@@ -1,31 +1,8 @@
 version: 2
 updates:
-  # npm/pnpm dependencies
-  - package-ecosystem: "npm"
-    directory: "/"
-    schedule:
-      interval: "weekly"
-      day: "monday"
-      time: "03:00"
-    open-pull-requests-limit: 5
-    allow:
-      - dependency-type: "all"
-    versioning-strategy: "auto"
-    groups:
-      production-dependencies:
-        dependency-type: "production"
-        update-types:
-          - "minor"
-          - "patch"
-      dev-dependencies:
-        dependency-type: "development"
-        update-types:
-          - "minor"
-          - "patch"
-
-  # Rust dependencies (Cargo.toml)
+  # Rust dependencies (Cargo workspace)
   - package-ecosystem: "cargo"
-    directory: "/src-tauri"
+    directory: "/"
     schedule:
       interval: "weekly"
       day: "monday"

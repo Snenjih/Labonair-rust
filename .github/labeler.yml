@@ -1,17 +1,5 @@
 # Automatically applied labels based on changed file paths
 
-frontend:
-  - changed-files:
-    - any-glob-to-any-file:
-      - "src/**"
-      - "index.html"
-      - "vite.config.*"
-
-backend:
-  - changed-files:
-    - any-glob-to-any-file:
-      - "src-tauri/**"
-
 ci:
   - changed-files:
     - any-glob-to-any-file:
@@ -20,48 +8,61 @@ ci:
 dependencies:
   - changed-files:
     - any-glob-to-any-file:
-      - "package.json"
-      - "pnpm-lock.yaml"
-      - "src-tauri/Cargo.toml"
-      - "src-tauri/Cargo.lock"
+      - "**/Cargo.toml"
+      - "Cargo.lock"
 
-terminal:
+backend:
   - changed-files:
     - any-glob-to-any-file:
-      - "src/modules/terminal/**"
-      - "src-tauri/src/modules/pty/**"
+      - "crates/backend/**"
 
-ssh/sftp:
+ui:
   - changed-files:
     - any-glob-to-any-file:
-      - "src/modules/sftp/**"
-      - "src-tauri/src/modules/ssh/**"
-      - "src-tauri/src/modules/sftp/**"
-
-hosts:
-  - changed-files:
-    - any-glob-to-any-file:
-      - "src/modules/hosts/**"
-      - "src-tauri/src/modules/hosts/**"
-
-ai:
-  - changed-files:
-    - any-glob-to-any-file:
-      - "src/modules/ai/**"
-
-editor:
-  - changed-files:
-    - any-glob-to-any-file:
-      - "src/modules/editor/**"
+      - "crates/ui/**"
+      - "crates/app/**"
 
 theme:
   - changed-files:
     - any-glob-to-any-file:
-      - "src/styles/**"
-      - "src/modules/theme/**"
+      - "crates/theme/**"
+
+terminal:
+  - changed-files:
+    - any-glob-to-any-file:
+      - "crates/terminal/**"
+      - "crates/backend/src/modules/pty/**"
+      - "crates/backend/src/modules/terminal_exec/**"
+
+editor:
+  - changed-files:
+    - any-glob-to-any-file:
+      - "crates/editor/**"
+
+ai:
+  - changed-files:
+    - any-glob-to-any-file:
+      - "crates/ai/**"
+      - "crates/backend/src/modules/mcp/**"
+
+ssh/sftp:
+  - changed-files:
+    - any-glob-to-any-file:
+      - "crates/backend/src/modules/ssh/**"
+      - "crates/backend/src/modules/sftp/**"
+
+hosts:
+  - changed-files:
+    - any-glob-to-any-file:
+      - "crates/backend/src/modules/hosts/**"
+      - "crates/backend/src/modules/credentials/**"
+
+git:
+  - changed-files:
+    - any-glob-to-any-file:
+      - "crates/backend/src/modules/git/**"
 
 snippets:
   - changed-files:
     - any-glob-to-any-file:
-      - "src/modules/snippets/**"
-      - "src-tauri/src/modules/snippets/**"
+      - "crates/backend/src/modules/snippets/**"

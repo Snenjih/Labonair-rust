@@ -17,9 +17,12 @@ changelog:
     - title: "Editor"
       labels:
         - editor
-    - title: "Frontend"
+    - title: "Git"
       labels:
-        - frontend
+        - git
+    - title: "UI / Theme"
+      labels:
+        - ui
         - theme
     - title: "Backend"
       labels:

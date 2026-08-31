@@ -1,7 +1,7 @@
 # T01-005: CI-Pipeline (cargo check/clippy/test/fmt)
 
 ## Status
-⏳ Pending
+✅ Done
 
 ## Phase
 0 — Projekt-Setup & Grundgerüst
@@ -39,11 +39,11 @@ Rust anpassen oder entfernen.
    werden — Linux ist „später", soll aber nicht komplett brechen.
 
 ## Akzeptanzkriterien
-- [ ] `.github/workflows/ci.yml` existiert und triggert auf push/PR
-- [ ] CI läuft grün auf einem Test-PR (fmt + check + clippy + test)
-- [ ] `dependabot.yml` nutzt `cargo`
-- [ ] Keine verbleibenden pnpm/react-Workflows im Repo-Stamm-`.github/`
-- [ ] `cargo fmt --check` und `cargo clippy -- -D warnings` lokal grün
+- [x] `.github/workflows/ci.yml` existiert und triggert auf push/PR
+- [ ] CI läuft grün auf einem Test-PR (fmt + check + clippy + test) — pending push (nur auf Nutzer-Wunsch)
+- [x] `dependabot.yml` nutzt `cargo` (Workspace-Root `/`, kein npm mehr)
+- [x] Keine verbleibenden pnpm/react-Workflows im Repo-Stamm-`.github/` (alte Workflows nur unter `reference-src/.github/workflows/`)
+- [x] `cargo fmt --check` und `cargo clippy -- -D warnings` lokal grün
 
 ## Notizen
 - Caching ist wichtig — GPUI + alacritty + russh sind große Dependency-Bäume.
