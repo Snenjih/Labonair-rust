@@ -7,7 +7,7 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
-tasks/
+# tasks/ is the port roadmap and IS tracked — do not ignore
 references/
 
 node_modules
