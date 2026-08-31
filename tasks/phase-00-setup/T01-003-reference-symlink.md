@@ -1,7 +1,7 @@
 # T01-003: Referenz-Kopie verifizieren & Projekt-Doku
 
 ## Status
-⏳ Pending
+✅ Done
 
 ## Phase
 0 — Projekt-Setup & Grundgerüst

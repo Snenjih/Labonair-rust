@@ -8,6 +8,16 @@ This repo is fully standalone. The original web-app source is a frozen,
 read-only reference copy at [`reference-src/`](./reference-src/) and is the only
 reference — never a build target.
 
+## Goal
+
+Full feature parity — everything Labonair does today must work in the pure-Rust
+version. Only unavoidable deviation: the in-app web-preview tab becomes native
+markdown rendering + "open in system browser" (GPUI cannot embed a WebView).
+
+## Status
+
+See [tasks/ROADMAP.md](./tasks/ROADMAP.md) and [handshake.md](./handshake.md).
+
 ## Workspace layout
 
 | Crate | Purpose |
