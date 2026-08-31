@@ -5,7 +5,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with th
 # Labonair-rust — CLAUDE.md
 **AI Developer Guidelines & Project Reference**
 
-This is a **fresh port** of Labonair from a Tauri v2 + React 19 web app to a **pure native Rust app using GPUI**. This repo is NOT the original Labonair source — treat that repo (`../Labonair`, the clone source) as read-only **reference** only. The web-app artifacts that were copied in (React, WebView, xterm.js, CodeMirror, Zustand, Tailwind, sbt) are being **replaced**, not extended.
+This is a **hard fork** of Labonair — a Tauri v2 + React 19 web app being rewritten as a **pure native Rust app using GPUI**. It is fully standalone: there is **no** link, symlink, submodule, or dependency back to the original Labonair repo. The original web-app source was copied once into **`reference-src/`** inside this repo and that copy is the *only* reference — a read-only design/behavior spec, never a build target. Work exclusively from what's in `reference-src/`. The web-app artifacts there (React, WebView, xterm.js, CodeMirror, Zustand, Tailwind) are being **replaced** by native Rust, not extended.
+
+**Goal is full feature parity:** everything Labonair does today must work in the pure-Rust version at the end — no feature is out of scope. The only unavoidable deviation is the in-app URL/web preview tab (GPUI cannot embed a WebView); that is replaced by native markdown rendering + "open in system browser".
 
 ## Commands
 
@@ -47,9 +49,9 @@ Platform: **macOS first, Linux later, no Windows.** The GPUI renderer differs pe
 
 ## Critical Rules (NEVER Violate)
 
-1. **Reference, don't edit the source** — `../Labonair` is a read-only design/behavioral reference. Never modify files there.
+1. **Reference, don't edit the source** — `reference-src/` is a read-only design/behavioral reference (a frozen copy). Never modify files there. Never add a link/symlink/submodule to any external Labonair repo — this fork is standalone.
 2. **No web tech in the result** — no WebView, no xterm.js, no CodeMirror, no Zustand, no Tailwind, no npm deps. GPUI-native rendering only.
-3. **UI values come from the reference** — colors/spacing/radii/shadows are taken 1:1 from `../Labonair/src/styles/globals.css` (converted from oklch to GPUI theme). No hardcoded arbitrary values that diverge from the reference.
+3. **UI values come from the reference** — colors/spacing/radii/shadows are taken 1:1 from `reference-src/src/styles/globals.css` (converted from oklch to GPUI theme). No hardcoded arbitrary values that diverge from the reference.
 4. **No incomplete/wrong GPUI usage** — GPUI is largely **undocumented**: check `cargo doc`, the `gpui`/`gpui-component` source, or the Zed codebase (both on GitHub) before guessing an API. Never invent an API that doesn't exist.
 5. **No blocking on the main thread** — all I/O is `async`/`tokio::spawn` / `spawn_blocking`. Never `std::thread::sleep` on the main thread.
 6. **No `unwrap()` on predictable errors** — return `Result<T, String>` (or GPUI error type) with descriptive messages.
@@ -62,7 +64,7 @@ The source of truth for what to build is the **roadmap in [`tasks/ROADMAP.md`](.
 1. **Find the next task.** Read `tasks/ROADMAP.md` and scan the `tasks/phase-*/` task files. Each task file has a `## Status` header followed by a status value on the next line (`⏳ Pending`, `🔄 In Progress`, `✅ Done`). The next task is the earliest-phase, lowest-numbered `T*\-\*` file whose status is `⏳ Pending` (or `🔄 In Progress` if its dependencies are satisfied). Respect the `## Abhängigkeiten` (dependencies) listed in that task — only start it once its dependencies are marked Done.
 2. **Read the full task file.** Understand its `## Ziel` (goal), `## Kontext`, `## Anweisungen` (instructions), `## Akzeptanzkriterien` (acceptance criteria), `## Notizen`, `## Warnungen` (warnings) before writing any code.
 3. **Set its status.** Change the value line under the task file's `## Status` header to `🔄 In Progress` (if not already).
-4. **Implement.** Write the code following the task's instructions and the Critical Rules above. Use the `cargo` commands to compile/test frequently. When you need to check the reference app's exact behavior/values, read the corresponding files under `../Labonair` (e.g. `src/styles/globals.css` for theme, `src-tauri/src/modules/*/` for backend logic to port, `src/modules/*/` for UI behavior to replicate).
+4. **Implement.** Write the code following the task's instructions and the Critical Rules above. Use the `cargo` commands to compile/test frequently. When you need to check the reference app's exact behavior/values, read the corresponding files under `reference-src` (e.g. `src/styles/globals.css` for theme, `src-tauri/src/modules/*/` for backend logic to port, `src/modules/*/` for UI behavior to replicate).
 5. **Verify.** Satisfy the task's `## Akzeptanzkriterien`:
    - Run `cargo check`, `cargo clippy -- -D warnings`, and `cargo test`. All must pass (add/adjust tests as the task requires).
    - Confirm each acceptance criterion is genuinely met.
@@ -96,12 +98,12 @@ If you hit a build error, unexpected behavior, or had to debug something non-obv
 
 ## Reference Usage
 
-The original Labonair lives at `../Labonair` (or a `reference/` symlink — see Task T01-003 which sets this up). It is the source of truth for:
-- **Visual design**: `src/styles/globals.css` (oklch token values), component layout, spacing, fonts.
-- **Behavior**: how each feature behaves (terminal, explorer, editor, SSH, SFTP, git, AI, settings).
-- **Backend logic to port**: `src-tauri/src/modules/*/` (21 Rust modules) — reuse these directly, stripping Tauri/IPC wrappers and calling them in-process.
+The frozen reference copy lives at `reference-src/` in this repo. It is the single source of truth for:
+- **Visual design**: `reference-src/src/styles/globals.css` (oklch token values), component layout, spacing, fonts.
+- **Behavior**: how each feature behaves (terminal, explorer, editor, SSH, SFTP, git, AI, settings, backgrounds, updater, native menus, MCP bridge).
+- **Backend logic to port**: `reference-src/src-tauri/src/modules/*/` — port these to native Rust modules under `crates/`, stripping the Tauri/IPC wrappers and calling them in-process.
 
-Remember: the original repo must be kept intact and running; you only read from it.
+Read from `reference-src/` only; never edit it, never reach outside the repo for it.
 
 ## Language Protocol
 

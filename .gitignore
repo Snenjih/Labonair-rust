@@ -1,31 +1,25 @@
+# Rust / Cargo
+/target
+**/*.rs.bk
+*.pdb
+
 # Logs
 logs
 *.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-lerna-debug.log*
 
-# tasks/ is the port roadmap and IS tracked — do not ignore
-references/
+# Local session exports / scratch
+session-*.md
+last.md
 
-node_modules
-dist
-dist-ssr
-*.local
-stats.html
-
-# Editor directories and files
+# OS / editor
+.DS_Store
+.idea
+*.sw?
 .vscode/*
 !.vscode/extensions.json
-.idea
-.DS_Store
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-*.sw?
 
-*.tsbuildinfo
+# Agent-local (memory lives in ~/.claude/projects/.../memory/)
 .claude/
+
+# reference-src/ is the frozen in-repo reference copy and IS tracked.
+# This fork is standalone — no external symlink to any other Labonair repo.

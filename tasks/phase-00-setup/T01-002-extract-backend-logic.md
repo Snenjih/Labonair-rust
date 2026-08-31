@@ -1,4 +1,4 @@
-# T01-002: Backend-Logik aus Labonair extrahieren
+# T01-002: Backend-Logik aus reference-src extrahieren
 
 ## Status
 ⏳ Pending
@@ -10,13 +10,16 @@
 T01-001 (Cargo Workspace)
 
 ## Ziel
-Die gesamte Rust-Backend-Logik aus `Labonair/src-tauri/src/modules/` in das neue `crates/backend/` extrahieren und von Tauri-spezifischen Abhängigkeiten befreien.
+Die gesamte Rust-Backend-Logik aus `reference-src/src-tauri/src/modules/` in das neue `crates/backend/` extrahieren und von Tauri-spezifischen Abhängigkeiten befreien.
+
+> **Nicht in dieser Task:** `dock_menu.rs` / `menu_sync.rs` (native Menüs → T04-005) und `errors.rs`
+> (geht im neuen `crates/backend/src/error.rs` auf).
 
 ## Anweisungen
 
 ### 1. Rust-Module kopieren
 
-Kopiere die folgenden Module aus `../Labonair/src-tauri/src/modules/` nach `crates/backend/src/`:
+Kopiere die folgenden Module aus `reference-src/src-tauri/src/modules/` nach `crates/backend/src/`:
 
 | Modul | Quelle | Ziel | Dateien |
 |---|---|---|---|
@@ -128,7 +131,7 @@ pub enum AppError {
     Json(#[from] serde_json::Error),
     
     #[error("Git error: {0}")]
-    Git(#[from] git2::Error),
+    Git(String), // git-CLI-Fehler (stderr/exit-code) — KEIN git2/libgit2
     
     #[error("Keyring error: {0}")]
     Keyring(String),
@@ -161,8 +164,8 @@ edition = "2021"
 russh = { workspace = true }
 russh-sftp = { workspace = true }
 
-# Git
-git2 = { workspace = true }
+# Git — KEIN git2. Git läuft über das `git`-CLI (std::process / tokio::process),
+# lokal und remote-over-SSH (GitExecutor). So macht es auch das Original.
 
 # SQLite
 rusqlite = { workspace = true }
@@ -254,5 +257,5 @@ pub use state::AppState;
 
 ## Weiterführende Tasks
 
-- [T01-003: Referenz-Symlink erstellen](./T01-003-reference-symlink.md)
+- [T01-003: Referenz-Kopie verifizieren & Projekt-Doku](./T01-003-reference-symlink.md)
 - [T01-004: Event-System definieren](./T01-004-event-system.md)

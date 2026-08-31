@@ -10,7 +10,7 @@
 T01-001 (Cargo Workspace)
 
 ## Ziel
-Die kompletten Design-Tokens aus `../Labonair/src/styles/globals.css` lesen und in eine datenorientierte Rust-Struktur übersetzen. Das Ergebnis ist eine vollständige, programmatisch nutzbare Repräsentation aller Farb-, Radius-, Schatten- und Animationswerte der App. Die Struktur liegt dort, wo sie in `crates/theme/` hingehört, und wird von der gesamten UI als einzige Design-Quelle genutzt.
+Die kompletten Design-Tokens aus `reference-src/src/styles/globals.css` lesen und in eine datenorientierte Rust-Struktur übersetzen. Das Ergebnis ist eine vollständige, programmatisch nutzbare Repräsentation aller Farb-, Radius-, Schatten- und Animationswerte der App. Die Struktur liegt dort, wo sie in `crates/theme/` hingehört, und wird von der gesamten UI als einzige Design-Quelle genutzt.
 
 ## Kontext
 Labonair definiert sein gesamtes visuelles Erscheinungsbild über CSS Custom Properties in `src/styles/globals.css`. Diese Datei ist die Autorität für alle Farben, Radien, Schatten, Animationen und Typografien — rund 80 bis 100 Tokens, aufgeteilt in zwei Theme-Varianten: Light (`:root`) und Dark (`.dark`).

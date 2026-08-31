@@ -1,4 +1,4 @@
-# T01-003: Referenz-Symlink zu Labonair erstellen
+# T01-003: Referenz-Kopie verifizieren & Projekt-Doku
 
 ## Status
 ⏳ Pending
@@ -10,75 +10,86 @@
 T01-001 (Cargo Workspace)
 
 ## Ziel
-Einen Symlink von `reference/` im Labonair-rust-Projekt zu `../Labonair/` erstellen, damit alle Tasks einfachen Zugriff auf das Original haben.
+Sicherstellen, dass die eingefrorene Referenz-Kopie `reference-src/` vollständig und unangetastet
+im Repo liegt, und die Projekt-Doku (README) auf den Fork-Charakter ausrichten. **Es wird KEIN
+Symlink und KEINE externe Anbindung erstellt** — dieser Fork ist vollständig standalone.
+
+## Kontext
+Labonair-rust ist ein **Hard Fork**. Der Original-Webapp-Source wurde einmalig nach
+`reference-src/` kopiert. Ab jetzt gibt es keine Verbindung mehr zum Original-Repo — weder
+Symlink, Submodul noch Pfad-Abhängigkeit. Alle Tasks lesen ausschließlich aus `reference-src/`.
 
 ## Anweisungen
 
-### 1. Symlink erstellen
+### 1. Referenz-Kopie prüfen
 
-Unter macOS/Linux:
+Verifiziere, dass folgende Pfade unter `reference-src/` existieren und lesbar sind:
 
-```bash
-ln -s ../Labonair reference
-```
+- `reference-src/src/styles/globals.css` — Design-Tokens (oklch)
+- `reference-src/src/modules/` — die Frontend-Feature-Module (Verhaltens-Referenz)
+- `reference-src/src-tauri/src/modules/` — die Rust-Backend-Module (Port-Vorlage), u.a.:
+  `ssh`, `sftp`, `git`, `fs`, `pty`, `hosts`, `credentials`, `snippets`, `secrets.rs`,
+  `themes`, `backgrounds`, `scrollback`, `settings`, `shell`, `terminal_exec`, `mcp`,
+  `fonts`, `dock_menu.rs`, `menu_sync.rs`, `errors.rs`
+- `reference-src/src-tauri/Cargo.toml` — maßgebliche Crate-Versionen (russh 0.62.2, russh-sftp 2.3.0,
+  rusqlite 0.40, portable-pty 0.9, kein git2 → git-CLI)
+- `reference-src/src-tauri/src/modules/pty/scripts/` — Shell-Init-Skripte (zshrc.zsh, bashrc.bash)
 
-Die Struktur sollte dann so aussehen:
+Falls etwas fehlt: stoppen und melden — die Referenz ist die einzige Quelle.
 
-```
-Labonair-rust/
-├── reference -> ../Labonair   ← Symlink
-├── crates/
-├── tasks/
-└── ...
-```
+### 2. README.md schreiben
 
-### 2. README.md erstellen
-
-Erstelle `README.md` im Stammverzeichnis:
+Erstelle `README.md` im Repo-Stamm:
 
 ```markdown
 # Labonair-rust
 
-Native Rust-Portierung von Labonair (Tauri v2 + React → GPUI).
+Native Rust/GPUI-Rewrite von Labonair (vormals Tauri v2 + React 19) — ein **Hard Fork**.
+Vollständig standalone, keine Verbindung zum Original-Repo.
 
-**Referenz**: `reference/` zeigt auf den Original-Source von Labonair.
-Alle Design-Werte, funktionale Spezifikationen und Verhaltensweisen werden
-aus dem Referenz-Code übernommen und in GPUI übersetzt.
+## Referenz
+`reference-src/` ist eine **eingefrorene, read-only Kopie** des Original-Webapps.
+Sie ist die einzige Quelle für Design-Werte, Feature-Verhalten und zu portierende
+Backend-Logik. Niemals editieren, niemals extern verlinken.
+
+## Ziel
+Volle Feature-Parität — alles was Labonair heute kann, läuft am Ende in purem Rust.
 
 ## Status
-See [tasks/ROADMAP.md](./tasks/ROADMAP.md)
+Siehe [tasks/ROADMAP.md](./tasks/ROADMAP.md) und [handshake.md](./handshake.md).
 
 ## Entwicklung
-cargo run    # Startet die App
-cargo check  # Kompiliert ohne Run
-cargo clippy # Lint
+    cargo run      # App starten
+    cargo check    # Kompilieren ohne Run
+    cargo clippy --all-targets -- -D warnings
+    cargo test
 ```
 
-### 3. .gitignore erstellen
+### 3. .gitignore prüfen
 
-```gitignore
-/target
-/reference
-.DS_Store
-```
+`.gitignore` ist bereits gesetzt (Rust `/target`, `.claude/`, OS-Kram). Sicherstellen, dass
+`reference-src/` **nicht** ignoriert wird (es ist getrackt) und kein `/reference`-Symlink-Eintrag
+mehr nötig ist.
 
 ## Akzeptanzkriterien
 
-- [ ] `reference/` zeigt auf den Labonair-Source
-- [ ] README.md existiert mit Projekt-Beschreibung
-- [ ] .gitignore schließt `/target` und `/reference` aus
-- [ ] `ls reference/src/modules/` zeigt die 23 Module
+- [ ] Alle unter Anweisung 1 gelisteten Referenz-Pfade existieren in `reference-src/`
+- [ ] `README.md` existiert im Repo-Stamm und beschreibt den Fork-/Referenz-Charakter
+- [ ] `.gitignore` ignoriert `reference-src/` NICHT; kein externer Symlink im Repo
+- [ ] `git grep -n "\.\./Labonair"` liefert 0 Treffer (keine Alt-Pfade mehr)
+- [ ] `cargo check` weiterhin grün
 
 ## Notizen
 
-- **Desktop-Only**: Labonair-rust ist eine Desktop-App. Es gibt kein Web-Output.
-- **git clone**: Der `reference/` Ordner wird NICHT in das neue Repo committet (Symlink ist nicht versionierbar sinnvoll).
+- **Desktop-Only**: kein Web-Output.
+- `reference-src/` wird mitgecheckt in den Remote — bewusst, es ist Teil des Forks.
 
 ## Warnungen
 
-- ⚠️ **Nicht versehentlich das Original ändern** — Der Symlink ist read-only Referenz. Keine Änderungen an `../Labonair/` während der Portierung.
-- ⚠️ **Kein Git-Submodul**: Der Symlink ist kein Submodul. Bei ordnungsgemäßem Workflow wird er nicht in den Remote gepusht.
+- ⚠️ **Kein Symlink, kein Submodul, keine Pfad-Dependency** zu einem externen Labonair-Repo.
+  Der User will die Trennung explizit (Hard Fork).
+- ⚠️ **`reference-src/` niemals ändern** — read-only Referenz.
 
 ## Weiterführende Tasks
 
-- Keine direkten Nachfolger. Projekt kann mit Phase 1 beginnen.
+- Keine direkten Nachfolger. Projekt kann mit Phase 1 fortfahren.

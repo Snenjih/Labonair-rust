@@ -24,7 +24,7 @@ Labonair hat ein Source-Control-Panel (Sidebar-Tab) mit:
 - Branch-Verwaltung (in T09-002).
 - Stash-Operationen (in T09-002).
 
-Die Git-Logik liegt im Backend (git2/libgit2 oder git-CLI) — das UI liest den Status und ruft die Operationen auf.
+Die Git-Logik liegt im Backend und läuft über das `git`-CLI (lokal + remote-over-SSH via GitExecutor, wie im Original — **kein** git2/libgit2). Das UI liest den Status und ruft die Operationen auf.
 
 ## Anweisungen zur Umsetzung
 
@@ -61,7 +61,7 @@ Die Git-Logik liegt im Backend (git2/libgit2 oder git-CLI) — das UI liest den 
 
 7. **Status-Polling und Aktualität.** Sorge für eine zuverlässige Synchronisierung:
    - Status bei Operationen aktualisieren.
-   - Externer Dateisystem-/Git-Änderung (Datei von anderem Tool geändert) erkennen und aktualisieren (libgit2-Reflesh bzw. Watcher).
+   - Externer Dateisystem-/Git-Änderung (Datei von anderem Tool geändert) erkennen und aktualisieren (FS-Watcher + `git status` neu ausführen).
    - Polling mit Generation-Guards (ähnlich Labonair) um Race-Conditions zu vermeiden.
 
 8. **Tests schreiben.** Erstelle Tests (gegen lokale Test-Repos):
@@ -83,7 +83,7 @@ Die Git-Logik liegt im Backend (git2/libgit2 oder git-CLI) — das UI liest den 
 
 ## Notizen
 
-- Die Git-Befehle kommen aus dem Backend (git2). Das UI muss sie nur sauber anbinden.
+- Die Git-Befehle kommen aus dem Backend (git-CLI-Wrapper). Das UI muss sie nur sauber anbinden.
 - Die Hunk-Erkennung (aus diffHunks in Labonair) ist für Hunk-Staging wichtig — über die Diff-Ansicht (T06-004) zugänglich machen.
 
 ## Warnungen

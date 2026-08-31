@@ -44,7 +44,7 @@ Labonair-rust/
 │       ├── Cargo.toml
 │       └── src/lib.rs
 ├── tasks/                  ← Roadmap & Tasks (existiert bereits)
-├── reference/              ← Symlink zu ../Labonair/ (Referenz)
+├── reference-src/          ← Eingefrorene Referenz-Kopie des Original-Webapps (existiert bereits, read-only)
 └── README.md
 ```
 
@@ -75,17 +75,15 @@ vte = "0.13"
 # Async
 tokio = { version = "1", features = ["full"] }
 
-# SSH
-russh = { version = "0.50", features = ["vendored-openssl"] }
-russh-sftp = "1"
+# SSH — Versionen 1:1 aus reference-src/src-tauri/Cargo.toml übernehmen
+russh = { version = "0.62.2", default-features = false, features = ["ring", "flate2", "rsa"] }
+russh-sftp = "2.3.0"
 
-# SFTP (in russh-sftp enthalten)
-
-# Git
-git2 = "0.19"  # Libgit2 für Git-Operationen
+# Git — KEIN git2/libgit2. Das Original shellt zum `git`-CLI aus
+# (lokal UND remote-over-SSH via GitExecutor). Parität = gleiche Strategie beibehalten.
 
 # SQLite
-rusqlite = { version = "0.32", features = ["bundled"] }
+rusqlite = { version = "0.40", features = ["bundled"] }
 
 # Keyring
 keyring = "3"
@@ -98,7 +96,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
 # PTY
-portable-pty = "0.8"
+portable-pty = "0.9"
 
 # Fonts
 fontdb = "0.17"
@@ -237,7 +235,7 @@ pub mod theme_store;
 - [ ] `cargo run` startet ein GPUI-Fenster (1200x800) mit dunklem Hintergrund
 - [ ] Alle 7 Crates sind im Workspace registriert
 - [ ] `cargo clippy` zeigt keine Warnings
-- [ ] Die Referenz-Struktur existiert (`reference/` Verzeichnis oder Symlink)
+- [ ] `reference-src/` liegt unangetastet im Repo (frozen, read-only — nicht anfassen)
 
 ## Notizen
 
@@ -254,4 +252,4 @@ pub mod theme_store;
 ## Weiterführende Tasks
 
 - [T01-002: Backend-Logik extrahieren](./T01-002-extract-backend-logic.md)
-- [T01-003: Referenz-Symlink erstellen](./T01-003-reference-symlink.md)
+- [T01-003: Referenz-Kopie verifizieren & Projekt-Doku](./T01-003-reference-symlink.md)

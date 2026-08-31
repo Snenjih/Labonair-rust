@@ -67,7 +67,7 @@ In der React/xterm.js-Welt geschah das Parsing dieser OSC-Sequenzen im Frontend 
 
 ## Notizen
 
-- Die bestehenden Shell-Skripte in `../Labonair/src-tauri/src/modules/pty/scripts/` (zshrc.zsh, bashrc.bash usw.) sind eine ideale Vorlage — übernimm deren Logik.
+- Die bestehenden Shell-Skripte in `reference-src/src-tauri/src/modules/pty/scripts/` (zshrc.zsh, bashrc.bash usw.) sind eine ideale Vorlage — übernimm deren Logik.
 - Einige Programme deaktivieren Shell-Integration, wenn keine Builder-Umgebungsvariable (die die Terminal-Identität meldet) gesetzt ist. Stelle diese korrekt ein (analog `TERM_PROGRAM`).
 - Die OSC-Sequenzen sind die zentrale Schnittstelle zwischen Shell und Terminal — konsistent und fehlerfrei umsetzen.
 
