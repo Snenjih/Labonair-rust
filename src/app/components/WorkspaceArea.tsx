@@ -1,0 +1,188 @@
+import { motion } from "motion/react";
+import React from "react";
+import { DURATION, EASE_PREMIUM } from "@/lib/motion";
+import { cn } from "@/lib/utils";
+import { AiInputBar } from "@/modules/ai";
+import { AiInputBarConnect } from "@/modules/ai/components/AiInputBar";
+import type { EditorPaneHandle } from "@/modules/editor";
+import { AiDiffStack, EditorStack, GitDiffStack } from "@/modules/editor";
+import { CommitDiffStack, GitGraphStack } from "@/modules/git-graph";
+import { HomeDashboard } from "@/modules/hosts";
+import type { PreviewPaneHandle } from "@/modules/preview";
+import { PreviewStack } from "@/modules/preview";
+import { openSettingsWindow } from "@/modules/settings/openSettingsWindow";
+import { usePreferencesStore } from "@/modules/settings/preferences";
+import { SftpStack } from "@/modules/sftp/SftpStack";
+import { selectActiveTabKind, useTabsStore } from "@/modules/tabs";
+import type { TerminalPaneHandle, WorkspacePaneHandle } from "@/modules/terminal";
+import { WorkspaceStack } from "@/modules/terminal/WorkspaceStack";
+
+export interface WorkspaceAreaProps {
+  workspacePaneRefs: React.MutableRefObject<Map<number, WorkspacePaneHandle>>;
+  terminalRefs: React.MutableRefObject<Map<string, TerminalPaneHandle>>;
+  onDetectedLocalUrl: (sessionId: string, url: string) => void;
+  registerEditorHandle: (id: number, h: EditorPaneHandle | null) => void;
+  onEditorDirtyChange: (id: number, dirty: boolean) => void;
+  onCloseEditorTab: (id: number) => void;
+  onEditorSaveAs: (id: number, newPath: string) => void;
+  registerPreviewHandle: (id: number, h: PreviewPaneHandle | null) => void;
+  onPreviewUrlChange: (id: number, url: string) => void;
+  onAcceptDiff: (id: string) => void;
+  onRejectDiff: (id: string) => void;
+  newSshTab: (hostId: string, title: string, cwd?: string) => number;
+  newQuickSshTab: (username: string, hostAddress: string, port: number) => number;
+  newSftpTab: (hostId: string, title: string) => number;
+  onOpenSshTerminal: (hostId: string, title: string) => number;
+  onOpenRemoteEditor: (
+    sftpTabId: string,
+    remotePath: string,
+    hostId: string,
+    source: "sftp-tab",
+  ) => Promise<void>;
+  onSftpPathsChange: (tabId: number, remotePath: string, localPath: string) => void;
+  keysLoaded: boolean;
+  panelOpen: boolean;
+  aiEnabled: boolean;
+  hasComposer: boolean;
+  onOpenGitGraphFile?: (path: string) => void;
+}
+
+export const WorkspaceArea = React.memo(function WorkspaceArea({
+  workspacePaneRefs,
+  terminalRefs,
+  onDetectedLocalUrl,
+  registerEditorHandle,
+  onEditorDirtyChange,
+  onCloseEditorTab,
+  onEditorSaveAs,
+  registerPreviewHandle,
+  onPreviewUrlChange,
+  onAcceptDiff,
+  onRejectDiff,
+  newSshTab,
+  newQuickSshTab,
+  newSftpTab,
+  onOpenSshTerminal,
+  onOpenRemoteEditor,
+  onSftpPathsChange,
+  keysLoaded,
+  panelOpen,
+  aiEnabled,
+  hasComposer,
+  onOpenGitGraphFile,
+}: WorkspaceAreaProps) {
+  const activeTabKind = useTabsStore(selectActiveTabKind);
+  // The command composer works without any AI provider configured — its
+  // *content* below isn't gated behind `aiEnabled`/`hasComposer` (AI-specific
+  // concerns), only its own setting and having a terminal to target. Overall
+  // bar *visibility* is `panelOpen` alone (seeded true by useAppBootstrap
+  // when this setting is on, but closeable afterwards like any other panel).
+  const terminalComposerEnabled = usePreferencesStore((s) => s.terminalComposerEnabled);
+  const showComposerBar = terminalComposerEnabled && activeTabKind === "workspace";
+  const isEditorTab = activeTabKind === "editor";
+  const isPreviewTab = activeTabKind === "preview";
+  const isAiDiffTab = activeTabKind === "ai-diff";
+  const isHomeTab = activeTabKind === "home";
+  const isGitGraphTab = activeTabKind === "git-graph";
+  const isGitDiffTab = activeTabKind === "git-diff";
+  const isCommitDiffTab = activeTabKind === "commit-diff";
+
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="relative min-h-0 flex-1">
+        <WorkspaceStack
+          workspacePaneRefs={workspacePaneRefs}
+          terminalRefs={terminalRefs}
+          onDetectedLocalUrl={onDetectedLocalUrl}
+        />
+        <div
+          className={cn(
+            "absolute inset-0 px-3 pt-2 pb-2",
+            isEditorTab ? "z-10" : "z-0 opacity-0 pointer-events-none",
+          )}
+          aria-hidden={!isEditorTab}
+        >
+          <EditorStack
+            registerHandle={registerEditorHandle}
+            onDirtyChange={onEditorDirtyChange}
+            onCloseTab={onCloseEditorTab}
+            onSaveAs={onEditorSaveAs}
+          />
+        </div>
+        <div
+          className={cn(
+            "absolute inset-0 px-3 pt-2 pb-2",
+            isPreviewTab ? "z-10" : "z-0 opacity-0 pointer-events-none",
+          )}
+          aria-hidden={!isPreviewTab}
+        >
+          <PreviewStack registerHandle={registerPreviewHandle} onUrlChange={onPreviewUrlChange} />
+        </div>
+        <div
+          className={cn(
+            "absolute inset-0 px-3 pt-2 pb-2",
+            isAiDiffTab ? "z-10" : "z-0 opacity-0 pointer-events-none",
+          )}
+          aria-hidden={!isAiDiffTab}
+        >
+          <AiDiffStack onAccept={onAcceptDiff} onReject={onRejectDiff} />
+        </div>
+        <div
+          className={cn("absolute inset-0", isHomeTab ? "z-10" : "z-0 opacity-0 pointer-events-none")}
+          aria-hidden={!isHomeTab}
+        >
+          <HomeDashboard newSshTab={newSshTab} newQuickSshTab={newQuickSshTab} newSftpTab={newSftpTab} />
+        </div>
+        <SftpStack
+          onOpenSshTerminal={onOpenSshTerminal}
+          onOpenRemoteEditor={onOpenRemoteEditor}
+          onPathsChange={onSftpPathsChange}
+        />
+        <div
+          className={cn("absolute inset-0", isGitGraphTab ? "z-10" : "z-0 opacity-0 pointer-events-none")}
+          aria-hidden={!isGitGraphTab}
+        >
+          <GitGraphStack onOpenFile={onOpenGitGraphFile} />
+        </div>
+        <div
+          className={cn(
+            "absolute inset-0 px-3 pt-2 pb-2",
+            isGitDiffTab ? "z-10" : "z-0 opacity-0 pointer-events-none",
+          )}
+          aria-hidden={!isGitDiffTab}
+        >
+          <GitDiffStack />
+        </div>
+        <div
+          className={cn(
+            "absolute inset-0 px-3 pt-2 pb-2",
+            isCommitDiffTab ? "z-10" : "z-0 opacity-0 pointer-events-none",
+          )}
+          aria-hidden={!isCommitDiffTab}
+        >
+          <CommitDiffStack />
+        </div>
+      </div>
+
+      {keysLoaded ? (
+        <motion.div
+          data-ai-input-bar
+          initial={false}
+          animate={{
+            height: panelOpen ? "auto" : 0,
+            opacity: panelOpen ? 1 : 0,
+          }}
+          transition={{ duration: DURATION.base, ease: EASE_PREMIUM }}
+          className="overflow-hidden"
+          aria-hidden={!panelOpen}
+        >
+          {(aiEnabled && panelOpen && hasComposer) || showComposerBar ? (
+            <AiInputBar aiEnabled={aiEnabled} hasComposer={hasComposer} />
+          ) : aiEnabled && panelOpen ? (
+            <AiInputBarConnect onAdd={() => void openSettingsWindow("ai")} />
+          ) : null}
+        </motion.div>
+      ) : null}
+    </div>
+  );
+});

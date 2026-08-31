@@ -1,0 +1,109 @@
+---
+title: "Theme JSON Format"
+description: "Full reference for the Labonair theme JSON schema, including the variants structure and all color keys."
+---
+
+# Theme JSON Format
+
+A Labonair theme is a single JSON file with a few top-level metadata fields and a `variants` object. Each entry in `variants` is a self-contained color palette tagged with a `mode` (`"light"` or `"dark"`) — a theme file must define at least one variant of each mode. All color values must be valid HEX strings (3-, 6-, or 8-digit with alpha, `#` prefix).
+
+## Full Schema
+
+```json
+{
+  "name": "My Theme",
+  "author": "Your Name",
+  "variants": {
+    "dark": {
+      "mode": "dark",
+      "label": "Dark",
+      "colors": {
+        "background": "#0f111a",
+        "foreground": "#e4e4e5",
+        "primary": "#6366f1",
+        "border": "#2a2d3e",
+        "terminal.ansi.black": "#1c1e2b",
+        "terminal.ansi.red": "#e06c75"
+      }
+    },
+    "light": {
+      "mode": "light",
+      "label": "Light",
+      "colors": {
+        "background": "#faf9f5",
+        "foreground": "#1e2130",
+        "primary": "#6366f1",
+        "border": "#e2e4ee",
+        "terminal.ansi.black": "#1e2130",
+        "terminal.ansi.red": "#dc4c5c"
+      }
+    }
+  }
+}
+```
+
+## Top-Level Fields
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `name` | string | Yes | Display name shown in the Theme Picker |
+| `author` | string | No | Attribution shown in the Theme Picker |
+| `authorUrl` | string | No | Link shown next to the author name |
+| `version` | string | No | Free-form version string |
+| `description` | string | No | Short description shown in the marketplace |
+| `variants` | object | Yes | Map of variant key → variant definition (see below) |
+
+## Variant Object
+
+Each key in `variants` is an arbitrary slug (`dark`, `light`, `frappe`, `macchiato`, …) — the key itself has no meaning beyond being a stable identifier; what matters is each variant's `mode` field.
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `mode` | `"light"` or `"dark"` | Yes | Which color scheme this variant renders under |
+| `label` | string | No | Display label for the variant picker (defaults to the key, capitalized) |
+| `colors` | object | Yes | Flat map of color keys → HEX values (see below) |
+
+A theme file is only valid if `variants` contains **at least one entry with `mode: "dark"` and at least one with `mode: "light"`**. Themes with more than two variants — e.g. a family like Catppuccin with three `"dark"`-mode variants (Frappé, Macchiato, Mocha) plus one `"light"`-mode variant (Latte) — are supported: Labonair shows a small variant picker whenever more than one variant shares the currently active mode.
+
+## UI Color Keys
+
+These tokens map to CSS custom properties on `:root` and drive the entire app shell:
+
+| Key | Purpose |
+|---|---|
+| `background` | Main app background |
+| `foreground` | Primary text color |
+| `card` / `card_foreground` | Card and panel surfaces |
+| `popover` / `popover_foreground` | Dropdowns, tooltips, context menus |
+| `primary` / `primary_foreground` | Accent color (buttons, active states) |
+| `secondary` / `secondary_foreground` | Secondary surfaces |
+| `muted` / `muted_foreground` | Subdued backgrounds and placeholder text |
+| `accent` / `accent_foreground` | Hover states, subtle highlights |
+| `destructive` / `destructive_foreground` | Delete and error states |
+| `border` | Dividers and component borders |
+| `input` | Input field background |
+| `ring` | Focus ring color |
+| `sidebar.background`, `toolbar.background`, `title_bar.background`, `status_bar.background` | Named surface areas |
+| `border.variant`, `border.focused`, `border.selected`, `border.transparent`, `border.disabled` | Border state variants |
+| `modified`, `error`, `warning`, `info`, `hint`, `success` | Semantic status colors |
+| `cursor`, `selection` | Text cursor and selection highlight |
+| `sidebar-foreground`, `sidebar-primary`, `sidebar-primary-foreground`, `sidebar-accent`, `sidebar-accent-foreground`, `sidebar-border`, `sidebar-ring` | Sidebar component colors |
+
+All keys above are optional per variant — Labonair falls back to `globals.css` defaults for anything missing.
+
+## Terminal Color Keys
+
+| Key | Purpose |
+|---|---|
+| `terminal.background`, `terminal.foreground`, `terminal.bright_foreground`, `terminal.dim_foreground` | Terminal surface colors |
+| `terminal.ansi.background`, `terminal.ansi.black` … `terminal.ansi.white` | The 8 standard ANSI colors |
+| `terminal.ansi.bright_black` … `terminal.ansi.bright_white` | The 8 bright ANSI variants |
+| `terminal.ansi.dim_black` … `terminal.ansi.dim_white` | The 8 dim ANSI variants |
+
+:::tip
+Omitting a `terminal.ansi.*` key falls back to the built-in default for that slot. For best results, define all of them per variant.
+:::
+
+:::tip
+Legacy underscore-notation terminal keys (`terminal_black`, `terminal_bright_red`, …) are still accepted for backward compatibility, but new themes should use the dot-notation keys shown above.
+:::

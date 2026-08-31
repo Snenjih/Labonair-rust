@@ -1,0 +1,250 @@
+import { invoke } from "@tauri-apps/api/core";
+import { useHostsStore } from "@/modules/hosts/store/hostsStore";
+import { useNotificationStore } from "@/modules/notifications/store/useNotificationStore";
+import type { PaneLeaf, PaneNode, PaneSplit } from "@/modules/tabs";
+import { useTabsStore } from "@/modules/tabs/store/tabsStore";
+import { loadSnapshot } from "./store";
+import type {
+  RestoreResult,
+  SessionSnapshot,
+  SftpTabSnapshot,
+  TabSnapshot,
+  WorkspaceTabSnapshot,
+} from "./types";
+
+export interface TabActions {
+  setActiveId: (id: number) => void;
+  newTab: (cwd?: string, initialCommand?: string, sessionId?: string, cold?: boolean) => number;
+  newSshTab: (
+    hostId: string,
+    title: string,
+    cwd?: string,
+    initialCommand?: string,
+    sessionId?: string,
+    cold?: boolean,
+  ) => number;
+  newQuickSshTab: (
+    username: string,
+    hostAddress: string,
+    port: number,
+    sessionId?: string,
+    cold?: boolean,
+  ) => number;
+  openFileTab: (path: string, activate?: boolean, peek?: boolean) => number | null;
+  newPreviewTab: (url: string, title?: string, activate?: boolean) => number;
+  openHomeTab: (activate?: boolean) => void;
+  newSftpTab: (hostId: string, title: string, activate?: boolean) => number;
+  updateSftpPaths: (tabId: number, remotePath: string, localPath: string) => void;
+  splitPane: (tabId: number, direction: "horizontal" | "vertical") => void;
+  setActivePaneId: (tabId: number, paneId: string) => void;
+}
+
+function collectLeaves(node: PaneNode): PaneLeaf[] {
+  if (node.type === "pane") return [node];
+  return [...collectLeaves(node.children[0]), ...collectLeaves(node.children[1])];
+}
+
+async function restoreWorkspaceTab(
+  snap: WorkspaceTabSnapshot,
+  actions: TabActions,
+  failedTabs: RestoreResult["failedTabs"],
+  cold: boolean,
+): Promise<number | null> {
+  const leaves = collectLeaves(snap.layout);
+  if (leaves.length === 0) return null;
+
+  // Validate hosts for SSH panes
+  const hosts = useHostsStore.getState().hosts;
+  const validatedSessions: typeof snap.sessions = {};
+  for (const [paneId, session] of Object.entries(snap.sessions)) {
+    if (session.kind === "ssh" && session.hostId) {
+      const hostExists = hosts.some((h) => h.id === session.hostId);
+      if (!hostExists) {
+        failedTabs.push({
+          title: session.title,
+          reason: `Host no longer exists (was: ${session.title})`,
+        });
+        validatedSessions[paneId] = { ...session, kind: "local" };
+        continue;
+      }
+    }
+    validatedSessions[paneId] = session;
+  }
+
+  // Open the root tab using the first leaf's session
+  const rootLeafId = leaves[0].id;
+  const rootSession = validatedSessions[rootLeafId];
+  let tabId: number;
+
+  if (!rootSession) return null;
+
+  if (rootSession.kind === "ssh") {
+    if (rootSession.quickConnect) {
+      tabId = actions.newQuickSshTab(
+        rootSession.quickConnect.username,
+        rootSession.quickConnect.hostAddress,
+        rootSession.quickConnect.port,
+        rootSession.id,
+        cold,
+      );
+    } else if (rootSession.hostId) {
+      tabId = actions.newSshTab(
+        rootSession.hostId,
+        rootSession.title,
+        rootSession.cwd,
+        rootSession.initialCommand,
+        rootSession.id,
+        cold,
+      );
+    } else {
+      tabId = actions.newTab(rootSession.cwd, rootSession.initialCommand, rootSession.id, cold);
+    }
+  } else {
+    tabId = actions.newTab(rootSession.cwd, rootSession.initialCommand, rootSession.id, cold);
+  }
+
+  // Reconstruct the split pane tree if there are multiple panes.
+  // `splitPane`/`setActivePaneId` are pure Zustand store updates — no PTY/SSH
+  // connection is spawned by them (only `WorkspaceStack` mounting a pane
+  // does that) — so this is safe to do even for a cold tab that isn't
+  // mounted at all yet.
+  if (leaves.length > 1) {
+    await reconstructPaneTree(snap.layout, tabId, actions);
+    actions.setActivePaneId(tabId, snap.activePaneId);
+  }
+
+  return tabId;
+}
+
+async function reconstructPaneTree(node: PaneNode, tabId: number, actions: TabActions): Promise<void> {
+  if (node.type === "pane") return;
+
+  const split = node as PaneSplit;
+  // Split the current active pane in the given direction
+  actions.splitPane(tabId, split.direction);
+  // Allow React state to settle before recursing
+  await new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+  await reconstructPaneTree(split.children[0], tabId, actions);
+  await reconstructPaneTree(split.children[1], tabId, actions);
+}
+
+async function restoreSftpTab(
+  snap: SftpTabSnapshot,
+  actions: TabActions,
+  failedTabs: RestoreResult["failedTabs"],
+  cold: boolean,
+): Promise<number | null> {
+  const hosts = useHostsStore.getState().hosts;
+  const hostExists = hosts.some((h) => h.id === snap.hostId);
+  if (!hostExists) {
+    failedTabs.push({ title: snap.title, reason: "Host no longer exists" });
+    return null;
+  }
+  const tabId = actions.newSftpTab(snap.hostId, snap.title, !cold);
+  if (snap.remotePath && snap.localPath) {
+    actions.updateSftpPaths(tabId, snap.remotePath, snap.localPath);
+  }
+  return tabId;
+}
+
+async function restoreTab(
+  snap: TabSnapshot,
+  actions: TabActions,
+  failedTabs: RestoreResult["failedTabs"],
+  cold: boolean,
+): Promise<number | null> {
+  switch (snap.kind) {
+    case "home": {
+      actions.openHomeTab(!cold);
+      const homeTab = useTabsStore.getState().tabs.find((t) => t.kind === "home");
+      return homeTab?.id ?? null;
+    }
+
+    case "preview": {
+      if (!snap.url) return null;
+      return actions.newPreviewTab(snap.url, undefined, !cold);
+    }
+
+    case "editor": {
+      if (snap.isRemote) {
+        // Remote editor tabs depend on SFTP — skip, show toast
+        failedTabs.push({
+          title: snap.title,
+          reason: "Remote editor tabs cannot be restored automatically",
+        });
+        return null;
+      }
+      try {
+        const exists = await invoke<boolean>("fs_file_exists", { path: snap.path });
+        if (!exists) {
+          failedTabs.push({ title: snap.title, reason: `File not found: ${snap.path}` });
+          return null;
+        }
+        // Restored tabs are deliberate, not a quick look — never peek.
+        return actions.openFileTab(snap.path, !cold, false);
+      } catch {
+        failedTabs.push({ title: snap.title, reason: `Could not check file: ${snap.path}` });
+        return null;
+      }
+    }
+
+    case "workspace": {
+      return restoreWorkspaceTab(snap, actions, failedTabs, cold);
+    }
+
+    case "sftp": {
+      return restoreSftpTab(snap, actions, failedTabs, cold);
+    }
+  }
+}
+
+export async function restoreSnapshot(
+  snapshot: SessionSnapshot,
+  actions: TabActions,
+): Promise<RestoreResult> {
+  const failedTabs: RestoreResult["failedTabs"] = [];
+  let restoredCount = 0;
+  const newTabIds: (number | null)[] = [];
+
+  for (const [index, snap] of snapshot.tabs.entries()) {
+    // Only the previously-active tab connects immediately; every other
+    // workspace tab is restored `cold` (see tabsStore's `newTab`/
+    // `WorkspaceStack`'s mount filter) — spawning a PTY/SSH connection per
+    // restored tab regardless of visibility is what made restoring 40+ tabs
+    // slow/heavy in the first place.
+    const cold = index !== snapshot.activeTabIndex;
+    const tabId = await restoreTab(snap, actions, failedTabs, cold);
+    newTabIds.push(tabId);
+    if (tabId !== null) restoredCount++;
+  }
+
+  // Restore the active tab. If the snapshotted active tab specifically
+  // failed to restore (e.g. its SSH host was deleted), fall back to the
+  // first tab that did restore — otherwise activeId stays unset and, under
+  // cold-gating, *nothing* ever warms (every other tab is cold and only
+  // setActiveId clears that).
+  const targetNewId = newTabIds[snapshot.activeTabIndex] ?? newTabIds.find((id) => id !== null);
+  if (targetNewId !== null && targetNewId !== undefined) {
+    actions.setActiveId(targetNewId);
+  }
+
+  return { restoredCount, failedTabs };
+}
+
+export async function restoreIfEnabled(actions: TabActions): Promise<RestoreResult | null> {
+  try {
+    const snapshot = await loadSnapshot();
+    if (!snapshot || snapshot.tabs.length === 0) return null;
+    return await restoreSnapshot(snapshot, actions);
+  } catch (e) {
+    console.warn("[session] restore failed:", e);
+    useNotificationStore.getState().addNotification({
+      type: "warning",
+      title: "Session not restored",
+      message: "Could not restore previous tabs. Starting with an empty workspace.",
+      source: "Session",
+    });
+    return null;
+  }
+}

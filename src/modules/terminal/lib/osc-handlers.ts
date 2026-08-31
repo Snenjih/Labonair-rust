@@ -1,0 +1,246 @@
+import type { IDisposable, IMarker, Terminal } from "@xterm/xterm";
+
+/** Tracks whether a foreground command is currently executing, derived from
+ *  OSC 133 C/D. Shared between registerCwdHandler (to reject untrusted OSC 7
+ *  from command output) and registerPromptTracker (which drives it) — one
+ *  instance per session, persists across renderer-pool slot rebinds since
+ *  it lives in the session record, not on the Terminal itself. */
+export type ShellIntegrationState = { inCommand: boolean };
+
+export function createShellIntegrationState(): ShellIntegrationState {
+  return { inCommand: false };
+}
+
+/**
+ * Process-set terminal title (OSC 0/1/2), e.g. a TUI like Claude Code
+ * updating the tab to reflect its own session state. Unlike OSC 7/133,
+ * xterm.js already parses these itself and exposes `onTitleChange` — no
+ * manual `registerOscHandler` needed. Shell integration resets the title to
+ * empty on every new prompt (see `_labonair_precmd` in the shell-integration
+ * scripts), so an empty string here means "no process title" to the caller.
+ */
+export function registerTitleHandler(term: Terminal, onTitle: (title: string) => void): () => void {
+  const d = term.onTitleChange((title) => onTitle(title.trim()));
+  return () => d.dispose();
+}
+
+export function registerCwdHandler(
+  term: Terminal,
+  onCwd: (cwd: string) => void,
+  state?: ShellIntegrationState,
+): () => void {
+  const d = term.parser.registerOscHandler(7, (data) => {
+    // Untrusted command output (remote SSH, `cat` of an attacker-controlled
+    // file, …) can emit its own OSC 7 — ignore while a command owns the tty.
+    if (state?.inCommand) return true;
+    const cwd = parseOsc7(data);
+    if (cwd) onCwd(cwd);
+    return true;
+  });
+  return () => d.dispose();
+}
+
+export type PromptTracker = {
+  getMarker: () => IMarker | null;
+  dispose: () => void;
+};
+
+/**
+ * `onCommandState` fires on OSC 133 C (pre-exec — a command starts running,
+ * `running=true`) and D (command finished, `running=false`). This is the
+ * primary "is this session busy" signal for both local and SSH sessions
+ * (renderer-pool eviction scoring, hidden-release gating) — it works
+ * identically over either transport since it's parsed purely from the shell's
+ * own OSC stream. OSC 133 B (end of prompt / command line begins) is parsed
+ * but has no callback — the pool cares about *executing*, not *typing*.
+ *
+ * The `D` branch also carries the command's exit code as `D;<code>`, and the
+ * `C` branch carries the literal command text as `C;<command>` when the
+ * shell is in block mode (see `_labonair_precmd`/`_labonair_preexec` in the
+ * shell-integration scripts — plain sessions get a bare `C` with no text, to
+ * avoid paying for a payload nothing reads) — both passed through so
+ * block-terminal bookkeeping (terminalSessionRegistry's BlockDecorations
+ * engine) can start/finish a block without a second competing OSC 133
+ * handler. `exitCode`/`commandText` are only ever defined on the event that
+ * actually carries them; `exitCode === undefined` doubles as "this wasn't a
+ * finished-command event" for callers that only care about `D`.
+ */
+export function registerPromptTracker(
+  term: Terminal,
+  state?: ShellIntegrationState,
+  onCommandState?: (running: boolean, exitCode?: number, commandText?: string) => void,
+): PromptTracker {
+  let marker: IMarker | null = null;
+  const d = term.parser.registerOscHandler(133, (data) => {
+    if (data.startsWith("A")) {
+      marker?.dispose();
+      marker = term.registerMarker(0);
+      if (state) state.inCommand = false;
+      onCommandState?.(false);
+    } else if (data.startsWith("C")) {
+      if (state) state.inCommand = true;
+      // Only pass a third argument when text was actually sent — callers
+      // (and tests) that assert `toHaveBeenCalledWith(true)` for a bare "C"
+      // must see exactly one argument, not `(true, undefined, undefined)`.
+      const text = data.length > 2 && data[1] === ";" ? data.slice(2) : undefined;
+      if (text !== undefined) {
+        onCommandState?.(true, undefined, text);
+      } else {
+        onCommandState?.(true);
+      }
+    } else if (data.startsWith("D")) {
+      if (state) state.inCommand = false;
+      const code = Number.parseInt(data.split(";")[1] ?? "", 10);
+      // Only pass a second argument when we actually parsed one — callers
+      // (and tests) that assert `toHaveBeenCalledWith(false)` for a bare
+      // "D" must see exactly one argument, not `(false, undefined)`.
+      if (Number.isFinite(code)) {
+        onCommandState?.(false, code);
+      } else {
+        onCommandState?.(false);
+      }
+    }
+    return true;
+  });
+  return {
+    getMarker: () => (marker && !marker.isDisposed ? marker : null),
+    dispose: () => {
+      d.dispose();
+      marker?.dispose();
+      marker = null;
+    },
+  };
+}
+
+/**
+ * Reads the active buffer's cursor position, guarding against the transient
+ * non-finite values a renderer-pool slot rebind can produce (see the CPR
+ * handler below). Returns `null` when the position isn't currently sane to
+ * read — callers should treat that the same as "don't know," not "0,0."
+ */
+export function safeCursorPos(term: Terminal): { x: number; y: number } | null {
+  const buf = term.buffer.active;
+  if (!Number.isFinite(buf.cursorX) || !Number.isFinite(buf.cursorY)) return null;
+  return { x: buf.cursorX, y: buf.cursorY };
+}
+
+/**
+ * Registers terminal query response handlers for DA1, CPR, OSC 10, and OSC 11.
+ * Must be called after the Terminal instance is opened and the PTY/SSH write
+ * function is available. Returns a cleanup function for use in the cleanups array.
+ *
+ * writeToProcess: sends data back to the running shell/process.
+ *   Local PTY: (d) => pty.write(d)
+ *   SSH:       (d) => invoke("ssh_pty_write", { sessionId, data: d }).catch(...)
+ */
+export function registerTerminalQueryHandlers(
+  term: Terminal,
+  writeToProcess: (data: string) => void,
+): () => void {
+  const handles: IDisposable[] = [];
+
+  // DA1: Primary Device Attributes (\033[c or \033[0c)
+  // Intercepted before xterm.js's built-in handler to avoid the double-IPC
+  // round-trip. Secondary DA (\033[>c, param > 0) is passed through.
+  handles.push(
+    term.parser.registerCsiHandler({ final: "c" }, (params) => {
+      if ((params[0] ?? 0) !== 0) return false;
+      writeToProcess("\x1b[?62;22c");
+      return true;
+    }),
+  );
+
+  // CPR: Cursor Position Report (\033[6n)
+  // Reads cursor position directly from xterm.js buffer (0-indexed → 1-indexed).
+  handles.push(
+    term.parser.registerCsiHandler({ final: "n" }, (params) => {
+      if (params[0] !== 6) return false;
+      // During a renderer-pool slot rebind, cursorX/cursorY can transiently
+      // be non-finite. Sending "NaN;NaNR" back would land as literal typed
+      // text in the shell/TUI instead of a control reply — better to leave
+      // the query unanswered (the caller's own CPR timeout handles that).
+      const pos = safeCursorPos(term);
+      if (!pos) return false;
+      writeToProcess(`\x1b[${pos.y + 1};${pos.x + 1}R`);
+      return true;
+    }),
+  );
+
+  // OSC 10: Foreground color query (\033]10;?\007)
+  // Colors read from term.options.theme — always current, works with custom themes.
+  handles.push(
+    term.parser.registerOscHandler(10, (data) => {
+      if (data !== "?") return false;
+      const fg = (term.options.theme as Record<string, string | undefined>)?.foreground ?? "#cccccc";
+      writeToProcess(`\x1b]10;${hexToOscRgb(fg)}\x07`);
+      return true;
+    }),
+  );
+
+  // OSC 11: Background color query (\033]11;?\007)
+  handles.push(
+    term.parser.registerOscHandler(11, (data) => {
+      if (data !== "?") return false;
+      const bg = (term.options.theme as Record<string, string | undefined>)?.background ?? "#000000";
+      writeToProcess(`\x1b]11;${hexToOscRgb(bg)}\x07`);
+      return true;
+    }),
+  );
+
+  return () => handles.forEach((h) => h.dispose());
+}
+
+/**
+ * SSH-session counterpart to `registerTerminalQueryHandlers`. DA1/CPR queries
+ * over SSH must not be answered via the normal path: `writeToProcess` for a
+ * remote session is a Tauri IPC hop plus a real network round trip, which
+ * routinely exceeds how long an interactive TUI (gh, claude, etc.) waits for
+ * a reply before giving up — a reply that arrives after the caller gave up
+ * gets consumed as literal keystrokes instead of a control reply, corrupting
+ * the TUI. The fix used for OSC 10/11 (simply never registering a handler,
+ * letting the caller's own reply-timeout degrade gracefully) does NOT work
+ * for CSI `c`/`n`: xterm.js registers its own built-in DA1/CPR handlers
+ * unconditionally at `Terminal` construction time (see
+ * `@xterm/xterm/src/common/InputHandler.ts`'s `deviceStatus`), and the parser
+ * dispatches same-key CSI handlers last-registered-first — so leaving no
+ * handler registered here doesn't mean "unanswered," it means "answered by
+ * xterm's own unguarded built-in instead," which still round-trips through
+ * the same slow path and has no NaN guard at all.
+ *
+ * Registering these swallow-handlers (after xterm's own construction-time
+ * ones) wins the dispatch and answers with nothing — the actual graceful
+ * degradation OSC 10/11 already gets "for free."
+ */
+export function registerTerminalQuerySwallowHandlers(term: Terminal): () => void {
+  const handles: IDisposable[] = [];
+  handles.push(term.parser.registerCsiHandler({ final: "c" }, () => true));
+  handles.push(term.parser.registerCsiHandler({ final: "n" }, () => true));
+  return () => handles.forEach((h) => h.dispose());
+}
+
+// Converts #RRGGBB (or #RGB) to the VT OSC rgb: format (4 hex digits per channel).
+function hexToOscRgb(hex: string): string {
+  const raw = hex.replace("#", "");
+  let r: number, g: number, b: number;
+  if (raw.length === 3) {
+    r = parseInt(raw[0] + raw[0], 16);
+    g = parseInt(raw[1] + raw[1], 16);
+    b = parseInt(raw[2] + raw[2], 16);
+  } else {
+    r = parseInt(raw.slice(0, 2), 16);
+    g = parseInt(raw.slice(2, 4), 16);
+    b = parseInt(raw.slice(4, 6), 16);
+  }
+  const to16 = (v: number) => v.toString(16).padStart(2, "0").repeat(2);
+  return `rgb:${to16(r)}/${to16(g)}/${to16(b)}`;
+}
+
+function parseOsc7(data: string): string | null {
+  const m = data.match(/^file:\/\/[^/]*(\/.*)$/);
+  if (!m) return null;
+  try {
+    return decodeURIComponent(m[1]);
+  } catch {
+    return m[1];
+  }
+}

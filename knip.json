@@ -1,0 +1,24 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "entry": [
+    "src/settings/**/*.tsx",
+    "src/styles/globals.css",
+    "src/modules/*/index.ts",
+    "src/app/hooks/index.ts",
+    "src/app/components/index.ts"
+  ],
+  "project": ["src/**/*.{ts,tsx}"],
+  "ignore": [
+    "src/components/ui/**",
+    "src/components/ai-elements/**"
+  ],
+  "ignoreDependencies": [
+    "react-scan",
+    "react-compiler-healthcheck",
+    "vitest",
+    "@tauri-apps/plugin-log",
+    "@tauri-apps/plugin-window-state",
+    "@codemirror/autocomplete",
+    "@uiw/codemirror-themes"
+  ]
+}

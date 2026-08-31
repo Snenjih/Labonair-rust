@@ -1,0 +1,77 @@
+---
+title: "Theme Development"
+description: "How to create, test, and contribute themes for Labonair."
+---
+
+# Theme Development
+
+Labonair themes are JSON files that bundle multiple named color variants — each tagged `light` or `dark` — under one theme identity. The Rust backend manages them as files; the React frontend resolves the variant matching the active color scheme and injects it as CSS variables at runtime. This page explains the full lifecycle.
+
+## Theme JSON Format
+
+Each theme is a `.json` file with the following shape (see [Theme JSON Format](/11-themes-appearance/theme-json-format) for the complete field reference):
+
+```json
+{
+  "name": "My Theme",
+  "author": "yourhandle",
+  "version": "1.0.0",
+  "variants": {
+    "dark": { "mode": "dark", "colors": { "background": "#1a1a2e", "foreground": "#e0e0ff", "accent": "#7c3aed" } },
+    "light": { "mode": "light", "colors": { "background": "#faf9f5", "foreground": "#1e2130", "accent": "#7c3aed" } }
+  }
+}
+```
+
+All color values are HEX strings. A theme is valid only if `variants` contains at least one entry with `mode: "dark"` and one with `mode: "light"` — the Rust backend rejects (`theme_import`/`theme_download`) or silently skips (`themes_get_all`, logging a warning) files that don't satisfy this.
+
+## CSS Injection
+
+When Labonair loads a theme, the React frontend (`useThemeEngine()`, `src/lib/useThemeEngine.ts`):
+
+1. Reads the active theme ID (`appTheme`) and the resolved color-scheme mode (`light`/`dark`, derived from the "Color scheme" preference + the OS `prefers-color-scheme` media query) from the preferences store
+2. Fetches the active theme's full data — `theme_get_default` for the bundled "Default" theme, `themes_get_all` (filtered by id) for any installed theme
+3. Resolves which variant to apply: the user's saved per-theme variant override if one exists and matches the current mode, otherwise the first variant whose `mode` matches
+4. Iterates over that variant's `colors` object and injects each value as a CSS custom property on `document.documentElement.style`
+
+For example, `"background": "#1a1a2e"` becomes `--background: <hsl equivalent>` on the `<html>` element. Tailwind CSS v4's semantic utilities (e.g., `bg-background`) resolve to these injected variables, so every UI element recolors instantly. Toggling the color scheme re-runs this resolution against the same theme, switching to its other variant live — no reload needed.
+
+## Rust Theme Commands
+
+| Command | Description |
+|---|---|
+| `themes_get_all` | Returns metadata for all installed themes (excludes the bundled default) |
+| `theme_get_default` | Returns the bundled "Default" theme (both variants) |
+| `theme_import` | Validates and copies a theme JSON into the themes directory |
+| `theme_export` | Writes a theme JSON to a user-chosen path |
+| `theme_delete` | Removes a theme file and clears it if it was active |
+| `theme_create` | Scaffolds a new theme file from the bundled default |
+| `theme_download` | Downloads and validates a theme JSON from a URL (community install) |
+
+## Theme Storage
+
+Installed themes are stored at:
+
+```
+~/.config/labonair/themes/
+```
+
+Each `.json` file in this directory is a theme. You can place theme files here manually without using the import UI — Labonair reads this directory on each launch.
+
+## Testing a Theme
+
+1. Create your theme JSON file
+2. Open Settings → Appearance → Theme Picker → **Import**
+3. Select your JSON file
+4. The theme appears in the Theme Picker immediately
+5. Select it to preview; use the Command Palette theme switcher for live preview while editing
+
+## Contributing Community Themes
+
+Submit a pull request to the [labonair-themes repository](https://github.com/Snenjih/labonair-themes). Include:
+- Your theme `.json` file
+- A screenshot showing the theme in a terminal, editor, and SFTP tab
+
+:::tip
+Use the live theme preview in the Command Palette (see [Theme Switcher via Palette](/13-command-palette/theme-switcher)) to rapidly iterate on your theme colors without closing and reopening dialogs.
+:::

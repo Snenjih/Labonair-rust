@@ -1,0 +1,759 @@
+import {
+  AiChipIcon,
+  AiNetworkIcon,
+  ArrowDown01Icon,
+  BotIcon,
+  BrainIcon,
+  Cancel01Icon,
+  ChatGptIcon,
+  ClaudeIcon,
+  Clock01Icon,
+  ComputerIcon,
+  ComputerTerminal01Icon,
+  DeepseekIcon,
+  Dollar01Icon,
+  FavouriteIcon,
+  FlashIcon,
+  GoogleGeminiIcon,
+  GridViewIcon,
+  Grok02Icon,
+  Loading03Icon,
+  MistralIcon,
+  RefreshIcon,
+  Search01Icon,
+  Tick02Icon,
+} from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { AnimatePresence, motion } from "motion/react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { DURATION, SPRING_SNAPPY } from "@/lib/motion";
+import { cn } from "@/lib/utils";
+import { openSettingsWindow } from "@/modules/settings/openSettingsWindow";
+import {
+  type DynamicModelInfo,
+  MODELS,
+  type ModelId,
+  type ModelInfo,
+  PROVIDERS,
+  type ProviderId,
+  providerNeedsKey,
+} from "../config";
+import { makeModelRef, parseModelRef } from "../lib/modelRef";
+import { useChatStore } from "../store/chatStore";
+import { useModelCacheStore } from "../store/modelCacheStore";
+import { useProvidersStore } from "../store/providersStore";
+
+const PROVIDER_ICON: Record<ProviderId, typeof ChatGptIcon> = {
+  openai: ChatGptIcon,
+  anthropic: ClaudeIcon,
+  google: GoogleGeminiIcon,
+  xai: Grok02Icon,
+  cerebras: AiChipIcon,
+  groq: FlashIcon,
+  lmstudio: ComputerTerminal01Icon,
+  "openai-compatible": ComputerIcon,
+  deepseek: DeepseekIcon,
+  mistral: MistralIcon,
+  openrouter: AiNetworkIcon,
+  mlx: ComputerTerminal01Icon,
+  ollama: BotIcon,
+} as const satisfies Record<ProviderId, typeof ChatGptIcon>;
+
+// ── Capability bars ────────────────────────────────────────────────────────────
+
+function CapabilityBars({ score, max = 5 }: { score: number; max?: number }) {
+  return (
+    <div className="flex items-end gap-[2px]">
+      {Array.from({ length: max }, (_, i) => (
+        <div
+          key={i}
+          className={cn(
+            "w-[3px] rounded-[1px] transition-colors duration-150",
+            i < score ? "bg-foreground/55" : "bg-foreground/10",
+          )}
+          style={{ height: `${6 + (i / (max - 1)) * 5}px` }}
+        />
+      ))}
+    </div>
+  );
+}
+
+function CapabilityGroup({ icon, score, label }: { icon: typeof BrainIcon; score: number; label: string }) {
+  return (
+    <div className="flex items-center gap-[3px]" title={`${label}: ${score}/5`}>
+      <HugeiconsIcon icon={icon} size={9} strokeWidth={1.5} className="text-muted-foreground/40 shrink-0" />
+      <CapabilityBars score={score} />
+    </div>
+  );
+}
+
+// ── Sub-components ─────────────────────────────────────────────────────────────
+
+function TabButton({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "flex items-center gap-1 rounded-md px-2 py-1 text-[11px] transition-colors",
+        active
+          ? "bg-accent text-foreground font-medium"
+          : "text-muted-foreground hover:bg-muted hover:text-foreground",
+      )}
+    >
+      {children}
+    </button>
+  );
+}
+
+function ProviderButton({
+  icon,
+  active,
+  label,
+  onClick,
+  hasKey,
+  loading,
+}: {
+  icon: typeof GridViewIcon;
+  active: boolean;
+  label: string;
+  onClick: () => void;
+  hasKey: boolean;
+  loading?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={label}
+      className={cn(
+        "relative mx-1 flex items-center justify-center rounded-md w-8 h-8 transition-colors shrink-0",
+        active ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground",
+      )}
+    >
+      {active && (
+        <motion.span
+          layoutId="picker-provider-indicator"
+          className="absolute -left-1 top-1/2 -translate-y-1/2 h-4 w-[2px] rounded-r bg-foreground/80"
+          transition={SPRING_SNAPPY}
+        />
+      )}
+      <HugeiconsIcon icon={icon} size={14} strokeWidth={1.5} />
+      {loading && (
+        <span className="absolute bottom-0.5 right-0.5 size-2 rounded-full bg-background flex items-center justify-center">
+          <HugeiconsIcon
+            icon={Loading03Icon}
+            size={8}
+            strokeWidth={2}
+            className="animate-spin text-muted-foreground/60"
+          />
+        </span>
+      )}
+      {!loading && !hasKey && (
+        <span className="absolute bottom-1 right-1 size-1.5 rounded-full bg-warning/80 ring-1 ring-card" />
+      )}
+    </button>
+  );
+}
+
+function ModelRow({
+  model,
+  index,
+  selected,
+  hasKey,
+  isFavorite,
+  providerIcon,
+  onSelect,
+  onToggleFavorite,
+}: {
+  model: ModelInfo & { instanceId?: string | null; instanceName?: string | null };
+  index: number;
+  selected: boolean;
+  hasKey: boolean;
+  isFavorite: boolean;
+  providerIcon: typeof ChatGptIcon;
+  onSelect: () => void;
+  onToggleFavorite: (e: React.MouseEvent) => void;
+}) {
+  const caps = model.capabilities;
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ delay: Math.min(index * 0.012, 0.12), duration: DURATION.fast }}
+    >
+      <button
+        type="button"
+        onClick={onSelect}
+        className={cn(
+          "group w-full flex items-center gap-2 px-2 py-[7px] text-left transition-colors",
+          selected ? "bg-accent/50" : "hover:bg-muted/60",
+          !hasKey && "opacity-40",
+        )}
+      >
+        {/* Favorite */}
+        <button
+          type="button"
+          onClick={onToggleFavorite}
+          className={cn(
+            "shrink-0 rounded p-0.5 transition-all duration-100",
+            isFavorite
+              ? "text-warning"
+              : "text-transparent group-hover:text-muted-foreground/30 hover:!text-warning",
+          )}
+          title={isFavorite ? "Remove from favorites" : "Add to favorites"}
+        >
+          <HugeiconsIcon icon={FavouriteIcon} size={12} strokeWidth={1.75} />
+        </button>
+
+        {/* Provider icon */}
+        <HugeiconsIcon
+          icon={providerIcon}
+          size={13}
+          strokeWidth={1.25}
+          className={cn("shrink-0", selected ? "text-foreground" : "text-muted-foreground/65")}
+        />
+
+        {/* Name + hint */}
+        <div className="flex min-w-0 flex-1 items-baseline gap-1.5 overflow-hidden">
+          <span
+            className={cn(
+              "text-[12px] font-medium leading-tight whitespace-nowrap",
+              selected ? "text-foreground" : "text-foreground/90",
+            )}
+          >
+            {model.label}
+          </span>
+          <span className="min-w-0 truncate text-[10.5px] text-muted-foreground/55 leading-tight">
+            {model.hint}
+          </span>
+        </div>
+
+        {/* Capability bars */}
+        <div className="flex items-center gap-2 shrink-0 ml-1">
+          {caps ? (
+            <>
+              <CapabilityGroup icon={BrainIcon} score={caps.intelligence} label="Intelligence" />
+              <CapabilityGroup icon={FlashIcon} score={caps.speed} label="Speed" />
+              <CapabilityGroup icon={Dollar01Icon} score={caps.cost} label="Cost efficiency" />
+            </>
+          ) : (
+            <span className="text-[9.5px] text-muted-foreground/30 italic">local</span>
+          )}
+          {/* Non-blocking warning only — the agent still wires the full tool
+           *  set into every model regardless (agent.ts), this is purely
+           *  informational so pointing a custom/local/dynamic endpoint at a
+           *  model without confirmed function-calling doesn't fail silently
+           *  with no explanation. */}
+          {!model.tags?.includes("tools") && (
+            <span
+              className="shrink-0 rounded px-1 py-px text-[8.5px] uppercase tracking-wide text-warning/70 bg-warning/10"
+              title="Tool calling support is unconfirmed for this model — the AI's file/shell tools may not work."
+            >
+              no tools
+            </span>
+          )}
+        </div>
+
+        {/* Selected */}
+        <div className="w-3 shrink-0 flex justify-end">
+          {selected && (
+            <HugeiconsIcon icon={Tick02Icon} size={12} strokeWidth={2} className="text-foreground" />
+          )}
+        </div>
+      </button>
+    </motion.div>
+  );
+}
+
+function SkeletonRow() {
+  return (
+    <div className="flex items-center gap-2 px-2 py-[7px] animate-pulse">
+      <div className="w-4 h-3 rounded bg-muted/40 shrink-0" />
+      <div className="w-3 h-3 rounded bg-muted/40 shrink-0" />
+      <div className="flex-1 h-3 rounded bg-muted/40" />
+      <div className="w-12 h-3 rounded bg-muted/30 shrink-0" />
+    </div>
+  );
+}
+
+function ErrorRow({ message, onRetry }: { message: string; onRetry: () => void }) {
+  return (
+    <div className="flex items-center gap-2 px-3 py-2">
+      <span className="flex-1 text-[11px] text-destructive/70 truncate" title={message}>
+        {message}
+      </span>
+      <button
+        type="button"
+        onClick={onRetry}
+        className="text-[10.5px] text-muted-foreground/60 hover:text-foreground underline-offset-2 hover:underline shrink-0 transition-colors"
+      >
+        Retry
+      </button>
+    </div>
+  );
+}
+
+// ── Types ──────────────────────────────────────────────────────────────────────
+
+type Tab = "all" | "favorites" | "recent";
+
+type ExpandedModel = ModelInfo & {
+  instanceId: string | null;
+  instanceName: string | null;
+  isDynamic?: boolean;
+};
+
+// ── Main component ─────────────────────────────────────────────────────────────
+
+export function ModelPicker({ grouped }: { grouped?: boolean } = {}) {
+  const selected = useChatStore((s) => s.selectedModelId);
+  const apiKeys = useChatStore((s) => s.apiKeys);
+  const setSelected = useChatStore((s) => s.setSelectedModelId);
+  const favorites = useChatStore((s) => s.favoriteModelIds);
+  const recents = useChatStore((s) => s.recentModelIds);
+  const toggleFavorite = useChatStore((s) => s.toggleFavoriteModel);
+
+  const instances = useProvidersStore((s) => s.instances);
+  const instanceKeys = useProvidersStore((s) => s.instanceKeys);
+
+  const modelCache = useModelCacheStore();
+
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const [tab, setTab] = useState<Tab>("all");
+  const [activeProvider, setActiveProvider] = useState<ProviderId | null>(null);
+
+  const searchRef = useRef<HTMLInputElement>(null);
+
+  // ── Provider key checks ──────────────────────────────────────────────────────
+
+  const providerHasKeyFn = (providerId: ProviderId): boolean => {
+    if (!providerNeedsKey(providerId)) return true;
+    const provInstances = instances.filter((i) => i.providerId === providerId);
+    if (provInstances.length > 0) return provInstances.some((i) => !!instanceKeys[i.id]);
+    return !!apiKeys[providerId];
+  };
+
+  // ── Selected model display ───────────────────────────────────────────────────
+
+  const { modelDefId: selectedModelDefId, instanceId: selectedInstanceId } = parseModelRef(selected);
+
+  const selectedDynamic = useMemo<DynamicModelInfo | null>(() => {
+    if (!selectedInstanceId) return null;
+    const cached = modelCache.getModelsForInstance(selectedInstanceId);
+    return cached.find((m) => m.id === selectedModelDefId) ?? null;
+  }, [selectedModelDefId, selectedInstanceId, modelCache]);
+
+  const selectedStatic = useMemo<ModelInfo | null>(() => {
+    return (MODELS as readonly ModelInfo[]).find((m) => m.id === selectedModelDefId) ?? null;
+  }, [selectedModelDefId]);
+
+  const currentModel: ModelInfo | null = selectedDynamic ?? selectedStatic;
+  const currentProvider = (currentModel?.provider ?? null) as ProviderId | null;
+  const hasKey = currentProvider ? providerHasKeyFn(currentProvider) : false;
+
+  const triggerLabel = useMemo(() => {
+    if (!currentModel) return selectedModelDefId || "Select model";
+    if (currentModel.provider !== "openai-compatible") return currentModel.label;
+    const inst =
+      instances.find((i) => i.id === selectedInstanceId) ??
+      instances.find((i) => i.providerId === "openai-compatible");
+    if (!inst) return currentModel.label;
+    const isDefault = inst.name === inst.providerId || /^[a-z-]+\d+$/.test(inst.name);
+    return isDefault ? currentModel.label : inst.name;
+  }, [currentModel, selectedModelDefId, selectedInstanceId, instances]);
+
+  // ── Keyboard / focus ─────────────────────────────────────────────────────────
+
+  useEffect(() => {
+    if (open) {
+      const t = setTimeout(() => searchRef.current?.focus(), 60);
+      return () => clearTimeout(t);
+    } else {
+      setSearch("");
+      setTab("all");
+      setActiveProvider(null);
+    }
+  }, [open]);
+
+  // ── Providers that have instances (always "only configured") ──────────────────
+
+  const configuredProviders = useMemo(() => {
+    const seen = new Set<ProviderId>();
+    const out: (typeof PROVIDERS)[number][] = [];
+    for (const inst of instances) {
+      if (!seen.has(inst.providerId)) {
+        seen.add(inst.providerId);
+        const info = PROVIDERS.find((p) => p.id === inst.providerId);
+        if (info) out.push(info);
+      }
+    }
+    return out;
+  }, [instances]);
+
+  // ── Build model list from cache (dynamic) or static fallback ─────────────────
+
+  const expandedModels = useMemo<ExpandedModel[]>(() => {
+    if (instances.length === 0) return [];
+
+    const out: ExpandedModel[] = [];
+
+    for (const inst of instances) {
+      const cached = modelCache.getModelsForInstance(inst.id);
+      const isLoading = modelCache.isLoading(inst.id);
+
+      if (cached.length > 0) {
+        // Use fetched models
+        const sameProviderInstances = instances.filter((i) => i.providerId === inst.providerId);
+        const showInstanceName = sameProviderInstances.length > 1;
+        for (const m of cached) {
+          out.push({
+            ...m,
+            instanceId: inst.id,
+            instanceName: showInstanceName ? inst.name : null,
+            isDynamic: true,
+          });
+        }
+      } else if (!isLoading) {
+        // No cache yet and not loading — use static fallback for this provider
+        const staticModels = (MODELS as readonly ModelInfo[]).filter((m) => m.provider === inst.providerId);
+        const sameProviderInstances = instances.filter((i) => i.providerId === inst.providerId);
+        const showInstanceName = sameProviderInstances.length > 1;
+        for (const m of staticModels) {
+          out.push({
+            ...m,
+            instanceId: inst.id,
+            instanceName: showInstanceName ? inst.name : null,
+            isDynamic: false,
+          });
+        }
+      }
+      // If loading: no rows added here — skeleton rows are rendered separately
+    }
+
+    return out;
+  }, [instances, modelCache]);
+
+  // ── Filter models ─────────────────────────────────────────────────────────────
+
+  const filtered = useMemo<ExpandedModel[]>(() => {
+    let list = expandedModels;
+
+    if (tab === "favorites") {
+      list = list.filter((m) => favorites.includes(m.id));
+    } else if (tab === "recent") {
+      const ordered: ExpandedModel[] = [];
+      for (const ref of recents) {
+        const { modelDefId } = parseModelRef(ref);
+        const found = list.find((m) => m.id === modelDefId);
+        if (found) ordered.push(found);
+      }
+      list = ordered;
+    }
+
+    if (activeProvider) {
+      list = list.filter((m) => m.provider === activeProvider);
+    }
+
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      list = list.filter(
+        (m) =>
+          m.label.toLowerCase().includes(q) ||
+          m.hint.toLowerCase().includes(q) ||
+          m.provider.toLowerCase().includes(q) ||
+          (m.instanceName ?? "").toLowerCase().includes(q) ||
+          m.tags?.some((t) => t.includes(q)),
+      );
+    }
+
+    return list;
+  }, [tab, activeProvider, search, favorites, recents, expandedModels]);
+
+  // ── Check if any visible provider is loading ──────────────────────────────────
+
+  const loadingInstances = useMemo(() => {
+    return instances.filter((inst) => {
+      if (activeProvider && inst.providerId !== activeProvider) return false;
+      return modelCache.isLoading(inst.id);
+    });
+  }, [instances, activeProvider, modelCache]);
+
+  const isRefreshing = modelCache.isAnyLoading();
+
+  // ── Actions ───────────────────────────────────────────────────────────────────
+
+  const onPick = (m: ExpandedModel) => {
+    if (!providerHasKeyFn(m.provider as ProviderId)) {
+      void openSettingsWindow("ai");
+      setOpen(false);
+      return;
+    }
+    const ref = makeModelRef(m.id, m.instanceId ?? undefined);
+    setSelected(ref as ModelId);
+    setOpen(false);
+  };
+
+  const handleRefresh = () => {
+    for (const inst of instances) {
+      modelCache.invalidate(inst.id);
+    }
+    void modelCache.fetchAllConfigured(instances, instanceKeys);
+  };
+
+  const handleRetryInstance = (instanceId: string) => {
+    const inst = instances.find((i) => i.id === instanceId);
+    if (!inst) return;
+    modelCache.invalidate(instanceId);
+    void modelCache.fetchForInstance(inst, instanceKeys[instanceId] ?? null);
+  };
+
+  // ── Render ────────────────────────────────────────────────────────────────────
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className={cn(
+            grouped
+              ? "h-7 gap-1 rounded-none border-0 px-2 text-xs hover:bg-accent hover:text-foreground"
+              : "h-5.5 gap-1 rounded-md px-1.5 my-1 text-xs hover:bg-accent hover:text-foreground",
+            hasKey ? "text-muted-foreground" : "text-warning",
+          )}
+          title={hasKey ? `Model: ${triggerLabel}` : `${triggerLabel} — no key configured`}
+        >
+          <span className="max-w-[6rem] truncate">{triggerLabel}</span>
+          <HugeiconsIcon icon={ArrowDown01Icon} size={11} strokeWidth={2} className="opacity-70" />
+        </Button>
+      </PopoverTrigger>
+
+      <PopoverContent
+        side="bottom"
+        align="start"
+        sideOffset={8}
+        className="w-[460px] p-0 overflow-hidden flex flex-col"
+        style={{ maxHeight: "min(540px, calc(100vh - 80px))" }}
+      >
+        {/* Search + refresh */}
+        <div className="flex items-center gap-2 px-3 py-2 border-b border-border/50 shrink-0">
+          <HugeiconsIcon
+            icon={Search01Icon}
+            size={13}
+            strokeWidth={1.75}
+            className="text-muted-foreground/40 shrink-0"
+          />
+          <input
+            ref={searchRef}
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") setOpen(false);
+              if (e.key === "Enter" && filtered.length === 1) {
+                onPick(filtered[0]);
+              }
+            }}
+            placeholder="Search models, providers, capabilities…"
+            className="flex-1 bg-transparent text-[12px] outline-none placeholder:text-muted-foreground/35"
+          />
+          <AnimatePresence>
+            {search && (
+              <motion.button
+                type="button"
+                initial={{ opacity: 0, scale: 0.8 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.8 }}
+                transition={{ duration: DURATION.fast }}
+                onClick={() => setSearch("")}
+                className="text-muted-foreground/40 hover:text-muted-foreground transition-colors"
+              >
+                <HugeiconsIcon icon={Cancel01Icon} size={11} strokeWidth={2} />
+              </motion.button>
+            )}
+          </AnimatePresence>
+          <button
+            type="button"
+            onClick={handleRefresh}
+            title="Refresh model list"
+            className="text-muted-foreground/40 hover:text-muted-foreground transition-colors"
+          >
+            <HugeiconsIcon
+              icon={isRefreshing ? Loading03Icon : RefreshIcon}
+              size={12}
+              strokeWidth={1.75}
+              className={cn(isRefreshing && "animate-spin")}
+            />
+          </button>
+        </div>
+
+        {/* Tabs */}
+        <div className="flex items-center gap-0.5 px-2 py-1 border-b border-border/50 shrink-0">
+          <TabButton
+            active={tab === "all"}
+            onClick={() => {
+              setTab("all");
+              setActiveProvider(null);
+            }}
+          >
+            <HugeiconsIcon icon={GridViewIcon} size={11} strokeWidth={1.75} />
+            All
+          </TabButton>
+          <TabButton active={tab === "favorites"} onClick={() => setTab("favorites")}>
+            <HugeiconsIcon icon={FavouriteIcon} size={11} strokeWidth={1.75} />
+            Favorites
+          </TabButton>
+          <TabButton active={tab === "recent"} onClick={() => setTab("recent")}>
+            <HugeiconsIcon icon={Clock01Icon} size={11} strokeWidth={1.75} />
+            Recent
+            {recents.length > 0 && (
+              <span className="ml-0.5 rounded bg-muted px-1 py-px text-[9px] text-muted-foreground font-medium tabular-nums">
+                {recents.length}
+              </span>
+            )}
+          </TabButton>
+        </div>
+
+        {/* Body */}
+        <div className="flex min-h-0 flex-1 overflow-hidden">
+          {/* Provider Sidebar */}
+          <div className="flex flex-col gap-0.5 border-r border-border/50 py-1.5 w-[44px] shrink-0 overflow-y-auto themed-scrollbar">
+            <ProviderButton
+              icon={GridViewIcon}
+              active={activeProvider === null}
+              label="All providers"
+              onClick={() => setActiveProvider(null)}
+              hasKey
+              loading={isRefreshing && activeProvider === null}
+            />
+            <div className="mx-2 my-0.5 h-px bg-border/50" />
+            {configuredProviders.map((p) => {
+              const provInstances = instances.filter((i) => i.providerId === p.id);
+              const isProviderLoading = provInstances.some((i) => modelCache.isLoading(i.id));
+              return (
+                <ProviderButton
+                  key={p.id}
+                  icon={PROVIDER_ICON[p.id]}
+                  active={activeProvider === p.id}
+                  label={p.label}
+                  onClick={() => setActiveProvider(activeProvider === p.id ? null : p.id)}
+                  hasKey={providerHasKeyFn(p.id)}
+                  loading={isProviderLoading}
+                />
+              );
+            })}
+          </div>
+
+          {/* Model List */}
+          <div className="flex-1 overflow-y-auto py-1 themed-scrollbar">
+            {instances.length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-full gap-2 px-4 text-center">
+                <span className="text-[12px] text-muted-foreground/60">No providers configured</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    void openSettingsWindow("ai");
+                    setOpen(false);
+                  }}
+                  className="text-[11px] text-muted-foreground/40 hover:text-muted-foreground underline-offset-2 hover:underline transition-colors"
+                >
+                  Add a provider in Settings
+                </button>
+              </div>
+            ) : (
+              <>
+                {/* Error rows per loading-failed instance */}
+                {instances
+                  .filter((inst) => {
+                    if (activeProvider && inst.providerId !== activeProvider) return false;
+                    return modelCache.getError(inst.id) !== null;
+                  })
+                  .map((inst) => (
+                    <ErrorRow
+                      key={inst.id}
+                      message={`${inst.name}: ${modelCache.getError(inst.id)}`}
+                      onRetry={() => handleRetryInstance(inst.id)}
+                    />
+                  ))}
+
+                {/* Skeleton rows for loading instances */}
+                {loadingInstances.map((inst) => (
+                  <div key={inst.id}>
+                    <SkeletonRow />
+                    <SkeletonRow />
+                    <SkeletonRow />
+                  </div>
+                ))}
+
+                {/* Model rows */}
+                {filtered.length === 0 && loadingInstances.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center h-full gap-2">
+                    <span className="text-[12px] text-muted-foreground/60">No models found</span>
+                    {tab !== "all" && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setTab("all");
+                          setActiveProvider(null);
+                        }}
+                        className="text-[11px] text-muted-foreground/40 hover:text-muted-foreground underline-offset-2 hover:underline transition-colors"
+                      >
+                        Show all models
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  filtered.map((m, i) => {
+                    const ref = makeModelRef(m.id, m.instanceId ?? undefined);
+                    const isSelected = selected === ref || (m.instanceName === null && selected === m.id);
+                    return (
+                      <div key={`${m.id}-${m.instanceId ?? "single"}`}>
+                        {m.instanceName && (
+                          <div className="px-3 pb-0.5 pt-2 first:pt-1">
+                            <span className="rounded bg-muted/50 px-1.5 py-0.5 font-mono text-[9.5px] text-muted-foreground">
+                              {m.instanceName}
+                            </span>
+                          </div>
+                        )}
+                        <ModelRow
+                          model={m}
+                          index={i}
+                          selected={isSelected}
+                          hasKey={
+                            m.instanceId
+                              ? !!instanceKeys[m.instanceId]
+                              : providerHasKeyFn(m.provider as ProviderId)
+                          }
+                          isFavorite={favorites.includes(m.id)}
+                          providerIcon={PROVIDER_ICON[m.provider as ProviderId] ?? ComputerIcon}
+                          onSelect={() => onPick(m)}
+                          onToggleFavorite={(e) => {
+                            e.stopPropagation();
+                            toggleFavorite(m.id);
+                          }}
+                        />
+                      </div>
+                    );
+                  })
+                )}
+              </>
+            )}
+          </div>
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}

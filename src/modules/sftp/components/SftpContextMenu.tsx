@@ -1,0 +1,326 @@
+import { invoke } from "@tauri-apps/api/core";
+import { open as dialogOpen } from "@tauri-apps/plugin-dialog";
+import { useEffect, useRef, useState } from "react";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { handleApiError } from "@/lib/errors";
+import { usePathBookmarksStore } from "@/modules/bookmarks/store/pathBookmarksStore";
+import { usePreferencesStore } from "@/modules/settings/preferences";
+import type { FileNode } from "../types";
+import { PropertiesDialog, permStringToOctal } from "./PropertiesDialog";
+
+interface SftpContextMenuProps {
+  tabId: string;
+  hostId?: string;
+  side: "local" | "remote";
+  selectedPaths: Set<string>;
+  currentPath?: string;
+  files?: FileNode[];
+  onRefresh: () => void;
+  onStartRename?: (path: string) => void;
+  onStartNewFolder?: () => void;
+  onStartNewFile?: () => void;
+  onOpenRemoteEditor: (
+    tabId: string,
+    remotePath: string,
+    hostId: string,
+    source: "sftp-tab",
+  ) => Promise<void>;
+  children: React.ReactNode;
+}
+
+export function SftpContextMenu({
+  tabId,
+  hostId,
+  side,
+  selectedPaths,
+  currentPath,
+  files,
+  onRefresh,
+  onStartRename,
+  onStartNewFolder,
+  onStartNewFile,
+  onOpenRemoteEditor,
+  children,
+}: SftpContextMenuProps) {
+  // "Click again to confirm" 2-click delete (matches the sidebar Explorer's
+  // pattern) instead of a modal — with a properly cleaned-up re-arm timer
+  // (the sidebar's own version leaks its timeout; this doesn't).
+  const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
+  const confirmResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    return () => {
+      if (confirmResetTimerRef.current) clearTimeout(confirmResetTimerRef.current);
+    };
+  }, []);
+  const [chmodOpen, setChmodOpen] = useState(false);
+  const [chmodValue, setChmodValue] = useState("755");
+  const [propertiesFile, setPropertiesFile] = useState<FileNode | null>(null);
+  const addBookmark = usePathBookmarksStore((s) => s.addBookmark);
+  const removeByPath = usePathBookmarksStore((s) => s.removeByPath);
+  const bookmarksEnabled = usePreferencesStore((s) => s.bookmarksEnabled);
+
+  const count = selectedPaths.size;
+  const singlePath = count === 1 ? [...selectedPaths][0] : null;
+  const bookmarkHostId = side === "remote" ? hostId : undefined;
+  const bookmarkPath = singlePath ?? currentPath;
+  const isBookmarked = usePathBookmarksStore((s) =>
+    bookmarkPath ? s.isBookmarked(bookmarkHostId, bookmarkPath) : false,
+  );
+  const singleFile = singlePath ? (files?.find((f) => f.path === singlePath) ?? null) : null;
+
+  async function handleDelete() {
+    if (count === 0) return;
+    try {
+      if (side === "remote") {
+        await invoke("sftp_delete", { sessionId: tabId, paths: [...selectedPaths] });
+      } else {
+        await Promise.all([...selectedPaths].map((p) => invoke("fs_delete", { path: p })));
+      }
+    } catch (e) {
+      handleApiError(e, "Failed to delete files", "SFTP");
+    } finally {
+      // Always refresh, even on partial failure (e.g. permission-denied
+      // partway through a multi-select batch) — otherwise paths that were
+      // already deleted before the failure stay visible until a manual
+      // refresh.
+      onRefresh();
+    }
+  }
+
+  async function handleChmod() {
+    if (!singlePath) return;
+    const octal = parseInt(chmodValue, 8);
+    if (isNaN(octal)) return;
+    try {
+      await invoke("sftp_chmod", { sessionId: tabId, path: singlePath, permissions: octal });
+      onRefresh();
+    } catch (e) {
+      handleApiError(e, "Failed to set permissions", "SFTP");
+    }
+  }
+
+  function handleCopyPath() {
+    const text = [...selectedPaths].join("\n");
+    navigator.clipboard.writeText(text).catch((e) => handleApiError(e, "Failed to copy path", "SFTP"));
+  }
+
+  async function handleDownloadTo() {
+    if (count === 0 || !tabId) return;
+    const dest = await dialogOpen({ directory: true, multiple: false, title: "Choose download folder" });
+    if (!dest || typeof dest !== "string") return;
+    const results = await Promise.allSettled(
+      [...selectedPaths].map((remotePath) => {
+        const fileName = remotePath.split("/").pop() ?? "file";
+        const destPath = `${dest}/${fileName}`;
+        return invoke("enqueue_transfer", {
+          sessionId: tabId,
+          srcPath: remotePath,
+          destPath,
+          direction: "download",
+        });
+      }),
+    );
+    for (const r of results) {
+      if (r.status === "rejected") handleApiError(r.reason, "Failed to enqueue download", "SFTP");
+    }
+  }
+
+  async function handleUploadHere() {
+    if (!tabId || !currentPath) return;
+    const selected = await dialogOpen({ multiple: true, directory: false, title: "Choose files to upload" });
+    if (!selected) return;
+    const paths = Array.isArray(selected) ? selected : [selected];
+    const results = await Promise.allSettled(
+      paths.map((localPath) => {
+        const fileName = localPath.split(/[\\/]/).pop() ?? "file";
+        const sep = currentPath.endsWith("/") ? "" : "/";
+        const destPath = `${currentPath}${sep}${fileName}`;
+        return invoke("enqueue_transfer", {
+          sessionId: tabId,
+          srcPath: localPath,
+          destPath,
+          direction: "upload",
+        });
+      }),
+    );
+    for (const r of results) {
+      if (r.status === "rejected") handleApiError(r.reason, "Failed to enqueue upload", "SFTP");
+    }
+  }
+
+  function handleBookmark() {
+    if (!bookmarkPath) return;
+    if (isBookmarked) void removeByPath(bookmarkHostId, bookmarkPath);
+    else void addBookmark(bookmarkHostId, bookmarkPath);
+  }
+
+  return (
+    <>
+      <ContextMenu>
+        <ContextMenuTrigger asChild>{children}</ContextMenuTrigger>
+        {/* Without this, Radix restores focus to the trigger row via a
+         *  setTimeout(0) after the menu closes — landing after our
+         *  rename/new-folder/new-file <input> has already auto-focused
+         *  itself, silently stealing focus (and, since the input's onBlur
+         *  cancels the edit, aborting it) right as the user starts typing. */}
+        <ContextMenuContent className="w-52" onCloseAutoFocus={(e) => e.preventDefault()}>
+          <ContextMenuItem onClick={() => onStartNewFolder?.()}>New Folder</ContextMenuItem>
+          <ContextMenuItem onClick={() => onStartNewFile?.()}>New File</ContextMenuItem>
+
+          {count === 1 && (
+            <ContextMenuItem onClick={() => onStartRename?.(singlePath!)}>Rename</ContextMenuItem>
+          )}
+
+          <ContextMenuSeparator />
+
+          {/* OS-native download (remote → local) */}
+          {side === "remote" && count > 0 && (
+            <ContextMenuItem onClick={handleDownloadTo}>Download to…</ContextMenuItem>
+          )}
+
+          {/* OS-native upload (local files → remote) */}
+          {side === "remote" && (
+            <ContextMenuItem onClick={handleUploadHere}>Upload files here…</ContextMenuItem>
+          )}
+
+          {side === "remote" && <ContextMenuSeparator />}
+
+          {/* Bookmark current path or selected item */}
+          {bookmarksEnabled && (
+            <ContextMenuItem onClick={handleBookmark}>
+              {isBookmarked ? "Remove bookmark" : "Bookmark this path"}
+            </ContextMenuItem>
+          )}
+          <ContextMenuItem onClick={onRefresh}>Refresh</ContextMenuItem>
+
+          {(count > 0 || (side === "remote" && count === 1)) && <ContextMenuSeparator />}
+
+          {count > 0 && (
+            <ContextMenuItem
+              onSelect={(e) => {
+                e.preventDefault();
+                if (isConfirmingDelete) {
+                  void handleDelete();
+                  setIsConfirmingDelete(false);
+                  return;
+                }
+                setIsConfirmingDelete(true);
+              }}
+              onMouseLeave={() => {
+                if (confirmResetTimerRef.current) clearTimeout(confirmResetTimerRef.current);
+                confirmResetTimerRef.current = setTimeout(() => setIsConfirmingDelete(false), 1500);
+              }}
+              className="text-destructive focus:text-destructive"
+            >
+              {isConfirmingDelete
+                ? `Click again to delete${count > 1 ? ` ${count} items` : ""}`
+                : `Delete${count > 1 ? ` ${count} items` : ""}…`}
+            </ContextMenuItem>
+          )}
+
+          {count > 0 && (
+            <ContextMenuItem onClick={handleCopyPath}>Copy Path{count > 1 ? "s" : ""}</ContextMenuItem>
+          )}
+
+          {side === "remote" && count === 1 && (
+            <>
+              <ContextMenuSeparator />
+              <ContextMenuItem
+                onClick={() => {
+                  const perm = singleFile?.permissions;
+                  // `permStringToOctal("")` returns "000", not a sane
+                  // default — only feed it a real permission string, and
+                  // fall back to "755" when metadata hasn't loaded yet.
+                  setChmodValue(perm ? permStringToOctal(perm) : "755");
+                  setChmodOpen(true);
+                }}
+              >
+                Quick Permissions…
+              </ContextMenuItem>
+              {singleFile && (
+                <ContextMenuItem onClick={() => setPropertiesFile(singleFile)}>Properties…</ContextMenuItem>
+              )}
+              <ContextMenuItem
+                onClick={async () => {
+                  if (!singlePath || !hostId) return;
+                  try {
+                    await onOpenRemoteEditor(tabId, singlePath, hostId, "sftp-tab");
+                  } catch (e) {
+                    handleApiError(e, "Failed to open remote file", "SFTP");
+                  }
+                }}
+              >
+                Edit Remote File
+              </ContextMenuItem>
+            </>
+          )}
+        </ContextMenuContent>
+      </ContextMenu>
+
+      {/* Quick chmod dialog — only mounted when open to avoid Radix portal side-effects */}
+      {chmodOpen && (
+        <Dialog
+          open
+          onOpenChange={(v) => {
+            if (!v) setChmodOpen(false);
+          }}
+        >
+          <DialogContent className="w-72">
+            <DialogHeader>
+              <DialogTitle className="text-sm">Set Permissions</DialogTitle>
+              <p className="text-xs text-muted-foreground truncate">{singlePath}</p>
+            </DialogHeader>
+            <input
+              value={chmodValue}
+              onChange={(e) => setChmodValue(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  handleChmod();
+                  setChmodOpen(false);
+                }
+              }}
+              placeholder="755"
+              maxLength={4}
+              className="w-full h-8 px-2 text-sm font-mono rounded bg-muted/30 border border-border text-foreground focus:outline-none focus:border-primary"
+              autoFocus
+            />
+            <DialogFooter>
+              <button
+                onClick={() => setChmodOpen(false)}
+                className="h-7 px-3 text-xs rounded bg-muted/30 text-muted-foreground hover:text-foreground"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  handleChmod();
+                  setChmodOpen(false);
+                }}
+                className="h-7 px-3 text-xs rounded bg-primary text-primary-foreground hover:bg-primary/90"
+              >
+                Apply
+              </button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {/* Full Properties dialog */}
+      {propertiesFile && (
+        <PropertiesDialog
+          open={!!propertiesFile}
+          onClose={() => setPropertiesFile(null)}
+          file={propertiesFile}
+          tabId={tabId}
+        />
+      )}
+    </>
+  );
+}

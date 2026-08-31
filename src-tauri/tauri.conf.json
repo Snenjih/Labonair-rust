@@ -1,0 +1,75 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Labonair",
+  "version": "2.0.6",
+  "identifier": "com.labonair.app",
+  "build": {
+    "beforeDevCommand": "pnpm dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "pnpm build",
+    "frontendDist": "../dist",
+    "removeUnusedCommands": true
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Labonair",
+        "width": 800,
+        "height": 600,
+        "minWidth": 420,
+        "minHeight": 280,
+        "maxWidth": 2560,
+        "maxHeight": 1600,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true,
+        "visible": false
+      }
+    ],
+    "security": {
+      "csp": null,
+      "assetProtocol": {
+        "enable": true,
+        "scope": ["**", "/**", "$HOME/**", "$APPDATA/**"]
+      }
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "createUpdaterArtifacts": true,
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "macOS": {
+      "minimumSystemVersion": "10.15",
+      "entitlements": "Labonair.entitlements"
+    },
+    "linux": {
+      "deb": {
+        "section": "utils",
+        "depends": ["libwebkit2gtk-4.1-0", "libgtk-3-0"]
+      },
+      "rpm": {
+        "depends": ["webkit2gtk4.1", "gtk3"]
+      },
+      "appimage": {
+        "bundleMediaFramework": true
+      }
+    },
+    "category": "DeveloperTool",
+    "shortDescription": "AI-native terminal emulator",
+    "longDescription": "Labonair — an open-source AI-native terminal emulator with multi-tab, file explorer, code editor, web preview, voice input, and AI agents."
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEJFNjc1QzhDMTNFRUU3NzIKUldSeTUrNFRqRnhudmpmNHFURGZhK0Z0V3dVRkp1U2pvMCt4a3JidXhIQzl1Q1RNSDBuOUZaRmcK",
+      "endpoints": [
+        "https://github.com/Snenjih/labonair/releases/latest/download/latest.json"
+      ]
+    }
+  }
+}

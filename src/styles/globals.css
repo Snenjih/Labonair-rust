@@ -1,0 +1,458 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@import "@fontsource-variable/inter";
+
+@source "../../node_modules/streamdown/dist/index.js";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+    --font-heading: var(--font-sans);
+    --font-sans: var(--app-font-family, "Inter Variable", sans-serif);
+    --color-sidebar-ring: var(--sidebar-ring);
+    --color-sidebar-border: var(--sidebar-border);
+    --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+    --color-sidebar-accent: var(--sidebar-accent);
+    --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+    --color-sidebar-primary: var(--sidebar-primary);
+    --color-sidebar-foreground: var(--sidebar-foreground);
+    --color-sidebar: var(--sidebar);
+    --color-chart-5: var(--chart-5);
+    --color-chart-4: var(--chart-4);
+    --color-chart-3: var(--chart-3);
+    --color-chart-2: var(--chart-2);
+    --color-chart-1: var(--chart-1);
+    --color-ring: var(--ring);
+    --color-input: var(--input);
+    --color-border: var(--border);
+    --color-destructive: var(--destructive);
+    --color-destructive-foreground: var(--destructive-foreground);
+    --color-accent-foreground: var(--accent-foreground);
+    --color-accent: var(--accent);
+    --color-muted-foreground: var(--muted-foreground);
+    --color-muted: var(--muted);
+    --color-secondary-foreground: var(--secondary-foreground);
+    --color-secondary: var(--secondary);
+    --color-primary-foreground: var(--primary-foreground);
+    --color-primary: var(--primary);
+    --color-popover-foreground: var(--popover-foreground);
+    --color-popover: var(--popover);
+    --color-card-foreground: var(--card-foreground);
+    --color-card: var(--card);
+    --color-foreground: var(--foreground);
+    --color-background: var(--background);
+    /* Surface tokens */
+    --color-toolbar: var(--toolbar-background);
+    --color-title-bar: var(--title-bar-background);
+    --color-status-bar: var(--status-bar-background);
+    /* Border variant tokens */
+    --color-border-variant: var(--border-variant);
+    --color-border-focused: var(--border-focused);
+    --color-border-selected: var(--border-selected);
+    --color-border-transparent: var(--border-transparent);
+    --color-border-disabled: var(--border-disabled);
+    /* Semantic status tokens */
+    --color-modified: var(--modified);
+    --color-error: var(--error);
+    --color-warning: var(--warning);
+    --color-info: var(--info);
+    --color-hint: var(--hint);
+    --color-success: var(--success);
+    /* UI interaction tokens */
+    --color-cursor: var(--cursor);
+    --color-selection: var(--selection);
+    --radius-sm: calc(var(--radius) * 0.6);
+    --radius-md: calc(var(--radius) * 0.8);
+    --radius-lg: var(--radius);
+    --radius-xl: calc(var(--radius) * 1.4);
+    --radius-2xl: calc(var(--radius) * 1.8);
+    --radius-3xl: calc(var(--radius) * 2.2);
+    --radius-4xl: calc(var(--radius) * 2.6);
+    /* Fixed physical size — window-frame chrome, not part of the zoomable
+       content radius scale above, so intentionally not derived from --radius. */
+    --window-radius: 12px;
+    /* Elevation shadows — semantic tiers, light/dark values defined in :root/.dark below */
+    --shadow-row: var(--shadow-row);
+    --shadow-popover: var(--shadow-popover);
+    --shadow-modal: var(--shadow-modal);
+    /* Animation timing */
+    --dur-fast: 160ms;
+    --dur-base: 240ms;
+    --dur-slow: 320ms;
+    --ease-premium: cubic-bezier(0.16, 1, 0.3, 1);
+    --ease-soft: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+:root {
+    --background: oklch(97.00% 0.000 0);
+    --foreground: oklch(20.90% 0.0000 0);
+    --card: oklch(100.00% 0.000 0);
+    --card-foreground: oklch(20.90% 0.0000 0);
+    --popover: oklch(100.00% 0.000 0);
+    --popover-foreground: oklch(20.90% 0.0000 0);
+    --primary: oklch(79.68% 0.1298 82.18);
+    --primary-foreground: oklch(20.90% 0.0000 0);
+    --secondary: oklch(93.00% 0.000 0);
+    --secondary-foreground: oklch(25.20% 0.0000 0);
+    --muted: oklch(93.00% 0.000 0);
+    --muted-foreground: oklch(55.41% 0.0220 262.94);
+    --accent: oklch(93.00% 0.000 0);
+    --accent-foreground: oklch(25.20% 0.0000 0);
+    --destructive: oklch(55.00% 0.1637 17.27);
+    --border: oklch(88.00% 0.000 0);
+    --input: oklch(88.00% 0.000 0);
+    --ring: oklch(79.68% 0.1298 82.18);
+    --chart-1: oklch(79.68% 0.1298 82.18);
+    --chart-2: oklch(53.00% 0.1000 225.69);
+    --chart-3: oklch(52.00% 0.1400 125.86);
+    --chart-4: oklch(55.00% 0.1637 17.27);
+    --chart-5: oklch(55.00% 0.1308 306.30);
+    --radius: 0.3125rem;
+    /* Elevation shadows — semantic tiers (row/popover/modal), overridden in .dark below */
+    --shadow-row: 0 1px 2px 0 oklch(0% 0 0 / 0.06);
+    --shadow-popover: 0 4px 12px -2px oklch(0% 0 0 / 0.12), 0 2px 4px -2px oklch(0% 0 0 / 0.08);
+    --shadow-modal: 0 16px 40px -8px oklch(0% 0 0 / 0.18), 0 4px 12px -4px oklch(0% 0 0 / 0.1);
+    /* Runtime typography vars — mutated by useTypographyEngine.ts. Real
+       custom properties (unlike the @theme inline block above, whose values
+       get inlined into generated utility CSS at build time and can't be
+       mutated at runtime), referenced via var() from the theme token. */
+    --app-font-family: "Inter Variable", sans-serif;
+    --app-font-size: 13px;
+    --app-line-height: 1.5;
+    --sidebar: oklch(97.00% 0.000 0);
+    --sidebar-foreground: oklch(20.90% 0.0000 0);
+    --sidebar-primary: oklch(79.68% 0.1298 82.18);
+    --sidebar-primary-foreground: oklch(20.90% 0.0000 0);
+    --sidebar-accent: oklch(93.00% 0.000 0);
+    --sidebar-accent-foreground: oklch(25.20% 0.0000 0);
+    --sidebar-border: oklch(88.00% 0.000 0);
+    --sidebar-ring: oklch(79.68% 0.1298 82.18);
+    /* Surface colors */
+    --toolbar-background: var(--card);
+    --title-bar-background: var(--card);
+    --status-bar-background: var(--card);
+    /* Border variants */
+    --border-variant: var(--border);
+    --border-focused: var(--ring);
+    --border-selected: var(--ring);
+    --border-transparent: transparent;
+    --border-disabled: oklch(88.00% 0.000 0);
+    /* Semantic status colors */
+    --modified: oklch(53.00% 0.1000 225.69);
+    --error: oklch(55.00% 0.1637 17.27);
+    --warning: oklch(54.00% 0.1400 55.00);
+    --info: oklch(53.00% 0.1000 225.69);
+    --hint: oklch(55.41% 0.0220 262.94);
+    --success: oklch(52.00% 0.1400 125.86);
+    /* UI interaction */
+    --cursor: var(--foreground);
+    --selection: oklch(79.68% 0.1298 82.18 / 13%);
+    --destructive-foreground: oklch(100.00% 0.000 0);
+    /* ANSI 16 terminal colors — fallback for the default light theme */
+    --terminal-background: oklch(100.00% 0.000 0);
+    --terminal-foreground: oklch(20.90% 0.0000 0);
+    --terminal-bright-foreground: oklch(100.00% 0.0001 259.98);
+    --terminal-dim-foreground: oklch(60.00% 0.0000 0);
+    --terminal-black: oklch(20.90% 0.0000 259.98);
+    --terminal-red: oklch(59.32% 0.1422 16.44);
+    --terminal-green: oklch(69.52% 0.1447 125.28);
+    --terminal-yellow: oklch(67.56% 0.1087 82.29);
+    --terminal-blue: oklch(62.72% 0.1048 225.37);
+    --terminal-magenta: oklch(67.62% 0.1088 306.27);
+    --terminal-cyan: oklch(73.24% 0.0743 170.89);
+    --terminal-white: oklch(79.80% 0.0099 93.74);
+    --terminal-bright-black: oklch(55.41% 0.0220 262.94);
+    --terminal-bright-red: oklch(76.32% 0.1408 20.86);
+    --terminal-bright-green: oklch(93.51% 0.1593 130.47);
+    --terminal-bright-yellow: oklch(89.59% 0.1392 91.09);
+    --terminal-bright-blue: oklch(72.00% 0.1524 249.03);
+    --terminal-bright-magenta: oklch(84.18% 0.1159 315.20);
+    --terminal-bright-cyan: oklch(90.08% 0.0588 232.06);
+    --terminal-bright-white: oklch(100.00% 0.0001 259.98);
+    /* Dim ANSI colors */
+    --terminal-dim-black: oklch(20.90% 0.0000 259.98);
+    --terminal-dim-red: oklch(50.00% 0.1100 17.00);
+    --terminal-dim-green: oklch(64.00% 0.1300 125.00);
+    --terminal-dim-yellow: oklch(60.00% 0.0900 82.00);
+    --terminal-dim-blue: oklch(54.00% 0.0900 225.00);
+    --terminal-dim-magenta: oklch(60.00% 0.0900 306.00);
+    --terminal-dim-cyan: oklch(68.00% 0.0700 171.00);
+    --terminal-dim-white: oklch(60.00% 0.0050 93.00);
+}
+
+.dark {
+    /* Surfaces — from reference palette neutrals */
+    --background: oklch(20.90% 0.0000 259.98);
+    --foreground: oklch(94.52% 0.0001 259.98);
+    --card: oklch(23.93% 0.0000 259.98);
+    --card-foreground: oklch(94.52% 0.0001 259.98);
+    --popover: oklch(23.93% 0.0000 259.98);
+    --popover-foreground: oklch(94.52% 0.0001 259.98);
+    /* Elevation shadows — stronger than light mode so surfaces read against a dark background */
+    --shadow-row: 0 1px 2px 0 oklch(0% 0 0 / 0.35);
+    --shadow-popover: 0 4px 16px -2px oklch(0% 0 0 / 0.55), 0 2px 6px -2px oklch(0% 0 0 / 0.35);
+    --shadow-modal: 0 20px 48px -8px oklch(0% 0 0 / 0.65), 0 6px 16px -4px oklch(0% 0 0 / 0.4);
+    /* Primary — #E6B450 golden yellow */
+    --primary: oklch(79.68% 0.1298 82.18);
+    --primary-foreground: oklch(20.90% 0.0000 259.98);
+    /* Secondary / Muted / Accent — element.active #3C3C3C */
+    --secondary: oklch(35.62% 0.0000 259.98);
+    --secondary-foreground: oklch(94.52% 0.0001 259.98);
+    --muted: oklch(31.32% 0.0000 259.98);
+    --muted-foreground: oklch(69.60% 0.0001 259.98);
+    --accent: oklch(35.62% 0.0000 259.98);
+    --accent-foreground: oklch(94.52% 0.0001 259.98);
+    /* Destructive — #F26D78 red */
+    --destructive: oklch(69.82% 0.1637 17.27);
+    /* Border / Input — #2B2B2B */
+    --border: oklch(28.91% 0.0000 259.98);
+    --input: oklch(31.32% 0.0000 259.98);
+    /* Ring — #E6B450 focused border */
+    --ring: oklch(79.68% 0.1298 82.18);
+    /* Charts */
+    --chart-1: oklch(79.68% 0.1298 82.18);
+    --chart-2: oklch(73.86% 0.1252 225.69);
+    --chart-3: oklch(82.51% 0.1745 125.86);
+    --chart-4: oklch(69.82% 0.1637 17.27);
+    --chart-5: oklch(79.70% 0.1308 306.30);
+    /* Sidebar — matches panel/toolbar background */
+    --sidebar: oklch(20.90% 0.0000 259.98);
+    --sidebar-foreground: oklch(94.52% 0.0001 259.98);
+    --sidebar-primary: oklch(79.68% 0.1298 82.18);
+    --sidebar-primary-foreground: oklch(20.90% 0.0000 259.98);
+    --sidebar-accent: oklch(35.62% 0.0000 259.98);
+    --sidebar-accent-foreground: oklch(94.52% 0.0001 259.98);
+    --sidebar-border: oklch(28.91% 0.0000 259.98);
+    --sidebar-ring: oklch(79.68% 0.1298 82.18);
+    /* Surface colors */
+    --toolbar-background: oklch(23.93% 0.0000 259.98);
+    --title-bar-background: oklch(23.93% 0.0000 259.98);
+    --status-bar-background: oklch(23.93% 0.0000 259.98);
+    /* Border variants */
+    --border-variant: oklch(28.91% 0.0000 259.98);
+    --border-focused: oklch(79.68% 0.1298 82.18);
+    --border-selected: oklch(79.68% 0.1298 82.18);
+    --border-transparent: transparent;
+    --border-disabled: oklch(28.00% 0.0000 259.98);
+    /* Semantic status colors */
+    --modified: oklch(73.86% 0.1252 225.69);
+    --error: oklch(69.82% 0.1637 17.27);
+    --warning: oklch(80.00% 0.1300 55.00);
+    --info: oklch(73.86% 0.1252 225.69);
+    --hint: oklch(50.00% 0.0120 262.94);
+    --success: oklch(82.51% 0.1745 125.86);
+    /* UI interaction */
+    --cursor: oklch(79.68% 0.1298 82.18);
+    --selection: oklch(79.68% 0.1298 82.18 / 13%);
+    --destructive-foreground: oklch(100.00% 0.0000 0);
+    /* ANSI 16 terminal colors — from reference palette terminal.ansi.* */
+    --terminal-background: oklch(20.90% 0.0000 259.98);
+    --terminal-foreground: oklch(94.52% 0.0001 259.98);
+    --terminal-bright-foreground: oklch(100.00% 0.0001 259.98);
+    --terminal-dim-foreground: oklch(61.50% 0.0000 259.98);
+    --terminal-black: oklch(20.90% 0.0000 259.98);
+    --terminal-red: oklch(69.82% 0.1637 17.27);
+    --terminal-green: oklch(82.51% 0.1745 125.86);
+    --terminal-yellow: oklch(79.68% 0.1298 82.18);
+    --terminal-blue: oklch(73.86% 0.1252 225.69);
+    --terminal-magenta: oklch(79.70% 0.1308 306.30);
+    --terminal-cyan: oklch(86.51% 0.0884 171.17);
+    --terminal-white: oklch(79.80% 0.0099 93.74);
+    --terminal-bright-black: oklch(55.41% 0.0220 262.94);
+    --terminal-bright-red: oklch(76.32% 0.1408 20.86);
+    --terminal-bright-green: oklch(93.51% 0.1593 130.47);
+    --terminal-bright-yellow: oklch(89.59% 0.1392 91.09);
+    --terminal-bright-blue: oklch(72.00% 0.1524 249.03);
+    --terminal-bright-magenta: oklch(84.18% 0.1159 315.20);
+    --terminal-bright-cyan: oklch(90.08% 0.0588 232.06);
+    --terminal-bright-white: oklch(100.00% 0.0001 259.98);
+    /* Dim ANSI colors */
+    --terminal-dim-black: oklch(20.90% 0.0000 259.98);
+    --terminal-dim-red: oklch(50.20% 0.1170 17.27);
+    --terminal-dim-green: oklch(63.80% 0.1350 125.86);
+    --terminal-dim-yellow: oklch(60.20% 0.0980 82.18);
+    --terminal-dim-blue: oklch(54.60% 0.0960 225.69);
+    --terminal-dim-magenta: oklch(59.50% 0.0980 306.30);
+    --terminal-dim-cyan: oklch(68.50% 0.0700 171.17);
+    --terminal-dim-white: oklch(60.20% 0.0050 93.74);
+}
+
+@layer base {
+    * {
+        @apply border-border outline-ring/50;
+    }
+    body {
+        @apply bg-background text-foreground;
+        margin: 0;
+        overflow: hidden;
+    }
+    html,
+    body,
+    #root {
+        height: 100%;
+    }
+    html {
+        @apply font-sans;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+    }
+    ::selection {
+        background-color: var(--selection);
+        color: inherit;
+    }
+}
+
+/* Custom window chrome (Linux/Windows): the OS gives us a transparent
+ * borderless window, and we paint the rounded corners + border + shadow
+ * ourselves so the app doesn't look naked on GNOME/KDE/Hyprland. */
+html[data-chrome="borderless"] {
+    background: var(--background); /* Fix white corners on Windows/Linux borderless chrome */
+}
+html[data-chrome="borderless"] body {
+    background: transparent !important;
+}
+html[data-chrome="borderless"] #root,
+html[data-chrome="borderless"] #settings-root {
+    height: 100%;
+    border-radius: var(--window-radius);
+    overflow: hidden;
+    border: 1px solid var(--border);
+    background: var(--background);
+}
+
+/*
+ * xterm.js overrides — kept outside @layer so they win against the addon's
+ * own stylesheet (which is not in any layer and would otherwise override).
+ *
+ * Newer xterm renders scrollbars as real <div class="scrollbar vertical|horizontal">
+ * children rather than relying on native overflow scrollbars. Both code paths exist
+ * across versions, so we hide both.
+ */
+.xterm .scrollbar,
+.xterm .scrollbar.vertical,
+.xterm .scrollbar.horizontal {
+    display: none !important;
+    visibility: hidden !important;
+    width: 0 !important;
+    height: 0 !important;
+    pointer-events: none !important;
+}
+.xterm .xterm-viewport,
+.xterm-viewport {
+    scrollbar-width: none !important;
+    -ms-overflow-style: none !important;
+}
+.xterm .xterm-viewport::-webkit-scrollbar,
+.xterm-viewport::-webkit-scrollbar {
+    width: 0 !important;
+    height: 0 !important;
+    display: none !important;
+}
+.xterm,
+.xterm-screen,
+.xterm:focus,
+.xterm.focus {
+    outline: none !important;
+}
+
+.cm-editor,
+.cm-scroller {
+    scrollbar-width: none !important;
+    -ms-overflow-style: none !important;
+}
+.cm-editor::-webkit-scrollbar,
+.cm-scroller::-webkit-scrollbar {
+    width: 0 !important;
+    height: 0 !important;
+    display: none !important;
+}
+
+.no-scrollbar {
+    scrollbar-width: none !important;
+    -ms-overflow-style: none !important;
+}
+.no-scrollbar::-webkit-scrollbar {
+    width: 0 !important;
+    height: 0 !important;
+    display: none !important;
+}
+
+.no-scrollbar-deep,
+.no-scrollbar-deep * {
+    scrollbar-width: none !important;
+    -ms-overflow-style: none !important;
+}
+.no-scrollbar-deep::-webkit-scrollbar,
+.no-scrollbar-deep *::-webkit-scrollbar {
+    width: 0 !important;
+    height: 0 !important;
+    display: none !important;
+}
+
+/* Themed thin scrollbar for panels that keep a visible scrollbar (Explorer,
+ * SFTP, AI pickers, Settings, Snippets) — colors derive from --foreground so
+ * it tracks light/dark and user-imported themes without extra tokens. */
+.themed-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in oklch, var(--foreground) 22%, transparent) transparent;
+}
+.themed-scrollbar::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+}
+.themed-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+}
+.themed-scrollbar::-webkit-scrollbar-thumb {
+    background-color: color-mix(in oklch, var(--foreground) 22%, transparent);
+    border-radius: 999px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+}
+.themed-scrollbar::-webkit-scrollbar-thumb:hover {
+    background-color: color-mix(in oklch, var(--foreground) 34%, transparent);
+}
+
+@keyframes labonair-tab-in {
+    from { opacity: 0; transform: scale(0.86); }
+    to   { opacity: 1; transform: scale(1);    }
+}
+
+.labonair-tab-in {
+    animation: labonair-tab-in var(--dur-base) var(--ease-premium);
+}
+
+/*
+ * Reduce-motion reset for Tailwind/Radix `animate-in`/`animate-out` open-
+ * close animations and the custom tab-entrance keyframe — the two things
+ * <MotionConfig> structurally can't reach (it only gates motion/react).
+ *
+ * Deliberately allowlist-based (targets elements that actually carry an
+ * animation class) rather than a universal `*`/`:where(*)` selector — an
+ * earlier `:where(*):not(...)` version of this rule broke terminal
+ * rendering entirely (blank canvas) on at least one machine, almost
+ * certainly a WebKit compositing bug triggered by forcing animation/
+ * transition timing on every DOM node, including xterm's internal canvas
+ * layers. Do not widen this back to a universal selector.
+ *
+ * Duration is forced to 0.01ms (not 0/none) so transitionend/animationend
+ * listeners some Radix/shadcn components rely on to unmount still fire.
+ */
+@media (prefers-reduced-motion: reduce) {
+    html:not([data-reduce-motion="false"]) [class*="animate-in"],
+    html:not([data-reduce-motion="false"]) [class*="animate-out"],
+    html:not([data-reduce-motion="false"]) .labonair-tab-in {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
+}
+
+html[data-reduce-motion="true"] [class*="animate-in"],
+html[data-reduce-motion="true"] [class*="animate-out"],
+html[data-reduce-motion="true"] .labonair-tab-in {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+}

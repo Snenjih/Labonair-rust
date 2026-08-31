@@ -1,0 +1,33 @@
+import "@fontsource/jetbrains-mono/400.css";
+import "@fontsource/jetbrains-mono/500.css";
+import "@fontsource/jetbrains-mono/700.css";
+import "@xterm/xterm/css/xterm.css";
+import "./styles/globals.css";
+
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import ReactDOM from "react-dom/client";
+import App from "./app/App";
+import { ErrorBoundary } from "./components/ErrorBoundary";
+import { USE_CUSTOM_WINDOW_CONTROLS } from "./lib/platform";
+
+if (USE_CUSTOM_WINDOW_CONTROLS) {
+  document.documentElement.dataset.chrome = "borderless";
+}
+
+ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
+  <ErrorBoundary>
+    <App />
+  </ErrorBoundary>,
+);
+
+// The main window starts hidden (tauri.conf.json: visible: false) so that
+// tauri-plugin-window-state can restore geometry before the first paint —
+// avoiding a flash of the window at the wrong size/position.
+// rAF is throttled when the window is invisible and never fires, so we use
+// setTimeout instead. A second call at 500 ms is a safety net.
+const showWindow = () =>
+  getCurrentWindow()
+    .show()
+    .catch((e) => console.error("window.show failed:", e));
+setTimeout(showWindow, 50);
+setTimeout(showWindow, 500);

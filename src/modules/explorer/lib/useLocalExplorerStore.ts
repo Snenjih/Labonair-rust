@@ -1,0 +1,249 @@
+import { create } from "zustand";
+import { useHostsStore } from "@/modules/hosts";
+import { usePreferencesStore } from "@/modules/settings/preferences";
+// Imported from the concrete store path (not the `@/modules/tabs` barrel) —
+// that barrel re-exports `useTabManagement`, which imports `@/modules/explorer`'s
+// barrel. Going through it here would close a circular import
+// (explorer -> tabs -> explorer). `tabsStore.ts` itself doesn't import from
+// explorer, so this path is cycle-safe. Mirrors `useExplorerTarget.ts`.
+import { useTabsStore } from "@/modules/tabs/store/tabsStore";
+import type { Tab } from "@/modules/tabs/types";
+import type { FileEntry } from "./fsProvider";
+
+export type ChildrenState =
+  | { status: "idle" }
+  | { status: "loading" }
+  | { status: "loaded"; entries: FileEntry[]; hasMore?: boolean }
+  | { status: "error"; message: string };
+
+type TreeState = Record<string, ChildrenState>;
+
+/** A snapshot of a remote scope's tree, kept around after the user switches
+ *  away so switching back can render instantly instead of re-fetching over
+ *  the network. Local scopes are never cached — see `isRemoteScope`. */
+type RemoteScopeSnapshot = {
+  rootPath: string;
+  nodes: TreeState;
+  expanded: Set<string>;
+  lastAccessedAt: number;
+};
+
+function isRemoteScope(scopeKey: string): boolean {
+  return scopeKey.startsWith("ssh:");
+}
+
+/** Oldest-`lastAccessedAt`-first eviction when over `maxCached` — mirrors
+ *  `selectEvictionCandidates` in `useLazyExplorerSession.ts`. `protectedKeys`
+ *  (scopes with a currently open tab, see `openRemoteScopeKeys`) are evicted
+ *  only as a last resort, after every unprotected scope is already gone —
+ *  in practice this never triggers, since `setScope` raises `maxCached` to
+ *  fit `protectedKeys.size` before calling this. Exported for unit testing
+ *  without touching the live store. */
+export function selectScopesToEvict(
+  entries: Array<{ scopeKey: string; lastAccessedAt: number }>,
+  maxCached: number,
+  protectedKeys: Set<string> = new Set(),
+): string[] {
+  const byAge = (a: { lastAccessedAt: number }, b: { lastAccessedAt: number }) =>
+    a.lastAccessedAt - b.lastAccessedAt;
+  const unprotected = entries.filter((e) => !protectedKeys.has(e.scopeKey)).sort(byAge);
+  const protectedEntries = entries.filter((e) => protectedKeys.has(e.scopeKey)).sort(byAge);
+  const overflow = Math.max(0, entries.length - maxCached);
+  const fromUnprotected = unprotected.slice(0, Math.min(overflow, unprotected.length));
+  const remainingOverflow = overflow - fromUnprotected.length;
+  const fromProtected = remainingOverflow > 0 ? protectedEntries.slice(0, remainingOverflow) : [];
+  return [...fromUnprotected, ...fromProtected].map((e) => e.scopeKey);
+}
+
+/** Distinct `ssh:<hostId>` scope keys currently referenced by an open tab —
+ *  an `SftpTab`'s own host, a `WorkspaceTab`'s ssh pane sessions, or an
+ *  `EditorTab`/`PreviewTab` pinned to a remote file. Multiple tabs against
+ *  the same host collapse to one key, matching how the cache itself is keyed
+ *  by hostId rather than by tab. Exported for unit testing. */
+export function openRemoteScopeKeys(tabs: Tab[]): Set<string> {
+  const keys = new Set<string>();
+  for (const tab of tabs) {
+    if (tab.kind === "sftp") {
+      keys.add(`ssh:${tab.hostId}`);
+    } else if (tab.kind === "workspace") {
+      for (const session of Object.values(tab.sessions)) {
+        if (session.kind === "ssh" && session.hostId) keys.add(`ssh:${session.hostId}`);
+      }
+    } else if ((tab.kind === "editor" || tab.kind === "preview") && tab.remoteHostId) {
+      keys.add(`ssh:${tab.remoteHostId}`);
+    }
+  }
+  return keys;
+}
+
+/** A cached snapshot is only usable if it's for the EXACT root path being
+ *  requested — e.g. the SSH terminal's cwd may have changed since the host
+ *  was last browsed, in which case this must be treated as a miss rather
+ *  than showing an unrelated folder's stale contents. Exported for unit
+ *  testing without touching the live store. */
+export function shouldHydrateFromCache(
+  cached: RemoteScopeSnapshot | undefined,
+  requestedRootPath: string | null,
+): cached is RemoteScopeSnapshot {
+  return !!cached && requestedRootPath !== null && cached.rootPath === requestedRootPath;
+}
+
+type LocalExplorerStore = {
+  // Identity of the currently loaded scope (e.g. "local" or "ssh:<hostId>") plus
+  // its root path. `nodes`/`expanded` reflect THIS scope's live, current state.
+  scopeKey: string;
+  rootPath: string | null;
+  nodes: TreeState;
+  expanded: Set<string>;
+  showHidden: boolean;
+  /** Bumped on every scope/root change. `useFileTree` captures this before an
+   *  in-flight `readDir` and discards the response if it no longer matches
+   *  when the request resolves — otherwise a slow remote fetch from a scope
+   *  the user has since navigated away from could write stale entries into
+   *  whatever scope is active by the time it lands. */
+  generation: number;
+  /** Snapshots of remote scopes the user has recently left, keyed by
+   *  scopeKey (`ssh:<hostId>`) — bounded to `explorerMaxCachedRemoteScopes`
+   *  entries, oldest evicted first. Local scopes are never cached here
+   *  (local reads are cheap enough that caching would only add risk). */
+  remoteScopeCache: Record<string, RemoteScopeSnapshot>;
+
+  setScope: (scopeKey: string, root: string | null) => void;
+  setNode: (path: string, state: ChildrenState) => void;
+  toggleExpanded: (path: string) => void;
+  addExpanded: (path: string) => void;
+  reset: () => void;
+  toggleShowHidden: () => void;
+  /** Drops the current scope's cached nodes (but keeps `expanded`, so open
+   *  folders don't collapse) and bumps `generation`. Used by "Hard Refresh"
+   *  — unlike `refresh()`, which only re-fetches what's already known, this
+   *  forces every subsequent fetch to hit the backend fresh instead of
+   *  reusing anything currently in memory. Also drops this scope's entry
+   *  from `remoteScopeCache` so leaving and returning to it doesn't
+   *  re-hydrate the very state that was just cleared. */
+  hardReset: () => void;
+};
+
+export const useLocalExplorerStore = create<LocalExplorerStore>((set) => ({
+  scopeKey: "local",
+  rootPath: null,
+  nodes: {},
+  expanded: new Set(),
+  showHidden: false,
+  generation: 0,
+  remoteScopeCache: {},
+
+  setScope: (scopeKey, root) =>
+    set((s) => {
+      let remoteScopeCache = s.remoteScopeCache;
+      // Snapshot the scope being LEFT, if it was remote and had a root —
+      // stale-while-revalidate: switching back to it later renders this
+      // instantly while a silent background fetch (see useFileTree.ts)
+      // brings it up to date.
+      if (isRemoteScope(s.scopeKey) && s.rootPath) {
+        // The configured preference is a floor, not a hard ceiling — a scope
+        // with a still-open tab against it is never evicted just to obey the
+        // number, so tabbing between hosts you actually have open can't
+        // trigger a cache-miss re-fetch (and the flash that comes with it).
+        const prefMaxCached = usePreferencesStore.getState().explorerMaxCachedRemoteScopes;
+        const protectedKeys = openRemoteScopeKeys(useTabsStore.getState().tabs);
+        const maxCached = Math.max(prefMaxCached, protectedKeys.size);
+        const next = {
+          ...remoteScopeCache,
+          [s.scopeKey]: {
+            rootPath: s.rootPath,
+            nodes: s.nodes,
+            expanded: s.expanded,
+            lastAccessedAt: Date.now(),
+          },
+        };
+        const entries = Object.entries(next).map(([k, v]) => ({
+          scopeKey: k,
+          lastAccessedAt: v.lastAccessedAt,
+        }));
+        for (const evict of selectScopesToEvict(entries, maxCached, protectedKeys)) delete next[evict];
+        remoteScopeCache = next;
+      }
+
+      // Hydrate the scope being ENTERED, if it's a valid cache hit.
+      const cached = isRemoteScope(scopeKey) ? remoteScopeCache[scopeKey] : undefined;
+      const hit = shouldHydrateFromCache(cached, root);
+
+      return {
+        scopeKey,
+        rootPath: root,
+        nodes: hit ? cached.nodes : {},
+        expanded: hit ? cached.expanded : new Set(),
+        remoteScopeCache,
+        generation: s.generation + 1,
+      };
+    }),
+
+  // Every cached snapshot was fetched under the previous showHidden value —
+  // toggling it invalidates all of them, not just the active scope.
+  toggleShowHidden: () =>
+    set((s) => ({ showHidden: !s.showHidden, nodes: {}, expanded: new Set(), remoteScopeCache: {} })),
+
+  setNode: (path, state) => set((s) => ({ nodes: { ...s.nodes, [path]: state } })),
+
+  toggleExpanded: (path) =>
+    set((s) => {
+      const next = new Set(s.expanded);
+      if (next.has(path)) next.delete(path);
+      else next.add(path);
+      return { expanded: next };
+    }),
+
+  addExpanded: (path) =>
+    set((s) => {
+      if (s.expanded.has(path)) return s;
+      const next = new Set(s.expanded);
+      next.add(path);
+      return { expanded: next };
+    }),
+
+  reset: () => set({ nodes: {}, expanded: new Set(), remoteScopeCache: {} }),
+
+  hardReset: () =>
+    set((s) => {
+      const remoteScopeCache = { ...s.remoteScopeCache };
+      delete remoteScopeCache[s.scopeKey];
+      return { nodes: {}, remoteScopeCache, generation: s.generation + 1 };
+    }),
+}));
+
+// Drops a deleted host's cached scope, if any — hostIds are never reused so
+// this is a memory-hygiene nicety, not a correctness requirement (the LRU
+// cap in setScope already bounds total cache size regardless). Mirrors the
+// module-scope subscription pattern below (seedShowHiddenFromPreferences).
+useHostsStore.subscribe((state) => {
+  const liveHostIds = new Set(state.hosts.map((h) => h.id));
+  const { remoteScopeCache } = useLocalExplorerStore.getState();
+  const next = { ...remoteScopeCache };
+  let changed = false;
+  for (const key of Object.keys(next)) {
+    if (key.startsWith("ssh:") && !liveHostIds.has(key.slice("ssh:".length))) {
+      delete next[key];
+      changed = true;
+    }
+  }
+  if (changed) useLocalExplorerStore.setState({ remoteScopeCache: next });
+});
+
+// Seeds the initial `showHidden` from the persisted `explorerShowHiddenByDefault`
+// preference exactly once, as soon as preferences finish hydrating. Done here
+// (module scope) rather than in a component effect so it applies before the
+// first tree render regardless of which sidebar panel mounts first, and never
+// re-fires to stomp on an in-session manual toggle.
+let _hiddenSeeded = false;
+function seedShowHiddenFromPreferences() {
+  if (_hiddenSeeded) return;
+  const prefs = usePreferencesStore.getState();
+  if (!prefs.hydrated) return;
+  _hiddenSeeded = true;
+  if (prefs.explorerShowHiddenByDefault) {
+    useLocalExplorerStore.setState({ showHidden: true });
+  }
+}
+seedShowHiddenFromPreferences();
+usePreferencesStore.subscribe(seedShowHiddenFromPreferences);
