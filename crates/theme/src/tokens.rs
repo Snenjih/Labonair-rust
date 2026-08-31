@@ -205,15 +205,43 @@ pub struct Animation {
     pub ease_soft: CubicBezier,
 }
 
+/// Terminal/editor font weight preference (`preferencesStore` `terminalFontWeight`:
+/// `"normal" | "medium" | "bold"`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MonoFontWeight {
+    Normal,
+    Medium,
+    Bold,
+}
+
 /// Typography tokens. `app_*` values are runtime-mutable in the original
-/// (`useTypographyEngine.ts`); here they hold the CSS defaults.
+/// (`useTypographyEngine.ts`); here they hold the CSS / `preferencesStore`
+/// defaults. Font families name the bundled assets from [`crate::fonts`];
+/// the `*_fallback` chains list system fonts to fall back to when an asset is
+/// missing (mirrors the reference app's CSS font stacks). T13-003 (settings)
+/// later overrides these at runtime.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Typography {
     pub sans_family: String,
     pub heading_family: String,
+    /// UI font — `preferencesStore.appFontFamily` default.
     pub app_font_family: String,
     pub app_font_size: f32,
     pub app_line_height: f32,
+    pub ui_font_fallback: Vec<String>,
+    /// Code editor — `preferencesStore.editorFontFamily` / `editorFontSize`.
+    pub buffer_font_family: String,
+    pub buffer_font_size: f32,
+    /// Terminal emulator — `preferencesStore.terminal*` defaults.
+    pub terminal_font_family: String,
+    pub terminal_font_size: f32,
+    pub terminal_line_height: f32,
+    pub terminal_letter_spacing: f32,
+    pub terminal_font_weight: MonoFontWeight,
+    pub mono_font_fallback: Vec<String>,
+    /// Whether programming ligatures (`calt`) are enabled for mono text. The
+    /// reference app always loads xterm's `LigaturesAddon`, so this is on.
+    pub font_ligatures: bool,
 }
 
 impl Default for Animation {
@@ -240,12 +268,30 @@ impl Default for Animation {
 
 impl Default for Typography {
     fn default() -> Self {
+        let ui_fallback: Vec<String> = crate::fonts::UI_FONT_FALLBACKS
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        let mono_fallback: Vec<String> = crate::fonts::MONO_FONT_FALLBACKS
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
         Self {
-            sans_family: "Inter Variable".into(),
-            heading_family: "Inter Variable".into(),
-            app_font_family: "Inter Variable".into(),
+            sans_family: crate::fonts::UI_FONT_FAMILY.into(),
+            heading_family: crate::fonts::UI_FONT_FAMILY.into(),
+            app_font_family: crate::fonts::UI_FONT_FAMILY.into(),
             app_font_size: 13.0,
             app_line_height: 1.5,
+            ui_font_fallback: ui_fallback,
+            buffer_font_family: crate::fonts::MONO_FONT_FAMILY.into(),
+            buffer_font_size: 13.0,
+            terminal_font_family: crate::fonts::MONO_FONT_FAMILY.into(),
+            terminal_font_size: 14.0,
+            terminal_line_height: 1.05,
+            terminal_letter_spacing: 0.0,
+            terminal_font_weight: MonoFontWeight::Normal,
+            mono_font_fallback: mono_fallback,
+            font_ligatures: true,
         }
     }
 }

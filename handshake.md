@@ -4,7 +4,32 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
-## Last Session: 2026-08-31 (T02-004 — terminal ANSI palette → engine bridge)
+## Last Session: 2026-08-31 (T02-005 — font handling & bundling)
+
+### What Was Done
+- **T02-005 ✅ Done.** Bundled the reference app's font families natively and wired them into GPUI's text system.
+  - **`crates/theme/assets/fonts/`** (new) — SIL OFL 1.1 font files committed into the repo: `InterVariable.ttf` + `InterVariable-Italic.ttf` (rsms Inter 4.1), `JetBrainsMono-{Regular,Medium,Bold,Italic,BoldItalic}.ttf` (JetBrainsMono 2.304). Family `name`-table values verified with fonttools: `"Inter Variable"` and `"JetBrains Mono"` (Medium carries typographic-family id16 `"JetBrains Mono"` so weight selection works). `LICENSE` + `Inter-OFL.txt` + `JetBrainsMono-OFL.txt` document redistribution rights. SF Mono / Menlo are runtime fallbacks only, never bundled.
+  - **`crates/theme/src/fonts.rs`** (new module, `pub mod fonts`) — `embedded_fonts() -> Vec<Cow<'static,[u8]>>` via `include_bytes!` (7 files), plus `UI_FONT_FAMILY`/`MONO_FONT_FAMILY` consts and `UI_FONT_FALLBACKS` (`[".SystemUIFont","sans-serif"]`) / `MONO_FONT_FALLBACKS` (`["SFMono-Regular","Menlo","monospace"]` — mirrors the reference CSS stack). lib.rs re-exports all. 2 tests (all 7 assets are valid TrueType sfnt & >10KB; family-name stability).
+  - **`crates/theme/src/tokens.rs`** — `Typography` gained font fields matching `preferencesStore` defaults: `ui_font_fallback`, `buffer_font_family` + `buffer_font_size` (13), `terminal_font_family`, `terminal_font_size` (14), `terminal_line_height` (1.05), `terminal_letter_spacing` (0), `terminal_font_weight` (new `MonoFontWeight` enum Normal/Medium/Bold), `mono_font_fallback`, `font_ligatures` (true — reference always loads xterm `LigaturesAddon`). `Typography::default()` fills them from `crate::fonts` consts; `Theme::light()/dark()` unchanged (both use the default). Existing `app_*` fields untouched.
+  - **`crates/ui/src/theme.rs`** — `ThemeStore` accessors: `ui_font()` / `buffer_font()` / `terminal_font()` -> `gpui::Font` (family + `FontFallbacks::from_fonts` + weight; mono honors `font_ligatures` via `FontFeatures::disable_ligatures()`), `terminal_font_size()`, `terminal_line_height()`. New free fn **`init_fonts(cx: &App)`** = `cx.text_system().add_fonts(labonair_theme::embedded_fonts())` (non-fatal on error). lib.rs re-exports `init_fonts`. 1 new `#[gpui::test]`.
+  - **`crates/app/src/main.rs`** — `labonair_ui::init_fonts(cx)` first thing in `Application::run`; `Root::render` now sets `.font(ui_font)` on the root and renders a mono/ligature sample line (`-> => != >= …`) in `terminal_font` for visual parity checks.
+- **GPUI API used (gpui 0.2.2, verified in source):** `TextSystem::add_fonts(Vec<Cow<'static,[u8]>>)` (mac impl uses `CGFont::from_data_provider` → needs ttf/otf, **not** woff2/ttc); `App::text_system() -> &Arc<TextSystem>`; `gpui::font(family)` builder + `Font { features, fallbacks, weight, style, .. }`; `FontFallbacks::from_fonts(Vec<String>)` / `.fallback_list()`; `FontFeatures::disable_ligatures()` (sets `calt=0`) / `.is_calt_enabled()`; `FontWeight::{NORMAL,MEDIUM,BOLD}`; `Styled::font(Font)`.
+- **Verified:** `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`, `cargo build --bin labonair` — all green. Counts: 122 backend, 1 app_state, **22 theme (+2)**, **9 ui (+1)**, 9 terminal. Not yet visually run — user should `cargo run` to confirm UI renders in Inter and the sample line shows JetBrains Mono ligatures.
+
+### Current State
+- Branch `master`, 10 unpushed commits + this one. `crates/theme` owns the font assets + `Typography` font fields; `crates/ui` exposes `gpui::Font` accessors + `init_fonts`.
+- Pre-existing uncommitted `CLAUDE.md` edit (not mine) still garbles Next Task Protocol steps 1 & 3 — left untouched & excluded from the commit, flag to user.
+- `reference-src/` untouched.
+
+### What's Next
+- **T02-006** `tasks/phase-01-theme/T02-006-terminal-background-images.md` — terminal background images. Deps: T02-002 (done) + Phase 2 (terminal engine, not yet started) — **may be blocked** until Phase 02 exists; check the task file's dependencies before starting.
+
+### Blockers
+- T02-006 lists a "Phase 2" dependency — the terminal engine (T03-*) does not exist yet. Next session must check whether T02-006 can proceed or whether Phase 02 comes first.
+
+---
+
+## Session: 2026-08-31 (T02-004 — terminal ANSI palette → engine bridge)
 
 ### What Was Done
 - **T02-004 ✅ Done.** Built the theme → terminal-engine color bridge in **`crates/terminal/src/palette.rs`** (new module; `crates/terminal` gained a `labonair-theme` path dep).

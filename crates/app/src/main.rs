@@ -24,6 +24,8 @@ impl Render for Root {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = self.theme.read(cx);
         let core = &theme.theme().core;
+        let ui_font = theme.ui_font();
+        let terminal_font = theme.terminal_font();
         let mode = if theme.theme().is_dark {
             "dark"
         } else {
@@ -34,11 +36,18 @@ impl Render for Root {
             .size_full()
             .bg(core.background)
             .text_color(core.foreground)
+            .font(ui_font)
             .p_4()
             .flex()
             .flex_col()
             .gap_3()
             .child(format!("Labonair-rust — theme: {mode}"))
+            .child(
+                div()
+                    .font(terminal_font)
+                    .text_color(core.muted_foreground)
+                    .child("mono + ligatures: -> => != >= <= === |> ::"),
+            )
             .child(
                 div()
                     .flex()
@@ -118,6 +127,7 @@ fn main() {
     tracing::info!("Labonair-rust starting");
 
     Application::new().run(|cx: &mut App| {
+        labonair_ui::init_fonts(cx);
         let bounds = Bounds::centered(None, size(px(1200.0), px(800.0)), cx);
         cx.open_window(
             WindowOptions {

@@ -1,0 +1,18 @@
+# Bundled fonts — licensing
+
+All font files in this directory are redistributed inside the Labonair-rust
+binary via `include_bytes!` (see `crates/theme/src/fonts.rs`). Every family
+here is licensed under the SIL Open Font License 1.1, which explicitly permits
+bundling/embedding in and redistribution with software.
+
+| File(s) | Family | Version / Source | License |
+|---|---|---|---|
+| `InterVariable.ttf`, `InterVariable-Italic.ttf` | Inter Variable | Inter 4.1 — https://github.com/rsms/inter | SIL OFL 1.1 — see `Inter-OFL.txt` |
+| `JetBrainsMono-Regular.ttf`, `JetBrainsMono-Medium.ttf`, `JetBrainsMono-Bold.ttf`, `JetBrainsMono-Italic.ttf`, `JetBrainsMono-BoldItalic.ttf` | JetBrains Mono | JetBrainsMono 2.304 — https://github.com/JetBrains/JetBrainsMono | SIL OFL 1.1 — see `JetBrainsMono-OFL.txt` |
+
+These match the families referenced by the reference web app
+(`reference-src/src/styles/globals.css` → `"Inter Variable"`, and the
+`preferencesStore` default `terminalFontFamily` / `editorFontFamily` →
+`"JetBrains Mono", SFMono-Regular, Menlo, monospace`). SF Mono / SFMono-Regular
+and Menlo are Apple system fonts and are used only as runtime fallbacks — they
+are never bundled.

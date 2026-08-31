@@ -1,7 +1,7 @@
 # T02-005: Font-Handling & Font-Bundling (GPUI)
 
 ## Status
-⏳ Pending
+✅ Done
 
 ## Phase
 1 — Theme-System & Design-Tokens

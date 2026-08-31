@@ -10,8 +10,11 @@
 //! [`active_theme`] / [`theme_store`]. Components must never hold their own
 //! theme state.
 
-use gpui::{App, AppContext, Context, Entity, Global, Hsla, WindowAppearance};
-use labonair_theme::{Animation, RadiusScale, Shadows, Theme, ThemeFile};
+use gpui::{
+    font, App, AppContext, Context, Entity, Font, FontFallbacks, FontFeatures, FontWeight, Global,
+    Hsla, WindowAppearance,
+};
+use labonair_theme::{Animation, MonoFontWeight, RadiusScale, Shadows, Theme, ThemeFile};
 
 /// The theme preference the user picked in settings.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -232,6 +235,67 @@ impl ThemeStore {
     pub fn animation(&self) -> &Animation {
         &self.theme().animation
     }
+
+    /// GPUI [`Font`] for UI text (Inter Variable + system fallbacks).
+    pub fn ui_font(&self) -> Font {
+        let t = &self.theme().typography;
+        Font {
+            fallbacks: Some(FontFallbacks::from_fonts(t.ui_font_fallback.clone())),
+            ..font(t.app_font_family.clone())
+        }
+    }
+
+    /// GPUI [`Font`] for the code editor buffer (JetBrains Mono, ligatures per theme).
+    pub fn buffer_font(&self) -> Font {
+        let t = &self.theme().typography;
+        self.mono_font(&t.buffer_font_family, MonoFontWeight::Normal)
+    }
+
+    /// GPUI [`Font`] for the terminal, honoring the configured weight + ligatures.
+    pub fn terminal_font(&self) -> Font {
+        let t = &self.theme().typography;
+        self.mono_font(&t.terminal_font_family, t.terminal_font_weight)
+    }
+
+    fn mono_font(&self, family: &str, weight: MonoFontWeight) -> Font {
+        let t = &self.theme().typography;
+        let features = if t.font_ligatures {
+            FontFeatures::default()
+        } else {
+            FontFeatures::disable_ligatures()
+        };
+        Font {
+            features,
+            fallbacks: Some(FontFallbacks::from_fonts(t.mono_font_fallback.clone())),
+            weight: match weight {
+                MonoFontWeight::Normal => FontWeight::NORMAL,
+                MonoFontWeight::Medium => FontWeight::MEDIUM,
+                MonoFontWeight::Bold => FontWeight::BOLD,
+            },
+            ..font(family.to_string())
+        }
+    }
+
+    /// Terminal font size in pixels (`preferencesStore.terminalFontSize`).
+    pub fn terminal_font_size(&self) -> f32 {
+        self.theme().typography.terminal_font_size
+    }
+
+    /// Terminal line-height multiple (`preferencesStore.terminalLineHeight`).
+    pub fn terminal_line_height(&self) -> f32 {
+        self.theme().typography.terminal_line_height
+    }
+}
+
+/// Registers the bundled font assets ([`labonair_theme::embedded_fonts`]) with
+/// GPUI's text system so the UI / terminal / editor render with Inter Variable
+/// and JetBrains Mono regardless of what is installed on the system. Call once
+/// at startup, before opening the window.
+pub fn init_fonts(cx: &App) {
+    if let Err(err) = cx.text_system().add_fonts(labonair_theme::embedded_fonts()) {
+        // Non-fatal: GPUI falls back to system fonts.
+        eprintln!("labonair-ui: failed to register bundled fonts: {err}");
+    }
 }
 
 /// App-wide handle to the [`ThemeStore`] entity.
@@ -335,6 +399,42 @@ mod tests {
             assert_eq!(s.radius(), t.radius);
             assert_eq!(s.shadows(), &t.shadows);
             assert_eq!(s.animation(), &t.animation);
+        });
+    }
+
+    #[gpui::test]
+    fn font_accessors_build_expected_gpui_fonts(cx: &mut TestAppContext) {
+        cx.update(|cx| {
+            let store = cx.new(|_| ThemeStore::new(WindowAppearance::Dark));
+            let s = store.read(cx);
+
+            let ui = s.ui_font();
+            assert_eq!(ui.family.as_ref(), labonair_theme::UI_FONT_FAMILY);
+            assert!(ui
+                .fallbacks
+                .as_ref()
+                .unwrap()
+                .fallback_list()
+                .contains(&"sans-serif".to_string()));
+
+            let term = s.terminal_font();
+            assert_eq!(term.family.as_ref(), labonair_theme::MONO_FONT_FAMILY);
+            assert_eq!(term.weight, FontWeight::NORMAL);
+            // Ligatures on by default → calt is not disabled.
+            assert_ne!(term.features, FontFeatures::disable_ligatures());
+            assert!(term
+                .fallbacks
+                .as_ref()
+                .unwrap()
+                .fallback_list()
+                .contains(&"Menlo".to_string()));
+
+            assert_eq!(
+                s.buffer_font().family.as_ref(),
+                labonair_theme::MONO_FONT_FAMILY
+            );
+            assert_eq!(s.terminal_font_size(), 14.0);
+            assert_eq!(s.terminal_line_height(), 1.05);
         });
     }
 
