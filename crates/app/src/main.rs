@@ -1,22 +1,68 @@
 use gpui::{
-    div, prelude::*, px, rgb, size, App, Application, Bounds, Window, WindowBounds, WindowOptions,
+    div, prelude::*, px, size, App, Application, Bounds, Entity, Window, WindowBounds,
+    WindowOptions,
 };
 use labonair_backend::{App as Backend, AppEvent};
+use labonair_ui::ThemeStore;
 use tokio::sync::broadcast::error::RecvError;
 use tracing_subscriber::EnvFilter;
 
 /// Root view of the Labonair window. Replaced by the real app shell in Phase 03 (T04-003).
-struct Root;
+struct Root {
+    theme: Entity<ThemeStore>,
+}
+
+impl Root {
+    fn new(theme: Entity<ThemeStore>, cx: &mut Context<Self>) -> Self {
+        // Re-render whenever the active theme changes.
+        cx.observe(&theme, |_, _, cx| cx.notify()).detach();
+        Self { theme }
+    }
+}
 
 impl Render for Root {
-    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-        div().size_full().bg(rgb(0x1a1b26)).child(
-            div()
-                .p_4()
-                .text_color(rgb(0xc0caf5))
-                .child("Labonair-rust — ready for development"),
-        )
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = self.theme.read(cx);
+        let core = &theme.theme().core;
+        let mode = if theme.theme().is_dark {
+            "dark"
+        } else {
+            "light"
+        };
+
+        div()
+            .size_full()
+            .bg(core.background)
+            .text_color(core.foreground)
+            .p_4()
+            .flex()
+            .flex_col()
+            .gap_3()
+            .child(format!("Labonair-rust — theme: {mode}"))
+            .child(
+                div()
+                    .flex()
+                    .gap_2()
+                    .child(swatch(core.primary))
+                    .child(swatch(core.accent))
+                    .child(swatch(core.muted))
+                    .child(swatch(core.destructive))
+                    .child(swatch(core.border)),
+            )
+            .child(
+                div()
+                    .bg(core.card)
+                    .text_color(core.card_foreground)
+                    .border_1()
+                    .border_color(core.border)
+                    .p_3()
+                    .child("card surface"),
+            )
     }
+}
+
+fn swatch(color: gpui::Hsla) -> impl IntoElement {
+    div().size(px(40.0)).bg(color)
 }
 
 /// `tracing` logging: default-off for noisy deps, `debug` for our crates, all
@@ -78,7 +124,21 @@ fn main() {
                 window_bounds: Some(WindowBounds::Windowed(bounds)),
                 ..Default::default()
             },
-            |_window, cx| cx.new(|_cx| Root),
+            |window, cx| {
+                let theme = labonair_ui::init_theme(window.appearance(), cx);
+                window
+                    .observe_window_appearance({
+                        let theme = theme.clone();
+                        move |window, cx| {
+                            let appearance = window.appearance();
+                            theme.update(cx, |store, cx| {
+                                store.set_system_appearance(appearance, cx)
+                            });
+                        }
+                    })
+                    .detach();
+                cx.new(|cx| Root::new(theme, cx))
+            },
         )
         .expect("failed to open window");
         cx.activate(true);

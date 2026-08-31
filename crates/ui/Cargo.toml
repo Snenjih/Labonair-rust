@@ -6,3 +6,6 @@ edition = "2021"
 [dependencies]
 gpui = { workspace = true }
 labonair-theme = { path = "../theme" }
+
+[dev-dependencies]
+gpui = { workspace = true, features = ["test-support"] }

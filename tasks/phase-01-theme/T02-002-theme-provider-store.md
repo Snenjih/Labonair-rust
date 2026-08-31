@@ -1,7 +1,7 @@
 # T02-002: Theme-Provider und Theme-Store
 
 ## Status
-⏳ Pending
+✅ Done
 
 ## Phase
 1 — Theme-System & Design-Tokens
