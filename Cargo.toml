@@ -1,0 +1,59 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/app",
+    "crates/ui",
+    "crates/terminal",
+    "crates/editor",
+    "crates/backend",
+    "crates/ai",
+    "crates/theme",
+]
+
+[workspace.dependencies]
+# GPUI (Zed's GPU-accelerated UI framework). gpui-component is a separate crate,
+# added later when UI components are needed (T04+).
+gpui = "0.2.2"
+
+# Terminal
+alacritty_terminal = "0.24"
+vte = "0.13"
+
+# Async
+tokio = { version = "1", features = ["full"] }
+
+# SSH — versions taken 1:1 from reference-src/src-tauri/Cargo.toml
+russh = { version = "0.62.2", default-features = false, features = ["ring", "flate2"] }
+russh-sftp = "2.3.0"
+
+# Git — NO git2/libgit2. The original shells out to the `git` CLI
+# (local AND remote-over-SSH via GitExecutor). Parity = keep the same strategy.
+
+# SQLite
+rusqlite = { version = "0.40", features = ["bundled"] }
+
+# Keyring
+keyring = "3"
+
+# HTTP (for AI provider APIs)
+reqwest = { version = "0.12", features = ["json", "stream"] }
+
+# JSON
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# PTY
+portable-pty = "0.9"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = "0.3"
+
+# Error handling
+anyhow = "1"
+thiserror = "2"
+
+# Utilities
+dirs = "6"
+uuid = { version = "1", features = ["v4"] }
+chrono = { version = "0.4", features = ["serde"] }

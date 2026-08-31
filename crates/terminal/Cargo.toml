@@ -1,0 +1,10 @@
+[package]
+name = "labonair-terminal"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+gpui = { workspace = true }
+alacritty_terminal = { workspace = true }
+portable-pty = { workspace = true }
+tokio = { workspace = true }

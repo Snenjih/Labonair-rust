@@ -1,7 +1,7 @@
 # T01-001: Cargo Workspace & Projektstruktur erstellen
 
 ## Status
-⏳ Pending
+✅ Done
 
 ## Phase
 0 — Projekt-Setup & Grundgerüst
