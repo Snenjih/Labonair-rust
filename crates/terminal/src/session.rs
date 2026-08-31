@@ -35,6 +35,10 @@ pub struct SessionOptions {
     /// Start the shell in block-terminal mode (`LABONAIR_BLOCKS=1`). Fixed for
     /// the shell's lifetime.
     pub blocks: bool,
+    /// Optional command written to the shell as input right after spawn
+    /// (analogous to Labonair's "startup snippet"). The shell stays interactive
+    /// afterwards — this is fed as if the user typed it, not `exec`'d.
+    pub startup_command: Option<String>,
 }
 
 /// A read of the active terminal for the AI companion: working directory,
@@ -164,6 +168,19 @@ impl TerminalSession {
                 .map_err(|e| format!("failed to spawn pty reader thread: {e}"))?
         };
 
+        // Feed the optional startup command as if typed. The PTY buffers it
+        // until the shell starts reading, so ordering vs. shell init is safe.
+        if let Some(cmd) = &options.startup_command {
+            let trimmed = cmd.trim_end_matches(['\r', '\n']);
+            if !trimmed.is_empty() {
+                if let Ok(mut w) = writer.lock() {
+                    let _ = w.write_all(trimmed.as_bytes());
+                    let _ = w.write_all(b"\n");
+                    let _ = w.flush();
+                }
+            }
+        }
+
         Ok(Self {
             emulator,
             master: pair.master,
@@ -179,6 +196,44 @@ impl TerminalSession {
     /// The shell's process id, if the platform reports one.
     pub fn shell_pid(&self) -> Option<u32> {
         self.shell_pid
+    }
+
+    /// True while a foreground job other than the shell itself owns the tty —
+    /// i.e. the shell handed its process group off to a running command
+    /// (`vim`, `less`, `sleep`, …). Used to decide whether closing a tab
+    /// should warn the user first (Labonair's KeepTerminal / "process still
+    /// running" behaviour). Unix-only; always `false` elsewhere.
+    #[cfg(unix)]
+    pub fn has_foreground_job(&self) -> bool {
+        let Some(shell_pid) = self.shell_pid else {
+            return false;
+        };
+        matches!(
+            self.master.process_group_leader(),
+            Some(pid) if pid > 0 && pid as u32 != shell_pid
+        )
+    }
+
+    #[cfg(not(unix))]
+    pub fn has_foreground_job(&self) -> bool {
+        false
+    }
+
+    /// Politely ask the shell (and its foreground job, which shares the
+    /// process group) to exit by sending `SIGHUP` — exactly what a real
+    /// terminal emulator does when its window closes. The hard `SIGKILL`
+    /// fallback and thread join happen in [`Drop`], so dropping the session
+    /// right after this call can never hang.
+    pub fn terminate(&self) {
+        #[cfg(unix)]
+        if let Some(pid) = self.shell_pid {
+            // Negative pid → signal the whole process group so a foreground
+            // job started by the shell gets the hangup too.
+            unsafe {
+                libc::kill(-(pid as libc::pid_t), libc::SIGHUP);
+                libc::kill(pid as libc::pid_t, libc::SIGHUP);
+            }
+        }
     }
 
     /// Current grid size in cells.

@@ -4,7 +4,35 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
-## Last Session: 2026-09-01 (T03-004 — shell integration & CWD tracking)
+## Last Session: 2026-09-01 (T03-005 — local PTY sessions & multi-tab terminal)
+
+### What Was Done
+- **T03-005 ✅ Done.** Multi-session registry + lifecycle for local PTY terminals, ported from `reference-src/src-tauri/src/modules/pty/{mod.rs,session.rs}` (the `PtyState` HashMap + `pty_open`/`pty_close`/`pty_has_foreground_job`).
+  - **`crates/terminal/src/registry.rs`** (new) — `TerminalRegistry`: `RwLock<HashMap<SessionId, Arc<Slot>>>` + `AtomicU64` id counter (starts at 1, never reused). `SessionId = u64`. API: `create(colors, dims, options) -> SessionId`, `handle(id) -> Option<SessionHandle>`, `ids()`, `len()`/`is_empty()`, `close(id)` (SIGHUP then drop → SIGKILL+join in `Drop`, returns promptly even with a wedged foreground job), `close_all()`.
+  - **`SessionHandle`** — cheap `Clone` (`Arc<Slot>` + id). `write`/`resize`/`set_colors`/`with(|&TerminalSession|…)`/`drain_events`/`status`/`has_foreground_job`/`restart(dims)`. `drain_events` folds `Exit`/`ChildExit` into `SessionStatus::{Running, Exited(i32)}` as a side effect, so the existing UI poll loop gets shell-exit tracking for free. `restart` respawns in place with the stored `SessionOptions` + latest palette, same `SessionId` (→ same tab); errors if still running.
+  - **`Slot`** — `Mutex<TerminalSession>` (Mutex only so `restart` can swap the whole value; hot path is `&self` on the inner session, no contention) + `Mutex<TerminalColors>` + `SessionOptions` + `Mutex<SessionStatus>`.
+  - **`crates/terminal/src/session.rs`** — `SessionOptions.startup_command: Option<String>` (written to the PTY as input right after spawn, shell stays interactive — PTY buffers it until the shell reads, so ordering vs. shell-init is safe). New `TerminalSession::has_foreground_job()` (`#[cfg(unix)]`: `master.process_group_leader()` != `shell_pid`; `false` elsewhere) and `terminate()` (SIGHUP to `-pid` process group + `pid`; hard kill + join stays in `Drop`, so `drop` right after `terminate` can't hang).
+  - **`crates/terminal/src/lib.rs`** — `pub mod registry` + re-export `SessionHandle, SessionId, SessionStatus, TerminalRegistry`.
+  - **Deps:** added `libc = "0.2"` (workspace) + `[target.'cfg(unix)'.dependencies] libc` on `labonair-terminal` for SIGHUP. `portable_pty` already pulls libc transitively but doesn't re-export it.
+  - **Tab-system seam (Phase 3)** documented in the `registry.rs` module doc: tab system holds `Arc<TerminalRegistry>` + a `SessionId` per local-terminal tab; calls `create` on open (inheriting cwd from the previous tab's `SessionMetadata::cwd`), `handle` for the visible tab's I/O, `status`/`has_foreground_job` for the "shell exited — click to restart" screen + close-confirm prompt, `restart` on click, `close` on tab close. Registry never pauses a session — visibility is purely UI.
+  - 5 new registry tests: multiple independent sessions (output isolation), startup command runs, clean close with a live `sleep 300` foreground job (< 3s), background session keeps progressing while only another tab is polled, restart-in-place after `exit 7` (+ restart-on-running errors).
+- **Verified:** `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`, `cargo build --bin labonair` — all green. Counts: 122 backend, 1 app_state, 22 theme, 15 ui, **62 terminal (+5)**. Not yet wired into the UI (`crates/ui/terminal.rs` still spawns a single `TerminalSession` directly — that migration is Phase 3 / T04-001). Not visually run.
+
+### Current State
+- Branch `master`, ~15 unpushed commits + this one. `crates/terminal` now owns the multi-session registry; UI still single-session until Phase 3.
+- Pre-existing uncommitted `CLAUDE.md` edit (not ours) — left untouched & excluded from this commit, flag to user.
+- `reference-src/` untouched.
+
+### What's Next
+- **T04-001** `tasks/phase-03-tabs-workspace/T04-001-*` — Tab-Leiste & Tab-Verwaltung. This is where the registry gets wired into the UI (replace the direct `TerminalSession` in `crates/ui/src/terminal.rs`).
+- **T02-006** (terminal background images) also still unblocked.
+
+### Blockers
+- None.
+
+---
+
+## Session: 2026-09-01 (T03-004 — shell integration & CWD tracking)
 
 ### What Was Done
 - **T03-004 ✅ Done.** OSC 7 + OSC 133 shell integration and session metadata tracking, ported from `reference-src` (`src-tauri/src/modules/pty/{shell_init.rs,scripts/*}` + `src/modules/terminal/lib/osc-handlers.ts`).

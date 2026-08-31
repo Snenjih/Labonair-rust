@@ -9,3 +9,6 @@ labonair-theme = { path = "../theme" }
 alacritty_terminal = { workspace = true }
 portable-pty = { workspace = true }
 tokio = { workspace = true }
+
+[target.'cfg(unix)'.dependencies]
+libc = { workspace = true }

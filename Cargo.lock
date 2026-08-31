@@ -3935,6 +3935,7 @@ dependencies = [
  "alacritty_terminal",
  "gpui",
  "labonair-theme",
+ "libc",
  "portable-pty",
  "tokio",
 ]

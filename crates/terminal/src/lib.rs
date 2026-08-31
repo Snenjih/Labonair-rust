@@ -3,6 +3,7 @@
 //! * [`palette`] — theme → engine color bridge (T02-004).
 //! * [`engine`] — render-free VTE emulation core (T03-001).
 //! * [`session`] — local PTY-backed terminal sessions (T03-001).
+//! * [`registry`] — multi-session registry + tab-system seam (T03-005).
 //! * [`input`] — keyboard/mouse → terminal byte-sequence mapping (T03-003).
 //! * [`shell_integration`] — OSC 7 / OSC 133 shell-integration rc-file bootstrap
 //!   + CWD / title / prompt-state tracking (T03-004).
@@ -13,6 +14,7 @@
 pub mod engine;
 pub mod input;
 pub mod palette;
+pub mod registry;
 pub mod render;
 pub mod session;
 pub mod shell_integration;
@@ -28,6 +30,7 @@ pub use input::{
     MouseEventKind, MouseInput, NamedKey, WheelAction, WheelInput,
 };
 pub use palette::{ansi_self_test, TerminalColors};
+pub use registry::{SessionHandle, SessionId, SessionStatus, TerminalRegistry};
 pub use render::{batch_runs, grid_size, RunStyle, StyledRun};
 pub use session::{SessionOptions, TerminalContext, TerminalSession};
 pub use shell_integration::Shell;

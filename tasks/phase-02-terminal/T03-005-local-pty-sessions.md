@@ -1,7 +1,7 @@
 # T03-005: Lokale PTY-Sessions und Multi-Tab-Terminal
 
 ## Status
-⏳ Pending
+✅ Done
 
 ## Phase
 2 — Terminal-Engine
