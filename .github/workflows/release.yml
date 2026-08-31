@@ -81,7 +81,7 @@ jobs:
         if: matrix.rust-target != ''
         run: rustup target add ${{ matrix.rust-target }}
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
 
       - uses: actions/setup-node@v4
         with:
