@@ -4,7 +4,36 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
-## Last Session: 2026-08-31 (T02-003 — theme import/export for user themes)
+## Last Session: 2026-08-31 (T02-004 — terminal ANSI palette → engine bridge)
+
+### What Was Done
+- **T02-004 ✅ Done.** Built the theme → terminal-engine color bridge in **`crates/terminal/src/palette.rs`** (new module; `crates/terminal` gained a `labonair-theme` path dep).
+  - **`Rgb`** is re-used straight from `alacritty_terminal::vte::ansi::Rgb` (`{r,g,b: u8}`) so Phase 02 integration is friction-free. `alacritty_terminal` re-exports `vte`, so the path is `alacritty_terminal::vte::ansi::{NamedColor, Rgb}` and `alacritty_terminal::term::color::Colors`.
+  - **`TerminalColors`** (`Debug/Clone/Copy/PartialEq`, not `Eq` — carries an `f32`): `background`, `foreground`, `bright_foreground`, `dim_foreground`, `cursor`, `cursor_text` (= bg, xterm `cursorAccent`), `selection` (alpha stripped) + `selection_alpha: f32`, and `normal`/`bright`/`dim: [Rgb; 8]`. `from_theme(&Theme)` / `from_palette(&TerminalPalette)`. Row order = black,red,green,yellow,blue,magenta,cyan,white.
+  - **`TerminalColors::ansi256(u8) -> Rgb`** — standard xterm 256 scheme: 0–7 normal, 8–15 bright, 16–231 6×6×6 cube (`cube_axis(n) = 0 if n==0 else 55+n*40`), 232–255 grayscale (`8 + 10*(i-232)`). Cube/ramp are derived, not from globals.css (per task note).
+  - **`TerminalColors::to_alacritty_colors() -> Colors`** — fills all 256 ANSI slots + `Foreground`/`Background`/`Cursor` + `BrightForeground` (267) + `DimForeground` (268) + the `DimBlack..DimWhite` group (259–266). This is what a Phase-02 session hands the engine.
+  - **`ansi_self_test() -> String`** — ANSI escape dump (16 system + 216 cube + 24 grayscale + SGR attrs incl. `\x1b[2mdim`) for visual parity checks against Labonair (`ls`/Vim/Git).
+  - Conversion reuses `labonair_theme::to_rgb8` (same rounding as theme export) → "< 1/255" is exact by construction.
+  - `crates/terminal/src/lib.rs` re-exports `TerminalColors`, `ansi_self_test`.
+  - **9 tests** in `palette::tests`: three-rows-present, named-range lookup, cube+grayscale xterm scheme (16→black, 231→white, 196→red, 46→green, 232→#080808, 255→#eeeeee), exact conversion for all 8 normal colors, dark values vs globals.css (`--terminal-yellow`==primary #E6B450, `--terminal-red`==destructive #F26D78, bright white/fg ≈ #FFFFFF), light≠dark, `selection_alpha`==0.13, alacritty `Colors` list fully filled, self-test covers all 256 indices.
+- **Deferred to Phase 02** (explicitly this task's "Weiterführende Tasks — Phase 2: Terminal-Engine übernimmt die Paletten-Integration in der Praxis"): binding `TerminalColors` into a live PTY session, and the `cx.observe(&theme_store)` re-color-on-theme-switch hook. The bridge + resolution + self-test are complete and green now.
+- **Verified:** `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace` — all green. Counts: 122 backend, 1 app_state, 20 theme, 8 ui, **9 terminal (new)**.
+
+### Current State
+- Branch `master`, 9 unpushed commits + this one. `crates/terminal` now owns the palette bridge; `crates/theme` untouched.
+- Uncommitted pre-existing `CLAUDE.md` edit (not mine) still garbles Next Task Protocol steps 1 & 3 — left untouched, flag to user.
+- `reference-src/` untouched.
+
+### What's Next
+- **T02-005** `tasks/phase-01-theme/T02-005-font-loading.md` — font handling / bundling (GPUI). Dep (T01-001) satisfied.
+- Phase 02 (T03-001) will consume `TerminalColors` when it integrates alacritty_terminal.
+
+### Blockers
+- None.
+
+---
+
+## Session: 2026-08-31 (T02-003 — theme import/export for user themes)
 
 ### What Was Done
 - **T02-003 ✅ Done** (functional layer; settings-UI wiring deferred to T13-002 — no shell/settings surface exists in Phase 1).

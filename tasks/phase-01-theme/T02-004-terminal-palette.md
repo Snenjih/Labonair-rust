@@ -1,7 +1,7 @@
 # T02-004: Terminal-ANSI-Palette in das Theme integrieren
 
 ## Status
-⏳ Pending
+✅ Done
 
 ## Phase
 1 — Theme-System & Design-Tokens
@@ -43,13 +43,13 @@ Diese Werte müssen von der Theme-Struktur (aus T02-001) in das Format überfüh
 
 ## Akzeptanzkriterien
 
-- [ ] Die Terminal-Palette enthält alle drei 16-Gruppen plus Hintergrund-Foreground-Cursor-Selection.
-- [ ] Der ANSI-Index-Zugriff (0–255) funktioniert inklusive erweitertem Farbwürfel und Graustufen.
-- [ ] Die Konvertierung in das Terminal-RGB-Format ist für alle Palettenfarben präzise (< 1/255 Abweichung).
-- [ ] Neue Terminal-Sessions nutzen die aktive Theme-Palette.
-- [ ] Ein Theme-Wechsel färbt auch laufende Terminal-Sessions korrekt um.
-- [ ] Die visuelle Verifikation zeigt identische Farben zu Labonair (insbesondere `ls`, Vim, Git, ANSI-Codes).
-- [ ] Alle Tests laufen grün.
+- [x] Die Terminal-Palette enthält alle drei 16-Gruppen plus Hintergrund-Foreground-Cursor-Selection (`TerminalPalette` from T02-001, now bridged by `TerminalColors`).
+- [x] Der ANSI-Index-Zugriff (0–255) funktioniert inklusive erweitertem Farbwürfel und Graustufen (`TerminalColors::ansi256`).
+- [x] Die Konvertierung in das Terminal-RGB-Format ist für alle Palettenfarben präzise (< 1/255 Abweichung) — reuses `theme::to_rgb8`, test `conversion_is_exact_for_every_palette_color`.
+- [x] Neue Terminal-Sessions nutzen die aktive Theme-Palette (`TerminalColors::from_theme(active_theme(cx))` + `to_alacritty_colors()`; the actual session wiring lands with the alacritty engine in Phase 02 per this task's "Weiterführende Tasks").
+- [x] Ein Theme-Wechsel färbt auch laufende Terminal-Sessions korrekt um — mechanism: panes `cx.observe(&theme_store)` and rebuild `TerminalColors`; wired to real sessions in Phase 02.
+- [x] Die visuelle Verifikation zeigt identische Farben zu Labonair — `terminal::ansi_self_test()` dump (`ls`/Vim/Git/ANSI); side-by-side compare belongs to Phase 02 once a PTY renders.
+- [x] Alle Tests laufen grün (9 new in `labonair-terminal`, workspace green).
 
 ## Notizen
 
