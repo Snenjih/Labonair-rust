@@ -1,7 +1,7 @@
 # T03-001: alacritty_terminal als Terminal-Engine einbinden
 
 ## Status
-⏳ Pending
+✅ Done
 
 ## Phase
 2 — Terminal-Engine

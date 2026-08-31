@@ -4,7 +4,38 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
-## Last Session: 2026-08-31 (T02-005 — font handling & bundling)
+## Last Session: 2026-08-31 (T03-001 — alacritty_terminal engine integration)
+
+### Task selection note
+- **T02-006** (terminal background images) was the next roadmap task, but its `## Abhängigkeiten` list `T02-002 (Theme-Store), Phase 2 (Terminal-Renderer — für die tatsächliche Darstellung)` and two of its acceptance criteria require a live terminal element to render into. Phase 02 did not exist. Per the session directive, **T02-006 was left untouched** (still `⏳ Pending`) and **T03-001** was done instead. Return to T02-006 after the Phase 02 renderer (T03-002) lands.
+
+### What Was Done
+- **T03-001 ✅ Done.** `crates/terminal` now embeds `alacritty_terminal` 0.24.2 as the emulation core — render-free logic only, no GPUI.
+  - **`crates/terminal/src/engine.rs`** (new) — `TerminalEmulator`: wraps `alacritty_terminal::Term<EventProxy>` + `vte::ansi::Processor` (fed byte-by-byte; vte 0.13.1 `advance(&mut handler, u8)`). `feed(&[u8]) -> Vec<TerminalEvent>` runs the parser and returns a trailing `Wakeup` (Term never emits Wakeup itself — that was Alacritty's event-loop's job) plus any `Cwd` recovered by an OSC-7 sniffer that scans the raw stream *before* the parser (`alacritty_terminal` 0.24 ignores OSC 7; OSC 133 is deferred to T03-004). `render() -> RenderableScreen` walks `term.renderable_content().display_iter` and resolves every `vte::ansi::Color` (Named/Indexed/Spec, incl. DIM group + INVERSE swap) to a concrete `Rgb` via `TerminalColors` (T02-004) — never an Alacritty default. `TermDimensions` implements `alacritty_terminal::grid::Dimensions` (own type, not the crate's `term::test::TermSize`). `resize()`, `scroll(Scroll)`, `is_alt_screen()` (TermMode::ALT_SCREEN), `history_len()`, `set_colors()`, `take_pty_output()` (drains DA/DSR replies the `EventProxy` buffers). Config: `scrolling_history = 10_000`.
+  - **`EventProxy`** impl `alacritty_terminal::event::EventListener` — maps `Event::{Wakeup,Title,ResetTitle,Bell,Exit,ChildExit,MouseCursorDirty}` onto a `std::sync::mpsc::Sender<TerminalEvent>`; `PtyWrite` bytes are appended to a shared `Arc<Mutex<Vec<u8>>>` (drained by the session's I/O thread, not sent to the UI). Clipboard/Color/CursorBlink/TextAreaSize events dropped. `Clone + Send` so `Term` can move to the reader thread.
+  - **`crates/terminal/src/session.rs`** (new) — `TerminalSession::spawn(colors, dims, SessionOptions)`: opens a PTY via `portable-pty` `native_pty_system()`, `CommandBuilder` (default shell = `$SHELL` → `/bin/zsh`; env `TERM=xterm-256color`, `COLORTERM=truecolor`, `TERM_PROGRAM=Labonair`, `LABONAIR_TERMINAL=1` — mirrors `reference-src/.../pty/shell_init.rs`). A dedicated `labonair-pty-reader` OS thread does blocking `reader.read()`, locks the emulator, `feed()`s, writes back any `take_pty_output()` replies, forwards events over the channel; on EOF sends `TerminalEvent::Exit`. UI-facing API: `write()`, `resize(&mut)` (both PTY + grid), `scroll()`, `set_colors()`, `render()`, `with_emulator()`, `drain_events()`, `recv_event_timeout()`, `shell_pid()`. `Drop` kills the child and joins the thread.
+  - **`crates/terminal/examples/headless_dump.rs`** (new) — spawns a real shell, runs a colored `printf`, prints the grid to stdout with no GUI. Verified manually: prompt + `GREETING from alacritty_terminal` render correctly.
+  - **`crates/terminal/src/lib.rs`** re-exports `engine::*`, `session::*`, and `alacritty_terminal::grid::Scroll`.
+- **No new deps** — `alacritty_terminal`, `portable-pty`, `tokio` were already in `crates/terminal/Cargo.toml`; `labonair-theme` path dep already present (T02-004). `alacritty_terminal`'s own `tty`/`event_loop` modules are **not** used — PTY I/O is portable-pty + our thread (per the architecture doc + task note).
+- **Tests:** 23 in `crates/terminal` (was 9). `engine::tests` (11): plain-text, SGR color→theme palette, cursor-move CSI, Wakeup on output, OSC 0 title event, OSC 7 cwd, resize, scrollback accumulate/scroll (`Scroll::Top`/`Bottom`), alt-screen `?1049h/l`, INVERSE fg/bg swap. `session::tests` (4, spawn real `/bin/sh`): runs a command & reads it back, ANSI color from shell output resolves to theme green, `stty size` reflects a resize, `exit` produces an Exit/ChildExit event.
+- **GPUI API used:** none (this task is renderer-free).
+- **alacritty_terminal 0.24.2 API (verified in `~/.cargo/registry/src/.../alacritty_terminal-0.24.2/src`):** `Term::new<D: Dimensions>(Config, &D, T)`, `Term::resize<S: Dimensions>(S)`, `term.renderable_content() -> RenderableContent { display_iter: GridIterator<Indexed<&Cell>>, display_offset, cursor: RenderableCursor { point: Point<Line,Column>, shape }, colors, mode }`, `term.grid().history_size()`, `term.scroll_display(Scroll)`, `term.mode().contains(TermMode::ALT_SCREEN)`. `Cell { c, fg, bg, flags: Flags }`; `Flags::{BOLD,ITALIC,DIM,INVERSE,STRIKEOUT,HIDDEN,ALL_UNDERLINES,WIDE_CHAR_SPACER,LEADING_WIDE_CHAR_SPACER}`. `event::{Event, EventListener, WindowSize}`. VTE parser = `alacritty_terminal::vte::ansi::Processor` (vte **0.13.1**, `advance(&mut H: Handler, byte: u8)` — single byte, not a slice). `NamedColor` discriminants: system 0–15 contiguous, `Foreground=256`, then Background/Cursor/Dim*/Bright*/Dim* — `named as usize` arithmetic is safe for the Bright/Dim ranges.
+
+### Current State
+- Branch `master`, 11 unpushed commits + this one. `crates/terminal` owns the emulation core + PTY sessions; nothing renders it yet.
+- Pre-existing uncommitted `CLAUDE.md` edit (not mine) still garbles Next Task Protocol steps 1 & 3 — left untouched & excluded from the commit, flag to user.
+- `reference-src/` untouched.
+
+### What's Next
+- **T03-002** `tasks/phase-02-terminal/T03-002-gpui-terminal-renderer.md` — GPUI cell renderer consuming `engine::RenderableScreen`. Deps: T03-001 (done) + T02-004 (done).
+- **T02-006** (terminal background images) is still pending and now only blocked on the renderer element from T03-002.
+
+### Blockers
+- None.
+
+---
+
+## Session: 2026-08-31 (T02-005 — font handling & bundling)
 
 ### What Was Done
 - **T02-005 ✅ Done.** Bundled the reference app's font families natively and wired them into GPUI's text system.
