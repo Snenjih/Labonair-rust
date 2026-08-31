@@ -171,6 +171,14 @@ pub struct RenderableCursor {
     pub shape: CursorShape,
 }
 
+/// A horizontal stretch of selected cells on one visible row (end exclusive).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SelectionSpan {
+    pub line: usize,
+    pub start_col: usize,
+    pub end_col: usize,
+}
+
 /// An immutable snapshot of the visible terminal, produced by
 /// [`TerminalEmulator::render`] and consumed by the renderer.
 #[derive(Debug, Clone, PartialEq)]
@@ -181,6 +189,9 @@ pub struct RenderableScreen {
     pub display_offset: usize,
     pub cursor: RenderableCursor,
     pub cells: Vec<RenderableCell>,
+    /// Highlighted selection, split per visible row (empty when nothing is
+    /// selected or the selection lies entirely in hidden scrollback).
+    pub selection: Vec<SelectionSpan>,
 }
 
 impl RenderableScreen {
@@ -413,6 +424,26 @@ impl TerminalEmulator {
         self.term.scroll_display(scroll);
     }
 
+    /// Set a simple (linewise-free) text selection between two grid points,
+    /// given as `(line, column)` where `line` is relative to the visible top
+    /// (negative = scrollback). Used by the mouse mapping (T03-003); exposed
+    /// here so the renderer can already draw selections.
+    pub fn set_selection(&mut self, start: (i32, usize), end: (i32, usize)) {
+        use alacritty_terminal::index::{Column, Line, Point as GridIndex, Side};
+        use alacritty_terminal::selection::{Selection, SelectionType};
+
+        let anchor = GridIndex::new(Line(start.0), Column(start.1));
+        let head = GridIndex::new(Line(end.0), Column(end.1));
+        let mut selection = Selection::new(SelectionType::Simple, anchor, Side::Left);
+        selection.update(head, Side::Right);
+        self.term.selection = Some(selection);
+    }
+
+    /// Clear any active selection.
+    pub fn clear_selection(&mut self) {
+        self.term.selection = None;
+    }
+
     /// `true` while a full-screen application (vim, less, …) holds the alternate
     /// screen.
     pub fn is_alt_screen(&self) -> bool {
@@ -431,6 +462,7 @@ impl TerminalEmulator {
     pub fn render(&self) -> RenderableScreen {
         let content = self.term.renderable_content();
         let display_offset = content.display_offset;
+        let selection_range = content.selection;
         let cursor = RenderableCursor {
             line: content.cursor.point.line.0,
             column: content.cursor.point.column.0,
@@ -474,12 +506,49 @@ impl TerminalEmulator {
             });
         }
 
+        let mut selection = Vec::new();
+        if let Some(range) = selection_range {
+            let columns = self.dimensions.columns;
+            let (start_line, end_line) = (range.start.line.0, range.end.line.0);
+            for line in 0..self.dimensions.screen_lines {
+                let l = line as i32;
+                if l < start_line || l > end_line {
+                    continue;
+                }
+                let (mut start_col, mut end_col) = if range.is_block {
+                    (range.start.column.0, range.end.column.0 + 1)
+                } else {
+                    let s = if l == start_line {
+                        range.start.column.0
+                    } else {
+                        0
+                    };
+                    let e = if l == end_line {
+                        range.end.column.0 + 1
+                    } else {
+                        columns
+                    };
+                    (s, e)
+                };
+                start_col = start_col.min(columns);
+                end_col = end_col.min(columns);
+                if end_col > start_col {
+                    selection.push(SelectionSpan {
+                        line,
+                        start_col,
+                        end_col,
+                    });
+                }
+            }
+        }
+
         RenderableScreen {
             columns: self.dimensions.columns,
             screen_lines: self.dimensions.screen_lines,
             display_offset,
             cursor,
             cells,
+            selection,
         }
     }
 }
@@ -590,6 +659,30 @@ mod tests {
         assert!(term.is_alt_screen());
         term.feed(b"\x1b[?1049l");
         assert!(!term.is_alt_screen());
+    }
+
+    #[test]
+    fn selection_is_split_into_per_row_spans() {
+        let (mut term, _rx) = emulator(20, 5);
+        term.feed(b"line one\r\nline two\r\nline three");
+        // Select from row 0 col 2 to row 2 col 4.
+        term.set_selection((0, 2), (2, 4));
+        let screen = term.render();
+        let rows: Vec<_> = screen.selection.iter().map(|s| s.line).collect();
+        assert_eq!(rows, vec![0, 1, 2]);
+        assert_eq!(screen.selection[0].start_col, 2);
+        assert_eq!(
+            screen.selection[1],
+            SelectionSpan {
+                line: 1,
+                start_col: 0,
+                end_col: 20
+            }
+        );
+        assert_eq!(screen.selection[2].end_col, 5);
+
+        term.clear_selection();
+        assert!(term.render().selection.is_empty());
     }
 
     #[test]

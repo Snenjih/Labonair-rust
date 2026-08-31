@@ -1,7 +1,7 @@
 # T03-002: GPUI-Terminal-Renderer für Zellen bauen
 
 ## Status
-⏳ Pending
+✅ Done
 
 ## Phase
 2 — Terminal-Engine

@@ -3,75 +3,30 @@ use gpui::{
     WindowOptions,
 };
 use labonair_backend::{App as Backend, AppEvent};
-use labonair_ui::ThemeStore;
+use labonair_ui::{TerminalView, ThemeStore};
 use tokio::sync::broadcast::error::RecvError;
 use tracing_subscriber::EnvFilter;
 
-/// Root view of the Labonair window. Replaced by the real app shell in Phase 03 (T04-003).
+/// Root view of the Labonair window. Currently hosts a single interactive
+/// terminal; the real tabbed app shell arrives in Phase 03 (T04-003).
 struct Root {
     theme: Entity<ThemeStore>,
+    terminal: Entity<TerminalView>,
 }
 
 impl Root {
-    fn new(theme: Entity<ThemeStore>, cx: &mut Context<Self>) -> Self {
-        // Re-render whenever the active theme changes.
+    fn new(theme: Entity<ThemeStore>, window: &mut Window, cx: &mut Context<Self>) -> Self {
         cx.observe(&theme, |_, _, cx| cx.notify()).detach();
-        Self { theme }
+        let terminal = cx.new(|cx| TerminalView::new(theme.clone(), window, cx));
+        Self { theme, terminal }
     }
 }
 
 impl Render for Root {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let theme = self.theme.read(cx);
-        let core = &theme.theme().core;
-        let ui_font = theme.ui_font();
-        let terminal_font = theme.terminal_font();
-        let mode = if theme.theme().is_dark {
-            "dark"
-        } else {
-            "light"
-        };
-
-        div()
-            .size_full()
-            .bg(core.background)
-            .text_color(core.foreground)
-            .font(ui_font)
-            .p_4()
-            .flex()
-            .flex_col()
-            .gap_3()
-            .child(format!("Labonair-rust — theme: {mode}"))
-            .child(
-                div()
-                    .font(terminal_font)
-                    .text_color(core.muted_foreground)
-                    .child("mono + ligatures: -> => != >= <= === |> ::"),
-            )
-            .child(
-                div()
-                    .flex()
-                    .gap_2()
-                    .child(swatch(core.primary))
-                    .child(swatch(core.accent))
-                    .child(swatch(core.muted))
-                    .child(swatch(core.destructive))
-                    .child(swatch(core.border)),
-            )
-            .child(
-                div()
-                    .bg(core.card)
-                    .text_color(core.card_foreground)
-                    .border_1()
-                    .border_color(core.border)
-                    .p_3()
-                    .child("card surface"),
-            )
+        let bg = self.theme.read(cx).background();
+        div().size_full().bg(bg).child(self.terminal.clone())
     }
-}
-
-fn swatch(color: gpui::Hsla) -> impl IntoElement {
-    div().size(px(40.0)).bg(color)
 }
 
 /// `tracing` logging: default-off for noisy deps, `debug` for our crates, all
@@ -147,7 +102,7 @@ fn main() {
                         }
                     })
                     .detach();
-                cx.new(|cx| Root::new(theme, cx))
+                cx.new(|cx| Root::new(theme, window, cx))
             },
         )
         .expect("failed to open window");

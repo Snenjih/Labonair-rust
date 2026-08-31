@@ -4,7 +4,48 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
-## Last Session: 2026-08-31 (T03-001 — alacritty_terminal engine integration)
+## Last Session: 2026-09-01 (T03-002 — GPUI terminal cell renderer)
+
+### What Was Done
+- **T03-002 ✅ Done.** The terminal is now a visible, interactive GPUI surface.
+  - **`crates/terminal/src/render.rs`** (new, no GPUI) — pure prep helpers:
+    - `batch_runs(&RenderableScreen) -> Vec<StyledRun>`: collapses the per-cell grid into per-row runs of identical `RunStyle` (fg/bg/bold/italic/underline/strikeout/hidden) on contiguous columns; a column gap always breaks a run so each run is positioned by `start_col` alone. Trailing blank cells share the default style and stay in one run (correct terminal behavior).
+    - `grid_size(w_px, h_px, cell_w, cell_h) -> (cols, rows)`: floor division, min 1×1.
+    - `RunStyle`, `StyledRun { line, start_col, text, style }` (+ `width()`).
+    - 4 unit tests (run merge, style-change split w/ palette colors, bold breaks run, grid math).
+  - **`crates/terminal/src/engine.rs`** — `RenderableScreen` gained `selection: Vec<SelectionSpan>` (per-visible-row spans, end-exclusive), populated in `render()` from `term.renderable_content().selection` (alacritty already resolves the `SelectionRange`; handles block vs linewise, clamps to `columns`). New `TerminalEmulator::set_selection((i32,usize),(i32,usize))` / `clear_selection()` (uses `alacritty_terminal::selection::{Selection,SelectionType}` + `index::Side`) — the mouse task (T03-003) will drive these; exposed now so the renderer can already draw selections. +1 engine test.
+  - **`crates/terminal/src/lib.rs`** — re-exports `render::*`, `SelectionSpan`, and `alacritty_terminal::vte::ansi::{CursorShape, Rgb}`.
+  - **`crates/ui/src/terminal.rs`** (new) — `TerminalView`, a GPUI entity (`Render` + `Focusable`):
+    - `new(theme, window, cx)` spawns a local `TerminalSession` (80×24), focuses itself, `cx.observe`s the `ThemeStore` to re-color the running shell + repaint, and starts a poll `Task` (`cx.spawn` async closure + `cx.background_executor().timer(16ms)`) that drains `session.drain_events()` and only `cx.notify()`s when there were events; the loop stops on `Exit`/`ChildExit` or when the entity is dropped. Spawn failure is stored as `Err(String)` and rendered as a message instead of crashing.
+    - `render()` derives cell metrics from the theme: `cell_w = text_system().ch_advance(resolve_font(terminal_font), font_size)`, `cell_h = ceil(font_size * terminal_line_height)`. Fits the grid to `window.viewport_size()` via `grid_size` and calls `session.resize(TermDimensions{..})` only when `(cols,rows)` changed. Paints a `relative` `size_full` container (bg = theme `terminal.background`) with: one absolutely-positioned `div` per `StyledRun` (`.left/.top` from `start_col*cell_w` / `line*cell_h`, `.w(run_width*cell_w)`, `.h(cell_h)`, `.bg(run.style.bg)`, `.text_color`, `.text_size(font_size)`, `.line_height(cell_h)`, `.whitespace_nowrap()`, bold→cloned `Font` with `weight = BOLD`, italic/underline/line_through toggles, hidden→fg=bg); selection spans as translucent overlays (`terminal.selection` @ `selection_alpha`); and a cursor overlay honoring `CursorShape` (Block/HollowBlock = 55%-alpha fill so the glyph shows through, Beam = 2px, Underline = 2px at cell bottom, Hidden/scrolled-out = none).
+    - Input: `.on_scroll_wheel` → `Scroll::Delta(lines)` (`ScrollDelta::Lines` used directly, `Pixels` divided by `cell_h`); `.on_key_down` → `keystroke_to_bytes()` then `session.write()` + `Scroll::Bottom` snap; `.on_mouse_down(Left)` refocuses. `keystroke_to_bytes` is the minimal map (ctrl+letter→control byte, named keys enter/tab/backspace/arrows/home/end/delete→sequences, `key_char` passthrough, alt→ESC prefix). Full mapping is T03-003.
+    - 4 plain `#[test]`s (ctrl-C, named keys, printable+alt, `to_hsla` black/white).
+  - **`crates/ui/Cargo.toml`** — added `labonair-terminal` path dep (no cycle: terminal only deps theme). `crates/ui/src/lib.rs` re-exports `TerminalView`.
+  - **`crates/app/src/main.rs`** — `Root` now holds `Entity<TerminalView>` (created with `window` in `Root::new`) and renders it full-window over the theme background; dropped the T02 swatch/sample demo. `Root::new` signature gained `&mut Window`.
+- **GPUI API used (gpui 0.2.2, verified in source):** `App::text_system() -> &Arc<TextSystem>`; `TextSystem::{resolve_font(&Font)->FontId, ch_advance(FontId,Pixels)->Result<Pixels>}`; `f32::from(Pixels)` (the `.0` field is private in 0.2.2 — use the `From` impls); `Window::{viewport_size()->Size<Pixels>, focus(&FocusHandle)}`; `App::focus_handle()`; `Context::spawn(async move |WeakEntity<T>, &mut AsyncApp| ...)` (stable async closures) + `AsyncApp::background_executor()` + `BackgroundExecutor::timer(Duration)`; `WeakEntity::update(cx, |&mut T, &mut Context<T>|) -> Result<R>`; `div().id(_)` → `Stateful<Div>`, so a `Render` fn mixing an early `Div` return with a final `Stateful<Div>` must unify via `.into_any_element()` (keep the signature `-> impl IntoElement`, NOT `-> AnyElement`, or clippy's `refining_impl_trait` fires); `InteractiveElement::{track_focus, key_context, on_key_down, on_scroll_wheel, on_mouse_down}`; `Styled::{absolute, relative, whitespace_nowrap, italic, underline, line_through, line_height, text_size, font}`; `ScrollDelta::{Lines(Point<f32>), Pixels(Point<Pixels>)}`; `gpui::Rgba{r,g,b,a: f32}.into() -> Hsla`.
+- **Verified:** `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`, `cargo build --bin labonair` — all green. Test counts: 122 backend, 1 app_state, 22 theme, **13 ui (+4)**, **28 terminal (+5)**. Not yet visually run — user should `cargo run` and confirm a live shell renders, is typable, scrolls, and resizes with the window.
+
+### Current State
+- Branch `master`, 12 unpushed commits + this one. `crates/ui` owns the GPUI terminal element; `crates/terminal` owns batching + selection snapshot. App root shows one interactive terminal.
+- Pre-existing uncommitted `CLAUDE.md` edit (not ours) still garbles Next Task Protocol steps 1 & 3 — left untouched & excluded from this commit, flag to user.
+- `reference-src/` untouched.
+
+### Known limitations (for next tasks, not blockers)
+- Resize is driven by `window.viewport_size()` (terminal assumed full-window). Once the app shell / tabs exist (Phase 03) the view must measure its own element bounds instead.
+- The renderer repaints the whole grid on any wakeup (no per-region damage tracking). Fine at 80×24–ish; revisit under T15-003 if scrolling large output stutters.
+- Selection can be *drawn* but nothing *creates* one yet — `set_selection` is wired for T03-003 (mouse drag-select).
+- Wide/CJK cells: the engine already drops `WIDE_CHAR_SPACER` cells; the wide glyph occupies one run cell but is positioned for a single column (double-width advance handled by GPUI text shaping, not by the cell grid). Verify under T03-003/T15-001.
+
+### What's Next
+- **T03-003** `tasks/phase-02-terminal/T03-003-keyboard-mouse-mapping.md` — full keyboard + mouse mapping (modifiers, mouse reporting, drag selection, copy/paste, bracketed paste). Deps: T03-002 (done).
+- **T02-006** (terminal background images) is now unblocked (needed the renderer element).
+
+### Blockers
+- None.
+
+---
+
+## Session: 2026-08-31 (T03-001 — alacritty_terminal engine integration)
 
 ### Task selection note
 - **T02-006** (terminal background images) was the next roadmap task, but its `## Abhängigkeiten` list `T02-002 (Theme-Store), Phase 2 (Terminal-Renderer — für die tatsächliche Darstellung)` and two of its acceptance criteria require a live terminal element to render into. Phase 02 did not exist. Per the session directive, **T02-006 was left untouched** (still `⏳ Pending`) and **T03-001** was done instead. Return to T02-006 after the Phase 02 renderer (T03-002) lands.
