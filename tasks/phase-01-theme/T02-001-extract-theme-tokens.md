@@ -1,7 +1,7 @@
 # T02-001: Design-Tokens aus globals.css extrahieren
 
 ## Status
-⏳ Pending
+✅ Done
 
 ## Phase
 1 — Theme-System & Design-Tokens
