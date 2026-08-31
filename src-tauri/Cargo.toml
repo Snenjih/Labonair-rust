@@ -54,7 +54,7 @@ thiserror = "1"
 flate2 = "1"
 notify = "6"
 notify-debouncer-mini = "0.4"
-rmcp = { version = "2.2.0", features = ["server", "macros", "transport-streamable-http-server"] }
+rmcp = { version = "3.1.4", features = ["server", "macros", "transport-streamable-http-server"] }
 axum = "0.8"
 vte = "0.15"
 schemars = "1"
