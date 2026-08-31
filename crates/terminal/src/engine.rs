@@ -88,8 +88,18 @@ pub enum TerminalEvent {
     Title(String),
     /// Title reset to the default.
     ResetTitle,
-    /// Working directory reported via OSC 7 (`file://host/path`).
+    /// Working directory reported via OSC 7, percent-decoded to a plain path.
     Cwd(String),
+    /// OSC 133;A — the shell is about to draw a prompt.
+    PromptStart,
+    /// OSC 133;B — end of prompt; command-line input begins.
+    PromptEnd,
+    /// OSC 133;C — a foreground command started executing. Carries the literal
+    /// command text when the shell runs in block mode, otherwise `None`.
+    CommandStart(Option<String>),
+    /// OSC 133;D — the running command finished. Carries the exit code when the
+    /// shell reported one.
+    CommandFinished(Option<i32>),
     /// Terminal bell.
     Bell,
     /// The emulator requested a shutdown.
@@ -221,6 +231,46 @@ impl ModeState {
     }
 }
 
+/// Prompt/command lifecycle phase derived from the OSC 133 markers. The basis
+/// for block detection ("select just the last command") and for handing the AI
+/// live-context reader a clean prompt/command/output split.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum PromptPhase {
+    /// No marker seen yet, or a command just finished.
+    #[default]
+    Unknown,
+    /// OSC 133;A — the prompt is being drawn.
+    PromptStart,
+    /// OSC 133;B — accepting command-line input.
+    Prompt,
+    /// OSC 133;C — a command is executing.
+    Executing,
+}
+
+/// Shell-integration metadata for a session, updated as OSC 7 / OSC 133 /
+/// OSC 0/2 sequences arrive in the output stream (T03-004). Read via
+/// [`TerminalEmulator::metadata`] and surfaced to the UI (status bar / breadcrumb,
+/// inherited cwd for new tabs) and the AI live-context reader.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SessionMetadata {
+    /// Current working directory (OSC 7), percent-decoded. Seeded with the
+    /// spawn directory so it is populated before the first prompt.
+    pub cwd: Option<String>,
+    /// Process/window title (OSC 0/2). `None` after the shell resets it at the
+    /// next prompt.
+    pub title: Option<String>,
+    /// `true` between an OSC 133;C and the matching A/D — a foreground command
+    /// owns the tty. Gates untrusted OSC 7 emitted by command output.
+    pub in_command: bool,
+    /// Prompt/command lifecycle phase from the OSC 133 markers.
+    pub prompt_phase: PromptPhase,
+    /// Exit code of the last finished command (OSC 133;D), when reported.
+    pub last_exit_code: Option<i32>,
+    /// Literal text of the last executed command (OSC 133;C block mode), when
+    /// reported.
+    pub last_command: Option<String>,
+}
+
 /// An immutable snapshot of the visible terminal, produced by
 /// [`TerminalEmulator::render`] and consumed by the renderer.
 #[derive(Debug, Clone, PartialEq)]
@@ -318,19 +368,45 @@ fn resolve_color(color: AnsiColor, colors: &TerminalColors, dim: bool) -> Rgb {
     }
 }
 
-/// OSC 7 (working directory) sniffer that runs on the raw byte stream before it
-/// reaches the VTE parser — `alacritty_terminal` 0.24 ignores OSC 7, so the CWD
-/// event has to be recovered here. Full shell-integration (OSC 133) is T03-004.
+/// A shell-integration signal recovered from the raw output stream by
+/// [`OscSniffer`], before [`TerminalEmulator::feed`] folds it into
+/// [`SessionMetadata`] and (for most kinds) a [`TerminalEvent`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum OscUpdate {
+    /// OSC 7 — working directory (percent-decoded).
+    Cwd(String),
+    /// OSC 0/1/2 — process/window title (`None` = reset to default).
+    Title(Option<String>),
+    /// OSC 133;A.
+    PromptStart,
+    /// OSC 133;B.
+    PromptEnd,
+    /// OSC 133;C — optional literal command text (block mode).
+    CommandStart(Option<String>),
+    /// OSC 133;D — optional exit code.
+    CommandFinished(Option<i32>),
+}
+
+/// Sniffs OSC 7 (cwd), OSC 133 A/B/C/D (shell integration) and OSC 0/1/2
+/// (title) out of the raw byte stream *before* it reaches the VTE parser —
+/// `alacritty_terminal` 0.24 ignores OSC 7 and 133 entirely, and we want the
+/// title in the metadata too. The parser still consumes every OSC sequence, so
+/// none of this ever appears in the visible grid; this sniffer is purely a
+/// read-only tap (T03-001 for OSC 7, T03-004 for OSC 133 + title).
 #[derive(Default)]
 struct OscSniffer {
     /// Buffered bytes once we've seen `ESC ]`, until the terminator.
     buf: Vec<u8>,
     in_osc: bool,
     saw_esc: bool,
+    /// `true` while a foreground command owns the tty (between OSC 133;C and
+    /// the next A/D) — untrusted OSC 7 from command output is then ignored,
+    /// matching the reference `registerCwdHandler`.
+    in_command: bool,
 }
 
 impl OscSniffer {
-    fn feed(&mut self, bytes: &[u8], out: &mut Vec<TerminalEvent>) {
+    fn feed(&mut self, bytes: &[u8], out: &mut Vec<OscUpdate>) {
         for &b in bytes {
             if self.in_osc {
                 // Terminator: BEL (0x07) or ST (ESC \).
@@ -342,7 +418,7 @@ impl OscSniffer {
                 } else {
                     self.saw_esc = b == 0x1b;
                     self.buf.push(b);
-                    if self.buf.len() > 4096 {
+                    if self.buf.len() > 8192 {
                         self.reset();
                     }
                 }
@@ -358,20 +434,65 @@ impl OscSniffer {
         }
     }
 
-    fn finish(&mut self, out: &mut Vec<TerminalEvent>) {
+    fn finish(&mut self, out: &mut Vec<OscUpdate>) {
         let payload = std::mem::take(&mut self.buf);
         self.reset();
-        // OSC 7 ; file://host/path
-        if let Some(rest) = payload.strip_prefix(b"7;") {
-            if let Ok(s) = std::str::from_utf8(rest) {
-                let path = s
-                    .strip_prefix("file://")
-                    .and_then(|u| u.split_once('/').map(|(_, p)| format!("/{p}")))
-                    .unwrap_or_else(|| s.to_string());
-                if !path.is_empty() {
-                    out.push(TerminalEvent::Cwd(path));
+
+        let Some(sep) = payload.iter().position(|&b| b == b';') else {
+            return;
+        };
+        let (id, rest) = payload.split_at(sep);
+        let rest = &rest[1..]; // drop the ';'
+
+        match id {
+            b"0" | b"1" | b"2" => {
+                let title = std::str::from_utf8(rest).unwrap_or("").trim();
+                out.push(OscUpdate::Title(
+                    (!title.is_empty()).then(|| title.to_string()),
+                ));
+            }
+            b"7" => {
+                if self.in_command {
+                    return; // untrusted OSC 7 from command output
+                }
+                if let Ok(s) = std::str::from_utf8(rest) {
+                    if let Some(path) = parse_osc7(s) {
+                        if !path.is_empty() {
+                            out.push(OscUpdate::Cwd(path));
+                        }
+                    }
                 }
             }
+            b"133" => {
+                let (kind, arg) = match rest.iter().position(|&b| b == b';') {
+                    Some(p) => (&rest[..p], Some(&rest[p + 1..])),
+                    None => (rest, None),
+                };
+                match kind {
+                    b"A" => {
+                        self.in_command = false;
+                        out.push(OscUpdate::PromptStart);
+                    }
+                    b"B" => out.push(OscUpdate::PromptEnd),
+                    b"C" => {
+                        self.in_command = true;
+                        let text = arg
+                            .and_then(|a| std::str::from_utf8(a).ok())
+                            .filter(|s| !s.is_empty())
+                            .map(str::to_string);
+                        out.push(OscUpdate::CommandStart(text));
+                    }
+                    b"D" => {
+                        self.in_command = false;
+                        let code = arg
+                            .and_then(|a| std::str::from_utf8(a).ok())
+                            .and_then(|s| s.trim().parse::<i32>().ok());
+                        out.push(OscUpdate::CommandFinished(code));
+                    }
+                    _ => {}
+                }
+            }
+            _ => {}
         }
     }
 
@@ -379,6 +500,44 @@ impl OscSniffer {
         self.buf.clear();
         self.in_osc = false;
         self.saw_esc = false;
+    }
+}
+
+/// Parse an OSC 7 payload (`file://host/percent%20encoded/path`) into a plain,
+/// percent-decoded filesystem path. Mirrors the reference `parseOsc7`
+/// (`^file://[^/]*(/.*)$` + `decodeURIComponent`).
+fn parse_osc7(data: &str) -> Option<String> {
+    let rest = data.strip_prefix("file://")?;
+    let slash = rest.find('/')?;
+    Some(percent_decode(&rest[slash..]))
+}
+
+/// Percent-decode a string (`%20` → space). Undecodable byte pairs are left
+/// verbatim; the result is UTF-8 lossily reconstructed.
+fn percent_decode(s: &str) -> String {
+    let bytes = s.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 3 <= bytes.len() {
+            if let (Some(h), Some(l)) = (hex_val(bytes[i + 1]), hex_val(bytes[i + 2])) {
+                out.push((h << 4) | l);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(bytes[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+fn hex_val(b: u8) -> Option<u8> {
+    match b {
+        b'0'..=b'9' => Some(b - b'0'),
+        b'a'..=b'f' => Some(b - b'a' + 10),
+        b'A'..=b'F' => Some(b - b'A' + 10),
+        _ => None,
     }
 }
 
@@ -390,6 +549,7 @@ pub struct TerminalEmulator {
     dimensions: TermDimensions,
     sniffer: OscSniffer,
     pty_out: Arc<Mutex<Vec<u8>>>,
+    metadata: SessionMetadata,
 }
 
 impl TerminalEmulator {
@@ -414,7 +574,23 @@ impl TerminalEmulator {
             dimensions,
             sniffer: OscSniffer::default(),
             pty_out,
+            metadata: SessionMetadata::default(),
         }
+    }
+
+    /// Seed the working directory before the first prompt (the shell's spawn
+    /// cwd). Later OSC 7 reports overwrite it.
+    pub fn set_initial_cwd(&mut self, cwd: impl Into<String>) {
+        let cwd = cwd.into();
+        if !cwd.is_empty() {
+            self.metadata.cwd = Some(cwd);
+        }
+    }
+
+    /// Shell-integration metadata (cwd, title, prompt/command state), updated
+    /// on every [`Self::feed`] from the OSC 7 / 133 / 0-2 sequences.
+    pub fn metadata(&self) -> &SessionMetadata {
+        &self.metadata
     }
 
     /// Take any bytes the emulator queued to be written back to the PTY.
@@ -435,8 +611,43 @@ impl TerminalEmulator {
         if bytes.is_empty() {
             return Vec::new();
         }
-        let mut extra = Vec::new();
-        self.sniffer.feed(bytes, &mut extra);
+        let mut updates = Vec::new();
+        self.sniffer.feed(bytes, &mut updates);
+        let mut extra = Vec::with_capacity(updates.len() + 1);
+        for update in updates {
+            match update {
+                OscUpdate::Cwd(path) => {
+                    self.metadata.cwd = Some(path.clone());
+                    extra.push(TerminalEvent::Cwd(path));
+                }
+                OscUpdate::Title(title) => {
+                    self.metadata.title = title;
+                }
+                OscUpdate::PromptStart => {
+                    self.metadata.in_command = false;
+                    self.metadata.prompt_phase = PromptPhase::PromptStart;
+                    extra.push(TerminalEvent::PromptStart);
+                }
+                OscUpdate::PromptEnd => {
+                    self.metadata.prompt_phase = PromptPhase::Prompt;
+                    extra.push(TerminalEvent::PromptEnd);
+                }
+                OscUpdate::CommandStart(text) => {
+                    self.metadata.in_command = true;
+                    self.metadata.prompt_phase = PromptPhase::Executing;
+                    if text.is_some() {
+                        self.metadata.last_command = text.clone();
+                    }
+                    extra.push(TerminalEvent::CommandStart(text));
+                }
+                OscUpdate::CommandFinished(code) => {
+                    self.metadata.in_command = false;
+                    self.metadata.prompt_phase = PromptPhase::Unknown;
+                    self.metadata.last_exit_code = code;
+                    extra.push(TerminalEvent::CommandFinished(code));
+                }
+            }
+        }
         for &byte in bytes {
             self.parser.advance(&mut self.term, byte);
         }
@@ -729,6 +940,89 @@ mod tests {
         let (mut term, _rx) = emulator(20, 5);
         let events = term.feed(b"\x1b]7;file://host/Users/me/dev\x07");
         assert!(events.contains(&TerminalEvent::Cwd("/Users/me/dev".into())));
+    }
+
+    #[test]
+    fn osc7_percent_decodes_and_updates_metadata() {
+        let (mut term, _rx) = emulator(20, 5);
+        let events = term.feed(b"\x1b]7;file://host/Users/me/my%20dev%2Fdir\x07");
+        assert!(events.contains(&TerminalEvent::Cwd("/Users/me/my dev/dir".into())));
+        assert_eq!(term.metadata().cwd.as_deref(), Some("/Users/me/my dev/dir"));
+    }
+
+    #[test]
+    fn osc133_markers_model_the_prompt_lifecycle() {
+        let (mut term, _rx) = emulator(20, 5);
+
+        let e = term.feed(b"\x1b]133;A\x1b\\");
+        assert!(e.contains(&TerminalEvent::PromptStart));
+        assert_eq!(term.metadata().prompt_phase, PromptPhase::PromptStart);
+
+        term.feed(b"\x1b]133;B\x1b\\");
+        assert_eq!(term.metadata().prompt_phase, PromptPhase::Prompt);
+
+        let e = term.feed(b"\x1b]133;C;git status\x1b\\");
+        assert!(e.contains(&TerminalEvent::CommandStart(Some("git status".into()))));
+        assert!(term.metadata().in_command);
+        assert_eq!(term.metadata().last_command.as_deref(), Some("git status"));
+
+        let e = term.feed(b"\x1b]133;D;3\x1b\\");
+        assert!(e.contains(&TerminalEvent::CommandFinished(Some(3))));
+        assert!(!term.metadata().in_command);
+        assert_eq!(term.metadata().last_exit_code, Some(3));
+        assert_eq!(term.metadata().prompt_phase, PromptPhase::Unknown);
+    }
+
+    #[test]
+    fn bare_osc133_c_and_d_carry_no_payload() {
+        let (mut term, _rx) = emulator(20, 5);
+        let e = term.feed(b"\x1b]133;C\x1b\\");
+        assert!(e.contains(&TerminalEvent::CommandStart(None)));
+        let e = term.feed(b"\x1b]133;D\x1b\\");
+        assert!(e.contains(&TerminalEvent::CommandFinished(None)));
+    }
+
+    #[test]
+    fn osc7_from_command_output_is_ignored_while_a_command_runs() {
+        let (mut term, _rx) = emulator(20, 5);
+        term.feed(b"\x1b]7;file://host/home\x07");
+        term.feed(b"\x1b]133;C\x1b\\");
+        // Untrusted OSC 7 emitted by the running command.
+        let e = term.feed(b"\x1b]7;file://host/evil\x07");
+        assert!(!e.iter().any(|e| matches!(e, TerminalEvent::Cwd(_))));
+        assert_eq!(term.metadata().cwd.as_deref(), Some("/home"));
+        // Once the prompt returns, OSC 7 is trusted again.
+        term.feed(b"\x1b]133;A\x1b\\");
+        term.feed(b"\x1b]7;file://host/work\x07");
+        assert_eq!(term.metadata().cwd.as_deref(), Some("/work"));
+    }
+
+    #[test]
+    fn osc0_title_updates_metadata_and_resets_to_none() {
+        let (mut term, _rx) = emulator(20, 5);
+        term.feed(b"\x1b]2;my session\x07");
+        assert_eq!(term.metadata().title.as_deref(), Some("my session"));
+        term.feed(b"\x1b]0;\x07");
+        assert_eq!(term.metadata().title, None);
+    }
+
+    #[test]
+    fn shell_integration_sequences_do_not_appear_in_the_grid() {
+        let (mut term, _rx) = emulator(40, 5);
+        term.feed(b"\x1b]133;A\x1b\\$ \x1b]133;B\x1b\\\x1b]133;C;ls\x1b\\");
+        term.feed(b"\r\nfile.txt\r\n\x1b]133;D;0\x1b\\");
+        term.feed(b"\x1b]7;file://host/tmp\x07");
+        let text = term.render().to_text();
+        assert!(!text.contains("133"));
+        assert!(!text.contains("file://"));
+        assert!(text.contains("file.txt"));
+    }
+
+    #[test]
+    fn initial_cwd_is_used_before_the_first_prompt() {
+        let (mut term, _rx) = emulator(20, 5);
+        term.set_initial_cwd("/Users/me/project");
+        assert_eq!(term.metadata().cwd.as_deref(), Some("/Users/me/project"));
     }
 
     #[test]

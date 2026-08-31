@@ -110,6 +110,22 @@ impl TerminalView {
         }
     }
 
+    /// The shell's current working directory (OSC 7 shell integration), if
+    /// known. Surfaced to the status bar / breadcrumb and used as the starting
+    /// directory for new tabs (Phase 03).
+    pub fn cwd(&self) -> Option<String> {
+        self.session.as_ref().ok().and_then(|s| s.cwd())
+    }
+
+    /// The process/window title set via OSC 0/2, if any.
+    pub fn shell_title(&self) -> Option<String> {
+        self.session
+            .as_ref()
+            .ok()
+            .and_then(|s| s.metadata().ok())
+            .and_then(|m| m.title)
+    }
+
     /// The current terminal mode snapshot (falls back to defaults on error).
     fn mode(&self) -> ModeState {
         self.session

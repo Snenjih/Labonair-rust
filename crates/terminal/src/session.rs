@@ -14,7 +14,9 @@ use std::thread::{self, JoinHandle};
 use alacritty_terminal::grid::Scroll;
 use portable_pty::{native_pty_system, ChildKiller, CommandBuilder, MasterPty, PtySize};
 
-use crate::engine::{ModeState, RenderableScreen, TermDimensions, TerminalEmulator, TerminalEvent};
+use crate::engine::{
+    ModeState, RenderableScreen, SessionMetadata, TermDimensions, TerminalEmulator, TerminalEvent,
+};
 use crate::TerminalColors;
 
 const READ_BUF: usize = 16 * 1024;
@@ -30,6 +32,19 @@ pub struct SessionOptions {
     pub working_directory: Option<String>,
     /// Extra environment variables.
     pub env: Vec<(String, String)>,
+    /// Start the shell in block-terminal mode (`LABONAIR_BLOCKS=1`). Fixed for
+    /// the shell's lifetime.
+    pub blocks: bool,
+}
+
+/// A read of the active terminal for the AI companion: working directory,
+/// process title and the tail of the visible buffer (T03-004, consumed in
+/// Phase 10).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct TerminalContext {
+    pub cwd: Option<String>,
+    pub title: Option<String>,
+    pub lines: Vec<String>,
 }
 
 /// A running local terminal session.
@@ -65,10 +80,8 @@ impl TerminalSession {
         let shell = options.shell.clone().unwrap_or_else(default_shell);
         let mut cmd = CommandBuilder::new(&shell);
         cmd.args(&options.args);
-        cmd.env("TERM", "xterm-256color");
-        cmd.env("COLORTERM", "truecolor");
-        cmd.env("TERM_PROGRAM", "Labonair");
-        cmd.env("LABONAIR_TERMINAL", "1");
+        // Load Labonair shell integration (OSC 7 + OSC 133 emitters, env).
+        crate::shell_integration::configure(&mut cmd, &shell, options.blocks);
         if let Some(dir) = &options.working_directory {
             cmd.cwd(dir);
         }
@@ -100,6 +113,17 @@ impl TerminalSession {
             dimensions,
             event_tx.clone(),
         )));
+        // Seed the working directory so the UI has one before the first prompt.
+        {
+            let initial_cwd = options.working_directory.clone().or_else(|| {
+                std::env::current_dir()
+                    .ok()
+                    .map(|p| p.to_string_lossy().into_owned())
+            });
+            if let (Some(cwd), Ok(mut guard)) = (initial_cwd, emulator.lock()) {
+                guard.set_initial_cwd(cwd);
+            }
+        }
 
         let reader_thread = {
             let emulator = Arc::clone(&emulator);
@@ -249,6 +273,38 @@ impl TerminalSession {
             .selection_text())
     }
 
+    /// Shell-integration metadata (cwd, title, prompt/command state). Updated
+    /// as OSC 7 / 133 / 0-2 sequences arrive from the shell.
+    pub fn metadata(&self) -> Result<SessionMetadata, String> {
+        Ok(self
+            .emulator
+            .lock()
+            .map_err(|_| "emulator poisoned")?
+            .metadata()
+            .clone())
+    }
+
+    /// The shell's current working directory (OSC 7), if known.
+    pub fn cwd(&self) -> Option<String> {
+        self.metadata().ok().and_then(|m| m.cwd)
+    }
+
+    /// A snapshot for the AI live-context reader: the working directory, the
+    /// process title, and the last `max_lines` non-empty-trimmed visible rows.
+    pub fn ai_context(&self, max_lines: usize) -> Result<TerminalContext, String> {
+        let guard = self.emulator.lock().map_err(|_| "emulator poisoned")?;
+        let meta = guard.metadata().clone();
+        let text = guard.render().to_text();
+        drop(guard);
+        let all: Vec<String> = text.lines().map(str::to_string).collect();
+        let start = all.len().saturating_sub(max_lines);
+        Ok(TerminalContext {
+            cwd: meta.cwd,
+            title: meta.title,
+            lines: all[start..].to_vec(),
+        })
+    }
+
     /// Take an immutable snapshot of the visible grid for rendering.
     pub fn render(&self) -> Result<RenderableScreen, String> {
         Ok(self
@@ -390,6 +446,45 @@ mod tests {
         session.write(b"stty size\n").unwrap();
         let text = wait_for(&session, Duration::from_secs(5), |t| t.contains("40 120"));
         assert!(text.contains("40 120"), "stty size reported:\n{text}");
+    }
+
+    #[test]
+    fn bash_shell_integration_tracks_cwd() {
+        let session = TerminalSession::spawn(
+            dark_colors(),
+            TermDimensions::new(80, 24),
+            SessionOptions {
+                shell: Some("/bin/bash".to_string()),
+                ..SessionOptions::default()
+            },
+        )
+        .unwrap();
+
+        // Initial cwd is seeded from the process cwd before any prompt.
+        assert!(session.cwd().is_some());
+
+        session.write(b"cd /tmp\n").unwrap();
+        let start = Instant::now();
+        let mut tracked = false;
+        while start.elapsed() < Duration::from_secs(10) {
+            let _ = session.drain_events();
+            if let Some(cwd) = session.cwd() {
+                if cwd == "/tmp" || cwd == "/private/tmp" {
+                    tracked = true;
+                    break;
+                }
+            }
+            thread::sleep(Duration::from_millis(30));
+        }
+        assert!(
+            tracked,
+            "OSC 7 cwd tracking never reported /tmp; cwd = {:?}",
+            session.cwd()
+        );
+
+        // The AI context reader sees the same cwd plus buffer lines.
+        let ctx = session.ai_context(50).unwrap();
+        assert!(matches!(ctx.cwd.as_deref(), Some("/tmp" | "/private/tmp")));
     }
 
     #[test]

@@ -4,7 +4,40 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
-## Last Session: 2026-09-01 (T03-003 — keyboard & mouse mapping)
+## Last Session: 2026-09-01 (T03-004 — shell integration & CWD tracking)
+
+### What Was Done
+- **T03-004 ✅ Done.** OSC 7 + OSC 133 shell integration and session metadata tracking, ported from `reference-src` (`src-tauri/src/modules/pty/{shell_init.rs,scripts/*}` + `src/modules/terminal/lib/osc-handlers.ts`).
+  - **`crates/terminal/src/scripts/`** (new) — verbatim copy of the reference shell-integration rc-files (`zshenv.zsh`, `zprofile.zsh`, `zlogin.zsh`, `zshrc.zsh`, `bashrc.bash`). They emit OSC 7 on every prompt, OSC 133 A/B/C/D around prompt/command/output, and reset OSC 0 at each prompt. Block-mode (`LABONAIR_BLOCKS`) branches kept intact.
+  - **`crates/terminal/src/shell_integration.rs`** (new) — `Shell{Zsh,Bash,Other}` + `Shell::from_path`; `configure(&mut CommandBuilder, shell, blocks) -> Shell` sets `TERM/COLORTERM/TERM_PROGRAM=Labonair/LABONAIR_TERMINAL=1` (+ `LABONAIR_BLOCKS`), writes the rc-files atomically (tmp+rename) under `~/.cache/labonair/shell-integration/{zsh,bash}/`, sets `ZDOTDIR`/`LABONAIR_USER_ZDOTDIR` (+ `-l`) for zsh or `--rcfile <path> -i` for bash. Non-fatal on write failure (spawns without integration). No `dirs` dep — uses `std::env::var_os("HOME")`. 3 unit tests.
+  - **`crates/terminal/src/engine.rs`** — `OscSniffer` (raw-stream tap, runs before the VTE parser) extended from OSC-7-only to also parse **OSC 133 A/B/C/D** and **OSC 0/1/2** titles. Internal `OscUpdate` enum; `feed()` folds updates into a new `SessionMetadata` and emits `TerminalEvent::{PromptStart,PromptEnd,CommandStart(Option<String>),CommandFinished(Option<i32>)}` (new variants) alongside the existing `Cwd`. OSC 7 now **percent-decoded** (`parse_osc7` mirrors the reference `^file://[^/]*(/.*)$` regex + `percent_decode`/`hex_val` helpers) and **gated**: an OSC 7 emitted while `in_command` (between 133;C and the next A/D) is ignored (untrusted-command-output parity with `registerCwdHandler`). `SessionMetadata{cwd,title,in_command,prompt_phase,last_exit_code,last_command}` + `PromptPhase{Unknown,PromptStart,Prompt,Executing}`. New `TerminalEmulator::{set_initial_cwd, metadata}`. OSC 0/2 title still also flows through alacritty's own `Title` event (sniffer only updates metadata, doesn't double-emit). 8 new engine tests (percent-decode, 133 lifecycle, bare C/D, in-command OSC7 gate, title set/reset, sequences-not-in-grid, initial cwd).
+  - **`crates/terminal/src/session.rs`** — `SessionOptions.blocks: bool`; `spawn()` now calls `shell_integration::configure` instead of setting env inline, and seeds the emulator cwd from `options.working_directory` or `std::env::current_dir()`. New `TerminalSession::{metadata() -> SessionMetadata, cwd() -> Option<String>, ai_context(max_lines) -> TerminalContext}`; `TerminalContext{cwd,title,lines}` is the base data-holding for the Phase-10 AI live-context reader. 1 new session test (`/bin/bash` real spawn → `cd /tmp` → asserts OSC 7 tracked cwd + `ai_context`).
+  - **`crates/terminal/src/lib.rs`** — `pub mod shell_integration`; re-exports `PromptPhase`, `SessionMetadata`, `TerminalContext`, `Shell`.
+  - **`crates/ui/src/terminal.rs`** — `TerminalView::{cwd(), shell_title()}` accessors so the (not-yet-built) status bar / breadcrumb and new-tab logic can read them.
+- **Design notes:** OSC 133/7 never reach the visible grid — alacritty's VTE parser consumes every OSC sequence (dispatches to a known set, silently drops the rest); the sniffer is a pure read-only tap on the raw bytes. Kept the sniffer approach from T03-001 rather than a `Term` handler because alacritty 0.24 has no OSC-7/133 hook.
+- **Verified:** `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`, `cargo build --bin labonair` — all green. Counts: 122 backend, 1 app_state, 22 theme, 15 ui, **57 terminal (+11: +8 engine, +3 shell_integration; the +1 session test replaced none)**. Not yet visually run — user should `cargo run` and check the status data once a status bar exists; for now confirm a zsh/bash shell still starts cleanly with the integration rc-files (no stray `]` / `133` leaking into the prompt, p10k/starship still fine).
+
+### Current State
+- Branch `master`, 14 unpushed commits + this one. `crates/terminal` owns shell-integration bootstrap + OSC parsing + `SessionMetadata`; `crates/ui` exposes `cwd()`/`shell_title()`.
+- Pre-existing uncommitted `CLAUDE.md` edit (not ours) still garbles Next Task Protocol steps 1 & 3 — left untouched & excluded from this commit, flag to user.
+- `reference-src/` untouched.
+
+### Known limitations (not blockers)
+- Block-terminal rendering (the reserved-row prompt + floating block header) is not built — only the `LABONAIR_BLOCKS` env plumbing + `CommandStart` command-text capture. Block UI is later-phase.
+- Title still double-sourced (alacritty `Title` event + `SessionMetadata.title`); UI currently uses neither. Consolidate when the tab bar lands (Phase 03).
+- `ai_context` returns the visible grid tail only (no scrollback, no prompt/command/output segmentation yet) — enough for Phase 10 to build on.
+- OSC 633 (VS Code shell integration) is not parsed — the reference scripts only emit 7 + 133, so there is no path that needs it.
+
+### What's Next
+- **T03-005** `tasks/phase-02-terminal/T03-005-local-pty-sessions.md` — local PTY sessions & multi-tab terminal. Deps: T03-001–004 (all done).
+- **T02-006** (terminal background images) also still unblocked.
+
+### Blockers
+- None.
+
+---
+
+## Session: 2026-09-01 (T03-003 — keyboard & mouse mapping)
 
 ### What Was Done
 - **T03-003 ✅ Done.** Full GPUI-event → terminal-byte translation.

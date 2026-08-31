@@ -1,7 +1,7 @@
 # T03-004: Shell-Integration und CWD-Tracking
 
 ## Status
-⏳ Pending
+✅ Done
 
 ## Phase
 2 — Terminal-Engine
