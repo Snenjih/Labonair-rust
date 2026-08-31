@@ -1,7 +1,7 @@
 # T03-003: Tastatur- und Maus-Mapping
 
 ## Status
-⏳ Pending
+✅ Done
 
 ## Phase
 2 — Terminal-Engine

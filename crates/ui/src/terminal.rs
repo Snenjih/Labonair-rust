@@ -7,8 +7,6 @@
 //!   one styled-text element per run rather than per cell;
 //! * the block/beam/underline cursor and the selection highlight are painted as
 //!   absolutely-positioned overlays using the theme's terminal palette;
-//! * mouse-wheel scrolling walks the scrollback and any keystroke snaps back to
-//!   the prompt;
 //! * on every frame the view derives `(columns, rows)` from the available pixel
 //!   area and the monospace cell metrics and forwards a resize to the engine +
 //!   PTY when it changed;
@@ -16,19 +14,27 @@
 //!   `cx.notify()` when the grid actually changed, so idle terminals don't
 //!   re-render.
 //!
-//! Full keyboard/mouse mapping (modifiers, drag-select, bracketed paste) is
-//! T03-003 — this view wires the minimal input path.
+//! Keyboard and mouse input (T03-003) is translated by
+//! [`labonair_terminal::input`]: this view converts GPUI events to the plain
+//! [`KeyInput`] / [`MouseInput`] / [`WheelInput`] descriptions, folds in the
+//! live [`ModeState`] from the engine, and writes the resulting bytes to the
+//! PTY. Mouse-wheel scrolling walks the scrollback unless a mouse-reporting or
+//! alternate-scroll mode is active; drag selects text (copy-on-select), Cmd+C /
+//! Cmd+V and right-click drive the clipboard with bracketed-paste support.
 
 use std::time::Duration;
 
 use gpui::{
-    div, px, App, Context, Entity, FocusHandle, Focusable, FontWeight, Hsla, InteractiveElement,
-    IntoElement, KeyDownEvent, Keystroke, MouseButton, MouseDownEvent, ParentElement, Render,
-    ScrollDelta, ScrollWheelEvent, SharedString, Styled, Task, Window,
+    div, px, App, ClipboardItem, Context, Entity, FocusHandle, Focusable, FontWeight, Hsla,
+    InteractiveElement, IntoElement, KeyDownEvent, Keystroke, MouseButton, MouseDownEvent,
+    MouseMoveEvent, MouseUpEvent, ParentElement, Point, Render, ScrollDelta, ScrollWheelEvent,
+    SharedString, Styled, Task, Window,
 };
 use labonair_terminal::{
-    batch_runs, grid_size, CursorShape, RenderableScreen, Rgb, Scroll, SessionOptions, StyledRun,
-    TermDimensions, TerminalColors, TerminalEvent, TerminalSession,
+    batch_runs, grid_size, key_to_bytes, mouse_report, paste_payload, wheel_action, CursorShape,
+    Key, KeyInput, ModeState, Modifiers, MouseButton as TermMouseButton, MouseEventKind,
+    MouseInput, NamedKey, RenderableScreen, Rgb, Scroll, SessionOptions, StyledRun, TermDimensions,
+    TerminalColors, TerminalEvent, TerminalSession, WheelAction, WheelInput,
 };
 
 use crate::theme::ThemeStore;
@@ -44,6 +50,11 @@ pub struct TerminalView {
     session: Result<TerminalSession, String>,
     /// Grid size last pushed to the engine, to avoid redundant resizes.
     grid: (usize, usize),
+    /// Cell (width, height) in pixels from the last render — used to map mouse
+    /// positions to grid cells.
+    cell_size: (f32, f32),
+    /// Anchor cell of an in-progress drag selection, if the user is selecting.
+    drag_anchor: Option<(usize, usize)>,
     _poll: Task<()>,
 }
 
@@ -93,8 +104,52 @@ impl TerminalView {
             focus_handle,
             session: session.map_err(|e| format!("failed to start shell: {e}")),
             grid: (80, 24),
+            cell_size: (8.0, 16.0),
+            drag_anchor: None,
             _poll: poll,
         }
+    }
+
+    /// The current terminal mode snapshot (falls back to defaults on error).
+    fn mode(&self) -> ModeState {
+        self.session
+            .as_ref()
+            .ok()
+            .and_then(|s| s.mode_state().ok())
+            .unwrap_or_default()
+    }
+
+    /// Map a window-relative pixel position to a viewport cell `(col, row)`,
+    /// clamped to the grid.
+    fn cell_at(&self, pos: Point<gpui::Pixels>) -> (usize, usize) {
+        let (cw, ch) = self.cell_size;
+        let (cols, rows) = self.grid;
+        let col = (f32::from(pos.x).max(0.0) / cw) as usize;
+        let row = (f32::from(pos.y).max(0.0) / ch) as usize;
+        (
+            col.min(cols.saturating_sub(1)),
+            row.min(rows.saturating_sub(1)),
+        )
+    }
+
+    fn copy_selection(&self, cx: &mut Context<Self>) {
+        if let Ok(session) = &self.session {
+            if let Ok(Some(text)) = session.selection_text() {
+                cx.write_to_clipboard(ClipboardItem::new_string(text));
+            }
+        }
+    }
+
+    fn paste_from_clipboard(&self, cx: &mut Context<Self>) {
+        let Some(text) = cx.read_from_clipboard().and_then(|i| i.text()) else {
+            return;
+        };
+        if text.is_empty() {
+            return;
+        }
+        let bracketed = self.mode().bracketed_paste;
+        self.send_input(&paste_payload(&text, bracketed));
+        self.snap_to_bottom();
     }
 
     fn scroll_lines(&self, delta: i32) {
@@ -152,6 +207,8 @@ impl Render for TerminalView {
                 .child(SharedString::from(message.clone()))
                 .into_any_element();
         }
+
+        self.cell_size = (cell_w, cell_h);
 
         // Fit the grid to the current viewport and inform the engine/PTY.
         let viewport = window.viewport_size();
@@ -260,8 +317,74 @@ impl Render for TerminalView {
             .text_color(fg)
             .on_mouse_down(
                 MouseButton::Left,
-                cx.listener(|this, _: &MouseDownEvent, window, cx| {
+                cx.listener(|this, ev: &MouseDownEvent, window, cx| {
                     window.focus(&this.focus_handle);
+                    let cell = this.cell_at(ev.position);
+                    let mode = this.mode();
+                    let mods = to_term_mods(&ev.modifiers);
+                    if let Some(bytes) = mouse_report(
+                        &MouseInput {
+                            button: TermMouseButton::Left,
+                            kind: MouseEventKind::Press,
+                            col: cell.0,
+                            row: cell.1,
+                            mods,
+                        },
+                        &mode,
+                    ) {
+                        this.send_input(&bytes);
+                    } else {
+                        // Native selection: anchor here, clear any old selection.
+                        this.drag_anchor = Some(cell);
+                        if let Ok(session) = &this.session {
+                            let _ = session.clear_selection();
+                        }
+                    }
+                    cx.notify();
+                }),
+            )
+            .on_mouse_move(cx.listener(|this, ev: &MouseMoveEvent, _window, cx| {
+                let Some(anchor) = this.drag_anchor else {
+                    return;
+                };
+                if ev.pressed_button != Some(MouseButton::Left) {
+                    return;
+                }
+                let head = this.cell_at(ev.position);
+                if let Ok(session) = &this.session {
+                    let _ = session.update_selection(anchor, head);
+                }
+                cx.notify();
+            }))
+            .on_mouse_up(
+                MouseButton::Left,
+                cx.listener(|this, ev: &MouseUpEvent, _window, cx| {
+                    let cell = this.cell_at(ev.position);
+                    let mode = this.mode();
+                    if let Some(bytes) = mouse_report(
+                        &MouseInput {
+                            button: TermMouseButton::Left,
+                            kind: MouseEventKind::Release,
+                            col: cell.0,
+                            row: cell.1,
+                            mods: to_term_mods(&ev.modifiers),
+                        },
+                        &mode,
+                    ) {
+                        this.send_input(&bytes);
+                    } else if this.drag_anchor.is_some() {
+                        // Copy-on-select parity with the reference terminal.
+                        this.copy_selection(cx);
+                    }
+                    this.drag_anchor = None;
+                    cx.notify();
+                }),
+            )
+            .on_mouse_down(
+                MouseButton::Right,
+                cx.listener(|this, _: &MouseDownEvent, _window, cx| {
+                    // Right-click pastes (reference `terminalRightClickPastes`).
+                    this.paste_from_clipboard(cx);
                     cx.notify();
                 }),
             )
@@ -272,17 +395,52 @@ impl Render for TerminalView {
                         ScrollDelta::Pixels(p) => f32::from(p.y) / cell_h,
                     };
                     let step = lines.round() as i32;
-                    if step != 0 {
-                        this.scroll_lines(step);
-                        cx.notify();
+                    if step == 0 {
+                        return;
                     }
+                    let cell = this.cell_at(ev.position);
+                    match wheel_action(
+                        &WheelInput {
+                            lines: step,
+                            col: cell.0,
+                            row: cell.1,
+                            mods: to_term_mods(&ev.modifiers),
+                        },
+                        &this.mode(),
+                    ) {
+                        WheelAction::Bytes(bytes) => this.send_input(&bytes),
+                        WheelAction::Scrollback(n) if n != 0 => this.scroll_lines(n),
+                        WheelAction::Scrollback(_) => {}
+                    }
+                    cx.notify();
                 }),
             )
             .on_key_down(cx.listener(|this, ev: &KeyDownEvent, _window, cx| {
-                if let Some(bytes) = keystroke_to_bytes(&ev.keystroke) {
-                    this.send_input(&bytes);
-                    this.snap_to_bottom();
-                    cx.notify();
+                let ks = &ev.keystroke;
+                // App-level clipboard shortcuts never reach the shell.
+                if ks.modifiers.platform && !ks.modifiers.control && !ks.modifiers.alt {
+                    match ks.key.as_str() {
+                        "c" => {
+                            this.copy_selection(cx);
+                            return;
+                        }
+                        "v" => {
+                            this.paste_from_clipboard(cx);
+                            cx.notify();
+                            return;
+                        }
+                        _ => {}
+                    }
+                }
+                if let Some(input) = keystroke_to_input(ks) {
+                    if let Some(bytes) = key_to_bytes(&input, &this.mode()) {
+                        this.send_input(&bytes);
+                        this.snap_to_bottom();
+                        if let Ok(session) = &this.session {
+                            let _ = session.clear_selection();
+                        }
+                        cx.notify();
+                    }
                 }
             }))
             .children(run_elements)
@@ -344,65 +502,81 @@ fn with_alpha(mut color: Hsla, alpha: f32) -> Hsla {
     color
 }
 
-/// Minimal keystroke → PTY byte mapping. The full mapping (all modifiers, key
-/// sequences, bracketed paste) is T03-003.
-fn keystroke_to_bytes(ks: &Keystroke) -> Option<Vec<u8>> {
-    let m = &ks.modifiers;
+/// Translate GPUI [`Modifiers`](gpui::Modifiers) to the engine's [`Modifiers`].
+fn to_term_mods(m: &gpui::Modifiers) -> Modifiers {
+    Modifiers {
+        shift: m.shift,
+        alt: m.alt,
+        ctrl: m.control,
+        logo: m.platform,
+    }
+}
+
+/// Map a GPUI keystroke to a framework-agnostic [`KeyInput`] for
+/// [`key_to_bytes`]. Returns `None` for keys the terminal never consumes (bare
+/// modifiers, unknown named keys).
+fn keystroke_to_input(ks: &Keystroke) -> Option<KeyInput> {
+    let mods = to_term_mods(&ks.modifiers);
     let key = ks.key.as_str();
 
-    if m.control {
-        let mut chars = key.chars();
-        if let (Some(c), None) = (chars.next(), chars.next()) {
-            let lower = c.to_ascii_lowercase();
-            if lower.is_ascii_alphabetic() {
-                return Some(vec![lower as u8 - b'a' + 1]);
-            }
-            match lower {
-                '[' => return Some(vec![0x1b]),
-                '\\' => return Some(vec![0x1c]),
-                ']' => return Some(vec![0x1d]),
-                ' ' => return Some(vec![0x00]),
-                _ => {}
-            }
-        }
-    }
-
-    let mut bytes = match key {
-        "enter" => vec![b'\r'],
-        "tab" => vec![b'\t'],
-        "backspace" => vec![0x7f],
-        "escape" => vec![0x1b],
-        "space" => vec![b' '],
-        "left" => vec![0x1b, b'[', b'D'],
-        "right" => vec![0x1b, b'[', b'C'],
-        "up" => vec![0x1b, b'[', b'A'],
-        "down" => vec![0x1b, b'[', b'B'],
-        "home" => vec![0x1b, b'[', b'H'],
-        "end" => vec![0x1b, b'[', b'F'],
-        "delete" => vec![0x1b, b'[', b'3', b'~'],
-        _ => {
-            if let Some(text) = &ks.key_char {
-                text.clone().into_bytes()
-            } else if !m.control && !m.platform && key.chars().count() == 1 {
-                key.as_bytes().to_vec()
-            } else {
-                return None;
-            }
-        }
+    let named = match key {
+        "enter" => Some(NamedKey::Enter),
+        "tab" => Some(NamedKey::Tab),
+        "backspace" => Some(NamedKey::Backspace),
+        "escape" => Some(NamedKey::Escape),
+        "space" => Some(NamedKey::Space),
+        "up" => Some(NamedKey::Up),
+        "down" => Some(NamedKey::Down),
+        "left" => Some(NamedKey::Left),
+        "right" => Some(NamedKey::Right),
+        "home" => Some(NamedKey::Home),
+        "end" => Some(NamedKey::End),
+        "pageup" => Some(NamedKey::PageUp),
+        "pagedown" => Some(NamedKey::PageDown),
+        "insert" => Some(NamedKey::Insert),
+        "delete" => Some(NamedKey::Delete),
+        _ => key
+            .strip_prefix('f')
+            .and_then(|n| n.parse::<u8>().ok())
+            .filter(|n| (1..=20).contains(n))
+            .map(NamedKey::Function),
     };
 
-    if m.alt && !bytes.is_empty() && bytes[0] != 0x1b {
-        bytes.insert(0, 0x1b);
+    if let Some(named) = named {
+        return Some(KeyInput {
+            key: Key::Named(named),
+            mods,
+            text: None,
+        });
     }
-    Some(bytes)
+
+    // Text-producing key. Prefer the platform-resolved char; for Ctrl combos
+    // GPUI often reports no `key_char`, so fall back to the key name.
+    let ch = ks
+        .key_char
+        .as_deref()
+        .filter(|t| t.chars().count() == 1)
+        .and_then(|t| t.chars().next())
+        .or_else(|| {
+            let mut it = key.chars();
+            match (it.next(), it.next()) {
+                (Some(c), None) => Some(c),
+                _ => None,
+            }
+        })?;
+
+    Some(KeyInput {
+        key: Key::Char(ch),
+        mods,
+        text: ks.key_char.clone(),
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use gpui::Modifiers;
 
-    fn ks(key: &str, mods: Modifiers) -> Keystroke {
+    fn ks(key: &str, mods: gpui::Modifiers) -> Keystroke {
         Keystroke {
             modifiers: mods,
             key: key.into(),
@@ -410,40 +584,63 @@ mod tests {
         }
     }
 
+    fn bytes(ks: &Keystroke) -> Option<Vec<u8>> {
+        key_to_bytes(&keystroke_to_input(ks)?, &ModeState::default())
+    }
+
     #[test]
     fn control_letter_maps_to_control_byte() {
-        let m = Modifiers {
+        let m = gpui::Modifiers {
             control: true,
             ..Default::default()
         };
-        assert_eq!(keystroke_to_bytes(&ks("c", m)), Some(vec![0x03]));
+        assert_eq!(bytes(&ks("c", m)), Some(vec![0x03]));
     }
 
     #[test]
     fn named_keys_map_to_expected_sequences() {
-        let m = Modifiers::default();
-        assert_eq!(keystroke_to_bytes(&ks("enter", m)), Some(vec![b'\r']));
-        assert_eq!(keystroke_to_bytes(&ks("backspace", m)), Some(vec![0x7f]));
-        assert_eq!(
-            keystroke_to_bytes(&ks("up", m)),
-            Some(vec![0x1b, b'[', b'A'])
-        );
+        let m = gpui::Modifiers::default();
+        assert_eq!(bytes(&ks("enter", m)), Some(vec![b'\r']));
+        assert_eq!(bytes(&ks("backspace", m)), Some(vec![0x7f]));
+        assert_eq!(bytes(&ks("up", m)), Some(vec![0x1b, b'[', b'A']));
+        assert_eq!(bytes(&ks("f5", m)), Some(b"\x1b[15~".to_vec()));
+    }
+
+    #[test]
+    fn app_cursor_mode_changes_arrow_keys() {
+        let mode = ModeState {
+            app_cursor: true,
+            ..ModeState::default()
+        };
+        let input = keystroke_to_input(&ks("left", gpui::Modifiers::default())).unwrap();
+        assert_eq!(key_to_bytes(&input, &mode), Some(vec![0x1b, b'O', b'D']));
     }
 
     #[test]
     fn printable_char_passes_through_and_alt_prefixes_escape() {
-        let m = Modifiers::default();
+        let m = gpui::Modifiers::default();
         let mut k = ks("a", m);
         k.key_char = Some("a".into());
-        assert_eq!(keystroke_to_bytes(&k), Some(vec![b'a']));
+        assert_eq!(bytes(&k), Some(vec![b'a']));
 
-        let alt = Modifiers {
+        let alt = gpui::Modifiers {
             alt: true,
             ..Default::default()
         };
         let mut k = ks("b", alt);
         k.key_char = Some("b".into());
-        assert_eq!(keystroke_to_bytes(&k), Some(vec![0x1b, b'b']));
+        assert_eq!(bytes(&k), Some(vec![0x1b, b'b']));
+    }
+
+    #[test]
+    fn platform_shortcuts_produce_no_pty_bytes() {
+        let m = gpui::Modifiers {
+            platform: true,
+            ..Default::default()
+        };
+        let mut k = ks("c", m);
+        k.key_char = Some("c".into());
+        assert_eq!(bytes(&k), None);
     }
 
     #[test]

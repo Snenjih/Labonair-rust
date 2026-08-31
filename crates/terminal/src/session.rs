@@ -14,7 +14,7 @@ use std::thread::{self, JoinHandle};
 use alacritty_terminal::grid::Scroll;
 use portable_pty::{native_pty_system, ChildKiller, CommandBuilder, MasterPty, PtySize};
 
-use crate::engine::{RenderableScreen, TermDimensions, TerminalEmulator, TerminalEvent};
+use crate::engine::{ModeState, RenderableScreen, TermDimensions, TerminalEmulator, TerminalEvent};
 use crate::TerminalColors;
 
 const READ_BUF: usize = 16 * 1024;
@@ -207,6 +207,46 @@ impl TerminalSession {
             .map_err(|_| "emulator poisoned")?
             .set_colors(colors);
         Ok(())
+    }
+
+    /// Snapshot of the input-relevant terminal modes (cursor/keypad/mouse/paste).
+    pub fn mode_state(&self) -> Result<ModeState, String> {
+        Ok(self
+            .emulator
+            .lock()
+            .map_err(|_| "emulator poisoned")?
+            .mode_state())
+    }
+
+    /// Begin or extend a text selection using viewport cell coordinates.
+    pub fn update_selection(
+        &self,
+        anchor: (usize, usize),
+        head: (usize, usize),
+    ) -> Result<(), String> {
+        self.emulator
+            .lock()
+            .map_err(|_| "emulator poisoned")?
+            .update_selection_viewport(anchor, head);
+        Ok(())
+    }
+
+    /// Clear any active selection.
+    pub fn clear_selection(&self) -> Result<(), String> {
+        self.emulator
+            .lock()
+            .map_err(|_| "emulator poisoned")?
+            .clear_selection();
+        Ok(())
+    }
+
+    /// The currently selected text, if any.
+    pub fn selection_text(&self) -> Result<Option<String>, String> {
+        Ok(self
+            .emulator
+            .lock()
+            .map_err(|_| "emulator poisoned")?
+            .selection_text())
     }
 
     /// Take an immutable snapshot of the visible grid for rendering.

@@ -4,7 +4,47 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
-## Last Session: 2026-09-01 (T03-002 — GPUI terminal cell renderer)
+## Last Session: 2026-09-01 (T03-003 — keyboard & mouse mapping)
+
+### What Was Done
+- **T03-003 ✅ Done.** Full GPUI-event → terminal-byte translation.
+  - **`crates/terminal/src/input.rs`** (new, no gpui, no alacritty types leaking) — modular, framework-agnostic mappers driven by a `ModeState` snapshot:
+    - `KeyInput { key: Key (Char|Named), mods: Modifiers{shift,alt,ctrl,logo}, text: Option<String> }`, `NamedKey` enum (Enter/Tab/Backspace/Escape/Space/arrows/Home/End/PageUp/PageDown/Insert/Delete/Function(u8 1–20)).
+    - `key_to_bytes(&KeyInput, &ModeState) -> Option<Vec<u8>>`. Helpers: `char_key_bytes` (Ctrl+letter→C0 0x01–0x1a, Ctrl+symbol `[ \ ] ^ _ @ ?` + digit aliases, alt→ESC prefix, UTF-8 passthrough), `named_key_bytes`, `cursor_key` (DECCKM `ESC O`/`ESC [`, modified → `CSI 1;<mod><final>` with `mod = 1+shift+2*alt+4*ctrl`), `tilde_key` (`CSI n~` / `CSI n;mod~`), `function_key` (F1–F4 SS3 `ESC O P..S` unmodified else CSI; F5–F20 xterm code table 15/17/18/19/20/21/23/24/25/26/28/29/31/32/33/34). Shift+Enter→`ESC CR` (Claude-Code parity, from reference key handler), Shift+Tab→`CSI Z`, Ctrl+Backspace→0x08. Cmd/logo combos return `None` (app shortcuts).
+    - `paste_payload(text, bracketed)` — `\r\n`/`\n`→`\r`, bracketed mode wraps in `ESC[200~`/`ESC[201~` and strips any embedded `ESC[201~`.
+    - Mouse: `MouseInput{button,kind,col,row,mods}`, `mouse_report(&MouseInput,&ModeState)` → SGR (`CSI < b ; x ; y M|m`) when `sgr_mouse` else legacy `CSI M` with +32 bias; button codes L/M/R=0/1/2, wheel=64/65, +32 motion, +4/+8/+16 shift/alt/ctrl; returns `None` unless the matching mode (click/drag 1002/motion 1003) is active.
+    - Wheel: `wheel_action(&WheelInput,&ModeState) -> WheelAction::{Bytes,Scrollback}` — mouse-mode→wheel button reports (one per line step), alt-screen+`alternate_scroll`→arrow keys, else scrollback.
+    - 18 unit tests covering every category (basic/ctrl/alt/modified-cursor/function-both-forms/tilde/specials/bracketed-paste/SGR+legacy mouse/drag-mode-gating/wheel×3).
+  - **`crates/terminal/src/engine.rs`** — new `ModeState` struct (app_cursor/app_keypad/bracketed_paste/insert/alt_screen/alternate_scroll/mouse_report_click/mouse_drag/mouse_motion/sgr_mouse/utf8_mouse/kitty_keyboard/report_all_keys_as_esc) + `.mouse_reporting()`. `TerminalEmulator::mode_state()` reads `term.mode()` (`TermMode` bitflags). `update_selection_viewport((col,row),(col,row))` — folds in `grid().display_offset()` so a drag stays buffer-anchored, picks anchor/head `Side` from column direction; `selection_text()` → `term.selection_to_string()` (empty→None). +1 engine test would be nice but covered via session.
+  - **`crates/terminal/src/session.rs`** — passthroughs: `mode_state()`, `update_selection()`, `clear_selection()`, `selection_text()`.
+  - **`crates/terminal/src/lib.rs`** — `pub mod input` + re-exports (`key_to_bytes`, `mouse_report`, `paste_payload`, `wheel_action`, `Key`, `KeyInput`, `Modifiers`, `MouseButton`, `MouseEventKind`, `MouseInput`, `NamedKey`, `WheelAction`, `WheelInput`, `ModeState`).
+  - **`crates/ui/src/terminal.rs`** — replaced the minimal `keystroke_to_bytes` with `keystroke_to_input(&Keystroke) -> Option<KeyInput>` (GPUI key-name → `NamedKey`/`Char`, `f1..f20` parse, `key_char` preferred) + `to_term_mods`. `TerminalView` gained `cell_size: (f32,f32)` (stored each render) and `drag_anchor: Option<(usize,usize)>`. New handlers: `on_mouse_down(Left)` → `mouse_report` if mouse mode else start selection (clear old); `on_mouse_move` (pressed Left) → `session.update_selection(anchor, cell_at(pos))`; `on_mouse_up(Left)` → release report or copy-on-select (`copy_selection` → clipboard); `on_mouse_down(Right)` → `paste_from_clipboard` (right-click-pastes parity); `on_scroll_wheel` → `wheel_action` (Bytes vs Scrollback); `on_key_down` → Cmd+C/Cmd+V intercepted for clipboard, else `key_to_bytes(&input, &this.mode())`, write, snap-to-bottom, clear selection. `cell_at(Point<Pixels>)` maps window px → clamped grid cell (assumes terminal origin (0,0) — full-window; revisit when the app shell adds bounds). `mode()` helper reads `session.mode_state()` with default fallback. 3 old tests replaced with 5 (`keystroke_to_input`+`key_to_bytes` round-trips, app-cursor mode, platform-shortcut→None, f5).
+- **Kitty keyboard protocol:** deliberately **not** emitted — `ModeState::kitty_keyboard` is observable but our DA responses never advertise support, so shells stay on the legacy sequences (per task warning; revisit if a real Kitty need appears).
+- **GPUI API used (gpui 0.2.2):** `InteractiveElement::{on_mouse_move, on_mouse_up}`; `MouseMoveEvent{position, pressed_button: Option<MouseButton>, modifiers}`, `MouseUpEvent{button, position, modifiers}`; `App::{write_to_clipboard(ClipboardItem), read_from_clipboard() -> Option<ClipboardItem>}`, `ClipboardItem::new_string(String)` / `.text() -> Option<String>`; `Keystroke{key: String, modifiers: Modifiers, key_char: Option<String>}`; `gpui::Modifiers{shift,alt,control,platform,function}` (`platform` = Cmd).
+- **alacritty_terminal 0.24.2:** `Term::mode() -> &TermMode` (bitflags u32, `APP_CURSOR=1<<1`, `BRACKETED_PASTE=1<<4`, `SGR_MOUSE=1<<5`, `MOUSE_REPORT_CLICK=1<<3`, `MOUSE_DRAG=1<<13`, `MOUSE_MOTION=1<<6`, `ALTERNATE_SCROLL=1<<15`, `KITTY_KEYBOARD_PROTOCOL` = OR of the 5 report flags); `Term::selection_to_string() -> Option<String>`; `Grid::display_offset() -> usize`; `Selection::new(SelectionType::Simple, Point, Side)` + `.update(Point, Side)`, assign to `term.selection`.
+- **Verified:** `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`, `cargo build --bin labonair` — all green. Counts: 122 backend, 1 app_state, 22 theme, **15 ui**, **46 terminal (+18)**. Not yet visually run — user should `cargo run` and check: arrows/ctrl-combos/function keys in vim + bash, Cmd+C/Cmd+V, drag-select + copy-on-select, wheel scrollback vs. wheel in `less`/`htop`.
+
+### Current State
+- Branch `master`, 13 unpushed commits + this one. `crates/terminal::input` owns the pure mapping; `crates/ui` owns the GPUI event conversion.
+- Pre-existing uncommitted `CLAUDE.md` edit (not ours) still garbles Next Task Protocol steps 1 & 3 — left untouched & excluded from this commit, flag to user.
+- `reference-src/` untouched.
+
+### Known limitations (not blockers)
+- `cell_at` assumes the terminal element sits at window origin (0,0). Correct today (full-window); once tabs/splits land (Phase 03) it must use measured element bounds.
+- Selection is `SelectionType::Simple` only — no double-click word / triple-click line select yet (T03-005 or polish).
+- Kitty keyboard + OSC 52 clipboard: not implemented (Kitty intentionally; OSC 52 deferred — no shell path needs it yet).
+- Numeric keypad application mode (DECKPAM) is tracked in `ModeState.app_keypad` but GPUI doesn't distinguish keypad keys, so no keypad-specific sequences are emitted.
+
+### What's Next
+- **T03-004** `tasks/phase-02-terminal/T03-004-shell-integration-cwd.md` — OSC 133 shell integration + CWD tracking. Deps: T03-002 (done).
+- **T02-006** (terminal background images) also unblocked.
+
+### Blockers
+- None.
+
+---
+
+## Session: 2026-09-01 (T03-002 — GPUI terminal cell renderer)
 
 ### What Was Done
 - **T03-002 ✅ Done.** The terminal is now a visible, interactive GPUI surface.

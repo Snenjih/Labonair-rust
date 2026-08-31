@@ -17,7 +17,7 @@ use alacritty_terminal::event::{Event as AlacEvent, EventListener, WindowSize};
 use alacritty_terminal::grid::{Dimensions, Scroll};
 use alacritty_terminal::index::{Column, Line, Point};
 use alacritty_terminal::term::cell::Flags;
-use alacritty_terminal::term::{Config, Term};
+use alacritty_terminal::term::{Config, Term, TermMode};
 use alacritty_terminal::vte::ansi::{Color as AnsiColor, CursorShape, NamedColor, Processor, Rgb};
 
 use crate::TerminalColors;
@@ -177,6 +177,48 @@ pub struct SelectionSpan {
     pub line: usize,
     pub start_col: usize,
     pub end_col: usize,
+}
+
+/// Snapshot of the terminal modes that change how keyboard and mouse input is
+/// encoded (see [`crate::input`]). Pulled from the `alacritty_terminal` engine
+/// via [`TerminalEmulator::mode_state`] and passed into the input mappers so the
+/// generated escape sequences match what the running program expects.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct ModeState {
+    /// DECCKM — cursor keys send `ESC O x` instead of `ESC [ x`.
+    pub app_cursor: bool,
+    /// DECKPAM — application keypad mode.
+    pub app_keypad: bool,
+    /// Bracketed paste (DEC 2004) — pasted text is wrapped in `ESC[200~`/`ESC[201~`.
+    pub bracketed_paste: bool,
+    /// Insert mode (IRM).
+    pub insert: bool,
+    /// Alternate screen buffer is active (vim, less, htop, …).
+    pub alt_screen: bool,
+    /// DEC 1007 — wheel events become arrow keys on the alternate screen.
+    pub alternate_scroll: bool,
+    /// DEC 1000 — report button press/release.
+    pub mouse_report_click: bool,
+    /// DEC 1002 — also report motion while a button is held.
+    pub mouse_drag: bool,
+    /// DEC 1003 — report all motion.
+    pub mouse_motion: bool,
+    /// DEC 1006 — SGR extended mouse encoding.
+    pub sgr_mouse: bool,
+    /// DEC 1005 — UTF-8 extended mouse encoding.
+    pub utf8_mouse: bool,
+    /// Any Kitty keyboard protocol flag is enabled.
+    pub kitty_keyboard: bool,
+    /// Kitty "report all keys as escape codes".
+    pub report_all_keys_as_esc: bool,
+}
+
+impl ModeState {
+    /// `true` when any mouse-reporting mode is active, i.e. wheel/click events
+    /// must be sent to the program rather than driving scrollback/selection.
+    pub fn mouse_reporting(&self) -> bool {
+        self.mouse_report_click || self.mouse_drag || self.mouse_motion
+    }
 }
 
 /// An immutable snapshot of the visible terminal, produced by
@@ -442,6 +484,66 @@ impl TerminalEmulator {
     /// Clear any active selection.
     pub fn clear_selection(&mut self) {
         self.term.selection = None;
+    }
+
+    /// Snapshot of the input-relevant terminal modes.
+    pub fn mode_state(&self) -> ModeState {
+        let m = *self.term.mode();
+        ModeState {
+            app_cursor: m.contains(TermMode::APP_CURSOR),
+            app_keypad: m.contains(TermMode::APP_KEYPAD),
+            bracketed_paste: m.contains(TermMode::BRACKETED_PASTE),
+            insert: m.contains(TermMode::INSERT),
+            alt_screen: m.contains(TermMode::ALT_SCREEN),
+            alternate_scroll: m.contains(TermMode::ALTERNATE_SCROLL),
+            mouse_report_click: m.contains(TermMode::MOUSE_REPORT_CLICK),
+            mouse_drag: m.contains(TermMode::MOUSE_DRAG),
+            mouse_motion: m.contains(TermMode::MOUSE_MOTION),
+            sgr_mouse: m.contains(TermMode::SGR_MOUSE),
+            utf8_mouse: m.contains(TermMode::UTF8_MOUSE),
+            kitty_keyboard: m.intersects(TermMode::KITTY_KEYBOARD_PROTOCOL),
+            report_all_keys_as_esc: m.contains(TermMode::REPORT_ALL_KEYS_AS_ESC),
+        }
+    }
+
+    /// Begin or extend a simple text selection using **viewport** cell
+    /// coordinates `(column, row)` where row 0 is the top visible line. The
+    /// current scrollback offset is folded in so the selection stays anchored to
+    /// the buffer content while the user scrolls. `anchor` is the fixed corner
+    /// (mouse-down cell), `head` the moving corner (current mouse cell).
+    pub fn update_selection_viewport(&mut self, anchor: (usize, usize), head: (usize, usize)) {
+        use alacritty_terminal::index::{Column, Line, Point as GridIndex, Side};
+        use alacritty_terminal::selection::{Selection, SelectionType};
+
+        let offset = self.term.grid().display_offset() as i32;
+        let cols = self.dimensions.columns.max(1);
+        let to_point = |(col, row): (usize, usize)| {
+            let line = Line(row as i32 - offset);
+            let col = col.min(cols - 1);
+            (GridIndex::new(line, Column(col)), col)
+        };
+        let (a_point, a_col) = to_point(anchor);
+        let (h_point, h_col) = to_point(head);
+        // Anchor side stays on the outer edge of the cell so a click that never
+        // moves selects nothing, matching how xterm/alacritty behave.
+        let anchor_side = if h_col >= a_col {
+            Side::Left
+        } else {
+            Side::Right
+        };
+        let head_side = if h_col >= a_col {
+            Side::Right
+        } else {
+            Side::Left
+        };
+        let mut selection = Selection::new(SelectionType::Simple, a_point, anchor_side);
+        selection.update(h_point, head_side);
+        self.term.selection = Some(selection);
+    }
+
+    /// The currently selected text, if any (empty selection → `None`).
+    pub fn selection_text(&self) -> Option<String> {
+        self.term.selection_to_string().filter(|s| !s.is_empty())
     }
 
     /// `true` while a full-screen application (vim, less, …) holds the alternate
