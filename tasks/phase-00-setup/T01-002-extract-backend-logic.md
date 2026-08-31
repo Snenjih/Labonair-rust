@@ -1,7 +1,7 @@
 # T01-002: Backend-Logik aus reference-src extrahieren
 
 ## Status
-⏳ Pending
+✅ Done
 
 ## Phase
 0 — Projekt-Setup & Grundgerüst

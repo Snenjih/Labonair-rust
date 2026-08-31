@@ -4,17 +4,62 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-tokio = { workspace = true }
-russh = { workspace = true }
-russh-sftp = { workspace = true }
-rusqlite = { workspace = true }
-keyring = { workspace = true }
-portable-pty = { workspace = true }
-serde = { workspace = true }
-serde_json = { workspace = true }
-anyhow = { workspace = true }
-thiserror = { workspace = true }
-dirs = { workspace = true }
-uuid = { workspace = true }
-chrono = { workspace = true }
-tracing = { workspace = true }
+# SSH / SFTP — versions taken 1:1 from reference-src/src-tauri/Cargo.toml
+russh = { version = "0.62.2", default-features = false, features = ["ring", "flate2", "rsa"] }
+russh-sftp = "2.3.0"
+
+# Git runs via the `git` CLI (std::process / tokio::process) — no git2/libgit2.
+
+# SQLite
+rusqlite = { version = "0.40", features = ["bundled"] }
+
+# HTTP (theme index fetch)
+reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "rustls-tls"] }
+
+# PTY
+portable-pty = "0.9"
+
+# Async
+tokio = { version = "1", features = ["full"] }
+tokio-util = "0.7"
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Errors / logging
+thiserror = "1"
+log = "0.4"
+
+# Crypto / hashing
+aes-gcm = "0.10"
+rand = { version = "0.8", features = ["getrandom"] }
+md5 = "0.7"
+openssl = { version = "0.10", features = ["vendored"] }
+base64 = "0.22"
+
+# Filesystem search
+ignore = "0.4"
+grep-regex = "0.1"
+grep-searcher = "0.1"
+globset = "0.4"
+notify = "6"
+notify-debouncer-mini = "0.4"
+flate2 = "1"
+
+# Terminal parsing (OSC 133 capture)
+vte = "0.15"
+
+# MCP bridge
+rmcp = { version = "2.2.0", features = ["server", "macros", "transport-streamable-http-server"] }
+axum = "0.8"
+schemars = "1"
+
+# Fonts
+fontdb = "0.24.0"
+
+# Platform / misc
+socket2 = "0.5"
+libc = "0.2"
+dirs = "6"
+uuid = { version = "1", features = ["v4"] }

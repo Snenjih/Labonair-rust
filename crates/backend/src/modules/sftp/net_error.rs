@@ -1,0 +1,113 @@
+/// Heuristic classification of a raw error string as a network-level failure
+/// (dropped connection, dead socket) vs. any other error (permission denied,
+/// file not found, stale session, ...). Shared between the transfer worker
+/// and the SFTP browsing commands so both react identically to a dead
+/// connection — remove the session and let the frontend show a reconnect
+/// affordance instead of a silently stuck pane.
+pub(crate) fn is_network_error(e: &str) -> bool {
+    let lower = e.to_lowercase();
+    lower.contains("broken pipe")
+        || lower.contains("connection reset")
+        || lower.contains("connection refused")
+        || lower.contains("no route to host")
+        || lower.contains("network")
+        || lower.contains("no sftp session")
+        || lower.contains("no ssh session")
+        // Mirrors ssh/pty.rs's humanize_disconnect_reason patterns — a dead
+        // SFTP/browsing session surfaces the exact same transport-level
+        // errors an interactive PTY session does, and previously only the
+        // PTY side recognized them here, so a browsing session killed this
+        // way was never removed/reported (see the SSH reliability fix plan).
+        || lower.contains("transport read")
+        || lower.contains("transport write")
+        || lower.contains("timed out")
+        || lower.contains("timeout")
+        || lower.contains("eof")
+        || lower.contains("end of file")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn detects_broken_pipe() {
+        assert!(is_network_error("Broken pipe (os error 32)"));
+    }
+
+    #[test]
+    fn detects_connection_reset() {
+        assert!(is_network_error("Connection reset by peer"));
+    }
+
+    #[test]
+    fn detects_connection_refused() {
+        assert!(is_network_error("Connection refused"));
+    }
+
+    #[test]
+    fn detects_no_route_to_host() {
+        assert!(is_network_error("No route to host"));
+    }
+
+    #[test]
+    fn detects_missing_session_after_removal() {
+        assert!(is_network_error("no SFTP session for tab abc-123"));
+    }
+
+    #[test]
+    fn detects_missing_ssh_session_for_git() {
+        assert!(is_network_error(
+            "no SSH session for this host — reconnect and try again"
+        ));
+    }
+
+    #[test]
+    fn is_case_insensitive() {
+        assert!(is_network_error("BROKEN PIPE"));
+    }
+
+    #[test]
+    fn does_not_flag_permission_denied() {
+        assert!(!is_network_error("Permission denied"));
+    }
+
+    #[test]
+    fn does_not_flag_file_not_found() {
+        assert!(!is_network_error("No such file or directory"));
+    }
+
+    #[test]
+    fn does_not_flag_generic_internal_error() {
+        assert!(!is_network_error("invalid argument"));
+    }
+
+    // --- patterns added by the SSH reliability fix (mirrors
+    // ssh/pty.rs::humanize_disconnect_reason so a browsing/SFTP session dying
+    // the same way an interactive PTY session would is classified the same). ---
+
+    #[test]
+    fn detects_transport_read_error() {
+        assert!(is_network_error(
+            "Network transport failure — the connection was dropped by the server or network [transport read]"
+        ));
+    }
+
+    #[test]
+    fn detects_transport_write_error() {
+        assert!(is_network_error("transport write error"));
+    }
+
+    #[test]
+    fn detects_timed_out() {
+        assert!(is_network_error("operation timed out"));
+    }
+
+    #[test]
+    fn detects_eof() {
+        assert!(is_network_error("unexpected eof"));
+        assert!(is_network_error(
+            "Connection closed by the remote host (EOF)"
+        ));
+    }
+}
