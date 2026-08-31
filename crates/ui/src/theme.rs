@@ -11,7 +11,7 @@
 //! theme state.
 
 use gpui::{App, AppContext, Context, Entity, Global, Hsla, WindowAppearance};
-use labonair_theme::{Animation, RadiusScale, Shadows, Theme};
+use labonair_theme::{Animation, RadiusScale, Shadows, Theme, ThemeFile};
 
 /// The theme preference the user picked in settings.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -53,9 +53,12 @@ pub struct ThemeStore {
     /// Default themes, built once from the design tokens — never recomputed.
     light: Theme,
     dark: Theme,
-    /// An imported user theme. When set it overrides the default theme
-    /// regardless of the resolved mode (T02-003).
+    /// An imported user theme, resolved for the current mode. When set it
+    /// overrides the default theme (T02-003).
     custom: Option<Theme>,
+    /// The source file for `custom`, kept so the imported theme can be
+    /// re-resolved for the other mode when the appearance changes.
+    custom_file: Option<ThemeFile>,
 }
 
 impl ThemeStore {
@@ -67,6 +70,18 @@ impl ThemeStore {
             light: Theme::light(),
             dark: Theme::dark(),
             custom: None,
+            custom_file: None,
+        }
+    }
+
+    /// Re-resolves the imported theme (if any) against the current mode.
+    fn reresolve_custom(&mut self) {
+        let Some(file) = self.custom_file.clone() else {
+            return;
+        };
+        let dark = self.mode() == ThemeMode::Dark;
+        if let Ok((theme, _warnings)) = Theme::from_theme_file(&file, dark) {
+            self.custom = Some(theme);
         }
     }
 
@@ -107,6 +122,7 @@ impl ThemeStore {
             return;
         }
         self.preference = preference;
+        self.reresolve_custom();
         cx.notify();
     }
 
@@ -120,18 +136,55 @@ impl ThemeStore {
         let was_following = self.preference == ThemePreference::System;
         self.system_mode = mode;
         if was_following {
+            self.reresolve_custom();
             cx.notify();
         }
     }
 
-    /// Activates an imported theme (`Some`) or clears it (`None`), falling back
-    /// to the default theme for the resolved mode.
+    /// Directly sets a resolved custom theme (`Some`) or clears it (`None`).
+    /// Clears any imported [`ThemeFile`] source — use [`Self::import_theme_file`]
+    /// to keep mode-following behaviour.
     pub fn set_custom_theme(&mut self, theme: Option<Theme>, cx: &mut Context<Self>) {
-        if self.custom == theme {
+        if self.custom == theme && self.custom_file.is_none() {
             return;
         }
         self.custom = theme;
+        self.custom_file = None;
         cx.notify();
+    }
+
+    /// Imports a user [`ThemeFile`], resolves it for the current mode and
+    /// activates it. The file is validated first; a half-parsed theme is never
+    /// set active. Returns any non-fatal warnings (unknown tokens, unparseable
+    /// color values that fell back to defaults).
+    pub fn import_theme_file(
+        &mut self,
+        file: ThemeFile,
+        cx: &mut Context<Self>,
+    ) -> Result<Vec<String>, String> {
+        file.validate()?;
+        let dark = self.mode() == ThemeMode::Dark;
+        let (theme, warnings) = Theme::from_theme_file(&file, dark)?;
+        self.custom = Some(theme);
+        self.custom_file = Some(file);
+        cx.notify();
+        Ok(warnings)
+    }
+
+    /// Clears the active custom theme, reverting to the built-in light/dark
+    /// theme for the resolved mode.
+    pub fn clear_custom_theme(&mut self, cx: &mut Context<Self>) {
+        if self.custom.is_none() && self.custom_file.is_none() {
+            return;
+        }
+        self.custom = None;
+        self.custom_file = None;
+        cx.notify();
+    }
+
+    /// Serializes the active theme into a reusable [`ThemeFile`] for export.
+    pub fn active_theme_file(&self, name: impl Into<String>) -> ThemeFile {
+        self.theme().to_theme_file(name, "")
     }
 
     // --- Convenience accessors for UI components -------------------------
@@ -282,6 +335,70 @@ mod tests {
             assert_eq!(s.radius(), t.radius);
             assert_eq!(s.shadows(), &t.shadows);
             assert_eq!(s.animation(), &t.animation);
+        });
+    }
+
+    const SAMPLE_THEME: &str = r##"{
+        "name": "Sample",
+        "variants": {
+            "dark":  { "mode": "dark",  "colors": { "primary": "#ff0000" } },
+            "light": { "mode": "light", "colors": { "primary": "#0000ff" } }
+        }
+    }"##;
+
+    #[gpui::test]
+    fn import_theme_file_activates_and_follows_mode(cx: &mut TestAppContext) {
+        cx.update(|cx| {
+            let store = cx.new(|_| ThemeStore::new(WindowAppearance::Dark));
+            store.update(cx, |s, cx| {
+                let file = ThemeFile::from_json(SAMPLE_THEME).unwrap();
+                let warnings = s.import_theme_file(file, cx).unwrap();
+                assert!(warnings.is_empty(), "{warnings:?}");
+                assert!(s.has_custom_theme());
+                assert_eq!(labonair_theme::to_rgb8(s.primary()), [0xff, 0x00, 0x00]);
+
+                // Switching the resolved mode re-resolves the imported theme.
+                s.set_preference(ThemePreference::Light, cx);
+                assert_eq!(labonair_theme::to_rgb8(s.primary()), [0x00, 0x00, 0xff]);
+
+                s.clear_custom_theme(cx);
+                assert!(!s.has_custom_theme());
+                assert_eq!(s.primary(), Theme::light().core.primary);
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn import_rejects_invalid_file_without_activating(cx: &mut TestAppContext) {
+        cx.update(|cx| {
+            let store = cx.new(|_| ThemeStore::new(WindowAppearance::Dark));
+            store.update(cx, |s, cx| {
+                let bad = ThemeFile::from_json(
+                    r#"{ "name": "OnlyDark", "variants": { "d": { "mode": "dark", "colors": {} } } }"#,
+                )
+                .unwrap();
+                assert!(s.import_theme_file(bad, cx).is_err());
+                assert!(!s.has_custom_theme(), "invalid theme must not become active");
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn export_then_import_round_trips(cx: &mut TestAppContext) {
+        cx.update(|cx| {
+            let store = cx.new(|_| ThemeStore::new(WindowAppearance::Dark));
+            store.update(cx, |s, cx| {
+                let exported = s.active_theme_file("Exported");
+                let json = exported.to_json().unwrap();
+                let reparsed = ThemeFile::from_json(&json).unwrap();
+                let warnings = s.import_theme_file(reparsed, cx).unwrap();
+                assert!(warnings.is_empty(), "{warnings:?}");
+                // Same colors as the dark default we exported from.
+                assert_eq!(
+                    labonair_theme::to_rgb8(s.background()),
+                    labonair_theme::to_rgb8(Theme::dark().core.background)
+                );
+            });
         });
     }
 

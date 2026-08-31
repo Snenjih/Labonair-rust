@@ -4,6 +4,7 @@
 
 pub mod theme;
 
+pub use labonair_theme::{ThemeFile, ThemeFileVariant};
 pub use theme::{
     active_theme, init as init_theme, theme_store, GlobalTheme, ThemeMode, ThemePreference,
     ThemeStore,

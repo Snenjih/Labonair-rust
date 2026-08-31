@@ -70,6 +70,11 @@ fn meta_from_theme(id: String, theme: Theme, builtin: bool) -> ThemeMeta {
 
 const DEFAULT_JSON: &str = include_str!("default.json");
 
+/// Built-in themes that must never be deleted or overwritten from disk.
+fn is_protected(id: &str) -> bool {
+    id == "default"
+}
+
 fn themes_dir(_app: &crate::App) -> Result<PathBuf, String> {
     let dir = crate::modules::fs::paths::config_dir().join("themes");
     if !dir.exists() {
@@ -150,7 +155,7 @@ pub async fn theme_export(app: crate::App, id: String, dest_path: String) -> Res
 
 /// Delete a user-created theme by id. Built-in themes cannot be deleted.
 pub async fn theme_delete(app: crate::App, id: String) -> Result<(), String> {
-    if id == "default" {
+    if is_protected(&id) {
         return Err("Cannot delete the built-in default theme.".to_string());
     }
     let path = themes_dir(&app)?.join(format!("{}.json", id));
@@ -278,4 +283,46 @@ pub async fn theme_download(app: crate::App, url: String) -> Result<ThemeMeta, S
     std::fs::write(&dest, &raw_json).map_err(|e| e.to_string())?;
 
     Ok(meta_from_theme(id, theme, false))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bundled_default_theme_parses_and_validates() {
+        let theme: Theme = serde_json::from_str(DEFAULT_JSON).expect("default.json must parse");
+        theme
+            .validate()
+            .expect("default.json must be a valid theme");
+        assert_eq!(theme.name, "Labonair");
+    }
+
+    #[test]
+    fn validate_requires_both_light_and_dark_variants() {
+        let mut only_dark = HashMap::new();
+        only_dark.insert(
+            "dark".to_string(),
+            ThemeVariant {
+                mode: "dark".to_string(),
+                label: None,
+                colors: HashMap::new(),
+            },
+        );
+        let theme = Theme {
+            name: "X".to_string(),
+            author: String::new(),
+            author_url: String::new(),
+            version: String::new(),
+            description: String::new(),
+            variants: only_dark,
+        };
+        assert!(theme.validate().is_err());
+    }
+
+    #[test]
+    fn default_theme_is_protected_from_deletion() {
+        assert!(is_protected("default"));
+        assert!(!is_protected("my-custom-theme"));
+    }
 }

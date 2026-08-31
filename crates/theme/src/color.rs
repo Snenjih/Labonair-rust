@@ -181,6 +181,19 @@ pub fn to_rgb8(color: Hsla) -> [u8; 3] {
     ]
 }
 
+/// Serialize an `Hsla` to a `#rrggbb` (opaque) or `#rrggbbaa` hex string — the
+/// format Labonair theme files use. Used by theme export (T02-003).
+pub fn to_hex(color: Hsla) -> String {
+    let [r, g, b] = to_rgb8(color);
+    let rgba: Rgba = color.into();
+    let a = (rgba.a.clamp(0.0, 1.0) * 255.0).round() as u8;
+    if a == 255 {
+        format!("#{r:02x}{g:02x}{b:02x}")
+    } else {
+        format!("#{r:02x}{g:02x}{b:02x}{a:02x}")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

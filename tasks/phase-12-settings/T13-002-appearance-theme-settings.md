@@ -65,6 +65,7 @@ Dieser Task verdrahtet diese mit dem Settings-System und dem Theme-Store, sodass
 ## Notizen
 
 - Hintergrund-Bilder und Themes müssen konsistent zusammenspielen (Bild-Verdunkelung für Lesbarkeit, wenn Theme hell/dunkel).
+- **T02-003 hat die Funktions-Ebene fertig, nur die Settings-UI-Verdrahtung fehlt (dieser Task, Schritt 2).** Vorhandene APIs: `ThemeStore::import_theme_file(ThemeFile, cx) -> Result<Vec<String>, String>` (Warnungen anzeigen), `ThemeStore::clear_custom_theme(cx)`, `ThemeStore::active_theme_file(name) -> ThemeFile` (Export, dann `ThemeFile::to_json`), `labonair_ui::ThemeFile::from_json`. Persistenz + Liste + Löschen liegen im Backend `themes`-Modul (`themes_get_all`, `theme_get_default`, `theme_import`, `theme_export`, `theme_delete` — `theme_delete` schützt bereits `id == "default"`).
 - Die Font-Verwaltung ist auch für das Terminal relevant (Phase 2) — gemeinsamer Font-Store sinnvoll.
 
 ## Warnungen

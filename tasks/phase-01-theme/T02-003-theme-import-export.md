@@ -1,7 +1,13 @@
 # T02-003: Theme-Import/Export für Benutzer-Themes
 
 ## Status
-⏳ Pending
+✅ Done
+
+> Functional layer complete (schema, parsing, conversion, persistence, list,
+> delete-protection, import/export round-trip, tests). The **settings-UI wiring**
+> (criterion 7) is deferred to **T13-002** (Appearance settings), which already
+> lists T02-003 as a dependency — there is no app shell or settings surface in
+> Phase 1 to attach it to yet.
 
 ## Phase
 1 — Theme-System & Design-Tokens
