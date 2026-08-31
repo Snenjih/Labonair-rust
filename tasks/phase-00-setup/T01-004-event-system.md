@@ -1,7 +1,7 @@
 # T01-004: Event-System & Logging definieren
 
 ## Status
-⏳ Pending
+✅ Done
 
 ## Phase
 0 — Projekt-Setup & Grundgerüst

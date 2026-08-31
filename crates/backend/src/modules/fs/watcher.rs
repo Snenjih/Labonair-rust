@@ -1,6 +1,5 @@
 use notify::RecommendedWatcher;
 use notify_debouncer_mini::{new_debouncer, Debouncer};
-use serde::Serialize;
 use std::{
     collections::{HashMap, HashSet},
     path::Path,
@@ -8,10 +7,7 @@ use std::{
     time::Duration,
 };
 
-#[derive(Serialize, Clone)]
-struct DirChangedPayload {
-    path: String,
-}
+use crate::events::AppEvent;
 
 pub struct WatcherState(pub Arc<Mutex<HashMap<String, Debouncer<RecommendedWatcher>>>>);
 
@@ -42,12 +38,9 @@ fn create_watcher(path: &str, app: crate::App) -> Result<Debouncer<RecommendedWa
         Duration::from_millis(300),
         move |res: Result<Vec<notify_debouncer_mini::DebouncedEvent>, notify::Error>| {
             if res.is_ok() {
-                let _ = app.emit(
-                    "fs:dir-changed",
-                    DirChangedPayload {
-                        path: emit_path.clone(),
-                    },
-                );
+                let _ = app.emit_event(AppEvent::DirChanged {
+                    path: emit_path.clone(),
+                });
             }
         },
     )

@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex as StdMutex};
 
 use serde::Serialize;
 
-use crate::events::EventBus;
+use crate::events::{AppEvent, EventBus};
 use crate::modules::fs::watcher::WatcherState;
 use crate::modules::hosts::{self, HostsDb};
 use crate::modules::mcp::McpState;
@@ -109,5 +109,10 @@ impl App {
     /// Emit an app-wide event (replaces `window.emit`).
     pub fn emit<S: Serialize>(&self, name: &str, payload: S) -> Result<(), String> {
         self.events.emit(name, payload)
+    }
+
+    /// Emit a typed app-wide event.
+    pub fn emit_event(&self, event: AppEvent) -> Result<(), String> {
+        self.events.emit_event(event)
     }
 }

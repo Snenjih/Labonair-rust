@@ -8,7 +8,7 @@ pub mod events;
 pub mod modules;
 
 pub use app::{App, AppState};
-pub use events::{AppEvent, EventBus, EventChannel};
+pub use events::{AppEvent, EventBus, EventChannel, RawEvent};
 pub use modules::errors::LabonairError;
 pub use modules::errors::LabonairError as AppError;
 
