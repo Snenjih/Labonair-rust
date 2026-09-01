@@ -26,7 +26,9 @@ use gpui::{
     Focusable, InteractiveElement, IntoElement, KeyDownEvent, ParentElement, Pixels, Render,
     SharedString, StatefulInteractiveElement, Styled, Window, WindowBounds,
 };
+use labonair_backend::App as Backend;
 use labonair_terminal::TerminalRegistry;
+use tokio::runtime::Handle as TokioHandle;
 
 use crate::background::{BackgroundStore, LayerScope};
 use crate::explorer::ExplorerView;
@@ -124,10 +126,13 @@ pub struct AppShell {
 }
 
 impl AppShell {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         theme: Entity<ThemeStore>,
         background: Entity<BackgroundStore>,
         notifications: Entity<NotificationCenter>,
+        backend: Backend,
+        tokio: TokioHandle,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -149,8 +154,17 @@ impl AppShell {
         });
 
         let registry = Arc::new(TerminalRegistry::new());
-        let workspace =
-            cx.new(|cx| Workspace::new(registry, theme.clone(), background.clone(), window, cx));
+        let workspace = cx.new(|cx| {
+            Workspace::new(
+                registry,
+                theme.clone(),
+                background.clone(),
+                backend,
+                tokio,
+                window,
+                cx,
+            )
+        });
         cx.observe(&workspace, |_, _, cx| cx.notify()).detach();
 
         let explorer = cx.new(|cx| ExplorerView::new(theme.clone(), workspace.clone(), cx));

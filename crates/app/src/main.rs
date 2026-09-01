@@ -44,6 +44,7 @@ fn main() {
     init_logging();
 
     let runtime = tokio::runtime::Runtime::new().expect("failed to start tokio runtime");
+    let tokio_handle = runtime.handle().clone();
     let guard = runtime.enter();
 
     let data_dir = dirs::data_dir()
@@ -59,7 +60,7 @@ fn main() {
 
     tracing::info!("Labonair-rust starting");
 
-    Application::new().run(|cx: &mut App| {
+    Application::new().run(move |cx: &mut App| {
         labonair_ui::init_fonts(cx);
         let bounds = window_state::load()
             .unwrap_or_else(|| Bounds::centered(None, size(px(1200.0), px(800.0)), cx));
@@ -74,7 +75,7 @@ fn main() {
                 window_min_size: Some(size(px(720.0), px(480.0))),
                 ..Default::default()
             },
-            |window, cx| {
+            move |window, cx| {
                 let theme = labonair_ui::init_theme(window.appearance(), cx);
                 window
                     .observe_window_appearance({
@@ -89,7 +90,19 @@ fn main() {
                     .detach();
                 let background = labonair_ui::init_background(cx);
                 let notifications = labonair_ui::init_notifications(cx);
-                cx.new(|cx| AppShell::new(theme, background, notifications, window, cx))
+                let backend = backend.clone();
+                let tokio_handle = tokio_handle.clone();
+                cx.new(|cx| {
+                    AppShell::new(
+                        theme,
+                        background,
+                        notifications,
+                        backend,
+                        tokio_handle,
+                        window,
+                        cx,
+                    )
+                })
             },
         )
         .expect("failed to open window");

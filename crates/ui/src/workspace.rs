@@ -26,16 +26,64 @@ use gpui::{
     Focusable, InteractiveElement, IntoElement, KeyDownEvent, MouseButton, MouseDownEvent,
     ParentElement, Render, SharedString, StatefulInteractiveElement, Styled, Task, Window,
 };
+use labonair_backend::modules::ssh::client::{ssh_connect, ssh_disconnect, ssh_trust_host};
+use labonair_backend::modules::ssh::pty::SshPtyEvent;
+use labonair_backend::{App as Backend, AppEvent, EventChannel};
 use labonair_terminal::{
-    SessionHandle, SessionId, SessionOptions, TermDimensions, TerminalColors, TerminalRegistry,
+    RemoteFeed, RemoteResizer, RemoteWriter, SessionHandle, SessionId, SessionOptions,
+    TermDimensions, TerminalColors, TerminalRegistry,
 };
+use tokio::runtime::Handle as TokioHandle;
 
 use crate::background::BackgroundStore;
 use crate::editor::{EditorEvent, EditorView};
+use crate::hosts::{HostManagerEvent, HostManagerView, HostStatus};
 use crate::pane::{CloseOutcome, PaneId, PaneNode, SplitAxis, WorkspaceLayout};
 use crate::tabs::{Tab, TabData, TabKind, TabStore};
 use crate::terminal::TerminalView;
 use crate::theme::ThemeStore;
+
+/// Interval for draining backend SSH events into the workspace.
+const SSH_POLL_INTERVAL: Duration = Duration::from_millis(40);
+
+/// One open SSH terminal tab: its backend session id, the host it targets and
+/// the [`RemoteFeed`] used to push remote output / signal disconnects.
+struct SshTab {
+    ssh_id: String,
+    host_id: String,
+    feed: RemoteFeed,
+    tab_id: u64,
+}
+
+/// A blocking prompt raised mid-connect by the SSH backend.
+enum SshPrompt {
+    Trust {
+        ssh_id: String,
+        host: String,
+        fingerprint: String,
+        mismatch: bool,
+    },
+    Password {
+        ssh_id: String,
+        message: String,
+        buffer: String,
+        is_2fa: bool,
+    },
+    Passphrase {
+        ssh_id: String,
+        buffer: String,
+    },
+}
+
+impl SshPrompt {
+    fn ssh_id(&self) -> &str {
+        match self {
+            SshPrompt::Trust { ssh_id, .. }
+            | SshPrompt::Password { ssh_id, .. }
+            | SshPrompt::Passphrase { ssh_id, .. } => ssh_id,
+        }
+    }
+}
 
 /// Interval for syncing terminal cwd/title into their tab labels.
 const META_SYNC_INTERVAL: Duration = Duration::from_millis(400);
@@ -107,13 +155,33 @@ pub struct Workspace {
     context_menu: Option<(u64, gpui::Point<gpui::Pixels>)>,
     focus_handle: FocusHandle,
     _meta_sync: Task<()>,
+
+    // ── SSH (T07-001) ──────────────────────────────────────────────────────
+    backend: Backend,
+    tokio: TokioHandle,
+    host_manager: Entity<HostManagerView>,
+    /// Live SSH terminal tabs, keyed by registry session id.
+    ssh_tabs: HashMap<SessionId, SshTab>,
+    /// Host ids queued by the host manager for connection, drained in `render`
+    /// (where a `&mut Window` is available).
+    pending_connect: Vec<String>,
+    /// The active connect prompt (trust / password / passphrase), if any.
+    ssh_prompt: Option<SshPrompt>,
+    prompt_focus: FocusHandle,
+    prompt_shown: bool,
+    /// Backend → workspace SSH events, forwarded off the broadcast bus.
+    ssh_events: std::sync::mpsc::Receiver<AppEvent>,
+    _ssh_poll: Task<()>,
 }
 
 impl Workspace {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         registry: Arc<TerminalRegistry>,
         theme: Entity<ThemeStore>,
         background: Entity<BackgroundStore>,
+        backend: Backend,
+        tokio: TokioHandle,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -135,6 +203,60 @@ impl Workspace {
             }
         });
 
+        let host_manager =
+            cx.new(|cx| HostManagerView::new(backend.clone(), tokio.clone(), theme.clone(), cx));
+        cx.observe(&host_manager, |_, _, cx| cx.notify()).detach();
+        cx.subscribe(
+            &host_manager,
+            |this, _, ev: &HostManagerEvent, cx| match ev {
+                HostManagerEvent::Connect(host_id) => {
+                    this.pending_connect.push(host_id.clone());
+                    cx.notify();
+                }
+            },
+        )
+        .detach();
+
+        // Forward the backend's broadcast event bus into a plain channel the
+        // GPUI poll loop can drain without an async runtime.
+        let (ev_tx, ev_rx) = std::sync::mpsc::channel::<AppEvent>();
+        {
+            let mut bus = backend.events.subscribe();
+            tokio.spawn(async move {
+                use tokio::sync::broadcast::error::RecvError;
+                loop {
+                    match bus.recv().await {
+                        Ok(raw) => {
+                            if let Some(ev) = AppEvent::from_raw(&raw) {
+                                if ev_tx.send(ev).is_err() {
+                                    break;
+                                }
+                            }
+                        }
+                        Err(RecvError::Lagged(_)) => continue,
+                        Err(RecvError::Closed) => break,
+                    }
+                }
+            });
+        }
+        let ssh_poll = cx.spawn(async move |this, cx| loop {
+            cx.background_executor().timer(SSH_POLL_INTERVAL).await;
+            let ok = this
+                .update(cx, |this, cx| {
+                    let mut events = Vec::new();
+                    while let Ok(ev) = this.ssh_events.try_recv() {
+                        events.push(ev);
+                    }
+                    for ev in events {
+                        this.handle_ssh_event(ev, cx);
+                    }
+                })
+                .is_ok();
+            if !ok {
+                break;
+            }
+        });
+
         let mut this = Self {
             registry,
             tabs,
@@ -148,8 +270,20 @@ impl Workspace {
             context_menu: None,
             focus_handle: cx.focus_handle(),
             _meta_sync: meta_sync,
+            backend,
+            tokio,
+            host_manager,
+            ssh_tabs: HashMap::new(),
+            pending_connect: Vec::new(),
+            ssh_prompt: None,
+            prompt_focus: cx.focus_handle(),
+            prompt_shown: false,
+            ssh_events: ev_rx,
+            _ssh_poll: ssh_poll,
         };
-        // First tab.
+        // Landing tab: the host-manager dashboard.
+        this.tabs
+            .update(cx, |s, cx| s.open(TabKind::Home, TabData::default(), cx));
         this.open_terminal_tab(window, cx);
         this
     }
@@ -652,6 +786,446 @@ impl Workspace {
             }
         }
         self.editors.remove(&tab.id);
+
+        // Disconnect any SSH session owned by this tab.
+        let dead: Vec<SessionId> = self
+            .ssh_tabs
+            .iter()
+            .filter(|(_, t)| t.tab_id == tab.id)
+            .map(|(k, _)| *k)
+            .collect();
+        for sid in dead {
+            if let Some(t) = self.ssh_tabs.remove(&sid) {
+                let app = self.backend.clone();
+                let ssh_id = t.ssh_id.clone();
+                self.tokio.spawn(async move {
+                    let _ = ssh_disconnect(ssh_id, &app.ssh).await;
+                });
+                if let Some(p) = &self.ssh_prompt {
+                    if p.ssh_id() == t.ssh_id {
+                        self.ssh_prompt = None;
+                    }
+                }
+            }
+        }
+    }
+
+    // ── SSH connection flow (T07-001) ──────────────────────────────────────
+
+    fn set_host_status(&mut self, host_id: &str, status: HostStatus, cx: &mut Context<Self>) {
+        self.host_manager
+            .update(cx, |h, cx| h.set_status(host_id, status, cx));
+    }
+
+    /// Open an SSH terminal tab for `host_id` and start the connection.
+    fn connect_host(&mut self, host_id: String, window: &mut Window, cx: &mut Context<Self>) {
+        let ssh_id = uuid::Uuid::new_v4().to_string();
+        let colors = self.theme_colors(cx);
+        let dims = TermDimensions::new(80, 24);
+
+        let writer: RemoteWriter = {
+            let (id, st, tk) = (ssh_id.clone(), self.backend.ssh.clone(), self.tokio.clone());
+            Arc::new(move |bytes: Vec<u8>| {
+                let (id, st) = (id.clone(), st.clone());
+                tk.spawn(async move {
+                    let _ = labonair_backend::modules::ssh::pty::ssh_pty_write(
+                        id,
+                        String::from_utf8_lossy(&bytes).into_owned(),
+                        &st,
+                    )
+                    .await;
+                });
+            })
+        };
+        let resizer: RemoteResizer = {
+            let (id, st, tk) = (ssh_id.clone(), self.backend.ssh.clone(), self.tokio.clone());
+            Arc::new(move |cols: u16, rows: u16| {
+                let (id, st) = (id.clone(), st.clone());
+                tk.spawn(async move {
+                    let _ = labonair_backend::modules::ssh::pty::ssh_pty_resize(
+                        id,
+                        cols as u32,
+                        rows as u32,
+                        &st,
+                    )
+                    .await;
+                });
+            })
+        };
+
+        let (session_id, feed) = self.registry.create_remote(colors, dims, writer, resizer);
+        let Some(handle) = self.registry.handle(session_id) else {
+            return;
+        };
+        feed.feed(b"Connecting\xe2\x80\xa6\r\n");
+
+        let pane_id = self.alloc_pane();
+        let tab_id = self.tabs.update(cx, |s, cx| {
+            let id = s.open(
+                TabKind::Workspace,
+                TabData {
+                    session_id: Some(session_id),
+                    host_id: Some(host_id.clone()),
+                    ..TabData::default()
+                },
+                cx,
+            );
+            s.set_custom_title(id, Some(format!("SSH · {host_id}")), cx);
+            id
+        });
+        let view = self.new_terminal_view(handle, window, cx);
+        self.panes.insert(pane_id, PaneEntry { session_id, view });
+        self.layouts.insert(tab_id, WorkspaceLayout::new(pane_id));
+        self.ssh_tabs.insert(
+            session_id,
+            SshTab {
+                ssh_id: ssh_id.clone(),
+                host_id: host_id.clone(),
+                feed: feed.clone(),
+                tab_id,
+            },
+        );
+        self.set_host_status(&host_id, HostStatus::Connecting, cx);
+        self.spawn_ssh_connect(ssh_id, host_id, None, None, feed, cx);
+        self.focus_active(window, cx);
+        cx.notify();
+    }
+
+    /// (Re)run `ssh_connect` for `ssh_id`, streaming remote output into `feed`.
+    fn spawn_ssh_connect(
+        &self,
+        ssh_id: String,
+        host_id: String,
+        passphrase: Option<String>,
+        password: Option<String>,
+        feed: RemoteFeed,
+        cx: &mut Context<Self>,
+    ) {
+        let app = self.backend.clone();
+        let ev_feed = feed.clone();
+        let on_event = EventChannel::new(move |ev: SshPtyEvent| {
+            match ev {
+                SshPtyEvent::Data { data } => ev_feed.feed(data.as_bytes()),
+            }
+            Ok(())
+        });
+        let connect_id = ssh_id.clone();
+        let jh = self.tokio.spawn(async move {
+            ssh_connect(
+                connect_id,
+                host_id,
+                passphrase,
+                password,
+                Some(80),
+                Some(24),
+                false,
+                on_event,
+                &app.ssh,
+                &app.trust,
+                &app.db,
+                &app.secrets,
+                app.clone(),
+                Some(20),
+            )
+            .await
+            .map_err(|e| e.to_string())
+        });
+        cx.spawn(async move |this, cx| {
+            if let Ok(Err(err)) = jh.await {
+                let low = err.to_lowercase();
+                let expected_prompt = low.contains("passphrase")
+                    || low.contains("auth")
+                    || low.contains("trust")
+                    || low.contains("host key");
+                if !expected_prompt {
+                    let _ = this.update(cx, |this, cx| {
+                        feed.feed(
+                            format!("\r\n\x1b[31mConnection failed: {err}\x1b[0m\r\n").as_bytes(),
+                        );
+                        if let Some(host) = this
+                            .ssh_tabs
+                            .values()
+                            .find(|t| t.ssh_id == ssh_id)
+                            .map(|t| t.host_id.clone())
+                        {
+                            this.set_host_status(&host, HostStatus::Failed, cx);
+                        }
+                        cx.notify();
+                    });
+                }
+            }
+        })
+        .detach();
+    }
+
+    fn retry_ssh(
+        &mut self,
+        ssh_id: &str,
+        passphrase: Option<String>,
+        password: Option<String>,
+        cx: &mut Context<Self>,
+    ) {
+        let Some((host_id, feed)) = self
+            .ssh_tabs
+            .values()
+            .find(|t| t.ssh_id == ssh_id)
+            .map(|t| (t.host_id.clone(), t.feed.clone()))
+        else {
+            return;
+        };
+        self.spawn_ssh_connect(ssh_id.to_string(), host_id, passphrase, password, feed, cx);
+    }
+
+    fn handle_ssh_event(&mut self, ev: AppEvent, cx: &mut Context<Self>) {
+        match ev {
+            AppEvent::SshKnownHostsWarning {
+                session_id,
+                fingerprint,
+                host,
+                is_mismatch,
+            } => {
+                self.ssh_prompt = Some(SshPrompt::Trust {
+                    ssh_id: session_id,
+                    host,
+                    fingerprint,
+                    mismatch: is_mismatch,
+                });
+            }
+            AppEvent::SshAuthRequired {
+                session_id,
+                prompt_message,
+                is_2fa,
+            } => {
+                self.ssh_prompt = Some(SshPrompt::Password {
+                    ssh_id: session_id,
+                    message: prompt_message,
+                    buffer: String::new(),
+                    is_2fa,
+                });
+            }
+            AppEvent::SshPassphraseRequired { session_id } => {
+                self.ssh_prompt = Some(SshPrompt::Passphrase {
+                    ssh_id: session_id,
+                    buffer: String::new(),
+                });
+            }
+            AppEvent::SshSessionEstablished { session_id, .. } => {
+                if let Some(host) = self
+                    .ssh_tabs
+                    .values()
+                    .find(|t| t.ssh_id == session_id)
+                    .map(|t| t.host_id.clone())
+                {
+                    self.set_host_status(&host, HostStatus::Connected, cx);
+                }
+                if self.ssh_prompt.as_ref().map(|p| p.ssh_id()) == Some(session_id.as_str()) {
+                    self.ssh_prompt = None;
+                }
+            }
+            AppEvent::SshConnectionLost { session_id } => {
+                if let Some(host) =
+                    self.ssh_tabs
+                        .values()
+                        .find(|t| t.ssh_id == session_id)
+                        .map(|t| {
+                            t.feed.mark_disconnected();
+                            t.host_id.clone()
+                        })
+                {
+                    self.set_host_status(&host, HostStatus::Failed, cx);
+                }
+            }
+            _ => {}
+        }
+        cx.notify();
+    }
+
+    fn submit_prompt(&mut self, cx: &mut Context<Self>) {
+        let Some(prompt) = self.ssh_prompt.take() else {
+            return;
+        };
+        match prompt {
+            SshPrompt::Trust { ssh_id, .. } => {
+                let app = self.backend.clone();
+                self.tokio.spawn(async move {
+                    let _ = ssh_trust_host(ssh_id, true, &app.trust).await;
+                });
+            }
+            SshPrompt::Password { ssh_id, buffer, .. } => {
+                self.retry_ssh(&ssh_id, None, Some(buffer), cx);
+            }
+            SshPrompt::Passphrase { ssh_id, buffer } => {
+                self.retry_ssh(&ssh_id, Some(buffer), None, cx);
+            }
+        }
+        cx.notify();
+    }
+
+    fn cancel_prompt(&mut self, cx: &mut Context<Self>) {
+        if let Some(SshPrompt::Trust { ssh_id, .. }) = self.ssh_prompt.take() {
+            let app = self.backend.clone();
+            self.tokio.spawn(async move {
+                let _ = ssh_trust_host(ssh_id, false, &app.trust).await;
+            });
+        }
+        cx.notify();
+    }
+
+    fn on_prompt_key(&mut self, ev: &KeyDownEvent, _window: &mut Window, cx: &mut Context<Self>) {
+        let ks = &ev.keystroke;
+        match ks.key.as_str() {
+            "escape" => self.cancel_prompt(cx),
+            "enter" => self.submit_prompt(cx),
+            "backspace" => {
+                if let Some(
+                    SshPrompt::Password { buffer, .. } | SshPrompt::Passphrase { buffer, .. },
+                ) = self.ssh_prompt.as_mut()
+                {
+                    buffer.pop();
+                }
+            }
+            key => {
+                if ks.modifiers.platform || ks.modifiers.control || ks.modifiers.alt {
+                    return;
+                }
+                let ch = ks
+                    .key_char
+                    .clone()
+                    .filter(|s| !s.is_empty() && !s.chars().any(|c| c.is_control()))
+                    .or_else(|| (key.chars().count() == 1).then(|| key.to_string()));
+                if let (
+                    Some(ch),
+                    Some(SshPrompt::Password { buffer, .. } | SshPrompt::Passphrase { buffer, .. }),
+                ) = (ch, self.ssh_prompt.as_mut())
+                {
+                    buffer.push_str(&ch);
+                }
+            }
+        }
+        cx.stop_propagation();
+        cx.notify();
+    }
+
+    fn render_ssh_prompt(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = self.theme.read(cx);
+        let (card, fg, border, accent, muted) = (
+            theme.card(),
+            theme.foreground(),
+            theme.border(),
+            theme.accent(),
+            theme.muted_foreground(),
+        );
+        let (title, body, ok_label): (String, String, &str) = match self.ssh_prompt.as_ref() {
+            Some(SshPrompt::Trust {
+                host,
+                fingerprint,
+                mismatch,
+                ..
+            }) => (
+                if *mismatch {
+                    "\u{26a0} Host key CHANGED".to_string()
+                } else {
+                    "Unknown host key".to_string()
+                },
+                format!(
+                    "{host}\nFingerprint: {fingerprint}\n\n{}",
+                    if *mismatch {
+                        "The key differs from the one on record. Only continue if you know why."
+                    } else {
+                        "This host is not yet in known_hosts."
+                    }
+                ),
+                "Trust & Continue",
+            ),
+            Some(SshPrompt::Password {
+                message,
+                buffer,
+                is_2fa,
+                ..
+            }) => (
+                if *is_2fa {
+                    "Two-factor code".to_string()
+                } else {
+                    "Password required".to_string()
+                },
+                format!("{message}\n{}", "\u{2022}".repeat(buffer.chars().count())),
+                "Submit",
+            ),
+            Some(SshPrompt::Passphrase { buffer, .. }) => (
+                "Key passphrase".to_string(),
+                format!(
+                    "Enter the passphrase for the private key.\n{}",
+                    "\u{2022}".repeat(buffer.chars().count())
+                ),
+                "Submit",
+            ),
+            None => return div(),
+        };
+
+        div()
+            .absolute()
+            .inset_0()
+            .flex()
+            .items_center()
+            .justify_center()
+            .bg(gpui::rgba(0x000000aa))
+            .child(
+                div()
+                    .track_focus(&self.prompt_focus)
+                    .key_context("SshPrompt")
+                    .on_key_down(cx.listener(Self::on_prompt_key))
+                    .flex()
+                    .flex_col()
+                    .gap_3()
+                    .w(px(420.0))
+                    .p_4()
+                    .rounded_lg()
+                    .bg(card)
+                    .border_1()
+                    .border_color(border)
+                    .text_color(fg)
+                    .child(div().text_sm().child(SharedString::from(title)))
+                    .child(
+                        div()
+                            .text_xs()
+                            .text_color(muted)
+                            .whitespace_normal()
+                            .child(SharedString::from(body)),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .gap_2()
+                            .justify_end()
+                            .child(
+                                div()
+                                    .id("ssh-prompt-cancel")
+                                    .px_3()
+                                    .py_1()
+                                    .rounded_md()
+                                    .text_color(muted)
+                                    .hover(|s| s.bg(border).text_color(fg))
+                                    .child("Cancel")
+                                    .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
+                                        this.cancel_prompt(cx)
+                                    })),
+                            )
+                            .child(
+                                div()
+                                    .id("ssh-prompt-ok")
+                                    .px_3()
+                                    .py_1()
+                                    .rounded_md()
+                                    .bg(accent)
+                                    .text_color(fg)
+                                    .hover(|s| s.opacity(0.85))
+                                    .child(SharedString::from(ok_label.to_string()))
+                                    .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
+                                        this.submit_prompt(cx)
+                                    })),
+                            ),
+                    ),
+            )
     }
 
     fn sync_meta(&mut self, cx: &mut Context<Self>) {
@@ -816,6 +1390,7 @@ impl Workspace {
         };
 
         match active.kind {
+            TabKind::Home => self.host_manager.clone().into_any_element(),
             TabKind::Workspace => {
                 if let Some(layout) = self.layouts.get(&active.id).cloned() {
                     let multi = layout.len() > 1;
@@ -1122,7 +1697,18 @@ impl Focusable for Workspace {
 }
 
 impl Render for Workspace {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        // Drain host-manager connect requests here — `connect_host` needs a
+        // `&mut Window` and `cx.subscribe` does not provide one.
+        for host_id in std::mem::take(&mut self.pending_connect) {
+            self.connect_host(host_id, window, cx);
+        }
+        let want_prompt = self.ssh_prompt.is_some();
+        if want_prompt && !self.prompt_shown {
+            window.focus(&self.prompt_focus);
+        }
+        self.prompt_shown = want_prompt;
+
         let bg = self.theme.read(cx).background();
         let tab_bar = self.render_tab_bar(cx);
         let content = self.render_content(cx);
@@ -1132,6 +1718,10 @@ impl Render for Workspace {
         let context_menu = self
             .context_menu
             .map(|(id, pos)| self.render_context_menu(id, pos, cx).into_any_element());
+        let ssh_prompt = self
+            .ssh_prompt
+            .is_some()
+            .then(|| self.render_ssh_prompt(cx).into_any_element());
 
         div()
             .track_focus(&self.focus_handle)
@@ -1146,6 +1736,7 @@ impl Render for Workspace {
             .child(div().flex_1().min_h_0().child(content))
             .children(confirm)
             .children(context_menu)
+            .children(ssh_prompt)
     }
 }
 

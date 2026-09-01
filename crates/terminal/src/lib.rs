@@ -32,5 +32,8 @@ pub use input::{
 pub use palette::{ansi_self_test, TerminalColors};
 pub use registry::{SessionHandle, SessionId, SessionStatus, TerminalRegistry};
 pub use render::{batch_runs, grid_size, RunStyle, StyledRun};
-pub use session::{SessionOptions, TerminalContext, TerminalSession};
+pub use session::{
+    RemoteFeed, RemoteResizer, RemoteSession, RemoteWriter, SessionAccess, SessionOptions,
+    TerminalContext, TerminalSession,
+};
 pub use shell_integration::Shell;

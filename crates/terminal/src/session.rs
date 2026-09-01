@@ -399,6 +399,215 @@ impl Drop for TerminalSession {
     }
 }
 
+/// The interior-mutable read/selection/scroll surface the GPUI renderer reaches
+/// through [`crate::SessionHandle::with`]. Implemented by the local
+/// [`TerminalSession`] and the transport-backed [`RemoteSession`] alike so the
+/// renderer never needs to know which one backs a tab (T07-001).
+pub trait SessionAccess {
+    fn render(&self) -> Result<RenderableScreen, String>;
+    fn cwd(&self) -> Option<String>;
+    fn metadata(&self) -> Result<SessionMetadata, String>;
+    fn mode_state(&self) -> Result<ModeState, String>;
+    fn selection_text(&self) -> Result<Option<String>, String>;
+    fn scroll(&self, scroll: Scroll) -> Result<(), String>;
+    fn clear_selection(&self) -> Result<(), String>;
+    fn update_selection(&self, anchor: (usize, usize), head: (usize, usize)) -> Result<(), String>;
+    fn ai_context(&self, max_lines: usize) -> Result<TerminalContext, String>;
+}
+
+impl SessionAccess for TerminalSession {
+    fn render(&self) -> Result<RenderableScreen, String> {
+        TerminalSession::render(self)
+    }
+    fn cwd(&self) -> Option<String> {
+        TerminalSession::cwd(self)
+    }
+    fn metadata(&self) -> Result<SessionMetadata, String> {
+        TerminalSession::metadata(self)
+    }
+    fn mode_state(&self) -> Result<ModeState, String> {
+        TerminalSession::mode_state(self)
+    }
+    fn selection_text(&self) -> Result<Option<String>, String> {
+        TerminalSession::selection_text(self)
+    }
+    fn scroll(&self, scroll: Scroll) -> Result<(), String> {
+        TerminalSession::scroll(self, scroll)
+    }
+    fn clear_selection(&self) -> Result<(), String> {
+        TerminalSession::clear_selection(self)
+    }
+    fn update_selection(&self, anchor: (usize, usize), head: (usize, usize)) -> Result<(), String> {
+        TerminalSession::update_selection(self, anchor, head)
+    }
+    fn ai_context(&self, max_lines: usize) -> Result<TerminalContext, String> {
+        TerminalSession::ai_context(self, max_lines)
+    }
+}
+
+/// Sink for user-input bytes produced by a [`RemoteSession`] (the SSH PTY write
+/// path). Called on the GPUI thread; implementations forward to the transport.
+pub type RemoteWriter = Arc<dyn Fn(Vec<u8>) + Send + Sync>;
+/// Sink for `(cols, rows)` resize requests from a [`RemoteSession`].
+pub type RemoteResizer = Arc<dyn Fn(u16, u16) + Send + Sync>;
+
+/// A terminal session whose bytes come from an external transport (SSH) rather
+/// than a local PTY. The [`TerminalEmulator`] is identical to the local case —
+/// only the "wire" differs (T07-001). Output is pushed in via [`RemoteFeed`];
+/// user input / resizes go out through the [`RemoteWriter`] / [`RemoteResizer`].
+pub struct RemoteSession {
+    emulator: Arc<Mutex<TerminalEmulator>>,
+    events: Receiver<TerminalEvent>,
+    dimensions: TermDimensions,
+    writer: RemoteWriter,
+    resizer: RemoteResizer,
+}
+
+/// Cheap, `Clone`able handle the transport reader uses to push remote output
+/// into a [`RemoteSession`]'s emulator and to signal that the connection
+/// dropped.
+#[derive(Clone)]
+pub struct RemoteFeed {
+    emulator: Arc<Mutex<TerminalEmulator>>,
+    events: Sender<TerminalEvent>,
+    writer: RemoteWriter,
+}
+
+impl RemoteFeed {
+    /// Feed a chunk of remote output through the parser. Any reply bytes the
+    /// emulator queues (DA/DSR answers) are sent straight back over the
+    /// transport.
+    pub fn feed(&self, bytes: &[u8]) {
+        let Ok(mut guard) = self.emulator.lock() else {
+            return;
+        };
+        let extra = guard.feed(bytes);
+        let replies = guard.take_pty_output();
+        drop(guard);
+        for ev in extra {
+            let _ = self.events.send(ev);
+        }
+        let _ = self.events.send(TerminalEvent::Wakeup);
+        if !replies.is_empty() {
+            (self.writer)(replies);
+        }
+    }
+
+    /// Mark the transport as gone — surfaces as a shell-exit in the UI.
+    pub fn mark_disconnected(&self) {
+        let _ = self.events.send(TerminalEvent::Exit);
+    }
+}
+
+impl RemoteSession {
+    /// Build a remote session + its [`RemoteFeed`]. No I/O happens here — the
+    /// caller wires `feed` to the transport reader.
+    pub fn new(
+        colors: TerminalColors,
+        dimensions: TermDimensions,
+        writer: RemoteWriter,
+        resizer: RemoteResizer,
+    ) -> (Self, RemoteFeed) {
+        let (tx, rx): (Sender<TerminalEvent>, Receiver<TerminalEvent>) = channel();
+        let emulator = Arc::new(Mutex::new(TerminalEmulator::new(
+            colors,
+            dimensions,
+            tx.clone(),
+        )));
+        let feed = RemoteFeed {
+            emulator: Arc::clone(&emulator),
+            events: tx,
+            writer: Arc::clone(&writer),
+        };
+        (
+            Self {
+                emulator,
+                events: rx,
+                dimensions,
+                writer,
+                resizer,
+            },
+            feed,
+        )
+    }
+
+    pub fn dimensions(&self) -> TermDimensions {
+        self.dimensions
+    }
+
+    pub fn write(&self, bytes: &[u8]) -> Result<(), String> {
+        (self.writer)(bytes.to_vec());
+        Ok(())
+    }
+
+    pub fn resize(&mut self, dimensions: TermDimensions) -> Result<(), String> {
+        self.dimensions = dimensions;
+        (self.resizer)(dimensions.columns as u16, dimensions.screen_lines as u16);
+        self.emulator
+            .lock()
+            .map_err(|_| "emulator poisoned")?
+            .resize(dimensions);
+        Ok(())
+    }
+
+    pub fn set_colors(&self, colors: TerminalColors) -> Result<(), String> {
+        self.emulator
+            .lock()
+            .map_err(|_| "emulator poisoned")?
+            .set_colors(colors);
+        Ok(())
+    }
+
+    pub fn drain_events(&self) -> Vec<TerminalEvent> {
+        self.events.try_iter().collect()
+    }
+
+    fn with_emulator<R>(&self, f: impl FnOnce(&mut TerminalEmulator) -> R) -> Result<R, String> {
+        let mut guard = self.emulator.lock().map_err(|_| "emulator poisoned")?;
+        Ok(f(&mut guard))
+    }
+}
+
+impl SessionAccess for RemoteSession {
+    fn render(&self) -> Result<RenderableScreen, String> {
+        self.with_emulator(|e| e.render())
+    }
+    fn cwd(&self) -> Option<String> {
+        self.metadata().ok().and_then(|m| m.cwd)
+    }
+    fn metadata(&self) -> Result<SessionMetadata, String> {
+        self.with_emulator(|e| e.metadata().clone())
+    }
+    fn mode_state(&self) -> Result<ModeState, String> {
+        self.with_emulator(|e| e.mode_state())
+    }
+    fn selection_text(&self) -> Result<Option<String>, String> {
+        self.with_emulator(|e| e.selection_text())
+    }
+    fn scroll(&self, scroll: Scroll) -> Result<(), String> {
+        self.with_emulator(|e| e.scroll(scroll))
+    }
+    fn clear_selection(&self) -> Result<(), String> {
+        self.with_emulator(|e| e.clear_selection())
+    }
+    fn update_selection(&self, anchor: (usize, usize), head: (usize, usize)) -> Result<(), String> {
+        self.with_emulator(|e| e.update_selection_viewport(anchor, head))
+    }
+    fn ai_context(&self, max_lines: usize) -> Result<TerminalContext, String> {
+        let guard = self.emulator.lock().map_err(|_| "emulator poisoned")?;
+        let meta = guard.metadata().clone();
+        let text = guard.render().to_text();
+        drop(guard);
+        let all: Vec<String> = text.lines().map(str::to_string).collect();
+        let start = all.len().saturating_sub(max_lines);
+        Ok(TerminalContext {
+            cwd: meta.cwd,
+            title: meta.title,
+            lines: all[start..].to_vec(),
+        })
+    }
+}
+
 /// The user's login shell, falling back to `/bin/zsh` (matches the reference).
 fn default_shell() -> String {
     std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string())

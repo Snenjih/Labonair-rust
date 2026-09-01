@@ -4,7 +4,92 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
-## Last Session: 2026-09-01 (T06-004 — Diff view)
+## Last Session: 2026-09-01 (T07-001 — Host manager & SSH connection)
+
+### What Was Done
+- **T07-001 ✅ Done.** First UI↔backend-wired feature. Host-manager dashboard,
+  SSH connect flow, SSH terminal tabs, credential manager.
+  - **`crates/terminal/src/session.rs`** — new `SessionAccess` trait (render /
+    cwd / metadata / mode_state / selection / scroll / ai_context) impl'd for
+    both `TerminalSession` and the new **`RemoteSession`** (transport-backed
+    terminal: same `TerminalEmulator`, bytes come from SSH not a local PTY).
+    `RemoteSession::new(colors, dims, RemoteWriter, RemoteResizer) -> (Self,
+    RemoteFeed)`. `RemoteFeed { feed(&[u8]), mark_disconnected() }` — the SSH
+    reader pushes output through `feed`; DA/DSR replies go back out via the
+    writer. `RemoteWriter/RemoteResizer = Arc<dyn Fn(..) + Send + Sync>`.
+  - **`crates/terminal/src/registry.rs`** — `Slot.session` is now
+    `Mutex<SessionBackend>` (`Local(TerminalSession) | Remote(RemoteSession)`);
+    all `SessionHandle` methods dispatch. `SessionHandle::with` now hands out
+    `&dyn SessionAccess`. New `TerminalRegistry::create_remote(...) ->
+    (SessionId, RemoteFeed)`. `restart` errors on remote sessions. +1 test.
+  - **`crates/ui/src/hosts.rs`** (new, ~780 lines) — `HostManagerView`
+    (`TabKind::Home` content). Groups (ungrouped + named, collapsible,
+    create/delete), host rows with live status dot + Connect / Edit /
+    Duplicate / Delete, host add/edit form modal (name/address/port/user/
+    auth-method[password|key|agent|none]/key-path/password/start-dir/tags +
+    credential & group cycle pickers), credential manager modal (list, new
+    password/key credential, ed25519 keygen via backend, delete; public key
+    shown in a toast). All persistence via `labonair_backend::modules::{hosts,
+    credentials}`. Inline text fields use the explorer's focus+key-buffer
+    pattern. Emits `HostManagerEvent::Connect(host_id)`. +2 tests.
+  - **`crates/ui/src/workspace.rs`** — owns `backend: labonair_backend::App`,
+    `tokio: runtime::Handle`, `host_manager`, `ssh_tabs:
+    HashMap<SessionId, SshTab>`. Landing tab is now `TabKind::Home` (then a
+    terminal tab, still active on start). `connect_host()` builds writer/
+    resizer closures that `tokio.spawn` `ssh_pty_write` / `ssh_pty_resize`,
+    calls `registry.create_remote`, opens a Workspace tab + `TerminalView`,
+    then `spawn_ssh_connect` (calls `ssh_connect`, streams `SshPtyEvent::Data`
+    into the `RemoteFeed`). Backend broadcast bus → `std::sync::mpsc` →
+    `cx.spawn` 40ms poll → `handle_ssh_event`: `known_hosts_warning` /
+    `auth_required` / `passphrase_required` raise an `SshPrompt` modal
+    (trust / password / passphrase); `session_established` → status Connected
+    + clears prompt; `ssh_connection_lost` → `feed.mark_disconnected()` +
+    status Failed. Trust accept → `ssh_trust_host(id, true)`; password/
+    passphrase submit → re-run `ssh_connect` with the override (the backend's
+    fail-then-re-prompt model). `retire_tab` disconnects the SSH session.
+    `pending_connect` drained in `render` (needs `&mut Window`).
+  - **`crates/ui/src/app_shell.rs`, `crates/app/src/main.rs`** — thread
+    `backend` + `runtime.handle().clone()` (captured before the runtime is
+    `mem::forget`-leaked) through `AppShell::new` → `Workspace::new`.
+  - **`crates/backend/src/modules/ssh/client.rs`** — +3 tests (trust-host
+    oneshot release, unknown session no-panic, connect-to-missing-host errors).
+  - Cargo: `crates/ui` gains `tokio` + `uuid` deps.
+  - Gates: `cargo fmt --all --check`, `cargo clippy --workspace --all-targets
+    -- -D warnings`, `cargo check --workspace`, `cargo test --workspace` all
+    green. Tests: backend 135→138, terminal 62→63, ui 61→63.
+
+### Current State
+- Branch `master`, committed. Pre-existing unrelated `CLAUDE.md` working-tree
+  edit deliberately left uncommitted / untouched.
+
+### Next
+- **T07-002** — Jump-Hosts & Tunnel (`tasks/phase-06-ssh-ui/T07-002-*`). Dep:
+  T07-001 (done). Backend `ssh/tunnels.rs` + jump-host resolution in
+  `ssh_connect` already exist; this is largely UI (host-form jump-host picker,
+  tunnel editor) + wiring.
+
+### Notes / Quirks (T07-001)
+- **No live SSH-server integration test.** Setting up `sshd` in CI is
+  platform-fragile; connection-flow error handling + the trust mechanism are
+  unit-tested instead. A real end-to-end connect test against a throwaway
+  `sshd` is a good follow-up (task lists it under Notizen).
+- The UI has **no tokio runtime on the GPUI thread** — `main.rs` leaks the
+  runtime and passes a `Handle`. All backend async calls go through
+  `tokio.spawn(...)` returning a `JoinHandle`, then `cx.spawn` awaits that
+  handle (polling a `JoinHandle` needs no runtime context). This is the
+  pattern every future UI↔backend feature should follow.
+- `hosts_update` skips a field when its `Option` arg is `None`; there is no
+  clean "clear the group" path (passing `Some("")` would leave an orphan FK).
+  The form only *sets* a group; credential clearing works (`Some("")`).
+- Auth method "agent"/"none" are stored but the backend's agent path only
+  triggers under `auth_method == "key"` with a key file — deeper agent-only
+  semantics are a backend concern, out of scope here.
+- SSH prompt modal is focused from `render` via a `prompt_shown` transition
+  guard (the event handler has no `&mut Window`).
+
+---
+
+## Previous Session: 2026-09-01 (T06-004 — Diff view)
 
 ### What Was Done
 - **T06-004 ✅ Done.** Reusable line-diff core + GPUI diff pane.

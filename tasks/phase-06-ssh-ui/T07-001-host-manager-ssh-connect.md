@@ -1,7 +1,7 @@
 # T07-001: Host-Manager und SSH-Verbindungs-Grundlage
 
 ## Status
-⏳ Pending
+✅ Done
 
 ## Phase
 6 — SSH-UI & Host-Manager

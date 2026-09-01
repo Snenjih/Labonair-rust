@@ -7,6 +7,7 @@ pub mod background;
 pub mod diff;
 pub mod editor;
 pub mod explorer;
+pub mod hosts;
 pub mod menu;
 pub mod notifications;
 pub mod pane;
@@ -25,6 +26,7 @@ pub use background::{
 pub use diff::{DiffLayout, DiffView};
 pub use editor::{EditorEvent, EditorView};
 pub use explorer::{DraggedPaths, ExplorerView};
+pub use hosts::{HostManagerEvent, HostManagerView, HostStatus};
 pub use labonair_theme::{ThemeFile, ThemeFileVariant};
 pub use menu::init as init_menus;
 pub use notifications::{

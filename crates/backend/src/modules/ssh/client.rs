@@ -1566,3 +1566,64 @@ pub async fn ssh_disconnect(session_id: String, state: &super::SshState) -> Resu
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::events::EventChannel;
+
+    fn test_app() -> crate::App {
+        let dir = std::env::temp_dir().join(format!("labonair-ssh-test-{}", uuid::Uuid::new_v4()));
+        crate::App::new(&dir).expect("backend app")
+    }
+
+    #[tokio::test]
+    async fn trust_host_releases_the_pending_known_hosts_warning() {
+        // Mirrors the security flow: ClientHandler parks on a oneshot after
+        // emitting `known_hosts_warning`; the UI's accept/reject resolves it.
+        let ts = super::super::TrustState::default();
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        ts.0.lock().unwrap().insert("s1".to_string(), tx);
+
+        ssh_trust_host("s1".to_string(), true, &ts).await.unwrap();
+
+        assert!(rx.await.unwrap(), "accept must be delivered to the waiter");
+        assert!(
+            ts.0.lock().unwrap().is_empty(),
+            "the trust slot must not leak"
+        );
+    }
+
+    #[tokio::test]
+    async fn trust_host_rejects_unknown_session_without_panicking() {
+        let ts = super::super::TrustState::default();
+        assert!(ssh_trust_host("nope".to_string(), false, &ts).await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn connect_to_unknown_host_id_fails_cleanly() {
+        let app = test_app();
+        let on_event: EventChannel<super::super::pty::SshPtyEvent> = EventChannel::null();
+        let res = ssh_connect(
+            "sess-x".to_string(),
+            "does-not-exist".to_string(),
+            None,
+            None,
+            Some(80),
+            Some(24),
+            false,
+            on_event,
+            &app.ssh,
+            &app.trust,
+            &app.db,
+            &app.secrets,
+            app.clone(),
+            Some(1),
+        )
+        .await;
+        assert!(
+            res.is_err(),
+            "connecting to a missing host must error, not hang"
+        );
+    }
+}

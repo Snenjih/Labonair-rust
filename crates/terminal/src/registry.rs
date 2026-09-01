@@ -34,8 +34,69 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 
 use crate::engine::{TermDimensions, TerminalEvent};
-use crate::session::{SessionOptions, TerminalSession};
+use crate::session::{
+    RemoteFeed, RemoteResizer, RemoteSession, RemoteWriter, SessionAccess, SessionOptions,
+    TerminalSession,
+};
 use crate::TerminalColors;
+
+/// The transport backing one registered session: a local PTY or an external
+/// (SSH) transport. Both expose the same operations to [`SessionHandle`].
+enum SessionBackend {
+    Local(TerminalSession),
+    Remote(RemoteSession),
+}
+
+impl SessionBackend {
+    fn write(&self, bytes: &[u8]) -> Result<(), String> {
+        match self {
+            SessionBackend::Local(s) => s.write(bytes),
+            SessionBackend::Remote(s) => s.write(bytes),
+        }
+    }
+
+    fn resize(&mut self, dimensions: TermDimensions) -> Result<(), String> {
+        match self {
+            SessionBackend::Local(s) => s.resize(dimensions),
+            SessionBackend::Remote(s) => s.resize(dimensions),
+        }
+    }
+
+    fn set_colors(&self, colors: TerminalColors) -> Result<(), String> {
+        match self {
+            SessionBackend::Local(s) => s.set_colors(colors),
+            SessionBackend::Remote(s) => s.set_colors(colors),
+        }
+    }
+
+    fn drain_events(&self) -> Vec<TerminalEvent> {
+        match self {
+            SessionBackend::Local(s) => s.drain_events(),
+            SessionBackend::Remote(s) => s.drain_events(),
+        }
+    }
+
+    fn has_foreground_job(&self) -> bool {
+        match self {
+            SessionBackend::Local(s) => s.has_foreground_job(),
+            SessionBackend::Remote(_) => false,
+        }
+    }
+
+    fn terminate(&self) {
+        match self {
+            SessionBackend::Local(s) => s.terminate(),
+            SessionBackend::Remote(_) => {}
+        }
+    }
+
+    fn access(&self) -> &dyn SessionAccess {
+        match self {
+            SessionBackend::Local(s) => s,
+            SessionBackend::Remote(s) => s,
+        }
+    }
+}
 
 /// Opaque, process-unique identifier for a local terminal session. Starts at 1
 /// (0 reads as "unset" in some call sites) and never reused.
@@ -54,7 +115,7 @@ struct Slot {
     /// The live session. Behind a `Mutex` only so [`restart`] can swap the
     /// whole value; all hot-path access (`write`, `render`) is `&self` on the
     /// inner session and never contends.
-    session: Mutex<TerminalSession>,
+    session: Mutex<SessionBackend>,
     /// Everything needed to respawn this session in place on restart.
     colors: Mutex<TerminalColors>,
     options: SessionOptions,
@@ -92,8 +153,9 @@ impl SessionHandle {
 
     /// Run `f` with the locked session (advanced access: selection, scroll,
     /// metadata, `ai_context`, `render`, …).
-    pub fn with<R>(&self, f: impl FnOnce(&TerminalSession) -> R) -> R {
-        f(&self.slot.session.lock().unwrap())
+    pub fn with<R>(&self, f: impl FnOnce(&dyn SessionAccess) -> R) -> R {
+        let guard = self.slot.session.lock().unwrap();
+        f(guard.access())
     }
 
     /// Drain pending terminal events. Exit events flip [`status`](Self::status)
@@ -135,13 +197,16 @@ impl SessionHandle {
     /// still running.
     pub fn restart(&self, dimensions: TermDimensions) -> Result<(), String> {
         let mut session = self.slot.session.lock().unwrap();
+        if !matches!(&*session, SessionBackend::Local(_)) {
+            return Err("cannot restart a remote session".to_string());
+        }
         if !matches!(*self.slot.status.lock().unwrap(), SessionStatus::Exited(_)) {
             return Err("session is still running".to_string());
         }
         let colors = *self.slot.colors.lock().unwrap();
         let fresh = TerminalSession::spawn(colors, dimensions, self.slot.options.clone())?;
         session.terminate();
-        *session = fresh;
+        *session = SessionBackend::Local(fresh);
         *self.slot.status.lock().unwrap() = SessionStatus::Running;
         Ok(())
     }
@@ -178,13 +243,36 @@ impl TerminalRegistry {
         let session = TerminalSession::spawn(colors, dimensions, options.clone())?;
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
         let slot = Arc::new(Slot {
-            session: Mutex::new(session),
+            session: Mutex::new(SessionBackend::Local(session)),
             colors: Mutex::new(colors),
             options,
             status: Mutex::new(SessionStatus::Running),
         });
         self.sessions.write().unwrap().insert(id, slot);
         Ok(id)
+    }
+
+    /// Register a session backed by an external transport (SSH). Returns its id
+    /// plus a [`RemoteFeed`] the caller wires to the transport's output reader
+    /// (T07-001). `writer` / `resizer` carry user input and resize requests back
+    /// out over the transport.
+    pub fn create_remote(
+        &self,
+        colors: TerminalColors,
+        dimensions: TermDimensions,
+        writer: RemoteWriter,
+        resizer: RemoteResizer,
+    ) -> (SessionId, RemoteFeed) {
+        let (session, feed) = RemoteSession::new(colors, dimensions, writer, resizer);
+        let id = self.next_id.fetch_add(1, Ordering::Relaxed);
+        let slot = Arc::new(Slot {
+            session: Mutex::new(SessionBackend::Remote(session)),
+            colors: Mutex::new(colors),
+            options: SessionOptions::default(),
+            status: Mutex::new(SessionStatus::Running),
+        });
+        self.sessions.write().unwrap().insert(id, slot);
+        (id, feed)
     }
 
     /// A handle to a registered session, if `id` is known.
@@ -383,6 +471,55 @@ mod tests {
         h.write(b"printf 'REBORN\\n'\n").unwrap();
         let text = wait_for(&h, Duration::from_secs(5), |t| t.contains("REBORN"));
         assert!(text.contains("REBORN"), "restarted shell dead:\n{text}");
+        reg.close(id);
+    }
+
+    #[test]
+    fn remote_session_feeds_output_and_forwards_input() {
+        use std::sync::Mutex as StdMutex;
+
+        let reg = TerminalRegistry::new();
+        let sent: Arc<StdMutex<Vec<u8>>> = Arc::new(StdMutex::new(Vec::new()));
+        let resized: Arc<StdMutex<Vec<(u16, u16)>>> = Arc::new(StdMutex::new(Vec::new()));
+        let writer: RemoteWriter = {
+            let sent = Arc::clone(&sent);
+            Arc::new(move |b| sent.lock().unwrap().extend(b))
+        };
+        let resizer: RemoteResizer = {
+            let resized = Arc::clone(&resized);
+            Arc::new(move |c, r| resized.lock().unwrap().push((c, r)))
+        };
+
+        let (id, feed) = reg.create_remote(colors(), dims(), writer, resizer);
+        let h = reg.handle(id).unwrap();
+
+        // Remote output → emulator grid.
+        feed.feed(b"REMOTE_HELLO\r\n");
+        let _ = h.drain_events();
+        assert!(h
+            .with(|s| s.render().unwrap().to_text())
+            .contains("REMOTE_HELLO"));
+
+        // User input → transport writer.
+        h.write(b"ls\n").unwrap();
+        assert_eq!(&*sent.lock().unwrap(), b"ls\n");
+
+        // Resize → transport resizer + emulator grid.
+        h.resize(TermDimensions::new(120, 40)).unwrap();
+        assert_eq!(resized.lock().unwrap().last().copied(), Some((120, 40)));
+        assert_eq!(h.with(|s| s.render().unwrap().columns), 120);
+
+        // Transport loss surfaces as a shell exit.
+        feed.mark_disconnected();
+        let start = Instant::now();
+        while start.elapsed() < Duration::from_secs(2) && h.status() == SessionStatus::Running {
+            let _ = h.drain_events();
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert!(matches!(h.status(), SessionStatus::Exited(_)));
+
+        // Remote sessions cannot be restarted in place.
+        assert!(h.restart(dims()).is_err());
         reg.close(id);
     }
 }
