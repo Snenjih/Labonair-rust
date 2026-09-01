@@ -4,7 +4,94 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
-## Last Session: 2026-09-01 (T04-004 — notifications / toast system)
+## Last Session: 2026-09-01 (T04-005 — native macOS menus + Dock menu)
+
+### What Was Done
+- **T04-005 ✅ Done.** Native macOS menu bar + Dock context menu, ported from
+  `reference-src/src-tauri/src/lib.rs` `build_menu`, `modules/dock_menu.rs`,
+  `modules/menu_sync.rs`.
+  - **`crates/ui/src/menu.rs`** (new):
+    - `gpui::actions!(labonair, [...])` — 40 unit-struct actions covering every
+      menu entry (File/Edit/View/Terminal/Connections/AI/Window/App).
+    - `init(cx: &mut App)`: `cx.bind_keys(bindings())` (23 `KeyBinding`s mirroring
+      the reference accelerators — drives both the menu shortcut hint *and*
+      dispatch), 8 app-global `cx.on_action` handlers (Quit→`cx.quit()`,
+      HideApp/HideOthers/ShowAll→`cx.hide*`, About/OpenSettings/AiSettings/
+      CheckForUpdates→info toast placeholders via `notification_center`),
+      `cx.set_menus(app_menus())`, `#[cfg(macos)] cx.set_dock_menu(dock_menu())`.
+    - `app_menus()` — 8 submenus, structure/order/labels 1:1 with the reference
+      (App menu adds Services `os_submenu` + Check for Updates; Edit uses
+      `MenuItem::os_action(.., OsAction::{Undo,Redo,Cut,Copy,Paste,SelectAll})`).
+      Window submenu named exactly `"Window"` so GPUI wires the live window list.
+    - `dock_menu()` — New Terminal Tab / New SSH Connection… / — / Open Host Manager.
+    - 3 unit tests (binding count = parse-all-succeed, menu-bar name order,
+      dock entry count).
+  - **`crates/ui/src/app_shell.rs`** — 12 action handler methods
+    (`act_new_terminal_tab`, `act_close_tab`, `act_close_pane`, `act_split_right/
+    _down`, `act_find`, `act_toggle_sidebar`, `act_toggle_fullscreen`,
+    `act_minimize`, `act_zoom_window`, `act_next_tab`, `act_prev_tab`) registered
+    via `.on_action(cx.listener(...))` on the root element. `SplitPaneRight/Down`
+    are only registered `when(active_is_terminal)`, `ClosePane` only
+    `when(active_has_split)` — so those menu items grey out automatically
+    (macOS calls `validate_menu_item` → `is_action_available` against the live
+    focus dispatch tree on every menu open; no `set_menus` re-sync needed).
+    Removed `AppShell::on_key_down` (Cmd-B / Cmd-F) — now the `ToggleSidebar` /
+    `Find` actions.
+  - **`crates/ui/src/workspace.rs`** — added thin `pub` wrappers
+    (`new_terminal_tab`, `split`, `close_active`, `close_pane`, `cycle`,
+    `active_has_split`) so menu + shortcut share one path. Removed the
+    Cmd-T/W/D/Shift-D arms from `Workspace::on_key_down` (now actions; the
+    Cmd-Shift-`[`/`]` tab-cycle arms stay as an extra binding alongside the new
+    `ctrl-tab` / `ctrl-shift-tab`).
+  - **`crates/app/src/main.rs`** — `labonair_ui::init_menus(cx)` right after
+    `open_window`, before `cx.activate(true)`.
+  - **`crates/ui/src/lib.rs`** — `pub mod menu;` + `pub use menu::init as init_menus`.
+- **GPUI API used (gpui 0.2.2, verified in source `src/platform/app_menu.rs` +
+  `src/platform/mac/platform.rs` + `examples/set_menus.rs`):**
+  `App::set_menus(Vec<Menu>)`, `App::set_dock_menu(Vec<MenuItem>)` (mac only),
+  `Menu { name: SharedString, items: Vec<MenuItem> }`,
+  `MenuItem::{action(name, impl Action), os_action(name, action, OsAction),
+  os_submenu(name, SystemMenuType::Services), separator}`,
+  `gpui::actions!(namespace, [Name, ...])` (unit structs, derive `gpui::Action`),
+  `KeyBinding::new(&str, action, Option<&str>)` (**panics** on bad keystroke —
+  `"cmd--"` / `"cmd-="` / `"ctrl-cmd-f"` all parse fine),
+  `App::{quit, hide, hide_other_apps, unhide_other_apps}`,
+  `Window::{toggle_fullscreen, minimize_window, zoom_window}` (all `&self`).
+  Menu enable/disable is driven entirely by `is_action_available` (focus
+  dispatch tree) — GPUI's `MenuItem::Action` has **no** `enabled` field and no
+  checkmark support, so dynamic checkmarks / recent-hosts / window-list beyond
+  what GPUI auto-provides are deferred to their feature phases.
+- **Deviations / limits:** items for not-yet-built features (New SSH/SFTP/Preview/
+  Editor Tab, Open Host Manager, New SSH Connection, New Quick SSH, New AI
+  Session, Ask about Selection, Clear Chat, Toggle AI Panel, Keyboard Shortcuts,
+  Zoom In/Out/Reset) have **no handler** → render disabled (per task note);
+  their phase adds `.on_action` and they light up. `CloseTab` maps to the
+  existing pane-aware `close_active_pane_or_tab` (closes pane if split, else
+  tab); `ClosePane` (`cmd-shift-w`) always closes the pane. About / Settings /
+  Check for Updates are toast placeholders (Settings = Phase 12, updater =
+  T15-005). No `MenuItemRegistry`-style accelerator hot-swap (that's Phase 12
+  shortcut config) — bindings are static in `menu::bindings()`.
+- **Verified:** `cargo fmt --all --check`, `cargo clippy --workspace --all-targets
+  -- -D warnings`, `cargo test --workspace` (all green; **ui 42, +3**),
+  `cargo build --bin labonair` — all green. Not visually run — user should
+  `cargo run` and check: full menu bar (Labonair/File/Edit/View/Terminal/
+  Connections/AI/Window), Cmd-T / Cmd-W / Cmd-D / Cmd-F / Cmd-B still work via
+  the menu path, "Split Pane …" greys out on the Home tab and enables on a
+  terminal tab, "Close Pane" greys out until a tab is split, right-click the
+  Dock icon → New Terminal Tab works.
+
+### Current State
+- Branch `master`, ~22 unpushed commits + this one.
+- Pre-existing uncommitted `CLAUDE.md` edit (not ours) — left untouched & excluded.
+- `reference-src/` untouched. **Phase 03 complete** (T04-001..005 all done).
+
+### What's Next
+- **Phase 04 — File-Explorer: T05-001** (`tasks/phase-04-explorer/T05-001-*`) —
+  Dateibaum & Explorer-Grundlagen. Dep: T04-002 (done). No blockers.
+
+---
+
+## Session: 2026-09-01 (T04-004 — notifications / toast system)
 
 ### What Was Done
 - **T04-004 ✅ Done.** App-wide notification/toast system, ported from

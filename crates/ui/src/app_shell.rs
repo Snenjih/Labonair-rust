@@ -29,7 +29,9 @@ use gpui::{
 use labonair_terminal::TerminalRegistry;
 
 use crate::background::{BackgroundStore, LayerScope};
+use crate::menu;
 use crate::notifications::{self, NotificationCenter};
+use crate::pane::SplitAxis;
 use crate::theme::ThemeStore;
 use crate::window_state;
 use crate::workspace::Workspace;
@@ -222,23 +224,91 @@ impl AppShell {
             .update(cx, |w, cx| w.search_active(&query, cx));
     }
 
-    fn on_key_down(&mut self, ev: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
-        let ks = &ev.keystroke;
-        let m = &ks.modifiers;
-        if !m.platform || m.control || m.alt || m.shift {
-            return;
-        }
-        match ks.key.as_str() {
-            "b" => {
-                self.toggle_sidebar(cx);
-                cx.stop_propagation();
-            }
-            "f" => {
-                self.open_search(window, cx);
-                cx.stop_propagation();
-            }
-            _ => {}
-        }
+    // ── Menu / shortcut action handlers (T04-005) ──────────────────────────
+    // Bound as GPUI actions on the root element in `render`, so the native
+    // menu bar and the keyboard shortcuts run identical code.
+
+    fn act_new_terminal_tab(
+        &mut self,
+        _: &menu::NewTerminalTab,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.workspace
+            .update(cx, |w, cx| w.new_terminal_tab(window, cx));
+    }
+
+    fn act_close_tab(&mut self, _: &menu::CloseTab, window: &mut Window, cx: &mut Context<Self>) {
+        self.workspace
+            .update(cx, |w, cx| w.close_active(window, cx));
+    }
+
+    fn act_close_pane(&mut self, _: &menu::ClosePane, window: &mut Window, cx: &mut Context<Self>) {
+        self.workspace.update(cx, |w, cx| w.close_pane(window, cx));
+    }
+
+    fn act_split_right(
+        &mut self,
+        _: &menu::SplitPaneRight,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.workspace
+            .update(cx, |w, cx| w.split(SplitAxis::Horizontal, window, cx));
+    }
+
+    fn act_split_down(
+        &mut self,
+        _: &menu::SplitPaneDown,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.workspace
+            .update(cx, |w, cx| w.split(SplitAxis::Vertical, window, cx));
+    }
+
+    fn act_find(&mut self, _: &menu::Find, window: &mut Window, cx: &mut Context<Self>) {
+        self.open_search(window, cx);
+    }
+
+    fn act_toggle_sidebar(
+        &mut self,
+        _: &menu::ToggleSidebar,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.toggle_sidebar(cx);
+    }
+
+    fn act_toggle_fullscreen(
+        &mut self,
+        _: &menu::ToggleFullScreen,
+        window: &mut Window,
+        _: &mut Context<Self>,
+    ) {
+        window.toggle_fullscreen();
+    }
+
+    fn act_minimize(&mut self, _: &menu::Minimize, window: &mut Window, _: &mut Context<Self>) {
+        window.minimize_window();
+    }
+
+    fn act_zoom_window(
+        &mut self,
+        _: &menu::ZoomWindow,
+        window: &mut Window,
+        _: &mut Context<Self>,
+    ) {
+        window.zoom_window();
+    }
+
+    fn act_next_tab(&mut self, _: &menu::NextTab, window: &mut Window, cx: &mut Context<Self>) {
+        self.workspace.update(cx, |w, cx| w.cycle(true, window, cx));
+    }
+
+    fn act_prev_tab(&mut self, _: &menu::PrevTab, window: &mut Window, cx: &mut Context<Self>) {
+        self.workspace
+            .update(cx, |w, cx| w.cycle(false, window, cx));
     }
 
     fn on_search_key(&mut self, ev: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
@@ -591,6 +661,8 @@ impl Render for AppShell {
             .then(|| self.render_sidebar(cx).into_any_element());
         let statusbar = self.render_statusbar(cx);
         let workspace = self.workspace.clone();
+        let can_split = self.workspace.read(cx).active_is_terminal(cx);
+        let has_split = self.workspace.read(cx).active_has_split(cx);
 
         div()
             .track_focus(&self.focus_handle)
@@ -601,7 +673,22 @@ impl Render for AppShell {
             .size_full()
             .bg(bg)
             .text_xs()
-            .on_key_down(cx.listener(Self::on_key_down))
+            .on_action(cx.listener(Self::act_new_terminal_tab))
+            .on_action(cx.listener(Self::act_close_tab))
+            .on_action(cx.listener(Self::act_find))
+            .on_action(cx.listener(Self::act_toggle_sidebar))
+            .on_action(cx.listener(Self::act_toggle_fullscreen))
+            .on_action(cx.listener(Self::act_minimize))
+            .on_action(cx.listener(Self::act_zoom_window))
+            .on_action(cx.listener(Self::act_next_tab))
+            .on_action(cx.listener(Self::act_prev_tab))
+            .when(can_split, |d| {
+                d.on_action(cx.listener(Self::act_split_right))
+                    .on_action(cx.listener(Self::act_split_down))
+            })
+            .when(has_split, |d| {
+                d.on_action(cx.listener(Self::act_close_pane))
+            })
             .child(header)
             .child(
                 div()

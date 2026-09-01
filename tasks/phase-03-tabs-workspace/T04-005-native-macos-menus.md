@@ -1,7 +1,7 @@
 # T04-005: Native macOS-Menüs (App-Menüleiste + Dock-Menü)
 
 ## Status
-⏳ Pending
+✅ Done
 
 ## Phase
 3 — App-Shell, Tab-System & Workspace-Layout

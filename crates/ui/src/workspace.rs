@@ -195,6 +195,40 @@ impl Workspace {
         self.focus_active(window, cx);
     }
 
+    // ── Menu / shortcut entry points (T04-005) ──────────────────────────────
+    // Thin `pub` wrappers so the native menu and keyboard shortcuts drive the
+    // exact same code path.
+
+    /// Open a new local terminal tab.
+    pub fn new_terminal_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.open_terminal_tab(window, cx);
+    }
+
+    /// Split the active workspace pane along `axis`.
+    pub fn split(&mut self, axis: SplitAxis, window: &mut Window, cx: &mut Context<Self>) {
+        self.split_active(axis, window, cx);
+    }
+
+    /// `Close Tab`: close the active pane if the tab is split, else the tab.
+    pub fn close_active(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.close_active_pane_or_tab(window, cx);
+    }
+
+    /// `Close Pane`: close just the active pane.
+    pub fn close_pane(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.close_active_pane(window, cx);
+    }
+
+    /// Cycle to the next (`forward`) or previous tab.
+    pub fn cycle(&mut self, forward: bool, window: &mut Window, cx: &mut Context<Self>) {
+        self.cycle_tab(forward, window, cx);
+    }
+
+    /// Whether the active tab is a workspace tab whose layout is split.
+    pub fn active_has_split(&self, cx: &App) -> bool {
+        self.active_layout(cx).map(|l| l.len() > 1).unwrap_or(false)
+    }
+
     fn theme_colors(&self, cx: &App) -> TerminalColors {
         TerminalColors::from_theme(self.theme.read(cx).theme())
     }
@@ -938,23 +972,9 @@ impl Workspace {
         if !m.platform || m.control || m.alt {
             return;
         }
+        // Cmd-T / Cmd-W / Cmd-D / Cmd-Shift-D and tab cycling are GPUI actions
+        // now (see `crate::menu`), bound so the native menu shares the path.
         match (m.shift, ks.key.as_str()) {
-            (false, "t") => {
-                self.open_terminal_tab(window, cx);
-                cx.stop_propagation();
-            }
-            (false, "w") => {
-                self.close_active_pane_or_tab(window, cx);
-                cx.stop_propagation();
-            }
-            (false, "d") => {
-                self.split_active(SplitAxis::Horizontal, window, cx);
-                cx.stop_propagation();
-            }
-            (true, "d") => {
-                self.split_active(SplitAxis::Vertical, window, cx);
-                cx.stop_propagation();
-            }
             (true, "]") | (false, "}") => {
                 self.cycle_tab(true, window, cx);
                 cx.stop_propagation();

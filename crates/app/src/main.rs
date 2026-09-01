@@ -93,6 +93,7 @@ fn main() {
             },
         )
         .expect("failed to open window");
+        labonair_ui::init_menus(cx);
         cx.activate(true);
     });
 }

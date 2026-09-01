@@ -4,6 +4,7 @@
 
 pub mod app_shell;
 pub mod background;
+pub mod menu;
 pub mod notifications;
 pub mod pane;
 pub mod tabs;
@@ -18,6 +19,7 @@ pub use background::{
     GlobalBackground, LayerScope,
 };
 pub use labonair_theme::{ThemeFile, ThemeFileVariant};
+pub use menu::init as init_menus;
 pub use notifications::{
     init as init_notifications, notification_center, notify_err, GlobalNotificationCenter,
     Notification, NotificationAction, NotificationCenter, Severity,
