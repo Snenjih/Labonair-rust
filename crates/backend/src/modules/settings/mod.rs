@@ -1,6 +1,8 @@
 use serde_json::{Map, Value};
 use tokio::sync::Mutex;
 
+pub mod editor;
+
 use crate::modules::fs::paths::config_dir;
 
 const SETTINGS_FILE: &str = "labonair-settings.json";

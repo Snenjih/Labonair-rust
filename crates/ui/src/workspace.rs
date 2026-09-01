@@ -351,6 +351,14 @@ impl Workspace {
 
     fn watch_editor(&self, tab_id: u64, view: &Entity<EditorView>, cx: &mut Context<Self>) {
         cx.subscribe(view, move |this, view, ev: &EditorEvent, cx| {
+            if matches!(ev, EditorEvent::CloseRequested) {
+                // Vim `:q` / `:wq` — close this editor's tab.
+                if let Some(removed) = this.tabs.update(cx, |s, cx| s.close(tab_id, cx)) {
+                    this.retire_tab(&removed);
+                }
+                cx.notify();
+                return;
+            }
             let dirty = view.read(cx).is_dirty();
             this.tabs.update(cx, |s, cx| {
                 s.set_dirty(tab_id, dirty, cx);

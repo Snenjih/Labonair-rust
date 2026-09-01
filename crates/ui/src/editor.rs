@@ -23,9 +23,10 @@ use gpui::{
 use labonair_backend::modules::fs::file::{
     file_mtime_sync, load_editor_file_sync, save_editor_file_sync, EditorLoad,
 };
+use labonair_backend::modules::settings::editor::editor_prefs_load;
 use labonair_editor::{
     document::Motion, find_all, next_match, Document, Language, Match, Position, SearchQuery,
-    SyntaxHighlighter,
+    SyntaxHighlighter, Vim, VimKey, VimMode, VimOptions,
 };
 
 use crate::notifications::{notification_center, Notification};
@@ -39,6 +40,8 @@ pub enum EditorEvent {
     Changed,
     /// The user made their first edit — a peek tab should become permanent.
     Edited,
+    /// Vim `:q` / `:wq` — the hosting workspace should close this editor's tab.
+    CloseRequested,
 }
 
 /// Which field the find bar is typing into.
@@ -86,11 +89,26 @@ pub struct EditorView {
     syntax: SyntaxHighlighter,
     /// Bumped on every buffer mutation / load — the highlighter's cache key.
     syntax_rev: u64,
+    /// Vim keybinding state machine (T06-003) — `None` when Vim mode is off.
+    vim: Option<Vim>,
 }
 
 impl EditorView {
     pub fn new(theme: Entity<ThemeStore>, cx: &mut Context<Self>) -> Self {
         cx.observe(&theme, |_, _, cx| cx.notify()).detach();
+        let prefs = editor_prefs_load();
+        let vim = prefs.vim_mode.then(|| {
+            Vim::new(VimOptions {
+                number: prefs.number,
+                relativenumber: prefs.relative_number,
+                hlsearch: prefs.hlsearch,
+                incsearch: prefs.incsearch,
+                smartcase: prefs.smartcase,
+                expandtab: prefs.expandtab,
+                tabstop: prefs.tabstop,
+                shiftwidth: prefs.shiftwidth,
+            })
+        });
         Self {
             doc: Document::empty(),
             theme,
@@ -102,6 +120,7 @@ impl EditorView {
             find: None,
             syntax: SyntaxHighlighter::new(Language::PlainText),
             syntax_rev: 0,
+            vim,
         }
     }
 
@@ -544,6 +563,17 @@ impl EditorView {
             return;
         }
 
+        // Vim mode (T06-003): consume the keystroke in the modal state machine.
+        // Insert mode lets non-text keys (arrows, page-up/down) fall through to
+        // the regular editor navigation below.
+        if self.vim.is_some() {
+            if let Some(key) = self.vim_key(ks) {
+                self.handle_vim(key, cx);
+                cx.stop_propagation();
+                return;
+            }
+        }
+
         if m.control || m.alt {
             return;
         }
@@ -572,6 +602,62 @@ impl EditorView {
             }
         }
         cx.stop_propagation();
+    }
+
+    // ── Vim mode ────────────────────────────────────────────────────────────
+
+    /// Translate a keystroke into a [`VimKey`], or `None` to let the regular
+    /// editor navigation handle it (arrow / paging keys in insert mode).
+    fn vim_key(&self, ks: &gpui::Keystroke) -> Option<VimKey> {
+        let m = &ks.modifiers;
+        let insert = self.vim.as_ref().map(Vim::mode) == Some(VimMode::Insert);
+        match ks.key.as_str() {
+            "escape" => Some(VimKey::Esc),
+            "enter" | "return" => Some(VimKey::Enter),
+            "backspace" => Some(VimKey::Backspace),
+            "tab" => Some(VimKey::Tab),
+            "r" if m.control => Some(VimKey::Redo),
+            "left" if !insert => Some(VimKey::Char('h')),
+            "right" if !insert => Some(VimKey::Char('l')),
+            "up" if !insert => Some(VimKey::Char('k')),
+            "down" if !insert => Some(VimKey::Char('j')),
+            _ => {
+                if m.control || m.platform || m.alt {
+                    None
+                } else {
+                    printable(ks)
+                        .and_then(|s| s.chars().next())
+                        .map(VimKey::Char)
+                }
+            }
+        }
+    }
+
+    fn handle_vim(&mut self, key: VimKey, cx: &mut Context<Self>) {
+        let dirty_before = self.doc.is_dirty();
+        let resp = {
+            let vim = self.vim.as_mut().expect("vim mode active");
+            vim.on_key(&mut self.doc, key)
+        };
+        if resp.handled {
+            self.bump_syntax();
+            self.ensure_cursor_visible();
+            self.refresh_matches();
+            cx.emit(EditorEvent::Changed);
+            if !dirty_before && self.doc.is_dirty() {
+                cx.emit(EditorEvent::Edited);
+            }
+            cx.notify();
+        }
+        if resp.save {
+            self.save(cx);
+        }
+        if resp.reload {
+            self.reload_from_disk(cx);
+        }
+        if resp.quit {
+            cx.emit(EditorEvent::CloseRequested);
+        }
     }
 
     fn position_at(&self, p: Point<Pixels>) -> Position {
@@ -757,6 +843,55 @@ impl EditorView {
                     })),
             )
     }
+
+    /// Bottom status line for Vim mode: the mode indicator plus the live
+    /// `:` / `/` command line (T06-003).
+    fn render_vim_status(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = self.theme.read(cx);
+        let (card, fg, muted, border, accent) = (
+            theme.card(),
+            theme.foreground(),
+            theme.muted_foreground(),
+            theme.border(),
+            theme.accent(),
+        );
+        let vim = self.vim.as_ref().unwrap();
+        let (label, is_command) = match vim.command_line() {
+            Some((prefix, text)) => (format!("{prefix}{text}"), true),
+            None => {
+                let s = vim.status();
+                (
+                    if s.is_empty() {
+                        "NORMAL".to_string()
+                    } else {
+                        s
+                    },
+                    false,
+                )
+            }
+        };
+        let cursor = self.doc.cursor;
+        div()
+            .flex()
+            .items_center()
+            .justify_between()
+            .w_full()
+            .flex_shrink_0()
+            .px_3()
+            .py_0p5()
+            .bg(card)
+            .border_t_1()
+            .border_color(border)
+            .text_xs()
+            .font(theme.buffer_font())
+            .text_color(if is_command { fg } else { accent })
+            .child(SharedString::from(label))
+            .child(div().text_color(muted).child(SharedString::from(format!(
+                "{}:{}",
+                cursor.line + 1,
+                cursor.column + 1
+            ))))
+    }
 }
 
 impl EventEmitter<EditorEvent> for EditorView {}
@@ -819,9 +954,24 @@ impl Render for EditorView {
         self.syntax
             .update(&doc_text, self.syntax_rev, visible_start..visible_end);
 
-        // Gutter rows.
+        // Gutter rows. Vim's `number` / `relativenumber` options apply when
+        // Vim mode is on (T06-003).
+        let (show_numbers, relative) = self
+            .vim
+            .as_ref()
+            .map(|v| (v.options.number, v.options.relativenumber))
+            .unwrap_or((true, false));
         let gutter = (first..last).map(|line| {
             let on_cursor = line == cursor.line;
+            let label = if !show_numbers {
+                String::new()
+            } else if relative && !on_cursor {
+                (line as isize - cursor.line as isize)
+                    .unsigned_abs()
+                    .to_string()
+            } else {
+                (line + 1).to_string()
+            };
             div()
                 .absolute()
                 .top(px((line - first) as f32 * line_h))
@@ -835,7 +985,7 @@ impl Render for EditorView {
                 .text_size(px(font_px))
                 .font(font.clone())
                 .text_color(if on_cursor { fg } else { muted })
-                .child(SharedString::from((line + 1).to_string()))
+                .child(SharedString::from(label))
         });
 
         // Text + selection rows.
@@ -985,6 +1135,7 @@ impl Render for EditorView {
             })
             .when(self.find.is_some(), |d| d.child(self.render_find_bar(cx)))
             .child(text_area)
+            .when(self.vim.is_some(), |d| d.child(self.render_vim_status(cx)))
             .on_key_down(cx.listener(Self::on_key))
             .on_mouse_down(
                 MouseButton::Left,
@@ -1069,6 +1220,26 @@ mod tests {
                 assert_eq!(v.find.as_ref().unwrap().matches.len(), 3);
                 v.find_step(true, cx);
                 assert!(v.doc.selection().is_some());
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn vim_mode_routes_keys_and_edits(cx: &mut TestAppContext) {
+        let view = setup(cx);
+        cx.update(|cx| {
+            view.update(cx, |v, cx| {
+                v.doc = Document::from_file("t.txt".into(), "hello world", 1);
+                v.vim = Some(Vim::default());
+                // `dw` deletes the first word.
+                v.handle_vim(VimKey::Char('d'), cx);
+                v.handle_vim(VimKey::Char('w'), cx);
+                assert_eq!(v.doc.text(), "world");
+                assert_eq!(v.vim.as_ref().unwrap().mode(), VimMode::Normal);
+                // `:q` asks the workspace to close the tab.
+                for k in [VimKey::Char(':'), VimKey::Char('q'), VimKey::Enter] {
+                    v.handle_vim(k, cx);
+                }
             });
         });
     }

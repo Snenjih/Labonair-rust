@@ -1,7 +1,7 @@
 # T06-003: Vim-Modus
 
 ## Status
-⏳ Pending
+✅ Done
 
 ## Phase
 5 — Editor

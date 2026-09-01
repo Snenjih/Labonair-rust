@@ -4,7 +4,79 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
-## Last Session: 2026-09-01 (T06-002 — syntax highlighting & language detection)
+## Last Session: 2026-09-01 (T06-003 — Vim mode)
+
+### What Was Done
+- **T06-003 ✅ Done.** Self-contained modal Vim layer over `Document` (no
+  external vim crate — the ones that exist are bound to their own buffer
+  types; approach documented in the module header).
+  - **`crates/editor/src/vim.rs`** (new, ~950 lines incl. 20 tests) —
+    `Vim` state machine: `VimMode` (Normal/Insert/Visual/VisualLine/Command),
+    `VimOptions` (number/relativenumber/hlsearch/incsearch/smartcase/expandtab/
+    tabstop/shiftwidth), `VimKey` input alphabet, `VimResponse { handled, save,
+    quit, reload }`. `on_key(&mut Document, VimKey) -> VimResponse`.
+    - Motions: h/j/k/l, w/W/b/B/e/E, ge, 0/^/$/gg/G, `{`/`}`, `%` (bracket
+      match), f/F/t/T + `;`/`,`, all with counts; combine with operators
+      (`d3w`, `2dd`, `dj`, `dt.`).
+    - Operators d/c/y + doubled (dd/cc/yy) + D/C/Y; `cw`→`ce` quirk.
+    - Edits: x/X (count), r, ~, J, s/S, i/I/a/A/o/O, p/P (charwise +
+      linewise register), u, Ctrl-R.
+    - Visual + visual-line: motions extend, d/x/c/y/p operate on selection
+      (charwise via `doc.anchor`, linewise via a tracked anchor line).
+    - Ex line: `:w :q :wq :x :e :noh`, `:s/a/b/[g]` + `:%s/…`, `:set
+      [no]opt` / `:set opt=N`. `/` `?` search + `n`/`N` wired to
+      `crate::search` (smartcase-aware); `hlsearch` matches exposed on
+      `Vim::search_matches`.
+    - Undo units: every operator goes through `range_delete` which does
+      `set_caret`×2 + `backspace` — `set_caret` breaks history coalescing so
+      each command is its own undo step; insert-mode typing stays one step.
+  - **`crates/editor/src/lib.rs`** — `pub mod vim` + re-exports (`Vim`,
+    `VimKey`, `VimMode`, `VimOptions`, `VimResponse`).
+  - **`crates/backend/src/modules/settings/editor.rs`** (new) — `EditorPrefs`
+    (vim_mode + the 8 vim options) persisted as the `editor` object inside the
+    shared `labonair-settings.json`; `editor_prefs_load()` /
+    `editor_prefs_save()` (merge-preserving, atomic tmp+rename). `pub mod
+    editor;` added to `settings/mod.rs`. 2 tests.
+  - **`crates/ui/src/editor.rs`** — `EditorView.vim: Option<Vim>` built in
+    `new()` from `editor_prefs_load()`. `on_key`: after the Cmd/Alt shortcut
+    blocks, `vim_key(ks)` translates the keystroke (arrows→hjkl outside insert,
+    Ctrl-R→Redo, printable→Char) and `handle_vim()` runs it, then
+    bump_syntax/ensure_visible/refresh_matches/emit + acts on save/reload/quit.
+    New `EditorEvent::CloseRequested` (from `:q`/`:wq`). Bottom status line
+    (`render_vim_status`) shows the mode / live `:`-`/` command line + caret
+    pos. Gutter honours `number` / `relativenumber` when vim is on.
+  - **`crates/ui/src/workspace.rs`** — `watch_editor` handles
+    `EditorEvent::CloseRequested` → `tabs.close(tab_id)` + `retire_tab`.
+  - Tests: editor 29→49, backend +2, ui 56→57. `cargo fmt --all --check`,
+    `cargo clippy --workspace --all-targets -D warnings`, `cargo test
+    --workspace`, `cargo check --workspace` all green.
+
+### Current State
+- Branch `master`, committed. Pre-existing unrelated `CLAUDE.md` working-tree
+  edit deliberately left uncommitted / untouched.
+
+### Next
+- **T06-004** — Diff view (`tasks/phase-05-editor/T06-004-diff-view.md`).
+
+### Notes / Quirks (T06-003)
+- No Phase 12 settings UI yet: vim mode is toggled only via the persisted
+  `editor.vimMode` key in `labonair-settings.json` (read once at
+  `EditorView::new`) and at runtime via `:set` for the session. Wire the
+  toggle into the Phase 12 Editor settings section when it lands, and call
+  `editor_prefs_save` there.
+- `r` / `~` currently produce **two** undo steps (delete + insert) because
+  `Document` has no in-place replace; acceptable but could be tightened later.
+- `:q` close path skips `focus_active` (subscribe closure has no `&Window`),
+  so focus isn't moved to the next tab's view after `:q`. Minor.
+- hlsearch matches are collected on `Vim::search_matches` but not yet painted
+  by the editor renderer — search still moves the caret to matches, which is
+  the required integration. Painting them is a small follow-up.
+- `Document` caret/selection fields (`cursor`, `anchor`) are `pub`, which the
+  vim layer relies on for visual mode + range math.
+
+---
+
+## Previous Session: 2026-09-01 (T06-002 — syntax highlighting & language detection)
 
 ### What Was Done
 - **T06-002 ✅ Done.** Tree-sitter syntax highlighting + language detection +

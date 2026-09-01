@@ -13,9 +13,11 @@ pub mod history;
 pub mod language;
 pub mod search;
 pub mod syntax;
+pub mod vim;
 
 pub use buffer::{Position, TextBuffer};
 pub use document::{Document, Motion};
 pub use language::Language;
 pub use search::{find_all, next_match, replace_all, Match, SearchQuery};
 pub use syntax::{HighlightKind, HighlightSpan, StyledRun, SyntaxHighlighter};
+pub use vim::{Vim, VimKey, VimMode, VimOptions, VimResponse};
