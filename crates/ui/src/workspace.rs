@@ -261,6 +261,11 @@ pub struct Workspace {
     /// Client-side mirror of the bridge's per-tab agent-access grants
     /// (T11-006) — shared with the header badge in `AppShell`.
     agent_access: Entity<AgentAccessStore>,
+
+    // ── Snippets (T12-001) ────────────────────────────────────────────────
+    /// Snippet commands waiting to be typed into a freshly-opened SSH tab
+    /// once its session is established, keyed by `ssh_id`.
+    pending_snippet_ssh: HashMap<String, String>,
 }
 
 impl Workspace {
@@ -409,6 +414,7 @@ impl Workspace {
             transfer_events: tev_rx,
             pending_mcp: Vec::new(),
             agent_access,
+            pending_snippet_ssh: HashMap::new(),
         };
         cx.observe(&this.agent_access, |_, _, cx| cx.notify())
             .detach();
@@ -498,6 +504,65 @@ impl Workspace {
         self.panes.insert(pane_id, PaneEntry { session_id, view });
         self.layouts.insert(tab_id, WorkspaceLayout::new(pane_id));
         self.focus_active(window, cx);
+    }
+
+    // ── Snippets (T12-001) ────────────────────────────────────────────────
+
+    /// Type `command` (without executing beyond the trailing newline the caller
+    /// includes, if any) into the active terminal pane — snippet "inject" mode.
+    /// No-op when the active pane is not a terminal.
+    pub fn inject_into_active_terminal(&self, text: &str, cx: &App) {
+        if let Some(view) = self.active_pane_view(cx) {
+            let _ = view.read(cx).handle().write(text.as_bytes());
+        }
+    }
+
+    /// Open a new local terminal tab in `cwd` and run `command` in it —
+    /// snippet "terminal" mode, local target.
+    pub fn run_snippet_local(
+        &mut self,
+        cwd: Option<String>,
+        command: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some((session_id, handle)) = self.spawn_session(cwd.clone(), cx) else {
+            return;
+        };
+        let pane_id = self.alloc_pane();
+        let tab_id = self
+            .tabs
+            .update(cx, |s, cx| s.open_workspace(session_id, cwd, cx));
+        let view = self.new_terminal_view(handle.clone(), window, cx);
+        self.panes.insert(pane_id, PaneEntry { session_id, view });
+        self.layouts.insert(tab_id, WorkspaceLayout::new(pane_id));
+        self.focus_active(window, cx);
+        let _ = handle.write(format!("{}\n", command.trim_end()).as_bytes());
+        cx.notify();
+    }
+
+    /// Open (or reuse a connection to) an SSH tab for `host_id` and run
+    /// `command` in it once the session is established — snippet "terminal"
+    /// mode, SSH target.
+    pub fn run_snippet_ssh_terminal(
+        &mut self,
+        host_id: String,
+        command: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if let Some(ssh_id) = self.connect_host(host_id, window, cx) {
+            self.pending_snippet_ssh.insert(ssh_id, command);
+        }
+    }
+
+    /// The `ssh_id` of a live SSH session for `host_id`, if one is open — used
+    /// by snippet "silent" mode against SSH targets.
+    pub fn ssh_session_for_host(&self, host_id: &str) -> Option<String> {
+        self.ssh_tabs
+            .values()
+            .find(|t| t.host_id == host_id)
+            .map(|t| t.ssh_id.clone())
     }
 
     /// Open a file from the Explorer in the code editor. `peek` opens it as a
@@ -1614,6 +1679,18 @@ impl Workspace {
                 }
                 if self.ssh_prompt.as_ref().map(|p| p.ssh_id()) == Some(session_id.as_str()) {
                     self.ssh_prompt = None;
+                }
+                if let Some(command) = self.pending_snippet_ssh.remove(&session_id) {
+                    if let Some(sid) = self
+                        .ssh_tabs
+                        .iter()
+                        .find(|(_, t)| t.ssh_id == session_id)
+                        .map(|(sid, _)| *sid)
+                    {
+                        if let Some(handle) = self.registry.handle(sid) {
+                            let _ = handle.write(format!("{}\n", command.trim_end()).as_bytes());
+                        }
+                    }
                 }
             }
             AppEvent::SshConnectionLost { session_id } => {

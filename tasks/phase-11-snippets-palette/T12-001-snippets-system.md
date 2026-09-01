@@ -1,7 +1,7 @@
 # T12-001: Befehl-Snippets-System
 
 ## Status
-⏳ Pending
+✅ Done
 
 ## Phase
 11 — Snippets & Command-Palette

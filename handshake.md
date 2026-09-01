@@ -4,7 +4,86 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
-## Last Session: 2026-09-02 (T11-006 — MCP-Bridge Grants UI & Settings)
+## Last Session: 2026-09-02 (T12-001 — Command-Snippets system)
+
+### What Was Done
+- **T12-001 ✅ Done.** New `crates/ui/src/snippets.rs` (~1970 lines incl. 15
+  tests) — `SnippetsView` GPUI sidebar panel, port of
+  `reference-src/src/modules/snippets/*`. Backend (`modules/snippets/db.rs` CRUD
+  + `exec.rs` local/SSH run + `snippet_run_cancel`) already existed from the
+  T01-002 bulk port; this task built everything above it.
+  - **Pure helpers (ported test suites):** `extract_snippet_variables` /
+    `substitute_snippet_variables` (hand-rolled `${NAME}` / `${NAME:-default}`
+    scanner replacing the JS regex — no `regex` dep in `crates/ui`; full
+    `SHELL_RESERVED_VAR_NAMES` list; raw textual substitution, **no
+    shell-quoting**, matching the reference `snippetVariables.ts` exactly),
+    `parse_tags` / `serialize_tags` (port of `snippetUtils.ts`). All 13 ported
+    JS assertions reproduced + a run-log ring-buffer test (newest-first, cap 50).
+  - **Panel:** grouped snippet list (collapsible groups + item count, "Other"
+    for ungrouped), search toggle/filter (name/command/description), row actions
+    RUN / log / ▲▼ reorder / edit / duplicate / delete, "+ Add group" inline
+    field, per-group delete. Create/edit form (name, description, command,
+    group chips, Local/SSH target toggle, host chips, Terminal/Silent/Inject
+    mode toggle, working-dir). Hand-rolled key-buffer text fields (same pattern
+    as `git.rs`), `Field` enum routed through `on_key`.
+  - **Variable prompt modal:** shown before a run when the command has
+    `${VAR}`s; per-var value fields (default pre-filled), Tab/Enter to advance,
+    Enter on last field runs.
+  - **Host picker modal:** shown for SSH snippets with `host_id = None` ("ask at
+    runtime"); missing-host (`host_id` set but gone) → error toast, no run.
+  - **Execution:** `inject` → `Workspace::inject_into_active_terminal`;
+    `terminal` local → new `Workspace::run_snippet_local` (spawns a tab, writes
+    `cmd\n` to the handle); `terminal` SSH → new
+    `Workspace::run_snippet_ssh_terminal` (connects, queues the command in
+    `Workspace::pending_snippet_ssh`, flushed on `SshSessionEstablished`);
+    `silent` → `snippet_run_local` / `snippet_run_ssh` on `tokio.spawn`, output
+    streamed into the log drawer via a bus subscription
+    (`snippet_run_output` / `snippet_run_done` raw events → mpsc → 60ms cx.spawn
+    poll loop). Silent SSH needs a live session for the host
+    (`Workspace::ssh_session_for_host`) — else logs an error line, same as the
+    reference.
+  - **Log drawer:** bottom drawer, run tab list + selected-run output (stdout/
+    stderr colouring, `[exit N]` / cancelled markers), Cancel (running run),
+    Clear, Close.
+  - Wired into `SidebarPanel::Snippets` in `app_shell.rs` (variant + ✂ glyph
+    already existed); new `snippets: Entity<SnippetsView>` field.
+- Verify: `cargo check --workspace`, `cargo clippy --workspace --all-targets --
+  -D warnings`, `cargo test --workspace`, `cargo fmt --all --check` — all green.
+  ui **126 → 141** (+15), backend 153 / ai 75 unchanged.
+
+### State / Next
+- Branch `master`, committed. Pre-existing unrelated `CLAUDE.md` working-tree
+  edit deliberately left untouched / uncommitted.
+- **Next: T12-002 — Command-Palette**
+  (`tasks/phase-11-snippets-palette/T12-002-command-palette.md`).
+
+### Notes / Quirks (T12-001)
+- The reference `substituteSnippetVariables` does **no** escaping/quoting — it
+  is a raw `String.replace`. The task text asks for "defensiv escapen" but the
+  ported test suite pins the raw behaviour (`echo ${NAME}` + `{NAME:"world"}` →
+  `echo world`), so parity wins. Reserved names are never extracted, so never
+  substituted — they pass straight through to the real shell.
+- No `regex` dependency in `crates/ui`; `scan_variables` is a byte-scan
+  replicating `/\$\{([A-Z_][A-Z0-9_]*)(?::-([^}]*))?\}/g` (first char
+  `[A-Z_]`, tail `[A-Z0-9_]`, optional `:-default` with no `}` in the default).
+- SSH "terminal" mode writes the command into the tab's PTY **after**
+  `SshSessionEstablished` (queued in `Workspace::pending_snippet_ssh` keyed by
+  `ssh_id`) — writing before the remote PTY channel is open silently drops it.
+- Local "terminal" mode writes `cmd\n` to the fresh session handle immediately;
+  the kernel PTY buffers it until the shell reads, so no artificial delay.
+- `SnippetsView` owns its own bus subscription (like `Workspace`) — it is an
+  `AppShell` child, not a `Workspace` child, so it can't reuse the workspace's
+  forwarding channel.
+- Reorder (▲▼) renumbers the whole group 0..n via `snippets_reorder`; there is
+  no drag-and-drop (GPUI DnD for list rows isn't wired anywhere yet — same
+  situation as the explorer's file DnD which is minimal).
+- The panel is untested at the view level (GPUI views aren't unit-testable
+  here); the 15 tests cover the pure variable/tag/run-log logic — the seam that
+  actually carries risk.
+
+---
+
+## Prev Session: 2026-09-02 (T11-006 — MCP-Bridge Grants UI & Settings)
 
 ### What Was Done
 - **T11-006 ✅ Done.** UI + persistence for the MCP bridge. Backend enforcement

@@ -17,6 +17,7 @@ pub mod menu;
 pub mod notifications;
 pub mod pane;
 pub mod sftp;
+pub mod snippets;
 pub mod syntax_theme;
 pub mod tabs;
 pub mod terminal;
@@ -46,6 +47,10 @@ pub use notifications::{
 };
 pub use pane::{CloseOutcome, PaneId, PaneNode, SplitAxis, WorkspaceLayout};
 pub use sftp::{SftpEvent, SftpView};
+pub use snippets::{
+    extract_snippet_variables, parse_tags, serialize_tags, substitute_snippet_variables,
+    SnippetVariable, SnippetsView,
+};
 pub use syntax_theme::EditorPalette;
 pub use tabs::{Tab, TabData, TabKind, TabStore};
 pub use terminal::TerminalView;

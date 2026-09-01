@@ -43,6 +43,7 @@ use crate::git_graph::GitGraphView;
 use crate::menu;
 use crate::notifications::{self, NotificationCenter};
 use crate::pane::SplitAxis;
+use crate::snippets::SnippetsView;
 use crate::theme::ThemeStore;
 use crate::window_state;
 use crate::workspace::Workspace;
@@ -125,6 +126,7 @@ pub struct AppShell {
     explorer: Entity<ExplorerView>,
     git_panel: Entity<GitPanelView>,
     git_graph: Entity<GitGraphView>,
+    snippets: Entity<SnippetsView>,
     ai_chat: Entity<AiChatView>,
     /// Client-side mirror of the MCP bridge's per-tab agent-access grants,
     /// shared with `Workspace` (T11-006).
@@ -212,8 +214,14 @@ impl AppShell {
             cx.new(|cx| GitPanelView::new(backend.clone(), tokio.clone(), theme.clone(), cx));
         cx.observe(&git_panel, |_, _, cx| cx.notify()).detach();
 
-        let git_graph = cx.new(|cx| GitGraphView::new(backend, tokio.clone(), theme.clone(), cx));
+        let git_graph =
+            cx.new(|cx| GitGraphView::new(backend.clone(), tokio.clone(), theme.clone(), cx));
         cx.observe(&git_graph, |_, _, cx| cx.notify()).detach();
+
+        let snippets = cx.new(|cx| {
+            SnippetsView::new(backend, tokio.clone(), theme.clone(), workspace.clone(), cx)
+        });
+        cx.observe(&snippets, |_, _, cx| cx.notify()).detach();
 
         let ai_store = cx.new(|_| AiChatStore::new(tokio));
         let ai_chat = cx.new(|cx| AiChatView::new(ai_store, theme.clone(), cx));
@@ -273,6 +281,7 @@ impl AppShell {
             explorer,
             git_panel,
             git_graph,
+            snippets,
             ai_chat,
             agent_access,
             agent_badge_open: false,
@@ -825,6 +834,9 @@ impl AppShell {
         }
         if panel == SidebarPanel::GitGraph {
             return self.git_graph.clone().into_any_element();
+        }
+        if panel == SidebarPanel::Snippets {
+            return self.snippets.clone().into_any_element();
         }
         if panel == SidebarPanel::Ai {
             return self.ai_chat.clone().into_any_element();
