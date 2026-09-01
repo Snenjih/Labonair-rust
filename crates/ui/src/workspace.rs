@@ -1,13 +1,12 @@
-//! Workspace shell: window chrome + tab bar + split-pane content (T04-001, T04-002).
+//! Workspace: tab bar + split-pane content (T04-001, T04-002).
 //!
 //! [`Workspace`] owns the [`TabStore`], the shared [`TerminalRegistry`], the
 //! per-workspace-tab [`WorkspaceLayout`] (its split-pane tree) and the content
-//! view for every open pane. It renders, top to bottom:
-//!
-//! * a header bar (app title + sidebar toggle),
-//! * a body row: an optional, resizable left sidebar + the central area
-//!   (tab bar over the active tab's split-pane tree),
-//! * a status bar (active tab label + pane count).
+//! view for every open pane. It renders the tab bar over the active tab's
+//! split-pane tree; the window chrome around it (header, sidebar, status bar,
+//! native titlebar) is composed by [`crate::app_shell::AppShell`] (T04-003),
+//! which queries this view for the data it surfaces (active cwd, tab label,
+//! pane count) and forwards the header's inline search here.
 //!
 //! Panes / tabs / sessions are three distinct things, mirroring the reference:
 //! a *session* is a PTY that lives in the [`TerminalRegistry`] and never pauses;
@@ -40,13 +39,8 @@ use crate::theme::ThemeStore;
 /// Interval for syncing terminal cwd/title into their tab labels.
 const META_SYNC_INTERVAL: Duration = Duration::from_millis(400);
 
-const HEADER_H: f32 = 36.0;
-const STATUS_H: f32 = 24.0;
-/// Thickness of a resize handle (split divider / sidebar edge).
+/// Thickness of a split-divider resize handle.
 const HANDLE: f32 = 6.0;
-const SIDEBAR_DEFAULT: f32 = 260.0;
-const SIDEBAR_MIN: f32 = 180.0;
-const SIDEBAR_MAX: f32 = 520.0;
 
 /// Value carried by a tab drag.
 struct DraggedTab {
@@ -58,9 +52,6 @@ struct DraggedTab {
 struct PaneResize {
     split_id: PaneId,
 }
-
-/// Value carried while dragging the sidebar edge.
-struct SidebarResize;
 
 /// Minimal drag preview for the resize handles (the cursor does the work).
 struct DragGhost;
@@ -107,8 +98,6 @@ pub struct Workspace {
     /// Content view + session per pane id (pane ids are process-unique).
     panes: HashMap<PaneId, PaneEntry>,
     next_pane_id: PaneId,
-    sidebar_open: bool,
-    sidebar_width: f32,
     /// Tab id whose close is awaiting unsaved-changes confirmation.
     confirm_close: Option<u64>,
     /// Open tab context menu: `(tab id, anchor position)`.
@@ -145,8 +134,6 @@ impl Workspace {
             layouts: HashMap::new(),
             panes: HashMap::new(),
             next_pane_id: 1,
-            sidebar_open: true,
-            sidebar_width: SIDEBAR_DEFAULT,
             confirm_close: None,
             context_menu: None,
             focus_handle: cx.focus_handle(),
@@ -160,6 +147,52 @@ impl Workspace {
     /// The tab store (for later phases / command palette wiring).
     pub fn tab_store(&self) -> &Entity<TabStore> {
         &self.tabs
+    }
+
+    /// The working directory of the active pane's shell, if known — feeds the
+    /// status-bar cwd breadcrumb (T04-003).
+    pub fn active_cwd(&self, cx: &App) -> Option<String> {
+        self.active_pane_view(cx).and_then(|v| v.read(cx).cwd())
+    }
+
+    /// The active tab's display label.
+    pub fn active_tab_label(&self, cx: &App) -> String {
+        self.tabs
+            .read(cx)
+            .active()
+            .map(Tab::label)
+            .unwrap_or_default()
+    }
+
+    /// Number of panes in the active workspace tab (0 for non-workspace tabs).
+    pub fn active_pane_count(&self, cx: &App) -> usize {
+        self.active_ws_tab(cx)
+            .and_then(|id| self.layouts.get(&id))
+            .map(WorkspaceLayout::len)
+            .unwrap_or(0)
+    }
+
+    /// Whether the active tab targets a terminal (vs. an editor / other) —
+    /// drives which surface the header's inline search dispatches to.
+    pub fn active_is_terminal(&self, cx: &App) -> bool {
+        self.tabs
+            .read(cx)
+            .active()
+            .map(|t| t.kind == TabKind::Workspace)
+            .unwrap_or(false)
+    }
+
+    /// Run the header's inline search against the active terminal pane.
+    pub fn search_active(&mut self, query: &str, cx: &mut Context<Self>) -> bool {
+        let Some(view) = self.active_pane_view(cx) else {
+            return false;
+        };
+        view.update(cx, |v, cx| v.search(query, cx))
+    }
+
+    /// Focus the active pane (called by the app shell after closing an overlay).
+    pub fn focus(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.focus_active(window, cx);
     }
 
     fn theme_colors(&self, cx: &App) -> TerminalColors {
@@ -311,14 +344,6 @@ impl Workspace {
                     cx.notify();
                 }
             }
-        }
-    }
-
-    fn set_sidebar_width(&mut self, width: f32, cx: &mut Context<Self>) {
-        let clamped = width.clamp(SIDEBAR_MIN, SIDEBAR_MAX);
-        if (clamped - self.sidebar_width).abs() > 0.5 {
-            self.sidebar_width = clamped;
-            cx.notify();
         }
     }
 
@@ -719,131 +744,6 @@ impl Workspace {
             )))
     }
 
-    fn render_header(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
-        let theme = self.theme.read(cx);
-        let (bg, fg, muted, border) = (
-            theme.background(),
-            theme.foreground(),
-            theme.muted_foreground(),
-            theme.border(),
-        );
-        div()
-            .flex()
-            .items_center()
-            .gap_2()
-            .h(px(HEADER_H))
-            .w_full()
-            .flex_shrink_0()
-            .px_2()
-            .bg(bg)
-            .border_b_1()
-            .border_color(border)
-            .child(
-                div()
-                    .id("sidebar-toggle")
-                    .size(px(24.0))
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .rounded_md()
-                    .text_color(muted)
-                    .hover(|s| s.bg(border).text_color(fg))
-                    .child("\u{2630}")
-                    .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
-                        this.sidebar_open = !this.sidebar_open;
-                        cx.notify();
-                    })),
-            )
-            .child(div().text_xs().text_color(muted).child("Labonair"))
-    }
-
-    fn render_sidebar(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
-        let theme = self.theme.read(cx);
-        let (card, muted, border, accent) = (
-            theme.card(),
-            theme.muted_foreground(),
-            theme.border(),
-            theme.accent(),
-        );
-        let width = self.sidebar_width;
-
-        div()
-            .flex_shrink_0()
-            .h_full()
-            .flex()
-            .flex_row()
-            .child(
-                div()
-                    .w(px(width))
-                    .h_full()
-                    .flex_shrink_0()
-                    .flex()
-                    .flex_col()
-                    .bg(card)
-                    .child(
-                        div()
-                            .px_3()
-                            .py_2()
-                            .text_xs()
-                            .text_color(muted)
-                            .child("EXPLORER"),
-                    )
-                    .child(
-                        div()
-                            .flex_1()
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .px_3()
-                            .text_center()
-                            .text_xs()
-                            .text_color(muted)
-                            .child("Explorer — coming in a later phase"),
-                    ),
-            )
-            .child(
-                div()
-                    .id("sidebar-handle")
-                    .w(px(HANDLE))
-                    .h_full()
-                    .flex_shrink_0()
-                    .cursor_col_resize()
-                    .bg(border)
-                    .hover(|s| s.bg(accent))
-                    .on_drag(SidebarResize, |_, _, _, cx| cx.new(|_| DragGhost)),
-            )
-    }
-
-    fn render_statusbar(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
-        let store = self.tabs.read(cx);
-        let label = store.active().map(Tab::label).unwrap_or_default();
-        let panes = self
-            .active_ws_tab(cx)
-            .and_then(|id| self.layouts.get(&id))
-            .map(WorkspaceLayout::len)
-            .unwrap_or(0);
-        let theme = self.theme.read(cx);
-        let (bg, muted, border) = (theme.background(), theme.muted_foreground(), theme.border());
-
-        div()
-            .flex()
-            .items_center()
-            .gap_2()
-            .h(px(STATUS_H))
-            .w_full()
-            .flex_shrink_0()
-            .px_3()
-            .bg(bg)
-            .border_t_1()
-            .border_color(border)
-            .text_xs()
-            .text_color(muted)
-            .child(SharedString::from(label))
-            .when(panes > 1, |d| {
-                d.child(SharedString::from(format!("\u{00b7} {panes} panes")))
-            })
-    }
-
     fn render_confirm(&mut self, id: u64, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = self.theme.read(cx);
         let (card, fg, border, accent, muted) = (
@@ -1005,13 +905,8 @@ impl Focusable for Workspace {
 impl Render for Workspace {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let bg = self.theme.read(cx).background();
-        let header = self.render_header(cx);
-        let sidebar = self
-            .sidebar_open
-            .then(|| self.render_sidebar(cx).into_any_element());
         let tab_bar = self.render_tab_bar(cx);
         let content = self.render_content(cx);
-        let statusbar = self.render_statusbar(cx);
         let confirm = self
             .confirm_close
             .map(|id| self.render_confirm(id, cx).into_any_element());
@@ -1028,31 +923,8 @@ impl Render for Workspace {
             .size_full()
             .bg(bg)
             .on_key_down(cx.listener(Self::on_key_down))
-            .child(header)
-            .child(
-                div()
-                    .flex_1()
-                    .min_h_0()
-                    .flex()
-                    .flex_row()
-                    .children(sidebar)
-                    .child(
-                        div()
-                            .flex_1()
-                            .min_w_0()
-                            .flex()
-                            .flex_col()
-                            .child(tab_bar)
-                            .child(div().flex_1().min_h_0().child(content)),
-                    )
-                    .on_drag_move(cx.listener(
-                        |this, ev: &DragMoveEvent<SidebarResize>, _window, cx| {
-                            let w = f32::from(ev.event.position.x - ev.bounds.origin.x);
-                            this.set_sidebar_width(w, cx);
-                        },
-                    )),
-            )
-            .child(statusbar)
+            .child(tab_bar)
+            .child(div().flex_1().min_h_0().child(content))
             .children(confirm)
             .children(context_menu)
     }
@@ -1081,11 +953,6 @@ impl Workspace {
             }
             (true, "d") => {
                 self.split_active(SplitAxis::Vertical, window, cx);
-                cx.stop_propagation();
-            }
-            (false, "b") => {
-                self.sidebar_open = !self.sidebar_open;
-                cx.notify();
                 cx.stop_propagation();
             }
             (true, "]") | (false, "}") => {

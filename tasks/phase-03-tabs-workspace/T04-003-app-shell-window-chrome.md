@@ -1,7 +1,7 @@
 # T04-003: App-Shell & Fensterchrome
 
 ## Status
-⏳ Pending
+✅ Done
 
 ## Phase
 3 — App-Shell, Tab-System & Workspace-Layout

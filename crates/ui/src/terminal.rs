@@ -149,6 +149,37 @@ impl TerminalView {
             .with(|s| s.metadata().ok().and_then(|m| m.title))
     }
 
+    /// Find `query` in the currently visible screen and select the first
+    /// match (top-to-bottom, left-to-right). Returns `true` if a match was
+    /// found. An empty query just clears any active selection.
+    ///
+    /// This is the target of the header's inline search (T04-003). A full
+    /// scrollback-spanning find widget with next/previous navigation is a
+    /// later search-module concern.
+    pub fn search(&self, query: &str, cx: &mut Context<Self>) -> bool {
+        if query.is_empty() {
+            let _ = self.handle.with(|s| s.clear_selection());
+            cx.notify();
+            return false;
+        }
+        let Ok(screen) = self.handle.with(|s| s.render()) else {
+            return false;
+        };
+        let text = screen.to_text();
+        for (row, line) in text.lines().enumerate() {
+            if let Some(byte_idx) = line.find(query) {
+                let col = line[..byte_idx].chars().count();
+                let len = query.chars().count();
+                let _ = self
+                    .handle
+                    .with(|s| s.update_selection((col, row), (col + len, row)));
+                cx.notify();
+                return true;
+            }
+        }
+        false
+    }
+
     /// The current terminal mode snapshot (falls back to defaults on error).
     fn mode(&self) -> ModeState {
         self.handle

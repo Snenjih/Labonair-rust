@@ -2,13 +2,16 @@
 //!
 //! Populated by later phases (T04+). T02-002 adds the runtime theme provider.
 
+pub mod app_shell;
 pub mod background;
 pub mod pane;
 pub mod tabs;
 pub mod terminal;
 pub mod theme;
+pub mod window_state;
 pub mod workspace;
 
+pub use app_shell::{AppShell, SidebarPanel};
 pub use background::{
     background_store, init as init_background, BackgroundFit, BackgroundStore, BackgroundTarget,
     GlobalBackground, LayerScope,

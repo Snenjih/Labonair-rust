@@ -224,6 +224,36 @@ impl ThemeStore {
         self.theme().core.accent
     }
 
+    /// `--toolbar-background` — the window header / titlebar surface.
+    pub fn toolbar(&self) -> Hsla {
+        self.theme().surface.toolbar
+    }
+
+    /// `--title-bar-background`.
+    pub fn title_bar(&self) -> Hsla {
+        self.theme().surface.title_bar
+    }
+
+    /// `--status-bar-background` — the bottom status bar surface.
+    pub fn status_bar(&self) -> Hsla {
+        self.theme().surface.status_bar
+    }
+
+    /// `--sidebar` background.
+    pub fn sidebar_bg(&self) -> Hsla {
+        self.theme().sidebar.background
+    }
+
+    /// `--sidebar-border`.
+    pub fn sidebar_border(&self) -> Hsla {
+        self.theme().sidebar.border
+    }
+
+    /// `--sidebar-foreground`.
+    pub fn sidebar_fg(&self) -> Hsla {
+        self.theme().sidebar.foreground
+    }
+
     pub fn radius(&self) -> RadiusScale {
         self.theme().radius
     }

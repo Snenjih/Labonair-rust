@@ -1,56 +1,11 @@
 use gpui::{
-    div, prelude::*, px, size, App, Application, Bounds, Entity, Window, WindowBounds,
-    WindowOptions,
+    prelude::*, px, size, App, Application, Bounds, TitlebarOptions, WindowBounds, WindowOptions,
 };
-use std::sync::Arc;
 
 use labonair_backend::{App as Backend, AppEvent};
-use labonair_terminal::TerminalRegistry;
-use labonair_ui::{BackgroundStore, LayerScope, ThemeStore, Workspace};
+use labonair_ui::{window_state, AppShell};
 use tokio::sync::broadcast::error::RecvError;
 use tracing_subscriber::EnvFilter;
-
-/// Root view of the Labonair window: hosts the tabbed [`Workspace`] shell
-/// (T04-001). The full window chrome (header, statusbar, sidebar) arrives in
-/// T04-003.
-struct Root {
-    theme: Entity<ThemeStore>,
-    background: Entity<BackgroundStore>,
-    workspace: Entity<Workspace>,
-}
-
-impl Root {
-    fn new(
-        theme: Entity<ThemeStore>,
-        background: Entity<BackgroundStore>,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> Self {
-        cx.observe(&theme, |_, _, cx| cx.notify()).detach();
-        cx.observe(&background, |_, _, cx| cx.notify()).detach();
-        let registry = Arc::new(TerminalRegistry::new());
-        let workspace =
-            cx.new(|cx| Workspace::new(registry, theme.clone(), background.clone(), window, cx));
-        Self {
-            theme,
-            background,
-            workspace,
-        }
-    }
-}
-
-impl Render for Root {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let bg = self.theme.read(cx).background();
-        let background_layer = self.background.read(cx).layer(LayerScope::App);
-        div()
-            .relative()
-            .size_full()
-            .bg(bg)
-            .child(self.workspace.clone())
-            .children(background_layer)
-    }
-}
 
 /// `tracing` logging: default-off for noisy deps, `debug` for our crates, all
 /// overridable via `RUST_LOG`.
@@ -106,10 +61,17 @@ fn main() {
 
     Application::new().run(|cx: &mut App| {
         labonair_ui::init_fonts(cx);
-        let bounds = Bounds::centered(None, size(px(1200.0), px(800.0)), cx);
+        let bounds = window_state::load()
+            .unwrap_or_else(|| Bounds::centered(None, size(px(1200.0), px(800.0)), cx));
         cx.open_window(
             WindowOptions {
                 window_bounds: Some(WindowBounds::Windowed(bounds)),
+                titlebar: Some(TitlebarOptions {
+                    title: Some("Labonair".into()),
+                    appears_transparent: false,
+                    traffic_light_position: None,
+                }),
+                window_min_size: Some(size(px(720.0), px(480.0))),
                 ..Default::default()
             },
             |window, cx| {
@@ -126,7 +88,7 @@ fn main() {
                     })
                     .detach();
                 let background = labonair_ui::init_background(cx);
-                cx.new(|cx| Root::new(theme, background, window, cx))
+                cx.new(|cx| AppShell::new(theme, background, window, cx))
             },
         )
         .expect("failed to open window");
