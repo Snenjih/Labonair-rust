@@ -1,15 +1,21 @@
-//! Workspace shell: tab bar + tab content area (T04-001).
+//! Workspace shell: window chrome + tab bar + split-pane content (T04-001, T04-002).
 //!
-//! [`Workspace`] owns the [`TabStore`], the shared [`TerminalRegistry`] and the
-//! per-tab content views. It renders the tab bar (open / close / switch /
-//! drag-reorder / context actions) and, below it, the content view for the
-//! active tab — a live [`TerminalView`] for `Workspace` tabs, a placeholder for
-//! kinds whose content arrives in later phases.
+//! [`Workspace`] owns the [`TabStore`], the shared [`TerminalRegistry`], the
+//! per-workspace-tab [`WorkspaceLayout`] (its split-pane tree) and the content
+//! view for every open pane. It renders, top to bottom:
 //!
-//! Session lifecycle: a new `Workspace` tab spawns a PTY session in the
-//! registry (inheriting the previous tab's cwd); closing the tab calls
-//! [`TerminalRegistry::close`] so no shell process is orphaned. Switching tabs
-//! never touches the registry, so background terminals keep running.
+//! * a header bar (app title + sidebar toggle),
+//! * a body row: an optional, resizable left sidebar + the central area
+//!   (tab bar over the active tab's split-pane tree),
+//! * a status bar (active tab label + pane count).
+//!
+//! Panes / tabs / sessions are three distinct things, mirroring the reference:
+//! a *session* is a PTY that lives in the [`TerminalRegistry`] and never pauses;
+//! a *pane* is one slot in a workspace tab's [`WorkspaceLayout`] tree, bound to
+//! one session; a *tab* selects which pane tree is on screen. Splitting a pane
+//! (`Cmd-D` / `Cmd-Shift-D`) spawns a new session in the active pane's cwd;
+//! closing the last pane of a tab closes the tab; closing any tab tears down
+//! every session in its layout so no shell is orphaned.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -17,13 +23,16 @@ use std::time::Duration;
 
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, px, App, AppContext, ClickEvent, Context, Entity, FocusHandle, Focusable,
-    InteractiveElement, IntoElement, KeyDownEvent, MouseButton, MouseDownEvent, ParentElement,
-    Render, SharedString, StatefulInteractiveElement, Styled, Task, Window,
+    div, px, relative, App, AppContext, ClickEvent, Context, DragMoveEvent, Entity, FocusHandle,
+    Focusable, InteractiveElement, IntoElement, KeyDownEvent, MouseButton, MouseDownEvent,
+    ParentElement, Render, SharedString, StatefulInteractiveElement, Styled, Task, Window,
 };
-use labonair_terminal::{SessionOptions, TermDimensions, TerminalColors, TerminalRegistry};
+use labonair_terminal::{
+    SessionHandle, SessionId, SessionOptions, TermDimensions, TerminalColors, TerminalRegistry,
+};
 
 use crate::background::BackgroundStore;
+use crate::pane::{CloseOutcome, PaneId, PaneNode, SplitAxis, WorkspaceLayout};
 use crate::tabs::{Tab, TabKind, TabStore};
 use crate::terminal::TerminalView;
 use crate::theme::ThemeStore;
@@ -31,10 +40,35 @@ use crate::theme::ThemeStore;
 /// Interval for syncing terminal cwd/title into their tab labels.
 const META_SYNC_INTERVAL: Duration = Duration::from_millis(400);
 
+const HEADER_H: f32 = 36.0;
+const STATUS_H: f32 = 24.0;
+/// Thickness of a resize handle (split divider / sidebar edge).
+const HANDLE: f32 = 6.0;
+const SIDEBAR_DEFAULT: f32 = 260.0;
+const SIDEBAR_MIN: f32 = 180.0;
+const SIDEBAR_MAX: f32 = 520.0;
+
 /// Value carried by a tab drag.
 struct DraggedTab {
     id: u64,
     label: SharedString,
+}
+
+/// Value carried while dragging a split divider.
+struct PaneResize {
+    split_id: PaneId,
+}
+
+/// Value carried while dragging the sidebar edge.
+struct SidebarResize;
+
+/// Minimal drag preview for the resize handles (the cursor does the work).
+struct DragGhost;
+
+impl Render for DragGhost {
+    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+        div()
+    }
 }
 
 /// Drag image shown while a tab is being reordered.
@@ -55,15 +89,26 @@ impl Render for TabDragPreview {
     }
 }
 
-/// The tabbed workspace shell.
+/// One pane's backing session + content view.
+struct PaneEntry {
+    session_id: SessionId,
+    view: Entity<TerminalView>,
+}
+
+/// The tabbed, split-pane workspace shell.
 pub struct Workspace {
     registry: Arc<TerminalRegistry>,
     tabs: Entity<TabStore>,
     theme: Entity<ThemeStore>,
     background: Entity<BackgroundStore>,
-    /// Content view per `Workspace` tab id — kept alive across tab switches so
-    /// scrollback position and focus survive.
-    terminals: HashMap<u64, Entity<TerminalView>>,
+    /// Split-pane tree per `Workspace` tab id — survives tab switches so the
+    /// layout is never lost.
+    layouts: HashMap<u64, WorkspaceLayout>,
+    /// Content view + session per pane id (pane ids are process-unique).
+    panes: HashMap<PaneId, PaneEntry>,
+    next_pane_id: PaneId,
+    sidebar_open: bool,
+    sidebar_width: f32,
     /// Tab id whose close is awaiting unsaved-changes confirmation.
     confirm_close: Option<u64>,
     /// Open tab context menu: `(tab id, anchor position)`.
@@ -97,7 +142,11 @@ impl Workspace {
             tabs,
             theme,
             background,
-            terminals: HashMap::new(),
+            layouts: HashMap::new(),
+            panes: HashMap::new(),
+            next_pane_id: 1,
+            sidebar_open: true,
+            sidebar_width: SIDEBAR_DEFAULT,
             confirm_close: None,
             context_menu: None,
             focus_handle: cx.focus_handle(),
@@ -117,39 +166,176 @@ impl Workspace {
         TerminalColors::from_theme(self.theme.read(cx).theme())
     }
 
-    /// Spawn a new local terminal session and open a workspace tab for it.
-    fn open_terminal_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let cwd = self.active_terminal(cx).and_then(|v| v.read(cx).cwd());
-        let colors = self.theme_colors(cx);
+    fn alloc_pane(&mut self) -> PaneId {
+        let id = self.next_pane_id;
+        self.next_pane_id += 1;
+        id
+    }
+
+    /// Spawn a local terminal session in `cwd` and return its id + handle.
+    fn spawn_session(&self, cwd: Option<String>, cx: &App) -> Option<(SessionId, SessionHandle)> {
         let options = SessionOptions {
-            working_directory: cwd.clone(),
+            working_directory: cwd,
             ..SessionOptions::default()
         };
-        let session_id = match self
-            .registry
-            .create(colors, TermDimensions::new(80, 24), options)
-        {
-            Ok(id) => id,
-            Err(err) => {
-                tracing::error!(%err, "failed to spawn terminal session for new tab");
-                return;
-            }
-        };
-        let Some(handle) = self.registry.handle(session_id) else {
+        let session_id =
+            match self
+                .registry
+                .create(self.theme_colors(cx), TermDimensions::new(80, 24), options)
+            {
+                Ok(id) => id,
+                Err(err) => {
+                    tracing::error!(%err, "failed to spawn terminal session");
+                    return None;
+                }
+            };
+        let handle = self.registry.handle(session_id)?;
+        Some((session_id, handle))
+    }
+
+    fn new_terminal_view(
+        &self,
+        handle: SessionHandle,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Entity<TerminalView> {
+        let theme = self.theme.clone();
+        let background = self.background.clone();
+        cx.new(|cx| TerminalView::new(handle, theme, background, window, cx))
+    }
+
+    /// Spawn a new local terminal session and open a workspace tab for it.
+    fn open_terminal_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let cwd = self.active_pane_view(cx).and_then(|v| v.read(cx).cwd());
+        let Some((session_id, handle)) = self.spawn_session(cwd.clone(), cx) else {
             return;
         };
+        let pane_id = self.alloc_pane();
         let tab_id = self
             .tabs
             .update(cx, |s, cx| s.open_workspace(session_id, cwd, cx));
-        let theme = self.theme.clone();
-        let background = self.background.clone();
-        let view = cx.new(|cx| TerminalView::new(handle, theme, background, window, cx));
-        self.terminals.insert(tab_id, view);
+        let view = self.new_terminal_view(handle, window, cx);
+        self.panes.insert(pane_id, PaneEntry { session_id, view });
+        self.layouts.insert(tab_id, WorkspaceLayout::new(pane_id));
+        self.focus_active(window, cx);
     }
 
-    fn active_terminal(&self, cx: &App) -> Option<Entity<TerminalView>> {
+    /// Split the active pane of the active workspace tab, spawning a new
+    /// terminal in the same cwd.
+    fn split_active(&mut self, axis: SplitAxis, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(tab_id) = self.active_ws_tab(cx) else {
+            return;
+        };
+        let cwd = self.active_pane_view(cx).and_then(|v| v.read(cx).cwd());
+        let Some((session_id, handle)) = self.spawn_session(cwd, cx) else {
+            return;
+        };
+        let split_id = self.alloc_pane();
+        let new_pane = self.alloc_pane();
+        if let Some(layout) = self.layouts.get_mut(&tab_id) {
+            layout.split(split_id, new_pane, axis);
+        }
+        let view = self.new_terminal_view(handle, window, cx);
+        self.panes.insert(new_pane, PaneEntry { session_id, view });
+        self.focus_active(window, cx);
+        cx.notify();
+    }
+
+    /// `Cmd-W`: close the active pane if the tab is split, otherwise close the
+    /// whole tab.
+    fn close_active_pane_or_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(tab_id) = self.active_ws_tab(cx) {
+            let multi = self
+                .layouts
+                .get(&tab_id)
+                .map(WorkspaceLayout::len)
+                .unwrap_or(0)
+                > 1;
+            if multi {
+                self.close_active_pane(window, cx);
+                return;
+            }
+        }
         let id = self.tabs.read(cx).active_id();
-        self.terminals.get(&id).cloned()
+        self.request_close(id, window, cx);
+    }
+
+    fn close_active_pane(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(tab_id) = self.active_ws_tab(cx) else {
+            return;
+        };
+        let Some(pane) = self.layouts.get(&tab_id).map(|l| l.active) else {
+            return;
+        };
+        let outcome = self
+            .layouts
+            .get_mut(&tab_id)
+            .map(|l| l.close(pane))
+            .unwrap_or(CloseOutcome::NotFound);
+        match outcome {
+            CloseOutcome::LastPane => self.request_close(tab_id, window, cx),
+            CloseOutcome::Closed { .. } => {
+                self.retire_pane(pane);
+                self.focus_active(window, cx);
+                cx.notify();
+            }
+            CloseOutcome::NotFound => {}
+        }
+    }
+
+    fn set_pane_active(&mut self, pane_id: PaneId, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(tab_id) = self.active_ws_tab(cx) {
+            if let Some(layout) = self.layouts.get_mut(&tab_id) {
+                if layout.set_active(pane_id) {
+                    cx.notify();
+                }
+            }
+        }
+        self.focus_active(window, cx);
+    }
+
+    fn resize_split(&mut self, split_id: PaneId, ratio: f32, cx: &mut Context<Self>) {
+        if let Some(tab_id) = self.active_ws_tab(cx) {
+            if let Some(layout) = self.layouts.get_mut(&tab_id) {
+                if layout.set_ratio(split_id, ratio) {
+                    cx.notify();
+                }
+            }
+        }
+    }
+
+    fn reset_split(&mut self, split_id: PaneId, cx: &mut Context<Self>) {
+        if let Some(tab_id) = self.active_ws_tab(cx) {
+            if let Some(layout) = self.layouts.get_mut(&tab_id) {
+                if layout.reset_ratio(split_id) {
+                    cx.notify();
+                }
+            }
+        }
+    }
+
+    fn set_sidebar_width(&mut self, width: f32, cx: &mut Context<Self>) {
+        let clamped = width.clamp(SIDEBAR_MIN, SIDEBAR_MAX);
+        if (clamped - self.sidebar_width).abs() > 0.5 {
+            self.sidebar_width = clamped;
+            cx.notify();
+        }
+    }
+
+    // ── Lookups ─────────────────────────────────────────────────────────────
+
+    fn active_ws_tab(&self, cx: &App) -> Option<u64> {
+        let tab = self.tabs.read(cx).active()?;
+        (tab.kind == TabKind::Workspace).then_some(tab.id)
+    }
+
+    fn active_layout<'a>(&'a self, cx: &App) -> Option<&'a WorkspaceLayout> {
+        self.layouts.get(&self.active_ws_tab(cx)?)
+    }
+
+    fn active_pane_view(&self, cx: &App) -> Option<Entity<TerminalView>> {
+        let pane = self.active_layout(cx)?.active;
+        self.panes.get(&pane).map(|e| e.view.clone())
     }
 
     fn select_tab(&mut self, id: u64, window: &mut Window, cx: &mut Context<Self>) {
@@ -158,7 +344,7 @@ impl Workspace {
     }
 
     fn focus_active(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if let Some(view) = self.active_terminal(cx) {
+        if let Some(view) = self.active_pane_view(cx) {
             view.read(cx).focus(window);
         } else {
             window.focus(&self.focus_handle);
@@ -171,8 +357,7 @@ impl Workspace {
     }
 
     /// Request closing a tab. Editor tabs with unsaved changes first ask for
-    /// confirmation; everything else (and terminals) closes immediately, with
-    /// the session torn down.
+    /// confirmation; everything else closes immediately, sessions torn down.
     fn request_close(&mut self, id: u64, window: &mut Window, cx: &mut Context<Self>) {
         let needs_confirm = self
             .tabs
@@ -216,21 +401,29 @@ impl Workspace {
         self.focus_active(window, cx);
     }
 
-    /// Tear down a removed tab's backing resources.
-    fn retire_tab(&mut self, tab: &Tab) {
-        if let Some(session_id) = tab.data.session_id {
-            self.registry.close(session_id);
+    /// Tear down one pane's session + content view.
+    fn retire_pane(&mut self, pane_id: PaneId) {
+        if let Some(entry) = self.panes.remove(&pane_id) {
+            self.registry.close(entry.session_id);
         }
-        self.terminals.remove(&tab.id);
+    }
+
+    /// Tear down a removed tab's whole pane tree.
+    fn retire_tab(&mut self, tab: &Tab) {
+        if let Some(layout) = self.layouts.remove(&tab.id) {
+            for leaf in layout.leaves() {
+                self.retire_pane(leaf);
+            }
+        }
     }
 
     fn sync_meta(&mut self, cx: &mut Context<Self>) {
         let updates: Vec<(u64, Option<String>, Option<String>)> = self
-            .terminals
+            .layouts
             .iter()
-            .map(|(id, view)| {
-                let v = view.read(cx);
-                (*id, v.cwd(), v.shell_title())
+            .filter_map(|(tab_id, layout)| {
+                let v = self.panes.get(&layout.active)?.view.read(cx);
+                Some((*tab_id, v.cwd(), v.shell_title()))
             })
             .collect();
         self.tabs.update(cx, |store, cx| {
@@ -375,7 +568,6 @@ impl Workspace {
                     .child("+")
                     .on_click(cx.listener(|this, _: &ClickEvent, window, cx| {
                         this.open_terminal_tab(window, cx);
-                        this.focus_active(window, cx);
                     })),
             )
     }
@@ -388,8 +580,12 @@ impl Workspace {
 
         match active.kind {
             TabKind::Workspace => {
-                if let Some(view) = self.terminals.get(&active.id) {
-                    div().size_full().child(view.clone()).into_any_element()
+                if let Some(layout) = self.layouts.get(&active.id).cloned() {
+                    let multi = layout.len() > 1;
+                    div()
+                        .size_full()
+                        .child(self.render_pane_node(&layout.root, layout.active, multi, cx))
+                        .into_any_element()
                 } else {
                     self.placeholder("Terminal", cx).into_any_element()
                 }
@@ -397,6 +593,114 @@ impl Workspace {
             other => self
                 .placeholder(other.default_title(), cx)
                 .into_any_element(),
+        }
+    }
+
+    fn render_pane_node(
+        &mut self,
+        node: &PaneNode,
+        active_pane: PaneId,
+        multi: bool,
+        cx: &mut Context<Self>,
+    ) -> gpui::AnyElement {
+        let theme = self.theme.read(cx);
+        let (bg, border, accent) = (theme.background(), theme.border(), theme.accent());
+
+        match node {
+            PaneNode::Pane { id } => {
+                let id = *id;
+                let is_active = id == active_pane;
+                let content: gpui::AnyElement = match self.panes.get(&id) {
+                    Some(entry) => entry.view.clone().into_any_element(),
+                    None => div().size_full().into_any_element(),
+                };
+                div()
+                    .id(("pane", id))
+                    .relative()
+                    .size_full()
+                    .min_w_0()
+                    .min_h_0()
+                    .overflow_hidden()
+                    .border_1()
+                    .border_color(if multi && is_active { accent } else { bg })
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(move |this, _: &MouseDownEvent, window, cx| {
+                            this.set_pane_active(id, window, cx);
+                        }),
+                    )
+                    .child(content)
+                    .into_any_element()
+            }
+            PaneNode::Split {
+                id,
+                axis,
+                ratio,
+                first,
+                second,
+            } => {
+                let split_id = *id;
+                let row = *axis == SplitAxis::Horizontal;
+                let ratio = *ratio;
+                let first_el = self.render_pane_node(first, active_pane, multi, cx);
+                let second_el = self.render_pane_node(second, active_pane, multi, cx);
+
+                let handle = div()
+                    .id(("split", split_id))
+                    .flex_shrink_0()
+                    .bg(border)
+                    .hover(|s| s.bg(accent))
+                    .when(row, |d| d.w(px(HANDLE)).h_full().cursor_col_resize())
+                    .when(!row, |d| d.h(px(HANDLE)).w_full().cursor_row_resize())
+                    .on_drag(PaneResize { split_id }, |_, _, _, cx| cx.new(|_| DragGhost))
+                    .on_click(cx.listener(move |this, ev: &ClickEvent, _window, cx| {
+                        if ev.click_count() >= 2 {
+                            this.reset_split(split_id, cx);
+                        }
+                    }));
+
+                div()
+                    .flex()
+                    .size_full()
+                    .min_w_0()
+                    .min_h_0()
+                    .when(row, |d| d.flex_row())
+                    .when(!row, |d| d.flex_col())
+                    .child(
+                        div()
+                            .min_w_0()
+                            .min_h_0()
+                            .overflow_hidden()
+                            .flex_basis(relative(ratio))
+                            .child(first_el),
+                    )
+                    .child(handle)
+                    .child(
+                        div()
+                            .min_w_0()
+                            .min_h_0()
+                            .overflow_hidden()
+                            .flex_grow()
+                            .flex_basis(relative(1.0 - ratio))
+                            .child(second_el),
+                    )
+                    .on_drag_move(cx.listener(
+                        move |this, ev: &DragMoveEvent<PaneResize>, _window, cx| {
+                            if ev.drag(cx).split_id != split_id {
+                                return;
+                            }
+                            let b = ev.bounds;
+                            let p = ev.event.position;
+                            let frac = if row {
+                                f32::from(p.x - b.origin.x) / f32::from(b.size.width).max(1.0)
+                            } else {
+                                f32::from(p.y - b.origin.y) / f32::from(b.size.height).max(1.0)
+                            };
+                            this.resize_split(split_id, frac, cx);
+                        },
+                    ))
+                    .into_any_element()
+            }
         }
     }
 
@@ -413,6 +717,131 @@ impl Workspace {
             .child(SharedString::from(format!(
                 "{title} — coming in a later phase"
             )))
+    }
+
+    fn render_header(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = self.theme.read(cx);
+        let (bg, fg, muted, border) = (
+            theme.background(),
+            theme.foreground(),
+            theme.muted_foreground(),
+            theme.border(),
+        );
+        div()
+            .flex()
+            .items_center()
+            .gap_2()
+            .h(px(HEADER_H))
+            .w_full()
+            .flex_shrink_0()
+            .px_2()
+            .bg(bg)
+            .border_b_1()
+            .border_color(border)
+            .child(
+                div()
+                    .id("sidebar-toggle")
+                    .size(px(24.0))
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .rounded_md()
+                    .text_color(muted)
+                    .hover(|s| s.bg(border).text_color(fg))
+                    .child("\u{2630}")
+                    .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
+                        this.sidebar_open = !this.sidebar_open;
+                        cx.notify();
+                    })),
+            )
+            .child(div().text_xs().text_color(muted).child("Labonair"))
+    }
+
+    fn render_sidebar(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = self.theme.read(cx);
+        let (card, muted, border, accent) = (
+            theme.card(),
+            theme.muted_foreground(),
+            theme.border(),
+            theme.accent(),
+        );
+        let width = self.sidebar_width;
+
+        div()
+            .flex_shrink_0()
+            .h_full()
+            .flex()
+            .flex_row()
+            .child(
+                div()
+                    .w(px(width))
+                    .h_full()
+                    .flex_shrink_0()
+                    .flex()
+                    .flex_col()
+                    .bg(card)
+                    .child(
+                        div()
+                            .px_3()
+                            .py_2()
+                            .text_xs()
+                            .text_color(muted)
+                            .child("EXPLORER"),
+                    )
+                    .child(
+                        div()
+                            .flex_1()
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .px_3()
+                            .text_center()
+                            .text_xs()
+                            .text_color(muted)
+                            .child("Explorer — coming in a later phase"),
+                    ),
+            )
+            .child(
+                div()
+                    .id("sidebar-handle")
+                    .w(px(HANDLE))
+                    .h_full()
+                    .flex_shrink_0()
+                    .cursor_col_resize()
+                    .bg(border)
+                    .hover(|s| s.bg(accent))
+                    .on_drag(SidebarResize, |_, _, _, cx| cx.new(|_| DragGhost)),
+            )
+    }
+
+    fn render_statusbar(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
+        let store = self.tabs.read(cx);
+        let label = store.active().map(Tab::label).unwrap_or_default();
+        let panes = self
+            .active_ws_tab(cx)
+            .and_then(|id| self.layouts.get(&id))
+            .map(WorkspaceLayout::len)
+            .unwrap_or(0);
+        let theme = self.theme.read(cx);
+        let (bg, muted, border) = (theme.background(), theme.muted_foreground(), theme.border());
+
+        div()
+            .flex()
+            .items_center()
+            .gap_2()
+            .h(px(STATUS_H))
+            .w_full()
+            .flex_shrink_0()
+            .px_3()
+            .bg(bg)
+            .border_t_1()
+            .border_color(border)
+            .text_xs()
+            .text_color(muted)
+            .child(SharedString::from(label))
+            .when(panes > 1, |d| {
+                d.child(SharedString::from(format!("\u{00b7} {panes} panes")))
+            })
     }
 
     fn render_confirm(&mut self, id: u64, cx: &mut Context<Self>) -> impl IntoElement {
@@ -518,7 +947,6 @@ impl Workspace {
                 .child(SharedString::from(label.to_string()))
         };
 
-        // Full-window catcher: any click dismisses the menu.
         div()
             .absolute()
             .inset_0()
@@ -576,8 +1004,14 @@ impl Focusable for Workspace {
 
 impl Render for Workspace {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let bg = self.theme.read(cx).background();
+        let header = self.render_header(cx);
+        let sidebar = self
+            .sidebar_open
+            .then(|| self.render_sidebar(cx).into_any_element());
         let tab_bar = self.render_tab_bar(cx);
         let content = self.render_content(cx);
+        let statusbar = self.render_statusbar(cx);
         let confirm = self
             .confirm_close
             .map(|id| self.render_confirm(id, cx).into_any_element());
@@ -592,9 +1026,33 @@ impl Render for Workspace {
             .flex()
             .flex_col()
             .size_full()
+            .bg(bg)
             .on_key_down(cx.listener(Self::on_key_down))
-            .child(tab_bar)
-            .child(div().flex_1().min_h_0().child(content))
+            .child(header)
+            .child(
+                div()
+                    .flex_1()
+                    .min_h_0()
+                    .flex()
+                    .flex_row()
+                    .children(sidebar)
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .flex()
+                            .flex_col()
+                            .child(tab_bar)
+                            .child(div().flex_1().min_h_0().child(content)),
+                    )
+                    .on_drag_move(cx.listener(
+                        |this, ev: &DragMoveEvent<SidebarResize>, _window, cx| {
+                            let w = f32::from(ev.event.position.x - ev.bounds.origin.x);
+                            this.set_sidebar_width(w, cx);
+                        },
+                    )),
+            )
+            .child(statusbar)
             .children(confirm)
             .children(context_menu)
     }
@@ -604,19 +1062,30 @@ impl Workspace {
     fn on_key_down(&mut self, ev: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
         let ks = &ev.keystroke;
         let m = &ks.modifiers;
-        // Cmd-based tab shortcuts (full configurability lands in Phase 12).
+        // Cmd-based shortcuts (full configurability lands in Phase 12).
         if !m.platform || m.control || m.alt {
             return;
         }
         match (m.shift, ks.key.as_str()) {
             (false, "t") => {
                 self.open_terminal_tab(window, cx);
-                self.focus_active(window, cx);
                 cx.stop_propagation();
             }
             (false, "w") => {
-                let id = self.tabs.read(cx).active_id();
-                self.request_close(id, window, cx);
+                self.close_active_pane_or_tab(window, cx);
+                cx.stop_propagation();
+            }
+            (false, "d") => {
+                self.split_active(SplitAxis::Horizontal, window, cx);
+                cx.stop_propagation();
+            }
+            (true, "d") => {
+                self.split_active(SplitAxis::Vertical, window, cx);
+                cx.stop_propagation();
+            }
+            (false, "b") => {
+                self.sidebar_open = !self.sidebar_open;
+                cx.notify();
                 cx.stop_propagation();
             }
             (true, "]") | (false, "}") => {

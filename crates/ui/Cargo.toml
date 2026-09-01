@@ -10,6 +10,8 @@ labonair-theme = { path = "../theme" }
 labonair-terminal = { path = "../terminal" }
 labonair-backend = { path = "../backend" }
 tracing = { workspace = true }
+serde = { workspace = true }
 
 [dev-dependencies]
 gpui = { workspace = true, features = ["test-support"] }
+serde_json = { workspace = true }

@@ -4,7 +4,36 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
-## Last Session: 2026-09-01 (T04-001 — tab bar & tab management)
+## Last Session: 2026-09-01 (T04-002 — split-pane layout & workspace shell)
+
+### What Was Done
+- **T04-002 ✅ Done.** Added the split-pane layout tree + full workspace window chrome (pure Rust + GPUI, ported from `reference-src/src/modules/tabs/types.ts` + `store/tabsStore.ts` `splitPane`/`closePane` and `WorkspacePane.tsx`).
+  - **`crates/ui/src/pane.rs`** (new) — pure, serde-serializable pane tree:
+    - `PaneNode` = `Pane { id }` | `Split { id, axis, ratio, first, second }` (`#[serde(tag="type")]`, axes `horizontal`/`vertical` lowercased). `SplitAxis::Horizontal` = children left→right. `MIN_RATIO = 0.1`.
+    - `WorkspaceLayout { root, active }` (no id allocation — the `Workspace` view owns a process-wide `next_pane_id`; `split()`/`new()` take caller-allocated ids so pane ids stay unique across tabs). Ops: `new(first)`, `split(split_id, new_pane, axis)` (replaces active leaf with a 50/50 split, new pane becomes active — mirrors reference `splitPane`), `close(target) -> CloseOutcome::{Closed{new_active}, LastPane, NotFound}` (collapses parent split into sibling; new active = **promoted sibling subtree's first leaf**, matching reference `siblingLeaves[0]`, not the tree's global first leaf), `set_active`, `set_ratio`/`reset_ratio` (clamped `[MIN_RATIO, 1-MIN_RATIO]`), `leaves()`, `len()`.
+    - 6 unit tests: split nesting/activation, close→collapse-into-sibling, close keeps a non-removed active valid, ratio clamping + reset, 8-pane deep nest build+teardown stays non-empty/consistent, JSON round-trip.
+  - **`crates/ui/src/workspace.rs`** — `Workspace` now owns `layouts: HashMap<tab_id, WorkspaceLayout>` (survives tab switches — pane tree never lost) + `panes: HashMap<PaneId, PaneEntry{session_id, view}>` + `next_pane_id`. Replaced the old one-`TerminalView`-per-tab map.
+    - `split_active(axis)` — spawns a new session in the active pane's cwd, `layout.split(...)`, builds a `TerminalView`, focuses the new pane. `close_active_pane` — `layout.close`; `LastPane` → `request_close(tab)`, else `retire_pane` (registry.close). `Cmd-W` = `close_active_pane_or_tab` (pane if split, else whole tab). `retire_tab` tears down **every** pane/session in the closed tab's layout.
+    - `render_pane_node` recursively renders the tree: `Split` → flex row/col, `flex_basis(relative(ratio))` first child + `flex_grow` second, a draggable divider (`HANDLE = 6px`, `cursor_col_resize`/`row_resize`); drag handled by `on_drag(PaneResize{split_id})` + `on_drag_move::<DragMoveEvent<PaneResize>>` on the split group — computes new fraction from `ev.bounds` + `ev.event.position` along the axis → `resize_split`. Double-click the divider → `reset_split` (50/50). `Pane` leaf → its `TerminalView` (or empty), 1px border (accent when active+multi, else bg-coloured so no layout shift), click-to-activate.
+    - **Workspace hull**: `render_header` (☰ sidebar toggle + "Labonair", `HEADER_H = 36`), body row = optional left sidebar + central column (tab bar over content), `render_statusbar` (active tab label + "· N panes", `STATUS_H = 24`). `render_sidebar` — `card`-bg column (default 260px, clamp 180–520) with an "EXPLORER" header + placeholder + a `cursor_col_resize` edge handle; drag via `on_drag(SidebarResize)` + `on_drag_move::<SidebarResize>` on the body row → `set_sidebar_width` (position.x − row origin.x). Toggle: header button or `Cmd-B`.
+    - Keys added to `on_key_down`: `Cmd-D` split horizontal, `Cmd-Shift-D` split vertical, `Cmd-B` toggle sidebar. `Cmd-W` now pane-aware.
+  - **`crates/ui/src/terminal.rs`** — `TerminalView` grids to **its own content area** now, not the whole window: new `measured: Option<Size<Pixels>>` field captured every paint by an absolute `canvas(|bounds,_,cx| this.measured = Some(bounds.size) + notify-on-change, |_,_,_,_| {})` child; `render` uses `self.measured.unwrap_or_else(|| window.viewport_size())` for `grid_size`. Needed so split-pane terminals don't oversize.
+  - **`crates/ui/Cargo.toml`** — added `serde` (workspace) dep + `serde_json` dev-dep. **`crates/ui/src/lib.rs`** — `pub mod pane;` + re-exports `CloseOutcome, PaneId, PaneNode, SplitAxis, WorkspaceLayout`.
+- **GPUI API used (gpui 0.2.2, verified in source):** `gpui::canvas(prepaint: FnOnce(Bounds<Pixels>, &mut Window, &mut App) -> T, paint: FnOnce(Bounds<Pixels>, T, ...))` — `impl Styled for Canvas<T>` so `.absolute().size_full()` chain works; capture `cx.weak_entity()` and `weak.update(cx, ...)` inside the prepaint closure (it gets `&mut App`). `InteractiveElement::on_drag_move::<T>(Fn(&DragMoveEvent<T>, &mut Window, &mut App))` — `DragMoveEvent { event: MouseMoveEvent, bounds: Bounds<Pixels> }`, `.drag(cx) -> &T` reads the active drag value; `cx.listener(...)` adapts directly. `gpui::relative(f32) -> DefiniteLength` for `flex_basis`. `ClickEvent::click_count()` for double-click. Cursor helpers `cursor_col_resize()` / `cursor_row_resize()`. `Pixels` arithmetic: `f32::from(a - b)`.
+- **Verified:** `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`, `cargo build --bin labonair` — all green. Counts: 126 backend, 1 app_state, 22 theme, **31 ui (+6)**, 62 terminal. Not visually run — user should `cargo run` and check: `Cmd-D`/`Cmd-Shift-D` split the active pane (new shell, same cwd), drag a divider to resize (double-click = 50/50), click a pane to focus it, `Cmd-W` closes the focused pane (or the tab if it's the last pane), `Cmd-B` / the ☰ button toggle the sidebar and its edge is draggable, the status bar shows the pane count, switching tabs keeps each tab's split layout intact.
+
+### Design notes / limits (T04-002)
+- Pane content is terminal-only for now; other `TabKind`s still show the "coming in a later phase" placeholder (editor-as-pane-content is Phase 5). Sidebar content is a placeholder (Explorer = Phase 4). Header/statusbar are minimal shells (full chrome = T04-003).
+- Layout persistence: `WorkspaceLayout` serializes to JSON (test proves round-trip); wiring it into a session snapshot is Phase 13. The `panes`/`session_id` ↔ pane-id mapping is view-side and not yet serialized.
+- Only a left sidebar (task scope); the reference also has a right sidebar — deferred.
+- `TabData.session_id` is still set by `open_workspace` for the initial pane (label/compat); teardown now goes through the layout's leaf list, so multi-pane tabs fully clean up.
+
+### What's Next
+- **T04-003** `tasks/phase-03-tabs-workspace/T04-003-app-shell-window-chrome.md` — app shell & window chrome. Dep: T04-002 (done).
+
+---
+
+## Previous Session: 2026-09-01 (T04-001 — tab bar & tab management)
 
 ### What Was Done
 - **T04-001 ✅ Done.** Wired the T03-005 `TerminalRegistry` into the UI and built the tabbed workspace shell (pure Rust + GPUI, ported from `reference-src/src/modules/tabs/`).

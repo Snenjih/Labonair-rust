@@ -1,7 +1,7 @@
 # T04-002: Split-Pane-Layout und Workspace
 
 ## Status
-⏳ Pending
+✅ Done
 
 ## Phase
 3 — Tab-System & Workspace-Layout

@@ -26,10 +26,10 @@ use std::time::Duration;
 
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, px, App, ClipboardItem, Context, Entity, FocusHandle, Focusable, FontWeight, Hsla,
+    canvas, div, px, App, ClipboardItem, Context, Entity, FocusHandle, Focusable, FontWeight, Hsla,
     InteractiveElement, IntoElement, KeyDownEvent, Keystroke, MouseButton, MouseDownEvent,
-    MouseMoveEvent, MouseUpEvent, ParentElement, Point, Render, ScrollDelta, ScrollWheelEvent,
-    SharedString, Styled, Task, Window,
+    MouseMoveEvent, MouseUpEvent, ParentElement, Pixels, Point, Render, ScrollDelta,
+    ScrollWheelEvent, SharedString, Size, Styled, Task, Window,
 };
 use labonair_terminal::{
     batch_runs, grid_size, key_to_bytes, mouse_report, paste_payload, wheel_action, CursorShape,
@@ -65,6 +65,10 @@ pub struct TerminalView {
     cell_size: (f32, f32),
     /// Anchor cell of an in-progress drag selection, if the user is selecting.
     drag_anchor: Option<(usize, usize)>,
+    /// Pixel size of this view's content area, captured each paint. Preferred
+    /// over the whole window's viewport so a terminal hosted in a split pane
+    /// sizes its grid to the pane, not the window (T04-002).
+    measured: Option<Size<Pixels>>,
     _poll: Task<()>,
 }
 
@@ -117,6 +121,7 @@ impl TerminalView {
             grid: (80, 24),
             cell_size: (8.0, 16.0),
             drag_anchor: None,
+            measured: None,
             _poll: poll,
         }
     }
@@ -228,8 +233,10 @@ impl Render for TerminalView {
 
         self.cell_size = (cell_w, cell_h);
 
-        // Fit the grid to the current viewport and inform the engine/PTY.
-        let viewport = window.viewport_size();
+        // Fit the grid to this view's content area (falling back to the whole
+        // window before the first paint has measured it) and inform the
+        // engine/PTY.
+        let viewport = self.measured.unwrap_or_else(|| window.viewport_size());
         let (cols, rows) = grid_size(
             f32::from(viewport.width),
             f32::from(viewport.height),
@@ -324,6 +331,21 @@ impl Render for TerminalView {
 
         let cursor_element = cursor_overlay(&screen, cell_w, cell_h, to_hsla(colors.cursor, 1.0));
 
+        let view = cx.weak_entity();
+        let size_probe = canvas(
+            move |bounds, _window, cx| {
+                let _ = view.update(cx, |this, cx| {
+                    if this.measured != Some(bounds.size) {
+                        this.measured = Some(bounds.size);
+                        cx.notify();
+                    }
+                });
+            },
+            |_, _, _, _| {},
+        )
+        .absolute()
+        .size_full();
+
         div()
             .id("terminal")
             .track_focus(&self.focus_handle)
@@ -333,6 +355,7 @@ impl Render for TerminalView {
             .overflow_hidden()
             .bg(bg)
             .text_color(fg)
+            .child(size_probe)
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(|this, ev: &MouseDownEvent, window, cx| {

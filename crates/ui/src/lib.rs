@@ -3,6 +3,7 @@
 //! Populated by later phases (T04+). T02-002 adds the runtime theme provider.
 
 pub mod background;
+pub mod pane;
 pub mod tabs;
 pub mod terminal;
 pub mod theme;
@@ -13,6 +14,7 @@ pub use background::{
     GlobalBackground, LayerScope,
 };
 pub use labonair_theme::{ThemeFile, ThemeFileVariant};
+pub use pane::{CloseOutcome, PaneId, PaneNode, SplitAxis, WorkspaceLayout};
 pub use tabs::{Tab, TabData, TabKind, TabStore};
 pub use terminal::TerminalView;
 pub use theme::{
