@@ -32,7 +32,7 @@ use labonair_terminal::{
 
 use crate::background::BackgroundStore;
 use crate::pane::{CloseOutcome, PaneId, PaneNode, SplitAxis, WorkspaceLayout};
-use crate::tabs::{Tab, TabKind, TabStore};
+use crate::tabs::{Tab, TabData, TabKind, TabStore};
 use crate::terminal::TerminalView;
 use crate::theme::ThemeStore;
 
@@ -202,6 +202,49 @@ impl Workspace {
     /// Open a new local terminal tab.
     pub fn new_terminal_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.open_terminal_tab(window, cx);
+    }
+
+    /// Open a new local terminal tab rooted at `cwd` — the Explorer's
+    /// "Open in Terminal" context action.
+    pub fn new_terminal_tab_in(
+        &mut self,
+        cwd: Option<String>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some((session_id, handle)) = self.spawn_session(cwd.clone(), cx) else {
+            return;
+        };
+        let pane_id = self.alloc_pane();
+        let tab_id = self
+            .tabs
+            .update(cx, |s, cx| s.open_workspace(session_id, cwd, cx));
+        let view = self.new_terminal_view(handle, window, cx);
+        self.panes.insert(pane_id, PaneEntry { session_id, view });
+        self.layouts.insert(tab_id, WorkspaceLayout::new(pane_id));
+        self.focus_active(window, cx);
+    }
+
+    /// Open a file from the Explorer. Until Phase 5 lands the real editor this
+    /// opens an `Editor` tab whose content is the placeholder; the tab is
+    /// titled with the file's basename and carries its path.
+    pub fn open_file(&mut self, path: String, cx: &mut Context<Self>) {
+        let title = path
+            .rsplit('/')
+            .find(|s| !s.is_empty())
+            .unwrap_or(path.as_str())
+            .to_string();
+        self.tabs.update(cx, |s, cx| {
+            let id = s.open(
+                TabKind::Editor,
+                TabData {
+                    path: Some(path.clone()),
+                    ..TabData::default()
+                },
+                cx,
+            );
+            s.set_custom_title(id, Some(title), cx);
+        });
     }
 
     /// Split the active workspace pane along `axis`.
@@ -649,9 +692,18 @@ impl Workspace {
                     self.placeholder("Terminal", cx).into_any_element()
                 }
             }
-            other => self
-                .placeholder(other.default_title(), cx)
-                .into_any_element(),
+            other => {
+                let label = if other == TabKind::Editor {
+                    active
+                        .data
+                        .path
+                        .clone()
+                        .unwrap_or_else(|| other.default_title().to_string())
+                } else {
+                    other.default_title().to_string()
+                };
+                self.placeholder(&label, cx).into_any_element()
+            }
         }
     }
 

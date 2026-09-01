@@ -4,6 +4,7 @@
 
 pub mod app_shell;
 pub mod background;
+pub mod explorer;
 pub mod menu;
 pub mod notifications;
 pub mod pane;
@@ -18,6 +19,7 @@ pub use background::{
     background_store, init as init_background, BackgroundFit, BackgroundStore, BackgroundTarget,
     GlobalBackground, LayerScope,
 };
+pub use explorer::ExplorerView;
 pub use labonair_theme::{ThemeFile, ThemeFileVariant};
 pub use menu::init as init_menus;
 pub use notifications::{

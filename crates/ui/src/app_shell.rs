@@ -29,6 +29,7 @@ use gpui::{
 use labonair_terminal::TerminalRegistry;
 
 use crate::background::{BackgroundStore, LayerScope};
+use crate::explorer::ExplorerView;
 use crate::menu;
 use crate::notifications::{self, NotificationCenter};
 use crate::pane::SplitAxis;
@@ -111,6 +112,7 @@ pub struct AppShell {
     background: Entity<BackgroundStore>,
     notifications: Entity<NotificationCenter>,
     workspace: Entity<Workspace>,
+    explorer: Entity<ExplorerView>,
     sidebar_open: bool,
     sidebar_width: f32,
     active_panel: SidebarPanel,
@@ -151,6 +153,28 @@ impl AppShell {
             cx.new(|cx| Workspace::new(registry, theme.clone(), background.clone(), window, cx));
         cx.observe(&workspace, |_, _, cx| cx.notify()).detach();
 
+        let explorer = cx.new(|cx| ExplorerView::new(theme.clone(), workspace.clone(), cx));
+        cx.observe(&explorer, |_, _, cx| cx.notify()).detach();
+        // Root tracks the active terminal's cwd (falls back to $HOME).
+        {
+            let initial = workspace
+                .read(cx)
+                .active_cwd(cx)
+                .or_else(|| dirs::home_dir().map(|p| p.to_string_lossy().to_string()));
+            explorer.update(cx, |e, cx| e.set_root_str(initial, cx));
+        }
+        cx.observe(&workspace, {
+            let explorer = explorer.clone();
+            move |_, workspace, cx| {
+                let cwd = workspace
+                    .read(cx)
+                    .active_cwd(cx)
+                    .or_else(|| dirs::home_dir().map(|p| p.to_string_lossy().to_string()));
+                explorer.update(cx, |e, cx| e.set_root_str(cwd, cx));
+            }
+        })
+        .detach();
+
         // Persist the final window geometry on close (the throttled per-render
         // save covers force-quit within the last second).
         window.on_window_should_close(cx, |window, _cx| {
@@ -165,6 +189,7 @@ impl AppShell {
             background,
             notifications,
             workspace,
+            explorer,
             sidebar_open: true,
             sidebar_width: SIDEBAR_DEFAULT,
             active_panel: SidebarPanel::Explorer,
@@ -537,7 +562,10 @@ impl AppShell {
 
     /// Placeholder body for each sidebar panel. Later phases replace the arm
     /// for their panel with the real view.
-    fn render_panel_body(&self, panel: SidebarPanel, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render_panel_body(&self, panel: SidebarPanel, cx: &mut Context<Self>) -> gpui::AnyElement {
+        if panel == SidebarPanel::Explorer {
+            return self.explorer.clone().into_any_element();
+        }
         let muted = self.theme.read(cx).muted_foreground();
         div()
             .flex_1()
@@ -552,6 +580,7 @@ impl AppShell {
                 "{} \u{2014} coming in a later phase",
                 panel.label()
             )))
+            .into_any_element()
     }
 
     fn render_statusbar(&mut self, cx: &mut Context<Self>) -> impl IntoElement {

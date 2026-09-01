@@ -12,6 +12,53 @@ fn expand_home(path: &str) -> Result<PathBuf, String> {
     }
 }
 
+// --- Blocking, in-process variants for the sidebar file explorer (T05-001). ---
+// Same semantics as the async commands below, minus the `spawn_blocking`
+// wrapper; the GPUI explorer runs these on `cx.background_executor().spawn`.
+
+/// Creates a new empty file. Fails if the file already exists.
+pub fn create_file_sync(path: &str) -> Result<(), String> {
+    let p = expand_home(path)?;
+    if p.exists() {
+        return Err(format!("already exists: {}", p.display()));
+    }
+    std::fs::write(&p, "").map_err(|e| e.to_string())
+}
+
+/// Creates a new directory (and parents as needed). Fails if it already exists.
+pub fn create_dir_sync(path: &str) -> Result<(), String> {
+    let p = expand_home(path)?;
+    if p.exists() {
+        return Err(format!("already exists: {}", p.display()));
+    }
+    std::fs::create_dir_all(&p).map_err(|e| e.to_string())
+}
+
+/// Renames (or moves) a path. Refuses to overwrite an existing target.
+pub fn rename_sync(from: &str, to: &str) -> Result<(), String> {
+    let from_p = expand_home(from)?;
+    let to_p = expand_home(to)?;
+    if !from_p.exists() {
+        return Err(format!("not found: {}", from_p.display()));
+    }
+    if to_p.exists() {
+        return Err(format!("already exists: {}", to_p.display()));
+    }
+    std::fs::rename(&from_p, &to_p).map_err(|e| e.to_string())
+}
+
+/// Deletes a file or directory (recursively for dirs).
+pub fn delete_sync(path: &str) -> Result<(), String> {
+    let p = expand_home(path)?;
+    let meta = std::fs::symlink_metadata(&p).map_err(|e| e.to_string())?;
+    let result = if meta.is_dir() {
+        std::fs::remove_dir_all(&p)
+    } else {
+        std::fs::remove_file(&p)
+    };
+    result.map_err(|e| e.to_string())
+}
+
 /// Creates a new empty file. Fails if the file already exists.
 pub async fn fs_create_file(path: String) -> Result<(), String> {
     tokio::task::spawn_blocking(move || {
@@ -181,4 +228,53 @@ pub async fn fs_delete(path: String) -> Result<(), String> {
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn scratch_dir(tag: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "labonair-mutate-{tag}-{}-{:?}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn create_rename_delete_roundtrip() {
+        let dir = scratch_dir("crd");
+        let file = dir.join("a.txt");
+        create_file_sync(file.to_str().unwrap()).unwrap();
+        assert!(file.is_file());
+        assert!(create_file_sync(file.to_str().unwrap()).is_err());
+
+        let sub = dir.join("nested/deep");
+        create_dir_sync(sub.to_str().unwrap()).unwrap();
+        assert!(sub.is_dir());
+
+        let renamed = dir.join("b.txt");
+        rename_sync(file.to_str().unwrap(), renamed.to_str().unwrap()).unwrap();
+        assert!(!file.exists() && renamed.is_file());
+        create_file_sync(file.to_str().unwrap()).unwrap();
+        assert!(rename_sync(renamed.to_str().unwrap(), file.to_str().unwrap()).is_err());
+
+        delete_sync(renamed.to_str().unwrap()).unwrap();
+        assert!(!renamed.exists());
+        delete_sync(dir.join("nested").to_str().unwrap()).unwrap();
+        assert!(!dir.join("nested").exists());
+
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn delete_missing_is_err_not_panic() {
+        assert!(delete_sync("/tmp/labonair-mutate-nope-xyz-123").is_err());
+    }
 }

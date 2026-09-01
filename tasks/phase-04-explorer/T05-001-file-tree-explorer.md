@@ -1,7 +1,7 @@
 # T05-001: Dateibaum und Datei-Explorer-Grundlagen
 
 ## Status
-⏳ Pending
+✅ Done
 
 ## Phase
 4 — File-Explorer

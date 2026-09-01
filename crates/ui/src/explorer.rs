@@ -1,0 +1,1247 @@
+//! Sidebar file explorer (T05-001).
+//!
+//! Ported from `reference-src/src/modules/explorer/` — the React tree
+//! (`FileExplorer` / `FileTreeNode` / `useFileTree` / `useLocalExplorerStore` /
+//! `buildTreeRows`). The reference keeps a per-directory node map
+//! (`idle | loading | loaded | error`), a `generation` counter that a slow
+//! `readDir` compares against so a stale response can't overwrite a scope the
+//! user has since navigated away from, lazy loading of only the visible
+//! subtree, a `showHidden` toggle that invalidates the cache, and a flatten
+//! pass (`buildTreeRows`) that turns the node map into an ordered row list.
+//! That state machine lives in [`TreeModel`] (pure, unit-tested); [`ExplorerView`]
+//! wraps it with the GPUI rendering, async filesystem calls and the watcher.
+//!
+//! The filesystem work runs in-process through
+//! [`labonair_backend::modules::fs`] (`tree::read_dir_page` +
+//! `mutate::{create_file_sync, create_dir_sync, rename_sync, delete_sync}`) on
+//! `cx.background_executor()` — no Tauri IPC.
+//!
+//! Deviations from the reference:
+//! * Rows render into a plain `overflow_y_scroll` column rather than
+//!   `@tanstack/react-virtual`. The per-directory 500-entry page cap + lazy
+//!   loading keep the element count bounded; true windowing is a later polish
+//!   pass.
+//! * The directory watcher (`reference-src/src-tauri/src/modules/fs/watcher.rs`)
+//!   is embedded directly in this entity via `notify-debouncer-mini` (300 ms
+//!   debounce, non-recursive, watch-set synced to the loaded directories)
+//!   instead of going through the backend event bus.
+//! * File-type icons are a small glyph map, not the full material-icon-theme
+//!   port.
+
+use std::collections::{HashMap, HashSet};
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+
+use gpui::prelude::FluentBuilder;
+use gpui::{
+    div, px, App, ClickEvent, ClipboardItem, Context, Entity, FocusHandle, Focusable, Hsla,
+    InteractiveElement, IntoElement, KeyDownEvent, MouseButton, ParentElement, Render,
+    SharedString, StatefulInteractiveElement, Styled, Task, Window,
+};
+use notify::{RecommendedWatcher, RecursiveMode};
+use notify_debouncer_mini::{new_debouncer, Debouncer};
+
+use labonair_backend::modules::fs::{mutate, tree};
+
+use crate::notifications::{notification_center, Notification};
+use crate::theme::ThemeStore;
+use crate::workspace::Workspace;
+
+const PAGE_LIMIT: usize = tree::DEFAULT_LOCAL_PAGE_LIMIT;
+const INDENT: f32 = 12.0;
+const WATCH_DEBOUNCE: Duration = Duration::from_millis(300);
+const DRAIN_INTERVAL: Duration = Duration::from_millis(400);
+
+#[derive(Clone)]
+struct Entry {
+    name: String,
+    is_dir: bool,
+    is_ignored: bool,
+}
+
+#[derive(Clone)]
+enum NodeState {
+    Loading,
+    Loaded { entries: Vec<Entry>, has_more: bool },
+    Error(String),
+}
+
+struct PendingCreate {
+    parent: PathBuf,
+    is_dir: bool,
+}
+
+/// Whether the inline text field is creating a new entry or renaming one.
+#[derive(Default)]
+enum EditMode {
+    #[default]
+    None,
+    Create,
+    Rename(PathBuf),
+}
+
+/// One visible line of the flattened tree (mirrors the reference `TreeRow`).
+enum Row {
+    Entry {
+        path: PathBuf,
+        depth: usize,
+        entry: Entry,
+    },
+    PendingCreate {
+        depth: usize,
+    },
+    Rename {
+        depth: usize,
+    },
+    Loading {
+        depth: usize,
+    },
+    Error {
+        depth: usize,
+        message: String,
+    },
+    LoadMore {
+        parent: PathBuf,
+        depth: usize,
+    },
+}
+
+/// Pure explorer state machine — the port of `useLocalExplorerStore` +
+/// `buildTreeRows`. No GPUI, no IO; unit-tested below.
+#[derive(Default)]
+struct TreeModel {
+    root: Option<PathBuf>,
+    nodes: HashMap<PathBuf, NodeState>,
+    expanded: HashSet<PathBuf>,
+    show_hidden: bool,
+    /// Bumped on every root/show-hidden change; a slow `read_dir_page` response
+    /// is discarded when it no longer matches (reference `generation`).
+    generation: u64,
+    pending_create: Option<PendingCreate>,
+    edit_mode: EditMode,
+}
+
+impl TreeModel {
+    fn generation(&self) -> u64 {
+        self.generation
+    }
+
+    /// Repoint at a new root. Returns `false` (no-op) when unchanged.
+    fn set_root(&mut self, root: Option<PathBuf>) -> bool {
+        if self.root == root {
+            return false;
+        }
+        self.root = root;
+        self.generation += 1;
+        self.nodes.clear();
+        self.expanded.clear();
+        self.pending_create = None;
+        self.edit_mode = EditMode::None;
+        true
+    }
+
+    fn set_node(&mut self, path: PathBuf, state: NodeState) {
+        self.nodes.insert(path, state);
+    }
+
+    fn mark_loading(&mut self, path: PathBuf) {
+        self.nodes.insert(path, NodeState::Loading);
+    }
+
+    /// Lazy-load guard: a directory that is already loaded or in flight is not
+    /// re-requested (reference `useFileTree` dedup).
+    fn needs_load(&self, path: &Path) -> bool {
+        !matches!(
+            self.nodes.get(path),
+            Some(NodeState::Loaded { .. }) | Some(NodeState::Loading)
+        )
+    }
+
+    /// Returns `true` when the directory became expanded (caller should load).
+    fn toggle_expanded(&mut self, path: PathBuf) -> bool {
+        if self.expanded.remove(&path) {
+            false
+        } else {
+            self.expanded.insert(path);
+            true
+        }
+    }
+
+    /// Flips `show_hidden`, invalidates every cached node (each was read under
+    /// the old flag) but keeps `expanded` so open folders don't collapse.
+    /// Returns the directories that must be re-fetched.
+    fn toggle_show_hidden(&mut self) -> Vec<PathBuf> {
+        self.show_hidden = !self.show_hidden;
+        self.generation += 1;
+        let reload: Vec<PathBuf> = self
+            .root
+            .iter()
+            .cloned()
+            .chain(self.expanded.iter().cloned())
+            .collect();
+        self.nodes.clear();
+        reload
+    }
+
+    fn collapse_all(&mut self) {
+        self.expanded.clear();
+    }
+
+    /// Directories currently loaded or loading — the watch set.
+    fn watch_targets(&self) -> Vec<PathBuf> {
+        self.nodes
+            .iter()
+            .filter(|(_, s)| matches!(s, NodeState::Loaded { .. } | NodeState::Loading))
+            .map(|(p, _)| p.clone())
+            .collect()
+    }
+
+    fn rows(&self) -> Vec<Row> {
+        let mut out = Vec::new();
+        if let Some(root) = self.root.clone() {
+            self.walk(&root, 0, &mut out);
+        }
+        out
+    }
+
+    fn walk(&self, parent: &Path, depth: usize, out: &mut Vec<Row>) {
+        if let Some(pc) = &self.pending_create {
+            if pc.parent == parent {
+                out.push(Row::PendingCreate { depth });
+            }
+        }
+        match self.nodes.get(parent) {
+            None => {}
+            Some(NodeState::Loading) => out.push(Row::Loading { depth }),
+            Some(NodeState::Error(message)) => out.push(Row::Error {
+                depth,
+                message: message.clone(),
+            }),
+            Some(NodeState::Loaded { entries, has_more }) => {
+                for entry in entries {
+                    let path = parent.join(&entry.name);
+                    if matches!(&self.edit_mode, EditMode::Rename(p) if *p == path) {
+                        out.push(Row::Rename { depth });
+                    } else {
+                        out.push(Row::Entry {
+                            path: path.clone(),
+                            depth,
+                            entry: entry.clone(),
+                        });
+                    }
+                    if entry.is_dir && self.expanded.contains(&path) {
+                        self.walk(&path, depth + 1, out);
+                    }
+                }
+                if *has_more {
+                    out.push(Row::LoadMore {
+                        parent: parent.to_path_buf(),
+                        depth,
+                    });
+                }
+            }
+        }
+    }
+}
+
+pub struct ExplorerView {
+    theme: Entity<ThemeStore>,
+    workspace: Entity<Workspace>,
+    model: TreeModel,
+    selected: Option<PathBuf>,
+    edit_buffer: String,
+    edit_focus: FocusHandle,
+    context_menu: Option<PathBuf>,
+    confirm_delete: Option<PathBuf>,
+    focus: FocusHandle,
+    /// Parent directories flagged dirty by the watcher, drained on a timer.
+    dirty: Arc<Mutex<HashSet<PathBuf>>>,
+    watched: HashSet<PathBuf>,
+    debouncer: Option<Debouncer<RecommendedWatcher>>,
+    _drain: Task<()>,
+}
+
+impl ExplorerView {
+    pub fn new(
+        theme: Entity<ThemeStore>,
+        workspace: Entity<Workspace>,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        cx.observe(&theme, |_, _, cx| cx.notify()).detach();
+
+        let drain = cx.spawn(async move |view, cx| loop {
+            cx.background_executor().timer(DRAIN_INTERVAL).await;
+            if view
+                .update(cx, |this, cx| this.drain_watch_events(cx))
+                .is_err()
+            {
+                break;
+            }
+        });
+
+        Self {
+            theme,
+            workspace,
+            model: TreeModel::default(),
+            selected: None,
+            edit_buffer: String::new(),
+            edit_focus: cx.focus_handle(),
+            context_menu: None,
+            confirm_delete: None,
+            focus: cx.focus_handle(),
+            dirty: Arc::new(Mutex::new(HashSet::new())),
+            watched: HashSet::new(),
+            debouncer: None,
+            _drain: drain,
+        }
+    }
+
+    /// Point the explorer at a new working directory (driven by the active
+    /// terminal's cwd — see [`crate::app_shell`]). No-op if unchanged.
+    pub fn set_root(&mut self, root: Option<PathBuf>, cx: &mut Context<Self>) {
+        if !self.model.set_root(root) {
+            return;
+        }
+        self.selected = None;
+        self.context_menu = None;
+        self.confirm_delete = None;
+        self.edit_buffer.clear();
+        if let Some(root) = self.model.root.clone() {
+            self.load_dir(root, false, cx);
+        }
+        self.sync_watchers();
+        cx.notify();
+    }
+
+    pub fn set_root_str(&mut self, root: Option<String>, cx: &mut Context<Self>) {
+        self.set_root(root.map(PathBuf::from), cx);
+    }
+
+    fn load_dir(&mut self, path: PathBuf, force: bool, cx: &mut Context<Self>) {
+        if !force && !self.model.needs_load(&path) {
+            return;
+        }
+        self.model.mark_loading(path.clone());
+        cx.notify();
+
+        let gen = self.model.generation();
+        let show_hidden = self.model.show_hidden;
+        let path_str = path.to_string_lossy().to_string();
+
+        cx.spawn(async move |view, cx| {
+            let result = cx
+                .background_executor()
+                .spawn(async move { tree::read_dir_page(&path_str, 0, PAGE_LIMIT, show_hidden) })
+                .await;
+            let _ = view.update(cx, |this, cx| {
+                if this.model.generation() != gen {
+                    return;
+                }
+                match result {
+                    Ok(page) => {
+                        let entries = page
+                            .entries
+                            .into_iter()
+                            .map(|e| Entry {
+                                name: e.name,
+                                is_dir: matches!(e.kind, tree::EntryKind::Dir),
+                                is_ignored: e.is_ignored,
+                            })
+                            .collect();
+                        this.model.set_node(
+                            path.clone(),
+                            NodeState::Loaded {
+                                entries,
+                                has_more: page.has_more,
+                            },
+                        );
+                    }
+                    Err(message) => {
+                        this.model.set_node(path.clone(), NodeState::Error(message));
+                    }
+                }
+                this.sync_watchers();
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn toggle_expanded(&mut self, path: PathBuf, cx: &mut Context<Self>) {
+        if self.model.toggle_expanded(path.clone()) {
+            self.load_dir(path, false, cx);
+        }
+        cx.notify();
+    }
+
+    fn toggle_show_hidden(&mut self, cx: &mut Context<Self>) {
+        for path in self.model.toggle_show_hidden() {
+            self.load_dir(path, true, cx);
+        }
+        cx.notify();
+    }
+
+    fn collapse_all(&mut self, cx: &mut Context<Self>) {
+        self.model.collapse_all();
+        cx.notify();
+    }
+
+    fn select(&mut self, path: PathBuf, cx: &mut Context<Self>) {
+        self.selected = Some(path);
+        cx.notify();
+    }
+
+    // --- inline create / rename ---
+
+    fn begin_create(
+        &mut self,
+        parent: PathBuf,
+        is_dir: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.context_menu = None;
+        self.model.expanded.insert(parent.clone());
+        self.load_dir(parent.clone(), false, cx);
+        self.model.pending_create = Some(PendingCreate { parent, is_dir });
+        self.model.edit_mode = EditMode::Create;
+        self.edit_buffer.clear();
+        window.focus(&self.edit_focus);
+        cx.notify();
+    }
+
+    fn begin_rename(&mut self, path: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
+        self.context_menu = None;
+        self.edit_buffer = path
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_default();
+        self.model.edit_mode = EditMode::Rename(path);
+        self.model.pending_create = None;
+        window.focus(&self.edit_focus);
+        cx.notify();
+    }
+
+    fn cancel_edit(&mut self, cx: &mut Context<Self>) {
+        self.model.edit_mode = EditMode::None;
+        self.model.pending_create = None;
+        self.edit_buffer.clear();
+        cx.notify();
+    }
+
+    fn commit_edit(&mut self, cx: &mut Context<Self>) {
+        let name = self.edit_buffer.trim().to_string();
+        match std::mem::replace(&mut self.model.edit_mode, EditMode::None) {
+            EditMode::None => {}
+            EditMode::Create => {
+                let Some(pc) = self.model.pending_create.take() else {
+                    return;
+                };
+                if name.is_empty() {
+                    self.edit_buffer.clear();
+                    cx.notify();
+                    return;
+                }
+                let target = pc.parent.join(&name);
+                let is_dir = pc.is_dir;
+                self.run_fs_op(
+                    pc.parent.clone(),
+                    move || {
+                        let p = target.to_string_lossy().to_string();
+                        if is_dir {
+                            mutate::create_dir_sync(&p)
+                        } else {
+                            mutate::create_file_sync(&p)
+                        }
+                    },
+                    cx,
+                );
+            }
+            EditMode::Rename(from) => {
+                if name.is_empty()
+                    || Some(name.as_str()) == from.file_name().and_then(|n| n.to_str())
+                {
+                    self.edit_buffer.clear();
+                    cx.notify();
+                    return;
+                }
+                let Some(parent) = from.parent().map(Path::to_path_buf) else {
+                    return;
+                };
+                let to = parent.join(&name);
+                let from_c = from.clone();
+                self.model.expanded.remove(&from);
+                self.run_fs_op(
+                    parent,
+                    move || mutate::rename_sync(&from_c.to_string_lossy(), &to.to_string_lossy()),
+                    cx,
+                );
+            }
+        }
+        self.edit_buffer.clear();
+        cx.notify();
+    }
+
+    fn request_delete(&mut self, path: PathBuf, cx: &mut Context<Self>) {
+        self.context_menu = None;
+        self.confirm_delete = Some(path);
+        cx.notify();
+    }
+
+    fn confirm_delete_now(&mut self, cx: &mut Context<Self>) {
+        let Some(path) = self.confirm_delete.take() else {
+            return;
+        };
+        let Some(parent) = path.parent().map(Path::to_path_buf) else {
+            return;
+        };
+        self.model.expanded.remove(&path);
+        self.model.nodes.remove(&path);
+        self.selected = None;
+        let path_c = path.clone();
+        self.run_fs_op(
+            parent,
+            move || mutate::delete_sync(&path_c.to_string_lossy()),
+            cx,
+        );
+        cx.notify();
+    }
+
+    /// Runs a blocking filesystem mutation off-thread, then reloads `reload`
+    /// (stale-guard: the reference re-fetches after every op) or toasts the
+    /// error (Critical Rule 6 — no `unwrap` on predictable errors).
+    fn run_fs_op<F>(&mut self, reload: PathBuf, op: F, cx: &mut Context<Self>)
+    where
+        F: FnOnce() -> Result<(), String> + Send + 'static,
+    {
+        cx.spawn(async move |view, cx| {
+            let result = cx.background_executor().spawn(async move { op() }).await;
+            let _ = view.update(cx, |this, cx| match result {
+                Ok(()) => this.load_dir(reload, true, cx),
+                Err(message) => {
+                    notification_center(cx).update(cx, |c, cx| {
+                        c.push(Notification::error("File operation failed", message), cx);
+                    });
+                }
+            });
+        })
+        .detach();
+    }
+
+    // --- context-menu actions ---
+
+    fn copy_path(&mut self, path: &Path, cx: &mut Context<Self>) {
+        self.context_menu = None;
+        cx.write_to_clipboard(ClipboardItem::new_string(
+            path.to_string_lossy().to_string(),
+        ));
+        cx.notify();
+    }
+
+    fn open_in_terminal(&mut self, dir: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
+        self.context_menu = None;
+        let cwd = dir.to_string_lossy().to_string();
+        self.workspace.update(cx, |w, cx| {
+            w.new_terminal_tab_in(Some(cwd), window, cx);
+        });
+        cx.notify();
+    }
+
+    fn open_file(&mut self, path: &Path, cx: &mut Context<Self>) {
+        let path = path.to_string_lossy().to_string();
+        self.workspace.update(cx, |w, cx| w.open_file(path, cx));
+        cx.notify();
+    }
+
+    // --- watcher (port of fs/watcher.rs, embedded) ---
+
+    fn sync_watchers(&mut self) {
+        let target: HashSet<PathBuf> = self
+            .model
+            .watch_targets()
+            .into_iter()
+            .filter(|p| p.is_dir())
+            .collect();
+
+        if target == self.watched {
+            return;
+        }
+
+        if self.debouncer.is_none() {
+            let dirty = self.dirty.clone();
+            match new_debouncer(
+                WATCH_DEBOUNCE,
+                move |res: notify_debouncer_mini::DebounceEventResult| {
+                    if let Ok(events) = res {
+                        let mut set = dirty.lock().unwrap();
+                        for ev in events {
+                            if let Some(parent) = ev.path.parent() {
+                                set.insert(parent.to_path_buf());
+                            }
+                        }
+                    }
+                },
+            ) {
+                Ok(d) => self.debouncer = Some(d),
+                Err(err) => {
+                    tracing::warn!(%err, "explorer: failed to create fs watcher");
+                    return;
+                }
+            }
+        }
+
+        let Some(debouncer) = self.debouncer.as_mut() else {
+            return;
+        };
+        for path in target.difference(&self.watched) {
+            let _ = debouncer.watcher().watch(path, RecursiveMode::NonRecursive);
+        }
+        for path in self.watched.difference(&target) {
+            let _ = debouncer.watcher().unwatch(path);
+        }
+        self.watched = target;
+    }
+
+    fn drain_watch_events(&mut self, cx: &mut Context<Self>) {
+        let dirs: Vec<PathBuf> = {
+            let mut set = self.dirty.lock().unwrap();
+            if set.is_empty() {
+                return;
+            }
+            set.drain().collect()
+        };
+        for dir in dirs {
+            if self.model.nodes.contains_key(&dir) {
+                self.load_dir(dir, true, cx);
+            }
+        }
+    }
+}
+
+fn file_glyph(name: &str) -> &'static str {
+    let ext = name.rsplit('.').next().unwrap_or("").to_ascii_lowercase();
+    match ext.as_str() {
+        "rs" => "\u{1F980}",
+        "js" | "cjs" | "mjs" | "ts" | "tsx" | "jsx" => "\u{1F4DC}",
+        "json" | "toml" | "yaml" | "yml" | "lock" => "\u{2699}",
+        "md" | "markdown" | "txt" => "\u{1F4DD}",
+        "png" | "jpg" | "jpeg" | "gif" | "svg" | "webp" => "\u{1F5BC}",
+        _ => "\u{1F4C4}",
+    }
+}
+
+impl Focusable for ExplorerView {
+    fn focus_handle(&self, _cx: &App) -> FocusHandle {
+        self.focus.clone()
+    }
+}
+
+#[derive(Clone, Copy)]
+struct Colors {
+    fg: Hsla,
+    muted: Hsla,
+    accent: Hsla,
+    border: Hsla,
+    card: Hsla,
+    err: Hsla,
+}
+
+impl Render for ExplorerView {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let c = {
+            let t = self.theme.read(cx);
+            Colors {
+                fg: t.foreground(),
+                muted: t.muted_foreground(),
+                accent: t.accent(),
+                border: t.border(),
+                card: t.card(),
+                err: t.status_error(),
+            }
+        };
+
+        let Some(root) = self.model.root.clone() else {
+            return div()
+                .flex_1()
+                .flex()
+                .items_center()
+                .justify_center()
+                .px_3()
+                .text_xs()
+                .text_color(c.muted)
+                .child("No working directory")
+                .into_any_element();
+        };
+
+        let root_name = root
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_else(|| root.to_string_lossy().to_string());
+
+        let root_file = root.clone();
+        let root_dir = root.clone();
+        let root_refresh = root.clone();
+        let toolbar = div()
+            .flex()
+            .flex_row()
+            .items_center()
+            .gap_1()
+            .px_2()
+            .py_1()
+            .border_b_1()
+            .border_color(c.border)
+            .child(
+                div()
+                    .flex_1()
+                    .text_xs()
+                    .text_color(c.muted)
+                    .child(SharedString::from(root_name)),
+            )
+            .child(
+                self.icon_btn("new-file", "\u{FF0B}", c, cx, move |this, window, cx| {
+                    this.begin_create(root_file.clone(), false, window, cx)
+                }),
+            )
+            .child(self.icon_btn(
+                "new-dir",
+                "\u{1F4C1}\u{FF0B}",
+                c,
+                cx,
+                move |this, window, cx| this.begin_create(root_dir.clone(), true, window, cx),
+            ))
+            .child(
+                self.icon_btn("refresh", "\u{21BB}", c, cx, move |this, _window, cx| {
+                    this.load_dir(root_refresh.clone(), true, cx)
+                }),
+            )
+            .child(self.icon_btn(
+                "toggle-hidden",
+                if self.model.show_hidden {
+                    "\u{25C9}"
+                } else {
+                    "\u{25CB}"
+                },
+                c,
+                cx,
+                move |this, _window, cx| this.toggle_show_hidden(cx),
+            ))
+            .child(
+                self.icon_btn("collapse", "\u{2212}", c, cx, move |this, _window, cx| {
+                    this.collapse_all(cx)
+                }),
+            );
+
+        let list = div()
+            .id("explorer-list")
+            .flex_1()
+            .overflow_y_scroll()
+            .py_1()
+            .children(
+                self.model
+                    .rows()
+                    .into_iter()
+                    .map(|row| self.render_row(row, c, cx))
+                    .collect::<Vec<_>>(),
+            );
+
+        let mut container = div()
+            .id("explorer")
+            .track_focus(&self.focus)
+            .relative()
+            .flex_1()
+            .flex()
+            .flex_col()
+            .text_color(c.fg)
+            .child(toolbar)
+            .child(list);
+
+        if let Some(target) = self.context_menu.clone() {
+            container = container.child(self.render_context_menu(target, c, cx));
+        }
+        if let Some(target) = self.confirm_delete.clone() {
+            container = container.child(self.render_delete_confirm(target, c, cx));
+        }
+
+        container.into_any_element()
+    }
+}
+
+impl ExplorerView {
+    fn icon_btn(
+        &self,
+        id: &'static str,
+        glyph: &'static str,
+        c: Colors,
+        cx: &mut Context<Self>,
+        handler: impl Fn(&mut Self, &mut Window, &mut Context<Self>) + 'static,
+    ) -> impl IntoElement {
+        div()
+            .id(id)
+            .h(px(20.0))
+            .px_1()
+            .flex()
+            .items_center()
+            .justify_center()
+            .rounded_sm()
+            .text_xs()
+            .text_color(c.muted)
+            .hover(|s| s.bg(c.border))
+            .child(glyph)
+            .on_click(
+                cx.listener(move |this, _: &ClickEvent, window, cx| handler(this, window, cx)),
+            )
+    }
+
+    fn on_edit_key(&mut self, ev: &KeyDownEvent, _window: &mut Window, cx: &mut Context<Self>) {
+        let ks = &ev.keystroke;
+        match ks.key.as_str() {
+            "escape" => self.cancel_edit(cx),
+            "enter" => self.commit_edit(cx),
+            "backspace" => {
+                self.edit_buffer.pop();
+                cx.notify();
+            }
+            key => {
+                if ks.modifiers.platform || ks.modifiers.control || ks.modifiers.alt {
+                    return;
+                }
+                let ch = ks
+                    .key_char
+                    .clone()
+                    .filter(|s| !s.is_empty() && !s.chars().any(|c| c.is_control()))
+                    .or_else(|| (key.chars().count() == 1).then(|| key.to_string()));
+                if let Some(ch) = ch {
+                    self.edit_buffer.push_str(&ch);
+                    cx.notify();
+                }
+            }
+        }
+        cx.stop_propagation();
+    }
+
+    fn render_inline_input(
+        &self,
+        depth: usize,
+        c: Colors,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        div()
+            .flex()
+            .flex_row()
+            .items_center()
+            .pl(px(8.0 + depth as f32 * INDENT))
+            .pr_2()
+            .py(px(1.0))
+            .child(
+                div()
+                    .id("explorer-inline-input")
+                    .track_focus(&self.edit_focus)
+                    .flex_1()
+                    .px_1()
+                    .text_sm()
+                    .rounded_sm()
+                    .border_1()
+                    .border_color(c.accent)
+                    .bg(c.card)
+                    .text_color(c.fg)
+                    .child(SharedString::from(format!("{}\u{2502}", self.edit_buffer)))
+                    .on_key_down(cx.listener(Self::on_edit_key)),
+            )
+    }
+
+    fn render_row(&self, row: Row, c: Colors, cx: &mut Context<Self>) -> gpui::AnyElement {
+        match row {
+            Row::PendingCreate { depth } => self
+                .render_inline_input(depth + 1, c, cx)
+                .into_any_element(),
+            Row::Rename { depth } => self.render_inline_input(depth, c, cx).into_any_element(),
+            Row::Loading { depth } => text_row(depth, "Loading\u{2026}", c.muted),
+            Row::Error { depth, message } => text_row(depth, &message, c.err),
+            Row::LoadMore { parent, depth } => {
+                let id: SharedString = format!("more:{}", parent.display()).into();
+                div()
+                    .id(id)
+                    .pl(px(8.0 + (depth as f32 + 1.0) * INDENT))
+                    .py(px(2.0))
+                    .text_xs()
+                    .text_color(c.accent)
+                    .hover(|s| s.underline())
+                    .child("Load more\u{2026}")
+                    .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
+                        this.load_dir(parent.clone(), true, cx);
+                    }))
+                    .into_any_element()
+            }
+            Row::Entry { path, depth, entry } => {
+                let is_selected = self.selected.as_deref() == Some(path.as_path());
+                let is_expanded = entry.is_dir && self.model.expanded.contains(&path);
+                let chevron = if entry.is_dir {
+                    if is_expanded {
+                        "\u{25BE}"
+                    } else {
+                        "\u{25B8}"
+                    }
+                } else {
+                    "\u{2002}"
+                };
+                let glyph = if entry.is_dir {
+                    "\u{1F4C1}"
+                } else {
+                    file_glyph(&entry.name)
+                };
+                let id: SharedString = format!("row:{}", path.display()).into();
+                let click_path = path.clone();
+                let menu_path = path.clone();
+                let is_dir = entry.is_dir;
+                div()
+                    .id(id)
+                    .flex()
+                    .flex_row()
+                    .items_center()
+                    .gap_1()
+                    .pl(px(8.0 + depth as f32 * INDENT))
+                    .pr_2()
+                    .py(px(2.0))
+                    .text_sm()
+                    .when(is_selected, |d| d.bg(c.border))
+                    .when(!is_selected, |d| d.hover(|s| s.bg(c.card)))
+                    .when(entry.is_ignored, |d| d.text_color(c.muted))
+                    .child(
+                        div()
+                            .w(px(10.0))
+                            .text_xs()
+                            .text_color(c.muted)
+                            .child(chevron),
+                    )
+                    .child(div().child(glyph))
+                    .child(div().flex_1().child(SharedString::from(entry.name.clone())))
+                    .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
+                        this.select(click_path.clone(), cx);
+                        if is_dir {
+                            this.toggle_expanded(click_path.clone(), cx);
+                        } else {
+                            this.open_file(&click_path, cx);
+                        }
+                    }))
+                    .on_mouse_down(
+                        MouseButton::Right,
+                        cx.listener(move |this, _, _window, cx| {
+                            this.context_menu = Some(menu_path.clone());
+                            cx.notify();
+                        }),
+                    )
+                    .into_any_element()
+            }
+        }
+    }
+
+    fn render_context_menu(
+        &self,
+        target: PathBuf,
+        c: Colors,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let is_dir = matches!(
+            self.model.nodes.get(&target),
+            Some(NodeState::Loaded { .. })
+        ) || self.model.expanded.contains(&target)
+            || target.is_dir();
+        let dir_for_ops = if is_dir {
+            target.clone()
+        } else {
+            target
+                .parent()
+                .map(Path::to_path_buf)
+                .unwrap_or_else(|| target.clone())
+        };
+        let name = target
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_default();
+
+        let backdrop = div()
+            .id("explorer-menu-backdrop")
+            .absolute()
+            .inset_0()
+            .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
+                this.context_menu = None;
+                cx.notify();
+            }));
+
+        let item = |label: SharedString| {
+            div()
+                .px_2()
+                .py_1()
+                .text_sm()
+                .rounded_sm()
+                .hover(|s| s.bg(c.border))
+                .child(label)
+        };
+
+        let d1 = dir_for_ops.clone();
+        let d2 = dir_for_ops.clone();
+        let d3 = dir_for_ops.clone();
+        let t_rename = target.clone();
+        let t_delete = target.clone();
+        let t_copy = target.clone();
+
+        let menu = div()
+            .absolute()
+            .top(px(26.0))
+            .left(px(10.0))
+            .w(px(200.0))
+            .p_1()
+            .rounded_md()
+            .border_1()
+            .border_color(c.border)
+            .bg(c.card)
+            .text_color(c.fg)
+            .child(
+                div()
+                    .px_2()
+                    .py_1()
+                    .text_xs()
+                    .text_color(c.muted)
+                    .child(SharedString::from(name)),
+            )
+            .child(
+                item("New File".into())
+                    .id("cm-new-file")
+                    .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
+                        this.begin_create(d1.clone(), false, window, cx)
+                    })),
+            )
+            .child(
+                item("New Folder".into())
+                    .id("cm-new-dir")
+                    .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
+                        this.begin_create(d2.clone(), true, window, cx)
+                    })),
+            )
+            .child(item("Rename".into()).id("cm-rename").on_click(cx.listener(
+                move |this, _: &ClickEvent, window, cx| {
+                    this.begin_rename(t_rename.clone(), window, cx)
+                },
+            )))
+            .child(item("Delete".into()).id("cm-delete").on_click(cx.listener(
+                move |this, _: &ClickEvent, _window, cx| this.request_delete(t_delete.clone(), cx),
+            )))
+            .child(item("Copy Path".into()).id("cm-copy").on_click(
+                cx.listener(move |this, _: &ClickEvent, _window, cx| this.copy_path(&t_copy, cx)),
+            ))
+            .child(
+                item("Open in Terminal".into())
+                    .id("cm-terminal")
+                    .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
+                        this.open_in_terminal(d3.clone(), window, cx)
+                    })),
+            );
+
+        div().absolute().inset_0().child(backdrop).child(menu)
+    }
+
+    fn render_delete_confirm(
+        &self,
+        target: PathBuf,
+        c: Colors,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let name = target
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_default();
+        div()
+            .absolute()
+            .inset_0()
+            .flex()
+            .items_center()
+            .justify_center()
+            .bg(gpui::hsla(0.0, 0.0, 0.0, 0.4))
+            .child(
+                div()
+                    .w(px(240.0))
+                    .p_3()
+                    .rounded_md()
+                    .border_1()
+                    .border_color(c.border)
+                    .bg(c.card)
+                    .flex()
+                    .flex_col()
+                    .gap_2()
+                    .child(
+                        div()
+                            .text_sm()
+                            .text_color(c.fg)
+                            .child(SharedString::from(format!(
+                                "Delete \u{201C}{name}\u{201D}?"
+                            ))),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .flex_row()
+                            .justify_end()
+                            .gap_2()
+                            .child(
+                                div()
+                                    .id("del-cancel")
+                                    .px_2()
+                                    .py_1()
+                                    .text_sm()
+                                    .rounded_sm()
+                                    .hover(|s| s.bg(c.border))
+                                    .child("Cancel")
+                                    .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
+                                        this.confirm_delete = None;
+                                        cx.notify();
+                                    })),
+                            )
+                            .child(
+                                div()
+                                    .id("del-ok")
+                                    .px_2()
+                                    .py_1()
+                                    .text_sm()
+                                    .rounded_sm()
+                                    .bg(c.err)
+                                    .text_color(c.card)
+                                    .hover(|s| s.opacity(0.9))
+                                    .child("Delete")
+                                    .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
+                                        this.confirm_delete_now(cx);
+                                    })),
+                            ),
+                    ),
+            )
+    }
+}
+
+fn text_row(depth: usize, text: &str, color: Hsla) -> gpui::AnyElement {
+    div()
+        .pl(px(8.0 + depth as f32 * INDENT))
+        .py(px(2.0))
+        .text_xs()
+        .text_color(color)
+        .child(SharedString::from(text.to_string()))
+        .into_any_element()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn loaded(entries: &[(&str, bool)]) -> NodeState {
+        NodeState::Loaded {
+            entries: entries
+                .iter()
+                .map(|(n, d)| Entry {
+                    name: n.to_string(),
+                    is_dir: *d,
+                    is_ignored: false,
+                })
+                .collect(),
+            has_more: false,
+        }
+    }
+
+    #[test]
+    fn rows_flatten_respects_expanded_and_depth() {
+        let mut m = TreeModel::default();
+        m.set_root(Some(PathBuf::from("/r")));
+        m.set_node(
+            PathBuf::from("/r"),
+            loaded(&[("sub", true), ("a.txt", false)]),
+        );
+        assert_eq!(m.rows().len(), 2);
+
+        assert!(m.toggle_expanded(PathBuf::from("/r/sub")));
+        m.set_node(PathBuf::from("/r/sub"), loaded(&[("nested.txt", false)]));
+        let rows = m.rows();
+        assert_eq!(rows.len(), 3);
+        match &rows[1] {
+            Row::Entry { depth, entry, .. } => {
+                assert_eq!(*depth, 1);
+                assert_eq!(entry.name, "nested.txt");
+            }
+            _ => panic!("expected nested entry at index 1"),
+        }
+        // Collapsing hides the child again.
+        assert!(!m.toggle_expanded(PathBuf::from("/r/sub")));
+        assert_eq!(m.rows().len(), 2);
+    }
+
+    #[test]
+    fn lazy_load_only_requests_unloaded_dirs() {
+        let mut m = TreeModel::default();
+        m.set_root(Some(PathBuf::from("/r")));
+        assert!(m.needs_load(Path::new("/r")));
+        m.mark_loading(PathBuf::from("/r"));
+        assert!(
+            !m.needs_load(Path::new("/r")),
+            "in-flight dir not re-requested"
+        );
+        m.set_node(PathBuf::from("/r"), loaded(&[]));
+        assert!(
+            !m.needs_load(Path::new("/r")),
+            "loaded dir not re-requested"
+        );
+        // A never-touched subdir still needs loading.
+        assert!(m.needs_load(Path::new("/r/other")));
+    }
+
+    #[test]
+    fn set_root_bumps_generation_and_clears_state() {
+        let mut m = TreeModel::default();
+        m.set_root(Some(PathBuf::from("/a")));
+        m.set_node(PathBuf::from("/a"), loaded(&[("x", false)]));
+        m.toggle_expanded(PathBuf::from("/a/d"));
+        let g = m.generation();
+
+        assert!(m.set_root(Some(PathBuf::from("/b"))));
+        assert_eq!(m.generation(), g + 1, "stale responses now discarded");
+        assert!(m.nodes.is_empty() && m.expanded.is_empty());
+        assert!(
+            !m.set_root(Some(PathBuf::from("/b"))),
+            "no-op when unchanged"
+        );
+    }
+
+    #[test]
+    fn toggle_hidden_invalidates_cache_but_keeps_expanded() {
+        let mut m = TreeModel::default();
+        m.set_root(Some(PathBuf::from("/r")));
+        m.set_node(PathBuf::from("/r"), loaded(&[]));
+        m.toggle_expanded(PathBuf::from("/r/sub"));
+        m.set_node(PathBuf::from("/r/sub"), loaded(&[]));
+        let g = m.generation();
+
+        let reload = m.toggle_show_hidden();
+        assert!(m.show_hidden);
+        assert_eq!(m.generation(), g + 1);
+        assert!(m.nodes.is_empty());
+        assert!(m.expanded.contains(Path::new("/r/sub")));
+        assert!(reload.contains(&PathBuf::from("/r")));
+        assert!(reload.contains(&PathBuf::from("/r/sub")));
+    }
+
+    #[test]
+    fn watch_targets_are_the_loaded_directories_only() {
+        let mut m = TreeModel::default();
+        m.set_root(Some(PathBuf::from("/r")));
+        m.mark_loading(PathBuf::from("/r"));
+        m.set_node(PathBuf::from("/r/a"), loaded(&[]));
+        m.set_node(PathBuf::from("/r/b"), NodeState::Error("nope".into()));
+        let t = m.watch_targets();
+        assert!(t.contains(&PathBuf::from("/r")));
+        assert!(t.contains(&PathBuf::from("/r/a")));
+        assert!(!t.contains(&PathBuf::from("/r/b")));
+    }
+
+    #[test]
+    fn file_glyph_maps_known_extensions() {
+        assert_eq!(file_glyph("main.rs"), "\u{1F980}");
+        assert_eq!(file_glyph("Cargo.toml"), "\u{2699}");
+        assert_eq!(file_glyph("weird.unknownext"), "\u{1F4C4}");
+    }
+}

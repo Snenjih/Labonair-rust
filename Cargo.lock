@@ -3960,6 +3960,8 @@ dependencies = [
  "labonair-backend",
  "labonair-terminal",
  "labonair-theme",
+ "notify",
+ "notify-debouncer-mini",
  "serde",
  "serde_json",
  "tracing",

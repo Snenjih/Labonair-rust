@@ -17,7 +17,7 @@ fn expand_home(path: &str) -> Result<PathBuf, String> {
     }
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Clone, Copy, Debug, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum EntryKind {
     File,
@@ -25,7 +25,7 @@ pub enum EntryKind {
     Symlink,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Clone, Debug)]
 pub struct DirEntry {
     pub name: String,
     pub kind: EntryKind,
@@ -35,7 +35,7 @@ pub struct DirEntry {
     pub is_ignored: bool,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Clone, Debug)]
 pub struct DirReadPage {
     pub entries: Vec<DirEntry>,
     pub has_more: bool,
@@ -45,7 +45,7 @@ pub struct DirReadPage {
 /// files, each sorted case-insensitively — with gitignore-derived
 /// `is_ignored` flags. Shared by `fs_read_dir` and `fs_read_dir_page` so the
 /// listing/sort/ignore logic only lives in one place.
-fn list_dir_entries_sync(path: &str, show_hidden: bool) -> Result<Vec<DirEntry>, String> {
+pub fn list_dir_entries_sync(path: &str, show_hidden: bool) -> Result<Vec<DirEntry>, String> {
     let root = expand_home(path)?;
     let read = std::fs::read_dir(&root).map_err(|e| {
         log::debug!("fs_read_dir({}) failed: {e}", root.display());
@@ -148,7 +148,11 @@ pub async fn fs_read_dir(path: String, show_hidden: Option<bool>) -> Result<Vec<
 
 /// Pure slicing logic, split out so it's unit-testable without touching the
 /// filesystem — mirrors `sftp::paginate_entries`.
-fn paginate_dir_entries(mut entries: Vec<DirEntry>, offset: usize, limit: usize) -> DirReadPage {
+pub fn paginate_dir_entries(
+    mut entries: Vec<DirEntry>,
+    offset: usize,
+    limit: usize,
+) -> DirReadPage {
     let total = entries.len();
     if offset >= total {
         return DirReadPage {
@@ -163,7 +167,22 @@ fn paginate_dir_entries(mut entries: Vec<DirEntry>, offset: usize, limit: usize)
     }
 }
 
-const DEFAULT_LOCAL_PAGE_LIMIT: usize = 500;
+pub const DEFAULT_LOCAL_PAGE_LIMIT: usize = 500;
+
+/// Blocking, in-process directory page read for the sidebar file explorer
+/// (T05-001). Lists + sorts one directory's immediate children and returns a
+/// single `offset..offset+limit` slice. Same listing/sort/ignore logic as
+/// [`fs_read_dir_page`], minus the Tauri `spawn_blocking` wrapper — the GPUI
+/// explorer calls this from `cx.background_executor().spawn`.
+pub fn read_dir_page(
+    path: &str,
+    offset: usize,
+    limit: usize,
+    show_hidden: bool,
+) -> Result<DirReadPage, String> {
+    let entries = list_dir_entries_sync(path, show_hidden)?;
+    Ok(paginate_dir_entries(entries, offset, limit))
+}
 
 /// Paginated variant of `fs_read_dir`. Introduced alongside the unpaginated
 /// command (not as a replacement) so a directory with tens of thousands of
@@ -285,5 +304,57 @@ mod tests {
         let page = paginate_dir_entries(entries(200), 0, DEFAULT_LOCAL_PAGE_LIMIT);
         assert_eq!(page.entries.len(), 200);
         assert!(!page.has_more);
+    }
+
+    // --- read_dir_page — the sidebar explorer's blocking entry point ---
+
+    fn scratch_dir(tag: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "labonair-tree-{tag}-{}-{:?}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn read_dir_page_sorts_dirs_first_then_case_insensitive() {
+        let dir = scratch_dir("sort");
+        std::fs::create_dir(dir.join("zeta")).unwrap();
+        std::fs::create_dir(dir.join("Alpha")).unwrap();
+        std::fs::write(dir.join("b.txt"), "").unwrap();
+        std::fs::write(dir.join("A.txt"), "").unwrap();
+
+        let page = read_dir_page(dir.to_str().unwrap(), 0, 500, false).unwrap();
+        let names: Vec<_> = page.entries.iter().map(|e| e.name.as_str()).collect();
+        assert_eq!(names, ["Alpha", "zeta", "A.txt", "b.txt"]);
+
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn read_dir_page_hidden_toggle() {
+        let dir = scratch_dir("hidden");
+        std::fs::write(dir.join("visible.txt"), "").unwrap();
+        std::fs::write(dir.join(".secret"), "").unwrap();
+
+        let hidden_off = read_dir_page(dir.to_str().unwrap(), 0, 500, false).unwrap();
+        assert_eq!(hidden_off.entries.len(), 1);
+        assert_eq!(hidden_off.entries[0].name, "visible.txt");
+
+        let hidden_on = read_dir_page(dir.to_str().unwrap(), 0, 500, true).unwrap();
+        assert_eq!(hidden_on.entries.len(), 2);
+
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn read_dir_page_missing_directory_is_err_not_panic() {
+        let missing = std::env::temp_dir().join("labonair-tree-does-not-exist-xyz");
+        assert!(read_dir_page(missing.to_str().unwrap(), 0, 500, false).is_err());
     }
 }

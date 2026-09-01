@@ -4,7 +4,94 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
-## Last Session: 2026-09-01 (T04-005 — native macOS menus + Dock menu)
+## Last Session: 2026-09-01 (T05-001 — file tree & explorer basics)
+
+### What Was Done
+- **T05-001 ✅ Done.** Sidebar file explorer, ported from
+  `reference-src/src/modules/explorer/` (`useLocalExplorerStore` +
+  `useFileTree` + `buildTreeRows` + `FileTreeNode`) and the backend
+  `src-tauri/src/modules/fs/` (`tree.rs`, `mutate.rs`, `watcher.rs`).
+  - **`crates/backend/src/modules/fs/tree.rs`** — added blocking, in-process
+    entry point `read_dir_page(path, offset, limit, show_hidden)` (=
+    `list_dir_entries_sync` + `paginate_dir_entries`, both made `pub`),
+    `pub const DEFAULT_LOCAL_PAGE_LIMIT`, `#[derive(Clone, Debug, ...)]` on
+    `EntryKind` / `DirEntry` / `DirReadPage`. +3 tests (dirs-first
+    case-insensitive sort, hidden toggle, missing dir → Err not panic).
+  - **`crates/backend/src/modules/fs/mutate.rs`** — added sync variants
+    `create_file_sync` / `create_dir_sync` / `rename_sync` / `delete_sync`
+    (same semantics as the async commands, no `spawn_blocking`). +2 tests
+    (create/rename/delete roundtrip incl. conflict refusal, delete-missing
+    → Err).
+  - **`crates/ui/src/explorer.rs`** (new) — `TreeModel` (pure port of
+    `useLocalExplorerStore` + `buildTreeRows`: per-dir node map
+    `Loading|Loaded{entries,has_more}|Error`, `generation` stale-guard, lazy
+    `needs_load` dedup, `toggle_show_hidden` cache-invalidate-but-keep-expanded,
+    `rows()` flatten with pending-create / rename / loading / error / load-more
+    rows) + `ExplorerView` GPUI entity wrapping it:
+    - `set_root`/`set_root_str` (bumps generation, clears cache, loads root),
+      `load_dir` runs `tree::read_dir_page` on `cx.background_executor().spawn`
+      and drops the result if `generation` moved,
+    - toolbar: new file / new folder / refresh / toggle-hidden / collapse-all,
+    - rows in an `overflow_y_scroll` column (chevron + glyph + name, indent by
+      depth, selection highlight, gitignored = muted), click folder →
+      expand/collapse, click file → `Workspace::open_file` (Editor
+      placeholder tab titled with basename, path in `TabData.path`),
+    - right-click → context menu (New File/Folder, Rename, Delete, Copy Path,
+      Open in Terminal) anchored top-left with a click-catch backdrop,
+    - inline text field (hand-rolled like the header search: `key_char` +
+      backspace/enter/escape) for create + rename → `mutate::*_sync` off-thread,
+      reload parent on success, error toast (`notification_center`) on failure,
+    - **embedded watcher**: `notify-debouncer-mini` (300 ms, non-recursive,
+      watch-set synced to loaded dirs); debounced callback pushes affected
+      parent dirs into an `Arc<Mutex<HashSet>>` drained by a 400 ms
+      `cx.spawn` loop that force-reloads any still-loaded dirty dir.
+    - delete confirmation modal overlay.
+    - 6 pure `#[test]`s on `TreeModel` (flatten+depth+collapse, lazy-load
+      dedup, set_root generation+clear, hidden-toggle invalidation,
+      watch-target set, glyph map).
+  - **`crates/ui/src/workspace.rs`** — added `new_terminal_tab_in(cwd, …)`
+    (Explorer "Open in Terminal") and `open_file(path, …)` (Editor placeholder
+    tab); `render_content` Editor arm now shows the file path.
+  - **`crates/ui/src/app_shell.rs`** — `AppShell` owns
+    `explorer: Entity<ExplorerView>`; `render_panel_body` returns the real
+    view for `SidebarPanel::Explorer`; a `cx.observe(&workspace)` pushes the
+    active terminal cwd (fallback `$HOME`) into `ExplorerView::set_root_str`.
+  - **`crates/ui/Cargo.toml`** — `notify = "6"`, `notify-debouncer-mini = "0.4"`.
+  - **`crates/ui/src/lib.rs`** — `pub mod explorer;` + `pub use ExplorerView`.
+- **GPUI notes:** `overflow_y_scroll` is a `StatefulInteractiveElement` method
+  → the scroll container needs an `.id(...)` first. `EditMode` enum gets
+  `#[derive(Default)]` + `#[default]` on the unit variant. On macOS the
+  `notify` `FsEventWatcher` exposes inherent `watch`/`unwatch` so the
+  `notify::Watcher` trait import is unused (removed). `ClipboardItem::new_string`
+  for Copy Path.
+- **Deviations:** no `@tanstack/react-virtual` windowing (plain scroll column;
+  500-entry page cap + lazy load bound the element count); watcher is embedded
+  in the entity instead of the backend event bus; file-type icons are a small
+  emoji glyph map, not the material-icon-theme port; SFTP/remote scope +
+  `remoteScopeCache` LRU are Phase 07, not ported here; chmod/chown dialog and
+  DnD are T05-002.
+- **Verified:** `cargo fmt --all --check`, `cargo clippy --workspace
+  --all-targets -- -D warnings`, `cargo test --workspace`, `cargo build --bin
+  labonair` — all green. Counts: **backend 131 (+5)**, **ui 48 (+6)**. Not
+  visually run — user should `cargo run` and check: Explorer panel shows the
+  cwd tree, folders expand/collapse, click a file opens an "Editor" tab,
+  right-click → New File/Folder/Rename/Delete/Copy Path/Open in Terminal,
+  create a file in Finder and watch the tree refresh, toggle-hidden button
+  shows/hides dotfiles.
+
+### Current State
+- Branch `master`, ~23 unpushed commits + this one.
+- Pre-existing uncommitted `CLAUDE.md` edit (not ours) — left untouched & excluded.
+- `reference-src/` untouched. **Phase 04: T05-001 done, T05-002 next.**
+
+### What's Next
+- **T05-002** (`tasks/phase-04-explorer/T05-002-drag-drop-actions.md`) —
+  drag-and-drop + advanced file actions (chmod/chown, copy/cut/paste, OS drop).
+  Dep: T05-001 (done).
+
+---
+
+## Session: 2026-09-01 (T04-005 — native macOS menus + Dock menu)
 
 ### What Was Done
 - **T04-005 ✅ Done.** Native macOS menu bar + Dock context menu, ported from
