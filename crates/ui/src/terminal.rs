@@ -37,6 +37,7 @@ use labonair_terminal::{
     TerminalColors, TerminalEvent, TerminalSession, WheelAction, WheelInput,
 };
 
+use crate::background::{BackgroundStore, LayerScope};
 use crate::theme::ThemeStore;
 
 /// How often the view polls the session for new terminal output.
@@ -45,6 +46,7 @@ const POLL_INTERVAL: Duration = Duration::from_millis(16);
 /// A running terminal, rendered with GPUI.
 pub struct TerminalView {
     theme: Entity<ThemeStore>,
+    background: Entity<BackgroundStore>,
     focus_handle: FocusHandle,
     /// `Ok` once the shell spawned; `Err` keeps the failure message for display.
     session: Result<TerminalSession, String>,
@@ -60,7 +62,12 @@ pub struct TerminalView {
 
 impl TerminalView {
     /// Spawn a local shell and start rendering it.
-    pub fn new(theme: Entity<ThemeStore>, window: &mut Window, cx: &mut Context<Self>) -> Self {
+    pub fn new(
+        theme: Entity<ThemeStore>,
+        background: Entity<BackgroundStore>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
         let colors = TerminalColors::from_theme(theme.read(cx).theme());
         let dims = TermDimensions::new(80, 24);
         let session = TerminalSession::spawn(colors, dims, SessionOptions::default());
@@ -77,6 +84,9 @@ impl TerminalView {
             cx.notify();
         })
         .detach();
+
+        // Repaint when the background image / settings change.
+        cx.observe(&background, |_, _, cx| cx.notify()).detach();
 
         let poll = cx.spawn(async move |view, cx| loop {
             cx.background_executor().timer(POLL_INTERVAL).await;
@@ -101,6 +111,7 @@ impl TerminalView {
 
         Self {
             theme,
+            background,
             focus_handle,
             session: session.map_err(|e| format!("failed to start shell: {e}")),
             grid: (80, 24),
@@ -263,6 +274,10 @@ impl Render for TerminalView {
                 cells: Vec::new(),
                 selection: Vec::new(),
             });
+
+        // Background image overlay (only when the target is Terminal-only;
+        // App/Both is painted window-wide by the app root instead).
+        let background_layer = self.background.read(cx).layer(LayerScope::Terminal);
 
         let runs = batch_runs(&screen);
         let bold_font = {
@@ -462,6 +477,7 @@ impl Render for TerminalView {
             .children(run_elements)
             .children(selection_elements)
             .children(cursor_element)
+            .children(background_layer)
             .into_any_element()
     }
 }

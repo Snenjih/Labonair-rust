@@ -4,7 +4,49 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
-## Last Session: 2026-09-01 (T03-005 — local PTY sessions & multi-tab terminal)
+## Last Session: 2026-09-01 (T02-006 — terminal/app background images)
+
+### What Was Done
+- **T02-006 ✅ Done.** Full parity port of the reference `backgrounds` feature (import/list/delete + opacity/blur/tint/fit/target), pure Rust + GPUI.
+  - **`crates/backend/src/modules/backgrounds/mod.rs`** — de-Tauri'd: the 5 fns (`backgrounds_dir` now `pub`, `backgrounds_list`, `background_import`, `background_read_data_url`, `background_delete`) changed `async fn` → `fn` (they were only async for Tauri; no `.await` inside, no callers). Added the preferences layer:
+    - `BackgroundSettings` (`#[serde(rename_all="camelCase")]`) = reference `preferencesStore` keys `backgroundImage` (filename, `""`=none), `backgroundOpacity` (u8 0–100, def 30), `backgroundBlur` (u8 px 0–100, def 0), `backgroundTintColor` (`#000000`), `backgroundTintOpacity` (u8, def 0) **plus** two keys the pure-Rust renderer needs that the reference did implicitly: `backgroundFit` (`BackgroundFit::{Cover,Contain,Tile}`, def Cover) + `backgroundTarget` (`BackgroundTarget::{Both,App,Terminal}`, def Both). Enums `#[serde(rename_all="lowercase")]`.
+    - `background_settings_load()` / `background_settings_save(&BackgroundSettings)` read/merge the shared `config_dir()/labonair-settings.json` blob (same file `super::settings` uses) key-by-key so `barItemPlacements` etc. survive; atomic tmp+rename write; numbers clamped ≤100 on load. Internal `load_from(&Path)`/`save_to(&Path,..)` for tests.
+    - 4 new tests (defaults match reference, missing-file → defaults, round-trip + preserves other keys + enum wire form, out-of-range clamp). Uses `std::env::temp_dir()`, not the real config dir.
+  - **`crates/ui/src/background.rs`** (new) — `BackgroundStore` GPUI entity + `GlobalBackground` global (`init(cx)` / `background_store(cx)`):
+    - Owns `BackgroundSettings` + one decoded `Arc<gpui::Image>`, rebuilt **only** when `(filename, blur)` changes (cache key) — never per frame (task warning). On decode failure it clears the selection and persists that (reference fallback behavior).
+    - `load_processed_from(dir,filename,blur)`: `image::load_from_memory` → downscale to `MAX_DIM=2560` (Triangle) → `image::imageops::blur` (pre-blur, since GPUI has **no** blur filter) → re-encode (PNG if source had alpha, else JPEG q85). Fast path: no downscale + no blur → hand GPUI the untouched file bytes with format guessed from extension. AVIF: undecodable by the `image` crate here (no `avif` feature) → only works via the raw fast path (no blur); documented limitation.
+    - Mutators `set_image/opacity/blur/tint_color/tint_opacity/fit/target` (persist + rebuild + notify), `import(PathBuf)`, `delete(&str)`, `available()`, `prompt_and_import(cx)` (native picker via `cx.prompt_for_paths(PathPromptOptions{files:true,..})` + `cx.spawn`).
+    - `layer(LayerScope::{App,Terminal}) -> Option<AnyElement>`: absolutely-positioned `inset_0` non-interactive overlay, `img(image).object_fit(fit).size_full()`, wrapper `.opacity(backgroundOpacity/100 * 0.5)` (reference `BG_OPACITY_RENDER_FACTOR`), optional tint `div` on top. `App`/`Both` → App scope shows (window-wide, covers terminal too); `Terminal` → Terminal scope shows only. `Tile` → `ObjectFit::Cover` fallback (GPUI has no tiling).
+    - 3 tests (fit mapping incl. Tile→Cover, extension→format, generated 3000px image → downscaled + blurred + re-encoded to JPEG).
+  - **`crates/ui/Cargo.toml`** — added `image` (workspace) + `labonair-backend` path dep (no cycle; backend doesn't dep ui). **workspace `Cargo.toml`** — added `image = "0.25"` (`default-features=false`, features jpeg/png/gif/webp/bmp; matches gpui's image 0.25.10 in the lockfile).
+  - **`crates/ui/src/terminal.rs`** — `TerminalView` gained a `background: Entity<BackgroundStore>` field + `new()` param, `cx.observe(&background)` → repaint, and `.children(self.background.read(cx).layer(LayerScope::Terminal))` on top of the cell/cursor layers.
+  - **`crates/app/src/main.rs`** — `Root` holds `Entity<BackgroundStore>` (`labonair_ui::init_background(cx)`), observes it, passes it to `TerminalView::new`, renders `.relative()` + `.children(background.layer(LayerScope::App))` over the theme bg + terminal.
+  - **`crates/ui/src/lib.rs`** — re-exports `BackgroundStore`, `BackgroundFit`, `BackgroundTarget`, `LayerScope`, `init as init_background`, `background_store`, `GlobalBackground`.
+- **GPUI API used (gpui 0.2.2, verified in source):** `gpui::img(impl Into<ImageSource>) -> Img`; `ImageSource::From<Arc<gpui::Image>>`; `gpui::Image::from_bytes(ImageFormat, Vec<u8>)` (`ImageFormat::{Png,Jpeg,Webp,Gif,Bmp}` — **no Avif variant**); `StyledImage::object_fit(ObjectFit)` (needs the `StyledImage` trait, from `gpui::prelude`; `ObjectFit` has no `PartialEq`/`Debug` → test with `matches!`); `Styled::{opacity(f32), inset_0(), overflow_hidden(), absolute()}` (opacity nests/multiplies via `Window::with_element_opacity`); `App::prompt_for_paths(PathPromptOptions{files,directories,multiple,prompt}) -> oneshot::Receiver<Result<Option<Vec<PathBuf>>>>` (on `App`, reachable through `Context` deref); `.children(Option<AnyElement>)` works (Option: IntoIterator).
+- **Design note:** the reference wallpaper is one full-window overlay painted *on top* of everything at low opacity (xterm's `<canvas>` is opaque, can't sit behind it). The GPUI port keeps that exact model — overlay on top, `pointer-events`-free, opacity ×0.5 — rather than truly compositing behind the terminal cells (which are also opaque `bg()` divs). "Behind terminal" in criteria == the reference's dimmed-overlay look.
+- **Verified:** `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`, `cargo build --bin labonair` — all green. Counts: **126 backend (+4)**, 1 app_state, 22 theme, **18 ui (+3)**, 62 terminal. Not visually run — user should `cargo run`, import an image via a future settings pane (or temporarily call `background_store(cx).update(..set_image..)`), and confirm opacity/blur/fit/target behave.
+
+### Current State
+- Branch `master`, ~16 unpushed commits + this one. `crates/ui` now depends on `crates/backend` (first such edge; slower ui compiles). Background layer live in both Root and TerminalView.
+- Pre-existing uncommitted `CLAUDE.md` edit (not ours) — left untouched & excluded from this commit, flag to user.
+- `reference-src/` untouched.
+
+### Known limitations (not blockers)
+- No settings UI yet — wiring `BackgroundStore` mutators + `prompt_and_import` into the Appearance pane is **T13-002**.
+- AVIF images only load when no blur is requested (raw fast path); the `image` crate build here has no `avif` feature and GPUI's `ImageFormat` has no AVIF variant.
+- `Tile` fit renders as `Cover` (GPUI `img()` has no tiling). The reference had no tile mode either.
+- Re-encode (downscale/blur path) runs synchronously inside the GPUI update that changes the setting — fine for a one-shot user action; move to `spawn_blocking` if it ever stutters.
+- Blur uses `image::imageops::blur` (true Gaussian, O(n·r)) applied once at load — not GPUI (no blur filter exists in 0.2.2).
+
+### What's Next
+- **T04-001** `tasks/phase-03-tabs-workspace/T04-001-*` — Tab-Leiste & Tab-Verwaltung (wires the T03-005 `TerminalRegistry` into the UI).
+
+### Blockers
+- None.
+
+---
+
+## Session: 2026-09-01 (T03-005 — local PTY sessions & multi-tab terminal)
 
 ### What Was Done
 - **T03-005 ✅ Done.** Multi-session registry + lifecycle for local PTY terminals, ported from `reference-src/src-tauri/src/modules/pty/{mod.rs,session.rs}` (the `PtyState` HashMap + `pty_open`/`pty_close`/`pty_has_foreground_job`).

@@ -3955,6 +3955,8 @@ name = "labonair-ui"
 version = "0.1.0"
 dependencies = [
  "gpui",
+ "image",
+ "labonair-backend",
  "labonair-terminal",
  "labonair-theme",
 ]

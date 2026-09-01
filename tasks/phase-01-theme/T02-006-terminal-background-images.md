@@ -1,7 +1,7 @@
 # T02-006: Terminal-Hintergrundbilder
 
 ## Status
-⏳ Pending
+✅ Done
 
 ## Phase
 1 — Theme-System & Design-Tokens
@@ -35,11 +35,11 @@ Referenz:
 5. Settings-UI wird in T13-002 (Appearance) angebunden — hier nur die Datenschicht + Rendering.
 
 ## Akzeptanzkriterien
-- [ ] Bild importieren/auflisten/löschen funktioniert; Dateien liegen im App-Data-Dir
-- [ ] Hintergrundbild rendert hinter Terminal mit korrekter Deckkraft/Blur/Fit
-- [ ] Auswahl „App / Terminal / beide" wirkt wie im Original
-- [ ] Einstellung überlebt Neustart (Persistenz via Preferences)
-- [ ] `cargo check` + `clippy -- -D warnings` + `cargo test` grün
+- [x] Bild importieren/auflisten/löschen funktioniert; Dateien liegen im App-Data-Dir (`backgrounds::background_import/backgrounds_list/background_delete`, `~/.config/labonair/backgrounds/`)
+- [x] Hintergrundbild rendert hinter Terminal mit korrekter Deckkraft/Blur/Fit (`BackgroundStore::layer`, pre-blurred + downscaled `gpui::Image`, `object_fit`, opacity × 0.5 wie Referenz)
+- [x] Auswahl „App / Terminal / beide" wirkt wie im Original (`BackgroundTarget`; App/Both = fensterweit über Root, Terminal = nur im Terminal-Element)
+- [x] Einstellung überlebt Neustart (Persistenz via `background_settings_load/save` in `labonair-settings.json`)
+- [x] `cargo check` + `clippy -- -D warnings` + `cargo test` grün
 
 ## Notizen
 - Bild-Decoding: `image`-Crate; große Bilder ggf. beim Import herunterskalieren.

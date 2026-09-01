@@ -2,9 +2,14 @@
 //!
 //! Populated by later phases (T04+). T02-002 adds the runtime theme provider.
 
+pub mod background;
 pub mod terminal;
 pub mod theme;
 
+pub use background::{
+    background_store, init as init_background, BackgroundFit, BackgroundStore, BackgroundTarget,
+    GlobalBackground, LayerScope,
+};
 pub use labonair_theme::{ThemeFile, ThemeFileVariant};
 pub use terminal::TerminalView;
 pub use theme::{

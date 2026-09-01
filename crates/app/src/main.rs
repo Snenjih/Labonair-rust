@@ -3,7 +3,7 @@ use gpui::{
     WindowOptions,
 };
 use labonair_backend::{App as Backend, AppEvent};
-use labonair_ui::{TerminalView, ThemeStore};
+use labonair_ui::{BackgroundStore, LayerScope, TerminalView, ThemeStore};
 use tokio::sync::broadcast::error::RecvError;
 use tracing_subscriber::EnvFilter;
 
@@ -11,21 +11,39 @@ use tracing_subscriber::EnvFilter;
 /// terminal; the real tabbed app shell arrives in Phase 03 (T04-003).
 struct Root {
     theme: Entity<ThemeStore>,
+    background: Entity<BackgroundStore>,
     terminal: Entity<TerminalView>,
 }
 
 impl Root {
-    fn new(theme: Entity<ThemeStore>, window: &mut Window, cx: &mut Context<Self>) -> Self {
+    fn new(
+        theme: Entity<ThemeStore>,
+        background: Entity<BackgroundStore>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
         cx.observe(&theme, |_, _, cx| cx.notify()).detach();
-        let terminal = cx.new(|cx| TerminalView::new(theme.clone(), window, cx));
-        Self { theme, terminal }
+        cx.observe(&background, |_, _, cx| cx.notify()).detach();
+        let terminal =
+            cx.new(|cx| TerminalView::new(theme.clone(), background.clone(), window, cx));
+        Self {
+            theme,
+            background,
+            terminal,
+        }
     }
 }
 
 impl Render for Root {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let bg = self.theme.read(cx).background();
-        div().size_full().bg(bg).child(self.terminal.clone())
+        let background_layer = self.background.read(cx).layer(LayerScope::App);
+        div()
+            .relative()
+            .size_full()
+            .bg(bg)
+            .child(self.terminal.clone())
+            .children(background_layer)
     }
 }
 
@@ -102,7 +120,8 @@ fn main() {
                         }
                     })
                     .detach();
-                cx.new(|cx| Root::new(theme, window, cx))
+                let background = labonair_ui::init_background(cx);
+                cx.new(|cx| Root::new(theme, background, window, cx))
             },
         )
         .expect("failed to open window");

@@ -5,8 +5,10 @@ edition = "2021"
 
 [dependencies]
 gpui = { workspace = true }
+image = { workspace = true }
 labonair-theme = { path = "../theme" }
 labonair-terminal = { path = "../terminal" }
+labonair-backend = { path = "../backend" }
 
 [dev-dependencies]
 gpui = { workspace = true, features = ["test-support"] }
