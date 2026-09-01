@@ -4,7 +4,58 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
-## Last Session: 2026-09-01 (T09-001 — Source-Control panel: Git status & staging)
+## Last Session: 2026-09-01 (T09-002 — Branch management & stash)
+
+### What Was Done
+- **T09-002 ✅ Done.** Branch/tag/stash UI added to `crates/ui/src/git.rs`
+  (`GitPanelView`), a GPUI-native port of the reference `BranchBar` /
+  `BranchDropdown` / `NewBranchDialog` / `StashPanel` components. No new
+  backend work — all commands (`git_checkout_branch`, `git_create_branch`,
+  `git_delete_branch`, `git_rename_branch`, `git_get_branches`,
+  `git_create_tag` / `git_get_tags` / `git_delete_tag` / `git_push_tag`,
+  `git_stash_push` / `list` / `pop` / `apply` / `drop`) already existed and
+  the workspace-state bundle already carries `branches` / `current_branch` /
+  `stash` / `tags`, so the poll loop feeds everything.
+  - Pure helpers (unit-tested): `filter_branches` (case-insensitive, split by
+    local/remote), `map_checkout_error` ("would be overwritten" → "stash
+    first"), `is_unmerged_branch_error`, `stash_display_message` (blank →
+    "WIP"), `is_stash_conflict_error` / `stash_conflict_message` (pop/apply
+    conflict → "stash was kept"), `resolve_default_from_ref` (unwraps
+    "HEAD detached at <hash>").
+  - Branch bar: the branch label is now a toggle (`⌥ <branch> ▾`) that opens
+    an inline branch picker rendered between the file list and the bar.
+  - Branch picker (`render_branch_picker`): filter field, "+ New Branch"
+    inline form (name / from / checkout-toggle / error), local branch rows
+    (✓ current, ↑ahead/↓behind chips, ✎ rename inline, ✕ delete), collapsible
+    remote section (checkout only), collapsible Tags section (+ new-tag form
+    name/message/from, per-row ↑push / ✕delete). Delete uses an inline
+    `confirm_bar`; an unmerged-branch delete escalates to a "force delete?"
+    confirm. Rename swaps the row for an inline text field.
+  - Stash panel (`render_stash_panel`): collapsible "STASHES (n)" section
+    above the diff, + opens an inline message form, per-row `A`pply / `P`op /
+    ✕drop (drop behind a confirm bar). Pop/apply conflicts surface the
+    "stash kept" message via `notify_err`.
+  - Text input: GPUI has no built-in single-line input here, so all fields
+    are hand-rolled — a `Field` enum marks the one active field and the panel
+    root's `on_key_down` routes keystrokes to it (`on_field_key`), same
+    approach as the existing commit box. `text_field()` renders each one;
+    clicking it sets `active_field` + focuses the panel root.
+  - `dispatch()` helper = `run_op` variant that hands the raw `Result` to a
+    callback (for inline errors / follow-up state) instead of always toasting.
+- Verify: `cargo check`, `cargo clippy --workspace --all-targets -D warnings`,
+  `cargo test --workspace` (backend 148, ui 99 — incl. 6 new UI helper tests
+  + 2 new backend live tests `branch_tag_stash_lifecycle` /
+  `checkout_with_conflicting_local_changes_is_rejected`), `cargo fmt --check`
+  — all green.
+
+### State / Next
+- Branch: `master`. Next task: **first not-done task after T09-002** — check
+  `tasks/ROADMAP.md` (phase 09 Git-Graph is referenced as follow-up).
+- Note: pre-existing uncommitted `CLAUDE.md` edit (not ours) left untouched.
+
+---
+
+## Prior Session: 2026-09-01 (T09-001 — Source-Control panel: Git status & staging)
 
 ### What Was Done
 - **T09-001 ✅ Done.** The backend git module

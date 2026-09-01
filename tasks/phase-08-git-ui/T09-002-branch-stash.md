@@ -1,7 +1,7 @@
 # T09-002: Branch-Verwaltung und Stash
 
 ## Status
-⏳ Pending
+✅ Done
 
 ## Phase
 8 — Git-UI & Source-Control

@@ -26,7 +26,7 @@ use gpui::{
     IntoElement, KeyDownEvent, ParentElement, Render, SharedString, StatefulInteractiveElement,
     Styled, Window,
 };
-use labonair_backend::modules::git::{self, FileStatus, GitStatus, WorkspaceGitState};
+use labonair_backend::modules::git::{self, Branch, FileStatus, GitStatus, WorkspaceGitState};
 use labonair_backend::App as Backend;
 use tokio::runtime::Handle as TokioHandle;
 
@@ -179,6 +179,72 @@ pub fn is_whole_file_single_hunk(file: &FileDiff) -> bool {
     (file.is_new_file || file.is_deleted_file) && file.hunks.len() == 1
 }
 
+// ─── Branch / stash helpers (port of BranchDropdown / StashPanel) ─────────────
+
+/// Case-insensitive substring filter over branches of one kind (local or
+/// remote). An empty/whitespace filter returns every branch of that kind.
+pub fn filter_branches<'a>(branches: &'a [Branch], filter: &str, remote: bool) -> Vec<&'a Branch> {
+    let f = filter.trim().to_lowercase();
+    branches
+        .iter()
+        .filter(|b| b.is_remote == remote)
+        .filter(|b| f.is_empty() || b.name.to_lowercase().contains(&f))
+        .collect()
+}
+
+/// Maps a raw `git checkout` failure to the user-facing message the reference
+/// `BranchDropdown.handleCheckout` shows.
+pub fn map_checkout_error(err: &str) -> String {
+    if err.contains("overwritten") {
+        "Could not checkout: uncommitted changes would be overwritten. Stash your changes first."
+            .to_string()
+    } else {
+        format!("Could not checkout: {err}")
+    }
+}
+
+/// A `git branch -d` refusal because the branch still has unmerged commits —
+/// the reference escalates this to the "force delete?" confirm.
+pub fn is_unmerged_branch_error(err: &str) -> bool {
+    err.contains("not fully merged")
+}
+
+/// Display label for a stash entry (`StashPanel` shows `"WIP"` for a blank
+/// message).
+pub fn stash_display_message(msg: &str) -> String {
+    let t = msg.trim();
+    if t.is_empty() {
+        "WIP".to_string()
+    } else {
+        t.to_string()
+    }
+}
+
+/// `git stash pop`/`apply` that hit merge conflicts — the entry is kept (pop
+/// behaves like apply) and the working tree carries the conflicts.
+pub fn is_stash_conflict_error(err: &str) -> bool {
+    err.contains("conflict") || err.contains("CONFLICT")
+}
+
+/// Message shown for a conflicting stash pop/apply (mirrors `StashPanel`).
+pub fn stash_conflict_message(err: &str) -> String {
+    if is_stash_conflict_error(err) {
+        "Conflicts after stash apply \u{2014} the stash was kept; resolve the conflicts in the working tree".to_string()
+    } else {
+        err.to_string()
+    }
+}
+
+/// Detached-HEAD label produced by the backend; `NewBranchDialog` unwraps it
+/// to the bare short hash so `git branch <name> <ref>` can resolve it.
+pub fn resolve_default_from_ref(current_branch: &str) -> String {
+    const PREFIX: &str = "HEAD detached at ";
+    match current_branch.strip_prefix(PREFIX) {
+        Some(hash) => hash.trim().to_string(),
+        None => current_branch.to_string(),
+    }
+}
+
 // ─── Commit-message validation (port of CommitForm.tsx) ───────────────────────
 
 /// `Ok(trimmed message)` or `Err(reason)`.
@@ -261,6 +327,20 @@ enum Section {
     Untracked,
 }
 
+/// Which hand-rolled text field currently receives key events (only one is
+/// ever active — the panel routes `on_key_down` to it via [`GitPanelView::on_field_key`]).
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Field {
+    BranchFilter,
+    NewBranchName,
+    NewBranchFrom,
+    TagName,
+    TagMessage,
+    TagFrom,
+    StashMsg,
+    Rename,
+}
+
 /// The currently previewed file.
 #[derive(Clone, PartialEq, Eq)]
 struct Selected {
@@ -318,6 +398,44 @@ pub struct GitPanelView {
     commit_error: Option<String>,
     /// Second-click confirmation latch for force-push.
     force_push_armed: bool,
+
+    // ── branch picker (port of BranchDropdown) ──
+    branch_picker_open: bool,
+    branch_filter: String,
+    checkout_error: Option<String>,
+    remotes_collapsed: bool,
+    /// Branch pending a plain delete confirmation.
+    delete_confirm_branch: Option<String>,
+    /// Branch pending a *force* delete confirmation (was not fully merged).
+    force_delete_branch: Option<String>,
+    /// Branch currently being renamed inline (its row shows a text field).
+    rename_target: Option<String>,
+    rename_buf: String,
+
+    // ── new-branch form ──
+    new_branch_open: bool,
+    new_branch_name: String,
+    new_branch_from: String,
+    new_branch_checkout: bool,
+    new_branch_error: Option<String>,
+
+    // ── tags (port of TagSection) ──
+    tags_collapsed: bool,
+    new_tag_open: bool,
+    new_tag_name: String,
+    new_tag_message: String,
+    new_tag_from: String,
+    tag_error: Option<String>,
+    delete_confirm_tag: Option<String>,
+
+    // ── stash (port of StashPanel) ──
+    stash_collapsed: bool,
+    stash_form_open: bool,
+    stash_msg: String,
+    /// Stash entry (index, hash) pending a drop confirmation.
+    drop_confirm_stash: Option<(u32, String)>,
+
+    active_field: Option<Field>,
 }
 
 impl Focusable for GitPanelView {
@@ -370,6 +488,31 @@ impl GitPanelView {
             commit_msg: String::new(),
             commit_error: None,
             force_push_armed: false,
+            branch_picker_open: false,
+            branch_filter: String::new(),
+            checkout_error: None,
+            remotes_collapsed: true,
+            delete_confirm_branch: None,
+            force_delete_branch: None,
+            rename_target: None,
+            rename_buf: String::new(),
+            new_branch_open: false,
+            new_branch_name: String::new(),
+            new_branch_from: String::new(),
+            new_branch_checkout: true,
+            new_branch_error: None,
+            tags_collapsed: true,
+            new_tag_open: false,
+            new_tag_name: String::new(),
+            new_tag_message: String::new(),
+            new_tag_from: String::new(),
+            tag_error: None,
+            delete_confirm_tag: None,
+            stash_collapsed: false,
+            stash_form_open: false,
+            stash_msg: String::new(),
+            drop_confirm_stash: None,
+            active_field: None,
         }
     }
 
@@ -877,6 +1020,384 @@ impl GitPanelView {
             .any(|b| b.name == state.current_branch && !b.is_remote && b.upstream.is_some())
     }
 
+    // ── branch / tag / stash operations ────────────────────────────────────
+
+    /// Like [`run_op`], but hands the raw `Result` to `done` instead of always
+    /// toasting — lets callers surface inline errors / drive follow-up state.
+    fn dispatch<F>(
+        &mut self,
+        op: F,
+        done: impl FnOnce(&mut Self, Result<(), String>, &mut Context<Self>) + 'static,
+        cx: &mut Context<Self>,
+    ) where
+        F: std::future::Future<Output = Result<(), String>> + Send + 'static,
+    {
+        if self.op_in_progress {
+            return;
+        }
+        self.op_in_progress = true;
+        cx.notify();
+        let jh = self.tokio.spawn(op);
+        cx.spawn(async move |this, cx| {
+            let res = jh.await.unwrap_or_else(|e| Err(e.to_string()));
+            let _ = this.update(cx, |this, cx| {
+                this.op_in_progress = false;
+                done(this, res, cx);
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn checkout_branch(&mut self, name: String, cx: &mut Context<Self>) {
+        let Some((root, sid, be)) = self.ctx() else {
+            return;
+        };
+        self.checkout_error = None;
+        let name2 = name.clone();
+        self.dispatch(
+            async move { git::git_checkout_branch(root, name2, sid, &be.ssh, be.clone()).await },
+            move |this, res, cx| match res {
+                Ok(()) => {
+                    this.checkout_error = None;
+                    this.branch_picker_open = false;
+                    this.refresh_soon(cx);
+                }
+                Err(e) => {
+                    let msg = map_checkout_error(&e);
+                    this.checkout_error = Some(msg.clone());
+                    notify_err::<()>("Checkout failed", Err(msg), cx);
+                }
+            },
+            cx,
+        );
+    }
+
+    fn create_branch(&mut self, cx: &mut Context<Self>) {
+        let name = self.new_branch_name.trim().to_string();
+        if name.is_empty() {
+            self.new_branch_error = Some("Branch name is required.".to_string());
+            cx.notify();
+            return;
+        }
+        let from = {
+            let f = self.new_branch_from.trim();
+            if f.is_empty() {
+                None
+            } else {
+                Some(f.to_string())
+            }
+        };
+        let checkout = self.new_branch_checkout;
+        let Some((root, sid, be)) = self.ctx() else {
+            return;
+        };
+        self.new_branch_error = None;
+        self.dispatch(
+            async move {
+                git::git_create_branch(root, name, from, checkout, sid, &be.ssh, be.clone()).await
+            },
+            move |this, res, cx| match res {
+                Ok(()) => {
+                    this.new_branch_open = false;
+                    this.new_branch_name.clear();
+                    this.new_branch_from.clear();
+                    this.active_field = None;
+                    this.refresh_soon(cx);
+                }
+                Err(e) => this.new_branch_error = Some(e),
+            },
+            cx,
+        );
+    }
+
+    fn delete_branch(&mut self, name: String, force: bool, cx: &mut Context<Self>) {
+        let Some((root, sid, be)) = self.ctx() else {
+            return;
+        };
+        let name2 = name.clone();
+        self.dispatch(
+            async move {
+                git::git_delete_branch(root, name2, force, sid, &be.ssh, be.clone()).await
+            },
+            move |this, res, cx| match res {
+                Ok(()) => {
+                    this.delete_confirm_branch = None;
+                    this.force_delete_branch = None;
+                    this.refresh_soon(cx);
+                }
+                Err(e) if !force && is_unmerged_branch_error(&e) => {
+                    this.delete_confirm_branch = None;
+                    this.force_delete_branch = Some(name);
+                }
+                Err(e) => {
+                    this.delete_confirm_branch = None;
+                    this.force_delete_branch = None;
+                    this.checkout_error = Some(format!("Could not delete branch: {e}"));
+                    notify_err::<()>("Delete branch failed", Err(e), cx);
+                }
+            },
+            cx,
+        );
+    }
+
+    fn rename_branch(&mut self, cx: &mut Context<Self>) {
+        let Some(old) = self.rename_target.clone() else {
+            return;
+        };
+        let new_name = self.rename_buf.trim().to_string();
+        if new_name.is_empty() || new_name == old {
+            self.rename_target = None;
+            self.active_field = None;
+            cx.notify();
+            return;
+        }
+        let Some((root, sid, be)) = self.ctx() else {
+            return;
+        };
+        self.dispatch(
+            async move {
+                git::git_rename_branch(root, old, new_name, sid, &be.ssh, be.clone()).await
+            },
+            move |this, res, cx| {
+                this.rename_target = None;
+                this.active_field = None;
+                notify_err("Rename branch failed", res, cx);
+                this.refresh_soon(cx);
+            },
+            cx,
+        );
+    }
+
+    fn create_tag(&mut self, cx: &mut Context<Self>) {
+        let name = self.new_tag_name.trim().to_string();
+        if name.is_empty() {
+            return;
+        }
+        let message = {
+            let m = self.new_tag_message.trim();
+            (!m.is_empty()).then(|| m.to_string())
+        };
+        let from = {
+            let f = self.new_tag_from.trim();
+            (!f.is_empty()).then(|| f.to_string())
+        };
+        let Some((root, sid, be)) = self.ctx() else {
+            return;
+        };
+        self.tag_error = None;
+        self.dispatch(
+            async move {
+                git::git_create_tag(root, name, message, from, sid, &be.ssh, be.clone()).await
+            },
+            move |this, res, cx| match res {
+                Ok(()) => {
+                    this.new_tag_open = false;
+                    this.new_tag_name.clear();
+                    this.new_tag_message.clear();
+                    this.new_tag_from.clear();
+                    this.active_field = None;
+                    this.refresh_soon(cx);
+                }
+                Err(e) => this.tag_error = Some(e),
+            },
+            cx,
+        );
+    }
+
+    fn delete_tag(&mut self, name: String, cx: &mut Context<Self>) {
+        let Some((root, sid, be)) = self.ctx() else {
+            return;
+        };
+        self.dispatch(
+            async move { git::git_delete_tag(root, name, sid, &be.ssh, be.clone()).await },
+            move |this, res, cx| {
+                this.delete_confirm_tag = None;
+                if let Err(e) = &res {
+                    this.tag_error = Some(e.clone());
+                }
+                notify_err("Delete tag failed", res, cx);
+                this.refresh_soon(cx);
+            },
+            cx,
+        );
+    }
+
+    fn push_tag(&mut self, name: String, cx: &mut Context<Self>) {
+        let Some((root, sid, be)) = self.ctx() else {
+            return;
+        };
+        self.dispatch(
+            async move {
+                git::git_push_tag(root, name, None, sid, &be.ssh, be.clone())
+                    .await
+                    .map(|_| ())
+            },
+            move |this, res, cx| {
+                if let Err(e) = &res {
+                    this.tag_error = Some(e.clone());
+                }
+                notify_err("Push tag failed", res, cx);
+                this.refresh_soon(cx);
+            },
+            cx,
+        );
+    }
+
+    fn stash_push(&mut self, cx: &mut Context<Self>) {
+        let message = {
+            let m = self.stash_msg.trim();
+            (!m.is_empty()).then(|| m.to_string())
+        };
+        let Some((root, sid, be)) = self.ctx() else {
+            return;
+        };
+        self.dispatch(
+            async move { git::git_stash_push(root, message, None, sid, &be.ssh, be.clone()).await },
+            move |this, res, cx| {
+                this.stash_form_open = false;
+                this.stash_msg.clear();
+                this.active_field = None;
+                notify_err("Stash failed", res, cx);
+                this.refresh_soon(cx);
+            },
+            cx,
+        );
+    }
+
+    /// `pop == true` → `git stash pop`; otherwise `git stash apply`.
+    fn stash_apply(&mut self, hash: String, pop: bool, cx: &mut Context<Self>) {
+        let Some((root, sid, be)) = self.ctx() else {
+            return;
+        };
+        self.dispatch(
+            async move {
+                if pop {
+                    git::git_stash_pop(root, hash, sid, &be.ssh, be.clone()).await
+                } else {
+                    git::git_stash_apply(root, hash, sid, &be.ssh, be.clone()).await
+                }
+            },
+            move |this, res, cx| {
+                if let Err(e) = res {
+                    notify_err::<()>(
+                        if pop {
+                            "Stash pop failed"
+                        } else {
+                            "Stash apply failed"
+                        },
+                        Err(stash_conflict_message(&e)),
+                        cx,
+                    );
+                }
+                this.refresh_soon(cx);
+            },
+            cx,
+        );
+    }
+
+    fn stash_drop(&mut self, hash: String, cx: &mut Context<Self>) {
+        let Some((root, sid, be)) = self.ctx() else {
+            return;
+        };
+        self.dispatch(
+            async move { git::git_stash_drop(root, hash, sid, &be.ssh, be.clone()).await },
+            move |this, res, cx| {
+                this.drop_confirm_stash = None;
+                notify_err("Stash drop failed", res, cx);
+                this.refresh_soon(cx);
+            },
+            cx,
+        );
+    }
+
+    // ── hand-rolled text-field routing ─────────────────────────────────────
+
+    fn field_buf_mut(&mut self, f: Field) -> &mut String {
+        match f {
+            Field::BranchFilter => &mut self.branch_filter,
+            Field::NewBranchName => &mut self.new_branch_name,
+            Field::NewBranchFrom => &mut self.new_branch_from,
+            Field::TagName => &mut self.new_tag_name,
+            Field::TagMessage => &mut self.new_tag_message,
+            Field::TagFrom => &mut self.new_tag_from,
+            Field::StashMsg => &mut self.stash_msg,
+            Field::Rename => &mut self.rename_buf,
+        }
+    }
+
+    fn field_value(&self, f: Field) -> &str {
+        match f {
+            Field::BranchFilter => &self.branch_filter,
+            Field::NewBranchName => &self.new_branch_name,
+            Field::NewBranchFrom => &self.new_branch_from,
+            Field::TagName => &self.new_tag_name,
+            Field::TagMessage => &self.new_tag_message,
+            Field::TagFrom => &self.new_tag_from,
+            Field::StashMsg => &self.stash_msg,
+            Field::Rename => &self.rename_buf,
+        }
+    }
+
+    fn submit_field(&mut self, f: Field, cx: &mut Context<Self>) {
+        match f {
+            Field::BranchFilter => {}
+            Field::NewBranchName | Field::NewBranchFrom => self.create_branch(cx),
+            Field::TagName | Field::TagMessage | Field::TagFrom => self.create_tag(cx),
+            Field::StashMsg => self.stash_push(cx),
+            Field::Rename => self.rename_branch(cx),
+        }
+    }
+
+    fn cancel_field(&mut self, f: Field) {
+        match f {
+            Field::BranchFilter => self.branch_filter.clear(),
+            Field::NewBranchName | Field::NewBranchFrom => {
+                self.new_branch_open = false;
+                self.new_branch_error = None;
+            }
+            Field::TagName | Field::TagMessage | Field::TagFrom => {
+                self.new_tag_open = false;
+                self.tag_error = None;
+            }
+            Field::StashMsg => {
+                self.stash_form_open = false;
+                self.stash_msg.clear();
+            }
+            Field::Rename => self.rename_target = None,
+        }
+        self.active_field = None;
+    }
+
+    fn on_field_key(&mut self, ev: &KeyDownEvent, _w: &mut Window, cx: &mut Context<Self>) {
+        let Some(field) = self.active_field else {
+            return;
+        };
+        let ks = &ev.keystroke;
+        match ks.key.as_str() {
+            "escape" => self.cancel_field(field),
+            "enter" => self.submit_field(field, cx),
+            "backspace" => {
+                self.field_buf_mut(field).pop();
+            }
+            key => {
+                if ks.modifiers.platform || ks.modifiers.control || ks.modifiers.alt {
+                    return;
+                }
+                let ch = ks
+                    .key_char
+                    .clone()
+                    .filter(|s| !s.is_empty() && !s.chars().any(|c| c.is_control()))
+                    .or_else(|| (key.chars().count() == 1).then(|| key.to_string()));
+                if let Some(ch) = ch {
+                    self.field_buf_mut(field).push_str(&ch);
+                }
+            }
+        }
+        cx.stop_propagation();
+        cx.notify();
+    }
+
     // ── commit-message text input ──────────────────────────────────────────
 
     fn on_commit_key(&mut self, ev: &KeyDownEvent, _w: &mut Window, cx: &mut Context<Self>) {
@@ -1249,18 +1770,24 @@ impl GitPanelView {
             .text_size(px(11.0))
             .child(
                 div()
+                    .id("git-branch-toggle")
                     .flex_1()
                     .overflow_hidden()
                     .whitespace_nowrap()
                     .text_color(c.fg)
+                    .hover(|s| s.text_color(c.accent))
                     .child(SharedString::from(format!(
-                        "\u{2325} {}",
+                        "\u{2325} {} \u{25BE}",
                         if state.current_branch.is_empty() {
                             "\u{2014}"
                         } else {
                             &state.current_branch
                         }
-                    ))),
+                    )))
+                    .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
+                        this.branch_picker_open = !this.branch_picker_open;
+                        cx.notify();
+                    })),
             );
         if status.behind > 0 {
             row = row.child(
@@ -1387,6 +1914,880 @@ impl GitPanelView {
             .into_any_element()
     }
 
+    // ── branch picker / stash rendering ────────────────────────────────────
+
+    /// A hand-rolled single-line text field (GPUI has no built-in text input
+    /// here — the panel routes key events to the [`Field`] marked active).
+    fn text_field(
+        &self,
+        id: &'static str,
+        field: Field,
+        placeholder: &'static str,
+        c: Colors,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let active = self.active_field == Some(field);
+        let value = self.field_value(field).to_string();
+        let empty = value.is_empty();
+        div()
+            .id(id)
+            .h(px(22.0))
+            .px(px(6.0))
+            .flex()
+            .items_center()
+            .overflow_hidden()
+            .whitespace_nowrap()
+            .rounded_sm()
+            .border_1()
+            .border_color(if active { c.accent } else { c.border })
+            .bg(c.bg)
+            .text_size(px(11.0))
+            .text_color(if empty { c.muted } else { c.fg })
+            .child(SharedString::from(if empty {
+                placeholder.to_string()
+            } else {
+                value
+            }))
+            .on_click(cx.listener(move |this, _: &ClickEvent, w, cx| {
+                cx.stop_propagation();
+                this.active_field = Some(field);
+                w.focus(&this.focus);
+                cx.notify();
+            }))
+    }
+
+    fn confirm_bar(
+        &self,
+        text: String,
+        c: Colors,
+        actions: Vec<(&'static str, &'static str, gpui::Hsla)>,
+        cx: &mut Context<Self>,
+        on_action: impl Fn(&mut Self, &'static str, &mut Context<Self>) + 'static + Clone,
+    ) -> gpui::AnyElement {
+        let mut row = div()
+            .flex()
+            .items_center()
+            .gap(px(6.0))
+            .px(px(8.0))
+            .py(px(4.0))
+            .bg(c.warning.opacity(0.10))
+            .text_size(px(10.0))
+            .text_color(c.warning)
+            .child(div().flex_1().child(SharedString::from(text)));
+        for (id, label, color) in actions {
+            let cb = on_action.clone();
+            row = row.child(
+                div()
+                    .id(id)
+                    .px(px(6.0))
+                    .h(px(18.0))
+                    .flex()
+                    .items_center()
+                    .rounded_sm()
+                    .border_1()
+                    .border_color(color)
+                    .text_color(color)
+                    .hover(|s| s.bg(color.opacity(0.15)))
+                    .child(SharedString::from(label))
+                    .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                        cx.stop_propagation();
+                        cb(this, id, cx);
+                    })),
+            );
+        }
+        row.into_any_element()
+    }
+
+    fn render_branch_picker(&self, c: Colors, cx: &mut Context<Self>) -> gpui::AnyElement {
+        if !self.branch_picker_open {
+            return div().into_any_element();
+        }
+        let Some(state) = &self.state else {
+            return div().into_any_element();
+        };
+        let current = state.current_branch.clone();
+        let locals = filter_branches(&state.branches, &self.branch_filter, false);
+        let remotes = filter_branches(&state.branches, &self.branch_filter, true);
+        let filtering = !self.branch_filter.trim().is_empty();
+
+        let mut body = div()
+            .id("git-branch-picker")
+            .flex()
+            .flex_col()
+            .max_h(px(320.0))
+            .overflow_y_scroll()
+            .border_t_1()
+            .border_color(c.border)
+            .bg(c.card);
+
+        // Filter + New Branch.
+        body = body.child(
+            div()
+                .flex()
+                .flex_col()
+                .gap(px(4.0))
+                .p(px(6.0))
+                .border_b_1()
+                .border_color(c.border)
+                .child(self.text_field(
+                    "git-branch-filter",
+                    Field::BranchFilter,
+                    "Filter branches\u{2026}",
+                    c,
+                    cx,
+                ))
+                .child(self.tool_btn(
+                    "git-new-branch-toggle",
+                    "+ New Branch\u{2026}",
+                    c,
+                    cx,
+                    |this, w, cx| {
+                        this.new_branch_open = !this.new_branch_open;
+                        if this.new_branch_open {
+                            this.new_branch_from = resolve_default_from_ref(
+                                &this
+                                    .state
+                                    .as_ref()
+                                    .map(|s| s.current_branch.clone())
+                                    .unwrap_or_default(),
+                            );
+                            this.active_field = Some(Field::NewBranchName);
+                            w.focus(&this.focus);
+                        }
+                        cx.notify();
+                    },
+                )),
+        );
+
+        if let Some(err) = &self.checkout_error {
+            body = body.child(
+                div()
+                    .px(px(8.0))
+                    .py(px(4.0))
+                    .bg(c.error.opacity(0.10))
+                    .text_size(px(10.0))
+                    .text_color(c.error)
+                    .child(SharedString::from(err.clone())),
+            );
+        }
+
+        if self.new_branch_open {
+            body = body.child(self.render_new_branch_form(c, cx));
+        }
+
+        // Plain / force delete confirmations.
+        if let Some(name) = self.delete_confirm_branch.clone() {
+            body = body.child(self.confirm_bar(
+                format!("Delete branch '{name}'?"),
+                c,
+                vec![
+                    ("del-yes", "Delete", c.error),
+                    ("del-no", "Cancel", c.muted),
+                ],
+                cx,
+                move |this, id, cx| {
+                    if id == "del-yes" {
+                        this.delete_branch(name.clone(), false, cx);
+                    } else {
+                        this.delete_confirm_branch = None;
+                        cx.notify();
+                    }
+                },
+            ));
+        }
+        if let Some(name) = self.force_delete_branch.clone() {
+            body = body.child(self.confirm_bar(
+                format!(
+                    "'{name}' is not fully merged \u{2014} force delete (discards its commits)?"
+                ),
+                c,
+                vec![
+                    ("fdel-yes", "Force delete", c.error),
+                    ("fdel-no", "Cancel", c.muted),
+                ],
+                cx,
+                move |this, id, cx| {
+                    if id == "fdel-yes" {
+                        this.delete_branch(name.clone(), true, cx);
+                    } else {
+                        this.force_delete_branch = None;
+                        cx.notify();
+                    }
+                },
+            ));
+        }
+
+        // Local branches.
+        body = body.child(section_label("Local Branches", c));
+        if locals.is_empty() {
+            body = body.child(picker_empty(
+                if filtering {
+                    "No matching branches"
+                } else {
+                    "No local branches"
+                },
+                c,
+            ));
+        } else {
+            for b in &locals {
+                body = body.child(self.render_branch_row(b, &current, c, cx));
+            }
+        }
+
+        // Remote branches.
+        if !remotes.is_empty() {
+            let expanded = filtering || !self.remotes_collapsed;
+            body = body.child(
+                div()
+                    .id("git-remotes-hdr")
+                    .flex()
+                    .items_center()
+                    .gap(px(4.0))
+                    .h(px(22.0))
+                    .px(px(8.0))
+                    .border_t_1()
+                    .border_color(c.border)
+                    .text_size(px(10.0))
+                    .text_color(c.muted)
+                    .child(SharedString::from(if expanded {
+                        "\u{25BE}"
+                    } else {
+                        "\u{25B8}"
+                    }))
+                    .child(SharedString::from(format!("REMOTE ({})", remotes.len())))
+                    .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
+                        this.remotes_collapsed = !this.remotes_collapsed;
+                        cx.notify();
+                    })),
+            );
+            if expanded {
+                for b in &remotes {
+                    body = body.child(self.render_branch_row(b, &current, c, cx));
+                }
+            }
+        }
+
+        // Tags.
+        body = body.child(self.render_tag_section(c, cx));
+
+        body.into_any_element()
+    }
+
+    fn render_new_branch_form(&self, c: Colors, cx: &mut Context<Self>) -> gpui::AnyElement {
+        div()
+            .flex()
+            .flex_col()
+            .gap(px(4.0))
+            .m(px(6.0))
+            .p(px(6.0))
+            .rounded_sm()
+            .border_1()
+            .border_color(c.border)
+            .bg(c.bg)
+            .child(self.text_field(
+                "git-nb-name",
+                Field::NewBranchName,
+                "Branch name (required)",
+                c,
+                cx,
+            ))
+            .child(self.text_field(
+                "git-nb-from",
+                Field::NewBranchFrom,
+                "From (default HEAD)",
+                c,
+                cx,
+            ))
+            .child(
+                div()
+                    .id("git-nb-checkout")
+                    .flex()
+                    .items_center()
+                    .gap(px(6.0))
+                    .text_size(px(10.0))
+                    .text_color(c.muted)
+                    .child(SharedString::from(if self.new_branch_checkout {
+                        "[x] Checkout after create"
+                    } else {
+                        "[ ] Checkout after create"
+                    }))
+                    .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
+                        this.new_branch_checkout = !this.new_branch_checkout;
+                        cx.notify();
+                    })),
+            )
+            .when_some(self.new_branch_error.clone(), |d, err| {
+                d.child(
+                    div()
+                        .text_size(px(10.0))
+                        .text_color(c.error)
+                        .child(SharedString::from(err)),
+                )
+            })
+            .child(
+                div()
+                    .flex()
+                    .gap(px(4.0))
+                    .child(
+                        self.tool_btn("git-nb-create", "Create", c, cx, |this, _w, cx| {
+                            this.create_branch(cx)
+                        }),
+                    )
+                    .child(
+                        self.tool_btn("git-nb-cancel", "Cancel", c, cx, |this, _w, cx| {
+                            this.new_branch_open = false;
+                            this.new_branch_error = None;
+                            this.active_field = None;
+                            cx.notify();
+                        }),
+                    ),
+            )
+            .into_any_element()
+    }
+
+    fn render_branch_row(
+        &self,
+        b: &Branch,
+        current: &str,
+        c: Colors,
+        cx: &mut Context<Self>,
+    ) -> gpui::AnyElement {
+        let is_current = !b.is_remote && b.name == current;
+        let name = b.name.clone();
+
+        if self.rename_target.as_deref() == Some(name.as_str()) {
+            return div()
+                .flex()
+                .items_center()
+                .gap(px(4.0))
+                .px(px(8.0))
+                .py(px(3.0))
+                .child(div().flex_1().child(self.text_field(
+                    "git-rename",
+                    Field::Rename,
+                    "New name",
+                    c,
+                    cx,
+                )))
+                .child(
+                    self.tool_btn("git-rename-ok", "Rename", c, cx, |this, _w, cx| {
+                        this.rename_branch(cx)
+                    }),
+                )
+                .child(
+                    self.tool_btn("git-rename-x", "Cancel", c, cx, |this, _w, cx| {
+                        this.rename_target = None;
+                        this.active_field = None;
+                        cx.notify();
+                    }),
+                )
+                .into_any_element();
+        }
+
+        let meta = [b.author.clone(), b.committed_relative.clone()]
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>()
+            .join(" \u{2022} ");
+        let co_name = name.clone();
+        let rn_name = name.clone();
+        let del_name = name.clone();
+
+        let mut row =
+            div()
+                .id(SharedString::from(format!("git-branch-{}", name)))
+                .flex()
+                .items_center()
+                .gap(px(6.0))
+                .px(px(8.0))
+                .py(px(3.0))
+                .text_size(px(12.0))
+                .text_color(c.fg)
+                .when(is_current, |d| d.bg(c.accent))
+                .hover(|s| s.bg(c.border))
+                .child(
+                    div()
+                        .w(px(10.0))
+                        .flex_shrink_0()
+                        .text_color(c.success)
+                        .text_size(px(10.0))
+                        .child(SharedString::from(if is_current { "\u{2713}" } else { "" })),
+                )
+                .child(
+                    div()
+                        .flex_1()
+                        .overflow_hidden()
+                        .flex()
+                        .flex_col()
+                        .child(
+                            div()
+                                .flex()
+                                .items_center()
+                                .gap(px(4.0))
+                                .whitespace_nowrap()
+                                .child(SharedString::from(name.clone()))
+                                .when(b.ahead > 0, |d| {
+                                    d.child(
+                                        div().text_size(px(9.0)).text_color(c.success).child(
+                                            SharedString::from(format!("\u{2191}{}", b.ahead)),
+                                        ),
+                                    )
+                                })
+                                .when(b.behind > 0, |d| {
+                                    d.child(
+                                        div().text_size(px(9.0)).text_color(c.error).child(
+                                            SharedString::from(format!("\u{2193}{}", b.behind)),
+                                        ),
+                                    )
+                                }),
+                        )
+                        .when(!meta.is_empty(), |d| {
+                            d.child(
+                                div()
+                                    .text_size(px(10.0))
+                                    .text_color(c.muted)
+                                    .overflow_hidden()
+                                    .whitespace_nowrap()
+                                    .child(SharedString::from(meta.clone())),
+                            )
+                        }),
+                )
+                .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                    if !is_current {
+                        this.checkout_branch(co_name.clone(), cx);
+                    }
+                }));
+
+        if !b.is_remote {
+            row = row.child(
+                div()
+                    .id(SharedString::from(format!("git-branch-rn-{}", name)))
+                    .flex_shrink_0()
+                    .w(px(16.0))
+                    .text_color(c.muted)
+                    .text_size(px(11.0))
+                    .hover(|s| s.text_color(c.fg))
+                    .child(SharedString::from("\u{270E}"))
+                    .on_click(cx.listener(move |this, _: &ClickEvent, w, cx| {
+                        cx.stop_propagation();
+                        this.rename_target = Some(rn_name.clone());
+                        this.rename_buf = rn_name.clone();
+                        this.active_field = Some(Field::Rename);
+                        w.focus(&this.focus);
+                        cx.notify();
+                    })),
+            );
+            if !is_current {
+                row = row.child(
+                    div()
+                        .id(SharedString::from(format!("git-branch-del-{}", name)))
+                        .flex_shrink_0()
+                        .w(px(16.0))
+                        .text_color(c.muted)
+                        .text_size(px(12.0))
+                        .hover(|s| s.text_color(c.error))
+                        .child(SharedString::from("\u{2715}"))
+                        .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                            cx.stop_propagation();
+                            this.delete_confirm_branch = Some(del_name.clone());
+                            cx.notify();
+                        })),
+                );
+            }
+        }
+
+        row.into_any_element()
+    }
+
+    fn render_tag_section(&self, c: Colors, cx: &mut Context<Self>) -> gpui::AnyElement {
+        let Some(state) = &self.state else {
+            return div().into_any_element();
+        };
+        let tags = state.tags.clone();
+        let mut wrap = div().flex().flex_col().border_t_1().border_color(c.border);
+
+        wrap = wrap.child(
+            div()
+                .flex()
+                .items_center()
+                .gap(px(4.0))
+                .h(px(22.0))
+                .px(px(8.0))
+                .text_size(px(10.0))
+                .text_color(c.muted)
+                .child(
+                    div()
+                        .id("git-tags-hdr")
+                        .flex_1()
+                        .flex()
+                        .items_center()
+                        .gap(px(4.0))
+                        .child(SharedString::from(if self.tags_collapsed {
+                            "\u{25B8}"
+                        } else {
+                            "\u{25BE}"
+                        }))
+                        .child(SharedString::from(format!("TAGS ({})", tags.len())))
+                        .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
+                            this.tags_collapsed = !this.tags_collapsed;
+                            cx.notify();
+                        })),
+                )
+                .child(
+                    div()
+                        .id("git-tags-new")
+                        .text_size(px(12.0))
+                        .hover(|s| s.text_color(c.fg))
+                        .child(SharedString::from("+"))
+                        .on_click(cx.listener(|this, _: &ClickEvent, w, cx| {
+                            this.new_tag_open = true;
+                            this.tags_collapsed = false;
+                            this.active_field = Some(Field::TagName);
+                            w.focus(&this.focus);
+                            cx.notify();
+                        })),
+                ),
+        );
+
+        if self.tags_collapsed {
+            return wrap.into_any_element();
+        }
+
+        if let Some(err) = &self.tag_error {
+            wrap = wrap.child(
+                div()
+                    .px(px(8.0))
+                    .py(px(3.0))
+                    .bg(c.error.opacity(0.10))
+                    .text_size(px(10.0))
+                    .text_color(c.error)
+                    .child(SharedString::from(err.clone())),
+            );
+        }
+
+        if self.new_tag_open {
+            wrap = wrap.child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(px(4.0))
+                    .m(px(6.0))
+                    .p(px(6.0))
+                    .rounded_sm()
+                    .border_1()
+                    .border_color(c.border)
+                    .bg(c.bg)
+                    .child(self.text_field(
+                        "git-tag-name",
+                        Field::TagName,
+                        "Tag name (required)",
+                        c,
+                        cx,
+                    ))
+                    .child(self.text_field(
+                        "git-tag-msg",
+                        Field::TagMessage,
+                        "Message (optional, annotated)",
+                        c,
+                        cx,
+                    ))
+                    .child(self.text_field(
+                        "git-tag-from",
+                        Field::TagFrom,
+                        "From (optional, default HEAD)",
+                        c,
+                        cx,
+                    ))
+                    .child(
+                        div()
+                            .flex()
+                            .gap(px(4.0))
+                            .child(self.tool_btn(
+                                "git-tag-create",
+                                "Create",
+                                c,
+                                cx,
+                                |this, _w, cx| this.create_tag(cx),
+                            ))
+                            .child(self.tool_btn(
+                                "git-tag-cancel",
+                                "Cancel",
+                                c,
+                                cx,
+                                |this, _w, cx| {
+                                    this.new_tag_open = false;
+                                    this.tag_error = None;
+                                    this.active_field = None;
+                                    cx.notify();
+                                },
+                            )),
+                    ),
+            );
+        }
+
+        if tags.is_empty() && !self.new_tag_open {
+            wrap = wrap.child(picker_empty("No tags", c));
+        }
+
+        if let Some(name) = self.delete_confirm_tag.clone() {
+            wrap = wrap.child(self.confirm_bar(
+                format!("Delete tag '{name}'?"),
+                c,
+                vec![
+                    ("tdel-yes", "Delete", c.error),
+                    ("tdel-no", "Cancel", c.muted),
+                ],
+                cx,
+                move |this, id, cx| {
+                    if id == "tdel-yes" {
+                        this.delete_tag(name.clone(), cx);
+                    } else {
+                        this.delete_confirm_tag = None;
+                        cx.notify();
+                    }
+                },
+            ));
+        }
+
+        for tag in &tags {
+            let push_tag = tag.clone();
+            let del_tag = tag.clone();
+            wrap = wrap.child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(6.0))
+                    .h(px(20.0))
+                    .px(px(8.0))
+                    .text_size(px(11.0))
+                    .text_color(c.fg)
+                    .hover(|s| s.bg(c.border))
+                    .child(
+                        div()
+                            .flex_1()
+                            .overflow_hidden()
+                            .whitespace_nowrap()
+                            .child(SharedString::from(tag.clone())),
+                    )
+                    .child(
+                        div()
+                            .id(SharedString::from(format!("git-tag-push-{tag}")))
+                            .w(px(16.0))
+                            .flex_shrink_0()
+                            .text_color(c.muted)
+                            .hover(|s| s.text_color(c.fg))
+                            .child(SharedString::from("\u{2191}"))
+                            .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                                this.push_tag(push_tag.clone(), cx);
+                            })),
+                    )
+                    .child(
+                        div()
+                            .id(SharedString::from(format!("git-tag-del-{tag}")))
+                            .w(px(16.0))
+                            .flex_shrink_0()
+                            .text_color(c.muted)
+                            .hover(|s| s.text_color(c.error))
+                            .child(SharedString::from("\u{2715}"))
+                            .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                                this.delete_confirm_tag = Some(del_tag.clone());
+                                cx.notify();
+                            })),
+                    ),
+            );
+        }
+
+        wrap.into_any_element()
+    }
+
+    fn render_stash_panel(&self, c: Colors, cx: &mut Context<Self>) -> gpui::AnyElement {
+        let Some(state) = &self.state else {
+            return div().into_any_element();
+        };
+        let entries = state.stash.clone();
+        let mut wrap = div().flex().flex_col().border_b_1().border_color(c.border);
+
+        wrap = wrap.child(
+            div()
+                .flex()
+                .items_center()
+                .gap(px(4.0))
+                .h(px(22.0))
+                .px(px(8.0))
+                .text_size(px(10.0))
+                .text_color(c.muted)
+                .child(
+                    div()
+                        .id("git-stash-hdr")
+                        .flex_1()
+                        .flex()
+                        .items_center()
+                        .gap(px(4.0))
+                        .child(SharedString::from(if self.stash_collapsed {
+                            "\u{25B8}"
+                        } else {
+                            "\u{25BE}"
+                        }))
+                        .child(SharedString::from(format!("STASHES ({})", entries.len())))
+                        .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
+                            this.stash_collapsed = !this.stash_collapsed;
+                            cx.notify();
+                        })),
+                )
+                .child(
+                    div()
+                        .id("git-stash-new")
+                        .text_size(px(12.0))
+                        .hover(|s| s.text_color(c.fg))
+                        .child(SharedString::from("+"))
+                        .on_click(cx.listener(|this, _: &ClickEvent, w, cx| {
+                            this.stash_form_open = true;
+                            this.stash_collapsed = false;
+                            this.active_field = Some(Field::StashMsg);
+                            w.focus(&this.focus);
+                            cx.notify();
+                        })),
+                ),
+        );
+
+        if self.stash_collapsed {
+            return wrap.into_any_element();
+        }
+
+        if self.stash_form_open {
+            wrap = wrap.child(
+                div()
+                    .flex()
+                    .gap(px(4.0))
+                    .px(px(8.0))
+                    .pb(px(4.0))
+                    .child(div().flex_1().child(self.text_field(
+                        "git-stash-msg",
+                        Field::StashMsg,
+                        "Stash message (optional)",
+                        c,
+                        cx,
+                    )))
+                    .child(
+                        self.tool_btn("git-stash-do", "Stash", c, cx, |this, _w, cx| {
+                            this.stash_push(cx)
+                        }),
+                    )
+                    .child(
+                        self.tool_btn("git-stash-cancel", "Cancel", c, cx, |this, _w, cx| {
+                            this.stash_form_open = false;
+                            this.stash_msg.clear();
+                            this.active_field = None;
+                            cx.notify();
+                        }),
+                    ),
+            );
+        }
+
+        if entries.is_empty() {
+            return wrap.child(picker_empty("No stashes", c)).into_any_element();
+        }
+
+        if let Some((idx, _)) = self.drop_confirm_stash.clone() {
+            wrap = wrap.child(self.confirm_bar(
+                format!("Drop stash@{{{idx}}}?"),
+                c,
+                vec![
+                    ("sdrop-yes", "Drop", c.error),
+                    ("sdrop-no", "Cancel", c.muted),
+                ],
+                cx,
+                move |this, id, cx| {
+                    if id == "sdrop-yes" {
+                        if let Some((_, hash)) = this.drop_confirm_stash.clone() {
+                            this.stash_drop(hash, cx);
+                        }
+                    } else {
+                        this.drop_confirm_stash = None;
+                        cx.notify();
+                    }
+                },
+            ));
+        }
+
+        for e in &entries {
+            let apply_hash = e.hash.clone();
+            let pop_hash = e.hash.clone();
+            let drop_idx = e.index;
+            let drop_hash = e.hash.clone();
+            wrap = wrap.child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(6.0))
+                    .h(px(20.0))
+                    .px(px(8.0))
+                    .text_size(px(11.0))
+                    .text_color(c.fg)
+                    .hover(|s| s.bg(c.border))
+                    .child(
+                        div()
+                            .flex_shrink_0()
+                            .text_size(px(9.0))
+                            .text_color(c.muted)
+                            .child(SharedString::from(e.index.to_string())),
+                    )
+                    .child(
+                        div()
+                            .flex_1()
+                            .overflow_hidden()
+                            .whitespace_nowrap()
+                            .child(SharedString::from(stash_display_message(&e.message))),
+                    )
+                    .when(!e.branch.is_empty(), |d| {
+                        d.child(
+                            div()
+                                .flex_shrink_0()
+                                .text_size(px(9.0))
+                                .text_color(c.muted)
+                                .child(SharedString::from(e.branch.clone())),
+                        )
+                    })
+                    .child(
+                        div()
+                            .id(SharedString::from(format!("git-stash-apply-{}", e.index)))
+                            .flex_shrink_0()
+                            .text_color(c.muted)
+                            .hover(|s| s.text_color(c.fg))
+                            .child(SharedString::from("A"))
+                            .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                                this.stash_apply(apply_hash.clone(), false, cx);
+                            })),
+                    )
+                    .child(
+                        div()
+                            .id(SharedString::from(format!("git-stash-pop-{}", e.index)))
+                            .flex_shrink_0()
+                            .text_color(c.muted)
+                            .hover(|s| s.text_color(c.fg))
+                            .child(SharedString::from("P"))
+                            .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                                this.stash_apply(pop_hash.clone(), true, cx);
+                            })),
+                    )
+                    .child(
+                        div()
+                            .id(SharedString::from(format!("git-stash-drop-{}", e.index)))
+                            .flex_shrink_0()
+                            .text_color(c.muted)
+                            .hover(|s| s.text_color(c.error))
+                            .child(SharedString::from("\u{2715}"))
+                            .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                                this.drop_confirm_stash = Some((drop_idx, drop_hash.clone()));
+                                cx.notify();
+                            })),
+                    ),
+            );
+        }
+
+        wrap.into_any_element()
+    }
+
     fn render_no_repo(&self, c: Colors, cx: &mut Context<Self>) -> gpui::AnyElement {
         div()
             .flex()
@@ -1418,6 +2819,7 @@ impl Render for GitPanelView {
 
         let mut root = div()
             .track_focus(&self.focus)
+            .on_key_down(cx.listener(Self::on_field_key))
             .flex()
             .flex_col()
             .size_full()
@@ -1496,6 +2898,7 @@ impl Render for GitPanelView {
             );
         }
 
+        root = root.child(self.render_stash_panel(c, cx));
         root = root.child(self.render_diff(c, cx));
 
         let mut list = div()
@@ -1536,6 +2939,7 @@ impl Render for GitPanelView {
         }
 
         root.child(list)
+            .child(self.render_branch_picker(c, cx))
             .child(self.render_branch_bar(c, cx))
             .child(self.render_commit_form(c, cx))
     }
@@ -1556,6 +2960,26 @@ fn diff_line(line: &str, c: Colors) -> impl IntoElement {
         } else {
             line.to_string()
         }))
+}
+
+fn section_label(text: &'static str, c: Colors) -> impl IntoElement {
+    div()
+        .h(px(20.0))
+        .px(px(8.0))
+        .flex()
+        .items_center()
+        .text_size(px(10.0))
+        .text_color(c.muted)
+        .child(SharedString::from(text.to_uppercase()))
+}
+
+fn picker_empty(text: &'static str, c: Colors) -> impl IntoElement {
+    div()
+        .px(px(12.0))
+        .py(px(4.0))
+        .text_size(px(11.0))
+        .text_color(c.muted)
+        .child(SharedString::from(text))
 }
 
 /// Trims a repo-relative path to its last two segments for display.
@@ -1795,6 +3219,73 @@ mod tests {
         assert_eq!(b.unstaged.len(), 1);
         assert_eq!(b.unstaged[0].path, "c");
         assert_eq!(b.untracked.len(), 1);
+    }
+
+    fn mk_branch(name: &str, remote: bool) -> Branch {
+        Branch {
+            name: name.into(),
+            is_current: false,
+            is_remote: remote,
+            upstream: None,
+            ahead: 0,
+            behind: 0,
+            author: None,
+            committed_relative: None,
+            subject: None,
+        }
+    }
+
+    #[test]
+    fn filter_branches_splits_by_kind_and_matches_case_insensitively() {
+        let bs = vec![
+            mk_branch("main", false),
+            mk_branch("feature/Login", false),
+            mk_branch("origin/main", true),
+        ];
+        let local = filter_branches(&bs, "", false);
+        assert_eq!(local.len(), 2);
+        let remote = filter_branches(&bs, "", true);
+        assert_eq!(remote.len(), 1);
+        let filtered = filter_branches(&bs, "login", false);
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].name, "feature/Login");
+        assert!(filter_branches(&bs, "  ", false).len() == 2);
+    }
+
+    #[test]
+    fn checkout_error_mapping() {
+        assert!(
+            map_checkout_error("error: Your local changes would be overwritten by checkout")
+                .contains("Stash your changes first")
+        );
+        assert_eq!(
+            map_checkout_error("boom"),
+            "Could not checkout: boom".to_string()
+        );
+        assert!(is_unmerged_branch_error(
+            "error: The branch 'x' is not fully merged."
+        ));
+        assert!(!is_unmerged_branch_error("some other error"));
+    }
+
+    #[test]
+    fn stash_message_and_conflict_helpers() {
+        assert_eq!(stash_display_message("   "), "WIP");
+        assert_eq!(stash_display_message("  fix bug "), "fix bug");
+        assert!(is_stash_conflict_error(
+            "CONFLICT (content): Merge conflict in a.txt"
+        ));
+        assert!(stash_conflict_message("CONFLICT in a.txt").contains("stash was kept"));
+        assert_eq!(stash_conflict_message("plain error"), "plain error");
+    }
+
+    #[test]
+    fn from_ref_unwraps_detached_head_label() {
+        assert_eq!(resolve_default_from_ref("main"), "main");
+        assert_eq!(
+            resolve_default_from_ref("HEAD detached at a1b2c3d"),
+            "a1b2c3d"
+        );
     }
 
     #[test]

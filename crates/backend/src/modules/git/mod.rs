@@ -2230,4 +2230,236 @@ rename_src.txt\0\
 
         let _ = std::fs::remove_dir_all(&dir);
     }
+
+    // ─── Branch / tag / stash: live end-to-end against a throwaway repo ────
+    //
+    // Drives the real public `git_*` async commands (local `GitExecutor`
+    // path) that the T09-002 Source-Control branch/stash UI wires up.
+
+    fn test_app() -> crate::App {
+        let dir = std::env::temp_dir().join(format!(
+            "labonair_git_app_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        crate::App::new(&dir).expect("App::new")
+    }
+
+    #[tokio::test]
+    async fn branch_tag_stash_lifecycle() {
+        let dir = make_temp_repo("branch_stash");
+        let path = dir.to_string_lossy().into_owned();
+        write_file(&dir, "a.txt", "one\n");
+        std::process::Command::new("git")
+            .args(["add", "."])
+            .current_dir(&dir)
+            .output()
+            .unwrap();
+        std::process::Command::new("git")
+            .args(["commit", "-q", "-m", "init"])
+            .current_dir(&dir)
+            .output()
+            .unwrap();
+
+        let app = test_app();
+        let ssh = &app.ssh;
+        let p = || path.clone();
+
+        // ── branches: create (no checkout), list, checkout, rename, delete ──
+        git_create_branch(p(), "feature".into(), None, false, None, ssh, app.clone())
+            .await
+            .expect("create branch");
+        let branches = git_get_branches(p(), None, ssh, app.clone())
+            .await
+            .expect("list branches");
+        let local: Vec<&Branch> = branches.iter().filter(|b| !b.is_remote).collect();
+        assert!(local.iter().any(|b| b.name == "feature"));
+        assert!(local.iter().any(|b| b.is_current && b.name != "feature"));
+
+        git_checkout_branch(p(), "feature".into(), None, ssh, app.clone())
+            .await
+            .expect("checkout");
+        assert_eq!(
+            git_get_current_branch(p(), None, ssh, app.clone())
+                .await
+                .unwrap(),
+            "feature"
+        );
+
+        git_rename_branch(
+            p(),
+            "feature".into(),
+            "feat2".into(),
+            None,
+            ssh,
+            app.clone(),
+        )
+        .await
+        .expect("rename");
+        assert_eq!(
+            git_get_current_branch(p(), None, ssh, app.clone())
+                .await
+                .unwrap(),
+            "feat2"
+        );
+
+        // Can't delete the current branch.
+        assert!(
+            git_delete_branch(p(), "feat2".into(), false, None, ssh, app.clone())
+                .await
+                .is_err()
+        );
+        let default_branch = branches
+            .iter()
+            .find(|b| b.is_current && !b.is_remote)
+            .map(|b| b.name.clone())
+            .unwrap();
+        git_checkout_branch(p(), default_branch.clone(), None, ssh, app.clone())
+            .await
+            .unwrap();
+        git_delete_branch(p(), "feat2".into(), false, None, ssh, app.clone())
+            .await
+            .expect("delete merged branch");
+
+        // ── tags: create, list, delete ──
+        git_create_tag(
+            p(),
+            "v1.0.0".into(),
+            Some("release".into()),
+            None,
+            None,
+            ssh,
+            app.clone(),
+        )
+        .await
+        .expect("create tag");
+        let tags = git_get_tags(p(), None, ssh, app.clone()).await.unwrap();
+        assert_eq!(tags, vec!["v1.0.0".to_string()]);
+        git_delete_tag(p(), "v1.0.0".into(), None, ssh, app.clone())
+            .await
+            .expect("delete tag");
+        assert!(git_get_tags(p(), None, ssh, app.clone())
+            .await
+            .unwrap()
+            .is_empty());
+
+        // ── stash: push, list, apply (kept), pop (removed), then drop ──
+        write_file(&dir, "a.txt", "changed\n");
+        git_stash_push(p(), Some("wip".into()), Some(false), None, ssh, app.clone())
+            .await
+            .expect("stash push");
+        assert_eq!(std::fs::read_to_string(dir.join("a.txt")).unwrap(), "one\n");
+        let stashes = git_stash_list(p(), None, ssh, app.clone()).await.unwrap();
+        assert_eq!(stashes.len(), 1);
+        assert_eq!(stashes[0].message, "wip");
+        let hash = stashes[0].hash.clone();
+
+        git_stash_apply(p(), hash.clone(), None, ssh, app.clone())
+            .await
+            .expect("stash apply");
+        assert_eq!(
+            std::fs::read_to_string(dir.join("a.txt")).unwrap(),
+            "changed\n"
+        );
+        assert_eq!(
+            git_stash_list(p(), None, ssh, app.clone())
+                .await
+                .unwrap()
+                .len(),
+            1,
+            "apply keeps the stash"
+        );
+
+        // Reset the worktree so pop applies cleanly, then pop removes it.
+        std::fs::write(dir.join("a.txt"), "one\n").unwrap();
+        git_stash_pop(p(), hash.clone(), None, ssh, app.clone())
+            .await
+            .expect("stash pop");
+        assert!(git_stash_list(p(), None, ssh, app.clone())
+            .await
+            .unwrap()
+            .is_empty());
+
+        // A second stash we drop directly.
+        write_file(&dir, "a.txt", "again\n");
+        git_stash_push(p(), None, Some(false), None, ssh, app.clone())
+            .await
+            .unwrap();
+        let h2 = git_stash_list(p(), None, ssh, app.clone()).await.unwrap()[0]
+            .hash
+            .clone();
+        git_stash_drop(p(), h2, None, ssh, app.clone())
+            .await
+            .expect("stash drop");
+        assert!(git_stash_list(p(), None, ssh, app.clone())
+            .await
+            .unwrap()
+            .is_empty());
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn checkout_with_conflicting_local_changes_is_rejected() {
+        let dir = make_temp_repo("checkout_dirty");
+        let path = dir.to_string_lossy().into_owned();
+        write_file(&dir, "a.txt", "base\n");
+        std::process::Command::new("git")
+            .args(["add", "."])
+            .current_dir(&dir)
+            .output()
+            .unwrap();
+        std::process::Command::new("git")
+            .args(["commit", "-q", "-m", "init"])
+            .current_dir(&dir)
+            .output()
+            .unwrap();
+
+        let app = test_app();
+        let ssh = &app.ssh;
+
+        // Diverge `other` so checking it out would clobber the dirty file.
+        git_create_branch(
+            path.clone(),
+            "other".into(),
+            None,
+            true,
+            None,
+            ssh,
+            app.clone(),
+        )
+        .await
+        .unwrap();
+        write_file(&dir, "a.txt", "on-other\n");
+        std::process::Command::new("git")
+            .args(["commit", "-aqm", "other change"])
+            .current_dir(&dir)
+            .output()
+            .unwrap();
+        let default_branch = git_get_branches(path.clone(), None, ssh, app.clone())
+            .await
+            .unwrap()
+            .into_iter()
+            .find(|b| !b.is_remote && b.name != "other")
+            .map(|b| b.name)
+            .unwrap();
+        git_checkout_branch(path.clone(), default_branch, None, ssh, app.clone())
+            .await
+            .unwrap();
+
+        // Uncommitted change that conflicts with `other`.
+        write_file(&dir, "a.txt", "dirty-local\n");
+        let err = git_checkout_branch(path.clone(), "other".into(), None, ssh, app.clone())
+            .await
+            .expect_err("checkout should be rejected");
+        assert!(
+            err.contains("overwritten") || err.to_lowercase().contains("would be overwritten"),
+            "unexpected error: {err}"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }
