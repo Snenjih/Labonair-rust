@@ -1,7 +1,7 @@
 # T12-002: Command-Palette und Shortcut-System
 
 ## Status
-⏳ Pending
+✅ Done
 
 ## Phase
 11 — Snippets & Command-Palette

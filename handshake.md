@@ -4,7 +4,73 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
-## Last Session: 2026-09-02 (T12-001 — Command-Snippets system)
+## Last Session: 2026-09-02 (T12-002 — Command palette & shortcut system)
+
+### What Was Done
+- **T12-002 ✅ Done.** New `crates/ui/src/command_palette.rs` (~880 lines incl.
+  11 tests) — port of `reference-src/src/modules/command-palette/*` +
+  `.../shortcuts/*`.
+  - **Shortcut table (`shortcuts.ts` port):** `ShortcutId` (30 variants),
+    `ShortcutGroup`, static `SHORTCUTS` table with cheat-sheet display tokens
+    (`keys`) + GPUI keystroke string (`binding`). Helpers `shortcuts()`,
+    `shortcut(id)`, `shortcut_keys(id)`.
+  - **Conflict detection (`conflictDetector.ts` port):** `find_conflict(binding,
+    exclude) -> Option<Conflict>` with modifier-order-insensitive `normalize()`
+    (handles the `cmd--` minus-key case). `RESERVED_ACCELERATORS` = Settings
+    (`cmd-,`) + New SSH Connection (`cmd-shift-n`). Note: `cmd-k` is NOT reserved
+    here — it is the real rebindable `ShortcutId::ShortcutsOpen` (the reference's
+    reservedAccelerators.ts / shortcuts.ts disagreed on ⌘K vs ⌘?; resolved in
+    favour of a single rebindable entry to avoid a self-conflict).
+  - **Command registry (`useCommandRegistry` port):** `CommandContext` (Terminal
+    / Editor / Sftp / Home / SshTerminal), `CommandId` (28 variants), static
+    `COMMANDS` table (id/title/section/contexts/shortcut). `available(ctx)`
+    implements the reference `filterByContext` (no-context cmds always show;
+    context-scoped only when active). `search(query, ctx)` title+section
+    substring filter. `command_for_shortcut(id)`, `context_of(kind, is_ssh)`.
+    Domains covered: Layout, Tab Actions, Terminal, Connections, Search, View,
+    AI, Snippets, Source Control, Editor, Application.
+  - **Palette view:** `CommandPalette` GPUI modal overlay (`Entity`,
+    `EventEmitter<PaletteEvent>`). Cmd+P toggles (bound in `menu.rs`). Dimmed
+    backdrop + centered card, search input line, sectioned result list, arrow
+    up/down wraparound, Enter runs, Esc closes / pops sub-page. `SwitchTab`
+    command pushes a follow-up page listing open tabs (argument-input level).
+    Hand-rolled key buffer (same pattern as `snippets.rs` / `git.rs`).
+  - **Execution:** palette emits `PaletteEvent::{Run(CommandId), SwitchToTab(id)}`
+    → `AppShell` queues into `pending_commands`, drained in `render` (where
+    `&mut Window` exists — same trick `Workspace` uses for window-less subs).
+    `AppShell::run_palette_command` dispatches the matching GPUI menu action for
+    most commands (identical path to the native menu — stub-now-wire-later, like
+    menu.rs) and services SwitchTab / DuplicateTab / CloseOtherTabs /
+    ClearTerminal / panel-focus (Ai, Snippets, GitGraph, SourceControl) directly.
+    `FormatDocument` is a registered-but-inert stub until the editor formatter
+    phase (documented in code).
+  - **New `Workspace` methods:** `active_context`, `close_other_tabs`,
+    `duplicate_active_tab` (terminal re-spawn / editor re-open), `clear_active_terminal`.
+  - **`menu.rs`:** new `CommandPalette` action + `cmd-p` binding + "Command
+    Palette…" item in the Window menu. `bindings_parse` test count 24 → 25.
+  - **`lib.rs`:** `pub mod command_palette` + re-exports (`CommandPalette`,
+    `CommandId`, `PaletteEvent`, `ShortcutId`, `shortcuts`, `shortcut`,
+    `find_conflict`, `command_for_shortcut`).
+- Verify: `cargo check`, `cargo clippy --workspace --all-targets -- -D warnings`,
+  `cargo test --workspace`, `cargo fmt --all --check` — all green. ui
+  **141 → 152** (+11), other crates unchanged.
+
+### State / Next
+- Branch `master`, committed. Pre-existing unrelated `CLAUDE.md` working-tree
+  edit deliberately left untouched / uncommitted.
+- **Next: T12-003** (or next unstarted task in `tasks/phase-11-snippets-palette/`
+  / then phase-12). Check ROADMAP.
+
+### Notes / Quirks (T12-002)
+- `gpui::prelude::FluentBuilder` must be imported for `.when()` on
+  `Stateful<Div>` (a stateful/`.id()` element) — plain `Styled` is not enough.
+- `gpui::Keystroke::parse` (`platform/keystroke.rs`) is the cheap way to
+  validate a binding string in a test without `KeyBinding::new` (which panics).
+- `window.dispatch_action(Box<dyn Action>, cx)` exists on gpui 0.2.2 `Window` —
+  lets the palette reuse the exact menu-action code path.
+
+---
+## Previous Session: 2026-09-02 (T12-001 — Command-Snippets system)
 
 ### What Was Done
 - **T12-001 ✅ Done.** New `crates/ui/src/snippets.rs` (~1970 lines incl. 15

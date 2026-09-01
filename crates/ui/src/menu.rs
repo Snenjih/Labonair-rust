@@ -68,6 +68,7 @@ actions!(
         Minimize,
         ZoomWindow,
         OpenShortcuts,
+        CommandPalette,
         NextTab,
         PrevTab,
         // ── App ───────────────────────────────────────────────────────────
@@ -149,6 +150,7 @@ fn bindings() -> Vec<KeyBinding> {
         KeyBinding::new("cmd-shift-n", NewSshConnection, None),
         KeyBinding::new("cmd-l", AskAboutSelection, None),
         KeyBinding::new("cmd-k", OpenShortcuts, None),
+        KeyBinding::new("cmd-p", CommandPalette, None),
         KeyBinding::new("cmd-,", OpenSettings, None),
         KeyBinding::new("cmd-m", Minimize, None),
         KeyBinding::new("ctrl-tab", NextTab, None),
@@ -256,6 +258,7 @@ fn app_menus() -> Vec<Menu> {
                 MenuItem::action("Minimize", Minimize),
                 MenuItem::action("Zoom", ZoomWindow),
                 MenuItem::separator(),
+                MenuItem::action("Command Palette\u{2026}", CommandPalette),
                 MenuItem::action("Keyboard Shortcuts", OpenShortcuts),
                 MenuItem::action("Settings", OpenSettings),
                 MenuItem::separator(),
@@ -284,7 +287,7 @@ mod tests {
     /// Every accelerator string parses (`KeyBinding::new` panics otherwise).
     #[test]
     fn bindings_parse() {
-        assert_eq!(bindings().len(), 24);
+        assert_eq!(bindings().len(), 25);
     }
 
     #[test]

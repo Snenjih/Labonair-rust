@@ -1003,6 +1003,45 @@ impl Workspace {
         self.focus_active(window, cx);
     }
 
+    // ── Command-palette entry points (T12-002) ─────────────────────────────
+
+    /// The [`CommandContext`] the active tab exposes, driving which
+    /// context-scoped palette commands are offered.
+    pub fn active_context(&self, cx: &App) -> Option<crate::command_palette::CommandContext> {
+        let active = self.tabs.read(cx).active()?;
+        let is_ssh = self.ssh_tabs.values().any(|t| t.tab_id == active.id);
+        crate::command_palette::context_of(active.kind, is_ssh)
+    }
+
+    /// Close every tab except the active one (palette "Close Other Tabs").
+    pub fn close_other_tabs(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let id = self.tabs.read(cx).active_id();
+        self.close_others(id, window, cx);
+    }
+
+    /// Open a fresh copy of the active tab (palette "Duplicate Tab").
+    /// Terminal tabs re-spawn (inheriting cwd); editor tabs re-open the file.
+    pub fn duplicate_active_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(active) = self.tabs.read(cx).active().cloned() else {
+            return;
+        };
+        match active.kind {
+            TabKind::Workspace => self.open_terminal_tab(window, cx),
+            TabKind::Editor => {
+                if let Some(path) = active.data.path.clone() {
+                    self.open_file(path, false, window, cx);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Send the ANSI clear-screen sequence to the active terminal pane
+    /// (palette "Clear Terminal").
+    pub fn clear_active_terminal(&self, cx: &App) {
+        self.inject_into_active_terminal("\x1b[2J\x1b[H", cx);
+    }
+
     /// Tear down one pane's session + content view.
     fn retire_pane(&mut self, pane_id: PaneId) {
         if let Some(entry) = self.panes.remove(&pane_id) {

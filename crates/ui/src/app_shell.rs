@@ -37,6 +37,7 @@ use tokio::runtime::Handle as TokioHandle;
 use crate::agent_access::{AgentAccessEntry, AgentAccessStore};
 use crate::ai_chat::{AiChatStore, AiChatView};
 use crate::background::{BackgroundStore, LayerScope};
+use crate::command_palette::{CommandId, CommandPalette, PaletteEvent};
 use crate::explorer::ExplorerView;
 use crate::git::GitPanelView;
 use crate::git_graph::GitGraphView;
@@ -128,6 +129,10 @@ pub struct AppShell {
     git_graph: Entity<GitGraphView>,
     snippets: Entity<SnippetsView>,
     ai_chat: Entity<AiChatView>,
+    command_palette: Entity<CommandPalette>,
+    /// Palette picks awaiting a `&mut Window` (drained in `render`) — same
+    /// pattern `Workspace` uses for its window-less subscriptions.
+    pending_commands: Vec<PaletteEvent>,
     /// Client-side mirror of the MCP bridge's per-tab agent-access grants,
     /// shared with `Workspace` (T11-006).
     agent_access: Entity<AgentAccessStore>,
@@ -227,6 +232,16 @@ impl AppShell {
         let ai_chat = cx.new(|cx| AiChatView::new(ai_store, theme.clone(), cx));
         cx.observe(&ai_chat, |_, _, cx| cx.notify()).detach();
 
+        let command_palette =
+            cx.new(|cx| CommandPalette::new(theme.clone(), workspace.clone(), cx));
+        cx.observe(&command_palette, |_, _, cx| cx.notify())
+            .detach();
+        cx.subscribe(&command_palette, |this, _, event: &PaletteEvent, cx| {
+            this.pending_commands.push(event.clone());
+            cx.notify();
+        })
+        .detach();
+
         let explorer = cx.new(|cx| ExplorerView::new(theme.clone(), workspace.clone(), cx));
         cx.observe(&explorer, |_, _, cx| cx.notify()).detach();
         // Root tracks the active terminal's cwd (falls back to $HOME).
@@ -283,6 +298,8 @@ impl AppShell {
             git_graph,
             snippets,
             ai_chat,
+            command_palette,
+            pending_commands: Vec::new(),
             agent_access,
             agent_badge_open: false,
             sidebar_open: true,
@@ -448,6 +465,82 @@ impl AppShell {
     fn act_prev_tab(&mut self, _: &menu::PrevTab, window: &mut Window, cx: &mut Context<Self>) {
         self.workspace
             .update(cx, |w, cx| w.cycle(false, window, cx));
+    }
+
+    fn act_command_palette(
+        &mut self,
+        _: &menu::CommandPalette,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.command_palette
+            .update(cx, |p, cx| p.toggle(window, cx));
+    }
+
+    /// Drain palette picks queued by the `PaletteEvent` subscription, now
+    /// that a `&mut Window` is available (called from `render`).
+    fn drain_pending_commands(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        for event in std::mem::take(&mut self.pending_commands) {
+            match event {
+                PaletteEvent::SwitchToTab(id) => {
+                    self.workspace
+                        .update(cx, |w, cx| w.reveal_tab(id, window, cx));
+                }
+                PaletteEvent::Run(id) => self.run_palette_command(id, window, cx),
+            }
+        }
+    }
+
+    fn run_palette_command(&mut self, id: CommandId, window: &mut Window, cx: &mut Context<Self>) {
+        // Commands that map onto a menu action dispatch it — identical code
+        // path as the native menu, and later phases that add the handler
+        // light the command up for free (same "one source of truth" the
+        // menu module documents). The rest we service directly.
+        macro_rules! dispatch {
+            ($action:expr) => {
+                window.dispatch_action(Box::new($action), cx)
+            };
+        }
+        match id {
+            CommandId::NewTerminalTab => dispatch!(menu::NewTerminalTab),
+            CommandId::NewEditorTab => dispatch!(menu::NewEditorTab),
+            CommandId::CloseTab => dispatch!(menu::CloseTab),
+            CommandId::ClosePane => dispatch!(menu::ClosePane),
+            CommandId::SplitRight => dispatch!(menu::SplitPaneRight),
+            CommandId::SplitDown => dispatch!(menu::SplitPaneDown),
+            CommandId::NextTab => dispatch!(menu::NextTab),
+            CommandId::PrevTab => dispatch!(menu::PrevTab),
+            CommandId::Find => dispatch!(menu::Find),
+            CommandId::ToggleSidebar => dispatch!(menu::ToggleSidebar),
+            CommandId::ToggleFullScreen => dispatch!(menu::ToggleFullScreen),
+            CommandId::ZoomIn => dispatch!(menu::ZoomIn),
+            CommandId::ZoomOut => dispatch!(menu::ZoomOut),
+            CommandId::ZoomReset => dispatch!(menu::ResetZoom),
+            CommandId::AskSelection => dispatch!(menu::AskAboutSelection),
+            CommandId::NewAiSession => dispatch!(menu::NewAiSession),
+            CommandId::OpenHostManager => dispatch!(menu::OpenHostManager),
+            CommandId::OpenShortcuts => dispatch!(menu::OpenShortcuts),
+            CommandId::OpenSettings => dispatch!(menu::OpenSettings),
+            CommandId::DuplicateTab => self
+                .workspace
+                .update(cx, |w, cx| w.duplicate_active_tab(window, cx)),
+            CommandId::CloseOtherTabs => self
+                .workspace
+                .update(cx, |w, cx| w.close_other_tabs(window, cx)),
+            CommandId::ClearTerminal => self
+                .workspace
+                .update(cx, |w, cx| w.clear_active_terminal(cx)),
+            CommandId::ToggleAiPanel => self.select_panel(SidebarPanel::Ai, cx),
+            CommandId::OpenSnippetsPanel => self.select_panel(SidebarPanel::Snippets, cx),
+            CommandId::OpenGitGraph => self.select_panel(SidebarPanel::GitGraph, cx),
+            CommandId::FocusSourceControl => self.select_panel(SidebarPanel::SourceControl, cx),
+            // Resolved inside the palette (opens a follow-up page).
+            CommandId::SwitchTab => {}
+            // No handler yet — the editor formatter arrives with its phase,
+            // at which point this command starts working (see menu.rs on the
+            // same "stub now, wire later" convention).
+            CommandId::FormatDocument => {}
+        }
     }
 
     fn on_search_key(&mut self, ev: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
@@ -955,6 +1048,7 @@ impl Focusable for AppShell {
 impl Render for AppShell {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.maybe_persist_geometry(window);
+        self.drain_pending_commands(window, cx);
 
         let bg = self.theme.read(cx).background();
         let background_layer = self.background.read(cx).layer(LayerScope::App);
@@ -988,6 +1082,7 @@ impl Render for AppShell {
             .on_action(cx.listener(Self::act_zoom_window))
             .on_action(cx.listener(Self::act_next_tab))
             .on_action(cx.listener(Self::act_prev_tab))
+            .on_action(cx.listener(Self::act_command_palette))
             .when(can_split, |d| {
                 d.on_action(cx.listener(Self::act_split_right))
                     .on_action(cx.listener(Self::act_split_down))
@@ -1013,6 +1108,7 @@ impl Render for AppShell {
             )
             .child(statusbar)
             .children(background_layer)
+            .child(self.command_palette.clone())
             .children(toasts)
     }
 }

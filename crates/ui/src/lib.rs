@@ -6,6 +6,7 @@ pub mod agent_access;
 pub mod ai_chat;
 pub mod app_shell;
 pub mod background;
+pub mod command_palette;
 pub mod diff;
 pub mod editor;
 pub mod explorer;
@@ -32,6 +33,10 @@ pub use app_shell::{AppShell, SidebarPanel};
 pub use background::{
     background_store, init as init_background, BackgroundFit, BackgroundStore, BackgroundTarget,
     GlobalBackground, LayerScope,
+};
+pub use command_palette::{
+    command_for_shortcut, find_conflict, shortcut, shortcuts, CommandId, CommandPalette,
+    PaletteEvent, ShortcutId,
 };
 pub use diff::{DiffLayout, DiffView};
 pub use editor::{EditorEvent, EditorView};
