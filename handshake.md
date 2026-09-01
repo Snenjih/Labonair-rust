@@ -4,7 +4,68 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
-## Last Session: 2026-09-01 (T06-003 — Vim mode)
+## Last Session: 2026-09-01 (T06-004 — Diff view)
+
+### What Was Done
+- **T06-004 ✅ Done.** Reusable line-diff core + GPUI diff pane.
+  - **`crates/editor/src/diff.rs`** (new, ~530 lines incl. 13 tests) —
+    line-based **Myers** O(ND) diff (`myers`, trace + backtrack). Public API:
+    `Diff::compute(old, new)` / `compute_with_context(old, new, ctx)` →
+    `Diff { lines: Vec<DiffLine>, hunks: Vec<Hunk> }`. `DiffLine { tag:
+    ChangeTag (Equal/Delete/Insert), old_line/new_line: Option<usize> (1-based),
+    text }`. `Hunk { old_start/old_len/new_start/new_len, lines }` +
+    `header()` (`@@ -a,b +c,d @@`) + `change_counts()`. Hunks group changed
+    lines whose 3-line context windows touch (`gap > 2*ctx+1` splits).
+    `Diff::is_unchanged()` / `stats() -> (ins, del)`. `side_by_side(&Hunk) ->
+    Vec<SideRow>` pairs delete-run/insert-run index-wise into
+    `RowKind::{Context,Delete,Insert,Replace}` rows with `SideCell { line,
+    text }`. Deliberately NOT the textual git-diff format (warning #2 in the
+    task) — plain manipulation-friendly line list.
+  - **`crates/editor/src/lib.rs`** — `pub mod diff` + re-exports.
+  - **`crates/ui/src/diff.rs`** (new, ~430 lines incl. 4 gpui tests) —
+    `DiffView` GPUI component. `set_content(old, new, title, cx)` recomputes;
+    `DiffLayout::{Unified, Split}` toggle (`toggle_layout` / button / `s` key);
+    hunk navigation `next_hunk`/`prev_hunk` (clamped, `j`/`k` / arrows /
+    header ↑↓ buttons), active hunk gets a left border in `modified` colour.
+    Unified: dual line-number gutter + `+`/`-` sign, row tint from theme
+    `success`/`error`. Split: two columns w/ divider, `Replace` rows tinted
+    `modified`. Hunk header row uses `info`. Ellipsis divider row for
+    skipped context. `on_stage_hunk(Fn(usize, &mut Window, &mut App))` hook
+    (type alias `StageHunkFn`) prepared for Phase 8 hunk staging — no
+    staging logic here.
+  - **`crates/ui/src/theme.rs`** — added `ThemeStore::status_modified()`
+    accessor (`status.modified`).
+  - **`crates/ui/src/lib.rs`** — `pub mod diff` + `pub use diff::{DiffLayout,
+    DiffView}`.
+  - Tests: editor 60 (+13), ui 61 (+4). `cargo fmt --all --check`, `cargo
+    clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`
+    all green.
+
+### Current State
+- Branch `master`, committed. Pre-existing unrelated `CLAUDE.md` working-tree
+  edit deliberately left uncommitted / untouched.
+
+### Next
+- **T06-005** (or next lowest-numbered pending in `tasks/phase-05-editor/`;
+  T06-001..004 all Done) — check `tasks/ROADMAP.md`.
+
+### Notes / Quirks (T06-004)
+- Diff body renders every hunk row directly (no virtualization). Hunks
+  already exclude unchanged gaps so it's bounded by change size; the task's
+  "consider windowed rendering for huge diffs" note is deferred — wire
+  `uniform_list` if a real perf problem shows up with Git/AI diffs.
+- The ellipsis divider is informational only (not click-to-expand). Full
+  context is available in `Diff::lines` if an expand affordance is wanted
+  later.
+- `side_by_side` pairs a delete-run with the *immediately following*
+  insert-run; a hunk with interleaved equal lines between them produces
+  separate single-sided rows, which is correct.
+- No tab/AI/Git wiring yet — `DiffView` is standalone and exported; Phase 8
+  and Phase 10 call `set_content` + `on_stage_hunk`.
+
+---
+
+## Previous Session: 2026-09-01 (T06-003 — Vim mode)
 
 ### What Was Done
 - **T06-003 ✅ Done.** Self-contained modal Vim layer over `Document` (no

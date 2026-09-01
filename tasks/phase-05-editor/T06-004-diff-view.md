@@ -1,7 +1,7 @@
 # T06-004: Diff-Ansicht
 
 ## Status
-⏳ Pending
+✅ Done
 
 ## Phase
 5 — Editor

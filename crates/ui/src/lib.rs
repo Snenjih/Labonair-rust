@@ -4,6 +4,7 @@
 
 pub mod app_shell;
 pub mod background;
+pub mod diff;
 pub mod editor;
 pub mod explorer;
 pub mod menu;
@@ -21,6 +22,7 @@ pub use background::{
     background_store, init as init_background, BackgroundFit, BackgroundStore, BackgroundTarget,
     GlobalBackground, LayerScope,
 };
+pub use diff::{DiffLayout, DiffView};
 pub use editor::{EditorEvent, EditorView};
 pub use explorer::{DraggedPaths, ExplorerView};
 pub use labonair_theme::{ThemeFile, ThemeFileVariant};

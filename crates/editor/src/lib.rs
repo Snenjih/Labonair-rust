@@ -8,6 +8,7 @@
 //! mode (T06-003) and diff view (T06-004) build on top.
 
 pub mod buffer;
+pub mod diff;
 pub mod document;
 pub mod history;
 pub mod language;
@@ -16,6 +17,7 @@ pub mod syntax;
 pub mod vim;
 
 pub use buffer::{Position, TextBuffer};
+pub use diff::{side_by_side, ChangeTag, Diff, DiffLine, Hunk, RowKind, SideCell, SideRow};
 pub use document::{Document, Motion};
 pub use language::Language;
 pub use search::{find_all, next_match, replace_all, Match, SearchQuery};

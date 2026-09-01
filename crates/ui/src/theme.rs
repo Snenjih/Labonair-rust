@@ -321,6 +321,11 @@ impl ThemeStore {
         self.theme().status.info
     }
 
+    /// `--modified` status color (changed / dirty markers, diff "replaced").
+    pub fn status_modified(&self) -> Hsla {
+        self.theme().status.modified
+    }
+
     /// `--success` status color (severity: success).
     pub fn status_success(&self) -> Hsla {
         self.theme().status.success
