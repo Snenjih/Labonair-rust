@@ -1,7 +1,7 @@
 # T06-001: Editor-Fundament und Datei-Öffnen/Speichern
 
 ## Status
-⏳ Pending
+✅ Done
 
 ## Phase
 5 — Editor

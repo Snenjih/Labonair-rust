@@ -4,7 +4,86 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
-## Last Session: 2026-09-01 (T05-002 — drag-and-drop & advanced file actions)
+## Last Session: 2026-09-01 (T06-001 — editor foundation & file open/save)
+
+### What Was Done
+- **T06-001 ✅ Done.** Native code-editor foundation. No CodeMirror / web tech;
+  a framework-free editing model in the `labonair-editor` crate plus a GPUI
+  view in `labonair-ui`.
+  - **`crates/editor/`** (was an empty stub) — new modules:
+    - `buffer.rs` — `TextBuffer` (`Vec<String>` lines, char-indexed
+      `Position`), `insert`/`delete` handle multi-line + Unicode (columns are
+      char indices, not bytes), round-trips trailing newline.
+    - `history.rs` — `History` undo/redo of full snapshots, coalesces
+      same-kind edits within 600ms; `EditKind::Barrier` (paste/reload/replace-
+      all) never coalesces; caret moves call `break_coalescing`.
+    - `search.rs` — literal (non-regex) `find_all` / `next_match` (wrapping) /
+      `replace_all`, case-sensitive + whole-word options, single-line matches.
+    - `language.rs` — `Language` enum, extension/filename detection (status
+      bar + T06-002 grammar hook prep).
+    - `document.rs` — `Document` = buffer + caret + selection + history +
+      saved-text baseline (`is_dirty`), `disk_mtime` + `external_change`
+      flag, `Motion` enum (word/line/doc/page nav with sticky goal column),
+      `insert`/`backspace`/`delete_forward`/`undo`/`redo`/`replace_all`/
+      `reload`/`mark_saved`.
+    - Cargo.toml: dropped the unused `gpui` dep (core is framework-free).
+  - **`crates/backend/src/modules/fs/file.rs`** — added blocking sync fns for
+    the editor (run on `cx.background_executor().spawn`): `load_editor_file_sync`
+    (`EditorLoad::{Text{content,mtime},Binary,TooLarge}`, 10 MB limit, null-byte
+    + strict-UTF-8 sniff — same rules as `fs_read_file`), `save_editor_file_sync`
+    (atomic temp+rename, returns new mtime), `file_mtime_sync`. Existing async
+    fns untouched.
+  - **`crates/ui/src/editor.rs`** (new) — `EditorView` GPUI entity:
+    viewport-based line rendering (only visible lines painted) with a
+    line-number gutter, caret + selection overlays, current-line highlight;
+    keyboard editing via `on_key_down` (printable chars, Enter, Tab→4 spaces,
+    Backspace/Delete, arrows/Home/End/PageUp-Down, Alt+arrows = word,
+    Cmd+arrows = line/doc, Shift extends selection); Cmd+S save, Cmd+Z/Cmd+Shift+Z
+    undo/redo, Cmd+A select-all, Cmd+C/X/V clipboard, Cmd+F find bar.
+    Find bar: query + replace fields (Tab toggles), Enter/Shift-Enter next/prev,
+    Cmd+Enter replace-all, Cmd+C/Cmd+W toggle case/whole-word, Esc closes.
+    External-change: `check_external` re-stats on tab activation — auto-reloads
+    if clean, else shows a conflict banner (Reload / Keep mine). Emits
+    `EditorEvent::{Changed,Edited}`. All file IO on the background executor.
+  - **`crates/ui/src/workspace.rs`** — `editors: HashMap<u64, Entity<EditorView>>`;
+    rewrote `open_file(path, peek, window, cx)` with full **peek-tab** semantics
+    (single click = peek/reuse the peek tab, double-click or already-open = 
+    permanent, first edit un-peeks via `EditorEvent::Edited`); `new_editor_tab`
+    (Cmd+E), `save_active` (Cmd+S), `find_in_active_editor` (routes Cmd+F);
+    `render_content` renders the `EditorView` for `TabKind::Editor`;
+    `focus_active` + `retire_tab` + ActiveTabChanged subscription (fires
+    `check_external`) handle editors.
+  - **`crates/ui/src/menu.rs`** — new `Save` action, `cmd-s` binding, File ▸ Save
+    menu item (binding count test 23→24).
+  - **`crates/ui/src/app_shell.rs`** — `act_save`, `act_new_editor_tab` wired as
+    root actions; `act_find` now tries the editor find bar first, falls back to
+    the terminal/header search.
+  - **`crates/ui/src/theme.rs`** — added `ThemeStore::buffer_font_size()`.
+  - **`crates/ui/src/explorer.rs`** — `open_file` passes `peek = click_count < 2`.
+  - Tests: editor crate 21, ui crate 53 (2 new editor-view tests). Full
+    `cargo test --workspace` green; clippy `-D warnings` + `cargo fmt --check`
+    clean.
+
+### Current State
+- Branch `master`, committed. Pre-existing unrelated `CLAUDE.md` working-tree
+  edit deliberately left uncommitted / untouched.
+
+### Next
+- **T06-002** — syntax highlighting & language detection (Tree-sitter grammars;
+  `Language` enum already in place as the hook point).
+
+### Notes / Quirks
+- gpui 0.2.2 `ScrollDelta::Lines(p)` — `p.y` is already `f32` (no `f32::from`);
+  `Pixels(p)` needs `f32::from(p.y)`.
+- Clippy rejects an inherent method named `from_str` (confusable with
+  `FromStr::from_str`) even with `-D warnings` off-by-default lint promoted —
+  used `TextBuffer::from_text`.
+- `on_click` needs `gpui::StatefulInteractiveElement` in scope + an `.id(...)`
+  on the div.
+
+---
+
+## Prior Session: 2026-09-01 (T05-002 — drag-and-drop & advanced file actions)
 
 ### What Was Done
 - **T05-002 ✅ Done.** Explorer drag-and-drop + copy/cut/paste buffer + OS

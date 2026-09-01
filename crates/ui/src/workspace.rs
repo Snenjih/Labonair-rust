@@ -31,6 +31,7 @@ use labonair_terminal::{
 };
 
 use crate::background::BackgroundStore;
+use crate::editor::{EditorEvent, EditorView};
 use crate::pane::{CloseOutcome, PaneId, PaneNode, SplitAxis, WorkspaceLayout};
 use crate::tabs::{Tab, TabData, TabKind, TabStore};
 use crate::terminal::TerminalView;
@@ -97,6 +98,8 @@ pub struct Workspace {
     layouts: HashMap<u64, WorkspaceLayout>,
     /// Content view + session per pane id (pane ids are process-unique).
     panes: HashMap<PaneId, PaneEntry>,
+    /// Editor view per `Editor` tab id.
+    editors: HashMap<u64, Entity<EditorView>>,
     next_pane_id: PaneId,
     /// Tab id whose close is awaiting unsaved-changes confirmation.
     confirm_close: Option<u64>,
@@ -116,6 +119,12 @@ impl Workspace {
     ) -> Self {
         let tabs = cx.new(|_| TabStore::new());
         cx.observe(&tabs, |_, _, cx| cx.notify()).detach();
+        cx.subscribe(&tabs, |this, _, ev: &crate::tabs::ActiveTabChanged, cx| {
+            if let Some(editor) = this.editors.get(&ev.0).cloned() {
+                editor.update(cx, |e, cx| e.check_external(cx));
+            }
+        })
+        .detach();
         cx.observe(&theme, |_, _, cx| cx.notify()).detach();
         cx.observe(&background, |_, _, cx| cx.notify()).detach();
 
@@ -133,6 +142,7 @@ impl Workspace {
             background,
             layouts: HashMap::new(),
             panes: HashMap::new(),
+            editors: HashMap::new(),
             next_pane_id: 1,
             confirm_close: None,
             context_menu: None,
@@ -225,26 +235,139 @@ impl Workspace {
         self.focus_active(window, cx);
     }
 
-    /// Open a file from the Explorer. Until Phase 5 lands the real editor this
-    /// opens an `Editor` tab whose content is the placeholder; the tab is
-    /// titled with the file's basename and carries its path.
-    pub fn open_file(&mut self, path: String, cx: &mut Context<Self>) {
-        let title = path
-            .rsplit('/')
-            .find(|s| !s.is_empty())
+    /// Open a file from the Explorer in the code editor. `peek` opens it as a
+    /// reusable preview tab (single click); a non-peek call (double click, or a
+    /// file already open) makes/keeps it permanent. Clicking a different file
+    /// while a peek tab is open replaces that tab's content instead of piling
+    /// up tabs — the VS Code / Labonair "peek" behaviour.
+    pub fn open_file(
+        &mut self,
+        path: String,
+        peek: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let pathbuf = std::path::PathBuf::from(&path);
+        let title = pathbuf
+            .file_name()
+            .and_then(|s| s.to_str())
             .unwrap_or(path.as_str())
             .to_string();
-        self.tabs.update(cx, |s, cx| {
-            let id = s.open(
-                TabKind::Editor,
-                TabData {
-                    path: Some(path.clone()),
-                    ..TabData::default()
-                },
-                cx,
-            );
-            s.set_custom_title(id, Some(title), cx);
+
+        // Already open (permanent) → just activate it.
+        let existing = self.editors.iter().find_map(|(tab_id, view)| {
+            (view.read(cx).path().as_deref() == Some(pathbuf.as_path())).then_some(*tab_id)
         });
+        if let Some(tab_id) = existing {
+            self.tabs.update(cx, |s, cx| {
+                if !peek {
+                    s.set_peek(tab_id, false, cx);
+                }
+                s.set_active(tab_id, cx);
+            });
+            self.focus_active(window, cx);
+            return;
+        }
+
+        // Reuse an existing peek tab if present.
+        let peek_tab = self
+            .tabs
+            .read(cx)
+            .tabs_by_kind(TabKind::Editor)
+            .iter()
+            .find(|t| t.peek)
+            .map(|t| t.id);
+
+        let tab_id = if let Some(tab_id) = peek_tab {
+            self.tabs.update(cx, |s, cx| {
+                s.set_path(tab_id, Some(path.clone()), cx);
+                s.set_custom_title(tab_id, Some(title.clone()), cx);
+                s.set_peek(tab_id, peek, cx);
+                s.set_active(tab_id, cx);
+            });
+            tab_id
+        } else {
+            let tab_id = self.tabs.update(cx, |s, cx| {
+                let id = s.open(
+                    TabKind::Editor,
+                    TabData {
+                        path: Some(path.clone()),
+                        ..TabData::default()
+                    },
+                    cx,
+                );
+                s.set_custom_title(id, Some(title.clone()), cx);
+                s.set_peek(id, peek, cx);
+                id
+            });
+            let view = self.new_editor_view(cx);
+            self.watch_editor(tab_id, &view, cx);
+            self.editors.insert(tab_id, view);
+            tab_id
+        };
+
+        let view = self.editors.get(&tab_id).cloned();
+        if let Some(view) = view {
+            view.update(cx, |e, cx| e.open_path(pathbuf, cx));
+        }
+        self.focus_active(window, cx);
+    }
+
+    /// `Cmd-E` / File ▸ New Editor Tab — an empty, pathless editor.
+    pub fn new_editor_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let tab_id = self
+            .tabs
+            .update(cx, |s, cx| s.open(TabKind::Editor, TabData::default(), cx));
+        let view = self.new_editor_view(cx);
+        self.watch_editor(tab_id, &view, cx);
+        self.editors.insert(tab_id, view);
+        self.focus_active(window, cx);
+    }
+
+    /// Save the active editor tab (`Cmd-S`).
+    pub fn save_active(&mut self, cx: &mut Context<Self>) {
+        let id = self.tabs.read(cx).active_id();
+        if let Some(view) = self.editors.get(&id).cloned() {
+            view.update(cx, |e, cx| e.save(cx));
+        }
+    }
+
+    /// Route the header's Find action: editor tab → editor find bar (returns
+    /// `true`); otherwise let the caller open the terminal search.
+    pub fn find_in_active_editor(&mut self, cx: &mut Context<Self>) -> bool {
+        let id = self.tabs.read(cx).active_id();
+        if let Some(view) = self.editors.get(&id).cloned() {
+            view.update(cx, |e, cx| e.toggle_find(cx));
+            true
+        } else {
+            false
+        }
+    }
+
+    fn new_editor_view(&self, cx: &mut Context<Self>) -> Entity<EditorView> {
+        let theme = self.theme.clone();
+        cx.new(|cx| EditorView::new(theme, cx))
+    }
+
+    fn watch_editor(&self, tab_id: u64, view: &Entity<EditorView>, cx: &mut Context<Self>) {
+        cx.subscribe(view, move |this, view, ev: &EditorEvent, cx| {
+            let dirty = view.read(cx).is_dirty();
+            this.tabs.update(cx, |s, cx| {
+                s.set_dirty(tab_id, dirty, cx);
+                if matches!(ev, EditorEvent::Edited) {
+                    s.set_peek(tab_id, false, cx);
+                }
+                if let Some(title) = view
+                    .read(cx)
+                    .path()
+                    .and_then(|p| p.file_name().and_then(|n| n.to_str()).map(str::to_string))
+                {
+                    s.set_custom_title(tab_id, Some(title), cx);
+                }
+            });
+            cx.notify();
+        })
+        .detach();
     }
 
     /// Split the active workspace pane along `axis`.
@@ -446,7 +569,10 @@ impl Workspace {
     }
 
     fn focus_active(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if let Some(view) = self.active_pane_view(cx) {
+        let active_id = self.tabs.read(cx).active_id();
+        if let Some(editor) = self.editors.get(&active_id) {
+            editor.read(cx).focus(window);
+        } else if let Some(view) = self.active_pane_view(cx) {
             view.read(cx).focus(window);
         } else {
             window.focus(&self.focus_handle);
@@ -517,6 +643,7 @@ impl Workspace {
                 self.retire_pane(leaf);
             }
         }
+        self.editors.remove(&tab.id);
     }
 
     fn sync_meta(&mut self, cx: &mut Context<Self>) {
@@ -692,18 +819,16 @@ impl Workspace {
                     self.placeholder("Terminal", cx).into_any_element()
                 }
             }
-            other => {
-                let label = if other == TabKind::Editor {
-                    active
-                        .data
-                        .path
-                        .clone()
-                        .unwrap_or_else(|| other.default_title().to_string())
+            TabKind::Editor => {
+                if let Some(view) = self.editors.get(&active.id) {
+                    view.clone().into_any_element()
                 } else {
-                    other.default_title().to_string()
-                };
-                self.placeholder(&label, cx).into_any_element()
+                    self.placeholder("Editor", cx).into_any_element()
+                }
             }
+            other => self
+                .placeholder(other.default_title(), cx)
+                .into_any_element(),
         }
     }
 

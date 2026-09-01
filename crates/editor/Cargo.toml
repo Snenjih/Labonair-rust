@@ -4,4 +4,4 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-gpui = { workspace = true }
+# gpui not needed by the core editing model; the GPUI view lives in labonair-ui.

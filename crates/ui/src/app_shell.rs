@@ -293,7 +293,26 @@ impl AppShell {
     }
 
     fn act_find(&mut self, _: &menu::Find, window: &mut Window, cx: &mut Context<Self>) {
-        self.open_search(window, cx);
+        let handled = self
+            .workspace
+            .update(cx, |w, cx| w.find_in_active_editor(cx));
+        if !handled {
+            self.open_search(window, cx);
+        }
+    }
+
+    fn act_save(&mut self, _: &menu::Save, _: &mut Window, cx: &mut Context<Self>) {
+        self.workspace.update(cx, |w, cx| w.save_active(cx));
+    }
+
+    fn act_new_editor_tab(
+        &mut self,
+        _: &menu::NewEditorTab,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.workspace
+            .update(cx, |w, cx| w.new_editor_tab(window, cx));
     }
 
     fn act_toggle_sidebar(
@@ -703,6 +722,8 @@ impl Render for AppShell {
             .bg(bg)
             .text_xs()
             .on_action(cx.listener(Self::act_new_terminal_tab))
+            .on_action(cx.listener(Self::act_new_editor_tab))
+            .on_action(cx.listener(Self::act_save))
             .on_action(cx.listener(Self::act_close_tab))
             .on_action(cx.listener(Self::act_find))
             .on_action(cx.listener(Self::act_toggle_sidebar))

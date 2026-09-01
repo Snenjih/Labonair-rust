@@ -1,0 +1,1008 @@
+//! GPUI code-editor view (T06-001).
+//!
+//! Renders and drives a [`labonair_editor::Document`]: viewport-based line
+//! rendering with a line-number gutter, caret + selection, keyboard editing,
+//! undo/redo, `Cmd-S` save (atomic write via
+//! [`labonair_backend::modules::fs::file::save_editor_file_sync`]), a find /
+//! replace bar (`Cmd-F`), and external-change detection with a reload banner.
+//!
+//! The view owns no file IO on the main thread — reads and writes run on
+//! `cx.background_executor().spawn`. It emits [`EditorEvent`] so the hosting
+//! [`crate::workspace::Workspace`] can mirror the dirty flag and peek state
+//! onto the tab.
+
+use std::path::PathBuf;
+
+use gpui::prelude::FluentBuilder;
+use gpui::{
+    canvas, div, px, App, Bounds, ClickEvent, ClipboardItem, Context, Entity, EventEmitter,
+    FocusHandle, Focusable, InteractiveElement, IntoElement, KeyDownEvent, MouseButton,
+    MouseDownEvent, ParentElement, Pixels, Point, Render, ScrollWheelEvent, SharedString,
+    StatefulInteractiveElement, Styled, Window,
+};
+use labonair_backend::modules::fs::file::{
+    file_mtime_sync, load_editor_file_sync, save_editor_file_sync, EditorLoad,
+};
+use labonair_editor::{
+    document::Motion, find_all, next_match, Document, Match, Position, SearchQuery,
+};
+
+use crate::notifications::{notification_center, Notification};
+use crate::theme::ThemeStore;
+
+/// Editor → workspace notifications.
+#[derive(Clone, Copy, Debug)]
+pub enum EditorEvent {
+    /// Dirty flag or title-relevant state changed — re-sync the tab.
+    Changed,
+    /// The user made their first edit — a peek tab should become permanent.
+    Edited,
+}
+
+/// Which field the find bar is typing into.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum FindFocus {
+    Query,
+    Replace,
+}
+
+struct FindBar {
+    query: SearchQuery,
+    replacement: String,
+    focus: FindFocus,
+    replace_visible: bool,
+    matches: Vec<Match>,
+    active: usize,
+}
+
+impl Default for FindBar {
+    fn default() -> Self {
+        Self {
+            query: SearchQuery::default(),
+            replacement: String::new(),
+            focus: FindFocus::Query,
+            replace_visible: false,
+            matches: Vec::new(),
+            active: 0,
+        }
+    }
+}
+
+pub struct EditorView {
+    doc: Document,
+    theme: Entity<ThemeStore>,
+    focus_handle: FocusHandle,
+    /// Content-area bounds from the last paint (window-relative).
+    bounds: Option<Bounds<Pixels>>,
+    /// First visible buffer line.
+    scroll_top: usize,
+    /// Cached glyph metrics `(char_width, line_height)` in px.
+    metrics: (f32, f32),
+    gutter_width: f32,
+    find: Option<FindBar>,
+}
+
+impl EditorView {
+    pub fn new(theme: Entity<ThemeStore>, cx: &mut Context<Self>) -> Self {
+        cx.observe(&theme, |_, _, cx| cx.notify()).detach();
+        Self {
+            doc: Document::empty(),
+            theme,
+            focus_handle: cx.focus_handle(),
+            bounds: None,
+            scroll_top: 0,
+            metrics: (8.0, 18.0),
+            gutter_width: 48.0,
+            find: None,
+        }
+    }
+
+    pub fn focus(&self, window: &mut Window) {
+        window.focus(&self.focus_handle);
+    }
+
+    pub fn path(&self) -> Option<PathBuf> {
+        self.doc.path.clone()
+    }
+
+    pub fn is_dirty(&self) -> bool {
+        self.doc.is_dirty()
+    }
+
+    pub fn title(&self) -> String {
+        let base = self
+            .doc
+            .path
+            .as_ref()
+            .and_then(|p| p.file_name())
+            .and_then(|s| s.to_str())
+            .map(str::to_string)
+            .unwrap_or_else(|| "Untitled".to_string());
+        base
+    }
+
+    // ── Loading ─────────────────────────────────────────────────────────────
+
+    /// Load `path` into this view, replacing any current document.
+    pub fn open_path(&mut self, path: PathBuf, cx: &mut Context<Self>) {
+        let path_str = path.to_string_lossy().to_string();
+        let load = cx
+            .background_executor()
+            .spawn(async move { load_editor_file_sync(&path_str, None) });
+        cx.spawn(async move |this, cx| {
+            let result = load.await;
+            let _ = this.update(cx, |this, cx| {
+                match result {
+                    Ok(EditorLoad::Text { content, mtime }) => {
+                        this.doc = Document::from_file(path, &content, mtime);
+                        this.scroll_top = 0;
+                    }
+                    Ok(EditorLoad::Binary) => {
+                        this.doc = Document::from_file(path, "// Binary file — not shown.\n", 0);
+                    }
+                    Ok(EditorLoad::TooLarge { size, limit }) => {
+                        this.doc = Document::from_file(
+                            path,
+                            &format!("// File is {size} bytes (limit {limit}) — not shown.\n"),
+                            0,
+                        );
+                    }
+                    Err(message) => {
+                        notify(cx, "Open file failed", &message);
+                        return;
+                    }
+                }
+                cx.emit(EditorEvent::Changed);
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    /// Re-stat the file; auto-reload if we have no unsaved edits, otherwise flag
+    /// the conflict for the reload banner. Called when the tab is (re)activated.
+    pub fn check_external(&mut self, cx: &mut Context<Self>) {
+        let Some(path) = self.doc.path.clone() else {
+            return;
+        };
+        let path_str = path.to_string_lossy().to_string();
+        let known = self.doc.disk_mtime;
+        let stat = cx
+            .background_executor()
+            .spawn(async move { file_mtime_sync(&path_str) });
+        cx.spawn(async move |this, cx| {
+            let Ok(mtime) = stat.await else {
+                return;
+            };
+            if mtime == known {
+                return;
+            }
+            let _ = this.update(cx, |this, cx| {
+                if this.doc.is_dirty() {
+                    this.doc.note_disk_mtime(mtime);
+                    cx.notify();
+                } else {
+                    this.reload_from_disk(cx);
+                }
+            });
+        })
+        .detach();
+    }
+
+    fn reload_from_disk(&mut self, cx: &mut Context<Self>) {
+        let Some(path) = self.doc.path.clone() else {
+            return;
+        };
+        let path_str = path.to_string_lossy().to_string();
+        let load = cx
+            .background_executor()
+            .spawn(async move { load_editor_file_sync(&path_str, None) });
+        cx.spawn(async move |this, cx| {
+            let result = load.await;
+            let _ = this.update(cx, |this, cx| {
+                if let Ok(EditorLoad::Text { content, mtime }) = result {
+                    this.doc.reload(&content, mtime);
+                    this.clamp_scroll();
+                    cx.emit(EditorEvent::Changed);
+                    cx.notify();
+                }
+            });
+        })
+        .detach();
+    }
+
+    // ── Saving ──────────────────────────────────────────────────────────────
+
+    pub fn save(&mut self, cx: &mut Context<Self>) {
+        let Some(path) = self.doc.path.clone() else {
+            notify(cx, "Save", "This document has no file path.");
+            return;
+        };
+        let path_str = path.to_string_lossy().to_string();
+        let content = self.doc.text();
+        let write = cx
+            .background_executor()
+            .spawn(async move { save_editor_file_sync(&path_str, &content) });
+        cx.spawn(async move |this, cx| {
+            let result = write.await;
+            let _ = this.update(cx, |this, cx| match result {
+                Ok(mtime) => {
+                    this.doc.mark_saved(mtime);
+                    cx.emit(EditorEvent::Changed);
+                    cx.notify();
+                }
+                Err(message) => notify(cx, "Save failed", &message),
+            });
+        })
+        .detach();
+    }
+
+    // ── Editing helpers ─────────────────────────────────────────────────────
+
+    fn after_edit(&mut self, cx: &mut Context<Self>) {
+        let was_first = self.doc.is_dirty();
+        self.ensure_cursor_visible();
+        self.refresh_matches();
+        cx.emit(EditorEvent::Changed);
+        if was_first {
+            cx.emit(EditorEvent::Edited);
+        }
+        cx.notify();
+    }
+
+    fn edit(&mut self, cx: &mut Context<Self>, f: impl FnOnce(&mut Document)) {
+        let dirty_before = self.doc.is_dirty();
+        f(&mut self.doc);
+        self.ensure_cursor_visible();
+        self.refresh_matches();
+        cx.emit(EditorEvent::Changed);
+        if !dirty_before && self.doc.is_dirty() {
+            cx.emit(EditorEvent::Edited);
+        }
+        cx.notify();
+    }
+
+    fn navigate(&mut self, motion: Motion, extend: bool, cx: &mut Context<Self>) {
+        self.doc.move_caret(motion, extend);
+        self.ensure_cursor_visible();
+        cx.notify();
+    }
+
+    fn copy(&self, cx: &mut Context<Self>) {
+        if let Some(text) = self.doc.selected_text() {
+            cx.write_to_clipboard(ClipboardItem::new_string(text));
+        }
+    }
+
+    fn cut(&mut self, cx: &mut Context<Self>) {
+        if let Some(text) = self.doc.selected_text() {
+            cx.write_to_clipboard(ClipboardItem::new_string(text));
+            self.edit(cx, |d| d.backspace());
+        }
+    }
+
+    fn paste(&mut self, cx: &mut Context<Self>) {
+        if let Some(text) = cx.read_from_clipboard().and_then(|i| i.text()) {
+            if !text.is_empty() {
+                self.edit(cx, |d| d.insert(&text));
+            }
+        }
+    }
+
+    // ── Scrolling ───────────────────────────────────────────────────────────
+
+    fn visible_rows(&self) -> usize {
+        let h = self
+            .bounds
+            .map(|b| f32::from(b.size.height))
+            .unwrap_or(600.0);
+        ((h / self.metrics.1).floor() as usize).max(1)
+    }
+
+    fn clamp_scroll(&mut self) {
+        let max = self.doc.buffer.line_count().saturating_sub(1);
+        self.scroll_top = self.scroll_top.min(max);
+    }
+
+    fn ensure_cursor_visible(&mut self) {
+        let rows = self.visible_rows();
+        let line = self.doc.cursor.line;
+        if line < self.scroll_top {
+            self.scroll_top = line;
+        } else if line >= self.scroll_top + rows {
+            self.scroll_top = line + 1 - rows;
+        }
+        self.clamp_scroll();
+    }
+
+    fn scroll_by(&mut self, lines: isize, cx: &mut Context<Self>) {
+        let max = self.doc.buffer.line_count().saturating_sub(1) as isize;
+        let next = (self.scroll_top as isize + lines).clamp(0, max);
+        if next as usize != self.scroll_top {
+            self.scroll_top = next as usize;
+            cx.notify();
+        }
+    }
+
+    // ── Find / replace ──────────────────────────────────────────────────────
+
+    pub fn toggle_find(&mut self, cx: &mut Context<Self>) {
+        if self.find.is_some() {
+            self.find = None;
+        } else {
+            let mut bar = FindBar::default();
+            if let Some(sel) = self.doc.selected_text() {
+                if !sel.contains('\n') {
+                    bar.query.text = sel;
+                }
+            }
+            self.find = Some(bar);
+            self.refresh_matches();
+        }
+        cx.notify();
+    }
+
+    fn refresh_matches(&mut self) {
+        if let Some(bar) = &mut self.find {
+            bar.matches = find_all(&self.doc.buffer, &bar.query);
+            if bar.active >= bar.matches.len() {
+                bar.active = 0;
+            }
+        }
+    }
+
+    fn select_match(&mut self, idx: usize) {
+        let Some(bar) = &mut self.find else { return };
+        let Some(m) = bar.matches.get(idx).copied() else {
+            return;
+        };
+        bar.active = idx;
+        self.doc.set_caret(m.start, false);
+        self.doc.set_caret(m.end, true);
+        self.ensure_cursor_visible();
+    }
+
+    fn find_step(&mut self, forward: bool, cx: &mut Context<Self>) {
+        self.refresh_matches();
+        let Some(bar) = &self.find else { return };
+        if bar.matches.is_empty() {
+            return;
+        }
+        let from = self.doc.cursor;
+        let idx = if forward {
+            next_match(&bar.matches, from, true).unwrap_or(0)
+        } else {
+            next_match(&bar.matches, from, false).unwrap_or(0)
+        };
+        self.select_match(idx);
+        cx.notify();
+    }
+
+    fn replace_current(&mut self, cx: &mut Context<Self>) {
+        let Some(bar) = &self.find else { return };
+        let replacement = bar.replacement.clone();
+        if self.doc.selected_text().is_some() {
+            self.edit(cx, |d| d.insert(&replacement));
+            self.find_step(true, cx);
+        } else {
+            self.find_step(true, cx);
+        }
+    }
+
+    fn replace_all(&mut self, cx: &mut Context<Self>) {
+        let Some(bar) = &self.find else { return };
+        let query = bar.query.clone();
+        let replacement = bar.replacement.clone();
+        if query.text.is_empty() {
+            return;
+        }
+        let n = self.doc.replace_all(&query, &replacement);
+        self.refresh_matches();
+        self.after_edit(cx);
+        notify_info(cx, "Replace all", &format!("{n} replacement(s)"));
+    }
+
+    fn find_key(&mut self, ev: &KeyDownEvent, cx: &mut Context<Self>) -> bool {
+        let Some(bar) = self.find.as_mut() else {
+            return false;
+        };
+        let ks = &ev.keystroke;
+        let m = &ks.modifiers;
+        match ks.key.as_str() {
+            "escape" => {
+                self.find = None;
+                cx.notify();
+                return true;
+            }
+            "enter" => {
+                if m.platform {
+                    self.replace_all(cx);
+                } else {
+                    self.find_step(!m.shift, cx);
+                }
+                return true;
+            }
+            "tab" => {
+                bar.replace_visible = true;
+                bar.focus = match bar.focus {
+                    FindFocus::Query => FindFocus::Replace,
+                    FindFocus::Replace => FindFocus::Query,
+                };
+                cx.notify();
+                return true;
+            }
+            "backspace" => {
+                match bar.focus {
+                    FindFocus::Query => {
+                        bar.query.text.pop();
+                    }
+                    FindFocus::Replace => {
+                        bar.replacement.pop();
+                    }
+                }
+                self.refresh_matches();
+                cx.notify();
+                return true;
+            }
+            _ => {}
+        }
+        if m.platform && !m.control && !m.alt {
+            match ks.key.as_str() {
+                "c" => {
+                    bar.query.case_sensitive = !bar.query.case_sensitive;
+                    self.refresh_matches();
+                    cx.notify();
+                    return true;
+                }
+                "w" => {
+                    bar.query.whole_word = !bar.query.whole_word;
+                    self.refresh_matches();
+                    cx.notify();
+                    return true;
+                }
+                _ => return true, // swallow other cmd combos while the bar is open
+            }
+        }
+        if let Some(text) = printable(ks) {
+            match bar.focus {
+                FindFocus::Query => bar.query.text.push_str(&text),
+                FindFocus::Replace => bar.replacement.push_str(&text),
+            }
+            self.refresh_matches();
+            cx.notify();
+            return true;
+        }
+        false
+    }
+
+    // ── Key handling ────────────────────────────────────────────────────────
+
+    fn on_key(&mut self, ev: &KeyDownEvent, _window: &mut Window, cx: &mut Context<Self>) {
+        if self.find.is_some() && self.find_key(ev, cx) {
+            cx.stop_propagation();
+            return;
+        }
+
+        let ks = &ev.keystroke;
+        let m = &ks.modifiers;
+
+        if m.platform && !m.control && !m.alt {
+            match ks.key.as_str() {
+                "s" => self.save(cx),
+                "z" if m.shift => self.edit(cx, Document::redo),
+                "z" => self.edit(cx, Document::undo),
+                "y" => self.edit(cx, Document::redo),
+                "a" => {
+                    self.doc.select_all();
+                    cx.notify();
+                }
+                "c" => self.copy(cx),
+                "x" => self.cut(cx),
+                "v" => self.paste(cx),
+                "f" => self.toggle_find(cx),
+                "left" => self.navigate(Motion::LineStart, m.shift, cx),
+                "right" => self.navigate(Motion::LineEnd, m.shift, cx),
+                "up" => self.navigate(Motion::DocStart, m.shift, cx),
+                "down" => self.navigate(Motion::DocEnd, m.shift, cx),
+                _ => return,
+            }
+            cx.stop_propagation();
+            return;
+        }
+
+        if m.alt && !m.platform && !m.control {
+            match ks.key.as_str() {
+                "left" => self.navigate(Motion::WordLeft, m.shift, cx),
+                "right" => self.navigate(Motion::WordRight, m.shift, cx),
+                _ => return,
+            }
+            cx.stop_propagation();
+            return;
+        }
+
+        if m.control || m.alt {
+            return;
+        }
+
+        let rows = self.visible_rows().saturating_sub(1).max(1);
+        match ks.key.as_str() {
+            "left" => self.navigate(Motion::Left, m.shift, cx),
+            "right" => self.navigate(Motion::Right, m.shift, cx),
+            "up" => self.navigate(Motion::Up, m.shift, cx),
+            "down" => self.navigate(Motion::Down, m.shift, cx),
+            "home" => self.navigate(Motion::LineStart, m.shift, cx),
+            "end" => self.navigate(Motion::LineEnd, m.shift, cx),
+            "pageup" => self.navigate(Motion::PageUp(rows), m.shift, cx),
+            "pagedown" => self.navigate(Motion::PageDown(rows), m.shift, cx),
+            "enter" => self.edit(cx, |d| d.insert("\n")),
+            "tab" => self.edit(cx, |d| d.insert("    ")),
+            "backspace" => self.edit(cx, Document::backspace),
+            "delete" => self.edit(cx, Document::delete_forward),
+            "escape" => {}
+            _ => {
+                if let Some(text) = printable(ks) {
+                    self.edit(cx, |d| d.insert(&text));
+                } else {
+                    return;
+                }
+            }
+        }
+        cx.stop_propagation();
+    }
+
+    fn position_at(&self, p: Point<Pixels>) -> Position {
+        let origin = self.bounds.map(|b| b.origin).unwrap_or_default();
+        let (cw, lh) = self.metrics;
+        let x = (f32::from(p.x - origin.x) - self.gutter_width).max(0.0);
+        let y = f32::from(p.y - origin.y).max(0.0);
+        let line = self.scroll_top + (y / lh) as usize;
+        let column = ((x / cw) + 0.5) as usize;
+        Position::new(line, column)
+    }
+
+    // ── Rendering ───────────────────────────────────────────────────────────
+
+    fn render_find_bar(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = self.theme.read(cx);
+        let (card, fg, muted, border, accent) = (
+            theme.card(),
+            theme.foreground(),
+            theme.muted_foreground(),
+            theme.border(),
+            theme.accent(),
+        );
+        let bar = self.find.as_ref().unwrap();
+        let count = if bar.matches.is_empty() {
+            "No results".to_string()
+        } else {
+            format!("{}/{}", bar.active + 1, bar.matches.len())
+        };
+
+        let field = |label: &str, value: &str, focused: bool| {
+            div()
+                .flex()
+                .items_center()
+                .gap_1()
+                .px_2()
+                .py_0p5()
+                .min_w(px(200.0))
+                .rounded_sm()
+                .border_1()
+                .border_color(if focused { accent } else { border })
+                .text_color(fg)
+                .child(div().text_xs().text_color(muted).child(label.to_string()))
+                .child(SharedString::from(value.to_string()))
+        };
+
+        let toggle = |on: bool, glyph: &str| {
+            div()
+                .px_1()
+                .rounded_sm()
+                .text_xs()
+                .text_color(if on { accent } else { muted })
+                .child(glyph.to_string())
+        };
+
+        div()
+            .flex()
+            .items_center()
+            .gap_2()
+            .w_full()
+            .flex_shrink_0()
+            .px_2()
+            .py_1()
+            .bg(card)
+            .border_b_1()
+            .border_color(border)
+            .child(field(
+                "Find",
+                &bar.query.text,
+                bar.focus == FindFocus::Query,
+            ))
+            .when(bar.replace_visible, |d| {
+                d.child(field(
+                    "Replace",
+                    &bar.replacement,
+                    bar.focus == FindFocus::Replace,
+                ))
+            })
+            .child(toggle(bar.query.case_sensitive, "Aa"))
+            .child(toggle(bar.query.whole_word, "\u{2039}W\u{203a}"))
+            .child(div().text_xs().text_color(muted).child(count))
+            .child(
+                div()
+                    .id("find-prev")
+                    .px_1()
+                    .rounded_sm()
+                    .text_color(muted)
+                    .hover(|s| s.bg(border).text_color(fg))
+                    .child("\u{2191}")
+                    .on_click(
+                        cx.listener(|this, _: &ClickEvent, _w, cx| this.find_step(false, cx)),
+                    ),
+            )
+            .child(
+                div()
+                    .id("find-next")
+                    .px_1()
+                    .rounded_sm()
+                    .text_color(muted)
+                    .hover(|s| s.bg(border).text_color(fg))
+                    .child("\u{2193}")
+                    .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| this.find_step(true, cx))),
+            )
+            .child(
+                div()
+                    .id("replace-one")
+                    .px_1()
+                    .text_xs()
+                    .rounded_sm()
+                    .text_color(muted)
+                    .hover(|s| s.bg(border).text_color(fg))
+                    .child("Replace")
+                    .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| this.replace_current(cx))),
+            )
+            .child(
+                div()
+                    .id("replace-all")
+                    .px_1()
+                    .text_xs()
+                    .rounded_sm()
+                    .text_color(muted)
+                    .hover(|s| s.bg(border).text_color(fg))
+                    .child("All")
+                    .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| this.replace_all(cx))),
+            )
+            .child(
+                div()
+                    .id("find-close")
+                    .px_1()
+                    .rounded_sm()
+                    .text_color(muted)
+                    .hover(|s| s.bg(border).text_color(fg))
+                    .child("\u{2715}")
+                    .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
+                        this.find = None;
+                        cx.notify();
+                    })),
+            )
+    }
+
+    fn render_conflict_banner(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = self.theme.read(cx);
+        let (warn, fg, border) = (theme.status_warning(), theme.foreground(), theme.border());
+        div()
+            .flex()
+            .items_center()
+            .gap_3()
+            .w_full()
+            .flex_shrink_0()
+            .px_3()
+            .py_1()
+            .bg(warn.opacity(0.15))
+            .border_b_1()
+            .border_color(border)
+            .text_xs()
+            .text_color(fg)
+            .child("This file changed on disk since you started editing.")
+            .child(
+                div()
+                    .id("conflict-reload")
+                    .px_2()
+                    .rounded_sm()
+                    .border_1()
+                    .border_color(border)
+                    .hover(|s| s.bg(border))
+                    .child("Reload (discard my changes)")
+                    .on_click(
+                        cx.listener(|this, _: &ClickEvent, _w, cx| this.reload_from_disk(cx)),
+                    ),
+            )
+            .child(
+                div()
+                    .id("conflict-keep")
+                    .px_2()
+                    .rounded_sm()
+                    .border_1()
+                    .border_color(border)
+                    .hover(|s| s.bg(border))
+                    .child("Keep mine")
+                    .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
+                        this.doc.external_change = false;
+                        cx.notify();
+                    })),
+            )
+    }
+}
+
+impl EventEmitter<EditorEvent> for EditorView {}
+
+impl Focusable for EditorView {
+    fn focus_handle(&self, _cx: &App) -> FocusHandle {
+        self.focus_handle.clone()
+    }
+}
+
+impl Render for EditorView {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = self.theme.read(cx);
+        let bg = theme.background();
+        let fg = theme.foreground();
+        let muted = theme.muted_foreground();
+        let accent = theme.accent();
+        let gutter_bg = theme.card();
+        let font = theme.buffer_font();
+        let font_px = theme.buffer_font_size();
+        let line_h = (font_px * 1.5).ceil().max(1.0);
+
+        let font_id = cx.text_system().resolve_font(&font);
+        let char_w = cx
+            .text_system()
+            .ch_advance(font_id, px(font_px))
+            .map(f32::from)
+            .unwrap_or(font_px * 0.6)
+            .max(1.0);
+        self.metrics = (char_w, line_h);
+
+        let line_count = self.doc.buffer.line_count();
+        let digits = line_count.to_string().len().max(3);
+        self.gutter_width = digits as f32 * char_w + 16.0;
+        self.clamp_scroll();
+
+        let rows = self.visible_rows();
+        let first = self.scroll_top;
+        let last = (first + rows + 1).min(line_count);
+
+        let sel = self.doc.selection();
+        let cursor = self.doc.cursor;
+        let gutter_width = self.gutter_width;
+
+        // Gutter rows.
+        let gutter = (first..last).map(|line| {
+            let on_cursor = line == cursor.line;
+            div()
+                .absolute()
+                .top(px((line - first) as f32 * line_h))
+                .left_0()
+                .w(px(gutter_width))
+                .h(px(line_h))
+                .flex()
+                .items_center()
+                .justify_end()
+                .pr(px(8.0))
+                .text_size(px(font_px))
+                .font(font.clone())
+                .text_color(if on_cursor { fg } else { muted })
+                .child(SharedString::from((line + 1).to_string()))
+        });
+
+        // Text + selection rows.
+        let text_rows = (first..last).map(|line| {
+            let top = px((line - first) as f32 * line_h);
+            let content = self.doc.buffer.line(line).to_string();
+            let mut row = div()
+                .absolute()
+                .top(top)
+                .left(px(0.0))
+                .h(px(line_h))
+                .flex()
+                .items_center()
+                .whitespace_nowrap()
+                .text_size(px(font_px))
+                .line_height(px(line_h))
+                .font(font.clone())
+                .text_color(fg);
+
+            // Selection highlight for this line.
+            if let Some((s, e)) = sel {
+                if line >= s.line && line <= e.line {
+                    let start_col = if line == s.line { s.column } else { 0 };
+                    let end_col = if line == e.line {
+                        e.column
+                    } else {
+                        self.doc.buffer.line_len(line) + 1
+                    };
+                    let x = start_col as f32 * char_w;
+                    let w = ((end_col.saturating_sub(start_col)) as f32 * char_w).max(2.0);
+                    row = row.child(
+                        div()
+                            .absolute()
+                            .left(px(x))
+                            .top(px(0.0))
+                            .w(px(w))
+                            .h(px(line_h))
+                            .bg(accent.opacity(0.3)),
+                    );
+                }
+            }
+
+            row.child(div().child(SharedString::from(content)))
+        });
+
+        // Caret.
+        let caret_visible = cursor.line >= first && cursor.line < last;
+        let caret = caret_visible.then(|| {
+            div()
+                .absolute()
+                .top(px((cursor.line - first) as f32 * line_h))
+                .left(px(cursor.column as f32 * char_w))
+                .w(px(2.0))
+                .h(px(line_h))
+                .bg(accent)
+        });
+
+        let current_line = caret_visible.then(|| {
+            div()
+                .absolute()
+                .top(px((cursor.line - first) as f32 * line_h))
+                .left(px(0.0))
+                .right(px(0.0))
+                .h(px(line_h))
+                .bg(fg.opacity(0.04))
+        });
+
+        let weak = cx.weak_entity();
+        let probe = canvas(
+            move |bounds, _window, cx| {
+                let _ = weak.update(cx, |this, cx| {
+                    if this.bounds != Some(bounds) {
+                        this.bounds = Some(bounds);
+                        cx.notify();
+                    }
+                });
+            },
+            |_, _, _, _| {},
+        )
+        .absolute()
+        .size_full();
+
+        let _ = window;
+
+        let text_area = div()
+            .relative()
+            .flex_1()
+            .min_h_0()
+            .overflow_hidden()
+            .child(probe)
+            .child(
+                div()
+                    .absolute()
+                    .inset_0()
+                    .bg(gutter_bg)
+                    .w(px(gutter_width))
+                    .children(gutter),
+            )
+            .child(
+                div()
+                    .absolute()
+                    .top_0()
+                    .bottom_0()
+                    .left(px(gutter_width))
+                    .right_0()
+                    .overflow_hidden()
+                    .children(current_line)
+                    .children(text_rows)
+                    .children(caret),
+            );
+
+        div()
+            .id("editor")
+            .track_focus(&self.focus_handle)
+            .key_context("Editor")
+            .flex()
+            .flex_col()
+            .size_full()
+            .bg(bg)
+            .when(self.doc.external_change, |d| {
+                d.child(self.render_conflict_banner(cx))
+            })
+            .when(self.find.is_some(), |d| d.child(self.render_find_bar(cx)))
+            .child(text_area)
+            .on_key_down(cx.listener(Self::on_key))
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(|this, ev: &MouseDownEvent, window, cx| {
+                    window.focus(&this.focus_handle);
+                    let pos = this.position_at(ev.position);
+                    this.doc.set_caret(pos, ev.modifiers.shift);
+                    cx.notify();
+                }),
+            )
+            .on_scroll_wheel(cx.listener(|this, ev: &ScrollWheelEvent, window, cx| {
+                let dy = match ev.delta {
+                    gpui::ScrollDelta::Lines(p) => p.y,
+                    gpui::ScrollDelta::Pixels(p) => f32::from(p.y) / this.metrics.1,
+                };
+                let _ = window;
+                if dy.abs() >= 0.01 {
+                    this.scroll_by(-(dy.round() as isize).clamp(-8, 8), cx);
+                }
+            }))
+    }
+}
+
+/// A GPUI keystroke that produces a single printable character, if any.
+fn printable(ks: &gpui::Keystroke) -> Option<String> {
+    let text = ks.key_char.clone()?;
+    if text.chars().any(|c| c.is_control()) || text.is_empty() {
+        return None;
+    }
+    Some(text)
+}
+
+fn notify(cx: &mut App, title: &str, body: &str) {
+    let (title, body) = (title.to_string(), body.to_string());
+    notification_center(cx).update(cx, |center, cx| {
+        center.push(Notification::error(title, body), cx);
+    });
+}
+
+fn notify_info(cx: &mut App, title: &str, body: &str) {
+    let (title, body) = (title.to_string(), body.to_string());
+    notification_center(cx).update(cx, |center, cx| {
+        center.push(Notification::info(title, body), cx);
+    });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use gpui::{AppContext, TestAppContext};
+
+    fn setup(cx: &mut TestAppContext) -> Entity<EditorView> {
+        cx.update(|cx| {
+            let theme = cx.new(|_| crate::theme::ThemeStore::new(gpui::WindowAppearance::Light));
+            cx.new(|cx| EditorView::new(theme, cx))
+        })
+    }
+
+    #[gpui::test]
+    fn edits_set_dirty_and_emit(cx: &mut TestAppContext) {
+        let view = setup(cx);
+        cx.update(|cx| {
+            view.update(cx, |v, cx| {
+                v.doc = Document::from_file("t.txt".into(), "abc", 1);
+                v.doc.move_caret(Motion::DocEnd, false);
+                v.edit(cx, |d| d.insert("d"));
+                assert!(v.is_dirty());
+                assert_eq!(v.doc.text(), "abcd");
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn find_navigates_matches(cx: &mut TestAppContext) {
+        let view = setup(cx);
+        cx.update(|cx| {
+            view.update(cx, |v, cx| {
+                v.doc = Document::from_file("t.txt".into(), "x y x y x", 1);
+                v.toggle_find(cx);
+                v.find.as_mut().unwrap().query.text = "x".to_string();
+                v.refresh_matches();
+                assert_eq!(v.find.as_ref().unwrap().matches.len(), 3);
+                v.find_step(true, cx);
+                assert!(v.doc.selection().is_some());
+            });
+        });
+    }
+}

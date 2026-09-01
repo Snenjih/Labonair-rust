@@ -177,6 +177,83 @@ pub async fn fs_stat(path: String) -> Result<FileStat, String> {
     .map_err(|e| e.to_string())?
 }
 
+// --- Blocking, in-process variants for the code editor (T06-001). ---
+// Same semantics as `fs_read_file` / `fs_write_file`, minus the async wrapper;
+// the GPUI editor view runs these on `cx.background_executor().spawn`. They also
+// surface the mtime so the editor can detect external changes.
+
+/// Outcome of loading a file for the editor.
+pub enum EditorLoad {
+    /// UTF-8 text plus the file's mtime (ms since epoch).
+    Text { content: String, mtime: u64 },
+    /// Binary / invalid-UTF-8 — the editor refuses to open it as text.
+    Binary,
+    /// Larger than `limit` bytes.
+    TooLarge { size: u64, limit: u64 },
+}
+
+fn mtime_ms(meta: &std::fs::Metadata) -> u64 {
+    meta.modified()
+        .ok()
+        .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+/// Read a file as editor text. `max_bytes` defaults to [`MAX_READ_BYTES`].
+pub fn load_editor_file_sync(path: &str, max_bytes: Option<u64>) -> Result<EditorLoad, String> {
+    let limit = max_bytes.unwrap_or(MAX_READ_BYTES);
+    let p = expand_home(path)?;
+    let meta = std::fs::metadata(&p).map_err(|e| e.to_string())?;
+    let size = meta.len();
+    if size > limit {
+        return Ok(EditorLoad::TooLarge { size, limit });
+    }
+    let mtime = mtime_ms(&meta);
+    let bytes = std::fs::read(&p).map_err(|e| e.to_string())?;
+    let sniff_len = bytes.len().min(BINARY_SNIFF_BYTES);
+    if bytes[..sniff_len].contains(&0) {
+        return Ok(EditorLoad::Binary);
+    }
+    match String::from_utf8(bytes) {
+        Ok(content) => Ok(EditorLoad::Text { content, mtime }),
+        Err(_) => Ok(EditorLoad::Binary),
+    }
+}
+
+/// Atomic write (stage sibling temp, rename over target). Returns the new mtime.
+pub fn save_editor_file_sync(path: &str, content: &str) -> Result<u64, String> {
+    let target = expand_home(path)?;
+    let parent = target
+        .parent()
+        .ok_or_else(|| "path has no parent".to_string())?;
+    let file_name = target
+        .file_name()
+        .and_then(|s| s.to_str())
+        .ok_or_else(|| "path has no file name".to_string())?;
+    let tmp = parent.join(format!(".{file_name}.labonair.tmp"));
+    {
+        let mut f = std::fs::File::create(&tmp).map_err(|e| e.to_string())?;
+        f.write_all(content.as_bytes()).map_err(|e| e.to_string())?;
+        f.sync_all().map_err(|e| e.to_string())?;
+    }
+    std::fs::rename(&tmp, &target).map_err(|e| {
+        let _ = std::fs::remove_file(&tmp);
+        e.to_string()
+    })?;
+    let mtime = std::fs::metadata(&target)
+        .map(|m| mtime_ms(&m))
+        .unwrap_or(0);
+    Ok(mtime)
+}
+
+/// The mtime (ms) of a file, or an error if it can't be stat'd (e.g. deleted).
+pub fn file_mtime_sync(path: &str) -> Result<u64, String> {
+    let p = expand_home(path)?;
+    let meta = std::fs::metadata(&p).map_err(|e| e.to_string())?;
+    Ok(mtime_ms(&meta))
+}
+
 pub async fn fs_file_exists(path: String) -> bool {
     tokio::task::spawn_blocking(move || {
         let p = if path == "~" {

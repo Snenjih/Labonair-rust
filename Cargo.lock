@@ -3924,9 +3924,6 @@ dependencies = [
 [[package]]
 name = "labonair-editor"
 version = "0.1.0"
-dependencies = [
- "gpui",
-]
 
 [[package]]
 name = "labonair-terminal"
@@ -3958,6 +3955,7 @@ dependencies = [
  "gpui",
  "image",
  "labonair-backend",
+ "labonair-editor",
  "labonair-terminal",
  "labonair-theme",
  "notify",

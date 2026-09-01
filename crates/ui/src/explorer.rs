@@ -824,9 +824,10 @@ impl ExplorerView {
         cx.notify();
     }
 
-    fn open_file(&mut self, path: &Path, cx: &mut Context<Self>) {
+    fn open_file(&mut self, path: &Path, peek: bool, window: &mut Window, cx: &mut Context<Self>) {
         let path = path.to_string_lossy().to_string();
-        self.workspace.update(cx, |w, cx| w.open_file(path, cx));
+        self.workspace
+            .update(cx, |w, cx| w.open_file(path, peek, window, cx));
         cx.notify();
     }
 
@@ -1333,7 +1334,7 @@ impl ExplorerView {
                     )
                     .child(div().child(glyph))
                     .child(div().flex_1().child(SharedString::from(entry.name.clone())))
-                    .on_click(cx.listener(move |this, ev: &ClickEvent, _window, cx| {
+                    .on_click(cx.listener(move |this, ev: &ClickEvent, window, cx| {
                         let additive = ev.modifiers().secondary() || ev.modifiers().shift;
                         this.select(click_path.clone(), additive, cx);
                         if additive {
@@ -1342,7 +1343,7 @@ impl ExplorerView {
                         if is_dir {
                             this.toggle_expanded(click_path.clone(), cx);
                         } else {
-                            this.open_file(&click_path, cx);
+                            this.open_file(&click_path, ev.click_count() < 2, window, cx);
                         }
                     }))
                     .on_mouse_down(

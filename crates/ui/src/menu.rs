@@ -34,6 +34,7 @@ actions!(
         NewSftpTab,
         NewPreviewTab,
         NewEditorTab,
+        Save,
         CloseTab,
         ClosePane,
         // ── Edit (OS-backed) ──────────────────────────────────────────────
@@ -133,6 +134,7 @@ fn bindings() -> Vec<KeyBinding> {
         KeyBinding::new("cmd-t", NewTerminalTab, None),
         KeyBinding::new("cmd-shift-p", NewPreviewTab, None),
         KeyBinding::new("cmd-e", NewEditorTab, None),
+        KeyBinding::new("cmd-s", Save, None),
         KeyBinding::new("cmd-w", CloseTab, None),
         KeyBinding::new("cmd-shift-w", ClosePane, None),
         KeyBinding::new("cmd-b", ToggleSidebar, None),
@@ -186,6 +188,8 @@ fn app_menus() -> Vec<Menu> {
                 MenuItem::action("New SFTP Tab", NewSftpTab),
                 MenuItem::action("New Preview Tab", NewPreviewTab),
                 MenuItem::action("New Editor Tab", NewEditorTab),
+                MenuItem::separator(),
+                MenuItem::action("Save", Save),
                 MenuItem::separator(),
                 MenuItem::action("Close Tab", CloseTab),
                 MenuItem::action("Close Pane", ClosePane),
@@ -280,7 +284,7 @@ mod tests {
     /// Every accelerator string parses (`KeyBinding::new` panics otherwise).
     #[test]
     fn bindings_parse() {
-        assert_eq!(bindings().len(), 23);
+        assert_eq!(bindings().len(), 24);
     }
 
     #[test]

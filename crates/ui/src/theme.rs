@@ -326,6 +326,11 @@ impl ThemeStore {
         }
     }
 
+    /// Code-editor font size in pixels (`preferencesStore.editorFontSize`).
+    pub fn buffer_font_size(&self) -> f32 {
+        self.theme().typography.buffer_font_size
+    }
+
     /// Terminal font size in pixels (`preferencesStore.terminalFontSize`).
     pub fn terminal_font_size(&self) -> f32 {
         self.theme().typography.terminal_font_size
