@@ -1,7 +1,7 @@
 # T07-002: Jump-Hosts und Tunnel
 
 ## Status
-⏳ Pending
+✅ Done
 
 ## Phase
 6 — SSH-UI & Host-Manager

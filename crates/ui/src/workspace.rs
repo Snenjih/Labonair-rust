@@ -28,6 +28,9 @@ use gpui::{
 };
 use labonair_backend::modules::ssh::client::{ssh_connect, ssh_disconnect, ssh_trust_host};
 use labonair_backend::modules::ssh::pty::SshPtyEvent;
+use labonair_backend::modules::ssh::tunnels::{
+    active_tunnels, ssh_start_tunnels, ssh_stop_tunnels,
+};
 use labonair_backend::{App as Backend, AppEvent, EventChannel};
 use labonair_terminal::{
     RemoteFeed, RemoteResizer, RemoteWriter, SessionHandle, SessionId, SessionOptions,
@@ -37,7 +40,7 @@ use tokio::runtime::Handle as TokioHandle;
 
 use crate::background::BackgroundStore;
 use crate::editor::{EditorEvent, EditorView};
-use crate::hosts::{HostManagerEvent, HostManagerView, HostStatus};
+use crate::hosts::{ActiveTunnelRow, HostManagerEvent, HostManagerView, HostStatus};
 use crate::pane::{CloseOutcome, PaneId, PaneNode, SplitAxis, WorkspaceLayout};
 use crate::tabs::{Tab, TabData, TabKind, TabStore};
 use crate::terminal::TerminalView;
@@ -53,6 +56,15 @@ struct SshTab {
     host_id: String,
     feed: RemoteFeed,
     tab_id: u64,
+}
+
+/// Title for an SSH terminal tab, annotated with the bastion when the
+/// connection is routed through a jump host (task T07-002, item 5).
+fn ssh_tab_title(host_label: &str, jump_label: Option<&str>) -> String {
+    match jump_label {
+        Some(j) => format!("SSH \u{00b7} {host_label}  \u{2933} {j}"),
+        None => format!("SSH \u{00b7} {host_label}"),
+    }
 }
 
 /// A blocking prompt raised mid-connect by the SSH backend.
@@ -250,6 +262,7 @@ impl Workspace {
                     for ev in events {
                         this.handle_ssh_event(ev, cx);
                     }
+                    this.refresh_active_tunnels(cx);
                 })
                 .is_ok();
             if !ok {
@@ -798,8 +811,10 @@ impl Workspace {
             if let Some(t) = self.ssh_tabs.remove(&sid) {
                 let app = self.backend.clone();
                 let ssh_id = t.ssh_id.clone();
+                let host_id = t.host_id.clone();
                 self.tokio.spawn(async move {
                     let _ = ssh_disconnect(ssh_id, &app.ssh).await;
+                    let _ = ssh_stop_tunnels(host_id, &app.tunnels).await;
                 });
                 if let Some(p) = &self.ssh_prompt {
                     if p.ssh_id() == t.ssh_id {
@@ -860,6 +875,14 @@ impl Workspace {
         feed.feed(b"Connecting\xe2\x80\xa6\r\n");
 
         let pane_id = self.alloc_pane();
+        let (host_label, jump_label) = {
+            let hm = self.host_manager.read(cx);
+            (
+                hm.host_name(&host_id).unwrap_or_else(|| host_id.clone()),
+                hm.jump_host_label(&host_id),
+            )
+        };
+        let tab_title = ssh_tab_title(&host_label, jump_label.as_deref());
         let tab_id = self.tabs.update(cx, |s, cx| {
             let id = s.open(
                 TabKind::Workspace,
@@ -870,7 +893,7 @@ impl Workspace {
                 },
                 cx,
             );
-            s.set_custom_title(id, Some(format!("SSH · {host_id}")), cx);
+            s.set_custom_title(id, Some(tab_title.clone()), cx);
             id
         });
         let view = self.new_terminal_view(handle, window, cx);
@@ -958,6 +981,50 @@ impl Workspace {
         .detach();
     }
 
+    /// Bring up this host's configured local port-forwards on a dedicated
+    /// background SSH connection (ref-counted per host by the backend). Mirrors
+    /// the reference app's `ssh_start_tunnels` call on `session_established`.
+    fn start_tunnels(&self, host_id: &str, cx: &mut Context<Self>) {
+        let app = self.backend.clone();
+        let hid = host_id.to_string();
+        let jh = self.tokio.spawn(async move {
+            ssh_start_tunnels(
+                hid,
+                &app.tunnels,
+                &app.db,
+                &app.secrets,
+                &app.trust,
+                app.clone(),
+                Some(20),
+            )
+            .await
+        });
+        cx.spawn(async move |this, cx| {
+            if let Ok(Err(e)) = jh.await {
+                tracing::warn!(%e, "failed to start SSH tunnels");
+            }
+            let _ = this.update(cx, |this, cx| this.refresh_active_tunnels(cx));
+        })
+        .detach();
+    }
+
+    /// Push the current set of running forwards into the host manager panel.
+    fn refresh_active_tunnels(&self, cx: &mut Context<Self>) {
+        let raw = active_tunnels(&self.backend.tunnels);
+        let hm = self.host_manager.read(cx);
+        let rows: Vec<ActiveTunnelRow> = raw
+            .into_iter()
+            .map(|t| ActiveTunnelRow {
+                host_label: hm.host_name(&t.host_id).unwrap_or(t.host_id),
+                local_port: t.local_port,
+                remote_host: t.remote_host,
+                remote_port: t.remote_port,
+            })
+            .collect();
+        self.host_manager
+            .update(cx, |h, cx| h.set_active_tunnels(rows, cx));
+    }
+
     fn retry_ssh(
         &mut self,
         ssh_id: &str,
@@ -1017,6 +1084,7 @@ impl Workspace {
                     .map(|t| t.host_id.clone())
                 {
                     self.set_host_status(&host, HostStatus::Connected, cx);
+                    self.start_tunnels(&host, cx);
                 }
                 if self.ssh_prompt.as_ref().map(|p| p.ssh_id()) == Some(session_id.as_str()) {
                     self.ssh_prompt = None;
@@ -1761,5 +1829,19 @@ impl Workspace {
             }
             _ => {}
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ssh_tab_title;
+
+    #[test]
+    fn ssh_tab_title_annotates_jump_route() {
+        assert_eq!(ssh_tab_title("prod-web", None), "SSH \u{00b7} prod-web");
+        assert_eq!(
+            ssh_tab_title("prod-web", Some("bastion")),
+            "SSH \u{00b7} prod-web  \u{2933} bastion"
+        );
     }
 }

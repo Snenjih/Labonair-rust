@@ -61,6 +61,16 @@ pub enum HostManagerEvent {
     Connect(String),
 }
 
+/// One running port-forward, as shown in the host manager's active-tunnel panel.
+/// Built by the workspace from `labonair_backend::modules::ssh::tunnels`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ActiveTunnelRow {
+    pub host_label: String,
+    pub local_port: u16,
+    pub remote_host: String,
+    pub remote_port: u16,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum AuthMethod {
     Password,
@@ -112,6 +122,87 @@ enum HostField {
     DefaultPath,
     Tags,
     Password,
+    TunnelLocalPort(usize),
+    TunnelRemoteHost(usize),
+    TunnelRemotePort(usize),
+}
+
+/// One editable local-forward row in the host form's Tunnels section.
+#[derive(Debug, Clone, Default, PartialEq)]
+struct TunnelDraft {
+    id: String,
+    local_port: String,
+    remote_host: String,
+    remote_port: String,
+}
+
+impl TunnelDraft {
+    fn new() -> Self {
+        Self {
+            id: uuid::Uuid::new_v4().to_string(),
+            local_port: String::new(),
+            remote_host: String::new(),
+            remote_port: String::new(),
+        }
+    }
+}
+
+/// Parse the `hosts.tunnels` JSON column into editable drafts.
+fn parse_tunnels(raw: &Option<String>) -> Vec<TunnelDraft> {
+    let Some(s) = raw.as_deref().filter(|s| !s.trim().is_empty()) else {
+        return Vec::new();
+    };
+    let Ok(serde_json::Value::Array(arr)) = serde_json::from_str::<serde_json::Value>(s) else {
+        return Vec::new();
+    };
+    arr.iter()
+        .map(|t| TunnelDraft {
+            id: t
+                .get("id")
+                .and_then(|v| v.as_str())
+                .map(str::to_string)
+                .unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
+            local_port: t
+                .get("local_port")
+                .and_then(|v| v.as_u64())
+                .map(|n| n.to_string())
+                .unwrap_or_default(),
+            remote_host: t
+                .get("remote_host")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .to_string(),
+            remote_port: t
+                .get("remote_port")
+                .and_then(|v| v.as_u64())
+                .map(|n| n.to_string())
+                .unwrap_or_default(),
+        })
+        .collect()
+}
+
+/// Serialize the drafts back to the `hosts.tunnels` JSON shape, dropping any
+/// row that is not a complete `local:<port> → host:<port>` forward.
+fn serialize_tunnels(drafts: &[TunnelDraft]) -> String {
+    let list: Vec<serde_json::Value> = drafts
+        .iter()
+        .filter_map(|d| {
+            let lp: u16 = d.local_port.trim().parse().ok()?;
+            let rp: u16 = d.remote_port.trim().parse().ok()?;
+            let rh = d.remote_host.trim();
+            if rh.is_empty() {
+                return None;
+            }
+            Some(serde_json::json!({
+                "id": d.id,
+                "type": "local",
+                "local_port": lp,
+                "remote_host": rh,
+                "remote_port": rp,
+            }))
+        })
+        .collect();
+    serde_json::to_string(&list).unwrap_or_else(|_| "[]".to_string())
 }
 
 /// Backing state of the add/edit-host form.
@@ -130,7 +221,14 @@ struct HostForm {
     credential: Option<usize>,
     /// `None` = no group; `Some(idx)` indexes into `groups`.
     group: Option<usize>,
+    /// `None` = direct; `Some(idx)` indexes into `hosts` (the bastion to route
+    /// through). The host being edited is never a valid choice.
+    jump_host: Option<usize>,
+    /// Configured local port-forwards (ProxyJump-independent).
+    tunnels: Vec<TunnelDraft>,
     focus: HostField,
+    /// Fallback edit target for a stale tunnel-field index (never rendered).
+    scratch: String,
 }
 
 impl HostForm {
@@ -148,11 +246,14 @@ impl HostForm {
             password: String::new(),
             credential: None,
             group: None,
+            jump_host: None,
+            tunnels: Vec::new(),
             focus: HostField::Name,
+            scratch: String::new(),
         }
     }
 
-    fn from_host(h: &Host, groups: &[Group], creds: &[Credential]) -> Self {
+    fn from_host(h: &Host, groups: &[Group], creds: &[Credential], hosts: &[Host]) -> Self {
         Self {
             editing_id: Some(h.id.clone()),
             name: h.name.clone(),
@@ -172,7 +273,13 @@ impl HostForm {
                 .group_id
                 .as_deref()
                 .and_then(|gid| groups.iter().position(|g| g.id == gid)),
+            jump_host: h
+                .jump_host_id
+                .as_deref()
+                .and_then(|jid| hosts.iter().position(|c| c.id == jid && c.id != h.id)),
+            tunnels: parse_tunnels(&h.tunnels),
             focus: HostField::Name,
+            scratch: String::new(),
         }
     }
 
@@ -186,6 +293,16 @@ impl HostForm {
             HostField::DefaultPath => &mut self.default_path,
             HostField::Tags => &mut self.tags,
             HostField::Password => &mut self.password,
+            HostField::TunnelLocalPort(i)
+            | HostField::TunnelRemoteHost(i)
+            | HostField::TunnelRemotePort(i)
+                if i >= self.tunnels.len() =>
+            {
+                &mut self.scratch
+            }
+            HostField::TunnelLocalPort(i) => &mut self.tunnels[i].local_port,
+            HostField::TunnelRemoteHost(i) => &mut self.tunnels[i].remote_host,
+            HostField::TunnelRemotePort(i) => &mut self.tunnels[i].remote_port,
         }
     }
 }
@@ -204,6 +321,7 @@ pub struct HostManagerView {
     groups: Vec<Group>,
     credentials: Vec<Credential>,
     statuses: Vec<(String, HostStatus)>,
+    active_tunnels: Vec<ActiveTunnelRow>,
     collapsed: HashSet<String>,
     form: Option<HostForm>,
     form_focus: FocusHandle,
@@ -234,6 +352,7 @@ impl HostManagerView {
             groups: Vec::new(),
             credentials: Vec::new(),
             statuses: Vec::new(),
+            active_tunnels: Vec::new(),
             collapsed: HashSet::new(),
             form: None,
             form_focus: cx.focus_handle(),
@@ -256,6 +375,33 @@ impl HostManagerView {
             self.statuses.push((host_id.to_string(), status));
         }
         cx.notify();
+    }
+
+    /// Replace the active-tunnel snapshot (called by the workspace each poll
+    /// tick). Only notifies when the set actually changed.
+    pub fn set_active_tunnels(&mut self, rows: Vec<ActiveTunnelRow>, cx: &mut Context<Self>) {
+        if self.active_tunnels != rows {
+            self.active_tunnels = rows;
+            cx.notify();
+        }
+    }
+
+    /// Display name for a host id, if known.
+    pub fn host_name(&self, host_id: &str) -> Option<String> {
+        self.hosts
+            .iter()
+            .find(|h| h.id == host_id)
+            .map(|h| h.name.clone())
+    }
+
+    /// Display name of the jump host a given host routes through, if any.
+    pub fn jump_host_label(&self, host_id: &str) -> Option<String> {
+        let host = self.hosts.iter().find(|h| h.id == host_id)?;
+        let jid = host.jump_host_id.as_deref()?;
+        self.hosts
+            .iter()
+            .find(|c| c.id == jid)
+            .map(|c| c.name.clone())
     }
 
     fn status_of(&self, host_id: &str) -> HostStatus {
@@ -322,6 +468,11 @@ impl HostManagerView {
             .credential
             .and_then(|i| self.credentials.get(i))
             .map(|c| c.id.clone());
+        let jump_host_id = form
+            .jump_host
+            .and_then(|i| self.hosts.get(i))
+            .map(|h| h.id.clone());
+        let tunnels_json = serialize_tunnels(&form.tunnels);
         let editing = form.editing_id.clone();
         let addr = form.address.trim().to_string();
         let user = form.username.trim().to_string();
@@ -334,30 +485,30 @@ impl HostManagerView {
                         &app.db,
                         &app.secrets,
                         id,
-                        Some(name),                                // name
-                        Some(addr),                                // host_address
-                        Some(port),                                // port
-                        Some(user),                                // username
-                        Some(auth),                                // auth_method
-                        key_path,                                  // private_key_path
-                        group_id,                                  // group_id
-                        tags,                                      // tags
-                        password,                                  // password
-                        None,                                      // sudo_password
-                        default_path,                              // default_path_ssh
-                        None,                                      // default_path_sftp
-                        None,                                      // pin_to_top
-                        None,                                      // keep_alive_interval
-                        None,                                      // keep_alive_tries
-                        None,                                      // sort_order
-                        None,                                      // tunnels
-                        None,                                      // startup_snippet_id
-                        None,                                      // startup_snippet_mode
-                        Some(cred_id.clone().unwrap_or_default()), // credential_id ("" clears)
-                        None,                                      // jump_host_id
-                        None,                                      // notes
-                        None,                                      // icon
-                        None,                                      // block_agent_access
+                        Some(name),                                     // name
+                        Some(addr),                                     // host_address
+                        Some(port),                                     // port
+                        Some(user),                                     // username
+                        Some(auth),                                     // auth_method
+                        key_path,                                       // private_key_path
+                        group_id,                                       // group_id
+                        tags,                                           // tags
+                        password,                                       // password
+                        None,                                           // sudo_password
+                        default_path,                                   // default_path_ssh
+                        None,                                           // default_path_sftp
+                        None,                                           // pin_to_top
+                        None,                                           // keep_alive_interval
+                        None,                                           // keep_alive_tries
+                        None,                                           // sort_order
+                        Some(tunnels_json),                             // tunnels
+                        None,                                           // startup_snippet_id
+                        None,                                           // startup_snippet_mode
+                        Some(cred_id.clone().unwrap_or_default()),      // credential_id ("" clears)
+                        Some(jump_host_id.clone().unwrap_or_default()), // jump_host_id ("" clears)
+                        None,                                           // notes
+                        None,                                           // icon
+                        None,                                           // block_agent_access
                     )
                     .await;
                 }
@@ -366,30 +517,30 @@ impl HostManagerView {
                         app.clone(),
                         &app.db,
                         &app.secrets,
-                        name,         // name
-                        addr,         // host_address
-                        port,         // port
-                        user,         // username
-                        auth,         // auth_method
-                        key_path,     // private_key_path
-                        group_id,     // group_id
-                        tags,         // tags
-                        password,     // password
-                        None,         // sudo_password
-                        default_path, // default_path_ssh
-                        None,         // default_path_sftp
-                        None,         // pin_to_top
-                        None,         // keep_alive_interval
-                        None,         // keep_alive_tries
-                        None,         // sort_order
-                        None,         // tunnels
-                        None,         // startup_snippet_id
-                        None,         // startup_snippet_mode
-                        cred_id,      // credential_id
-                        None,         // jump_host_id
-                        None,         // notes
-                        None,         // icon
-                        None,         // block_agent_access
+                        name,               // name
+                        addr,               // host_address
+                        port,               // port
+                        user,               // username
+                        auth,               // auth_method
+                        key_path,           // private_key_path
+                        group_id,           // group_id
+                        tags,               // tags
+                        password,           // password
+                        None,               // sudo_password
+                        default_path,       // default_path_ssh
+                        None,               // default_path_sftp
+                        None,               // pin_to_top
+                        None,               // keep_alive_interval
+                        None,               // keep_alive_tries
+                        None,               // sort_order
+                        Some(tunnels_json), // tunnels
+                        None,               // startup_snippet_id
+                        None,               // startup_snippet_mode
+                        cred_id,            // credential_id
+                        jump_host_id,       // jump_host_id
+                        None,               // notes
+                        None,               // icon
+                        None,               // block_agent_access
                     )
                     .await;
                 }
@@ -724,8 +875,12 @@ impl HostManagerView {
                 self.btn("host-edit", "Edit", p, false)
                     .on_click(cx.listener(move |this, _: &ClickEvent, w, cx| {
                         if let Some(h) = this.hosts.iter().find(|h| h.id == id_e).cloned() {
-                            this.form =
-                                Some(HostForm::from_host(&h, &this.groups, &this.credentials));
+                            this.form = Some(HostForm::from_host(
+                                &h,
+                                &this.groups,
+                                &this.credentials,
+                                &this.hosts,
+                            ));
                             w.focus(&this.form_focus);
                             cx.notify();
                         }
@@ -858,6 +1013,131 @@ impl HostManagerView {
             )
     }
 
+    fn tunnel_field(
+        &self,
+        id: String,
+        value: &str,
+        field: HostField,
+        active: bool,
+        p: &Palette,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        div()
+            .id(SharedString::from(id))
+            .flex_1()
+            .px_2()
+            .py_1()
+            .rounded_md()
+            .bg(p.bg)
+            .border_1()
+            .border_color(if active { p.accent } else { p.border })
+            .text_sm()
+            .text_color(p.fg)
+            .cursor_text()
+            .child(SharedString::from(if active {
+                format!("{value}\u{2502}")
+            } else {
+                value.to_string()
+            }))
+            .on_click(cx.listener(move |this, _: &ClickEvent, w, cx| {
+                if let Some(f) = this.form.as_mut() {
+                    f.focus = field;
+                }
+                w.focus(&this.form_focus);
+                cx.notify();
+            }))
+    }
+
+    fn render_tunnels_section(
+        &self,
+        form: &HostForm,
+        p: &Palette,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let focus = form.focus;
+        let rows = form
+            .tunnels
+            .iter()
+            .enumerate()
+            .map(|(i, t)| {
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap_1()
+                    .p_2()
+                    .rounded_md()
+                    .border_1()
+                    .border_color(p.border)
+                    .child(
+                        div()
+                            .flex()
+                            .gap_1()
+                            .child(self.tunnel_field(
+                                format!("tun-lp-{i}"),
+                                &t.local_port,
+                                HostField::TunnelLocalPort(i),
+                                focus == HostField::TunnelLocalPort(i),
+                                p,
+                                cx,
+                            ))
+                            .child(self.tunnel_field(
+                                format!("tun-rh-{i}"),
+                                &t.remote_host,
+                                HostField::TunnelRemoteHost(i),
+                                focus == HostField::TunnelRemoteHost(i),
+                                p,
+                                cx,
+                            ))
+                            .child(self.tunnel_field(
+                                format!("tun-rp-{i}"),
+                                &t.remote_port,
+                                HostField::TunnelRemotePort(i),
+                                focus == HostField::TunnelRemotePort(i),
+                                p,
+                                cx,
+                            )),
+                    )
+                    .child(
+                        div()
+                            .id(SharedString::from(format!("tun-del-{i}")))
+                            .text_xs()
+                            .text_color(p.muted)
+                            .cursor_pointer()
+                            .child("Remove tunnel")
+                            .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                                if let Some(f) = this.form.as_mut() {
+                                    if i < f.tunnels.len() {
+                                        f.tunnels.remove(i);
+                                    }
+                                }
+                                cx.notify();
+                            })),
+                    )
+            })
+            .collect::<Vec<_>>();
+
+        div()
+            .flex()
+            .flex_col()
+            .gap_1()
+            .child(
+                div()
+                    .text_xs()
+                    .text_color(p.muted)
+                    .child("Tunnels (local forward: local port \u{2192} host : port)"),
+            )
+            .children(rows)
+            .child(
+                self.btn("tun-add", "Add Tunnel", p, false)
+                    .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
+                        if let Some(f) = this.form.as_mut() {
+                            f.tunnels.push(TunnelDraft::new());
+                        }
+                        cx.notify();
+                    })),
+            )
+    }
+
     fn render_form(&self, p: &Palette, cx: &mut Context<Self>) -> gpui::AnyElement {
         let Some(form) = self.form.as_ref() else {
             return div().into_any_element();
@@ -878,6 +1158,11 @@ impl HostManagerView {
             .and_then(|i| self.groups.get(i))
             .map(|g| g.name.clone())
             .unwrap_or_else(|| "none".to_string());
+        let jump_label = form
+            .jump_host
+            .and_then(|i| self.hosts.get(i))
+            .map(|h| h.name.clone())
+            .unwrap_or_else(|| "direct".to_string());
 
         div()
             .absolute()
@@ -1044,6 +1329,49 @@ impl HostManagerView {
                                     })),
                             ),
                     )
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .gap_0p5()
+                            .child(
+                                div()
+                                    .text_xs()
+                                    .text_color(p.muted)
+                                    .child("Jump host (ProxyJump)"),
+                            )
+                            .child(
+                                self.btn("jump-cycle", format!("Route: {jump_label}"), p, false)
+                                    .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
+                                        let editing =
+                                            this.form.as_ref().and_then(|f| f.editing_id.clone());
+                                        let cands: Vec<usize> = this
+                                            .hosts
+                                            .iter()
+                                            .enumerate()
+                                            .filter(|(_, h)| {
+                                                Some(h.id.as_str()) != editing.as_deref()
+                                            })
+                                            .map(|(i, _)| i)
+                                            .collect();
+                                        if let Some(f) = this.form.as_mut() {
+                                            f.jump_host = match f.jump_host {
+                                                None => cands.first().copied(),
+                                                Some(cur) => {
+                                                    match cands.iter().position(|&i| i == cur) {
+                                                        Some(pos) if pos + 1 < cands.len() => {
+                                                            Some(cands[pos + 1])
+                                                        }
+                                                        _ => None,
+                                                    }
+                                                }
+                                            };
+                                        }
+                                        cx.notify();
+                                    })),
+                            ),
+                    )
+                    .child(self.render_tunnels_section(form, p, cx))
                     .child(
                         div()
                             .flex()
@@ -1244,6 +1572,28 @@ impl Render for HostManagerView {
                     })),
             );
 
+        let tunnels_panel = (!self.active_tunnels.is_empty()).then(|| {
+            div()
+                .flex()
+                .flex_col()
+                .gap_1()
+                .p_3()
+                .rounded_md()
+                .bg(p.card)
+                .border_1()
+                .border_color(p.border)
+                .child(div().text_xs().text_color(p.muted).child("Active tunnels"))
+                .children(self.active_tunnels.iter().map(|t| {
+                    div()
+                        .text_xs()
+                        .text_color(p.fg)
+                        .child(SharedString::from(format!(
+                            "{}  \u{00b7}  localhost:{} \u{2192} {}:{}",
+                            t.host_label, t.local_port, t.remote_host, t.remote_port
+                        )))
+                }))
+        });
+
         let form_overlay = self
             .form
             .is_some()
@@ -1268,6 +1618,7 @@ impl Render for HostManagerView {
                     .gap_3()
                     .p_4()
                     .child(toolbar)
+                    .children(tunnels_panel)
                     .children(blocks),
             )
             .children(form_overlay)
@@ -1339,12 +1690,105 @@ mod tests {
             icon: None,
             block_agent_access: false,
         };
-        let form = HostForm::from_host(&host, &[], &[]);
+        let form = HostForm::from_host(&host, &[], &[], &[]);
         assert_eq!(form.name, "Web");
         assert_eq!(form.port, "2222");
         assert_eq!(form.auth, AuthMethod::Key);
         assert_eq!(form.key_path, "/k");
         assert_eq!(form.default_path, "/srv");
         assert_eq!(form.editing_id.as_deref(), Some("h"));
+        assert!(form.jump_host.is_none());
+        assert!(form.tunnels.is_empty());
+    }
+
+    fn host_stub(id: &str, name: &str) -> Host {
+        Host {
+            id: id.into(),
+            name: name.into(),
+            host_address: "h.example".into(),
+            port: 22,
+            username: "u".into(),
+            auth_method: "password".into(),
+            private_key_path: None,
+            group_id: None,
+            tags: None,
+            created_at: 0,
+            last_connected_at: None,
+            default_path_ssh: None,
+            default_path_sftp: None,
+            pin_to_top: false,
+            sudo_password_set: false,
+            keep_alive_interval: None,
+            keep_alive_tries: None,
+            sort_order: 0,
+            tunnels: None,
+            startup_snippet_id: None,
+            startup_snippet_mode: None,
+            credential_id: None,
+            jump_host_id: None,
+            notes: None,
+            icon: None,
+            block_agent_access: false,
+        }
+    }
+
+    #[test]
+    fn tunnel_json_round_trips_and_drops_incomplete_rows() {
+        let drafts = vec![
+            TunnelDraft {
+                id: "keep".into(),
+                local_port: "8080".into(),
+                remote_host: "db.internal".into(),
+                remote_port: "5432".into(),
+            },
+            TunnelDraft {
+                id: "drop-no-host".into(),
+                local_port: "9000".into(),
+                remote_host: "  ".into(),
+                remote_port: "9000".into(),
+            },
+            TunnelDraft {
+                id: "drop-bad-port".into(),
+                local_port: "notaport".into(),
+                remote_host: "x".into(),
+                remote_port: "1".into(),
+            },
+        ];
+        let json = serialize_tunnels(&drafts);
+        let back = parse_tunnels(&Some(json));
+        assert_eq!(back.len(), 1);
+        assert_eq!(back[0].id, "keep");
+        assert_eq!(back[0].local_port, "8080");
+        assert_eq!(back[0].remote_host, "db.internal");
+        assert_eq!(back[0].remote_port, "5432");
+    }
+
+    #[test]
+    fn empty_and_garbage_tunnel_columns_parse_to_nothing() {
+        assert!(parse_tunnels(&None).is_empty());
+        assert!(parse_tunnels(&Some(String::new())).is_empty());
+        assert!(parse_tunnels(&Some("not json".into())).is_empty());
+        assert!(parse_tunnels(&Some("[]".into())).is_empty());
+    }
+
+    #[test]
+    fn from_host_resolves_jump_host_index_and_never_points_at_self() {
+        let hosts = vec![host_stub("a", "Alpha"), host_stub("b", "Bastion")];
+        let mut target = host_stub("a", "Alpha");
+        target.jump_host_id = Some("b".into());
+        target.tunnels = Some(
+            r#"[{"id":"t","type":"local","local_port":2201,"remote_host":"web","remote_port":80}]"#
+                .into(),
+        );
+        let form = HostForm::from_host(&target, &[], &[], &hosts);
+        assert_eq!(form.jump_host, Some(1));
+        assert_eq!(form.tunnels.len(), 1);
+        assert_eq!(form.tunnels[0].local_port, "2201");
+
+        // A self-referential jump_host_id is ignored.
+        let mut loopy = host_stub("a", "Alpha");
+        loopy.jump_host_id = Some("a".into());
+        let form = HostForm::from_host(&loopy, &[], &[], &hosts);
+        assert!(form.jump_host.is_none());
     }
 }

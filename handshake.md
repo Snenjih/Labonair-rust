@@ -4,7 +4,76 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
-## Last Session: 2026-09-01 (T07-001 — Host manager & SSH connection)
+## Last Session: 2026-09-01 (T07-002 — Jump hosts & tunnels)
+
+### What Was Done
+- **T07-002 ✅ Done.** Backend jump-host routing + local-forward tunnels
+  already existed (`ssh/client.rs::resolve_jump_host` / `connect_via_jump`,
+  `ssh/tunnels.rs`); this task was the UI + wiring.
+  - **`crates/backend/src/modules/ssh/tunnels.rs`** — `TunnelConfig` now
+    derives `Serialize` + `PartialEq`, `type` defaults to `"local"` on parse
+    (round-trips unchanged); dropped the `#[allow(dead_code)]` on `id`/
+    `tunnel_type`. `TunnelEntry` gained `configs: Vec<TunnelConfig>`. New
+    `pub fn active_tunnels(&TunnelState) -> Vec<ActiveTunnel>` (sorted by
+    `(host_id, local_port)`) for the UI panel. +4 tests (JSON shape round-trip,
+    `active_tunnels` listing/sort, ref-count-gated shutdown, unknown-host
+    no-op). **Only `type:"local"` forwarding is supported — matches the
+    reference (`reference-src/.../hosts/types.ts` `type: "local"` only); the
+    task's remote/dynamic mention is beyond reference parity and was not
+    implemented.**
+  - **`crates/ui/src/hosts.rs`** — `HostForm` gains `jump_host: Option<usize>`
+    (index into `self.hosts`, never the host being edited) and
+    `tunnels: Vec<TunnelDraft>` + a `scratch` fallback string. New
+    `HostField::Tunnel{LocalPort,RemoteHost,RemotePort}(usize)` inline-edit
+    targets. Free fns `parse_tunnels` / `serialize_tunnels` (drops incomplete
+    rows, `type:"local"`). Form now renders a "Jump host (ProxyJump)" cycle
+    button + a "Tunnels" section (add / edit 3 fields / remove per row).
+    `submit_form` passes `Some(jump_host_id_or_"")` + `Some(tunnels_json)` to
+    `hosts_create`/`hosts_update` (`""` clears the jump host). New pub
+    `host_name()` / `jump_host_label()` accessors, `ActiveTunnelRow` type +
+    `set_active_tunnels()` + an "Active tunnels" panel. `from_host` signature
+    gained a `hosts: &[Host]` param. +3 tests.
+  - **`crates/ui/src/workspace.rs`** — `ssh_tab_title(host, jump)` helper
+    (SSH tab title shows `SSH · host  ⤳ bastion` when routed through a jump
+    host). `connect_host` reads the jump label from the host manager for the
+    title. On `SshSessionEstablished` → `start_tunnels()` (spawns
+    `ssh_start_tunnels`, mirrors the reference's `session_established` hook);
+    `retire_tab` SSH teardown also calls `ssh_stop_tunnels`. The 40ms SSH
+    poll loop now calls `refresh_active_tunnels()` → pushes `ActiveTunnelRow`s
+    into the host manager (deduped, only notifies on change). +1 test.
+  - Gates: `cargo fmt --all --check`, `cargo clippy --workspace --all-targets
+    -- -D warnings`, `cargo check --workspace`, `cargo test --workspace` all
+    green. Tests: backend 138→142, ui 63→67.
+
+### Current State
+- Branch `master`, committed. Pre-existing unrelated `CLAUDE.md` working-tree
+  edit deliberately left uncommitted / untouched.
+
+### Next
+- **T07-003** — SSH config import/export (`tasks/phase-06-ssh-ui/
+  T07-003-ssh-config-import-export.md`). Dep: T07-001 (done). Backend
+  `ssh/config_parser.rs` already exists.
+
+### Notes / Quirks (T07-002)
+- **No live jump/tunnel integration test** — same rationale as T07-001 (no
+  `sshd` in CI). Routing/tunnel logic is unit-tested at the seams
+  (resolution, ref-counting, JSON round-trip, title annotation).
+- Tunnel type is **local-forward only** end to end. The `type` field is kept
+  in the JSON purely for round-trip fidelity with the reference.
+- No standalone "stop this one tunnel" control: tunnels are host-config and
+  auto start/stop with the SSH session (backend ref-counts per host). The
+  "Active tunnels" panel is read-only status, matching the reference (which
+  has no tunnel-management UI at all).
+- Multi-hop jump chains are still unsupported (a jump host's own
+  `jump_host_id` is never followed — documented in `resolve_jump_host`). The
+  form only lets you pick one bastion.
+- `HostForm::field_mut` returns `&mut self.scratch` for a stale tunnel-field
+  index instead of panicking (indices only ever come from `render`, but the
+  guard keeps it total).
+
+---
+
+## Previous Session: 2026-09-01 (T07-001 — Host manager & SSH connection)
 
 ### What Was Done
 - **T07-001 ✅ Done.** First UI↔backend-wired feature. Host-manager dashboard,

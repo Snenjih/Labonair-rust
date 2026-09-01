@@ -1,17 +1,32 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use tokio::net::TcpListener;
 use tokio_util::sync::CancellationToken;
 
-#[derive(Debug, Clone, Deserialize)]
+/// A single configured port-forward. Only `type: "local"` is supported — matching
+/// the reference implementation, whose UI (`reference-src/src/modules/hosts/types.ts`)
+/// only ever writes local forwards. `tunnel_type` is kept so the on-disk JSON
+/// round-trips unchanged.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 pub struct TunnelConfig {
-    #[allow(dead_code)]
     pub id: String,
-    #[serde(rename = "type")]
-    #[allow(dead_code)]
+    #[serde(rename = "type", default = "local_type")]
     pub tunnel_type: String,
+    pub local_port: u16,
+    pub remote_host: String,
+    pub remote_port: u16,
+}
+
+fn local_type() -> String {
+    "local".to_string()
+}
+
+/// One running forward, as surfaced to the UI's active-tunnel panel.
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct ActiveTunnel {
+    pub host_id: String,
     pub local_port: u16,
     pub remote_host: String,
     pub remote_port: u16,
@@ -23,6 +38,33 @@ pub struct TunnelConfig {
 pub struct TunnelEntry {
     shutdown: tokio::sync::oneshot::Sender<()>,
     ref_count: usize,
+    /// The forwards this entry runs — reported by [`active_tunnels`].
+    configs: Vec<TunnelConfig>,
+}
+
+/// Snapshot of every forward currently bound, across all hosts. Sorted by
+/// `(host_id, local_port)` for stable rendering.
+pub fn active_tunnels(state: &TunnelState) -> Vec<ActiveTunnel> {
+    let Ok(map) = state.0.lock() else {
+        return Vec::new();
+    };
+    let mut out: Vec<ActiveTunnel> = map
+        .iter()
+        .flat_map(|(host_id, entry)| {
+            entry.configs.iter().map(move |c| ActiveTunnel {
+                host_id: host_id.clone(),
+                local_port: c.local_port,
+                remote_host: c.remote_host.clone(),
+                remote_port: c.remote_port,
+            })
+        })
+        .collect();
+    out.sort_by(|a, b| {
+        a.host_id
+            .cmp(&b.host_id)
+            .then(a.local_port.cmp(&b.local_port))
+    });
+    out
 }
 
 pub struct TunnelState(pub Arc<Mutex<HashMap<String, TunnelEntry>>>);
@@ -147,6 +189,7 @@ pub async fn ssh_start_tunnels(
             TunnelEntry {
                 shutdown: shutdown_tx,
                 ref_count: 1,
+                configs: tunnels.clone(),
             },
         );
     }
@@ -327,4 +370,86 @@ pub async fn ssh_stop_tunnels(host_id: String, tunnel_state: &TunnelState) -> Re
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn cfg(local: u16) -> TunnelConfig {
+        TunnelConfig {
+            id: format!("t{local}"),
+            tunnel_type: "local".into(),
+            local_port: local,
+            remote_host: "10.0.0.1".into(),
+            remote_port: 80,
+        }
+    }
+
+    fn insert(state: &TunnelState, host: &str, ref_count: usize, configs: Vec<TunnelConfig>) {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        // Keep the receiver alive so `shutdown.send` doesn't fail; leak it for the test.
+        Box::leak(Box::new(rx));
+        state.0.lock().unwrap().insert(
+            host.to_string(),
+            TunnelEntry {
+                shutdown: tx,
+                ref_count,
+                configs,
+            },
+        );
+    }
+
+    #[test]
+    fn parses_the_ui_tunnel_json_shape() {
+        let raw = r#"[{"id":"a","type":"local","local_port":8080,"remote_host":"db","remote_port":5432}]"#;
+        let v: Vec<TunnelConfig> = serde_json::from_str(raw).unwrap();
+        assert_eq!(v.len(), 1);
+        assert_eq!(v[0].local_port, 8080);
+        assert_eq!(v[0].remote_host, "db");
+        assert_eq!(v[0].remote_port, 5432);
+        // Round-trips back out unchanged.
+        let out = serde_json::to_string(&v).unwrap();
+        assert_eq!(serde_json::from_str::<Vec<TunnelConfig>>(&out).unwrap(), v);
+    }
+
+    #[test]
+    fn active_tunnels_lists_every_forward_sorted() {
+        let state = TunnelState::default();
+        insert(&state, "hb", 1, vec![cfg(2000)]);
+        insert(&state, "ha", 1, vec![cfg(1100), cfg(1000)]);
+        let list = active_tunnels(&state);
+        assert_eq!(list.len(), 3);
+        assert_eq!((list[0].host_id.as_str(), list[0].local_port), ("ha", 1000));
+        assert_eq!((list[1].host_id.as_str(), list[1].local_port), ("ha", 1100));
+        assert_eq!((list[2].host_id.as_str(), list[2].local_port), ("hb", 2000));
+    }
+
+    #[tokio::test]
+    async fn stop_tunnels_only_shuts_down_at_zero_refs() {
+        let state = TunnelState::default();
+        let (tx, mut rx) = tokio::sync::oneshot::channel();
+        state.0.lock().unwrap().insert(
+            "h1".into(),
+            TunnelEntry {
+                shutdown: tx,
+                ref_count: 2,
+                configs: vec![cfg(1000)],
+            },
+        );
+
+        ssh_stop_tunnels("h1".into(), &state).await.unwrap();
+        assert!(state.0.lock().unwrap().contains_key("h1"));
+        assert!(rx.try_recv().is_err());
+
+        ssh_stop_tunnels("h1".into(), &state).await.unwrap();
+        assert!(!state.0.lock().unwrap().contains_key("h1"));
+        assert!(rx.try_recv().is_ok());
+    }
+
+    #[tokio::test]
+    async fn stop_tunnels_is_a_noop_for_an_unknown_host() {
+        let state = TunnelState::default();
+        ssh_stop_tunnels("nope".into(), &state).await.unwrap();
+    }
 }
