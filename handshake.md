@@ -4,7 +4,50 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
-## Last Session: 2026-09-02 (T13-001 — Settings structure & preferences)
+## Last Session: 2026-09-02 (T13-002 — Appearance & theme settings)
+
+### What Was Done
+- **T13-002 ✅ Done.** Appearance pane in the settings modal, wiring the
+  deferred T02-003 theme import/export into the UI, plus background-image and
+  UI-font controls.
+  - **`crates/ui/src/settings.rs`** — `SettingsView` now takes the
+    `Entity<BackgroundStore>` and renders `"Appearance"` as a custom pane
+    (like `AGENT_BRIDGE`):
+    - **Color scheme** — System / Light / Dark buttons → `set_pref("theme")`
+      (already flows to `ThemeStore::set_preference` + persists).
+    - **Themes** — list of built-in "Labonair" + user themes scanned from
+      `config_dir()/themes/*.json`; per-row Activate / Delete; `Import theme…`
+      (native picker → copy into themes dir → `ThemeStore::import_theme_file`)
+      and `Export active theme…` (`active_theme_file(name).to_json()` →
+      `prompt_for_new_path`). `active_theme_id` tracks the selection; `default`
+      clears the custom override. Warnings from import surface as a toast.
+    - **Background image** — None tile + per-image tiles (select / delete) +
+      `+ Add` (`BackgroundStore::prompt_and_import`); when an image is active,
+      steppers for wallpaper opacity / blur / tint opacity drive
+      `BackgroundStore` (its own persistence in `labonair-settings.json`).
+    - **Typography** — `appFontFamily` (new pref, Text), `appFontSize` (Int),
+      `reduceMotion` (Switch) rendered via the generic `render_field`.
+    - Theme dir ops extracted to dir-parameterised free fns (`scan_themes`,
+      `read_theme_file_in`, `save_theme_file_in`, `delete_theme_in`) so tests
+      run against a tempdir, never the real `~/.config`. 6 new tests
+      (slugify, trim_ext, scan skips junk / never shadows built-in `default`,
+      save→read→delete roundtrip + built-in delete guard, appFontFamily
+      persistence).
+  - **`crates/backend/src/modules/settings/preferences.rs`** — added
+    `app_font_family: String` (default `""` = system) in the Appearance group.
+  - **`crates/ui/src/app_shell.rs`** — passes `background.clone()` into
+    `SettingsView::new`.
+- Verify: `cargo fmt --all --check`, `cargo clippy --workspace --all-targets
+  -- -D warnings`, `cargo test --workspace` — all green (ui lib 168 tests).
+- **Known gaps / for later:** background *color* tint picker omitted (GPUI has
+  no colour input; tint opacity still adjustable, colour stays default black).
+  `appFontFamily` / `appFontSize` persist but are not yet pushed into the
+  live `ThemeStore` typography (runtime UI-font re-application belongs to
+  T13-003 / font work). Theme *marketplace* (remote index browse/download)
+  from `reference-src` `ThemeMarketplace.tsx` is not part of this task.
+- **Next task:** T13-003 — Terminal & Editor settings.
+
+### (previous) T13-001 — Settings structure & preferences
 
 ### What Was Done
 - **T13-001 ✅ Done.** Central preferences model + store + settings window,

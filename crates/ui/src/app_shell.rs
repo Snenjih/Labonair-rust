@@ -244,6 +244,7 @@ impl AppShell {
             SettingsView::new(
                 prefs.clone(),
                 theme.clone(),
+                background.clone(),
                 backend.clone(),
                 tokio.clone(),
                 cx,

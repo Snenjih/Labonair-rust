@@ -1,7 +1,7 @@
 # T13-002: Appearance- & Theme-Einstellungen
 
 ## Status
-⏳ Pending
+✅ Done
 
 ## Phase
 12 — Settings & Preferences

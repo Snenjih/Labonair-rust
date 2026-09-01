@@ -17,14 +17,22 @@
 //!   Text), plus a hand-built **AI Agent Bridge** pane (MCP) that the
 //!   T11-006 work deferred here because no settings window existed yet.
 
+use std::fs;
+use std::path::{Path, PathBuf};
+
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, px, App, ClickEvent, ClipboardItem, Context, Entity, FocusHandle, Focusable,
-    InteractiveElement, IntoElement, KeyDownEvent, ParentElement, Render, SharedString,
-    StatefulInteractiveElement, Styled, Window,
+    InteractiveElement, IntoElement, KeyDownEvent, ParentElement, PathPromptOptions, Render,
+    SharedString, StatefulInteractiveElement, Styled, Window,
 };
 use serde_json::Value;
 use tokio::runtime::Handle as TokioHandle;
+
+use labonair_backend::modules::fs::paths::config_dir;
+use labonair_theme::ThemeFile;
+
+use crate::background::BackgroundStore;
 
 use labonair_backend::modules::mcp::{
     mcp_get_status, mcp_regenerate_token, mcp_set_auto_revoke_minutes, mcp_set_enabled,
@@ -198,6 +206,13 @@ pub const FIELDS: &[FieldDef] = &[
         Switch,
     ),
     // Appearance
+    d(
+        "appFontFamily",
+        "UI font family",
+        "Font used for all application UI text (empty = system default).",
+        "Appearance",
+        Text,
+    ),
     d(
         "appFontSize",
         "App font size",
@@ -459,9 +474,20 @@ struct EditState {
     numeric: bool,
 }
 
+/// One row in the Appearance theme list (built-in default + user themes).
+struct ThemeEntry {
+    /// Filename stem — `"default"` for the built-in.
+    id: String,
+    /// Display name from the theme file.
+    name: String,
+    /// Built-in themes can be activated/exported but never deleted.
+    builtin: bool,
+}
+
 pub struct SettingsView {
     prefs: Entity<PreferencesStore>,
     theme: Entity<ThemeStore>,
+    background: Entity<BackgroundStore>,
     backend: Backend,
     tokio: TokioHandle,
     open: bool,
@@ -470,6 +496,10 @@ pub struct SettingsView {
     editing: Option<EditState>,
     mcp: McpPrefs,
     mcp_token: Option<String>,
+    /// Available themes for the Appearance pane, refreshed when the modal opens.
+    theme_files: Vec<ThemeEntry>,
+    /// Which listed theme is active (`None` = built-in light/dark, no override).
+    active_theme_id: Option<String>,
     focus: FocusHandle,
 }
 
@@ -477,15 +507,18 @@ impl SettingsView {
     pub fn new(
         prefs: Entity<PreferencesStore>,
         theme: Entity<ThemeStore>,
+        background: Entity<BackgroundStore>,
         backend: Backend,
         tokio: TokioHandle,
         cx: &mut Context<Self>,
     ) -> Self {
         cx.observe(&prefs, |_, _, cx| cx.notify()).detach();
         cx.observe(&theme, |_, _, cx| cx.notify()).detach();
+        cx.observe(&background, |_, _, cx| cx.notify()).detach();
         Self {
             prefs,
             theme,
+            background,
             backend,
             tokio,
             open: false,
@@ -494,6 +527,8 @@ impl SettingsView {
             editing: None,
             mcp: mcp_prefs_load(),
             mcp_token: None,
+            theme_files: Vec::new(),
+            active_theme_id: None,
             focus: cx.focus_handle(),
         }
     }
@@ -508,6 +543,7 @@ impl SettingsView {
         self.search.clear();
         window.focus(&self.focus);
         self.refresh_mcp_status(cx);
+        self.refresh_themes();
         cx.notify();
     }
 
@@ -542,6 +578,161 @@ impl SettingsView {
             }
         })
         .detach();
+    }
+
+    // ── appearance: themes ────────────────────────────────────────────────
+
+    /// Rescans the user themes directory (`config_dir()/themes/*.json`) and
+    /// rebuilds [`Self::theme_files`]. The built-in "Labonair" default is
+    /// always first.
+    fn refresh_themes(&mut self) {
+        self.theme_files = scan_themes(&themes_dir());
+    }
+
+    /// Activates a listed theme. `"default"` clears any custom override and
+    /// reverts to the built-in light/dark themes.
+    fn activate_theme(&mut self, id: &str, cx: &mut Context<Self>) {
+        if id == "default" {
+            self.theme.update(cx, |t, cx| t.clear_custom_theme(cx));
+            self.active_theme_id = None;
+            cx.notify();
+            return;
+        }
+        let file = match read_theme_file_in(&themes_dir(), id) {
+            Ok(f) => f,
+            Err(e) => {
+                self.notify_error(cx, "Failed to load theme", e);
+                return;
+            }
+        };
+        let result = self.theme.update(cx, |t, cx| t.import_theme_file(file, cx));
+        match result {
+            Ok(warnings) => {
+                self.active_theme_id = Some(id.to_string());
+                if !warnings.is_empty() {
+                    self.notify(
+                        cx,
+                        Notification::warning("Theme applied with warnings", warnings.join("; ")),
+                    );
+                }
+            }
+            Err(e) => self.notify_error(cx, "Invalid theme", e),
+        }
+        cx.notify();
+    }
+
+    /// Opens the file picker, copies the chosen `.json` into the themes dir and
+    /// activates it (T02-003 wiring).
+    fn import_theme(&mut self, cx: &mut Context<Self>) {
+        let receiver = cx.prompt_for_paths(PathPromptOptions {
+            files: true,
+            directories: false,
+            multiple: false,
+            prompt: Some("Import theme".into()),
+        });
+        cx.spawn(async move |this, cx| {
+            let Ok(Ok(Some(paths))) = receiver.await else {
+                return;
+            };
+            let Some(src) = paths.into_iter().next() else {
+                return;
+            };
+            let _ = this.update(cx, |this, cx| this.import_theme_from(src, cx));
+        })
+        .detach();
+    }
+
+    fn import_theme_from(&mut self, src: PathBuf, cx: &mut Context<Self>) {
+        let raw = match fs::read_to_string(&src) {
+            Ok(r) => r,
+            Err(e) => return self.notify_error(cx, "Failed to read theme", e.to_string()),
+        };
+        let file = match ThemeFile::from_json(&raw).and_then(|f| f.validate().map(|_| f)) {
+            Ok(f) => f,
+            Err(e) => return self.notify_error(cx, "Invalid theme file", e),
+        };
+        let id = src
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .filter(|s| !s.is_empty())
+            .unwrap_or("imported-theme")
+            .to_string();
+        if let Err(e) = save_theme_file_in(&themes_dir(), &id, &raw) {
+            return self.notify_error(cx, "Failed to save theme", e);
+        }
+        match self.theme.update(cx, |t, cx| t.import_theme_file(file, cx)) {
+            Ok(_) => {
+                self.active_theme_id = Some(id);
+                self.notify(
+                    cx,
+                    Notification::success("Theme imported", "The theme is now active."),
+                );
+            }
+            Err(e) => self.notify_error(cx, "Invalid theme", e),
+        }
+        self.refresh_themes();
+        cx.notify();
+    }
+
+    /// Exports the currently active theme to a user-chosen `.json` file.
+    fn export_theme(&mut self, cx: &mut Context<Self>) {
+        let name = self
+            .active_theme_id
+            .as_deref()
+            .and_then(|id| self.theme_files.iter().find(|t| t.id == id))
+            .map(|t| t.name.clone())
+            .unwrap_or_else(|| "Labonair".to_string());
+        let json = match self
+            .theme
+            .read(cx)
+            .active_theme_file(name.clone())
+            .to_json()
+        {
+            Ok(j) => j,
+            Err(e) => return self.notify_error(cx, "Export failed", e),
+        };
+        let slug = slugify(&name);
+        let receiver = cx.prompt_for_new_path(&config_dir(), Some(&format!("{slug}.json")));
+        cx.spawn(async move |this, cx| {
+            let Ok(Ok(Some(dest))) = receiver.await else {
+                return;
+            };
+            let _ = this.update(cx, |this, cx| match fs::write(&dest, &json) {
+                Ok(()) => this.notify(
+                    cx,
+                    Notification::success("Theme exported", dest.to_string_lossy().to_string()),
+                ),
+                Err(e) => this.notify_error(cx, "Export failed", e.to_string()),
+            });
+        })
+        .detach();
+    }
+
+    /// Deletes a user theme file. Built-in themes are protected.
+    fn delete_theme(&mut self, id: &str, cx: &mut Context<Self>) {
+        if id == "default" {
+            return;
+        }
+        if let Err(e) = delete_theme_in(&themes_dir(), id) {
+            self.notify_error(cx, "Failed to delete theme", e);
+            return;
+        }
+        if self.active_theme_id.as_deref() == Some(id) {
+            self.theme.update(cx, |t, cx| t.clear_custom_theme(cx));
+            self.active_theme_id = None;
+        }
+        self.refresh_themes();
+        cx.notify();
+    }
+
+    fn notify(&self, cx: &mut Context<Self>, n: Notification) {
+        notification_center(cx).update(cx, |c, cx| {
+            c.push(n, cx);
+        });
+    }
+
+    fn notify_error(&self, cx: &mut Context<Self>, title: &'static str, body: String) {
+        self.notify(cx, Notification::error(title, body));
     }
 
     // ── generic field mutation ────────────────────────────────────────────
@@ -1022,6 +1213,280 @@ impl SettingsView {
         col.into_any_element()
     }
 
+    fn render_appearance(&mut self, c: &Palette, cx: &mut Context<Self>) -> gpui::AnyElement {
+        let cur_pref = self.prefs.read(cx).get().theme;
+        let bg = self.background.read(cx).settings().clone();
+        let available = self.background.read(cx).available();
+        let has_image = !bg.background_image.is_empty();
+
+        // Color scheme selector.
+        let scheme = div().flex().gap_2().py_2().children(
+            [
+                (ThemePref::System, "System", "system"),
+                (ThemePref::Light, "Light", "light"),
+                (ThemePref::Dark, "Dark", "dark"),
+            ]
+            .into_iter()
+            .map(|(pref, label, token)| {
+                let active = cur_pref == pref;
+                div()
+                    .id(SharedString::from(format!("scheme-{token}")))
+                    .flex_1()
+                    .h(px(56.0))
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .rounded_md()
+                    .border_1()
+                    .border_color(if active { c.accent } else { c.border })
+                    .bg(c.bg)
+                    .text_color(if active { c.fg } else { c.muted })
+                    .child(SharedString::from(label))
+                    .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                        this.set_pref("theme", Value::String(token.to_string()), cx);
+                    }))
+            }),
+        );
+
+        // Theme list.
+        let active_id = self.active_theme_id.clone();
+        let theme_rows: Vec<_> = self
+            .theme_files
+            .iter()
+            .map(|t| {
+                let id = t.id.clone();
+                let id_del = t.id.clone();
+                let is_active = active_id.as_deref() == Some(t.id.as_str())
+                    || (active_id.is_none() && t.id == "default");
+                let builtin = t.builtin;
+                div()
+                    .flex()
+                    .items_center()
+                    .justify_between()
+                    .gap_2()
+                    .py_1p5()
+                    .border_b_1()
+                    .border_color(c.border)
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap_2()
+                            .child(div().size(px(10.0)).rounded_full().bg(if is_active {
+                                c.accent
+                            } else {
+                                c.border
+                            }))
+                            .child(
+                                div()
+                                    .text_color(c.fg)
+                                    .child(SharedString::from(t.name.clone())),
+                            )
+                            .when(builtin, |d| {
+                                d.child(
+                                    div()
+                                        .text_size(px(10.0))
+                                        .text_color(c.muted)
+                                        .child("built-in"),
+                                )
+                            }),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap_1()
+                            .child(
+                                div()
+                                    .id(SharedString::from(format!("theme-use-{}", t.id)))
+                                    .px_2()
+                                    .py(px(2.0))
+                                    .rounded_sm()
+                                    .border_1()
+                                    .border_color(c.border)
+                                    .text_color(c.fg)
+                                    .hover(|s| s.bg(c.border))
+                                    .child(if is_active { "Active" } else { "Activate" })
+                                    .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                                        this.activate_theme(&id, cx);
+                                    })),
+                            )
+                            .when(!builtin, |d| {
+                                d.child(
+                                    div()
+                                        .id(SharedString::from(format!("theme-del-{}", id_del)))
+                                        .px_2()
+                                        .py(px(2.0))
+                                        .rounded_sm()
+                                        .border_1()
+                                        .border_color(c.border)
+                                        .text_color(c.muted)
+                                        .hover(|s| s.text_color(c.fg))
+                                        .child("Delete")
+                                        .on_click(cx.listener(
+                                            move |this, _: &ClickEvent, _w, cx| {
+                                                this.delete_theme(&id_del, cx);
+                                            },
+                                        )),
+                                )
+                            }),
+                    )
+            })
+            .collect();
+
+        let theme_actions = div()
+            .flex()
+            .gap_2()
+            .py_2()
+            .child(
+                div()
+                    .id("theme-import")
+                    .px_2()
+                    .py(px(3.0))
+                    .rounded_sm()
+                    .border_1()
+                    .border_color(c.border)
+                    .text_color(c.fg)
+                    .hover(|s| s.bg(c.border))
+                    .child("Import theme\u{2026}")
+                    .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| this.import_theme(cx))),
+            )
+            .child(
+                div()
+                    .id("theme-export")
+                    .px_2()
+                    .py(px(3.0))
+                    .rounded_sm()
+                    .border_1()
+                    .border_color(c.border)
+                    .text_color(c.fg)
+                    .hover(|s| s.bg(c.border))
+                    .child("Export active theme\u{2026}")
+                    .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| this.export_theme(cx))),
+            );
+
+        // Background image tiles.
+        let mut tiles = div().flex().flex_wrap().gap_2().py_2();
+        tiles = tiles.child(bg_tile("none", "None", !has_image, c, cx, |this, cx| {
+            this.background.update(cx, |b, cx| b.set_image("", cx));
+        }));
+        for info in &available {
+            let name = info.filename.clone();
+            let sel = bg.background_image == info.filename;
+            let name_del = info.filename.clone();
+            tiles = tiles.child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap_1()
+                    .child(bg_tile(
+                        &format!("bg-{}", info.filename),
+                        &trim_ext(&info.filename),
+                        sel,
+                        c,
+                        cx,
+                        move |this, cx| {
+                            let n = name.clone();
+                            this.background.update(cx, |b, cx| b.set_image(n, cx));
+                        },
+                    ))
+                    .child(
+                        div()
+                            .id(SharedString::from(format!("bg-del-{}", info.filename)))
+                            .text_size(px(11.0))
+                            .text_color(c.muted)
+                            .hover(|s| s.text_color(c.fg))
+                            .child("\u{2715}")
+                            .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                                let n = name_del.clone();
+                                let _ = this.background.update(cx, |b, cx| b.delete(&n, cx));
+                            })),
+                    ),
+            );
+        }
+        tiles = tiles.child(
+            div()
+                .id("bg-add")
+                .w(px(96.0))
+                .h(px(60.0))
+                .flex()
+                .items_center()
+                .justify_center()
+                .rounded_md()
+                .border_1()
+                .border_dashed()
+                .border_color(c.border)
+                .text_color(c.muted)
+                .hover(|s| s.text_color(c.fg))
+                .child("+ Add")
+                .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
+                    this.background.update(cx, |b, cx| b.prompt_and_import(cx));
+                })),
+        );
+
+        let mut root = div()
+            .flex()
+            .flex_col()
+            .child(section_label("Color scheme", c))
+            .child(scheme)
+            .child(section_label("Themes", c))
+            .child(div().flex().flex_col().children(theme_rows))
+            .child(theme_actions)
+            .child(section_label("Background image", c))
+            .child(tiles);
+
+        if has_image {
+            root = root
+                .child(bridge_int_row(
+                    "Wallpaper opacity (%)",
+                    bg.background_opacity as i64,
+                    0,
+                    100,
+                    5,
+                    c,
+                    cx,
+                    |this, v, cx| {
+                        this.background
+                            .update(cx, |b, cx| b.set_opacity(v as u8, cx));
+                    },
+                ))
+                .child(bridge_int_row(
+                    "Image blur (px)",
+                    bg.background_blur as i64,
+                    0,
+                    20,
+                    1,
+                    c,
+                    cx,
+                    |this, v, cx| {
+                        this.background.update(cx, |b, cx| b.set_blur(v as u8, cx));
+                    },
+                ))
+                .child(bridge_int_row(
+                    "Color tint (%)",
+                    bg.background_tint_opacity as i64,
+                    0,
+                    100,
+                    5,
+                    c,
+                    cx,
+                    |this, v, cx| {
+                        this.background
+                            .update(cx, |b, cx| b.set_tint_opacity(v as u8, cx));
+                    },
+                ));
+        }
+
+        root = root.child(section_label("Typography", c));
+        for key in ["appFontFamily", "appFontSize", "reduceMotion"] {
+            if let Some(def) = FIELDS.iter().find(|f| f.key == key) {
+                root = root.child(self.render_field(def, c, cx));
+            }
+        }
+
+        root.into_any_element()
+    }
+
     fn render_body(&mut self, c: &Palette, cx: &mut Context<Self>) -> gpui::AnyElement {
         let query = self.search.trim().to_lowercase();
         if !query.is_empty() {
@@ -1049,6 +1514,9 @@ impl SettingsView {
         let cat = CATEGORIES[self.active_cat];
         if cat == AGENT_BRIDGE {
             return self.render_agent_bridge(c, cx);
+        }
+        if cat == "Appearance" {
+            return self.render_appearance(c, cx);
         }
         div()
             .flex()
@@ -1214,6 +1682,120 @@ struct Palette {
     border: gpui::Hsla,
     card: gpui::Hsla,
     accent: gpui::Hsla,
+}
+
+fn themes_dir() -> PathBuf {
+    config_dir().join("themes")
+}
+
+/// Scans `dir` for valid user theme files. The built-in "Labonair" default is
+/// always the first entry; user themes follow, sorted by display name.
+fn scan_themes(dir: &Path) -> Vec<ThemeEntry> {
+    let mut entries = vec![ThemeEntry {
+        id: "default".to_string(),
+        name: "Labonair".to_string(),
+        builtin: true,
+    }];
+    if let Ok(rd) = fs::read_dir(dir) {
+        let mut users: Vec<ThemeEntry> = rd
+            .flatten()
+            .filter(|e| e.path().extension().and_then(|x| x.to_str()) == Some("json"))
+            .filter_map(|e| {
+                let path = e.path();
+                let id = path.file_stem()?.to_str()?.to_string();
+                if id == "default" {
+                    return None;
+                }
+                let file = ThemeFile::from_json(&fs::read_to_string(&path).ok()?).ok()?;
+                file.validate().ok()?;
+                Some(ThemeEntry {
+                    id,
+                    name: file.name,
+                    builtin: false,
+                })
+            })
+            .collect();
+        users.sort_by_key(|a| a.name.to_lowercase());
+        entries.extend(users);
+    }
+    entries
+}
+
+fn read_theme_file_in(dir: &Path, id: &str) -> Result<ThemeFile, String> {
+    let raw = fs::read_to_string(dir.join(format!("{id}.json"))).map_err(|e| e.to_string())?;
+    ThemeFile::from_json(&raw)
+}
+
+fn save_theme_file_in(dir: &Path, id: &str, raw: &str) -> Result<(), String> {
+    fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+    fs::write(dir.join(format!("{id}.json")), raw).map_err(|e| e.to_string())
+}
+
+fn delete_theme_in(dir: &Path, id: &str) -> Result<(), String> {
+    if id == "default" {
+        return Err("the built-in theme cannot be deleted".to_string());
+    }
+    fs::remove_file(dir.join(format!("{id}.json"))).map_err(|e| e.to_string())
+}
+
+fn slugify(name: &str) -> String {
+    let s: String = name
+        .to_lowercase()
+        .chars()
+        .map(|c| if c.is_alphanumeric() { c } else { '-' })
+        .collect();
+    let s = s
+        .split('-')
+        .filter(|p| !p.is_empty())
+        .collect::<Vec<_>>()
+        .join("-");
+    if s.is_empty() {
+        "theme".to_string()
+    } else {
+        s
+    }
+}
+
+fn trim_ext(name: &str) -> String {
+    name.rsplit_once('.')
+        .map(|(s, _)| s.to_string())
+        .unwrap_or_else(|| name.to_string())
+}
+
+fn section_label(text: &'static str, c: &Palette) -> impl IntoElement {
+    div()
+        .pt_3()
+        .pb_1()
+        .text_size(px(11.0))
+        .font_weight(gpui::FontWeight::SEMIBOLD)
+        .text_color(c.muted)
+        .child(text)
+}
+
+fn bg_tile(
+    id: &str,
+    label: &str,
+    selected: bool,
+    c: &Palette,
+    cx: &mut Context<SettingsView>,
+    f: impl Fn(&mut SettingsView, &mut Context<SettingsView>) + 'static,
+) -> impl IntoElement {
+    div()
+        .id(SharedString::from(id.to_string()))
+        .w(px(96.0))
+        .h(px(60.0))
+        .flex()
+        .items_end()
+        .p_1()
+        .rounded_md()
+        .border_1()
+        .border_color(if selected { c.accent } else { c.border })
+        .bg(c.bg)
+        .text_color(if selected { c.fg } else { c.muted })
+        .text_size(px(10.0))
+        .overflow_hidden()
+        .child(SharedString::from(label.to_string()))
+        .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| f(this, cx)))
 }
 
 fn char_of(ks: &gpui::Keystroke) -> Option<String> {
@@ -1446,6 +2028,86 @@ mod tests {
         });
         cx.run_until_parked();
         assert_eq!(*count.borrow(), 1);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    const SAMPLE_THEME: &str = r##"{
+        "name": "Sample",
+        "variants": {
+            "dark":  { "mode": "dark",  "colors": { "primary": "#ff0000" } },
+            "light": { "mode": "light", "colors": { "primary": "#0000ff" } }
+        }
+    }"##;
+
+    fn tmp() -> std::path::PathBuf {
+        let d = std::env::temp_dir().join(format!("labonair-themes-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    #[test]
+    fn slugify_makes_filesystem_safe_names() {
+        assert_eq!(slugify("Tokyo Night!!"), "tokyo-night");
+        assert_eq!(slugify("  "), "theme");
+        assert_eq!(slugify("Ayu_Mirage"), "ayu-mirage");
+    }
+
+    #[test]
+    fn trim_ext_strips_extension() {
+        assert_eq!(trim_ext("wall.png"), "wall");
+        assert_eq!(trim_ext("no-ext"), "no-ext");
+    }
+
+    #[test]
+    fn scan_themes_lists_valid_user_themes_and_skips_junk() {
+        let dir = tmp();
+        std::fs::write(dir.join("good.json"), SAMPLE_THEME).unwrap();
+        std::fs::write(dir.join("broken.json"), "{ not json").unwrap();
+        std::fs::write(dir.join("notes.txt"), "ignore me").unwrap();
+        // A file literally named default.json must never shadow the built-in.
+        std::fs::write(dir.join("default.json"), SAMPLE_THEME).unwrap();
+
+        let list = scan_themes(&dir);
+        assert_eq!(list[0].id, "default");
+        assert!(list[0].builtin);
+        let ids: Vec<&str> = list.iter().map(|t| t.id.as_str()).collect();
+        assert_eq!(ids, vec!["default", "good"]);
+        assert_eq!(list[1].name, "Sample");
+        assert!(!list[1].builtin);
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn save_read_and_delete_theme_roundtrip() {
+        let dir = tmp();
+        save_theme_file_in(&dir, "mine", SAMPLE_THEME).unwrap();
+        let file = read_theme_file_in(&dir, "mine").unwrap();
+        assert_eq!(file.name, "Sample");
+
+        assert!(delete_theme_in(&dir, "default").is_err());
+        delete_theme_in(&dir, "mine").unwrap();
+        assert!(read_theme_file_in(&dir, "mine").is_err());
+        assert_eq!(scan_themes(&dir).len(), 1);
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[gpui::test]
+    fn app_font_family_preference_persists(cx: &mut TestAppContext) {
+        let dir = std::env::temp_dir().join(format!("labonair-set-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = cx.new(|_| PreferencesStore::with_dir(dir.clone()));
+        store.update(cx, |s, cx| {
+            s.set_value("appFontFamily", Value::String("Inter".into()), cx);
+        });
+        cx.run_until_parked();
+        assert_eq!(
+            PreferencesStore::with_dir(dir.clone())
+                .get()
+                .app_font_family,
+            "Inter"
+        );
         std::fs::remove_dir_all(&dir).ok();
     }
 

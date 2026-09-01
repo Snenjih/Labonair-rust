@@ -91,6 +91,8 @@ pub struct Preferences {
     // ── Appearance ───────────────────────────────────────────────────────
     pub app_font_size: u32,
     pub app_line_height: f32,
+    /// UI font family (empty = system default).
+    pub app_font_family: String,
     pub reduce_motion: bool,
 
     // ── Terminal ─────────────────────────────────────────────────────────
@@ -143,6 +145,7 @@ impl Default for Preferences {
 
             app_font_size: 13,
             app_line_height: 1.5,
+            app_font_family: String::new(),
             reduce_motion: false,
 
             terminal_shell: String::new(),
