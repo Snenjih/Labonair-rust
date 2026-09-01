@@ -39,6 +39,7 @@ use labonair_terminal::{
 };
 
 use crate::background::{BackgroundStore, LayerScope};
+use crate::explorer::{quote_paths, DraggedPaths};
 use crate::theme::ThemeStore;
 
 /// How often the view polls the session for new terminal output.
@@ -508,6 +509,15 @@ impl Render for TerminalView {
                         cx.notify();
                     }
                 }
+            }))
+            .on_drop(cx.listener(|this, d: &DraggedPaths, _window, _cx| {
+                // Explorer file dragged onto the terminal → insert its quoted
+                // path(s), like the reference "drag file into shell" workflow.
+                if d.paths.is_empty() {
+                    return;
+                }
+                let text = format!("{} ", quote_paths(&d.paths));
+                this.send_input(text.as_bytes());
             }))
             .children(run_elements)
             .children(selection_elements)

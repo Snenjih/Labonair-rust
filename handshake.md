@@ -4,7 +4,90 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
-## Last Session: 2026-09-01 (T05-001 — file tree & explorer basics)
+## Last Session: 2026-09-01 (T05-002 — drag-and-drop & advanced file actions)
+
+### What Was Done
+- **T05-002 ✅ Done.** Explorer drag-and-drop + copy/cut/paste buffer + OS
+  file drop, ported from `reference-src/src/modules/explorer/lib/`
+  (`explorerDrag.ts`, `useInternalDrop.ts` `canDropInto`/`resolveDropTarget`,
+  `useOsFileDrop.ts`, `useFileTree.movePath`) and backend
+  `src-tauri/src/modules/fs/mutate.rs` (`fs_copy_into`).
+  - **`crates/backend/src/modules/fs/mutate.rs`** — new blocking sync fns:
+    `move_into_sync(src, dest_dir) -> Result<String,String>` (rename into a
+    dir; refuses overwrite / move-onto-own-parent / move-into-self-or-
+    descendant), `copy_into_sync(&[String], &str)` (extracted core of
+    `fs_copy_into`, which now just wraps it in `spawn_blocking`). +2 tests
+    (move roundtrip + conflict + into-self + no-op + missing-dest guards;
+    copy conflict-rename `name (1).ext` + source-left-in-place + missing src).
+    backend tests 131 → 133.
+  - **`crates/ui/src/explorer.rs`**:
+    - module-level: `pub struct DraggedPaths { paths: Vec<PathBuf> }` (drag
+      payload, exported from `lib.rs`), `DragPreview` render entity (pointer
+      chip), `ClipOp{Copy,Cut}` + `Clipboard{op,paths}`, `pub fn shell_quote`
+      / `pub fn quote_paths` (single-quote wrap unless all-safe chars),
+      `can_drop_into(src,dest)` (port of `canDropInto`).
+    - `ExplorerView`: `selected: Option<PathBuf>` → `selection: Vec<PathBuf>`
+      (Cmd/Shift-click toggles additive; plain click still selects+opens/
+      expands). New fields `clipboard: Option<Clipboard>`, `drop_target:
+      Option<PathBuf>`.
+    - copy/cut/paste: `clip_set`/`clip_clear`/`is_cut`/`paste_into(dir)` +
+      `action_paths(path)` (whole selection if `path` is in it, else just it).
+      Paste runs `copy_into_sync` (Copy) or a loop of `move_into_sync` (Cut,
+      then clears buffer) on the background executor, reloads affected dirs,
+      toasts errors. Guards dest against self/descendant.
+    - drag: folder + file rows get `.on_drag(DraggedPaths, |_,_,_,cx|
+      cx.new(DragPreview))`. Folder rows + the root list container get
+      `.on_drag_move::<DragMoveEvent<DraggedPaths>>` (sets `drop_target` for
+      the accent highlight), `.on_drop::<DraggedPaths>` → `drop_move` (move,
+      `can_drop_into`-filtered), `.on_drop::<ExternalPaths>` → `drop_external`
+      (copy_into + success toast). List container drop = into root.
+    - terminal drop: `crates/ui/src/terminal.rs` root div gets
+      `.on_drop::<DraggedPaths>` → `send_input(quote_paths(&paths) + " ")`.
+    - UI: clipboard banner above the list ("N items copied/cut" + Paste +
+      Clear), cut rows render at `opacity(0.5)` + error color, drop-target
+      folder rows render `bg(accent)`. Context menu gains Copy / Cut /
+      Paste (Paste only when buffer non-empty). Explorer-level `on_key`:
+      Cmd-C/X/V, Esc clears buffer then selection.
+    - +3 pure tests (`can_drop_into` noop/self/descendant, `shell_quote` +
+      `quote_paths`, clipboard buffer set/replace/discard). ui tests 48 → 51.
+  - **`crates/ui/src/lib.rs`** — `pub use explorer::{DraggedPaths, ExplorerView}`.
+- **GPUI API (gpui 0.2.2):** `ExternalPaths(pub(crate) SmallVec<[PathBuf;2]>)`
+  with `.paths() -> &[PathBuf]` + blanket `Render`; `InteractiveElement::
+  on_drop::<T>` pushes per-TypeId so multiple `.on_drop` with different `T`
+  on one element is fine (unlike `.on_drag`, which debug-panics on a second
+  call); `ClickEvent::modifiers() -> Modifiers` (`.secondary()` = Cmd on
+  mac, `.shift`); `cx.new(...)` inside an `on_drag` constructor closure
+  (`&mut App`) needs `use gpui::AppContext`.
+- **Deviations / limits:** no name-conflict *dialog* on drop/paste — a move
+  onto an existing name fails with an error toast (backend refuses overwrite),
+  copy auto-renames `name (1).ext` (reference `fs_copy_into` behavior). No
+  chmod/chown: `localFsProvider` in the reference has no chmod/chown (SFTP-
+  only — Phase 07), and the task instructions don't mention it, so
+  `ChmodChownDialog` is not ported here. `drop_target` highlight clears on
+  drop/handler, not on drag-cancel-outside (stale until next notify). Range
+  (shift-click) select is treated as additive-toggle, not a true range.
+- **Verified:** `cargo fmt --all --check`, `cargo clippy --workspace
+  --all-targets -- -D warnings`, `cargo test --workspace` (backend 133,
+  ui 51), `cargo build --bin labonair` — all green. Not visually run — user
+  should `cargo run` and check: drag a file onto a folder → it moves (folder
+  highlights while hovering), drag a file onto a terminal pane → its quoted
+  path is typed, right-click → Copy/Cut then right-click a folder → Paste,
+  Cmd-C/Cmd-X/Cmd-V, cut items dim red, banner shows + Clear works, drop a
+  file from Finder onto the tree → it is copied in.
+
+### Current State
+- Branch `master`, ~24 unpushed commits + this one.
+- Pre-existing uncommitted `CLAUDE.md` edit (not ours) — left untouched & excluded.
+- `reference-src/` untouched. **Phase 04: T05-001 + T05-002 done.**
+
+### What's Next
+- Next roadmap task after T05-002 (see `tasks/ROADMAP.md`) — Phase 04 is
+  complete if T05-002 is its last task; otherwise the next `T05-*`. Likely
+  Phase 05 (Editor) T06-001.
+
+---
+
+## Session: 2026-09-01 (T05-001 — file tree & explorer basics)
 
 ### What Was Done
 - **T05-001 ✅ Done.** Sidebar file explorer, ported from

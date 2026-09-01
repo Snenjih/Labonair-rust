@@ -35,9 +35,9 @@ use std::time::Duration;
 
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, px, App, ClickEvent, ClipboardItem, Context, Entity, FocusHandle, Focusable, Hsla,
-    InteractiveElement, IntoElement, KeyDownEvent, MouseButton, ParentElement, Render,
-    SharedString, StatefulInteractiveElement, Styled, Task, Window,
+    div, px, App, AppContext, ClickEvent, ClipboardItem, Context, Entity, ExternalPaths,
+    FocusHandle, Focusable, Hsla, InteractiveElement, IntoElement, KeyDownEvent, MouseButton,
+    ParentElement, Render, SharedString, StatefulInteractiveElement, Styled, Task, Window,
 };
 use notify::{RecommendedWatcher, RecursiveMode};
 use notify_debouncer_mini::{new_debouncer, Debouncer};
@@ -52,6 +52,79 @@ const PAGE_LIMIT: usize = tree::DEFAULT_LOCAL_PAGE_LIMIT;
 const INDENT: f32 = 12.0;
 const WATCH_DEBOUNCE: Duration = Duration::from_millis(300);
 const DRAIN_INTERVAL: Duration = Duration::from_millis(400);
+
+/// Payload of an in-tree drag (T05-002). Pure-data drag, mirroring the
+/// reference `explorerDrag` module singleton — carries the selected paths from
+/// an explorer row to a drop target (a folder in the same tree, or a terminal
+/// pane which inserts the quoted path).
+#[derive(Clone)]
+pub struct DraggedPaths {
+    pub paths: Vec<PathBuf>,
+}
+
+/// The little chip that follows the pointer while dragging explorer rows.
+pub struct DragPreview {
+    label: SharedString,
+}
+
+impl Render for DragPreview {
+    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+        div()
+            .px_2()
+            .py(px(2.0))
+            .rounded_sm()
+            .bg(gpui::hsla(0.0, 0.0, 0.18, 0.94))
+            .text_color(gpui::white())
+            .text_xs()
+            .child(self.label.clone())
+    }
+}
+
+/// App-internal copy/cut buffer for the explorer (mirrors the reference
+/// clipboard buffer — lives in the store, not the OS clipboard).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum ClipOp {
+    Copy,
+    Cut,
+}
+
+#[derive(Clone)]
+struct Clipboard {
+    op: ClipOp,
+    paths: Vec<PathBuf>,
+}
+
+/// Shell-quote a single path for insertion into a terminal (single-quote wrap
+/// unless it is entirely "safe" characters).
+pub fn shell_quote(path: &Path) -> String {
+    let s = path.to_string_lossy();
+    let safe = !s.is_empty()
+        && s.chars()
+            .all(|c| c.is_alphanumeric() || "-_./=:@%+,".contains(c));
+    if safe {
+        s.into_owned()
+    } else {
+        format!("'{}'", s.replace('\'', "'\\''"))
+    }
+}
+
+/// Space-joined shell-quoted paths (drag-into-terminal payload).
+pub fn quote_paths(paths: &[PathBuf]) -> String {
+    paths
+        .iter()
+        .map(|p| shell_quote(p))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// A move/drop is a no-op (already in `dest_dir`) or invalid (into itself or a
+/// descendant). Port of the reference `canDropInto`.
+fn can_drop_into(src: &Path, dest_dir: &Path) -> bool {
+    if src.parent() == Some(dest_dir) || dest_dir == src {
+        return false;
+    }
+    !dest_dir.starts_with(src)
+}
 
 #[derive(Clone)]
 struct Entry {
@@ -249,7 +322,9 @@ pub struct ExplorerView {
     theme: Entity<ThemeStore>,
     workspace: Entity<Workspace>,
     model: TreeModel,
-    selected: Option<PathBuf>,
+    selection: Vec<PathBuf>,
+    clipboard: Option<Clipboard>,
+    drop_target: Option<PathBuf>,
     edit_buffer: String,
     edit_focus: FocusHandle,
     context_menu: Option<PathBuf>,
@@ -284,7 +359,9 @@ impl ExplorerView {
             theme,
             workspace,
             model: TreeModel::default(),
-            selected: None,
+            selection: Vec::new(),
+            clipboard: None,
+            drop_target: None,
             edit_buffer: String::new(),
             edit_focus: cx.focus_handle(),
             context_menu: None,
@@ -303,7 +380,9 @@ impl ExplorerView {
         if !self.model.set_root(root) {
             return;
         }
-        self.selected = None;
+        self.selection.clear();
+        self.clipboard = None;
+        self.drop_target = None;
         self.context_menu = None;
         self.confirm_delete = None;
         self.edit_buffer.clear();
@@ -387,8 +466,205 @@ impl ExplorerView {
         cx.notify();
     }
 
-    fn select(&mut self, path: PathBuf, cx: &mut Context<Self>) {
-        self.selected = Some(path);
+    fn select(&mut self, path: PathBuf, additive: bool, cx: &mut Context<Self>) {
+        if additive {
+            if let Some(i) = self.selection.iter().position(|p| p == &path) {
+                self.selection.remove(i);
+            } else {
+                self.selection.push(path);
+            }
+        } else {
+            self.selection.clear();
+            self.selection.push(path);
+        }
+        cx.notify();
+    }
+
+    fn is_selected(&self, path: &Path) -> bool {
+        self.selection.iter().any(|p| p == path)
+    }
+
+    /// Paths a drag/copy/cut acts on: the whole selection when `path` is part
+    /// of it, otherwise just `path`.
+    fn action_paths(&self, path: &Path) -> Vec<PathBuf> {
+        if self.is_selected(path) && self.selection.len() > 1 {
+            self.selection.clone()
+        } else {
+            vec![path.to_path_buf()]
+        }
+    }
+
+    // --- copy / cut / paste buffer (T05-002) ---
+
+    fn clip_set(&mut self, op: ClipOp, paths: Vec<PathBuf>, cx: &mut Context<Self>) {
+        self.context_menu = None;
+        if paths.is_empty() {
+            return;
+        }
+        self.clipboard = Some(Clipboard { op, paths });
+        cx.notify();
+    }
+
+    fn clip_clear(&mut self, cx: &mut Context<Self>) {
+        self.clipboard = None;
+        cx.notify();
+    }
+
+    fn is_cut(&self, path: &Path) -> bool {
+        matches!(&self.clipboard, Some(c) if c.op == ClipOp::Cut && c.paths.iter().any(|p| p == path))
+    }
+
+    fn paste_into(&mut self, dir: PathBuf, cx: &mut Context<Self>) {
+        self.context_menu = None;
+        let Some(clip) = self.clipboard.clone() else {
+            return;
+        };
+        // Guard against pasting a folder into itself / a descendant.
+        if clip.paths.iter().any(|p| {
+            dir == *p || dir.starts_with(p) || (clip.op == ClipOp::Cut && !can_drop_into(p, &dir))
+        }) {
+            notification_center(cx).update(cx, |c, cx| {
+                c.push(
+                    Notification::error("Paste failed", "Invalid destination".to_string()),
+                    cx,
+                );
+            });
+            return;
+        }
+        let mut reload: Vec<PathBuf> = vec![dir.clone()];
+        let op = clip.op;
+        let paths: Vec<String> = clip
+            .paths
+            .iter()
+            .map(|p| p.to_string_lossy().to_string())
+            .collect();
+        if op == ClipOp::Cut {
+            for p in &clip.paths {
+                if let Some(parent) = p.parent() {
+                    reload.push(parent.to_path_buf());
+                }
+                self.model.expanded.remove(p);
+            }
+            self.clipboard = None;
+        }
+        let dir_s = dir.to_string_lossy().to_string();
+        cx.spawn(async move |view, cx| {
+            let result = cx
+                .background_executor()
+                .spawn(async move {
+                    match op {
+                        ClipOp::Copy => mutate::copy_into_sync(&paths, &dir_s).map(|_| ()),
+                        ClipOp::Cut => {
+                            for p in &paths {
+                                mutate::move_into_sync(p, &dir_s)?;
+                            }
+                            Ok(())
+                        }
+                    }
+                })
+                .await;
+            let _ = view.update(cx, |this, cx| match result {
+                Ok(()) => {
+                    for d in reload {
+                        this.load_dir(d, true, cx);
+                    }
+                }
+                Err(message) => {
+                    notification_center(cx).update(cx, |c, cx| {
+                        c.push(Notification::error("Paste failed", message), cx);
+                    });
+                }
+            });
+        })
+        .detach();
+        cx.notify();
+    }
+
+    /// Drop of a dragged row (or rows) onto a directory — move.
+    fn drop_move(&mut self, srcs: Vec<PathBuf>, dest_dir: PathBuf, cx: &mut Context<Self>) {
+        self.drop_target = None;
+        let srcs: Vec<PathBuf> = srcs
+            .into_iter()
+            .filter(|s| can_drop_into(s, &dest_dir))
+            .collect();
+        if srcs.is_empty() {
+            return;
+        }
+        let mut reload: Vec<PathBuf> = vec![dest_dir.clone()];
+        let mut paths = Vec::new();
+        for s in &srcs {
+            if let Some(parent) = s.parent() {
+                reload.push(parent.to_path_buf());
+            }
+            self.model.expanded.remove(s);
+            paths.push(s.to_string_lossy().to_string());
+        }
+        self.selection.clear();
+        let dir_s = dest_dir.to_string_lossy().to_string();
+        cx.spawn(async move |view, cx| {
+            let result = cx
+                .background_executor()
+                .spawn(async move {
+                    for p in &paths {
+                        mutate::move_into_sync(p, &dir_s)?;
+                    }
+                    Ok::<(), String>(())
+                })
+                .await;
+            let _ = view.update(cx, |this, cx| match result {
+                Ok(()) => {
+                    for d in reload {
+                        this.load_dir(d, true, cx);
+                    }
+                }
+                Err(message) => {
+                    notification_center(cx).update(cx, |c, cx| {
+                        c.push(Notification::error("Move failed", message), cx);
+                    });
+                }
+            });
+        })
+        .detach();
+        cx.notify();
+    }
+
+    /// External OS file drop into the tree — copy into the target directory.
+    fn drop_external(&mut self, srcs: Vec<PathBuf>, dest_dir: PathBuf, cx: &mut Context<Self>) {
+        self.drop_target = None;
+        if srcs.is_empty() {
+            return;
+        }
+        let paths: Vec<String> = srcs
+            .iter()
+            .map(|p| p.to_string_lossy().to_string())
+            .collect();
+        let dir_s = dest_dir.to_string_lossy().to_string();
+        cx.spawn(async move |view, cx| {
+            let result = cx
+                .background_executor()
+                .spawn(async move { mutate::copy_into_sync(&paths, &dir_s).map(|v| v.len()) })
+                .await;
+            let _ = view.update(cx, |this, cx| match result {
+                Ok(n) => {
+                    this.load_dir(dest_dir, true, cx);
+                    notification_center(cx).update(cx, |c, cx| {
+                        c.push(
+                            Notification::success(
+                                "Files copied",
+                                format!("{n} item{} copied", if n == 1 { "" } else { "s" }),
+                            ),
+                            cx,
+                        );
+                    });
+                }
+                Err(message) => {
+                    notification_center(cx).update(cx, |c, cx| {
+                        c.push(Notification::error("Copy failed", message), cx);
+                    });
+                }
+            });
+        })
+        .detach();
         cx.notify();
     }
 
@@ -498,7 +774,7 @@ impl ExplorerView {
         };
         self.model.expanded.remove(&path);
         self.model.nodes.remove(&path);
-        self.selected = None;
+        self.selection.clear();
         let path_c = path.clone();
         self.run_fs_op(
             parent,
@@ -732,11 +1008,29 @@ impl Render for ExplorerView {
                 }),
             );
 
+        let root_drop = root.clone();
+        let root_ext = root.clone();
+        let root_over = root.clone();
         let list = div()
             .id("explorer-list")
             .flex_1()
             .overflow_y_scroll()
             .py_1()
+            .on_drag_move(cx.listener(
+                move |this, _: &gpui::DragMoveEvent<DraggedPaths>, _w, cx| {
+                    // Empty space / non-folder rows → drop into the root.
+                    if this.drop_target.as_deref() != Some(root_over.as_path()) {
+                        this.drop_target = Some(root_over.clone());
+                        cx.notify();
+                    }
+                },
+            ))
+            .on_drop(cx.listener(move |this, d: &DraggedPaths, _w, cx| {
+                this.drop_move(d.paths.clone(), root_drop.clone(), cx);
+            }))
+            .on_drop(cx.listener(move |this, d: &ExternalPaths, _w, cx| {
+                this.drop_external(d.paths().to_vec(), root_ext.clone(), cx);
+            }))
             .children(
                 self.model
                     .rows()
@@ -753,7 +1047,9 @@ impl Render for ExplorerView {
             .flex()
             .flex_col()
             .text_color(c.fg)
+            .on_key_down(cx.listener(Self::on_key))
             .child(toolbar)
+            .children(self.render_clip_banner(c, cx))
             .child(list);
 
         if let Some(target) = self.context_menu.clone() {
@@ -791,6 +1087,112 @@ impl ExplorerView {
             .on_click(
                 cx.listener(move |this, _: &ClickEvent, window, cx| handler(this, window, cx)),
             )
+    }
+
+    /// Explorer-level keyboard: copy / cut / paste buffer + clear.
+    fn on_key(&mut self, ev: &KeyDownEvent, _window: &mut Window, cx: &mut Context<Self>) {
+        let ks = &ev.keystroke;
+        if ks.key == "escape" {
+            if self.clipboard.is_some() {
+                self.clip_clear(cx);
+            } else {
+                self.selection.clear();
+                cx.notify();
+            }
+            return;
+        }
+        if !ks.modifiers.secondary() {
+            return;
+        }
+        let Some(primary) = self.selection.last().cloned() else {
+            if ks.key == "v" {
+                if let Some(root) = self.paste_dir() {
+                    self.paste_into(root, cx);
+                }
+            }
+            return;
+        };
+        match ks.key.as_str() {
+            "c" => self.clip_set(ClipOp::Copy, self.action_paths(&primary), cx),
+            "x" => self.clip_set(ClipOp::Cut, self.action_paths(&primary), cx),
+            "v" => {
+                if let Some(dir) = self.paste_dir() {
+                    self.paste_into(dir, cx);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Where a keyboard/banner paste lands: the selected directory (or the
+    /// selected file's parent), else the root.
+    fn paste_dir(&self) -> Option<PathBuf> {
+        if let Some(p) = self.selection.last() {
+            if p.is_dir() {
+                return Some(p.clone());
+            }
+            if let Some(parent) = p.parent() {
+                return Some(parent.to_path_buf());
+            }
+        }
+        self.model.root.clone()
+    }
+
+    fn render_clip_banner(&self, c: Colors, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
+        let clip = self.clipboard.as_ref()?;
+        let verb = match clip.op {
+            ClipOp::Copy => "copied",
+            ClipOp::Cut => "cut",
+        };
+        let text = format!(
+            "{} item{} {verb}",
+            clip.paths.len(),
+            if clip.paths.len() == 1 { "" } else { "s" }
+        );
+        Some(
+            div()
+                .flex()
+                .flex_row()
+                .items_center()
+                .gap_2()
+                .px_2()
+                .py(px(2.0))
+                .text_xs()
+                .bg(c.card)
+                .border_b_1()
+                .border_color(c.border)
+                .child(
+                    div()
+                        .flex_1()
+                        .text_color(c.muted)
+                        .child(SharedString::from(text)),
+                )
+                .child(
+                    div()
+                        .id("clip-paste")
+                        .px_1()
+                        .rounded_sm()
+                        .text_color(c.accent)
+                        .hover(|s| s.bg(c.border))
+                        .child("Paste")
+                        .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
+                            if let Some(dir) = this.paste_dir() {
+                                this.paste_into(dir, cx);
+                            }
+                        })),
+                )
+                .child(
+                    div()
+                        .id("clip-clear")
+                        .px_1()
+                        .rounded_sm()
+                        .text_color(c.muted)
+                        .hover(|s| s.bg(c.border))
+                        .child("Clear")
+                        .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| this.clip_clear(cx))),
+                )
+                .into_any_element(),
+        )
     }
 
     fn on_edit_key(&mut self, ev: &KeyDownEvent, _window: &mut Window, cx: &mut Context<Self>) {
@@ -874,7 +1276,10 @@ impl ExplorerView {
                     .into_any_element()
             }
             Row::Entry { path, depth, entry } => {
-                let is_selected = self.selected.as_deref() == Some(path.as_path());
+                let is_selected = self.is_selected(&path);
+                let is_cut = self.is_cut(&path);
+                let is_drop_target =
+                    entry.is_dir && self.drop_target.as_deref() == Some(path.as_path());
                 let is_expanded = entry.is_dir && self.model.expanded.contains(&path);
                 let chevron = if entry.is_dir {
                     if is_expanded {
@@ -893,8 +1298,16 @@ impl ExplorerView {
                 let id: SharedString = format!("row:{}", path.display()).into();
                 let click_path = path.clone();
                 let menu_path = path.clone();
+                let over_path = path.clone();
+                let drop_path = path.clone();
                 let is_dir = entry.is_dir;
-                div()
+                let drag_paths = self.action_paths(&path);
+                let drag_label: SharedString = if drag_paths.len() > 1 {
+                    format!("{} items", drag_paths.len()).into()
+                } else {
+                    entry.name.clone().into()
+                };
+                let mut row = div()
                     .id(id)
                     .flex()
                     .flex_row()
@@ -904,9 +1317,13 @@ impl ExplorerView {
                     .pr_2()
                     .py(px(2.0))
                     .text_sm()
-                    .when(is_selected, |d| d.bg(c.border))
-                    .when(!is_selected, |d| d.hover(|s| s.bg(c.card)))
+                    .when(is_drop_target, |d| d.bg(c.accent))
+                    .when(is_selected && !is_drop_target, |d| d.bg(c.border))
+                    .when(!is_selected && !is_drop_target, |d| {
+                        d.hover(|s| s.bg(c.card))
+                    })
                     .when(entry.is_ignored, |d| d.text_color(c.muted))
+                    .when(is_cut, |d| d.opacity(0.5).text_color(c.err))
                     .child(
                         div()
                             .w(px(10.0))
@@ -916,8 +1333,12 @@ impl ExplorerView {
                     )
                     .child(div().child(glyph))
                     .child(div().flex_1().child(SharedString::from(entry.name.clone())))
-                    .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
-                        this.select(click_path.clone(), cx);
+                    .on_click(cx.listener(move |this, ev: &ClickEvent, _window, cx| {
+                        let additive = ev.modifiers().secondary() || ev.modifiers().shift;
+                        this.select(click_path.clone(), additive, cx);
+                        if additive {
+                            return;
+                        }
                         if is_dir {
                             this.toggle_expanded(click_path.clone(), cx);
                         } else {
@@ -931,7 +1352,33 @@ impl ExplorerView {
                             cx.notify();
                         }),
                     )
-                    .into_any_element()
+                    .on_drag(DraggedPaths { paths: drag_paths }, move |_, _, _, cx| {
+                        cx.new(|_| DragPreview {
+                            label: drag_label.clone(),
+                        })
+                    });
+
+                if is_dir {
+                    row = row
+                        .on_drag_move(cx.listener(
+                            move |this, _: &gpui::DragMoveEvent<DraggedPaths>, _w, cx| {
+                                if this.drop_target.as_deref() != Some(over_path.as_path()) {
+                                    this.drop_target = Some(over_path.clone());
+                                    cx.notify();
+                                }
+                            },
+                        ))
+                        .on_drop(cx.listener(move |this, d: &DraggedPaths, _w, cx| {
+                            this.drop_move(d.paths.clone(), drop_path.clone(), cx);
+                        }))
+                        .on_drop(cx.listener({
+                            let drop_path = path.clone();
+                            move |this, d: &ExternalPaths, _w, cx| {
+                                this.drop_external(d.paths().to_vec(), drop_path.clone(), cx);
+                            }
+                        }));
+                }
+                row.into_any_element()
             }
         }
     }
@@ -982,9 +1429,13 @@ impl ExplorerView {
         let d1 = dir_for_ops.clone();
         let d2 = dir_for_ops.clone();
         let d3 = dir_for_ops.clone();
+        let d_paste = dir_for_ops.clone();
         let t_rename = target.clone();
         let t_delete = target.clone();
         let t_copy = target.clone();
+        let t_cc = self.action_paths(&target);
+        let t_cx = t_cc.clone();
+        let has_clip = self.clipboard.is_some();
 
         let menu = div()
             .absolute()
@@ -1027,6 +1478,25 @@ impl ExplorerView {
             .child(item("Delete".into()).id("cm-delete").on_click(cx.listener(
                 move |this, _: &ClickEvent, _window, cx| this.request_delete(t_delete.clone(), cx),
             )))
+            .child(item("Copy".into()).id("cm-clip-copy").on_click(cx.listener(
+                move |this, _: &ClickEvent, _window, cx| {
+                    this.clip_set(ClipOp::Copy, t_cc.clone(), cx)
+                },
+            )))
+            .child(item("Cut".into()).id("cm-clip-cut").on_click(cx.listener(
+                move |this, _: &ClickEvent, _window, cx| {
+                    this.clip_set(ClipOp::Cut, t_cx.clone(), cx)
+                },
+            )))
+            .when(has_clip, |menu| {
+                menu.child(
+                    item("Paste".into())
+                        .id("cm-clip-paste")
+                        .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
+                            this.paste_into(d_paste.clone(), cx)
+                        })),
+                )
+            })
             .child(item("Copy Path".into()).id("cm-copy").on_click(
                 cx.listener(move |this, _: &ClickEvent, _window, cx| this.copy_path(&t_copy, cx)),
             ))
@@ -1236,6 +1706,55 @@ mod tests {
         assert!(t.contains(&PathBuf::from("/r")));
         assert!(t.contains(&PathBuf::from("/r/a")));
         assert!(!t.contains(&PathBuf::from("/r/b")));
+    }
+
+    #[test]
+    fn can_drop_into_rejects_noop_and_self_and_descendant() {
+        // Same folder → no-op.
+        assert!(!can_drop_into(Path::new("/r/a/x.txt"), Path::new("/r/a")));
+        // Into itself.
+        assert!(!can_drop_into(Path::new("/r/a"), Path::new("/r/a")));
+        // Into its own descendant.
+        assert!(!can_drop_into(Path::new("/r/a"), Path::new("/r/a/sub")));
+        // Valid: sibling directory.
+        assert!(can_drop_into(Path::new("/r/a/x.txt"), Path::new("/r/b")));
+        assert!(can_drop_into(Path::new("/r/a"), Path::new("/r/b")));
+    }
+
+    #[test]
+    fn shell_quote_wraps_only_when_needed() {
+        assert_eq!(
+            shell_quote(Path::new("/home/me/file.txt")),
+            "/home/me/file.txt"
+        );
+        assert_eq!(
+            shell_quote(Path::new("/home/me/my file.txt")),
+            "'/home/me/my file.txt'"
+        );
+        assert_eq!(shell_quote(Path::new("/a/it's")), "'/a/it'\\''s'");
+        assert_eq!(
+            quote_paths(&[PathBuf::from("/a/b"), PathBuf::from("/c d")]),
+            "/a/b '/c d'"
+        );
+    }
+
+    #[test]
+    fn clipboard_buffer_set_replace_and_holds_multiple() {
+        let mut clip = Some(Clipboard {
+            op: ClipOp::Copy,
+            paths: vec![PathBuf::from("/a"), PathBuf::from("/b")],
+        });
+        assert_eq!(clip.as_ref().unwrap().paths.len(), 2);
+        // A cut replaces the buffer.
+        clip = Some(Clipboard {
+            op: ClipOp::Cut,
+            paths: vec![PathBuf::from("/c")],
+        });
+        assert_eq!(clip.as_ref().unwrap().op, ClipOp::Cut);
+        assert_eq!(clip.as_ref().unwrap().paths, vec![PathBuf::from("/c")]);
+        // Discard.
+        clip = None;
+        assert!(clip.is_none());
     }
 
     #[test]

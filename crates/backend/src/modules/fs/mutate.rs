@@ -47,6 +47,73 @@ pub fn rename_sync(from: &str, to: &str) -> Result<(), String> {
     std::fs::rename(&from_p, &to_p).map_err(|e| e.to_string())
 }
 
+/// Moves `src` into the directory `dest_dir` (a plain filesystem rename, which
+/// also relocates across directories). Refuses to overwrite an existing target,
+/// to move a path onto its own parent (no-op), or to move a directory into
+/// itself or one of its own descendants. Returns the final path.
+///
+/// Port of the reference `useFileTree.movePath` (drag-and-drop move) — T05-002.
+pub fn move_into_sync(src: &str, dest_dir: &str) -> Result<String, String> {
+    let src_p = expand_home(src)?;
+    let dest_p = expand_home(dest_dir)?;
+    if !src_p.exists() {
+        return Err(format!("not found: {}", src_p.display()));
+    }
+    if !dest_p.is_dir() {
+        return Err(format!(
+            "destination is not a directory: {}",
+            dest_p.display()
+        ));
+    }
+    if src_p.parent() == Some(dest_p.as_path()) {
+        return Err("already in that folder".to_string());
+    }
+    if dest_p == src_p || dest_p.starts_with(&src_p) {
+        return Err("cannot move a folder into itself".to_string());
+    }
+    let name = src_p
+        .file_name()
+        .ok_or_else(|| format!("no filename: {}", src_p.display()))?;
+    let target = dest_p.join(name);
+    if target.exists() {
+        return Err(format!("already exists: {}", target.display()));
+    }
+    std::fs::rename(&src_p, &target).map_err(|e| e.to_string())?;
+    Ok(target.to_string_lossy().into_owned())
+}
+
+/// Blocking core of [`fs_copy_into`] — used directly by the GPUI explorer's
+/// paste action (T05-002).
+pub fn copy_into_sync(src_paths: &[String], dest_dir: &str) -> Result<Vec<String>, String> {
+    let dest = expand_home(dest_dir)?;
+    if !dest.is_dir() {
+        return Err(format!(
+            "destination is not a directory: {}",
+            dest.display()
+        ));
+    }
+    let mut results = Vec::new();
+    for src_str in src_paths {
+        let src = expand_home(src_str)?;
+        if !src.exists() {
+            return Err(format!("source not found: {}", src.display()));
+        }
+        let name = src
+            .file_name()
+            .ok_or_else(|| format!("no filename: {}", src.display()))?
+            .to_string_lossy()
+            .to_string();
+        let dest_path = resolve_conflict_path(&dest, &name);
+        if src.is_dir() {
+            copy_dir_recursive(&src, &dest_path)?;
+        } else {
+            std::fs::copy(&src, &dest_path).map_err(|e| format!("copy failed: {e}"))?;
+        }
+        results.push(dest_path.to_string_lossy().into_owned());
+    }
+    Ok(results)
+}
+
 /// Deletes a file or directory (recursively for dirs).
 pub fn delete_sync(path: &str) -> Result<(), String> {
     let p = expand_home(path)?;
@@ -134,37 +201,9 @@ pub async fn fs_rename(from: String, to: String) -> Result<(), String> {
 /// If a name conflict exists the copy is placed as "name (1).ext", "name (2).ext", etc.
 /// Returns the list of final destination paths.
 pub async fn fs_copy_into(src_paths: Vec<String>, dest_dir: String) -> Result<Vec<String>, String> {
-    tokio::task::spawn_blocking(move || {
-        let dest = expand_home(&dest_dir)?;
-        if !dest.is_dir() {
-            return Err(format!(
-                "destination is not a directory: {}",
-                dest.display()
-            ));
-        }
-        let mut results = Vec::new();
-        for src_str in &src_paths {
-            let src = expand_home(src_str)?;
-            if !src.exists() {
-                return Err(format!("source not found: {}", src.display()));
-            }
-            let name = src
-                .file_name()
-                .ok_or_else(|| format!("no filename: {}", src.display()))?
-                .to_string_lossy()
-                .to_string();
-            let dest_path = resolve_conflict_path(&dest, &name);
-            if src.is_dir() {
-                copy_dir_recursive(&src, &dest_path)?;
-            } else {
-                std::fs::copy(&src, &dest_path).map_err(|e| format!("copy failed: {e}"))?;
-            }
-            results.push(dest_path.to_string_lossy().into_owned());
-        }
-        Ok(results)
-    })
-    .await
-    .map_err(|e| e.to_string())?
+    tokio::task::spawn_blocking(move || copy_into_sync(&src_paths, &dest_dir))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 fn resolve_conflict_path(dest_dir: &std::path::Path, name: &str) -> std::path::PathBuf {
@@ -269,6 +308,60 @@ mod tests {
         assert!(!renamed.exists());
         delete_sync(dir.join("nested").to_str().unwrap()).unwrap();
         assert!(!dir.join("nested").exists());
+
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn move_into_moves_and_guards() {
+        let dir = scratch_dir("mv");
+        let a = dir.join("a");
+        let b = dir.join("b");
+        create_dir_sync(a.to_str().unwrap()).unwrap();
+        create_dir_sync(b.to_str().unwrap()).unwrap();
+        let f = a.join("x.txt");
+        create_file_sync(f.to_str().unwrap()).unwrap();
+
+        let moved = move_into_sync(f.to_str().unwrap(), b.to_str().unwrap()).unwrap();
+        assert_eq!(moved, b.join("x.txt").to_string_lossy());
+        assert!(!f.exists() && b.join("x.txt").is_file());
+
+        // Conflict: a second file with the same name can't overwrite.
+        let f2 = a.join("x.txt");
+        create_file_sync(f2.to_str().unwrap()).unwrap();
+        assert!(move_into_sync(f2.to_str().unwrap(), b.to_str().unwrap()).is_err());
+
+        // Moving a folder into itself / a descendant is refused.
+        let sub = b.join("sub");
+        create_dir_sync(sub.to_str().unwrap()).unwrap();
+        assert!(move_into_sync(b.to_str().unwrap(), sub.to_str().unwrap()).is_err());
+        // No-op move into the current parent is refused.
+        assert!(move_into_sync(f2.to_str().unwrap(), a.to_str().unwrap()).is_err());
+        // Missing destination.
+        assert!(move_into_sync(f2.to_str().unwrap(), dir.join("nope").to_str().unwrap()).is_err());
+
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn copy_into_sync_resolves_name_conflicts() {
+        let dir = scratch_dir("cp");
+        let src = dir.join("src");
+        let dst = dir.join("dst");
+        create_dir_sync(src.to_str().unwrap()).unwrap();
+        create_dir_sync(dst.to_str().unwrap()).unwrap();
+        let f = src.join("note.txt");
+        create_file_sync(f.to_str().unwrap()).unwrap();
+
+        let r1 =
+            copy_into_sync(&[f.to_string_lossy().into_owned()], dst.to_str().unwrap()).unwrap();
+        assert_eq!(r1[0], dst.join("note.txt").to_string_lossy());
+        let r2 =
+            copy_into_sync(&[f.to_string_lossy().into_owned()], dst.to_str().unwrap()).unwrap();
+        assert_eq!(r2[0], dst.join("note (1).txt").to_string_lossy());
+        assert!(f.is_file(), "copy leaves the source in place");
+
+        assert!(copy_into_sync(&["/no/such/thing".into()], dst.to_str().unwrap()).is_err());
 
         std::fs::remove_dir_all(&dir).unwrap();
     }

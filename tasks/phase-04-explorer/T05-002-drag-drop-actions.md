@@ -1,7 +1,7 @@
 # T05-002: Drag-and-Drop und erweiterte Dateiaktionen
 
 ## Status
-⏳ Pending
+✅ Done
 
 ## Phase
 4 — File-Explorer

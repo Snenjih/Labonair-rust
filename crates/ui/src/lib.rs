@@ -19,7 +19,7 @@ pub use background::{
     background_store, init as init_background, BackgroundFit, BackgroundStore, BackgroundTarget,
     GlobalBackground, LayerScope,
 };
-pub use explorer::ExplorerView;
+pub use explorer::{DraggedPaths, ExplorerView};
 pub use labonair_theme::{ThemeFile, ThemeFileVariant};
 pub use menu::init as init_menus;
 pub use notifications::{
