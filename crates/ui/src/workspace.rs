@@ -26,8 +26,12 @@ use gpui::{
     Focusable, InteractiveElement, IntoElement, KeyDownEvent, MouseButton, MouseDownEvent,
     ParentElement, Render, SharedString, StatefulInteractiveElement, Styled, Task, Window,
 };
+use labonair_backend::modules::sftp::connection::sftp_disconnect as sftp_tab_disconnect;
 use labonair_backend::modules::ssh::client::{ssh_connect, ssh_disconnect, ssh_trust_host};
 use labonair_backend::modules::ssh::pty::SshPtyEvent;
+use labonair_backend::modules::ssh::sftp::{
+    cleanup_remote_edit_temp, prepare_remote_edit, save_remote_edit,
+};
 use labonair_backend::modules::ssh::tunnels::{
     active_tunnels, ssh_start_tunnels, ssh_stop_tunnels,
 };
@@ -42,6 +46,7 @@ use crate::background::BackgroundStore;
 use crate::editor::{EditorEvent, EditorView};
 use crate::hosts::{ActiveTunnelRow, HostManagerEvent, HostManagerView, HostStatus};
 use crate::pane::{CloseOutcome, PaneId, PaneNode, SplitAxis, WorkspaceLayout};
+use crate::sftp::{SftpEvent, SftpView};
 use crate::tabs::{Tab, TabData, TabKind, TabStore};
 use crate::terminal::TerminalView;
 use crate::theme::ThemeStore;
@@ -147,6 +152,30 @@ struct PaneEntry {
     view: Entity<TerminalView>,
 }
 
+/// A remote file staged into a local temp copy for editing (T08-001). Keyed
+/// by the editor tab id; the temp file is uploaded back on save and removed
+/// when the tab closes.
+struct RemoteEdit {
+    session_id: String,
+    remote_path: String,
+    temp_path: String,
+    /// Last-seen dirty flag — a `true → false` transition means the editor
+    /// just saved, so the temp copy is pushed back to the host.
+    dirty: bool,
+}
+
+/// A file-open request queued by an [`SftpView`], drained in `render` where a
+/// `&mut Window` is available.
+enum PendingOpen {
+    Local(String),
+    RemoteEdit {
+        session_id: String,
+        remote_path: String,
+        host_id: String,
+        temp_path: String,
+    },
+}
+
 /// The tabbed, split-pane workspace shell.
 pub struct Workspace {
     registry: Arc<TerminalRegistry>,
@@ -160,6 +189,17 @@ pub struct Workspace {
     panes: HashMap<PaneId, PaneEntry>,
     /// Editor view per `Editor` tab id.
     editors: HashMap<u64, Entity<EditorView>>,
+    /// SFTP browser view per `Sftp` tab id (T08-001).
+    sftp_views: HashMap<u64, Entity<SftpView>>,
+    /// SFTP session id per `Sftp` tab id — kept alongside the view so the
+    /// session can be torn down from `retire_tab` (which has no `cx`).
+    sftp_sessions: HashMap<u64, String>,
+    /// Active remote-edit temp copies, keyed by editor tab id.
+    remote_edits: HashMap<u64, RemoteEdit>,
+    /// SFTP tabs queued by the host manager, drained in `render`.
+    pending_sftp: Vec<String>,
+    /// File-open requests queued by SFTP views, drained in `render`.
+    pending_open: Vec<PendingOpen>,
     next_pane_id: PaneId,
     /// Tab id whose close is awaiting unsaved-changes confirmation.
     confirm_close: Option<u64>,
@@ -225,6 +265,10 @@ impl Workspace {
                     this.pending_connect.push(host_id.clone());
                     cx.notify();
                 }
+                HostManagerEvent::OpenSftp(host_id) => {
+                    this.pending_sftp.push(host_id.clone());
+                    cx.notify();
+                }
             },
         )
         .detach();
@@ -278,6 +322,11 @@ impl Workspace {
             layouts: HashMap::new(),
             panes: HashMap::new(),
             editors: HashMap::new(),
+            sftp_views: HashMap::new(),
+            sftp_sessions: HashMap::new(),
+            remote_edits: HashMap::new(),
+            pending_sftp: Vec::new(),
+            pending_open: Vec::new(),
             next_pane_id: 1,
             confirm_close: None,
             context_menu: None,
@@ -507,19 +556,48 @@ impl Workspace {
                 return;
             }
             let dirty = view.read(cx).is_dirty();
+            let is_remote_edit = this.remote_edits.contains_key(&tab_id);
             this.tabs.update(cx, |s, cx| {
                 s.set_dirty(tab_id, dirty, cx);
                 if matches!(ev, EditorEvent::Edited) {
                     s.set_peek(tab_id, false, cx);
                 }
-                if let Some(title) = view
-                    .read(cx)
-                    .path()
-                    .and_then(|p| p.file_name().and_then(|n| n.to_str()).map(str::to_string))
-                {
-                    s.set_custom_title(tab_id, Some(title), cx);
+                if !is_remote_edit {
+                    if let Some(title) = view
+                        .read(cx)
+                        .path()
+                        .and_then(|p| p.file_name().and_then(|n| n.to_str()).map(str::to_string))
+                    {
+                        s.set_custom_title(tab_id, Some(title), cx);
+                    }
                 }
             });
+
+            // Remote-edit tab: a `dirty → clean` transition means the editor
+            // just saved the local temp copy — push it back to the host.
+            if let Some(re) = this.remote_edits.get_mut(&tab_id) {
+                let saved = re.dirty && !dirty;
+                re.dirty = dirty;
+                if saved {
+                    let app = this.backend.clone();
+                    let (sid, rpath, tpath) = (
+                        re.session_id.clone(),
+                        re.remote_path.clone(),
+                        re.temp_path.clone(),
+                    );
+                    let jh = this.tokio.spawn(async move {
+                        save_remote_edit(sid, rpath, tpath, &app.ssh, app.clone())
+                            .await
+                            .map_err(|e| e.to_string())
+                    });
+                    cx.spawn(async move |_this, _cx| {
+                        if let Ok(Err(e)) = jh.await {
+                            tracing::warn!(%e, "save_remote_edit failed");
+                        }
+                    })
+                    .detach();
+                }
+            }
             cx.notify();
         })
         .detach();
@@ -800,6 +878,20 @@ impl Workspace {
         }
         self.editors.remove(&tab.id);
 
+        // SFTP browser tab: drop the view and close its SFTP/SSH session.
+        self.sftp_views.remove(&tab.id);
+        if let Some(session_id) = self.sftp_sessions.remove(&tab.id) {
+            let _ = sftp_tab_disconnect(session_id, &self.backend.ssh);
+        }
+
+        // Editor tab backed by a remote-edit temp copy: clean the temp file.
+        if let Some(re) = self.remote_edits.remove(&tab.id) {
+            let temp = re.temp_path;
+            self.tokio.spawn(async move {
+                let _ = cleanup_remote_edit_temp(temp).await;
+            });
+        }
+
         // Disconnect any SSH session owned by this tab.
         let dead: Vec<SessionId> = self
             .ssh_tabs
@@ -823,6 +915,162 @@ impl Workspace {
                 }
             }
         }
+    }
+
+    // ── SFTP browser (T08-001) ────────────────────────────────────────────
+
+    /// Open (or re-focus) a dual-pane SFTP browser tab for `host_id`.
+    fn open_sftp(&mut self, host_id: String, window: &mut Window, cx: &mut Context<Self>) {
+        let existing = self.sftp_views.keys().copied().find(|id| {
+            self.tabs
+                .read(cx)
+                .get(*id)
+                .and_then(|t| t.data.host_id.clone())
+                == Some(host_id.clone())
+        });
+        if let Some(tab_id) = existing {
+            self.tabs.update(cx, |s, cx| s.set_active(tab_id, cx));
+            self.focus_active(window, cx);
+            return;
+        }
+
+        let session_id = uuid::Uuid::new_v4().to_string();
+        let label = self
+            .host_manager
+            .read(cx)
+            .host_name(&host_id)
+            .unwrap_or_else(|| host_id.clone());
+        let tab_id = self.tabs.update(cx, |s, cx| {
+            let id = s.open(
+                TabKind::Sftp,
+                TabData {
+                    host_id: Some(host_id.clone()),
+                    ..TabData::default()
+                },
+                cx,
+            );
+            s.set_custom_title(id, Some(format!("SFTP \u{00b7} {label}")), cx);
+            id
+        });
+        let view = cx.new(|cx| {
+            SftpView::new(
+                self.backend.clone(),
+                self.tokio.clone(),
+                self.theme.clone(),
+                session_id.clone(),
+                host_id,
+                label,
+                cx,
+            )
+        });
+        cx.observe(&view, |_, _, cx| cx.notify()).detach();
+        cx.subscribe(&view, |this, _view, ev: &SftpEvent, cx| {
+            this.on_sftp_event(ev, cx)
+        })
+        .detach();
+        self.sftp_views.insert(tab_id, view);
+        self.sftp_sessions.insert(tab_id, session_id);
+        self.focus_active(window, cx);
+        cx.notify();
+    }
+
+    fn on_sftp_event(&mut self, ev: &SftpEvent, cx: &mut Context<Self>) {
+        match ev {
+            SftpEvent::OpenLocalFile(path) => {
+                self.pending_open.push(PendingOpen::Local(path.clone()));
+                cx.notify();
+            }
+            SftpEvent::OpenRemoteFile {
+                session_id,
+                remote_path,
+                host_id,
+            } => {
+                let app = self.backend.clone();
+                let (sid, rpath, hid) = (session_id.clone(), remote_path.clone(), host_id.clone());
+                let (jh_sid, jh_rpath) = (sid.clone(), rpath.clone());
+                let jh = self.tokio.spawn(async move {
+                    prepare_remote_edit(jh_sid, jh_rpath, None, &app.ssh, app.clone())
+                        .await
+                        .map_err(|e| e.to_string())
+                });
+                cx.spawn(async move |this, cx| {
+                    let res = jh.await.unwrap_or_else(|e| Err(e.to_string()));
+                    let _ = this.update(cx, |this, cx| match res {
+                        Ok(temp_path) => {
+                            this.pending_open.push(PendingOpen::RemoteEdit {
+                                session_id: sid,
+                                remote_path: rpath,
+                                host_id: hid,
+                                temp_path,
+                            });
+                            cx.notify();
+                        }
+                        Err(e) => tracing::warn!(%e, "prepare_remote_edit failed"),
+                    });
+                })
+                .detach();
+            }
+        }
+    }
+
+    /// Open an editor tab on a remote-edit temp copy and register it so a
+    /// save uploads it back to the host.
+    fn open_remote_edit(
+        &mut self,
+        session_id: String,
+        remote_path: String,
+        host_id: String,
+        temp_path: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        // Already open → just activate.
+        if let Some(tab_id) = self
+            .remote_edits
+            .iter()
+            .find(|(_, re)| re.temp_path == temp_path)
+            .map(|(id, _)| *id)
+        {
+            self.tabs.update(cx, |s, cx| s.set_active(tab_id, cx));
+            self.focus_active(window, cx);
+            return;
+        }
+
+        let base = std::path::Path::new(&remote_path)
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or("file")
+            .to_string();
+        let tab_id = self.tabs.update(cx, |s, cx| {
+            let id = s.open(
+                TabKind::Editor,
+                TabData {
+                    path: Some(temp_path.clone()),
+                    host_id: Some(host_id),
+                    ..TabData::default()
+                },
+                cx,
+            );
+            s.set_custom_title(id, Some(format!("{base} (remote)")), cx);
+            id
+        });
+        let view = self.new_editor_view(cx);
+        self.watch_editor(tab_id, &view, cx);
+        view.update(cx, |e, cx| {
+            e.open_path(std::path::PathBuf::from(&temp_path), cx)
+        });
+        self.editors.insert(tab_id, view);
+        self.remote_edits.insert(
+            tab_id,
+            RemoteEdit {
+                session_id,
+                remote_path,
+                temp_path,
+                dirty: false,
+            },
+        );
+        self.focus_active(window, cx);
+        cx.notify();
     }
 
     // ── SSH connection flow (T07-001) ──────────────────────────────────────
@@ -1477,6 +1725,13 @@ impl Workspace {
                     self.placeholder("Editor", cx).into_any_element()
                 }
             }
+            TabKind::Sftp => {
+                if let Some(view) = self.sftp_views.get(&active.id) {
+                    view.clone().into_any_element()
+                } else {
+                    self.placeholder("SFTP", cx).into_any_element()
+                }
+            }
             other => self
                 .placeholder(other.default_title(), cx)
                 .into_any_element(),
@@ -1770,6 +2025,20 @@ impl Render for Workspace {
         // `&mut Window` and `cx.subscribe` does not provide one.
         for host_id in std::mem::take(&mut self.pending_connect) {
             self.connect_host(host_id, window, cx);
+        }
+        for host_id in std::mem::take(&mut self.pending_sftp) {
+            self.open_sftp(host_id, window, cx);
+        }
+        for open in std::mem::take(&mut self.pending_open) {
+            match open {
+                PendingOpen::Local(path) => self.open_file(path, false, window, cx),
+                PendingOpen::RemoteEdit {
+                    session_id,
+                    remote_path,
+                    host_id,
+                    temp_path,
+                } => self.open_remote_edit(session_id, remote_path, host_id, temp_path, window, cx),
+            }
         }
         let want_prompt = self.ssh_prompt.is_some();
         if want_prompt && !self.prompt_shown {

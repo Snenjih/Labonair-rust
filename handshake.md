@@ -4,7 +4,84 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
-## Last Session: 2026-09-01 (T07-003 — SSH config import/export)
+## Last Session: 2026-09-01 (T08-001 — SFTP file browser)
+
+### What Was Done
+- **T08-001 ✅ Done.** Dual-pane SFTP browser as a `TabKind::Sftp` tab. The
+  backend SFTP layer (`ssh/sftp.rs`, `sftp/connection.rs`,
+  `sftp/worker.rs`) was already fully ported + unit-tested (146 backend
+  tests) — this task is the GPUI UI + workspace wiring.
+  - **`crates/ui/src/sftp.rs`** (new, ~1080 lines incl. 8 tests) — `SftpView`
+    GPUI entity. Left pane = local FS (`fs::tree::list_dir_entries_sync` on
+    the background executor + `fs::mutate::{create_file,create_dir,rename,
+    delete}_sync`), right pane = remote FS over SFTP. Per pane: title +
+    up / reload / hidden-toggle buttons + click-to-edit address bar,
+    generation-guarded async loads, error banner, dirs-first sort, inline
+    rename / new-file / new-folder (focus + key-buffer pattern from the
+    explorer), row select + double-click (dir → navigate, file → open).
+    Right-click context menu (New Folder/File, Rename, Copy Path, 2-click
+    Delete, and for remote entries Permissions… / Properties… / Edit Remote
+    File, plus Refresh). chmod/chown dialog (`sftp_chmod` + `sftp_chown`,
+    Tab cycles octal/owner/group fields). Properties dialog (type, size,
+    perms, mtime; `sftp_calculate_size` for dirs). Remote connect via
+    `sftp::connection::sftp_connect` with a Connecting / Error+Retry / Ready
+    state. Emits `SftpEvent::{OpenLocalFile, OpenRemoteFile}`.
+  - **`crates/ui/src/workspace.rs`** — `sftp_views` / `sftp_sessions` /
+    `remote_edits` maps + `pending_sftp` / `pending_open` queues (drained in
+    `render`, mirroring `pending_connect`). `open_sftp(host_id)` opens/refocus
+    a `Sftp` tab + `SftpView` (fresh uuid session id). `on_sftp_event`:
+    `OpenLocalFile` → `open_file`; `OpenRemoteFile` → spawn
+    `prepare_remote_edit` → `open_remote_edit` opens an editor tab on the
+    temp copy titled `"<name> (remote)"` and records a `RemoteEdit`.
+    `watch_editor` now: skips the filename-title overwrite for remote-edit
+    tabs, and on a `dirty → clean` transition spawns `save_remote_edit` to
+    push the temp copy back. `retire_tab` drops the SftpView + calls
+    `sftp_disconnect`, and for remote-edit editor tabs spawns
+    `cleanup_remote_edit_temp`. `render_content` handles `TabKind::Sftp`.
+  - **`crates/ui/src/hosts.rs`** — `HostManagerEvent::OpenSftp(String)` + an
+    "SFTP" button on each host row.
+  - **`crates/ui/src/lib.rs`** — `pub mod sftp` + re-exports.
+  - Gates: `cargo fmt --all --check`, `cargo clippy --workspace
+    --all-targets -- -D warnings`, `cargo check --workspace`, `cargo test
+    --workspace` all green. ui tests 69 → 77.
+
+### Current State
+- Branch `master`, committed. Pre-existing unrelated `CLAUDE.md` working-tree
+  edit deliberately left uncommitted / untouched.
+
+### Next
+- **T08-002** — SFTP transfers (upload/download/queue) (`tasks/phase-07-sftp/
+  T08-002-sftp-transfers.md`). Backend transfer worker (`sftp/worker.rs`,
+  `sftp/commands.rs::enqueue_transfer` etc.) already exists — this is the
+  queue UI + drag-between-panes + context-menu "Download to…/Upload here…".
+
+### Notes / Quirks (T08-001)
+- **No live SFTP integration test** — same rationale as T07-00x (no `sshd` in
+  CI). The pure seams are unit-tested in `sftp.rs` (`parent_path`,
+  `join_path`, `sanitize_entry_name`, `perm_string_to_octal`, `sort_entries`,
+  `format_epoch`, `format_bytes`, `Pane::visible`); the backend SFTP ops
+  themselves have 146 backend tests.
+- GPUI: context-menu / dropdown row `div()`s need an explicit `.id(...)`
+  before `.on_click` — `on_click` lives on `StatefulInteractiveElement`, only
+  impl'd for `Stateful<Div>`. A plain `Div` silently lacks it (the explorer's
+  `item` helper adds `.id("cm-…")` at each call site for this reason).
+- Remote pane starts at `/` (not the SFTP home) — there is no public
+  `canonicalize` in `ssh/sftp.rs`, and `default_path_sftp` is only set for
+  hosts that configured it. Address bar + double-click navigation cover it;
+  wiring a home-dir resolve is a small follow-up.
+- Remote-edit save-back is detected via the editor's `dirty → clean`
+  transition in `watch_editor` (there is no dedicated `Saved` event). It
+  fires once per save. No conflict detection if the remote file changed
+  underneath the temp copy — `save_remote_edit` is a plain overwrite.
+- Conflict/2-click delete is in the context menu only (no modal), matching
+  the reference `SftpContextMenu`. `sftp_delete` won't remove non-empty
+  remote dirs (backend limitation — unlink-then-rmdir, no recursion).
+- Chmod dialog octal field accepts up to 4 digits but only the low 3 apply
+  (special bits unsupported), same as the reference `PropertiesDialog`.
+
+---
+
+## Previous Session: 2026-09-01 (T07-003 — SSH config import/export)
 
 ### What Was Done
 - **T07-003 ✅ Done.** Backend parse/import/export was already ported in

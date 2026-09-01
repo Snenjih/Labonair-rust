@@ -60,6 +60,8 @@ impl HostStatus {
 pub enum HostManagerEvent {
     /// Open an SSH terminal tab for this host id.
     Connect(String),
+    /// Open a dual-pane SFTP browser tab for this host id.
+    OpenSftp(String),
 }
 
 /// One running port-forward, as shown in the host manager's active-tunnel panel.
@@ -1045,6 +1047,7 @@ impl HostManagerView {
         let status = self.status_of(&host.id);
         let id = host.id.clone();
         let (id_c, id_e, id_d, id_x) = (id.clone(), id.clone(), id.clone(), id.clone());
+        let id_s = id.clone();
         let subtitle = format!(
             "{}@{}:{}  \u{00b7}  {}",
             host.username,
@@ -1095,6 +1098,12 @@ impl HostManagerView {
                 self.btn("host-connect", "Connect", p, true)
                     .on_click(cx.listener(move |_this, _: &ClickEvent, _w, cx| {
                         cx.emit(HostManagerEvent::Connect(id_c.clone()));
+                    })),
+            )
+            .child(
+                self.btn("host-sftp", "SFTP", p, false)
+                    .on_click(cx.listener(move |_this, _: &ClickEvent, _w, cx| {
+                        cx.emit(HostManagerEvent::OpenSftp(id_s.clone()));
                     })),
             )
             .child(

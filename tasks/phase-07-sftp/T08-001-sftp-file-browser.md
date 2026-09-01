@@ -1,7 +1,7 @@
 # T08-001: SFTP-Dateibrowser
 
 ## Status
-⏳ Pending
+✅ Done
 
 ## Phase
 7 — SFTP-Browser

@@ -11,6 +11,7 @@ pub mod hosts;
 pub mod menu;
 pub mod notifications;
 pub mod pane;
+pub mod sftp;
 pub mod syntax_theme;
 pub mod tabs;
 pub mod terminal;
@@ -34,6 +35,7 @@ pub use notifications::{
     Notification, NotificationAction, NotificationCenter, Severity,
 };
 pub use pane::{CloseOutcome, PaneId, PaneNode, SplitAxis, WorkspaceLayout};
+pub use sftp::{SftpEvent, SftpView};
 pub use syntax_theme::EditorPalette;
 pub use tabs::{Tab, TabData, TabKind, TabStore};
 pub use terminal::TerminalView;
