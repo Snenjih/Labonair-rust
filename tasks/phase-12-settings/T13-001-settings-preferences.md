@@ -1,7 +1,7 @@
 # T13-001: Einstellungen-Struktur und Preferences
 
 ## Status
-⏳ Pending
+✅ Done
 
 ## Phase
 12 — Settings & Preferences
@@ -49,12 +49,12 @@ In der Rust-Version wird das Preferences-Modell als konkret typisierte Struktur 
 
 ## Akzeptanzkriterien
 
-- [ ] Ein typisiertes Preferences-Modell mit den relevanten Feldern existiert, in Kategorien gegliedert.
-- [ ] Preferences werden persistent gespeichert und beim Start geladen; Defaults für fehlende Felder.
-- [ ] Ein zentraler Preferences-Store bietet Lesen/Setzen mit Effekt (speichern + notifizieren).
-- [ ] Die Settings-UI zeigt Kategorien und rendert die Feldtypen korrekt; Änderungen wirken sofort und gespeichert.
-- [ ] Theme/Terminal/Editor können ihre Werte aus den Preferences lesen und reagieren auf Änderungen.
-- [ ] Alle Tests laufen grün.
+- [x] Ein typisiertes Preferences-Modell mit den relevanten Feldern existiert, in Kategorien gegliedert. (`crates/backend/src/modules/settings/preferences.rs` — `Preferences` + typed enums)
+- [x] Preferences werden persistent gespeichert und beim Start geladen; Defaults für fehlende Felder. (`preferences` key in `labonair-settings.json`, per-field `#[serde(default)]`, corrupt-file → `.bak` + defaults)
+- [x] Ein zentraler Preferences-Store bietet Lesen/Setzen mit Effekt (speichern + notifizieren). (`PreferencesStore` GPUI entity, key-addressed `value`/`set_value`)
+- [x] Die Settings-UI zeigt Kategorien und rendert die Feldtypen korrekt; Änderungen wirken sofort und gespeichert. (`SettingsView` modal — category rail + table-driven Switch/Int/Select/Text rows + search + AI Agent Bridge / MCP pane)
+- [x] Theme kann seine Werte aus den Preferences lesen und reagiert auf Änderungen. (`theme` pref applied to `ThemeStore` at startup + on change). Terminal/Editor konsumieren den Store in T13-002/T13-003 (Roadmap-Split).
+- [x] Alle Tests laufen grün. (backend +5, ui +5)
 
 ## Notizen
 

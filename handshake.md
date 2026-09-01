@@ -4,7 +4,90 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
-## Last Session: 2026-09-02 (T12-002 — Command palette & shortcut system)
+## Last Session: 2026-09-02 (T13-001 — Settings structure & preferences)
+
+### What Was Done
+- **T13-001 ✅ Done.** Central preferences model + store + settings window,
+  and the AI Agent Bridge (MCP) settings pane that T11-006 / T12-001 deferred
+  here.
+  - **`crates/backend/src/modules/settings/preferences.rs`** (new, 6 tests) —
+    typed `Preferences` struct (~33 fields, grouped General / Appearance /
+    Terminal / Editor / File Manager / Command Palette / Source Control / AI),
+    typed enums `ThemePref` / `StartupTab` / `CursorStyle` / `PaletteSearchMode`
+    (serde tokens match the reference `store.ts`). Stored as a `preferences`
+    object in the shared `labonair-settings.json` (same file editor/mcp/
+    bar-items use). `#[serde(default)]` per field → missing fields fall back
+    field-by-field. **Corruption defence:** a settings file that isn't a valid
+    JSON object is renamed to `labonair-settings.json.bak` and defaults load
+    (never crash / clobber). Public `preferences_load` / `preferences_save`
+    + `preferences_load_from` / `preferences_save_to` (explicit dir, for tests).
+    `settings/mod.rs` gained `pub mod preferences;`.
+  - **`crates/ui/src/settings.rs`** (new, 5 tests):
+    - `PreferencesStore` GPUI entity — holds `Preferences`, generic
+      key-addressed `value(key)` / `set_value(key, json)` (serialize model →
+      swap one key → deserialize back to validate; wrong-typed value is
+      rejected + logged, not stored). Persists + `cx.notify()` only when the
+      value parsed AND changed. `with_dir()` ctor keeps tests off the real
+      settings file.
+    - Table-driven field defs: `FieldKind` (Switch / Int{min,max,step} /
+      Select(&[token]) / Text), static `FIELDS` (33 rows) + `CATEGORIES`.
+      Select options ARE the serialized token strings (test-pinned).
+    - `SettingsView` — modal overlay (command-palette pattern; GPUI has no
+      child-window story wired). Category rail + search box (flat filter across
+      all categories) + scrollable field list. Switch = toggle, Int = `[−] n
+      [+]`, Select = click-cycles, Text = click-to-edit hand-rolled key buffer
+      (Enter commits / Esc cancels). Single `FocusHandle`, one `on_key_down`
+      state machine (Search vs EditField).
+    - **AI Agent Bridge pane** (`AGENT_BRIDGE` category, custom render): enable
+      switch, port, max-timeout, auto-revoke, notify-on-activity, "Regenerate
+      token" button, and the `claude mcp add … --header "Authorization: Bearer
+      …"` setup command + Copy (shown only when enabled + token present). Reads
+      `McpPrefs` / `mcp_get_status`; writes persist via `mcp_prefs_save` **and**
+      spawn the matching `mcp_set_*` on tokio (mirrors reference
+      `ConnectionsSection.tsx` `AgentBridgeSection`).
+  - **`crates/ui/src/app_shell.rs`** — owns `prefs: Entity<PreferencesStore>`
+    + `settings: Entity<SettingsView>`. At startup the persisted `theme` pref
+    is pushed into `ThemeStore::set_preference`; `SettingsView::set_pref`
+    re-pushes it on every change (the one value modules can't observe
+    generically yet). New `act_open_settings` handler bound to `menu::
+    OpenSettings` (so `cmd-,`, the menu item, and the `OpenSettings`
+    command-palette entry all toggle the modal). `pub fn preferences()`
+    accessor. Modal rendered as a root child.
+  - **`crates/ui/src/menu.rs`** — removed the `OpenSettings` "arrives in a
+    later phase" toast stub (now handled by `AppShell`).
+  - `lib.rs` — `pub mod settings` + re-exports (`PreferencesStore`,
+    `SettingsView`, `FieldDef`, `FieldKind`, `FIELDS`, `SETTINGS_CATEGORIES`).
+- Verify: `cargo fmt --all --check`, `cargo clippy --workspace --all-targets
+  -- -D warnings`, `cargo test --workspace` — all green. backend **153 → 158**
+  (+5), ui **152 → 157** (+5), ai 75 unchanged.
+
+### State / Next
+- Branch `master`, committed. Pre-existing unrelated `CLAUDE.md` working-tree
+  edit deliberately left untouched / uncommitted.
+- **Next: T13-002 — Appearance & Theme settings**
+  (`tasks/phase-12-settings/T13-002-appearance-theme-settings.md`). Then
+  T13-003 (wires Terminal/Editor to actually consume `PreferencesStore` — only
+  `theme` is wired so far) and T13-004 (shortcut config).
+
+### Notes / Quirks (T13-001)
+- Only `theme` is wired into a live module. Terminal/editor still read their
+  own config (`settings::editor` key, terminal defaults). The roadmap splits
+  that into T13-002 / T13-003 — `PreferencesStore` is the store they'll read
+  from; `AppShell` already holds it and `preferences()` exposes it.
+- `Render::render` must return `impl IntoElement` whose concrete type is stable
+  across `return` branches — mixing `Div` (early `return div()`) with
+  `Stateful<Div>` fails; use `.into_any_element()` on **both** branches (a bare
+  `-> gpui::AnyElement` return type trips `refining_impl_trait`).
+- `on_click` / `overflow_y_scroll` need a `.id(...)` (stateful element) first —
+  same rule as elsewhere.
+- Generic pref get/set via `serde_json::to_value` / `from_value` round-trip is
+  the cheap way to avoid a giant per-field match; `Select` options must be the
+  exact serde token (`"host-manager"`, `"startsWith"`, …), pinned by a test.
+- `PreferencesStore` tests must use `with_dir(temp)` — `preferences_save()`
+  writes the real `~/.config/labonair/labonair-settings.json`.
+
+---
+## Prev Session: 2026-09-02 (T12-002 — Command palette & shortcut system)
 
 ### What Was Done
 - **T12-002 ✅ Done.** New `crates/ui/src/command_palette.rs` (~880 lines incl.

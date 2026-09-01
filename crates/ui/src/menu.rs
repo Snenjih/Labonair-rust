@@ -102,9 +102,7 @@ pub fn init(cx: &mut App) {
             ),
         )
     });
-    cx.on_action(|_: &OpenSettings, cx: &mut App| {
-        toast(cx, "Settings", "Settings arrive in a later phase.")
-    });
+    // `OpenSettings` is handled by `AppShell` (opens the settings modal, T13-001).
     cx.on_action(|_: &AiSettings, cx: &mut App| {
         toast(cx, "AI Settings", "AI settings arrive in a later phase.")
     });

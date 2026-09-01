@@ -17,6 +17,7 @@ pub mod markdown;
 pub mod menu;
 pub mod notifications;
 pub mod pane;
+pub mod settings;
 pub mod sftp;
 pub mod snippets;
 pub mod syntax_theme;
@@ -51,6 +52,9 @@ pub use notifications::{
     Notification, NotificationAction, NotificationCenter, Severity,
 };
 pub use pane::{CloseOutcome, PaneId, PaneNode, SplitAxis, WorkspaceLayout};
+pub use settings::{
+    FieldDef, FieldKind, PreferencesStore, SettingsView, CATEGORIES as SETTINGS_CATEGORIES, FIELDS,
+};
 pub use sftp::{SftpEvent, SftpView};
 pub use snippets::{
     extract_snippet_variables, parse_tags, serialize_tags, substitute_snippet_variables,

@@ -44,8 +44,9 @@ use crate::git_graph::GitGraphView;
 use crate::menu;
 use crate::notifications::{self, NotificationCenter};
 use crate::pane::SplitAxis;
+use crate::settings::{PreferencesStore, SettingsView};
 use crate::snippets::SnippetsView;
-use crate::theme::ThemeStore;
+use crate::theme::{ThemePreference, ThemeStore};
 use crate::window_state;
 use crate::workspace::Workspace;
 
@@ -130,6 +131,8 @@ pub struct AppShell {
     snippets: Entity<SnippetsView>,
     ai_chat: Entity<AiChatView>,
     command_palette: Entity<CommandPalette>,
+    prefs: Entity<PreferencesStore>,
+    settings: Entity<SettingsView>,
     /// Palette picks awaiting a `&mut Window` (drained in `render`) — same
     /// pattern `Workspace` uses for its window-less subscriptions.
     pending_commands: Vec<PaletteEvent>,
@@ -223,6 +226,31 @@ impl AppShell {
             cx.new(|cx| GitGraphView::new(backend.clone(), tokio.clone(), theme.clone(), cx));
         cx.observe(&git_graph, |_, _, cx| cx.notify()).detach();
 
+        // Central preferences store + settings modal (T13-001). Apply the
+        // persisted theme preference to the ThemeStore once at startup; further
+        // changes flow through `SettingsView::set_pref`.
+        let prefs = cx.new(|_| PreferencesStore::new());
+        cx.observe(&prefs, |_, _, cx| cx.notify()).detach();
+        {
+            use labonair_backend::modules::settings::preferences::ThemePref;
+            let pref = match prefs.read(cx).get().theme {
+                ThemePref::System => ThemePreference::System,
+                ThemePref::Light => ThemePreference::Light,
+                ThemePref::Dark => ThemePreference::Dark,
+            };
+            theme.update(cx, |t, cx| t.set_preference(pref, cx));
+        }
+        let settings = cx.new(|cx| {
+            SettingsView::new(
+                prefs.clone(),
+                theme.clone(),
+                backend.clone(),
+                tokio.clone(),
+                cx,
+            )
+        });
+        cx.observe(&settings, |_, _, cx| cx.notify()).detach();
+
         let snippets = cx.new(|cx| {
             SnippetsView::new(backend, tokio.clone(), theme.clone(), workspace.clone(), cx)
         });
@@ -299,6 +327,8 @@ impl AppShell {
             snippets,
             ai_chat,
             command_palette,
+            prefs,
+            settings,
             pending_commands: Vec::new(),
             agent_access,
             agent_badge_open: false,
@@ -316,6 +346,20 @@ impl AppShell {
     /// The workspace view (for later command-palette / menu wiring).
     pub fn workspace(&self) -> &Entity<Workspace> {
         &self.workspace
+    }
+
+    /// The central preferences store (T13-001).
+    pub fn preferences(&self) -> &Entity<PreferencesStore> {
+        &self.prefs
+    }
+
+    fn act_open_settings(
+        &mut self,
+        _: &menu::OpenSettings,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.settings.update(cx, |s, cx| s.toggle(window, cx));
     }
 
     fn toggle_sidebar(&mut self, cx: &mut Context<Self>) {
@@ -1083,6 +1127,7 @@ impl Render for AppShell {
             .on_action(cx.listener(Self::act_next_tab))
             .on_action(cx.listener(Self::act_prev_tab))
             .on_action(cx.listener(Self::act_command_palette))
+            .on_action(cx.listener(Self::act_open_settings))
             .when(can_split, |d| {
                 d.on_action(cx.listener(Self::act_split_right))
                     .on_action(cx.listener(Self::act_split_down))
@@ -1109,6 +1154,7 @@ impl Render for AppShell {
             .child(statusbar)
             .children(background_layer)
             .child(self.command_palette.clone())
+            .child(self.settings.clone())
             .children(toasts)
     }
 }
