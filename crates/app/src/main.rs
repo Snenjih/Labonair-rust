@@ -88,7 +88,8 @@ fn main() {
                     })
                     .detach();
                 let background = labonair_ui::init_background(cx);
-                cx.new(|cx| AppShell::new(theme, background, window, cx))
+                let notifications = labonair_ui::init_notifications(cx);
+                cx.new(|cx| AppShell::new(theme, background, notifications, window, cx))
             },
         )
         .expect("failed to open window");

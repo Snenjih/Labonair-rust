@@ -29,6 +29,7 @@ use gpui::{
 use labonair_terminal::TerminalRegistry;
 
 use crate::background::{BackgroundStore, LayerScope};
+use crate::notifications::{self, NotificationCenter};
 use crate::theme::ThemeStore;
 use crate::window_state;
 use crate::workspace::Workspace;
@@ -106,6 +107,7 @@ impl Render for DragGhost {
 pub struct AppShell {
     theme: Entity<ThemeStore>,
     background: Entity<BackgroundStore>,
+    notifications: Entity<NotificationCenter>,
     workspace: Entity<Workspace>,
     sidebar_open: bool,
     sidebar_width: f32,
@@ -121,11 +123,26 @@ impl AppShell {
     pub fn new(
         theme: Entity<ThemeStore>,
         background: Entity<BackgroundStore>,
+        notifications: Entity<NotificationCenter>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
         cx.observe(&theme, |_, _, cx| cx.notify()).detach();
         cx.observe(&background, |_, _, cx| cx.notify()).detach();
+        cx.observe(&notifications, |_, _, cx| cx.notify()).detach();
+
+        // Demo: a startup toast proves the system is reachable from anywhere
+        // (acceptance criterion). Debug builds only.
+        #[cfg(debug_assertions)]
+        notifications.update(cx, |center, cx| {
+            center.push(
+                crate::notifications::Notification::info(
+                    "Welcome to Labonair",
+                    "Notifications appear here. This demo toast auto-dismisses.",
+                ),
+                cx,
+            );
+        });
 
         let registry = Arc::new(TerminalRegistry::new());
         let workspace =
@@ -144,6 +161,7 @@ impl AppShell {
         Self {
             theme,
             background,
+            notifications,
             workspace,
             sidebar_open: true,
             sidebar_width: SIDEBAR_DEFAULT,
@@ -566,6 +584,7 @@ impl Render for AppShell {
 
         let bg = self.theme.read(cx).background();
         let background_layer = self.background.read(cx).layer(LayerScope::App);
+        let toasts = notifications::render_overlay(&self.notifications, &self.theme, cx);
         let header = self.render_header(cx);
         let sidebar = self
             .sidebar_open
@@ -601,6 +620,7 @@ impl Render for AppShell {
             )
             .child(statusbar)
             .children(background_layer)
+            .children(toasts)
     }
 }
 

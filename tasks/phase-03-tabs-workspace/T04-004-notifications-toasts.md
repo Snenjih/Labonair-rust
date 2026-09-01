@@ -1,7 +1,7 @@
 # T04-004: Notifications / Toast-System
 
 ## Status
-⏳ Pending
+✅ Done
 
 ## Phase
 3 — App-Shell, Tab-System & Workspace-Layout

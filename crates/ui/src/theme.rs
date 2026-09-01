@@ -224,6 +224,26 @@ impl ThemeStore {
         self.theme().core.accent
     }
 
+    /// `--destructive` / status `error` color (severity: error).
+    pub fn status_error(&self) -> Hsla {
+        self.theme().status.error
+    }
+
+    /// `--warning` status color (severity: warning).
+    pub fn status_warning(&self) -> Hsla {
+        self.theme().status.warning
+    }
+
+    /// `--info` status color (severity: info).
+    pub fn status_info(&self) -> Hsla {
+        self.theme().status.info
+    }
+
+    /// `--success` status color (severity: success).
+    pub fn status_success(&self) -> Hsla {
+        self.theme().status.success
+    }
+
     /// `--toolbar-background` — the window header / titlebar surface.
     pub fn toolbar(&self) -> Hsla {
         self.theme().surface.toolbar

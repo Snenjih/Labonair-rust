@@ -4,6 +4,7 @@
 
 pub mod app_shell;
 pub mod background;
+pub mod notifications;
 pub mod pane;
 pub mod tabs;
 pub mod terminal;
@@ -17,6 +18,10 @@ pub use background::{
     GlobalBackground, LayerScope,
 };
 pub use labonair_theme::{ThemeFile, ThemeFileVariant};
+pub use notifications::{
+    init as init_notifications, notification_center, notify_err, GlobalNotificationCenter,
+    Notification, NotificationAction, NotificationCenter, Severity,
+};
 pub use pane::{CloseOutcome, PaneId, PaneNode, SplitAxis, WorkspaceLayout};
 pub use tabs::{Tab, TabData, TabKind, TabStore};
 pub use terminal::TerminalView;

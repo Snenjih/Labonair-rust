@@ -4,7 +4,79 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
-## Last Session: 2026-09-01 (T04-003 — app-shell & window chrome)
+## Last Session: 2026-09-01 (T04-004 — notifications / toast system)
+
+### What Was Done
+- **T04-004 ✅ Done.** App-wide notification/toast system, ported from
+  `reference-src/src/modules/notifications/` (`useNotificationStore` +
+  `NotificationDropdown`).
+  - **`crates/ui/src/notifications.rs`** (new):
+    - `NotificationCenter` GPUI entity — `items: Vec<Active>` newest-first, `next_id`,
+      `notify_on_errors: bool` (default `true` until T13-001 wires the real preference).
+      Ported store logic: **2s spam guard** on `title + body + severity` vs `items[0]`
+      (`insert(notif, now, cx)` takes an explicit `now` and is `pub` for deterministic
+      tests; `push`/`push_action_result` call it with `Instant::now()`), **100-item cap**
+      (`truncate`), **error gate** — `push` drops `Severity::Error` when
+      `!notify_on_errors` (ref `addNotification`), `push_action_result` bypasses it
+      (ref `addActionResultNotification`). `dismiss(id)`, `clear_all()`, `len`/`is_empty`,
+      `snapshots() -> Vec<ToastSnapshot>` (render view), `trigger_action(id, window, cx)`
+      (fires the `FnMut` callback once, then removes the toast).
+    - `Severity{Info,Success,Warning,Error}` + `default_timeout()` = info 5s / success 4s /
+      warning 8s / **error None** (manual dismiss — ref never auto-cleared errors) + `glyph()`
+      + `color(&ThemeStore)`.
+    - Per-toast **auto-dismiss**: `insert` does `cx.spawn(async move |this, cx| { timer(d).await;
+      this.update(..dismiss(id)) })` when a timeout resolves.
+    - `Notification` builder (`info/success/warning/error(title, body)` + `.source()` /
+      `.timeout()` / `.action()`), `NotificationAction::new(label, impl FnMut(&mut Window, &mut App))`
+      (`type ActionCallback = Box<dyn FnMut(..)>`; manual `Debug`).
+    - `render_overlay(&Entity<NotificationCenter>, &Entity<ThemeStore>, &mut App) -> Option<AnyElement>`
+      — `.absolute().top_4().right_4()` flex-col stack of 360px cards (`bg-card`, 1px border in the
+      severity color, `shadow_lg`, glyph + title[semibold] + optional source badge + muted body,
+      close ✕, optional accent action button). The container only occupies its own top-right box, so
+      clicks elsewhere pass through — **warning satisfied** (only the cards are interactive).
+    - Global `GlobalNotificationCenter` + `init(cx)` / `notification_center(cx)`, and the
+      `notify_err(title, Result<T, String>, &mut App) -> Option<T>` helper (pushes an error toast via
+      the action-result path on `Err`).
+    - 8 `#[gpui::test]`s: newest-first + ids, spam guard (block/allow by body/type/time),
+      different-titles kept, error gate + action-result bypass, 100 cap, dismiss/clear,
+      action label wiring, auto-dismiss after `advance_clock`.
+  - **`crates/ui/src/theme.rs`** — new accessors `status_error()` / `status_warning()` /
+    `status_info()` / `status_success()` (read `theme().status.*`).
+  - **`crates/ui/src/app_shell.rs`** — `AppShell` gained a `notifications: Entity<NotificationCenter>`
+    field + `new()` param, observes it, renders `render_overlay(...)` via `.children(toasts)` after the
+    background layer. `#[cfg(debug_assertions)]` startup demo toast (acceptance: reachable from anywhere).
+  - **`crates/app/src/main.rs`** — `labonair_ui::init_notifications(cx)` before `AppShell::new`.
+  - **`crates/ui/src/lib.rs`** — `pub mod notifications;` + re-exports (`init_notifications`,
+    `notification_center`, `notify_err`, `Notification`, `NotificationAction`, `NotificationCenter`,
+    `Severity`, `GlobalNotificationCenter`).
+- **No new deps.** GPUI APIs used were all already known (`cx.spawn` async-closure form,
+  `background_executor().timer`, `on_click` needs `StatefulInteractiveElement` in scope, tuple
+  `ElementId` `(&str, u64)`, `.children(Option<AnyElement>)`).
+- **Deviations / notes:** the reference notifications module is a *persistent dropdown* (bell icon +
+  popover list, no auto-dismiss); the task asked for a *toast* system, so this port keeps the store
+  semantics 1:1 but renders stacked auto-dismissing toasts instead of the popover. No bell/dropdown
+  entry point in the status bar yet (needs the bar-item placement settings from T13 + an icon set) —
+  the store keeps the full history regardless, so a dropdown can be added later without touching it.
+  `notify_on_errors` defaults to `true` (reference default is `false`, gated by a preference we don't
+  have yet). `relativeTime` / "Copy" affordance from the dropdown not ported (toast-inappropriate).
+- **Verified:** `cargo check --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`,
+  `cargo test --workspace` (all suites green; **ui 39, +8**), `cargo fmt --all --check`,
+  `cargo build --bin labonair` — all green. Not visually run — user should `cargo run` and check:
+  a demo info toast appears top-right on launch and auto-dismisses after ~5s; toasts stack; ✕ closes
+  one; clicking through the area where a toast *isn't* still hits the UI behind it.
+
+### Current State
+- Branch `master`, ~22 unpushed commits + this one.
+- Pre-existing uncommitted `CLAUDE.md` edit (not ours) — left untouched & excluded from this commit.
+- `reference-src/` untouched.
+
+### What's Next
+- **T04-005 — Native macOS menus** (`tasks/phase-03-tabs-workspace/T04-005-native-macos-menus.md`).
+  Dep: T04-003 (done). No blockers.
+
+---
+
+## Session: 2026-09-01 (T04-003 — app-shell & window chrome)
 
 ### What Was Done
 - **T04-003 ✅ Done.** Introduced `AppShell` as the app's root coordinator (ported from `reference-src/src/app/components/AppShell.tsx` + `modules/header/Header.tsx` + `modules/statusbar/StatusBar.tsx`). `cargo run` now shows the full app layout.
