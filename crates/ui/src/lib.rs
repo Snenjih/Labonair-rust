@@ -11,6 +11,7 @@ pub mod explorer;
 pub mod git;
 pub mod git_graph;
 pub mod hosts;
+pub mod markdown;
 pub mod menu;
 pub mod notifications;
 pub mod pane;
@@ -23,7 +24,7 @@ pub mod transfers;
 pub mod window_state;
 pub mod workspace;
 
-pub use ai_chat::{init as init_ai_chat, AiChatStore};
+pub use ai_chat::{init as init_ai_chat, AiChatStore, AiChatView, Attachment, AttachmentKind};
 pub use app_shell::{AppShell, SidebarPanel};
 pub use background::{
     background_store, init as init_background, BackgroundFit, BackgroundStore, BackgroundTarget,

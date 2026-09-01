@@ -4,7 +4,90 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
-## Last Session: 2026-09-01 (T11-002 — Chat store & session management)
+## Last Session: 2026-09-01 (T11-003 — Chat UI & streaming markdown)
+
+### What Was Done
+- **T11-003 ✅ Done.** GPUI chat panel rendering off the T11-002 `AiChatStore`.
+  - `crates/ui/src/markdown.rs` (new, pure, 8 tests) — a small streaming-aware
+    Markdown parser replacing the web `streamdown`. `parse_markdown` →
+    `Vec<MdBlock>` (Heading/Paragraph/Code{lang,text,closed}/Bullets/Ordered/
+    Quote/Rule/Table), `parse_inline` → `Vec<Inline>` (Text/Code/Bold/Italic/
+    Link). Unterminated markers (open fence, dangling `**`/`` ` ``/`[`) degrade
+    to literal text so a mid-stream document stays stable; a prefix-sweep test
+    asserts every streamed prefix parses without panic.
+  - `crates/ui/src/ai_chat.rs` (+~950 lines) — `AiChatView` GPUI entity:
+    - Header: session title + dropdown (switch / delete / `+` new), model-ref
+      pill (click cycles the `MODELS` catalog via `AiChatStore::set_model_ref`),
+      run-status line (Thinking/Streaming/Awaiting approval/Error).
+    - Message list: role-styled (user = right-aligned accent bubble, assistant =
+      left block, system = compact), `overflow_y_scroll` + `ScrollHandle`.
+      Auto-scroll: `stick_bottom` flag recomputed from the scroll offset on
+      every wheel event (`is_at_bottom(offset_y, max_h, 48px)`); while true the
+      view pins to bottom, so scrolling up detaches and returns re-attaches.
+    - Assistant rendering: per-message markdown cache keyed by
+      `(msg id, content.len())` — only the growing trailing message re-parses
+      per token, history is untouched (the "don't re-render the whole verlauf"
+      warning). Blocks → GPUI elements; inline bold/italic/code/link via
+      `StyledText::with_highlights`. Fenced code blocks: `SyntaxHighlighter`
+      (T06-002) highlight via `EditorPalette`, language label + Copy button
+      (`cx.write_to_clipboard`).
+    - Reasoning: collapsible "Thinking" block per message.
+    - Tool-approval cards: pending (Streaming/AwaitingApproval) shows
+      Approve/Reject; Done/Error shows the result. Wired to new
+      `SessionStore::resolve_tool_call(id, approved)` (ai crate) → sets the card
+      to Done/Error with a placeholder result and settles run status (real
+      execution is T11-004).
+    - Composer: hand-rolled multi-line key-buffer input (Enter sends,
+      Shift/Alt+Enter newline), Send/Stop button, attachment chips with remove.
+      `compose_message` prepends `<selection source=…>` / `<file path=…>` /
+      `<image path=…>` blocks (which `derive_title` already strips). Public
+      `attach_selection` / `attach_file` for a later terminal/editor
+      "Ask AI about selection" wire.
+  - `AiChatStore`: added `last_usage()`, `resolve_tool_call(...)`.
+  - `crates/ui/src/app_shell.rs` — owns `ai_chat: Entity<AiChatView>`
+    (constructs `AiChatStore::new(tokio)` + view), `render_panel_body` routes
+    `SidebarPanel::Ai` → the view. `git_graph` now gets `tokio.clone()`.
+  - `crates/ui/src/lib.rs` — `pub mod markdown` + re-exports `AiChatView`,
+    `Attachment`, `AttachmentKind`.
+- Verify: `cargo fmt --all --check`, `cargo clippy --workspace --all-targets
+  -- -D warnings`, `cargo test --workspace` — all green. ai **45** (+1:
+  `resolve_tool_call_settles_card_and_status`), ui **124** (+13: 8 markdown +
+  5 chat: compose/at-bottom/context-split/composer-clear/tool-card/model-cycle),
+  backend 148 unchanged.
+
+### State / Next
+- Branch `master`, committed. Pre-existing unrelated `CLAUDE.md` working-tree
+  edit deliberately left uncommitted / untouched.
+- **Next: T11-004 — Agent/Tool-System und Live-Bridge**
+  (`tasks/phase-10-ai-chat/T11-004-agent-tool-system.md`) — the actual
+  tool-execution loop behind the approval cards.
+
+### Notes / Quirks (T11-003)
+- Chat is a **dockable sidebar panel** (`SidebarPanel::Ai`), not a workspace
+  tab. The reference `AiMiniWindow` is a floating/dockable mini-window; the
+  sidebar slot was already reserved and avoids tab/pane plumbing. Moving it to
+  a detachable window is a later polish.
+- **No Settings→AI provider pane** (API-key entry UI). Only display + a
+  model-cycle pill. `AiChatStore` still uses the OS keyring from T11-001, so
+  with no key `send` fails the run and the error renders in the message list.
+  The key-entry form belongs with the Phase 12 Settings UI.
+- Markdown code highlighting reuses `labonair_editor::SyntaxHighlighter` — a
+  fresh highlighter is built per code block per render (`update` + `line_runs`
+  like `editor.rs`). Cheap for chat-sized snippets; the message-level parse
+  cache keeps the hot path (streaming trailing message) from re-highlighting
+  earlier blocks… actually it does re-render all blocks of the *trailing*
+  message each token, but not the rest of the history.
+- Attachments have no file/image picker (GPUI has none wired). `attach_file`
+  reads via `std::fs` (truncated to 16k chars); images carry the path only —
+  vision payloads are a later pass.
+- GPUI: `overflow_y_scroll` / `on_click` require the element to be stateful
+  (`.id(...)` first) — every clickable/scrollable div in the panel has an id.
+  `ScrollHandle::{offset,max_offset,scroll_to_bottom}` from gpui 0.2.2
+  `elements/div.rs`; `.track_scroll(&ScrollHandle)` on the list.
+
+---
+
+## Prev Session: 2026-09-01 (T11-002 — Chat store & session management)
 
 ### What Was Done
 - **T11-002 ✅ Done.** Chat sessions + send/stream orchestration on top of the

@@ -1,7 +1,7 @@
 # T11-003: Chat-UI und Streaming-Markdown
 
 ## Status
-⏳ Pending
+✅ Done
 
 ## Phase
 10 — AI-Chat-System
@@ -62,13 +62,13 @@ In der Rust-Welt ersetzt ein GPUI-Markdown-Renderer das Web-`streamdown`. Dieser
 
 ## Akzeptanzkriterien
 
-- [ ] Die Chat-Ansicht zeigt die Konversation nach Rolle gestylt und scrollbar.
-- [ ] Streaming-Markdown wird inkrementell und flüssig gerendert, inkl. Codeblöcke mit Highlighting und Kopieren.
-- [ ] Der Composer unterstützt Senden/Stoppen, mehrzeilige Eingabe, Anhänge (Bild/Text/Selection) mit Chip-Anzeige.
-- [ ] Provider/Modell- und Busy-Status werden angezeigt; Session-Verwaltung (Auswahl/Neu) funktioniert.
-- [ ] Tool-Genehmigungs-Karten mit Aktionen und Status funktionieren.
-- [ ] Die Chat-Ansicht ist in das Workspace-Layout integriert (dockbar).
-- [ ] Alle Tests laufen grün.
+- [x] Die Chat-Ansicht zeigt die Konversation nach Rolle gestylt und scrollbar.
+- [x] Streaming-Markdown wird inkrementell und flüssig gerendert, inkl. Codeblöcke mit Highlighting und Kopieren.
+- [x] Der Composer unterstützt Senden/Stoppen, mehrzeilige Eingabe, Anhänge (Bild/Text/Selection) mit Chip-Anzeige.
+- [x] Provider/Modell- und Busy-Status werden angezeigt; Session-Verwaltung (Auswahl/Neu) funktioniert.
+- [x] Tool-Genehmigungs-Karten mit Aktionen und Status funktionieren.
+- [x] Die Chat-Ansicht ist in das Workspace-Layout integriert (als dockbares Sidebar-Panel `SidebarPanel::Ai`).
+- [x] Alle Tests laufen grün.
 
 ## Notizen
 

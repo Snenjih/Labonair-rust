@@ -12,7 +12,7 @@ use std::sync::Arc;
 use gpui::{AppContext, Context, Entity};
 use labonair_ai::{
     resolve_target, AiClient, ChatConfig, InstanceStore, KeyringSecretStore, RunStatus,
-    SecretStore, SessionMessage, SessionMeta, SessionStore, StreamEvent,
+    SecretStore, SessionMessage, SessionMeta, SessionStore, StreamEvent, Usage,
 };
 use tokio::runtime::Handle as TokioHandle;
 use tokio::sync::mpsc;
@@ -204,6 +204,17 @@ impl AiChatStore {
         cx.notify();
     }
 
+    /// Token usage of the last run (0 until the first `Usage` event).
+    pub fn last_usage(&self) -> Usage {
+        self.store.last_usage()
+    }
+
+    /// Approve / reject a pending tool-call approval card.
+    pub fn resolve_tool_call(&mut self, tool_id: &str, approved: bool, cx: &mut Context<Self>) {
+        self.store.resolve_tool_call(tool_id, approved);
+        cx.notify();
+    }
+
     fn cancel_run(&mut self) {
         self.generation = self.generation.wrapping_add(1);
         if let Some(handle) = self.run.take() {
@@ -215,6 +226,1210 @@ impl AiChatStore {
 /// Convenience: create the entity.
 pub fn init(tokio: TokioHandle, cx: &mut gpui::App) -> Entity<AiChatStore> {
     cx.new(|_| AiChatStore::new(tokio))
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// T11-003 — Chat UI & streaming markdown
+// ═══════════════════════════════════════════════════════════════════════════
+
+use std::collections::{HashMap, HashSet};
+
+use gpui::prelude::FluentBuilder;
+use gpui::{
+    div, px, App, ClickEvent, ClipboardItem, FocusHandle, Focusable, FontStyle, FontWeight,
+    HighlightStyle, InteractiveElement, IntoElement, KeyDownEvent, ParentElement, Render,
+    ScrollHandle, ScrollWheelEvent, SharedString, StatefulInteractiveElement, Styled, StyledText,
+    Window,
+};
+use labonair_ai::{find_model, MessageStatus, Role, SessionToolCall, ToolCallStatus, MODELS};
+use labonair_editor::{Language, SyntaxHighlighter};
+
+use crate::markdown::{parse_markdown, Inline, MdBlock};
+use crate::syntax_theme::EditorPalette;
+use crate::theme::ThemeStore;
+
+/// A composer attachment shown as a chip and embedded into the outgoing message.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AttachmentKind {
+    /// A selection captured from a terminal or editor.
+    Selection,
+    /// The contents of a text file.
+    File,
+    /// A referenced image (path only — vision payloads are a later pass).
+    Image,
+}
+
+#[derive(Debug, Clone)]
+pub struct Attachment {
+    pub kind: AttachmentKind,
+    /// Short label for the chip (source name / path).
+    pub label: String,
+    /// Embedded content (the file text / selection text; empty for images).
+    pub content: String,
+}
+
+impl Attachment {
+    fn embed(&self) -> String {
+        match self.kind {
+            AttachmentKind::Selection => {
+                format!(
+                    "<selection source=\"{}\">\n{}\n</selection>",
+                    self.label, self.content
+                )
+            }
+            AttachmentKind::File => {
+                format!("<file path=\"{}\">\n{}\n</file>", self.label, self.content)
+            }
+            AttachmentKind::Image => format!("<image path=\"{}\"></image>", self.label),
+        }
+    }
+
+    fn glyph(&self) -> &'static str {
+        match self.kind {
+            AttachmentKind::Selection => "\u{2702}",
+            AttachmentKind::File => "\u{1F4C4}",
+            AttachmentKind::Image => "\u{1F5BC}",
+        }
+    }
+}
+
+/// Prepend the attachment blocks to `text` for the outgoing user message.
+pub fn compose_message(text: &str, attachments: &[Attachment]) -> String {
+    let mut out = String::new();
+    for a in attachments {
+        out.push_str(&a.embed());
+        out.push_str("\n\n");
+    }
+    out.push_str(text);
+    out
+}
+
+/// True when the scroll viewport is pinned within `threshold` px of the bottom.
+/// `offset_y` is the (non-positive) scroll offset, `max_h` the max scroll extent.
+pub fn is_at_bottom(offset_y: f32, max_h: f32, threshold: f32) -> bool {
+    if max_h <= 0.0 {
+        return true;
+    }
+    (max_h - (-offset_y)) <= threshold
+}
+
+fn run_status_label(status: RunStatus) -> Option<&'static str> {
+    match status {
+        RunStatus::Idle => None,
+        RunStatus::Thinking => Some("Thinking\u{2026}"),
+        RunStatus::Streaming => Some("Streaming\u{2026}"),
+        RunStatus::AwaitingApproval => Some("Awaiting approval"),
+        RunStatus::Error => Some("Error"),
+    }
+}
+
+/// Map a fenced-code info string to an editor [`Language`] for highlighting.
+fn fence_language(lang: Option<&str>) -> Language {
+    let Some(raw) = lang else {
+        return Language::PlainText;
+    };
+    let lower = raw.trim().to_ascii_lowercase();
+    let ext = match lower.as_str() {
+        "rust" | "rs" => "rs",
+        "python" | "py" => "py",
+        "javascript" | "js" | "node" => "js",
+        "typescript" | "ts" => "ts",
+        "tsx" => "tsx",
+        "json" | "jsonc" => "json",
+        "toml" => "toml",
+        "yaml" | "yml" => "yml",
+        "sh" | "bash" | "shell" | "zsh" | "console" => "sh",
+        "go" | "golang" => "go",
+        "c" => "c",
+        "cpp" | "c++" | "cxx" => "cpp",
+        "sql" => "sql",
+        "java" => "java",
+        "html" => "html",
+        "css" => "css",
+        "md" | "markdown" => "md",
+        other => other,
+    };
+    Language::from_path(format!("snippet.{ext}"))
+}
+
+const CHAT_MIN_W: f32 = 240.0;
+
+struct ChatColors {
+    bg: gpui::Hsla,
+    fg: gpui::Hsla,
+    muted: gpui::Hsla,
+    border: gpui::Hsla,
+    accent: gpui::Hsla,
+    card: gpui::Hsla,
+    user_bubble: gpui::Hsla,
+    code_bg: gpui::Hsla,
+    error: gpui::Hsla,
+    link: gpui::Hsla,
+}
+
+/// The GPUI chat panel — renders off an [`AiChatStore`] and owns the composer.
+pub struct AiChatView {
+    store: Entity<AiChatStore>,
+    theme: Entity<ThemeStore>,
+    composer: String,
+    composer_focused: bool,
+    attachments: Vec<Attachment>,
+    focus: FocusHandle,
+    scroll: ScrollHandle,
+    /// Auto-scroll to the newest message while the user is at the bottom.
+    stick_bottom: bool,
+    /// Session switcher dropdown open state.
+    session_menu: bool,
+    /// Reasoning blocks the user has expanded (message id).
+    expanded_reasoning: HashSet<String>,
+    /// Parsed-markdown cache keyed by message id → (content length, blocks).
+    md_cache: HashMap<String, (usize, Vec<MdBlock>)>,
+}
+
+impl AiChatView {
+    pub fn new(
+        store: Entity<AiChatStore>,
+        theme: Entity<ThemeStore>,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        cx.observe(&store, |_, _, cx| cx.notify()).detach();
+        cx.observe(&theme, |_, _, cx| cx.notify()).detach();
+        Self {
+            store,
+            theme,
+            composer: String::new(),
+            composer_focused: false,
+            attachments: Vec::new(),
+            focus: cx.focus_handle(),
+            scroll: ScrollHandle::new(),
+            stick_bottom: true,
+            session_menu: false,
+            expanded_reasoning: HashSet::new(),
+            md_cache: HashMap::new(),
+        }
+    }
+
+    /// Attach a captured terminal/editor selection to the composer.
+    pub fn attach_selection(
+        &mut self,
+        label: impl Into<String>,
+        content: impl Into<String>,
+        cx: &mut Context<Self>,
+    ) {
+        self.attachments.push(Attachment {
+            kind: AttachmentKind::Selection,
+            label: label.into(),
+            content: content.into(),
+        });
+        cx.notify();
+    }
+
+    /// Attach a text file's contents (truncated) to the composer.
+    pub fn attach_file(&mut self, path: impl Into<String>, cx: &mut Context<Self>) {
+        let path = path.into();
+        let content = std::fs::read_to_string(&path)
+            .map(|s| s.chars().take(16_000).collect::<String>())
+            .unwrap_or_default();
+        self.attachments.push(Attachment {
+            kind: AttachmentKind::File,
+            label: path,
+            content,
+        });
+        cx.notify();
+    }
+
+    fn can_send(&self, cx: &App) -> bool {
+        !self.store.read(cx).is_streaming()
+            && (!self.composer.trim().is_empty() || !self.attachments.is_empty())
+    }
+
+    fn send(&mut self, cx: &mut Context<Self>) {
+        let text = self.composer.trim().to_string();
+        if text.is_empty() && self.attachments.is_empty() {
+            return;
+        }
+        let body = compose_message(&text, &self.attachments);
+        self.composer.clear();
+        self.attachments.clear();
+        self.stick_bottom = true;
+        self.store.update(cx, |s, cx| s.send(body, cx));
+        cx.notify();
+    }
+
+    fn stop(&mut self, cx: &mut Context<Self>) {
+        self.store.update(cx, |s, cx| s.stop(cx));
+        cx.notify();
+    }
+
+    fn cycle_model(&mut self, cx: &mut Context<Self>) {
+        let current = self.store.read(cx).model_ref().to_string();
+        let cur_id = current.split('@').next().unwrap_or(&current);
+        let pos = MODELS.iter().position(|m| m.id == cur_id).unwrap_or(0);
+        let next = MODELS[(pos + 1) % MODELS.len()].id;
+        self.store.update(cx, |s, cx| s.set_model_ref(next, cx));
+        cx.notify();
+    }
+
+    fn on_composer_key(&mut self, ev: &KeyDownEvent, _w: &mut Window, cx: &mut Context<Self>) {
+        let ks = &ev.keystroke;
+        let m = &ks.modifiers;
+        match ks.key.as_str() {
+            "enter" => {
+                if m.shift || m.alt {
+                    self.composer.push('\n');
+                } else {
+                    self.send(cx);
+                }
+            }
+            "backspace" => {
+                self.composer.pop();
+            }
+            "escape" => {
+                self.composer_focused = false;
+            }
+            key => {
+                if m.platform || m.control || m.alt {
+                    return;
+                }
+                let ch = ks
+                    .key_char
+                    .clone()
+                    .filter(|s| !s.is_empty() && !s.chars().any(|c| c.is_control()))
+                    .or_else(|| (key.chars().count() == 1).then(|| key.to_string()));
+                if let Some(ch) = ch {
+                    self.composer.push_str(&ch);
+                }
+            }
+        }
+        cx.stop_propagation();
+        cx.notify();
+    }
+
+    fn on_scroll(&mut self, _ev: &ScrollWheelEvent, _w: &mut Window, cx: &mut Context<Self>) {
+        let off = self.scroll.offset().y;
+        let max = self.scroll.max_offset().height;
+        self.stick_bottom = is_at_bottom(f32::from(off), f32::from(max), 48.0);
+        cx.notify();
+    }
+
+    fn colors(&self, cx: &App) -> ChatColors {
+        let t = self.theme.read(cx);
+        ChatColors {
+            bg: t.background(),
+            fg: t.foreground(),
+            muted: t.muted_foreground(),
+            border: t.border(),
+            accent: t.accent(),
+            card: t.card(),
+            user_bubble: t.accent(),
+            code_bg: t.muted(),
+            error: t.status_error(),
+            link: t.primary(),
+        }
+    }
+
+    // ── rendering ─────────────────────────────────────────────────────────
+
+    fn render_header(&self, c: &ChatColors, cx: &mut Context<Self>) -> impl IntoElement {
+        let store = self.store.read(cx);
+        let active_id = store.active_id().map(str::to_string);
+        let title = store
+            .sessions()
+            .iter()
+            .find(|s| Some(&s.id) == active_id.as_ref())
+            .map(|s| s.title.clone())
+            .unwrap_or_else(|| "New chat".to_string());
+        let model_id = store
+            .model_ref()
+            .split('@')
+            .next()
+            .unwrap_or("")
+            .to_string();
+        let model_label = find_model(&model_id)
+            .map(|m| m.label.to_string())
+            .unwrap_or_else(|| model_id.clone());
+        let status = run_status_label(store.run_status());
+        let sessions: Vec<SessionMeta> = store.sessions().to_vec();
+
+        div()
+            .flex()
+            .flex_col()
+            .w_full()
+            .flex_shrink_0()
+            .px_2()
+            .py_1p5()
+            .border_b_1()
+            .border_color(c.border)
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap_2()
+                    .child(
+                        div()
+                            .id("ai-session-toggle")
+                            .flex_1()
+                            .min_w_0()
+                            .flex()
+                            .items_center()
+                            .gap_1()
+                            .text_xs()
+                            .text_color(c.fg)
+                            .child(
+                                div()
+                                    .min_w_0()
+                                    .overflow_hidden()
+                                    .whitespace_nowrap()
+                                    .child(SharedString::from(title)),
+                            )
+                            .child(div().text_color(c.muted).child("\u{25be}"))
+                            .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
+                                this.session_menu = !this.session_menu;
+                                cx.notify();
+                            })),
+                    )
+                    .child(
+                        div()
+                            .id("ai-model-pick")
+                            .px_1p5()
+                            .py_0p5()
+                            .rounded_sm()
+                            .border_1()
+                            .border_color(c.border)
+                            .text_color(c.muted)
+                            .text_size(px(10.0))
+                            .hover(|s| s.border_color(c.accent).text_color(c.fg))
+                            .child(SharedString::from(model_label))
+                            .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
+                                this.cycle_model(cx);
+                            })),
+                    )
+                    .child(
+                        div()
+                            .id("ai-new-session")
+                            .size(px(20.0))
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .rounded_sm()
+                            .text_color(c.muted)
+                            .hover(|s| s.bg(c.border).text_color(c.fg))
+                            .child("+")
+                            .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
+                                this.store.update(cx, |s, cx| {
+                                    s.new_session(cx);
+                                });
+                                this.session_menu = false;
+                                cx.notify();
+                            })),
+                    ),
+            )
+            .when_some(status, |d, label| {
+                d.child(
+                    div()
+                        .mt_1()
+                        .text_size(px(10.0))
+                        .text_color(if label == "Error" { c.error } else { c.muted })
+                        .child(SharedString::from(label)),
+                )
+            })
+            .when(self.session_menu, |d| {
+                d.child(self.render_session_menu(&sessions, active_id.as_deref(), c, cx))
+            })
+    }
+
+    fn render_session_menu(
+        &self,
+        sessions: &[SessionMeta],
+        active: Option<&str>,
+        c: &ChatColors,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        div()
+            .id("ai-session-menu")
+            .mt_1()
+            .flex()
+            .flex_col()
+            .gap_0p5()
+            .max_h(px(220.0))
+            .overflow_y_scroll()
+            .rounded_sm()
+            .border_1()
+            .border_color(c.border)
+            .bg(c.card)
+            .p_1()
+            .children(sessions.iter().map(|s| {
+                let id = s.id.clone();
+                let id2 = s.id.clone();
+                let is_active = Some(s.id.as_str()) == active;
+                div()
+                    .id(SharedString::from(s.id.clone()))
+                    .flex()
+                    .items_center()
+                    .gap_1()
+                    .px_1p5()
+                    .py_1()
+                    .rounded_sm()
+                    .text_size(px(11.0))
+                    .text_color(if is_active { c.fg } else { c.muted })
+                    .when(is_active, |d| d.bg(c.border))
+                    .hover(|s| s.bg(c.border))
+                    .child(
+                        div()
+                            .id(SharedString::from(format!("sess-title-{}", s.id)))
+                            .flex_1()
+                            .min_w_0()
+                            .overflow_hidden()
+                            .whitespace_nowrap()
+                            .child(SharedString::from(s.title.clone()))
+                            .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                                this.store.update(cx, |st, cx| st.switch_session(&id, cx));
+                                this.session_menu = false;
+                                cx.notify();
+                            })),
+                    )
+                    .child(
+                        div()
+                            .id(SharedString::from(format!("sess-del-{}", s.id)))
+                            .text_color(c.muted)
+                            .hover(|s| s.text_color(c.error))
+                            .child("\u{00d7}")
+                            .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                                this.store.update(cx, |st, cx| st.delete_session(&id2, cx));
+                                cx.notify();
+                            })),
+                    )
+            }))
+    }
+
+    fn render_messages(&mut self, c: &ChatColors, cx: &mut Context<Self>) -> gpui::AnyElement {
+        let messages: Vec<SessionMessage> = self.store.read(cx).active_messages().to_vec();
+        let editor_theme = self.theme.read(cx).editor_theme();
+        let palette = EditorPalette::resolve(editor_theme, self.theme.read(cx));
+
+        if messages.is_empty() {
+            return div()
+                .flex_1()
+                .flex()
+                .flex_col()
+                .items_center()
+                .justify_center()
+                .gap_1()
+                .p_4()
+                .text_center()
+                .child(
+                    div()
+                        .text_xs()
+                        .text_color(c.fg)
+                        .child("Ask Labonair anything"),
+                )
+                .child(
+                    div().text_size(px(10.0)).text_color(c.muted).child(
+                        "Explain command output, fix errors, generate snippets, or run a task.",
+                    ),
+                )
+                .into_any_element();
+        }
+
+        if self.stick_bottom {
+            self.scroll.scroll_to_bottom();
+        }
+
+        // Prune cache entries for messages that no longer exist.
+        let live: HashSet<&str> = messages.iter().map(|m| m.id.as_str()).collect();
+        self.md_cache.retain(|k, _| live.contains(k.as_str()));
+
+        let rows: Vec<gpui::AnyElement> = messages
+            .iter()
+            .map(|m| self.render_message(m, c, &palette, cx))
+            .collect();
+
+        div()
+            .id("ai-messages")
+            .flex_1()
+            .min_h_0()
+            .overflow_y_scroll()
+            .track_scroll(&self.scroll)
+            .on_scroll_wheel(cx.listener(Self::on_scroll))
+            .child(div().flex().flex_col().gap_3().p_3().children(rows))
+            .into_any_element()
+    }
+
+    fn render_message(
+        &mut self,
+        m: &SessionMessage,
+        c: &ChatColors,
+        palette: &EditorPalette,
+        cx: &mut Context<Self>,
+    ) -> gpui::AnyElement {
+        match m.role {
+            Role::User => self.render_user_message(m, c).into_any_element(),
+            Role::System => div()
+                .text_size(px(10.0))
+                .text_color(c.muted)
+                .child(SharedString::from(m.content.clone()))
+                .into_any_element(),
+            _ => self.render_assistant_message(m, c, palette, cx),
+        }
+    }
+
+    fn render_user_message(&self, m: &SessionMessage, c: &ChatColors) -> impl IntoElement {
+        let (chips, text) = split_context_blocks(&m.content);
+        div().flex().flex_col().items_end().gap_1().child(
+            div()
+                .max_w(px(360.0))
+                .rounded_md()
+                .bg(c.user_bubble)
+                .text_color(c.bg)
+                .px_2p5()
+                .py_1p5()
+                .text_xs()
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap_1()
+                        .when(!chips.is_empty(), |d| {
+                            d.children(chips.iter().map(|chip| {
+                                div()
+                                    .text_size(px(10.0))
+                                    .opacity(0.85)
+                                    .child(SharedString::from(format!("\u{1F4CE} {chip}")))
+                            }))
+                        })
+                        .when(!text.trim().is_empty(), |d| {
+                            d.child(
+                                div()
+                                    .whitespace_normal()
+                                    .child(SharedString::from(text.trim().to_string())),
+                            )
+                        }),
+                ),
+        )
+    }
+
+    fn render_assistant_message(
+        &mut self,
+        m: &SessionMessage,
+        c: &ChatColors,
+        palette: &EditorPalette,
+        cx: &mut Context<Self>,
+    ) -> gpui::AnyElement {
+        let cache_hit = self
+            .md_cache
+            .get(&m.id)
+            .is_some_and(|(len, _)| *len == m.content.len());
+        if !cache_hit {
+            let blocks = parse_markdown(&m.content);
+            self.md_cache
+                .insert(m.id.clone(), (m.content.len(), blocks));
+        }
+        let blocks = self
+            .md_cache
+            .get(&m.id)
+            .map(|(_, b)| b.clone())
+            .unwrap_or_default();
+
+        let reasoning = (!m.reasoning.is_empty()).then(|| {
+            let expanded = self.expanded_reasoning.contains(&m.id);
+            let id = m.id.clone();
+            div()
+                .flex()
+                .flex_col()
+                .gap_1()
+                .rounded_sm()
+                .border_1()
+                .border_color(c.border)
+                .bg(c.card)
+                .p_1p5()
+                .child(
+                    div()
+                        .id(SharedString::from(format!("reason-{}", m.id)))
+                        .flex()
+                        .items_center()
+                        .gap_1()
+                        .text_size(px(10.0))
+                        .text_color(c.muted)
+                        .child(if expanded {
+                            "\u{25be} Thinking"
+                        } else {
+                            "\u{25b8} Thinking"
+                        })
+                        .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                            if !this.expanded_reasoning.remove(&id) {
+                                this.expanded_reasoning.insert(id.clone());
+                            }
+                            cx.notify();
+                        })),
+                )
+                .when(expanded, |d| {
+                    d.child(
+                        div()
+                            .text_size(px(11.0))
+                            .text_color(c.muted)
+                            .whitespace_normal()
+                            .child(SharedString::from(m.reasoning.clone())),
+                    )
+                })
+        });
+
+        let tool_cards: Vec<gpui::AnyElement> = m
+            .tool_calls
+            .iter()
+            .map(|tc| self.render_tool_call(tc, c, cx))
+            .collect();
+
+        let error = (m.status == MessageStatus::Error)
+            .then(|| m.error.clone())
+            .flatten()
+            .map(|e| {
+                div()
+                    .rounded_sm()
+                    .border_1()
+                    .border_color(c.error)
+                    .bg(c.error.opacity(0.12))
+                    .px_2()
+                    .py_1p5()
+                    .text_size(px(11.0))
+                    .text_color(c.error)
+                    .child(SharedString::from(e))
+            });
+
+        div()
+            .flex()
+            .flex_col()
+            .gap_2()
+            .text_xs()
+            .text_color(c.fg)
+            .when_some(reasoning, |d, r| d.child(r))
+            .children(blocks.iter().map(|b| self.render_block(b, c, palette)))
+            .children(tool_cards)
+            .when_some(error, |d, e| d.child(e))
+            .into_any_element()
+    }
+
+    fn render_tool_call(
+        &self,
+        tc: &SessionToolCall,
+        c: &ChatColors,
+        cx: &mut Context<Self>,
+    ) -> gpui::AnyElement {
+        let pending = matches!(
+            tc.status,
+            ToolCallStatus::AwaitingApproval | ToolCallStatus::Streaming
+        );
+        let (status_text, status_color) = match tc.status {
+            ToolCallStatus::Streaming => ("streaming\u{2026}", c.muted),
+            ToolCallStatus::AwaitingApproval => ("awaiting approval", c.accent),
+            ToolCallStatus::Done => ("done", c.muted),
+            ToolCallStatus::Error => ("rejected", c.error),
+        };
+        let id_ok = tc.id.clone();
+        let id_no = tc.id.clone();
+        div()
+            .flex()
+            .flex_col()
+            .gap_1p5()
+            .rounded_sm()
+            .border_1()
+            .border_color(if pending { c.accent } else { c.border })
+            .bg(c.card)
+            .p_2()
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .justify_between()
+                    .gap_2()
+                    .child(
+                        div()
+                            .font_family("mono")
+                            .text_size(px(11.0))
+                            .text_color(c.fg)
+                            .child(SharedString::from(tc.name.clone())),
+                    )
+                    .child(
+                        div()
+                            .text_size(px(10.0))
+                            .text_color(status_color)
+                            .child(status_text),
+                    ),
+            )
+            .when(!tc.arguments.is_empty(), |d| {
+                d.child(
+                    div()
+                        .font_family("mono")
+                        .text_size(px(10.0))
+                        .text_color(c.muted)
+                        .whitespace_normal()
+                        .child(SharedString::from(truncate(&tc.arguments, 600))),
+                )
+            })
+            .when_some(tc.result.clone(), |d, r| {
+                d.child(
+                    div()
+                        .font_family("mono")
+                        .text_size(px(10.0))
+                        .text_color(c.muted)
+                        .whitespace_normal()
+                        .child(SharedString::from(truncate(&r, 600))),
+                )
+            })
+            .when(tc.status == ToolCallStatus::AwaitingApproval, |d| {
+                d.child(
+                    div()
+                        .flex()
+                        .gap_2()
+                        .child(
+                            div()
+                                .id(SharedString::from(format!("approve-{}", tc.id)))
+                                .px_2()
+                                .py_0p5()
+                                .rounded_sm()
+                                .bg(c.accent)
+                                .text_color(c.bg)
+                                .text_size(px(10.0))
+                                .child("Approve")
+                                .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                                    this.store
+                                        .update(cx, |s, cx| s.resolve_tool_call(&id_ok, true, cx));
+                                    cx.notify();
+                                })),
+                        )
+                        .child(
+                            div()
+                                .id(SharedString::from(format!("reject-{}", tc.id)))
+                                .px_2()
+                                .py_0p5()
+                                .rounded_sm()
+                                .border_1()
+                                .border_color(c.border)
+                                .text_color(c.muted)
+                                .text_size(px(10.0))
+                                .child("Reject")
+                                .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                                    this.store
+                                        .update(cx, |s, cx| s.resolve_tool_call(&id_no, false, cx));
+                                    cx.notify();
+                                })),
+                        ),
+                )
+            })
+            .into_any_element()
+    }
+
+    fn render_block(
+        &self,
+        block: &MdBlock,
+        c: &ChatColors,
+        palette: &EditorPalette,
+    ) -> gpui::AnyElement {
+        match block {
+            MdBlock::Heading { level, spans } => div()
+                .font_weight(FontWeight::SEMIBOLD)
+                .text_size(px(match level {
+                    1 => 15.0,
+                    2 => 13.5,
+                    _ => 12.5,
+                }))
+                .text_color(c.fg)
+                .child(inline_text(spans, c))
+                .into_any_element(),
+            MdBlock::Paragraph(spans) => div()
+                .whitespace_normal()
+                .child(inline_text(spans, c))
+                .into_any_element(),
+            MdBlock::Quote(spans) => div()
+                .border_l_2()
+                .border_color(c.border)
+                .pl_2()
+                .text_color(c.muted)
+                .child(inline_text(spans, c))
+                .into_any_element(),
+            MdBlock::Rule => div().h(px(1.0)).w_full().bg(c.border).into_any_element(),
+            MdBlock::Bullets(items) => div()
+                .flex()
+                .flex_col()
+                .gap_0p5()
+                .children(items.iter().map(|it| {
+                    div()
+                        .flex()
+                        .gap_1p5()
+                        .child(div().text_color(c.muted).child("\u{2022}"))
+                        .child(div().flex_1().whitespace_normal().child(inline_text(it, c)))
+                }))
+                .into_any_element(),
+            MdBlock::Ordered(items) => div()
+                .flex()
+                .flex_col()
+                .gap_0p5()
+                .children(items.iter().map(|(n, it)| {
+                    div()
+                        .flex()
+                        .gap_1p5()
+                        .child(
+                            div()
+                                .text_color(c.muted)
+                                .child(SharedString::from(format!("{n}."))),
+                        )
+                        .child(div().flex_1().whitespace_normal().child(inline_text(it, c)))
+                }))
+                .into_any_element(),
+            MdBlock::Table { headers, rows } => div()
+                .flex()
+                .flex_col()
+                .rounded_sm()
+                .border_1()
+                .border_color(c.border)
+                .overflow_hidden()
+                .child(table_row(headers, c, true))
+                .children(rows.iter().map(|r| table_row(r, c, false)))
+                .into_any_element(),
+            MdBlock::Code { lang, text, .. } => {
+                self.render_code_block(lang.as_deref(), text, c, palette)
+            }
+        }
+    }
+
+    fn render_code_block(
+        &self,
+        lang: Option<&str>,
+        text: &str,
+        c: &ChatColors,
+        palette: &EditorPalette,
+    ) -> gpui::AnyElement {
+        let language = fence_language(lang);
+        let mut hl = SyntaxHighlighter::new(language);
+        if hl.has_grammar() {
+            hl.update(text, 0, 0..text.len());
+        }
+        let mut offset = 0usize;
+        let lines: Vec<gpui::AnyElement> = text
+            .split('\n')
+            .map(|line| {
+                let runs = if hl.has_grammar() {
+                    hl.line_runs(line, offset)
+                } else {
+                    Vec::new()
+                };
+                offset += line.len() + 1;
+                if runs.is_empty() {
+                    div()
+                        .child(SharedString::from(line.to_string()))
+                        .into_any_element()
+                } else {
+                    let mut highlights: Vec<(std::ops::Range<usize>, HighlightStyle)> = Vec::new();
+                    let mut byte = 0usize;
+                    for run in &runs {
+                        let len = run.text.len();
+                        if let Some(kind) = run.kind {
+                            highlights.push((
+                                byte..byte + len,
+                                HighlightStyle {
+                                    color: Some(palette.color(kind)),
+                                    ..Default::default()
+                                },
+                            ));
+                        }
+                        byte += len;
+                    }
+                    StyledText::new(SharedString::from(line.to_string()))
+                        .with_highlights(highlights)
+                        .into_any_element()
+                }
+            })
+            .collect();
+
+        let label = lang.map(|l| l.to_string());
+        let copy = text.to_string();
+
+        div()
+            .flex()
+            .flex_col()
+            .rounded_sm()
+            .border_1()
+            .border_color(c.border)
+            .bg(c.code_bg)
+            .overflow_hidden()
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .justify_between()
+                    .px_2()
+                    .py_0p5()
+                    .border_b_1()
+                    .border_color(c.border)
+                    .text_size(px(9.0))
+                    .text_color(c.muted)
+                    .child(SharedString::from(
+                        label.unwrap_or_else(|| "code".to_string()),
+                    ))
+                    .child(
+                        div()
+                            .id("ai-code-copy")
+                            .child("Copy")
+                            .hover(|s| s.text_color(c.fg))
+                            .on_click(move |_, _, cx| {
+                                cx.write_to_clipboard(ClipboardItem::new_string(copy.clone()));
+                            }),
+                    ),
+            )
+            .child(
+                div()
+                    .font_family("mono")
+                    .text_size(px(11.0))
+                    .p_2()
+                    .flex()
+                    .flex_col()
+                    .children(lines),
+            )
+            .into_any_element()
+    }
+
+    fn render_composer(&self, c: &ChatColors, cx: &mut Context<Self>) -> impl IntoElement {
+        let streaming = self.store.read(cx).is_streaming();
+        let placeholder = self.composer.is_empty() && !self.composer_focused;
+        let display = if placeholder {
+            "Message Labonair\u{2026}".to_string()
+        } else {
+            self.composer.clone()
+        };
+
+        div()
+            .flex()
+            .flex_col()
+            .gap_1p5()
+            .w_full()
+            .flex_shrink_0()
+            .p_2()
+            .border_t_1()
+            .border_color(c.border)
+            .when(!self.attachments.is_empty(), |d| {
+                d.child(div().flex().flex_wrap().gap_1().children(
+                    self.attachments.iter().enumerate().map(|(i, a)| {
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap_1()
+                            .px_1p5()
+                            .py_0p5()
+                            .rounded_sm()
+                            .border_1()
+                            .border_color(c.border)
+                            .bg(c.card)
+                            .text_size(px(10.0))
+                            .text_color(c.muted)
+                            .child(a.glyph())
+                            .child(SharedString::from(truncate(&a.label, 28)))
+                            .child(
+                                div()
+                                    .id(SharedString::from(format!("att-{i}")))
+                                    .hover(|s| s.text_color(c.error))
+                                    .child("\u{00d7}")
+                                    .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                                        if i < this.attachments.len() {
+                                            this.attachments.remove(i);
+                                        }
+                                        cx.notify();
+                                    })),
+                            )
+                    }),
+                ))
+            })
+            .child(
+                div()
+                    .id("ai-composer")
+                    .track_focus(&self.focus)
+                    .min_h(px(52.0))
+                    .max_h(px(160.0))
+                    .w_full()
+                    .overflow_y_scroll()
+                    .rounded_sm()
+                    .border_1()
+                    .border_color(if self.composer_focused {
+                        c.accent
+                    } else {
+                        c.border
+                    })
+                    .bg(c.bg)
+                    .px_2()
+                    .py_1p5()
+                    .text_xs()
+                    .text_color(if placeholder { c.muted } else { c.fg })
+                    .whitespace_normal()
+                    .child(SharedString::from(display))
+                    .on_click(cx.listener(|this, _: &ClickEvent, w, cx| {
+                        this.composer_focused = true;
+                        w.focus(&this.focus);
+                        cx.notify();
+                    }))
+                    .on_key_down(cx.listener(Self::on_composer_key)),
+            )
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .justify_between()
+                    .child(
+                        div()
+                            .text_size(px(9.0))
+                            .text_color(c.muted)
+                            .child("Enter to send \u{00b7} Shift+Enter for newline"),
+                    )
+                    .child(if streaming {
+                        div()
+                            .id("ai-stop")
+                            .px_2p5()
+                            .py_1()
+                            .rounded_sm()
+                            .border_1()
+                            .border_color(c.border)
+                            .text_color(c.fg)
+                            .text_size(px(10.0))
+                            .child("Stop")
+                            .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| this.stop(cx)))
+                            .into_any_element()
+                    } else {
+                        let enabled = self.can_send(cx);
+                        div()
+                            .id("ai-send")
+                            .px_2p5()
+                            .py_1()
+                            .rounded_sm()
+                            .bg(if enabled { c.accent } else { c.border })
+                            .text_color(if enabled { c.bg } else { c.muted })
+                            .text_size(px(10.0))
+                            .child("Send")
+                            .when(enabled, |d| {
+                                d.on_click(
+                                    cx.listener(|this, _: &ClickEvent, _w, cx| this.send(cx)),
+                                )
+                            })
+                            .into_any_element()
+                    }),
+            )
+    }
+}
+
+impl Focusable for AiChatView {
+    fn focus_handle(&self, _cx: &App) -> FocusHandle {
+        self.focus.clone()
+    }
+}
+
+impl Render for AiChatView {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let c = self.colors(cx);
+        let header = self.render_header(&c, cx);
+        let messages = self.render_messages(&c, cx);
+        let composer = self.render_composer(&c, cx);
+
+        div()
+            .flex()
+            .flex_col()
+            .size_full()
+            .min_w(px(CHAT_MIN_W))
+            .bg(c.bg)
+            .text_color(c.fg)
+            .child(header)
+            .child(messages)
+            .child(composer)
+    }
+}
+
+// ── free helpers ──────────────────────────────────────────────────────────
+
+fn truncate(s: &str, max: usize) -> String {
+    if s.chars().count() <= max {
+        s.to_string()
+    } else {
+        let t: String = s.chars().take(max).collect();
+        format!("{t}\u{2026}")
+    }
+}
+
+/// Split a user message into its `<selection>` / `<file>` / `<image>` context
+/// chips (label strings) and the remaining prose.
+pub fn split_context_blocks(content: &str) -> (Vec<String>, String) {
+    let mut chips = Vec::new();
+    let mut rest = content.to_string();
+    for tag in ["selection", "file", "image"] {
+        let open = format!("<{tag}");
+        let close = format!("</{tag}>");
+        while let Some(start) = rest.find(&open) {
+            let Some(rel_end) = rest[start..].find(&close) else {
+                break;
+            };
+            let end = start + rel_end + close.len();
+            let block = &rest[start..end];
+            let label = block
+                .split_once('"')
+                .and_then(|(_, r)| r.split_once('"'))
+                .map(|(l, _)| l.to_string())
+                .unwrap_or_else(|| tag.to_string());
+            chips.push(label);
+            rest.replace_range(start..end, "");
+        }
+    }
+    (chips, rest)
+}
+
+fn inline_text(spans: &[Inline], c: &ChatColors) -> gpui::AnyElement {
+    let mut text = String::new();
+    let mut highlights: Vec<(std::ops::Range<usize>, HighlightStyle)> = Vec::new();
+    for span in spans {
+        let start = text.len();
+        text.push_str(span.plain());
+        let end = text.len();
+        let style = match span {
+            Inline::Text(_) => None,
+            Inline::Bold(_) => Some(HighlightStyle {
+                font_weight: Some(FontWeight::BOLD),
+                ..Default::default()
+            }),
+            Inline::Italic(_) => Some(HighlightStyle {
+                font_style: Some(FontStyle::Italic),
+                ..Default::default()
+            }),
+            Inline::Code(_) => Some(HighlightStyle {
+                color: Some(c.fg),
+                background_color: Some(c.code_bg),
+                ..Default::default()
+            }),
+            Inline::Link { .. } => Some(HighlightStyle {
+                color: Some(c.link),
+                ..Default::default()
+            }),
+        };
+        if let Some(style) = style {
+            highlights.push((start..end, style));
+        }
+    }
+    if highlights.is_empty() {
+        div().child(SharedString::from(text)).into_any_element()
+    } else {
+        StyledText::new(SharedString::from(text))
+            .with_highlights(highlights)
+            .into_any_element()
+    }
+}
+
+fn table_row(cells: &[Vec<Inline>], c: &ChatColors, header: bool) -> gpui::AnyElement {
+    div()
+        .flex()
+        .border_b_1()
+        .border_color(c.border)
+        .children(cells.iter().map(|cell| {
+            div()
+                .flex_1()
+                .min_w_0()
+                .px_1p5()
+                .py_1()
+                .when(header, |d| d.font_weight(FontWeight::SEMIBOLD).bg(c.card))
+                .child(inline_text(cell, c))
+        }))
+        .into_any_element()
 }
 
 #[cfg(test)]
@@ -277,6 +1492,110 @@ mod tests {
             );
         });
         assert!(notments.load(std::sync::atomic::Ordering::SeqCst) >= 5);
+    }
+
+    fn make_view(cx: &mut TestAppContext) -> (Entity<AiChatView>, tokio::runtime::Runtime) {
+        let (store, rt) = make(cx);
+        let view = cx.update(|cx| {
+            let theme = cx.new(|_| ThemeStore::new(gpui::WindowAppearance::Dark));
+            cx.new(|cx| AiChatView::new(store, theme, cx))
+        });
+        (view, rt)
+    }
+
+    #[test]
+    fn compose_message_embeds_attachments() {
+        let atts = vec![
+            Attachment {
+                kind: AttachmentKind::Selection,
+                label: "term".into(),
+                content: "line".into(),
+            },
+            Attachment {
+                kind: AttachmentKind::File,
+                label: "a.rs".into(),
+                content: "fn x() {}".into(),
+            },
+        ];
+        let out = compose_message("explain", &atts);
+        assert!(out.contains("<selection source=\"term\">\nline\n</selection>"));
+        assert!(out.contains("<file path=\"a.rs\">\nfn x() {}\n</file>"));
+        assert!(out.ends_with("explain"));
+        // Title derivation strips the injected blocks.
+        assert_eq!(labonair_ai::derive_title(&[]), "New chat");
+    }
+
+    #[test]
+    fn is_at_bottom_thresholds() {
+        assert!(is_at_bottom(0.0, 0.0, 48.0));
+        assert!(is_at_bottom(-960.0, 1000.0, 48.0));
+        assert!(!is_at_bottom(-200.0, 1000.0, 48.0));
+    }
+
+    #[test]
+    fn split_context_blocks_extracts_chips() {
+        let (chips, rest) =
+            split_context_blocks("<selection source=\"term\">\nhi\n</selection>\n\nWhat is this?");
+        assert_eq!(chips, vec!["term".to_string()]);
+        assert_eq!(rest.trim(), "What is this?");
+    }
+
+    #[gpui::test]
+    fn composer_clears_on_send_and_attachments_manage(cx: &mut TestAppContext) {
+        let (view, _rt) = make_view(cx);
+        view.update(cx, |this, cx| {
+            this.attach_selection("term", "ls -la", cx);
+            this.attach_selection("editor", "let x = 1;", cx);
+            assert_eq!(this.attachments.len(), 2);
+            this.attachments.remove(0);
+            assert_eq!(this.attachments.len(), 1);
+            this.composer = "why".into();
+            assert!(this.can_send(cx));
+            this.send(cx);
+            assert!(this.composer.is_empty());
+            assert!(this.attachments.is_empty());
+            // No key configured → run failed, and the embedded selection block
+            // is part of the stored user message.
+            let store = this.store.read(cx);
+            assert_eq!(store.run_status(), RunStatus::Error);
+            assert!(store.active_messages()[0].content.contains("<selection"));
+        });
+    }
+
+    #[gpui::test]
+    fn tool_approval_card_resolves(cx: &mut TestAppContext) {
+        let (view, _rt) = make_view(cx);
+        view.update(cx, |this, cx| {
+            this.store.update(cx, |s, cx| {
+                s.send("run ls", cx);
+                s.store
+                    .apply_event(labonair_ai::StreamEvent::ToolCallStart {
+                        id: "t1".into(),
+                        name: "bash_run".into(),
+                    });
+                s.store
+                    .apply_event(labonair_ai::StreamEvent::ToolCallEnd { id: "t1".into() });
+                s.store.apply_event(labonair_ai::StreamEvent::Done {
+                    finish_reason: "tool_calls".into(),
+                });
+            });
+        });
+        // begin_send with no key already failed the run; drive the card directly.
+        view.update(cx, |this, cx| {
+            this.store
+                .update(cx, |s, cx| s.resolve_tool_call("t1", true, cx));
+            let tc = &this.store.read(cx).active_messages()[1].tool_calls[0];
+            assert_eq!(tc.status, ToolCallStatus::Done);
+        });
+    }
+
+    #[gpui::test]
+    fn cycle_model_changes_ref(cx: &mut TestAppContext) {
+        let (view, _rt) = make_view(cx);
+        let before = view.read_with(cx, |v, cx| v.store.read(cx).model_ref().to_string());
+        view.update(cx, |v, cx| v.cycle_model(cx));
+        let after = view.read_with(cx, |v, cx| v.store.read(cx).model_ref().to_string());
+        assert_ne!(before, after);
     }
 
     #[gpui::test]

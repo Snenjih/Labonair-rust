@@ -30,6 +30,7 @@ use labonair_backend::App as Backend;
 use labonair_terminal::TerminalRegistry;
 use tokio::runtime::Handle as TokioHandle;
 
+use crate::ai_chat::{AiChatStore, AiChatView};
 use crate::background::{BackgroundStore, LayerScope};
 use crate::explorer::ExplorerView;
 use crate::git::GitPanelView;
@@ -119,6 +120,7 @@ pub struct AppShell {
     explorer: Entity<ExplorerView>,
     git_panel: Entity<GitPanelView>,
     git_graph: Entity<GitGraphView>,
+    ai_chat: Entity<AiChatView>,
     sidebar_open: bool,
     sidebar_width: f32,
     active_panel: SidebarPanel,
@@ -175,8 +177,12 @@ impl AppShell {
             cx.new(|cx| GitPanelView::new(backend.clone(), tokio.clone(), theme.clone(), cx));
         cx.observe(&git_panel, |_, _, cx| cx.notify()).detach();
 
-        let git_graph = cx.new(|cx| GitGraphView::new(backend, tokio, theme.clone(), cx));
+        let git_graph = cx.new(|cx| GitGraphView::new(backend, tokio.clone(), theme.clone(), cx));
         cx.observe(&git_graph, |_, _, cx| cx.notify()).detach();
+
+        let ai_store = cx.new(|_| AiChatStore::new(tokio));
+        let ai_chat = cx.new(|cx| AiChatView::new(ai_store, theme.clone(), cx));
+        cx.observe(&ai_chat, |_, _, cx| cx.notify()).detach();
 
         let explorer = cx.new(|cx| ExplorerView::new(theme.clone(), workspace.clone(), cx));
         cx.observe(&explorer, |_, _, cx| cx.notify()).detach();
@@ -232,6 +238,7 @@ impl AppShell {
             explorer,
             git_panel,
             git_graph,
+            ai_chat,
             sidebar_open: true,
             sidebar_width: SIDEBAR_DEFAULT,
             active_panel: SidebarPanel::Explorer,
@@ -632,6 +639,9 @@ impl AppShell {
         }
         if panel == SidebarPanel::GitGraph {
             return self.git_graph.clone().into_any_element();
+        }
+        if panel == SidebarPanel::Ai {
+            return self.ai_chat.clone().into_any_element();
         }
         let muted = self.theme.read(cx).muted_foreground();
         div()

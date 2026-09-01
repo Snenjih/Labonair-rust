@@ -579,6 +579,44 @@ impl SessionStore {
         self.bump();
     }
 
+    /// Approve or reject a still-pending tool call on the active session and
+    /// record a placeholder result. Actual execution is T11-004; this only
+    /// moves the approval card out of its pending state so the UI reflects the
+    /// user's choice and the run status can settle.
+    pub fn resolve_tool_call(&mut self, tool_id: &str, approved: bool) {
+        let Some(id) = self.file.active_id.clone() else {
+            return;
+        };
+        let Some(msgs) = self.file.messages.get_mut(&id) else {
+            return;
+        };
+        let mut changed = false;
+        for m in msgs.iter_mut() {
+            for tc in m.tool_calls.iter_mut() {
+                if tc.id == tool_id
+                    && matches!(
+                        tc.status,
+                        ToolCallStatus::AwaitingApproval | ToolCallStatus::Streaming
+                    )
+                {
+                    if approved {
+                        tc.status = ToolCallStatus::Done;
+                        tc.result = Some("Approved — execution arrives in T11-004.".to_string());
+                    } else {
+                        tc.status = ToolCallStatus::Error;
+                        tc.result = Some("Rejected by user.".to_string());
+                    }
+                    changed = true;
+                }
+            }
+        }
+        if changed {
+            self.settle_run_status(&id);
+            self.persist_messages(&id);
+            self.bump();
+        }
+    }
+
     // ── internals ─────────────────────────────────────────────────────────
 
     fn settle_run_status(&mut self, session_id: &str) {
@@ -821,6 +859,28 @@ mod tests {
         assert_eq!(tc.arguments, "{\"cmd\":\"ls\"}");
         assert_eq!(tc.status, ToolCallStatus::AwaitingApproval);
         assert_eq!(s.run_status(), RunStatus::AwaitingApproval);
+    }
+
+    #[test]
+    fn resolve_tool_call_settles_card_and_status() {
+        let mut s = store();
+        s.begin_send("run something");
+        s.apply_event(StreamEvent::ToolCallStart {
+            id: "t1".into(),
+            name: "bash_run".into(),
+        });
+        s.apply_event(StreamEvent::ToolCallEnd { id: "t1".into() });
+        s.apply_event(StreamEvent::Done {
+            finish_reason: "tool_calls".into(),
+        });
+        s.finish_run();
+        assert_eq!(s.run_status(), RunStatus::AwaitingApproval);
+
+        s.resolve_tool_call("t1", false);
+        let tc = &s.active_messages()[1].tool_calls[0];
+        assert_eq!(tc.status, ToolCallStatus::Error);
+        assert!(tc.result.as_deref().unwrap().contains("Rejected"));
+        assert_eq!(s.run_status(), RunStatus::Idle);
     }
 
     #[test]
