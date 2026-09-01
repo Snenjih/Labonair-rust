@@ -6,7 +6,7 @@
 
 use std::path::Path;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Language {
     PlainText,
     Rust,
@@ -24,6 +24,12 @@ pub enum Language {
     Cpp,
     Shell,
     Sql,
+    Java,
+    Php,
+    Xml,
+    Ruby,
+    Swift,
+    Kotlin,
 }
 
 impl Language {
@@ -36,8 +42,9 @@ impl Language {
             .to_ascii_lowercase();
 
         match name.as_str() {
-            "dockerfile" => return Language::Shell,
-            "makefile" => return Language::Shell,
+            "dockerfile" | "dockerfile.dev" | "containerfile" => return Language::Shell,
+            "makefile" | "gnumakefile" => return Language::Shell,
+            ".bashrc" | ".zshrc" | ".bash_profile" | ".profile" => return Language::Shell,
             _ => {}
         }
 
@@ -61,8 +68,14 @@ impl Language {
             "go" => Language::Go,
             "c" | "h" => Language::C,
             "cc" | "cpp" | "cxx" | "hpp" => Language::Cpp,
-            "sh" | "bash" | "zsh" | "fish" => Language::Shell,
+            "sh" | "bash" | "zsh" | "fish" | "ksh" => Language::Shell,
             "sql" => Language::Sql,
+            "java" => Language::Java,
+            "php" | "phtml" => Language::Php,
+            "xml" | "svg" | "xsl" | "plist" => Language::Xml,
+            "rb" | "rake" | "gemspec" => Language::Ruby,
+            "swift" => Language::Swift,
+            "kt" | "kts" => Language::Kotlin,
             _ => Language::PlainText,
         }
     }
@@ -86,7 +99,34 @@ impl Language {
             Language::Cpp => "C++",
             Language::Shell => "Shell",
             Language::Sql => "SQL",
+            Language::Java => "Java",
+            Language::Php => "PHP",
+            Language::Xml => "XML",
+            Language::Ruby => "Ruby",
+            Language::Swift => "Swift",
+            Language::Kotlin => "Kotlin",
         }
+    }
+
+    /// Whether a bundled Tree-sitter grammar can highlight this language.
+    pub fn has_grammar(&self) -> bool {
+        matches!(
+            self,
+            Language::Rust
+                | Language::Json
+                | Language::Toml
+                | Language::Yaml
+                | Language::Python
+                | Language::JavaScript
+                | Language::TypeScript
+                | Language::Go
+                | Language::C
+                | Language::Cpp
+                | Language::Css
+                | Language::Html
+                | Language::Java
+                | Language::Shell
+        )
     }
 }
 
@@ -101,5 +141,20 @@ mod tests {
         assert_eq!(Language::from_path("a/b/App.tsx"), Language::TypeScript);
         assert_eq!(Language::from_path("Dockerfile"), Language::Shell);
         assert_eq!(Language::from_path("notes"), Language::PlainText);
+        assert_eq!(Language::from_path("Main.java"), Language::Java);
+        assert_eq!(Language::from_path("a.rb"), Language::Ruby);
+        assert_eq!(Language::from_path("q.sql"), Language::Sql);
+        assert_eq!(Language::from_path("index.php"), Language::Php);
+        assert_eq!(Language::from_path("m.kt"), Language::Kotlin);
+        assert_eq!(Language::from_path("v.swift"), Language::Swift);
+        assert_eq!(Language::from_path("data.yaml"), Language::Yaml);
+    }
+
+    #[test]
+    fn grammar_availability_matches_bundled_set() {
+        assert!(Language::Rust.has_grammar());
+        assert!(Language::TypeScript.has_grammar());
+        assert!(!Language::PlainText.has_grammar());
+        assert!(!Language::Sql.has_grammar());
     }
 }

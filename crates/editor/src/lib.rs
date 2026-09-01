@@ -12,8 +12,10 @@ pub mod document;
 pub mod history;
 pub mod language;
 pub mod search;
+pub mod syntax;
 
 pub use buffer::{Position, TextBuffer};
 pub use document::{Document, Motion};
 pub use language::Language;
 pub use search::{find_all, next_match, replace_all, Match, SearchQuery};
+pub use syntax::{HighlightKind, HighlightSpan, StyledRun, SyntaxHighlighter};

@@ -9,6 +9,7 @@ pub mod explorer;
 pub mod menu;
 pub mod notifications;
 pub mod pane;
+pub mod syntax_theme;
 pub mod tabs;
 pub mod terminal;
 pub mod theme;
@@ -29,10 +30,11 @@ pub use notifications::{
     Notification, NotificationAction, NotificationCenter, Severity,
 };
 pub use pane::{CloseOutcome, PaneId, PaneNode, SplitAxis, WorkspaceLayout};
+pub use syntax_theme::EditorPalette;
 pub use tabs::{Tab, TabData, TabKind, TabStore};
 pub use terminal::TerminalView;
 pub use theme::{
-    active_theme, init as init_theme, init_fonts, theme_store, GlobalTheme, ThemeMode,
-    ThemePreference, ThemeStore,
+    active_theme, init as init_theme, init_fonts, theme_store, EditorThemeId, GlobalTheme,
+    ThemeMode, ThemePreference, ThemeStore,
 };
 pub use workspace::Workspace;

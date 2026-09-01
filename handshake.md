@@ -4,7 +4,90 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
-## Last Session: 2026-09-01 (T06-001 — editor foundation & file open/save)
+## Last Session: 2026-09-01 (T06-002 — syntax highlighting & language detection)
+
+### What Was Done
+- **T06-002 ✅ Done.** Tree-sitter syntax highlighting + language detection +
+  editor colour schemes. No web tech; native `tree-sitter` / `tree-sitter-highlight`.
+  - **`crates/editor/Cargo.toml`** — added `tree-sitter 0.25`, `tree-sitter-highlight
+    0.25`, and 14 grammar crates: rust, json, python, javascript, typescript,
+    go, c, cpp, css, html, bash, toml-ng, yaml, java.
+  - **`crates/editor/src/language.rs`** — `Language` gains `Hash`; new variants
+    Java/Php/Xml/Ruby/Swift/Kotlin; more filename rules (Containerfile,
+    dotfiles, `.dev`), more extensions (java/php/xml/svg/rb/swift/kt/…);
+    `Language::has_grammar()`. +2 test assertions blocks.
+  - **`crates/editor/src/syntax.rs`** (new) — `SyntaxHighlighter`:
+    - `HighlightKind` (20 coarse token classes) + `HIGHLIGHT_NAMES` capture list
+      + `capture_kind()` dotted-name → kind mapping.
+    - `config(Language) -> Option<&'static HighlightConfiguration>`: lazy per
+      language, built on first use, `Box::leak`-ed into a `OnceLock<Mutex<HashMap>>`.
+      `build_config` wires each grammar's `HIGHLIGHT(S)_QUERY` (JS uses
+      `HIGHLIGHT_QUERY`; TS/C++ concat the JS/C base query; note const-name
+      inconsistency across crates). Unsupported langs (plain/md/sql/php/xml/
+      ruby/swift/kotlin) → `None` → no spans (default-fg fallback).
+    - `update(text, revision, visible_byte_range)`: re-parses only when the
+      revision changed or the cached `covered` window no longer contains the
+      viewport; keeps spans for `visible ± 32 KiB`; **breaks out of the
+      Tree-sitter event stream once past the window**; 2 MiB hard size guard.
+    - `line_runs(line, line_start_byte) -> Vec<StyledRun>` splits one line into
+      styled/plain runs for the renderer.
+    - 7 `#[test]`s (rust/python/json snippet token checks, plain-text = no spans,
+      line partition exactness, viewport skips offscreen tail, revision cache reuse).
+  - **`crates/editor/src/lib.rs`** — `pub mod syntax` + re-exports.
+  - **`crates/ui/src/theme.rs`** — `EditorThemeId` (Auto + 9 named: atomone,
+    aura, copilot, github-dark/light, nord, tokyo-night, xcode-dark/light —
+    mirrors `reference-src/.../editor/lib/themes.ts`) with `slug`/`from_slug`/
+    `ALL`; `ThemeStore.editor_theme` field + `editor_theme()` / `set_editor_theme()`.
+  - **`crates/ui/src/syntax_theme.rs`** (new) — `EditorPalette` (one `Hsla` per
+    `HighlightKind`). `resolve(id, &ThemeStore)`: `Auto` derives colours from the
+    app-theme tokens (primary/accent/status_*/muted_foreground/foreground) so it
+    follows light/dark + imported themes; named schemes use fixed `Roles` hex
+    palettes. 3 tests (auto tracks app mode, named stable + app-independent,
+    every kind resolves).
+  - **`crates/ui/src/editor.rs`** — `EditorView` gains `syntax: SyntaxHighlighter`
+    + `syntax_rev` (bumped in `edit`/`after_edit`; `resync_syntax()` on load/
+    reload sets language + invalidates). `render()`: builds `doc_text` +
+    per-visible-line byte offsets, calls `syntax.update(..)` for the visible
+    range, resolves `EditorPalette` from `theme.editor_theme()`, and renders
+    each line via `gpui::StyledText::with_highlights(Vec<(Range, HighlightStyle)>)`
+    (falls back to a plain `div` child when a line has no spans). Theme changes
+    already repaint via the existing `cx.observe(&theme)`.
+  - **`crates/ui/src/lib.rs`** — `pub mod syntax_theme` + re-exports
+    (`EditorPalette`, `EditorThemeId`).
+  - Tests: editor 21→29, ui 53→56. `cargo fmt --all --check`, `cargo clippy
+    --workspace --all-targets -D warnings`, `cargo test --workspace`, `cargo
+    build --bin labonair` all green.
+
+### Current State
+- Branch `master`, committed. Pre-existing unrelated `CLAUDE.md` working-tree
+  edit deliberately left uncommitted / untouched.
+
+### Next
+- **T06-003** — Vim mode (`tasks/phase-05-editor/T06-003-vim-mode.md`). Dep: T06-001.
+
+### Notes / Quirks
+- Grammar crates export their highlights query under **inconsistent names**:
+  `HIGHLIGHTS_QUERY` (rust/json/python/ts/go/css/html/java/toml-ng/yaml) vs
+  `HIGHLIGHT_QUERY` (javascript/c/cpp/bash). Check per crate.
+- `tree_sitter_highlight::Language` is a **private** re-export — use
+  `tree_sitter::Language` (`tree-sitter` is a direct dep). `LanguageFn` →
+  `Language` via `.into()`.
+- TS grammar exposes `LANGUAGE_TYPESCRIPT` / `LANGUAGE_TSX` (not `LANGUAGE`);
+  its highlights query must be concatenated **after** the JS one.
+- `HighlightConfiguration::new` in 0.25 takes `(Language, name: impl Into<String>,
+  highlights, injections, locals)` — the `name` param was added in 0.23.
+- `tree-sitter-highlight` has no byte-range restriction API; viewport bounding is
+  done by breaking the event iterator once `Source.start >= window_end`.
+- `StyledText::with_highlights` uses the enclosing element's text style as the
+  default run style (delayed); ranges must be char-boundary + sorted + non-overlapping.
+- `tree-sitter-md` / markdown grammar not wired (block/inline split API, odd
+  const names) — Markdown detected but not highlighted. Same for SQL/PHP/XML/
+  Ruby/Swift/Kotlin (no grammar crate added). Easy to add later — one arm in
+  `build_config` + one dep.
+
+---
+
+## Prior Session: 2026-09-01 (T06-001 — editor foundation & file open/save)
 
 ### What Was Done
 - **T06-001 ✅ Done.** Native code-editor foundation. No CodeMirror / web tech;

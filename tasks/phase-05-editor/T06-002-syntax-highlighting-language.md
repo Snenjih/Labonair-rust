@@ -1,7 +1,7 @@
 # T06-002: Syntax-Highlighting und Sprach-Erkennung
 
 ## Status
-⏳ Pending
+✅ Done
 
 ## Phase
 5 — Editor
@@ -46,12 +46,12 @@ Die Editor-Themes (Farbschemas) müssen dem Benutzer-Theme folgen — d.h. auch 
 
 ## Akzeptanzkriterien
 
-- [ ] Unterstützte Sprachen werden anhand der Dateierweiterung korrekt erkannt.
-- [ ] Syntax-Highlighting auf Tree-Sitter-Basis funktioniert (Tokens farblich korrekt).
-- [ ] Ein Editor-Themen-Satz (dem Labonair-Satz nachempfunden) existiert, kompatibel mit dem App-Theme.
-- [ ] Editor-Farben aktualisieren sich bei Theme-Wechsel.
-- [ ] Highlighting wird nur für sichtbare/geänderte Bereiche berechnet (performant bei großen Dateien).
-- [ ] Alle Tests laufen grün.
+- [x] Unterstützte Sprachen werden anhand der Dateierweiterung korrekt erkannt.
+- [x] Syntax-Highlighting auf Tree-Sitter-Basis funktioniert (Tokens farblich korrekt).
+- [x] Ein Editor-Themen-Satz (dem Labonair-Satz nachempfunden) existiert, kompatibel mit dem App-Theme.
+- [x] Editor-Farben aktualisieren sich bei Theme-Wechsel.
+- [x] Highlighting wird nur für sichtbare/geänderte Bereiche berechnet (performant bei großen Dateien).
+- [x] Alle Tests laufen grün.
 
 ## Notizen
 

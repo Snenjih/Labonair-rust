@@ -16,18 +16,20 @@ use std::path::PathBuf;
 use gpui::prelude::FluentBuilder;
 use gpui::{
     canvas, div, px, App, Bounds, ClickEvent, ClipboardItem, Context, Entity, EventEmitter,
-    FocusHandle, Focusable, InteractiveElement, IntoElement, KeyDownEvent, MouseButton,
-    MouseDownEvent, ParentElement, Pixels, Point, Render, ScrollWheelEvent, SharedString,
-    StatefulInteractiveElement, Styled, Window,
+    FocusHandle, Focusable, HighlightStyle, InteractiveElement, IntoElement, KeyDownEvent,
+    MouseButton, MouseDownEvent, ParentElement, Pixels, Point, Render, ScrollWheelEvent,
+    SharedString, StatefulInteractiveElement, Styled, StyledText, Window,
 };
 use labonair_backend::modules::fs::file::{
     file_mtime_sync, load_editor_file_sync, save_editor_file_sync, EditorLoad,
 };
 use labonair_editor::{
-    document::Motion, find_all, next_match, Document, Match, Position, SearchQuery,
+    document::Motion, find_all, next_match, Document, Language, Match, Position, SearchQuery,
+    SyntaxHighlighter,
 };
 
 use crate::notifications::{notification_center, Notification};
+use crate::syntax_theme::EditorPalette;
 use crate::theme::ThemeStore;
 
 /// Editor → workspace notifications.
@@ -80,6 +82,10 @@ pub struct EditorView {
     metrics: (f32, f32),
     gutter_width: f32,
     find: Option<FindBar>,
+    /// Tree-sitter syntax highlighter for the current document (T06-002).
+    syntax: SyntaxHighlighter,
+    /// Bumped on every buffer mutation / load — the highlighter's cache key.
+    syntax_rev: u64,
 }
 
 impl EditorView {
@@ -94,7 +100,21 @@ impl EditorView {
             metrics: (8.0, 18.0),
             gutter_width: 48.0,
             find: None,
+            syntax: SyntaxHighlighter::new(Language::PlainText),
+            syntax_rev: 0,
         }
+    }
+
+    fn bump_syntax(&mut self) {
+        self.syntax_rev = self.syntax_rev.wrapping_add(1);
+    }
+
+    /// Point the highlighter at the current document's language and force a
+    /// re-parse (called after a load / reload).
+    fn resync_syntax(&mut self) {
+        self.syntax.set_language(self.doc.language);
+        self.syntax.invalidate();
+        self.bump_syntax();
     }
 
     pub fn focus(&self, window: &mut Window) {
@@ -152,6 +172,7 @@ impl EditorView {
                         return;
                     }
                 }
+                this.resync_syntax();
                 cx.emit(EditorEvent::Changed);
                 cx.notify();
             });
@@ -203,6 +224,7 @@ impl EditorView {
                 if let Ok(EditorLoad::Text { content, mtime }) = result {
                     this.doc.reload(&content, mtime);
                     this.clamp_scroll();
+                    this.resync_syntax();
                     cx.emit(EditorEvent::Changed);
                     cx.notify();
                 }
@@ -241,6 +263,7 @@ impl EditorView {
 
     fn after_edit(&mut self, cx: &mut Context<Self>) {
         let was_first = self.doc.is_dirty();
+        self.bump_syntax();
         self.ensure_cursor_visible();
         self.refresh_matches();
         cx.emit(EditorEvent::Changed);
@@ -253,6 +276,7 @@ impl EditorView {
     fn edit(&mut self, cx: &mut Context<Self>, f: impl FnOnce(&mut Document)) {
         let dirty_before = self.doc.is_dirty();
         f(&mut self.doc);
+        self.bump_syntax();
         self.ensure_cursor_visible();
         self.refresh_matches();
         cx.emit(EditorEvent::Changed);
@@ -777,6 +801,24 @@ impl Render for EditorView {
         let cursor = self.doc.cursor;
         let gutter_width = self.gutter_width;
 
+        // Syntax highlighting (T06-002): parse once per revision, keep only the
+        // spans covering the visible line range, and repaint with the palette
+        // resolved from the active app theme.
+        let palette = EditorPalette::resolve(theme.editor_theme(), theme);
+        let doc_text = self.doc.buffer.text();
+        let mut line_starts: Vec<usize> = Vec::with_capacity(last.saturating_sub(first) + 1);
+        let mut offset = 0usize;
+        for i in 0..last {
+            if i >= first {
+                line_starts.push(offset);
+            }
+            offset += self.doc.buffer.line(i).len() + 1;
+        }
+        let visible_start = line_starts.first().copied().unwrap_or(0);
+        let visible_end = offset.min(doc_text.len());
+        self.syntax
+            .update(&doc_text, self.syntax_rev, visible_start..visible_end);
+
         // Gutter rows.
         let gutter = (first..last).map(|line| {
             let on_cursor = line == cursor.line;
@@ -836,7 +878,32 @@ impl Render for EditorView {
                 }
             }
 
-            row.child(div().child(SharedString::from(content)))
+            // Syntax-highlighted line text.
+            let line_start = line_starts[line - first];
+            let runs = self.syntax.line_runs(&content, line_start);
+            let mut highlights: Vec<(std::ops::Range<usize>, HighlightStyle)> = Vec::new();
+            let mut byte = 0usize;
+            for run in &runs {
+                let len = run.text.len();
+                if let Some(kind) = run.kind {
+                    highlights.push((
+                        byte..byte + len,
+                        HighlightStyle {
+                            color: Some(palette.color(kind)),
+                            ..Default::default()
+                        },
+                    ));
+                }
+                byte += len;
+            }
+            let text = if highlights.is_empty() {
+                div().child(SharedString::from(content)).into_any_element()
+            } else {
+                StyledText::new(SharedString::from(content))
+                    .with_highlights(highlights)
+                    .into_any_element()
+            };
+            row.child(text)
         });
 
         // Caret.
