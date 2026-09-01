@@ -4,7 +4,101 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
-## Last Session: 2026-09-01 (T08-001 — SFTP file browser)
+## Last Session: 2026-09-01 (T08-002 — SFTP transfers upload/download/queue)
+
+### What Was Done
+- **T08-002 ✅ Done.** The backend transfer worker
+  (`sftp/worker.rs`, `sftp/commands.rs`) was already fully ported + tested
+  (146 backend tests, folder recursion, MD5 verify, cancel tokens, sticky
+  session reconnect requeue) — this task is the GPUI queue UI + event
+  wiring + drag/context-menu triggering.
+  - **`crates/ui/src/transfers.rs`** (new, ~950 lines incl. 6 tests) —
+    `TransfersView` GPUI entity. `TransferBusEvent::from_raw(name, payload)`
+    decodes the four worker events off the broadcast bus
+    (`transfer_progress` → full `TransferJob`, `transfer_step`,
+    `file_conflict`, `file_error`) — the typed `AppEvent` can't carry them
+    (shape mismatch). `apply(ev)` maintains `jobs: Vec<JobRow>` (newest
+    first, `JobRow` adds UI-only `conflict`/`file_error` pause state),
+    `steps` per job, and `sticky` overwrite/skip policy per session.
+    Bottom-right pill (`N active · M total`) toggles a 380px panel: per-job
+    row = direction arrow, dest filename, status pill (running/done/paused/
+    failed/cancelled + `· K skipped`), collapsible step log, cancel ✕,
+    theme-tinted progress bar (`gpui::relative(pct)`), `src → dest` +
+    bytes/speed. Conflict modal (Overwrite / Skip / Rename… with
+    `suggested_rename` seed / Overwrite all / Skip all — "…all" sets the
+    session sticky + fans out to paused siblings). File-error modal (Skip /
+    Skip all / Abort). Resolutions go back via
+    `sftp::commands::resolve_conflict`; cancel via `cancel_transfer`.
+    Emits `TransfersEvent::Completed { session_id, direction }`.
+  - **`crates/backend/src/modules/sftp/mod.rs`** — `#[derive(Clone)]` on
+    `TransferWorkerState` (all fields already Clone: `mpsc::Sender` +
+    2×`Arc`) so the UI can move a handle into `tokio.spawn`.
+  - **`crates/ui/src/sftp.rs`** — new `SftpEvent::Enqueue { session_id,
+    src_path, dest_path, direction }` + `SftpDrag { from: Side, paths }`
+    payload + `DragGhost`. Each row is now `.on_drag(SftpDrag…)`; each pane
+    body is `.on_drop(&SftpDrag)` → `enqueue(from, paths)` when the drop
+    landed on the opposite pane (upload local→remote, download remote→
+    local, into that pane's current dir). Context menu gains "Upload to
+    Remote" / "Download to Local" per entry. `pub fn reload_side(remote)`
+    for post-transfer refresh. Folders transfer recursively (backend).
+  - **`crates/ui/src/workspace.rs`** — owns `transfers: Entity<TransfersView>`
+    + `transfer_events: mpsc::Receiver<TransferBusEvent>`. The existing bus
+    forwarder task now also decodes `TransferBusEvent` (checked before
+    `AppEvent`). The 40ms `ssh_poll` loop drains transfer events into
+    `transfers.apply`. `on_sftp_event` handles `Enqueue` → spawn
+    `enqueue_transfer` + `transfers.reveal()`. New `on_transfers_event`:
+    `Completed` → find the `SftpView` by session id and `reload_side`
+    (Upload → remote pane, Download → local pane). `render` adds
+    `.child(self.transfers.clone())` (pill/panel only occupy their own
+    box; modal is a full inset-0 backdrop).
+  - **`crates/ui/src/lib.rs`** — `pub mod transfers` + re-exports.
+  - Gates: `cargo fmt --all --check`, `cargo clippy --workspace
+    --all-targets -- -D warnings`, `cargo check --workspace`, `cargo test
+    --workspace` all green. ui tests 77 → 83.
+
+### Current State
+- Branch `master`, committed. Pre-existing unrelated `CLAUDE.md` working-tree
+  edit deliberately left uncommitted / untouched.
+
+### Next
+- **Phase 8 — Git UI & Source Control** (`tasks/phase-08-*`, first task
+  T09-001 or the lowest-numbered pending — check `tasks/ROADMAP.md`).
+  Phase 7 (SFTP) is now complete.
+
+### Notes / Quirks (T08-002)
+- **No live SFTP transfer integration test** — same rationale as T07-00x /
+  T08-001 (no `sshd` in CI). The worker's transfer/folder/conflict/cancel
+  logic has 146 backend tests already; the UI seams (`percent`,
+  `format_bytes`, `base_name`, `suggested_rename`, `TransferBusEvent::
+  from_raw`, `status_label`) are unit-tested in `transfers.rs`.
+- Transfer events are forwarded off the bus **before** `AppEvent` decoding
+  because `file_conflict` is *also* an `AppEvent` variant but with a
+  different payload shape — `TransferBusEvent::from_raw` must win.
+- The queue panel is a fixed bottom-right pill/panel, not a Phase-12
+  configurable bar-item. No `badgesAlwaysVisible` equivalent — the pill
+  only shows when `jobs` is non-empty.
+- Conflict "Rename" seeds an editable buffer with `suggested_rename` (e.g.
+  `report_1.tar.gz`) rather than the reference's free-form field.
+- Drag-drop uses the same `.on_drag`/`.on_drop` value-payload pattern as
+  the explorer (`DraggedPaths`). There is no drop-target highlight yet
+  (the reference dims the hovered pane) — a small follow-up.
+- "Download to Local" / "Upload to Remote" always target the *opposite
+  pane's current directory* (matching drag semantics). The reference's
+  "Download to…/Upload here…" open a native folder picker, which GPUI
+  doesn't have wired yet.
+- `sftp_update_transfer_settings` (concurrency / chunk size / default
+  conflict policy) is not called from the UI yet — the worker keeps its
+  defaults (2 concurrent, 64 KiB, "ask"). Wire it in the Phase 12 Settings
+  UI (reference: `bootstrapTransferSettingsSync`).
+- Connection-loss during a transfer: the worker emits `ssh_connection_lost`
+  and marks the job `Failed`; the SFTP tab's own Retry reconnects the
+  session and the worker's `SessionReconnected` requeue path handles
+  in-flight jobs. The UI just shows the failed job — no dedicated
+  "reconnect & resume" button.
+
+---
+
+## Previous Session: 2026-09-01 (T08-001 — SFTP file browser)
 
 ### What Was Done
 - **T08-001 ✅ Done.** Dual-pane SFTP browser as a `TabKind::Sftp` tab. The

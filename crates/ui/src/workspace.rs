@@ -26,6 +26,7 @@ use gpui::{
     Focusable, InteractiveElement, IntoElement, KeyDownEvent, MouseButton, MouseDownEvent,
     ParentElement, Render, SharedString, StatefulInteractiveElement, Styled, Task, Window,
 };
+use labonair_backend::modules::sftp::commands::enqueue_transfer;
 use labonair_backend::modules::sftp::connection::sftp_disconnect as sftp_tab_disconnect;
 use labonair_backend::modules::ssh::client::{ssh_connect, ssh_disconnect, ssh_trust_host};
 use labonair_backend::modules::ssh::pty::SshPtyEvent;
@@ -50,6 +51,7 @@ use crate::sftp::{SftpEvent, SftpView};
 use crate::tabs::{Tab, TabData, TabKind, TabStore};
 use crate::terminal::TerminalView;
 use crate::theme::ThemeStore;
+use crate::transfers::{TransferBusEvent, TransfersEvent, TransfersView};
 
 /// Interval for draining backend SSH events into the workspace.
 const SSH_POLL_INTERVAL: Duration = Duration::from_millis(40);
@@ -224,6 +226,11 @@ pub struct Workspace {
     /// Backend → workspace SSH events, forwarded off the broadcast bus.
     ssh_events: std::sync::mpsc::Receiver<AppEvent>,
     _ssh_poll: Task<()>,
+
+    // ── SFTP transfers (T08-002) ──────────────────────────────────────────
+    transfers: Entity<TransfersView>,
+    /// Transfer-worker events forwarded off the same broadcast bus.
+    transfer_events: std::sync::mpsc::Receiver<TransferBusEvent>,
 }
 
 impl Workspace {
@@ -276,6 +283,7 @@ impl Workspace {
         // Forward the backend's broadcast event bus into a plain channel the
         // GPUI poll loop can drain without an async runtime.
         let (ev_tx, ev_rx) = std::sync::mpsc::channel::<AppEvent>();
+        let (tev_tx, tev_rx) = std::sync::mpsc::channel::<TransferBusEvent>();
         {
             let mut bus = backend.events.subscribe();
             tokio.spawn(async move {
@@ -283,7 +291,11 @@ impl Workspace {
                 loop {
                     match bus.recv().await {
                         Ok(raw) => {
-                            if let Some(ev) = AppEvent::from_raw(&raw) {
+                            if let Some(tev) = TransferBusEvent::from_raw(&raw.name, &raw.payload) {
+                                if tev_tx.send(tev).is_err() {
+                                    break;
+                                }
+                            } else if let Some(ev) = AppEvent::from_raw(&raw) {
                                 if ev_tx.send(ev).is_err() {
                                     break;
                                 }
@@ -295,6 +307,14 @@ impl Workspace {
                 }
             });
         }
+        let transfers =
+            cx.new(|cx| TransfersView::new(backend.clone(), tokio.clone(), theme.clone(), cx));
+        cx.observe(&transfers, |_, _, cx| cx.notify()).detach();
+        cx.subscribe(&transfers, |this, _, ev: &TransfersEvent, cx| {
+            this.on_transfers_event(ev, cx)
+        })
+        .detach();
+
         let ssh_poll = cx.spawn(async move |this, cx| loop {
             cx.background_executor().timer(SSH_POLL_INTERVAL).await;
             let ok = this
@@ -305,6 +325,18 @@ impl Workspace {
                     }
                     for ev in events {
                         this.handle_ssh_event(ev, cx);
+                    }
+                    let mut tevents = Vec::new();
+                    while let Ok(ev) = this.transfer_events.try_recv() {
+                        tevents.push(ev);
+                    }
+                    if !tevents.is_empty() {
+                        let view = this.transfers.clone();
+                        view.update(cx, |t, cx| {
+                            for ev in tevents {
+                                t.apply(ev, cx);
+                            }
+                        });
                     }
                     this.refresh_active_tunnels(cx);
                 })
@@ -342,6 +374,8 @@ impl Workspace {
             prompt_shown: false,
             ssh_events: ev_rx,
             _ssh_poll: ssh_poll,
+            transfers,
+            transfer_events: tev_rx,
         };
         // Landing tab: the host-manager dashboard.
         this.tabs
@@ -1009,6 +1043,50 @@ impl Workspace {
                     });
                 })
                 .detach();
+            }
+            SftpEvent::Enqueue {
+                session_id,
+                src_path,
+                dest_path,
+                direction,
+            } => {
+                let worker = self.backend.transfer.clone();
+                let (sid, src, dest, dir) = (
+                    session_id.clone(),
+                    src_path.clone(),
+                    dest_path.clone(),
+                    direction.to_string(),
+                );
+                self.tokio.spawn(async move {
+                    if let Err(e) = enqueue_transfer(sid, src, dest, dir, &worker).await {
+                        tracing::warn!(%e, "enqueue_transfer failed");
+                    }
+                });
+                // Surface the transfer panel so the user sees the new job.
+                self.transfers.update(cx, |t, cx| {
+                    t.reveal(cx);
+                });
+            }
+        }
+    }
+
+    fn on_transfers_event(&mut self, ev: &TransfersEvent, cx: &mut Context<Self>) {
+        match ev {
+            TransfersEvent::Completed {
+                session_id,
+                direction,
+            } => {
+                let remote = matches!(
+                    direction,
+                    labonair_backend::modules::sftp::TransferDirection::Upload
+                );
+                let view = self
+                    .sftp_views
+                    .iter()
+                    .find_map(|(_, v)| (v.read(cx).session_id() == session_id).then(|| v.clone()));
+                if let Some(view) = view {
+                    view.update(cx, |v, cx| v.reload_side(remote, cx));
+                }
             }
         }
     }
@@ -2074,6 +2152,7 @@ impl Render for Workspace {
             .children(confirm)
             .children(context_menu)
             .children(ssh_prompt)
+            .child(self.transfers.clone())
     }
 }
 

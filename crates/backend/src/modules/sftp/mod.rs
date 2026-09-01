@@ -122,6 +122,7 @@ impl Default for TransferSettings {
     }
 }
 
+#[derive(Clone)]
 pub struct TransferWorkerState {
     pub sender: mpsc::Sender<WorkerMessage>,
     pub conflicts: ConflictMap,

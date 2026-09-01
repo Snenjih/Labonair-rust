@@ -1,7 +1,7 @@
 # T08-002: SFTP-Transfers (Upload/Download/Queue)
 
 ## Status
-⏳ Pending
+✅ Done
 
 ## Phase
 7 — SFTP-Browser

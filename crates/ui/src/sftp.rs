@@ -6,8 +6,9 @@
 //! the connected host's filesystem (over SFTP) on the right — with an address
 //! bar + up/reload/hidden-toggle per pane, inline rename / new file / new
 //! folder, a right-click context menu, a permissions (chmod/chown) dialog and
-//! a properties dialog. Transfers (upload/download/queue) are **not** here —
-//! they land in T08-002.
+//! a properties dialog. The transfer *queue* UI lives in
+//! [`crate::transfers`] (T08-002); this module only *triggers* transfers
+//! (drag between panes + context-menu upload/download) via `SftpEvent`.
 //!
 //! All backend work is in-process through
 //! [`labonair_backend::modules::ssh::sftp`] (`sftp_read_dir`, `sftp_rename`,
@@ -20,15 +21,15 @@
 //!   `@tanstack/react-virtual` (same call the [`crate::explorer`] port makes).
 //! * The two panes are a fixed 50/50 split rather than a draggable
 //!   `ResizablePanelGroup`.
-//! * Pointer-drag file moves between panes are deferred to T08-002 with the
-//!   transfer queue.
+//! * Drag between panes has no drop-target pane highlight yet (the reference
+//!   dims the hovered pane).
 //! * Remote-edit conflict detection (remote file changed underneath the temp
 //!   copy) is not implemented — the backend `save_remote_edit` is a plain
 //!   overwrite. Documented as a follow-up.
 
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, px, App, ClickEvent, Context, Entity, EventEmitter, FocusHandle, Focusable,
+    div, px, App, AppContext, ClickEvent, Context, Entity, EventEmitter, FocusHandle, Focusable,
     InteractiveElement, IntoElement, KeyDownEvent, MouseButton, ParentElement, Render,
     SharedString, StatefulInteractiveElement, Styled, Window,
 };
@@ -285,6 +286,22 @@ pub enum SftpEvent {
         remote_path: String,
         host_id: String,
     },
+    /// Queue a transfer (T08-002). `direction` is `"upload"` or `"download"`;
+    /// folders are handled recursively by the backend worker.
+    Enqueue {
+        session_id: String,
+        src_path: String,
+        dest_path: String,
+        direction: &'static str,
+    },
+}
+
+/// Payload of a pointer-drag of one or more rows from one pane to the other
+/// (T08-002). Dropping on the opposite pane queues an upload/download.
+#[derive(Clone)]
+pub struct SftpDrag {
+    pub from: Side,
+    pub paths: Vec<String>,
 }
 
 pub struct SftpView {
@@ -810,6 +827,40 @@ impl SftpView {
         .detach();
     }
 
+    // ── transfers (T08-002) ────────────────────────────────────────────────
+
+    /// Queue upload/download of `src_paths` (which live on the `from` side)
+    /// into the opposite pane's current directory. Folders transfer
+    /// recursively (handled by the backend worker).
+    fn enqueue(&mut self, from: Side, src_paths: Vec<String>, cx: &mut Context<Self>) {
+        self.menu = None;
+        let (dest_dir, direction) = match from {
+            Side::Local => (self.remote.path.clone(), "upload"),
+            Side::Remote => (self.local.path.clone(), "download"),
+        };
+        let session_id = self.session_id.clone();
+        for src in src_paths {
+            let name = src
+                .rsplit(['/', '\\'])
+                .next()
+                .filter(|s| !s.is_empty())
+                .unwrap_or("file")
+                .to_string();
+            cx.emit(SftpEvent::Enqueue {
+                session_id: session_id.clone(),
+                src_path: src,
+                dest_path: join_path(&dest_dir, &name),
+                direction,
+            });
+        }
+        cx.notify();
+    }
+
+    /// Reload one pane after a transfer landed a file in it.
+    pub fn reload_side(&mut self, remote: bool, cx: &mut Context<Self>) {
+        self.reload(if remote { Side::Remote } else { Side::Local }, cx);
+    }
+
     fn menu_entry(&self) -> Option<(Side, Entry)> {
         let m = self.menu.as_ref()?;
         let pane = match m.side {
@@ -1101,6 +1152,11 @@ impl SftpView {
                             cx.notify();
                         }),
                     )
+                    .on_drop(cx.listener(move |this, d: &SftpDrag, _w, cx| {
+                        if d.from != bhandler_side {
+                            this.enqueue(d.from, d.paths.clone(), cx);
+                        }
+                    }))
                     .child(body),
             )
             .into_any_element()
@@ -1239,6 +1295,7 @@ impl SftpView {
         let id: SharedString = format!("row:{:?}:{}", side_key(side), entry.path).into();
         let e_click = entry.clone();
         let e_menu = entry.clone();
+        let drag_path = entry.path.clone();
         let perm_col = entry.permissions.clone();
         let size_col = if entry.is_dir {
             String::new()
@@ -1297,6 +1354,13 @@ impl SftpView {
                     });
                     cx.notify();
                 }),
+            )
+            .on_drag(
+                SftpDrag {
+                    from: side,
+                    paths: vec![drag_path],
+                },
+                |_, _, _, cx| cx.new(|_| DragGhost),
             )
             .into_any_element()
     }
@@ -1465,6 +1529,21 @@ impl SftpView {
                         },
                     )),
                 );
+        }
+
+        if has_entry {
+            let transfer_label: SharedString = if is_remote {
+                "Download to Local".into()
+            } else {
+                "Upload to Remote".into()
+            };
+            menu_el = menu_el.child(item("sftp-cm-transfer", transfer_label).on_click(
+                cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                    if let Some((s, e)) = this.menu_entry() {
+                        this.enqueue(s, vec![e.path], cx);
+                    }
+                }),
+            ));
         }
 
         if is_remote && has_entry {
@@ -1686,6 +1765,15 @@ impl SftpView {
                     ),
             )
             .into_any_element()
+    }
+}
+
+/// Minimal drag preview — the cursor + drop-target highlighting do the work.
+struct DragGhost;
+
+impl Render for DragGhost {
+    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+        div()
     }
 }
 

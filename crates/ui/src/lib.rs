@@ -16,6 +16,7 @@ pub mod syntax_theme;
 pub mod tabs;
 pub mod terminal;
 pub mod theme;
+pub mod transfers;
 pub mod window_state;
 pub mod workspace;
 
@@ -43,4 +44,5 @@ pub use theme::{
     active_theme, init as init_theme, init_fonts, theme_store, EditorThemeId, GlobalTheme,
     ThemeMode, ThemePreference, ThemeStore,
 };
+pub use transfers::{TransferBusEvent, TransfersEvent, TransfersView};
 pub use workspace::Workspace;
