@@ -4,7 +4,97 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
-## Last Session: 2026-09-01 (T10-001 — Git-Graph rendering / commit graph)
+## Last Session: 2026-09-01 (T11-001 — AI provider integration / Multi-Provider BYOK)
+
+### What Was Done
+- **T11-001 ✅ Done.** Filled the previously-stub `crates/ai` with the pure-Rust
+  replacement for the reference app's Vercel-AI-SDK layer
+  (`reference-src/src/modules/ai/`). New modules:
+  - `config.rs` — `ProviderId` (13 providers: openai/anthropic/google/xai/
+    cerebras/groq/lmstudio/openai-compatible/deepseek/mistral/openrouter/mlx/
+    ollama), 21-entry static `MODELS` catalog (ids/labels/hints/context limits/
+    tags), cloud + local base URLs, `ProviderFamily` (OpenAi | Anthropic |
+    Google), `needs_key`/`is_keyless`, `find_model`/`model_context_limit`/
+    `model_keeps_reasoning`.
+  - `message.rs` — provider-agnostic interface: `ChatMessage`/`Role`/`ToolCall`/
+    `ToolDef`/`ChatConfig`/`Usage` and `StreamEvent` (`TextDelta`,
+    `ReasoningDelta`, `ToolCallStart/Delta/End`, `Usage`, `Done{finish_reason}`,
+    `Error(AiError)`). A well-formed stream ends with exactly one Done or Error.
+  - `error.rs` — `AiError` with `from_status` (401/403→Auth, 429→RateLimit,
+    400/404/422→BadRequest, 5xx→ServerError) + `from_reqwest` (timeout/network);
+    pulls `error.message` out of the JSON body for the display string.
+  - `sse.rs` — incremental `SseDecoder` (multi-line `data:`, `event:`, CRLF,
+    comment lines, chunk-split frames, `finish()` flush).
+  - `adapters.rs` — per-family `build_request` (URL + headers + JSON body) and
+    stateful `StreamParser` (`OpenAiState`/`AnthropicState`/`GoogleState`)
+    decoding provider SSE → `StreamEvent`s. OpenAI covers 11 of 13 providers;
+    Anthropic extracts system messages + defaults `max_tokens`; Google puts the
+    key in the query string and maps assistant→"model".
+  - `secret_store.rs` — `SecretStore` trait + `KeyringSecretStore` (OS keyring
+    via the `keyring` crate, service `labonair-ai`) + `MemorySecretStore` for
+    tests. Per-instance keys under `inst-<id>`, legacy per-provider under
+    `<provider>-api-key`. Keys never touch disk/logs/app-state.
+  - `instances.rs` — `ProviderInstance` + `InstanceStore` persisting to
+    `~/.config/labonair/labonair-ai.json` (instances + `active_model_ref` +
+    recents). `parse_model_ref`/`make_model_ref` (`"model@instanceId"`),
+    `resolve_instance`, `auto_name`, `rename_for_duplicates`.
+  - `client.rs` — `AiClient::stream_chat(target, config, messages, tools)
+    -> ChatStream` (mpsc receiver + `tokio::task` handle; `cancel()` / `Drop`
+    abort the request and close the HTTP connection). `resolve_target(model_ref,
+    &InstanceStore, &dyn SecretStore)` → provider/family/base_url/api_key/model,
+    erroring `MissingKey` for keyless-less cloud providers.
+- Deps added to `crates/ai/Cargo.toml`: `futures-util`, `bytes`, plus
+  `thiserror`/`dirs`/`uuid` (all workspace versions). `Cargo.lock` updated.
+- Verify: `cargo fmt --all --check`, `cargo clippy --workspace --all-targets
+  -- -D warnings`, `cargo check --workspace`, `cargo test --workspace` — all
+  green. New: **ai 34 tests** (adapter request shapes per family, SSE parsing
+  per family incl. tool calls + usage + errors, keyring lifecycle, instance
+  store persistence, target resolution, a real end-to-end test that streams
+  OpenAI SSE from a throwaway `tokio::net::TcpListener` HTTP server, plus the
+  connection-error + cancel paths). backend 148 / ui 109 unchanged.
+
+### State / Next
+- Branch `master`, committed. Pre-existing unrelated `CLAUDE.md` working-tree
+  edit deliberately left uncommitted / untouched.
+- **Next: T11-002 — Chat store & session management**
+  (`tasks/phase-10-ai-chat/T11-002-chat-store-sessions.md`). Builds the session
+  history / persistence layer on top of this crate; T11-003 is the chat UI,
+  T11-004 the agent/tool loop.
+
+### Notes / Quirks (T11-001)
+- `crates/ai` is **not yet wired into the UI or app** — no `AiClient` is
+  constructed anywhere, no keyring writes happen. That's deliberate: T11-002
+  (store) and T11-003 (chat UI + Settings→AI) own the wiring. The crate is a
+  self-contained, fully-tested library for now.
+- Keys use the real **OS keyring** (`keyring` crate) via `KeyringSecretStore`,
+  *not* the backend `secrets.rs` file store. The task text says "via Backend
+  secrets (T01-002)" but also "OS-Keyring"; the keyring keeps `crates/ai`
+  free of a `labonair-backend` dependency and matches the security warning
+  ("nur Keyring"). If a later task wants the file store, add a `SecretStore`
+  impl that calls `backend::secrets`.
+- The reference's `buildLanguageModel` delegates all wire formatting to
+  `@ai-sdk/*`. Those packages are gone, so the three adapters are written from
+  scratch. OpenRouter / DeepSeek / xAI / Groq / Cerebras / Mistral / LM Studio
+  / MLX / Ollama / openai-compatible all share the **OpenAI** adapter (endpoint
+  `<base>/chat/completions`, Bearer auth); only Anthropic and Google have
+  bespoke adapters.
+- Google `:streamGenerateContent` never sends a `[DONE]` marker — the client
+  calls `StreamParser::finish()` on connection close to synthesize the final
+  `Done`. OpenAI's `finish()` is also called if `[DONE]` is dropped.
+- Tool-call arguments stream as raw JSON-string deltas (`ToolCallDelta`); the
+  caller concatenates them and parses once `ToolCallEnd` fires. Anthropic's
+  `input_json_delta` and Google's one-shot `functionCall.args` are both
+  normalised to this shape.
+- Model catalog uses the reference's (fictional, future-dated) model ids
+  verbatim (`gpt-5.5`, `claude-opus-4-7`, `gemini-3.1-pro`, …) — they're the
+  reference's chosen identifiers, adjust when wiring real API calls.
+- `InstanceStore` writes `labonair-ai.json` (separate from the shared
+  `labonair-settings.json` the reference uses via `LazyStore`) to avoid
+  coupling to the backend settings module; revisit if Phase 12 wants one file.
+
+---
+
+## Prev Session: 2026-09-01 (T10-001 — Git-Graph rendering / commit graph)
 
 ### What Was Done
 - **T10-001 ✅ Done.** New `crates/ui/src/git_graph.rs` (~1200 lines incl. 10

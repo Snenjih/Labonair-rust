@@ -3875,12 +3875,17 @@ name = "labonair-ai"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "bytes",
+ "dirs 6.0.0",
+ "futures-util",
  "keyring",
  "reqwest",
  "serde",
  "serde_json",
+ "thiserror 2.0.20",
  "tokio",
  "tracing",
+ "uuid",
 ]
 
 [[package]]
