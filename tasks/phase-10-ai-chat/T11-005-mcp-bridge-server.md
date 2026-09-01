@@ -1,7 +1,7 @@
 # T11-005: MCP-Bridge — Server
 
 ## Status
-⏳ Pending
+✅ Done
 
 ## Phase
 10 — AI-Chat-System (MCP-Bridge ist agent-nahe Infrastruktur, technisch aber unabhängig vom Chat)

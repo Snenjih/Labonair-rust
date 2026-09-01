@@ -4,7 +4,79 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
-## Last Session: 2026-09-01 (T11-004 — Agent/Tool-System und Live-Bridge)
+## Last Session: 2026-09-01 (T11-005 — MCP-Bridge Server)
+
+### What Was Done
+- **T11-005 ✅ Done.** The backend `mcp` module (`crates/backend/src/modules/mcp/`
+  — `server.rs` rmcp/axum Streamable-HTTP server + 6 tools, `osc133.rs` vte
+  parser with 6 tests, `mod.rs` `McpState`/grants/settings/auto-revoke sweeper)
+  was already fully ported wholesale in T01-002 and is wired into `App`
+  (`app.mcp`, sweeper spawned at startup). SSH + local PTY sessions already
+  carry the `agent_tap` broadcast (T07-001 / T03-005). This task added the
+  **missing GPUI coordinator** — the half of the reference `useMcpTabBridge.ts`
+  that drives real tab actions:
+  - `crates/backend/src/events.rs` — `AppEvent::McpOpenTabRequest.path` made
+    `Option<String>` (server emits only `{request_id, host_id}` — it was
+    silently failing `from_raw` before, a real bug); `McpCloseTabRequest` gained
+    `session_id: Option<String>` (server emits it); new variants
+    `McpServerError { message }` + `McpActivity { label, action, detail }` with
+    event-name + `from_raw` mappings. 3 new tests (backend 148 → 150).
+  - `crates/ui/src/workspace.rs` — `McpTabOp` queue (`pending_mcp`), drained in
+    `render` (needs `&mut Window`). `handle_ssh_event` now handles the 4 new MCP
+    events:
+    - `McpOpenTabRequest` → `mcp_open_tab`: verify host exists → `connect_host`
+      (now returns `Option<String>` = the new tab's `ssh_id`) → auto-grant via
+      `mcp_set_session_grant(tab_id, ssh_id, true, …, SessionKind::Ssh, host_id)`
+      → `mcp_tab_op_response(ok, session_id=ssh_id, tab_id)`. `host_id: None` →
+      immediate error response.
+    - `McpCloseTabRequest` → `mcp_close_tab`: find the SSH tab whose backend
+      session == `session_id`, `do_close` it, respond ok/err on whether the tab
+      is gone.
+    - `McpServerError` → error toast via `notifications::notification_center`
+      (backend already flipped `enabled=false`).
+    - `McpActivity` → `tracing::debug!` for now (the preference-gated
+      notification is T11-006).
+  - `retire_tab` now revokes the MCP grant for any SSH tab being closed
+    (grant keyed by `tab_id`, so `mcp_set_session_grant(tab_id, "", false, …)`),
+    satisfying "Tab-Schließen widerruft den Grant".
+- Verify: `cargo check --workspace`, `cargo clippy --workspace --all-targets --
+  -D warnings`, `cargo test --workspace`, `cargo fmt --all --check` — all green.
+  backend **150** (+2 MCP event tests, one of the two test fns adds 2 asserts),
+  ui 124 / ai 75 unchanged.
+
+### State / Next
+- Branch `master`, committed. Pre-existing unrelated `CLAUDE.md` working-tree
+  edit deliberately left untouched / uncommitted.
+- **Next: T11-006 — MCP-Bridge UI & Grants**
+  (`tasks/phase-10-ai-chat/T11-006-mcp-bridge-ui-grants.md`) — Settings→AI Agent
+  Bridge pane (enable/port/token/timeout/auto-revoke), the tab context-menu
+  "Grant AI Agent Access" toggle + header badge, the `mcpNotifyOnActivity`
+  preference that consumes `McpActivity`, and the local-tab grant path
+  (`SessionKind::Local` + `local_pty_id`) + `McpGrantExpired` local-mirror
+  clearing.
+
+### Notes / Quirks (T11-005)
+- The whole backend `mcp` module predated this task (T01-002 bulk port). Only
+  the GPUI-side event coordinator + the `AppEvent` shape fixes were new work.
+- **SSH grant `session_id` == the `ssh_id` UUID**, not the terminal registry's
+  `u64` session id — that UUID is the key in `app.ssh` sessions, which
+  `server.rs`'s `write_to_ssh_session` / `get_session_arc!` require. `SshTab`
+  already stores it as `ssh_id`.
+- **Local-tab MCP (`SessionKind::Local`, `local_pty_id`) is not wired** —
+  `open_tab` in the reference is SSH-only anyway; `close_tab` / grants for local
+  tabs need the local-PTY tab's `pty_id` plumbed from the workspace, which is
+  T11-006's grant-UI work.
+- `open_tab` grants **before** the SSH connection completes (matches the
+  reference auto-grant: create tab → grant → respond, connection resolves
+  async). `run_command` against it will just fail until the session is up.
+- No new UI integration test — GPUI views aren't unit-testable here; the OSC133
+  parser (6 tests) + the new `AppEvent::from_raw` MCP decode tests cover the
+  seams. The rmcp server itself has no test (needs a live listener + a real
+  granted SSH/local session).
+
+---
+
+## Prev Session: 2026-09-01 (T11-004 — Agent/Tool-System und Live-Bridge)
 
 ### What Was Done
 - **T11-004 ✅ Done.** New `crates/ai/src/tools/` module — pure-Rust,

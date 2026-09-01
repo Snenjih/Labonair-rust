@@ -143,15 +143,32 @@ pub enum AppEvent {
     // MCP bridge
     McpOpenTabRequest {
         request_id: String,
-        path: String,
+        #[serde(default)]
+        path: Option<String>,
         #[serde(default)]
         host_id: Option<String>,
     },
     McpCloseTabRequest {
         request_id: String,
+        #[serde(default)]
+        session_id: Option<String>,
     },
     McpGrantExpired {
         tab_id: String,
+    },
+    /// The bridge listener failed to come up (e.g. port already in use). The
+    /// backend has already rolled `enabled` back to `false`; the UI surfaces
+    /// this as an error toast.
+    McpServerError {
+        message: String,
+    },
+    /// One of the four MCP action tools (`run_command` / `send_keys` /
+    /// `open_tab` / `close_tab`) touched a granted tab — feeds the optional
+    /// "notify on agent activity" preference (UI in T11-006).
+    McpActivity {
+        label: String,
+        action: String,
+        detail: String,
     },
 }
 
@@ -173,6 +190,8 @@ impl AppEvent {
             AppEvent::McpOpenTabRequest { .. } => "mcp_open_tab_request",
             AppEvent::McpCloseTabRequest { .. } => "mcp_close_tab_request",
             AppEvent::McpGrantExpired { .. } => "mcp_grant_expired",
+            AppEvent::McpServerError { .. } => "mcp_server_error",
+            AppEvent::McpActivity { .. } => "mcp_activity",
         }
     }
 
@@ -197,6 +216,8 @@ impl AppEvent {
             "mcp_open_tab_request" => "mcp_open_tab_request",
             "mcp_close_tab_request" => "mcp_close_tab_request",
             "mcp_grant_expired" => "mcp_grant_expired",
+            "mcp_server_error" => "mcp_server_error",
+            "mcp_activity" => "mcp_activity",
             _ => return None,
         };
         value(serde_json::json!({ variant: payload }))
@@ -268,6 +289,42 @@ mod tests {
         assert!(matches!(
             AppEvent::from_raw(&raw),
             Some(AppEvent::SshConnectionLost { session_id }) if session_id == "s1"
+        ));
+    }
+
+    #[test]
+    fn from_raw_decodes_mcp_open_tab_request_without_path() {
+        // `mcp::server::open_tab` emits only `{request_id, host_id}` — the
+        // optional `path` must not make this fail to decode.
+        let raw = RawEvent {
+            name: "mcp_open_tab_request".into(),
+            payload: serde_json::json!({ "request_id": "r1", "host_id": "h1" }),
+        };
+        assert!(matches!(
+            AppEvent::from_raw(&raw),
+            Some(AppEvent::McpOpenTabRequest { request_id, host_id, path })
+                if request_id == "r1" && host_id.as_deref() == Some("h1") && path.is_none()
+        ));
+    }
+
+    #[test]
+    fn from_raw_decodes_mcp_close_tab_request_and_server_error() {
+        let close = RawEvent {
+            name: "mcp_close_tab_request".into(),
+            payload: serde_json::json!({ "request_id": "r2", "session_id": "s9" }),
+        };
+        assert!(matches!(
+            AppEvent::from_raw(&close),
+            Some(AppEvent::McpCloseTabRequest { request_id, session_id })
+                if request_id == "r2" && session_id.as_deref() == Some("s9")
+        ));
+        let err = RawEvent {
+            name: "mcp_server_error".into(),
+            payload: serde_json::json!({ "message": "port in use" }),
+        };
+        assert!(matches!(
+            AppEvent::from_raw(&err),
+            Some(AppEvent::McpServerError { message }) if message == "port in use"
         ));
     }
 

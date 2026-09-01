@@ -26,6 +26,9 @@ use gpui::{
     Focusable, InteractiveElement, IntoElement, KeyDownEvent, MouseButton, MouseDownEvent,
     ParentElement, Render, SharedString, StatefulInteractiveElement, Styled, Task, Window,
 };
+use labonair_backend::modules::mcp::{
+    mcp_set_session_grant, mcp_tab_op_response, SessionKind, TabOpResult,
+};
 use labonair_backend::modules::sftp::commands::enqueue_transfer;
 use labonair_backend::modules::sftp::connection::sftp_disconnect as sftp_tab_disconnect;
 use labonair_backend::modules::ssh::client::{ssh_connect, ssh_disconnect, ssh_trust_host};
@@ -63,6 +66,21 @@ struct SshTab {
     host_id: String,
     feed: RemoteFeed,
     tab_id: u64,
+}
+
+/// A tab-lifecycle request from the MCP bridge (`modules::mcp::server`), queued
+/// off the event bus and drained in `render` where a `&mut Window` is available
+/// — the bridge itself cannot touch tab state (tabs are pure UI), so it emits a
+/// request event and waits on a `oneshot` for [`mcp_tab_op_response`].
+enum McpTabOp {
+    Open {
+        request_id: String,
+        host_id: String,
+    },
+    Close {
+        request_id: String,
+        session_id: String,
+    },
 }
 
 /// Title for an SSH terminal tab, annotated with the bastion when the
@@ -231,6 +249,10 @@ pub struct Workspace {
     transfers: Entity<TransfersView>,
     /// Transfer-worker events forwarded off the same broadcast bus.
     transfer_events: std::sync::mpsc::Receiver<TransferBusEvent>,
+
+    // ── MCP bridge (T11-005) ──────────────────────────────────────────────
+    /// Tab open/close requests from the MCP bridge, drained in `render`.
+    pending_mcp: Vec<McpTabOp>,
 }
 
 impl Workspace {
@@ -376,6 +398,7 @@ impl Workspace {
             _ssh_poll: ssh_poll,
             transfers,
             transfer_events: tev_rx,
+            pending_mcp: Vec::new(),
         };
         // Landing tab: the host-manager dashboard.
         this.tabs
@@ -938,7 +961,21 @@ impl Workspace {
                 let app = self.backend.clone();
                 let ssh_id = t.ssh_id.clone();
                 let host_id = t.host_id.clone();
+                let tab_key = t.tab_id.to_string();
                 self.tokio.spawn(async move {
+                    // Closing a tab revokes any MCP bridge grant that followed it.
+                    let _ = mcp_set_session_grant(
+                        tab_key,
+                        String::new(),
+                        false,
+                        String::new(),
+                        SessionKind::Ssh,
+                        None,
+                        None,
+                        app.clone(),
+                        &app.mcp,
+                    )
+                    .await;
                     let _ = ssh_disconnect(ssh_id, &app.ssh).await;
                     let _ = ssh_stop_tunnels(host_id, &app.tunnels).await;
                 });
@@ -1158,8 +1195,137 @@ impl Workspace {
             .update(cx, |h, cx| h.set_status(host_id, status, cx));
     }
 
-    /// Open an SSH terminal tab for `host_id` and start the connection.
-    fn connect_host(&mut self, host_id: String, window: &mut Window, cx: &mut Context<Self>) {
+    /// Push a completed [`TabOpResult`] back to a pending MCP `open_tab` /
+    /// `close_tab` tool call waiting on its `oneshot` in `modules::mcp::server`.
+    fn respond_mcp_tab_op(&self, request_id: String, result: TabOpResult) {
+        let mcp = self.backend.mcp.clone();
+        self.tokio.spawn(async move {
+            let _ = mcp_tab_op_response(request_id, result, &mcp).await;
+        });
+    }
+
+    /// Handle an MCP `open_tab` request: open a real SSH tab to `host_id`,
+    /// auto-grant the bridge access to it (the agent explicitly asked for it),
+    /// and answer the pending tool call.
+    fn mcp_open_tab(
+        &mut self,
+        request_id: String,
+        host_id: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let label = match self.host_manager.read(cx).host_name(&host_id) {
+            Some(name) => name,
+            None => {
+                self.respond_mcp_tab_op(
+                    request_id,
+                    TabOpResult {
+                        ok: false,
+                        error: Some(format!("host '{host_id}' not found")),
+                        ..Default::default()
+                    },
+                );
+                return;
+            }
+        };
+        let tab = self
+            .connect_host(host_id.clone(), window, cx)
+            .and_then(|ssh_id| {
+                self.ssh_tabs
+                    .values()
+                    .find(|t| t.ssh_id == ssh_id)
+                    .map(|t| (ssh_id.clone(), t.tab_id))
+            });
+        let Some((ssh_id, tab_id)) = tab else {
+            self.respond_mcp_tab_op(
+                request_id,
+                TabOpResult {
+                    ok: false,
+                    error: Some("failed to open tab".to_string()),
+                    ..Default::default()
+                },
+            );
+            return;
+        };
+        let tab_id_str = tab_id.to_string();
+        let app = self.backend.clone();
+        self.tokio.spawn(async move {
+            let _ = mcp_set_session_grant(
+                tab_id_str.clone(),
+                ssh_id.clone(),
+                true,
+                label,
+                SessionKind::Ssh,
+                None,
+                Some(host_id),
+                app.clone(),
+                &app.mcp,
+            )
+            .await;
+            let _ = mcp_tab_op_response(
+                request_id,
+                TabOpResult {
+                    ok: true,
+                    session_id: Some(ssh_id),
+                    tab_id: Some(tab_id_str),
+                    error: None,
+                },
+                &app.mcp,
+            )
+            .await;
+        });
+    }
+
+    /// Handle an MCP `close_tab` request: close the SSH tab whose backend
+    /// session matches `session_id` (its grant is revoked by `retire_tab`).
+    fn mcp_close_tab(
+        &mut self,
+        request_id: String,
+        session_id: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(tab_id) = self
+            .ssh_tabs
+            .values()
+            .find(|t| t.ssh_id == session_id)
+            .map(|t| t.tab_id)
+        else {
+            self.respond_mcp_tab_op(
+                request_id,
+                TabOpResult {
+                    ok: false,
+                    error: Some("no tab found for that session_id".to_string()),
+                    ..Default::default()
+                },
+            );
+            return;
+        };
+        self.do_close(tab_id, window, cx);
+        let result = if self.tabs.read(cx).get(tab_id).is_some() {
+            TabOpResult {
+                ok: false,
+                error: Some("tab could not be closed".to_string()),
+                ..Default::default()
+            }
+        } else {
+            TabOpResult {
+                ok: true,
+                ..Default::default()
+            }
+        };
+        self.respond_mcp_tab_op(request_id, result);
+    }
+
+    /// Open an SSH terminal tab for `host_id` and start the connection. Returns
+    /// the backend SSH session id (`ssh_id`) of the new tab, or `None` if the
+    /// terminal session could not be created.
+    fn connect_host(
+        &mut self,
+        host_id: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Option<String> {
         let ssh_id = uuid::Uuid::new_v4().to_string();
         let colors = self.theme_colors(cx);
         let dims = TermDimensions::new(80, 24);
@@ -1195,9 +1361,7 @@ impl Workspace {
         };
 
         let (session_id, feed) = self.registry.create_remote(colors, dims, writer, resizer);
-        let Some(handle) = self.registry.handle(session_id) else {
-            return;
-        };
+        let handle = self.registry.handle(session_id)?;
         feed.feed(b"Connecting\xe2\x80\xa6\r\n");
 
         let pane_id = self.alloc_pane();
@@ -1235,9 +1399,10 @@ impl Workspace {
             },
         );
         self.set_host_status(&host_id, HostStatus::Connecting, cx);
-        self.spawn_ssh_connect(ssh_id, host_id, None, None, feed, cx);
+        self.spawn_ssh_connect(ssh_id.clone(), host_id, None, None, feed, cx);
         self.focus_active(window, cx);
         cx.notify();
+        Some(ssh_id)
     }
 
     /// (Re)run `ssh_connect` for `ssh_id`, streaming remote output into `feed`.
@@ -1428,6 +1593,62 @@ impl Workspace {
                 {
                     self.set_host_status(&host, HostStatus::Failed, cx);
                 }
+            }
+            AppEvent::McpOpenTabRequest {
+                request_id,
+                host_id,
+                ..
+            } => match host_id {
+                Some(host_id) => self.pending_mcp.push(McpTabOp::Open {
+                    request_id,
+                    host_id,
+                }),
+                None => self.respond_mcp_tab_op(
+                    request_id,
+                    TabOpResult {
+                        ok: false,
+                        error: Some("open_tab requires a host_id".to_string()),
+                        ..Default::default()
+                    },
+                ),
+            },
+            AppEvent::McpCloseTabRequest {
+                request_id,
+                session_id,
+            } => match session_id {
+                Some(session_id) => self.pending_mcp.push(McpTabOp::Close {
+                    request_id,
+                    session_id,
+                }),
+                None => self.respond_mcp_tab_op(
+                    request_id,
+                    TabOpResult {
+                        ok: false,
+                        error: Some("close_tab requires a session_id".to_string()),
+                        ..Default::default()
+                    },
+                ),
+            },
+            AppEvent::McpServerError { message } => {
+                let center = crate::notifications::notification_center(cx);
+                center.update(cx, |c, cx| {
+                    c.push_action_result(
+                        crate::notifications::Notification::error(
+                            "AI Agent Bridge failed to start",
+                            message,
+                        ),
+                        cx,
+                    );
+                });
+            }
+            AppEvent::McpActivity {
+                label,
+                action,
+                detail,
+            } => {
+                // The opt-in "notify on agent activity" preference lands with
+                // the MCP settings UI (T11-006); for now just trace it.
+                tracing::debug!(%label, %action, %detail, "mcp agent activity");
             }
             _ => {}
         }
@@ -2102,7 +2323,19 @@ impl Render for Workspace {
         // Drain host-manager connect requests here — `connect_host` needs a
         // `&mut Window` and `cx.subscribe` does not provide one.
         for host_id in std::mem::take(&mut self.pending_connect) {
-            self.connect_host(host_id, window, cx);
+            let _ = self.connect_host(host_id, window, cx);
+        }
+        for op in std::mem::take(&mut self.pending_mcp) {
+            match op {
+                McpTabOp::Open {
+                    request_id,
+                    host_id,
+                } => self.mcp_open_tab(request_id, host_id, window, cx),
+                McpTabOp::Close {
+                    request_id,
+                    session_id,
+                } => self.mcp_close_tab(request_id, session_id, window, cx),
+            }
         }
         for host_id in std::mem::take(&mut self.pending_sftp) {
             self.open_sftp(host_id, window, cx);
