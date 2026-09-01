@@ -229,6 +229,9 @@ struct HostForm {
     jump_host: Option<usize>,
     /// Configured local port-forwards (ProxyJump-independent).
     tunnels: Vec<TunnelDraft>,
+    /// "Block AI Agent Access" — when set, the MCP bridge refuses to grant a
+    /// tab for this host and any live grant is revoked immediately (T11-006).
+    block_agent_access: bool,
     focus: HostField,
     /// Fallback edit target for a stale tunnel-field index (never rendered).
     scratch: String,
@@ -251,6 +254,7 @@ impl HostForm {
             group: None,
             jump_host: None,
             tunnels: Vec::new(),
+            block_agent_access: false,
             focus: HostField::Name,
             scratch: String::new(),
         }
@@ -281,6 +285,7 @@ impl HostForm {
                 .as_deref()
                 .and_then(|jid| hosts.iter().position(|c| c.id == jid && c.id != h.id)),
             tunnels: parse_tunnels(&h.tunnels),
+            block_agent_access: h.block_agent_access,
             focus: HostField::Name,
             scratch: String::new(),
         }
@@ -516,6 +521,7 @@ impl HostManagerView {
             .and_then(|i| self.hosts.get(i))
             .map(|h| h.id.clone());
         let tunnels_json = serialize_tunnels(&form.tunnels);
+        let block_agent_access = form.block_agent_access;
         let editing = form.editing_id.clone();
         let addr = form.address.trim().to_string();
         let user = form.username.trim().to_string();
@@ -551,7 +557,7 @@ impl HostManagerView {
                         Some(jump_host_id.clone().unwrap_or_default()), // jump_host_id ("" clears)
                         None,                                           // notes
                         None,                                           // icon
-                        None,                                           // block_agent_access
+                        Some(block_agent_access),                       // block_agent_access
                     )
                     .await;
                 }
@@ -560,30 +566,30 @@ impl HostManagerView {
                         app.clone(),
                         &app.db,
                         &app.secrets,
-                        name,               // name
-                        addr,               // host_address
-                        port,               // port
-                        user,               // username
-                        auth,               // auth_method
-                        key_path,           // private_key_path
-                        group_id,           // group_id
-                        tags,               // tags
-                        password,           // password
-                        None,               // sudo_password
-                        default_path,       // default_path_ssh
-                        None,               // default_path_sftp
-                        None,               // pin_to_top
-                        None,               // keep_alive_interval
-                        None,               // keep_alive_tries
-                        None,               // sort_order
-                        Some(tunnels_json), // tunnels
-                        None,               // startup_snippet_id
-                        None,               // startup_snippet_mode
-                        cred_id,            // credential_id
-                        jump_host_id,       // jump_host_id
-                        None,               // notes
-                        None,               // icon
-                        None,               // block_agent_access
+                        name,                     // name
+                        addr,                     // host_address
+                        port,                     // port
+                        user,                     // username
+                        auth,                     // auth_method
+                        key_path,                 // private_key_path
+                        group_id,                 // group_id
+                        tags,                     // tags
+                        password,                 // password
+                        None,                     // sudo_password
+                        default_path,             // default_path_ssh
+                        None,                     // default_path_sftp
+                        None,                     // pin_to_top
+                        None,                     // keep_alive_interval
+                        None,                     // keep_alive_tries
+                        None,                     // sort_order
+                        Some(tunnels_json),       // tunnels
+                        None,                     // startup_snippet_id
+                        None,                     // startup_snippet_mode
+                        cred_id,                  // credential_id
+                        jump_host_id,             // jump_host_id
+                        None,                     // notes
+                        None,                     // icon
+                        Some(block_agent_access), // block_agent_access
                     )
                     .await;
                 }
@@ -1604,6 +1610,33 @@ impl HostManagerView {
                                         }
                                         cx.notify();
                                     })),
+                            ),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .gap_0p5()
+                            .child(div().text_xs().text_color(p.muted).child("AI Agent Access"))
+                            .child(
+                                self.btn(
+                                    "agent-block",
+                                    if form.block_agent_access {
+                                        "Blocked \u{2014} the AI agent bridge cannot use this host"
+                                    } else {
+                                        "Allowed \u{2014} click to block AI agent bridge access"
+                                    },
+                                    p,
+                                    form.block_agent_access,
+                                )
+                                .on_click(cx.listener(
+                                    |this, _: &ClickEvent, _w, cx| {
+                                        if let Some(f) = this.form.as_mut() {
+                                            f.block_agent_access = !f.block_agent_access;
+                                        }
+                                        cx.notify();
+                                    },
+                                )),
                             ),
                     )
                     .child(self.render_tunnels_section(form, p, cx))

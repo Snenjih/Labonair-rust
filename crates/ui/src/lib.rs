@@ -2,6 +2,7 @@
 //!
 //! Populated by later phases (T04+). T02-002 adds the runtime theme provider.
 
+pub mod agent_access;
 pub mod ai_chat;
 pub mod app_shell;
 pub mod background;
@@ -24,6 +25,7 @@ pub mod transfers;
 pub mod window_state;
 pub mod workspace;
 
+pub use agent_access::{AgentAccessEntry, AgentAccessStore};
 pub use ai_chat::{init as init_ai_chat, AiChatStore, AiChatView, Attachment, AttachmentKind};
 pub use app_shell::{AppShell, SidebarPanel};
 pub use background::{

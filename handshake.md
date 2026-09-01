@@ -4,7 +4,97 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
-## Last Session: 2026-09-01 (T11-005 — MCP-Bridge Server)
+## Last Session: 2026-09-02 (T11-006 — MCP-Bridge Grants UI & Settings)
+
+### What Was Done
+- **T11-006 ✅ Done.** UI + persistence for the MCP bridge. Backend enforcement
+  (grant refusal, live-revoke on `hosts_update`, `block_agent_access`
+  column/migration) was already in place from the T01-002 bulk port; this task
+  added everything above it.
+  - `crates/backend/src/modules/settings/mcp.rs` (new, 3 tests) — `McpPrefs`
+    (`bridge_enabled` / `bridge_port` / `max_command_timeout_secs` /
+    `auto_revoke_minutes` / `notify_on_activity`) load/save into the shared
+    `labonair-settings.json` under an `mcp` key, same pattern as
+    `settings::editor`. This is the **load-bearing** config — `McpState` has no
+    persistence of its own. `settings/mod.rs` gained `pub mod mcp;`.
+  - `crates/ui/src/agent_access.rs` (new, 2 gpui tests) — `AgentAccessStore`
+    GPUI entity, port of the reference `agentAccessStore.ts`: `BTreeMap<tab_id,
+    AgentAccessEntry>` local mirror of `McpState.grants` + `bridge_enabled` /
+    `notify_on_activity` flags. `set_grant()` mirrors optimistically then runs
+    `mcp_set_session_grant` on `tokio.spawn`, rolling the mirror back + pushing
+    an error toast if the backend rejects the grant (host-blocked). `hydrate()`
+    / `set_bridge_enabled()` / `set_notify_on_activity()` / `clear_local()`.
+    Exported from `lib.rs` (`AgentAccessEntry`, `AgentAccessStore`).
+  - `crates/ui/src/workspace.rs`:
+    - new `agent_access: Entity<AgentAccessStore>` field + `Workspace::new`
+      param (call site in `app_shell.rs` updated), observed.
+    - `mcp_grant_target(tab_id)` → `Option<McpGrantTarget>` (new type alias for
+      the `(session_id, label, kind, host_id, local_pty_id)` 5-tuple — a bare
+      5-tuple return trips `clippy::type_complexity`). SSH tabs → `SessionKind::
+      Ssh` + `ssh_id` + `host_id`; local `Workspace` tabs → `SessionKind::Local`
+      + `local_pty_id` (from `TabData.session_id as u32`).
+    - tab context menu: "Grant AI Agent Access" toggle item (`✓` prefix when
+      granted), shown only when the bridge is enabled and the tab is an SSH or
+      local terminal tab.
+    - `handle_ssh_event`: `McpActivity` now pushes an info toast
+      (`"Agent: {action} — {label}"`) when `notify_on_activity` is on (was just
+      `tracing::debug!`); new `McpGrantExpired { tab_id }` arm clears the local
+      mirror (auto-revoke sweep / host-block).
+    - `retire_tab` gained a `cx` param (4 call sites updated) and now revokes
+      the backend grant + clears the mirror for any granted tab being closed.
+    - new pub `reveal_tab(id, window, cx)` for the badge's "jump to tab".
+  - `crates/ui/src/app_shell.rs`:
+    - owns the shared `agent_access: Entity<AgentAccessStore>` + `agent_badge_open`.
+    - startup block: `mcp_prefs_load()` → `AgentAccessStore::hydrate` + a
+      `tokio.spawn` that pushes port / max-timeout / auto-revoke into `McpState`
+      and, if `bridge_enabled`, calls `mcp_set_enabled(true, …)` (mirrors the
+      reference `useMcpTabBridge.ts` re-sync effect).
+    - `render_agent_badge` — header badge (shield glyph + count pill), hidden
+      unless the bridge is on AND ≥1 grant; popover lists granted tabs with a
+      jump button + a revoke `✕`. Port of `AgentAccessBadge.tsx`.
+  - `crates/ui/src/hosts.rs`: `HostForm` gained `block_agent_access` (init from
+    `Host`, blank default `false`), an "AI Agent Access" allow/block toggle
+    button in `render_form`, and `Some(block_agent_access)` is now passed to
+    `hosts_create` / `hosts_update` (was `None`).
+- **Partially blocked on T13-001.** There is still no Settings *window* in the
+  Rust app, so the visible "AI Agent Bridge (MCP)" settings pane (enable switch,
+  `claude mcp add …` setup command + Copy, Regenerate-token button, port /
+  max-timeout / auto-revoke number inputs, notify toggle) is **deferred**. All
+  of its plumbing is done: `mcp_set_port` / `mcp_set_max_command_timeout_secs` /
+  `mcp_set_auto_revoke_minutes` / `mcp_set_enabled` / `mcp_regenerate_token` /
+  `mcp_get_status` exist; `McpPrefs` load/save exists; `AgentAccessStore`
+  mirrors `bridge_enabled` / `notify_on_activity`. T13-001 just needs to build
+  the window and port `ConnectionsSection.tsx`'s `AgentBridgeSection`.
+- Verify: `cargo check --workspace`, `cargo clippy --workspace --all-targets --
+  -D warnings`, `cargo test --workspace`, `cargo fmt --all --check` — all green.
+  backend **150 → 153** (+3 `McpPrefs`), ui **124 → 126** (+2 `AgentAccessStore`),
+  ai 75 unchanged.
+
+### State / Next
+- Branch `master`, committed. Pre-existing unrelated `CLAUDE.md` working-tree
+  edit deliberately left untouched / uncommitted.
+- **Phase 10 (AI-Chat) is complete.** Next: **T12-001 — Befehl-Snippets-System**
+  (`tasks/phase-11-snippets-palette/T12-001-snippets-system.md`).
+
+### Notes / Quirks (T11-006)
+- Grant enforcement is **server-side** (T11-005 backend). `AgentAccessStore` is
+  a comfort mirror only — never trust it for a security decision.
+- Local-tab grants use `TabData.session_id as u32` as `local_pty_id`. The
+  reference `open_tab` tool is SSH-only anyway; local grants only matter for the
+  manual context-menu toggle + `close_tab`.
+- `AgentAccessStore::set_grant` runs the backend call on `tokio.spawn` because
+  `mcp_set_session_grant` does a blocking sqlite `block_agent_access` lookup —
+  it's `async` but never actually yields.
+- The header badge lives in `AppShell::render_header` (our top bar), not a
+  separate header component — the reference `AgentAccessBadge` sits next to the
+  other bar badges; same spot here. `badgesAlwaysVisible` preference not ported
+  → badge simply hides when empty.
+- gpui test gotcha: `cx.new()` inside `cx.update(|cx| …)` needs
+  `use gpui::AppContext;` imported.
+
+---
+
+## Prev Session: 2026-09-01 (T11-005 — MCP-Bridge Server)
 
 ### What Was Done
 - **T11-005 ✅ Done.** The backend `mcp` module (`crates/backend/src/modules/mcp/`

@@ -26,10 +26,15 @@ use gpui::{
     Focusable, InteractiveElement, IntoElement, KeyDownEvent, ParentElement, Pixels, Render,
     SharedString, StatefulInteractiveElement, Styled, Window, WindowBounds,
 };
+use labonair_backend::modules::mcp::{
+    mcp_set_auto_revoke_minutes, mcp_set_enabled, mcp_set_max_command_timeout_secs, mcp_set_port,
+};
+use labonair_backend::modules::settings::mcp::mcp_prefs_load;
 use labonair_backend::App as Backend;
 use labonair_terminal::TerminalRegistry;
 use tokio::runtime::Handle as TokioHandle;
 
+use crate::agent_access::{AgentAccessEntry, AgentAccessStore};
 use crate::ai_chat::{AiChatStore, AiChatView};
 use crate::background::{BackgroundStore, LayerScope};
 use crate::explorer::ExplorerView;
@@ -121,6 +126,11 @@ pub struct AppShell {
     git_panel: Entity<GitPanelView>,
     git_graph: Entity<GitGraphView>,
     ai_chat: Entity<AiChatView>,
+    /// Client-side mirror of the MCP bridge's per-tab agent-access grants,
+    /// shared with `Workspace` (T11-006).
+    agent_access: Entity<AgentAccessStore>,
+    /// Whether the header agent-access badge popover is open.
+    agent_badge_open: bool,
     sidebar_open: bool,
     sidebar_width: f32,
     active_panel: SidebarPanel,
@@ -159,6 +169,30 @@ impl AppShell {
             );
         });
 
+        let agent_access = cx.new(|_| AgentAccessStore::new(backend.clone(), tokio.clone()));
+        cx.observe(&agent_access, |_, _, cx| cx.notify()).detach();
+
+        // The Rust `McpState` boots with no persistence of its own — mirror the
+        // saved preferences into it once at startup (matches the reference
+        // `useMcpTabBridge.ts` re-sync). Port/timeout/auto-revoke first so the
+        // listener, if enabled, comes up on the right port.
+        {
+            let prefs = mcp_prefs_load();
+            agent_access.update(cx, |s, cx| {
+                s.hydrate(prefs.bridge_enabled, prefs.notify_on_activity, cx)
+            });
+            let app = backend.clone();
+            tokio.spawn(async move {
+                let _ = mcp_set_port(prefs.bridge_port, app.clone(), &app.mcp, &app.secrets).await;
+                let _ = mcp_set_max_command_timeout_secs(prefs.max_command_timeout_secs, &app.mcp)
+                    .await;
+                let _ = mcp_set_auto_revoke_minutes(prefs.auto_revoke_minutes, &app.mcp).await;
+                if prefs.bridge_enabled {
+                    let _ = mcp_set_enabled(true, app.clone(), &app.mcp, &app.secrets).await;
+                }
+            });
+        }
+
         let registry = Arc::new(TerminalRegistry::new());
         let workspace = cx.new(|cx| {
             Workspace::new(
@@ -167,6 +201,7 @@ impl AppShell {
                 background.clone(),
                 backend.clone(),
                 tokio.clone(),
+                agent_access.clone(),
                 window,
                 cx,
             )
@@ -239,6 +274,8 @@ impl AppShell {
             git_panel,
             git_graph,
             ai_chat,
+            agent_access,
+            agent_badge_open: false,
             sidebar_open: true,
             sidebar_width: SIDEBAR_DEFAULT,
             active_panel: SidebarPanel::Explorer,
@@ -467,6 +504,11 @@ impl AppShell {
             theme.border(),
         );
 
+        let aa = self.agent_access.read(cx);
+        let agent_entries = aa.entries();
+        let agent_badge_visible = aa.bridge_enabled() && !agent_entries.is_empty();
+        let agent_badge_open = self.agent_badge_open;
+
         div()
             .flex()
             .items_center()
@@ -497,6 +539,9 @@ impl AppShell {
             .child(div().text_xs().text_color(fg).child("Labonair"))
             .child(div().flex_1())
             .when(self.search_open, |d| d.child(self.render_search(cx)))
+            .when(agent_badge_visible, |d| {
+                d.child(self.render_agent_badge(agent_entries, agent_badge_open, cx))
+            })
             .child(
                 div()
                     .id("app-menu")
@@ -509,6 +554,147 @@ impl AppShell {
                     .hover(|s| s.bg(border).text_color(fg))
                     .child("\u{22EF}"),
             )
+    }
+
+    /// Header badge listing the SSH/local tabs the user has granted MCP agent
+    /// access to — click to open a popover to jump to or revoke each one.
+    /// Port of the reference `AgentAccessBadge`; hidden entirely (by the
+    /// caller) when the bridge is off or nothing is granted.
+    fn render_agent_badge(
+        &mut self,
+        entries: Vec<AgentAccessEntry>,
+        open: bool,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let theme = self.theme.read(cx);
+        let (fg, muted, border, card, accent) = (
+            theme.foreground(),
+            theme.muted_foreground(),
+            theme.border(),
+            theme.card(),
+            theme.accent(),
+        );
+        let count = entries.len();
+
+        div()
+            .relative()
+            .flex_shrink_0()
+            .child(
+                div()
+                    .id("agent-access-badge")
+                    .relative()
+                    .size(px(24.0))
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .rounded_md()
+                    .text_color(muted)
+                    .hover(|s| s.bg(border).text_color(fg))
+                    .child("\u{1F6E1}")
+                    .child(
+                        div()
+                            .absolute()
+                            .top(px(-2.0))
+                            .right(px(-2.0))
+                            .min_w(px(13.0))
+                            .h(px(13.0))
+                            .px(px(2.0))
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .rounded_full()
+                            .bg(accent)
+                            .text_color(fg)
+                            .text_size(px(8.0))
+                            .child(SharedString::from(count.to_string())),
+                    )
+                    .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
+                        this.agent_badge_open = !this.agent_badge_open;
+                        cx.notify();
+                    })),
+            )
+            .when(open, |d| {
+                d.child(
+                    div()
+                        .absolute()
+                        .top(px(28.0))
+                        .right(px(0.0))
+                        .w(px(300.0))
+                        .flex()
+                        .flex_col()
+                        .rounded_md()
+                        .bg(card)
+                        .border_1()
+                        .border_color(border)
+                        .child(
+                            div()
+                                .px_3()
+                                .py_2()
+                                .border_b_1()
+                                .border_color(border)
+                                .text_xs()
+                                .font_weight(gpui::FontWeight::SEMIBOLD)
+                                .text_color(fg)
+                                .child("AI Agent Access"),
+                        )
+                        .children(entries.into_iter().map(|entry| {
+                            let tab_id = entry.tab_id;
+                            let session_id = entry.session_id.clone();
+                            div()
+                                .flex()
+                                .items_center()
+                                .gap_2()
+                                .px_3()
+                                .py_1p5()
+                                .hover(|s| s.bg(border))
+                                .child(
+                                    div()
+                                        .id(SharedString::from(format!("agent-jump-{tab_id}")))
+                                        .flex_1()
+                                        .min_w_0()
+                                        .text_xs()
+                                        .text_color(fg)
+                                        .truncate()
+                                        .child(SharedString::from(entry.label.clone()))
+                                        .on_click(cx.listener(
+                                            move |this, _: &ClickEvent, window, cx| {
+                                                this.agent_badge_open = false;
+                                                this.workspace.update(cx, |w, cx| {
+                                                    w.reveal_tab(tab_id, window, cx)
+                                                });
+                                                cx.notify();
+                                            },
+                                        )),
+                                )
+                                .child(
+                                    div()
+                                        .id(SharedString::from(format!("agent-revoke-{tab_id}")))
+                                        .px_1()
+                                        .rounded_sm()
+                                        .text_xs()
+                                        .text_color(muted)
+                                        .hover(|s| s.text_color(fg))
+                                        .child("\u{2715}")
+                                        .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                                            let session_id = session_id.clone();
+                                            this.agent_access.update(cx, |s, cx| {
+                                                s.set_grant(
+                                                    tab_id,
+                                                    session_id,
+                                                    false,
+                                                    String::new(),
+                                                    labonair_backend::modules::mcp::SessionKind::Ssh,
+                                                    None,
+                                                    None,
+                                                    cx,
+                                                );
+                                            });
+                                            cx.notify();
+                                        })),
+                                )
+                        })),
+                )
+            })
     }
 
     fn render_search(&mut self, cx: &mut Context<Self>) -> impl IntoElement {

@@ -1,7 +1,7 @@
 # T11-006: MCP-Bridge — Grants-UI & Settings
 
 ## Status
-⏳ Pending
+✅ Done
 
 ## Phase
 10 — AI-Chat-System
@@ -44,14 +44,25 @@ Referenz:
    Fehler laufen über den normalen Fehler-Toast-Pfad, nicht über dieses Signal.
 
 ## Akzeptanzkriterien
-- [ ] Tab-Kontextmenü togglet den Grant; Badge erscheint/verschwindet entsprechend
-- [ ] Badge-Popover listet freigegebene Tabs + Einzel-Widerruf funktioniert
-- [ ] Settings: Enable/Regenerate/Port/Timeout/Auto-Revoke wirken (Port-Wechsel startet Listener neu)
-- [ ] Setup-Befehl zeigt korrekten Port; Copy funktioniert
-- [ ] Per-Host-Block: gesetzt → Tab-Toggle disabled, laufender Grant sofort widerrufen
-- [ ] `mcpNotifyOnActivity` an → Toast bei Agent-Aktivität; aus → still
-- [ ] Preference-Werte überleben Neustart und werden an `McpState` gepusht
-- [ ] `cargo check` + `clippy -- -D warnings` + `cargo test` grün
+- [x] Tab-Kontextmenü togglet den Grant; Badge erscheint/verschwindet entsprechend
+- [x] Badge-Popover listet freigegebene Tabs + Einzel-Widerruf funktioniert
+- [~] Settings: Enable/Regenerate/Port/Timeout/Auto-Revoke wirken — *Settings-**Fenster** gibt es
+  noch nicht (T13-001 ⏳). Die Backend-Wirkung (`mcp_set_*`) + Persistenz (`settings::mcp::McpPrefs`)
+  + Startup-Push nach `McpState` sind implementiert; die visuellen Regler hängen sich in T13-001 ein.
+- [~] Setup-Befehl — dito, gehört ins Settings-Fenster (T13-001)
+- [x] Per-Host-Block: Toggle im Host-Formular + `block_agent_access`-Spalte; Grant-Ablehnung +
+  Sofort-Widerruf laufender Grants war bereits im Backend (T01-002) implementiert
+- [x] `mcpNotifyOnActivity` an → Toast bei Agent-Aktivität; aus → still (`McpActivity`-Handler)
+- [x] Preference-Werte überleben Neustart (`labonair-settings.json` → `mcp`) und werden beim
+  Start an `McpState` gepusht (`AppShell::new`)
+- [x] `cargo check` + `clippy -- -D warnings` + `cargo test` + `fmt --check` grün
+
+> **Teilweise durch T13-001 blockiert:** Das Settings-Fenster/-Pane existiert in der Rust-App noch
+> nicht (Phase 12). Alles außer den *sichtbaren* Settings-Reglern (AI Agent Bridge Pane inkl.
+> Setup-Command/Copy/Regenerate-Button) ist fertig und getestet. Wenn T13-001 das Settings-Fenster
+> baut, muss dort nur noch eine `ConnectionsSection`-Portierung die vorhandenen `mcp_set_*`-Funktionen
+> + `McpPrefs`-Load/Save verdrahten (`AgentAccessStore::set_bridge_enabled`/`set_notify_on_activity`
+> spiegeln bereits).
 
 ## Notizen
 - Badge-Layout am `JumpHostDropdown` des Originals orientieren (gleiche Popover/Pill-Optik).

@@ -20,6 +20,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
+use crate::agent_access::AgentAccessStore;
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, px, relative, App, AppContext, ClickEvent, Context, DragMoveEvent, Entity, FocusHandle,
@@ -72,6 +73,10 @@ struct SshTab {
 /// off the event bus and drained in `render` where a `&mut Window` is available
 /// — the bridge itself cannot touch tab state (tabs are pure UI), so it emits a
 /// request event and waits on a `oneshot` for [`mcp_tab_op_response`].
+/// `(session_id, label, kind, host_id, local_pty_id)` for a tab that can be
+/// granted MCP agent access — see [`Workspace::mcp_grant_target`].
+type McpGrantTarget = (String, String, SessionKind, Option<String>, Option<u32>);
+
 enum McpTabOp {
     Open {
         request_id: String,
@@ -253,6 +258,9 @@ pub struct Workspace {
     // ── MCP bridge (T11-005) ──────────────────────────────────────────────
     /// Tab open/close requests from the MCP bridge, drained in `render`.
     pending_mcp: Vec<McpTabOp>,
+    /// Client-side mirror of the bridge's per-tab agent-access grants
+    /// (T11-006) — shared with the header badge in `AppShell`.
+    agent_access: Entity<AgentAccessStore>,
 }
 
 impl Workspace {
@@ -263,6 +271,7 @@ impl Workspace {
         background: Entity<BackgroundStore>,
         backend: Backend,
         tokio: TokioHandle,
+        agent_access: Entity<AgentAccessStore>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -399,7 +408,10 @@ impl Workspace {
             transfers,
             transfer_events: tev_rx,
             pending_mcp: Vec::new(),
+            agent_access,
         };
+        cx.observe(&this.agent_access, |_, _, cx| cx.notify())
+            .detach();
         // Landing tab: the host-manager dashboard.
         this.tabs
             .update(cx, |s, cx| s.open(TabKind::Home, TabData::default(), cx));
@@ -607,7 +619,7 @@ impl Workspace {
             if matches!(ev, EditorEvent::CloseRequested) {
                 // Vim `:q` / `:wq` — close this editor's tab.
                 if let Some(removed) = this.tabs.update(cx, |s, cx| s.close(tab_id, cx)) {
-                    this.retire_tab(&removed);
+                    this.retire_tab(&removed, cx);
                 }
                 cx.notify();
                 return;
@@ -896,7 +908,7 @@ impl Workspace {
             self.confirm_close = None;
         }
         if let Some(removed) = self.tabs.update(cx, |s, cx| s.close(id, cx)) {
-            self.retire_tab(&removed);
+            self.retire_tab(&removed, cx);
         }
         self.focus_active(window, cx);
     }
@@ -904,7 +916,7 @@ impl Workspace {
     fn close_others(&mut self, id: u64, window: &mut Window, cx: &mut Context<Self>) {
         let removed = self.tabs.update(cx, |s, cx| s.close_others(id, cx));
         for tab in &removed {
-            self.retire_tab(tab);
+            self.retire_tab(tab, cx);
         }
         self.confirm_close = None;
         self.focus_active(window, cx);
@@ -913,9 +925,16 @@ impl Workspace {
     fn close_by_kind(&mut self, kind: TabKind, window: &mut Window, cx: &mut Context<Self>) {
         let removed = self.tabs.update(cx, |s, cx| s.close_by_kind(kind, cx));
         for tab in &removed {
-            self.retire_tab(tab);
+            self.retire_tab(tab, cx);
         }
         self.confirm_close = None;
+        self.focus_active(window, cx);
+    }
+
+    /// Activate a tab by id and move focus into it — used by the header
+    /// agent-access badge's "jump to tab".
+    pub fn reveal_tab(&mut self, id: u64, window: &mut Window, cx: &mut Context<Self>) {
+        self.tabs.update(cx, |s, cx| s.set_active(id, cx));
         self.focus_active(window, cx);
     }
 
@@ -927,7 +946,23 @@ impl Workspace {
     }
 
     /// Tear down a removed tab's whole pane tree.
-    fn retire_tab(&mut self, tab: &Tab) {
+    fn retire_tab(&mut self, tab: &Tab, cx: &mut Context<Self>) {
+        // Closing a tab revokes any agent-access grant that followed it —
+        // backend (so the bridge stops exposing the session) and local mirror.
+        if self.agent_access.read(cx).is_granted(tab.id) {
+            self.agent_access.update(cx, |s, cx| {
+                s.set_grant(
+                    tab.id,
+                    String::new(),
+                    false,
+                    String::new(),
+                    SessionKind::Ssh,
+                    None,
+                    None,
+                    cx,
+                );
+            });
+        }
         if let Some(layout) = self.layouts.remove(&tab.id) {
             for leaf in layout.leaves() {
                 self.retire_pane(leaf);
@@ -1641,14 +1676,32 @@ impl Workspace {
                     );
                 });
             }
+            AppEvent::McpGrantExpired { tab_id } => {
+                // Auto-revoke sweep or a host's "Block AI Agent Access" flag
+                // being switched on: Rust already dropped the grant, clear the
+                // local mirror so the badge / context-menu checkbox catch up.
+                if let Ok(id) = tab_id.parse::<u64>() {
+                    self.agent_access.update(cx, |s, cx| s.clear_local(id, cx));
+                }
+            }
             AppEvent::McpActivity {
                 label,
                 action,
                 detail,
             } => {
-                // The opt-in "notify on agent activity" preference lands with
-                // the MCP settings UI (T11-006); for now just trace it.
                 tracing::debug!(%label, %action, %detail, "mcp agent activity");
+                if self.agent_access.read(cx).notify_on_activity() {
+                    let center = crate::notifications::notification_center(cx);
+                    center.update(cx, |c, cx| {
+                        c.push(
+                            crate::notifications::Notification::info(
+                                format!("Agent: {action} \u{2014} {label}"),
+                                detail.clone(),
+                            ),
+                            cx,
+                        );
+                    });
+                }
             }
             _ => {}
         }
@@ -2250,6 +2303,8 @@ impl Workspace {
             theme.muted_foreground(),
         );
         let kind = self.tabs.read(cx).get(id).map(|t| t.kind);
+        let grant_target = self.mcp_grant_target(id, cx);
+        let is_granted = self.agent_access.read(cx).is_granted(id);
 
         let item = |label: &str, key: &'static str| {
             div()
@@ -2307,8 +2362,69 @@ impl Workspace {
                                 this.close_by_kind(kind, window, cx);
                             },
                         )))
-                    }),
+                    })
+                    .when_some(
+                        grant_target,
+                        |el, (session_id, label, gkind, host_id, pty)| {
+                            let text = if is_granted {
+                                "\u{2713} Grant AI Agent Access"
+                            } else {
+                                "Grant AI Agent Access"
+                            };
+                            el.child(item(text, "mcp-grant").on_click(cx.listener(
+                                move |this, _: &ClickEvent, _window, cx| {
+                                    this.context_menu = None;
+                                    let (session_id, label, host_id) =
+                                        (session_id.clone(), label.clone(), host_id.clone());
+                                    this.agent_access.update(cx, |s, cx| {
+                                        s.set_grant(
+                                            id,
+                                            session_id,
+                                            !is_granted,
+                                            label,
+                                            gkind,
+                                            host_id,
+                                            pty,
+                                            cx,
+                                        );
+                                    });
+                                    cx.notify();
+                                },
+                            )))
+                        },
+                    ),
             )
+    }
+
+    /// Resolve the MCP agent-access grant target for a tab, when it's an SSH or
+    /// local terminal tab and the bridge is enabled.
+    fn mcp_grant_target(&self, tab_id: u64, cx: &mut Context<Self>) -> Option<McpGrantTarget> {
+        if !self.agent_access.read(cx).bridge_enabled() {
+            return None;
+        }
+        let tab = self.tabs.read(cx).get(tab_id)?.clone();
+        let label = tab.label();
+        if let Some(ssh) = self.ssh_tabs.values().find(|t| t.tab_id == tab_id) {
+            return Some((
+                ssh.ssh_id.clone(),
+                label,
+                SessionKind::Ssh,
+                Some(ssh.host_id.clone()),
+                None,
+            ));
+        }
+        if tab.kind == TabKind::Workspace {
+            if let Some(sid) = tab.data.session_id {
+                return Some((
+                    String::new(),
+                    label,
+                    SessionKind::Local,
+                    None,
+                    Some(sid as u32),
+                ));
+            }
+        }
+        None
     }
 }
 

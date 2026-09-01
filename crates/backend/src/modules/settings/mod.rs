@@ -2,6 +2,7 @@ use serde_json::{Map, Value};
 use tokio::sync::Mutex;
 
 pub mod editor;
+pub mod mcp;
 
 use crate::modules::fs::paths::config_dir;
 
