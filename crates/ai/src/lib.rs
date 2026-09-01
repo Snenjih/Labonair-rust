@@ -25,6 +25,7 @@ pub mod message;
 pub mod secret_store;
 pub mod sessions;
 pub mod sse;
+pub mod tools;
 
 pub use client::{resolve_target, AiClient, ChatStream, ResolvedTarget};
 pub use config::{
@@ -38,4 +39,8 @@ pub use secret_store::{KeyringSecretStore, MemorySecretStore, SecretStore};
 pub use sessions::{
     derive_title, MessageStatus, RunStatus, SessionMessage, SessionMeta, SessionStore,
     SessionToolCall, ToolCallStatus,
+};
+pub use tools::{
+    LiveBridge, NativeHost, NoLiveBridge, NoopSubagentRunner, StaticLiveBridge, TodoStore, Tool,
+    ToolContext, ToolHost, ToolRegistry, ToolResult, ToolTurn,
 };

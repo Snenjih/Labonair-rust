@@ -1,7 +1,7 @@
 # T11-004: Agent/Tool-System und Live-Bridge
 
 ## Status
-⏳ Pending
+✅ Done
 
 ## Phase
 10 — AI-Chat-System

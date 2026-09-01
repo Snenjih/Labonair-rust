@@ -4,7 +4,99 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
-## Last Session: 2026-09-01 (T11-003 — Chat UI & streaming markdown)
+## Last Session: 2026-09-01 (T11-004 — Agent/Tool-System und Live-Bridge)
+
+### What Was Done
+- **T11-004 ✅ Done.** New `crates/ai/src/tools/` module — pure-Rust,
+  framework-agnostic port of `reference-src/src/modules/ai/tools/*`, `agents/*`
+  and `lib/{security,todos,useAiLiveBridge}.ts`. `crates/ai` now deps
+  `labonair-backend` (no cycle).
+  - `security.rs` — `check_readable` / `check_writable` (+ `_resolved`
+    symlink-aware via `std::fs::canonicalize`), `check_shell_command`
+    (blocks `rm -rf /`, `dd of=/dev/*`, `mkfs`/`fdisk`/`diskutil erase`,
+    `--no-preserve-root`, + refuses any secret-file/dir reference),
+    `check_destructive_command` (warning labels, non-blocking). Deny-list on
+    **read AND write**; `..`/UNC/drive-letter/NTFS-ADS path normalization.
+    Ported `security.test.ts` (12 tests).
+  - `todos.rs` — `TodoStore` per chat session
+    (`~/.config/labonair/labonair-todos.json`), `validate_todos` (≤1
+    `in_progress`, non-empty titles).
+  - `live_bridge.rs` — `LiveBridge` trait (lazy `cwd`/`workspace_root`/
+    `terminal_context`/`active_ssh_tab_id`/`inject_into_active_pty`/
+    `send_to_active_terminal`), `NoLiveBridge` default + `StaticLiveBridge`
+    for tests, `terminal_context_block()` (`<terminal-context cwd=…>`),
+    `resolve_path()` (relative → cwd).
+  - `host.rs` — `ToolHost` trait (fs + shell). `NativeHost` → backend
+    `fs::{file,grep,mutate,tree}` + `sh -c` with kill-on-timeout, off any UI
+    thread. `ScratchHost` (std::fs + naive walk) for tests.
+  - `registry.rs` — `Tool` trait (name / description / JSON-Schema /
+    `needs_approval` / `run`), `ToolRegistry::builtin()` = **14 tools**:
+    read_file, list_directory, write_file*, create_directory*, edit*,
+    multi_edit*, grep, glob, run_command*, terminal_read, terminal_write*,
+    suggest_command, todo_write, run_subagent (`*` = approval-gated).
+    `ToolContext` carries a shared `Arc<Mutex<HashSet<String>>>` read_cache so
+    the read-before-edit invariant survives the approval-gated follow-up turn.
+    `ToolRegistry::read_only()` = the sub-agent subset.
+  - `run.rs` — `ToolTurn`: `begin()` auto-executes read-only calls + queues
+    gated ones; `resolve(id, approved)` executes (or records a clean
+    rejection); `into_messages()` → `Role::Tool` result messages to re-send.
+  - `subagent.rs` — `SUBAGENTS` catalog (explore / code-review / security /
+    general — all read-only tools, no recursion), `SubagentRunner` trait +
+    `NoopSubagentRunner`. (A model-driven runner is left as a follow-up.)
+  - `sessions.rs` — `record_tool_result` (card → Done/Error + inserts a
+    `Role::Tool` message after its owning assistant msg), `begin_continue`
+    (fresh streaming assistant placeholder + full history for the next turn),
+    `active_pending_tool_calls`.
+  - `crates/ui/src/ai_chat.rs` — `AiChatStore` now:
+    - passes `registry.tool_defs()` into `stream_chat` (was `Vec::new()`);
+    - `spawn_stream(history)` extracted, shared by `send` + continuation;
+    - `dispatch_tool_calls` after every finished turn: auto-runs read-only
+      calls on `tokio::spawn_blocking` (result via `oneshot` + `cx.spawn`),
+      records each into the store, and — when no gated calls remain — calls
+      `begin_continue` + `spawn_stream` so **the run continues
+      automatically**;
+    - `resolve_tool_call(id, approved)` executes the approved tool off-thread
+      then auto-continues; rejection records `"Rejected by user."` and still
+      continues so the model can react. Falls back to the plain
+      `SessionStore::resolve_tool_call` when no tracked pending call (keeps the
+      store-driven test working).
+    - `set_live_bridge(Arc<dyn LiveBridge>)` hook; default is `NoLiveBridge`.
+- Verify: `cargo fmt --all --check`, `cargo clippy --workspace --all-targets
+  -- -D warnings`, `cargo test --workspace` — all green. **ai 45 → 75**
+  (+30: security 8, todos 3, live_bridge 3, registry 8, run 5, subagent 1,
+  sessions 1 [`tool_result_recorded_then_run_continues`], + host/glob covered
+  via registry). ui **124** unchanged, backend **148** unchanged.
+
+### State / Next
+- Branch `master`, committed. Pre-existing unrelated `CLAUDE.md` working-tree
+  edit deliberately left uncommitted / untouched.
+- **Next: T11-005 — MCP-Bridge-Server**
+  (`tasks/phase-10-ai-chat/T11-005-mcp-bridge-server.md`).
+
+### Notes / Quirks (T11-004)
+- **No real workspace-backed `LiveBridge` yet.** The trait is `Send + Sync`
+  with sync methods and no `cx`, so it can't read `Entity<Workspace>` at call
+  time. Shipped `NoLiveBridge` + a `set_live_bridge` setter; the terminal
+  tools + `terminal_context_block` are fully implemented/tested against
+  `StaticLiveBridge`. Wiring: app-shell should push a `LiveSnapshot`
+  (cwd + buffer tail) into an `Arc<Mutex<…>>` on every active-tab change and
+  hand a bridge over that. Thin follow-up.
+- **Sub-agent runner is `NoopSubagentRunner`** in the UI — the read-only
+  catalog + tool dispatch + approval semantics are done and tested; an actual
+  bounded model loop (`AiClient` + resolved target, ≤12 steps) is the missing
+  piece, same shape as the main run.
+- `run_command` is the single shell tool (reference has `bash_run` visible +
+  `bash_run_headless`); it runs headless in the session cwd via
+  `NativeHost::run_shell`. The visible-in-a-real-terminal variant needs the
+  live bridge + `terminal_exec` wiring — later.
+- With `NoLiveBridge`, `cwd()` is `None` → relative tool paths error and
+  grep/glob need an explicit `root`. That's expected until the bridge lands.
+- `crates/ai` deliberately gained a `labonair-backend` dep — checked: backend
+  has no `ai` dep, no cycle. Build cost already paid (ui deps both).
+
+---
+
+## Prev Session: 2026-09-01 (T11-003 — Chat UI & streaming markdown)
 
 ### What Was Done
 - **T11-003 ✅ Done.** GPUI chat panel rendering off the T11-002 `AiChatStore`.

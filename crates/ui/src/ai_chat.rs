@@ -7,12 +7,14 @@
 //! into the store via [`SessionStore::apply_event`] followed by `cx.notify()`.
 //! The chat UI itself lands in T11-003 and renders off this entity.
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use gpui::{AppContext, Context, Entity};
+use labonair_ai::tools::{NativeHost, NoopSubagentRunner, SubagentRunner};
 use labonair_ai::{
-    resolve_target, AiClient, ChatConfig, InstanceStore, KeyringSecretStore, RunStatus,
-    SecretStore, SessionMessage, SessionMeta, SessionStore, StreamEvent, Usage,
+    resolve_target, AiClient, ChatConfig, ChatMessage, InstanceStore, KeyringSecretStore,
+    LiveBridge, NoLiveBridge, RunStatus, SecretStore, SessionMessage, SessionMeta, SessionStore,
+    StreamEvent, TodoStore, ToolCall, ToolContext, ToolHost, ToolRegistry, Usage,
 };
 use tokio::runtime::Handle as TokioHandle;
 use tokio::sync::mpsc;
@@ -31,6 +33,16 @@ pub struct AiChatStore {
     /// Bumped on every send / stop / provider switch; stale tasks whose
     /// generation no longer matches drop their events.
     generation: u64,
+    // ── T11-004 agent / tool system ──────────────────────────────────────
+    registry: Arc<ToolRegistry>,
+    live: Arc<dyn LiveBridge>,
+    host: Arc<dyn ToolHost>,
+    todos: Arc<Mutex<TodoStore>>,
+    subagents: Arc<dyn SubagentRunner>,
+    /// Absolute paths read this session — the read-before-edit invariant.
+    read_cache: Arc<Mutex<HashSet<String>>>,
+    /// Approval-gated tool calls from the last model turn, awaiting the user.
+    pending_calls: Vec<ToolCall>,
 }
 
 impl AiChatStore {
@@ -62,7 +74,32 @@ impl AiChatStore {
             model_ref,
             run: None,
             generation: 0,
+            registry: Arc::new(ToolRegistry::builtin()),
+            live: Arc::new(NoLiveBridge),
+            host: Arc::new(NativeHost),
+            todos: Arc::new(Mutex::new(TodoStore::open_default())),
+            subagents: Arc::new(NoopSubagentRunner),
+            read_cache: Arc::new(Mutex::new(HashSet::new())),
+            pending_calls: Vec::new(),
         }
+    }
+
+    /// Swap in a real live-bridge (active-terminal cwd + buffer). The default is
+    /// a no-op bridge; the app-shell wires the workspace-backed one.
+    pub fn set_live_bridge(&mut self, live: Arc<dyn LiveBridge>) {
+        self.live = live;
+    }
+
+    fn tool_context(&self) -> ToolContext {
+        let sid = self.store.active_id().unwrap_or_default().to_string();
+        ToolContext::new(
+            sid,
+            self.live.clone(),
+            self.host.clone(),
+            self.todos.clone(),
+            self.subagents.clone(),
+        )
+        .with_read_cache(self.read_cache.clone())
     }
 
     // ── Read accessors ───────────────────────────────────────────────────
@@ -143,9 +180,16 @@ impl AiChatStore {
             return;
         }
         self.cancel_run();
+        self.pending_calls.clear();
+        self.read_cache.lock().unwrap().clear();
         let history = self.store.begin_send(text);
         cx.notify();
+        self.spawn_stream(history, cx);
+    }
 
+    /// Start (or continue) a streaming model turn over `history`. Shared by
+    /// [`AiChatStore::send`] and the post-approval agent continuation.
+    fn spawn_stream(&mut self, history: Vec<ChatMessage>, cx: &mut Context<Self>) {
         let target = match resolve_target(&self.model_ref, &self.instances, self.secrets.as_ref()) {
             Ok(t) => t,
             Err(err) => {
@@ -159,9 +203,10 @@ impl AiChatStore {
         let generation = self.generation;
         let (tx, mut rx) = mpsc::channel::<StreamEvent>(64);
         let client = self.client.clone();
+        let tools = self.registry.tool_defs();
 
         self.run = Some(self.tokio.spawn(async move {
-            let mut stream = client.stream_chat(target, ChatConfig::default(), history, Vec::new());
+            let mut stream = client.stream_chat(target, ChatConfig::default(), history, tools);
             while let Some(ev) = stream.next().await {
                 if tx.send(ev).await.is_err() {
                     break;
@@ -191,6 +236,76 @@ impl AiChatStore {
                 }
                 this.store.finish_run();
                 this.run = None;
+                this.dispatch_tool_calls(cx);
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    /// After a model turn ends: auto-run read-only tool calls immediately and
+    /// hold approval-gated ones for the user. Once every call in the step is
+    /// resolved, the run continues automatically.
+    fn dispatch_tool_calls(&mut self, cx: &mut Context<Self>) {
+        let pending = self.store.active_pending_tool_calls();
+        if pending.is_empty() {
+            return;
+        }
+        let mut auto = Vec::new();
+        for (id, name, arguments) in pending {
+            let needs_approval = self
+                .registry
+                .get(&name)
+                .map(|t| t.needs_approval())
+                .unwrap_or(false);
+            let call = ToolCall {
+                id,
+                name,
+                arguments,
+            };
+            if needs_approval {
+                self.pending_calls.push(call);
+            } else {
+                auto.push(call);
+            }
+        }
+        if !auto.is_empty() {
+            self.execute_calls(auto, cx);
+        }
+    }
+
+    /// Execute `calls` off the UI thread, record each result into the store,
+    /// and — when no approval-gated calls remain — continue the run.
+    fn execute_calls(&mut self, calls: Vec<ToolCall>, cx: &mut Context<Self>) {
+        let registry = self.registry.clone();
+        let mut ctx = self.tool_context();
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        self.tokio.spawn_blocking(move || {
+            let mut out = Vec::new();
+            for c in calls {
+                let args: serde_json::Value =
+                    serde_json::from_str(&c.arguments).unwrap_or_else(|_| serde_json::json!({}));
+                let result = match registry.get(&c.name) {
+                    Some(tool) => tool.run(args, &mut ctx),
+                    None => serde_json::json!({ "error": format!("unknown tool: {}", c.name) }),
+                };
+                out.push((c.id, c.name, result));
+            }
+            let _ = tx.send(out);
+        });
+
+        cx.spawn(async move |this, cx| {
+            let Ok(results) = rx.await else { return };
+            let _ = this.update(cx, |this, cx| {
+                for (id, name, result) in results {
+                    let is_error = result.get("error").is_some();
+                    let text = serde_json::to_string(&result).unwrap_or_else(|_| "{}".into());
+                    this.store.record_tool_result(&id, &name, text, is_error);
+                }
+                if this.pending_calls.is_empty() {
+                    let history = this.store.begin_continue();
+                    this.spawn_stream(history, cx);
+                }
                 cx.notify();
             });
         })
@@ -209,14 +324,38 @@ impl AiChatStore {
         self.store.last_usage()
     }
 
-    /// Approve / reject a pending tool-call approval card.
+    /// Approve / reject a pending tool-call approval card. On approval the tool
+    /// runs (off-thread); once every gated call is resolved the agent run
+    /// continues automatically.
     pub fn resolve_tool_call(&mut self, tool_id: &str, approved: bool, cx: &mut Context<Self>) {
-        self.store.resolve_tool_call(tool_id, approved);
-        cx.notify();
+        if let Some(pos) = self.pending_calls.iter().position(|c| c.id == tool_id) {
+            let call = self.pending_calls.remove(pos);
+            if approved {
+                self.execute_calls(vec![call], cx);
+            } else {
+                self.store.record_tool_result(
+                    tool_id,
+                    &call.name,
+                    "{\"error\":\"Rejected by user.\",\"rejected\":true}",
+                    true,
+                );
+                if self.pending_calls.is_empty() {
+                    let history = self.store.begin_continue();
+                    self.spawn_stream(history, cx);
+                }
+                cx.notify();
+            }
+        } else {
+            // No tracked pending call (e.g. a test drove the store directly) —
+            // fall back to the plain state transition.
+            self.store.resolve_tool_call(tool_id, approved);
+            cx.notify();
+        }
     }
 
     fn cancel_run(&mut self) {
         self.generation = self.generation.wrapping_add(1);
+        self.pending_calls.clear();
         if let Some(handle) = self.run.take() {
             handle.abort();
         }

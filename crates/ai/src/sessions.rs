@@ -617,6 +617,100 @@ impl SessionStore {
         }
     }
 
+    /// Record the outcome of an *executed* tool call (T11-004): set the card to
+    /// `Done`/`Error` with `result`, append a `Role::Tool` result message to the
+    /// history so it replays to the model, and settle the run status.
+    pub fn record_tool_result(
+        &mut self,
+        tool_id: &str,
+        name: &str,
+        result: impl Into<String>,
+        is_error: bool,
+    ) {
+        let Some(id) = self.file.active_id.clone() else {
+            return;
+        };
+        let result = result.into();
+        let Some(msgs) = self.file.messages.get_mut(&id) else {
+            return;
+        };
+        let mut found = false;
+        for m in msgs.iter_mut() {
+            for tc in m.tool_calls.iter_mut() {
+                if tc.id == tool_id {
+                    tc.status = if is_error {
+                        ToolCallStatus::Error
+                    } else {
+                        ToolCallStatus::Done
+                    };
+                    tc.result = Some(result.clone());
+                    found = true;
+                }
+            }
+        }
+        if !found {
+            return;
+        }
+        let mut tool_msg = SessionMessage::new(Role::Tool, result, MessageStatus::Final);
+        tool_msg.tool_call_id = Some(tool_id.to_string());
+        // Insert the tool result right after the assistant message that owns the
+        // call (before any later streaming placeholder).
+        let insert_at = msgs
+            .iter()
+            .position(|m| m.role == Role::Assistant && m.tool_calls.iter().any(|t| t.id == tool_id))
+            .map(|i| {
+                // skip past any tool results already sitting after it
+                let mut j = i + 1;
+                while j < msgs.len() && msgs[j].role == Role::Tool {
+                    j += 1;
+                }
+                j
+            })
+            .unwrap_or(msgs.len());
+        msgs.insert(insert_at, tool_msg);
+        let _ = name;
+        self.settle_run_status(&id);
+        self.persist_messages(&id);
+        self.bump();
+    }
+
+    /// Begin a follow-up model turn after tool results were recorded: append a
+    /// fresh streaming assistant placeholder and return the full history to
+    /// re-send (placeholder excluded). This is how the run continues
+    /// automatically once every tool call in a step is resolved.
+    pub fn begin_continue(&mut self) -> Vec<ChatMessage> {
+        let Some(id) = self.file.active_id.clone() else {
+            return Vec::new();
+        };
+        let msgs = self.file.messages.entry(id.clone()).or_default();
+        let history: Vec<ChatMessage> = msgs.iter().map(SessionMessage::to_chat_message).collect();
+        msgs.push(SessionMessage::new(
+            Role::Assistant,
+            "",
+            MessageStatus::Streaming,
+        ));
+        self.run_status = RunStatus::Thinking;
+        self.persist_messages(&id);
+        self.bump();
+        history
+    }
+
+    /// The tool calls on the active session that are still `Streaming` /
+    /// `AwaitingApproval` — i.e. what the agent loop must execute or hold.
+    pub fn active_pending_tool_calls(&self) -> Vec<(String, String, String)> {
+        self.active_messages()
+            .iter()
+            .flat_map(|m| &m.tool_calls)
+            .filter(|t| {
+                matches!(
+                    t.status,
+                    ToolCallStatus::AwaitingApproval | ToolCallStatus::Streaming
+                )
+            })
+            .map(|t| (t.id.clone(), t.name.clone(), t.arguments.clone()))
+            .collect()
+    }
+
     // ── internals ─────────────────────────────────────────────────────────
 
     fn settle_run_status(&mut self, session_id: &str) {
@@ -943,6 +1037,54 @@ mod tests {
             assert_eq!(msgs[1].status, MessageStatus::Final);
         }
         let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn tool_result_recorded_then_run_continues() {
+        let mut s = store();
+        s.begin_send("do a thing");
+        s.apply_event(StreamEvent::ToolCallStart {
+            id: "t1".into(),
+            name: "run_command".into(),
+        });
+        s.apply_event(StreamEvent::ToolCallDelta {
+            id: "t1".into(),
+            arguments_delta: "{\"command\":\"echo hi\"}".into(),
+        });
+        s.apply_event(StreamEvent::ToolCallEnd { id: "t1".into() });
+        s.apply_event(StreamEvent::Done {
+            finish_reason: "tool_calls".into(),
+        });
+        s.finish_run();
+        assert_eq!(s.run_status(), RunStatus::AwaitingApproval);
+        assert_eq!(
+            s.active_pending_tool_calls(),
+            vec![(
+                "t1".to_string(),
+                "run_command".to_string(),
+                "{\"command\":\"echo hi\"}".to_string()
+            )]
+        );
+
+        s.record_tool_result("t1", "run_command", "{\"stdout\":\"hi\\n\"}", false);
+        let msgs = s.active_messages();
+        // user, assistant(tool_call), tool result
+        assert_eq!(msgs.len(), 3);
+        assert_eq!(msgs[2].role, Role::Tool);
+        assert_eq!(msgs[2].tool_call_id.as_deref(), Some("t1"));
+        assert_eq!(msgs[1].tool_calls[0].status, ToolCallStatus::Done);
+        assert_eq!(s.run_status(), RunStatus::Idle);
+
+        let history = s.begin_continue();
+        assert_eq!(history.len(), 3);
+        assert_eq!(s.active_messages().len(), 4);
+        assert_eq!(s.run_status(), RunStatus::Thinking);
+        s.apply_event(StreamEvent::TextDelta("done".into()));
+        s.apply_event(StreamEvent::Done {
+            finish_reason: "stop".into(),
+        });
+        s.finish_run();
+        assert_eq!(s.active_messages()[3].content, "done");
     }
 
     #[test]
