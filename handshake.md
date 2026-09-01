@@ -4,7 +4,94 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
-## Last Session: 2026-09-01 (T09-002 — Branch management & stash)
+## Last Session: 2026-09-01 (T10-001 — Git-Graph rendering / commit graph)
+
+### What Was Done
+- **T10-001 ✅ Done.** New `crates/ui/src/git_graph.rs` (~1200 lines incl. 10
+  tests) — `GitGraphView` GPUI entity, port of the reference
+  `src/modules/git-graph/` module (`GitGraphPane`, `GitGraphCanvas`,
+  `GraphRail`, `CommitDetailPanel`, `lib/graphLayout.ts`, `lib/laneColors.ts`,
+  `lib/useGitGraph.ts`). No backend work — `git_get_log` (with `skip` offset
+  pagination + over-fetch-by-one), `git_get_current_branch`,
+  `git_get_commit_numstat`, `git_get_commit_diff`, `git_is_repo`,
+  `git_get_repo_root` all already existed.
+  - Pure, unit-tested: `build_graph_layout` (direct port of `buildGraphLayout`
+    — stateful left-to-right lane sweep producing `LayoutCommit`s with
+    top/bottom `GraphEdge`s: Straight / Merge / Branch), `initial_graph_page_size`
+    (500 local / 200 remote), `parse_numstat` (binary `-`, tabs-in-path),
+    `classify_ref` (tag `^v\d` / remote `origin|upstream|<slug>/` / local, with
+    the `feat|fix|chore|…/` allow-list), `is_no_repo_error`, `relative_age`,
+    `format_commit_date` (self-contained days→civil, no chrono), `lane_color` /
+    `avatar_color` / `initials`.
+  - View: toolbar (repo name + parent path, Local/Remote badge, "Ns ago" age
+    that repaints on a 30s tick, refresh), virtualised commit list
+    (`gpui::uniform_list`, 32px rows — only visible rows build elements),
+    column headers, "Load more commits" footer (real `--skip` pagination),
+    generation guard (`gen`, bumped on root/session/reload) drops stale
+    responses.
+  - Graph rail is painted with absolutely-positioned `div` segments (vertical
+    lane lines + horizontal L-connectors for merge/branch + a coloured node
+    dot, ringed when selected), clamped to `MAX_VISIBLE_LANES = 12`. Not a
+    `<canvas>` — GPUI 0.2.2's `canvas()` paint API is undocumented and div
+    segments match the rest of the codebase (explorer/sftp/git all use plain
+    `div` + `overflow_y_scroll`, no virtualiser until now).
+  - Ref/tag badges on rows (lane-tinted, `HEAD` marker when the ref == current
+    branch), author avatar (initials, deterministic colour), relative +/-
+    change counts.
+  - Commit detail panel (right, 320px): avatar header, email, click-to-copy
+    full hash, parent short-hashes, subject, numstat file list with +/-
+    totals, Older/Newer nav between commits, "View diff" toggle that lazily
+    fetches `git_get_commit_diff` and renders it with a local colored
+    unified-diff line renderer (same approach as `git.rs`'s hunk preview —
+    `DiffView` wants two texts, not a unified patch).
+  - Wired into `SidebarPanel::GitGraph` in `app_shell.rs` (the variant + rail
+    glyph already existed but rendered a "coming later" placeholder): new
+    `git_graph: Entity<GitGraphView>` field, constructed next to `git_panel`
+    (so `GitPanelView::new` now takes `backend.clone()`/`tokio.clone()`), fed
+    the active terminal cwd via the same `observe(&workspace)` +
+    initial-set_root pattern as `git_panel`/`explorer`. `render_panel_body`
+    routes `SidebarPanel::GitGraph` → the view.
+  - `crates/ui/src/lib.rs` — `pub mod git_graph` + `pub use
+    git_graph::GitGraphView`.
+- Verify: `cargo check --workspace`, `cargo clippy --workspace --all-targets
+  -- -D warnings`, `cargo test --workspace` (ui 99 → 109), `cargo fmt --all
+  --check` — all green.
+
+### State / Next
+- Branch `master`, committed. Pre-existing unrelated `CLAUDE.md` working-tree
+  edit deliberately left uncommitted / untouched.
+- Phase 9 (Git-Graph) is now complete. **Next: Phase 10 — AI-Chat-System**,
+  first task **T11-001** (AI-Provider-Integration, Multi-Provider BYOK),
+  `tasks/phase-10-ai-chat/`.
+
+### Notes / Quirks (T10-001)
+- The `TabKind::GitGraph` / `TabKind::CommitDiff` tab variants exist in
+  `tabs.rs` but are **unused** — this task renders the graph as a *sidebar
+  panel* (`SidebarPanel::GitGraph`), not a workspace tab, because the panel
+  slot was already reserved and it avoids the tab/workspace plumbing. The
+  reference opens it as a tab; a follow-up could move it if tab semantics
+  (per-repo tabs, pinned path) are wanted. "View Changes → CommitDiff tab" and
+  the row context menu (checkout/cherry-pick/create-branch-here) from
+  `GitGraphPane` are **not** ported — detail-panel inline diff covers the
+  "see the commit's changes" criterion; the branch ops all live in the
+  Source-Control panel (T09-002).
+- No `sshd` in CI ⇒ no live remote test; the layout algorithm + all parsing
+  seams are unit-tested (10 tests incl. feature-branch merge, octopus merge,
+  lane reuse, linear history). The backend git log/numstat/diff fns have their
+  own coverage from T09-00x.
+- Rail edges are div segments, not bezier paths — merge/branch connectors are
+  drawn as an L (vertical + horizontal + vertical), not a curve. Visually
+  close enough; revisit with `gpui::canvas` + `PathBuilder` if the Zed source
+  yields a confirmed path-painting API.
+- `git_get_log` is always called with `all_branches = true` (matches the
+  reference `git.getLog(path, limit, true, …)`), so row 0 is the newest commit
+  across *all* refs, not necessarily HEAD — the `HEAD` badge is driven by
+  `git_get_current_branch` string-matching a ref name, which is correct for a
+  normal checkout and simply absent when detached.
+
+---
+
+## Prev Session: 2026-09-01 (T09-002 — Branch management & stash)
 
 ### What Was Done
 - **T09-002 ✅ Done.** Branch/tag/stash UI added to `crates/ui/src/git.rs`

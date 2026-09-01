@@ -1,7 +1,7 @@
 # T10-001: Git-Graph-Rendering (Commit-Graph)
 
 ## Status
-⏳ Pending
+✅ Done
 
 ## Phase
 9 — Git-Graph (Canvas)

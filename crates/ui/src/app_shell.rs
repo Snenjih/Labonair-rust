@@ -33,6 +33,7 @@ use tokio::runtime::Handle as TokioHandle;
 use crate::background::{BackgroundStore, LayerScope};
 use crate::explorer::ExplorerView;
 use crate::git::GitPanelView;
+use crate::git_graph::GitGraphView;
 use crate::menu;
 use crate::notifications::{self, NotificationCenter};
 use crate::pane::SplitAxis;
@@ -117,6 +118,7 @@ pub struct AppShell {
     workspace: Entity<Workspace>,
     explorer: Entity<ExplorerView>,
     git_panel: Entity<GitPanelView>,
+    git_graph: Entity<GitGraphView>,
     sidebar_open: bool,
     sidebar_width: f32,
     active_panel: SidebarPanel,
@@ -169,8 +171,12 @@ impl AppShell {
         });
         cx.observe(&workspace, |_, _, cx| cx.notify()).detach();
 
-        let git_panel = cx.new(|cx| GitPanelView::new(backend, tokio, theme.clone(), cx));
+        let git_panel =
+            cx.new(|cx| GitPanelView::new(backend.clone(), tokio.clone(), theme.clone(), cx));
         cx.observe(&git_panel, |_, _, cx| cx.notify()).detach();
+
+        let git_graph = cx.new(|cx| GitGraphView::new(backend, tokio, theme.clone(), cx));
+        cx.observe(&git_graph, |_, _, cx| cx.notify()).detach();
 
         let explorer = cx.new(|cx| ExplorerView::new(theme.clone(), workspace.clone(), cx));
         cx.observe(&explorer, |_, _, cx| cx.notify()).detach();
@@ -195,15 +201,18 @@ impl AppShell {
         .detach();
         cx.observe(&workspace, {
             let git_panel = git_panel.clone();
+            let git_graph = git_graph.clone();
             move |_, workspace, cx| {
                 let cwd = workspace.read(cx).active_cwd(cx);
-                git_panel.update(cx, |g, cx| g.set_root(cwd, cx));
+                git_panel.update(cx, |g, cx| g.set_root(cwd.clone(), cx));
+                git_graph.update(cx, |g, cx| g.set_root(cwd, cx));
             }
         })
         .detach();
         {
             let cwd = workspace.read(cx).active_cwd(cx);
-            git_panel.update(cx, |g, cx| g.set_root(cwd, cx));
+            git_panel.update(cx, |g, cx| g.set_root(cwd.clone(), cx));
+            git_graph.update(cx, |g, cx| g.set_root(cwd, cx));
         }
 
         // Persist the final window geometry on close (the throttled per-render
@@ -222,6 +231,7 @@ impl AppShell {
             workspace,
             explorer,
             git_panel,
+            git_graph,
             sidebar_open: true,
             sidebar_width: SIDEBAR_DEFAULT,
             active_panel: SidebarPanel::Explorer,
@@ -619,6 +629,9 @@ impl AppShell {
         }
         if panel == SidebarPanel::SourceControl {
             return self.git_panel.clone().into_any_element();
+        }
+        if panel == SidebarPanel::GitGraph {
+            return self.git_graph.clone().into_any_element();
         }
         let muted = self.theme.read(cx).muted_foreground();
         div()
