@@ -10,6 +10,7 @@ labonair-theme = { path = "../theme" }
 labonair-terminal = { path = "../terminal" }
 labonair-editor = { path = "../editor" }
 labonair-backend = { path = "../backend" }
+labonair-ai = { path = "../ai" }
 tracing = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

@@ -1,7 +1,7 @@
 # T11-002: Chat-Store und Session-Verwaltung (AI)
 
 ## Status
-⏳ Pending
+✅ Done
 
 ## Phase
 10 — AI-Chat-System
@@ -56,13 +56,13 @@ In der Rust-Version: Ein Chat-Store (GPUI-Entity) verwaltet Sessions (Liste + ak
 
 ## Akzeptanzkriterien
 
-- [ ] Nachrichten-Modell mit Rollen/Struktur existiert.
-- [ ] Sessions lassen sich erstellen, wechseln, löschen; aktive ID und Titel funktionieren.
-- [ ] Sessions und Nachrichten werden persistent über Neustarts gespeichert und geladen.
-- [ ] Senden einer Nachricht orchestriert die Provider-Streaming-Antwort korrekt in die Session.
-- [ ] Stoppen funktioniert; Tool-Calls werden erkannt und im Wartestatus gehalten.
-- [ ] Änderungen benachrichtigen die UI korrekt.
-- [ ] Alle Tests laufen grün.
+- [x] Nachrichten-Modell mit Rollen/Struktur existiert. (`SessionMessage` / `MessageStatus` / `SessionToolCall` / `ToolCallStatus` in `crates/ai/src/sessions.rs`)
+- [x] Sessions lassen sich erstellen, wechseln, löschen; aktive ID und Titel funktionieren. (`SessionStore` + auto-title via `derive_title`)
+- [x] Sessions und Nachrichten werden persistent über Neustarts gespeichert und geladen. (atomic JSON blob `~/.config/labonair/labonair-sessions.json`; `sessions_and_messages_survive_restart` test)
+- [x] Senden einer Nachricht orchestriert die Provider-Streaming-Antwort korrekt in die Session. (`begin_send` → `AiClient::stream_chat` → `apply_event` → `finish_run`, wired in `AiChatStore`)
+- [x] Stoppen funktioniert; Tool-Calls werden erkannt und im Wartestatus gehalten. (`stop`; `ToolCallStatus::AwaitingApproval` + `RunStatus::AwaitingApproval`)
+- [x] Änderungen benachrichtigen die UI korrekt. (`SessionStore::revision` counter; `AiChatStore` calls `cx.notify()` after every mutation — `session_ops_notify` test)
+- [x] Alle Tests laufen grün. (ai 44, ui 111; clippy + fmt clean)
 
 ## Notizen
 

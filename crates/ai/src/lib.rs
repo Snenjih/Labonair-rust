@@ -23,6 +23,7 @@ pub mod error;
 pub mod instances;
 pub mod message;
 pub mod secret_store;
+pub mod sessions;
 pub mod sse;
 
 pub use client::{resolve_target, AiClient, ChatStream, ResolvedTarget};
@@ -34,3 +35,7 @@ pub use error::AiError;
 pub use instances::{make_model_ref, parse_model_ref, InstanceStore, ModelRef, ProviderInstance};
 pub use message::{ChatConfig, ChatMessage, Role, StreamEvent, ToolCall, ToolDef, Usage};
 pub use secret_store::{KeyringSecretStore, MemorySecretStore, SecretStore};
+pub use sessions::{
+    derive_title, MessageStatus, RunStatus, SessionMessage, SessionMeta, SessionStore,
+    SessionToolCall, ToolCallStatus,
+};

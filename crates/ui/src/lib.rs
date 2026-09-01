@@ -2,6 +2,7 @@
 //!
 //! Populated by later phases (T04+). T02-002 adds the runtime theme provider.
 
+pub mod ai_chat;
 pub mod app_shell;
 pub mod background;
 pub mod diff;
@@ -22,6 +23,7 @@ pub mod transfers;
 pub mod window_state;
 pub mod workspace;
 
+pub use ai_chat::{init as init_ai_chat, AiChatStore};
 pub use app_shell::{AppShell, SidebarPanel};
 pub use background::{
     background_store, init as init_background, BackgroundFit, BackgroundStore, BackgroundTarget,

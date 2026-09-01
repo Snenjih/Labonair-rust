@@ -4,7 +4,76 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
-## Last Session: 2026-09-01 (T11-001 — AI provider integration / Multi-Provider BYOK)
+## Last Session: 2026-09-01 (T11-002 — Chat store & session management)
+
+### What Was Done
+- **T11-002 ✅ Done.** Chat sessions + send/stream orchestration on top of the
+  T11-001 `crates/ai` layer.
+  - `crates/ai/src/sessions.rs` (new, pure Rust, UI-framework-agnostic) — port
+    of `reference-src/src/modules/ai/store/chatStore.ts` + `lib/sessions.ts`:
+    - Message model: `SessionMessage` (id/role/content/reasoning/tool_calls/
+      tool_call_id/status/error/created_at), `MessageStatus`
+      (Streaming|Final|Error), `SessionToolCall` + `ToolCallStatus`
+      (Streaming|AwaitingApproval|Done|Error).
+    - `SessionMeta` (id/title/created_at/updated_at), `RunStatus`
+      (Idle|Thinking|Streaming|AwaitingApproval|Error).
+    - `SessionStore` — sessions list + active id + per-session messages, backed
+      by a single atomic JSON blob (`~/.config/labonair/labonair-sessions.json`,
+      tmp+rename). `load` guarantees the "always ≥1 session + valid active id"
+      invariant and reuses a leading untitled "New chat" across restarts.
+      CRUD: `new_session`/`switch_session`/`delete_session`(falls back / spawns
+      fresh)/`rename_session`. Change notification via a `revision()` counter.
+    - Orchestration transitions (no I/O): `begin_send(text) -> Vec<ChatMessage>`
+      (appends user msg + streaming assistant placeholder, auto-derives title
+      via `derive_title` which strips `<terminal-context>/<selection>/<file>`
+      blocks), `apply_event(StreamEvent)` (folds text/reasoning/tool-call deltas
+      into the trailing assistant msg), `finish_run`, `stop`, `fail_run`,
+      `reset_active_run` (provider/key switch — settles live state, keeps all
+      session data; mirrors the reference only resetting `agentMeta`).
+      Persists on send/finish/stop, never per token.
+  - `crates/ui/src/ai_chat.rs` (new) — `AiChatStore` GPUI entity wrapping
+    `SessionStore` + `InstanceStore` + `AiClient` + a `TokioHandle`. `send()`
+    spawns the `AiClient::stream_chat` consumer on Tokio, forwards each event
+    into the store via `cx.spawn` + `this.update` + `cx.notify()`, with a
+    `generation` guard so stale runs drop their events. `stop`/`set_model_ref`/
+    session ops all notify. `resolve_target` error (e.g. no key) → `fail_run`.
+    Exported as `labonair_ui::{AiChatStore, init_ai_chat}`. **Not yet wired into
+    `Workspace`** — that's T11-003 (chat UI).
+  - `crates/ui/Cargo.toml`: added `labonair-ai` path dep.
+- Verify: `cargo fmt --all --check`, `cargo clippy --workspace --all-targets
+  -- -D warnings`, `cargo test --workspace` — all green. ai **44 tests** (+10:
+  session CRUD, restart persistence, send sequence, stop, tool-call awaiting,
+  error event, provider-switch reset, title derivation, revision). ui **111**
+  (+2: `session_ops_notify`, `send_without_key_records_error`). backend 148
+  unchanged.
+
+### State / Next
+- Branch `master`, committed. Pre-existing unrelated `CLAUDE.md` working-tree
+  edit deliberately left uncommitted / untouched.
+- **Next: T11-003 — Chat UI & streaming markdown**
+  (`tasks/phase-10-ai-chat/T11-003-chat-ui-markdown.md`). Build the GPUI chat
+  panel/view rendering off `AiChatStore`; wire it + a Settings→AI provider pane
+  into `Workspace`. T11-004 is the agent/tool execution loop.
+
+### Notes / Quirks (T11-002)
+- `SessionStore` persistence is a single whole-file JSON blob, not the
+  reference's per-key `LazyStore` (`sessions` / `activeId` / `messages:<id>`).
+  Simpler and enough for parity; the "don't write per token" rule is honoured
+  by only persisting at send/finish/stop, not by a debounce timer.
+- `reset_active_run` intentionally does NOT delete messages — the reference
+  `chatStore.setApiKeys` only resets `agentMeta` to idle. "Provider switch
+  resets the chat" == resets run status/tokens, sessions & history stay.
+- GPUI notification coalescing: multiple `cx.notify()` inside one
+  `entity.update` block fire the observer once. The notify test does one op per
+  `update` + `cx.run_until_parked()` between them.
+- tokio mpsc `Receiver::recv().await` works fine inside a `cx.spawn` future
+  (gpui executor, no tokio runtime) — mpsc needs no reactor. The
+  `AiClient::stream_chat` call itself is kept on `self.tokio.spawn` since it
+  calls `tokio::spawn` internally.
+
+---
+
+## Session: 2026-09-01 (T11-001 — AI provider integration / Multi-Provider BYOK)
 
 ### What Was Done
 - **T11-001 ✅ Done.** Filled the previously-stub `crates/ai` with the pure-Rust

@@ -3977,6 +3977,7 @@ dependencies = [
  "dirs 6.0.0",
  "gpui",
  "image",
+ "labonair-ai",
  "labonair-backend",
  "labonair-editor",
  "labonair-terminal",
