@@ -1,7 +1,7 @@
 # T07-003: SSH-Config-Import/Export
 
 ## Status
-⏳ Pending
+✅ Done
 
 ## Phase
 6 — SSH-UI & Host-Manager

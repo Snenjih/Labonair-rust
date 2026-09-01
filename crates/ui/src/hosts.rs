@@ -14,12 +14,13 @@ use std::collections::HashSet;
 
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, px, App, ClickEvent, Context, Entity, EventEmitter, FocusHandle, Focusable,
+    div, px, App, ClickEvent, ClipboardItem, Context, Entity, EventEmitter, FocusHandle, Focusable,
     InteractiveElement, IntoElement, KeyDownEvent, ParentElement, Render, SharedString,
     StatefulInteractiveElement, Styled, Window,
 };
 use labonair_backend::modules::credentials::{self, Credential};
 use labonair_backend::modules::hosts::{self, Group, Host};
+use labonair_backend::modules::ssh::config_parser::{self, ImportConflict, SshConfigEntry};
 use labonair_backend::App as Backend;
 use tokio::runtime::Handle as TokioHandle;
 
@@ -313,6 +314,40 @@ struct CredDraft {
     is_key: bool,
 }
 
+/// Cycle order for the import dialog's conflict-policy toggle.
+fn cycle_conflict(c: ImportConflict) -> ImportConflict {
+    match c {
+        ImportConflict::Skip => ImportConflict::Overwrite,
+        ImportConflict::Overwrite => ImportConflict::Rename,
+        ImportConflict::Rename => ImportConflict::Skip,
+    }
+}
+
+fn conflict_label(c: ImportConflict) -> &'static str {
+    match c {
+        ImportConflict::Skip => "skip",
+        ImportConflict::Overwrite => "overwrite",
+        ImportConflict::Rename => "rename",
+    }
+}
+
+/// Backing state of the "Import from ~/.ssh/config" dialog.
+struct ImportState {
+    loading: bool,
+    entries: Vec<SshConfigEntry>,
+    /// Selected entries, keyed by alias.
+    selected: HashSet<String>,
+    conflict: ImportConflict,
+    error: Option<String>,
+}
+
+/// Backing state of the "Export to ~/.ssh/config" dialog.
+struct ExportState {
+    /// Selected host ids.
+    selected: HashSet<String>,
+    error: Option<String>,
+}
+
 pub struct HostManagerView {
     app: Backend,
     tokio: TokioHandle,
@@ -331,6 +366,10 @@ pub struct HostManagerView {
     /// Inline "new group" buffer, `Some` while the field is open.
     group_draft: Option<String>,
     group_focus: FocusHandle,
+    /// SSH-config import dialog, `Some` while open.
+    import: Option<ImportState>,
+    /// SSH-config export dialog, `Some` while open.
+    export: Option<ExportState>,
     focus_handle: FocusHandle,
 }
 
@@ -361,6 +400,8 @@ impl HostManagerView {
             cred_focus: cx.focus_handle(),
             group_draft: None,
             group_focus: cx.focus_handle(),
+            import: None,
+            export: None,
             focus_handle: cx.focus_handle(),
         };
         this.reload(cx);
@@ -669,6 +710,191 @@ impl HostManagerView {
         cx.spawn(async move |this, cx| {
             let _ = jh.await;
             let _ = this.update(cx, |this, cx| this.reload(cx));
+        })
+        .detach();
+    }
+
+    // ── SSH-config import / export ─────────────────────────────────────────
+
+    /// Open the import dialog and kick off a `~/.ssh/config` parse.
+    fn open_import(&mut self, cx: &mut Context<Self>) {
+        self.import = Some(ImportState {
+            loading: true,
+            entries: Vec::new(),
+            selected: HashSet::new(),
+            conflict: ImportConflict::Skip,
+            error: None,
+        });
+        let jh = self
+            .tokio
+            .spawn(async move { config_parser::parse_ssh_config_cmd().await });
+        cx.spawn(async move |this, cx| {
+            let res = jh.await;
+            let _ = this.update(cx, |this, cx| {
+                if let Some(state) = this.import.as_mut() {
+                    state.loading = false;
+                    match res {
+                        Ok(Ok(entries)) => {
+                            state.selected = entries.iter().map(|e| e.alias.clone()).collect();
+                            state.entries = entries;
+                        }
+                        Ok(Err(e)) => state.error = Some(e),
+                        Err(e) => state.error = Some(e.to_string()),
+                    }
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+        cx.notify();
+    }
+
+    /// Import the currently selected entries with the chosen conflict policy.
+    fn run_import(&mut self, cx: &mut Context<Self>) {
+        let Some(state) = self.import.as_ref() else {
+            return;
+        };
+        let conflict = state.conflict;
+        let entries: Vec<SshConfigEntry> = state
+            .entries
+            .iter()
+            .filter(|e| state.selected.contains(&e.alias))
+            .cloned()
+            .collect();
+        if entries.is_empty() {
+            return;
+        }
+        let count = entries.len();
+        let app = self.app.clone();
+        let jh = self.tokio.spawn(async move {
+            config_parser::import_ssh_config_entries(entries, conflict, &app.db).await
+        });
+        cx.spawn(async move |this, cx| {
+            let res = jh.await;
+            let _ = this.update(cx, |this, cx| {
+                match res {
+                    Ok(Ok(ids)) => {
+                        this.import = None;
+                        this.notify_toast(
+                            "SSH config imported",
+                            format!("{} of {count} host(s) imported.", ids.len()),
+                            cx,
+                        );
+                        this.reload(cx);
+                    }
+                    Ok(Err(e)) => {
+                        if let Some(s) = this.import.as_mut() {
+                            s.error = Some(e);
+                        }
+                    }
+                    Err(e) => {
+                        if let Some(s) = this.import.as_mut() {
+                            s.error = Some(e.to_string());
+                        }
+                    }
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    /// Open the export dialog with every host pre-selected.
+    fn open_export(&mut self, cx: &mut Context<Self>) {
+        self.export = Some(ExportState {
+            selected: self.hosts.iter().map(|h| h.id.clone()).collect(),
+            error: None,
+        });
+        cx.notify();
+    }
+
+    fn export_selected_ids(&self) -> Vec<String> {
+        self.export
+            .as_ref()
+            .map(|s| {
+                self.hosts
+                    .iter()
+                    .filter(|h| s.selected.contains(&h.id))
+                    .map(|h| h.id.clone())
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    /// Generate the SSH-config block for the selected hosts and either copy it
+    /// to the clipboard or append it to `~/.ssh/config`.
+    fn run_export(&mut self, append: bool, cx: &mut Context<Self>) {
+        let ids = self.export_selected_ids();
+        if ids.is_empty() {
+            return;
+        }
+        let app = self.app.clone();
+        let tokio = self.tokio.clone();
+        let jh = self
+            .tokio
+            .spawn(async move { config_parser::export_ssh_config(ids, &app.db).await });
+        cx.spawn(async move |this, cx| {
+            let res = jh.await;
+            let block = match res {
+                Ok(Ok(block)) => block,
+                Ok(Err(e)) => {
+                    let _ = this.update(cx, |this, cx| {
+                        if let Some(s) = this.export.as_mut() {
+                            s.error = Some(e);
+                        }
+                        cx.notify();
+                    });
+                    return;
+                }
+                Err(e) => {
+                    let _ = this.update(cx, |this, cx| {
+                        if let Some(s) = this.export.as_mut() {
+                            s.error = Some(e.to_string());
+                        }
+                        cx.notify();
+                    });
+                    return;
+                }
+            };
+            if !append {
+                let _ = this.update(cx, |this, cx| {
+                    cx.write_to_clipboard(ClipboardItem::new_string(block.clone()));
+                    this.export = None;
+                    this.notify_toast(
+                        "SSH config copied",
+                        "The generated Host blocks were copied to the clipboard.".to_string(),
+                        cx,
+                    );
+                    cx.notify();
+                });
+                return;
+            }
+            let write = tokio
+                .spawn(async move { config_parser::write_ssh_config_export(block, true).await })
+                .await;
+            let _ = this.update(cx, |this, cx| {
+                match write {
+                    Ok(Ok(path)) => {
+                        this.export = None;
+                        this.notify_toast(
+                            "SSH config exported",
+                            format!("Host blocks appended to {path}"),
+                            cx,
+                        );
+                    }
+                    Ok(Err(e)) => {
+                        if let Some(s) = this.export.as_mut() {
+                            s.error = Some(e);
+                        }
+                    }
+                    Err(e) => {
+                        if let Some(s) = this.export.as_mut() {
+                            s.error = Some(e.to_string());
+                        }
+                    }
+                }
+                cx.notify();
+            });
         })
         .detach();
     }
@@ -1513,6 +1739,337 @@ impl HostManagerView {
             )
             .into_any_element()
     }
+
+    fn modal_shell(&self, width: f32, p: &Palette) -> gpui::Div {
+        div()
+            .flex()
+            .flex_col()
+            .gap_2()
+            .w(px(width))
+            .max_h(px(620.0))
+            .overflow_hidden()
+            .p_4()
+            .rounded_lg()
+            .bg(p.card)
+            .border_1()
+            .border_color(p.border)
+    }
+
+    fn render_import(&self, p: &Palette, cx: &mut Context<Self>) -> gpui::AnyElement {
+        let Some(state) = self.import.as_ref() else {
+            return div().into_any_element();
+        };
+        let existing_names: HashSet<&str> = self.hosts.iter().map(|h| h.name.as_str()).collect();
+        let selected_count = state.selected.len();
+        let total = state.entries.len();
+        let conflict = state.conflict;
+
+        let list: Vec<gpui::AnyElement> = state
+            .entries
+            .iter()
+            .map(|e| {
+                let alias = e.alias.clone();
+                let checked = state.selected.contains(&alias);
+                let exists = existing_names.contains(e.alias.as_str());
+                let meta = format!(
+                    "{}:{}{}{}{}",
+                    e.host_address,
+                    e.port,
+                    e.username
+                        .as_deref()
+                        .map(|u| format!("  \u{00b7}  {u}"))
+                        .unwrap_or_default(),
+                    if e.auth_method == "key" {
+                        "  \u{00b7}  key"
+                    } else {
+                        "  \u{00b7}  password"
+                    },
+                    e.proxy_jump
+                        .as_deref()
+                        .map(|j| format!("  \u{00b7}  via {j}"))
+                        .unwrap_or_default(),
+                );
+                div()
+                    .id(SharedString::from(format!("imp-{alias}")))
+                    .flex()
+                    .items_center()
+                    .gap_2()
+                    .px_2()
+                    .py_1()
+                    .rounded_md()
+                    .border_1()
+                    .border_color(if checked { p.accent } else { p.border })
+                    .cursor_pointer()
+                    .child(div().w(px(14.0)).text_color(p.accent).child(if checked {
+                        "\u{2611}"
+                    } else {
+                        "\u{2610}"
+                    }))
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .flex()
+                            .flex_col()
+                            .child(div().text_sm().text_color(p.fg).child(SharedString::from(
+                                if exists {
+                                    format!("{alias}  (already exists)")
+                                } else {
+                                    alias.clone()
+                                },
+                            )))
+                            .child(
+                                div()
+                                    .text_xs()
+                                    .text_color(p.muted)
+                                    .child(SharedString::from(meta)),
+                            ),
+                    )
+                    .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                        if let Some(s) = this.import.as_mut() {
+                            if !s.selected.remove(&alias) {
+                                s.selected.insert(alias.clone());
+                            }
+                        }
+                        cx.notify();
+                    }))
+                    .into_any_element()
+            })
+            .collect();
+
+        let body = if state.loading {
+            div()
+                .text_sm()
+                .text_color(p.muted)
+                .child("Reading ~/.ssh/config\u{2026}")
+                .into_any_element()
+        } else if let Some(err) = &state.error {
+            div()
+                .text_sm()
+                .text_color(p.fg)
+                .child(SharedString::from(err.clone()))
+                .into_any_element()
+        } else if list.is_empty() {
+            div()
+                .text_sm()
+                .text_color(p.muted)
+                .child("No hosts found in ~/.ssh/config.")
+                .into_any_element()
+        } else {
+            div()
+                .id("imp-list")
+                .flex()
+                .flex_col()
+                .gap_1()
+                .overflow_y_scroll()
+                .max_h(px(360.0))
+                .children(list)
+                .into_any_element()
+        };
+
+        div()
+            .absolute()
+            .inset_0()
+            .flex()
+            .items_center()
+            .justify_center()
+            .bg(gpui::rgba(0x00000099))
+            .child(
+                self.modal_shell(500.0, p)
+                    .child(
+                        div()
+                            .text_sm()
+                            .text_color(p.fg)
+                            .child("Import from ~/.ssh/config"),
+                    )
+                    .when(
+                        !state.loading && state.error.is_none() && !state.entries.is_empty(),
+                        |el| {
+                            el.child(
+                                div()
+                                    .flex()
+                                    .gap_2()
+                                    .child(self.btn("imp-all", "Select all", p, false).on_click(
+                                        cx.listener(|this, _: &ClickEvent, _w, cx| {
+                                            if let Some(s) = this.import.as_mut() {
+                                                s.selected = s
+                                                    .entries
+                                                    .iter()
+                                                    .map(|e| e.alias.clone())
+                                                    .collect();
+                                            }
+                                            cx.notify();
+                                        }),
+                                    ))
+                                    .child(self.btn("imp-none", "Deselect all", p, false).on_click(
+                                        cx.listener(|this, _: &ClickEvent, _w, cx| {
+                                            if let Some(s) = this.import.as_mut() {
+                                                s.selected.clear();
+                                            }
+                                            cx.notify();
+                                        }),
+                                    ))
+                                    .child(
+                                        self.btn(
+                                            "imp-conflict",
+                                            format!("On conflict: {}", conflict_label(conflict)),
+                                            p,
+                                            false,
+                                        )
+                                        .on_click(
+                                            cx.listener(|this, _: &ClickEvent, _w, cx| {
+                                                if let Some(s) = this.import.as_mut() {
+                                                    s.conflict = cycle_conflict(s.conflict);
+                                                }
+                                                cx.notify();
+                                            }),
+                                        ),
+                                    ),
+                            )
+                        },
+                    )
+                    .child(body)
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap_2()
+                            .justify_end()
+                            .pt_2()
+                            .when(!state.loading && total > 0, |el| {
+                                el.child(div().flex_1().text_xs().text_color(p.muted).child(
+                                    SharedString::from(format!(
+                                        "{selected_count} of {total} selected"
+                                    )),
+                                ))
+                            })
+                            .child(self.btn("imp-cancel", "Cancel", p, false).on_click(
+                                cx.listener(|this, _: &ClickEvent, _w, cx| {
+                                    this.import = None;
+                                    cx.notify();
+                                }),
+                            ))
+                            .child(self.btn("imp-run", "Import Selected", p, true).on_click(
+                                cx.listener(|this, _: &ClickEvent, _w, cx| this.run_import(cx)),
+                            )),
+                    ),
+            )
+            .into_any_element()
+    }
+
+    fn render_export(&self, p: &Palette, cx: &mut Context<Self>) -> gpui::AnyElement {
+        let Some(state) = self.export.as_ref() else {
+            return div().into_any_element();
+        };
+        let selected_count = state.selected.len();
+
+        let rows: Vec<gpui::AnyElement> = self
+            .hosts
+            .iter()
+            .map(|h| {
+                let id = h.id.clone();
+                let checked = state.selected.contains(&id);
+                div()
+                    .id(SharedString::from(format!("exp-{id}")))
+                    .flex()
+                    .items_center()
+                    .gap_2()
+                    .px_2()
+                    .py_1()
+                    .rounded_md()
+                    .border_1()
+                    .border_color(if checked { p.accent } else { p.border })
+                    .cursor_pointer()
+                    .child(div().w(px(14.0)).text_color(p.accent).child(if checked {
+                        "\u{2611}"
+                    } else {
+                        "\u{2610}"
+                    }))
+                    .child(div().flex_1().min_w_0().text_sm().text_color(p.fg).child(
+                        SharedString::from(format!(
+                            "{}  \u{00b7}  {}@{}:{}",
+                            h.name, h.username, h.host_address, h.port
+                        )),
+                    ))
+                    .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                        if let Some(s) = this.export.as_mut() {
+                            if !s.selected.remove(&id) {
+                                s.selected.insert(id.clone());
+                            }
+                        }
+                        cx.notify();
+                    }))
+                    .into_any_element()
+            })
+            .collect();
+
+        div()
+            .absolute()
+            .inset_0()
+            .flex()
+            .items_center()
+            .justify_center()
+            .bg(gpui::rgba(0x00000099))
+            .child(
+                self.modal_shell(500.0, p)
+                    .child(
+                        div()
+                            .text_sm()
+                            .text_color(p.fg)
+                            .child("Export to ~/.ssh/config"),
+                    )
+                    .child(
+                        div()
+                            .id("exp-list")
+                            .flex()
+                            .flex_col()
+                            .gap_1()
+                            .overflow_y_scroll()
+                            .max_h(px(360.0))
+                            .children(rows),
+                    )
+                    .when_some(state.error.clone(), |el, err| {
+                        el.child(
+                            div()
+                                .text_xs()
+                                .text_color(p.fg)
+                                .child(SharedString::from(err)),
+                        )
+                    })
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap_2()
+                            .justify_end()
+                            .pt_2()
+                            .child(
+                                div().flex_1().text_xs().text_color(p.muted).child(
+                                    SharedString::from(format!("{selected_count} selected")),
+                                ),
+                            )
+                            .child(self.btn("exp-cancel", "Cancel", p, false).on_click(
+                                cx.listener(|this, _: &ClickEvent, _w, cx| {
+                                    this.export = None;
+                                    cx.notify();
+                                }),
+                            ))
+                            .child(
+                                self.btn("exp-copy", "Copy to clipboard", p, false)
+                                    .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
+                                        this.run_export(false, cx)
+                                    })),
+                            )
+                            .child(
+                                self.btn("exp-append", "Append to ~/.ssh/config", p, true)
+                                    .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
+                                        this.run_export(true, cx)
+                                    })),
+                            ),
+                    ),
+            )
+            .into_any_element()
+    }
 }
 
 impl Render for HostManagerView {
@@ -1570,6 +2127,14 @@ impl Render for HostManagerView {
                         this.creds_open = true;
                         cx.notify();
                     })),
+            )
+            .child(
+                self.btn("import-ssh-config", "Import SSH config", &p, false)
+                    .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| this.open_import(cx))),
+            )
+            .child(
+                self.btn("export-ssh-config", "Export SSH config", &p, false)
+                    .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| this.open_export(cx))),
             );
 
         let tunnels_panel = (!self.active_tunnels.is_empty()).then(|| {
@@ -1601,6 +2166,14 @@ impl Render for HostManagerView {
         let cred_overlay = self
             .creds_open
             .then(|| self.render_credentials(&p, cx).into_any_element());
+        let import_overlay = self
+            .import
+            .is_some()
+            .then(|| self.render_import(&p, cx).into_any_element());
+        let export_overlay = self
+            .export
+            .is_some()
+            .then(|| self.render_export(&p, cx).into_any_element());
 
         div()
             .track_focus(&self.focus_handle)
@@ -1623,6 +2196,8 @@ impl Render for HostManagerView {
             )
             .children(form_overlay)
             .children(cred_overlay)
+            .children(import_overlay)
+            .children(export_overlay)
     }
 }
 
@@ -1769,6 +2344,33 @@ mod tests {
         assert!(parse_tunnels(&Some(String::new())).is_empty());
         assert!(parse_tunnels(&Some("not json".into())).is_empty());
         assert!(parse_tunnels(&Some("[]".into())).is_empty());
+    }
+
+    #[test]
+    fn conflict_policy_cycles_skip_overwrite_rename() {
+        let c = ImportConflict::Skip;
+        let c = cycle_conflict(c);
+        assert_eq!(c, ImportConflict::Overwrite);
+        let c = cycle_conflict(c);
+        assert_eq!(c, ImportConflict::Rename);
+        let c = cycle_conflict(c);
+        assert_eq!(c, ImportConflict::Skip);
+        assert_eq!(conflict_label(ImportConflict::Overwrite), "overwrite");
+    }
+
+    #[gpui::test]
+    fn export_dialog_preselects_all_known_hosts(cx: &mut TestAppContext) {
+        let (_rt, view) = make(cx);
+        cx.update(|cx| {
+            view.update(cx, |v, cx| {
+                v.hosts = vec![host_stub("a", "Alpha"), host_stub("b", "Beta")];
+                v.open_export(cx);
+                let sel = &v.export.as_ref().unwrap().selected;
+                assert_eq!(sel.len(), 2);
+                assert!(sel.contains("a") && sel.contains("b"));
+                assert_eq!(v.export_selected_ids().len(), 2);
+            });
+        });
     }
 
     #[test]

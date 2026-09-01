@@ -4,7 +4,72 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
-## Last Session: 2026-09-01 (T07-002 — Jump hosts & tunnels)
+## Last Session: 2026-09-01 (T07-003 — SSH config import/export)
+
+### What Was Done
+- **T07-003 ✅ Done.** Backend parse/import/export was already ported in
+  `crates/backend/src/modules/ssh/config_parser.rs`; this session hardened it
+  and built the UI.
+  - **`config_parser.rs`** — parser now recognises `Match` (suppresses key
+    capture until the next top-level `Host`) and `Include` (read, not
+    followed). New `ImportConflict { Skip, Overwrite, Rename }` enum;
+    `import_ssh_config_entries` gained a `conflict: ImportConflict` param and
+    now snapshots existing host names → resolves alias collisions per policy
+    (Skip = leave + still usable as a ProxyJump target, Overwrite = UPDATE the
+    mapped fields in place, Rename = insert as `alias-2`/`-3`/…). Returns the
+    ids created **or** overwritten. New `write_ssh_config_export(block, append)`
+    — atomic temp+rename write to `~/.ssh/config`, chmod 0600 on unix, `append`
+    inserts after existing content; caller gates the non-append path. +4 tests
+    (representative parse incl. wildcard/Match/Include/`=`-form/ProxyJump,
+    import+mapping+ProxyJump resolution, Skip/Overwrite/Rename, export
+    well-formedness + Import→Export→Import round-trip). backend 142→146.
+  - **`crates/ui/src/hosts.rs`** — `ImportState`/`ExportState` on
+    `HostManagerView`, free fns `cycle_conflict`/`conflict_label`. Toolbar
+    gains "Import SSH config" + "Export SSH config". Import modal: async
+    `parse_ssh_config_cmd`, per-entry checkbox rows (alias, addr:port, user,
+    auth, `via <jump>`, "already exists" marker), select/deselect all, a
+    cycling "On conflict: skip/overwrite/rename" button, `N of M selected`
+    footer, runs `import_ssh_config_entries` then toast + `reload`. Export
+    modal: host checkbox list (all pre-selected), "Copy to clipboard"
+    (`cx.write_to_clipboard`) and "Append to ~/.ssh/config"
+    (`write_ssh_config_export(_, true)`). New `modal_shell` helper. +2 tests
+    (conflict cycle, export preselects all hosts). ui 67→69.
+  - Gates: `cargo fmt --all --check`, `cargo clippy --workspace --all-targets
+    -- -D warnings`, `cargo check --workspace`, `cargo test --workspace` all
+    green.
+
+### Current State
+- Branch `master`, committed. Pre-existing unrelated `CLAUDE.md` working-tree
+  edit deliberately left uncommitted / untouched.
+
+### Next
+- **T08-001** — SFTP-Dateibrowser (`tasks/phase-07-sftp/`). Deps T07-001,
+  T04-001/2, T05-001 (all done).
+
+### Notes / Quirks (T07-003)
+- Conflict policy is **global** for the import batch (one toggle), not
+  per-row — matches the task's overwrite/skip/rename wording without a
+  per-entry UI. The reference dialog only *warns* on duplicates (by
+  `address:port`); this port keys conflicts by **alias/name** and actually
+  acts on them.
+- Rename collision suffix is `-2`, `-3`, … (there is no UNIQUE constraint on
+  `hosts.name`; rename is best-effort cosmetic dedup).
+- Overwrite updates only the mapped fields (host_address, port, username,
+  auth_method, private_key_path) — never touches group, credential, tags,
+  tunnels of the existing row.
+- `write_ssh_config_export` is only ever called with `append = true` from the
+  UI (the task warns against silent overwrite). The `append = false` branch
+  exists but is unused — wire it to an explicit "replace file" action if ever
+  needed.
+- No test writes to the real `~/.ssh/config`; the file writer is covered by
+  the export-text generator + round-trip parse instead.
+- IdentityFile → stored as a path on the host (`auth_method = "key"`,
+  `private_key_path`), never imported as a credential — matches the task note
+  ("kein Klartext von Key-Inhalten").
+
+---
+
+## Previous Session: 2026-09-01 (T07-002 — Jump hosts & tunnels)
 
 ### What Was Done
 - **T07-002 ✅ Done.** Backend jump-host routing + local-forward tunnels
