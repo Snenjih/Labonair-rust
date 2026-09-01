@@ -1,7 +1,7 @@
 # T04-001: Tab-Leiste und Tab-Verwaltung
 
 ## Status
-⏳ Pending
+✅ Done
 
 ## Phase
 3 — Tab-System & Workspace-Layout

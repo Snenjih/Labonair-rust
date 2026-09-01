@@ -1,6 +1,6 @@
 //! GPUI terminal renderer (T03-002).
 //!
-//! [`TerminalView`] is the GPUI entity that turns a [`TerminalSession`]'s
+//! [`TerminalView`] is the GPUI entity that turns a registry session's
 //! [`RenderableScreen`] snapshots into a visible, interactive terminal surface:
 //!
 //! * cells are drawn as batched style runs ([`labonair_terminal::batch_runs`]),
@@ -24,6 +24,7 @@
 
 use std::time::Duration;
 
+use gpui::prelude::FluentBuilder;
 use gpui::{
     div, px, App, ClipboardItem, Context, Entity, FocusHandle, Focusable, FontWeight, Hsla,
     InteractiveElement, IntoElement, KeyDownEvent, Keystroke, MouseButton, MouseDownEvent,
@@ -33,8 +34,8 @@ use gpui::{
 use labonair_terminal::{
     batch_runs, grid_size, key_to_bytes, mouse_report, paste_payload, wheel_action, CursorShape,
     Key, KeyInput, ModeState, Modifiers, MouseButton as TermMouseButton, MouseEventKind,
-    MouseInput, NamedKey, RenderableScreen, Rgb, Scroll, SessionOptions, StyledRun, TermDimensions,
-    TerminalColors, TerminalEvent, TerminalSession, WheelAction, WheelInput,
+    MouseInput, NamedKey, RenderableScreen, Rgb, Scroll, SessionHandle, SessionStatus, StyledRun,
+    TermDimensions, TerminalColors, TerminalEvent, WheelAction, WheelInput,
 };
 
 use crate::background::{BackgroundStore, LayerScope};
@@ -44,12 +45,19 @@ use crate::theme::ThemeStore;
 const POLL_INTERVAL: Duration = Duration::from_millis(16);
 
 /// A running terminal, rendered with GPUI.
+///
+/// The terminal session itself lives in the shared [`TerminalRegistry`]
+/// (T03-005) and is reached through a cheap [`SessionHandle`] — the view only
+/// renders it and forwards input. Switching which tab is visible never touches
+/// the session, so background terminals keep running (T04-001).
+///
+/// [`TerminalRegistry`]: labonair_terminal::TerminalRegistry
 pub struct TerminalView {
     theme: Entity<ThemeStore>,
     background: Entity<BackgroundStore>,
     focus_handle: FocusHandle,
-    /// `Ok` once the shell spawned; `Err` keeps the failure message for display.
-    session: Result<TerminalSession, String>,
+    /// Handle to this tab's session in the registry.
+    handle: SessionHandle,
     /// Grid size last pushed to the engine, to avoid redundant resizes.
     grid: (usize, usize),
     /// Cell (width, height) in pixels from the last render — used to map mouse
@@ -61,26 +69,21 @@ pub struct TerminalView {
 }
 
 impl TerminalView {
-    /// Spawn a local shell and start rendering it.
+    /// Render the registry session behind `handle`.
     pub fn new(
+        handle: SessionHandle,
         theme: Entity<ThemeStore>,
         background: Entity<BackgroundStore>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
-        let colors = TerminalColors::from_theme(theme.read(cx).theme());
-        let dims = TermDimensions::new(80, 24);
-        let session = TerminalSession::spawn(colors, dims, SessionOptions::default());
-
         let focus_handle = cx.focus_handle();
         window.focus(&focus_handle);
 
         // Re-color the running shell when the theme changes.
         cx.observe(&theme, |this, theme, cx| {
-            if let Ok(session) = &this.session {
-                let colors = TerminalColors::from_theme(theme.read(cx).theme());
-                let _ = session.set_colors(colors);
-            }
+            let colors = TerminalColors::from_theme(theme.read(cx).theme());
+            let _ = this.handle.set_colors(colors);
             cx.notify();
         })
         .detach();
@@ -91,10 +94,7 @@ impl TerminalView {
         let poll = cx.spawn(async move |view, cx| loop {
             cx.background_executor().timer(POLL_INTERVAL).await;
             let keep_going = view.update(cx, |this, cx| {
-                let Ok(session) = &this.session else {
-                    return false;
-                };
-                let events = session.drain_events();
+                let events = this.handle.drain_events();
                 if events.is_empty() {
                     return true;
                 }
@@ -113,7 +113,7 @@ impl TerminalView {
             theme,
             background,
             focus_handle,
-            session: session.map_err(|e| format!("failed to start shell: {e}")),
+            handle,
             grid: (80, 24),
             cell_size: (8.0, 16.0),
             drag_anchor: None,
@@ -121,28 +121,33 @@ impl TerminalView {
         }
     }
 
+    /// The session this view renders.
+    pub fn handle(&self) -> &SessionHandle {
+        &self.handle
+    }
+
+    /// Focus the terminal surface (called by the workspace on tab switch).
+    pub fn focus(&self, window: &mut Window) {
+        window.focus(&self.focus_handle);
+    }
+
     /// The shell's current working directory (OSC 7 shell integration), if
     /// known. Surfaced to the status bar / breadcrumb and used as the starting
     /// directory for new tabs (Phase 03).
     pub fn cwd(&self) -> Option<String> {
-        self.session.as_ref().ok().and_then(|s| s.cwd())
+        self.handle.with(|s| s.cwd())
     }
 
     /// The process/window title set via OSC 0/2, if any.
     pub fn shell_title(&self) -> Option<String> {
-        self.session
-            .as_ref()
-            .ok()
-            .and_then(|s| s.metadata().ok())
-            .and_then(|m| m.title)
+        self.handle
+            .with(|s| s.metadata().ok().and_then(|m| m.title))
     }
 
     /// The current terminal mode snapshot (falls back to defaults on error).
     fn mode(&self) -> ModeState {
-        self.session
-            .as_ref()
-            .ok()
-            .and_then(|s| s.mode_state().ok())
+        self.handle
+            .with(|s| s.mode_state().ok())
             .unwrap_or_default()
     }
 
@@ -160,10 +165,8 @@ impl TerminalView {
     }
 
     fn copy_selection(&self, cx: &mut Context<Self>) {
-        if let Ok(session) = &self.session {
-            if let Ok(Some(text)) = session.selection_text() {
-                cx.write_to_clipboard(ClipboardItem::new_string(text));
-            }
+        if let Ok(Some(text)) = self.handle.with(|s| s.selection_text()) {
+            cx.write_to_clipboard(ClipboardItem::new_string(text));
         }
     }
 
@@ -180,21 +183,15 @@ impl TerminalView {
     }
 
     fn scroll_lines(&self, delta: i32) {
-        if let Ok(session) = &self.session {
-            let _ = session.scroll(Scroll::Delta(delta));
-        }
+        let _ = self.handle.with(|s| s.scroll(Scroll::Delta(delta)));
     }
 
     fn snap_to_bottom(&self) {
-        if let Ok(session) = &self.session {
-            let _ = session.scroll(Scroll::Bottom);
-        }
+        let _ = self.handle.with(|s| s.scroll(Scroll::Bottom));
     }
 
     fn send_input(&self, bytes: &[u8]) {
-        if let Ok(session) = &self.session {
-            let _ = session.write(bytes);
-        }
+        let _ = self.handle.write(bytes);
     }
 }
 
@@ -224,16 +221,10 @@ impl Render for TerminalView {
         let bg = to_hsla(colors.background, 1.0);
         let fg = to_hsla(colors.foreground, 1.0);
 
-        if let Err(message) = &self.session {
-            return div()
-                .size_full()
-                .bg(bg)
-                .text_color(fg)
-                .font(base_font)
-                .p_4()
-                .child(SharedString::from(message.clone()))
-                .into_any_element();
-        }
+        let exited = match self.handle.status() {
+            SessionStatus::Running => None,
+            SessionStatus::Exited(code) => Some(code),
+        };
 
         self.cell_size = (cell_w, cell_h);
 
@@ -247,33 +238,29 @@ impl Render for TerminalView {
         );
         if (cols, rows) != self.grid {
             self.grid = (cols, rows);
-            if let Ok(session) = &mut self.session {
-                let _ = session.resize(TermDimensions {
-                    columns: cols,
-                    screen_lines: rows,
-                    cell_width: cell_w.round().max(1.0) as u16,
-                    cell_height: cell_h as u16,
-                });
-            }
-        }
-
-        let screen: RenderableScreen = self
-            .session
-            .as_ref()
-            .expect("session present")
-            .render()
-            .unwrap_or_else(|_| RenderableScreen {
+            let _ = self.handle.resize(TermDimensions {
                 columns: cols,
                 screen_lines: rows,
-                display_offset: 0,
-                cursor: labonair_terminal::RenderableCursor {
-                    line: 0,
-                    column: 0,
-                    shape: CursorShape::Block,
-                },
-                cells: Vec::new(),
-                selection: Vec::new(),
+                cell_width: cell_w.round().max(1.0) as u16,
+                cell_height: cell_h as u16,
             });
+        }
+
+        let screen: RenderableScreen =
+            self.handle
+                .with(|s| s.render())
+                .unwrap_or_else(|_| RenderableScreen {
+                    columns: cols,
+                    screen_lines: rows,
+                    display_offset: 0,
+                    cursor: labonair_terminal::RenderableCursor {
+                        line: 0,
+                        column: 0,
+                        shape: CursorShape::Block,
+                    },
+                    cells: Vec::new(),
+                    selection: Vec::new(),
+                });
 
         // Background image overlay (only when the target is Terminal-only;
         // App/Both is painted window-wide by the app root instead).
@@ -367,9 +354,7 @@ impl Render for TerminalView {
                     } else {
                         // Native selection: anchor here, clear any old selection.
                         this.drag_anchor = Some(cell);
-                        if let Ok(session) = &this.session {
-                            let _ = session.clear_selection();
-                        }
+                        let _ = this.handle.with(|s| s.clear_selection());
                     }
                     cx.notify();
                 }),
@@ -382,9 +367,7 @@ impl Render for TerminalView {
                     return;
                 }
                 let head = this.cell_at(ev.position);
-                if let Ok(session) = &this.session {
-                    let _ = session.update_selection(anchor, head);
-                }
+                let _ = this.handle.with(|s| s.update_selection(anchor, head));
                 cx.notify();
             }))
             .on_mouse_up(
@@ -467,9 +450,7 @@ impl Render for TerminalView {
                     if let Some(bytes) = key_to_bytes(&input, &this.mode()) {
                         this.send_input(&bytes);
                         this.snap_to_bottom();
-                        if let Ok(session) = &this.session {
-                            let _ = session.clear_selection();
-                        }
+                        let _ = this.handle.with(|s| s.clear_selection());
                         cx.notify();
                     }
                 }
@@ -478,6 +459,23 @@ impl Render for TerminalView {
             .children(selection_elements)
             .children(cursor_element)
             .children(background_layer)
+            .when_some(exited, |el, code| {
+                el.child(
+                    div()
+                        .absolute()
+                        .bottom_0()
+                        .left_0()
+                        .right_0()
+                        .px_3()
+                        .py_1()
+                        .bg(with_alpha(fg, 0.08))
+                        .text_color(fg)
+                        .text_size(px(font_px))
+                        .child(SharedString::from(format!(
+                            "Shell exited ({code}) — press \u{2318}W to close this tab"
+                        ))),
+                )
+            })
             .into_any_element()
     }
 }

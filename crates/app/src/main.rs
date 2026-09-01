@@ -2,17 +2,21 @@ use gpui::{
     div, prelude::*, px, size, App, Application, Bounds, Entity, Window, WindowBounds,
     WindowOptions,
 };
+use std::sync::Arc;
+
 use labonair_backend::{App as Backend, AppEvent};
-use labonair_ui::{BackgroundStore, LayerScope, TerminalView, ThemeStore};
+use labonair_terminal::TerminalRegistry;
+use labonair_ui::{BackgroundStore, LayerScope, ThemeStore, Workspace};
 use tokio::sync::broadcast::error::RecvError;
 use tracing_subscriber::EnvFilter;
 
-/// Root view of the Labonair window. Currently hosts a single interactive
-/// terminal; the real tabbed app shell arrives in Phase 03 (T04-003).
+/// Root view of the Labonair window: hosts the tabbed [`Workspace`] shell
+/// (T04-001). The full window chrome (header, statusbar, sidebar) arrives in
+/// T04-003.
 struct Root {
     theme: Entity<ThemeStore>,
     background: Entity<BackgroundStore>,
-    terminal: Entity<TerminalView>,
+    workspace: Entity<Workspace>,
 }
 
 impl Root {
@@ -24,12 +28,13 @@ impl Root {
     ) -> Self {
         cx.observe(&theme, |_, _, cx| cx.notify()).detach();
         cx.observe(&background, |_, _, cx| cx.notify()).detach();
-        let terminal =
-            cx.new(|cx| TerminalView::new(theme.clone(), background.clone(), window, cx));
+        let registry = Arc::new(TerminalRegistry::new());
+        let workspace =
+            cx.new(|cx| Workspace::new(registry, theme.clone(), background.clone(), window, cx));
         Self {
             theme,
             background,
-            terminal,
+            workspace,
         }
     }
 }
@@ -42,7 +47,7 @@ impl Render for Root {
             .relative()
             .size_full()
             .bg(bg)
-            .child(self.terminal.clone())
+            .child(self.workspace.clone())
             .children(background_layer)
     }
 }

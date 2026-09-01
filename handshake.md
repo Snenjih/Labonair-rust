@@ -4,7 +4,48 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
-## Last Session: 2026-09-01 (T02-006 — terminal/app background images)
+## Last Session: 2026-09-01 (T04-001 — tab bar & tab management)
+
+### What Was Done
+- **T04-001 ✅ Done.** Wired the T03-005 `TerminalRegistry` into the UI and built the tabbed workspace shell (pure Rust + GPUI, ported from `reference-src/src/modules/tabs/`).
+  - **`crates/ui/src/tabs.rs`** (new) — the tab data model + `TabStore` GPUI entity:
+    - `TabKind` (Home / Workspace / Editor / Preview / AiDiff / Sftp / GitGraph / GitDiff / CommitDiff) with `indicator()` glyph + `default_title()`. `TabData` = flat optional bag (session_id, cwd, process_title, path, host_id, repo_path, url) documented per-kind — deliberately not a per-kind enum so later phases add fields without churn. `Tab { id, kind, title, custom_title, dirty, peek, data }` with `label()` mirroring the reference `labelFor` (custom title → process title → cwd basename → fallback) and `needs_close_confirm()` (dirty editor).
+    - `TabStore { tabs: Vec<Tab>, active_id, next_id }`, `EventEmitter<ActiveTabChanged>`. Ops: `open`/`open_workspace`, `set_active`, `cycle(forward)`, `close` (Home + last-tab guarded, returns removed `Tab` so caller tears down its session, active→left-neighbour like reference `closeTab`), `close_others`, `close_by_kind`, `reorder(dragged,target)` (array-move like reference `reorderTabs`), `tabs_by_kind`, field mutators (`set_title`/`set_custom_title`/`set_dirty`/`set_peek`/`set_path`), `sync_workspace_meta`. Every mutation `cx.notify()`s.
+    - 7 `#[gpui::test]`s: add/switch/close, close-active→left-neighbour, last-tab+Home unclosable, title/label resolution, reorder, dirty-editor confirm flag, tabs_by_kind + close_by_kind.
+  - **`crates/ui/src/workspace.rs`** (new) — `Workspace` GPUI entity: owns `Arc<TerminalRegistry>`, `Entity<TabStore>`, `HashMap<tab_id, Entity<TerminalView>>` (content views kept alive across switches — session lives in the registry regardless).
+    - `open_terminal_tab`: inherits cwd from the active terminal's `.cwd()`, `registry.create(...)`, `open_workspace`, builds a `TerminalView` from the `SessionHandle`.
+    - Close: `request_close` → dirty editor shows an inline confirm overlay (`confirm_close: Option<u64>`), else `do_close` → `TabStore::close` + `registry.close(session_id)` (no orphaned shells) + drop cached view + `focus_active`.
+    - Tab bar render: horizontal `overflow_x_scroll()` strip, per-tab pill (indicator glyph + truncated `label()` + dirty dot + hover close ✕), active tab uses `theme.accent()`, `+` button. Drag-reorder via `on_drag(DraggedTab{id,label})` + `TabDragPreview` render view + `drag_over::<DraggedTab>` left-border highlight (live feedback) + `on_drop` → `TabStore::reorder`. Middle-click closes; right-click opens a context menu (`context_menu: Option<(u64, Point)>`) with Close / Close Others / Close All Of This Type + full-window click-catcher to dismiss.
+    - Content area: active Workspace tab → its cached `TerminalView`; every other kind → `placeholder("… — coming in a later phase")`.
+    - Keyboard (`on_key_down` on the workspace root, bubbled up from the focused terminal which returns `None` for Cmd combos): Cmd-T new, Cmd-W close (with confirm), Cmd-Shift-] / Cmd-Shift-[ next/prev; `cx.stop_propagation()` on each. Full configurability is Phase 12.
+    - `_meta_sync` background task (400 ms) reads each terminal's `cwd()`/`shell_title()` into its tab via `sync_workspace_meta` so tab labels track the shell.
+  - **`crates/ui/src/terminal.rs`** — `TerminalView` no longer spawns its own `TerminalSession`; `new()` now takes a `SessionHandle` (registry-backed). All session calls go through `handle` (`handle.with(|s| …)` for scroll/selection/mode/render/metadata, `handle.write`, `handle.resize`, `handle.set_colors`, `handle.drain_events`). Dropped the `Result<TerminalSession,String>` + spawn-failure render branch (registry owns spawn now). Added `handle()`, `focus(&mut Window)`, and a bottom "Shell exited (code) — press ⌘W to close" overlay when `handle.status()` is `Exited`.
+  - **`crates/app/src/main.rs`** — `Root` now creates `Arc<TerminalRegistry>` + `Entity<Workspace>` instead of a bare `TerminalView`; renders the workspace full-window under the app-level background layer.
+  - **`crates/ui/Cargo.toml`** — added `tracing` (workspace) dep. **`crates/ui/src/lib.rs`** — `pub mod tabs; pub mod workspace;` + re-exports `Tab`, `TabData`, `TabKind`, `TabStore`, `Workspace`.
+- **GPUI API used (gpui 0.2.2, verified in source):** `InteractiveElement::on_drag<T,W: Render>(value, Fn(&T, Point<Pixels>, &mut Window, &mut App) -> Entity<W>)` — build the preview with `cx.new(...)` on the `&mut App`; `InteractiveElement::drag_over<S: 'static>(Fn(StyleRefinement, &S, &mut Window, &mut App) -> StyleRefinement)`; `InteractiveElement::on_drop<T: 'static>(Fn(&T, &mut Window, &mut App))` — `cx.listener(...)` matches this signature directly (it returns `impl Fn(&E, &mut Window, &mut App)`); `ElementId: From<(&'static str, u64)>` (tuple ids with a `u64` work — no `usize` cast needed); `Styled`/FluentBuilder `when_some(Option<T>, FnOnce(Self,T)->Self)` needs `use gpui::prelude::FluentBuilder`; `ClickEvent` has **no** `stop_propagation` — use `cx.stop_propagation()`; `cx.new()` in a non-`Context` spot (`&mut App`) needs `use gpui::AppContext`.
+- **Design note:** split-pane workspace tabs (multiple sessions per tab, `PaneNode` tree) are **T04-002** — a Workspace tab here owns exactly one session. Tab/Session separation from the reference is kept: closing/switching tabs never pauses a session, the registry is the sole session owner.
+- **Verified:** `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`, `cargo build --bin labonair` — all green. Counts: 126 backend, 1 app_state, 22 theme, **25 ui (+7)**, 62 terminal. Not visually run — user should `cargo run` and check: `+`/Cmd-T opens a new terminal tab (inherits cwd), tab click/Cmd-Shift-brackets switch, ✕/Cmd-W/middle-click close, drag to reorder, right-click menu, background terminals keep running while another tab is visible, closing a terminal tab kills its shell (no zombie).
+
+### Current State
+- Branch `master`, ~18 unpushed commits + this one. `crates/ui` owns the tab model + workspace shell; `TerminalView` is now registry-backed.
+- Pre-existing uncommitted `CLAUDE.md` edit (not ours) — left untouched & excluded from this commit, flag to user.
+- `reference-src/` untouched.
+
+### Known limitations (not blockers)
+- One session per Workspace tab (splits = T04-002). No tab rename UI yet (`set_custom_title` exists, no inline `<input>` equivalent) — reference has it; deferred with the rest of the tab polish.
+- Tab-bar overflow is a plain `overflow_x_scroll` (no sliding-pill animation, no scroll-active-into-view). Context menu is a hand-rolled panel (no `gpui-component` menu primitive in the workspace yet).
+- The "shell exited" overlay is informational only — no in-place restart button (registry `SessionHandle::restart` exists; wire a KeepTerminal screen in a later polish pass).
+- Editor/Sftp/Git/etc. tab kinds render a placeholder; their content + interactive creation come with their phases.
+
+### What's Next
+- **T04-002** `tasks/phase-03-tabs-workspace/T04-002-split-pane-layout-workspace.md` — split-pane layout & workspace (`PaneNode` tree, multiple sessions per tab). Dep: T04-001 (done).
+
+### Blockers
+- None.
+
+---
+
+## Session: 2026-09-01 (T02-006 — terminal/app background images)
 
 ### What Was Done
 - **T02-006 ✅ Done.** Full parity port of the reference `backgrounds` feature (import/list/delete + opacity/blur/tint/fit/target), pure Rust + GPUI.
