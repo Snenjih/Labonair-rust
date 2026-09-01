@@ -7,6 +7,7 @@ pub mod background;
 pub mod diff;
 pub mod editor;
 pub mod explorer;
+pub mod git;
 pub mod hosts;
 pub mod menu;
 pub mod notifications;
@@ -28,6 +29,7 @@ pub use background::{
 pub use diff::{DiffLayout, DiffView};
 pub use editor::{EditorEvent, EditorView};
 pub use explorer::{DraggedPaths, ExplorerView};
+pub use git::GitPanelView;
 pub use hosts::{HostManagerEvent, HostManagerView, HostStatus};
 pub use labonair_theme::{ThemeFile, ThemeFileVariant};
 pub use menu::init as init_menus;

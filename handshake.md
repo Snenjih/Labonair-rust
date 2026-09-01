@@ -4,7 +4,105 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
-## Last Session: 2026-09-01 (T08-002 — SFTP transfers upload/download/queue)
+## Last Session: 2026-09-01 (T09-001 — Source-Control panel: Git status & staging)
+
+### What Was Done
+- **T09-001 ✅ Done.** The backend git module
+  (`crates/backend/src/modules/git/`, ~2200 lines, `git` CLI wrapper — no
+  libgit2) was already fully ported + tested (146 backend tests incl. a
+  live hunk-apply smoke test). This task is the GPUI Source-Control panel
+  that wires it up.
+  - **`crates/ui/src/git.rs`** (new, ~1160 lines incl. 12 tests) —
+    `GitPanelView` GPUI entity.
+    - Pure helpers ported from `source-control/lib/diffHunks.ts`:
+      `parse_diff_hunks` / `build_hunk_patch` / `is_whole_file_single_hunk`
+      (unified-diff → per-file hunk structs; truncated diffs return `[]`;
+      CRLF content bytes preserved). Plus `validate_commit_message`,
+      `status_letter`, `bucketize` (dedupes conflicted entries that the
+      porcelain parser files into both staged+unstaged — mirrors
+      `SourceControlPanel.tsx`).
+    - Polls `git_is_repo` → `git_get_repo_root` → `git_get_workspace_state`
+      (the batched bundle) every 2s (×3 for remote). Generation guard
+      (`target_gen`, bumped only on genuine root/session change) +
+      `refreshing` flag so a stale response can't overwrite a newer
+      target's state — direct port of `useGitStatus.ts`'s
+      `generationRef`/`isRefreshingRef`.
+    - Renders: action bar (Refresh / Stage all ⇄ Unstage all / Discard /
+      Clean), unified-diff preview for the selected file (own lightweight
+      renderer — `DiffView` from T06-004 wants two texts, not a unified
+      diff string; hunk staging needs the raw unified diff anyway), file
+      list categorised Conflicts / Staged / Changes / Untracked
+      (collapsible, status-letter badge + colour, per-row stage/unstage +
+      discard, click-to-preview), branch bar (branch, ↑ahead/↓behind,
+      Fetch/Pull/Push/Publish/Force + merge/rebase/cherry-pick banner with
+      Continue/Abort), commit form (key-input message box, ⌘/Ctrl-Enter or
+      button, non-empty + something-staged validation).
+    - Hunk staging: `apply_hunk(idx, reverse)` → `parse_diff_hunks` on the
+      loaded diff → `build_hunk_patch` → `git_stage_hunk`/`git_unstage_hunk`
+      (`git apply --cached [--reverse]`). Falls back to whole-file
+      `git_stage_file`/`git_unstage_file` for new/deleted files
+      (`is_whole_file_single_hunk`).
+    - Force-push uses `git_push_force_with_lease` and requires an explicit
+      second click ("Force" → "Confirm force"); never automated.
+    - All backend calls dispatched via `self.tokio.spawn`, results folded
+      back with `cx.spawn` + `this.update`; errors → `notify_err` toast;
+      every mutating op refreshes on completion.
+  - **`crates/ui/src/app_shell.rs`** — owns `git_panel:
+    Entity<GitPanelView>`, constructed in `new` (needs `backend` +
+    `tokio`, so `Workspace::new` now takes `backend.clone()`/
+    `tokio.clone()`). `render_panel_body` routes
+    `SidebarPanel::SourceControl` → the panel. An `observe(&workspace)`
+    forwards the active terminal cwd into `git_panel.set_root` (same
+    pattern as the explorer).
+  - **`crates/ui/src/lib.rs`** — `pub mod git` + `pub use
+    git::GitPanelView`.
+  - Gates: `cargo fmt --all --check`, `cargo clippy --workspace
+    --all-targets -- -D warnings`, `cargo check --workspace`, `cargo test
+    --workspace` all green. ui tests 83 → 95.
+
+### Notes / Quirks (T09-001)
+- **Rust string `\` line-continuation strips the leading space of the
+  next line** — that space is the diff *context-line* marker, so test
+  fixtures must be built with `[...].join("\n")`, not a `"...\n\` literal.
+  (Cost ~20 min: the CRLF fixtures silently lost their context markers.)
+- `git_get_workspace_state` / all `git_*` fns take `(path, session_id:
+  Option<String>, sftp_state: &SshState, app: App)` — call as
+  `git::fn(root, sid, &backend.ssh, backend.clone())`. Local repo →
+  `session_id: None`.
+- `git_push_force_with_lease` takes `remote: Option<String>, branch:
+  Option<String>` (not bare `String` like `git_push_set_upstream`).
+- The panel currently targets **local repos only** (`session_id` field
+  exists + `set_session` is wired, but nothing calls it yet — remote-repo
+  Source Control needs the active SSH tab's session id plumbed from the
+  workspace, a thin follow-up).
+- **No new integration test** — the backend git module already has
+  full coverage (status parsing, stage/unstage, hunk apply/unapply
+  end-to-end against a throwaway repo, stale-patch classification). The
+  UI seams (`parse_diff_hunks`, `build_hunk_patch`,
+  `is_whole_file_single_hunk`, `validate_commit_message`, `status_letter`,
+  `bucketize`, `short_path`) are unit-tested in `git.rs` (12 tests,
+  fixtures byte-mirrored from `diffHunks.test.ts`).
+- FS-watcher-driven refresh is **not** wired — the 2s poll (matching the
+  reference default `gitStatusPollIntervalMs`) covers external changes.
+  `app.watcher` exists for a later precision pass.
+- No tree view / sort options / stash dialog / branch dropdown — those are
+  T09-002 (branch + stash) and the reference's `SourceControlActionBar`
+  dropdown extras.
+
+### Current State
+- Branch `master`, committed. Pre-existing unrelated `CLAUDE.md` working-tree
+  edit deliberately left uncommitted / untouched.
+
+### Next
+- **T09-002 — Branch management & stash** (`tasks/phase-08-git-ui/
+  T09-002-branch-stash.md`): branch dropdown/switch/create/delete/rename +
+  stash push/list/pop/apply/drop UI. Backend fns already exist
+  (`git_checkout_branch`, `git_create_branch`, `git_stash_*`, …). Hook the
+  stash/branch UI into `GitPanelView`'s branch bar + action bar.
+
+---
+
+## Prev Session: 2026-09-01 (T08-002 — SFTP transfers upload/download/queue)
 
 ### What Was Done
 - **T08-002 ✅ Done.** The backend transfer worker

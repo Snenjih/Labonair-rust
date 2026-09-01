@@ -1,7 +1,7 @@
 # T09-001: Source-Control-Panel (Git-Status und Staging)
 
 ## Status
-⏳ Pending
+✅ Done
 
 ## Phase
 8 — Git-UI & Source-Control

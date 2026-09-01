@@ -32,6 +32,7 @@ use tokio::runtime::Handle as TokioHandle;
 
 use crate::background::{BackgroundStore, LayerScope};
 use crate::explorer::ExplorerView;
+use crate::git::GitPanelView;
 use crate::menu;
 use crate::notifications::{self, NotificationCenter};
 use crate::pane::SplitAxis;
@@ -115,6 +116,7 @@ pub struct AppShell {
     notifications: Entity<NotificationCenter>,
     workspace: Entity<Workspace>,
     explorer: Entity<ExplorerView>,
+    git_panel: Entity<GitPanelView>,
     sidebar_open: bool,
     sidebar_width: f32,
     active_panel: SidebarPanel,
@@ -159,13 +161,16 @@ impl AppShell {
                 registry,
                 theme.clone(),
                 background.clone(),
-                backend,
-                tokio,
+                backend.clone(),
+                tokio.clone(),
                 window,
                 cx,
             )
         });
         cx.observe(&workspace, |_, _, cx| cx.notify()).detach();
+
+        let git_panel = cx.new(|cx| GitPanelView::new(backend, tokio, theme.clone(), cx));
+        cx.observe(&git_panel, |_, _, cx| cx.notify()).detach();
 
         let explorer = cx.new(|cx| ExplorerView::new(theme.clone(), workspace.clone(), cx));
         cx.observe(&explorer, |_, _, cx| cx.notify()).detach();
@@ -188,6 +193,18 @@ impl AppShell {
             }
         })
         .detach();
+        cx.observe(&workspace, {
+            let git_panel = git_panel.clone();
+            move |_, workspace, cx| {
+                let cwd = workspace.read(cx).active_cwd(cx);
+                git_panel.update(cx, |g, cx| g.set_root(cwd, cx));
+            }
+        })
+        .detach();
+        {
+            let cwd = workspace.read(cx).active_cwd(cx);
+            git_panel.update(cx, |g, cx| g.set_root(cwd, cx));
+        }
 
         // Persist the final window geometry on close (the throttled per-render
         // save covers force-quit within the last second).
@@ -204,6 +221,7 @@ impl AppShell {
             notifications,
             workspace,
             explorer,
+            git_panel,
             sidebar_open: true,
             sidebar_width: SIDEBAR_DEFAULT,
             active_panel: SidebarPanel::Explorer,
@@ -598,6 +616,9 @@ impl AppShell {
     fn render_panel_body(&self, panel: SidebarPanel, cx: &mut Context<Self>) -> gpui::AnyElement {
         if panel == SidebarPanel::Explorer {
             return self.explorer.clone().into_any_element();
+        }
+        if panel == SidebarPanel::SourceControl {
+            return self.git_panel.clone().into_any_element();
         }
         let muted = self.theme.read(cx).muted_foreground();
         div()
