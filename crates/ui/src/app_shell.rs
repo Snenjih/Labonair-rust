@@ -49,7 +49,7 @@ use crate::git_graph::GitGraphView;
 use crate::menu;
 use crate::notifications::{self, NotificationCenter};
 use crate::pane::SplitAxis;
-use crate::settings::{PreferencesStore, SettingsView};
+use crate::settings::{open_settings_window, set_settings_deps, PreferencesStore, SettingsTab};
 use crate::snippets::SnippetsView;
 use crate::theme::{ThemePreference, ThemeStore};
 use crate::updater::UpdaterView;
@@ -117,7 +117,6 @@ pub struct AppShell {
     ai_chat: Entity<AiChatView>,
     command_palette: Entity<CommandPalette>,
     prefs: Entity<PreferencesStore>,
-    settings: Entity<SettingsView>,
     updater: Entity<UpdaterView>,
     backend: Backend,
     tokio: TokioHandle,
@@ -278,17 +277,9 @@ impl AppShell {
             // Apply the persisted keyboard-shortcut overrides (T13-004).
             crate::menu::apply_keybinds(cx, &p.keybinds);
         }
-        let settings = cx.new(|cx| {
-            SettingsView::new(
-                prefs.clone(),
-                theme.clone(),
-                background.clone(),
-                backend.clone(),
-                tokio.clone(),
-                cx,
-            )
-        });
-        cx.observe(&settings, |_, _, cx| cx.notify()).detach();
+        // Publish the shared handles the settings window (its own OS window,
+        // T16-009) builds from — it is opened lazily on `Cmd+,`.
+        set_settings_deps(prefs.clone(), backend.clone(), tokio.clone(), cx);
 
         // Auto-updater (T15-005). Kicks a quiet background check at startup when
         // the `checkForUpdates` preference is on (6 h backoff inside the store).
@@ -406,7 +397,6 @@ impl AppShell {
             ai_chat,
             command_palette,
             prefs,
-            settings,
             updater,
             backend: backend.clone(),
             tokio: tokio.clone(),
@@ -448,10 +438,19 @@ impl AppShell {
     fn act_open_settings(
         &mut self,
         _: &menu::OpenSettings,
-        window: &mut Window,
+        _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.settings.update(cx, |s, cx| s.toggle(window, cx));
+        open_settings_window(None, cx);
+    }
+
+    fn act_open_ai_settings(
+        &mut self,
+        _: &menu::AiSettings,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        open_settings_window(Some(SettingsTab::Ai), cx);
     }
 
     fn act_check_for_updates(
@@ -997,9 +996,9 @@ impl AppShell {
                         .border_1()
                         .border_color(border)
                         .child(item("Settings", "am-settings".into()).on_click(cx.listener(
-                            |this, _: &ClickEvent, window, cx| {
+                            |this, _: &ClickEvent, _window, cx| {
                                 this.app_menu_open = false;
-                                this.settings.update(cx, |s, cx| s.open(window, cx));
+                                open_settings_window(None, cx);
                             },
                         )))
                         .child(item("Keyboard Shortcuts", "am-shortcuts".into()).on_click(
@@ -1010,9 +1009,9 @@ impl AppShell {
                         ))
                         .child(
                             item("Themes\u{2026}", "am-themes".into()).on_click(cx.listener(
-                                |this, _: &ClickEvent, window, cx| {
+                                |this, _: &ClickEvent, _window, cx| {
                                     this.app_menu_open = false;
-                                    this.settings.update(cx, |s, cx| s.open(window, cx));
+                                    open_settings_window(Some(SettingsTab::Themes), cx);
                                 },
                             )),
                         ),
@@ -2455,6 +2454,7 @@ impl Render for AppShell {
             .on_action(cx.listener(Self::act_command_palette))
             .on_action(cx.listener(Self::act_open_path_bookmarks))
             .on_action(cx.listener(Self::act_open_settings))
+            .on_action(cx.listener(Self::act_open_ai_settings))
             .on_action(cx.listener(Self::act_check_for_updates))
             .when(can_split, |d| {
                 d.on_action(cx.listener(Self::act_split_right))
@@ -2489,7 +2489,6 @@ impl Render for AppShell {
             .children(background_layer)
             .child(self.command_palette.clone())
             .child(self.bookmarks.clone())
-            .child(self.settings.clone())
             .child(self.updater.clone())
             .children(bar_menu)
             .children(crumb_menu)

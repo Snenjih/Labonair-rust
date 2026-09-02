@@ -22,10 +22,13 @@ use std::path::{Path, PathBuf};
 
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, px, App, ClickEvent, ClipboardItem, Context, Entity, FocusHandle, Focusable, Global,
-    InteractiveElement, IntoElement, KeyDownEvent, ParentElement, PathPromptOptions, Render,
-    SharedString, StatefulInteractiveElement, Styled, Window,
+    anchored, deferred, div, point, px, size, App, AppContext, Bounds, ClickEvent, ClipboardItem,
+    Context, Entity, FocusHandle, Focusable, Global, InteractiveElement, IntoElement, KeyDownEvent,
+    ParentElement, PathPromptOptions, Pixels, Point, Render, SharedString,
+    StatefulInteractiveElement, Styled, TitlebarOptions, Window, WindowBounds, WindowHandle,
+    WindowKind, WindowOptions,
 };
+use gpui_component::Root;
 use serde_json::Value;
 use tokio::runtime::Handle as TokioHandle;
 
@@ -62,6 +65,198 @@ use crate::theme::{ThemePreference, ThemeStore};
 pub struct GlobalPreferences(pub Preferences);
 
 impl Global for GlobalPreferences {}
+
+// ─────────────────────────── Settings OS window ──────────────────────────
+
+/// The 10 top-level settings sections, in the reference sidebar order
+/// (`reference-src/src/settings/SettingsApp.tsx`). Deep-link targets from the
+/// menu / command palette / `labonair:settings-tab` equivalent map onto these.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum SettingsTab {
+    General,
+    Appearance,
+    Themes,
+    Terminal,
+    Editor,
+    FileManager,
+    Connections,
+    Workspace,
+    Shortcuts,
+    Ai,
+}
+
+impl SettingsTab {
+    /// Index into [`CATEGORIES`].
+    fn category_index(self) -> usize {
+        let name = match self {
+            SettingsTab::General => "General",
+            SettingsTab::Appearance => CAT_APPEARANCE,
+            SettingsTab::Themes => "Themes",
+            SettingsTab::Terminal => "Terminal",
+            SettingsTab::Editor => "Editor",
+            SettingsTab::FileManager => "File Manager",
+            SettingsTab::Connections => "Connections",
+            SettingsTab::Workspace => "Workspace",
+            SettingsTab::Shortcuts => KEYBOARD,
+            SettingsTab::Ai => "AI",
+        };
+        CATEGORIES.iter().position(|c| *c == name).unwrap_or(0)
+    }
+
+    /// Port of the reference deep-link aliases (`SettingsApp.tsx`): `models |
+    /// agents | connections | directives → ai`, `bookmarks | command-palette |
+    /// source-control | layout → workspace/appearance`, …
+    pub fn from_deep_link(slug: &str) -> Option<Self> {
+        Some(match slug {
+            "general" => SettingsTab::General,
+            "appearance" | "layout" => SettingsTab::Appearance,
+            "themes" => SettingsTab::Themes,
+            "terminal" => SettingsTab::Terminal,
+            "editor" => SettingsTab::Editor,
+            "file-manager" => SettingsTab::FileManager,
+            "remote-connections" | "connections" => SettingsTab::Connections,
+            "workspace" | "bookmarks" | "command-palette" | "source-control" => {
+                SettingsTab::Workspace
+            }
+            "shortcuts" => SettingsTab::Shortcuts,
+            "models" | "agents" | "ai" | "directives" | "security" => SettingsTab::Ai,
+            _ => return None,
+        })
+    }
+}
+
+/// Shared handles the settings window needs, published by `AppShell` once at
+/// startup (the window is opened lazily, possibly long after `AppShell::new`).
+#[derive(Clone)]
+struct SettingsDeps {
+    prefs: Entity<PreferencesStore>,
+    backend: Backend,
+    tokio: TokioHandle,
+}
+
+impl Global for SettingsDeps {}
+
+/// The live settings window, if one is open. Checked on every open request so a
+/// second invocation focuses the existing window instead of duplicating it.
+#[derive(Default)]
+struct SettingsWindowRef {
+    handle: Option<WindowHandle<Root>>,
+}
+
+impl Global for SettingsWindowRef {}
+
+/// The section a pending deep-link wants to show. `SettingsView` observes this
+/// global so an already-open window jumps to the requested tab.
+#[derive(Clone, Copy, Default)]
+struct SettingsTarget(Option<SettingsTab>);
+
+impl Global for SettingsTarget {}
+
+/// Publish the shared handles the settings window builds from. Call once from
+/// `AppShell::new` after the [`PreferencesStore`] exists.
+pub fn set_settings_deps(
+    prefs: Entity<PreferencesStore>,
+    backend: Backend,
+    tokio: TokioHandle,
+    cx: &mut App,
+) {
+    cx.set_global(SettingsDeps {
+        prefs,
+        backend,
+        tokio,
+    });
+}
+
+/// Window bounds: 860 logical px wide, height = 80 % of the primary display
+/// clamped to `[580, 900]` — a straight port of `settings_window_size()` in
+/// `reference-src/src-tauri/src/lib.rs`.
+fn settings_bounds(cx: &mut App) -> Bounds<gpui::Pixels> {
+    let display_h = cx
+        .primary_display()
+        .map(|d| f32::from(d.bounds().size.height))
+        .unwrap_or(1000.0);
+    let h = (display_h * 0.8).clamp(580.0, 900.0);
+    Bounds::centered(None, size(px(860.0), px(h)), cx)
+}
+
+/// Open the settings window, or focus it if it is already open, optionally
+/// deep-linking to `tab`. Replaces the old in-`AppShell` modal overlay
+/// (T16-009). The window destroys on close and is cheaply rebuilt on the next
+/// open (GPUI 0.2.2 has no per-window hide); shared state lives in the
+/// [`PreferencesStore`] / theme / background entities, so nothing is lost.
+pub fn open_settings_window(tab: Option<SettingsTab>, cx: &mut App) {
+    cx.set_global(SettingsTarget(tab));
+
+    let existing = cx.try_global::<SettingsWindowRef>().and_then(|w| w.handle);
+    if let Some(handle) = existing {
+        if handle
+            .update(cx, |_, window, _| window.activate_window())
+            .is_ok()
+        {
+            cx.activate(true);
+            return;
+        }
+        // Stale handle (window was closed) — fall through and open a fresh one.
+        cx.set_global(SettingsWindowRef { handle: None });
+    }
+
+    let Some(deps) = cx.try_global::<SettingsDeps>().cloned() else {
+        tracing::warn!("settings deps not published; cannot open settings window");
+        return;
+    };
+
+    let bounds = settings_bounds(cx);
+    let opened = cx.open_window(
+        WindowOptions {
+            window_bounds: Some(WindowBounds::Windowed(bounds)),
+            titlebar: Some(TitlebarOptions {
+                title: Some("Settings".into()),
+                appears_transparent: true,
+                traffic_light_position: Some(point(px(19.0), px((44.0 - 14.0) / 2.0))),
+            }),
+            window_min_size: Some(size(px(720.0), px(480.0))),
+            kind: WindowKind::Normal,
+            is_movable: true,
+            ..Default::default()
+        },
+        move |window, cx| {
+            let theme = crate::theme::theme_store(cx);
+            let background = crate::background::background_store(cx);
+            let view = cx.new(|cx| {
+                let mut v = SettingsView::new(
+                    deps.prefs.clone(),
+                    theme,
+                    background,
+                    deps.backend.clone(),
+                    deps.tokio.clone(),
+                    cx,
+                );
+                v.windowed = true;
+                v.open = true;
+                if let Some(SettingsTarget(Some(tab))) = cx.try_global::<SettingsTarget>().copied()
+                {
+                    v.active_cat = tab.category_index();
+                }
+                v.refresh_themes();
+                v.refresh_mcp_status(cx);
+                window.focus(&v.focus);
+                v
+            });
+            let view: gpui::AnyView = view.into();
+            cx.new(|cx| Root::new(view, window, cx))
+        },
+    );
+
+    match opened {
+        Ok(handle) => {
+            cx.set_global(SettingsWindowRef {
+                handle: Some(handle),
+            });
+            cx.activate(true);
+        }
+        Err(e) => tracing::error!("failed to open settings window: {e}"),
+    }
+}
 
 // ─────────────────────────── Preferences store ───────────────────────────
 
@@ -167,22 +362,25 @@ pub struct FieldDef {
     pub kind: FieldKind,
 }
 
+/// The "AI Agent Bridge" (MCP) sub-section — rendered inside the `Connections`
+/// pane, matching `reference-src/src/settings/sections/ConnectionsSection.tsx`
+/// (it used to be a wrong top-level entry).
 pub const AGENT_BRIDGE: &str = "AI Agent Bridge";
-pub const KEYBOARD: &str = "Keyboard Shortcuts";
+pub const KEYBOARD: &str = "Shortcuts";
+pub const CAT_APPEARANCE: &str = "Appearance & Layout";
 
+/// The 10 top-level settings sections, matching the reference sidebar order.
 pub const CATEGORIES: &[&str] = &[
     "General",
-    "Appearance",
+    CAT_APPEARANCE,
+    "Themes",
     "Terminal",
     "Editor",
     "File Manager",
     "Connections",
-    "Command Palette",
-    "Source Control",
-    "Bookmarks",
-    "AI",
+    "Workspace",
     KEYBOARD,
-    AGENT_BRIDGE,
+    "AI",
 ];
 
 // ─────────────────────────── keybind mutation (pure) ─────────────────────────
@@ -283,14 +481,14 @@ pub const FIELDS: &[FieldDef] = &[
         "appFontFamily",
         "UI font family",
         "Font used for all application UI text (empty = system default).",
-        "Appearance",
+        CAT_APPEARANCE,
         Text,
     ),
     d(
         "appFontSize",
         "App font size",
         "Base UI font size in points.",
-        "Appearance",
+        CAT_APPEARANCE,
         Int {
             min: 9,
             max: 24,
@@ -301,56 +499,56 @@ pub const FIELDS: &[FieldDef] = &[
         "reduceMotion",
         "Reduce motion",
         "Minimise animations and transitions.",
-        "Appearance",
+        CAT_APPEARANCE,
         Switch,
     ),
     d(
         "appCornerRadius",
         "Corner radius",
         "Rounding of panels and cards (px).",
-        "Appearance",
+        CAT_APPEARANCE,
         Int { min: 0, max: 20, step: 1 },
     ),
     d(
         "tabsLocation",
         "Tab bar location",
         "Where the tab strip lives.",
-        "Appearance",
+        CAT_APPEARANCE,
         Select(&["titlebar", "sidebar"]),
     ),
     d(
         "sidebarGroupByFolder",
         "Group sidebar tabs by folder",
         "Group tabs that share a working directory.",
-        "Appearance",
+        CAT_APPEARANCE,
         Switch,
     ),
     d(
         "sidebarGroupSingleTabs",
         "Group single tabs too",
         "Also show a group header for a lone tab.",
-        "Appearance",
+        CAT_APPEARANCE,
         Switch,
     ),
     d(
         "badgesAlwaysVisible",
         "Always show badges",
         "Keep count badges visible even at zero.",
-        "Appearance",
+        CAT_APPEARANCE,
         Switch,
     ),
     d(
         "zenModeShowHeader",
         "Show header bar",
         "Show the window header bar (zen mode off).",
-        "Appearance",
+        CAT_APPEARANCE,
         Switch,
     ),
     d(
         "zenModeShowStatusbar",
         "Show status bar",
         "Show the bottom status bar (zen mode off).",
-        "Appearance",
+        CAT_APPEARANCE,
         Switch,
     ),
     // Terminal
@@ -587,14 +785,14 @@ pub const FIELDS: &[FieldDef] = &[
         "commandPaletteSearchMode",
         "Search mode",
         "How the palette matches your query.",
-        "Command Palette",
+        "Workspace",
         Select(&["contains", "startsWith", "fuzzy"]),
     ),
     d(
         "commandPaletteShowRecent",
         "Show recent",
         "Surface recently-run commands first.",
-        "Command Palette",
+        "Workspace",
         Switch,
     ),
     // Source Control
@@ -602,7 +800,7 @@ pub const FIELDS: &[FieldDef] = &[
         "gitStatusPollIntervalMs",
         "Status poll interval",
         "How often to refresh git status (ms).",
-        "Source Control",
+        "Workspace",
         Int {
             min: 500,
             max: 30_000,
@@ -1013,42 +1211,42 @@ pub const FIELDS: &[FieldDef] = &[
         "commandPaletteBlur",
         "Background blur",
         "Backdrop blur behind the palette (px).",
-        "Command Palette",
+        "Workspace",
         Int { min: 0, max: 20, step: 1 },
     ),
     d(
         "commandPaletteOpacity",
         "Palette opacity",
         "Opacity of the palette surface (%).",
-        "Command Palette",
+        "Workspace",
         Int { min: 60, max: 100, step: 1 },
     ),
     d(
         "commandPalettePosition",
         "Open position",
         "Vertical position the palette opens at.",
-        "Command Palette",
+        "Workspace",
         Select(&["top", "high", "center"]),
     ),
     d(
         "commandPaletteAnimation",
         "Animation speed",
         "Open/close animation speed.",
-        "Command Palette",
+        "Workspace",
         Select(&["fast", "normal", "slow", "none"]),
     ),
     d(
         "commandPaletteHistorySize",
         "Recent history size",
         "How many recent commands to remember.",
-        "Command Palette",
+        "Workspace",
         Int { min: 3, max: 20, step: 1 },
     ),
     d(
         "commandPaletteCloseOnOverlayClick",
         "Close on outside click",
         "Dismiss the palette when clicking outside it.",
-        "Command Palette",
+        "Workspace",
         Switch,
     ),
     // ── Bookmarks (added T16-011) ──────────────────────────────────────
@@ -1056,49 +1254,49 @@ pub const FIELDS: &[FieldDef] = &[
         "bookmarksEnabled",
         "Enable path bookmarks",
         "Show the bookmarks bar-item and jump targets.",
-        "Bookmarks",
+        "Workspace",
         Switch,
     ),
     d(
         "bookmarksActionNewTerminal",
         "Open in new terminal",
         "Offer 'open in a new terminal' for a bookmark.",
-        "Bookmarks",
+        "Workspace",
         Switch,
     ),
     d(
         "bookmarksActionCurrentTerminal",
         "Open in current terminal",
         "Offer 'cd in the current terminal' for a bookmark.",
-        "Bookmarks",
+        "Workspace",
         Switch,
     ),
     d(
         "bookmarksActionCurrentSftp",
         "Open in current SFTP manager",
         "Offer 'go to path in the current file manager'.",
-        "Bookmarks",
+        "Workspace",
         Switch,
     ),
     d(
         "bookmarksActionNewSftp",
         "Open in new SFTP tab",
         "Offer 'open the path in a new file-manager tab'.",
-        "Bookmarks",
+        "Workspace",
         Switch,
     ),
     d(
         "bookmarksPrimaryClickBehavior",
         "Primary click opens",
         "What a plain click on a bookmark does.",
-        "Bookmarks",
+        "Workspace",
         Select(&["current", "new"]),
     ),
     d(
         "bookmarksShowBadge",
         "Show bookmark count badge",
         "Show the number of bookmarks on the bar-item.",
-        "Bookmarks",
+        "Workspace",
         Switch,
     ),
     // ── AI (added T16-011) ────────────────────────────────────────────
@@ -1190,6 +1388,254 @@ const fn d(
     }
 }
 
+/// Sub-section layout per top-level category, mirroring the group headers in
+/// `reference-src/src/settings/sections/*`. `render_grouped` walks these in
+/// order; any field not named here still renders under a trailing "Other".
+type FieldGroup = (&'static str, &'static [&'static str]);
+pub const SECTION_GROUPS: &[(&str, &[FieldGroup])] = &[
+    (
+        "General",
+        &[
+            (
+                "Startup",
+                &["defaultStartupTab", "startupTerminalCount", "autostart"],
+            ),
+            (
+                "Session Restore",
+                &[
+                    "sessionRestore",
+                    "sessionScrollbackLines",
+                    "scrollbackMaxSizeMb",
+                    "scrollbackRetentionDays",
+                ],
+            ),
+            ("Window", &["restoreWindowState"]),
+            ("Security", &["credentialEncryption"]),
+            ("Quit", &["confirmQuitWithSsh"]),
+            ("Updates", &["checkForUpdates"]),
+            ("Notifications", &["notifyOnErrors"]),
+        ],
+    ),
+    (
+        "Terminal",
+        &[
+            (
+                "Shell",
+                &[
+                    "terminalShell",
+                    "terminalDefaultPath",
+                    "newTabInheritsCwd",
+                    "confirmCloseTerminalTab",
+                ],
+            ),
+            (
+                "Font",
+                &[
+                    "terminalFontFamily",
+                    "terminalFontSize",
+                    "terminalFontWeight",
+                ],
+            ),
+            (
+                "Cursor",
+                &[
+                    "terminalCursorStyle",
+                    "terminalCursorBlink",
+                    "terminalCursorBlinkInterval",
+                ],
+            ),
+            (
+                "Layout",
+                &["terminalShowPaneHeader", "terminalShowPaneFooter"],
+            ),
+            (
+                "Composer & Blocks",
+                &[
+                    "terminalComposerEnabled",
+                    "terminalComposerHistoryPopup",
+                    "terminalComposerArgumentCompletion",
+                    "terminalBlocksEnabled",
+                    "terminalBlocksAutoCollapseOnAltScreen",
+                ],
+            ),
+            ("Bell", &["terminalBell"]),
+            ("Buffer", &["terminalScrollback"]),
+            (
+                "Input",
+                &[
+                    "terminalCopyOnSelect",
+                    "terminalRightClickPastes",
+                    "terminalWordSeparator",
+                ],
+            ),
+            (
+                "Scrolling",
+                &["terminalScrollSensitivity", "terminalFastScrollModifier"],
+            ),
+            ("Appearance", &["terminalOpacity"]),
+        ],
+    ),
+    (
+        "Editor",
+        &[
+            ("Keybindings", &["vimMode", "editorRelativeLineNumbers"]),
+            ("Theme", &["editorTheme"]),
+            ("Font", &["editorFontFamily", "editorFontSize"]),
+            (
+                "Behaviour",
+                &[
+                    "editorFormatOnSave",
+                    "editorAutoSave",
+                    "editorAutoSaveDelay",
+                    "editorTabSize",
+                ],
+            ),
+            ("Indentation", &["editorIndentWithTabs"]),
+            ("Files", &["editorMaxFileSizeMb"]),
+            (
+                "Display",
+                &[
+                    "editorLineNumbers",
+                    "editorWordWrap",
+                    "editorBracketMatching",
+                    "editorShowCursorPosition",
+                    "editorShowSelectionStats",
+                    "editorShowOutline",
+                    "editorIndentationGuides",
+                ],
+            ),
+            (
+                "On Save",
+                &["editorTrimTrailingWhitespace", "editorInsertFinalNewline"],
+            ),
+            ("AI Completion", &["editorAutocompleteDebounceMs"]),
+        ],
+    ),
+    (
+        "File Manager",
+        &[
+            (
+                "Browsing",
+                &[
+                    "sftpShowHiddenFiles",
+                    "sftpShowUpFolder",
+                    "explorerShowHiddenByDefault",
+                ],
+            ),
+            (
+                "Columns",
+                &[
+                    "sftpColumnSize",
+                    "sftpColumnModified",
+                    "sftpColumnPermissions",
+                    "sftpColumnType",
+                ],
+            ),
+            (
+                "Remote Editing",
+                &[
+                    "sftpRemoteEditShowTransfers",
+                    "sftpMaxRemoteFileSizeMb",
+                    "sftpFontSize",
+                ],
+            ),
+            (
+                "Transfers",
+                &[
+                    "sftpMaxConcurrentTransfers",
+                    "sftpDefaultConflictResolution",
+                    "sftpChunkSizeKb",
+                    "sftpOnFolderFileError",
+                ],
+            ),
+        ],
+    ),
+    (
+        "Connections",
+        &[
+            ("Host Availability", &["hostPingInterval"]),
+            (
+                "SSH Terminal Sessions",
+                &[
+                    "sshConnectTimeoutSecs",
+                    "sshAutoReconnect",
+                    "sshAutoReconnectDelay",
+                    "sshAutoReconnectMaxAttempts",
+                ],
+            ),
+            (
+                "Remote File Browsing",
+                &[
+                    "explorerRemotePollInterval",
+                    "explorerAutoReconnect",
+                    "explorerIdleSessionTimeoutMin",
+                    "explorerMaxIdleSessions",
+                    "explorerMaxCachedRemoteScopes",
+                ],
+            ),
+        ],
+    ),
+    (
+        "Workspace",
+        &[
+            (
+                "Bookmarks",
+                &[
+                    "bookmarksEnabled",
+                    "bookmarksActionNewTerminal",
+                    "bookmarksActionCurrentTerminal",
+                    "bookmarksActionCurrentSftp",
+                    "bookmarksActionNewSftp",
+                    "bookmarksPrimaryClickBehavior",
+                    "bookmarksShowBadge",
+                ],
+            ),
+            (
+                "Command Palette",
+                &[
+                    "commandPaletteBlur",
+                    "commandPaletteOpacity",
+                    "commandPalettePosition",
+                    "commandPaletteAnimation",
+                    "commandPaletteShowRecent",
+                    "commandPaletteHistorySize",
+                    "commandPaletteSearchMode",
+                    "commandPaletteCloseOnOverlayClick",
+                ],
+            ),
+            ("Source Control", &["gitStatusPollIntervalMs"]),
+        ],
+    ),
+    (
+        "AI",
+        &[
+            (
+                "Defaults",
+                &[
+                    "defaultModelId",
+                    "autocompleteEnabled",
+                    "autocompleteProvider",
+                    "autocompleteModelId",
+                ],
+            ),
+            ("General", &["aiEnabled", "aiWarnDestructiveCommands"]),
+            (
+                "Behaviour",
+                &[
+                    "aiAutoOpenMiniOnSend",
+                    "aiNotifyOnHeadlessCommand",
+                    "aiMaxAgentSteps",
+                    "aiTemperature",
+                    "aiTerminalContextLines",
+                    "aiShellMaxTimeoutSecs",
+                    "aiShellMaxOutputKb",
+                ],
+            ),
+            ("Agents & Directives", &["customInstructions"]),
+        ],
+    ),
+];
+
 // ─────────────────────────────── Settings view ───────────────────────────
 
 struct EditState {
@@ -1229,7 +1675,19 @@ pub struct SettingsView {
     /// A captured combination that collides with another shortcut, awaiting
     /// the user's overwrite / cancel decision.
     kb_conflict: Option<KbConflict>,
+    /// `true` when this view is the root of its own OS window (T16-009); `false`
+    /// for the legacy in-`AppShell` modal path (kept for tests only).
+    windowed: bool,
+    /// An open `Select` dropdown (key + anchor position + options), drawn as a
+    /// deferred floating layer so it escapes the scroll clip.
+    dropdown: Option<SelectMenu>,
     focus: FocusHandle,
+}
+
+struct SelectMenu {
+    key: &'static str,
+    options: &'static [&'static str],
+    at: Point<Pixels>,
 }
 
 struct KbConflict {
@@ -1250,6 +1708,16 @@ impl SettingsView {
         cx.observe(&prefs, |_, _, cx| cx.notify()).detach();
         cx.observe(&theme, |_, _, cx| cx.notify()).detach();
         cx.observe(&background, |_, _, cx| cx.notify()).detach();
+        // Deep-link: jump to the requested tab when another part of the app
+        // asks for a specific settings section while this window is open.
+        cx.observe_global::<SettingsTarget>(|this, cx| {
+            if let Some(SettingsTarget(Some(tab))) = cx.try_global::<SettingsTarget>().copied() {
+                this.active_cat = tab.category_index();
+                this.search.clear();
+                cx.notify();
+            }
+        })
+        .detach();
         Self {
             prefs,
             theme,
@@ -1266,6 +1734,8 @@ impl SettingsView {
             active_theme_id: None,
             recording: None,
             kb_conflict: None,
+            windowed: false,
+            dropdown: None,
             focus: cx.focus_handle(),
         }
     }
@@ -1290,6 +1760,20 @@ impl SettingsView {
         self.open = false;
         self.editing = None;
         cx.notify();
+    }
+
+    /// Close request from Esc / the header close button. In windowed mode this
+    /// destroys the OS window (GPUI 0.2.2 has no per-window hide); the shared
+    /// [`PreferencesStore`] keeps all persistent state so the next open is
+    /// instant and lossless.
+    fn request_close(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.windowed {
+            cx.set_global(SettingsWindowRef { handle: None });
+            self.editing = None;
+            window.remove_window();
+        } else {
+            self.close(cx);
+        }
     }
 
     pub fn toggle(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -1619,18 +2103,6 @@ impl SettingsView {
         self.set_pref(key, Value::from(next), cx);
     }
 
-    fn cycle_select(&mut self, key: &str, options: &[&str], cx: &mut Context<Self>) {
-        let cur = self
-            .prefs
-            .read(cx)
-            .value(key)
-            .and_then(|v| v.as_str().map(str::to_string))
-            .unwrap_or_default();
-        let idx = options.iter().position(|o| *o == cur).unwrap_or(0);
-        let next = options[(idx + 1) % options.len()];
-        self.set_pref(key, Value::String(next.to_string()), cx);
-    }
-
     fn begin_edit(&mut self, key: &str, numeric: bool, cx: &mut Context<Self>) {
         let buffer = self
             .prefs
@@ -1707,7 +2179,7 @@ impl SettingsView {
         }
 
         match key {
-            "escape" => self.close(cx),
+            "escape" => self.request_close(window, cx),
             "backspace" => {
                 self.search.pop();
                 cx.notify();
@@ -1726,6 +2198,69 @@ impl SettingsView {
     }
 
     // ── rendering ─────────────────────────────────────────────────────────
+
+    /// The floating options list for an open `Select` (T16-010). Rendered as a
+    /// `deferred` + `anchored` layer so it is not clipped by the scroll area,
+    /// with a transparent full-window backdrop that dismisses it.
+    fn render_dropdown(&self, c: &Palette, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
+        let menu = self.dropdown.as_ref()?;
+        let key = menu.key;
+        let cur = self
+            .prefs
+            .read(cx)
+            .value(key)
+            .and_then(|v| v.as_str().map(str::to_string))
+            .unwrap_or_default();
+        let list = anchored().position(menu.at).snap_to_window().child(
+            div()
+                .id("dropdown-list")
+                .occlude()
+                .min_w(px(180.0))
+                .max_h(px(320.0))
+                .overflow_y_scroll()
+                .flex()
+                .flex_col()
+                .p_1()
+                .rounded_md()
+                .bg(c.card)
+                .border_1()
+                .border_color(c.border)
+                .children(menu.options.iter().map(|opt| {
+                    let opt = *opt;
+                    let selected = opt == cur;
+                    div()
+                        .id(SharedString::from(format!("opt-{key}-{opt}")))
+                        .px_2()
+                        .py(px(4.0))
+                        .rounded_sm()
+                        .text_size(px(11.5))
+                        .text_color(if selected { c.fg } else { c.muted })
+                        .when(selected, |d| d.bg(c.accent))
+                        .when(!selected, |d| d.hover(|s| s.bg(c.border)))
+                        .child(SharedString::from(opt))
+                        .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                            this.dropdown = None;
+                            this.set_pref(key, Value::String(opt.to_string()), cx);
+                        }))
+                })),
+        );
+        Some(
+            deferred(
+                div()
+                    .absolute()
+                    .inset_0()
+                    .child(div().id("dropdown-backdrop").absolute().inset_0().on_click(
+                        cx.listener(|this, _: &ClickEvent, _w, cx| {
+                            this.dropdown = None;
+                            cx.notify();
+                        }),
+                    ))
+                    .child(list),
+            )
+            .with_priority(200)
+            .into_any_element(),
+        )
+    }
 
     fn render_field(
         &self,
@@ -1796,18 +2331,35 @@ impl SettingsView {
                     .value(key)
                     .and_then(|v| v.as_str().map(str::to_string))
                     .unwrap_or_default();
+                let is_open = self.dropdown.as_ref().is_some_and(|d| d.key == key);
                 div()
                     .id(SharedString::from(format!("sel-{key}")))
+                    .min_w(px(160.0))
+                    .flex()
+                    .items_center()
+                    .justify_between()
+                    .gap_2()
                     .px_2()
-                    .py(px(3.0))
+                    .py(px(4.0))
                     .rounded_sm()
                     .border_1()
-                    .border_color(c.border)
+                    .border_color(if is_open { c.accent } else { c.border })
                     .bg(c.bg)
                     .text_color(c.fg)
-                    .child(SharedString::from(format!("{cur}  \u{25BE}")))
-                    .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
-                        this.cycle_select(key, options, cx);
+                    .text_size(px(11.5))
+                    .child(SharedString::from(cur))
+                    .child(div().text_color(c.muted).child("\u{25BE}"))
+                    .on_click(cx.listener(move |this, ev: &ClickEvent, _w, cx| {
+                        if this.dropdown.as_ref().is_some_and(|d| d.key == key) {
+                            this.dropdown = None;
+                        } else {
+                            this.dropdown = Some(SelectMenu {
+                                key,
+                                options,
+                                at: ev.position(),
+                            });
+                        }
+                        cx.notify();
                     }))
                     .into_any_element()
             }
@@ -2098,122 +2650,7 @@ impl SettingsView {
             }),
         );
 
-        // Theme list.
-        let active_id = self.active_theme_id.clone();
-        let theme_rows: Vec<_> = self
-            .theme_files
-            .iter()
-            .map(|t| {
-                let id = t.id.clone();
-                let id_del = t.id.clone();
-                let is_active = active_id.as_deref() == Some(t.id.as_str())
-                    || (active_id.is_none() && t.id == "default");
-                let builtin = t.builtin;
-                div()
-                    .flex()
-                    .items_center()
-                    .justify_between()
-                    .gap_2()
-                    .py_1p5()
-                    .border_b_1()
-                    .border_color(c.border)
-                    .child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .gap_2()
-                            .child(div().size(px(10.0)).rounded_full().bg(if is_active {
-                                c.accent
-                            } else {
-                                c.border
-                            }))
-                            .child(
-                                div()
-                                    .text_color(c.fg)
-                                    .child(SharedString::from(t.name.clone())),
-                            )
-                            .when(builtin, |d| {
-                                d.child(
-                                    div()
-                                        .text_size(px(10.0))
-                                        .text_color(c.muted)
-                                        .child("built-in"),
-                                )
-                            }),
-                    )
-                    .child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .gap_1()
-                            .child(
-                                div()
-                                    .id(SharedString::from(format!("theme-use-{}", t.id)))
-                                    .px_2()
-                                    .py(px(2.0))
-                                    .rounded_sm()
-                                    .border_1()
-                                    .border_color(c.border)
-                                    .text_color(c.fg)
-                                    .hover(|s| s.bg(c.border))
-                                    .child(if is_active { "Active" } else { "Activate" })
-                                    .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
-                                        this.activate_theme(&id, cx);
-                                    })),
-                            )
-                            .when(!builtin, |d| {
-                                d.child(
-                                    div()
-                                        .id(SharedString::from(format!("theme-del-{}", id_del)))
-                                        .px_2()
-                                        .py(px(2.0))
-                                        .rounded_sm()
-                                        .border_1()
-                                        .border_color(c.border)
-                                        .text_color(c.muted)
-                                        .hover(|s| s.text_color(c.fg))
-                                        .child("Delete")
-                                        .on_click(cx.listener(
-                                            move |this, _: &ClickEvent, _w, cx| {
-                                                this.delete_theme(&id_del, cx);
-                                            },
-                                        )),
-                                )
-                            }),
-                    )
-            })
-            .collect();
-
-        let theme_actions = div()
-            .flex()
-            .gap_2()
-            .py_2()
-            .child(
-                div()
-                    .id("theme-import")
-                    .px_2()
-                    .py(px(3.0))
-                    .rounded_sm()
-                    .border_1()
-                    .border_color(c.border)
-                    .text_color(c.fg)
-                    .hover(|s| s.bg(c.border))
-                    .child("Import theme\u{2026}")
-                    .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| this.import_theme(cx))),
-            )
-            .child(
-                div()
-                    .id("theme-export")
-                    .px_2()
-                    .py(px(3.0))
-                    .rounded_sm()
-                    .border_1()
-                    .border_color(c.border)
-                    .text_color(c.fg)
-                    .hover(|s| s.bg(c.border))
-                    .child("Export active theme\u{2026}")
-                    .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| this.export_theme(cx))),
-            );
+        // (Theme cards moved to the dedicated "Themes" pane — `render_themes`.)
 
         // Background image tiles.
         let mut tiles = div().flex().flex_wrap().gap_2().py_2();
@@ -2279,9 +2716,6 @@ impl SettingsView {
             .flex_col()
             .child(section_label("Color scheme", c))
             .child(scheme)
-            .child(section_label("Themes", c))
-            .child(div().flex().flex_col().children(theme_rows))
-            .child(theme_actions)
             .child(section_label("Background image", c))
             .child(tiles);
 
@@ -2546,47 +2980,380 @@ impl SettingsView {
 
     fn render_body(&mut self, c: &Palette, cx: &mut Context<Self>) -> gpui::AnyElement {
         let query = self.search.trim().to_lowercase();
-        if CATEGORIES[self.active_cat] == KEYBOARD {
+        if CATEGORIES[self.active_cat] == KEYBOARD && query.is_empty() {
             return self.render_shortcuts(&query, c, cx);
         }
         if !query.is_empty() {
-            let matches: Vec<&FieldDef> = FIELDS
-                .iter()
-                .filter(|f| {
-                    f.title.to_lowercase().contains(&query)
-                        || f.category.to_lowercase().contains(&query)
-                })
-                .collect();
-            if matches.is_empty() {
+            // Global search: results grouped by their top-level section, a port
+            // of the reference `SearchResults` layout.
+            let mut root = div().flex().flex_col();
+            let mut any = false;
+            for &cat in CATEGORIES {
+                let matches: Vec<&FieldDef> = FIELDS
+                    .iter()
+                    .filter(|f| {
+                        f.category == cat
+                            && (f.title.to_lowercase().contains(&query)
+                                || f.desc.to_lowercase().contains(&query)
+                                || f.key.to_lowercase().contains(&query))
+                    })
+                    .collect();
+                if matches.is_empty() {
+                    continue;
+                }
+                any = true;
+                root = root.child(section_label(cat, c)).children(
+                    matches
+                        .into_iter()
+                        .map(|f| self.render_field(f, c, cx))
+                        .collect::<Vec<_>>(),
+                );
+            }
+            if !any {
                 return div()
                     .p_4()
                     .text_color(c.muted)
                     .child("No matching settings.")
                     .into_any_element();
             }
-            return div()
-                .flex()
-                .flex_col()
-                .children(matches.into_iter().map(|f| self.render_field(f, c, cx)))
-                .into_any_element();
+            return root.into_any_element();
         }
 
         let cat = CATEGORIES[self.active_cat];
-        if cat == AGENT_BRIDGE {
-            return self.render_agent_bridge(c, cx);
+        match cat {
+            "General" => return self.render_general(c, cx),
+            "Themes" => return self.render_themes(c, cx),
+            _ if cat == CAT_APPEARANCE => return self.render_appearance(c, cx),
+            "Connections" => {
+                return div()
+                    .flex()
+                    .flex_col()
+                    .child(self.render_grouped(cat, c, cx))
+                    .child(section_label(AGENT_BRIDGE, c))
+                    .child(self.render_agent_bridge(c, cx))
+                    .into_any_element();
+            }
+            _ => {}
         }
-        if cat == "Appearance" {
-            return self.render_appearance(c, cx);
+        self.render_grouped(cat, c, cx)
+    }
+
+    /// Conditional-row visibility — a port of the reference's `hidden` /
+    /// `show_if` predicates (e.g. `sessionScrollbackLines` only when
+    /// `sessionRestore`). An unknown key is always visible.
+    fn field_visible(&self, key: &str, cx: &App) -> bool {
+        let p = self.prefs.read(cx).get();
+        match key {
+            "sessionScrollbackLines" | "scrollbackMaxSizeMb" | "scrollbackRetentionDays" => {
+                p.session_restore
+            }
+            "terminalCursorBlinkInterval" => p.terminal_cursor_blink,
+            "terminalComposerHistoryPopup" | "terminalComposerArgumentCompletion" => {
+                p.terminal_composer_enabled
+            }
+            "terminalBlocksAutoCollapseOnAltScreen" => p.terminal_blocks_enabled,
+            "editorAutoSaveDelay" => p.editor_auto_save != "off",
+            "sshAutoReconnectDelay" | "sshAutoReconnectMaxAttempts" => p.ssh_auto_reconnect,
+            "explorerIdleSessionTimeoutMin"
+            | "explorerMaxIdleSessions"
+            | "explorerMaxCachedRemoteScopes" => p.explorer_auto_reconnect,
+            "autocompleteProvider" | "autocompleteModelId" => p.autocomplete_enabled,
+            "bookmarksActionNewTerminal"
+            | "bookmarksActionCurrentTerminal"
+            | "bookmarksActionCurrentSftp"
+            | "bookmarksActionNewSftp"
+            | "bookmarksPrimaryClickBehavior"
+            | "bookmarksShowBadge" => p.bookmarks_enabled,
+            "commandPaletteHistorySize" => p.command_palette_show_recent,
+            _ => true,
         }
+    }
+
+    /// Render a category's fields, split into the reference sub-sections
+    /// (`SECTION_GROUPS`); any field not listed in a group falls through to a
+    /// trailing "Other" block so nothing is ever silently dropped.
+    fn render_grouped(&self, cat: &str, c: &Palette, cx: &mut Context<Self>) -> gpui::AnyElement {
+        let groups = SECTION_GROUPS
+            .iter()
+            .find(|(g, _)| *g == cat)
+            .map(|(_, g)| *g)
+            .unwrap_or(&[]);
+        let mut placed: Vec<&str> = Vec::new();
+        let mut root = div().flex().flex_col();
+        for (label, keys) in groups {
+            placed.extend(keys.iter().copied());
+            let defs: Vec<&FieldDef> = keys
+                .iter()
+                .filter_map(|k| FIELDS.iter().find(|f| f.key == *k && f.category == cat))
+                .filter(|f| self.field_visible(f.key, cx))
+                .collect();
+            if defs.is_empty() {
+                continue;
+            }
+            root = root.child(section_label(label, c)).children(
+                defs.into_iter()
+                    .map(|f| self.render_field(f, c, cx))
+                    .collect::<Vec<_>>(),
+            );
+        }
+        let leftover: Vec<&FieldDef> = FIELDS
+            .iter()
+            .filter(|f| {
+                f.category == cat && !placed.contains(&f.key) && self.field_visible(f.key, cx)
+            })
+            .collect();
+        if !leftover.is_empty() {
+            if !groups.is_empty() {
+                root = root.child(section_label("Other", c));
+            }
+            root = root.children(
+                leftover
+                    .into_iter()
+                    .map(|f| self.render_field(f, c, cx))
+                    .collect::<Vec<_>>(),
+            );
+        }
+        root.into_any_element()
+    }
+
+    /// The General pane: an About hero followed by the grouped rows.
+    fn render_general(&self, c: &Palette, cx: &mut Context<Self>) -> gpui::AnyElement {
         div()
             .flex()
             .flex_col()
-            .children(
-                FIELDS
-                    .iter()
-                    .filter(|f| f.category == cat)
-                    .map(|f| self.render_field(f, c, cx)),
+            .child(self.render_about_hero(c, cx))
+            .child(self.render_grouped("General", c, cx))
+            .into_any_element()
+    }
+
+    fn render_about_hero(&self, c: &Palette, cx: &mut Context<Self>) -> gpui::AnyElement {
+        let link = |id: &'static str, label: &'static str, url: &'static str| {
+            div()
+                .id(id)
+                .px_2()
+                .py(px(3.0))
+                .rounded_sm()
+                .border_1()
+                .border_color(c.border)
+                .text_size(px(11.5))
+                .text_color(c.fg)
+                .hover(|s| s.bg(c.border))
+                .child(label)
+                .on_click(cx.listener(move |_, _: &ClickEvent, _w, cx| {
+                    cx.open_url(url);
+                }))
+        };
+        div()
+            .flex()
+            .flex_col()
+            .items_center()
+            .gap_1()
+            .py_4()
+            .border_b_1()
+            .border_color(c.border)
+            .child(
+                div()
+                    .size(px(56.0))
+                    .rounded_lg()
+                    .bg(c.accent)
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .text_color(c.bg)
+                    .font_weight(gpui::FontWeight::BOLD)
+                    .child("L"),
             )
+            .child(
+                div()
+                    .text_color(c.fg)
+                    .font_weight(gpui::FontWeight::SEMIBOLD)
+                    .child("Labonair"),
+            )
+            .child(
+                div()
+                    .text_size(px(11.0))
+                    .text_color(c.muted)
+                    .child(SharedString::from(format!(
+                        "Version {}  \u{2022}  {} {}",
+                        env!("CARGO_PKG_VERSION"),
+                        std::env::consts::OS,
+                        std::env::consts::ARCH,
+                    ))),
+            )
+            .child(
+                div()
+                    .mt_1()
+                    .flex()
+                    .gap_2()
+                    .child(link(
+                        "about-report",
+                        "Report a problem",
+                        "https://github.com/Snenjih/Labonair-rust/issues/new",
+                    ))
+                    .child(link(
+                        "about-github",
+                        "GitHub",
+                        "https://github.com/Snenjih/Labonair-rust",
+                    ))
+                    .child(link(
+                        "about-website",
+                        "Website",
+                        "https://github.com/Snenjih/Labonair-rust",
+                    )),
+            )
+            .into_any_element()
+    }
+
+    /// Themes pane — a card grid over the installed themes (built-in + user
+    /// `~/.config/labonair/themes/*.json`), a port of `ThemeMarketplace` /
+    /// `ThemeCard`. Community fetch is not wired (documented in T16-012).
+    fn render_themes(&self, c: &Palette, cx: &mut Context<Self>) -> gpui::AnyElement {
+        let active_id = self.active_theme_id.clone();
+        let cards: Vec<_> = self
+            .theme_files
+            .iter()
+            .map(|t| {
+                let id = t.id.clone();
+                let id_del = t.id.clone();
+                let is_active = active_id.as_deref() == Some(t.id.as_str())
+                    || (active_id.is_none() && t.id == "default");
+                let builtin = t.builtin;
+                div()
+                    .w(px(180.0))
+                    .flex()
+                    .flex_col()
+                    .rounded_md()
+                    .overflow_hidden()
+                    .border_1()
+                    .border_color(if is_active { c.accent } else { c.border })
+                    .child(
+                        div()
+                            .h(px(84.0))
+                            .bg(c.bg)
+                            .flex()
+                            .items_end()
+                            .p_2()
+                            .gap_1()
+                            .child(div().size(px(14.0)).rounded_sm().bg(c.accent))
+                            .child(div().size(px(14.0)).rounded_sm().bg(c.muted))
+                            .child(div().size(px(14.0)).rounded_sm().bg(c.border)),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .gap_1()
+                            .p_2()
+                            .child(
+                                div()
+                                    .text_color(c.fg)
+                                    .text_size(px(11.5))
+                                    .child(SharedString::from(t.name.clone())),
+                            )
+                            .child(
+                                div()
+                                    .flex()
+                                    .gap_1()
+                                    .child(
+                                        div()
+                                            .id(SharedString::from(format!("theme-use-{}", t.id)))
+                                            .px_2()
+                                            .py(px(2.0))
+                                            .rounded_sm()
+                                            .border_1()
+                                            .border_color(c.border)
+                                            .text_size(px(11.0))
+                                            .text_color(c.fg)
+                                            .hover(|s| s.bg(c.border))
+                                            .child(if is_active { "Active" } else { "Activate" })
+                                            .on_click(cx.listener(
+                                                move |this, _: &ClickEvent, _w, cx| {
+                                                    this.activate_theme(&id, cx);
+                                                },
+                                            )),
+                                    )
+                                    .when(!builtin, |d| {
+                                        d.child(
+                                            div()
+                                                .id(SharedString::from(format!(
+                                                    "theme-del-{id_del}"
+                                                )))
+                                                .px_2()
+                                                .py(px(2.0))
+                                                .rounded_sm()
+                                                .border_1()
+                                                .border_color(c.border)
+                                                .text_size(px(11.0))
+                                                .text_color(c.muted)
+                                                .hover(|s| s.text_color(c.fg))
+                                                .child("Delete")
+                                                .on_click(cx.listener(
+                                                    move |this, _: &ClickEvent, _w, cx| {
+                                                        this.delete_theme(&id_del, cx);
+                                                    },
+                                                )),
+                                        )
+                                    }),
+                            ),
+                    )
+            })
+            .collect();
+
+        div()
+            .flex()
+            .flex_col()
+            .child(
+                div()
+                    .flex()
+                    .gap_2()
+                    .py_2()
+                    .child(
+                        div()
+                            .id("theme-import")
+                            .px_2()
+                            .py(px(3.0))
+                            .rounded_sm()
+                            .border_1()
+                            .border_color(c.border)
+                            .text_color(c.fg)
+                            .hover(|s| s.bg(c.border))
+                            .child("Import theme\u{2026}")
+                            .on_click(
+                                cx.listener(|this, _: &ClickEvent, _w, cx| this.import_theme(cx)),
+                            ),
+                    )
+                    .child(
+                        div()
+                            .id("theme-export")
+                            .px_2()
+                            .py(px(3.0))
+                            .rounded_sm()
+                            .border_1()
+                            .border_color(c.border)
+                            .text_color(c.fg)
+                            .hover(|s| s.bg(c.border))
+                            .child("Export active theme\u{2026}")
+                            .on_click(
+                                cx.listener(|this, _: &ClickEvent, _w, cx| this.export_theme(cx)),
+                            ),
+                    )
+                    .child(
+                        div()
+                            .id("theme-folder")
+                            .px_2()
+                            .py(px(3.0))
+                            .rounded_sm()
+                            .border_1()
+                            .border_color(c.border)
+                            .text_color(c.fg)
+                            .hover(|s| s.bg(c.border))
+                            .child("Open themes folder")
+                            .on_click(cx.listener(|_, _: &ClickEvent, _w, cx| {
+                                cx.reveal_path(&themes_dir());
+                            })),
+                    ),
+            )
+            .child(div().flex().flex_wrap().gap_3().py_2().children(cards))
             .into_any_element()
     }
 }
@@ -2599,7 +3366,7 @@ impl Focusable for SettingsView {
 
 impl Render for SettingsView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        if !self.open {
+        if !self.windowed && !self.open {
             return div().into_any_element();
         }
         let t = self.theme.read(cx);
@@ -2614,41 +3381,15 @@ impl Render for SettingsView {
         let active_cat = self.active_cat;
         let searching = !self.search.trim().is_empty();
 
-        let sidebar = div()
-            .w(px(180.0))
-            .flex_shrink_0()
-            .flex()
-            .flex_col()
-            .gap_0p5()
-            .p_2()
-            .border_r_1()
-            .border_color(c.border)
-            .children(CATEGORIES.iter().enumerate().map(|(i, name)| {
-                let is_active = i == active_cat && !searching;
-                div()
-                    .id(SharedString::from(*name))
-                    .px_2()
-                    .py(px(4.0))
-                    .rounded_sm()
-                    .text_color(if is_active { c.fg } else { c.muted })
-                    .when(is_active, |d| d.bg(c.accent))
-                    .when(!is_active, |d| d.hover(|s| s.bg(c.border)))
-                    .child(SharedString::from(*name))
-                    .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
-                        this.active_cat = i;
-                        this.search.clear();
-                        cx.notify();
-                    }))
-            }));
-
         let search_box = div()
             .mb_2()
             .px_2()
             .py(px(4.0))
             .rounded_sm()
             .border_1()
-            .border_color(c.border)
+            .border_color(if searching { c.accent } else { c.border })
             .bg(c.bg)
+            .text_size(px(11.5))
             .text_color(if self.search.is_empty() {
                 c.muted
             } else {
@@ -2660,73 +3401,131 @@ impl Render for SettingsView {
                 self.search.clone()
             }));
 
-        let body = self.render_body(&c, cx);
+        let sidebar = div()
+            .w(px(208.0))
+            .flex_shrink_0()
+            .flex()
+            .flex_col()
+            .gap_0p5()
+            .p_2()
+            .border_r_1()
+            .border_color(c.border)
+            .child(search_box)
+            .children(CATEGORIES.iter().enumerate().map(|(i, name)| {
+                let is_active = i == active_cat && !searching;
+                div()
+                    .id(SharedString::from(*name))
+                    .px_2()
+                    .py(px(5.0))
+                    .rounded_sm()
+                    .text_size(px(12.0))
+                    .text_color(if is_active { c.fg } else { c.muted })
+                    .when(is_active, |d| d.bg(c.accent))
+                    .when(!is_active, |d| d.hover(|s| s.bg(c.border)))
+                    .child(SharedString::from(*name))
+                    .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                        this.active_cat = i;
+                        this.search.clear();
+                        cx.notify();
+                    }))
+            }));
 
-        div()
-            .id("settings-overlay")
+        let body = self.render_body(&c, cx);
+        let windowed = self.windowed;
+
+        let header = div()
+            .h(px(44.0))
+            .flex_shrink_0()
+            .flex()
+            .items_center()
+            .justify_between()
+            .px_3()
+            .border_b_1()
+            .border_color(c.border)
+            .child(
+                div()
+                    .id("settings-open-json")
+                    .text_size(px(11.0))
+                    .text_color(c.muted)
+                    .hover(|s| s.text_color(c.fg))
+                    .child("Open settings.json")
+                    .on_click(cx.listener(|_, _: &ClickEvent, _w, cx| {
+                        cx.reveal_path(&config_dir().join("labonair-settings.json"));
+                    })),
+            )
+            .child(
+                div()
+                    .text_color(c.fg)
+                    .font_weight(gpui::FontWeight::SEMIBOLD)
+                    .text_size(px(12.5))
+                    .child("Settings"),
+            )
+            .child(
+                div()
+                    .id("settings-close")
+                    .text_color(c.muted)
+                    .hover(|s| s.text_color(c.fg))
+                    .child("\u{2715}")
+                    .on_click(cx.listener(|this, _: &ClickEvent, window, cx| {
+                        this.request_close(window, cx)
+                    })),
+            );
+
+        let content = div().flex_1().min_h_0().flex().child(sidebar).child(
+            div()
+                .id("settings-scroll")
+                .flex_1()
+                .min_w_0()
+                .flex()
+                .flex_col()
+                .items_center()
+                .p_4()
+                .overflow_y_scroll()
+                .child(
+                    div()
+                        .w_full()
+                        .max_w(px(580.0))
+                        .flex()
+                        .flex_col()
+                        .child(body),
+                ),
+        );
+
+        let card = div()
+            .id("settings-card")
             .track_focus(&self.focus)
             .key_context("Settings")
+            .flex()
+            .flex_col()
+            .bg(c.card)
+            .text_color(c.fg)
+            .on_key_down(cx.listener(Self::on_key))
+            .child(header)
+            .child(content)
+            .children(self.render_dropdown(&c, cx));
+
+        if windowed {
+            return card.size_full().into_any_element();
+        }
+
+        // Legacy in-`AppShell` modal path (kept for tests only).
+        div()
+            .id("settings-overlay")
             .absolute()
             .inset_0()
             .flex()
             .items_center()
             .justify_center()
             .bg(crate::theme::modal_scrim())
-            .on_key_down(cx.listener(Self::on_key))
             .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| this.close(cx)))
             .child(
-                div()
-                    .id("settings-card")
-                    .w(px(760.0))
-                    .h(px(540.0))
-                    .flex()
-                    .flex_col()
+                card.w(px(820.0))
+                    .h(px(560.0))
                     .rounded_lg()
-                    .bg(c.card)
                     .border_1()
                     .border_color(c.border)
                     .overflow_hidden()
-                    .on_click(|_, _w, cx| cx.stop_propagation())
-                    .child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .justify_between()
-                            .px_4()
-                            .py_2()
-                            .border_b_1()
-                            .border_color(c.border)
-                            .child(
-                                div()
-                                    .text_color(c.fg)
-                                    .font_weight(gpui::FontWeight::SEMIBOLD)
-                                    .child("Settings"),
-                            )
-                            .child(
-                                div()
-                                    .id("settings-close")
-                                    .text_color(c.muted)
-                                    .hover(|s| s.text_color(c.fg))
-                                    .child("\u{2715}")
-                                    .on_click(
-                                        cx.listener(|this, _: &ClickEvent, _w, cx| this.close(cx)),
-                                    ),
-                            ),
-                    )
-                    .child(
-                        div().flex_1().min_h_0().flex().child(sidebar).child(
-                            div()
-                                .id("settings-scroll")
-                                .flex_1()
-                                .min_w_0()
-                                .flex()
-                                .flex_col()
-                                .p_4()
-                                .overflow_y_scroll()
-                                .child(search_box)
-                                .child(body),
-                        ),
-                    ),
+                    .on_click(|_, _w, cx| cx.stop_propagation()),
             )
             .into_any_element()
     }

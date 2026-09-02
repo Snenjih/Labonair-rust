@@ -119,10 +119,9 @@ pub fn init(cx: &mut App) {
             ),
         )
     });
-    // `OpenSettings` is handled by `AppShell` (opens the settings modal, T13-001).
-    cx.on_action(|_: &AiSettings, cx: &mut App| {
-        toast(cx, "AI Settings", "AI settings arrive in a later phase.")
-    });
+    // `OpenSettings` / `AiSettings` are handled by `AppShell` (open the
+    // dedicated settings OS window, deep-linking to the AI tab for `AiSettings`
+    // — T16-009).
     // `CheckForUpdates` is handled by `AppShell` (drives the auto-updater,
     // T15-005) so the menu item, the command-palette entry and any shortcut
     // share one code path.
