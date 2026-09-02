@@ -1412,7 +1412,13 @@ impl Render for CommandPalette {
         let selected = self.selected.min(rows.len().saturating_sub(1));
 
         // ── list ─────────────────────────────────────────────────────────────
-        let mut list = div().flex().flex_col().p(px(8.0)).overflow_hidden();
+        let mut list = div()
+            .id("palette-list")
+            .flex()
+            .flex_col()
+            .p(px(8.0))
+            .max_h(px(384.0))
+            .overflow_y_scroll();
         if result_count == 0 {
             list = list.child(
                 div()
@@ -1432,7 +1438,8 @@ impl Render for CommandPalette {
                         .px(px(12.0))
                         .py(px(8.0))
                         .text_size(px(10.0))
-                        .text_color(muted)
+                        .font_weight(gpui::FontWeight::MEDIUM)
+                        .text_color(muted.opacity(0.7))
                         .child(SharedString::from(row.section.to_uppercase())),
                 );
                 last_section = Some(row.section.clone());
@@ -1687,10 +1694,10 @@ impl Render for CommandPalette {
                     .rounded(px(16.0))
                     .bg(card)
                     .border_1()
-                    .border_color(border)
+                    .border_color(border.opacity(0.6))
                     .shadow_lg()
                     .child(header)
-                    .child(div().flex_1().min_h_0().overflow_hidden().child(list))
+                    .child(div().flex().flex_col().min_h_0().child(list))
                     .child(footer),
             )
             .into_any_element()

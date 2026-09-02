@@ -811,6 +811,42 @@ pub const FIELDS: &[FieldDef] = &[
         "Workspace",
         Switch,
     ),
+    d(
+        "commandPalettePosition",
+        "Position",
+        "Where the palette opens vertically.",
+        "Workspace",
+        Select(&["top", "high", "center"]),
+    ),
+    d(
+        "commandPaletteOpacity",
+        "Card opacity",
+        "Palette card opacity (%).",
+        "Workspace",
+        Int {
+            min: 35,
+            max: 100,
+            step: 5,
+        },
+    ),
+    d(
+        "commandPaletteHistorySize",
+        "Recent history size",
+        "How many recently-run commands to remember.",
+        "Workspace",
+        Int {
+            min: 0,
+            max: 20,
+            step: 1,
+        },
+    ),
+    d(
+        "commandPaletteCloseOnOverlayClick",
+        "Close on click-away",
+        "Dismiss the palette when clicking outside the card.",
+        "Workspace",
+        Switch,
+    ),
     // Source Control
     d(
         "gitStatusPollIntervalMs",
