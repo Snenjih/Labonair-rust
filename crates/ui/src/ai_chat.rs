@@ -673,6 +673,28 @@ impl AiChatView {
         cx.notify();
     }
 
+    /// `(id, title, is_active)` for every chat session — command palette.
+    pub fn session_choices(&self, cx: &App) -> Vec<(String, String, bool)> {
+        let s = self.store.read(cx);
+        let active = s.active_id().map(str::to_string);
+        s.sessions()
+            .iter()
+            .map(|m| {
+                (
+                    m.id.clone(),
+                    m.title.clone(),
+                    Some(&m.id) == active.as_ref(),
+                )
+            })
+            .collect()
+    }
+
+    /// Switch to a chat session by id (command palette).
+    pub fn switch_to_session(&mut self, id: &str, cx: &mut Context<Self>) {
+        self.store.update(cx, |s, cx| s.switch_session(id, cx));
+        cx.notify();
+    }
+
     fn active_agent_name(&self) -> String {
         self.agents
             .iter()

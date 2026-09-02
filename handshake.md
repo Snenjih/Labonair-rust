@@ -4,7 +4,80 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
-## Last Session: 2026-09-02 (Block F Commit 4 — T16-019 AI panel + agents/directives backend)
+## Last Session: 2026-09-02 (Block F Commit 5 — palette fill-ins + cross-report cleanups)
+
+### What Was Done (commit after `74cb4ea`)
+
+- **Command-palette sub-pages completed**:
+  - `ai-sessions` → `PaletteData.ai_sessions` from
+    `AiChatView::session_choices`; `RowKey::SwitchAiSession` →
+    `PaletteEvent::SwitchAiSession` → `AiChatView::switch_to_session` +
+    reveal the AI dock.
+  - `git-branches` → `PaletteData.git_branches` from
+    `GitPanelView::branch_choices` (`(name, is_current, is_remote)`);
+    `RowKey::SwitchBranch` → `PaletteEvent::SwitchBranch` →
+    `GitPanelView::checkout`.
+- **`ShortcutsOpen` binding reconciled** `cmd-k` → `cmd-shift-/` (`⌘?`),
+  matching `reference-src/src/modules/shortcuts/shortcuts.ts` (`shortcuts.open`
+  = `["⌘","?"]`). Removed the stale "cmd-k is deliberate" comment.
+
+**Palette `outline` (Go to Symbol) page** — still empty: the editor
+(`editor.rs`) has no symbol-outline extraction yet; wiring it needs a
+TreeSitter document-symbol pass. Documented, deferred.
+
+### Verified
+`cargo fmt --all`, `cargo clippy --workspace --all-targets -D warnings`,
+`cargo test --workspace` — all green (695 tests).
+
+---
+
+## CONSOLIDATED — Block F deferred items (all commits)
+
+**T16-017 context menus** — tab-bar empty-area menu, "Ask AI about Selection"
+terminal item (needs the `menu::AskAboutSelection` action wired end-to-end;
+`attach_selection` is currently test-only), "Open Diff (Split)" (git panel
+has only an inline unified diff).
+
+**T16-016 sidebars** — bar-item context-menu Left/Right radios move only the
+*item placement*, not an already-open live panel (the header `←/→` and
+`move_panel` do that). `tabsLocation` gating + "leaving sidebar → fall back
+to explorer" rule for the Tabs panel not implemented.
+
+**T16-018 themes** — palette theme rows only preview on keyboard nav (no
+hover-to-select in the palette).
+
+**T16-019 AI panel** — real `text_field` composer (invasive: window
+threading + `make_view` test helper); slash-commands; `#`-directive inline
+expansion; `@` file picker; QueueStrip; TodoStrip (`TodoStore` exists in
+`labonair_ai`, unrendered); PlanModeStrip / PlanDiffReview; ContextPillsRow;
+AI⇄Shell toggle; ⌘↵ enqueue; connect banner; `CommandSnippet` rendering;
+voice/whisper stub; inline agent/directive editors (edit the JSON files
+directly for now).
+
+**Cross-report (vergleichsbericht-1/2/3/4) still open:**
+- Palette `outline` sub-page (editor symbol extraction).
+- File/folder icons: `crates/ui/src/components/icon.rs` ships a reduced
+  Lucide set + `file_icon`/`folder_icon` resolvers; the reference's full
+  Catppuccin iconify set is not ported (cosmetic; emoji were already purged
+  in Block A, guarded by `tests/no_pictograph_icons.rs`).
+- Statusbar bar items `cursorPosition` (`Ln x, Col y`) and `previewUrl` not
+  added; statusbar text size not pinned to 11px.
+- Command-palette view still ~520px / 26px rows (not the reference 640px /
+  40px), no footer search-mode toggle beyond what Block D added, no recents
+  UI, no per-palette preference pane.
+- `hosts.rs` checkbox glyphs `☑/☐` not a real control.
+- Host manager `btn` helper not migrated to `components::button`.
+- Migrate the remaining hand-rolled menus (`render_bar_menu`, breadcrumb
+  `crumb_menu`/`subdir_menu`) onto the shared `context_menu` primitive.
+
+**Overall parity vs the reference:** ~90%. All core workflows plus the four
+Block-F subsystems (context menus, dual-dock sidebars, theme marketplace,
+AI agents) now work. The gaps are AI-panel richness (composer + strips),
+the full file-icon set, and command-palette visual metrics.
+
+---
+
+## Session: 2026-09-02 (Block F Commit 4 — T16-019 AI panel + agents/directives backend)
 
 ### What Was Done (commit after `55f703f`)
 

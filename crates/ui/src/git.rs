@@ -1057,6 +1057,24 @@ impl GitPanelView {
         .detach();
     }
 
+    /// `(name, is_current, is_remote)` for every branch — for the command
+    /// palette's `Git: Switch Branch…` sub-page.
+    pub fn branch_choices(&self) -> Vec<(String, bool, bool)> {
+        let Some(state) = &self.state else {
+            return Vec::new();
+        };
+        state
+            .branches
+            .iter()
+            .map(|b| (b.name.clone(), b.name == state.current_branch, b.is_remote))
+            .collect()
+    }
+
+    /// Checkout a branch by name (palette entry point).
+    pub fn checkout(&mut self, name: String, cx: &mut Context<Self>) {
+        self.checkout_branch(name, cx);
+    }
+
     fn checkout_branch(&mut self, name: String, cx: &mut Context<Self>) {
         let Some((root, sid, be)) = self.ctx() else {
             return;

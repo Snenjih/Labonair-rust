@@ -969,6 +969,32 @@ impl AppShell {
             })
             .collect();
 
+        let ai_sessions = self
+            .ai_chat
+            .read(cx)
+            .session_choices(cx)
+            .into_iter()
+            .map(|(id, title, active)| PaletteChoice {
+                id,
+                title,
+                subtitle: None,
+                active,
+            })
+            .collect();
+
+        let git_branches = self
+            .git_panel
+            .read(cx)
+            .branch_choices()
+            .into_iter()
+            .map(|(name, current, remote)| PaletteChoice {
+                active: current,
+                subtitle: remote.then(|| "remote".to_string()),
+                id: name.clone(),
+                title: name,
+            })
+            .collect();
+
         let app_themes = crate::settings::theme_choices()
             .into_iter()
             .map(|(id, name)| PaletteChoice {
@@ -993,6 +1019,8 @@ impl AppShell {
             tabs,
             hosts,
             snippets,
+            ai_sessions,
+            git_branches,
             app_themes,
             color_mode: theme.preference(),
             editor_theme: theme.editor_theme(),
@@ -1030,6 +1058,14 @@ impl AppShell {
                 PaletteEvent::RunSnippet(id) => {
                     self.snippets
                         .update(cx, |s, cx| s.run_by_id(&id, window, cx));
+                }
+                PaletteEvent::SwitchAiSession(id) => {
+                    self.ai_chat
+                        .update(cx, |v, cx| v.switch_to_session(&id, cx));
+                    self.open_panel(SidebarPanel::Ai, cx);
+                }
+                PaletteEvent::SwitchBranch(name) => {
+                    self.git_panel.update(cx, |g, cx| g.checkout(name, cx));
                 }
                 PaletteEvent::SetColorMode(pref) => {
                     let key = match pref {

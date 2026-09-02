@@ -100,7 +100,7 @@ use ShortcutId::*;
 #[rustfmt::skip]
 static SHORTCUTS: &[Shortcut] = &[
     Shortcut { id: CommandPalette,  label: "Open command palette",      keys: &["\u{2318}", "P"],                 group: General,   binding: "cmd-p" },
-    Shortcut { id: ShortcutsOpen,   label: "Show keyboard shortcuts",   keys: &["\u{2318}", "K"],                 group: General,   binding: "cmd-k" },
+    Shortcut { id: ShortcutsOpen,   label: "Show keyboard shortcuts",   keys: &["\u{2318}", "?"],                 group: General,   binding: "cmd-shift-/" },
     Shortcut { id: TabNew,          label: "New tab",                   keys: &["\u{2318}", "T"],                 group: Tabs,      binding: "cmd-t" },
     Shortcut { id: TabNewPreview,   label: "New preview tab",           keys: &["\u{2318}", "\u{21e7}", "P"],     group: Tabs,      binding: "cmd-shift-p" },
     Shortcut { id: TabNewEditor,    label: "New editor tab",            keys: &["\u{2318}", "E"],                 group: Tabs,      binding: "cmd-e" },
@@ -152,8 +152,7 @@ pub fn shortcut_keys(id: ShortcutId) -> &'static [&'static str] {
 
 /// Native-menu-only accelerators with no [`ShortcutId`] — hardcoded in
 /// [`crate::menu`] and never customizable. Kept here so conflict detection
-/// can block a user from rebinding onto one. (`cmd-k` is *not* reserved: it
-/// is the real, rebindable [`ShortcutId::ShortcutsOpen`].)
+/// can block a user from rebinding onto one.
 pub const RESERVED_ACCELERATORS: &[(&str, &str)] =
     &[("cmd-,", "Settings"), ("cmd-shift-n", "New SSH Connection")];
 
@@ -722,6 +721,10 @@ pub enum PaletteEvent {
     PreviewAppTheme(Option<String>),
     /// Run a saved snippet by id with its default execution mode.
     RunSnippet(String),
+    /// Switch the AI panel to a chat session by id.
+    SwitchAiSession(String),
+    /// Check out a git branch by name.
+    SwitchBranch(String),
 }
 
 /// A dynamic choice rendered on a sub-page (tab, host, session, branch…).
@@ -802,6 +805,10 @@ enum RowKey {
     SetAppTheme(String),
     /// Run a saved snippet by id with its default execution mode.
     RunSnippet(String),
+    /// Switch the AI panel to a chat session by id.
+    SwitchAiSession(String),
+    /// Check out a git branch by name.
+    SwitchBranch(String),
     /// Non-actionable (empty-state placeholder line).
     Noop,
 }
@@ -1160,7 +1167,7 @@ impl CommandPalette {
                 IconName::Sparkles,
                 mode,
                 "No AI sessions yet",
-                |_| RowKey::Noop,
+                |c| RowKey::SwitchAiSession(c.id.clone()),
             ),
             Page::Outline => self.choice_rows(
                 &self.data.symbols,
@@ -1176,7 +1183,7 @@ impl CommandPalette {
                 IconName::GitBranch,
                 mode,
                 "No repository detected",
-                |_| RowKey::Noop,
+                |c| RowKey::SwitchBranch(c.id.clone()),
             ),
         }
     }
@@ -1217,6 +1224,14 @@ impl CommandPalette {
             RowKey::RunSnippet(id) => {
                 self.close(cx);
                 cx.emit(PaletteEvent::RunSnippet(id));
+            }
+            RowKey::SwitchAiSession(id) => {
+                self.close(cx);
+                cx.emit(PaletteEvent::SwitchAiSession(id));
+            }
+            RowKey::SwitchBranch(name) => {
+                self.close(cx);
+                cx.emit(PaletteEvent::SwitchBranch(name));
             }
         }
     }
