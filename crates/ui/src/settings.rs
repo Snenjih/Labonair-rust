@@ -36,6 +36,9 @@ use labonair_backend::modules::fs::paths::config_dir;
 use labonair_theme::ThemeFile;
 
 use crate::background::BackgroundStore;
+use crate::bar_items::{
+    self, default_placement, placement_patch, BarItemId, BarLoc, BarSide, BAR_ITEM_ORDER,
+};
 use crate::command_palette::{
     effective_binding, resolve_conflict, shortcut, shortcut_slug, shortcuts, Conflict, KeybindMap,
     ShortcutId,
@@ -239,6 +242,7 @@ pub fn open_settings_window(tab: Option<SettingsTab>, cx: &mut App) {
                 }
                 v.refresh_themes();
                 v.refresh_mcp_status(cx);
+                v.load_system_fonts(cx);
                 window.focus(&v.focus);
                 v
             });
@@ -348,8 +352,18 @@ pub enum FieldKind {
         max: i64,
         step: i64,
     },
+    /// Float stepper (line-height, letter-spacing, temperature). `step` is
+    /// expressed in hundredths to keep the type `Copy`/`i64`.
+    Float {
+        min_centi: i64,
+        max_centi: i64,
+        step_centi: i64,
+    },
     /// The options are the exact serialized token strings.
     Select(&'static [&'static str]),
+    /// A font-family picker — a dropdown populated from the scanned system
+    /// fonts plus a `(default)` entry.
+    FontFamily,
     Text,
 }
 
@@ -423,7 +437,9 @@ pub(crate) fn overwrite_keybind(
     m
 }
 
-use FieldKind::{Int, Select, Switch, Text};
+#[allow(clippy::enum_glob_use)]
+use FieldKind::Float;
+use FieldKind::{FontFamily, Int, Select, Switch, Text};
 
 pub const FIELDS: &[FieldDef] = &[
     // General
@@ -482,7 +498,7 @@ pub const FIELDS: &[FieldDef] = &[
         "UI font family",
         "Font used for all application UI text (empty = system default).",
         CAT_APPEARANCE,
-        Text,
+        FontFamily,
     ),
     d(
         "appFontSize",
@@ -564,7 +580,7 @@ pub const FIELDS: &[FieldDef] = &[
         "Font family",
         "Terminal typeface.",
         "Terminal",
-        Text,
+        FontFamily,
     ),
     d(
         "terminalFontSize",
@@ -666,7 +682,7 @@ pub const FIELDS: &[FieldDef] = &[
         "Font family",
         "Editor typeface.",
         "Editor",
-        Text,
+        FontFamily,
     ),
     d(
         "editorFontSize",
@@ -1370,6 +1386,35 @@ pub const FIELDS: &[FieldDef] = &[
         "AI",
         Text,
     ),
+    // ── Float rows (added T16-010) ──────────────────────────────────────
+    d(
+        "appLineHeight",
+        "UI line height",
+        "Line height multiplier for application text.",
+        CAT_APPEARANCE,
+        Float { min_centi: 100, max_centi: 200, step_centi: 5 },
+    ),
+    d(
+        "editorLineHeight",
+        "Line height",
+        "Editor line height multiplier.",
+        "Editor",
+        Float { min_centi: 100, max_centi: 300, step_centi: 5 },
+    ),
+    d(
+        "terminalLineHeight",
+        "Line height",
+        "Terminal line height multiplier.",
+        "Terminal",
+        Float { min_centi: 80, max_centi: 200, step_centi: 5 },
+    ),
+    d(
+        "terminalLetterSpacing",
+        "Letter spacing",
+        "Extra horizontal spacing between glyphs, in pixels.",
+        "Terminal",
+        Float { min_centi: -200, max_centi: 1000, step_centi: 50 },
+    ),
 ];
 
 const fn d(
@@ -1434,6 +1479,8 @@ pub const SECTION_GROUPS: &[(&str, &[FieldGroup])] = &[
                     "terminalFontFamily",
                     "terminalFontSize",
                     "terminalFontWeight",
+                    "terminalLineHeight",
+                    "terminalLetterSpacing",
                 ],
             ),
             (
@@ -1480,7 +1527,10 @@ pub const SECTION_GROUPS: &[(&str, &[FieldGroup])] = &[
         &[
             ("Keybindings", &["vimMode", "editorRelativeLineNumbers"]),
             ("Theme", &["editorTheme"]),
-            ("Font", &["editorFontFamily", "editorFontSize"]),
+            (
+                "Font",
+                &["editorFontFamily", "editorFontSize", "editorLineHeight"],
+            ),
             (
                 "Behaviour",
                 &[
@@ -1681,13 +1731,25 @@ pub struct SettingsView {
     /// An open `Select` dropdown (key + anchor position + options), drawn as a
     /// deferred floating layer so it escapes the scroll clip.
     dropdown: Option<SelectMenu>,
+    /// Live bar-item layout, edited by the Layout section (T16-012). Persisted
+    /// through the backend blob; the running `AppShell` bar re-reads it via
+    /// [`bar_items::BarLayoutTick`].
+    placements: bar_items::Placements,
+    /// AI provider instances + their keychain-backed API keys (T16-012).
+    instances: labonair_ai::InstanceStore,
+    secrets: std::sync::Arc<labonair_ai::KeyringSecretStore>,
+    /// Scanned system font family names for the `FontFamily` picker, loaded
+    /// once asynchronously when the window opens.
+    system_fonts: Vec<SharedString>,
     focus: FocusHandle,
 }
 
 struct SelectMenu {
     key: &'static str,
-    options: &'static [&'static str],
+    options: Vec<SharedString>,
     at: Point<Pixels>,
+    /// The `"(default)"` font entry — selecting it clears the pref to `""`.
+    default_sentinel: Option<SharedString>,
 }
 
 struct KbConflict {
@@ -1736,6 +1798,12 @@ impl SettingsView {
             kb_conflict: None,
             windowed: false,
             dropdown: None,
+            placements: bar_items::Placements::from_blob(
+                &labonair_backend::modules::settings::bar_item_placements_load(),
+            ),
+            instances: labonair_ai::InstanceStore::open_default(),
+            secrets: std::sync::Arc::new(labonair_ai::KeyringSecretStore),
+            system_fonts: Vec::new(),
             focus: cx.focus_handle(),
         }
     }
@@ -1753,6 +1821,7 @@ impl SettingsView {
         window.focus(&self.focus);
         self.refresh_mcp_status(cx);
         self.refresh_themes();
+        self.load_system_fonts(cx);
         cx.notify();
     }
 
@@ -1810,6 +1879,27 @@ impl SettingsView {
     /// always first.
     fn refresh_themes(&mut self) {
         self.theme_files = scan_themes(&themes_dir());
+    }
+
+    /// Load the scanned system font list once (async, off the main thread) for
+    /// the `FontFamily` picker.
+    fn load_system_fonts(&mut self, cx: &mut Context<Self>) {
+        if !self.system_fonts.is_empty() {
+            return;
+        }
+        let task = self
+            .tokio
+            .spawn(async { labonair_backend::modules::fonts::fonts_list_system().await });
+        cx.spawn(async move |this, cx| {
+            if let Ok(Ok(mut names)) = task.await {
+                names.sort_by_key(|n| n.to_lowercase());
+                let _ = this.update(cx, |this, cx| {
+                    this.system_fonts = names.into_iter().map(SharedString::from).collect();
+                    cx.notify();
+                });
+            }
+        })
+        .detach();
     }
 
     /// Activates a listed theme. `"default"` clears any custom override and
@@ -1979,9 +2069,100 @@ impl SettingsView {
             let kb = self.prefs.read(cx).get().keybinds.clone();
             crate::menu::apply_keybinds(cx, &kb);
         }
+        // The `Preferences` store already republishes `GlobalPreferences` on
+        // every change (see `PreferencesStore::set_value`); terminal / editor /
+        // workspace all `observe_global` / re-read it, so most keys propagate
+        // for free — this is the port's generic `applySettingChange`. The rest
+        // are the non-observable side effects (T16-012):
+        match key {
+            // Keep the AI chat's active model in sync with the settings pref.
+            "defaultModelId" => {
+                let v = self.prefs.read(cx).get().default_model_id.clone();
+                if !v.is_empty() {
+                    let _ = self.instances.set_active_model_ref(&v);
+                }
+            }
+            // Reduce-motion and corner radius feed the theme/layout layer.
+            "reduceMotion" | "appCornerRadius" | "appLineHeight" => {
+                self.sync_theme_from_prefs(cx);
+            }
+            _ => {}
+        }
         // Typography + editor syntax scheme are pushed into the ThemeStore so
         // open terminals / editors pick them up live (T13-003).
         self.sync_theme_from_prefs(cx);
+        cx.notify();
+    }
+
+    // ── bar-item layout editor (T16-012) ─────────────────────────────────
+
+    /// Mutate one bar item's placement, persist the blob, and bump
+    /// [`bar_items::BarLayoutTick`] so the running `AppShell` bar re-reads it.
+    fn move_bar_item(
+        &mut self,
+        id: BarItemId,
+        bar: Option<BarLoc>,
+        side: Option<BarSide>,
+        hidden: Option<bool>,
+        cx: &mut Context<Self>,
+    ) {
+        let mut p = self.placements.get(id);
+        if let Some(b) = bar {
+            p.bar = b;
+        }
+        if let Some(s) = side {
+            p.side = s;
+        }
+        if let Some(h) = hidden {
+            p.hidden = h;
+        }
+        self.placements.set(id, p);
+        self.persist_bar_item(id, cx);
+    }
+
+    fn reset_bar_layout(&mut self, cx: &mut Context<Self>) {
+        for id in BAR_ITEM_ORDER {
+            self.placements.set(id, default_placement(id));
+            self.persist_bar_item(id, cx);
+        }
+        cx.notify();
+    }
+
+    fn persist_bar_item(&mut self, id: BarItemId, cx: &mut Context<Self>) {
+        let patch = placement_patch(self.placements.get(id));
+        let backend = self.backend.clone();
+        let key = id.as_str().to_string();
+        self.tokio.spawn(async move {
+            let _ = labonair_backend::modules::settings::settings_set_bar_item_placement(
+                &backend.bar_item_lock,
+                key,
+                patch,
+            )
+            .await;
+        });
+        let next = cx
+            .try_global::<bar_items::BarLayoutTick>()
+            .map(|t| t.0)
+            .unwrap_or(0)
+            + 1;
+        cx.set_global(bar_items::BarLayoutTick(next));
+        cx.notify();
+    }
+
+    // ── AI providers (T16-012) ───────────────────────────────────────────
+
+    fn add_provider(&mut self, provider: labonair_ai::ProviderId, cx: &mut Context<Self>) {
+        match self.instances.add(provider) {
+            Ok(_) => cx.notify(),
+            Err(e) => self.notify_error(cx, "Could not add provider", e),
+        }
+    }
+
+    fn remove_provider(&mut self, id: String, cx: &mut Context<Self>) {
+        if let Err(e) = self.instances.remove(&id) {
+            self.notify_error(cx, "Could not remove provider", e);
+        }
+        let _ = labonair_ai::secret_store::clear_instance_key(&*self.secrets, &id);
         cx.notify();
     }
 
@@ -2103,6 +2284,28 @@ impl SettingsView {
         self.set_pref(key, Value::from(next), cx);
     }
 
+    /// Float stepper: `min/max/delta` are in hundredths.
+    fn bump_float(
+        &mut self,
+        key: &str,
+        min_centi: i64,
+        max_centi: i64,
+        delta_centi: i64,
+        cx: &mut Context<Self>,
+    ) {
+        let cur_centi = self
+            .prefs
+            .read(cx)
+            .value(key)
+            .and_then(|v| v.as_f64())
+            .map(|f| (f * 100.0).round() as i64)
+            .unwrap_or(min_centi);
+        let next = (cur_centi + delta_centi).clamp(min_centi, max_centi);
+        let n = serde_json::Number::from_f64(next as f64 / 100.0)
+            .unwrap_or_else(|| serde_json::Number::from(0));
+        self.set_pref(key, Value::Number(n), cx);
+    }
+
     fn begin_edit(&mut self, key: &str, numeric: bool, cx: &mut Context<Self>) {
         let buffer = self
             .prefs
@@ -2125,6 +2328,24 @@ impl SettingsView {
         let Some(edit) = self.editing.take() else {
             return;
         };
+        // Provider API keys are keychain-backed, never a preference key.
+        if let Some(instance_id) = edit.key.strip_prefix("provkey:") {
+            let trimmed = edit.buffer.trim();
+            let res = if trimmed.is_empty() {
+                labonair_ai::secret_store::clear_instance_key(&*self.secrets, instance_id)
+            } else {
+                labonair_ai::secret_store::set_instance_key(&*self.secrets, instance_id, trimmed)
+            };
+            match res {
+                Ok(()) => self.notify(
+                    cx,
+                    Notification::success("API key saved", "Stored in the OS keychain."),
+                ),
+                Err(e) => self.notify_error(cx, "Could not save API key", e),
+            }
+            cx.notify();
+            return;
+        }
         let value = if edit.numeric {
             match edit.buffer.trim().parse::<i64>() {
                 Ok(n) => Value::from(n),
@@ -2205,12 +2426,20 @@ impl SettingsView {
     fn render_dropdown(&self, c: &Palette, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
         let menu = self.dropdown.as_ref()?;
         let key = menu.key;
-        let cur = self
+        let sentinel = menu.default_sentinel.clone();
+        let stored = self
             .prefs
             .read(cx)
             .value(key)
             .and_then(|v| v.as_str().map(str::to_string))
             .unwrap_or_default();
+        // The row highlighted as "current": the stored value, or the sentinel
+        // when the stored value is empty.
+        let cur: SharedString = if stored.is_empty() {
+            sentinel.clone().unwrap_or_default()
+        } else {
+            SharedString::from(stored)
+        };
         let list = anchored().position(menu.at).snap_to_window().child(
             div()
                 .id("dropdown-list")
@@ -2225,11 +2454,12 @@ impl SettingsView {
                 .bg(c.card)
                 .border_1()
                 .border_color(c.border)
-                .children(menu.options.iter().map(|opt| {
-                    let opt = *opt;
+                .children(menu.options.iter().enumerate().map(|(i, opt)| {
+                    let opt = opt.clone();
                     let selected = opt == cur;
+                    let is_sentinel = sentinel.as_ref() == Some(&opt);
                     div()
-                        .id(SharedString::from(format!("opt-{key}-{opt}")))
+                        .id(SharedString::from(format!("opt-{key}-{i}")))
                         .px_2()
                         .py(px(4.0))
                         .rounded_sm()
@@ -2237,10 +2467,15 @@ impl SettingsView {
                         .text_color(if selected { c.fg } else { c.muted })
                         .when(selected, |d| d.bg(c.accent))
                         .when(!selected, |d| d.hover(|s| s.bg(c.border)))
-                        .child(SharedString::from(opt))
+                        .child(opt.clone())
                         .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
                             this.dropdown = None;
-                            this.set_pref(key, Value::String(opt.to_string()), cx);
+                            let v = if is_sentinel {
+                                String::new()
+                            } else {
+                                opt.to_string()
+                            };
+                            this.set_pref(key, Value::String(v), cx);
                         }))
                 })),
         );
@@ -2305,23 +2540,35 @@ impl SettingsView {
                     .value(key)
                     .and_then(|v| v.as_i64())
                     .unwrap_or(min);
+                let frac = if max > min {
+                    (cur - min) as f32 / (max - min) as f32
+                } else {
+                    0.0
+                };
                 div()
                     .flex()
-                    .items_center()
-                    .gap_1()
-                    .child(step_btn("dec", key, "\u{2212}", c, cx, move |this, cx| {
-                        this.bump_int(key, min, max, -step, cx)
-                    }))
+                    .flex_col()
+                    .items_end()
                     .child(
                         div()
-                            .min_w(px(52.0))
-                            .text_center()
-                            .text_color(c.fg)
-                            .child(SharedString::from(cur.to_string())),
+                            .flex()
+                            .items_center()
+                            .gap_1()
+                            .child(step_btn("dec", key, "\u{2212}", c, cx, move |this, cx| {
+                                this.bump_int(key, min, max, -step, cx)
+                            }))
+                            .child(
+                                div()
+                                    .min_w(px(52.0))
+                                    .text_center()
+                                    .text_color(c.fg)
+                                    .child(SharedString::from(cur.to_string())),
+                            )
+                            .child(step_btn("inc", key, "+", c, cx, move |this, cx| {
+                                this.bump_int(key, min, max, step, cx)
+                            })),
                     )
-                    .child(step_btn("inc", key, "+", c, cx, move |this, cx| {
-                        this.bump_int(key, min, max, step, cx)
-                    }))
+                    .child(slider_track(frac, c))
                     .into_any_element()
             }
             FieldKind::Select(options) => {
@@ -2355,8 +2602,100 @@ impl SettingsView {
                         } else {
                             this.dropdown = Some(SelectMenu {
                                 key,
+                                options: options.iter().map(|s| SharedString::from(*s)).collect(),
+                                at: ev.position(),
+                                default_sentinel: None,
+                            });
+                        }
+                        cx.notify();
+                    }))
+                    .into_any_element()
+            }
+            FieldKind::Float {
+                min_centi,
+                max_centi,
+                step_centi,
+            } => {
+                let cur = self
+                    .prefs
+                    .read(cx)
+                    .value(key)
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(min_centi as f64 / 100.0);
+                let frac = if max_centi > min_centi {
+                    ((cur * 100.0) as f32 - min_centi as f32) / (max_centi - min_centi) as f32
+                } else {
+                    0.0
+                };
+                div()
+                    .flex()
+                    .flex_col()
+                    .items_end()
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap_1()
+                            .child(step_btn("dec", key, "\u{2212}", c, cx, move |this, cx| {
+                                this.bump_float(key, min_centi, max_centi, -step_centi, cx)
+                            }))
+                            .child(
+                                div()
+                                    .min_w(px(52.0))
+                                    .text_center()
+                                    .text_color(c.fg)
+                                    .child(SharedString::from(format!("{cur:.2}"))),
+                            )
+                            .child(step_btn("inc", key, "+", c, cx, move |this, cx| {
+                                this.bump_float(key, min_centi, max_centi, step_centi, cx)
+                            })),
+                    )
+                    .child(slider_track(frac, c))
+                    .into_any_element()
+            }
+            FieldKind::FontFamily => {
+                let cur = self
+                    .prefs
+                    .read(cx)
+                    .value(key)
+                    .and_then(|v| v.as_str().map(str::to_string))
+                    .unwrap_or_default();
+                let is_open = self.dropdown.as_ref().is_some_and(|d| d.key == key);
+                let label = if cur.is_empty() {
+                    "(default)".to_string()
+                } else {
+                    cur
+                };
+                let fonts = self.system_fonts.clone();
+                div()
+                    .id(SharedString::from(format!("font-{key}")))
+                    .min_w(px(200.0))
+                    .flex()
+                    .items_center()
+                    .justify_between()
+                    .gap_2()
+                    .px_2()
+                    .py(px(4.0))
+                    .rounded_sm()
+                    .border_1()
+                    .border_color(if is_open { c.accent } else { c.border })
+                    .bg(c.bg)
+                    .text_color(c.fg)
+                    .text_size(px(11.5))
+                    .child(SharedString::from(label))
+                    .child(div().text_color(c.muted).child("\u{25BE}"))
+                    .on_click(cx.listener(move |this, ev: &ClickEvent, _w, cx| {
+                        if this.dropdown.as_ref().is_some_and(|d| d.key == key) {
+                            this.dropdown = None;
+                        } else {
+                            let sentinel = SharedString::from("(default)");
+                            let mut options = vec![sentinel.clone()];
+                            options.extend(fonts.iter().cloned());
+                            this.dropdown = Some(SelectMenu {
+                                key,
                                 options,
                                 at: ev.position(),
+                                default_sentinel: Some(sentinel),
                             });
                         }
                         cx.notify();
@@ -2777,12 +3116,274 @@ impl SettingsView {
         }
 
         root = root.child(section_label("Typography", c));
-        for key in ["appFontFamily", "appFontSize", "reduceMotion"] {
+        for key in [
+            "appFontFamily",
+            "appFontSize",
+            "appLineHeight",
+            "reduceMotion",
+        ] {
             if let Some(def) = FIELDS.iter().find(|f| f.key == key) {
                 root = root.child(self.render_field(def, c, cx));
             }
         }
 
+        root = root
+            .child(section_label("Titlebar & Status Bar Items", c))
+            .child(self.render_layout_editor(c, cx));
+
+        root.into_any_element()
+    }
+
+    /// The bar-item layout editor — a port of `BarItemLayoutSettings`
+    /// (`reference-src/src/settings/sections/LayoutSection.tsx`). Every
+    /// positionable titlebar/statusbar item gets a Bar / Side / Hidden control;
+    /// changes persist through the backend blob and refresh the live bar via
+    /// [`bar_items::BarLayoutTick`].
+    fn layout_seg(
+        &self,
+        dom_id: String,
+        label: &'static str,
+        active: bool,
+        c: &Palette,
+        cx: &mut Context<Self>,
+        on: impl Fn(&mut Self, &mut Context<Self>) + 'static,
+    ) -> gpui::AnyElement {
+        div()
+            .id(SharedString::from(dom_id))
+            .px_2()
+            .py(px(2.0))
+            .rounded_sm()
+            .text_size(px(10.5))
+            .border_1()
+            .border_color(if active { c.accent } else { c.border })
+            .text_color(if active { c.fg } else { c.muted })
+            .when(!active, |d| d.hover(|s| s.bg(c.border)))
+            .child(label)
+            .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| on(this, cx)))
+            .into_any_element()
+    }
+
+    fn render_layout_editor(&self, c: &Palette, cx: &mut Context<Self>) -> gpui::AnyElement {
+        let rows = BAR_ITEM_ORDER.into_iter().map(|id| {
+            let p = self.placements.get(id);
+            let title = id.toggle_title();
+            let name = if title.is_empty() { id.as_str() } else { title };
+            let is_tb = p.bar == BarLoc::Titlebar;
+            let is_left = p.side == BarSide::Left;
+            div()
+                .flex()
+                .items_center()
+                .justify_between()
+                .gap_2()
+                .py(px(4.0))
+                .border_b_1()
+                .border_color(c.border)
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .text_size(px(11.5))
+                        .text_color(if p.hidden { c.muted } else { c.fg })
+                        .child(SharedString::from(name.to_string())),
+                )
+                .child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap_1()
+                        .child(self.layout_seg(
+                            format!("bar-tb-{}", id.as_str()),
+                            "Titlebar",
+                            is_tb,
+                            c,
+                            cx,
+                            move |this, cx| {
+                                this.move_bar_item(id, Some(BarLoc::Titlebar), None, None, cx)
+                            },
+                        ))
+                        .child(self.layout_seg(
+                            format!("bar-sb-{}", id.as_str()),
+                            "Status",
+                            !is_tb,
+                            c,
+                            cx,
+                            move |this, cx| {
+                                this.move_bar_item(id, Some(BarLoc::Statusbar), None, None, cx)
+                            },
+                        ))
+                        .child(div().w(px(6.0)))
+                        .child(self.layout_seg(
+                            format!("side-l-{}", id.as_str()),
+                            "L",
+                            is_left,
+                            c,
+                            cx,
+                            move |this, cx| {
+                                this.move_bar_item(id, None, Some(BarSide::Left), None, cx)
+                            },
+                        ))
+                        .child(self.layout_seg(
+                            format!("side-r-{}", id.as_str()),
+                            "R",
+                            !is_left,
+                            c,
+                            cx,
+                            move |this, cx| {
+                                this.move_bar_item(id, None, Some(BarSide::Right), None, cx)
+                            },
+                        ))
+                        .child(div().w(px(6.0)))
+                        .child(self.layout_seg(
+                            format!("hide-{}", id.as_str()),
+                            "Hidden",
+                            p.hidden,
+                            c,
+                            cx,
+                            move |this, cx| {
+                                let cur = this.placements.get(id).hidden;
+                                this.move_bar_item(id, None, None, Some(!cur), cx)
+                            },
+                        )),
+                )
+        });
+
+        div()
+            .flex()
+            .flex_col()
+            .children(rows.collect::<Vec<_>>())
+            .child(
+                div().pt_2().child(
+                    div()
+                        .id("bar-reset")
+                        .px_2()
+                        .py(px(3.0))
+                        .rounded_sm()
+                        .border_1()
+                        .border_color(c.border)
+                        .text_size(px(11.0))
+                        .text_color(c.fg)
+                        .hover(|s| s.bg(c.border))
+                        .child("Reset layout")
+                        .on_click(
+                            cx.listener(|this, _: &ClickEvent, _w, cx| this.reset_bar_layout(cx)),
+                        ),
+                ),
+            )
+            .into_any_element()
+    }
+
+    /// The AI Providers section — a functional port of `AiSection`'s provider
+    /// list + `ProviderInstanceCard` + `AddProviderDropdown`. Instances persist
+    /// via `labonair_ai::InstanceStore`; API keys go to the OS keychain
+    /// (`secret_store`), never the preferences JSON.
+    fn render_providers(&self, c: &Palette, cx: &mut Context<Self>) -> gpui::AnyElement {
+        let active_ref = self.instances.active_model_ref();
+        let cards = self.instances.instances().iter().map(|inst| {
+            let id = inst.id.clone();
+            let id_key = id.clone();
+            let has_key =
+                labonair_ai::secret_store::get_instance_key(&*self.secrets, &inst.id).is_some();
+            let needs_key = inst.provider_id.needs_key();
+            let editing_key = self
+                .editing
+                .as_ref()
+                .filter(|e| e.key == format!("provkey:{id}"))
+                .map(|e| e.buffer.clone());
+            div()
+                .flex()
+                .flex_col()
+                .gap_1()
+                .p_2()
+                .rounded_md()
+                .border_1()
+                .border_color(c.border)
+                .child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .justify_between()
+                        .child(div().text_size(px(11.5)).text_color(c.fg).child(
+                            SharedString::from(format!(
+                                "{}  ({})",
+                                inst.name,
+                                inst.provider_id.label()
+                            )),
+                        ))
+                        .child(
+                            div()
+                                .id(SharedString::from(format!("prov-del-{id}")))
+                                .px_2()
+                                .py(px(1.0))
+                                .rounded_sm()
+                                .border_1()
+                                .border_color(c.border)
+                                .text_size(px(10.5))
+                                .text_color(c.muted)
+                                .hover(|s| s.text_color(c.fg))
+                                .child("Remove")
+                                .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                                    this.remove_provider(id_key.clone(), cx)
+                                })),
+                        ),
+                )
+                .when(needs_key, |d| {
+                    let label = match &editing_key {
+                        Some(buf) if buf.is_empty() => "\u{2022}\u{2022}\u{2022}".to_string(),
+                        Some(buf) => "\u{2022}".repeat(buf.len().min(24)),
+                        None if has_key => "API key set \u{2014} click to replace".to_string(),
+                        None => "Set API key\u{2026}".to_string(),
+                    };
+                    let active = editing_key.is_some();
+                    d.child(
+                        div()
+                            .id(SharedString::from(format!("prov-key-{id}")))
+                            .px_2()
+                            .py(px(3.0))
+                            .rounded_sm()
+                            .border_1()
+                            .border_color(if active { c.accent } else { c.border })
+                            .bg(c.bg)
+                            .text_size(px(11.0))
+                            .text_color(if has_key || active { c.fg } else { c.muted })
+                            .child(SharedString::from(label))
+                            .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                                this.begin_edit(&format!("provkey:{id}"), false, cx);
+                            })),
+                    )
+                })
+        });
+
+        let mut root = div().flex().flex_col().gap_2();
+        root = root.child(
+            div()
+                .text_size(px(11.0))
+                .text_color(c.muted)
+                .child(SharedString::from(format!("Active model: {active_ref}"))),
+        );
+        root = root.children(cards.collect::<Vec<_>>());
+        root = root.child(section_label("Add provider", c)).child(
+            div().flex().flex_wrap().gap_1().children(
+                labonair_ai::ProviderId::ALL
+                    .into_iter()
+                    .map(|p| {
+                        div()
+                            .id(SharedString::from(format!("add-prov-{}", p.as_str())))
+                            .px_2()
+                            .py(px(2.0))
+                            .rounded_sm()
+                            .border_1()
+                            .border_color(c.border)
+                            .text_size(px(10.5))
+                            .text_color(c.fg)
+                            .hover(|s| s.bg(c.border))
+                            .child(SharedString::from(p.label()))
+                            .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                                this.add_provider(p, cx)
+                            }))
+                    })
+                    .collect::<Vec<_>>(),
+            ),
+        );
         root.into_any_element()
     }
 
@@ -3031,6 +3632,20 @@ impl SettingsView {
                     .child(self.render_grouped(cat, c, cx))
                     .child(section_label(AGENT_BRIDGE, c))
                     .child(self.render_agent_bridge(c, cx))
+                    .into_any_element();
+            }
+            "AI" => {
+                return div()
+                    .flex()
+                    .flex_col()
+                    .child(self.render_grouped(cat, c, cx))
+                    .child(section_label("Providers", c))
+                    .child(self.render_providers(c, cx))
+                    .child(section_label("Agents & Directives", c))
+                    .child(div().text_size(px(11.0)).text_color(c.muted).child(
+                        "Custom agents and #directives are edited from the AI panel. \
+                                 A dedicated editor lands with the agent-store port.",
+                    ))
                     .into_any_element();
             }
             _ => {}
@@ -3643,6 +4258,25 @@ fn trim_ext(name: &str) -> String {
     name.rsplit_once('.')
         .map(|(s, _)| s.to_string())
         .unwrap_or_else(|| name.to_string())
+}
+
+/// A read-only filled progress track shown under a bounded numeric stepper,
+/// giving it a slider appearance (`fraction` is clamped to `0.0..=1.0`).
+fn slider_track(fraction: f32, c: &Palette) -> impl IntoElement {
+    let pct = (fraction.clamp(0.0, 1.0) * 100.0).round();
+    div()
+        .mt(px(4.0))
+        .w(px(120.0))
+        .h(px(4.0))
+        .rounded_full()
+        .bg(c.border)
+        .child(
+            div()
+                .h_full()
+                .rounded_full()
+                .bg(c.accent)
+                .w(gpui::relative(pct / 100.0)),
+        )
 }
 
 fn section_label(text: &'static str, c: &Palette) -> impl IntoElement {

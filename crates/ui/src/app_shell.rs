@@ -280,6 +280,15 @@ impl AppShell {
         // Publish the shared handles the settings window (its own OS window,
         // T16-009) builds from — it is opened lazily on `Cmd+,`.
         set_settings_deps(prefs.clone(), backend.clone(), tokio.clone(), cx);
+        // Re-read the bar-item layout when the settings window edits it
+        // (T16-012).
+        cx.observe_global::<bar_items::BarLayoutTick>(|this, cx| {
+            this.placements = bar_items::Placements::from_blob(
+                &labonair_backend::modules::settings::bar_item_placements_load(),
+            );
+            cx.notify();
+        })
+        .detach();
 
         // Auto-updater (T15-005). Kicks a quiet background check at startup when
         // the `checkForUpdates` preference is on (6 h backoff inside the store).

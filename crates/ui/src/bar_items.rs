@@ -16,9 +16,17 @@
 
 use std::collections::HashMap;
 
+use gpui::Global;
 use serde_json::{json, Value};
 
 use crate::components::IconName;
+
+/// Bumped whenever the settings window edits a bar-item placement so the live
+/// `AppShell` bar re-reads the persisted blob (`cx.observe_global`).
+#[derive(Default)]
+pub struct BarLayoutTick(pub u64);
+
+impl Global for BarLayoutTick {}
 
 /// Every positionable titlebar/statusbar item. Order of variants is irrelevant;
 /// [`BAR_ITEM_ORDER`] defines bucket iteration order (matches the reference

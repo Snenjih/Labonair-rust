@@ -4,7 +4,75 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
-## Last Session: 2026-09-02 (Block C — Settings: full preference model)
+## Last Session: 2026-09-02 (Block C cont. 2/2 — dropdowns, special sections)
+
+### What Was Done (commit after `47f6127`)
+
+- **T16-010 finished.**
+  - Real floating **`Select` dropdown** (`deferred` + `anchored().snap_to_window()`
+    + occluding backdrop) replaces click-to-cycle — `SettingsView::dropdown:
+    Option<SelectMenu>` (`crates/ui/src/settings.rs`).
+  - **`FieldKind::Float`** (min/max/step in hundredths, `bump_float`) — rows
+    `appLineHeight`, `editorLineHeight`, `terminalLineHeight`,
+    `terminalLetterSpacing`.
+  - **`FieldKind::FontFamily`** — a dropdown built from a scanned system-font
+    list (`labonair_backend::modules::fonts::fonts_list_system`, loaded async
+    into `SettingsView::system_fonts` on open) with a `(default)` sentinel that
+    clears the pref; `appFontFamily` / `terminalFontFamily` / `editorFontFamily`
+    now use it.
+  - **Slider look**: bounded `Int`/`Float` steppers get a read-only filled
+    `slider_track(fraction)` beneath them.
+  - **Conditional rows** (`field_visible`): `sessionScrollbackLines` &c. only
+    when `sessionRestore`, `terminalCursorBlinkInterval` only when blink,
+    `editorAutoSaveDelay` only when auto-save ≠ off, ssh/explorer reconnect
+    detail rows, bookmark action rows, autocomplete provider/model rows.
+  - Nav = the 10 reference top-level entries with nested sub-section headers
+    (`SECTION_GROUPS`); **Themes** top-level; **AI Agent Bridge** rendered
+    inside **Connections**; **Command Palette + Source Control + Bookmarks**
+    folded into **Workspace**; grouped global search; **About hero** in General.
+
+- **T16-012.**
+  - **Bar-item layout editor** (`render_layout_editor`) in the Appearance pane —
+    every `BAR_ITEM_ORDER` item gets Titlebar/Status · L/R · Hidden controls +
+    "Reset layout", built on `crates/ui/src/bar_items.rs`. Persists via the
+    backend blob and bumps the new `bar_items::BarLayoutTick` global; `AppShell`
+    `observe_global`s it and re-reads `Placements` live.
+  - **Theme grid** (`render_themes`) — `ThemeCard`-style grid over the scanned
+    themes (built-in + `~/.config/labonair/themes/*.json`) with Activate /
+    Delete / Import / Export / Open-folder.
+  - **AI Providers section** (`render_providers`) — functional list over
+    `labonair_ai::InstanceStore` (add via a provider chip row, remove), API keys
+    stored in the OS keychain via `labonair_ai::secret_store::{set,clear,get}_instance_key`
+    (synthetic `provkey:<id>` editing key routed in `commit_edit`), never in
+    prefs JSON. Shows the active model ref.
+  - Background-image management already lived in `render_appearance` (grid +
+    import + delete + opacity/blur/tint) — kept.
+
+- **Side-effect propagation** in `set_pref`: documented that the
+  `GlobalPreferences` republish (in `PreferencesStore::set_value`) is the port's
+  generic `applySettingChange` (terminal/editor/workspace observe it); added
+  explicit hooks for `defaultModelId` → `InstanceStore::set_active_model_ref`
+  and `reduceMotion`/`appCornerRadius`/`appLineHeight` → theme re-sync.
+
+### Known gaps / follow-ups
+
+- **Agents / Directives editor** — not built: there is *no* backend agents/
+  directives store in the port yet (reference `agentsStore`/`directivesStore`
+  have no Rust counterpart). The AI pane shows a note. Needs new backend
+  modules first.
+- **Slider** is a stepper + visual track, not a drag handle (no cheap way to
+  map a drag to a value without capturing element bounds).
+- **FontPicker** is a plain dropdown, not the reference's searchable combo.
+- Bar-item live refresh re-reads the whole blob on every `BarLayoutTick`; fine
+  at edit frequency.
+
+### Next: Block D (Command Palette).
+
+---
+
+## Prior Session: 2026-09-02 (Block C cont. 1/2 — separate window + section tree) → commit 47f6127
+
+## Prior Session: 2026-09-02 (Block C — Settings: full preference model)
 
 ### What Was Done (commit after `634706f`)
 
