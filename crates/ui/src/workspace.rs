@@ -966,6 +966,12 @@ impl Workspace {
     /// Type `command` (without executing beyond the trailing newline the caller
     /// includes, if any) into the active terminal pane — snippet "inject" mode.
     /// No-op when the active pane is not a terminal.
+    /// Local dev-server URL detected in the active terminal's output, if any
+    /// (statusbar `previewUrl` item).
+    pub fn active_preview_url(&self, cx: &App) -> Option<String> {
+        self.active_pane_view(cx)?.read(cx).preview_url()
+    }
+
     pub fn inject_into_active_terminal(&self, text: &str, cx: &App) {
         if let Some(view) = self.active_pane_view(cx) {
             let _ = view.read(cx).handle().write(text.as_bytes());

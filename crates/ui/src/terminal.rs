@@ -157,6 +157,14 @@ impl TerminalView {
         self.handle.with(|s| s.cwd())
     }
 
+    /// Scan the recent terminal output for a local dev-server URL
+    /// (`http://localhost:3000`, `127.0.0.1:5173`, …) — drives the statusbar
+    /// `previewUrl` item. Returns the most recently printed match.
+    pub fn preview_url(&self) -> Option<String> {
+        let ctx = self.handle.with(|s| s.ai_context(200)).ok()?;
+        detect_preview_url(&ctx.lines)
+    }
+
     /// The process/window title set via OSC 0/2, if any.
     pub fn shell_title(&self) -> Option<String> {
         self.handle
@@ -799,9 +807,50 @@ fn keystroke_to_input(ks: &Keystroke) -> Option<KeyInput> {
     })
 }
 
+/// Find a local dev-server URL in terminal output. Scans newest line first and
+/// only accepts loopback hosts (`localhost` / `127.0.0.1` / `0.0.0.0` / `[::1]`).
+pub fn detect_preview_url(lines: &[String]) -> Option<String> {
+    const LOOPBACK: [&str; 4] = ["localhost", "127.0.0.1", "0.0.0.0", "[::1]"];
+    for line in lines.iter().rev() {
+        for scheme in ["https://", "http://"] {
+            let Some(i) = line.find(scheme) else { continue };
+            let rest = &line[i..];
+            let end = rest
+                .find(|c: char| {
+                    c.is_whitespace() || matches!(c, '"' | '\'' | ')' | ']' | '>' | ',' | '`')
+                })
+                .unwrap_or(rest.len());
+            let url = rest[..end].trim_end_matches(['.', ':', '/']);
+            let host = &url[scheme.len()..];
+            if LOOPBACK.iter().any(|h| host.starts_with(h)) {
+                return Some(url.to_string());
+            }
+        }
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn detect_preview_url_finds_loopback() {
+        let lines = vec![
+            "  VITE v5.0  ready in 200 ms".to_string(),
+            "  ➜  Local:   http://localhost:5173/".to_string(),
+            "  ➜  Network: http://192.168.1.5:5173/".to_string(),
+        ];
+        assert_eq!(
+            detect_preview_url(&lines),
+            Some("http://localhost:5173".to_string())
+        );
+        assert_eq!(detect_preview_url(&["no url here".to_string()]), None);
+        assert_eq!(
+            detect_preview_url(&["listening on http://127.0.0.1:3000".to_string()]),
+            Some("http://127.0.0.1:3000".to_string())
+        );
+    }
 
     fn ks(key: &str, mods: gpui::Modifiers) -> Keystroke {
         Keystroke {

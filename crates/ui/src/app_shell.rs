@@ -1301,9 +1301,13 @@ impl AppShell {
 
         let left = self.build_bar_bucket(BarLoc::Titlebar, BarSide::Left, cx);
         let right = self.build_bar_bucket(BarLoc::Titlebar, BarSide::Right, cx);
-        let tabs = self
-            .workspace
-            .update(cx, |w, cx| w.render_tab_bar(cx).into_any_element());
+        // `tabsLocation === "sidebar"` moves the tab strip out of the titlebar
+        // and into the Tabs sidebar panel.
+        let tabs_in_sidebar = self.prefs.read(cx).get().tabs_location == "sidebar";
+        let tabs = (!tabs_in_sidebar).then(|| {
+            self.workspace
+                .update(cx, |w, cx| w.render_tab_bar(cx).into_any_element())
+        });
 
         div()
             .flex()
@@ -1325,7 +1329,7 @@ impl AppShell {
                     .flex_shrink_0()
                     .children(left),
             )
-            .child(div().flex_1().min_w_0().child(tabs))
+            .child(div().flex_1().min_w_0().children(tabs))
             .when(self.search_open, |d| d.child(self.render_search(cx)))
             .child(
                 div()
@@ -1655,6 +1659,7 @@ impl AppShell {
             BarItemId::ExplorerPanel => Some(SidebarPanel::Explorer),
             BarItemId::SnippetsPanel => Some(SidebarPanel::Snippets),
             BarItemId::SourceControlPanel => Some(SidebarPanel::SourceControl),
+            BarItemId::TabsPanel => Some(SidebarPanel::Tabs),
             _ => None,
         }
     }
@@ -1664,6 +1669,7 @@ impl AppShell {
             SidebarPanel::Explorer => BarItemId::ExplorerPanel,
             SidebarPanel::Snippets => BarItemId::SnippetsPanel,
             SidebarPanel::SourceControl => BarItemId::SourceControlPanel,
+            SidebarPanel::Tabs => BarItemId::TabsPanel,
             _ => return None,
         })
     }
@@ -1790,10 +1796,16 @@ impl AppShell {
             BarItemId::ExplorerPanel | BarItemId::SnippetsPanel | BarItemId::SourceControlPanel => {
                 Some(self.render_panel_toggle(id, compact, cx))
             }
-            // Tabs live in the titlebar in this port, so the sidebar tabs
-            // panel toggle renders nothing (reference `renderBarItem` returns
-            // null unless `tabsLocation === "sidebar"`).
-            BarItemId::TabsPanel => None,
+            // The Tabs sidebar-panel toggle only shows when the tab strip has
+            // been moved out of the titlebar (reference: `renderBarItem`
+            // returns null unless `tabsLocation === "sidebar"`).
+            BarItemId::TabsPanel => {
+                if self.prefs.read(cx).get().tabs_location == "sidebar" {
+                    Some(self.render_panel_toggle(id, compact, cx))
+                } else {
+                    None
+                }
+            }
             BarItemId::CwdBreadcrumb => Some(self.render_cwd_breadcrumb(compact, cx)),
             BarItemId::CursorPosition => {
                 let (line, col) = self.workspace.read(cx).active_editor_cursor(cx)?;
@@ -1806,9 +1818,30 @@ impl AppShell {
                         .into_any_element(),
                 )
             }
-            // Dev-server URL detection from terminal output is not ported yet;
-            // the item stays placeable but self-hides.
-            BarItemId::PreviewUrl => None,
+            BarItemId::PreviewUrl => {
+                let url = self.workspace.read(cx).active_preview_url(cx)?;
+                let muted = self.theme.read(cx).muted_foreground();
+                let fg = self.theme.read(cx).foreground();
+                let open = url.clone();
+                Some(
+                    div()
+                        .id("bar-preview-url")
+                        .flex()
+                        .items_center()
+                        .gap_1()
+                        .text_size(px(if compact { 11.0 } else { 12.0 }))
+                        .text_color(muted)
+                        .hover(|s| s.text_color(fg))
+                        .child(IconName::Globe.svg(muted).size(px(11.0)))
+                        .child(SharedString::from(
+                            url.strip_prefix("http://").unwrap_or(&url).to_string(),
+                        ))
+                        .on_click(cx.listener(move |_, _: &ClickEvent, _w, cx| {
+                            cx.open_url(&open);
+                        }))
+                        .into_any_element(),
+                )
+            }
             BarItemId::AiMini => Some(self.render_ai_toggle(IconName::MessageSquare, compact, cx)),
             BarItemId::AiPanel => Some(self.render_ai_toggle(IconName::PanelBottom, compact, cx)),
         }

@@ -398,6 +398,8 @@ pub struct GitPanelView {
     selected: Option<Selected>,
     diff_text: Option<String>,
     diff_error: Option<String>,
+    /// Diff preview layout — `true` = side-by-side, `false` = unified.
+    diff_split: bool,
     /// Open source-control file right-click menu: `(path, section, cursor)`.
     file_menu: Option<(String, Section, Point<Pixels>)>,
 
@@ -490,6 +492,7 @@ impl GitPanelView {
             op_in_progress: false,
             collapsed: std::collections::HashSet::new(),
             selected: None,
+            diff_split: false,
             diff_text: None,
             diff_error: None,
             file_menu: None,
@@ -652,6 +655,17 @@ impl GitPanelView {
             self.diff_text = None;
             self.diff_error = None;
         } else {
+            self.selected = Some(sel);
+            self.reload_diff(cx);
+        }
+        cx.notify();
+    }
+
+    /// Open `sel`'s diff in side-by-side layout (context menu "Open Diff
+    /// (Split)"). Always opens (never toggles closed).
+    fn open_diff_split(&mut self, sel: Selected, cx: &mut Context<Self>) {
+        self.diff_split = true;
+        if self.selected.as_ref() != Some(&sel) {
             self.selected = Some(sel);
             self.reload_diff(cx);
         }
@@ -1703,15 +1717,36 @@ impl GitPanelView {
             .child(SharedString::from(short_path(&sel.path)))
             .child(
                 div()
-                    .id("git-diff-close")
-                    .text_color(c.muted)
-                    .hover(|s| s.text_color(c.fg))
-                    .child(SharedString::from("\u{2715}"))
-                    .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
-                        this.selected = None;
-                        this.diff_text = None;
-                        cx.notify();
-                    })),
+                    .flex()
+                    .items_center()
+                    .gap(px(8.0))
+                    .child(
+                        div()
+                            .id("git-diff-layout")
+                            .text_color(c.muted)
+                            .hover(|s| s.text_color(c.fg))
+                            .child(SharedString::from(if self.diff_split {
+                                "Unified"
+                            } else {
+                                "Split"
+                            }))
+                            .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
+                                this.diff_split = !this.diff_split;
+                                cx.notify();
+                            })),
+                    )
+                    .child(
+                        div()
+                            .id("git-diff-close")
+                            .text_color(c.muted)
+                            .hover(|s| s.text_color(c.fg))
+                            .child(SharedString::from("\u{2715}"))
+                            .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
+                                this.selected = None;
+                                this.diff_text = None;
+                                cx.notify();
+                            })),
+                    ),
             );
 
         if let Some(err) = &self.diff_error {
@@ -1761,8 +1796,14 @@ impl GitPanelView {
                                     )
                                 }),
                         );
-                        for l in &hunk.lines {
-                            body = body.child(diff_line(l, c));
+                        if self.diff_split {
+                            for row in split_hunk_rows(&hunk.lines, c) {
+                                body = body.child(row);
+                            }
+                        } else {
+                            for l in &hunk.lines {
+                                body = body.child(diff_line(l, c));
+                            }
                         }
                     }
                 }
@@ -3070,10 +3111,17 @@ impl GitPanelView {
                 staged,
                 untracked,
             };
+            let sel_split = sel.clone();
             items.push(
                 MenuItem::new("gitm-diff", "Open Diff").on_click(act(Box::new(move |this, cx| {
+                    this.diff_split = false;
                     this.select_file(sel.clone(), cx)
                 }))),
+            );
+            items.push(
+                MenuItem::new("gitm-diff-split", "Open Diff (Split)").on_click(act(Box::new(
+                    move |this, cx| this.open_diff_split(sel_split.clone(), cx),
+                ))),
             );
         }
 
@@ -3086,6 +3134,72 @@ impl GitPanelView {
         };
         Some(context_menu(pos, self.theme.read(cx), dismiss, items))
     }
+}
+
+/// Render one hunk's body lines as side-by-side rows (old left, new right).
+/// Deletions align on the left, insertions on the right, context on both;
+/// unbalanced runs pad the shorter side with blanks.
+fn split_hunk_rows(lines: &[String], c: Colors) -> Vec<gpui::AnyElement> {
+    let cell = |text: &str, color: gpui::Hsla, tint: Option<gpui::Hsla>| {
+        let mut d = div()
+            .flex_1()
+            .min_w_0()
+            .px(px(8.0))
+            .whitespace_nowrap()
+            .overflow_hidden()
+            .text_color(color);
+        if let Some(t) = tint {
+            d = d.bg(t.opacity(0.10));
+        }
+        d.child(SharedString::from(if text.is_empty() {
+            " ".to_string()
+        } else {
+            text.to_string()
+        }))
+    };
+    let row = |left: gpui::AnyElement, right: gpui::AnyElement| {
+        div()
+            .flex()
+            .gap(px(1.0))
+            .child(left)
+            .child(right)
+            .into_any_element()
+    };
+    let mut out: Vec<gpui::AnyElement> = Vec::new();
+    let mut dels: Vec<&str> = Vec::new();
+    let mut adds: Vec<&str> = Vec::new();
+    let flush = |out: &mut Vec<gpui::AnyElement>, dels: &mut Vec<&str>, adds: &mut Vec<&str>| {
+        let n = dels.len().max(adds.len());
+        for i in 0..n {
+            let l = dels
+                .get(i)
+                .map(|s| cell(s, c.error, Some(c.error)).into_any_element())
+                .unwrap_or_else(|| cell("", c.fg, None).into_any_element());
+            let r = adds
+                .get(i)
+                .map(|s| cell(s, c.success, Some(c.success)).into_any_element())
+                .unwrap_or_else(|| cell("", c.fg, None).into_any_element());
+            out.push(row(l, r));
+        }
+        dels.clear();
+        adds.clear();
+    };
+    for line in lines {
+        match line.chars().next() {
+            Some('-') => dels.push(line.get(1..).unwrap_or("")),
+            Some('+') => adds.push(line.get(1..).unwrap_or("")),
+            _ => {
+                flush(&mut out, &mut dels, &mut adds);
+                let text = line.strip_prefix(' ').unwrap_or(line);
+                out.push(row(
+                    cell(text, c.fg, None).into_any_element(),
+                    cell(text, c.fg, None).into_any_element(),
+                ));
+            }
+        }
+    }
+    flush(&mut out, &mut dels, &mut adds);
+    out
 }
 
 fn diff_line(line: &str, c: Colors) -> impl IntoElement {
