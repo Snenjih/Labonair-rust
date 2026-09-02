@@ -2,6 +2,7 @@ use gpui::{
     prelude::*, px, size, App, Application, Bounds, TitlebarOptions, WindowBounds, WindowOptions,
 };
 
+use gpui_component::Root;
 use labonair_backend::{App as Backend, AppEvent};
 use labonair_ui::{window_state, AppShell};
 use tokio::sync::broadcast::error::RecvError;
@@ -60,53 +61,61 @@ fn main() {
 
     tracing::info!("Labonair-rust starting");
 
-    Application::new().run(move |cx: &mut App| {
-        labonair_ui::init_fonts(cx);
-        let bounds = window_state::load()
-            .unwrap_or_else(|| Bounds::centered(None, size(px(1200.0), px(800.0)), cx));
-        cx.open_window(
-            WindowOptions {
-                window_bounds: Some(WindowBounds::Windowed(bounds)),
-                titlebar: Some(TitlebarOptions {
-                    title: Some("Labonair".into()),
-                    appears_transparent: false,
-                    traffic_light_position: None,
-                }),
-                window_min_size: Some(size(px(720.0), px(480.0))),
-                ..Default::default()
-            },
-            move |window, cx| {
-                let theme = labonair_ui::init_theme(window.appearance(), cx);
-                window
-                    .observe_window_appearance({
-                        let theme = theme.clone();
-                        move |window, cx| {
-                            let appearance = window.appearance();
-                            theme.update(cx, |store, cx| {
-                                store.set_system_appearance(appearance, cx)
-                            });
-                        }
-                    })
-                    .detach();
-                let background = labonair_ui::init_background(cx);
-                let notifications = labonair_ui::init_notifications(cx);
-                let backend = backend.clone();
-                let tokio_handle = tokio_handle.clone();
-                cx.new(|cx| {
-                    AppShell::new(
-                        theme,
-                        background,
-                        notifications,
-                        backend,
-                        tokio_handle,
-                        window,
-                        cx,
-                    )
-                })
-            },
-        )
-        .expect("failed to open window");
-        labonair_ui::init_menus(cx);
-        cx.activate(true);
-    });
+    Application::new()
+        .with_assets(labonair_ui::Assets)
+        .run(move |cx: &mut App| {
+            labonair_ui::init_fonts(cx);
+            gpui_component::init(cx);
+            let bounds = window_state::load()
+                .unwrap_or_else(|| Bounds::centered(None, size(px(1200.0), px(800.0)), cx));
+            cx.open_window(
+                WindowOptions {
+                    window_bounds: Some(WindowBounds::Windowed(bounds)),
+                    titlebar: Some(TitlebarOptions {
+                        title: Some("Labonair".into()),
+                        appears_transparent: false,
+                        traffic_light_position: None,
+                    }),
+                    window_min_size: Some(size(px(720.0), px(480.0))),
+                    ..Default::default()
+                },
+                move |window, cx| {
+                    let theme = labonair_ui::init_theme(window.appearance(), cx);
+                    window
+                        .observe_window_appearance({
+                            let theme = theme.clone();
+                            move |window, cx| {
+                                let appearance = window.appearance();
+                                theme.update(cx, |store, cx| {
+                                    store.set_system_appearance(appearance, cx)
+                                });
+                            }
+                        })
+                        .detach();
+                    let background = labonair_ui::init_background(cx);
+                    let notifications = labonair_ui::init_notifications(cx);
+                    let backend = backend.clone();
+                    let tokio_handle = tokio_handle.clone();
+                    // The window's first layer must be a `gpui_component::Root`
+                    // so gpui-component primitives (Input, popovers, dialogs,
+                    // notifications) can reach their deferred render layers.
+                    let shell = cx.new(|cx| {
+                        AppShell::new(
+                            theme,
+                            background,
+                            notifications,
+                            backend,
+                            tokio_handle,
+                            window,
+                            cx,
+                        )
+                    });
+                    let shell_view: gpui::AnyView = shell.into();
+                    cx.new(|cx| Root::new(shell_view, window, cx))
+                },
+            )
+            .expect("failed to open window");
+            labonair_ui::init_menus(cx);
+            cx.activate(true);
+        });
 }

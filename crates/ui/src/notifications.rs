@@ -46,13 +46,14 @@ impl Severity {
         }
     }
 
-    /// A single glyph used in the toast (real icons arrive with the icon set).
-    fn glyph(self) -> &'static str {
+    /// The toast icon for this severity.
+    fn glyph(self) -> crate::components::IconName {
+        use crate::components::IconName;
         match self {
-            Severity::Info => "\u{2139}",
-            Severity::Success => "\u{2714}",
-            Severity::Warning => "\u{26A0}",
-            Severity::Error => "\u{2716}",
+            Severity::Info => IconName::Info,
+            Severity::Success => IconName::CircleCheck,
+            Severity::Warning => IconName::Warning,
+            Severity::Error => IconName::CircleX,
         }
     }
 
@@ -435,7 +436,7 @@ pub fn render_overlay(
                     .flex()
                     .items_start()
                     .gap_2()
-                    .child(div().text_color(accent).child(t.severity.glyph()))
+                    .child(div().child(t.severity.glyph().svg(accent)))
                     .child(
                         div()
                             .flex_1()

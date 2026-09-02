@@ -5,10 +5,12 @@
 pub mod agent_access;
 pub mod ai_chat;
 pub mod app_shell;
+pub mod assets;
 pub mod background;
 pub mod bell;
 pub mod bookmarks;
 pub mod command_palette;
+pub mod components;
 pub mod diff;
 pub mod editor;
 pub mod explorer;
@@ -36,6 +38,7 @@ pub mod workspace;
 pub use agent_access::{AgentAccessEntry, AgentAccessStore};
 pub use ai_chat::{init as init_ai_chat, AiChatStore, AiChatView, Attachment, AttachmentKind};
 pub use app_shell::{AppShell, SidebarPanel};
+pub use assets::Assets;
 pub use background::{
     background_store, init as init_background, BackgroundFit, BackgroundStore, BackgroundTarget,
     GlobalBackground, LayerScope,
@@ -45,6 +48,9 @@ pub use command_palette::{
     command_for_shortcut, effective_binding, find_conflict, resolve_conflict, shortcut,
     shortcut_from_slug, shortcut_slug, shortcuts, CommandId, CommandPalette, Conflict, KeybindMap,
     PaletteEvent, ShortcutId,
+};
+pub use components::{
+    button, field_input, file_icon, folder_icon, text_field, ButtonSize, ButtonVariant, IconName,
 };
 pub use diff::{DiffLayout, DiffView};
 pub use editor::{EditorEvent, EditorView};

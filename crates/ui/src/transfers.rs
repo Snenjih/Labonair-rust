@@ -591,7 +591,11 @@ impl Render for TransfersView {
                 .text_color(c.fg)
                 .text_xs()
                 .shadow_lg()
-                .child("\u{21C5}")
+                .child(
+                    crate::components::IconName::ArrowDownUp
+                        .svg(c.fg)
+                        .size(px(12.0)),
+                )
                 .child(SharedString::from(format!(
                     "{active} active \u{00b7} {} total",
                     self.jobs.len()

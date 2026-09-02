@@ -2367,7 +2367,11 @@ impl GitPanelView {
                     .text_color(c.muted)
                     .text_size(px(11.0))
                     .hover(|s| s.text_color(c.fg))
-                    .child(SharedString::from("\u{270E}"))
+                    .child(
+                        crate::components::IconName::Pencil
+                            .svg(c.muted)
+                            .size(px(11.0)),
+                    )
                     .on_click(cx.listener(move |this, _: &ClickEvent, w, cx| {
                         cx.stop_propagation();
                         this.rename_target = Some(rn_name.clone());
@@ -2857,7 +2861,7 @@ impl Render for GitPanelView {
             .border_b_1()
             .border_color(c.border)
             .child(
-                self.tool_btn("git-refresh", "\u{21BB} Refresh", c, cx, |this, _w, cx| {
+                self.tool_btn("git-refresh", "Refresh", c, cx, |this, _w, cx| {
                     this.refresh_soon(cx)
                 }),
             )

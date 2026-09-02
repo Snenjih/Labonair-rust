@@ -39,6 +39,7 @@ use crate::ai_chat::{AiChatStore, AiChatView};
 use crate::background::{BackgroundStore, LayerScope};
 use crate::bookmarks::{BookmarkEvent, BookmarksView};
 use crate::command_palette::{CommandId, CommandPalette, PaletteEvent};
+use crate::components::IconName;
 use crate::explorer::ExplorerView;
 use crate::git::GitPanelView;
 use crate::git_graph::GitGraphView;
@@ -98,14 +99,14 @@ impl SidebarPanel {
         }
     }
 
-    /// A single glyph for the switcher rail (real icons arrive with the panels).
-    fn glyph(self) -> &'static str {
+    /// The switcher-rail icon for this panel (mirrors the reference tab icons).
+    fn glyph(self) -> IconName {
         match self {
-            SidebarPanel::Explorer => "\u{1F4C1}",
-            SidebarPanel::Snippets => "\u{2702}",
-            SidebarPanel::SourceControl => "\u{2325}",
-            SidebarPanel::GitGraph => "\u{26D3}",
-            SidebarPanel::Ai => "\u{2728}",
+            SidebarPanel::Explorer => IconName::Folder,
+            SidebarPanel::Snippets => IconName::Command,
+            SidebarPanel::SourceControl => IconName::GitBranch,
+            SidebarPanel::GitGraph => IconName::GitCompare,
+            SidebarPanel::Ai => IconName::Sparkles,
         }
     }
 }
@@ -851,7 +852,7 @@ impl AppShell {
                     .rounded_md()
                     .text_color(muted)
                     .hover(|s| s.bg(border).text_color(fg))
-                    .child("\u{2630}")
+                    .child(IconName::PanelLeft.svg(muted))
                     .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
                         this.toggle_sidebar(cx);
                     })),
@@ -910,7 +911,7 @@ impl AppShell {
                     .rounded_md()
                     .text_color(muted)
                     .hover(|s| s.bg(border).text_color(fg))
-                    .child("\u{1F6E1}")
+                    .child(IconName::Shield.svg(muted))
                     .child(
                         div()
                             .absolute()
@@ -1090,7 +1091,11 @@ impl AppShell {
                     .text_color(if is_active { sidebar_fg } else { muted })
                     .when(is_active, |d| d.bg(accent))
                     .when(!is_active, |d| d.hover(|s| s.bg(sidebar_border)))
-                    .child(panel.glyph())
+                    .child(
+                        panel
+                            .glyph()
+                            .svg(if is_active { sidebar_fg } else { muted }),
+                    )
                     .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
                         this.select_panel(panel, cx);
                     }))

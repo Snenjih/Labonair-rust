@@ -4,7 +4,73 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
-## Last Session: 2026-09-02 (T13-005 — Remaining shortcut handlers)
+## Last Session: 2026-09-02 (Block A — shared component + icon layer)
+
+### What Was Done
+Feature-parity audit **Block A — Fundament (P0)** (`vergleichsbericht-subagent-3.md` / `-4.md`).
+
+- **T16-001 — gpui-component dependency + shared primitives.**
+  - Added `gpui-component = "0.5.1"` to `[workspace.dependencies]` (it targets
+    `gpui ^0.2.2`, matching the repo). Wired `gpui_component::init(cx)` and an
+    asset source in `crates/app/src/main.rs`; the window root is now wrapped in
+    **`gpui_component::Root`** (required so its `Input`/popover/dialog layers
+    resolve — `Root::read` panics otherwise). On macOS server-side decorations
+    `Root`'s `window_border()` is a no-op, so no layout shift expected.
+  - New `crates/ui/src/components/` module:
+    - `button.rs` — `button(id, &ThemeStore, ButtonVariant, ButtonSize)` builder.
+      Six variants × eight sizes, pill radius (`radius.xl4` == 13px ==
+      reference `rounded-4xl`), transparent border, per-variant hover — all 1:1
+      from `reference-src/src/components/ui/button.tsx`. Unit-tested.
+    - `icon.rs` — `IconName` enum (macro-generated path table) + `.svg(color)`
+      renderer + `file_icon`/`folder_icon` resolvers (reduced `iconResolver.ts`).
+    - `text_field.rs` — re-exports gpui-component `InputState` / `Input` (as the
+      `TextField` primitive) + `text_field` / `field_input` helpers.
+    - re-exports `Badge` / `Switch` / `Tooltip` for later blocks.
+  - `crates/ui/src/assets.rs` — `Assets` (`gpui::AssetSource`) embedding ~40
+    Lucide SVGs bundled under `crates/ui/assets/icons/` (ISC licensed).
+  - `hosts.rs::btn` restyled to the reference pill radius / transparent-border
+    treatment (full swap of the 32 call sites onto `components::button` is
+    incremental — Block B, when the host-manager panel is rebuilt).
+- **T16-002 — real text input (canary).** `explorer.rs` inline create/rename
+  row now uses a real `InputState`/`Input` (caret, mouse selection, clipboard
+  paste, IME, undo) instead of the focus-div that pushed chars via
+  `on_key_down`. Enter → commit via `InputEvent::PressEnter`, Esc → cancel.
+  `edit_focus` / the char-pushing `on_edit_key` body removed. Other call sites
+  (AI composer, host form, SSH prompts, search boxes) left for later blocks —
+  the widget is ready.
+- **T16-003 — icon system + emoji purge.** Replaced every emoji / geometric
+  pseudo-icon in `app_shell`, `tabs`, `explorer`, `ai_chat`, `sftp`, `snippets`,
+  `git`, `hosts`, `notifications`, `transfers`, `workspace` with `IconName`
+  SVGs (`TabKind::indicator()` and `SidebarPanel::glyph()` now return
+  `IconName`; host checkboxes → `Square`/`SquareCheck`; severity/warn glyphs →
+  `TriangleAlert`/`CircleCheck`/`CircleX`/`Info`; jump-route `⤳` → `→`).
+  New CI guard `crates/ui/tests/no_pictograph_icons.rs` fails if any emoji or
+  listed pseudo-icon glyph reappears in non-comment / non-test code.
+  Deliberately kept (audit-sanctioned): status dots `○ ◐ ●`, disclosure carets
+  `▸ ▾`, arrows, `·`, key-combo symbols `⌘ ⌃ ⌥` in help strings.
+
+### Current State
+- Branch `master`. `cargo fmt --check`, `cargo check --workspace --all-targets`,
+  `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test
+  --workspace` — all green. (Pre-existing unrelated uncommitted `CLAUDE.md` edit
+  left untouched.)
+
+### What's Next
+- **Block B** of the audit. First prerequisite: compose gpui-component's
+  notification / dialog / sheet render layers into the tree (Root currently
+  renders only the child view) before using Select/Dropdown/Dialog/Tooltip/
+  ContextMenu. Then the dynamic command palette, dynamic sidebars, master/detail
+  Host Manager, CWD breadcrumb, SSH loading screen, AI composer rebuild.
+
+### Blockers / notes
+- The explorer TextField canary + `Root` wrapper are compile+clippy+test clean
+  but **not runtime-verified** (no GUI here) — worth an eyeball in the manual
+  `cargo run` round: (a) explorer rename/new-file field types correctly,
+  (b) no global layout shift from the `Root` wrapper.
+
+---
+
+## Prev Session: 2026-09-02 (T13-005 — Remaining shortcut handlers)
 
 ### What Was Done
 - **T13-005 ✅ Done.** Wired the non-menu shortcuts the T15-006 audit flagged,

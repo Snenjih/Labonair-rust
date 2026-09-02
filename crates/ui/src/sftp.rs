@@ -40,6 +40,7 @@ use labonair_backend::modules::sftp::connection::sftp_connect;
 use labonair_backend::modules::ssh::sftp as backend_sftp;
 use labonair_backend::App as Backend;
 
+use crate::components::IconName;
 use crate::theme::ThemeStore;
 
 // ── pure helpers (unit-tested) ─────────────────────────────────────────────
@@ -1078,18 +1079,21 @@ impl SftpView {
                     this.go_up(side, cx)
                 }),
             )
-            .child(
-                self.tool_btn(side, "reload", "\u{21BB}", c, cx, |this, side, cx| {
-                    this.reload(side, cx)
-                }),
-            )
+            .child(self.tool_btn(
+                side,
+                "reload",
+                IconName::Refresh.svg(c.muted).size(px(13.0)),
+                c,
+                cx,
+                |this, side, cx| this.reload(side, cx),
+            ))
             .child(self.tool_btn(
                 side,
                 "hidden",
                 if pane.show_hidden {
-                    "\u{25C9}"
+                    IconName::Eye.svg(c.muted).size(px(13.0))
                 } else {
-                    "\u{25CB}"
+                    IconName::EyeOff.svg(c.muted).size(px(13.0))
                 },
                 c,
                 cx,
@@ -1222,7 +1226,7 @@ impl SftpView {
         &self,
         side: Side,
         id: &'static str,
-        glyph: &'static str,
+        glyph: impl IntoElement,
         c: Colors,
         cx: &mut Context<Self>,
         handler: impl Fn(&mut Self, Side, &mut Context<Self>) + 'static,
@@ -1286,11 +1290,11 @@ impl SftpView {
     ) -> gpui::AnyElement {
         let selected = pane.selected.as_deref() == Some(entry.path.as_str());
         let glyph = if entry.is_dir {
-            "\u{1F4C1}"
+            IconName::Folder
         } else if entry.is_symlink {
-            "\u{1F517}"
+            IconName::Link
         } else {
-            "\u{1F4C4}"
+            crate::components::file_icon(&entry.name)
         };
         let id: SharedString = format!("row:{:?}:{}", side_key(side), entry.path).into();
         let e_click = entry.clone();
@@ -1314,7 +1318,7 @@ impl SftpView {
             .text_sm()
             .when(selected, |d| d.bg(c.border))
             .when(!selected, |d| d.hover(|s| s.bg(c.card)))
-            .child(div().child(glyph))
+            .child(div().child(glyph.svg(c.muted)))
             .child(
                 div()
                     .flex_1()

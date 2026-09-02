@@ -24,6 +24,7 @@ use labonair_backend::modules::ssh::config_parser::{self, ImportConflict, SshCon
 use labonair_backend::App as Backend;
 use tokio::runtime::Handle as TokioHandle;
 
+use crate::components::IconName;
 use crate::notifications::{notification_center, Notification};
 use crate::theme::ThemeStore;
 
@@ -38,12 +39,14 @@ pub enum HostStatus {
 }
 
 impl HostStatus {
+    /// Status dot (○ ◐ ●) for the non-error states; `Failed` renders a real
+    /// warning icon instead (see `render_status_indicator`).
     fn glyph(self) -> &'static str {
         match self {
             HostStatus::Disconnected => "\u{25cb}", // ○
             HostStatus::Connecting => "\u{25d0}",   // ◐
             HostStatus::Connected => "\u{25cf}",    // ●
-            HostStatus::Failed => "\u{26a0}",       // ⚠
+            HostStatus::Failed => "",
         }
     }
     fn label(self) -> &'static str {
@@ -1022,6 +1025,11 @@ impl HostManagerView {
         }
     }
 
+    /// Small host-manager action button. Visual language (pill `rounded-4xl`
+    /// radius, transparent border, `default` vs `outline` variant) tracks
+    /// `reference-src/src/components/ui/button.tsx` / [`crate::components`];
+    /// the shared `components::button` builder will replace this helper once
+    /// the whole host-manager panel is migrated (Block B).
     fn btn(
         &self,
         id: &'static str,
@@ -1029,11 +1037,17 @@ impl HostManagerView {
         p: &Palette,
         primary: bool,
     ) -> gpui::Stateful<gpui::Div> {
+        // `--radius-4xl` == 13px (see `labonair_theme::RadiusScale`).
         let base = div()
             .id(id)
-            .px_2()
+            .flex()
+            .items_center()
+            .justify_center()
+            .px_3()
             .py_1()
-            .rounded_md()
+            .rounded(px(13.0))
+            .border_1()
+            .border_color(gpui::transparent_black())
             .text_xs()
             .cursor_pointer();
         if primary {
@@ -1042,7 +1056,6 @@ impl HostManagerView {
                 .hover(|s| s.opacity(0.85))
         } else {
             base.text_color(p.muted)
-                .border_1()
                 .border_color(p.border)
                 .hover(|s| s.bg(p.border).text_color(p.fg))
         }
@@ -1084,7 +1097,10 @@ impl HostManagerView {
                         HostStatus::Failed => p.fg,
                         _ => p.muted,
                     })
-                    .child(status.glyph()),
+                    .when(status == HostStatus::Failed, |d| {
+                        d.child(IconName::Warning.svg(p.fg).size(px(12.0)))
+                    })
+                    .when(status != HostStatus::Failed, |d| d.child(status.glyph())),
             )
             .child(
                 div()
@@ -1847,10 +1863,10 @@ impl HostManagerView {
                     .border_1()
                     .border_color(if checked { p.accent } else { p.border })
                     .cursor_pointer()
-                    .child(div().w(px(14.0)).text_color(p.accent).child(if checked {
-                        "\u{2611}"
+                    .child(div().w(px(14.0)).child(if checked {
+                        IconName::SquareCheck.svg(p.accent).size(px(14.0))
                     } else {
-                        "\u{2610}"
+                        IconName::Square.svg(p.muted).size(px(14.0))
                     }))
                     .child(
                         div()
@@ -2027,10 +2043,10 @@ impl HostManagerView {
                     .border_1()
                     .border_color(if checked { p.accent } else { p.border })
                     .cursor_pointer()
-                    .child(div().w(px(14.0)).text_color(p.accent).child(if checked {
-                        "\u{2611}"
+                    .child(div().w(px(14.0)).child(if checked {
+                        IconName::SquareCheck.svg(p.accent).size(px(14.0))
                     } else {
-                        "\u{2610}"
+                        IconName::Square.svg(p.muted).size(px(14.0))
                     }))
                     .child(div().flex_1().min_w_0().text_sm().text_color(p.fg).child(
                         SharedString::from(format!(

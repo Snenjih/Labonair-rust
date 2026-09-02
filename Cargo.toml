@@ -11,9 +11,12 @@ members = [
 ]
 
 [workspace.dependencies]
-# GPUI (Zed's GPU-accelerated UI framework). gpui-component is a separate crate,
-# added later when UI components are needed (T04+).
+# GPUI (Zed's GPU-accelerated UI framework).
 gpui = "0.2.2"
+# gpui-component — shared primitive/component library (Button, Input, Select,
+# Dropdown, Dialog, Tooltip, Switch, Badge, ContextMenu, Lucide icons). Pinned
+# to the release that targets gpui 0.2.2 (matches the `gpui` line above).
+gpui-component = "0.5.1"
 
 # Terminal
 alacritty_terminal = "0.24"

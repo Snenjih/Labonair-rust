@@ -383,6 +383,7 @@ use gpui::{
 use labonair_ai::{find_model, MessageStatus, Role, SessionToolCall, ToolCallStatus, MODELS};
 use labonair_editor::{Language, SyntaxHighlighter};
 
+use crate::components::IconName;
 use crate::markdown::{parse_markdown, Inline, MdBlock};
 use crate::syntax_theme::EditorPalette;
 use crate::theme::ThemeStore;
@@ -423,11 +424,11 @@ impl Attachment {
         }
     }
 
-    fn glyph(&self) -> &'static str {
+    fn glyph(&self) -> IconName {
         match self.kind {
-            AttachmentKind::Selection => "\u{2702}",
-            AttachmentKind::File => "\u{1F4C4}",
-            AttachmentKind::Image => "\u{1F5BC}",
+            AttachmentKind::Selection => IconName::Scissors,
+            AttachmentKind::File => IconName::File,
+            AttachmentKind::Image => IconName::Image,
         }
     }
 }
@@ -931,9 +932,13 @@ impl AiChatView {
                         .when(!chips.is_empty(), |d| {
                             d.children(chips.iter().map(|chip| {
                                 div()
+                                    .flex()
+                                    .items_center()
+                                    .gap_1()
                                     .text_size(px(10.0))
                                     .opacity(0.85)
-                                    .child(SharedString::from(format!("\u{1F4CE} {chip}")))
+                                    .child(IconName::Paperclip.svg(c.muted).size(px(11.0)))
+                                    .child(SharedString::from(chip.clone()))
                             }))
                         })
                         .when(!text.trim().is_empty(), |d| {
@@ -1359,13 +1364,13 @@ impl AiChatView {
                             .bg(c.card)
                             .text_size(px(10.0))
                             .text_color(c.muted)
-                            .child(a.glyph())
+                            .child(a.glyph().svg(c.muted).size(px(12.0)))
                             .child(SharedString::from(truncate(&a.label, 28)))
                             .child(
                                 div()
                                     .id(SharedString::from(format!("att-{i}")))
                                     .hover(|s| s.text_color(c.error))
-                                    .child("\u{00d7}")
+                                    .child(IconName::X.svg(c.muted).size(px(12.0)))
                                     .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
                                         if i < this.attachments.len() {
                                             this.attachments.remove(i);

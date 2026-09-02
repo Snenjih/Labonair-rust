@@ -32,6 +32,7 @@ use labonair_backend::modules::snippets::{CommandSnippet, SnippetGroup, SnippetR
 use labonair_backend::App as Backend;
 use tokio::runtime::Handle as TokioHandle;
 
+use crate::components::IconName;
 use crate::notifications::{notification_center, Notification};
 use crate::theme::ThemeStore;
 use crate::workspace::Workspace;
@@ -1480,7 +1481,7 @@ impl SnippetsView {
                             .text_size(px(10.0))
                             .text_color(c.muted)
                             .hover(|st| st.text_color(c.fg))
-                            .child("\u{270E}")
+                            .child(IconName::Pencil.svg(c.muted).size(px(11.0)))
                             .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
                                 this.form = Some(FormState::from_snippet(&s_edit));
                                 cx.notify();
@@ -1493,7 +1494,7 @@ impl SnippetsView {
                             .text_size(px(10.0))
                             .text_color(c.muted)
                             .hover(|st| st.text_color(c.fg))
-                            .child("\u{29C9}")
+                            .child(IconName::Copy.svg(c.muted).size(px(11.0)))
                             .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
                                 this.duplicate_snippet(&s_dup, cx);
                             })),
@@ -1505,7 +1506,7 @@ impl SnippetsView {
                             .text_size(px(10.0))
                             .text_color(c.muted)
                             .hover(|st| st.text_color(c.error))
-                            .child("\u{1F5D1}")
+                            .child(IconName::Trash.svg(c.muted).size(px(11.0)))
                             .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
                                 this.delete_snippet(s_del_id.clone(), cx);
                             })),
@@ -2013,7 +2014,7 @@ impl SnippetsView {
                 RunStatus::Running => "\u{25CC}",
                 RunStatus::Done => "\u{2713}",
                 RunStatus::Cancelled => "\u{25A0}",
-                RunStatus::Error => "\u{26A0}",
+                RunStatus::Error => "\u{25B2}",
             };
             tabs = tabs.child(
                 div()
@@ -2211,7 +2212,11 @@ impl Render for SnippetsView {
                     .px(px(4.0))
                     .text_size(px(11.0))
                     .text_color(if self.search_open { c.fg } else { c.muted })
-                    .child("\u{1F50D}")
+                    .child(
+                        IconName::Search
+                            .svg(if self.search_open { c.fg } else { c.muted })
+                            .size(px(12.0)),
+                    )
                     .on_click(cx.listener(|this, _: &ClickEvent, w, cx| {
                         this.search_open = !this.search_open;
                         if this.search_open {

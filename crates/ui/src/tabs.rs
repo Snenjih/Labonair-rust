@@ -16,6 +16,8 @@
 //! workspace tab owns exactly one session.
 
 use gpui::{Context, EventEmitter};
+
+use crate::components::IconName;
 use labonair_terminal::SessionId;
 
 /// The category of a tab. Content views for most kinds arrive in later phases;
@@ -43,18 +45,19 @@ pub enum TabKind {
 }
 
 impl TabKind {
-    /// A short text/glyph indicator shown in the tab bar before the title.
-    pub fn indicator(&self) -> &'static str {
+    /// The icon shown in the tab bar before the title (mirrors the reference
+    /// `tabUtils.tsx` per-kind Hugeicons).
+    pub fn indicator(&self) -> IconName {
         match self {
-            TabKind::Home => "\u{2302}",       // ⌂
-            TabKind::Workspace => "\u{25b8}",  // ▸
-            TabKind::Editor => "\u{270e}",     // ✎
-            TabKind::Preview => "\u{25c8}",    // ◈
-            TabKind::AiDiff => "\u{2726}",     // ✦
-            TabKind::Sftp => "\u{21c5}",       // ⇅
-            TabKind::GitGraph => "\u{2387}",   // ⎇
-            TabKind::GitDiff => "\u{00b1}",    // ±
-            TabKind::CommitDiff => "\u{00b1}", // ±
+            TabKind::Home => IconName::Home,
+            TabKind::Workspace => IconName::Terminal,
+            TabKind::Editor => IconName::SquarePen,
+            TabKind::Preview => IconName::Globe,
+            TabKind::AiDiff => IconName::Sparkles,
+            TabKind::Sftp => IconName::FolderOpen,
+            TabKind::GitGraph => IconName::GitCompare,
+            TabKind::GitDiff => IconName::GitBranch,
+            TabKind::CommitDiff => IconName::GitBranch,
         }
     }
 

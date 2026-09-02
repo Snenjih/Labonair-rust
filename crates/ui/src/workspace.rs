@@ -103,7 +103,7 @@ enum McpTabOp {
 /// connection is routed through a jump host (task T07-002, item 5).
 fn ssh_tab_title(host_label: &str, jump_label: Option<&str>) -> String {
     match jump_label {
-        Some(j) => format!("SSH \u{00b7} {host_label}  \u{2933} {j}"),
+        Some(j) => format!("SSH \u{00b7} {host_label}  \u{2192} {j}"),
         None => format!("SSH \u{00b7} {host_label}"),
     }
 }
@@ -2415,7 +2415,7 @@ impl Workspace {
                 ..
             }) => (
                 if *mismatch {
-                    "\u{26a0} Host key CHANGED".to_string()
+                    "Host key CHANGED".to_string()
                 } else {
                     "Unknown host key".to_string()
                 },
@@ -2598,7 +2598,7 @@ impl Workspace {
             .text_color(if active { fg } else { muted })
             .when(active, |d| d.bg(accent))
             .when(!active, |d| d.hover(|s| s.bg(border)))
-            .child(div().text_color(muted).child(tab.kind.indicator()))
+            .child(div().child(tab.kind.indicator().svg(muted)))
             .child(
                 div()
                     .max_w(px(180.0))
@@ -3194,7 +3194,7 @@ mod tests {
         assert_eq!(ssh_tab_title("prod-web", None), "SSH \u{00b7} prod-web");
         assert_eq!(
             ssh_tab_title("prod-web", Some("bastion")),
-            "SSH \u{00b7} prod-web  \u{2933} bastion"
+            "SSH \u{00b7} prod-web  \u{2192} bastion"
         );
     }
 }

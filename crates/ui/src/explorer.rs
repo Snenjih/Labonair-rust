@@ -44,6 +44,7 @@ use notify_debouncer_mini::{new_debouncer, Debouncer};
 
 use labonair_backend::modules::fs::{mutate, tree};
 
+use crate::components::{file_icon, folder_icon, IconName, InputEvent, InputState};
 use crate::notifications::{notification_center, Notification};
 use crate::theme::ThemeStore;
 use crate::workspace::Workspace;
@@ -326,7 +327,9 @@ pub struct ExplorerView {
     clipboard: Option<Clipboard>,
     drop_target: Option<PathBuf>,
     edit_buffer: String,
-    edit_focus: FocusHandle,
+    /// Real text field backing the inline create/rename row (T16-002 canary).
+    /// Lazily created on `begin_create` / `begin_rename` (needs a `Window`).
+    edit_field: Option<Entity<InputState>>,
     context_menu: Option<PathBuf>,
     confirm_delete: Option<PathBuf>,
     focus: FocusHandle,
@@ -363,7 +366,7 @@ impl ExplorerView {
             clipboard: None,
             drop_target: None,
             edit_buffer: String::new(),
-            edit_focus: cx.focus_handle(),
+            edit_field: None,
             context_menu: None,
             confirm_delete: None,
             focus: cx.focus_handle(),
@@ -670,6 +673,21 @@ impl ExplorerView {
 
     // --- inline create / rename ---
 
+    /// Spins up the real [`InputState`] for the inline row, seeds it with
+    /// `initial`, focuses it and wires Enter → commit (T16-002).
+    fn open_edit_field(&mut self, initial: &str, window: &mut Window, cx: &mut Context<Self>) {
+        let initial = initial.to_string();
+        let field = cx.new(|cx| InputState::new(window, cx).default_value(initial));
+        cx.subscribe(&field, |this, _, ev: &InputEvent, cx| {
+            if matches!(ev, InputEvent::PressEnter { .. }) {
+                this.commit_edit(cx);
+            }
+        })
+        .detach();
+        field.update(cx, |state, cx| state.focus(window, cx));
+        self.edit_field = Some(field);
+    }
+
     fn begin_create(
         &mut self,
         parent: PathBuf,
@@ -683,7 +701,7 @@ impl ExplorerView {
         self.model.pending_create = Some(PendingCreate { parent, is_dir });
         self.model.edit_mode = EditMode::Create;
         self.edit_buffer.clear();
-        window.focus(&self.edit_focus);
+        self.open_edit_field("", window, cx);
         cx.notify();
     }
 
@@ -695,7 +713,8 @@ impl ExplorerView {
             .unwrap_or_default();
         self.model.edit_mode = EditMode::Rename(path);
         self.model.pending_create = None;
-        window.focus(&self.edit_focus);
+        let seed = self.edit_buffer.clone();
+        self.open_edit_field(&seed, window, cx);
         cx.notify();
     }
 
@@ -703,10 +722,14 @@ impl ExplorerView {
         self.model.edit_mode = EditMode::None;
         self.model.pending_create = None;
         self.edit_buffer.clear();
+        self.edit_field = None;
         cx.notify();
     }
 
     fn commit_edit(&mut self, cx: &mut Context<Self>) {
+        if let Some(field) = &self.edit_field {
+            self.edit_buffer = field.read(cx).value().to_string();
+        }
         let name = self.edit_buffer.trim().to_string();
         match std::mem::replace(&mut self.model.edit_mode, EditMode::None) {
             EditMode::None => {}
@@ -756,6 +779,7 @@ impl ExplorerView {
             }
         }
         self.edit_buffer.clear();
+        self.edit_field = None;
         cx.notify();
     }
 
@@ -933,18 +957,6 @@ impl ExplorerView {
     }
 }
 
-fn file_glyph(name: &str) -> &'static str {
-    let ext = name.rsplit('.').next().unwrap_or("").to_ascii_lowercase();
-    match ext.as_str() {
-        "rs" => "\u{1F980}",
-        "js" | "cjs" | "mjs" | "ts" | "tsx" | "jsx" => "\u{1F4DC}",
-        "json" | "toml" | "yaml" | "yml" | "lock" => "\u{2699}",
-        "md" | "markdown" | "txt" => "\u{1F4DD}",
-        "png" | "jpg" | "jpeg" | "gif" | "svg" | "webp" => "\u{1F5BC}",
-        _ => "\u{1F4C4}",
-    }
-}
-
 impl Focusable for ExplorerView {
     fn focus_handle(&self, _cx: &App) -> FocusHandle {
         self.focus.clone()
@@ -1012,39 +1024,45 @@ impl Render for ExplorerView {
                     .text_color(c.muted)
                     .child(SharedString::from(root_name)),
             )
-            .child(
-                self.icon_btn("new-file", "\u{FF0B}", c, cx, move |this, window, cx| {
-                    this.begin_create(root_file.clone(), false, window, cx)
-                }),
-            )
+            .child(self.icon_btn(
+                "new-file",
+                IconName::Plus,
+                c,
+                cx,
+                move |this, window, cx| this.begin_create(root_file.clone(), false, window, cx),
+            ))
             .child(self.icon_btn(
                 "new-dir",
-                "\u{1F4C1}\u{FF0B}",
+                IconName::FolderOpen,
                 c,
                 cx,
                 move |this, window, cx| this.begin_create(root_dir.clone(), true, window, cx),
             ))
-            .child(
-                self.icon_btn("refresh", "\u{21BB}", c, cx, move |this, _window, cx| {
-                    this.load_dir(root_refresh.clone(), true, cx)
-                }),
-            )
+            .child(self.icon_btn(
+                "refresh",
+                IconName::Refresh,
+                c,
+                cx,
+                move |this, _window, cx| this.load_dir(root_refresh.clone(), true, cx),
+            ))
             .child(self.icon_btn(
                 "toggle-hidden",
                 if self.model.show_hidden {
-                    "\u{25C9}"
+                    IconName::Eye
                 } else {
-                    "\u{25CB}"
+                    IconName::EyeOff
                 },
                 c,
                 cx,
                 move |this, _window, cx| this.toggle_show_hidden(cx),
             ))
-            .child(
-                self.icon_btn("collapse", "\u{2212}", c, cx, move |this, _window, cx| {
-                    this.collapse_all(cx)
-                }),
-            );
+            .child(self.icon_btn(
+                "collapse",
+                IconName::Minus,
+                c,
+                cx,
+                move |this, _window, cx| this.collapse_all(cx),
+            ));
 
         let root_drop = root.clone();
         let root_ext = root.clone();
@@ -1105,7 +1123,7 @@ impl ExplorerView {
     fn icon_btn(
         &self,
         id: &'static str,
-        glyph: &'static str,
+        icon: IconName,
         c: Colors,
         cx: &mut Context<Self>,
         handler: impl Fn(&mut Self, &mut Window, &mut Context<Self>) + 'static,
@@ -1121,7 +1139,7 @@ impl ExplorerView {
             .text_xs()
             .text_color(c.muted)
             .hover(|s| s.bg(c.border))
-            .child(glyph)
+            .child(icon.svg(c.muted))
             .on_click(
                 cx.listener(move |this, _: &ClickEvent, window, cx| handler(this, window, cx)),
             )
@@ -1234,30 +1252,10 @@ impl ExplorerView {
     }
 
     fn on_edit_key(&mut self, ev: &KeyDownEvent, _window: &mut Window, cx: &mut Context<Self>) {
-        let ks = &ev.keystroke;
-        match ks.key.as_str() {
-            "escape" => self.cancel_edit(cx),
-            "enter" => self.commit_edit(cx),
-            "backspace" => {
-                self.edit_buffer.pop();
-                cx.notify();
-            }
-            key => {
-                if ks.modifiers.platform || ks.modifiers.control || ks.modifiers.alt {
-                    return;
-                }
-                let ch = ks
-                    .key_char
-                    .clone()
-                    .filter(|s| !s.is_empty() && !s.chars().any(|c| c.is_control()))
-                    .or_else(|| (key.chars().count() == 1).then(|| key.to_string()));
-                if let Some(ch) = ch {
-                    self.edit_buffer.push_str(&ch);
-                    cx.notify();
-                }
-            }
+        if ev.keystroke.key == "escape" {
+            self.cancel_edit(cx);
+            cx.stop_propagation();
         }
-        cx.stop_propagation();
     }
 
     fn render_inline_input(
@@ -1266,28 +1264,26 @@ impl ExplorerView {
         c: Colors,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
-        div()
+        let mut row = div()
             .flex()
             .flex_row()
             .items_center()
             .pl(px(8.0 + depth as f32 * INDENT))
             .pr_2()
             .py(px(1.0))
-            .child(
+            .on_key_down(cx.listener(Self::on_edit_key));
+        if let Some(field) = &self.edit_field {
+            row = row.child(
                 div()
-                    .id("explorer-inline-input")
-                    .track_focus(&self.edit_focus)
                     .flex_1()
-                    .px_1()
                     .text_sm()
                     .rounded_sm()
                     .border_1()
                     .border_color(c.accent)
-                    .bg(c.card)
-                    .text_color(c.fg)
-                    .child(SharedString::from(format!("{}\u{2502}", self.edit_buffer)))
-                    .on_key_down(cx.listener(Self::on_edit_key)),
-            )
+                    .child(crate::components::field_input(field)),
+            );
+        }
+        row
     }
 
     fn render_row(&self, row: Row, c: Colors, cx: &mut Context<Self>) -> gpui::AnyElement {
@@ -1320,18 +1316,18 @@ impl ExplorerView {
                     entry.is_dir && self.drop_target.as_deref() == Some(path.as_path());
                 let is_expanded = entry.is_dir && self.model.expanded.contains(&path);
                 let chevron = if entry.is_dir {
-                    if is_expanded {
-                        "\u{25BE}"
+                    Some(if is_expanded {
+                        IconName::ChevronDown
                     } else {
-                        "\u{25B8}"
-                    }
+                        IconName::ChevronRight
+                    })
                 } else {
-                    "\u{2002}"
+                    None
                 };
                 let glyph = if entry.is_dir {
-                    "\u{1F4C1}"
+                    folder_icon(is_expanded)
                 } else {
-                    file_glyph(&entry.name)
+                    file_icon(&entry.name)
                 };
                 let id: SharedString = format!("row:{}", path.display()).into();
                 let click_path = path.clone();
@@ -1365,11 +1361,12 @@ impl ExplorerView {
                     .child(
                         div()
                             .w(px(10.0))
-                            .text_xs()
-                            .text_color(c.muted)
-                            .child(chevron),
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .children(chevron.map(|ch| ch.svg(c.muted).size(px(12.0)))),
                     )
-                    .child(div().child(glyph))
+                    .child(div().child(glyph.svg(c.muted)))
                     .child(div().flex_1().child(SharedString::from(entry.name.clone())))
                     .on_click(cx.listener(move |this, ev: &ClickEvent, window, cx| {
                         let additive = ev.modifiers().secondary() || ev.modifiers().shift;
@@ -1815,9 +1812,9 @@ mod tests {
     }
 
     #[test]
-    fn file_glyph_maps_known_extensions() {
-        assert_eq!(file_glyph("main.rs"), "\u{1F980}");
-        assert_eq!(file_glyph("Cargo.toml"), "\u{2699}");
-        assert_eq!(file_glyph("weird.unknownext"), "\u{1F4C4}");
+    fn file_icon_maps_known_extensions() {
+        assert_eq!(file_icon("main.rs"), IconName::FileCode);
+        assert_eq!(file_icon("Cargo.toml"), IconName::Braces);
+        assert_eq!(file_icon("weird.unknownext"), IconName::File);
     }
 }
