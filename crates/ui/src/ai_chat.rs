@@ -48,6 +48,9 @@ pub struct AiChatStore {
     /// The active agent's instructions, prepended as a system message on every
     /// turn (AgentSwitcher — T16-019). Empty = no agent system prompt.
     agent_instructions: String,
+    /// Plan mode — the agent proposes edits for review instead of applying them
+    /// directly (reference `usePlanStore`). Toggled via `/plan` or the strip.
+    plan_mode: bool,
 }
 
 impl AiChatStore {
@@ -88,7 +91,34 @@ impl AiChatStore {
             pending_calls: Vec::new(),
             prompt_queue: Vec::new(),
             agent_instructions: String::new(),
+            plan_mode: false,
         }
+    }
+
+    /// Plan-mode flag (reference `usePlanStore().active`).
+    pub fn plan_mode(&self) -> bool {
+        self.plan_mode
+    }
+
+    /// Toggle / set plan mode.
+    pub fn set_plan_mode(&mut self, on: bool, cx: &mut Context<Self>) {
+        if self.plan_mode != on {
+            self.plan_mode = on;
+            cx.notify();
+        }
+    }
+
+    /// Best-effort workspace directory for the `@`-file picker: the live
+    /// bridge's root/cwd, else the process cwd.
+    pub fn workspace_cwd(&self) -> Option<String> {
+        self.live
+            .workspace_root()
+            .or_else(|| self.live.cwd())
+            .or_else(|| {
+                std::env::current_dir()
+                    .ok()
+                    .map(|p| p.display().to_string())
+            })
     }
 
     /// Set the active agent's system instructions (used on the next turn).
@@ -454,6 +484,10 @@ use gpui::{
 use labonair_ai::{find_model, MessageStatus, Role, SessionToolCall, ToolCallStatus, MODELS};
 use labonair_editor::{Language, SyntaxHighlighter};
 
+use crate::ai_composer::{
+    apply_file_mention, detect_popup, filter_files, filter_slash, parse_slash,
+    wrap_with_command_marker, ComposerPopup, SlashOutcome,
+};
 use crate::components::{field_input, IconName, InputEvent, InputState};
 use crate::markdown::{parse_markdown, Inline, MdBlock};
 use crate::syntax_theme::EditorPalette;
@@ -715,6 +749,10 @@ pub struct AiChatView {
     expanded_reasoning: HashSet<String>,
     /// Parsed-markdown cache keyed by message id → (content length, blocks).
     md_cache: HashMap<String, (usize, Vec<MdBlock>)>,
+    /// Active `/` or `@` autocomplete popover (recomputed on every keystroke).
+    composer_popup: Option<ComposerPopup>,
+    /// Cached workspace file list (rel paths) for the `@`-file picker.
+    popup_files: Vec<String>,
 }
 
 impl AiChatView {
@@ -757,7 +795,93 @@ impl AiChatView {
             expanded_tools: HashSet::new(),
             expanded_reasoning: HashSet::new(),
             md_cache: HashMap::new(),
+            composer_popup: None,
+            popup_files: Vec::new(),
         }
+    }
+
+    /// Recompute the `/` `@` autocomplete popover from the current composer text.
+    fn refresh_popup(&mut self, text: &str, cx: &mut Context<Self>) {
+        let next = detect_popup(text);
+        if let Some(ComposerPopup::File { query }) = &next {
+            if !query.is_empty() {
+                if let Some(root) = self.store.read(cx).workspace_cwd() {
+                    self.popup_files = labonair_backend::modules::fs::search::fs_search(
+                        root,
+                        query.clone(),
+                        Some(50),
+                        Some(false),
+                    )
+                    .unwrap_or_default()
+                    .into_iter()
+                    .filter(|h| !h.is_dir)
+                    .map(|h| h.rel)
+                    .collect();
+                }
+            } else {
+                self.popup_files.clear();
+            }
+        }
+        self.composer_popup = next;
+        cx.notify();
+    }
+
+    /// On Enter with an open popover, complete from it instead of sending.
+    /// Returns `true` when the keystroke was consumed.
+    fn try_complete_from_popup(&mut self, window: &mut Window, cx: &mut Context<Self>) -> bool {
+        match self.composer_popup.clone() {
+            Some(ComposerPopup::Slash { query }) => match filter_slash(&query).first() {
+                Some(cmd) => {
+                    self.run_slash(cmd.name, window, cx);
+                    true
+                }
+                None => false,
+            },
+            Some(ComposerPopup::File { query }) => {
+                match filter_files(&query, &self.popup_files, 20).first() {
+                    Some(path) => {
+                        self.insert_file_mention(path.clone(), window, cx);
+                        true
+                    }
+                    None => false,
+                }
+            }
+            None => false,
+        }
+    }
+
+    fn insert_file_mention(&mut self, path: String, window: &mut Window, cx: &mut Context<Self>) {
+        let cur = self.composer_text(cx);
+        let next = apply_file_mention(&cur, &path);
+        if let Some(input) = self.composer_input.clone() {
+            input.update(cx, |s, cx| s.set_value(&next, window, cx));
+        } else {
+            self.composer_seed = next;
+        }
+        self.composer_popup = None;
+        cx.notify();
+    }
+
+    /// Execute a slash command by name (popover click or Enter).
+    fn run_slash(&mut self, name: &str, window: &mut Window, cx: &mut Context<Self>) {
+        self.composer_popup = None;
+        let plan_now = self.store.read(cx).plan_mode();
+        let (outcome, plan_next) = parse_slash(&format!("/{name}"), plan_now);
+        self.store
+            .update(cx, |s, cx| s.set_plan_mode(plan_next, cx));
+        match outcome {
+            SlashOutcome::SendPrompt { prompt, command } => {
+                let body = wrap_with_command_marker(&prompt, command);
+                self.clear_composer(Some(window), cx);
+                self.stick_bottom = true;
+                self.store.update(cx, |s, cx| s.send(body, cx));
+            }
+            SlashOutcome::Handled(_) => {
+                self.clear_composer(Some(window), cx);
+            }
+            SlashOutcome::None => {}
+        }
+        cx.notify();
     }
 
     /// Switch the active agent — persists + pushes its instructions to the
@@ -902,23 +1026,35 @@ impl AiChatView {
         });
         let view = cx.entity();
         window
-            .subscribe(&input, cx, move |input, ev: &InputEvent, window, cx| {
-                if let InputEvent::PressEnter { secondary } = ev {
-                    // Multi-line already inserted a newline — drop the last one
-                    // and send (plain Enter) or enqueue (⌘↵).
-                    let v = input.read(cx).value().to_string();
-                    let trimmed = v.strip_suffix('\n').unwrap_or(&v).to_string();
-                    input.update(cx, |s, cx| s.set_value(trimmed, window, cx));
-                    let enqueue = *secondary;
-                    view.update(cx, |this, cx| {
-                        if enqueue {
-                            this.enqueue(Some(window), cx);
-                        } else {
-                            this.send(Some(window), cx);
-                        }
-                    });
-                }
-            })
+            .subscribe(
+                &input,
+                cx,
+                move |input, ev: &InputEvent, window, cx| match ev {
+                    InputEvent::Change => {
+                        let v = input.read(cx).value().to_string();
+                        view.update(cx, |this, cx| this.refresh_popup(&v, cx));
+                    }
+                    InputEvent::PressEnter { secondary } => {
+                        // Multi-line already inserted a newline — drop the last one
+                        // and send (plain Enter) or enqueue (⌘↵).
+                        let v = input.read(cx).value().to_string();
+                        let trimmed = v.strip_suffix('\n').unwrap_or(&v).to_string();
+                        input.update(cx, |s, cx| s.set_value(&trimmed, window, cx));
+                        let enqueue = *secondary;
+                        view.update(cx, |this, cx| {
+                            if this.try_complete_from_popup(window, cx) {
+                                return;
+                            }
+                            if enqueue {
+                                this.enqueue(Some(window), cx);
+                            } else {
+                                this.send(Some(window), cx);
+                            }
+                        });
+                    }
+                    _ => {}
+                },
+            )
             .detach();
         self.composer_input = Some(input);
     }
@@ -931,6 +1067,22 @@ impl AiChatView {
     fn send(&mut self, window: Option<&mut Window>, cx: &mut Context<Self>) {
         let text = self.composer_text(cx).trim().to_string();
         if text.is_empty() && self.attachments.is_empty() {
+            return;
+        }
+        // Intercept `/init` / `/plan` before treating the text as a message.
+        let plan_now = self.store.read(cx).plan_mode();
+        let (outcome, plan_next) = parse_slash(&text, plan_now);
+        if !matches!(outcome, SlashOutcome::None) {
+            self.composer_popup = None;
+            self.store
+                .update(cx, |s, cx| s.set_plan_mode(plan_next, cx));
+            self.clear_composer(window, cx);
+            if let SlashOutcome::SendPrompt { prompt, command } = outcome {
+                let body = wrap_with_command_marker(&prompt, command);
+                self.stick_bottom = true;
+                self.store.update(cx, |s, cx| s.send(body, cx));
+            }
+            cx.notify();
             return;
         }
         let (text, directive_blocks) =
@@ -1805,6 +1957,92 @@ impl AiChatView {
             .into_any_element()
     }
 
+    fn render_composer_popup(
+        &self,
+        c: &ChatColors,
+        cx: &mut Context<Self>,
+    ) -> Option<gpui::AnyElement> {
+        let popup = self.composer_popup.clone()?;
+        let rows: Vec<gpui::AnyElement> = match &popup {
+            ComposerPopup::Slash { query } => {
+                let cmds = filter_slash(query);
+                if cmds.is_empty() {
+                    return None;
+                }
+                cmds.into_iter()
+                    .map(|cmd| {
+                        div()
+                            .id(SharedString::from(format!("slash-{}", cmd.name)))
+                            .flex()
+                            .items_center()
+                            .gap_2()
+                            .px_2()
+                            .py_1()
+                            .rounded_sm()
+                            .text_size(px(11.0))
+                            .text_color(c.fg)
+                            .hover(|s| s.bg(c.border))
+                            .child(
+                                div()
+                                    .font_family("mono")
+                                    .text_color(c.accent)
+                                    .child(cmd.invocation),
+                            )
+                            .child(div().text_color(c.muted).child(cmd.label))
+                            .on_click(cx.listener(move |this, _: &ClickEvent, w, cx| {
+                                this.run_slash(cmd.name, w, cx)
+                            }))
+                            .into_any_element()
+                    })
+                    .collect()
+            }
+            ComposerPopup::File { query } => {
+                let files = filter_files(query, &self.popup_files, 12);
+                if files.is_empty() {
+                    return None;
+                }
+                files
+                    .into_iter()
+                    .map(|path| {
+                        let p = path.clone();
+                        div()
+                            .id(SharedString::from(format!("atfile-{path}")))
+                            .flex()
+                            .items_center()
+                            .gap_2()
+                            .px_2()
+                            .py_1()
+                            .rounded_sm()
+                            .text_size(px(11.0))
+                            .text_color(c.fg)
+                            .hover(|s| s.bg(c.border))
+                            .child(IconName::File.svg(c.muted).size(px(12.0)))
+                            .child(SharedString::from(path))
+                            .on_click(cx.listener(move |this, _: &ClickEvent, w, cx| {
+                                this.insert_file_mention(p.clone(), w, cx)
+                            }))
+                            .into_any_element()
+                    })
+                    .collect()
+            }
+        };
+        Some(
+            div()
+                .id("ai-composer-popup")
+                .flex()
+                .flex_col()
+                .max_h(px(200.0))
+                .overflow_y_scroll()
+                .rounded_sm()
+                .border_1()
+                .border_color(c.border)
+                .bg(c.card)
+                .p_1()
+                .children(rows)
+                .into_any_element(),
+        )
+    }
+
     fn render_composer(&self, c: &ChatColors, cx: &mut Context<Self>) -> impl IntoElement {
         let store = self.store.read(cx);
         let streaming = store.is_streaming();
@@ -1956,6 +2194,7 @@ impl AiChatView {
                         })),
                 )
             })
+            .when_some(self.render_composer_popup(c, cx), |d, p| d.child(p))
             .child(
                 div()
                     .id("ai-composer")

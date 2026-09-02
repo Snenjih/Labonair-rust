@@ -4,6 +4,7 @@
 
 pub mod agent_access;
 pub mod ai_chat;
+pub mod ai_composer;
 pub mod app_shell;
 pub mod assets;
 pub mod background;
