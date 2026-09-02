@@ -515,6 +515,66 @@ pub fn compose_message(text: &str, attachments: &[Attachment]) -> String {
     out
 }
 
+/// Expand `#handle` tokens in `text` against the directive store. Returns the
+/// prose with matched tokens stripped, plus the `<directive>` blocks to prepend
+/// to the outgoing message. Unknown tokens are left untouched. Port of
+/// `expandDirectiveTokens` (`reference-src/src/modules/ai/lib/directives.ts`).
+pub fn expand_directive_tokens(
+    text: &str,
+    directives: &[labonair_backend::modules::directives::Directive],
+) -> (String, Vec<String>) {
+    let chars: Vec<char> = text.chars().collect();
+    let mut matched: Vec<(String, String)> = Vec::new();
+    let mut out = String::with_capacity(text.len());
+    let mut i = 0;
+    while i < chars.len() {
+        let at_boundary = i == 0 || chars[i - 1].is_whitespace();
+        if chars[i] == '#' && at_boundary {
+            let start = i + 1;
+            let mut j = start;
+            while j < chars.len() && (chars[j].is_ascii_alphanumeric() || chars[j] == '-') {
+                j += 1;
+            }
+            // Trim trailing dashes off the handle (word boundary, like the JS `\b`).
+            let mut end = j;
+            while end > start && chars[end - 1] == '-' {
+                end -= 1;
+            }
+            let handle: String = chars[start..end]
+                .iter()
+                .collect::<String>()
+                .to_ascii_lowercase();
+            let valid = !handle.is_empty() && !handle.starts_with('-');
+            if valid {
+                if let Some(d) = directives.iter().find(|d| d.handle == handle) {
+                    if !matched.iter().any(|(id, _)| id == &d.id) {
+                        matched.push((
+                            d.id.clone(),
+                            format!(
+                                "<directive name=\"{}\">\n{}\n</directive>",
+                                d.handle, d.content
+                            ),
+                        ));
+                    }
+                    i = end;
+                    continue;
+                }
+            }
+        }
+        out.push(chars[i]);
+        i += 1;
+    }
+    let blocks = matched.into_iter().map(|(_, b)| b).collect();
+    let cleaned = out
+        .lines()
+        .map(str::trim_end)
+        .collect::<Vec<_>>()
+        .join("\n")
+        .trim()
+        .to_string();
+    (cleaned, blocks)
+}
+
 /// True when the scroll viewport is pinned within `threshold` px of the bottom.
 /// `offset_y` is the (non-positive) scroll offset, `max_h` the max scroll extent.
 pub fn is_at_bottom(offset_y: f32, max_h: f32, threshold: f32) -> bool {
@@ -873,7 +933,12 @@ impl AiChatView {
         if text.is_empty() && self.attachments.is_empty() {
             return;
         }
-        let body = compose_message(&text, &self.attachments);
+        let (text, directive_blocks) =
+            expand_directive_tokens(&text, &labonair_backend::modules::directives::load());
+        let mut body = compose_message(&text, &self.attachments);
+        if !directive_blocks.is_empty() {
+            body = format!("{}\n\n{}", directive_blocks.join("\n\n"), body);
+        }
         self.clear_composer(window, cx);
         self.attachments.clear();
         self.stick_bottom = true;
@@ -2188,6 +2253,30 @@ mod tests {
         assert!(out.ends_with("explain"));
         // Title derivation strips the injected blocks.
         assert_eq!(labonair_ai::derive_title(&[]), "New chat");
+    }
+
+    #[test]
+    fn expand_directive_tokens_splices_bodies() {
+        use labonair_backend::modules::directives::Directive;
+        let dirs = vec![Directive {
+            id: "d1".into(),
+            handle: "deploy".into(),
+            name: "Deploy".into(),
+            description: String::new(),
+            content: "Run the deploy checklist.".into(),
+        }];
+        let (body, blocks) = expand_directive_tokens("please #deploy now #unknown", &dirs);
+        assert_eq!(body, "please  now #unknown");
+        assert_eq!(
+            blocks,
+            vec![
+                "<directive name=\"deploy\">\nRun the deploy checklist.\n</directive>".to_string()
+            ]
+        );
+        // No tokens → passthrough, no blocks.
+        let (body, blocks) = expand_directive_tokens("nothing here", &dirs);
+        assert_eq!(body, "nothing here");
+        assert!(blocks.is_empty());
     }
 
     #[test]

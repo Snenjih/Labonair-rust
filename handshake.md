@@ -4,7 +4,37 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
-## Last Session: 2026-09-03 (Block F polish D — statusbar + shared-menu cleanups)
+## Last Session: 2026-09-03 (Final-5% round — AI composer `#`-directive expansion)
+
+### What Was Done (commit after `c6560b4`)
+
+- **`#`-directive inline expansion** — new pure `expand_directive_tokens(text,
+  &[Directive]) -> (String, Vec<String>)` in `crates/ui/src/ai_chat.rs` (port
+  of `expandDirectiveTokens` from `reference-src/src/modules/ai/lib/
+  directives.ts`): scans `#handle` tokens at whitespace boundaries, resolves
+  each against `directives::load()`, strips the matched tokens from the prose
+  and returns `<directive name="…">…</directive>` blocks. Unknown tokens are
+  left untouched; trailing dashes are trimmed off handles (JS `\b` parity).
+  Wired into `AiChatView::send` before `compose_message` — directive blocks
+  are prepended to the outgoing body. Test
+  `expand_directive_tokens_splices_bodies`. 696 tests green.
+
+### Still open from the "final 5%" brief (NOT done this session — each is a
+real implementation session in undocumented GPUI, see CONSOLIDATED below):
+slash-command popover, `@`-file picker, ContextPillsRow (note:
+`split_context_blocks` is already rendered as chips in `render_user_message`),
+`CommandSnippet` run-button rendering, AI⇄Shell toggle, Plan mode
+(PlanModeStrip + PlanDiffReview), palette `outline` / Go-to-Symbol, and the
+remaining small items (Open Diff Split, `tabsLocation` gating, `previewUrl`
+statusbar detection, host-manager `btn` migration, breadcrumb menu migration).
+
+### Verified
+`cargo fmt --all`, `cargo clippy --workspace --all-targets -D warnings`,
+`cargo test --workspace` — all green (696 tests).
+
+---
+
+## Prior Session: 2026-09-03 (Block F polish D — statusbar + shared-menu cleanups)
 
 ### What Was Done (commit after `e93b72b`)
 
@@ -157,16 +187,16 @@ Everything below is genuinely-large or low-value; none blocks normal use.
   needs a command registry + a popover anchored to the composer + prefix
   parsing. The real `InputState` doesn't push per-keystroke text to the view
   without a second `window.subscribe` on `InputEvent::Change`.
-- **`#`-directive inline expansion** — in `AiChatView::send`, before
-  `compose_message`, scan the body for `#handle` tokens, look each up in
-  `directives::load()`, and splice the directive `content` in.
+- ~~**`#`-directive inline expansion**~~ — DONE 2026-09-03
+  (`expand_directive_tokens` in `ai_chat.rs`, wired into `AiChatView::send`).
 - **`@`-file picker** — fuzzy over the live-bridge cwd; same popover
   machinery as slash-commands.
 - **PlanModeStrip / PlanDiffReview** — the store has no plan-mode concept
   (`reference-src/src/modules/ai/**` `usePlanMode`). Needs a store flag +
   a diff-review surface.
-- **ContextPillsRow** — `split_context_blocks` already exists (tested in
-  `ai_chat.rs`); render the extracted chips as a row under a user message.
+- **ContextPillsRow** — partially done: `split_context_blocks` output is
+  already rendered as (non-removable) chips in `render_user_message`. Missing:
+  a removable-pill row on the *composer* before send.
 - **`CommandSnippet` rendering** — detect fenced ```bash blocks in assistant
   messages, render a run button (ref `components/ai-elements/CommandSnippet`).
 - **AI⇄Shell toggle** — needs an `AiChatView` → workspace event to write the
