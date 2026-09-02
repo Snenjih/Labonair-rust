@@ -793,6 +793,34 @@ impl AppShell {
 
         let theme = self.theme.read(cx);
         let p = self.prefs.read(cx).get();
+
+        let active_theme_id = if p.app_theme.is_empty() {
+            "default"
+        } else {
+            p.app_theme.as_str()
+        };
+        let snippets = self
+            .snippets
+            .read(cx)
+            .snippet_choices()
+            .into_iter()
+            .map(|(id, name, mode)| PaletteChoice {
+                id,
+                title: name,
+                subtitle: Some(mode),
+                active: false,
+            })
+            .collect();
+
+        let app_themes = crate::settings::theme_choices()
+            .into_iter()
+            .map(|(id, name)| PaletteChoice {
+                active: id == active_theme_id,
+                id,
+                title: name,
+                subtitle: None,
+            })
+            .collect();
         let mut toggles = std::collections::HashMap::new();
         toggles.insert("zenModeShowHeader", p.zen_mode_show_header);
         toggles.insert("zenModeShowStatusbar", p.zen_mode_show_statusbar);
@@ -807,6 +835,8 @@ impl AppShell {
         PaletteData {
             tabs,
             hosts,
+            snippets,
+            app_themes,
             color_mode: theme.preference(),
             editor_theme: theme.editor_theme(),
             font_size: Some(p.terminal_font_size),
@@ -833,6 +863,13 @@ impl AppShell {
                             w.open_ssh_tab(host_id, window, cx);
                         }
                     });
+                }
+                PaletteEvent::SetAppTheme(id) => {
+                    crate::settings::activate_app_theme(&id, &self.prefs, &self.theme, cx);
+                }
+                PaletteEvent::RunSnippet(id) => {
+                    self.snippets
+                        .update(cx, |s, cx| s.run_by_id(&id, window, cx));
                 }
                 PaletteEvent::SetColorMode(pref) => {
                     let key = match pref {

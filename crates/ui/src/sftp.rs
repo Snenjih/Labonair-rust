@@ -295,6 +295,12 @@ pub enum SftpEvent {
         dest_path: String,
         direction: &'static str,
     },
+    /// Result of the remote SSH/SFTP connection attempt — drives the shared
+    /// connecting screen (`ConnectionStatusStore`). `error` is `None` on success.
+    ConnResult {
+        session_id: String,
+        error: Option<String>,
+    },
 }
 
 /// Payload of a pointer-drag of one or more rows from one pane to the other
@@ -380,6 +386,11 @@ impl SftpView {
 
     // ── connection ─────────────────────────────────────────────────────────
 
+    /// Re-run the remote connection (used by the connecting screen's Retry).
+    pub fn reconnect(&mut self, cx: &mut Context<Self>) {
+        self.connect(cx);
+    }
+
     fn connect(&mut self, cx: &mut Context<Self>) {
         self.conn = Conn::Connecting;
         let app = self.backend.clone();
@@ -402,12 +413,23 @@ impl SftpView {
         cx.spawn(async move |this, cx| {
             let res = jh.await.unwrap_or_else(|e| Err(e.to_string()));
             let _ = this.update(cx, |this, cx| {
+                let sid = this.session_id.clone();
                 match res {
                     Ok(()) => {
                         this.conn = Conn::Ready;
                         this.load_remote(cx);
+                        cx.emit(SftpEvent::ConnResult {
+                            session_id: sid,
+                            error: None,
+                        });
                     }
-                    Err(e) => this.conn = Conn::Error(e),
+                    Err(e) => {
+                        this.conn = Conn::Error(e.clone());
+                        cx.emit(SftpEvent::ConnResult {
+                            session_id: sid,
+                            error: Some(e),
+                        });
+                    }
                 }
                 cx.notify();
             });

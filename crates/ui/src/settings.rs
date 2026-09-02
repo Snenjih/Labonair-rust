@@ -1821,6 +1821,12 @@ impl SettingsView {
         window.focus(&self.focus);
         self.refresh_mcp_status(cx);
         self.refresh_themes();
+        if self.active_theme_id.is_none() {
+            let stored = self.prefs.read(cx).get().app_theme.clone();
+            if !stored.is_empty() && stored != "default" {
+                self.active_theme_id = Some(stored);
+            }
+        }
         self.load_system_fonts(cx);
         cx.notify();
     }
@@ -1908,6 +1914,7 @@ impl SettingsView {
         if id == "default" {
             self.theme.update(cx, |t, cx| t.clear_custom_theme(cx));
             self.active_theme_id = None;
+            self.set_pref("appTheme", Value::String("default".into()), cx);
             cx.notify();
             return;
         }
@@ -1922,6 +1929,7 @@ impl SettingsView {
         match result {
             Ok(warnings) => {
                 self.active_theme_id = Some(id.to_string());
+                self.set_pref("appTheme", Value::String(id.to_string()), cx);
                 if !warnings.is_empty() {
                     self.notify(
                         cx,
@@ -1931,6 +1939,65 @@ impl SettingsView {
             }
             Err(e) => self.notify_error(cx, "Invalid theme", e),
         }
+        self.apply_stored_variant(id, cx);
+        cx.notify();
+    }
+
+    /// The `"dark"`/`"light"` mode string currently resolved by the theme store.
+    fn resolved_mode_str(&self, cx: &Context<Self>) -> &'static str {
+        match self.theme.read(cx).mode() {
+            crate::theme::ThemeMode::Dark => "dark",
+            crate::theme::ThemeMode::Light => "light",
+        }
+    }
+
+    /// Re-apply the persisted `themeVariantOverrides[id][mode]` selection (if
+    /// any) to the freshly-activated imported theme.
+    fn apply_stored_variant(&mut self, id: &str, cx: &mut Context<Self>) {
+        let mode = self.resolved_mode_str(cx);
+        let key = self
+            .prefs
+            .read(cx)
+            .get()
+            .theme_variant_overrides
+            .get(id)
+            .and_then(|v| v.get(mode))
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+        if key.is_some() {
+            self.theme.update(cx, |t, cx| t.set_custom_variant(key, cx));
+        }
+    }
+
+    /// Persist and apply a named theme-variant selection for the active
+    /// imported theme (Catppuccin frappe / macchiato / mocha, …).
+    fn set_theme_variant(&mut self, key: Option<String>, cx: &mut Context<Self>) {
+        let Some(id) = self.active_theme_id.clone() else {
+            return;
+        };
+        let mode = self.resolved_mode_str(cx);
+        let mut overrides = self.prefs.read(cx).get().theme_variant_overrides.clone();
+        {
+            let entry = overrides
+                .entry(id)
+                .or_insert_with(|| Value::Object(Default::default()));
+            if let Some(obj) = entry.as_object_mut() {
+                match &key {
+                    Some(k) => {
+                        obj.insert(mode.to_string(), Value::String(k.clone()));
+                    }
+                    None => {
+                        obj.remove(mode);
+                    }
+                }
+            }
+        }
+        self.set_pref(
+            "themeVariantOverrides",
+            serde_json::to_value(&overrides).unwrap_or(Value::Null),
+            cx,
+        );
+        self.theme.update(cx, |t, cx| t.set_custom_variant(key, cx));
         cx.notify();
     }
 
@@ -1975,6 +2042,7 @@ impl SettingsView {
         }
         match self.theme.update(cx, |t, cx| t.import_theme_file(file, cx)) {
             Ok(_) => {
+                self.set_pref("appTheme", Value::String(id.clone()), cx);
                 self.active_theme_id = Some(id);
                 self.notify(
                     cx,
@@ -2033,6 +2101,7 @@ impl SettingsView {
         if self.active_theme_id.as_deref() == Some(id) {
             self.theme.update(cx, |t, cx| t.clear_custom_theme(cx));
             self.active_theme_id = None;
+            self.set_pref("appTheme", Value::String("default".into()), cx);
         }
         self.refresh_themes();
         cx.notify();
@@ -3968,8 +4037,61 @@ impl SettingsView {
                             })),
                     ),
             )
+            .children(self.render_variant_picker(c, cx))
             .child(div().flex().flex_wrap().gap_3().py_2().children(cards))
             .into_any_element()
+    }
+
+    /// A segmented control over the named variants of the active imported theme
+    /// (only rendered when it exposes more than one variant for the current
+    /// appearance — e.g. Catppuccin frappe / macchiato / mocha).
+    fn render_variant_picker(
+        &self,
+        c: &Palette,
+        cx: &mut Context<Self>,
+    ) -> Option<gpui::AnyElement> {
+        let t = self.theme.read(cx);
+        let dark = matches!(t.mode(), crate::theme::ThemeMode::Dark);
+        let choices = t.custom_theme_file()?.variant_choices(dark);
+        if choices.len() < 2 {
+            return None;
+        }
+        let current = t.custom_variant_key().map(|s| s.to_string());
+        let active = current
+            .clone()
+            .unwrap_or_else(|| choices.first().map(|(k, _)| k.clone()).unwrap_or_default());
+        Some(
+            div()
+                .flex()
+                .items_center()
+                .gap_2()
+                .py_2()
+                .child(
+                    div()
+                        .text_size(px(11.0))
+                        .text_color(c.muted)
+                        .child("Variant"),
+                )
+                .children(choices.into_iter().map(|(key, label)| {
+                    let is_on = key == active;
+                    let key_click = key.clone();
+                    div()
+                        .id(SharedString::from(format!("theme-variant-{key}")))
+                        .px_2()
+                        .py(px(2.0))
+                        .rounded_sm()
+                        .border_1()
+                        .border_color(if is_on { c.accent } else { c.border })
+                        .text_size(px(11.0))
+                        .text_color(if is_on { c.fg } else { c.muted })
+                        .hover(|s| s.bg(c.border))
+                        .child(SharedString::from(label))
+                        .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                            this.set_theme_variant(Some(key_click.clone()), cx);
+                        }))
+                }))
+                .into_any_element(),
+        )
     }
 }
 
@@ -4180,10 +4302,49 @@ pub(crate) fn apply_prefs_to_theme(p: &Preferences, theme: &Entity<ThemeStore>, 
     if let Some(id) = crate::theme::EditorThemeId::from_slug(&p.editor_theme) {
         theme.update(cx, |t, cx| t.set_editor_theme(id, cx));
     }
+    // Restore the active JSON app theme (+ persisted variant) on startup.
+    if !p.app_theme.is_empty() && p.app_theme != "default" {
+        if let Ok(file) = read_theme_file_in(&themes_dir(), &p.app_theme) {
+            let dark = matches!(theme.read(cx).mode(), crate::theme::ThemeMode::Dark);
+            let key = p
+                .theme_variant_overrides
+                .get(&p.app_theme)
+                .and_then(|v| v.get(if dark { "dark" } else { "light" }))
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+            let _ = theme.update(cx, |t, cx| t.import_theme_file_variant(file, key, cx));
+        }
+    } else {
+        theme.update(cx, |t, cx| t.clear_custom_theme(cx));
+    }
 }
 
 fn themes_dir() -> PathBuf {
     config_dir().join("themes")
+}
+
+/// `(id, display name)` for every installed theme (built-in `"default"` first),
+/// for the command palette's "Change App Theme…" sub-page.
+pub(crate) fn theme_choices() -> Vec<(String, String)> {
+    scan_themes(&themes_dir())
+        .into_iter()
+        .map(|e| (e.id, e.name))
+        .collect()
+}
+
+/// Activate a JSON app theme by id (`"default"` = built-in), persist the
+/// selection, and re-apply its stored variant. Used by the palette.
+pub(crate) fn activate_app_theme(
+    id: &str,
+    prefs: &Entity<PreferencesStore>,
+    theme: &Entity<ThemeStore>,
+    cx: &mut App,
+) {
+    prefs.update(cx, |s, cx| {
+        s.set_value("appTheme", Value::String(id.to_string()), cx)
+    });
+    let p = prefs.read(cx).get().clone();
+    apply_prefs_to_theme(&p, theme, cx);
 }
 
 /// Scans `dir` for valid user theme files. The built-in "Labonair" default is

@@ -172,6 +172,9 @@ pub struct ThemeStore {
     /// The source file for `custom`, kept so the imported theme can be
     /// re-resolved for the other mode when the appearance changes.
     custom_file: Option<ThemeFile>,
+    /// Selected named variant key for `custom_file` (e.g. Catppuccin `"mocha"`).
+    /// `None` = auto-pick the first variant of the resolved mode.
+    custom_variant: Option<String>,
     /// The editor syntax-highlighting colour scheme (T06-002).
     editor_theme: EditorThemeId,
     /// Runtime typography overrides from settings (T13-003).
@@ -189,6 +192,7 @@ impl ThemeStore {
             custom: None,
             custom_base: None,
             custom_file: None,
+            custom_variant: None,
             editor_theme: EditorThemeId::default(),
             font_overrides: FontOverrides::default(),
         }
@@ -234,7 +238,9 @@ impl ThemeStore {
     fn reresolve_custom(&mut self) {
         if let Some(file) = self.custom_file.clone() {
             let dark = self.mode() == ThemeMode::Dark;
-            if let Ok((theme, _warnings)) = Theme::from_theme_file(&file, dark) {
+            if let Ok((theme, _warnings)) =
+                Theme::from_theme_file_variant(&file, dark, self.custom_variant.as_deref())
+            {
                 self.custom_base = Some(theme);
             }
         }
@@ -314,6 +320,7 @@ impl ThemeStore {
         }
         self.custom_base = theme;
         self.custom_file = None;
+        self.custom_variant = None;
         self.rebuild_custom();
         cx.notify();
     }
@@ -327,14 +334,47 @@ impl ThemeStore {
         file: ThemeFile,
         cx: &mut Context<Self>,
     ) -> Result<Vec<String>, String> {
+        self.import_theme_file_variant(file, None, cx)
+    }
+
+    /// As [`Self::import_theme_file`], activating a specific named variant.
+    pub fn import_theme_file_variant(
+        &mut self,
+        file: ThemeFile,
+        variant_key: Option<String>,
+        cx: &mut Context<Self>,
+    ) -> Result<Vec<String>, String> {
         file.validate()?;
         let dark = self.mode() == ThemeMode::Dark;
-        let (theme, warnings) = Theme::from_theme_file(&file, dark)?;
+        let (theme, warnings) =
+            Theme::from_theme_file_variant(&file, dark, variant_key.as_deref())?;
         self.custom_base = Some(theme);
         self.custom_file = Some(file);
+        self.custom_variant = variant_key;
         self.rebuild_custom();
         cx.notify();
         Ok(warnings)
+    }
+
+    /// The active imported theme file (for a variant picker), if any.
+    pub fn custom_theme_file(&self) -> Option<&ThemeFile> {
+        self.custom_file.as_ref()
+    }
+
+    /// The selected named variant key of the active imported theme, if any.
+    pub fn custom_variant_key(&self) -> Option<&str> {
+        self.custom_variant.as_deref()
+    }
+
+    /// Select a named variant of the active imported theme and re-resolve.
+    /// No-op when there is no imported theme or the key is unchanged.
+    pub fn set_custom_variant(&mut self, key: Option<String>, cx: &mut Context<Self>) {
+        if self.custom_file.is_none() || self.custom_variant == key {
+            return;
+        }
+        self.custom_variant = key;
+        self.reresolve_custom();
+        cx.notify();
     }
 
     /// Clears the active custom theme, reverting to the built-in light/dark
@@ -346,6 +386,7 @@ impl ThemeStore {
         self.custom = None;
         self.custom_base = None;
         self.custom_file = None;
+        self.custom_variant = None;
         cx.notify();
     }
 

@@ -4,7 +4,119 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
-## Last Session: 2026-09-02 (Block E cont. — master/detail host manager + SSH connecting screen)
+## Last Session: 2026-09-02 (Block F — partial: SFTP connecting screen, theme variants, palette fill-ins)
+
+### What Was Done (branch `master`, commit after `4976de9`)
+
+Block F is large (four T16-016..019 subsystems + cross-block cleanups). This
+session delivered the tractable, verifiable slices; the big architectural
+pieces are itemised under "Block F — still outstanding" below.
+
+**SFTP connecting screen (T16-015 follow-up — DONE)**
+- `open_sftp` (`workspace.rs`) now calls `ssh_connection.begin(.., ConnectionKind::Sftp, None)`
+  so all SSH bus events for the SFTP session id (`ssh_connect_log`,
+  known-hosts, auth, passphrase, session-established) flow into the shared
+  `ConnectionStatusStore` and drive the same loading UI terminal tabs use.
+- New `SftpEvent::ConnResult { session_id, error }` emitted by
+  `SftpView::connect`; `Workspace::on_sftp_event` maps it to
+  `set_state(Connected)` / `set_error` (only if never connected).
+- `render_body` for `TabKind::Sftp` shows `render_ssh_loading` while the
+  entry `is_blocking()`. `render_ssh_loading` resolves `tab_id` from
+  `sftp_sessions` too; the error-screen **Retry** button re-runs
+  `SftpView::reconnect` for SFTP sessions (vs `retry_ssh` for terminals).
+- Tab close removes the SFTP session from `ssh_connection`.
+
+**Theme variant selection (T16-018 core — DONE)**
+- `crates/theme/import.rs`: `ThemeFile::resolve_variant(dark, Option<&str>)`
+  now honours a named variant key; new `variant_choices(dark)` +
+  `Theme::from_theme_file_variant(file, dark, key)`. Unit test
+  `named_variant_selection_picks_the_requested_scheme` (Catppuccin latte/
+  frappe/macchiato/mocha).
+- `ThemeStore`: `custom_variant: Option<String>` field, `set_custom_variant`,
+  `custom_theme_file()`, `custom_variant_key()`, `import_theme_file_variant`.
+  `reresolve_custom` uses the selected variant.
+- `settings.rs`: `render_variant_picker` segmented control in the Themes pane
+  (shown when the active imported theme has >1 variant for the current mode);
+  `set_theme_variant` persists `themeVariantOverrides[id][mode] = key` and
+  applies live. `apply_stored_variant` re-applies on activation.
+- **App-theme now persists**: `activate_theme` / `import_theme_from` /
+  `delete_theme` write the `appTheme` pref; `apply_prefs_to_theme` restores
+  the JSON theme **and** its stored variant on startup, and clears the custom
+  theme when `appTheme == "default"`. (Block C had left `appTheme` unwired.)
+
+**Command-palette fill-ins (partial — DONE: themes + snippets)**
+- `PaletteData.app_themes` populated from `settings::theme_choices()` with an
+  `active` flag; `Page::Themes` rows → `RowKey::SetAppTheme` →
+  `PaletteEvent::SetAppTheme` → `settings::activate_app_theme`.
+- `PaletteData.snippets` populated from `SnippetsView::snippet_choices()`;
+  `Page::Snippets` rows → `RowKey::RunSnippet` → `PaletteEvent::RunSnippet` →
+  `SnippetsView::run_by_id` (default exec mode, full variable/host-picker
+  flow reused).
+- ai-sessions / git-branches / outline palette pages: still empty (need
+  view-internal accessors on `AiChatView` / `git.rs` / editor outline).
+
+### Verified
+`cargo fmt --all --check`, `cargo clippy --workspace --all-targets -D warnings`,
+`cargo test --workspace` — all green (679 tests, 0 failures).
+
+### Block F — still outstanding (attempt in the next session)
+
+**T16-016 — Dual-dock dynamic sidebars** — NOT STARTED. Needs: refactor
+`AppShell` sidebar into a reusable `SidebarSlot` × 2 (primary/secondary),
+derive left/right from the existing `sidebar_position` pref, persist
+`open`/`active_panel`/`width` per slot (pref keys `sidebar*` /
+`sidebarRight*` + `barItemPlacements` all already exist in `Preferences`),
+port `sidebarSlotLogic.ts` as a pure unit-tested module, add
+`move_panel(from,to)` + a rail context-menu affordance, split
+`open_panel` (show) from `toggle_panel`, add `Tabs` + `Hosts` panels, drop
+`SidebarPanel::{GitGraph, Ai}` (GitGraph is a `TabKind`, AI is its own dock).
+Ref: `reference-src/src/modules/statusbar/lib/{useSidebar,sidebarSlotLogic}.ts`,
+`app/components/SidebarContent.tsx`.
+
+**T16-017 — Context menus** — NOT STARTED. Build ONE shared `ContextMenu`
+primitive in `crates/ui/src/components/` (cursor-anchored, backdrop dismiss,
+separators, destructive styling, disabled items, submenus, radio/checkbox).
+Migrate the 3 ad-hoc menus (`workspace.rs` tabs, `explorer.rs` tree,
+`sftp.rs` list) onto it, then add the 11 missing menus from
+`vergleichsbericht-subagent-3.md` §5 gap table (terminal pane, SSH terminal,
+source-control file change, git-graph commit, host card, host list item,
+host group, snippet item, appearance/bar-item preview, CWD breadcrumb,
+tab-bar empty area) + fill the item gaps in the existing ones.
+
+**T16-018 — Theme marketplace** — variant selection DONE (above); STILL
+MISSING: `theme_fetch_index` / `theme_download` backend (reqwest) +
+`MOCK_COMMUNITY_THEMES` + `Snenjih/labonair-themes` index URL; install/
+uninstall/`theme_create` ("New Theme"); a "Community" tab in the Settings
+Themes pane; palette theme **hover live-preview** + revert-on-cancel
+(`on_preview`/`on_leave` — the palette row model has no preview hook yet).
+Ref: `reference-src/src-tauri/src/modules/themes/**`,
+`reference-src/src/settings/sections/ThemeMarketplace.tsx`.
+
+**T16-019 — AI panel decomposition** — NOT STARTED. Break `ai_chat.rs`
+(1.7k lines) into the reference sub-components: real ModelPicker dropdown
+(not click-cycle), AgentSwitcher, slash-commands, `#` directives, `@` file
+picker, QueueStrip, TodoStrip, PlanModeStrip/PlanDiffReview, attach button,
+ContextPillsRow, AI⇄Shell toggle, ⌘↵ enqueue, connect banner,
+`CommandSnippet` rendering, expandable `ToolCallChip`, real `text_field`
+composer. Plus the deferred `crates/backend/src/modules/{agents,directives}`
+stores + Settings **Agents** / **Directives** sections + voice/whisper stub.
+Ref: `reference-src/src/modules/ai/**`, `components/ai-elements/**`.
+
+**Cross-block deferred (from all 4 reports) — still open:**
+- Icon system: no real icon crate for file/folder icons — `explorer.rs` /
+  `sftp.rs` still use emoji; Catppuccin file-icon resolver not ported
+  (report 3 §2). `components::icon` (Lucide) exists but explorer/sftp/tabs
+  not migrated.
+- Command-palette view metrics still ~520px / 26px rows (report 3 §1c.1),
+  no footer search-mode toggle, no fuzzy/startsWith, no recents UI, no
+  palette preferences pane, no icons/subtitles/rightLabel chips in rows.
+- `ShortcutsOpen` bound to `cmd-k` vs reference `cmd-?` (report 3 §1b) —
+  unreconciled.
+- `hosts.rs` checkbox glyphs `☑/☐` + `⚠` severity glyphs not real controls.
+- Host manager `btn` helper not migrated to `components::button`.
+- Host list auto-refresh on window focus (only 30s poll).
+
+
 
 ### What Was Done (branch `master`, commit after `c58652e`)
 

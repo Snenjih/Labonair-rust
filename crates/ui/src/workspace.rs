@@ -1745,6 +1745,8 @@ impl Workspace {
         // SFTP browser tab: drop the view and close its SFTP/SSH session.
         self.sftp_views.remove(&tab.id);
         if let Some(session_id) = self.sftp_sessions.remove(&tab.id) {
+            self.ssh_connection
+                .update(cx, |s, cx| s.remove(&session_id, cx));
             let _ = sftp_tab_disconnect(session_id, &self.backend.ssh);
         }
 
@@ -1832,6 +1834,16 @@ impl Workspace {
             s.set_custom_title(id, Some(format!("SFTP \u{00b7} {label}")), cx);
             id
         });
+        self.ssh_connection.update(cx, |s, cx| {
+            s.begin(
+                session_id.clone(),
+                host_id.clone(),
+                label.clone(),
+                ConnectionKind::Sftp,
+                None,
+                cx,
+            );
+        });
         let view = cx.new(|cx| {
             SftpView::new(
                 self.backend.clone(),
@@ -1856,6 +1868,21 @@ impl Workspace {
 
     fn on_sftp_event(&mut self, ev: &SftpEvent, cx: &mut Context<Self>) {
         match ev {
+            SftpEvent::ConnResult { session_id, error } => {
+                self.ssh_connection.update(cx, |s, cx| match error {
+                    None => s.set_state(session_id, ConnectionState::Connected, cx),
+                    Some(msg) => {
+                        // Only surface the error screen if we never connected.
+                        let connected = s
+                            .get(session_id)
+                            .map(|e| e.state == ConnectionState::Connected)
+                            .unwrap_or(false);
+                        if !connected {
+                            s.set_error(session_id, msg.clone(), cx);
+                        }
+                    }
+                });
+            }
             SftpEvent::OpenLocalFile(path) => {
                 self.pending_open.push(PendingOpen::Local(path.clone()));
                 cx.notify();
@@ -2643,11 +2670,18 @@ impl Workspace {
         );
         let destructive = core.destructive;
         let ssh_id = entry.session_id.clone();
+        let is_sftp = matches!(entry.kind, ConnectionKind::Sftp);
         let tab_id = self
             .ssh_tabs
             .values()
             .find(|t| t.ssh_id == ssh_id)
-            .map(|t| t.tab_id);
+            .map(|t| t.tab_id)
+            .or_else(|| {
+                self.sftp_sessions
+                    .iter()
+                    .find(|(_, sid)| **sid == ssh_id)
+                    .map(|(tid, _)| *tid)
+            });
         let host_id = entry.host_id.clone();
 
         // ── 4-stage progress row ──────────────────────────────────────────
@@ -2792,7 +2826,17 @@ impl Workspace {
                         loading_btn("ssh-l-retry", "Retry", accent, border, true, fg).on_click(
                             cx.listener(move |this, _: &ClickEvent, _w, cx| {
                                 this.ssh_prompt = None;
-                                this.retry_ssh(&ssh_id, None, None, cx);
+                                if is_sftp {
+                                    this.ssh_connection
+                                        .update(cx, |s, cx| s.resume(&ssh_id, cx));
+                                    if let Some(tid) = tab_id {
+                                        if let Some(view) = this.sftp_views.get(&tid).cloned() {
+                                            view.update(cx, |v, cx| v.reconnect(cx));
+                                        }
+                                    }
+                                } else {
+                                    this.retry_ssh(&ssh_id, None, None, cx);
+                                }
                             }),
                         ),
                     );
@@ -3355,6 +3399,17 @@ impl Workspace {
                 }
             }
             TabKind::Sftp => {
+                if let Some(session_id) = self.sftp_sessions.get(&active.id).cloned() {
+                    if let Some(entry) = self
+                        .ssh_connection
+                        .read(cx)
+                        .get(&session_id)
+                        .filter(|e| e.state.is_blocking())
+                        .cloned()
+                    {
+                        return self.render_ssh_loading(entry, cx);
+                    }
+                }
                 if let Some(view) = self.sftp_views.get(&active.id) {
                     view.clone().into_any_element()
                 } else {

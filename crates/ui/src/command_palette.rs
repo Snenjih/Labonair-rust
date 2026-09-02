@@ -715,6 +715,10 @@ pub enum PaletteEvent {
         host_id: String,
         sftp: bool,
     },
+    /// Activate a JSON app theme by id (`"default"` = built-in light/dark).
+    SetAppTheme(String),
+    /// Run a saved snippet by id with its default execution mode.
+    RunSnippet(String),
 }
 
 /// A dynamic choice rendered on a sub-page (tab, host, session, branch…).
@@ -791,6 +795,10 @@ enum RowKey {
         host_id: String,
         sftp: bool,
     },
+    /// Activate a JSON app theme by id (`"default"` = built-in).
+    SetAppTheme(String),
+    /// Run a saved snippet by id with its default execution mode.
+    RunSnippet(String),
     /// Non-actionable (empty-state placeholder line).
     Noop,
 }
@@ -1093,7 +1101,7 @@ impl CommandPalette {
                 IconName::Sparkles,
                 mode,
                 "No themes installed yet",
-                |_| RowKey::Noop,
+                |c| RowKey::SetAppTheme(c.id.clone()),
             ),
             Page::HostsSsh => self.choice_rows(
                 &self.data.hosts,
@@ -1123,7 +1131,7 @@ impl CommandPalette {
                 IconName::Command,
                 mode,
                 "No snippets saved yet",
-                |_| RowKey::Noop,
+                |c| RowKey::RunSnippet(c.id.clone()),
             ),
             Page::AiSessions => self.choice_rows(
                 &self.data.ai_sessions,
@@ -1180,6 +1188,14 @@ impl CommandPalette {
             RowKey::ConnectHost { host_id, sftp } => {
                 self.close(cx);
                 cx.emit(PaletteEvent::ConnectHost { host_id, sftp });
+            }
+            RowKey::SetAppTheme(id) => {
+                self.close(cx);
+                cx.emit(PaletteEvent::SetAppTheme(id));
+            }
+            RowKey::RunSnippet(id) => {
+                self.close(cx);
+                cx.emit(PaletteEvent::RunSnippet(id));
             }
         }
     }

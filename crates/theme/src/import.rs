@@ -96,13 +96,33 @@ impl ThemeFile {
         Ok(())
     }
 
-    /// The first variant whose `mode` matches, falling back to any variant.
-    fn resolve_variant(&self, dark: bool) -> Option<&ThemeFileVariant> {
+    /// Resolve the variant to render. If `variant_key` names an existing
+    /// variant whose `mode` matches the requested appearance, it wins;
+    /// otherwise fall back to the first variant of the right mode, then any.
+    fn resolve_variant(&self, dark: bool, variant_key: Option<&str>) -> Option<&ThemeFileVariant> {
         let want = if dark { "dark" } else { "light" };
+        if let Some(key) = variant_key {
+            if let Some(v) = self.variants.get(key) {
+                if v.mode == want {
+                    return Some(v);
+                }
+            }
+        }
         self.variants
             .values()
             .find(|v| v.mode == want)
             .or_else(|| self.variants.values().next())
+    }
+
+    /// The `(key, label)` pairs of every variant matching the given appearance,
+    /// in key order — for a variant picker.
+    pub fn variant_choices(&self, dark: bool) -> Vec<(String, String)> {
+        let want = if dark { "dark" } else { "light" };
+        self.variants
+            .iter()
+            .filter(|(_, v)| v.mode == want)
+            .map(|(k, v)| (k.clone(), v.label.clone().unwrap_or_else(|| k.clone())))
+            .collect()
     }
 }
 
@@ -112,8 +132,18 @@ impl Theme {
     /// every token the file provides. Unknown tokens / unparseable colors are
     /// returned as warnings rather than failing the whole import.
     pub fn from_theme_file(file: &ThemeFile, dark: bool) -> Result<(Theme, Vec<String>), String> {
+        Self::from_theme_file_variant(file, dark, None)
+    }
+
+    /// As [`Self::from_theme_file`], but selects a named variant when
+    /// `variant_key` matches an existing variant of the requested appearance.
+    pub fn from_theme_file_variant(
+        file: &ThemeFile,
+        dark: bool,
+        variant_key: Option<&str>,
+    ) -> Result<(Theme, Vec<String>), String> {
         let variant = file
-            .resolve_variant(dark)
+            .resolve_variant(dark, variant_key)
             .ok_or_else(|| "theme has no variants".to_string())?;
 
         let mut theme = if dark { Theme::dark() } else { Theme::light() };
@@ -446,6 +476,43 @@ mod tests {
 
         let (light, _) = Theme::from_theme_file(&file, false).unwrap();
         assert_eq!(to_rgb8(light.core.primary), [0x00, 0x00, 0xff]);
+    }
+
+    #[test]
+    fn named_variant_selection_picks_the_requested_scheme() {
+        let json = r##"{
+            "name": "Catppuccin",
+            "variants": {
+                "latte":     { "mode": "light", "colors": { "primary": "#111111" } },
+                "frappe":    { "mode": "dark",  "label": "Frappé",    "colors": { "primary": "#222222" } },
+                "macchiato": { "mode": "dark",  "label": "Macchiato", "colors": { "primary": "#333333" } },
+                "mocha":     { "mode": "dark",  "label": "Mocha",     "colors": { "primary": "#444444" } }
+            }
+        }"##;
+        let file = ThemeFile::from_json(json).unwrap();
+        file.validate().unwrap();
+
+        // No key → first dark variant in key order (`frappe`).
+        let (def, _) = Theme::from_theme_file_variant(&file, true, None).unwrap();
+        assert_eq!(to_rgb8(def.core.primary), [0x22, 0x22, 0x22]);
+
+        // Explicit key applies that variant.
+        let (mocha, _) = Theme::from_theme_file_variant(&file, true, Some("mocha")).unwrap();
+        assert_eq!(to_rgb8(mocha.core.primary), [0x44, 0x44, 0x44]);
+
+        // Key of the wrong appearance is ignored (falls back to first dark).
+        let (fallback, _) = Theme::from_theme_file_variant(&file, true, Some("latte")).unwrap();
+        assert_eq!(to_rgb8(fallback.core.primary), [0x22, 0x22, 0x22]);
+
+        let choices = file.variant_choices(true);
+        assert_eq!(
+            choices,
+            vec![
+                ("frappe".to_string(), "Frappé".to_string()),
+                ("macchiato".to_string(), "Macchiato".to_string()),
+                ("mocha".to_string(), "Mocha".to_string()),
+            ]
+        );
     }
 
     #[test]

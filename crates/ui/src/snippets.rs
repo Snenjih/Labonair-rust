@@ -801,6 +801,22 @@ impl SnippetsView {
 
     // ── execution ─────────────────────────────────────────────────────────
 
+    /// `(id, name, default exec mode)` for every loaded snippet — for the
+    /// command palette's "Run Snippet…" sub-page.
+    pub fn snippet_choices(&self) -> Vec<(String, String, String)> {
+        self.snippets
+            .iter()
+            .map(|s| (s.id.clone(), s.name.clone(), s.default_exec_mode.clone()))
+            .collect()
+    }
+
+    /// Run a snippet by id with its default execution mode (palette entry).
+    pub fn run_by_id(&mut self, id: &str, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(snippet) = self.snippets.iter().find(|s| s.id == id).cloned() {
+            self.run(snippet, None, window, cx);
+        }
+    }
+
     /// Entry point from a Run button / menu item.
     fn run(
         &mut self,
