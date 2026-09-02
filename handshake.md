@@ -4,7 +4,60 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
-## Last Session: 2026-09-02 (T13-003 — Terminal & Editor settings)
+## Last Session: 2026-09-02 (T13-004 — Shortcut configuration)
+
+### What Was Done
+- **T13-004 ✅ Done.** Persistent, user-editable keyboard-shortcut bindings
+  with conflict detection, immediate effect and native-menu sync.
+  - **`crates/backend/.../settings/preferences.rs`** — new
+    `keybinds: BTreeMap<String,String>` field (slug → keystroke; `""` =
+    disabled; absent = built-in default; empty map = fresh install on
+    defaults). +1 test (`keybinds_default_empty_and_roundtrip`).
+  - **`crates/ui/src/command_palette.rs`** — data layer:
+    `shortcut_slug` / `shortcut_from_slug` (ids 1:1 with the reference
+    `shortcuts.ts` string literals), `pub type KeybindMap`,
+    `effective_binding(id, overrides)` (`None` = disabled),
+    `resolve_conflict(binding, exclude, overrides)` — override-aware port of
+    `useKeybindsStore` conflict check (still blocks `RESERVED_ACCELERATORS`).
+    +4 tests.
+  - **`crates/ui/src/menu.rs`** — `bindings()` → `bindings(&KeybindMap)`;
+    the 18 rebindable shortcuts resolve through `effective_binding` (macro
+    `rebind!`), 7 fixed/OS-reserved accelerators (Save, NewSshConnection,
+    ToggleFullScreen, OpenSettings `cmd-,`, Minimize, Quit, HideApp) stay
+    hardcoded. New `pub fn apply_keybinds(cx, &KeybindMap)` =
+    `clear_key_bindings()` + `bind_keys(bindings(kb))`. `menu::init` **no
+    longer binds keys** (AppShell owns application, and runs first). +1 test.
+  - **`crates/ui/src/app_shell.rs`** — startup applies
+    `menu::apply_keybinds(cx, &prefs.keybinds)` right after the theme/font
+    prefs push.
+  - **`crates/ui/src/settings.rs`** — new **"Keyboard Shortcuts"** category
+    (custom pane like Appearance): every `SHORTCUTS` row with its effective
+    binding, click-to-record (`recording: Option<ShortcutId>`,
+    `on_key`→`record_key` captures `Keystroke::unparse()`, requires a
+    non-shift modifier, Esc cancels), per-row **Reset** (shown when
+    overridden), **Reset all**, and a local search filter (label + slug).
+    Conflict → inline banner with **Overwrite** (gives the combo to the new
+    shortcut and unbinds the previous owner — no silent double-binding) /
+    **Cancel**. Reserved-accelerator capture → error toast, refused. Pure
+    helpers `capture_keybind` / `overwrite_keybind` + `KbCapture` enum for
+    testability. `set_pref("keybinds", …)` calls `menu::apply_keybinds` so
+    changes are live with no restart; GPUI re-derives the menu accelerators
+    from the same keymap. +5 tests (incl. gpui `keybinds_persist_and_reset`).
+- Verify: `cargo check --workspace`, `cargo clippy --workspace --all-targets
+  -- -D warnings`, `cargo test --workspace`, `cargo fmt --all --check` — all
+  green. backend **160 → 161**, ui **166 → 176** (command_palette +4,
+  settings +5, menu +1), ai 75 unchanged.
+- **Known gaps / for later:** the non-menu shortcuts (`tab.selectTab1..9`,
+  `pane.focusNext`, `view.zenMode`, `bookmarks.open`) are listed and
+  rebindable + persisted, but have no runtime dispatch yet (they had none
+  before this task either) — they light up when their feature/phase wires a
+  menu action. Live key-capture shows the final chord only (no incremental
+  modifier preview). No cross-window keybind-changed event bus (single
+  window; `apply_keybinds` is called directly).
+- **Next task:** first unstarted task after phase-12 — check `tasks/ROADMAP.md`
+  (Phase 13: Session-Persistence & Scrollback).
+
+### (previous) T13-003 — Terminal & Editor settings
 
 ### What Was Done
 - **T13-003 ✅ Done.** Terminal / Editor preference fields wired so changes

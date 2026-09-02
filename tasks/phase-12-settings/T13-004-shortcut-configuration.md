@@ -1,7 +1,7 @@
 # T13-004: Shortcut-Konfiguration
 
 ## Status
-⏳ Pending
+✅ Done
 
 ## Phase
 12 — Settings & Preferences

@@ -213,6 +213,99 @@ pub fn find_conflict(binding: &str, exclude: Option<ShortcutId>) -> Option<Confl
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// User keybind overrides (port of shortcuts/keybinds-store.ts + useKeybindsStore)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Stable string id for a shortcut, matching the reference `ShortcutId`
+/// string literals in `shortcuts.ts`. This is the persisted key in the
+/// user's keybind-override map.
+pub fn shortcut_slug(id: ShortcutId) -> &'static str {
+    match id {
+        CommandPalette => "command.palette",
+        ShortcutsOpen => "shortcuts.open",
+        TabNew => "tab.new",
+        TabNewPreview => "tab.newPreview",
+        TabNewEditor => "tab.newEditor",
+        TabClose => "tab.close",
+        TabNext => "tab.next",
+        TabPrev => "tab.prev",
+        TabSelect1 => "tab.selectTab1",
+        TabSelect2 => "tab.selectTab2",
+        TabSelect3 => "tab.selectTab3",
+        TabSelect4 => "tab.selectTab4",
+        TabSelect5 => "tab.selectTab5",
+        TabSelect6 => "tab.selectTab6",
+        TabSelect7 => "tab.selectTab7",
+        TabSelect8 => "tab.selectTab8",
+        TabSelect9 => "tab.selectTab9",
+        PaneSplitRight => "pane.splitRight",
+        PaneSplitDown => "pane.splitDown",
+        PaneClose => "pane.close",
+        PaneFocusNext => "pane.focusNext",
+        SearchFocus => "search.focus",
+        AiToggle => "ai.toggle",
+        AiAskSelection => "ai.askSelection",
+        SidebarToggle => "sidebar.toggle",
+        ViewZenMode => "view.zenMode",
+        ViewZoomIn => "view.zoomIn",
+        ViewZoomOut => "view.zoomOut",
+        ViewZoomReset => "view.zoomReset",
+        BookmarksOpen => "bookmarks.open",
+    }
+}
+
+/// Reverse of [`shortcut_slug`].
+pub fn shortcut_from_slug(slug: &str) -> Option<ShortcutId> {
+    SHORTCUTS
+        .iter()
+        .map(|s| s.id)
+        .find(|id| shortcut_slug(*id) == slug)
+}
+
+/// User keybind overrides: shortcut slug → keystroke string. An empty
+/// string means the shortcut is explicitly disabled (unbound). An absent
+/// key means "use the registry default" — so an empty map is a fresh
+/// install running entirely on defaults.
+pub type KeybindMap = std::collections::BTreeMap<String, String>;
+
+/// The keystroke a shortcut currently resolves to, honouring user
+/// overrides. `None` = the shortcut is disabled (overridden to empty).
+pub fn effective_binding(id: ShortcutId, overrides: &KeybindMap) -> Option<String> {
+    match overrides.get(shortcut_slug(id)) {
+        Some(s) if s.is_empty() => None,
+        Some(s) => Some(s.clone()),
+        None => Some(shortcut(id).binding.to_string()),
+    }
+}
+
+/// Like [`find_conflict`] but resolves every shortcut through `overrides`
+/// first, so a rebound shortcut is compared at its *current* keystroke.
+/// Port of the override-aware conflict check in `useKeybindsStore`.
+pub fn resolve_conflict(
+    binding: &str,
+    exclude: Option<ShortcutId>,
+    overrides: &KeybindMap,
+) -> Option<Conflict> {
+    let n = normalize(binding);
+    for (b, label) in RESERVED_ACCELERATORS {
+        if normalize(b) == n {
+            return Some(Conflict::Reserved(label));
+        }
+    }
+    for s in SHORTCUTS {
+        if Some(s.id) == exclude {
+            continue;
+        }
+        if let Some(eff) = effective_binding(s.id, overrides) {
+            if normalize(&eff) == n {
+                return Some(Conflict::Shortcut(s.id));
+            }
+        }
+    }
+    None
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Command registry (port of command-palette/*)
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -761,6 +854,69 @@ mod tests {
     #[test]
     fn conflict_none_for_free_binding() {
         assert_eq!(find_conflict("cmd-shift-y", None), None);
+    }
+
+    #[test]
+    fn slug_roundtrips_for_every_shortcut() {
+        for s in shortcuts() {
+            assert_eq!(shortcut_from_slug(shortcut_slug(s.id)), Some(s.id));
+        }
+    }
+
+    #[test]
+    fn first_start_uses_registry_defaults() {
+        let empty = KeybindMap::new();
+        for s in shortcuts() {
+            assert_eq!(
+                effective_binding(s.id, &empty).as_deref(),
+                Some(s.binding),
+                "{:?} default binding",
+                s.id
+            );
+        }
+    }
+
+    #[test]
+    fn effective_binding_honours_overrides() {
+        let mut m = KeybindMap::new();
+        assert_eq!(
+            effective_binding(ShortcutId::TabNew, &m).as_deref(),
+            Some("cmd-t")
+        );
+        m.insert("tab.new".into(), "cmd-shift-t".into());
+        assert_eq!(
+            effective_binding(ShortcutId::TabNew, &m).as_deref(),
+            Some("cmd-shift-t")
+        );
+        m.insert("tab.new".into(), String::new());
+        assert_eq!(effective_binding(ShortcutId::TabNew, &m), None);
+    }
+
+    #[test]
+    fn resolve_conflict_follows_rebinds() {
+        let mut m = KeybindMap::new();
+        // cmd-t is TabNew's default → collides for anyone else.
+        assert_eq!(
+            resolve_conflict("cmd-t", Some(ShortcutId::CommandPalette), &m),
+            Some(Conflict::Shortcut(ShortcutId::TabNew))
+        );
+        // Disable TabNew → cmd-t is now free.
+        m.insert("tab.new".into(), String::new());
+        assert_eq!(
+            resolve_conflict("cmd-t", Some(ShortcutId::CommandPalette), &m),
+            None
+        );
+        // Rebind CommandPalette onto cmd-t → it becomes the new owner.
+        m.insert("command.palette".into(), "cmd-t".into());
+        assert_eq!(
+            resolve_conflict("cmd-t", None, &m),
+            Some(Conflict::Shortcut(ShortcutId::CommandPalette))
+        );
+        // Reserved accelerators stay blocked regardless of overrides.
+        assert_eq!(
+            resolve_conflict("cmd-,", None, &m),
+            Some(Conflict::Reserved("Settings"))
+        );
     }
 
     #[test]

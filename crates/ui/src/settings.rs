@@ -33,6 +33,10 @@ use labonair_backend::modules::fs::paths::config_dir;
 use labonair_theme::ThemeFile;
 
 use crate::background::BackgroundStore;
+use crate::command_palette::{
+    effective_binding, resolve_conflict, shortcut, shortcut_slug, shortcuts, Conflict, KeybindMap,
+    ShortcutId,
+};
 
 use labonair_backend::modules::mcp::{
     mcp_get_status, mcp_regenerate_token, mcp_set_auto_revoke_minutes, mcp_set_enabled,
@@ -164,6 +168,7 @@ pub struct FieldDef {
 }
 
 pub const AGENT_BRIDGE: &str = "AI Agent Bridge";
+pub const KEYBOARD: &str = "Keyboard Shortcuts";
 
 pub const CATEGORIES: &[&str] = &[
     "General",
@@ -174,8 +179,49 @@ pub const CATEGORIES: &[&str] = &[
     "Command Palette",
     "Source Control",
     "AI",
+    KEYBOARD,
     AGENT_BRIDGE,
 ];
+
+// ─────────────────────────── keybind mutation (pure) ─────────────────────────
+
+/// Result of capturing a keystroke for a shortcut.
+pub(crate) enum KbCapture {
+    /// The keystroke is free — here is the new override map to persist.
+    Set(KeybindMap),
+    /// The keystroke is already used by another shortcut — needs a decision.
+    Conflict(ShortcutId),
+    /// The keystroke is an OS/menu-reserved accelerator — refused.
+    Reserved(&'static str),
+}
+
+/// Pure port of `useKeybindsStore.setKeybind` + conflict detection: decide
+/// what capturing `binding` for `id` means, given the current `map`.
+pub(crate) fn capture_keybind(map: &KeybindMap, id: ShortcutId, binding: &str) -> KbCapture {
+    match resolve_conflict(binding, Some(id), map) {
+        Some(Conflict::Reserved(label)) => KbCapture::Reserved(label),
+        Some(Conflict::Shortcut(other)) => KbCapture::Conflict(other),
+        None => {
+            let mut m = map.clone();
+            m.insert(shortcut_slug(id).to_string(), binding.to_string());
+            KbCapture::Set(m)
+        }
+    }
+}
+
+/// Resolve a capture conflict by giving `binding` to `id` and unbinding the
+/// previous owner — no silent double-binding.
+pub(crate) fn overwrite_keybind(
+    map: &KeybindMap,
+    id: ShortcutId,
+    other: ShortcutId,
+    binding: &str,
+) -> KeybindMap {
+    let mut m = map.clone();
+    m.insert(shortcut_slug(other).to_string(), String::new());
+    m.insert(shortcut_slug(id).to_string(), binding.to_string());
+    m
+}
 
 use FieldKind::{Int, Select, Switch, Text};
 
@@ -561,7 +607,18 @@ pub struct SettingsView {
     theme_files: Vec<ThemeEntry>,
     /// Which listed theme is active (`None` = built-in light/dark, no override).
     active_theme_id: Option<String>,
+    /// Shortcut currently capturing a new key combination (`Keyboard` pane).
+    recording: Option<ShortcutId>,
+    /// A captured combination that collides with another shortcut, awaiting
+    /// the user's overwrite / cancel decision.
+    kb_conflict: Option<KbConflict>,
     focus: FocusHandle,
+}
+
+struct KbConflict {
+    id: ShortcutId,
+    binding: String,
+    other: ShortcutId,
 }
 
 impl SettingsView {
@@ -590,6 +647,8 @@ impl SettingsView {
             mcp_token: None,
             theme_files: Vec::new(),
             active_theme_id: None,
+            recording: None,
+            kb_conflict: None,
             focus: cx.focus_handle(),
         }
     }
@@ -601,6 +660,8 @@ impl SettingsView {
     pub fn open(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.open = true;
         self.editing = None;
+        self.recording = None;
+        self.kb_conflict = None;
         self.search.clear();
         window.focus(&self.focus);
         self.refresh_mcp_status(cx);
@@ -811,10 +872,106 @@ impl SettingsView {
             };
             self.theme.update(cx, |t, cx| t.set_preference(pref, cx));
         }
+        // Rebind the keymap so a changed shortcut takes effect immediately
+        // (and the native menu accelerators re-derive) (T13-004).
+        if key == "keybinds" {
+            let kb = self.prefs.read(cx).get().keybinds.clone();
+            crate::menu::apply_keybinds(cx, &kb);
+        }
         // Typography + editor syntax scheme are pushed into the ThemeStore so
         // open terminals / editors pick them up live (T13-003).
         self.sync_theme_from_prefs(cx);
         cx.notify();
+    }
+
+    // ── keyboard shortcuts ────────────────────────────────────────────────
+
+    fn keybinds(&self, cx: &App) -> KeybindMap {
+        self.prefs.read(cx).get().keybinds.clone()
+    }
+
+    fn write_keybinds(&mut self, map: KeybindMap, cx: &mut Context<Self>) {
+        let value = serde_json::to_value(map).unwrap_or(Value::Null);
+        self.set_pref("keybinds", value, cx);
+    }
+
+    /// Translate a captured keystroke into a persisted override (or a
+    /// conflict prompt / rejection).
+    fn capture_shortcut(&mut self, id: ShortcutId, binding: String, cx: &mut Context<Self>) {
+        let map = self.keybinds(cx);
+        match capture_keybind(&map, id, &binding) {
+            KbCapture::Set(next) => {
+                self.kb_conflict = None;
+                self.write_keybinds(next, cx);
+            }
+            KbCapture::Conflict(other) => {
+                self.kb_conflict = Some(KbConflict { id, binding, other });
+                cx.notify();
+            }
+            KbCapture::Reserved(label) => {
+                self.notify_error(
+                    cx,
+                    "Reserved shortcut",
+                    format!("{binding} is reserved for \u{201c}{label}\u{201d}."),
+                );
+                cx.notify();
+            }
+        }
+    }
+
+    fn resolve_kb_conflict(&mut self, cx: &mut Context<Self>) {
+        let Some(kc) = self.kb_conflict.take() else {
+            return;
+        };
+        let map = self.keybinds(cx);
+        let next = overwrite_keybind(&map, kc.id, kc.other, &kc.binding);
+        self.write_keybinds(next, cx);
+    }
+
+    fn reset_keybind(&mut self, id: ShortcutId, cx: &mut Context<Self>) {
+        let mut map = self.keybinds(cx);
+        if map.remove(shortcut_slug(id)).is_some() {
+            self.write_keybinds(map, cx);
+        }
+    }
+
+    fn reset_all_keybinds(&mut self, cx: &mut Context<Self>) {
+        self.kb_conflict = None;
+        self.recording = None;
+        self.write_keybinds(KeybindMap::new(), cx);
+    }
+
+    /// Handle a key press while a shortcut row is recording.
+    fn record_key(&mut self, ev: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(id) = self.recording else { return };
+        let ks = &ev.keystroke;
+        let key = ks.key.as_str();
+        window.focus(&self.focus);
+        if key == "escape" {
+            self.recording = None;
+            self.kb_conflict = None;
+            cx.notify();
+            return;
+        }
+        // A bare modifier press just updates the live hint — keep waiting.
+        if matches!(
+            key,
+            "cmd" | "ctrl" | "control" | "alt" | "option" | "shift" | "fn" | "function"
+        ) {
+            return;
+        }
+        // The reference `eventToBinding` requires a non-shift modifier.
+        if !(ks.modifiers.platform || ks.modifiers.control || ks.modifiers.alt) {
+            self.notify_error(
+                cx,
+                "Shortcut needs a modifier",
+                "Combine the key with \u{2318}, \u{2303} or \u{2325}.".to_string(),
+            );
+            return;
+        }
+        let binding = ks.unparse();
+        self.recording = None;
+        self.capture_shortcut(id, binding, cx);
     }
 
     /// Mirror the font / editor-theme preferences into the [`ThemeStore`].
@@ -895,7 +1052,12 @@ impl SettingsView {
 
     // ── key handling ──────────────────────────────────────────────────────
 
-    fn on_key(&mut self, ev: &KeyDownEvent, _window: &mut Window, cx: &mut Context<Self>) {
+    fn on_key(&mut self, ev: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
+        if self.recording.is_some() {
+            self.record_key(ev, window, cx);
+            cx.stop_propagation();
+            return;
+        }
         let ks = &ev.keystroke;
         let key = ks.key.as_str();
         if self.editing.is_some() {
@@ -1558,8 +1720,203 @@ impl SettingsView {
         root.into_any_element()
     }
 
+    fn render_shortcuts(
+        &self,
+        query: &str,
+        c: &Palette,
+        cx: &mut Context<Self>,
+    ) -> gpui::AnyElement {
+        let overrides = self.prefs.read(cx).get().keybinds.clone();
+        let recording = self.recording;
+        let conflict_id = self.kb_conflict.as_ref().map(|k| k.id);
+
+        let mut root = div().flex().flex_col().child(
+            div()
+                .flex()
+                .items_center()
+                .justify_between()
+                .gap_2()
+                .py_2()
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .text_size(px(11.0))
+                        .text_color(c.muted)
+                        .child(
+                            "Click a shortcut, then press the new key combination. Esc cancels.",
+                        ),
+                )
+                .child(
+                    div()
+                        .id("kb-reset-all")
+                        .px_2()
+                        .py(px(3.0))
+                        .rounded_sm()
+                        .border_1()
+                        .border_color(c.border)
+                        .text_color(c.fg)
+                        .hover(|s| s.bg(c.border))
+                        .child("Reset all")
+                        .on_click(
+                            cx.listener(|this, _: &ClickEvent, _w, cx| this.reset_all_keybinds(cx)),
+                        ),
+                ),
+        );
+
+        for s in shortcuts() {
+            if !query.is_empty()
+                && !s.label.to_lowercase().contains(query)
+                && !shortcut_slug(s.id).to_lowercase().contains(query)
+            {
+                continue;
+            }
+            let id = s.id;
+            let slug = shortcut_slug(id);
+            let overridden = overrides.contains_key(slug);
+            let is_rec = recording == Some(id);
+            let display = if is_rec {
+                "Press keys\u{2026}".to_string()
+            } else {
+                effective_binding(id, &overrides).unwrap_or_else(|| "Disabled".to_string())
+            };
+
+            let row = div()
+                .flex()
+                .items_center()
+                .justify_between()
+                .gap_4()
+                .py_2()
+                .border_b_1()
+                .border_color(c.border)
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .text_color(c.fg)
+                        .child(SharedString::from(s.label)),
+                )
+                .child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap_1()
+                        .child(
+                            div()
+                                .id(SharedString::from(format!("kb-rec-{slug}")))
+                                .px_2()
+                                .py(px(3.0))
+                                .min_w(px(120.0))
+                                .text_center()
+                                .rounded_sm()
+                                .border_1()
+                                .border_color(if is_rec { c.accent } else { c.border })
+                                .bg(c.bg)
+                                .text_color(c.fg)
+                                .hover(|st| st.bg(c.border))
+                                .child(SharedString::from(display))
+                                .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
+                                    this.recording = Some(id);
+                                    this.kb_conflict = None;
+                                    window.focus(&this.focus);
+                                    cx.notify();
+                                })),
+                        )
+                        .when(overridden, |d| {
+                            d.child(
+                                div()
+                                    .id(SharedString::from(format!("kb-reset-{slug}")))
+                                    .px_2()
+                                    .py(px(3.0))
+                                    .rounded_sm()
+                                    .border_1()
+                                    .border_color(c.border)
+                                    .text_color(c.muted)
+                                    .hover(|st| st.text_color(c.fg))
+                                    .child("Reset")
+                                    .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                                        this.reset_keybind(id, cx);
+                                    })),
+                            )
+                        }),
+                );
+            root = root.child(row);
+
+            if conflict_id == Some(id) {
+                let kc = self.kb_conflict.as_ref().unwrap();
+                let msg = format!(
+                    "{} is already used by \u{201c}{}\u{201d}.",
+                    kc.binding,
+                    shortcut(kc.other).label
+                );
+                root = root.child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .justify_between()
+                        .gap_2()
+                        .px_2()
+                        .py_2()
+                        .rounded_sm()
+                        .bg(c.bg)
+                        .border_1()
+                        .border_color(c.accent)
+                        .child(
+                            div()
+                                .flex_1()
+                                .min_w_0()
+                                .text_size(px(11.0))
+                                .text_color(c.fg)
+                                .child(SharedString::from(msg)),
+                        )
+                        .child(
+                            div()
+                                .flex()
+                                .gap_1()
+                                .child(
+                                    div()
+                                        .id("kb-conflict-overwrite")
+                                        .px_2()
+                                        .py(px(2.0))
+                                        .rounded_sm()
+                                        .border_1()
+                                        .border_color(c.border)
+                                        .text_color(c.fg)
+                                        .hover(|st| st.bg(c.border))
+                                        .child("Overwrite")
+                                        .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
+                                            this.resolve_kb_conflict(cx)
+                                        })),
+                                )
+                                .child(
+                                    div()
+                                        .id("kb-conflict-cancel")
+                                        .px_2()
+                                        .py(px(2.0))
+                                        .rounded_sm()
+                                        .border_1()
+                                        .border_color(c.border)
+                                        .text_color(c.muted)
+                                        .hover(|st| st.text_color(c.fg))
+                                        .child("Cancel")
+                                        .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
+                                            this.kb_conflict = None;
+                                            cx.notify();
+                                        })),
+                                ),
+                        ),
+                );
+            }
+        }
+
+        root.into_any_element()
+    }
+
     fn render_body(&mut self, c: &Palette, cx: &mut Context<Self>) -> gpui::AnyElement {
         let query = self.search.trim().to_lowercase();
+        if CATEGORIES[self.active_cat] == KEYBOARD {
+            return self.render_shortcuts(&query, c, cx);
+        }
         if !query.is_empty() {
             let matches: Vec<&FieldDef> = FIELDS
                 .iter()
@@ -2233,6 +2590,86 @@ mod tests {
                 .app_font_family,
             "Inter"
         );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn capture_free_binding_sets_override() {
+        match capture_keybind(&KeybindMap::new(), ShortcutId::TabNew, "cmd-shift-y") {
+            KbCapture::Set(m) => {
+                assert_eq!(m.get("tab.new").map(String::as_str), Some("cmd-shift-y"))
+            }
+            _ => panic!("expected a free binding"),
+        }
+    }
+
+    #[test]
+    fn capture_detects_conflict_then_overwrite_unbinds_loser() {
+        let map = KeybindMap::new();
+        match capture_keybind(&map, ShortcutId::CommandPalette, "cmd-t") {
+            KbCapture::Conflict(other) => assert_eq!(other, ShortcutId::TabNew),
+            _ => panic!("cmd-t should collide with TabNew"),
+        }
+        let next = overwrite_keybind(
+            &map,
+            ShortcutId::CommandPalette,
+            ShortcutId::TabNew,
+            "cmd-t",
+        );
+        assert_eq!(
+            next.get("command.palette").map(String::as_str),
+            Some("cmd-t")
+        );
+        assert_eq!(next.get("tab.new").map(String::as_str), Some(""));
+        assert_eq!(effective_binding(ShortcutId::TabNew, &next), None);
+        // No silent double-binding — cmd-t has exactly one owner now.
+        assert_eq!(
+            resolve_conflict("cmd-t", None, &next),
+            Some(Conflict::Shortcut(ShortcutId::CommandPalette))
+        );
+    }
+
+    #[test]
+    fn capture_refuses_reserved_accelerator() {
+        assert!(matches!(
+            capture_keybind(&KeybindMap::new(), ShortcutId::TabNew, "cmd-,"),
+            KbCapture::Reserved("Settings")
+        ));
+    }
+
+    #[test]
+    fn keyboard_category_is_registered() {
+        assert!(CATEGORIES.contains(&KEYBOARD));
+    }
+
+    #[gpui::test]
+    fn keybinds_persist_and_reset(cx: &mut TestAppContext) {
+        let dir = std::env::temp_dir().join(format!("labonair-set-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = cx.new(|_| PreferencesStore::with_dir(dir.clone()));
+        let mut m = KeybindMap::new();
+        m.insert("tab.new".into(), "cmd-shift-t".into());
+        store.update(cx, |s, cx| {
+            s.set_value("keybinds", serde_json::to_value(&m).unwrap(), cx);
+        });
+        cx.run_until_parked();
+        assert_eq!(
+            PreferencesStore::with_dir(dir.clone())
+                .get()
+                .keybinds
+                .get("tab.new")
+                .map(String::as_str),
+            Some("cmd-shift-t")
+        );
+        // Reset all → empty map persists across a reload.
+        store.update(cx, |s, cx| {
+            s.set_value("keybinds", serde_json::json!({}), cx);
+        });
+        cx.run_until_parked();
+        assert!(PreferencesStore::with_dir(dir.clone())
+            .get()
+            .keybinds
+            .is_empty());
         std::fs::remove_dir_all(&dir).ok();
     }
 

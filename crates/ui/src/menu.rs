@@ -21,8 +21,9 @@
 //! manager, zoom) have no handler and therefore render disabled, per the task
 //! note; their phase wires a handler in and they light up.
 
-use gpui::{actions, App, KeyBinding, Menu, MenuItem, OsAction, SystemMenuType};
+use gpui::{actions, App, KeyBinding, Keystroke, Menu, MenuItem, OsAction, SystemMenuType};
 
+use crate::command_palette::{effective_binding, KeybindMap, ShortcutId};
 use crate::notifications::{notification_center, Notification};
 
 actions!(
@@ -85,7 +86,9 @@ actions!(
 /// Register app-global menu handlers, key bindings, the menu bar and the Dock
 /// menu. Call once, after the main window is open.
 pub fn init(cx: &mut App) {
-    cx.bind_keys(bindings());
+    // Key bindings are applied by `AppShell` via [`apply_keybinds`] so they
+    // reflect the user's persisted shortcut overrides (T13-004). `AppShell`
+    // is constructed before this runs, so we must not re-bind defaults here.
 
     cx.on_action(|_: &Quit, cx: &mut App| cx.quit());
     cx.on_action(|_: &HideApp, cx: &mut App| cx.hide());
@@ -126,36 +129,61 @@ fn toast(cx: &mut App, title: &'static str, body: &'static str) {
     });
 }
 
+/// Rebind all key bindings from the user's shortcut-override map. Called by
+/// `AppShell` at startup and whenever the `keybinds` preference changes, so a
+/// rebound shortcut takes effect with no restart. GPUI derives the native
+/// menu-item accelerator hints from the same keymap, so the menu stays in
+/// sync automatically.
+pub fn apply_keybinds(cx: &mut App, kb: &KeybindMap) {
+    cx.clear_key_bindings();
+    cx.bind_keys(bindings(kb));
+}
+
 /// Key bindings that mirror the reference accelerators. They drive both the
-/// menu-item shortcut hint and the actual dispatch.
-fn bindings() -> Vec<KeyBinding> {
-    vec![
-        KeyBinding::new("cmd-t", NewTerminalTab, None),
-        KeyBinding::new("cmd-shift-p", NewPreviewTab, None),
-        KeyBinding::new("cmd-e", NewEditorTab, None),
+/// menu-item shortcut hint and the actual dispatch. The rebindable subset is
+/// resolved through the user's `overrides` map ([`effective_binding`]); the
+/// fixed / OS-reserved accelerators are never customizable.
+fn bindings(overrides: &KeybindMap) -> Vec<KeyBinding> {
+    macro_rules! rebind {
+        ($out:ident, $id:expr, $action:expr) => {{
+            if let Some(b) = effective_binding($id, overrides) {
+                if Keystroke::parse(&b).is_ok() {
+                    $out.push(KeyBinding::new(b.as_str(), $action, None));
+                }
+            }
+        }};
+    }
+
+    let mut v = vec![
+        // Fixed / OS-reserved — not user-customizable.
         KeyBinding::new("cmd-s", Save, None),
-        KeyBinding::new("cmd-w", CloseTab, None),
-        KeyBinding::new("cmd-shift-w", ClosePane, None),
-        KeyBinding::new("cmd-b", ToggleSidebar, None),
-        KeyBinding::new("cmd-i", ToggleAiPanel, None),
-        KeyBinding::new("cmd-=", ZoomIn, None),
-        KeyBinding::new("cmd--", ZoomOut, None),
-        KeyBinding::new("cmd-0", ResetZoom, None),
-        KeyBinding::new("ctrl-cmd-f", ToggleFullScreen, None),
-        KeyBinding::new("cmd-d", SplitPaneRight, None),
-        KeyBinding::new("cmd-shift-d", SplitPaneDown, None),
-        KeyBinding::new("cmd-f", Find, None),
         KeyBinding::new("cmd-shift-n", NewSshConnection, None),
-        KeyBinding::new("cmd-l", AskAboutSelection, None),
-        KeyBinding::new("cmd-k", OpenShortcuts, None),
-        KeyBinding::new("cmd-p", CommandPalette, None),
+        KeyBinding::new("ctrl-cmd-f", ToggleFullScreen, None),
         KeyBinding::new("cmd-,", OpenSettings, None),
         KeyBinding::new("cmd-m", Minimize, None),
-        KeyBinding::new("ctrl-tab", NextTab, None),
-        KeyBinding::new("ctrl-shift-tab", PrevTab, None),
         KeyBinding::new("cmd-q", Quit, None),
         KeyBinding::new("cmd-h", HideApp, None),
-    ]
+    ];
+
+    rebind!(v, ShortcutId::CommandPalette, CommandPalette);
+    rebind!(v, ShortcutId::ShortcutsOpen, OpenShortcuts);
+    rebind!(v, ShortcutId::TabNew, NewTerminalTab);
+    rebind!(v, ShortcutId::TabNewPreview, NewPreviewTab);
+    rebind!(v, ShortcutId::TabNewEditor, NewEditorTab);
+    rebind!(v, ShortcutId::TabClose, CloseTab);
+    rebind!(v, ShortcutId::TabNext, NextTab);
+    rebind!(v, ShortcutId::TabPrev, PrevTab);
+    rebind!(v, ShortcutId::PaneSplitRight, SplitPaneRight);
+    rebind!(v, ShortcutId::PaneSplitDown, SplitPaneDown);
+    rebind!(v, ShortcutId::PaneClose, ClosePane);
+    rebind!(v, ShortcutId::SearchFocus, Find);
+    rebind!(v, ShortcutId::AiToggle, ToggleAiPanel);
+    rebind!(v, ShortcutId::AiAskSelection, AskAboutSelection);
+    rebind!(v, ShortcutId::SidebarToggle, ToggleSidebar);
+    rebind!(v, ShortcutId::ViewZoomIn, ZoomIn);
+    rebind!(v, ShortcutId::ViewZoomOut, ZoomOut);
+    rebind!(v, ShortcutId::ViewZoomReset, ResetZoom);
+    v
 }
 
 /// The full menu bar, structure/order/labels 1:1 with the reference
@@ -285,7 +313,18 @@ mod tests {
     /// Every accelerator string parses (`KeyBinding::new` panics otherwise).
     #[test]
     fn bindings_parse() {
-        assert_eq!(bindings().len(), 25);
+        // 7 fixed + 18 rebindable defaults.
+        assert_eq!(bindings(&KeybindMap::new()).len(), 25);
+    }
+
+    #[test]
+    fn rebound_shortcut_replaces_its_binding() {
+        let mut kb = KeybindMap::new();
+        kb.insert("tab.new".into(), "cmd-shift-t".into());
+        kb.insert("pane.close".into(), String::new()); // disabled
+        let n = bindings(&kb).len();
+        // TabNew still present (moved), PaneClose dropped → one fewer.
+        assert_eq!(n, 24);
     }
 
     #[test]

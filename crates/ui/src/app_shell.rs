@@ -246,6 +246,8 @@ impl AppShell {
             let p = prefs.read(cx).get().clone();
             prefs.update(cx, |s, cx| s.publish_global(cx));
             crate::settings::apply_prefs_to_theme(&p, &theme, cx);
+            // Apply the persisted keyboard-shortcut overrides (T13-004).
+            crate::menu::apply_keybinds(cx, &p.keybinds);
         }
         let settings = cx.new(|cx| {
             SettingsView::new(

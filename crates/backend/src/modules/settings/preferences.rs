@@ -137,6 +137,12 @@ pub struct Preferences {
     pub ai_max_agent_steps: u32,
     pub ai_terminal_context_lines: u32,
     pub ai_warn_destructive_commands: bool,
+
+    // ── Keyboard Shortcuts ───────────────────────────────────────────────
+    /// User keybind overrides: shortcut slug (`"tab.new"`, …) → keystroke
+    /// string. An empty string disables the shortcut; an absent key means
+    /// "use the built-in default". An empty map = all defaults (first run).
+    pub keybinds: std::collections::BTreeMap<String, String>,
 }
 
 impl Default for Preferences {
@@ -188,6 +194,8 @@ impl Default for Preferences {
             ai_max_agent_steps: 12,
             ai_terminal_context_lines: 200,
             ai_warn_destructive_commands: true,
+
+            keybinds: std::collections::BTreeMap::new(),
         }
     }
 }
@@ -365,6 +373,26 @@ mod tests {
         assert!(!e.expandtab);
         assert_eq!(e.tabstop, 2);
         assert_eq!(e.shiftwidth, 2);
+    }
+
+    #[test]
+    fn keybinds_default_empty_and_roundtrip() {
+        let dir = tmp();
+        let mut p = Preferences::default();
+        assert!(p.keybinds.is_empty(), "fresh install runs on defaults");
+        p.keybinds.insert("tab.new".into(), "cmd-shift-t".into());
+        p.keybinds.insert("pane.close".into(), String::new());
+        save_to(&dir, &p).unwrap();
+        let back = load_from(&dir);
+        assert_eq!(
+            back.keybinds.get("tab.new").map(String::as_str),
+            Some("cmd-shift-t")
+        );
+        assert_eq!(
+            back.keybinds.get("pane.close").map(String::as_str),
+            Some("")
+        );
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
