@@ -64,6 +64,9 @@ use crate::session::{
 };
 use crate::settings::GlobalPreferences;
 use crate::sftp::{SftpEvent, SftpView};
+use crate::ssh_connection::{
+    ConnStage, ConnectionKind, ConnectionState, ConnectionStatusStore, StageStatus,
+};
 use crate::tabs::{Tab, TabData, TabKind, TabStore};
 use crate::terminal::TerminalView;
 use crate::theme::ThemeStore;
@@ -109,24 +112,45 @@ fn ssh_tab_title(host_label: &str, jump_label: Option<&str>) -> String {
     }
 }
 
+/// Small action button for the SSH loading screen (pill radius, matching the
+/// reference button treatment). Callers add `.on_click(..)`.
+fn loading_btn(
+    id: &'static str,
+    label: &'static str,
+    tint: gpui::Hsla,
+    border: gpui::Hsla,
+    primary: bool,
+    fg: gpui::Hsla,
+) -> gpui::Stateful<gpui::Div> {
+    let base = div()
+        .id(id)
+        .flex()
+        .items_center()
+        .justify_center()
+        .px_3()
+        .py_1()
+        .rounded(px(13.0))
+        .border_1()
+        .text_xs()
+        .cursor_pointer()
+        .child(label);
+    if primary {
+        base.bg(tint)
+            .text_color(fg)
+            .border_color(gpui::transparent_black())
+            .hover(|s| s.opacity(0.85))
+    } else {
+        base.text_color(tint)
+            .border_color(border)
+            .hover(|s| s.bg(border).text_color(fg))
+    }
+}
+
 /// A blocking prompt raised mid-connect by the SSH backend.
 enum SshPrompt {
-    Trust {
-        ssh_id: String,
-        host: String,
-        fingerprint: String,
-        mismatch: bool,
-    },
-    Password {
-        ssh_id: String,
-        message: String,
-        buffer: String,
-        is_2fa: bool,
-    },
-    Passphrase {
-        ssh_id: String,
-        buffer: String,
-    },
+    Trust { ssh_id: String },
+    Password { ssh_id: String, buffer: String },
+    Passphrase { ssh_id: String, buffer: String },
 }
 
 impl SshPrompt {
@@ -297,6 +321,11 @@ pub struct Workspace {
     ssh_prompt: Option<SshPrompt>,
     prompt_focus: FocusHandle,
     prompt_shown: bool,
+    /// Per-session connection state machine + stage progress + live log,
+    /// driving the full-pane `SshLoadingScreen` (T16-015).
+    ssh_connection: Entity<ConnectionStatusStore>,
+    /// Tab ids the loading screen asked to close (needs `&mut Window`).
+    pending_tab_close: Vec<u64>,
     /// Backend → workspace SSH events, forwarded off the broadcast bus.
     ssh_events: std::sync::mpsc::Receiver<AppEvent>,
     _ssh_poll: Task<()>,
@@ -477,6 +506,8 @@ impl Workspace {
             ssh_prompt: None,
             prompt_focus: cx.focus_handle(),
             prompt_shown: false,
+            ssh_connection: cx.new(|_| ConnectionStatusStore::new()),
+            pending_tab_close: Vec::new(),
             ssh_events: ev_rx,
             _ssh_poll: ssh_poll,
             transfers,
@@ -486,6 +517,8 @@ impl Workspace {
             pending_snippet_ssh: HashMap::new(),
         };
         cx.observe(&this.agent_access, |_, _, cx| cx.notify())
+            .detach();
+        cx.observe(&this.ssh_connection, |_, _, cx| cx.notify())
             .detach();
 
         // Session restore (T14-001): replay the previous tabs / layout if a
@@ -1732,6 +1765,8 @@ impl Workspace {
             .collect();
         for sid in dead {
             if let Some(t) = self.ssh_tabs.remove(&sid) {
+                self.ssh_connection
+                    .update(cx, |s, cx| s.remove(&t.ssh_id, cx));
                 let app = self.backend.clone();
                 let ssh_id = t.ssh_id.clone();
                 let host_id = t.host_id.clone();
@@ -2136,7 +2171,6 @@ impl Workspace {
 
         let (session_id, feed) = self.registry.create_remote(colors, dims, writer, resizer);
         let handle = self.registry.handle(session_id)?;
-        feed.feed(b"Connecting\xe2\x80\xa6\r\n");
 
         let pane_id = self.alloc_pane();
         let (host_label, jump_label) = {
@@ -2181,6 +2215,16 @@ impl Workspace {
             },
         );
         self.set_host_status(&host_id, HostStatus::Connecting, cx);
+        self.ssh_connection.update(cx, |s, cx| {
+            s.begin(
+                ssh_id.clone(),
+                host_id.clone(),
+                host_label.clone(),
+                ConnectionKind::Terminal,
+                jump_label.clone(),
+                cx,
+            );
+        });
         self.spawn_ssh_connect(ssh_id.clone(), host_id, None, None, feed, cx);
         self.focus_active(window, cx);
         cx.notify();
@@ -2235,9 +2279,8 @@ impl Workspace {
                     || low.contains("host key");
                 if !expected_prompt {
                     let _ = this.update(cx, |this, cx| {
-                        feed.feed(
-                            format!("\r\n\x1b[31mConnection failed: {err}\x1b[0m\r\n").as_bytes(),
-                        );
+                        this.ssh_connection
+                            .update(cx, |s, cx| s.set_error(&ssh_id, err.clone(), cx));
                         if let Some(host) = this
                             .ssh_tabs
                             .values()
@@ -2313,43 +2356,56 @@ impl Workspace {
         else {
             return;
         };
+        self.ssh_connection.update(cx, |s, cx| s.resume(ssh_id, cx));
         self.spawn_ssh_connect(ssh_id.to_string(), host_id, passphrase, password, feed, cx);
     }
 
     fn handle_ssh_event(&mut self, ev: AppEvent, cx: &mut Context<Self>) {
         match ev {
+            AppEvent::SshConnectLog {
+                session_id,
+                message,
+            } => {
+                self.ssh_connection
+                    .update(cx, |s, cx| s.push_log(&session_id, &message, cx));
+            }
             AppEvent::SshKnownHostsWarning {
                 session_id,
                 fingerprint,
                 host,
                 is_mismatch,
             } => {
-                self.ssh_prompt = Some(SshPrompt::Trust {
-                    ssh_id: session_id,
-                    host,
-                    fingerprint,
-                    mismatch: is_mismatch,
+                self.ssh_connection.update(cx, |s, cx| {
+                    s.set_trust(&session_id, fingerprint.clone(), is_mismatch, cx)
                 });
+                let _ = (host, fingerprint, is_mismatch);
+                self.ssh_prompt = Some(SshPrompt::Trust { ssh_id: session_id });
             }
             AppEvent::SshAuthRequired {
                 session_id,
                 prompt_message,
                 is_2fa,
             } => {
+                self.ssh_connection.update(cx, |s, cx| {
+                    s.set_auth_prompt(&session_id, prompt_message.clone(), is_2fa, cx)
+                });
                 self.ssh_prompt = Some(SshPrompt::Password {
                     ssh_id: session_id,
-                    message: prompt_message,
                     buffer: String::new(),
-                    is_2fa,
                 });
             }
             AppEvent::SshPassphraseRequired { session_id } => {
+                self.ssh_connection
+                    .update(cx, |s, cx| s.set_passphrase(&session_id, cx));
                 self.ssh_prompt = Some(SshPrompt::Passphrase {
                     ssh_id: session_id,
                     buffer: String::new(),
                 });
             }
             AppEvent::SshSessionEstablished { session_id, .. } => {
+                self.ssh_connection.update(cx, |s, cx| {
+                    s.set_state(&session_id, ConnectionState::Connected, cx)
+                });
                 if let Some(host) = self
                     .ssh_tabs
                     .values()
@@ -2376,6 +2432,7 @@ impl Workspace {
                 }
             }
             AppEvent::SshConnectionLost { session_id } => {
+                let known = self.ssh_connection.read(cx).get(&session_id).is_some();
                 if let Some(host) =
                     self.ssh_tabs
                         .values()
@@ -2386,6 +2443,23 @@ impl Workspace {
                         })
                 {
                     self.set_host_status(&host, HostStatus::Failed, cx);
+                }
+                // Only surface the error screen if the connection never reached
+                // the shell — a drop after `Connected` belongs in the terminal.
+                if known {
+                    self.ssh_connection.update(cx, |s, cx| {
+                        let was_connected = s
+                            .get(&session_id)
+                            .map(|e| e.state == ConnectionState::Connected)
+                            .unwrap_or(false);
+                        if !was_connected {
+                            s.set_error(
+                                &session_id,
+                                "Connection lost before the session was ready.",
+                                cx,
+                            );
+                        }
+                    });
                 }
             }
             AppEvent::McpOpenTabRequest {
@@ -2473,6 +2547,8 @@ impl Workspace {
         };
         match prompt {
             SshPrompt::Trust { ssh_id, .. } => {
+                self.ssh_connection
+                    .update(cx, |s, cx| s.resume(&ssh_id, cx));
                 let app = self.backend.clone();
                 self.tokio.spawn(async move {
                     let _ = ssh_trust_host(ssh_id, true, &app.trust).await;
@@ -2489,11 +2565,22 @@ impl Workspace {
     }
 
     fn cancel_prompt(&mut self, cx: &mut Context<Self>) {
-        if let Some(SshPrompt::Trust { ssh_id, .. }) = self.ssh_prompt.take() {
-            let app = self.backend.clone();
-            self.tokio.spawn(async move {
-                let _ = ssh_trust_host(ssh_id, false, &app.trust).await;
-            });
+        match self.ssh_prompt.take() {
+            Some(SshPrompt::Trust { ssh_id, .. }) => {
+                self.ssh_connection.update(cx, |s, cx| {
+                    s.set_error(&ssh_id, "Host key was not trusted.", cx)
+                });
+                let app = self.backend.clone();
+                self.tokio.spawn(async move {
+                    let _ = ssh_trust_host(ssh_id, false, &app.trust).await;
+                });
+            }
+            Some(SshPrompt::Password { ssh_id, .. } | SshPrompt::Passphrase { ssh_id, .. }) => {
+                self.ssh_connection.update(cx, |s, cx| {
+                    s.set_error(&ssh_id, "Authentication cancelled.", cx)
+                });
+            }
+            None => {}
         }
         cx.notify();
     }
@@ -2533,126 +2620,363 @@ impl Workspace {
         cx.notify();
     }
 
-    fn render_ssh_prompt(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
+    /// Full-pane SSH connecting screen (T16-015) — port of
+    /// `reference-src/src/modules/terminal/SshLoadingScreen.tsx`. Shown in the
+    /// tab body in place of the terminal until `session_established`, driving:
+    /// the 4-stage progress indicator, the live connection-log panel, and the
+    /// state-specific card (quick-connect password / trust / auth / passphrase
+    /// / error with retry+edit-host).
+    fn render_ssh_loading(
+        &mut self,
+        entry: crate::ssh_connection::ConnectionEntry,
+        cx: &mut Context<Self>,
+    ) -> gpui::AnyElement {
         let theme = self.theme.read(cx);
-        let (card, fg, border, accent, muted) = (
+        let core = theme.theme().core.clone();
+        let (bg, card, fg, border, accent, muted) = (
+            theme.background(),
             theme.card(),
             theme.foreground(),
             theme.border(),
             theme.accent(),
             theme.muted_foreground(),
         );
-        let (title, body, ok_label): (String, String, &str) = match self.ssh_prompt.as_ref() {
-            Some(SshPrompt::Trust {
-                host,
-                fingerprint,
-                mismatch,
-                ..
-            }) => (
-                if *mismatch {
+        let destructive = core.destructive;
+        let ssh_id = entry.session_id.clone();
+        let tab_id = self
+            .ssh_tabs
+            .values()
+            .find(|t| t.ssh_id == ssh_id)
+            .map(|t| t.tab_id);
+        let host_id = entry.host_id.clone();
+
+        // ── 4-stage progress row ──────────────────────────────────────────
+        let stage_count = ConnStage::ORDER.len();
+        let stages =
+            div()
+                .flex()
+                .items_center()
+                .gap_2()
+                .children(ConnStage::ORDER.iter().enumerate().map(|(i, &stage)| {
+                    let status = entry.stage_status(stage);
+                    let (dot_bg, dot_fg, txt) = match status {
+                        StageStatus::Done => (accent, bg, accent),
+                        StageStatus::Active => (accent.opacity(0.2), accent, fg),
+                        StageStatus::Pending => (gpui::transparent_black(), muted, muted),
+                    };
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap_2()
+                        .child(
+                            div()
+                                .size(px(18.0))
+                                .rounded_full()
+                                .border_1()
+                                .border_color(if status == StageStatus::Pending {
+                                    border
+                                } else {
+                                    accent
+                                })
+                                .bg(dot_bg)
+                                .flex()
+                                .items_center()
+                                .justify_center()
+                                .text_size(px(10.0))
+                                .text_color(dot_fg)
+                                .child(if status == StageStatus::Done {
+                                    "\u{2713}".to_string()
+                                } else {
+                                    (i + 1).to_string()
+                                }),
+                        )
+                        .child(
+                            div()
+                                .text_xs()
+                                .text_color(txt)
+                                .child(SharedString::from(stage.label(entry.kind))),
+                        )
+                        .when(i + 1 < stage_count, |d| {
+                            d.child(div().w(px(16.0)).h(px(1.0)).bg(border))
+                        })
+                }));
+
+        // ── state card ────────────────────────────────────────────────────
+        let is_prompt = matches!(
+            entry.state,
+            ConnectionState::WaitingAuth
+                | ConnectionState::WaitingPassphrase
+                | ConnectionState::QuickConnectPassword
+        );
+        let buffer_dots = self
+            .ssh_prompt
+            .as_ref()
+            .and_then(|p| match p {
+                SshPrompt::Password { buffer, .. } | SshPrompt::Passphrase { buffer, .. } => {
+                    Some("\u{2022}".repeat(buffer.chars().count()))
+                }
+                _ => None,
+            })
+            .unwrap_or_default();
+
+        let (card_title, card_body): (String, String) = match &entry.state {
+            ConnectionState::Error => (
+                "Connection failed".to_string(),
+                entry
+                    .error
+                    .clone()
+                    .unwrap_or_else(|| "The connection could not be established.".to_string()),
+            ),
+            ConnectionState::WaitingTrust => (
+                if entry.trust_mismatch {
                     "Host key CHANGED".to_string()
                 } else {
                     "Unknown host key".to_string()
                 },
                 format!(
-                    "{host}\nFingerprint: {fingerprint}\n\n{}",
-                    if *mismatch {
+                    "Fingerprint: {}\n\n{}",
+                    entry.trust_fingerprint.as_deref().unwrap_or("(unknown)"),
+                    if entry.trust_mismatch {
                         "The key differs from the one on record. Only continue if you know why."
                     } else {
                         "This host is not yet in known_hosts."
                     }
                 ),
-                "Trust & Continue",
             ),
-            Some(SshPrompt::Password {
-                message,
-                buffer,
-                is_2fa,
-                ..
-            }) => (
-                if *is_2fa {
-                    "Two-factor code".to_string()
+            ConnectionState::WaitingAuth => (
+                if entry.is_2fa {
+                    "Two-factor code required".to_string()
                 } else {
                     "Password required".to_string()
                 },
-                format!("{message}\n{}", "\u{2022}".repeat(buffer.chars().count())),
-                "Submit",
-            ),
-            Some(SshPrompt::Passphrase { buffer, .. }) => (
-                "Key passphrase".to_string(),
                 format!(
-                    "Enter the passphrase for the private key.\n{}",
-                    "\u{2022}".repeat(buffer.chars().count())
+                    "{}\n{}",
+                    entry
+                        .prompt_message
+                        .as_deref()
+                        .unwrap_or("Enter your password"),
+                    buffer_dots
                 ),
-                "Submit",
             ),
-            None => return div(),
+            ConnectionState::WaitingPassphrase | ConnectionState::QuickConnectPassword => (
+                "Key passphrase".to_string(),
+                format!("Enter the passphrase for the private key.\n{buffer_dots}"),
+            ),
+            _ => (
+                format!("Connecting to {}\u{2026}", entry.host_label),
+                "Negotiating a secure channel.".to_string(),
+            ),
         };
 
+        let mut actions = div().flex().gap_2().justify_end().pt_1();
+        match entry.state {
+            ConnectionState::Error => {
+                actions = actions
+                    .child(
+                        loading_btn("ssh-l-close", "Close", muted, border, false, fg).on_click(
+                            cx.listener(move |this, _: &ClickEvent, _w, _cx| {
+                                if let Some(id) = tab_id {
+                                    this.pending_tab_close.push(id);
+                                }
+                            }),
+                        ),
+                    )
+                    .child(
+                        loading_btn("ssh-l-edit", "Edit Host", muted, border, false, fg).on_click(
+                            cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                                this.open_host_manager(cx)
+                            }),
+                        ),
+                    )
+                    .child(
+                        loading_btn("ssh-l-retry", "Retry", accent, border, true, fg).on_click(
+                            cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                                this.ssh_prompt = None;
+                                this.retry_ssh(&ssh_id, None, None, cx);
+                            }),
+                        ),
+                    );
+                let _ = host_id;
+            }
+            ConnectionState::WaitingTrust => {
+                actions = actions
+                    .child(
+                        loading_btn("ssh-l-abort", "Abort", muted, border, false, fg).on_click(
+                            cx.listener(|this, _: &ClickEvent, _w, cx| this.cancel_prompt(cx)),
+                        ),
+                    )
+                    .child(
+                        loading_btn(
+                            "ssh-l-trust",
+                            if entry.trust_mismatch {
+                                "Accept anyway"
+                            } else {
+                                "Trust & Connect"
+                            },
+                            accent,
+                            border,
+                            true,
+                            fg,
+                        )
+                        .on_click(
+                            cx.listener(|this, _: &ClickEvent, _w, cx| this.submit_prompt(cx)),
+                        ),
+                    );
+            }
+            _ if is_prompt => {
+                actions = actions
+                    .child(
+                        loading_btn("ssh-l-cancel", "Cancel", muted, border, false, fg).on_click(
+                            cx.listener(|this, _: &ClickEvent, _w, cx| this.cancel_prompt(cx)),
+                        ),
+                    )
+                    .child(
+                        loading_btn("ssh-l-submit", "Submit", accent, border, true, fg).on_click(
+                            cx.listener(|this, _: &ClickEvent, _w, cx| this.submit_prompt(cx)),
+                        ),
+                    );
+            }
+            _ => {
+                actions = actions.child(
+                    loading_btn("ssh-l-cancel2", "Cancel", muted, border, false, fg).on_click(
+                        cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                            this.ssh_connection
+                                .update(cx, |s, cx| s.set_error(&ssh_id, "Cancelled by user.", cx));
+                        }),
+                    ),
+                );
+            }
+        }
+
+        let card_border = if matches!(entry.state, ConnectionState::Error)
+            || entry.trust_mismatch && entry.state == ConnectionState::WaitingTrust
+        {
+            destructive
+        } else {
+            border
+        };
+
+        let state_card = div()
+            .track_focus(&self.prompt_focus)
+            .key_context("SshPrompt")
+            .on_key_down(cx.listener(Self::on_prompt_key))
+            .flex()
+            .flex_col()
+            .gap_2()
+            .w_full()
+            .p_4()
+            .rounded_lg()
+            .bg(card)
+            .border_1()
+            .border_color(card_border)
+            .child(
+                div()
+                    .text_sm()
+                    .text_color(fg)
+                    .child(SharedString::from(card_title)),
+            )
+            .child(
+                div()
+                    .text_xs()
+                    .text_color(muted)
+                    .whitespace_normal()
+                    .child(SharedString::from(card_body)),
+            )
+            .child(actions);
+
+        // ── live connection log ───────────────────────────────────────────
+        let log_lines = entry.log.clone();
+        let log_panel = div()
+            .flex()
+            .flex_col()
+            .gap_1()
+            .w_full()
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap_2()
+                    .child(div().size(px(6.0)).rounded_full().bg(accent))
+                    .child(div().text_xs().text_color(muted).child("Connection Log")),
+            )
+            .child(
+                div()
+                    .id("ssh-connect-log")
+                    .flex()
+                    .flex_col()
+                    .gap_0p5()
+                    .w_full()
+                    .max_h(px(180.0))
+                    .overflow_y_scroll()
+                    .p_2()
+                    .rounded_md()
+                    .bg(bg)
+                    .border_1()
+                    .border_color(border)
+                    .font_family("monospace")
+                    .text_size(px(11.0))
+                    .text_color(muted)
+                    .children(if log_lines.is_empty() {
+                        vec![div()
+                            .child("Waiting for the backend\u{2026}")
+                            .into_any_element()]
+                    } else {
+                        log_lines
+                            .iter()
+                            .map(|l| {
+                                div()
+                                    .child(SharedString::from(l.clone()))
+                                    .into_any_element()
+                            })
+                            .collect()
+                    }),
+            );
+
+        let jump_badge = entry.jump_host_name.clone().map(|j| {
+            div()
+                .px_2()
+                .py_0p5()
+                .rounded_md()
+                .border_1()
+                .border_color(border)
+                .text_xs()
+                .text_color(muted)
+                .child(SharedString::from(format!("via {j}")))
+        });
+
         div()
-            .absolute()
-            .inset_0()
+            .size_full()
+            .bg(bg)
             .flex()
             .items_center()
             .justify_center()
-            .bg(crate::theme::modal_scrim())
             .child(
                 div()
-                    .track_focus(&self.prompt_focus)
-                    .key_context("SshPrompt")
-                    .on_key_down(cx.listener(Self::on_prompt_key))
                     .flex()
                     .flex_col()
-                    .gap_3()
-                    .w(px(420.0))
+                    .gap_4()
+                    .w(px(520.0))
+                    .max_w_full()
                     .p_4()
-                    .rounded_lg()
-                    .bg(card)
-                    .border_1()
-                    .border_color(border)
-                    .text_color(fg)
-                    .child(div().text_sm().child(SharedString::from(title)))
-                    .child(
-                        div()
-                            .text_xs()
-                            .text_color(muted)
-                            .whitespace_normal()
-                            .child(SharedString::from(body)),
-                    )
                     .child(
                         div()
                             .flex()
+                            .items_center()
                             .gap_2()
-                            .justify_end()
                             .child(
                                 div()
-                                    .id("ssh-prompt-cancel")
-                                    .px_3()
-                                    .py_1()
-                                    .rounded_md()
-                                    .text_color(muted)
-                                    .hover(|s| s.bg(border).text_color(fg))
-                                    .child("Cancel")
-                                    .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
-                                        this.cancel_prompt(cx)
-                                    })),
-                            )
-                            .child(
-                                div()
-                                    .id("ssh-prompt-ok")
-                                    .px_3()
-                                    .py_1()
-                                    .rounded_md()
-                                    .bg(accent)
+                                    .flex_1()
+                                    .text_sm()
                                     .text_color(fg)
-                                    .hover(|s| s.opacity(0.85))
-                                    .child(SharedString::from(ok_label.to_string()))
-                                    .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
-                                        this.submit_prompt(cx)
-                                    })),
-                            ),
-                    ),
+                                    .child(SharedString::from(entry.host_label.clone())),
+                            )
+                            .children(jump_badge),
+                    )
+                    .child(stages)
+                    .child(state_card)
+                    .child(log_panel),
             )
+            .into_any_element()
     }
 
     fn sync_meta(&mut self, cx: &mut Context<Self>) {
@@ -2994,6 +3318,25 @@ impl Workspace {
         match active.kind {
             TabKind::Home => self.host_manager.clone().into_any_element(),
             TabKind::Workspace => {
+                // While an SSH session for this tab is still connecting (or in
+                // a prompt / error state), the loading screen replaces the
+                // terminal (T16-015).
+                if let Some(ssh_id) = self
+                    .ssh_tabs
+                    .values()
+                    .find(|t| t.tab_id == active.id)
+                    .map(|t| t.ssh_id.clone())
+                {
+                    if let Some(entry) = self
+                        .ssh_connection
+                        .read(cx)
+                        .get(&ssh_id)
+                        .filter(|e| e.state.is_blocking())
+                        .cloned()
+                    {
+                        return self.render_ssh_loading(entry, cx);
+                    }
+                }
                 if let Some(layout) = self.layouts.get(&active.id).cloned() {
                     let multi = layout.len() > 1;
                     div()
@@ -3427,6 +3770,9 @@ impl Render for Workspace {
         for host_id in std::mem::take(&mut self.pending_sftp) {
             self.open_sftp(host_id, window, cx);
         }
+        for tab_id in std::mem::take(&mut self.pending_tab_close) {
+            self.request_close(tab_id, window, cx);
+        }
         for open in std::mem::take(&mut self.pending_open) {
             match open {
                 PendingOpen::Local(path) => self.open_file(path, false, window, cx),
@@ -3455,11 +3801,6 @@ impl Render for Workspace {
         let new_tab_menu = self
             .new_tab_menu
             .map(|pos| self.render_new_tab_menu(pos, cx).into_any_element());
-        let ssh_prompt = self
-            .ssh_prompt
-            .is_some()
-            .then(|| self.render_ssh_prompt(cx).into_any_element());
-
         div()
             .track_focus(&self.focus_handle)
             .key_context("Workspace")
@@ -3473,7 +3814,6 @@ impl Render for Workspace {
             .children(confirm)
             .children(context_menu)
             .children(new_tab_menu)
-            .children(ssh_prompt)
             .child(self.transfers.clone())
     }
 }

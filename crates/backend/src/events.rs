@@ -129,6 +129,13 @@ pub enum AppEvent {
     SshConnectionLost {
         session_id: String,
     },
+    /// One human-readable progress line from the connect flow (`log_step!` in
+    /// `modules::ssh::client`). Drives the loading screen's stage indicator +
+    /// live connection log.
+    SshConnectLog {
+        session_id: String,
+        message: String,
+    },
 
     // Filesystem
     DirChanged {
@@ -185,6 +192,7 @@ impl AppEvent {
             AppEvent::SshPassphraseRequired { .. } => "passphrase_required",
             AppEvent::SshKnownHostsWarning { .. } => "known_hosts_warning",
             AppEvent::SshConnectionLost { .. } => "ssh_connection_lost",
+            AppEvent::SshConnectLog { .. } => "ssh_connect_log",
             AppEvent::DirChanged { .. } => "fs:dir-changed",
             AppEvent::MenuActivated { .. } => "menu:activated",
             AppEvent::McpOpenTabRequest { .. } => "mcp_open_tab_request",
@@ -211,6 +219,7 @@ impl AppEvent {
             "passphrase_required" => "ssh_passphrase_required",
             "known_hosts_warning" => "ssh_known_hosts_warning",
             "ssh_connection_lost" => "ssh_connection_lost",
+            "ssh_connect_log" => "ssh_connect_log",
             "fs:dir-changed" => "dir_changed",
             "menu:activated" => "menu_activated",
             "mcp_open_tab_request" => "mcp_open_tab_request",

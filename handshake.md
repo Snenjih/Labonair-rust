@@ -4,7 +4,93 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
-## Last Session: 2026-09-02 (Block E — Host Manager & SSH, partial)
+## Last Session: 2026-09-02 (Block E cont. — master/detail host manager + SSH connecting screen)
+
+### What Was Done (branch `master`, commit after `c58652e`)
+
+**T16-015 — SSH connecting state machine + screen (new)**
+- `crates/ui/src/ssh_connection.rs` (new): `ConnectionStatusStore` GPUI entity
+  (port of `connectionStatusStore.ts`). `ConnectionState` = `Idle |
+  QuickConnectPassword | Connecting | WaitingTrust | WaitingAuth |
+  WaitingPassphrase | Connected | Error`. `ConnectionEntry` carries state,
+  error, `prompt_message`/`is_2fa`, trust fingerprint/mismatch,
+  `jump_host_name`, `kind` (Terminal/Sftp), 4-stage progress (`stage` +
+  `stage_done`) and the live log `Vec<String>`. `detect_stage()` maps
+  `log_step!` lines from `ssh::client` → `(stage_idx, done)`. Full unit tests
+  (stage-advance monotonic + whole state machine).
+- `crates/backend/src/events.rs`: new typed `AppEvent::SshConnectLog {
+  session_id, message }` mapped to the existing `"ssh_connect_log"` bus event
+  (backend already emitted it; it was just never typed).
+- `crates/ui/src/workspace.rs`:
+  - `ssh_connection: Entity<ConnectionStatusStore>` field; `connect_host`
+    calls `begin(...)` and no longer writes `"Connecting…"` into the PTY feed.
+  - `handle_ssh_event` feeds every SSH event into the store
+    (`SshConnectLog` → `push_log`, `KnownHostsWarning` → `set_trust`,
+    `AuthRequired` → `set_auth_prompt`, `PassphraseRequired` →
+    `set_passphrase`, `SessionEstablished` → `Connected`, `ConnectionLost` →
+    `set_error` only if not yet connected). `spawn_ssh_connect`'s failure path
+    now `set_error`s instead of red ANSI in the terminal. `submit_prompt` /
+    `cancel_prompt` / `retry_ssh` drive `resume` / `set_error`.
+  - New `render_ssh_loading(entry, cx)` full-pane view: host label + jump-host
+    badge, 4-stage progress row (TCP → Handshake → Auth → Shell/SFTP), a
+    state card (trust / auth / passphrase / error with Retry + Edit Host +
+    Close, or a plain connecting line with Cancel), and the live connection
+    log panel. Rendered in the `TabKind::Workspace` tab body whenever the
+    tab's session is in a blocking state; the old modal `render_ssh_prompt`
+    + its overlay are removed. `SshPrompt` slimmed to just `ssh_id` (+ buffer)
+    since the store now holds the display data. `pending_tab_close` queue
+    added for the error screen's Close button.
+  - Known gap: the **SFTP** connect path (`open_sftp`) does not yet populate
+    the store, so SFTP tabs don't show the loading screen (the store + stage
+    labels already support `ConnectionKind::Sftp`).
+
+**T16-014 — Host Manager master/detail rebuild** (`crates/ui/src/hosts.rs`)
+- Layout: centred modal → **persistent 340px left side panel + detail pane**.
+  Side panel: search box w/ `user@host[:port]` quick-connect parse + suggestion
+  card, actions toolbar (New Host / New Group / Sort cycle / Grid-List toggle /
+  Credentials / Import / Export), group filter chips (with per-group delete +
+  drop-target), active-tunnels panel, and the host list (list or grid).
+- Host list items: host icon, pin marker, ping/reachability dot (30s TCP-probe
+  worker `_ping_task` + `refresh_ping`), live connection status label, click =
+  select into detail, **drag-and-drop** to reorder (`hosts_reorder`) or drop
+  onto a group chip to re-group (`move_host_to_group`). `DraggedHost` payload +
+  `HostDragGhost`.
+- Detail pane = `render_detail` + `render_detail_tab`: header (icon picker
+  toggle, eyebrow, save-status indicator, Connect / SFTP / **Test Connection**
+  (`ssh_test_connection`) / Duplicate / Delete, close) + **4 tabs
+  General / SSH / SFTP / Tunnels**.
+  - General: name/address/port/username, auth (Password/Key/**Credential**/None),
+    key path / password, credential + group + jump-host cyclers, pin-to-top,
+    notes.
+  - SSH: start directory, sudo password, keep-alive interval/tries, **startup
+    snippet + Execute/Inject mode** (snippet list loaded from
+    `snippets::db::snippets_get_all`), Block AI Agent Access.
+  - SFTP: SFTP start directory. Tunnels: existing tunnels editor.
+  - **Icon picker** row (curated `HOST_ICONS` set of `IconName`s).
+- **Debounced autosave** (1s, `schedule_autosave` + `edit_gen`) for existing
+  hosts with a `SaveStatusIcon`-style indicator; new host keeps an explicit
+  "Add Host" button. `reload_list_only` refreshes rows without disturbing the
+  open form.
+- Backend `startup_snippet_id`/`startup_snippet_mode`/`icon` now wired through
+  `submit_form`. Stray "Tags" field already removed in the prior commit.
+- New tests: `quick_connect_target` parse, `visible_hosts` filter+sort,
+  icon/snippet/tab mapping.
+
+### Verified
+`cargo fmt --all --check`, `cargo check`/`clippy --workspace --all-targets
+-D warnings`, `cargo test --workspace` — all green (678 tests, 0 failures).
+
+### Deferred / next
+- SFTP loading screen wiring (store supports it; `open_sftp` needs the
+  `begin`/event calls).
+- `components::button` migration of the host manager's `btn` helper (kept the
+  existing pill-radius shim for churn-safety).
+- Auto-refresh on window focus for the host list (30s poll is in place).
+- Next: Block F (Sidebars / CtxMenus / Theme / AI).
+
+---
+
+## Session: 2026-09-02 (Block E — Host Manager & SSH, first pass)
 
 ### What Was Done (branch `master`, commit after `3f7beab`)
 

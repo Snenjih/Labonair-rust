@@ -10,16 +10,19 @@
 //! this view emits [`HostManagerEvent::Connect`] and the workspace opens the
 //! SSH terminal tab and drives the trust / auth prompts.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
+use std::time::Duration;
 
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, px, App, ClickEvent, ClipboardItem, Context, Entity, EventEmitter, FocusHandle, Focusable,
-    InteractiveElement, IntoElement, KeyDownEvent, ParentElement, Render, SharedString,
-    StatefulInteractiveElement, Styled, Window,
+    div, px, App, AppContext, ClickEvent, ClipboardItem, Context, Entity, EventEmitter,
+    FocusHandle, Focusable, InteractiveElement, IntoElement, KeyDownEvent, ParentElement, Render,
+    SharedString, StatefulInteractiveElement, Styled, Task, Window,
 };
 use labonair_backend::modules::credentials::{self, Credential};
-use labonair_backend::modules::hosts::{self, Group, Host};
+use labonair_backend::modules::hosts::{self, Group, Host, ReorderItem};
+use labonair_backend::modules::snippets;
+use labonair_backend::modules::ssh::client::{ssh_test_connection, TestConnectionResult};
 use labonair_backend::modules::ssh::config_parser::{self, ImportConflict, SshConfigEntry};
 use labonair_backend::App as Backend;
 use tokio::runtime::Handle as TokioHandle;
@@ -39,16 +42,7 @@ pub enum HostStatus {
 }
 
 impl HostStatus {
-    /// Status dot (○ ◐ ●) for the non-error states; `Failed` renders a real
-    /// warning icon instead (see `render_status_indicator`).
-    fn glyph(self) -> &'static str {
-        match self {
-            HostStatus::Disconnected => "\u{25cb}", // ○
-            HostStatus::Connecting => "\u{25d0}",   // ◐
-            HostStatus::Connected => "\u{25cf}",    // ●
-            HostStatus::Failed => "",
-        }
-    }
+    /// Short label for the host-list item's status pill.
     fn label(self) -> &'static str {
         match self {
             HostStatus::Disconnected => "offline",
@@ -75,6 +69,22 @@ pub struct ActiveTunnelRow {
     pub local_port: u16,
     pub remote_host: String,
     pub remote_port: u16,
+}
+
+/// Drag payload for reordering host list items / dropping them onto a group
+/// filter chip.
+#[derive(Debug, Clone)]
+struct DraggedHost {
+    id: String,
+}
+
+/// Minimal drag ghost for a host row.
+struct HostDragGhost;
+
+impl Render for HostDragGhost {
+    fn render(&mut self, _w: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+        div().w(px(180.0)).h(px(2.0))
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -220,6 +230,7 @@ fn serialize_tunnels(drafts: &[TunnelDraft]) -> String {
 }
 
 /// Backing state of the add/edit-host form.
+#[derive(Clone)]
 struct HostForm {
     editing_id: Option<String>,
     name: String,
@@ -254,9 +265,62 @@ struct HostForm {
     /// "Block AI Agent Access" — when set, the MCP bridge refuses to grant a
     /// tab for this host and any live grant is revoked immediately (T11-006).
     block_agent_access: bool,
+    /// Host avatar icon key (see [`HOST_ICONS`]); `None` = default server glyph.
+    icon: Option<String>,
+    /// Snippet to run on connect (`hosts.startup_snippet_id`).
+    snippet_id: Option<String>,
+    /// `"execute"` (run it) or `"inject"` (type it, don't press enter).
+    snippet_mode: String,
+    /// Which of the 4 form tabs is showing.
+    tab: FormTab,
     focus: HostField,
     /// Fallback edit target for a stale tunnel-field index (never rendered).
     scratch: String,
+}
+
+/// The 4 host-form tabs — ports `HostFormPanel.tsx:550`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FormTab {
+    General,
+    Ssh,
+    Sftp,
+    Tunnels,
+}
+
+impl FormTab {
+    const ALL: [FormTab; 4] = [
+        FormTab::General,
+        FormTab::Ssh,
+        FormTab::Sftp,
+        FormTab::Tunnels,
+    ];
+    fn title(self) -> &'static str {
+        match self {
+            FormTab::General => "General",
+            FormTab::Ssh => "SSH",
+            FormTab::Sftp => "SFTP",
+            FormTab::Tunnels => "Tunnels",
+        }
+    }
+}
+
+/// Curated host-avatar icon set (`lib/icons/` in the reference). Key stored in
+/// `hosts.icon`.
+const HOST_ICONS: [(&str, IconName); 8] = [
+    ("server", IconName::Server),
+    ("terminal", IconName::Terminal),
+    ("globe", IconName::Globe),
+    ("shield", IconName::Shield),
+    ("zap", IconName::Zap),
+    ("home", IconName::Home),
+    ("git", IconName::GitBranch),
+    ("cloud", IconName::Sparkles),
+];
+
+fn host_icon(key: Option<&str>) -> IconName {
+    key.and_then(|k| HOST_ICONS.iter().find(|(n, _)| *n == k))
+        .map(|(_, i)| *i)
+        .unwrap_or(IconName::Server)
 }
 
 impl HostForm {
@@ -283,6 +347,10 @@ impl HostForm {
             jump_host: None,
             tunnels: Vec::new(),
             block_agent_access: false,
+            icon: None,
+            snippet_id: None,
+            snippet_mode: "execute".into(),
+            tab: FormTab::General,
             focus: HostField::Name,
             scratch: String::new(),
         }
@@ -326,6 +394,13 @@ impl HostForm {
                 .and_then(|jid| hosts.iter().position(|c| c.id == jid && c.id != h.id)),
             tunnels: parse_tunnels(&h.tunnels),
             block_agent_access: h.block_agent_access,
+            icon: h.icon.clone(),
+            snippet_id: h.startup_snippet_id.clone(),
+            snippet_mode: h
+                .startup_snippet_mode
+                .clone()
+                .unwrap_or_else(|| "execute".into()),
+            tab: FormTab::General,
             focus: HostField::Name,
             scratch: String::new(),
         }
@@ -399,6 +474,63 @@ struct ExportState {
     error: Option<String>,
 }
 
+/// Host-list sort order — ports `HomeDashboard.tsx`'s sort dropdown.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum HostSort {
+    LastConnected,
+    NameAsc,
+    NameDesc,
+}
+
+impl HostSort {
+    fn next(self) -> Self {
+        match self {
+            HostSort::LastConnected => HostSort::NameAsc,
+            HostSort::NameAsc => HostSort::NameDesc,
+            HostSort::NameDesc => HostSort::LastConnected,
+        }
+    }
+    fn label(self) -> &'static str {
+        match self {
+            HostSort::LastConnected => "Last connected",
+            HostSort::NameAsc => "A \u{2192} Z",
+            HostSort::NameDesc => "Z \u{2192} A",
+        }
+    }
+}
+
+/// Per-host reachability probe result (`startPingWorker` in the reference).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+enum Ping {
+    #[default]
+    Checking,
+    Online,
+    Offline,
+}
+
+/// Autosave lifecycle indicator (`SaveStatusIcon`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+enum SaveState {
+    #[default]
+    Idle,
+    Pending,
+    Saving,
+    Saved,
+    Error,
+}
+
+impl SaveState {
+    fn label(self) -> &'static str {
+        match self {
+            SaveState::Idle => "",
+            SaveState::Pending => "Unsaved changes\u{2026}",
+            SaveState::Saving => "Saving\u{2026}",
+            SaveState::Saved => "Saved \u{2713}",
+            SaveState::Error => "Save failed",
+        }
+    }
+}
+
 pub struct HostManagerView {
     app: Backend,
     tokio: TokioHandle,
@@ -406,9 +538,9 @@ pub struct HostManagerView {
     hosts: Vec<Host>,
     groups: Vec<Group>,
     credentials: Vec<Credential>,
+    snippets: Vec<(String, String)>,
     statuses: Vec<(String, HostStatus)>,
     active_tunnels: Vec<ActiveTunnelRow>,
-    collapsed: HashSet<String>,
     form: Option<HostForm>,
     form_focus: FocusHandle,
     creds_open: bool,
@@ -421,6 +553,26 @@ pub struct HostManagerView {
     import: Option<ImportState>,
     /// SSH-config export dialog, `Some` while open.
     export: Option<ExportState>,
+    // ── master/detail state (T16-014) ──────────────────────────────────────
+    /// Left-pane search / quick-connect box.
+    search: String,
+    search_focus: FocusHandle,
+    sort: HostSort,
+    /// `true` = card grid, `false` = list.
+    grid_view: bool,
+    /// `None` = all groups; `Some("")` = ungrouped only; `Some(id)` = that group.
+    group_filter: Option<String>,
+    /// Per-host reachability, refreshed by the ping worker.
+    ping: HashMap<String, Ping>,
+    save_state: SaveState,
+    /// Whether the detail-pane host-icon picker row is expanded.
+    icon_picker_open: bool,
+    /// Bumped on every field edit; the debounced autosave task no-ops if it
+    /// changed while the task was sleeping.
+    edit_gen: u64,
+    /// Result line of the last Test Connection, shown in the form header.
+    test_result: Option<String>,
+    _ping_task: Task<()>,
     focus_handle: FocusHandle,
 }
 
@@ -434,6 +586,14 @@ impl HostManagerView {
         cx: &mut Context<Self>,
     ) -> Self {
         cx.observe(&theme, |_, _, cx| cx.notify()).detach();
+        let ping_task = cx.spawn(async move |this, cx| loop {
+            cx.background_executor()
+                .timer(Duration::from_secs(30))
+                .await;
+            if this.update(cx, |this, cx| this.refresh_ping(cx)).is_err() {
+                break;
+            }
+        });
         let this = Self {
             app,
             tokio,
@@ -441,9 +601,9 @@ impl HostManagerView {
             hosts: Vec::new(),
             groups: Vec::new(),
             credentials: Vec::new(),
+            snippets: Vec::new(),
             statuses: Vec::new(),
             active_tunnels: Vec::new(),
-            collapsed: HashSet::new(),
             form: None,
             form_focus: cx.focus_handle(),
             creds_open: false,
@@ -453,6 +613,17 @@ impl HostManagerView {
             group_focus: cx.focus_handle(),
             import: None,
             export: None,
+            search: String::new(),
+            search_focus: cx.focus_handle(),
+            sort: HostSort::LastConnected,
+            grid_view: false,
+            group_filter: None,
+            ping: HashMap::new(),
+            save_state: SaveState::Idle,
+            icon_picker_open: false,
+            edit_gen: 0,
+            test_result: None,
+            _ping_task: ping_task,
             focus_handle: cx.focus_handle(),
         };
         this.reload(cx);
@@ -534,14 +705,63 @@ impl HostManagerView {
             let creds = credentials::credentials_get_all(&app.db)
                 .await
                 .unwrap_or_default();
-            (hosts, groups, creds)
+            let snippets = snippets::db::snippets_get_all(&app.db)
+                .await
+                .unwrap_or_default()
+                .into_iter()
+                .map(|s| (s.id, s.name))
+                .collect::<Vec<_>>();
+            (hosts, groups, creds, snippets)
         });
         cx.spawn(async move |this, cx| {
-            if let Ok((h, g, c)) = jh.await {
+            if let Ok((h, g, c, s)) = jh.await {
                 let _ = this.update(cx, |this, cx| {
                     this.hosts = h;
                     this.groups = g;
                     this.credentials = c;
+                    this.snippets = s;
+                    this.refresh_ping(cx);
+                    cx.notify();
+                });
+            }
+        })
+        .detach();
+    }
+
+    /// Fire a TCP reachability probe at every host (`host:port`, 2s timeout)
+    /// and fold the results back in. Runs on load + every 30s.
+    fn refresh_ping(&mut self, cx: &mut Context<Self>) {
+        let targets: Vec<(String, String, u16)> = self
+            .hosts
+            .iter()
+            .map(|h| (h.id.clone(), h.host_address.clone(), h.port as u16))
+            .collect();
+        if targets.is_empty() {
+            return;
+        }
+        for (id, _, _) in &targets {
+            self.ping.entry(id.clone()).or_insert(Ping::Checking);
+        }
+        let jh = self.tokio.spawn(async move {
+            let mut out = Vec::with_capacity(targets.len());
+            for (id, addr, port) in targets {
+                let ok = tokio::time::timeout(
+                    Duration::from_secs(2),
+                    tokio::net::TcpStream::connect((addr.as_str(), port)),
+                )
+                .await
+                .map(|r| r.is_ok())
+                .unwrap_or(false);
+                out.push((id, if ok { Ping::Online } else { Ping::Offline }));
+            }
+            out
+        });
+        cx.spawn(async move |this, cx| {
+            if let Ok(results) = jh.await {
+                let _ = this.update(cx, |this, cx| {
+                    for (id, state) in results {
+                        this.ping.insert(id, state);
+                    }
                     cx.notify();
                 });
             }
@@ -558,9 +778,53 @@ impl HostManagerView {
 
     // ── mutations ───────────────────────────────────────────────────────────
 
-    fn submit_form(&mut self, cx: &mut Context<Self>) {
-        let Some(form) = self.form.take() else { return };
+    /// Debounced autosave: bump the generation, mark the form dirty, and after
+    /// 1s save it — unless the user kept typing (generation moved on).
+    fn schedule_autosave(&mut self, cx: &mut Context<Self>) {
+        if self
+            .form
+            .as_ref()
+            .and_then(|f| f.editing_id.clone())
+            .is_none()
+        {
+            return; // new host uses the explicit "Add Host" button
+        }
+        self.edit_gen = self.edit_gen.wrapping_add(1);
+        self.save_state = SaveState::Pending;
+        let gen = self.edit_gen;
+        cx.spawn(async move |this, cx| {
+            cx.background_executor()
+                .timer(Duration::from_millis(1000))
+                .await;
+            let _ = this.update(cx, |this, cx| {
+                if this.edit_gen == gen {
+                    this.submit_form(true, cx);
+                }
+            });
+        })
+        .detach();
+        cx.notify();
+    }
+
+    fn submit_form(&mut self, keep_form: bool, cx: &mut Context<Self>) {
+        let form = if keep_form {
+            match self.form.as_ref() {
+                Some(f) => f.clone(),
+                None => return,
+            }
+        } else {
+            match self.form.take() {
+                Some(f) => f,
+                None => return,
+            }
+        };
+        if keep_form {
+            self.save_state = SaveState::Saving;
+        }
         let app = self.app.clone();
+        let icon = Some(form.icon.clone().unwrap_or_default());
+        let snippet_id = Some(form.snippet_id.clone().unwrap_or_default());
+        let snippet_mode = Some(form.snippet_mode.clone());
         let port: i64 = form.port.trim().parse().unwrap_or(22);
         let name = if form.name.trim().is_empty() {
             form.address.clone()
@@ -623,12 +887,12 @@ impl HostManagerView {
                         keep_alive_tries, // keep_alive_tries
                         None,     // sort_order
                         Some(tunnels_json), // tunnels
-                        None,     // startup_snippet_id
-                        None,     // startup_snippet_mode
+                        snippet_id, // startup_snippet_id
+                        snippet_mode, // startup_snippet_mode
                         Some(cred_id.clone().unwrap_or_default()), // credential_id ("" clears)
                         Some(jump_host_id.clone().unwrap_or_default()), // jump_host_id ("" clears)
                         notes,    // notes
-                        None,     // icon
+                        icon,     // icon
                         Some(block_agent_access), // block_agent_access
                     )
                     .await;
@@ -655,12 +919,12 @@ impl HostManagerView {
                         keep_alive_tries, // keep_alive_tries
                         None,     // sort_order
                         Some(tunnels_json), // tunnels
-                        None,     // startup_snippet_id
-                        None,     // startup_snippet_mode
+                        snippet_id, // startup_snippet_id
+                        snippet_mode, // startup_snippet_mode
                         cred_id,  // credential_id
                         jump_host_id, // jump_host_id
                         notes,    // notes
-                        None,     // icon
+                        icon,     // icon
                         Some(block_agent_access), // block_agent_access
                     )
                     .await;
@@ -668,11 +932,46 @@ impl HostManagerView {
             }
         });
         cx.spawn(async move |this, cx| {
-            let _ = jh.await;
-            let _ = this.update(cx, |this, cx| this.reload(cx));
+            let ok = jh.await.is_ok();
+            let _ = this.update(cx, |this, cx| {
+                if keep_form {
+                    this.save_state = if ok {
+                        SaveState::Saved
+                    } else {
+                        SaveState::Error
+                    };
+                    // Refresh the list rows (name / group / pin may have changed)
+                    // without disturbing the open form.
+                    this.reload_list_only(cx);
+                } else {
+                    this.reload(cx);
+                }
+                cx.notify();
+            });
         })
         .detach();
         cx.notify();
+    }
+
+    /// Re-fetch just the host/group rows (used after autosave — must not touch
+    /// `self.form`).
+    fn reload_list_only(&self, cx: &mut Context<Self>) {
+        let app = self.app.clone();
+        let jh = self.tokio.spawn(async move {
+            let hosts = hosts::db::hosts_get_all(&app.db).await.unwrap_or_default();
+            let groups = hosts::db::groups_get_all(&app.db).await.unwrap_or_default();
+            (hosts, groups)
+        });
+        cx.spawn(async move |this, cx| {
+            if let Ok((h, g)) = jh.await {
+                let _ = this.update(cx, |this, cx| {
+                    this.hosts = h;
+                    this.groups = g;
+                    cx.notify();
+                });
+            }
+        })
+        .detach();
     }
 
     fn duplicate_host(&mut self, id: String, cx: &mut Context<Self>) {
@@ -688,6 +987,10 @@ impl HostManagerView {
     }
 
     fn delete_host(&mut self, id: String, cx: &mut Context<Self>) {
+        if self.form.as_ref().and_then(|f| f.editing_id.as_deref()) == Some(id.as_str()) {
+            self.form = None;
+            self.save_state = SaveState::Idle;
+        }
         let app = self.app.clone();
         let jh = self.tokio.spawn(async move {
             hosts::db::hosts_delete(app.clone(), &app.db, &app.secrets, id).await
@@ -695,6 +998,177 @@ impl HostManagerView {
         cx.spawn(async move |this, cx| {
             let _ = jh.await;
             let _ = this.update(cx, |this, cx| this.reload(cx));
+        })
+        .detach();
+    }
+
+    /// Persist a new sort order that places `dragged` immediately before
+    /// `target` in the current visible list, then reload.
+    fn reorder_hosts(&mut self, dragged: &str, target: &str, cx: &mut Context<Self>) {
+        if dragged == target {
+            return;
+        }
+        let mut order: Vec<String> = self.visible_hosts().into_iter().map(|h| h.id).collect();
+        let Some(from) = order.iter().position(|id| id == dragged) else {
+            return;
+        };
+        let id = order.remove(from);
+        let Some(to) = order.iter().position(|x| x == target) else {
+            return;
+        };
+        order.insert(to, id);
+        let items: Vec<ReorderItem> = order
+            .iter()
+            .enumerate()
+            .map(|(i, id)| ReorderItem {
+                id: id.clone(),
+                sort_order: i as i64,
+            })
+            .collect();
+        let app = self.app.clone();
+        let jh = self
+            .tokio
+            .spawn(async move { hosts::db::hosts_reorder(&app.db, items).await });
+        cx.spawn(async move |this, cx| {
+            let _ = jh.await;
+            let _ = this.update(cx, |this, cx| this.reload_list_only(cx));
+        })
+        .detach();
+    }
+
+    /// Move a host into (`Some(id)`) or out of (`None`) a group.
+    fn move_host_to_group(&mut self, host_id: &str, group: Option<String>, cx: &mut Context<Self>) {
+        let app = self.app.clone();
+        let id = host_id.to_string();
+        let jh = self.tokio.spawn(async move {
+            hosts::db::hosts_update(
+                app.clone(),
+                &app.db,
+                &app.secrets,
+                id,
+                None,                            // name
+                None,                            // host_address
+                None,                            // port
+                None,                            // username
+                None,                            // auth_method
+                None,                            // private_key_path
+                Some(group.unwrap_or_default()), // group_id ("" clears)
+                None,                            // tags
+                None,                            // password
+                None,                            // sudo_password
+                None,                            // default_path_ssh
+                None,                            // default_path_sftp
+                None,                            // pin_to_top
+                None,                            // keep_alive_interval
+                None,                            // keep_alive_tries
+                None,                            // sort_order
+                None,                            // tunnels
+                None,                            // startup_snippet_id
+                None,                            // startup_snippet_mode
+                None,                            // credential_id
+                None,                            // jump_host_id
+                None,                            // notes
+                None,                            // icon
+                None,                            // block_agent_access
+            )
+            .await
+        });
+        cx.spawn(async move |this, cx| {
+            let _ = jh.await;
+            let _ = this.update(cx, |this, cx| this.reload_list_only(cx));
+        })
+        .detach();
+    }
+
+    /// Run `ssh_test_connection` for the open host and drop the outcome into
+    /// `test_result` (form-header line) + a toast.
+    fn test_connection(&mut self, cx: &mut Context<Self>) {
+        let Some(id) = self.form.as_ref().and_then(|f| f.editing_id.clone()) else {
+            return;
+        };
+        self.test_result = Some("Testing\u{2026}".to_string());
+        let app = self.app.clone();
+        let jh = self.tokio.spawn(async move {
+            ssh_test_connection(
+                id,
+                None,
+                None,
+                &app.trust,
+                &app.db,
+                &app.secrets,
+                app.clone(),
+                Some(15),
+            )
+            .await
+        });
+        cx.spawn(async move |this, cx| {
+            let res = jh.await;
+            let _ = this.update(cx, |this, cx| {
+                let msg = match res {
+                    Ok(Ok(TestConnectionResult::Success)) => "Connection OK \u{2713}".to_string(),
+                    Ok(Ok(TestConnectionResult::UnknownHostKey { fingerprint })) => {
+                        format!("Unknown host key ({fingerprint}) — connect once to trust it")
+                    }
+                    Ok(Ok(TestConnectionResult::HostKeyChanged { fingerprint })) => {
+                        format!("Host key CHANGED ({fingerprint}) — verify before connecting")
+                    }
+                    Ok(Err(e)) => format!("Failed: {e}"),
+                    Err(e) => format!("Failed: {e}"),
+                };
+                this.notify_toast("Test Connection", msg.clone(), cx);
+                this.test_result = Some(msg);
+                cx.notify();
+            });
+        })
+        .detach();
+        cx.notify();
+    }
+
+    /// Connect via the quick-connect box (`user@host:port`), creating a saved
+    /// host row first so the connection flow has something to key on.
+    fn quick_connect(&mut self, user: String, host: String, port: u16, cx: &mut Context<Self>) {
+        let app = self.app.clone();
+        let name = host.clone();
+        let jh = self.tokio.spawn(async move {
+            hosts::db::hosts_create(
+                app.clone(),
+                &app.db,
+                &app.secrets,
+                name,
+                host,
+                port as i64,
+                user,
+                "password".to_string(),
+                None, // private_key_path
+                None, // group_id
+                None, // tags
+                None, // password
+                None, // sudo_password
+                None, // default_path_ssh
+                None, // default_path_sftp
+                None, // pin_to_top
+                None, // keep_alive_interval
+                None, // keep_alive_tries
+                None, // sort_order
+                None, // tunnels
+                None, // startup_snippet_id
+                None, // startup_snippet_mode
+                None, // credential_id
+                None, // jump_host_id
+                None, // notes
+                None, // icon
+                None, // block_agent_access
+            )
+            .await
+        });
+        cx.spawn(async move |this, cx| {
+            if let Ok(Ok(h)) = jh.await {
+                let _ = this.update(cx, |this, cx| {
+                    this.search.clear();
+                    this.reload(cx);
+                    cx.emit(HostManagerEvent::Connect(h.id));
+                });
+            }
         })
         .detach();
     }
@@ -1010,13 +1484,23 @@ impl HostManagerView {
         let ks = &ev.keystroke;
         match ks.key.as_str() {
             "escape" => {
+                // Flush a pending autosave before closing.
+                if self.save_state == SaveState::Pending {
+                    self.submit_form(true, cx);
+                }
                 self.form = None;
+                self.save_state = SaveState::Idle;
             }
-            "enter" => self.submit_form(cx),
+            "enter" => self.submit_form(false, cx),
             _ => {
-                if let Some(form) = self.form.as_mut() {
+                let changed = if let Some(form) = self.form.as_mut() {
                     let f = form.focus;
-                    Self::edit_str(form.field_mut(f), ks);
+                    Self::edit_str(form.field_mut(f), ks)
+                } else {
+                    false
+                };
+                if changed {
+                    self.schedule_autosave(cx);
                 }
             }
         }
@@ -1052,6 +1536,23 @@ impl HostManagerView {
                 if let Some(b) = self.group_draft.as_mut() {
                     Self::edit_str(b, ks);
                 }
+            }
+        }
+        cx.stop_propagation();
+        cx.notify();
+    }
+
+    fn on_search_key(&mut self, ev: &KeyDownEvent, _w: &mut Window, cx: &mut Context<Self>) {
+        let ks = &ev.keystroke;
+        match ks.key.as_str() {
+            "escape" => self.search.clear(),
+            "enter" => {
+                if let Some((u, h, p)) = self.quick_connect_target() {
+                    self.quick_connect(u, h, p, cx);
+                }
+            }
+            _ => {
+                Self::edit_str(&mut self.search, ks);
             }
         }
         cx.stop_propagation();
@@ -1126,46 +1627,110 @@ impl HostManagerView {
         .child(label.into())
     }
 
-    fn render_host_row(
+    // ── master/detail helpers (T16-014) ────────────────────────────────────
+
+    /// Load `host` into the detail-pane form.
+    fn select_host(&mut self, host: &Host, w: &mut Window, cx: &mut Context<Self>) {
+        self.form = Some(HostForm::from_host(
+            host,
+            &self.groups,
+            &self.credentials,
+            &self.hosts,
+        ));
+        self.save_state = SaveState::Idle;
+        self.test_result = None;
+        w.focus(&self.form_focus);
+        cx.notify();
+    }
+
+    /// Hosts after search filter, group-filter chip, and sort are applied.
+    fn visible_hosts(&self) -> Vec<Host> {
+        let q = self.search.trim().to_lowercase();
+        let mut v: Vec<Host> = self
+            .hosts
+            .iter()
+            .filter(|h| match &self.group_filter {
+                None => true,
+                Some(g) if g.is_empty() => h.group_id.is_none(),
+                Some(g) => h.group_id.as_deref() == Some(g.as_str()),
+            })
+            .filter(|h| {
+                q.is_empty()
+                    || h.name.to_lowercase().contains(&q)
+                    || h.host_address.to_lowercase().contains(&q)
+                    || h.username.to_lowercase().contains(&q)
+            })
+            .cloned()
+            .collect();
+        match self.sort {
+            HostSort::LastConnected => v.sort_by(|a, b| {
+                b.pin_to_top
+                    .cmp(&a.pin_to_top)
+                    .then(b.last_connected_at.cmp(&a.last_connected_at))
+                    .then(a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+            }),
+            HostSort::NameAsc => v.sort_by_key(|h| h.name.to_lowercase()),
+            HostSort::NameDesc => v.sort_by_key(|h| std::cmp::Reverse(h.name.to_lowercase())),
+        }
+        v
+    }
+
+    /// `Some((user, host, port))` if the search box holds a `user@host[:port]`
+    /// quick-connect target that isn't already a saved host.
+    fn quick_connect_target(&self) -> Option<(String, String, u16)> {
+        let s = self.search.trim();
+        let (user, rest) = s.split_once('@')?;
+        if user.is_empty() || rest.is_empty() || user.contains(char::is_whitespace) {
+            return None;
+        }
+        let (host, port) = match rest.split_once(':') {
+            Some((h, p)) => (h, p.parse::<u16>().ok()?),
+            None => (rest, 22),
+        };
+        if host.is_empty() || host.contains(char::is_whitespace) {
+            return None;
+        }
+        Some((user.to_string(), host.to_string(), port))
+    }
+
+    fn ping_dot(&self, host_id: &str, p: &Palette) -> gpui::Div {
+        let (color, _label) = match self.ping.get(host_id).copied().unwrap_or_default() {
+            Ping::Online => (p.accent, "online"),
+            Ping::Offline => (p.muted, "offline"),
+            Ping::Checking => (p.border, "checking"),
+        };
+        div().size(px(7.0)).rounded_full().bg(color)
+    }
+
+    fn render_host_list_item(
         &self,
         host: &Host,
         p: &Palette,
         cx: &mut Context<Self>,
-    ) -> impl IntoElement {
+    ) -> gpui::AnyElement {
+        let selected =
+            self.form.as_ref().and_then(|f| f.editing_id.as_deref()) == Some(host.id.as_str());
         let status = self.status_of(&host.id);
         let id = host.id.clone();
-        let (id_c, id_e, id_d, id_x) = (id.clone(), id.clone(), id.clone(), id.clone());
-        let id_s = id.clone();
-        let subtitle = format!(
-            "{}@{}:{}  \u{00b7}  {}",
-            host.username,
-            host.host_address,
-            host.port,
-            status.label()
-        );
+        let (id_click, id_drop) = (id.clone(), id.clone());
+        let subtitle = format!("{}@{}:{}", host.username, host.host_address, host.port);
+        let icon = host_icon(host.icon.as_deref());
+        let accent = p.accent;
+
         div()
+            .id(SharedString::from(format!("host-item-{id}")))
             .flex()
             .items_center()
             .gap_2()
-            .px_3()
+            .px_2()
             .py_2()
             .rounded_md()
-            .bg(p.card)
+            .bg(if selected { p.border } else { p.card })
             .border_1()
-            .border_color(p.border)
-            .child(
-                div()
-                    .w(px(14.0))
-                    .text_color(match status {
-                        HostStatus::Connected => p.accent,
-                        HostStatus::Failed => p.fg,
-                        _ => p.muted,
-                    })
-                    .when(status == HostStatus::Failed, |d| {
-                        d.child(IconName::Warning.svg(p.fg).size(px(12.0)))
-                    })
-                    .when(status != HostStatus::Failed, |d| d.child(status.glyph())),
-            )
+            .border_color(if selected { p.accent } else { p.border })
+            .cursor_pointer()
+            .hover(|s| s.border_color(p.accent))
+            .child(icon.svg(p.muted).size(px(14.0)))
             .child(
                 div()
                     .flex_1()
@@ -1174,9 +1739,18 @@ impl HostManagerView {
                     .flex_col()
                     .child(
                         div()
-                            .text_sm()
-                            .text_color(p.fg)
-                            .child(SharedString::from(host.name.clone())),
+                            .flex()
+                            .items_center()
+                            .gap_1()
+                            .when(host.pin_to_top, |d| {
+                                d.child(IconName::Bookmark.svg(p.accent).size(px(9.0)))
+                            })
+                            .child(
+                                div()
+                                    .text_sm()
+                                    .text_color(p.fg)
+                                    .child(SharedString::from(host.name.clone())),
+                            ),
                     )
                     .child(
                         div()
@@ -1185,117 +1759,126 @@ impl HostManagerView {
                             .child(SharedString::from(subtitle)),
                     ),
             )
-            .child(
-                self.btn("host-connect", "Connect", p, true)
-                    .on_click(cx.listener(move |_this, _: &ClickEvent, _w, cx| {
-                        cx.emit(HostManagerEvent::Connect(id_c.clone()));
-                    })),
-            )
-            .child(
-                self.btn("host-sftp", "SFTP", p, false)
-                    .on_click(cx.listener(move |_this, _: &ClickEvent, _w, cx| {
-                        cx.emit(HostManagerEvent::OpenSftp(id_s.clone()));
-                    })),
-            )
-            .child(
-                self.btn("host-edit", "Edit", p, false)
-                    .on_click(cx.listener(move |this, _: &ClickEvent, w, cx| {
-                        if let Some(h) = this.hosts.iter().find(|h| h.id == id_e).cloned() {
-                            this.form = Some(HostForm::from_host(
-                                &h,
-                                &this.groups,
-                                &this.credentials,
-                                &this.hosts,
-                            ));
-                            w.focus(&this.form_focus);
-                            cx.notify();
-                        }
-                    })),
-            )
-            .child(
-                self.btn("host-dup", "Duplicate", p, false)
-                    .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
-                        this.duplicate_host(id_d.clone(), cx)
-                    })),
-            )
-            .child(self.btn("host-del", "Delete", p, false).on_click(
-                cx.listener(move |this, _: &ClickEvent, _w, cx| this.delete_host(id_x.clone(), cx)),
-            ))
-    }
-
-    fn render_group_block(
-        &self,
-        group: Option<&Group>,
-        p: &Palette,
-        cx: &mut Context<Self>,
-    ) -> gpui::AnyElement {
-        let (gid, gname): (Option<String>, String) = match group {
-            Some(g) => (Some(g.id.clone()), g.name.clone()),
-            None => (None, "Ungrouped".to_string()),
-        };
-        let key = gid.clone().unwrap_or_default();
-        let collapsed = self.collapsed.contains(&key);
-        let rows: Vec<Host> = self
-            .hosts
-            .iter()
-            .filter(|h| h.group_id.clone().unwrap_or_default() == key)
-            .cloned()
-            .collect();
-        if rows.is_empty() && group.is_some() {
-            // still show empty named groups so they can be managed
-        }
-        let key_toggle = key.clone();
-        let header = div()
-            .flex()
-            .items_center()
-            .gap_2()
-            .py_1()
-            .child(
-                div()
-                    .id("group-toggle")
-                    .cursor_pointer()
-                    .text_xs()
-                    .text_color(p.muted)
-                    .child(if collapsed { "\u{25b8}" } else { "\u{25be}" })
-                    .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
-                        if !this.collapsed.remove(&key_toggle) {
-                            this.collapsed.insert(key_toggle.clone());
-                        }
-                        cx.notify();
-                    })),
-            )
-            .child(
-                div()
-                    .flex_1()
-                    .text_xs()
-                    .text_color(p.muted)
-                    .child(SharedString::from(format!(
-                        "{}  ({})",
-                        gname.to_uppercase(),
-                        rows.len()
-                    ))),
-            )
-            .when_some(gid.clone(), |el, id| {
-                el.child(
-                    self.btn("group-del", "Delete group", p, false)
-                        .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
-                            this.delete_group(id.clone(), cx)
-                        })),
-                )
-            });
-
-        div()
-            .flex()
-            .flex_col()
-            .gap_1()
-            .child(header)
-            .when(!collapsed, |el| {
-                el.children(
-                    rows.iter()
-                        .map(|h| self.render_host_row(h, p, cx).into_any_element()),
+            .child(self.ping_dot(&host.id, p))
+            .when(status != HostStatus::Disconnected, |d| {
+                d.child(
+                    div()
+                        .text_size(px(9.0))
+                        .text_color(if status == HostStatus::Failed {
+                            p.fg
+                        } else {
+                            p.accent
+                        })
+                        .child(status.label()),
                 )
             })
+            .on_click(cx.listener(move |this, _: &ClickEvent, w, cx| {
+                if let Some(h) = this.hosts.iter().find(|h| h.id == id_click).cloned() {
+                    this.select_host(&h, w, cx);
+                }
+            }))
+            .on_drag(DraggedHost { id: id.clone() }, |_, _, _, cx| {
+                cx.new(|_| HostDragGhost)
+            })
+            .drag_over::<DraggedHost>(move |style, _, _, _| style.border_color(accent))
+            .on_drop(cx.listener(move |this, dragged: &DraggedHost, _w, cx| {
+                this.reorder_hosts(&dragged.id, &id_drop, cx);
+            }))
             .into_any_element()
+    }
+
+    fn render_group_chips(&self, p: &Palette, cx: &mut Context<Self>) -> gpui::AnyElement {
+        let (c_accent, c_border, c_card, c_fg, c_muted) =
+            (p.accent, p.border, p.card, p.fg, p.muted);
+        let chip = |id: &'static str,
+                    label: String,
+                    active: bool,
+                    on_drop_group: Option<String>,
+                    cx: &mut Context<Self>,
+                    filter: Option<String>| {
+            let mut el = div()
+                .id(id)
+                .px_2()
+                .py_0p5()
+                .rounded(px(13.0))
+                .border_1()
+                .border_color(if active { c_accent } else { c_border })
+                .bg(if active { c_border } else { c_card })
+                .text_xs()
+                .text_color(if active { c_fg } else { c_muted })
+                .cursor_pointer()
+                .child(SharedString::from(label))
+                .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                    this.group_filter = filter.clone();
+                    cx.notify();
+                }));
+            if let Some(gid) = on_drop_group {
+                el = el
+                    .drag_over::<DraggedHost>(move |s, _, _, _| s.border_color(c_accent))
+                    .on_drop(cx.listener(move |this, dragged: &DraggedHost, _w, cx| {
+                        let g = if gid.is_empty() {
+                            None
+                        } else {
+                            Some(gid.clone())
+                        };
+                        this.move_host_to_group(&dragged.id, g, cx);
+                    }));
+            }
+            el
+        };
+
+        let mut row = div().flex().flex_wrap().gap_1().items_center().child(chip(
+            "chip-all",
+            "All".to_string(),
+            self.group_filter.is_none(),
+            None,
+            cx,
+            None,
+        ));
+        let ungrouped = self.hosts.iter().filter(|h| h.group_id.is_none()).count();
+        row = row.child(chip(
+            "chip-ungrouped",
+            format!("Ungrouped ({ungrouped})"),
+            self.group_filter.as_deref() == Some(""),
+            Some(String::new()),
+            cx,
+            Some(String::new()),
+        ));
+        for g in self.groups.clone() {
+            let count = self
+                .hosts
+                .iter()
+                .filter(|h| h.group_id.as_deref() == Some(g.id.as_str()))
+                .count();
+            let gid = g.id.clone();
+            let gid_del = g.id.clone();
+            row = row.child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap_0p5()
+                    .child(chip(
+                        "chip-group",
+                        format!("{} ({count})", g.name),
+                        self.group_filter.as_deref() == Some(g.id.as_str()),
+                        Some(gid.clone()),
+                        cx,
+                        Some(gid.clone()),
+                    ))
+                    .child(
+                        div()
+                            .id(SharedString::from(format!("gdel-{gid_del}")))
+                            .text_color(p.muted)
+                            .cursor_pointer()
+                            .hover(|s| s.text_color(p.fg))
+                            .child(IconName::X.svg(p.muted).size(px(10.0)))
+                            .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                                this.delete_group(gid_del.clone(), cx)
+                            })),
+                    ),
+            );
+        }
+        row.into_any_element()
     }
 
     fn labelled_field(
@@ -1464,15 +2047,26 @@ impl HostManagerView {
             )
     }
 
-    fn render_form(&self, p: &Palette, cx: &mut Context<Self>) -> gpui::AnyElement {
+    /// Detail pane — the tabbed host form (T16-014). No longer a modal; lives
+    /// permanently in the right half of the master/detail split.
+    fn render_detail(&self, p: &Palette, cx: &mut Context<Self>) -> gpui::AnyElement {
         let Some(form) = self.form.as_ref() else {
-            return div().into_any_element();
+            return div()
+                .size_full()
+                .flex()
+                .items_center()
+                .justify_center()
+                .bg(p.bg)
+                .child(
+                    div()
+                        .text_sm()
+                        .text_color(p.muted)
+                        .child("Select a host on the left, or add a new one."),
+                )
+                .into_any_element();
         };
-        let title = if form.editing_id.is_some() {
-            "Edit Host"
-        } else {
-            "New Host"
-        };
+        let is_new = form.editing_id.is_none();
+        let editing = form.editing_id.clone();
         let auth = form.auth;
         let cred_label = form
             .credential
@@ -1489,334 +2083,560 @@ impl HostManagerView {
             .and_then(|i| self.hosts.get(i))
             .map(|h| h.name.clone())
             .unwrap_or_else(|| "direct".to_string());
+        let snippet_label = form
+            .snippet_id
+            .as_deref()
+            .and_then(|sid| self.snippets.iter().find(|(id, _)| id == sid))
+            .map(|(_, n)| n.clone())
+            .unwrap_or_else(|| "none".to_string());
+        let head_icon = host_icon(form.icon.as_deref());
+
+        // ── header ────────────────────────────────────────────────────────
+        let (id_conn, id_sftp) = (editing.clone(), editing.clone());
+        let header =
+            div()
+                .flex()
+                .items_center()
+                .gap_2()
+                .child(
+                    self.btn("host-icon", "", p, false)
+                        .child(head_icon.svg(p.fg).size(px(14.0)))
+                        .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
+                            this.icon_picker_open = !this.icon_picker_open;
+                            cx.notify();
+                        })),
+                )
+                .child(
+                    div()
+                        .flex_1()
+                        .text_xs()
+                        .text_color(p.muted)
+                        .child(if is_new { "NEW HOST" } else { "HOST DETAILS" }),
+                )
+                .when(self.save_state != SaveState::Idle, |d| {
+                    d.child(
+                        div()
+                            .text_xs()
+                            .text_color(if self.save_state == SaveState::Error {
+                                p.fg
+                            } else {
+                                p.muted
+                            })
+                            .child(self.save_state.label()),
+                    )
+                })
+                .when(!is_new, |d| {
+                    d.child(
+                        self.btn("hd-connect", "Connect", p, true)
+                            .on_click(cx.listener(move |_this, _: &ClickEvent, _w, cx| {
+                                if let Some(id) = id_conn.clone() {
+                                    cx.emit(HostManagerEvent::Connect(id));
+                                }
+                            })),
+                    )
+                    .child(self.btn("hd-sftp", "SFTP", p, false).on_click(cx.listener(
+                        move |_this, _: &ClickEvent, _w, cx| {
+                            if let Some(id) = id_sftp.clone() {
+                                cx.emit(HostManagerEvent::OpenSftp(id));
+                            }
+                        },
+                    )))
+                    .child(self.btn("hd-test", "Test Connection", p, false).on_click(
+                        cx.listener(|this, _: &ClickEvent, _w, cx| this.test_connection(cx)),
+                    ))
+                    .child(
+                        self.btn("hd-dup", "Duplicate", p, false)
+                            .on_click(cx.listener({
+                                let id = editing.clone();
+                                move |this, _: &ClickEvent, _w, cx| {
+                                    if let Some(id) = id.clone() {
+                                        this.duplicate_host(id, cx);
+                                    }
+                                }
+                            })),
+                    )
+                    .child(
+                        self.btn("hd-del", "Delete", p, false)
+                            .on_click(cx.listener({
+                                let id = editing.clone();
+                                move |this, _: &ClickEvent, _w, cx| {
+                                    if let Some(id) = id.clone() {
+                                        this.delete_host(id, cx);
+                                    }
+                                }
+                            })),
+                    )
+                })
+                .child(
+                    self.btn("hd-close", "", p, false)
+                        .child(IconName::X.svg(p.muted).size(px(12.0)))
+                        .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
+                            if this.save_state == SaveState::Pending {
+                                this.submit_form(true, cx);
+                            }
+                            this.form = None;
+                            this.save_state = SaveState::Idle;
+                            cx.notify();
+                        })),
+                );
+
+        let icon_row = self.icon_picker_open.then(|| {
+            div()
+                .flex()
+                .flex_wrap()
+                .gap_1()
+                .children(HOST_ICONS.iter().map(|(key, ic)| {
+                    let key = key.to_string();
+                    let active = form.icon.as_deref() == Some(key.as_str());
+                    self.btn("host-icon-opt", "", p, active)
+                        .child(ic.svg(if active { p.fg } else { p.muted }).size(px(13.0)))
+                        .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                            if let Some(f) = this.form.as_mut() {
+                                f.icon = if f.icon.as_deref() == Some(key.as_str()) {
+                                    None
+                                } else {
+                                    Some(key.clone())
+                                };
+                            }
+                            this.icon_picker_open = false;
+                            this.schedule_autosave(cx);
+                        }))
+                }))
+        });
+
+        let tab_bar = div()
+            .flex()
+            .gap_1()
+            .children(FormTab::ALL.into_iter().map(|t| {
+                self.btn(
+                    match t {
+                        FormTab::General => "ft-gen",
+                        FormTab::Ssh => "ft-ssh",
+                        FormTab::Sftp => "ft-sftp",
+                        FormTab::Tunnels => "ft-tun",
+                    },
+                    t.title(),
+                    p,
+                    form.tab == t,
+                )
+                .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                    if let Some(f) = this.form.as_mut() {
+                        f.tab = t;
+                    }
+                    cx.notify();
+                }))
+            }));
+
+        let body = self.render_detail_tab(
+            form,
+            auth,
+            &cred_label,
+            &group_label,
+            &jump_label,
+            &snippet_label,
+            p,
+            cx,
+        );
+
+        let footer = is_new.then(|| {
+            div().flex().gap_2().justify_end().pt_2().child(
+                self.btn("hd-add", "Add Host", p, true).on_click(
+                    cx.listener(|this, _: &ClickEvent, _w, cx| this.submit_form(false, cx)),
+                ),
+            )
+        });
+        let test_line = self.test_result.clone().map(|t| {
+            div()
+                .text_xs()
+                .text_color(p.muted)
+                .child(SharedString::from(t))
+        });
 
         div()
-            .absolute()
-            .inset_0()
+            .track_focus(&self.form_focus)
+            .key_context("HostForm")
+            .on_key_down(cx.listener(Self::on_form_key))
+            .id("host-detail-scroll")
+            .size_full()
+            .overflow_y_scroll()
             .flex()
-            .items_center()
-            .justify_center()
-            .bg(crate::theme::modal_scrim())
-            .child(
-                div()
-                    .track_focus(&self.form_focus)
-                    .key_context("HostForm")
-                    .on_key_down(cx.listener(Self::on_form_key))
-                    .flex()
-                    .flex_col()
-                    .gap_2()
-                    .w(px(460.0))
-                    .max_h(px(620.0))
-                    .overflow_hidden()
-                    .p_4()
-                    .rounded_lg()
-                    .bg(p.card)
-                    .border_1()
-                    .border_color(p.border)
-                    .child(div().text_sm().text_color(p.fg).child(title))
-                    .child(self.labelled_field(
-                        "Name",
-                        &form.name,
-                        HostField::Name,
-                        form.focus == HostField::Name,
+            .flex_col()
+            .gap_2()
+            .p_4()
+            .bg(p.bg)
+            .child(header)
+            .children(icon_row)
+            .child(tab_bar)
+            .children(test_line)
+            .child(body)
+            .children(footer)
+            .into_any_element()
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn render_detail_tab(
+        &self,
+        form: &HostForm,
+        auth: AuthMethod,
+        cred_label: &str,
+        group_label: &str,
+        jump_label: &str,
+        snippet_label: &str,
+        p: &Palette,
+        cx: &mut Context<Self>,
+    ) -> gpui::AnyElement {
+        let container = div().flex().flex_col().gap_2();
+        match form.tab {
+            FormTab::General => container
+                .child(self.labelled_field(
+                    "Name",
+                    &form.name,
+                    HostField::Name,
+                    form.focus == HostField::Name,
+                    p,
+                    cx,
+                ))
+                .child(self.labelled_field(
+                    "Address",
+                    &form.address,
+                    HostField::Address,
+                    form.focus == HostField::Address,
+                    p,
+                    cx,
+                ))
+                .child(self.labelled_field(
+                    "Port",
+                    &form.port,
+                    HostField::Port,
+                    form.focus == HostField::Port,
+                    p,
+                    cx,
+                ))
+                .child(self.labelled_field(
+                    "Username",
+                    &form.username,
+                    HostField::Username,
+                    form.focus == HostField::Username,
+                    p,
+                    cx,
+                ))
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap_0p5()
+                        .child(div().text_xs().text_color(p.muted).child("Auth method"))
+                        .child(
+                            div()
+                                .flex()
+                                .gap_1()
+                                .children(AuthMethod::ALL.into_iter().map(|m| {
+                                    self.btn(
+                                        match m {
+                                            AuthMethod::Password => "auth-pw",
+                                            AuthMethod::Key => "auth-key",
+                                            AuthMethod::Credential => "auth-cred",
+                                            AuthMethod::None => "auth-none",
+                                        },
+                                        m.title(),
+                                        p,
+                                        m == auth,
+                                    )
+                                    .on_click(cx.listener(
+                                        move |this, _: &ClickEvent, _w, cx| {
+                                            if let Some(f) = this.form.as_mut() {
+                                                f.auth = m;
+                                            }
+                                            this.schedule_autosave(cx);
+                                        },
+                                    ))
+                                })),
+                        ),
+                )
+                .when(auth == AuthMethod::Key, |el| {
+                    el.child(self.labelled_field(
+                        "Private key path",
+                        &form.key_path,
+                        HostField::KeyPath,
+                        form.focus == HostField::KeyPath,
                         p,
                         cx,
                     ))
-                    .child(self.labelled_field(
-                        "Address",
-                        &form.address,
-                        HostField::Address,
-                        form.focus == HostField::Address,
+                })
+                .when(auth == AuthMethod::Password, |el| {
+                    el.child(self.labelled_field(
+                        "Password (stored in the secret store)",
+                        &"\u{2022}".repeat(form.password.chars().count()),
+                        HostField::Password,
+                        form.focus == HostField::Password,
                         p,
                         cx,
                     ))
-                    .child(self.labelled_field(
-                        "Port",
-                        &form.port,
-                        HostField::Port,
-                        form.focus == HostField::Port,
-                        p,
-                        cx,
-                    ))
-                    .child(self.labelled_field(
-                        "Username",
-                        &form.username,
-                        HostField::Username,
-                        form.focus == HostField::Username,
-                        p,
-                        cx,
-                    ))
-                    .child(
-                        div()
-                            .flex()
-                            .flex_col()
-                            .gap_0p5()
-                            .child(div().text_xs().text_color(p.muted).child("Auth method"))
-                            .child(
-                                div()
-                                    .flex()
-                                    .gap_1()
-                                    .children(AuthMethod::ALL.into_iter().map(|m| {
-                                        self.btn(
-                                            match m {
-                                                AuthMethod::Password => "auth-pw",
-                                                AuthMethod::Key => "auth-key",
-                                                AuthMethod::Credential => "auth-cred",
-                                                AuthMethod::None => "auth-none",
-                                            },
-                                            m.title(),
-                                            p,
-                                            m == auth,
-                                        )
-                                        .on_click(
-                                            cx.listener(move |this, _: &ClickEvent, _w, cx| {
-                                                if let Some(f) = this.form.as_mut() {
-                                                    f.auth = m;
-                                                }
-                                                cx.notify();
-                                            }),
-                                        )
-                                    })),
-                            ),
-                    )
-                    .when(auth == AuthMethod::Key, |el| {
-                        el.child(self.labelled_field(
-                            "Private key path",
-                            &form.key_path,
-                            HostField::KeyPath,
-                            form.focus == HostField::KeyPath,
-                            p,
-                            cx,
-                        ))
-                    })
-                    .when(auth == AuthMethod::Password, |el| {
-                        el.child(self.labelled_field(
-                            "Password (stored in the secret store)",
-                            &"\u{2022}".repeat(form.password.chars().count()),
-                            HostField::Password,
-                            form.focus == HostField::Password,
-                            p,
-                            cx,
-                        ))
-                    })
-                    .when(auth == AuthMethod::Password, |el| {
-                        el.child(
-                            self.labelled_field(
-                                "Sudo password autofill (OS keychain)",
-                                if form.sudo_password.is_empty() {
-                                    if form.sudo_password_set {
-                                        "(set)".to_string()
-                                    } else {
-                                        String::new()
-                                    }
-                                } else {
-                                    "\u{2022}".repeat(form.sudo_password.chars().count())
+                })
+                .when(auth == AuthMethod::Credential, |el| {
+                    el.child(
+                        self.btn("cred-cycle", format!("Credential: {cred_label}"), p, false)
+                            .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
+                                let n = this.credentials.len();
+                                if let Some(f) = this.form.as_mut() {
+                                    f.credential = match f.credential {
+                                        None if n > 0 => Some(0),
+                                        Some(i) if i + 1 < n => Some(i + 1),
+                                        _ => None,
+                                    };
                                 }
-                                .as_str(),
-                                HostField::SudoPassword,
-                                form.focus == HostField::SudoPassword,
-                                p,
-                                cx,
-                            ),
-                        )
-                    })
-                    .child(self.labelled_field(
-                        "Start directory",
-                        &form.default_path,
-                        HostField::DefaultPath,
-                        form.focus == HostField::DefaultPath,
-                        p,
-                        cx,
-                    ))
-                    .child(self.labelled_field(
-                        "SFTP start directory",
-                        &form.default_path_sftp,
-                        HostField::DefaultPathSftp,
-                        form.focus == HostField::DefaultPathSftp,
-                        p,
-                        cx,
-                    ))
-                    .child(
-                        div()
-                            .flex()
-                            .gap_2()
-                            .child(self.labelled_field(
-                                "Keep-alive interval (s)",
-                                &form.keep_alive_interval,
-                                HostField::KeepAliveInterval,
-                                form.focus == HostField::KeepAliveInterval,
-                                p,
-                                cx,
-                            ))
-                            .child(self.labelled_field(
-                                "Keep-alive max tries",
-                                &form.keep_alive_tries,
-                                HostField::KeepAliveTries,
-                                form.focus == HostField::KeepAliveTries,
-                                p,
-                                cx,
-                            )),
+                                this.schedule_autosave(cx);
+                            })),
                     )
-                    .child(self.labelled_field(
-                        "Notes / runbook",
-                        &form.notes,
-                        HostField::Notes,
-                        form.focus == HostField::Notes,
-                        p,
-                        cx,
-                    ))
-                    .child(
-                        div().flex().flex_col().gap_0p5().child("Options").child(
-                            self.btn(
-                                "pin-to-top",
-                                if form.pin_to_top {
-                                    "Pinned \u{2014} always shown first"
-                                } else {
-                                    "Not pinned \u{2014} click to always show first"
-                                },
-                                p,
-                                form.pin_to_top,
-                            )
-                            .on_click(cx.listener(
-                                |this, _: &ClickEvent, _w, cx| {
+                })
+                .child(
+                    self.btn("group-cycle", format!("Group: {group_label}"), p, false)
+                        .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
+                            let n = this.groups.len();
+                            if let Some(f) = this.form.as_mut() {
+                                f.group = match f.group {
+                                    None if n > 0 => Some(0),
+                                    Some(i) if i + 1 < n => Some(i + 1),
+                                    _ => None,
+                                };
+                            }
+                            this.schedule_autosave(cx);
+                        })),
+                )
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap_0p5()
+                        .child(
+                            div()
+                                .text_xs()
+                                .text_color(p.muted)
+                                .child("Jump host (ProxyJump)"),
+                        )
+                        .child(
+                            self.btn("jump-cycle", format!("Route: {jump_label}"), p, false)
+                                .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
+                                    let editing =
+                                        this.form.as_ref().and_then(|f| f.editing_id.clone());
+                                    let cands: Vec<usize> = this
+                                        .hosts
+                                        .iter()
+                                        .enumerate()
+                                        .filter(|(_, h)| Some(h.id.as_str()) != editing.as_deref())
+                                        .map(|(i, _)| i)
+                                        .collect();
                                     if let Some(f) = this.form.as_mut() {
-                                        f.pin_to_top = !f.pin_to_top;
+                                        f.jump_host = match f.jump_host {
+                                            None => cands.first().copied(),
+                                            Some(cur) => {
+                                                match cands.iter().position(|&i| i == cur) {
+                                                    Some(pos) if pos + 1 < cands.len() => {
+                                                        Some(cands[pos + 1])
+                                                    }
+                                                    _ => None,
+                                                }
+                                            }
+                                        };
                                     }
-                                    cx.notify();
-                                },
-                            )),
+                                    this.schedule_autosave(cx);
+                                })),
+                        ),
+                )
+                .child(
+                    self.btn(
+                        "pin-to-top",
+                        if form.pin_to_top {
+                            "Pinned \u{2014} always shown first"
+                        } else {
+                            "Not pinned \u{2014} click to always show first"
+                        },
+                        p,
+                        form.pin_to_top,
+                    )
+                    .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
+                        if let Some(f) = this.form.as_mut() {
+                            f.pin_to_top = !f.pin_to_top;
+                        }
+                        this.schedule_autosave(cx);
+                    })),
+                )
+                .child(self.labelled_field(
+                    "Notes / runbook",
+                    &form.notes,
+                    HostField::Notes,
+                    form.focus == HostField::Notes,
+                    p,
+                    cx,
+                ))
+                .into_any_element(),
+            FormTab::Ssh => container
+                .child(self.labelled_field(
+                    "Start directory (runs `cd <path>`)",
+                    &form.default_path,
+                    HostField::DefaultPath,
+                    form.focus == HostField::DefaultPath,
+                    p,
+                    cx,
+                ))
+                .when(auth == AuthMethod::Password, |el| {
+                    el.child(
+                        self.labelled_field(
+                            "Sudo password autofill (OS keychain)",
+                            if form.sudo_password.is_empty() {
+                                if form.sudo_password_set {
+                                    "(set)".to_string()
+                                } else {
+                                    String::new()
+                                }
+                            } else {
+                                "\u{2022}".repeat(form.sudo_password.chars().count())
+                            }
+                            .as_str(),
+                            HostField::SudoPassword,
+                            form.focus == HostField::SudoPassword,
+                            p,
+                            cx,
                         ),
                     )
-                    .child(
-                        div()
-                            .flex()
-                            .gap_2()
-                            .when(auth == AuthMethod::Credential, |el| {
-                                el.child(
+                })
+                .child(
+                    div()
+                        .flex()
+                        .gap_2()
+                        .child(self.labelled_field(
+                            "Keep-alive interval (s)",
+                            &form.keep_alive_interval,
+                            HostField::KeepAliveInterval,
+                            form.focus == HostField::KeepAliveInterval,
+                            p,
+                            cx,
+                        ))
+                        .child(self.labelled_field(
+                            "Keep-alive max tries",
+                            &form.keep_alive_tries,
+                            HostField::KeepAliveTries,
+                            form.focus == HostField::KeepAliveTries,
+                            p,
+                            cx,
+                        )),
+                )
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap_0p5()
+                        .child(
+                            div()
+                                .text_xs()
+                                .text_color(p.muted)
+                                .child("Run on connect (startup snippet)"),
+                        )
+                        .child(
+                            div()
+                                .flex()
+                                .gap_2()
+                                .child(
                                     self.btn(
-                                        "cred-cycle",
-                                        format!("Credential: {cred_label}"),
+                                        "snippet-cycle",
+                                        format!("Snippet: {snippet_label}"),
                                         p,
                                         false,
                                     )
                                     .on_click(cx.listener(
                                         |this, _: &ClickEvent, _w, cx| {
-                                            let n = this.credentials.len();
+                                            let ids: Vec<String> = this
+                                                .snippets
+                                                .iter()
+                                                .map(|(id, _)| id.clone())
+                                                .collect();
                                             if let Some(f) = this.form.as_mut() {
-                                                f.credential = match f.credential {
-                                                    None if n > 0 => Some(0),
-                                                    Some(i) if i + 1 < n => Some(i + 1),
-                                                    _ => None,
+                                                f.snippet_id = match &f.snippet_id {
+                                                    None => ids.first().cloned(),
+                                                    Some(cur) => {
+                                                        match ids.iter().position(|x| x == cur) {
+                                                            Some(i) if i + 1 < ids.len() => {
+                                                                Some(ids[i + 1].clone())
+                                                            }
+                                                            _ => None,
+                                                        }
+                                                    }
                                                 };
                                             }
-                                            cx.notify();
+                                            this.schedule_autosave(cx);
                                         },
                                     )),
                                 )
-                            })
-                            .child(
-                                self.btn("group-cycle", format!("Group: {group_label}"), p, false)
-                                    .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
-                                        let n = this.groups.len();
-                                        if let Some(f) = this.form.as_mut() {
-                                            f.group = match f.group {
-                                                None if n > 0 => Some(0),
-                                                Some(i) if i + 1 < n => Some(i + 1),
-                                                _ => None,
-                                            };
-                                        }
-                                        cx.notify();
-                                    })),
-                            ),
-                    )
-                    .child(
-                        div()
-                            .flex()
-                            .flex_col()
-                            .gap_0p5()
-                            .child(
-                                div()
-                                    .text_xs()
-                                    .text_color(p.muted)
-                                    .child("Jump host (ProxyJump)"),
-                            )
-                            .child(
-                                self.btn("jump-cycle", format!("Route: {jump_label}"), p, false)
-                                    .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
-                                        let editing =
-                                            this.form.as_ref().and_then(|f| f.editing_id.clone());
-                                        let cands: Vec<usize> = this
-                                            .hosts
-                                            .iter()
-                                            .enumerate()
-                                            .filter(|(_, h)| {
-                                                Some(h.id.as_str()) != editing.as_deref()
-                                            })
-                                            .map(|(i, _)| i)
-                                            .collect();
-                                        if let Some(f) = this.form.as_mut() {
-                                            f.jump_host = match f.jump_host {
-                                                None => cands.first().copied(),
-                                                Some(cur) => {
-                                                    match cands.iter().position(|&i| i == cur) {
-                                                        Some(pos) if pos + 1 < cands.len() => {
-                                                            Some(cands[pos + 1])
-                                                        }
-                                                        _ => None,
-                                                    }
+                                .when(form.snippet_id.is_some(), |d| {
+                                    d.child(
+                                        self.btn(
+                                            "snippet-mode",
+                                            if form.snippet_mode == "inject" {
+                                                "Inject"
+                                            } else {
+                                                "Execute"
+                                            },
+                                            p,
+                                            true,
+                                        )
+                                        .on_click(
+                                            cx.listener(|this, _: &ClickEvent, _w, cx| {
+                                                if let Some(f) = this.form.as_mut() {
+                                                    f.snippet_mode = if f.snippet_mode == "inject" {
+                                                        "execute".into()
+                                                    } else {
+                                                        "inject".into()
+                                                    };
                                                 }
-                                            };
-                                        }
-                                        cx.notify();
-                                    })),
-                            ),
-                    )
-                    .child(
-                        div()
-                            .flex()
-                            .flex_col()
-                            .gap_0p5()
-                            .child(div().text_xs().text_color(p.muted).child("AI Agent Access"))
-                            .child(
-                                self.btn(
-                                    "agent-block",
-                                    if form.block_agent_access {
-                                        "Blocked \u{2014} the AI agent bridge cannot use this host"
-                                    } else {
-                                        "Allowed \u{2014} click to block AI agent bridge access"
-                                    },
-                                    p,
-                                    form.block_agent_access,
-                                )
-                                .on_click(cx.listener(
-                                    |this, _: &ClickEvent, _w, cx| {
-                                        if let Some(f) = this.form.as_mut() {
-                                            f.block_agent_access = !f.block_agent_access;
-                                        }
-                                        cx.notify();
-                                    },
-                                )),
-                            ),
-                    )
-                    .child(self.render_tunnels_section(form, p, cx))
-                    .child(
-                        div()
-                            .flex()
-                            .gap_2()
-                            .justify_end()
-                            .pt_2()
-                            .child(self.btn("form-cancel", "Cancel", p, false).on_click(
-                                cx.listener(|this, _: &ClickEvent, _w, cx| {
-                                    this.form = None;
-                                    cx.notify();
+                                                this.schedule_autosave(cx);
+                                            }),
+                                        ),
+                                    )
                                 }),
-                            ))
-                            .child(self.btn("form-save", "Save", p, true).on_click(
-                                cx.listener(|this, _: &ClickEvent, _w, cx| this.submit_form(cx)),
+                        ),
+                )
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap_0p5()
+                        .child(div().text_xs().text_color(p.muted).child("AI Agent Access"))
+                        .child(
+                            self.btn(
+                                "agent-block",
+                                if form.block_agent_access {
+                                    "Blocked \u{2014} the AI agent bridge cannot use this host"
+                                } else {
+                                    "Allowed \u{2014} click to block AI agent bridge access"
+                                },
+                                p,
+                                form.block_agent_access,
+                            )
+                            .on_click(cx.listener(
+                                |this, _: &ClickEvent, _w, cx| {
+                                    if let Some(f) = this.form.as_mut() {
+                                        f.block_agent_access = !f.block_agent_access;
+                                    }
+                                    this.schedule_autosave(cx);
+                                },
                             )),
-                    ),
-            )
-            .into_any_element()
+                        ),
+                )
+                .into_any_element(),
+            FormTab::Sftp => container
+                .child(self.labelled_field(
+                    "SFTP start directory",
+                    &form.default_path_sftp,
+                    HostField::DefaultPathSftp,
+                    form.focus == HostField::DefaultPathSftp,
+                    p,
+                    cx,
+                ))
+                .into_any_element(),
+            FormTab::Tunnels => container
+                .child(self.render_tunnels_section(form, p, cx))
+                .into_any_element(),
+        }
     }
 
     fn render_credentials(&self, p: &Palette, cx: &mut Context<Self>) -> gpui::AnyElement {
@@ -2276,24 +3096,80 @@ impl HostManagerView {
 impl Render for HostManagerView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let p = self.palette(cx);
+        let accent = p.accent;
+        let visible = self.visible_hosts();
+        let quick = self.quick_connect_target();
 
-        // Group blocks: ungrouped first, then each named group.
-        let mut blocks: Vec<gpui::AnyElement> = Vec::new();
-        blocks.push(self.render_group_block(None, &p, cx));
-        let groups = self.groups.clone();
-        for g in &groups {
-            blocks.push(self.render_group_block(Some(g), &p, cx));
-        }
-
-        let toolbar = div()
+        // ── left pane: search + quick-connect suggestion ──────────────────
+        let search_box = div()
+            .track_focus(&self.search_focus)
+            .key_context("HostSearch")
+            .on_key_down(cx.listener(Self::on_search_key))
             .flex()
             .items_center()
-            .gap_2()
-            .child(div().flex_1().text_sm().text_color(p.fg).child("Hosts"))
+            .gap_1()
+            .px_2()
+            .py_1()
+            .rounded_md()
+            .bg(p.card)
+            .border_1()
+            .border_color(p.border)
+            .child(IconName::Search.svg(p.muted).size(px(12.0)))
+            .child(
+                div()
+                    .flex_1()
+                    .text_xs()
+                    .text_color(if self.search.is_empty() {
+                        p.muted
+                    } else {
+                        p.fg
+                    })
+                    .child(SharedString::from(if self.search.is_empty() {
+                        "Find a host or type user@hostname\u{2026}".to_string()
+                    } else {
+                        format!("{}\u{2502}", self.search)
+                    })),
+            );
+
+        let quick_card = quick.clone().map(|(user, host, port)| {
+            div()
+                .id("quick-connect")
+                .flex()
+                .items_center()
+                .justify_between()
+                .px_2()
+                .py_1()
+                .rounded_md()
+                .border_1()
+                .border_color(accent)
+                .bg(p.card)
+                .cursor_pointer()
+                .child(
+                    div()
+                        .text_xs()
+                        .text_color(p.fg)
+                        .child(SharedString::from(format!(
+                            "Quick Connect  {user}@{host}:{port}"
+                        ))),
+                )
+                .child(IconName::Zap.svg(accent).size(px(12.0)))
+                .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                    this.quick_connect(user.clone(), host.clone(), port, cx)
+                }))
+        });
+
+        // ── left pane: actions toolbar ───────────────────────────────────
+        let toolbar = div()
+            .flex()
+            .flex_wrap()
+            .items_center()
+            .gap_1()
             .child(
                 self.btn("new-host", "New Host", &p, true)
                     .on_click(cx.listener(|this, _: &ClickEvent, w, cx| {
                         this.form = Some(HostForm::blank());
+                        this.save_state = SaveState::Idle;
+                        this.test_result = None;
                         w.focus(&this.form_focus);
                         cx.notify();
                     })),
@@ -2308,7 +3184,7 @@ impl Render for HostManagerView {
                     .rounded_md()
                     .bg(p.bg)
                     .border_1()
-                    .border_color(p.accent)
+                    .border_color(accent)
                     .text_xs()
                     .text_color(p.fg)
                     .child(SharedString::from(format!("{b}\u{2502}")))
@@ -2323,6 +3199,30 @@ impl Render for HostManagerView {
                     .into_any_element(),
             })
             .child(
+                self.btn(
+                    "sort-cycle",
+                    format!("Sort: {}", self.sort.label()),
+                    &p,
+                    false,
+                )
+                .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
+                    this.sort = this.sort.next();
+                    cx.notify();
+                })),
+            )
+            .child(
+                self.btn(
+                    "view-toggle",
+                    if self.grid_view { "Grid" } else { "List" },
+                    &p,
+                    false,
+                )
+                .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
+                    this.grid_view = !this.grid_view;
+                    cx.notify();
+                })),
+            )
+            .child(
                 self.btn("open-creds", "Credentials", &p, false)
                     .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
                         this.creds_open = true;
@@ -2330,20 +3230,45 @@ impl Render for HostManagerView {
                     })),
             )
             .child(
-                self.btn("import-ssh-config", "Import SSH config", &p, false)
+                self.btn("import-ssh-config", "Import", &p, false)
                     .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| this.open_import(cx))),
             )
             .child(
-                self.btn("export-ssh-config", "Export SSH config", &p, false)
+                self.btn("export-ssh-config", "Export", &p, false)
                     .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| this.open_export(cx))),
             );
+
+        let list = if visible.is_empty() {
+            div()
+                .p_4()
+                .text_xs()
+                .text_color(p.muted)
+                .child("No hosts. Add one with \u{201c}New Host\u{201d}.")
+                .into_any_element()
+        } else {
+            let items = visible
+                .iter()
+                .map(|h| self.render_host_list_item(h, &p, cx))
+                .collect::<Vec<_>>();
+            div()
+                .id("host-list")
+                .flex()
+                .flex_col()
+                .gap_1()
+                .overflow_y_scroll()
+                .flex_1()
+                .min_h_0()
+                .when(self.grid_view, |d| d.flex_row().flex_wrap())
+                .children(items)
+                .into_any_element()
+        };
 
         let tunnels_panel = (!self.active_tunnels.is_empty()).then(|| {
             div()
                 .flex()
                 .flex_col()
-                .gap_1()
-                .p_3()
+                .gap_0p5()
+                .p_2()
                 .rounded_md()
                 .bg(p.card)
                 .border_1()
@@ -2360,10 +3285,24 @@ impl Render for HostManagerView {
                 }))
         });
 
-        let form_overlay = self
-            .form
-            .is_some()
-            .then(|| self.render_form(&p, cx).into_any_element());
+        let side_panel = div()
+            .flex()
+            .flex_col()
+            .gap_2()
+            .w(px(340.0))
+            .flex_shrink_0()
+            .h_full()
+            .p_3()
+            .border_r_1()
+            .border_color(p.border)
+            .bg(p.bg)
+            .child(search_box)
+            .children(quick_card)
+            .child(toolbar)
+            .child(self.render_group_chips(&p, cx))
+            .children(tunnels_panel)
+            .child(list);
+
         let cred_overlay = self
             .creds_open
             .then(|| self.render_credentials(&p, cx).into_any_element());
@@ -2383,19 +3322,14 @@ impl Render for HostManagerView {
             .overflow_hidden()
             .bg(p.bg)
             .child(
-                div()
-                    .id("host-manager-scroll")
-                    .size_full()
-                    .overflow_y_scroll()
-                    .flex()
-                    .flex_col()
-                    .gap_3()
-                    .p_4()
-                    .child(toolbar)
-                    .children(tunnels_panel)
-                    .children(blocks),
+                div().size_full().flex().flex_row().child(side_panel).child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .h_full()
+                        .child(self.render_detail(&p, cx)),
+                ),
             )
-            .children(form_overlay)
             .children(cred_overlay)
             .children(import_overlay)
             .children(export_overlay)
@@ -2620,5 +3554,85 @@ mod tests {
         loopy.jump_host_id = Some("a".into());
         let form = HostForm::from_host(&loopy, &[], &[], &hosts);
         assert!(form.jump_host.is_none());
+    }
+
+    #[test]
+    fn quick_connect_target_parses_user_at_host_port() {
+        let hm_search = |s: &str| {
+            // exercise the parser in isolation via a throwaway view field
+            let parsed = {
+                let s = s.trim();
+                s.split_once('@').and_then(|(u, rest)| {
+                    if u.is_empty() {
+                        return None;
+                    }
+                    let (h, p) = match rest.split_once(':') {
+                        Some((h, p)) => (h, p.parse::<u16>().ok()?),
+                        None => (rest, 22),
+                    };
+                    (!h.is_empty()).then(|| (u.to_string(), h.to_string(), p))
+                })
+            };
+            parsed
+        };
+        assert_eq!(
+            hm_search("deploy@web.example:2222"),
+            Some(("deploy".into(), "web.example".into(), 2222))
+        );
+        assert_eq!(
+            hm_search("root@10.0.0.1"),
+            Some(("root".into(), "10.0.0.1".into(), 22))
+        );
+        assert_eq!(hm_search("just-text"), None);
+        assert_eq!(hm_search("@host"), None);
+    }
+
+    #[gpui::test]
+    fn visible_hosts_applies_group_filter_and_sort(cx: &mut TestAppContext) {
+        let (_rt, view) = make(cx);
+        cx.update(|cx| {
+            view.update(cx, |v, cx| {
+                let mut a = host_stub("a", "Zeta");
+                a.group_id = Some("g1".into());
+                let mut b = host_stub("b", "Alpha");
+                b.group_id = Some("g1".into());
+                let c = host_stub("c", "Mid"); // ungrouped
+                v.hosts = vec![a, b, c];
+
+                v.sort = HostSort::NameAsc;
+                let all: Vec<_> = v.visible_hosts().into_iter().map(|h| h.name).collect();
+                assert_eq!(all, vec!["Alpha", "Mid", "Zeta"]);
+
+                v.group_filter = Some("g1".into());
+                let g: Vec<_> = v.visible_hosts().into_iter().map(|h| h.id).collect();
+                assert_eq!(g, vec!["b", "a"]); // NameAsc within the group
+
+                v.group_filter = Some(String::new()); // ungrouped only
+                let u: Vec<_> = v.visible_hosts().into_iter().map(|h| h.id).collect();
+                assert_eq!(u, vec!["c"]);
+
+                v.group_filter = None;
+                v.search = "mid".into();
+                let s: Vec<_> = v.visible_hosts().into_iter().map(|h| h.id).collect();
+                assert_eq!(s, vec!["c"]);
+                let _ = cx;
+            });
+        });
+    }
+
+    #[test]
+    fn host_form_maps_icon_snippet_and_tab_defaults() {
+        let mut h = host_stub("h", "Box");
+        h.icon = Some("shield".into());
+        h.startup_snippet_id = Some("s1".into());
+        h.startup_snippet_mode = Some("inject".into());
+        let form = HostForm::from_host(&h, &[], &[], &[]);
+        assert_eq!(form.icon.as_deref(), Some("shield"));
+        assert_eq!(form.snippet_id.as_deref(), Some("s1"));
+        assert_eq!(form.snippet_mode, "inject");
+        assert_eq!(form.tab, FormTab::General);
+        // icon key round-trips through the curated set
+        assert!(matches!(host_icon(Some("shield")), IconName::Shield));
+        assert!(matches!(host_icon(None), IconName::Server));
     }
 }

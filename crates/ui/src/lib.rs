@@ -28,6 +28,7 @@ pub mod session;
 pub mod settings;
 pub mod sftp;
 pub mod snippets;
+pub mod ssh_connection;
 pub mod syntax_theme;
 pub mod tabs;
 pub mod terminal;
