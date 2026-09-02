@@ -1497,6 +1497,18 @@ impl Workspace {
         self.panes.get(&pane).map(|e| e.view.clone())
     }
 
+    /// The active editor / terminal selection, tagged with its source label,
+    /// for "Ask AI about Selection".
+    pub fn active_selection(&self, cx: &App) -> Option<(&'static str, String)> {
+        let active_id = self.tabs.read(cx).active_id();
+        if let Some(editor) = self.editors.get(&active_id) {
+            return editor.read(cx).selected_text().map(|t| ("editor", t));
+        }
+        self.active_pane_view(cx)
+            .and_then(|v| v.read(cx).selection_text())
+            .map(|t| ("terminal", t))
+    }
+
     fn select_tab(&mut self, id: u64, window: &mut Window, cx: &mut Context<Self>) {
         if self.rename_tab.is_some() {
             self.commit_tab_rename(cx);
@@ -3202,6 +3214,16 @@ impl Workspace {
             .h(px(28.0))
             .w_full()
             .flex_shrink_0()
+            // Right-click anywhere on the empty strip → the new-tab menu
+            // (reference `TabBar` empty-area menu).
+            .on_mouse_down(
+                MouseButton::Right,
+                cx.listener(|this, ev: &MouseDownEvent, _w, cx| {
+                    this.new_tab_menu = Some(ev.position - point(px(0.0), px(TITLEBAR_OFFSET)));
+                    this.context_menu = None;
+                    cx.notify();
+                }),
+            )
             .child(
                 div()
                     .id("tab-strip")

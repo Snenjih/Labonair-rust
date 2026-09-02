@@ -4,7 +4,51 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
-## Last Session: 2026-09-03 (Block F polish A — AI-panel composer + strips)
+## Last Session: 2026-09-03 (Block F polish D — statusbar + shared-menu cleanups)
+
+### What Was Done (commit after `e93b72b`)
+
+- **`render_bar_menu`** (bar-item context menu) migrated to the shared
+  `components::context_menu` primitive — Side (Left/Right, `checked` radios),
+  Location (Titlebar/Status Bar), Hide (`EyeOff` icon), with section labels.
+- **Tab-bar empty-area menu** — right-click anywhere on the tab strip now
+  opens the new-tab dropdown (`workspace.rs render_tab_bar`).
+- **"Ask AI about Selection" wired end-to-end**: `EditorView::selected_text`
+  + `TerminalView::selection_text` (both filter empty) → new
+  `Workspace::active_selection() -> Option<(&'static str, String)>` →
+  `AppShell::act_ask_about_selection` (registered as an `on_action` for
+  `menu::AskAboutSelection`; the `AiAskSelection` shortcut + the palette
+  `AskSelection` command already dispatch it) → `AiChatView::attach_selection`
+  + reveal the AI dock. New "Ask AI about Selection" item in the terminal
+  context menu (disabled without a selection).
+
+**Statusbar items already done** (verified, not re-touched): `cursorPosition`
+(`Ln x, Col y` from `workspace.active_editor_cursor`) and the 11px text size
+are already in `render_bar_item` / `render_statusbar`. `previewUrl` stays a
+self-hiding placeholder — dev-server-URL detection from terminal output is
+not ported.
+
+**Not migrated / deferred (documented):**
+- `hosts.rs` `☑/☐` glyphs — none exist (Block E's host-manager rewrite
+  already uses real toggle buttons via `self.btn`).
+- host-manager `btn` → `components::button` — pure churn on a working shim;
+  intentionally left (as the Block E handoff noted).
+- breadcrumb `crumb_menu` / `subdir_menu` — already feature-complete
+  hand-rolled menus (copy abs/rel path, cd here, cd new tab, move to bar);
+  migrating to the primitive is churn without behaviour change.
+- "Open Diff (Split)" — the git panel only has an inline unified diff; a
+  split/editor-tab diff surface doesn't exist.
+- `tabsLocation` gating for the Tabs sidebar panel.
+- Palette `outline` / Go-to-Symbol — needs a TreeSitter document-symbol pass
+  in `editor.rs` (`labonair-editor` has the grammars; no symbol query yet).
+
+### Verified
+`cargo fmt --all`, `cargo clippy --workspace --all-targets -D warnings`,
+`cargo test --workspace` — all green (695 tests).
+
+---
+
+## Session: 2026-09-03 (Block F polish A — AI-panel composer + strips)
 
 ### What Was Done (commit after `1f2f21a`)
 

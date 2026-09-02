@@ -436,6 +436,11 @@ impl EditorView {
         cx.notify();
     }
 
+    /// The current selection text, if any (for "Ask AI about Selection").
+    pub fn selected_text(&self) -> Option<String> {
+        self.doc.selected_text().filter(|s| !s.is_empty())
+    }
+
     fn copy(&self, cx: &mut Context<Self>) {
         if let Some(text) = self.doc.selected_text() {
             cx.write_to_clipboard(ClipboardItem::new_string(text));

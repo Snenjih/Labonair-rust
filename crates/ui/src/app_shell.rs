@@ -798,6 +798,22 @@ impl AppShell {
         self.select_panel(SidebarPanel::Ai, cx);
     }
 
+    /// "Ask AI about Selection" — capture the active editor/terminal selection
+    /// into the AI composer and reveal the panel.
+    fn act_ask_about_selection(
+        &mut self,
+        _: &menu::AskAboutSelection,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some((label, text)) = self.workspace.read(cx).active_selection(cx) else {
+            return;
+        };
+        self.ai_chat
+            .update(cx, |v, cx| v.attach_selection(label, text, cx));
+        self.open_panel(SidebarPanel::Ai, cx);
+    }
+
     fn act_new_ai_session(
         &mut self,
         _: &menu::NewAiSession,
@@ -2037,109 +2053,46 @@ impl AppShell {
     /// The shared bar-item right-click menu (port of `BarItemContextMenu`):
     /// Left / Right, then Titlebar / Statusbar, then Hide.
     fn render_bar_menu(&mut self, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
+        use crate::components::{context_menu, MenuItem};
         let (id, pos) = self.bar_menu?;
         let p = self.placements.get(id);
-        let theme = self.theme.read(cx);
-        let (card, fg, border, muted, accent) = (
-            theme.card(),
-            theme.foreground(),
-            theme.border(),
-            theme.muted_foreground(),
-            theme.accent(),
-        );
-
-        let radio = |label: &str, key: SharedString, on: bool| {
-            div()
-                .id(key)
-                .flex()
-                .items_center()
-                .gap_2()
-                .px_2()
-                .py_1()
-                .text_xs()
-                .rounded_sm()
-                .text_color(fg)
-                .hover(|s| s.bg(border))
-                .child(
-                    div()
-                        .size(px(6.0))
-                        .rounded_full()
-                        .when(on, |d| d.bg(accent))
-                        .when(!on, |d| d.border_1().border_color(muted)),
-                )
-                .child(SharedString::from(label.to_string()))
+        let view = cx.entity();
+        let mv =
+            |v: &Entity<Self>, bar: Option<BarLoc>, side: Option<BarSide>, hide: Option<bool>| {
+                let v = v.clone();
+                move |_: &gpui::ClickEvent, _w: &mut Window, cx: &mut gpui::App| {
+                    v.update(cx, |this, cx| this.move_bar_item(id, bar, side, hide, cx));
+                }
+            };
+        let items = vec![
+            MenuItem::label("Side"),
+            MenuItem::new("bm-left", "Left")
+                .checked(p.side == BarSide::Left)
+                .on_click(mv(&view, None, Some(BarSide::Left), None)),
+            MenuItem::new("bm-right", "Right")
+                .checked(p.side == BarSide::Right)
+                .on_click(mv(&view, None, Some(BarSide::Right), None)),
+            MenuItem::separator(),
+            MenuItem::label("Location"),
+            MenuItem::new("bm-title", "Titlebar")
+                .checked(p.bar == BarLoc::Titlebar)
+                .on_click(mv(&view, Some(BarLoc::Titlebar), None, None)),
+            MenuItem::new("bm-status", "Status Bar")
+                .checked(p.bar == BarLoc::Statusbar)
+                .on_click(mv(&view, Some(BarLoc::Statusbar), None, None)),
+            MenuItem::separator(),
+            MenuItem::new("bm-hide", "Hide")
+                .icon(IconName::EyeOff)
+                .on_click(mv(&view, None, None, Some(true))),
+        ];
+        let v = view.clone();
+        let dismiss = move |_w: &mut Window, cx: &mut gpui::App| {
+            v.update(cx, |this, cx| {
+                this.bar_menu = None;
+                cx.notify();
+            });
         };
-
-        Some(
-            div()
-                .absolute()
-                .inset_0()
-                .on_mouse_down(
-                    MouseButton::Left,
-                    cx.listener(|this, _: &MouseDownEvent, _w, cx| {
-                        this.bar_menu = None;
-                        cx.notify();
-                    }),
-                )
-                .child(
-                    div()
-                        .absolute()
-                        .left(pos.x)
-                        .top(pos.y)
-                        .flex()
-                        .flex_col()
-                        .gap_0p5()
-                        .p_1()
-                        .min_w(px(176.0))
-                        .rounded_md()
-                        .bg(card)
-                        .border_1()
-                        .border_color(border)
-                        .child(
-                            radio("Left", "bm-left".into(), p.side == BarSide::Left).on_click(
-                                cx.listener(move |this, _: &ClickEvent, _w, cx| {
-                                    this.move_bar_item(id, None, Some(BarSide::Left), None, cx);
-                                }),
-                            ),
-                        )
-                        .child(
-                            radio("Right", "bm-right".into(), p.side == BarSide::Right).on_click(
-                                cx.listener(move |this, _: &ClickEvent, _w, cx| {
-                                    this.move_bar_item(id, None, Some(BarSide::Right), None, cx);
-                                }),
-                            ),
-                        )
-                        .child(div().my_0p5().h(px(1.0)).bg(border))
-                        .child(
-                            radio("Titlebar", "bm-title".into(), p.bar == BarLoc::Titlebar)
-                                .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
-                                    this.move_bar_item(id, Some(BarLoc::Titlebar), None, None, cx);
-                                })),
-                        )
-                        .child(
-                            radio("Status Bar", "bm-status".into(), p.bar == BarLoc::Statusbar)
-                                .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
-                                    this.move_bar_item(id, Some(BarLoc::Statusbar), None, None, cx);
-                                })),
-                        )
-                        .child(div().my_0p5().h(px(1.0)).bg(border))
-                        .child(
-                            div()
-                                .id("bm-hide")
-                                .px_2()
-                                .py_1()
-                                .text_xs()
-                                .rounded_sm()
-                                .text_color(fg)
-                                .hover(|s| s.bg(border))
-                                .child("Hide")
-                                .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
-                                    this.move_bar_item(id, None, None, Some(true), cx);
-                                })),
-                        ),
-                )
-                .into_any_element(),
-        )
+        Some(context_menu(pos, self.theme.read(cx), dismiss, items))
     }
 
     // ── Interactive CWD breadcrumb (T16-006) ──────────────────────────────
@@ -2915,6 +2868,7 @@ impl Render for AppShell {
             .on_action(cx.listener(Self::act_next_tab))
             .on_action(cx.listener(Self::act_prev_tab))
             .on_action(cx.listener(Self::act_toggle_ai_panel))
+            .on_action(cx.listener(Self::act_ask_about_selection))
             .on_action(cx.listener(Self::act_new_ai_session))
             .on_action(cx.listener(Self::act_clear_chat))
             .on_action(cx.listener(Self::act_open_host_manager))

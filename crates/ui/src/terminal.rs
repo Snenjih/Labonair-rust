@@ -214,6 +214,15 @@ impl TerminalView {
         )
     }
 
+    /// The current terminal selection text, if any ("Ask AI about Selection").
+    pub fn selection_text(&self) -> Option<String> {
+        self.handle
+            .with(|s| s.selection_text())
+            .ok()
+            .flatten()
+            .filter(|t| !t.is_empty())
+    }
+
     fn copy_selection(&self, cx: &mut Context<Self>) {
         if let Ok(Some(text)) = self.handle.with(|s| s.selection_text()) {
             cx.write_to_clipboard(ClipboardItem::new_string(text));
@@ -613,6 +622,20 @@ impl TerminalView {
                     })
                 }
             }),
+            MenuItem::separator(),
+            MenuItem::new("term-ask-ai", "Ask AI about Selection")
+                .icon(IconName::Sparkles)
+                .disabled(!has_selection)
+                .on_click({
+                    let v = view.clone();
+                    move |_, window, cx| {
+                        v.update(cx, |this, cx| {
+                            this.menu = None;
+                            cx.notify();
+                        });
+                        window.dispatch_action(Box::new(crate::menu::AskAboutSelection), cx);
+                    }
+                }),
         ];
         let dismiss = {
             let v = view.clone();
