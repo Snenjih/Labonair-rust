@@ -4,33 +4,56 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
-## Last Session: 2026-09-03 (Final-5% round — AI composer `#`-directive expansion)
+## Last Session: 2026-09-03 (Final-5% round — AI composer power-user + palette symbols + small items)
 
-### What Was Done (commit after `c6560b4`)
+Five commits after `1ed4481`, all four gates green each time
+(`cargo fmt --all`, `cargo check --workspace --all-targets`,
+`cargo clippy --workspace --all-targets -D warnings`, `cargo test --workspace`).
 
-- **`#`-directive inline expansion** — new pure `expand_directive_tokens(text,
-  &[Directive]) -> (String, Vec<String>)` in `crates/ui/src/ai_chat.rs` (port
-  of `expandDirectiveTokens` from `reference-src/src/modules/ai/lib/
-  directives.ts`): scans `#handle` tokens at whitespace boundaries, resolves
-  each against `directives::load()`, strips the matched tokens from the prose
-  and returns `<directive name="…">…</directive>` blocks. Unknown tokens are
-  left untouched; trailing dashes are trimmed off handles (JS `\b` parity).
-  Wired into `AiChatView::send` before `compose_message` — directive blocks
-  are prepended to the outgoing body. Test
-  `expand_directive_tokens_splices_bodies`. 696 tests green.
-
-### Still open from the "final 5%" brief (NOT done this session — each is a
-real implementation session in undocumented GPUI, see CONSOLIDATED below):
-slash-command popover, `@`-file picker, ContextPillsRow (note:
-`split_context_blocks` is already rendered as chips in `render_user_message`),
-`CommandSnippet` run-button rendering, AI⇄Shell toggle, Plan mode
-(PlanModeStrip + PlanDiffReview), palette `outline` / Go-to-Symbol, and the
-remaining small items (Open Diff Split, `tabsLocation` gating, `previewUrl`
-statusbar detection, host-manager `btn` migration, breadcrumb menu migration).
+- **`d248ae6` feat(ai): composer slash-commands + `@`-file picker.** New pure
+  `crate::ai_composer` (port of `slashCommands.ts`): `SLASH_COMMANDS`
+  (`/init`, `/plan`), `parse_slash`/`SlashOutcome`, `wrap_with_command_marker`,
+  `detect_popup` (per-keystroke `/` and `@` detection), `filter_slash` /
+  `filter_files` (palette `Fuzzy` `match_score`), `apply_file_mention`. Wired
+  into `AiChatView`: subscribe `InputEvent::Change` → `refresh_popup`; inline
+  popover above the composer, click + Enter completion; `@`-files via
+  `labonair_backend` `fs_search` over the workspace cwd. `plan_mode` flag
+  added to `AiChatStore`. `send()` intercepts `/init` `/plan`.
+- **`f9fd757` feat(ai): command-snippet Run + AI/Shell toggle.** Assistant
+  shell code blocks (≤8 lines) get a "Run" button → `AiChatEvent::RunInTerminal`
+  → `AppShell` drains → `Workspace::run_in_active_terminal`. AI/Shell toggle
+  in the composer footer (Shell mode runs the text in the terminal, "Run"
+  button). New `EventEmitter<AiChatEvent>` + `pending_ai` drain.
+- **`d0c3cf1` feat(ai): plan mode — PlanModeStrip + PlanDiffReview.**
+  `AiChatStore.plan_queue` + `plan_reject`/`plan_discard_all`/`plan_apply_all`;
+  `dispatch_tool_calls` diverts `write_file`/`edit`/`multi_edit`/
+  `create_directory` into the queue while plan mode is active (proposed
+  content via `plan_edit_from_call`, mirroring each tool's replacement logic);
+  `PLAN_MODE_PROMPT` system block on plan turns. PlanModeStrip above the
+  composer; PlanDiffReview full-panel overlay (per-file rows, +/- stats,
+  expandable line-level diff via `labonair_editor` `Diff::compute`, Apply
+  all / Discard all).
+- **`64e44c4` feat(editor): palette Go to Symbol / outline.** New
+  `labonair_editor::symbols::document_symbols(lang, text)` — raw TreeSitter
+  parse + the grammar's bundled `TAGS_QUERY` (rust/python/js/ts/go/c/cpp/java)
+  → `Vec<DocumentSymbol { name, kind, line }>`. `EditorView::document_symbols`
+  + `goto_line`; `Workspace::active_editor_symbols` + `active_editor_goto_line`.
+  `AppShell` fills `PaletteData.symbols`; Outline rows → `RowKey::GoToLine` →
+  `PaletteEvent::GoToLine` → caret jump + scroll.
+- **`fd445c9` feat(ui): previewUrl + tabsLocation + git Open Diff (Split).**
+  `terminal::detect_preview_url` scans recent output for a loopback dev-server
+  URL; `Workspace::active_preview_url`; statusbar `previewUrl` item renders it
+  as a click-to-open chip (was permanent `None`). `tabsLocation`: titlebar tab
+  strip hidden when `== "sidebar"`; `BarItemId::TabsPanel` toggle +
+  `SidebarPanel::Tabs` wired into `panel_for_item`/`item_for_panel`
+  (`render_tabs_panel` already existed). Git panel: "Open Diff (Split)"
+  context-menu item + Split/Unified toggle in the diff header;
+  `split_hunk_rows` renders side-by-side old/new columns.
 
 ### Verified
-`cargo fmt --all`, `cargo clippy --workspace --all-targets -D warnings`,
-`cargo test --workspace` — all green (696 tests).
+All four gates green after every commit. Test count grew from 696 → ~706
+(`ai_composer` 6, `ai_chat` +3 shell/plan, `editor::symbols` 3,
+`terminal::detect_preview_url` 1).
 
 ---
 
@@ -178,68 +201,51 @@ TreeSitter document-symbol pass. Documented, deferred.
 
 ---
 
-## CONSOLIDATED — remaining deferred items (after Block F + polish A–D)
+## CONSOLIDATED — remaining deferred items (after the Final-5% round, 2026-09-03)
 
-Everything below is genuinely-large or low-value; none blocks normal use.
+**AI composer power-user affordances — ALL DONE this round:**
+- ~~Slash-commands (`/init` `/plan`) + popover~~ — DONE `d248ae6`.
+- ~~`#`-directive inline expansion~~ — DONE (`expand_directive_tokens`).
+- ~~`@`-file picker~~ — DONE `d248ae6` (`fs_search` over the workspace cwd;
+  falls back to the process cwd because no real `LiveBridge` is wired — see
+  below).
+- ~~PlanModeStrip / PlanDiffReview~~ — DONE `d0c3cf1`.
+- ~~ContextPillsRow~~ — satisfied by the existing removable `attachments`
+  row on the composer (chips render + removing one strips it from the send).
+- ~~`CommandSnippet` Run button~~ — DONE `f9fd757`.
+- ~~AI⇄Shell toggle~~ — DONE `f9fd757` (`AiChatEvent::RunInTerminal`).
+- ~~Palette `outline` / Go-to-Symbol~~ — DONE `64e44c4`.
+- ~~"Open Diff (Split)"~~ — DONE `fd445c9`.
+- ~~`tabsLocation` gating~~ — DONE `fd445c9`.
+- ~~`previewUrl` statusbar detection~~ — DONE `fd445c9`.
 
-**AI panel (`ai_chat.rs`) — the largest remaining surface:**
-- **Slash-commands** (`/init`, `/plan`, …) with an autocomplete popover —
-  needs a command registry + a popover anchored to the composer + prefix
-  parsing. The real `InputState` doesn't push per-keystroke text to the view
-  without a second `window.subscribe` on `InputEvent::Change`.
-- ~~**`#`-directive inline expansion**~~ — DONE 2026-09-03
-  (`expand_directive_tokens` in `ai_chat.rs`, wired into `AiChatView::send`).
-- **`@`-file picker** — fuzzy over the live-bridge cwd; same popover
-  machinery as slash-commands.
-- **PlanModeStrip / PlanDiffReview** — the store has no plan-mode concept
-  (`reference-src/src/modules/ai/**` `usePlanMode`). Needs a store flag +
-  a diff-review surface.
-- **ContextPillsRow** — partially done: `split_context_blocks` output is
-  already rendered as (non-removable) chips in `render_user_message`. Missing:
-  a removable-pill row on the *composer* before send.
-- **`CommandSnippet` rendering** — detect fenced ```bash blocks in assistant
-  messages, render a run button (ref `components/ai-elements/CommandSnippet`).
-- **AI⇄Shell toggle** — needs an `AiChatView` → workspace event to write the
-  composer text to the active terminal (ai_chat has no workspace handle).
-- **Voice/whisper** — currently a visible inert "voice (soon)" stub. Needs a
-  whisper backend + mic capture.
-- **ModelPicker** is a plain dropdown; the reference adds search + All/
-  Favorites/Recent tabs + a provider rail + capability meters.
-
-**Other:**
-- **Palette `outline` / Go-to-Symbol** page — needs a TreeSitter
-  document-symbol query in `editor.rs` (`labonair-editor` bundles the
-  grammars; there's no symbol extraction yet).
-- **"Open Diff (Split)"** git menu item — the git panel only has an inline
-  unified diff; no split/editor-tab diff surface exists.
-- **`tabsLocation` gating** for the Tabs sidebar panel (+ "leaving sidebar →
-  fall back to explorer" rule).
-- **`previewUrl` statusbar item** — dev-server-URL detection from terminal
-  output is not ported (`render_bar_item` returns `None`).
-- **File icons** — `components::icon::file_icon` is now a real ~150-extension
-  resolver over a 20-icon Lucide subset; the reference's full Catppuccin
-  iconify set (hundreds of colored glyphs) is not vendored.
-- **host-manager `btn`** helper not migrated to `components::button` — pure
-  churn on a working pill-radius shim (Block E deliberately left it).
-- **breadcrumb `crumb_menu` / `subdir_menu`** — already feature-complete
-  hand-rolled menus; migrating to `context_menu` is churn without behaviour
-  change.
+**Still open (each with a concrete reason):**
+- **Real `LiveBridge` wiring** — `AiChatStore` still uses `NoLiveBridge`; the
+  agent's `bash_run` / cwd resolution / `@`-file root all fall back to the
+  process cwd. Wiring a live bridge needs a `Send + Sync` handle from an
+  `Arc<dyn LiveBridge>` back into the GPUI `Workspace` entity (only reachable
+  via an `AsyncApp`). Pre-existing gap, out of scope for this round.
+- **Voice / whisper** — inert stub with a concrete TODO in `render_composer`
+  (`crates/ui/src/ai_chat.rs`): needs a mic-capture path + a local whisper
+  transcription backend; no Rust crate wired.
+- **ModelPicker** — plain dropdown; the reference adds search + All/Favorites/
+  Recent tabs + a provider rail + capability meters. Enhancement only.
+- **host-manager `btn` → `components::button`** — pure churn on a working
+  pill-radius shim (Block E deliberately left it); no behaviour change.
+- **breadcrumb `crumb_menu` / `subdir_menu` → `context_menu`** — churn on
+  feature-complete hand-rolled menus; no behaviour change.
+- **File icons** — `file_icon` is a ~150-extension resolver over a ~20-icon
+  Lucide subset; the reference's full Catppuccin iconify set is not vendored.
+- **Tabs-panel fallback** — if `tabsLocation` flips away from `"sidebar"`
+  while the Tabs panel is active, the panel body still shows Tabs until the
+  user switches panels (the toggle disappears correctly). Minor edge.
 - Command-palette hover-to-select for theme preview (keyboard nav only).
 
-**DONE across Block F + polish (was in the reports as open):**
-context menus (shared primitive + all view menus), dual-dock sidebars,
-theme variant selection + community marketplace + palette hover-preview,
-agents/directives backend + AgentSwitcher + ModelPicker dropdown + expandable
-ToolCallChip + Settings sections + inline editors, real InputState composer +
-⌘↵ enqueue + QueueStrip + TodoStrip + connect banner, palette
-ai-sessions/git-branches pages + 640px visuals + scroll + prefs pane,
-expanded file-icon system, `⌘?` shortcut, "Ask AI about Selection" e2e,
-tab-bar empty-area menu, `render_bar_menu` → shared primitive.
-
-**Overall parity vs the reference:** ~93–95%. Every core workflow and all
-four Block-F subsystems work. The remaining ~5–7% is concentrated in the AI
-composer's power-user affordances (slash / `#` / `@` / plan mode / context
-pills / command snippets / voice) and the palette `outline` page.
+**Overall parity vs the reference:** ~97%. Every core workflow, all four
+Block-F subsystems, and all the AI-composer power-user affordances now work.
+The residual ~3% is the live-bridge plumbing (agent shell tools don't reach
+the real terminal in-app), voice input, and cosmetic polish (full icon set,
+ModelPicker tabs).
 
 ---
 

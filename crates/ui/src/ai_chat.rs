@@ -2783,8 +2783,11 @@ impl AiChatView {
                                 },
                             ))
                             .child(
-                                // Voice input — stub (TODO T16-019: whisper
-                                // backend). Visible but inert.
+                                // Voice input — inert stub. TODO: needs a mic
+                                // capture path + a local whisper transcription
+                                // backend (no Rust crate wired yet); until then
+                                // this stays visible-but-disabled so the
+                                // composer layout matches the reference.
                                 div()
                                     .id("ai-voice")
                                     .px_1()
