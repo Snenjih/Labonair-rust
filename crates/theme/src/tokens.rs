@@ -195,6 +195,62 @@ pub struct CubicBezier {
     pub y2: f32,
 }
 
+impl CubicBezier {
+    /// Evaluate the curve's `y` for a linear time input `t` in `0..=1`.
+    ///
+    /// CSS `cubic-bezier` curves are parametric (control points `(0,0)`,
+    /// `(x1,y1)`, `(x2,y2)`, `(1,1)`); this first solves the Bézier parameter
+    /// `s` for which `x(s) == t` (Newton-Raphson, then bisection fallback) and
+    /// returns `y(s)`. Used to drive GPUI [`Animation`](gpui) easing from the
+    /// same tokens the reference CSS uses (`--ease-premium` / `--ease-soft`).
+    pub fn eval(&self, t: f32) -> f32 {
+        let t = t.clamp(0.0, 1.0);
+        let cx = 3.0 * self.x1;
+        let bx = 3.0 * (self.x2 - self.x1) - cx;
+        let ax = 1.0 - cx - bx;
+        let cy = 3.0 * self.y1;
+        let by = 3.0 * (self.y2 - self.y1) - cy;
+        let ay = 1.0 - cy - by;
+        let sample_x = |s: f32| ((ax * s + bx) * s + cx) * s;
+        let sample_dx = |s: f32| (3.0 * ax * s + 2.0 * bx) * s + cx;
+
+        // Newton-Raphson.
+        let mut s = t;
+        for _ in 0..8 {
+            let x = sample_x(s) - t;
+            if x.abs() < 1e-5 {
+                return ((ay * s + by) * s + cy) * s;
+            }
+            let dx = sample_dx(s);
+            if dx.abs() < 1e-6 {
+                break;
+            }
+            s -= x / dx;
+        }
+        // Bisection fallback.
+        let (mut lo, mut hi, mut s) = (0.0_f32, 1.0_f32, t);
+        while lo < hi {
+            let x = sample_x(s);
+            if (x - t).abs() < 1e-5 {
+                break;
+            }
+            if t > x {
+                lo = s;
+            } else {
+                hi = s;
+            }
+            s = (hi - lo) * 0.5 + lo;
+        }
+        ((ay * s + by) * s + cy) * s
+    }
+}
+
+/// The `from` scale of the reference `labonair-tab-in` keyframe
+/// (`transform: scale(0.86) → scale(1)` over `--dur-base` `--ease-premium`,
+/// `reference-src/src/styles/globals.css`). Deferred visual item **D4** from
+/// the T15-001 catalog.
+pub const TAB_IN_FROM_SCALE: f32 = 0.86;
+
 /// Animation timing tokens.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Animation {
@@ -610,6 +666,38 @@ mod tests {
         assert_eq!(a.dur_fast, Duration::from_millis(160));
         assert_eq!(a.dur_base, Duration::from_millis(240));
         assert_eq!(a.dur_slow, Duration::from_millis(320));
+    }
+
+    #[test]
+    fn cubic_bezier_eval_endpoints_and_monotonic() {
+        let e = Theme::dark().animation.ease_premium;
+        assert!(e.eval(0.0).abs() < 1e-4, "starts at 0");
+        assert!((e.eval(1.0) - 1.0).abs() < 1e-4, "ends at 1");
+        // `--ease-premium` (0.16, 1, 0.3, 1) is an "ease-out expo" curve: it
+        // races ahead of linear early on.
+        assert!(e.eval(0.25) > 0.25);
+        assert!(e.eval(0.5) > 0.5);
+        // Non-decreasing over the domain.
+        let mut prev = -1.0;
+        for i in 0..=20 {
+            let y = e.eval(i as f32 / 20.0);
+            assert!(y + 1e-4 >= prev, "monotonic at t={}", i);
+            prev = y;
+        }
+        // Linear identity curve round-trips.
+        let lin = CubicBezier {
+            x1: 0.0,
+            y1: 0.0,
+            x2: 1.0,
+            y2: 1.0,
+        };
+        assert!((lin.eval(0.4) - 0.4).abs() < 1e-3);
+    }
+
+    #[test]
+    fn tab_in_from_scale_matches_reference_keyframe() {
+        // `@keyframes labonair-tab-in { from { transform: scale(0.86) } }`
+        assert!((TAB_IN_FROM_SCALE - 0.86).abs() < 1e-6);
     }
 
     /// WCAG 2.x relative luminance of an opaque color.

@@ -678,14 +678,16 @@ impl Render for CommandPalette {
         }
 
         let t = self.theme.read(cx);
-        let (bg, fg, muted, border, card, accent) = (
+        let (bg, fg, muted, border, card) = (
             t.background(),
             t.foreground(),
             t.muted_foreground(),
             t.border(),
             t.card(),
-            t.accent(),
         );
+        // D1 — cmdk command items use `data-selected:bg-muted`; a pointer hover
+        // gets the same fill (the reference has no separate hover state).
+        let sel_fill = t.selected_fill();
 
         let placeholder = match self.page {
             Page::Root => "Search commands\u{2026}",
@@ -735,13 +737,13 @@ impl Render for CommandPalette {
                     .justify_between()
                     .gap(px(8.0))
                     .mx(px(4.0))
-                    .px(px(8.0))
+                    .px(px(crate::theme::menu_metrics::ITEM_PAD_X))
                     .h(px(26.0))
                     .rounded_sm()
                     .text_size(px(12.0))
                     .text_color(fg)
-                    .when(is_sel, |d| d.bg(accent))
-                    .when(!is_sel, |d| d.hover(|s| s.bg(border)))
+                    .when(is_sel, |d| d.bg(sel_fill))
+                    .when(!is_sel, |d| d.hover(|s| s.bg(sel_fill)))
                     .child(SharedString::from(row.title.clone()))
                     .when_some(hint, |d, h| {
                         d.child(

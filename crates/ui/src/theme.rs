@@ -455,6 +455,34 @@ impl ThemeStore {
         &self.theme().animation
     }
 
+    /// Canonical hover/focus fill for interactive rows, menu items and ghost
+    /// buttons. The reference `dropdown-menu` / `context-menu` / `select`
+    /// components all use `focus:bg-accent` (deferred visual item **D1** from
+    /// the T15-001 catalog — was an ad-hoc `fg.opacity(0.04..0.05)` tint).
+    pub fn hover_fill(&self) -> Hsla {
+        self.accent()
+    }
+
+    /// Canonical selected/active fill for list selection (Explorer rows,
+    /// command-palette results). The reference `cmdk` command items use
+    /// `data-selected:bg-muted` (**D1**).
+    pub fn selected_fill(&self) -> Hsla {
+        self.muted()
+    }
+
+    /// Scrollbar thumb color for panels that keep a visible scrollbar
+    /// (Explorer, SFTP, Settings, Snippets, AI pickers). The reference
+    /// `.themed-scrollbar` thumb is `color-mix(in oklch, --foreground 22%,
+    /// transparent)` — i.e. the foreground at 22% alpha — rising to 34% on
+    /// hover (deferred visual item **D2**).
+    pub fn scrollbar_thumb(&self) -> Hsla {
+        self.foreground().opacity(0.22)
+    }
+
+    pub fn scrollbar_thumb_hover(&self) -> Hsla {
+        self.foreground().opacity(0.34)
+    }
+
     /// GPUI [`Font`] for UI text (Inter Variable + system fallbacks).
     pub fn ui_font(&self) -> Font {
         let t = &self.theme().typography;
@@ -560,6 +588,31 @@ pub fn modal_scrim() -> Hsla {
     gpui::black().opacity(0.30)
 }
 
+/// Visible-scrollbar track/thumb thickness, in px. Matches the reference
+/// `.themed-scrollbar::-webkit-scrollbar { width: 10px }` (deferred visual
+/// item **D2** from the T15-001 catalog).
+pub const SCROLLBAR_SIZE: f32 = 10.0;
+
+/// Popover/menu padding density (deferred visual item **D5**). Values are the
+/// reference Tailwind classes converted to px:
+/// - container: `dropdown-menu` / `context-menu` `p-1.5`, `command` list `p-1`
+/// - item: `px-3 py-2` with `gap-2.5` (menu) / `gap-2` (command)
+/// - popover shell: `popover` `p-4` with `gap-4`
+pub mod menu_metrics {
+    /// `dropdown-menu` / `context-menu` container `p-1.5`.
+    pub const CONTAINER_PAD: f32 = 6.0;
+    /// `cmdk` command list container `p-1`.
+    pub const COMMAND_CONTAINER_PAD: f32 = 4.0;
+    /// Menu / command item `px-3`.
+    pub const ITEM_PAD_X: f32 = 12.0;
+    /// Menu / command item `py-2`.
+    pub const ITEM_PAD_Y: f32 = 8.0;
+    /// Menu item `gap-2.5`.
+    pub const ITEM_GAP: f32 = 10.0;
+    /// `popover` shell `p-4` / `gap-4`.
+    pub const POPOVER_PAD: f32 = 16.0;
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -572,6 +625,33 @@ mod tests {
         let s = modal_scrim();
         assert_eq!((s.h, s.s, s.l), (0.0, 0.0, 0.0));
         assert!((s.a - 0.30).abs() < 1e-6);
+    }
+
+    #[test]
+    fn polish_metrics_match_reference_css() {
+        // D2 — `.themed-scrollbar::-webkit-scrollbar { width: 10px }`
+        assert_eq!(SCROLLBAR_SIZE, 10.0);
+        // D5 — menu/popover padding density.
+        assert_eq!(menu_metrics::CONTAINER_PAD, 6.0); // p-1.5
+        assert_eq!(menu_metrics::ITEM_PAD_X, 12.0); // px-3
+        assert_eq!(menu_metrics::ITEM_PAD_Y, 8.0); // py-2
+        assert_eq!(menu_metrics::POPOVER_PAD, 16.0); // p-4
+    }
+
+    #[gpui::test]
+    fn polish_fills_derive_from_the_active_theme(cx: &mut TestAppContext) {
+        cx.update(|cx| {
+            let store = cx.new(|_| ThemeStore::new(WindowAppearance::Dark));
+            let s = store.read(cx);
+            // D1 — hover = accent, selection = muted (1:1 with the reference
+            // `focus:bg-accent` / `data-selected:bg-muted`).
+            assert_eq!(s.hover_fill(), s.accent());
+            assert_eq!(s.selected_fill(), s.muted());
+            // D2 — thumb is the foreground at 22% → 34% alpha.
+            assert!((s.scrollbar_thumb().a - 0.22).abs() < 1e-6);
+            assert!((s.scrollbar_thumb_hover().a - 0.34).abs() < 1e-6);
+            assert_eq!(s.scrollbar_thumb().h, s.foreground().h);
+        });
     }
 
     #[gpui::test]
@@ -774,6 +854,52 @@ mod tests {
                     labonair_theme::to_rgb8(s.background()),
                     labonair_theme::to_rgb8(Theme::dark().core.background)
                 );
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn community_theme_partial_import_round_trips_visually(cx: &mut TestAppContext) {
+        // D6 — a user-imported community theme that only overrides a handful of
+        // tokens must (a) apply exactly those, (b) leave every other token on
+        // the built-in default, and (c) survive an export→re-import cycle
+        // pixel-identically.
+        const COMMUNITY: &str = r##"{
+            "name": "Community Neon",
+            "variants": {
+                "dark":  { "mode": "dark",  "colors": { "primary": "#39ff14", "accent": "#1b1b1b" } },
+                "light": { "mode": "light", "colors": { "primary": "#0a7d00", "accent": "#eaeaea" } }
+            }
+        }"##;
+        cx.update(|cx| {
+            let store = cx.new(|_| ThemeStore::new(WindowAppearance::Dark));
+            store.update(cx, |s, cx| {
+                let file = ThemeFile::from_json(COMMUNITY).unwrap();
+                s.import_theme_file(file, cx).unwrap();
+                assert_eq!(labonair_theme::to_rgb8(s.primary()), [0x39, 0xff, 0x14]);
+                // Untouched token still equals the dark default.
+                assert_eq!(
+                    labonair_theme::to_rgb8(s.background()),
+                    labonair_theme::to_rgb8(Theme::dark().core.background)
+                );
+
+                // Export → re-import must not drift any visible channel.
+                let before = (
+                    labonair_theme::to_rgb8(s.primary()),
+                    labonair_theme::to_rgb8(s.accent()),
+                    labonair_theme::to_rgb8(s.background()),
+                    labonair_theme::to_rgb8(s.foreground()),
+                );
+                let json = s.active_theme_file("Community Neon").to_json().unwrap();
+                s.import_theme_file(ThemeFile::from_json(&json).unwrap(), cx)
+                    .unwrap();
+                let after = (
+                    labonair_theme::to_rgb8(s.primary()),
+                    labonair_theme::to_rgb8(s.accent()),
+                    labonair_theme::to_rgb8(s.background()),
+                    labonair_theme::to_rgb8(s.foreground()),
+                );
+                assert_eq!(before, after);
             });
         });
     }

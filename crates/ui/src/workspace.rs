@@ -23,9 +23,10 @@ use std::time::Duration;
 use crate::agent_access::AgentAccessStore;
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, px, relative, App, AppContext, ClickEvent, Context, DragMoveEvent, Entity, FocusHandle,
-    Focusable, InteractiveElement, IntoElement, KeyDownEvent, MouseButton, MouseDownEvent,
-    ParentElement, Render, SharedString, StatefulInteractiveElement, Styled, Task, Window,
+    div, px, relative, Animation, AnimationExt, App, AppContext, ClickEvent, Context,
+    DragMoveEvent, Entity, FocusHandle, Focusable, InteractiveElement, IntoElement, KeyDownEvent,
+    MouseButton, MouseDownEvent, ParentElement, Render, SharedString, StatefulInteractiveElement,
+    Styled, Task, Window,
 };
 use labonair_backend::modules::mcp::{
     mcp_set_session_grant, mcp_tab_op_response, SessionKind, TabOpResult,
@@ -2425,6 +2426,26 @@ impl Workspace {
         let closable = total > 1 && tab.kind != TabKind::Home;
         let label = SharedString::from(tab.label());
 
+        // D4 — tab-entrance animation (`@keyframes labonair-tab-in` in the
+        // reference `globals.css`: fade + `scale(0.86) → 1` over `--dur-base`
+        // with `--ease-premium`). GPUI 0.2.2 `Div` can't take a scale
+        // transform, so we animate opacity only. Reduce-motion mirrors the
+        // reference's `animation-duration: 0.01ms` clamp rather than dropping
+        // the keyframe entirely.
+        let (ease, dur_base) = {
+            let a = self.theme.read(cx).animation();
+            (a.ease_premium, a.dur_base)
+        };
+        let reduce_motion = cx
+            .try_global::<GlobalPreferences>()
+            .map(|p| p.0.reduce_motion)
+            .unwrap_or(false);
+        let tab_in_dur = if reduce_motion {
+            Duration::from_micros(10)
+        } else {
+            dur_base
+        };
+
         let close_btn = div()
             .id(("tab-close", id))
             .px_1()
@@ -2497,6 +2518,11 @@ impl Workspace {
             .on_drop(cx.listener(move |this, dragged: &DraggedTab, _window, cx| {
                 this.tabs.update(cx, |s, cx| s.reorder(dragged.id, id, cx));
             }))
+            .with_animation(
+                ("tab-in", id),
+                Animation::new(tab_in_dur).with_easing(move |t| ease.eval(t)),
+                |el, delta| el.opacity(delta),
+            )
     }
 
     fn render_tab_bar(&mut self, cx: &mut Context<Self>) -> impl IntoElement {

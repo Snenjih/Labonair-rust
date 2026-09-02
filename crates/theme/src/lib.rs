@@ -21,5 +21,5 @@ pub use import::{ThemeFile, ThemeFileVariant, COLOR_TOKENS};
 pub use tokens::{
     Animation, AnsiColors, BorderVariants, CoreColors, CubicBezier, InteractionColors,
     MonoFontWeight, RadiusScale, ShadowLayer, Shadows, SidebarColors, StatusColors, SurfaceColors,
-    TerminalPalette, Theme, Typography,
+    TerminalPalette, Theme, Typography, TAB_IN_FROM_SCALE,
 };

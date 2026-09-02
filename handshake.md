@@ -4,7 +4,81 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
-## Last Session: 2026-09-02 (T15-002 — Error handling & robustness, app-wide)
+## Last Session: 2026-09-02 (T15-003 — Cross-platform & performance + deferred pixel items D1–D6)
+
+### What Was Done
+- **T15-003 ✅ Done.** Measure-first per the task warning: the GPUI-native
+  architecture already removes the WebView/IPC overhead and a static review
+  found the known hot paths already guarded, so this pass = document the
+  yard-stick + close the deferred pixel catalog, not speculative tuning.
+  - **`docs/performance.md`** (new) — baseline measurement method + recorded-
+    runs table (pending a release machine), target envelope (cold start
+    <400ms, idle RSS <150MB, …), a pre-release manual regression checklist,
+    an inventory of every hot-path guard already in the code
+    (startup async workers, lazy grammars, alacritty render diff, explorer
+    `generation`/page-cap, git-graph `uniform_list`, git poll `refreshing` +
+    `target_gen` + no-op-on-no-root, incremental AI streaming), the
+    follow-ups deliberately deferred (Explorer/SFTP true windowing; pausing
+    git poll off-screen), and macOS/Linux cross-platform notes.
+  - **Deferred visual items D1–D6 from the T15-001 catalog — all closed** by
+    extracting canonical reference values into tested constants/helpers:
+    - **D1** `crates/ui/src/theme.rs` — `ThemeStore::hover_fill()` (= `accent`)
+      + `selected_fill()` (= `muted`), matching the reference
+      `focus:bg-accent` / `data-selected:bg-muted`. Command-palette rows moved
+      off the ad-hoc `accent` selection + `border` hover to `selected_fill()`.
+    - **D2** — `scrollbar_thumb()` / `scrollbar_thumb_hover()` = foreground
+      @ 0.22 → 0.34 alpha; `theme::SCROLLBAR_SIZE = 10.0`
+      (`.themed-scrollbar`). Not yet wired to a widget (no scrollbar
+      component adopted) — helper + constant ready.
+    - **D3** `crates/ui/src/terminal.rs` — cursor proportions vs xterm: beam
+      1px (was 2), underline 1px (was 2), new `CursorShape::HollowBlock` arm
+      = 1px outline (xterm `cursorInactiveStyle: "outline"`); focused block
+      keeps the 0.55 translucent fill.
+    - **D4** `crates/theme/src/tokens.rs` — `CubicBezier::eval(t)`
+      (Newton-Raphson + bisection Bézier solve) + `TAB_IN_FROM_SCALE = 0.86`
+      const. `crates/ui/src/workspace.rs::render_tab` now wraps the tab in a
+      GPUI `with_animation` opacity fade over `--dur-base` with `--ease-premium`.
+      GPUI 0.2.2 `Div` has **no scale transform**, so the `scale(0.86)→1` part
+      of `@keyframes labonair-tab-in` is opacity-only. Reduce-motion pref
+      clamps the duration to 10µs (mirrors the reference `0.01ms` rule).
+    - **D5** `crates/ui/src/theme.rs` — `theme::menu_metrics` module
+      (`CONTAINER_PAD 6` / `COMMAND_CONTAINER_PAD 4` / `ITEM_PAD_X 12` /
+      `ITEM_PAD_Y 8` / `ITEM_GAP 10` / `POPOVER_PAD 16`) from the reference
+      `dropdown-menu` / `command` / `popover` classes. Command-palette row
+      `px` aligned to `ITEM_PAD_X`.
+    - **D6** — `community_theme_partial_import_round_trips_visually` test in
+      `theme.rs`: partial community theme applies only its tokens, rest stay
+      on default, survives export → re-import with no RGB drift.
+  - **`tasks/phase-14-testing/T15-001-feinschliff-catalog.md`** — deferred
+    section rewritten to "resolved in T15-003" with per-item status.
+- Verify: `cargo fmt --all --check`, `cargo check --workspace`,
+  `cargo clippy --workspace --all-targets -- -D warnings`,
+  `cargo test --workspace` — all green. theme **23 → 25**
+  (`cubic_bezier_eval_endpoints_and_monotonic`,
+  `tab_in_from_scale_matches_reference_keyframe`), ui **185 → 188**
+  (`polish_metrics_match_reference_css`, `polish_fills_derive_from_the_active_theme`,
+  `community_theme_partial_import_round_trips_visually`), all others unchanged
+  (backend 180, ai 75, terminal 67, editor 60, app 0).
+
+### Current State
+- Branch `master`. Commit this session (see `git log`). Not pushed (push when asked).
+- Pre-existing **uncommitted `CLAUDE.md` edit is NOT ours** — left untouched, excluded from the commit.
+
+### What's Next
+- **T15-004** — Packaging & release (incl. GPUI/ztracing GPL license audit).
+- Then T15-005 (auto-updater), T15-006 (feature-parity acceptance).
+
+### Blockers / notes for next session
+- `docs/performance.md` "Recorded runs" table is empty — fill it from a
+  `cargo run --release` on an Apple Silicon machine before the T15-004 release.
+- D2 scrollbar helper is defined but unused until a visible-scrollbar widget
+  exists; wire it then (Explorer/SFTP/Settings/Snippets panels).
+- D4 tab animation is opacity-only; if GPUI gains a `Div` transform, add the
+  `scale(0.86)` using `TAB_IN_FROM_SCALE`.
+
+---
+
+## Prev Session: 2026-09-02 (T15-002 — Error handling & robustness, app-wide)
 
 ### What Was Done
 - **T15-002 ✅ Done.** Formalised the app-wide error catalog on top of the

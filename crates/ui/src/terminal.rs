@@ -571,14 +571,27 @@ fn cursor_overlay(
     let base = div().absolute();
     Some(match cur.shape {
         CursorShape::Hidden => return None,
-        CursorShape::Beam => base.left(x).top(y).w(px(2.0)).h(px(cell_h)).bg(color),
+        // xterm's bar cursor is `cursorWidth` CSS px wide (default 1, and the
+        // reference never overrides it — `rendererPool.ts::termOptions`).
+        CursorShape::Beam => base.left(x).top(y).w(px(1.0)).h(px(cell_h)).bg(color),
+        // xterm's underline cursor is a 1px rule on the cell's baseline edge.
         CursorShape::Underline => base
             .left(x)
-            .top(px(cur.line as f32 * cell_h + cell_h - 2.0))
+            .top(px(cur.line as f32 * cell_h + cell_h - 1.0))
             .w(px(cell_w))
-            .h(px(2.0))
+            .h(px(1.0))
             .bg(color),
-        // Block / HollowBlock: a translucent fill so the glyph shows through.
+        // Inactive/unfocused block: xterm's `cursorInactiveStyle: "outline"`
+        // (`terminalSessionRegistry.ts`) — a 1px ring, no fill.
+        CursorShape::HollowBlock => base
+            .left(x)
+            .top(y)
+            .w(px(cell_w))
+            .h(px(cell_h))
+            .border_1()
+            .border_color(color),
+        // Focused block: translucent fill so the glyph shows through (we don't
+        // repaint the glyph in the background color the way xterm does).
         _ => base
             .left(x)
             .top(y)

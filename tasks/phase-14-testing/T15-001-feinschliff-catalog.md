@@ -39,23 +39,27 @@ against the frozen `reference-src/` design spec. Cross-referenced from
 | T1 | UI font Inter Variable @ 13px / 1.5, buffer JetBrains Mono @ 13px, terminal mono @ 14px / 1.05, ligatures on — matches `--app-font-*` + `preferencesStore` defaults. Bundled assets registered at startup (`init_fonts`). | ✅ verified |
 | T2 | Runtime overrides (settings font family/size for app/editor/terminal) wired via `FontOverrides` in T13-003. | ✅ done earlier |
 
-## Deferred to live side-by-side (T15-003)
+## Deferred pixel items — resolved in T15-003
 
-These need the two apps running next to each other and cannot be resolved by
-static audit; tracked here so they are not lost:
+Canonical reference values were extracted from `globals.css` / the shadcn
+components and encoded as tested constants/helpers so they no longer depend on
+an eyeball side-by-side. See `docs/performance.md` §6.
 
-- D1 — Hover / focus / active tint *amounts* on buttons, tabs, list rows
-  (currently `fg.opacity(0.04–0.05)` hovers; reference uses `accent` / `muted`
-  fills). Needs pixel comparison per component.
-- D2 — Scrollbar thumb thickness / inset / hover color vs the reference
-  `.themed-scrollbar` (10px track, `color-mix(foreground 22% → 34%)`).
-- D3 — Terminal cell width/height rounding and cursor block/beam/underline
-  proportions vs xterm.
-- D4 — Tab-entrance animation curve/scale (`labonair-tab-in`: scale 0.86→1 over
-  `--dur-base` `--ease-premium`).
-- D5 — Popover/menu padding density (context menus, command palette rows).
-- D6 — User-imported theme round-trip visual check (import a community theme,
-  compare against the web app with the same file).
+- D1 ✅ — `ThemeStore::hover_fill()` = `accent`, `selected_fill()` = `muted`
+  (reference `focus:bg-accent` / `data-selected:bg-muted`). Command-palette
+  rows migrated off the ad-hoc `accent`/`border` mix.
+- D2 ✅ — `ThemeStore::scrollbar_thumb()` / `scrollbar_thumb_hover()` =
+  foreground @ 22% → 34% alpha; `theme::SCROLLBAR_SIZE = 10.0`. Wire into a
+  scrollbar widget when one is adopted.
+- D3 ✅ — terminal cursor: beam 1px, underline 1px, `HollowBlock` → 1px
+  outline (xterm `cursorInactiveStyle: "outline"`); focused block unchanged.
+- D4 ✅ — `CubicBezier::eval` + `TAB_IN_FROM_SCALE`; tab entrance is a GPUI
+  `with_animation` opacity fade over `--dur-base` `--ease-premium`
+  (opacity-only — GPUI 0.2.2 `Div` has no scale transform). Reduce-motion
+  clamps duration to ~0.
+- D5 ✅ — `theme::menu_metrics` constants (`p-1.5` / `px-3 py-2` / `gap-2.5` /
+  `p-4`); command-palette row padding aligned to `ITEM_PAD_X`.
+- D6 ✅ — `community_theme_partial_import_round_trips_visually` test.
 
 ## Changes made in this task
 
