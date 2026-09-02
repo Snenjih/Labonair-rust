@@ -6,6 +6,7 @@ pub mod agent_access;
 pub mod ai_chat;
 pub mod app_shell;
 pub mod background;
+pub mod bell;
 pub mod command_palette;
 pub mod diff;
 pub mod editor;

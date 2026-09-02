@@ -168,6 +168,81 @@ impl EditorView {
         }
     }
 
+    /// Soft-wrap width in columns (0 = wrapping off), from the
+    /// `editor_word_wrap` preference and the measured content width (T06-005).
+    /// Mirrors CodeMirror's `EditorView.lineWrapping`.
+    fn wrap_cols(&self) -> usize {
+        if !self.prefs.editor_word_wrap {
+            return 0;
+        }
+        let (cw, _) = self.metrics;
+        let width = self.bounds.map(|b| f32::from(b.size.width)).unwrap_or(0.0) - self.gutter_width;
+        if cw <= 0.0 || width <= cw * 2.0 {
+            return 0;
+        }
+        (width / cw).floor() as usize
+    }
+
+    /// Vertical caret motion across visual (wrapped) rows. Returns `false` when
+    /// soft-wrap is off so the caller falls back to logical [`Motion`].
+    fn wrap_vertical(&mut self, down: bool, extend: bool, cx: &mut Context<Self>) -> bool {
+        let cols = self.wrap_cols();
+        if cols == 0 {
+            return false;
+        }
+        let cur = self.doc.cursor;
+        let seg = cur.column / cols;
+        let cin = cur.column % cols;
+        let last_seg = Wrap { cols }
+            .rows(self.doc.buffer.line_len(cur.line))
+            .saturating_sub(1);
+        let last_line = self.doc.buffer.line_count().saturating_sub(1);
+        let target = if down {
+            if seg < last_seg {
+                Position::new(cur.line, (seg + 1) * cols + cin)
+            } else if cur.line >= last_line {
+                return true;
+            } else {
+                Position::new(cur.line + 1, cin)
+            }
+        } else if seg > 0 {
+            Position::new(cur.line, (seg - 1) * cols + cin)
+        } else if cur.line == 0 {
+            return true;
+        } else {
+            let p = cur.line - 1;
+            let plast = Wrap { cols }
+                .rows(self.doc.buffer.line_len(p))
+                .saturating_sub(1);
+            Position::new(p, plast * cols + cin)
+        };
+        self.doc.set_caret(target, extend);
+        self.ensure_cursor_visible();
+        cx.notify();
+        true
+    }
+
+    /// Home / End across the current visual row. Returns `false` when soft-wrap
+    /// is off.
+    fn wrap_horizontal(&mut self, end: bool, extend: bool, cx: &mut Context<Self>) -> bool {
+        let cols = self.wrap_cols();
+        if cols == 0 {
+            return false;
+        }
+        let cur = self.doc.cursor;
+        let seg = cur.column / cols;
+        let line_len = self.doc.buffer.line_len(cur.line);
+        let target = if end {
+            Position::new(cur.line, ((seg + 1) * cols).min(line_len))
+        } else {
+            Position::new(cur.line, seg * cols)
+        };
+        self.doc.set_caret(target, extend);
+        self.ensure_cursor_visible();
+        cx.notify();
+        true
+    }
+
     fn bump_syntax(&mut self) {
         self.syntax_rev = self.syntax_rev.wrapping_add(1);
     }
@@ -626,10 +701,26 @@ impl EditorView {
         match ks.key.as_str() {
             "left" => self.navigate(Motion::Left, m.shift, cx),
             "right" => self.navigate(Motion::Right, m.shift, cx),
-            "up" => self.navigate(Motion::Up, m.shift, cx),
-            "down" => self.navigate(Motion::Down, m.shift, cx),
-            "home" => self.navigate(Motion::LineStart, m.shift, cx),
-            "end" => self.navigate(Motion::LineEnd, m.shift, cx),
+            "up" => {
+                if !self.wrap_vertical(false, m.shift, cx) {
+                    self.navigate(Motion::Up, m.shift, cx)
+                }
+            }
+            "down" => {
+                if !self.wrap_vertical(true, m.shift, cx) {
+                    self.navigate(Motion::Down, m.shift, cx)
+                }
+            }
+            "home" => {
+                if !self.wrap_horizontal(false, m.shift, cx) {
+                    self.navigate(Motion::LineStart, m.shift, cx)
+                }
+            }
+            "end" => {
+                if !self.wrap_horizontal(true, m.shift, cx) {
+                    self.navigate(Motion::LineEnd, m.shift, cx)
+                }
+            }
             "pageup" => self.navigate(Motion::PageUp(rows), m.shift, cx),
             "pagedown" => self.navigate(Motion::PageDown(rows), m.shift, cx),
             "enter" => self.edit(cx, |d| d.insert("\n")),
@@ -712,9 +803,28 @@ impl EditorView {
         let (cw, lh) = self.metrics;
         let x = (f32::from(p.x - origin.x) - self.gutter_width).max(0.0);
         let y = f32::from(p.y - origin.y).max(0.0);
-        let line = self.scroll_top + (y / lh) as usize;
-        let column = ((x / cw) + 0.5) as usize;
-        Position::new(line, column)
+        let col_hint = ((x / cw) + 0.5) as usize;
+        let cols = self.wrap_cols();
+        if cols == 0 {
+            return Position::new(self.scroll_top + (y / lh) as usize, col_hint);
+        }
+        // Walk visual rows from the scroll top to resolve the logical line and
+        // which wrapped segment the click landed on (T06-005).
+        let wrap = Wrap { cols };
+        let count = self.doc.buffer.line_count();
+        let mut cum = 0.0f32;
+        let mut line = self.scroll_top;
+        while line < count {
+            let segs = wrap.rows(self.doc.buffer.line_len(line));
+            let h = segs as f32 * lh;
+            if y < cum + h || line + 1 == count {
+                let seg = (((y - cum) / lh).max(0.0) as usize).min(segs.saturating_sub(1));
+                return Position::new(line, seg * cols + col_hint);
+            }
+            cum += h;
+            line += 1;
+        }
+        Position::new(count.saturating_sub(1), col_hint)
     }
 
     // ── Rendering ───────────────────────────────────────────────────────────
@@ -977,7 +1087,34 @@ impl Render for EditorView {
 
         let rows = self.visible_rows();
         let first = self.scroll_top;
-        let last = (first + rows + 1).min(line_count);
+        let wrap = Wrap {
+            cols: self.wrap_cols(),
+        };
+        // Visible logical lines → (line, top offset px, visual-row count).
+        // Without soft-wrap every line is exactly one row tall (T06-005).
+        let viewport_h = rows as f32 * line_h;
+        let content_w = (wrap.cols as f32 * char_w).max(char_w);
+        let mut layout: Vec<(usize, f32, usize)> = Vec::new();
+        {
+            let mut cum = 0.0f32;
+            let mut line = first;
+            while line < line_count {
+                let segs = wrap.rows(self.doc.buffer.line_len(line));
+                layout.push((line, cum, segs));
+                cum += segs as f32 * line_h;
+                line += 1;
+                if cum >= viewport_h + line_h {
+                    break;
+                }
+            }
+        }
+        let last = layout.last().map(|(l, _, _)| *l + 1).unwrap_or(first);
+        let top_of = |target: usize| -> Option<(f32, usize)> {
+            layout
+                .iter()
+                .find(|(l, _, _)| *l == target)
+                .map(|(_, t, s)| (*t, *s))
+        };
 
         let sel = self.doc.selection();
         let cursor = self.doc.cursor;
@@ -1022,9 +1159,10 @@ impl Render for EditorView {
             } else {
                 (line + 1).to_string()
             };
+            let row_top = top_of(line).map(|(t, _)| t).unwrap_or(0.0);
             div()
                 .absolute()
-                .top(px((line - first) as f32 * line_h))
+                .top(px(row_top))
                 .left_0()
                 .w(px(gutter_width))
                 .h(px(line_h))
@@ -1040,22 +1178,26 @@ impl Render for EditorView {
 
         // Text + selection rows.
         let text_rows = (first..last).map(|line| {
-            let top = px((line - first) as f32 * line_h);
+            let (row_top, segs) = top_of(line).unwrap_or((0.0, 1));
             let content = self.doc.buffer.line(line).to_string();
             let mut row = div()
                 .absolute()
-                .top(top)
+                .top(px(row_top))
                 .left(px(0.0))
-                .h(px(line_h))
+                .h(px(segs as f32 * line_h))
                 .flex()
-                .items_center()
-                .whitespace_nowrap()
+                .items_start()
                 .text_size(px(font_px))
                 .line_height(px(line_h))
                 .font(font.clone())
                 .text_color(fg);
+            row = if wrap.enabled() {
+                row.w(px(content_w))
+            } else {
+                row.items_center().whitespace_nowrap()
+            };
 
-            // Selection highlight for this line.
+            // Selection highlight — one rect per visual segment when wrapped.
             if let Some((s, e)) = sel {
                 if line >= s.line && line <= e.line {
                     let start_col = if line == s.line { s.column } else { 0 };
@@ -1064,17 +1206,36 @@ impl Render for EditorView {
                     } else {
                         self.doc.buffer.line_len(line) + 1
                     };
-                    let x = start_col as f32 * char_w;
-                    let w = ((end_col.saturating_sub(start_col)) as f32 * char_w).max(2.0);
-                    row = row.child(
-                        div()
-                            .absolute()
-                            .left(px(x))
-                            .top(px(0.0))
-                            .w(px(w))
-                            .h(px(line_h))
-                            .bg(accent.opacity(0.3)),
-                    );
+                    if wrap.enabled() {
+                        for seg in 0..segs {
+                            let seg_lo = seg * wrap.cols;
+                            let lo = start_col.max(seg_lo);
+                            let hi = end_col.min(seg_lo + wrap.cols);
+                            if hi > lo {
+                                row = row.child(
+                                    div()
+                                        .absolute()
+                                        .left(px((lo - seg_lo) as f32 * char_w))
+                                        .top(px(seg as f32 * line_h))
+                                        .w(px(((hi - lo) as f32 * char_w).max(2.0)))
+                                        .h(px(line_h))
+                                        .bg(accent.opacity(0.3)),
+                                );
+                            }
+                        }
+                    } else {
+                        let x = start_col as f32 * char_w;
+                        let w = ((end_col.saturating_sub(start_col)) as f32 * char_w).max(2.0);
+                        row = row.child(
+                            div()
+                                .absolute()
+                                .left(px(x))
+                                .top(px(0.0))
+                                .w(px(w))
+                                .h(px(line_h))
+                                .bg(accent.opacity(0.3)),
+                        );
+                    }
                 }
             }
 
@@ -1103,28 +1264,44 @@ impl Render for EditorView {
                     .with_highlights(highlights)
                     .into_any_element()
             };
+            let text = if wrap.enabled() {
+                div()
+                    .w(px(content_w))
+                    .line_height(px(line_h))
+                    .child(text)
+                    .into_any_element()
+            } else {
+                text
+            };
             row.child(text)
         });
 
-        // Caret.
-        let caret_visible = cursor.line >= first && cursor.line < last;
-        let caret = caret_visible.then(|| {
+        // Caret + current-line band (over visual rows when soft-wrap is on).
+        let caret_layout = top_of(cursor.line);
+        let (caret_seg, caret_col) = if wrap.enabled() {
+            let seg = (cursor.column / wrap.cols)
+                .min(caret_layout.map(|(_, s)| s.saturating_sub(1)).unwrap_or(0));
+            (seg, cursor.column - seg * wrap.cols)
+        } else {
+            (0, cursor.column)
+        };
+        let caret = caret_layout.map(|(top, _)| {
             div()
                 .absolute()
-                .top(px((cursor.line - first) as f32 * line_h))
-                .left(px(cursor.column as f32 * char_w))
+                .top(px(top + caret_seg as f32 * line_h))
+                .left(px(caret_col as f32 * char_w))
                 .w(px(2.0))
                 .h(px(line_h))
                 .bg(accent)
         });
 
-        let current_line = caret_visible.then(|| {
+        let current_line = caret_layout.map(|(top, segs)| {
             div()
                 .absolute()
-                .top(px((cursor.line - first) as f32 * line_h))
+                .top(px(top))
                 .left(px(0.0))
                 .right(px(0.0))
-                .h(px(line_h))
+                .h(px(segs as f32 * line_h))
                 .bg(fg.opacity(0.04))
         });
 
@@ -1206,6 +1383,29 @@ impl Render for EditorView {
                     this.scroll_by(-(dy.round() as isize).clamp(-8, 8), cx);
                 }
             }))
+    }
+}
+
+/// Soft-wrap geometry (T06-005). `cols == 0` disables wrapping; otherwise a
+/// logical line is broken every `cols` characters (character grid, like a
+/// monospace terminal — no word-boundary breaking, matching CodeMirror's
+/// default `lineWrapping` for code).
+#[derive(Clone, Copy)]
+struct Wrap {
+    cols: usize,
+}
+
+impl Wrap {
+    fn enabled(&self) -> bool {
+        self.cols > 0
+    }
+
+    /// Visual-row count for a logical line of `len` characters (at least 1).
+    fn rows(&self, len: usize) -> usize {
+        if self.cols == 0 {
+            return 1;
+        }
+        len.max(1).div_ceil(self.cols)
     }
 }
 
@@ -1301,6 +1501,67 @@ mod tests {
                 v.apply_prefs(cx);
                 assert!(v.vim.is_none(), "vim disabled via prefs");
                 assert_eq!(v.indent_unit(), "\t");
+            });
+        });
+    }
+
+    #[test]
+    fn wrap_rows_math() {
+        let w = Wrap { cols: 10 };
+        assert_eq!(w.rows(0), 1);
+        assert_eq!(w.rows(1), 1);
+        assert_eq!(w.rows(10), 1);
+        assert_eq!(w.rows(11), 2);
+        assert_eq!(w.rows(25), 3);
+        assert_eq!(Wrap { cols: 0 }.rows(999), 1, "wrap off = one row");
+    }
+
+    #[gpui::test]
+    fn soft_wrap_navigation_crosses_visual_rows(cx: &mut TestAppContext) {
+        let view = setup(cx);
+        cx.update(|cx| {
+            view.update(cx, |v, cx| {
+                // 45 visible columns: (408 - 48 gutter) / 8.
+                v.metrics = (8.0, 18.0);
+                v.gutter_width = 48.0;
+                v.bounds = Some(gpui::Bounds {
+                    origin: gpui::Point::default(),
+                    size: gpui::Size {
+                        width: px(408.0),
+                        height: px(360.0),
+                    },
+                });
+                v.prefs.editor_word_wrap = true;
+                assert_eq!(v.wrap_cols(), 45);
+
+                let long: String = "x".repeat(120);
+                v.doc = Document::from_file("t.txt".into(), &long, 1);
+                v.doc.set_caret(Position::new(0, 10), false);
+
+                assert!(v.wrap_vertical(true, false, cx));
+                assert_eq!(v.doc.cursor.column, 55, "down one visual row = +cols");
+                assert!(v.wrap_vertical(true, false, cx));
+                assert_eq!(v.doc.cursor.column, 100);
+                assert!(v.wrap_vertical(false, false, cx));
+                assert_eq!(v.doc.cursor.column, 55, "up one visual row = -cols");
+
+                assert!(v.wrap_horizontal(false, false, cx));
+                assert_eq!(v.doc.cursor.column, 45, "home = start of visual row");
+                assert!(v.wrap_horizontal(true, false, cx));
+                assert_eq!(v.doc.cursor.column, 90, "end = end of visual row");
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn soft_wrap_disabled_falls_back_to_logical(cx: &mut TestAppContext) {
+        let view = setup(cx);
+        cx.update(|cx| {
+            view.update(cx, |v, cx| {
+                v.prefs.editor_word_wrap = false;
+                assert_eq!(v.wrap_cols(), 0);
+                assert!(!v.wrap_vertical(true, false, cx));
+                assert!(!v.wrap_horizontal(true, false, cx));
             });
         });
     }

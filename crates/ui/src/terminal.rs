@@ -107,6 +107,13 @@ impl TerminalView {
                 let exited = events
                     .iter()
                     .any(|e| matches!(e, TerminalEvent::Exit | TerminalEvent::ChildExit(_)));
+                if events.iter().any(|e| matches!(e, TerminalEvent::Bell)) {
+                    let prefs = cx
+                        .try_global::<GlobalPreferences>()
+                        .map(|g| g.0.clone())
+                        .unwrap_or_default();
+                    crate::bell::ring(&prefs);
+                }
                 cx.notify();
                 !exited
             });

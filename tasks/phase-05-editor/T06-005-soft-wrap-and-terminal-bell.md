@@ -1,7 +1,7 @@
 # T06-005: Editor Soft-Wrap + hörbare Terminal-Glocke
 
 ## Status
-⏳ Pending
+✅ Done
 
 ## Phase
 5 — Editor (+ Terminal-Nachzügler)
@@ -36,10 +36,12 @@ Restpunkte schließen:
 3. Tests: Soft-Wrap-Zeilenberechnung unit-getestet; Bell-Gate unit-getestet.
 
 ## Akzeptanzkriterien
-- [ ] Bei `editor_word_wrap` an brechen lange Zeilen sichtbar um, Navigation
-      bleibt korrekt
-- [ ] Bei `terminal_bell` an erzeugt ein `printf '\a'` einen hörbaren Ton, aus → still
-- [ ] `cargo check` + `clippy -D warnings` + `cargo test` grün
+- [x] Bei `editor_word_wrap` an brechen lange Zeilen sichtbar um, Navigation
+      bleibt korrekt (visuelle Zeilen via `Wrap`-Geometrie; Up/Down/Home/End,
+      Maus-Hit-Testing und Gutter angepasst)
+- [x] Bei `terminal_bell` an erzeugt ein `printf '\a'` einen hörbaren Ton, aus → still
+      (`crate::bell::ring`, macOS `afplay` System-Sound, 120 ms Debounce)
+- [x] `cargo check` + `clippy -D warnings` + `cargo test` grün
 
 ## Notizen
 - Aus T15-006 ausgegliedert. Soft-Wrap ist echte Renderer-Arbeit; die Glocke

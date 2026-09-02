@@ -4,7 +4,61 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
-## Last Session: 2026-09-02 (T15-006 — Feature-parity acceptance / FINAL roadmap task)
+## Last Session: 2026-09-02 (T06-005 — Editor soft-wrap + audible terminal bell)
+
+### What Was Done
+- **T06-005 ✅ Done.** Closed the two parity gaps logged by the T15-006 audit.
+  - **Editor soft-wrap (`crates/ui/src/editor.rs`):**
+    - New `Wrap { cols }` geometry helper (`cols == 0` = off; char-grid wrap,
+      no word-boundary breaking, like CodeMirror `EditorView.lineWrapping` for
+      code). `EditorView::wrap_cols()` derives the column count from
+      `editor_word_wrap` + measured content width / char advance.
+    - Renderer: builds a `layout: Vec<(line, top_px, visual_row_count)>` for the
+      visible logical lines with cumulative Y offsets instead of a fixed
+      `line * line_h` grid. Text rows get `.w(content_w)` (GPUI native wrap) and
+      a per-visual-segment selection highlight; gutter number renders once per
+      logical line at its first visual row; caret + current-line band use the
+      segment offset.
+    - Navigation: `wrap_vertical` (Up/Down move ±`cols` within a wrapped line,
+      then cross to the previous/next logical line) and `wrap_horizontal`
+      (Home/End = start/end of the current visual segment), wired into `on_key`
+      with a fallback to logical `Motion` when wrap is off. `position_at` (mouse
+      hit-testing) walks visual rows when wrapped.
+    - +3 tests (`wrap_rows_math`, `soft_wrap_navigation_crosses_visual_rows`,
+      `soft_wrap_disabled_falls_back_to_logical`).
+  - **Audible terminal bell (`crates/ui/src/bell.rs`, new + `terminal.rs`):**
+    - `crate::bell::{should_ring, ring}` — port of `rendererPool.ts::playBell`.
+      `ring` gates on `terminal_bell`, applies a 120 ms debounce, and on macOS
+      plays the system alert sound via a detached `afplay`
+      (`/System/Library/Sounds/Tink.aiff`) — dependency-free; the web app's
+      800 Hz `AudioContext` tone has no GPUI equivalent. Linux `play()` is a
+      no-op (deferred, per task notes).
+    - `TerminalView` poll loop now scans drained events for `TerminalEvent::Bell`
+      and calls `bell::ring` with the live `GlobalPreferences`.
+    - +2 tests (gate follows preference; `ring` is a no-op when disabled).
+- Verify: `cargo fmt --all --check`, `cargo check --workspace --all-targets`,
+  `cargo clippy --workspace --all-targets -- -D warnings`,
+  `cargo test --workspace` — all green. ui **197 → 202**; all other crates
+  unchanged (backend 193, terminal 67, editor 60, theme 25, ai 75, app-smoke 3).
+
+### Current State
+- Branch `master`, committed. Pre-existing uncommitted `CLAUDE.md` edit is
+  **not ours** — left untouched, excluded from the commit.
+
+### What's Next
+- Remaining follow-ups: **T12-003** (path bookmarks), **T13-005** (remaining
+  shortcut handlers). Plus the manual `cargo run` acceptance round (T15-006).
+
+### Blockers / notes for next session
+- Soft-wrap text uses GPUI's native word-wrap while the caret/selection math is
+  a fixed char grid — near wrap points on prose with long words the visual
+  break can drift a column from the caret column. Fine for code; revisit with
+  manual segmentation if it looks off in the live app.
+- Bell uses `afplay` (always present on macOS); no bundled WAV asset.
+
+---
+
+## Prev Session: 2026-09-02 (T15-006 — Feature-parity acceptance / FINAL roadmap task)
 
 ### What Was Done
 - **T15-006 ✅ Done.** Full module inventory of the pure-Rust port against
