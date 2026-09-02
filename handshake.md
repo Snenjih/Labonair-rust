@@ -4,7 +4,80 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
-## Last Session: 2026-09-02 (Block F Commit 5 — palette fill-ins + cross-report cleanups)
+## Last Session: 2026-09-03 (Block F polish A — AI-panel composer + strips)
+
+### What Was Done (commit after `1f2f21a`)
+
+**AI panel composer — real `text_field`**
+- `AiChatView.composer_input: Option<Entity<InputState>>` created lazily on
+  the first `render` via `ensure_composer(window, cx)` (window is available
+  in `render`; solves the window-threading problem without touching `new` or
+  the headless test helper). `composer_seed: String` is the pre-render / test
+  fallback. `composer_text(cx)` reads from whichever is live.
+- Multi-line `InputState` (`auto_grow(2,8)`). `window.subscribe` on the input:
+  `PressEnter { secondary:false }` → strip the just-inserted `\n` + `send`;
+  `secondary:true` (⌘↵) → `enqueue`. `render_composer` renders
+  `field_input(input).appearance(false)`.
+- `send`/`enqueue`/`clear_composer` take `Option<&mut Window>` (subscribe has
+  a window, the test doesn't). Removed `on_composer_key` / `composer_focused`.
+- Test `composer_clears_on_send_and_attachments_manage` updated
+  (`composer_seed` + `send(None, cx)`).
+
+**⌘↵ enqueue + QueueStrip**
+- `AiChatStore.prompt_queue: Vec<String>` + `enqueue_prompt` (sends
+  immediately if idle, else queues), `dequeue_prompt`, `queued_prompts`.
+  The `spawn_stream` completion handler drains one queued prompt when the run
+  is done and no tool approvals pend. QueueStrip rendered above the composer
+  (each row = `↳` + text + `x`).
+
+**TodoStrip** — `AiChatStore::active_todos()` reads the `TodoStore` for the
+active session; rendered above the composer as `TODO n/total` + a checklist
+(✓ / ▸ / ○).
+
+**Connect banner** — `AiChatStore::needs_connection()` (`resolve_target`
+fails) → red "No model connected — add a key in Settings → AI" strip.
+
+**Voice** — visible inert "voice (soon)" stub in the composer footer with a
+`TODO(T16-019)` comment.
+
+**Inline agent / directive editors** — `settings.rs` `AiEditor` keydown-buffer
+modal (3 fields: Name/Description/Instructions or Handle/Name/Content; Tab
+cycles, Enter saves, Shift+Enter newline in the last field, Esc cancels).
+"Edit" button per custom agent + every directive; persists via the backend
+stores.
+
+**NOT done in polish A** (genuinely large, precise pointers below):
+- Slash-commands (`/init`, `/plan`, …) with an autocomplete popover — needs a
+  command registry + a popover anchored to the composer + prefix parsing on
+  every keystroke (the real `InputState` doesn't surface per-keystroke text
+  to the view without another subscription).
+- `#`-directive inline expansion — parse `#handle` tokens in the outgoing
+  body against `directives::load()` and splice `content` in (do this in
+  `AiChatView::send` before `compose_message`).
+- `@`-file picker — fuzzy over the live-bridge cwd; same popover machinery as
+  slash-commands.
+- PlanModeStrip / PlanDiffReview — the store has no plan-mode concept
+  (`reference-src/src/modules/ai/**` `usePlanMode`); needs a store flag +
+  a diff-review surface.
+- ContextPillsRow — `split_context_blocks` already exists (`ai_chat.rs`
+  tests); render the extracted chips as a row under a user message.
+- `CommandSnippet` rendering — detect fenced ```bash blocks in assistant
+  messages and render a run button (reference `components/ai-elements/
+  CommandSnippet.tsx`).
+- AI⇄Shell toggle — needs an `AiChatView` → workspace event to write the
+  composer text to the active terminal (ai_chat has no workspace handle).
+
+### Verified
+`cargo fmt --all`, `cargo clippy --workspace --all-targets -D warnings`,
+`cargo test --workspace` — all green (695 tests).
+
+### Next
+Polish B — command-palette visuals (640px / 40px rows / accent bar / recents
+/ Kbd chips / footer / section headings / empty state).
+
+---
+
+## Session: 2026-09-02 (Block F Commit 5 — palette fill-ins + cross-report cleanups)
 
 ### What Was Done (commit after `74cb4ea`)
 

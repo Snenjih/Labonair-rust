@@ -10,7 +10,7 @@
 use std::sync::{Arc, Mutex};
 
 use gpui::{AppContext, Context, Entity};
-use labonair_ai::tools::{NativeHost, NoopSubagentRunner, SubagentRunner};
+use labonair_ai::tools::{NativeHost, NoopSubagentRunner, SubagentRunner, Todo, TodoStatus};
 use labonair_ai::{
     resolve_target, AiClient, ChatConfig, ChatMessage, InstanceStore, KeyringSecretStore,
     LiveBridge, NoLiveBridge, RunStatus, SecretStore, SessionMessage, SessionMeta, SessionStore,
@@ -43,6 +43,8 @@ pub struct AiChatStore {
     read_cache: Arc<Mutex<HashSet<String>>>,
     /// Approval-gated tool calls from the last model turn, awaiting the user.
     pending_calls: Vec<ToolCall>,
+    /// Prompts queued with ⌘↵ — sent one at a time as each run completes.
+    prompt_queue: Vec<String>,
     /// The active agent's instructions, prepended as a system message on every
     /// turn (AgentSwitcher — T16-019). Empty = no agent system prompt.
     agent_instructions: String,
@@ -84,6 +86,7 @@ impl AiChatStore {
             subagents: Arc::new(NoopSubagentRunner),
             read_cache: Arc::new(Mutex::new(HashSet::new())),
             pending_calls: Vec::new(),
+            prompt_queue: Vec::new(),
             agent_instructions: String::new(),
         }
     }
@@ -135,6 +138,47 @@ impl AiChatStore {
 
     pub fn is_streaming(&self) -> bool {
         self.run.is_some()
+    }
+
+    /// Prompts waiting to be sent after the current run (⌘↵ enqueue).
+    pub fn queued_prompts(&self) -> &[String] {
+        &self.prompt_queue
+    }
+
+    /// The active session's agent todo list (TodoStrip).
+    pub fn active_todos(&self) -> Vec<Todo> {
+        let Some(id) = self.store.active_id() else {
+            return Vec::new();
+        };
+        self.todos
+            .lock()
+            .map(|t| t.get(id).to_vec())
+            .unwrap_or_default()
+    }
+
+    /// `true` when the active model has no usable credential — drives the
+    /// composer "connect" banner.
+    pub fn needs_connection(&self) -> bool {
+        resolve_target(&self.model_ref, &self.instances, self.secrets.as_ref()).is_err()
+    }
+
+    /// Queue a prompt for after the current turn. If nothing is running, it is
+    /// sent immediately.
+    pub fn enqueue_prompt(&mut self, text: String, cx: &mut Context<Self>) {
+        if self.is_streaming() {
+            self.prompt_queue.push(text);
+            cx.notify();
+        } else {
+            self.send(text, cx);
+        }
+    }
+
+    /// Drop a queued prompt by index (QueueStrip "x").
+    pub fn dequeue_prompt(&mut self, idx: usize, cx: &mut Context<Self>) {
+        if idx < self.prompt_queue.len() {
+            self.prompt_queue.remove(idx);
+            cx.notify();
+        }
     }
 
     // ── Session management (each notifies) ───────────────────────────────
@@ -256,6 +300,15 @@ impl AiChatStore {
                 this.store.finish_run();
                 this.run = None;
                 this.dispatch_tool_calls(cx);
+                // Drain one queued (⌘↵) prompt now the run is done and no tool
+                // approvals are pending.
+                if this.run.is_none()
+                    && this.pending_calls.is_empty()
+                    && !this.prompt_queue.is_empty()
+                {
+                    let next = this.prompt_queue.remove(0);
+                    this.send(next, cx);
+                }
                 cx.notify();
             });
         })
@@ -395,14 +448,13 @@ use std::collections::{HashMap, HashSet};
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, px, App, ClickEvent, ClipboardItem, FocusHandle, Focusable, FontStyle, FontWeight,
-    HighlightStyle, InteractiveElement, IntoElement, KeyDownEvent, ParentElement, Render,
-    ScrollHandle, ScrollWheelEvent, SharedString, StatefulInteractiveElement, Styled, StyledText,
-    Window,
+    HighlightStyle, InteractiveElement, IntoElement, ParentElement, Render, ScrollHandle,
+    ScrollWheelEvent, SharedString, StatefulInteractiveElement, Styled, StyledText, Window,
 };
 use labonair_ai::{find_model, MessageStatus, Role, SessionToolCall, ToolCallStatus, MODELS};
 use labonair_editor::{Language, SyntaxHighlighter};
 
-use crate::components::IconName;
+use crate::components::{field_input, IconName, InputEvent, InputState};
 use crate::markdown::{parse_markdown, Inline, MdBlock};
 use crate::syntax_theme::EditorPalette;
 use crate::theme::ThemeStore;
@@ -577,8 +629,12 @@ struct ChatColors {
 pub struct AiChatView {
     store: Entity<AiChatStore>,
     theme: Entity<ThemeStore>,
-    composer: String,
-    composer_focused: bool,
+    /// Real multi-line text input — created lazily on the first `render`
+    /// (needs a `Window`). `None` before then / in headless tests.
+    composer_input: Option<Entity<InputState>>,
+    /// Seed text for the composer before the input exists (tests + first
+    /// render). Once the input is live this stays empty.
+    composer_seed: String,
     attachments: Vec<Attachment>,
     focus: FocusHandle,
     scroll: ScrollHandle,
@@ -627,8 +683,8 @@ impl AiChatView {
         Self {
             store,
             theme,
-            composer: String::new(),
-            composer_focused: false,
+            composer_input: None,
+            composer_seed: String::new(),
             attachments: Vec::new(),
             focus: cx.focus_handle(),
             scroll: ScrollHandle::new(),
@@ -752,61 +808,92 @@ impl AiChatView {
         cx.notify();
     }
 
-    fn can_send(&self, cx: &App) -> bool {
-        !self.store.read(cx).is_streaming()
-            && (!self.composer.trim().is_empty() || !self.attachments.is_empty())
+    /// Current composer text (from the live input, or the pre-render seed).
+    fn composer_text(&self, cx: &App) -> String {
+        match &self.composer_input {
+            Some(input) => input.read(cx).value().to_string(),
+            None => self.composer_seed.clone(),
+        }
     }
 
-    fn send(&mut self, cx: &mut Context<Self>) {
-        let text = self.composer.trim().to_string();
+    fn clear_composer(&mut self, window: Option<&mut Window>, cx: &mut Context<Self>) {
+        self.composer_seed.clear();
+        if let (Some(input), Some(window)) = (self.composer_input.clone(), window) {
+            input.update(cx, |s, cx| s.set_value("", window, cx));
+        }
+    }
+
+    /// Lazily build the real multi-line text input (needs a `Window`, so this
+    /// runs on the first `render`). Wires Enter → send, ⌘↵ → enqueue.
+    fn ensure_composer(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.composer_input.is_some() {
+            return;
+        }
+        let seed = std::mem::take(&mut self.composer_seed);
+        let input = cx.new(|cx| {
+            let mut s = InputState::new(window, cx)
+                .multi_line(true)
+                .auto_grow(2, 8)
+                .placeholder("Message Labonair\u{2026}");
+            if !seed.is_empty() {
+                s.set_value(seed, window, cx);
+            }
+            s
+        });
+        let view = cx.entity();
+        window
+            .subscribe(&input, cx, move |input, ev: &InputEvent, window, cx| {
+                if let InputEvent::PressEnter { secondary } = ev {
+                    // Multi-line already inserted a newline — drop the last one
+                    // and send (plain Enter) or enqueue (⌘↵).
+                    let v = input.read(cx).value().to_string();
+                    let trimmed = v.strip_suffix('\n').unwrap_or(&v).to_string();
+                    input.update(cx, |s, cx| s.set_value(trimmed, window, cx));
+                    let enqueue = *secondary;
+                    view.update(cx, |this, cx| {
+                        if enqueue {
+                            this.enqueue(Some(window), cx);
+                        } else {
+                            this.send(Some(window), cx);
+                        }
+                    });
+                }
+            })
+            .detach();
+        self.composer_input = Some(input);
+    }
+
+    fn can_send(&self, cx: &App) -> bool {
+        !self.store.read(cx).is_streaming()
+            && (!self.composer_text(cx).trim().is_empty() || !self.attachments.is_empty())
+    }
+
+    fn send(&mut self, window: Option<&mut Window>, cx: &mut Context<Self>) {
+        let text = self.composer_text(cx).trim().to_string();
         if text.is_empty() && self.attachments.is_empty() {
             return;
         }
         let body = compose_message(&text, &self.attachments);
-        self.composer.clear();
+        self.clear_composer(window, cx);
         self.attachments.clear();
         self.stick_bottom = true;
         self.store.update(cx, |s, cx| s.send(body, cx));
         cx.notify();
     }
 
-    fn stop(&mut self, cx: &mut Context<Self>) {
-        self.store.update(cx, |s, cx| s.stop(cx));
+    /// ⌘↵ — queue the message as a follow-up turn instead of sending now.
+    fn enqueue(&mut self, window: Option<&mut Window>, cx: &mut Context<Self>) {
+        let text = self.composer_text(cx).trim().to_string();
+        if text.is_empty() {
+            return;
+        }
+        self.store.update(cx, |s, cx| s.enqueue_prompt(text, cx));
+        self.clear_composer(window, cx);
         cx.notify();
     }
 
-    fn on_composer_key(&mut self, ev: &KeyDownEvent, _w: &mut Window, cx: &mut Context<Self>) {
-        let ks = &ev.keystroke;
-        let m = &ks.modifiers;
-        match ks.key.as_str() {
-            "enter" => {
-                if m.shift || m.alt {
-                    self.composer.push('\n');
-                } else {
-                    self.send(cx);
-                }
-            }
-            "backspace" => {
-                self.composer.pop();
-            }
-            "escape" => {
-                self.composer_focused = false;
-            }
-            key => {
-                if m.platform || m.control || m.alt {
-                    return;
-                }
-                let ch = ks
-                    .key_char
-                    .clone()
-                    .filter(|s| !s.is_empty() && !s.chars().any(|c| c.is_control()))
-                    .or_else(|| (key.chars().count() == 1).then(|| key.to_string()));
-                if let Some(ch) = ch {
-                    self.composer.push_str(&ch);
-                }
-            }
-        }
-        cx.stop_propagation();
+    fn stop(&mut self, cx: &mut Context<Self>) {
+        self.store.update(cx, |s, cx| s.stop(cx));
         cx.notify();
     }
 
@@ -1654,13 +1741,11 @@ impl AiChatView {
     }
 
     fn render_composer(&self, c: &ChatColors, cx: &mut Context<Self>) -> impl IntoElement {
-        let streaming = self.store.read(cx).is_streaming();
-        let placeholder = self.composer.is_empty() && !self.composer_focused;
-        let display = if placeholder {
-            "Message Labonair\u{2026}".to_string()
-        } else {
-            self.composer.clone()
-        };
+        let store = self.store.read(cx);
+        let streaming = store.is_streaming();
+        let queued: Vec<String> = store.queued_prompts().to_vec();
+        let todos = store.active_todos();
+        let needs_conn = store.needs_connection();
 
         div()
             .flex()
@@ -1671,6 +1756,66 @@ impl AiChatView {
             .p_2()
             .border_t_1()
             .border_color(c.border)
+            .when(!todos.is_empty(), |d| {
+                let done = todos
+                    .iter()
+                    .filter(|t| t.status == TodoStatus::Completed)
+                    .count();
+                d.child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap_0p5()
+                        .p_1p5()
+                        .rounded_sm()
+                        .bg(c.card)
+                        .border_1()
+                        .border_color(c.border)
+                        .child(
+                            div()
+                                .text_size(px(9.0))
+                                .text_color(c.muted)
+                                .child(SharedString::from(format!("TODO  {done}/{}", todos.len()))),
+                        )
+                        .children(todos.iter().map(|t| {
+                            let (glyph, col) = match t.status {
+                                TodoStatus::Completed => ("\u{2713}", c.muted),
+                                TodoStatus::InProgress => ("\u{25b8}", c.accent),
+                                TodoStatus::Pending => ("\u{25cb}", c.muted),
+                            };
+                            div()
+                                .flex()
+                                .items_center()
+                                .gap_1()
+                                .text_size(px(10.0))
+                                .text_color(if t.status == TodoStatus::Completed {
+                                    c.muted
+                                } else {
+                                    c.fg
+                                })
+                                .child(div().w(px(10.0)).text_color(col).child(glyph))
+                                .child(SharedString::from(truncate(&t.title, 64)))
+                        })),
+                )
+            })
+            .when(needs_conn, |d| {
+                d.child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap_1()
+                        .px_1p5()
+                        .py_0p5()
+                        .rounded_sm()
+                        .bg(c.error.opacity(0.10))
+                        .border_1()
+                        .border_color(c.error.opacity(0.4))
+                        .text_size(px(10.0))
+                        .text_color(c.error)
+                        .child(IconName::Zap.svg(c.error).size(px(11.0)))
+                        .child("No model connected — add a key in Settings → AI"),
+                )
+            })
             .when(!self.attachments.is_empty(), |d| {
                 d.child(div().flex().flex_wrap().gap_1().children(
                     self.attachments.iter().enumerate().map(|(i, a)| {
@@ -1703,34 +1848,67 @@ impl AiChatView {
                     }),
                 ))
             })
+            .when(!queued.is_empty(), |d| {
+                d.child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap_0p5()
+                        .children(queued.iter().enumerate().map(|(i, q)| {
+                            div()
+                                .flex()
+                                .items_center()
+                                .gap_1()
+                                .px_1p5()
+                                .py_0p5()
+                                .rounded_sm()
+                                .bg(c.card)
+                                .border_1()
+                                .border_color(c.border)
+                                .text_size(px(10.0))
+                                .text_color(c.muted)
+                                .child(IconName::CornerDownRight.svg(c.muted).size(px(11.0)))
+                                .child(
+                                    div()
+                                        .flex_1()
+                                        .min_w_0()
+                                        .overflow_hidden()
+                                        .whitespace_nowrap()
+                                        .child(SharedString::from(truncate(q, 60))),
+                                )
+                                .child(
+                                    div()
+                                        .id(SharedString::from(format!("queue-x-{i}")))
+                                        .hover(|s| s.text_color(c.error))
+                                        .child(IconName::X.svg(c.muted).size(px(11.0)))
+                                        .on_click(cx.listener(
+                                            move |this, _: &ClickEvent, _w, cx| {
+                                                this.store
+                                                    .update(cx, |s, cx| s.dequeue_prompt(i, cx));
+                                            },
+                                        )),
+                                )
+                        })),
+                )
+            })
             .child(
                 div()
                     .id("ai-composer")
-                    .track_focus(&self.focus)
                     .min_h(px(52.0))
                     .max_h(px(160.0))
                     .w_full()
-                    .overflow_y_scroll()
                     .rounded_sm()
                     .border_1()
-                    .border_color(if self.composer_focused {
-                        c.accent
-                    } else {
-                        c.border
-                    })
+                    .border_color(c.border)
                     .bg(c.bg)
                     .px_2()
                     .py_1p5()
                     .text_xs()
-                    .text_color(if placeholder { c.muted } else { c.fg })
-                    .whitespace_normal()
-                    .child(SharedString::from(display))
-                    .on_click(cx.listener(|this, _: &ClickEvent, w, cx| {
-                        this.composer_focused = true;
-                        w.focus(&this.focus);
-                        cx.notify();
-                    }))
-                    .on_key_down(cx.listener(Self::on_composer_key)),
+                    .children(
+                        self.composer_input
+                            .as_ref()
+                            .map(|input| field_input(input).appearance(false)),
+                    ),
             )
             .child(
                 div()
@@ -1739,9 +1917,27 @@ impl AiChatView {
                     .justify_between()
                     .child(
                         div()
-                            .text_size(px(9.0))
-                            .text_color(c.muted)
-                            .child("Enter to send \u{00b7} Shift+Enter for newline"),
+                            .flex()
+                            .items_center()
+                            .gap_2()
+                            .child(
+                                div()
+                                    .text_size(px(9.0))
+                                    .text_color(c.muted)
+                                    .child("Enter to send \u{00b7} \u{2318}\u{21a9} to queue"),
+                            )
+                            .child(
+                                // Voice input — stub (TODO T16-019: whisper
+                                // backend). Visible but inert.
+                                div()
+                                    .id("ai-voice")
+                                    .px_1()
+                                    .rounded_sm()
+                                    .opacity(super::components::DISABLED_OPACITY)
+                                    .text_size(px(9.0))
+                                    .text_color(c.muted)
+                                    .child("voice (soon)"),
+                            ),
                     )
                     .child(if streaming {
                         div()
@@ -1769,7 +1965,9 @@ impl AiChatView {
                             .child("Send")
                             .when(enabled, |d| {
                                 d.on_click(
-                                    cx.listener(|this, _: &ClickEvent, _w, cx| this.send(cx)),
+                                    cx.listener(|this, _: &ClickEvent, w, cx| {
+                                        this.send(Some(w), cx)
+                                    }),
                                 )
                             })
                             .into_any_element()
@@ -1785,7 +1983,8 @@ impl Focusable for AiChatView {
 }
 
 impl Render for AiChatView {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.ensure_composer(window, cx);
         let c = self.colors(cx);
         let header = self.render_header(&c, cx);
         let messages = self.render_messages(&c, cx);
@@ -2015,10 +2214,10 @@ mod tests {
             assert_eq!(this.attachments.len(), 2);
             this.attachments.remove(0);
             assert_eq!(this.attachments.len(), 1);
-            this.composer = "why".into();
+            this.composer_seed = "why".into();
             assert!(this.can_send(cx));
-            this.send(cx);
-            assert!(this.composer.is_empty());
+            this.send(None, cx);
+            assert!(this.composer_text(cx).is_empty());
             assert!(this.attachments.is_empty());
             // No key configured → run failed, and the embedded selection block
             // is part of the stored user message.

@@ -1717,6 +1717,22 @@ struct RemoteTheme {
     raw_url: String,
 }
 
+/// Inline agent/directive editor state — three keydown-buffer fields.
+struct AiEditor {
+    kind: AiEditKind,
+    id: String,
+    labels: [&'static str; 3],
+    fields: [String; 3],
+    focus_idx: usize,
+    multiline_last: bool,
+}
+
+#[derive(PartialEq)]
+enum AiEditKind {
+    Agent,
+    Directive,
+}
+
 const COMMUNITY_INDEX_URL: &str =
     "https://raw.githubusercontent.com/Snenjih/labonair-themes/main/index.json";
 
@@ -1797,6 +1813,9 @@ pub struct SettingsView {
     agents: Vec<labonair_backend::modules::agents::Agent>,
     active_agent_id: String,
     directives: Vec<labonair_backend::modules::directives::Directive>,
+    /// Open inline agent/directive editor (keydown-buffer modal).
+    ai_editor: Option<AiEditor>,
+    ai_editor_focus: FocusHandle,
     focus: FocusHandle,
 }
 
@@ -1870,6 +1889,8 @@ impl SettingsView {
             agents: Vec::new(),
             active_agent_id: String::new(),
             directives: Vec::new(),
+            ai_editor: None,
+            ai_editor_focus: cx.focus_handle(),
             focus: cx.focus_handle(),
         }
     }
@@ -1969,6 +1990,207 @@ impl SettingsView {
         self.directives.retain(|d| d.id != id);
         let _ = labonair_backend::modules::directives::save(&self.directives);
         cx.notify();
+    }
+
+    fn edit_agent(&mut self, id: &str, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(a) = self.agents.iter().find(|a| a.id == id) else {
+            return;
+        };
+        self.ai_editor = Some(AiEditor {
+            kind: AiEditKind::Agent,
+            id: id.to_string(),
+            labels: ["Name", "Description", "Instructions"],
+            fields: [
+                a.name.clone(),
+                a.description.clone(),
+                a.instructions.clone(),
+            ],
+            focus_idx: 0,
+            multiline_last: true,
+        });
+        window.focus(&self.ai_editor_focus);
+        cx.notify();
+    }
+
+    fn edit_directive(&mut self, id: &str, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(d) = self.directives.iter().find(|d| d.id == id) else {
+            return;
+        };
+        self.ai_editor = Some(AiEditor {
+            kind: AiEditKind::Directive,
+            id: id.to_string(),
+            labels: ["Handle (#…)", "Name", "Content"],
+            fields: [d.handle.clone(), d.name.clone(), d.content.clone()],
+            focus_idx: 0,
+            multiline_last: true,
+        });
+        window.focus(&self.ai_editor_focus);
+        cx.notify();
+    }
+
+    fn save_ai_editor(&mut self, cx: &mut Context<Self>) {
+        let Some(ed) = self.ai_editor.take() else {
+            return;
+        };
+        match ed.kind {
+            AiEditKind::Agent => {
+                if let Some(a) = self.agents.iter_mut().find(|a| a.id == ed.id) {
+                    a.name = ed.fields[0].trim().to_string();
+                    a.description = ed.fields[1].trim().to_string();
+                    a.instructions = ed.fields[2].clone();
+                }
+                self.save_custom_agents();
+            }
+            AiEditKind::Directive => {
+                if let Some(d) = self.directives.iter_mut().find(|d| d.id == ed.id) {
+                    d.handle =
+                        labonair_backend::modules::directives::normalize_handle(&ed.fields[0]);
+                    d.name = ed.fields[1].trim().to_string();
+                    d.content = ed.fields[2].clone();
+                }
+                let _ = labonair_backend::modules::directives::save(&self.directives);
+            }
+        }
+        cx.notify();
+    }
+
+    fn on_ai_editor_key(
+        &mut self,
+        ev: &gpui::KeyDownEvent,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(ed) = self.ai_editor.as_mut() else {
+            return;
+        };
+        let key = ev.keystroke.key.as_str();
+        let shift = ev.keystroke.modifiers.shift;
+        let multiline_field = ed.focus_idx == 2 && ed.multiline_last;
+        match key {
+            "escape" => {
+                self.ai_editor = None;
+                cx.notify();
+            }
+            "tab" => {
+                ed.focus_idx = if shift {
+                    (ed.focus_idx + 2) % 3
+                } else {
+                    (ed.focus_idx + 1) % 3
+                };
+                cx.notify();
+            }
+            "enter" => {
+                if multiline_field && shift {
+                    ed.fields[2].push('\n');
+                    cx.notify();
+                } else {
+                    self.save_ai_editor(cx);
+                }
+            }
+            "backspace" => {
+                ed.fields[ed.focus_idx].pop();
+                cx.notify();
+            }
+            _ => {
+                if let Some(ch) = ev
+                    .keystroke
+                    .key_char
+                    .as_ref()
+                    .filter(|s| !s.is_empty() && !s.chars().any(|c| c.is_control()))
+                {
+                    let i = ed.focus_idx;
+                    ed.fields[i].push_str(ch);
+                    cx.notify();
+                }
+            }
+        }
+    }
+
+    fn render_ai_editor(&self, c: &Palette, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
+        let ed = self.ai_editor.as_ref()?;
+        let rows: Vec<_> = (0..3)
+            .map(|i| {
+                let focused = ed.focus_idx == i;
+                let multiline = i == 2;
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap_0p5()
+                    .child(
+                        div()
+                            .text_size(px(10.0))
+                            .text_color(c.muted)
+                            .child(SharedString::from(ed.labels[i])),
+                    )
+                    .child(
+                        div()
+                            .px_2()
+                            .py_1()
+                            .rounded_sm()
+                            .border_1()
+                            .border_color(if focused { c.accent } else { c.border })
+                            .bg(c.bg)
+                            .text_size(px(11.0))
+                            .text_color(c.fg)
+                            .when(multiline, |d| d.min_h(px(96.0)).whitespace_normal())
+                            .child(SharedString::from(if focused {
+                                format!("{}\u{2502}", ed.fields[i])
+                            } else {
+                                ed.fields[i].clone()
+                            })),
+                    )
+            })
+            .collect();
+        Some(
+            div()
+                .absolute()
+                .inset_0()
+                .flex()
+                .items_center()
+                .justify_center()
+                .bg(crate::theme::modal_scrim())
+                .on_mouse_down(
+                    gpui::MouseButton::Left,
+                    cx.listener(|this, _: &gpui::MouseDownEvent, _w, cx| {
+                        this.ai_editor = None;
+                        cx.notify();
+                    }),
+                )
+                .child(
+                    div()
+                        .track_focus(&self.ai_editor_focus)
+                        .key_context("AiEditor")
+                        .on_key_down(cx.listener(Self::on_ai_editor_key))
+                        .on_mouse_down(
+                            gpui::MouseButton::Left,
+                            cx.listener(|_, _: &gpui::MouseDownEvent, _w, cx| cx.stop_propagation()),
+                        )
+                        .flex()
+                        .flex_col()
+                        .gap_2()
+                        .w(px(440.0))
+                        .p_3()
+                        .rounded_md()
+                        .bg(c.card)
+                        .border_1()
+                        .border_color(c.border)
+                        .child(div().text_size(px(12.0)).text_color(c.fg).child(
+                            if ed.kind == AiEditKind::Agent {
+                                "Edit agent"
+                            } else {
+                                "Edit directive"
+                            },
+                        ))
+                        .children(rows)
+                        .child(
+                            div()
+                                .text_size(px(9.0))
+                                .text_color(c.muted)
+                                .child("Tab to switch field \u{00b7} Enter to save \u{00b7} Shift+Enter newline \u{00b7} Esc cancel"),
+                        ),
+                )
+                .into_any_element(),
+        )
     }
 
     pub fn close(&mut self, cx: &mut Context<Self>) {
@@ -3990,6 +4212,7 @@ impl SettingsView {
                     .child(self.render_agents_section(c, cx))
                     .child(section_label("Directives", c))
                     .child(self.render_directives_section(c, cx))
+                    .children(self.render_ai_editor(c, cx))
                     .into_any_element();
             }
             _ => {}
@@ -4053,7 +4276,24 @@ impl SettingsView {
                             })),
                     )
                     .when(!builtin, |d| {
+                        let id_edit = id_del.clone();
                         d.child(
+                            div()
+                                .id(SharedString::from(format!("agent-edit-{id_del}")))
+                                .px_2()
+                                .py(px(2.0))
+                                .rounded_sm()
+                                .border_1()
+                                .border_color(c.border)
+                                .text_size(px(10.5))
+                                .text_color(c.muted)
+                                .hover(|s| s.text_color(c.fg))
+                                .child("Edit")
+                                .on_click(cx.listener(move |this, _: &ClickEvent, w, cx| {
+                                    this.edit_agent(&id_edit, w, cx)
+                                })),
+                        )
+                        .child(
                             div()
                                 .id(SharedString::from(format!("agent-del-{id_del}")))
                                 .px_2()
@@ -4150,6 +4390,23 @@ impl SettingsView {
                                     .child(SharedString::from(d.description.clone())),
                             ),
                     )
+                    .child({
+                        let id_edit = id_del.clone();
+                        div()
+                            .id(SharedString::from(format!("dir-edit-{id_edit}")))
+                            .px_2()
+                            .py(px(2.0))
+                            .rounded_sm()
+                            .border_1()
+                            .border_color(c.border)
+                            .text_size(px(10.5))
+                            .text_color(c.muted)
+                            .hover(|s| s.text_color(c.fg))
+                            .child("Edit")
+                            .on_click(cx.listener(move |this, _: &ClickEvent, w, cx| {
+                                this.edit_directive(&id_edit, w, cx)
+                            }))
+                    })
                     .child(
                         div()
                             .id(SharedString::from(format!("dir-del-{id_del}")))
