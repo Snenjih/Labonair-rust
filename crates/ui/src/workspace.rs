@@ -945,6 +945,29 @@ impl Workspace {
         }
     }
 
+    /// Execute `command` in the active terminal (appends a newline). If no
+    /// terminal is focused, opens a new local tab in the active cwd and runs it
+    /// there. Used by the AI panel's "Run" affordances (command snippets,
+    /// AI⇄Shell composer mode).
+    pub fn run_in_active_terminal(
+        &mut self,
+        command: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let cmd = command.trim_end().to_string();
+        if cmd.is_empty() {
+            return;
+        }
+        if let Some(view) = self.active_pane_view(cx) {
+            let _ = view.read(cx).handle().write(format!("{cmd}\n").as_bytes());
+            self.focus_active(window, cx);
+        } else {
+            let cwd = self.active_cwd(cx);
+            self.run_snippet_local(cwd, cmd, window, cx);
+        }
+    }
+
     /// Open a new local terminal tab in `cwd` and run `command` in it —
     /// snippet "terminal" mode, local target.
     pub fn run_snippet_local(

@@ -753,6 +753,9 @@ pub struct AiChatView {
     composer_popup: Option<ComposerPopup>,
     /// Cached workspace file list (rel paths) for the `@`-file picker.
     popup_files: Vec<String>,
+    /// AI⇄Shell toggle — when `true`, composed text runs in the active terminal
+    /// instead of being sent to the model (reference `AiInputBar` shell mode).
+    shell_mode: bool,
 }
 
 impl AiChatView {
@@ -797,6 +800,7 @@ impl AiChatView {
             md_cache: HashMap::new(),
             composer_popup: None,
             popup_files: Vec::new(),
+            shell_mode: false,
         }
     }
 
@@ -1067,6 +1071,14 @@ impl AiChatView {
     fn send(&mut self, window: Option<&mut Window>, cx: &mut Context<Self>) {
         let text = self.composer_text(cx).trim().to_string();
         if text.is_empty() && self.attachments.is_empty() {
+            return;
+        }
+        // AI⇄Shell mode — run the text in the active terminal, don't message.
+        if self.shell_mode && !text.is_empty() {
+            cx.emit(AiChatEvent::RunInTerminal(text));
+            self.composer_popup = None;
+            self.clear_composer(window, cx);
+            cx.notify();
             return;
         }
         // Intercept `/init` / `/plan` before treating the text as a message.
@@ -1635,7 +1647,12 @@ impl AiChatView {
             .text_xs()
             .text_color(c.fg)
             .when_some(reasoning, |d, r| d.child(r))
-            .children(blocks.iter().map(|b| self.render_block(b, c, palette)))
+            .children(
+                blocks
+                    .iter()
+                    .map(|b| self.render_block(b, c, palette, cx))
+                    .collect::<Vec<_>>(),
+            )
             .children(tool_cards)
             .when_some(error, |d, e| d.child(e))
             .into_any_element()
@@ -1793,6 +1810,7 @@ impl AiChatView {
         block: &MdBlock,
         c: &ChatColors,
         palette: &EditorPalette,
+        cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
         match block {
             MdBlock::Heading { level, spans } => div()
@@ -1856,7 +1874,7 @@ impl AiChatView {
                 .children(rows.iter().map(|r| table_row(r, c, false)))
                 .into_any_element(),
             MdBlock::Code { lang, text, .. } => {
-                self.render_code_block(lang.as_deref(), text, c, palette)
+                self.render_code_block(lang.as_deref(), text, c, palette, cx)
             }
         }
     }
@@ -1867,6 +1885,7 @@ impl AiChatView {
         text: &str,
         c: &ChatColors,
         palette: &EditorPalette,
+        cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
         let language = fence_language(lang);
         let mut hl = SyntaxHighlighter::new(language);
@@ -1912,6 +1931,13 @@ impl AiChatView {
 
         let label = lang.map(|l| l.to_string());
         let copy = text.to_string();
+        let is_shell = matches!(
+            lang.map(|l| l.trim().to_ascii_lowercase()).as_deref(),
+            Some("sh" | "bash" | "shell" | "zsh" | "console" | "shell-session" | "sh-session")
+        );
+        // A one-liner (or a short block) is safe to offer as a single "Run".
+        let runnable = is_shell && text.lines().filter(|l| !l.trim().is_empty()).count() <= 8;
+        let run_cmd = text.trim().to_string();
 
         div()
             .flex()
@@ -1937,12 +1963,36 @@ impl AiChatView {
                     ))
                     .child(
                         div()
-                            .id("ai-code-copy")
-                            .child("Copy")
-                            .hover(|s| s.text_color(c.fg))
-                            .on_click(move |_, _, cx| {
-                                cx.write_to_clipboard(ClipboardItem::new_string(copy.clone()));
-                            }),
+                            .flex()
+                            .items_center()
+                            .gap_2()
+                            .when(runnable, |d| {
+                                d.child(
+                                    div()
+                                        .id("ai-code-run")
+                                        .flex()
+                                        .items_center()
+                                        .gap_1()
+                                        .text_color(c.accent)
+                                        .hover(|s| s.text_color(c.fg))
+                                        .child(IconName::Terminal.svg(c.accent).size(px(10.0)))
+                                        .child("Run")
+                                        .on_click(cx.listener(move |_, _: &ClickEvent, _w, cx| {
+                                            cx.emit(AiChatEvent::RunInTerminal(run_cmd.clone()));
+                                        })),
+                                )
+                            })
+                            .child(
+                                div()
+                                    .id("ai-code-copy")
+                                    .child("Copy")
+                                    .hover(|s| s.text_color(c.fg))
+                                    .on_click(move |_, _, cx| {
+                                        cx.write_to_clipboard(ClipboardItem::new_string(
+                                            copy.clone(),
+                                        ));
+                                    }),
+                            ),
                     ),
             )
             .child(
@@ -2226,10 +2276,35 @@ impl AiChatView {
                             .gap_2()
                             .child(
                                 div()
+                                    .id("ai-shell-toggle")
+                                    .flex()
+                                    .items_center()
+                                    .gap_1()
+                                    .px_1p5()
+                                    .py_0p5()
+                                    .rounded_sm()
+                                    .border_1()
+                                    .border_color(if self.shell_mode { c.accent } else { c.border })
                                     .text_size(px(9.0))
-                                    .text_color(c.muted)
-                                    .child("Enter to send \u{00b7} \u{2318}\u{21a9} to queue"),
+                                    .text_color(if self.shell_mode { c.fg } else { c.muted })
+                                    .child(
+                                        IconName::Terminal
+                                            .svg(if self.shell_mode { c.accent } else { c.muted })
+                                            .size(px(10.0)),
+                                    )
+                                    .child(if self.shell_mode { "Shell" } else { "AI" })
+                                    .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
+                                        this.shell_mode = !this.shell_mode;
+                                        cx.notify();
+                                    })),
                             )
+                            .child(div().text_size(px(9.0)).text_color(c.muted).child(
+                                if self.shell_mode {
+                                    "Enter to run in terminal"
+                                } else {
+                                    "Enter to send \u{00b7} \u{2318}\u{21a9} to queue"
+                                },
+                            ))
                             .child(
                                 // Voice input — stub (TODO T16-019: whisper
                                 // backend). Visible but inert.
@@ -2266,7 +2341,7 @@ impl AiChatView {
                             .bg(if enabled { c.accent } else { c.border })
                             .text_color(if enabled { c.bg } else { c.muted })
                             .text_size(px(10.0))
-                            .child("Send")
+                            .child(if self.shell_mode { "Run" } else { "Send" })
                             .when(enabled, |d| {
                                 d.on_click(
                                     cx.listener(|this, _: &ClickEvent, w, cx| {
@@ -2279,6 +2354,16 @@ impl AiChatView {
             )
     }
 }
+
+/// Events the AI panel raises for the app shell to service.
+#[derive(Debug, Clone)]
+pub enum AiChatEvent {
+    /// Run a shell command in the active terminal — command-snippet "Run"
+    /// button, or the AI⇄Shell composer mode.
+    RunInTerminal(String),
+}
+
+impl gpui::EventEmitter<AiChatEvent> for AiChatView {}
 
 impl Focusable for AiChatView {
     fn focus_handle(&self, _cx: &App) -> FocusHandle {
@@ -2553,6 +2638,29 @@ mod tests {
             assert_eq!(store.run_status(), RunStatus::Error);
             assert!(store.active_messages()[0].content.contains("<selection"));
         });
+    }
+
+    #[gpui::test]
+    fn shell_mode_runs_in_terminal_not_model(cx: &mut TestAppContext) {
+        let (view, _rt) = make_view(cx);
+        let got: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+        let g2 = got.clone();
+        cx.update(|cx| {
+            cx.subscribe(&view, move |_, ev: &AiChatEvent, _| {
+                let AiChatEvent::RunInTerminal(c) = ev;
+                g2.lock().unwrap().push(c.clone());
+            })
+            .detach();
+        });
+        view.update(cx, |this, cx| {
+            this.shell_mode = true;
+            this.composer_seed = "ls -la".into();
+            this.send(None, cx);
+            assert!(this.store.read(cx).active_messages().is_empty());
+            assert!(this.composer_text(cx).is_empty());
+        });
+        cx.run_until_parked();
+        assert_eq!(got.lock().unwrap().as_slice(), &["ls -la".to_string()]);
     }
 
     #[gpui::test]

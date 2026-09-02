@@ -36,7 +36,7 @@ use labonair_terminal::TerminalRegistry;
 use tokio::runtime::Handle as TokioHandle;
 
 use crate::agent_access::{AgentAccessEntry, AgentAccessStore};
-use crate::ai_chat::{AiChatStore, AiChatView};
+use crate::ai_chat::{AiChatEvent, AiChatStore, AiChatView};
 use crate::background::{BackgroundStore, LayerScope};
 use crate::bar_items::{self, BarItemId, BarLoc, BarSide};
 use crate::bookmarks::{BookmarkEvent, BookmarksView};
@@ -158,6 +158,8 @@ pub struct AppShell {
     pending_commands: Vec<PaletteEvent>,
     /// Bookmark picks awaiting a `&mut Window` (drained in `render`).
     pending_bookmarks: Vec<BookmarkEvent>,
+    /// AI-panel events (run-in-terminal) awaiting a `&mut Window`.
+    pending_ai: Vec<AiChatEvent>,
     /// Client-side mirror of the MCP bridge's per-tab agent-access grants,
     /// shared with `Workspace` (T11-006).
     agent_access: Entity<AgentAccessStore>,
@@ -350,6 +352,11 @@ impl AppShell {
         let ai_store = cx.new(|_| AiChatStore::new(tokio.clone()));
         let ai_chat = cx.new(|cx| AiChatView::new(ai_store, theme.clone(), cx));
         cx.observe(&ai_chat, |_, _, cx| cx.notify()).detach();
+        cx.subscribe(&ai_chat, |this, _, event: &AiChatEvent, cx| {
+            this.pending_ai.push(event.clone());
+            cx.notify();
+        })
+        .detach();
 
         let command_palette =
             cx.new(|cx| CommandPalette::new(theme.clone(), workspace.clone(), prefs.clone(), cx));
@@ -468,6 +475,7 @@ impl AppShell {
             tokio: tokio.clone(),
             pending_commands: Vec::new(),
             pending_bookmarks: Vec::new(),
+            pending_ai: Vec::new(),
             agent_access,
             agent_badge_open: false,
             placements: bar_items::Placements::from_blob(
@@ -1122,6 +1130,17 @@ impl AppShell {
                 BookmarkEvent::OpenRemote { host_id, .. } => {
                     self.workspace
                         .update(cx, |w, cx| w.open_sftp_tab(host_id, window, cx));
+                }
+            }
+        }
+    }
+
+    fn drain_pending_ai(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        for event in std::mem::take(&mut self.pending_ai) {
+            match event {
+                AiChatEvent::RunInTerminal(cmd) => {
+                    self.workspace
+                        .update(cx, |w, cx| w.run_in_active_terminal(cmd, window, cx));
                 }
             }
         }
@@ -2816,6 +2835,7 @@ impl Render for AppShell {
         self.maybe_persist_geometry(window);
         self.drain_pending_commands(window, cx);
         self.drain_pending_bookmarks(window, cx);
+        self.drain_pending_ai(window, cx);
 
         let palette_data = self.build_palette_data(cx);
         self.command_palette
