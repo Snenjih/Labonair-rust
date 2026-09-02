@@ -708,6 +708,13 @@ pub enum PaletteEvent {
     SwitchToTab(u64),
     SetColorMode(ThemePreference),
     SetEditorTheme(EditorThemeId),
+    /// Open an SSH terminal (`sftp = false`) or SFTP browser (`sftp = true`)
+    /// tab for the given host id — picked on the `Connect SSH` / `Open SFTP`
+    /// sub-pages.
+    ConnectHost {
+        host_id: String,
+        sftp: bool,
+    },
 }
 
 /// A dynamic choice rendered on a sub-page (tab, host, session, branch…).
@@ -780,6 +787,10 @@ enum RowKey {
     Tab(u64),
     SetColorMode(ThemePreference),
     SetEditorTheme(EditorThemeId),
+    ConnectHost {
+        host_id: String,
+        sftp: bool,
+    },
     /// Non-actionable (empty-state placeholder line).
     Noop,
 }
@@ -925,6 +936,7 @@ impl CommandPalette {
         icon: IconName,
         mode: SearchMode,
         empty_hint: &str,
+        key_for: fn(&PaletteChoice) -> RowKey,
     ) -> Vec<PaletteRow> {
         if choices.is_empty() {
             return vec![PaletteRow {
@@ -950,7 +962,7 @@ impl CommandPalette {
         scored
             .into_iter()
             .map(|(_, _, c)| PaletteRow {
-                key: RowKey::Noop,
+                key: key_for(c),
                 icon: Some(icon),
                 title: c.title.clone(),
                 subtitle: c.subtitle.clone(),
@@ -1081,6 +1093,7 @@ impl CommandPalette {
                 IconName::Sparkles,
                 mode,
                 "No themes installed yet",
+                |_| RowKey::Noop,
             ),
             Page::HostsSsh => self.choice_rows(
                 &self.data.hosts,
@@ -1088,6 +1101,10 @@ impl CommandPalette {
                 IconName::Terminal,
                 mode,
                 "No hosts — add one in the Host Manager",
+                |c| RowKey::ConnectHost {
+                    host_id: c.id.clone(),
+                    sftp: false,
+                },
             ),
             Page::HostsSftp => self.choice_rows(
                 &self.data.hosts,
@@ -1095,6 +1112,10 @@ impl CommandPalette {
                 IconName::Folder,
                 mode,
                 "No hosts — add one in the Host Manager",
+                |c| RowKey::ConnectHost {
+                    host_id: c.id.clone(),
+                    sftp: true,
+                },
             ),
             Page::Snippets => self.choice_rows(
                 &self.data.snippets,
@@ -1102,6 +1123,7 @@ impl CommandPalette {
                 IconName::Command,
                 mode,
                 "No snippets saved yet",
+                |_| RowKey::Noop,
             ),
             Page::AiSessions => self.choice_rows(
                 &self.data.ai_sessions,
@@ -1109,6 +1131,7 @@ impl CommandPalette {
                 IconName::Sparkles,
                 mode,
                 "No AI sessions yet",
+                |_| RowKey::Noop,
             ),
             Page::Outline => self.choice_rows(
                 &self.data.symbols,
@@ -1116,6 +1139,7 @@ impl CommandPalette {
                 IconName::FileCode,
                 mode,
                 "No symbols found",
+                |_| RowKey::Noop,
             ),
             Page::GitBranches => self.choice_rows(
                 &self.data.git_branches,
@@ -1123,6 +1147,7 @@ impl CommandPalette {
                 IconName::GitBranch,
                 mode,
                 "No repository detected",
+                |_| RowKey::Noop,
             ),
         }
     }
@@ -1151,6 +1176,10 @@ impl CommandPalette {
             RowKey::SetEditorTheme(id) => {
                 self.close(cx);
                 cx.emit(PaletteEvent::SetEditorTheme(id));
+            }
+            RowKey::ConnectHost { host_id, sftp } => {
+                self.close(cx);
+                cx.emit(PaletteEvent::ConnectHost { host_id, sftp });
             }
         }
     }

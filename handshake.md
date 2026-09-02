@@ -4,7 +4,59 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
-## Last Session: 2026-09-02 (Block D — Command Palette rebuild, T16-013)
+## Last Session: 2026-09-02 (Block E — Host Manager & SSH, partial)
+
+### What Was Done (branch `master`, commit after `3f7beab`)
+
+- **Command palette host wiring (fully done)**:
+  - `command_palette.rs`: new `PaletteEvent::ConnectHost { host_id, sftp }` +
+    `RowKey::ConnectHost`. `choice_rows` gained a `key_for: fn(&PaletteChoice)
+    -> RowKey` param; `HostsSsh`/`HostsSftp` pages now produce actionable rows
+    (`sftp` false/true), all other choice pages pass `|_| RowKey::Noop`
+    (unchanged behavior). `run_selected` emits the new event.
+  - `app_shell.rs`: `build_palette_data` now populates `PaletteData.hosts`
+    from `workspace.known_hosts(cx)`. `drain_pending_commands` handles
+    `ConnectHost` → `workspace.open_ssh_tab` / `open_sftp_tab`.
+  - Net effect: `Connect SSH…` / `Open SFTP…` palette sub-pages list real
+    hosts and open the tab on Enter/click.
+
+- **Host form correctness fixes (T16-014, partial — still the single modal, NOT
+  yet master/detail)** in `crates/ui/src/hosts.rs`:
+  - Auth taxonomy fixed: `AuthMethod::Agent` → `AuthMethod::Credential`,
+    backend string `"agent"` → `"credential"` (which `ssh::client` /
+    `config_parser` actually special-case — the old `"agent"` string was a
+    dead value). `from_str` still accepts legacy `"agent"`.
+  - Credential picker is now gated on `auth == Credential` (was always shown).
+  - Removed the stray "Tags (comma separated)" field (not in the reference
+    form); `submit_form` now sends `None` for tags. `tags` column untouched.
+  - Added + persisted 6 previously-missing fields (backend model + columns
+    already existed): `sudo_password` (keychain, "(set)" placeholder, Password
+    auth only), `default_path_sftp`, `keep_alive_interval`, `keep_alive_tries`,
+    `notes`, `pin_to_top` (toggle). Wired through both `hosts_create` and
+    `hosts_update` arms of `submit_form`.
+  - New test `host_form_prefills_and_serializes_the_block_e_fields`.
+
+### Verified
+`cargo fmt --all --check`, `cargo check/clippy --workspace --all-targets
+-D warnings`, `cargo test --workspace` — all green (16 suites, 0 failures).
+
+### NOT done — remaining Block E (hand off to next session)
+- **T16-014 master/detail rebuild**: left ~340px host list pane + persistent
+  detail pane (not modal); 4-tab form (General/SSH/SFTP/Tunnels); icon picker
+  (`icon` + `startup_snippet_id`/`mode` fields still unwired); autosave +
+  save-status indicator; **Test Connection** button; search box + quick-connect
+  (`user@host:port` parse); grid/list toggle; sort control; group filter chips;
+  per-host ping/reachability; drag-and-drop reorder + into groups.
+- **T16-015 (entirely untouched)**: per-session `ConnectionStatus` store;
+  full-pane `SshLoadingScreen` (5-state machine + 4-stage progress + live
+  connection-log); structured error screen w/ retry; wire russh flow in
+  `crates/backend/src/modules/ssh` to emit status transitions; replace
+  `workspace.rs::render_ssh_prompt` + the `"Connecting…"` PTY write.
+- Next task id: continue Block E (T16-014 master/detail + T16-015), then Block F.
+
+---
+
+## Session: 2026-09-02 (Block D — Command Palette rebuild, T16-013)
 
 ### What Was Done (commit after `16495bd`, branch `master`)
 

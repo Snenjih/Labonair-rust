@@ -778,6 +778,19 @@ impl AppShell {
             })
             .collect();
 
+        let hosts = self
+            .workspace
+            .read(cx)
+            .known_hosts(cx)
+            .into_iter()
+            .map(|(id, name)| PaletteChoice {
+                id,
+                title: name,
+                subtitle: None,
+                active: false,
+            })
+            .collect();
+
         let theme = self.theme.read(cx);
         let p = self.prefs.read(cx).get();
         let mut toggles = std::collections::HashMap::new();
@@ -793,6 +806,7 @@ impl AppShell {
 
         PaletteData {
             tabs,
+            hosts,
             color_mode: theme.preference(),
             editor_theme: theme.editor_theme(),
             font_size: Some(p.terminal_font_size),
@@ -811,6 +825,15 @@ impl AppShell {
                         .update(cx, |w, cx| w.reveal_tab(id, window, cx));
                 }
                 PaletteEvent::Run(id) => self.run_palette_command(id, window, cx),
+                PaletteEvent::ConnectHost { host_id, sftp } => {
+                    self.workspace.update(cx, |w, cx| {
+                        if sftp {
+                            w.open_sftp_tab(host_id, window, cx);
+                        } else {
+                            w.open_ssh_tab(host_id, window, cx);
+                        }
+                    });
+                }
                 PaletteEvent::SetColorMode(pref) => {
                     let key = match pref {
                         crate::theme::ThemePreference::System => "system",

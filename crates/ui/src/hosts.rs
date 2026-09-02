@@ -81,7 +81,10 @@ pub struct ActiveTunnelRow {
 enum AuthMethod {
     Password,
     Key,
-    Agent,
+    /// Auth via a saved [`Credential`] (key or password). Backend auth_method
+    /// string is `"credential"` — matches `reference-src` and
+    /// `ssh::client` / `config_parser` which special-case that exact value.
+    Credential,
     None,
 }
 
@@ -89,21 +92,22 @@ impl AuthMethod {
     const ALL: [AuthMethod; 4] = [
         AuthMethod::Password,
         AuthMethod::Key,
-        AuthMethod::Agent,
+        AuthMethod::Credential,
         AuthMethod::None,
     ];
     fn as_str(self) -> &'static str {
         match self {
             AuthMethod::Password => "password",
             AuthMethod::Key => "key",
-            AuthMethod::Agent => "agent",
+            AuthMethod::Credential => "credential",
             AuthMethod::None => "none",
         }
     }
     fn from_str(s: &str) -> Self {
         match s {
             "key" => AuthMethod::Key,
-            "agent" => AuthMethod::Agent,
+            // `"agent"` is the legacy pre-Block-E spelling of this mode.
+            "credential" | "agent" => AuthMethod::Credential,
             "none" => AuthMethod::None,
             _ => AuthMethod::Password,
         }
@@ -112,7 +116,7 @@ impl AuthMethod {
         match self {
             AuthMethod::Password => "Password",
             AuthMethod::Key => "SSH Key",
-            AuthMethod::Agent => "Agent",
+            AuthMethod::Credential => "Credential",
             AuthMethod::None => "None",
         }
     }
@@ -126,8 +130,12 @@ enum HostField {
     Username,
     KeyPath,
     DefaultPath,
-    Tags,
+    DefaultPathSftp,
     Password,
+    SudoPassword,
+    KeepAliveInterval,
+    KeepAliveTries,
+    Notes,
     TunnelLocalPort(usize),
     TunnelRemoteHost(usize),
     TunnelRemotePort(usize),
@@ -221,8 +229,19 @@ struct HostForm {
     auth: AuthMethod,
     key_path: String,
     default_path: String,
-    tags: String,
+    default_path_sftp: String,
     password: String,
+    /// Sudo-password autofill — persisted to the OS keychain, never SQLite.
+    /// Empty string on load (backend never returns the plaintext); only
+    /// written when the user types a replacement.
+    sudo_password: String,
+    /// `true` once a sudo password is on file for this host (drives the
+    /// "(set)" placeholder). From `Host::sudo_password_set`.
+    sudo_password_set: bool,
+    keep_alive_interval: String,
+    keep_alive_tries: String,
+    notes: String,
+    pin_to_top: bool,
     /// `None` = no credential; `Some(idx)` indexes into `credentials`.
     credential: Option<usize>,
     /// `None` = no group; `Some(idx)` indexes into `groups`.
@@ -251,8 +270,14 @@ impl HostForm {
             auth: AuthMethod::Password,
             key_path: String::new(),
             default_path: String::new(),
-            tags: String::new(),
+            default_path_sftp: String::new(),
             password: String::new(),
+            sudo_password: String::new(),
+            sudo_password_set: false,
+            keep_alive_interval: String::new(),
+            keep_alive_tries: String::new(),
+            notes: String::new(),
+            pin_to_top: false,
             credential: None,
             group: None,
             jump_host: None,
@@ -273,8 +298,20 @@ impl HostForm {
             auth: AuthMethod::from_str(&h.auth_method),
             key_path: h.private_key_path.clone().unwrap_or_default(),
             default_path: h.default_path_ssh.clone().unwrap_or_default(),
-            tags: h.tags.clone().unwrap_or_default(),
+            default_path_sftp: h.default_path_sftp.clone().unwrap_or_default(),
             password: String::new(),
+            sudo_password: String::new(),
+            sudo_password_set: h.sudo_password_set,
+            keep_alive_interval: h
+                .keep_alive_interval
+                .map(|v| v.to_string())
+                .unwrap_or_default(),
+            keep_alive_tries: h
+                .keep_alive_tries
+                .map(|v| v.to_string())
+                .unwrap_or_default(),
+            notes: h.notes.clone().unwrap_or_default(),
+            pin_to_top: h.pin_to_top,
             credential: h
                 .credential_id
                 .as_deref()
@@ -302,8 +339,12 @@ impl HostForm {
             HostField::Username => &mut self.username,
             HostField::KeyPath => &mut self.key_path,
             HostField::DefaultPath => &mut self.default_path,
-            HostField::Tags => &mut self.tags,
+            HostField::DefaultPathSftp => &mut self.default_path_sftp,
             HostField::Password => &mut self.password,
+            HostField::SudoPassword => &mut self.sudo_password,
+            HostField::KeepAliveInterval => &mut self.keep_alive_interval,
+            HostField::KeepAliveTries => &mut self.keep_alive_tries,
+            HostField::Notes => &mut self.notes,
             HostField::TunnelLocalPort(i)
             | HostField::TunnelRemoteHost(i)
             | HostField::TunnelRemotePort(i)
@@ -530,8 +571,15 @@ impl HostManagerView {
         let key_path = (!form.key_path.trim().is_empty()).then(|| form.key_path.trim().to_string());
         let default_path =
             (!form.default_path.trim().is_empty()).then(|| form.default_path.trim().to_string());
-        let tags = (!form.tags.trim().is_empty()).then(|| form.tags.trim().to_string());
         let password = (!form.password.is_empty()).then(|| form.password.clone());
+        // On edit: only send `Some(_)` when the user actually typed a new
+        // sudo password (backend interprets `Some("")` as "clear").
+        let sudo_password = form.sudo_password.clone();
+        let default_path_sftp = Some(form.default_path_sftp.trim().to_string());
+        let keep_alive_interval: Option<i64> = form.keep_alive_interval.trim().parse().ok();
+        let keep_alive_tries: Option<i64> = form.keep_alive_tries.trim().parse().ok();
+        let notes = Some(form.notes.trim().to_string());
+        let pin_to_top = form.pin_to_top;
         let group_id = form
             .group
             .and_then(|i| self.groups.get(i))
@@ -558,30 +606,30 @@ impl HostManagerView {
                         &app.db,
                         &app.secrets,
                         id,
-                        Some(name),                                     // name
-                        Some(addr),                                     // host_address
-                        Some(port),                                     // port
-                        Some(user),                                     // username
-                        Some(auth),                                     // auth_method
-                        key_path,                                       // private_key_path
-                        group_id,                                       // group_id
-                        tags,                                           // tags
-                        password,                                       // password
-                        None,                                           // sudo_password
-                        default_path,                                   // default_path_ssh
-                        None,                                           // default_path_sftp
-                        None,                                           // pin_to_top
-                        None,                                           // keep_alive_interval
-                        None,                                           // keep_alive_tries
-                        None,                                           // sort_order
-                        Some(tunnels_json),                             // tunnels
-                        None,                                           // startup_snippet_id
-                        None,                                           // startup_snippet_mode
-                        Some(cred_id.clone().unwrap_or_default()),      // credential_id ("" clears)
+                        Some(name),                                                 // name
+                        Some(addr),                                                 // host_address
+                        Some(port),                                                 // port
+                        Some(user),                                                 // username
+                        Some(auth),                                                 // auth_method
+                        key_path, // private_key_path
+                        group_id, // group_id
+                        None,     // tags
+                        password, // password
+                        (!sudo_password.is_empty()).then(|| sudo_password.clone()), // sudo_password
+                        default_path, // default_path_ssh
+                        default_path_sftp, // default_path_sftp
+                        Some(pin_to_top), // pin_to_top
+                        keep_alive_interval, // keep_alive_interval
+                        keep_alive_tries, // keep_alive_tries
+                        None,     // sort_order
+                        Some(tunnels_json), // tunnels
+                        None,     // startup_snippet_id
+                        None,     // startup_snippet_mode
+                        Some(cred_id.clone().unwrap_or_default()), // credential_id ("" clears)
                         Some(jump_host_id.clone().unwrap_or_default()), // jump_host_id ("" clears)
-                        None,                                           // notes
-                        None,                                           // icon
-                        Some(block_agent_access),                       // block_agent_access
+                        notes,    // notes
+                        None,     // icon
+                        Some(block_agent_access), // block_agent_access
                     )
                     .await;
                 }
@@ -590,29 +638,29 @@ impl HostManagerView {
                         app.clone(),
                         &app.db,
                         &app.secrets,
-                        name,                     // name
-                        addr,                     // host_address
-                        port,                     // port
-                        user,                     // username
-                        auth,                     // auth_method
-                        key_path,                 // private_key_path
-                        group_id,                 // group_id
-                        tags,                     // tags
-                        password,                 // password
-                        None,                     // sudo_password
-                        default_path,             // default_path_ssh
-                        None,                     // default_path_sftp
-                        None,                     // pin_to_top
-                        None,                     // keep_alive_interval
-                        None,                     // keep_alive_tries
-                        None,                     // sort_order
-                        Some(tunnels_json),       // tunnels
-                        None,                     // startup_snippet_id
-                        None,                     // startup_snippet_mode
-                        cred_id,                  // credential_id
-                        jump_host_id,             // jump_host_id
-                        None,                     // notes
-                        None,                     // icon
+                        name,                                                       // name
+                        addr,                                                       // host_address
+                        port,                                                       // port
+                        user,                                                       // username
+                        auth,                                                       // auth_method
+                        key_path, // private_key_path
+                        group_id, // group_id
+                        None,     // tags
+                        password, // password
+                        (!sudo_password.is_empty()).then(|| sudo_password.clone()), // sudo_password
+                        default_path, // default_path_ssh
+                        default_path_sftp, // default_path_sftp
+                        Some(pin_to_top), // pin_to_top
+                        keep_alive_interval, // keep_alive_interval
+                        keep_alive_tries, // keep_alive_tries
+                        None,     // sort_order
+                        Some(tunnels_json), // tunnels
+                        None,     // startup_snippet_id
+                        None,     // startup_snippet_mode
+                        cred_id,  // credential_id
+                        jump_host_id, // jump_host_id
+                        notes,    // notes
+                        None,     // icon
                         Some(block_agent_access), // block_agent_access
                     )
                     .await;
@@ -1513,7 +1561,7 @@ impl HostManagerView {
                                             match m {
                                                 AuthMethod::Password => "auth-pw",
                                                 AuthMethod::Key => "auth-key",
-                                                AuthMethod::Agent => "auth-agent",
+                                                AuthMethod::Credential => "auth-cred",
                                                 AuthMethod::None => "auth-none",
                                             },
                                             m.title(),
@@ -1551,6 +1599,27 @@ impl HostManagerView {
                             cx,
                         ))
                     })
+                    .when(auth == AuthMethod::Password, |el| {
+                        el.child(
+                            self.labelled_field(
+                                "Sudo password autofill (OS keychain)",
+                                if form.sudo_password.is_empty() {
+                                    if form.sudo_password_set {
+                                        "(set)".to_string()
+                                    } else {
+                                        String::new()
+                                    }
+                                } else {
+                                    "\u{2022}".repeat(form.sudo_password.chars().count())
+                                }
+                                .as_str(),
+                                HostField::SudoPassword,
+                                form.focus == HostField::SudoPassword,
+                                p,
+                                cx,
+                            ),
+                        )
+                    })
                     .child(self.labelled_field(
                         "Start directory",
                         &form.default_path,
@@ -1560,10 +1629,10 @@ impl HostManagerView {
                         cx,
                     ))
                     .child(self.labelled_field(
-                        "Tags (comma separated)",
-                        &form.tags,
-                        HostField::Tags,
-                        form.focus == HostField::Tags,
+                        "SFTP start directory",
+                        &form.default_path_sftp,
+                        HostField::DefaultPathSftp,
+                        form.focus == HostField::DefaultPathSftp,
                         p,
                         cx,
                     ))
@@ -1571,27 +1640,80 @@ impl HostManagerView {
                         div()
                             .flex()
                             .gap_2()
-                            .child(
-                                self.btn(
-                                    "cred-cycle",
-                                    format!("Credential: {cred_label}"),
-                                    p,
-                                    false,
-                                )
-                                .on_click(cx.listener(
-                                    |this, _: &ClickEvent, _w, cx| {
-                                        let n = this.credentials.len();
-                                        if let Some(f) = this.form.as_mut() {
-                                            f.credential = match f.credential {
-                                                None if n > 0 => Some(0),
-                                                Some(i) if i + 1 < n => Some(i + 1),
-                                                _ => None,
-                                            };
-                                        }
-                                        cx.notify();
-                                    },
-                                )),
+                            .child(self.labelled_field(
+                                "Keep-alive interval (s)",
+                                &form.keep_alive_interval,
+                                HostField::KeepAliveInterval,
+                                form.focus == HostField::KeepAliveInterval,
+                                p,
+                                cx,
+                            ))
+                            .child(self.labelled_field(
+                                "Keep-alive max tries",
+                                &form.keep_alive_tries,
+                                HostField::KeepAliveTries,
+                                form.focus == HostField::KeepAliveTries,
+                                p,
+                                cx,
+                            )),
+                    )
+                    .child(self.labelled_field(
+                        "Notes / runbook",
+                        &form.notes,
+                        HostField::Notes,
+                        form.focus == HostField::Notes,
+                        p,
+                        cx,
+                    ))
+                    .child(
+                        div().flex().flex_col().gap_0p5().child("Options").child(
+                            self.btn(
+                                "pin-to-top",
+                                if form.pin_to_top {
+                                    "Pinned \u{2014} always shown first"
+                                } else {
+                                    "Not pinned \u{2014} click to always show first"
+                                },
+                                p,
+                                form.pin_to_top,
                             )
+                            .on_click(cx.listener(
+                                |this, _: &ClickEvent, _w, cx| {
+                                    if let Some(f) = this.form.as_mut() {
+                                        f.pin_to_top = !f.pin_to_top;
+                                    }
+                                    cx.notify();
+                                },
+                            )),
+                        ),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .gap_2()
+                            .when(auth == AuthMethod::Credential, |el| {
+                                el.child(
+                                    self.btn(
+                                        "cred-cycle",
+                                        format!("Credential: {cred_label}"),
+                                        p,
+                                        false,
+                                    )
+                                    .on_click(cx.listener(
+                                        |this, _: &ClickEvent, _w, cx| {
+                                            let n = this.credentials.len();
+                                            if let Some(f) = this.form.as_mut() {
+                                                f.credential = match f.credential {
+                                                    None if n > 0 => Some(0),
+                                                    Some(i) if i + 1 < n => Some(i + 1),
+                                                    _ => None,
+                                                };
+                                            }
+                                            cx.notify();
+                                        },
+                                    )),
+                                )
+                            })
                             .child(
                                 self.btn("group-cycle", format!("Group: {group_label}"), p, false)
                                     .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
@@ -2353,6 +2475,33 @@ mod tests {
         assert_eq!(form.editing_id.as_deref(), Some("h"));
         assert!(form.jump_host.is_none());
         assert!(form.tunnels.is_empty());
+    }
+
+    #[test]
+    fn host_form_prefills_and_serializes_the_block_e_fields() {
+        let mut host = host_stub("h", "Box");
+        host.auth_method = "credential".into();
+        host.default_path_sftp = Some("/var/www".into());
+        host.keep_alive_interval = Some(30);
+        host.keep_alive_tries = Some(5);
+        host.notes = Some("prod runbook".into());
+        host.pin_to_top = true;
+        host.sudo_password_set = true;
+
+        let form = HostForm::from_host(&host, &[], &[], &[]);
+        assert_eq!(form.auth, AuthMethod::Credential);
+        assert_eq!(form.default_path_sftp, "/var/www");
+        assert_eq!(form.keep_alive_interval, "30");
+        assert_eq!(form.keep_alive_tries, "5");
+        assert_eq!(form.notes, "prod runbook");
+        assert!(form.pin_to_top);
+        assert!(form.sudo_password_set);
+        assert!(form.sudo_password.is_empty());
+
+        // Legacy "agent" spelling still resolves to the Credential mode, and
+        // Credential serializes back to the backend's "credential" string.
+        assert_eq!(AuthMethod::from_str("agent"), AuthMethod::Credential);
+        assert_eq!(AuthMethod::Credential.as_str(), "credential");
     }
 
     fn host_stub(id: &str, name: &str) -> Host {
