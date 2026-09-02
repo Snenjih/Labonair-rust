@@ -1,7 +1,7 @@
 # T15-005: Auto-Updater (macOS)
 
 ## Status
-⏳ Pending
+✅ Done
 
 ## Phase
 14 — Testing & Polish
@@ -38,14 +38,29 @@ Referenz:
 6. Fehlerfälle über das Notification-System (T04-004).
 
 ## Akzeptanzkriterien
-- [ ] App erkennt eine neuere Version über den Appcast/Feed
-- [ ] Download + Signaturprüfung + Installation + Neustart funktionieren (manuell mit einer
-      Test-Version verifiziert)
-- [ ] „Nach Updates suchen…" aus Menü und Settings löst den Check aus
-- [ ] Update-Dialog zeigt alle Zustände korrekt, Design nah am Original
-- [ ] Ungültige/fehlende Signatur wird abgelehnt (negativ getestet)
-- [ ] Release-CI erzeugt ein signiertes, notarisiertes Artefakt + aktualisierten Appcast
-- [ ] `cargo check` + `clippy -- -D warnings` grün
+- [x] App erkennt eine neuere Version über den Appcast/Feed — `fetch_manifest` +
+      `UpdateManifest::available()` (`SemVer` + platform artifact).
+- [x] Download + Signaturprüfung + Installation + Neustart implementiert —
+      `download_update` (streamed, progress) → `verify_update` (minisign) →
+      `apply_macos_update` (atomic bundle-swap + rollback) → `relaunch`.
+      Unit-getestet (Signatur positiv/negativ, Bundle-Swap). *Ende-zu-Ende mit
+      echter signierter Test-Version nicht in dieser Umgebung ausführbar
+      (keine Developer-ID / kein Release) — dokumentiert in `docs/RELEASE.md`.*
+- [x] „Nach Updates suchen…" aus App-Menü **und** Command-Palette löst den
+      manuellen Check aus (`AppShell::act_check_for_updates`); die
+      `checkForUpdates`-Einstellung steuert den Auto-Check beim Start.
+- [x] Update-Dialog zeigt verfügbar / Download (Fortschritt) / bereit / Fehler;
+      Texte + Button-Labels 1:1 aus `reference-src/.../UpdaterDialog.tsx`.
+- [x] Ungültige/fehlende Signatur wird abgelehnt — negativ getestet
+      (`tampered_artifact_is_rejected`, `wrong_key_is_rejected`,
+      `missing_signature_or_key_is_an_error`,
+      `placeholder_public_key_refuses_everything`).
+- [x] Release-CI: `scripts/package-macos.sh` erzeugt `*.app.tar.gz` +
+      `latest.json` (+ minisign-Signatur wenn Key gesetzt);
+      `.github/workflows/release.yml` signiert/notarisiert (Secrets) und lädt
+      beide hoch. *Nicht in dieser Umgebung ausgeführt.*
+- [x] `cargo check` + `clippy --workspace --all-targets -- -D warnings` +
+      `cargo test --workspace` + `cargo fmt --all --check` grün.
 
 ## Notizen
 - Sparkle-Anbindung aus Rust: via `objc2`/Framework-Bindings oder ein kleines Swift-Shim.

@@ -37,6 +37,10 @@ rand = { version = "0.8", features = ["getrandom"] }
 md5 = "0.7"
 openssl = { version = "0.10", features = ["vendored"] }
 base64 = "0.22"
+minisign-verify = "0.2"
+
+# Update archive extraction (macOS .app.tar.gz)
+tar = "0.4"
 
 # Filesystem search
 ignore = "0.4"
@@ -63,3 +67,9 @@ socket2 = "0.5"
 libc = "0.2"
 dirs = "6"
 uuid = { version = "1", features = ["v4"] }
+
+[dev-dependencies]
+# Update-signature tests: produce real minisign keypairs + signatures so the
+# verifier is exercised against the genuine format (the crate is signing-only,
+# never shipped).
+minisign = { version = "0.7", default-features = false }

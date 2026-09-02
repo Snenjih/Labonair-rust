@@ -26,6 +26,7 @@ pub mod tabs;
 pub mod terminal;
 pub mod theme;
 pub mod transfers;
+pub mod updater;
 pub mod window_state;
 pub mod workspace;
 
@@ -74,4 +75,5 @@ pub use theme::{
     GlobalTheme, ThemeMode, ThemePreference, ThemeStore,
 };
 pub use transfers::{TransferBusEvent, TransfersEvent, TransfersView};
+pub use updater::{UpdaterStatus, UpdaterView};
 pub use workspace::Workspace;

@@ -7,6 +7,20 @@ versions follow [SemVer](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **Auto-updater — macOS (T15-005).**
+  - `labonair_backend::updater` gained `fetch_manifest` / `download_update`
+    (streamed, with progress) / `verify_update` (minisign Ed25519, pre-hashed —
+    empty key or signature is a hard failure) / `apply_macos_update` (atomic
+    `.app` swap with rollback) / `relaunch`, plus a 6 h auto-check backoff.
+  - `labonair_ui::updater::UpdaterView` — native GPUI update dialog
+    (available / downloading + progress / ready), a startup background check
+    gated on the `checkForUpdates` preference, and a **Check for Updates…**
+    entry in the app menu and the command palette. Failures surface as toasts.
+  - `scripts/package-macos.sh` now emits `Labonair_<version>_<arch>.app.tar.gz`
+    + a filled `latest.json`, signing the tarball with minisign when
+    `LABONAIR_UPDATER_KEY` is set; `.github/workflows/release.yml` uploads both.
+  - Decision (Sparkle vs. custom) and signing setup documented in
+    `docs/RELEASE.md`.
 - **Packaging & release foundation (T15-004).**
   - `scripts/package-macos.sh` — assembles a self-contained `Labonair.app`
     from a `--release` build (`Info.plist`, `AppIcon.icns`, version from
@@ -31,5 +45,5 @@ versions follow [SemVer](https://semver.org/).
 - No in-app web/URL preview (GPUI has no WebView) — native markdown +
   "open in browser" instead.
 - macOS / Linux only, no Windows.
-- Auto-update is check-only until T15-005.
+- Auto-update is macOS-only; Linux update path is still TODO.
 - No packaged Linux release yet (builds from source).

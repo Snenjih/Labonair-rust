@@ -352,6 +352,7 @@ pub enum CommandId {
     ClearTerminal,
     OpenShortcuts,
     OpenSettings,
+    CheckForUpdates,
     FormatDocument,
 }
 
@@ -398,6 +399,7 @@ static COMMANDS: &[Command] = &[
     Command { id: CommandId::FormatDocument,     title: "Format Document",         section: "Editor",         contexts: &[CtxEditor],                   shortcut: None },
     Command { id: CommandId::OpenShortcuts,      title: "Keyboard Shortcuts",      section: "Application",    contexts: &[],                            shortcut: Some(ShortcutsOpen) },
     Command { id: CommandId::OpenSettings,       title: "Open Settings",           section: "Application",    contexts: &[],                            shortcut: None },
+    Command { id: CommandId::CheckForUpdates,    title: "Check for Updates\u{2026}", section: "Application",   contexts: &[],                            shortcut: None },
 ];
 
 /// The whole registry, unfiltered.

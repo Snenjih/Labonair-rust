@@ -21,6 +21,13 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
+mod install;
+pub use install::{
+    apply_macos_update, current_app_bundle, download_update, fetch_manifest, manifest_update,
+    record_check_now, relaunch, should_auto_check, verify_update, DownloadProgress, CHECK_INTERVAL,
+    UPDATE_PUBLIC_KEY,
+};
+
 /// Where the release pipeline publishes the update manifest.
 ///
 /// Mirrors the reference `tauri.conf.json` updater endpoint, retargeted at this

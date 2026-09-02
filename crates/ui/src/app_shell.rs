@@ -47,6 +47,7 @@ use crate::pane::SplitAxis;
 use crate::settings::{PreferencesStore, SettingsView};
 use crate::snippets::SnippetsView;
 use crate::theme::{ThemePreference, ThemeStore};
+use crate::updater::UpdaterView;
 use crate::window_state;
 use crate::workspace::Workspace;
 
@@ -133,6 +134,7 @@ pub struct AppShell {
     command_palette: Entity<CommandPalette>,
     prefs: Entity<PreferencesStore>,
     settings: Entity<SettingsView>,
+    updater: Entity<UpdaterView>,
     /// Palette picks awaiting a `&mut Window` (drained in `render`) — same
     /// pattern `Workspace` uses for its window-less subscriptions.
     pending_commands: Vec<PaletteEvent>,
@@ -271,6 +273,14 @@ impl AppShell {
         });
         cx.observe(&settings, |_, _, cx| cx.notify()).detach();
 
+        // Auto-updater (T15-005). Kicks a quiet background check at startup when
+        // the `checkForUpdates` preference is on (6 h backoff inside the store).
+        let updater = cx.new(|cx| UpdaterView::new(tokio.clone(), theme.clone(), cx));
+        cx.observe(&updater, |_, _, cx| cx.notify()).detach();
+        if prefs.read(cx).get().check_for_updates {
+            updater.update(cx, |u, cx| u.run_check(false, cx));
+        }
+
         let snippets = cx.new(|cx| {
             SnippetsView::new(backend, tokio.clone(), theme.clone(), workspace.clone(), cx)
         });
@@ -364,6 +374,7 @@ impl AppShell {
             command_palette,
             prefs,
             settings,
+            updater,
             pending_commands: Vec::new(),
             agent_access,
             agent_badge_open: false,
@@ -395,6 +406,15 @@ impl AppShell {
         cx: &mut Context<Self>,
     ) {
         self.settings.update(cx, |s, cx| s.toggle(window, cx));
+    }
+
+    fn act_check_for_updates(
+        &mut self,
+        _: &menu::CheckForUpdates,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.updater.update(cx, |u, cx| u.run_check(true, cx));
     }
 
     fn toggle_sidebar(&mut self, cx: &mut Context<Self>) {
@@ -600,6 +620,7 @@ impl AppShell {
             CommandId::OpenHostManager => dispatch!(menu::OpenHostManager),
             CommandId::OpenShortcuts => dispatch!(menu::OpenShortcuts),
             CommandId::OpenSettings => dispatch!(menu::OpenSettings),
+            CommandId::CheckForUpdates => dispatch!(menu::CheckForUpdates),
             CommandId::DuplicateTab => self
                 .workspace
                 .update(cx, |w, cx| w.duplicate_active_tab(window, cx)),
@@ -1166,6 +1187,7 @@ impl Render for AppShell {
             .on_action(cx.listener(Self::act_prev_tab))
             .on_action(cx.listener(Self::act_command_palette))
             .on_action(cx.listener(Self::act_open_settings))
+            .on_action(cx.listener(Self::act_check_for_updates))
             .when(can_split, |d| {
                 d.on_action(cx.listener(Self::act_split_right))
                     .on_action(cx.listener(Self::act_split_down))
@@ -1193,6 +1215,7 @@ impl Render for AppShell {
             .children(background_layer)
             .child(self.command_palette.clone())
             .child(self.settings.clone())
+            .child(self.updater.clone())
             .children(toasts)
     }
 }

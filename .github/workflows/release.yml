@@ -28,17 +28,31 @@ jobs:
       - name: Cache cargo build
         uses: Swatinem/rust-cache@v2
 
+      - name: Install minisign (auto-update signing)
+        run: brew install minisign
+
+      - name: Write updater signing key
+        if: ${{ secrets.LABONAIR_UPDATER_PRIVATE_KEY != '' }}
+        run: |
+          printf '%s' "${{ secrets.LABONAIR_UPDATER_PRIVATE_KEY }}" > "$RUNNER_TEMP/updater.key"
+          echo "LABONAIR_UPDATER_KEY=$RUNNER_TEMP/updater.key" >> "$GITHUB_ENV"
+
       - name: Build, verify and package
         env:
           # Optional — set as repo secrets to enable signing/notarization.
           LABONAIR_SIGN_IDENTITY: ${{ secrets.LABONAIR_SIGN_IDENTITY }}
           LABONAIR_NOTARY_PROFILE: ${{ secrets.LABONAIR_NOTARY_PROFILE }}
+          LABONAIR_UPDATER_KEY_PASSWORD: ${{ secrets.LABONAIR_UPDATER_KEY_PASSWORD }}
         run: scripts/smoke-test.sh && scripts/package-macos.sh --dmg
 
       - name: Upload artifacts to the release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
+          # The .dmg is the human download; the .app.tar.gz + latest.json are
+          # consumed by the in-app auto-updater (T15-005).
           files: |
             target/release/bundle/macos/*.dmg
+            target/release/bundle/macos/*.app.tar.gz
+            target/release/bundle/macos/latest.json
         fail_on_unmatched_files: true

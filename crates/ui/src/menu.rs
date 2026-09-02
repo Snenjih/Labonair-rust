@@ -109,13 +109,9 @@ pub fn init(cx: &mut App) {
     cx.on_action(|_: &AiSettings, cx: &mut App| {
         toast(cx, "AI Settings", "AI settings arrive in a later phase.")
     });
-    cx.on_action(|_: &CheckForUpdates, cx: &mut App| {
-        toast(
-            cx,
-            "Check for Updates",
-            "You're on the latest version. (Auto-update lands in T15-005.)",
-        )
-    });
+    // `CheckForUpdates` is handled by `AppShell` (drives the auto-updater,
+    // T15-005) so the menu item, the command-palette entry and any shortcut
+    // share one code path.
 
     cx.set_menus(app_menus());
 

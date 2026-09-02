@@ -92,28 +92,56 @@ the intended path is an **AppImage** (bundle the binary + a `.desktop` file +
 manifest. Keep platform packaging behind `scripts/package-<os>.sh` so the
 release workflow stays a per-OS switch.
 
-## Auto-update foundation
+## Auto-update (T15-005)
 
-`labonair_backend::updater` (`crates/backend/src/modules/updater/`) ports the
-decision layer of the old Tauri updater:
+**Decision — custom minimal updater, not Sparkle.** Sparkle would need an
+`objc2`/framework binding or a Swift shim plus its own signed-appcast tooling;
+the app already publishes a Tauri-shaped `latest.json` (T15-004) and Tauri's
+updater used **minisign** signatures. Reusing that format keeps the release
+pipeline unchanged and avoids a second signing system, so the port reimplements
+the same four steps natively (this is also the approach Zed's auto-updater
+takes).
 
-- **Manifest**: a Tauri-compatible `latest.json` published at
-  `DEFAULT_UPDATE_ENDPOINT`
-  (`https://github.com/Snenjih/Labonair-rust/releases/latest/download/latest.json`).
-  Shape: `{ version, notes, pub_date, platforms: { "<os>-<arch>": { url,
-  signature } } }`.
-- **Target key**: `labonair_backend::UPDATE_TARGET` — `darwin-aarch64`,
-  `darwin-x86_64`, `linux-x86_64`, `linux-aarch64`.
-- **Check**: `UpdateManifest::available()` returns an `AvailableUpdate`
-  (version, notes, url, signature) only when the manifest advertises a
-  strictly-newer `SemVer` *and* carries an artifact for this platform.
+`labonair_backend::updater` (`crates/backend/src/modules/updater/`):
 
-Downloading, signature verification and applying the update — plus the "update
-available" dialog — are **T15-005**. This task only lands the manifest format,
-the endpoint, and the version-comparison logic (unit-tested).
+- **Manifest** — Tauri-compatible `latest.json` at `DEFAULT_UPDATE_ENDPOINT`
+  (`…/releases/latest/download/latest.json`). Shape: `{ version, notes,
+  pub_date, platforms: { "<os>-<arch>": { url, signature } } }`. `signature` is
+  the base64 of the whole `.minisig` file.
+- **Check** — `fetch_manifest()` GETs it; `UpdateManifest::available()` returns
+  an `AvailableUpdate` only for a strictly-newer `SemVer` *with* an artifact for
+  this `UPDATE_TARGET`. Auto-cadence: `CHECK_INTERVAL` (6 h), tracked in
+  `~/.config/labonair/updater-last-check`.
+- **Download** — `download_update()` streams the artifact with progress
+  callbacks.
+- **Verify** — `verify_update()` checks the minisign (Ed25519, pre-hashed)
+  signature against `UPDATE_PUBLIC_KEY`. An empty key or empty signature is a
+  hard failure — the update is **never** applied unverified.
+- **Apply** — `apply_macos_update()` unpacks the `<name>.app.tar.gz` and
+  atomically swaps the running `.app` bundle (moves the old one aside, rolls
+  back on failure); `relaunch()` re-opens it via `open` and exits.
 
-At release time, generate `latest.json` alongside the artifacts and upload
-both to the GitHub release.
+UI: `crates/ui/src/updater.rs` (`UpdaterView`) — the native GPUI dialog
+(available / downloading / ready), auto-check at startup when the
+`checkForUpdates` preference is on, and a **Check for Updates…** entry in the
+app menu and command palette. Failures go through the notification system.
+
+### Signing the update artifact
+
+1. Generate a minisign keypair once: `minisign -G -p updater.pub -s updater.key`.
+2. Put the **public** key's second line into
+   `crates/backend/src/modules/updater/install.rs::UPDATE_PUBLIC_KEY`.
+3. Store the **secret** key + its password as the CI secrets
+   `LABONAIR_UPDATER_PRIVATE_KEY` / `LABONAIR_UPDATER_KEY_PASSWORD`.
+
+`scripts/package-macos.sh` then emits `Labonair_<version>_<arch>.app.tar.gz`,
+signs it (`<tarball>.minisig`) and writes `latest.json` with the base64
+signature inline. Until step 2 is done, `UPDATE_PUBLIC_KEY` is empty and the
+in-app updater refuses every update (safe default).
+
+> A universal `latest.json` needs both `darwin-aarch64` and `darwin-x86_64`
+> entries; the per-arch runs each produce a single-arch manifest — merge them
+> (or run the arm64 build last and hand-add the x86_64 block) before upload.
 
 ## Distributed artifacts
 
@@ -121,7 +149,8 @@ both to the GitHub release.
 |---|---|---|
 | macOS (Apple Silicon) | `Labonair_<version>_arm64.dmg` | primary |
 | macOS (Intel) | `Labonair_<version>_x86_64.dmg` | via `--target` |
-| all | `latest.json` | update manifest |
+| macOS | `Labonair_<version>_<arch>.app.tar.gz` (+ `.minisig`) | auto-update payload |
+| macOS | `latest.json` | update manifest |
 | Linux | — | prepared, not released (see above) |
 
 ## Known limitations vs. the original app
@@ -129,7 +158,7 @@ both to the GitHub release.
 - **No in-app web/URL preview** — GPUI cannot embed a WebView. Replaced by
   native markdown rendering + "open in system browser".
 - **macOS / Linux only** — no Windows.
-- Auto-update is check-only until T15-005 (no in-app download/apply yet).
+- Auto-update: macOS only. Linux update (AppImage/Flatpak/repo) is still TODO.
 - Linux has no packaged release yet (builds from source).
 
 ## Verifying a release

@@ -4,7 +4,88 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
-## Last Session: 2026-09-02 (T15-004 — Packaging & release + license audit)
+## Last Session: 2026-09-02 (T15-005 — Auto-updater, macOS)
+
+### What Was Done
+- **T15-005 ✅ Done.** Native reimplementation of the Tauri updater flow
+  (port of `reference-src/src/modules/updater/`), on top of the T15-004
+  manifest module.
+  - **Decision:** custom minimal updater, **not Sparkle** — the app already
+    publishes a Tauri-shaped `latest.json` with minisign signatures, so reusing
+    that avoids a Swift shim + a 2nd signing system (Zed does the same).
+    Documented in `docs/RELEASE.md`.
+  - **`crates/backend/src/modules/updater/install.rs`** (new, +7 tests,
+    backend 186→193):
+    - `fetch_manifest(endpoint)` — reqwest GET + `UpdateManifest::parse`.
+    - `download_update(url, on_progress)` — streamed via
+      `reqwest::Response::chunk()` (no `futures` dep), progress callback per
+      chunk.
+    - `verify_update(artifact, sig_b64, pubkey_b64)` — `minisign-verify` 0.2
+      (Ed25519, pre-hashed). `sig_b64` = base64 of the whole `.minisig` file
+      (Tauri shape). **Empty key or empty signature → hard error** (safe
+      default; `UPDATE_PUBLIC_KEY` is an empty placeholder until a real key is
+      baked in).
+    - `apply_macos_update(archive, bundle)` — unpack `<name>.app.tar.gz`
+      (flate2+tar), move running `.app` aside, rename new into place, **roll
+      back on failure**, clean staging/backup.
+    - `current_app_bundle()` (walks `current_exe()` ancestors for `*.app`),
+      `relaunch(bundle)` (`open` + `exit(0)`).
+    - `should_auto_check()` / `record_check_now()` — `CHECK_INTERVAL` = 6 h,
+      timestamp in `~/.config/labonair/updater-last-check`.
+    - dev-dep `minisign = "0.7"` (signing) for the positive/negative sig tests.
+  - **`crates/ui/src/updater.rs`** (new, +6 tests, ui 188→194) — `UpdaterView`
+    GPUI entity+dialog. `UpdaterStatus` mirrors the reference union
+    (Idle/Checking/UpToDate/Available/Downloading/Ready/Error). `run_check
+    (manual)` (quiet auto vs. reporting manual), `install()` (tokio task →
+    `mpsc` progress channel → `cx.spawn` recv loop → Ready → 700 ms →
+    `relaunch`). Dialog markup + button labels ("Later", "Install & restart",
+    "Installing…", "Close") 1:1 with `UpdaterDialog.tsx`; progress bar =
+    `div().w(relative(frac))`. Errors → notification toasts.
+  - **`crates/ui/src/app_shell.rs`** — owns `updater: Entity<UpdaterView>`,
+    quiet startup check when `checkForUpdates` pref on, `act_check_for_updates`
+    handler (menu `CheckForUpdates` + new command-palette entry), renders the
+    dialog as a root child.
+  - **`crates/ui/src/menu.rs`** — dropped the `CheckForUpdates` toast stub
+    (now AppShell-handled, like `OpenSettings`).
+  - **`crates/ui/src/command_palette.rs`** — new `CommandId::CheckForUpdates`
+    ("Check for Updates…", Application section).
+  - **`scripts/package-macos.sh`** — now also emits
+    `Labonair_<version>_<arch>.app.tar.gz` + `latest.json` (signature inline,
+    base64 of `.minisig` when `LABONAIR_UPDATER_KEY` + `minisign` present, else
+    empty). **`.github/workflows/release.yml`** — `brew install minisign`,
+    write `LABONAIR_UPDATER_PRIVATE_KEY` secret to a temp key file, upload
+    `*.dmg` + `*.app.tar.gz` + `latest.json`.
+  - **`docs/RELEASE.md`**, **`CHANGELOG.md`** updated (decision, signing
+    setup, artifacts, limitations).
+- Verify: `cargo fmt --all --check`, `cargo clippy --workspace --all-targets
+  -- -D warnings`, `cargo test --workspace` — all green. backend **186→193**,
+  ui **188→194**; theme 25, ai 75, terminal 67, editor 60, app smoke 3
+  unchanged.
+
+### Current State
+- Branch `master`, committed. Pre-existing uncommitted `CLAUDE.md` edit is
+  **not ours** — left untouched, excluded from the commit.
+
+### What's Next
+- **T15-006** — feature-parity acceptance (final gate; bump version in
+  `crates/app/Cargo.toml` there).
+
+### Blockers / notes for next session
+- **`UPDATE_PUBLIC_KEY` is empty** — bake in the real minisign pubkey +
+  add `LABONAIR_UPDATER_PRIVATE_KEY` / `LABONAIR_UPDATER_KEY_PASSWORD` CI
+  secrets before the first signed release. Until then the in-app updater
+  refuses every update by design.
+- End-to-end updater test (real signed test-version → download → apply →
+  relaunch) **not runnable here** (no Developer ID, no published release).
+  Logic is unit-tested; do a manual run on a real release.
+- `latest.json` from a per-arch CI run is single-arch — merge the
+  `darwin-aarch64` + `darwin-x86_64` blocks before upload (noted in
+  `docs/RELEASE.md`).
+- `docs/performance.md` "Recorded runs" table still empty.
+
+---
+
+## Prev Session: 2026-09-02 (T15-004 — Packaging & release + license audit)
 
 ### What Was Done
 - **T15-004 ✅ Done.** Release/distribution foundation for the GPUI binary
