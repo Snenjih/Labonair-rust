@@ -51,6 +51,102 @@ pub struct AiChatStore {
     /// Plan mode — the agent proposes edits for review instead of applying them
     /// directly (reference `usePlanStore`). Toggled via `/plan` or the strip.
     plan_mode: bool,
+    /// Queued file edits awaiting review while plan mode is active.
+    plan_queue: Vec<PlanEdit>,
+}
+
+/// The mutating tools that plan mode diverts into the review queue.
+pub const PLAN_MUTATING_TOOLS: &[&str] = &["write_file", "edit", "multi_edit", "create_directory"];
+
+/// System-prompt block appended while plan mode is active (verbatim port of
+/// `reference-src/src/modules/ai/lib/agent.ts` `planBlock`).
+pub const PLAN_MODE_PROMPT: &str = "## PLAN MODE — ACTIVE\n\
+Mutating tools (write_file, edit, multi_edit, create_directory) will queue their changes for the user to review as a single diff. \
+Do NOT execute bash_run or bash_background while plan mode is active — restrict yourself to reads (read_file, grep, glob, list_directory) and the queued mutations. \
+After queueing the full set of edits, stop and return a brief summary; do not continue acting until the user has accepted/rejected.";
+
+/// A queued file mutation for plan review (`QueuedEdit` in the reference).
+#[derive(Debug, Clone)]
+pub struct PlanEdit {
+    pub id: String,
+    /// `write_file` | `edit` | `multi_edit` | `create_directory`.
+    pub kind: String,
+    pub path: String,
+    /// File content before the edit (empty for new files / directories).
+    pub original: String,
+    /// Full file content after the edit (empty for `create_directory`).
+    pub proposed: String,
+    pub is_new: bool,
+}
+
+/// Build a [`PlanEdit`] by resolving a mutating tool call against the current
+/// on-disk state (mirrors each tool's own replacement logic).
+fn plan_edit_from_call(id: &str, name: &str, args: &serde_json::Value) -> Option<PlanEdit> {
+    let path = args.get("path").and_then(|v| v.as_str())?.to_string();
+    let exists = std::path::Path::new(&path).exists();
+    let original = std::fs::read_to_string(&path).unwrap_or_default();
+    let apply = |src: &str, old: &str, new: &str, all: bool| -> String {
+        if all {
+            src.replace(old, new)
+        } else {
+            src.replacen(old, new, 1)
+        }
+    };
+    let (kind, proposed) = match name {
+        "create_directory" => ("create_directory", String::new()),
+        "write_file" => (
+            "write_file",
+            args.get("content")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .to_string(),
+        ),
+        "edit" => {
+            let old = args
+                .get("old_string")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default();
+            let new = args
+                .get("new_string")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default();
+            let all = args
+                .get("replace_all")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            ("edit", apply(&original, old, new, all))
+        }
+        "multi_edit" => {
+            let mut proposed = original.clone();
+            if let Some(edits) = args.get("edits").and_then(|v| v.as_array()) {
+                for e in edits {
+                    let old = e
+                        .get("old_string")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or_default();
+                    let new = e
+                        .get("new_string")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or_default();
+                    let all = e
+                        .get("replace_all")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false);
+                    proposed = apply(&proposed, old, new, all);
+                }
+            }
+            ("multi_edit", proposed)
+        }
+        _ => return None,
+    };
+    Some(PlanEdit {
+        id: id.to_string(),
+        kind: kind.to_string(),
+        path,
+        original,
+        proposed,
+        is_new: !exists,
+    })
 }
 
 impl AiChatStore {
@@ -92,7 +188,57 @@ impl AiChatStore {
             prompt_queue: Vec::new(),
             agent_instructions: String::new(),
             plan_mode: false,
+            plan_queue: Vec::new(),
         }
+    }
+
+    /// Queued plan-mode edits awaiting review.
+    pub fn plan_queue(&self) -> &[PlanEdit] {
+        &self.plan_queue
+    }
+
+    /// Reject a single queued edit.
+    pub fn plan_reject(&mut self, id: &str, cx: &mut Context<Self>) {
+        self.plan_queue.retain(|e| e.id != id);
+        cx.notify();
+    }
+
+    /// Discard every queued edit.
+    pub fn plan_discard_all(&mut self, cx: &mut Context<Self>) {
+        self.plan_queue.clear();
+        cx.notify();
+    }
+
+    /// Write every queued edit to disk (off-thread), then clear the queue.
+    pub fn plan_apply_all(&mut self, cx: &mut Context<Self>) {
+        let items = std::mem::take(&mut self.plan_queue);
+        if items.is_empty() {
+            return;
+        }
+        let (tx, rx) = tokio::sync::oneshot::channel::<Vec<String>>();
+        self.tokio.spawn_blocking(move || {
+            let mut errs = Vec::new();
+            for it in &items {
+                let res = if it.kind == "create_directory" {
+                    std::fs::create_dir_all(&it.path)
+                } else {
+                    if let Some(parent) = std::path::Path::new(&it.path).parent() {
+                        let _ = std::fs::create_dir_all(parent);
+                    }
+                    std::fs::write(&it.path, &it.proposed)
+                };
+                if let Err(e) = res {
+                    errs.push(format!("{}: {e}", it.path));
+                }
+            }
+            let _ = tx.send(errs);
+        });
+        cx.spawn(async move |this, cx| {
+            let _ = rx.await;
+            let _ = this.update(cx, |_this, cx| cx.notify());
+        })
+        .detach();
+        cx.notify();
     }
 
     /// Plan-mode flag (reference `usePlanStore().active`).
@@ -273,16 +419,22 @@ impl AiChatStore {
     /// Start (or continue) a streaming model turn over `history`. Shared by
     /// [`AiChatStore::send`] and the post-approval agent continuation.
     fn spawn_stream(&mut self, history: Vec<ChatMessage>, cx: &mut Context<Self>) {
-        let history = if self.agent_instructions.trim().is_empty()
-            || history.iter().any(|m| matches!(m.role, Role::System))
-        {
-            history
-        } else {
-            let mut with_sys = Vec::with_capacity(history.len() + 1);
-            with_sys.push(ChatMessage::system(self.agent_instructions.clone()));
-            with_sys.extend(history);
-            with_sys
-        };
+        let mut sys = self.agent_instructions.clone();
+        if self.plan_mode {
+            if !sys.is_empty() {
+                sys.push_str("\n\n");
+            }
+            sys.push_str(PLAN_MODE_PROMPT);
+        }
+        let history =
+            if sys.trim().is_empty() || history.iter().any(|m| matches!(m.role, Role::System)) {
+                history
+            } else {
+                let mut with_sys = Vec::with_capacity(history.len() + 1);
+                with_sys.push(ChatMessage::system(sys));
+                with_sys.extend(history);
+                with_sys
+            };
         let target = match resolve_target(&self.model_ref, &self.instances, self.secrets.as_ref()) {
             Ok(t) => t,
             Err(err) => {
@@ -354,7 +506,26 @@ impl AiChatStore {
             return;
         }
         let mut auto = Vec::new();
+        let mut queued_any = false;
         for (id, name, arguments) in pending {
+            // Plan mode — mutating tools queue their change for review instead
+            // of executing (reference `usePlanStore.enqueue`).
+            if self.plan_mode && PLAN_MUTATING_TOOLS.contains(&name.as_str()) {
+                let args: serde_json::Value =
+                    serde_json::from_str(&arguments).unwrap_or_else(|_| serde_json::json!({}));
+                if let Some(edit) = plan_edit_from_call(&id, &name, &args) {
+                    let path = edit.path.clone();
+                    self.plan_queue.push(edit);
+                    self.store.record_tool_result(
+                        &id,
+                        &name,
+                        format!("{{\"queued\":true,\"path\":{path:?}}}"),
+                        false,
+                    );
+                    queued_any = true;
+                    continue;
+                }
+            }
             let needs_approval = self
                 .registry
                 .get(&name)
@@ -373,6 +544,12 @@ impl AiChatStore {
         }
         if !auto.is_empty() {
             self.execute_calls(auto, cx);
+        } else if queued_any && self.pending_calls.is_empty() {
+            let history = self.store.begin_continue();
+            self.spawn_stream(history, cx);
+        }
+        if queued_any {
+            cx.notify();
         }
     }
 
@@ -455,6 +632,11 @@ impl AiChatStore {
         }
     }
 
+    #[cfg(test)]
+    pub(crate) fn test_dispatch_tool_calls(&mut self, cx: &mut Context<Self>) {
+        self.dispatch_tool_calls(cx);
+    }
+
     fn cancel_run(&mut self) {
         self.generation = self.generation.wrapping_add(1);
         self.pending_calls.clear();
@@ -482,6 +664,7 @@ use gpui::{
     ScrollWheelEvent, SharedString, StatefulInteractiveElement, Styled, StyledText, Window,
 };
 use labonair_ai::{find_model, MessageStatus, Role, SessionToolCall, ToolCallStatus, MODELS};
+use labonair_editor::diff::{ChangeTag, Diff};
 use labonair_editor::{Language, SyntaxHighlighter};
 
 use crate::ai_composer::{
@@ -756,6 +939,8 @@ pub struct AiChatView {
     /// AI⇄Shell toggle — when `true`, composed text runs in the active terminal
     /// instead of being sent to the model (reference `AiInputBar` shell mode).
     shell_mode: bool,
+    /// Plan-review rows whose diff the user has expanded (plan-edit id).
+    expanded_plan: HashSet<String>,
 }
 
 impl AiChatView {
@@ -801,6 +986,7 @@ impl AiChatView {
             composer_popup: None,
             popup_files: Vec::new(),
             shell_mode: false,
+            expanded_plan: HashSet::new(),
         }
     }
 
@@ -2007,6 +2193,294 @@ impl AiChatView {
             .into_any_element()
     }
 
+    /// Plan-mode strip above the composer — shows the flag + pending count and
+    /// an "Exit" toggle (reference `PlanModeStrip`).
+    fn render_plan_strip(&self, c: &ChatColors, cx: &mut Context<Self>) -> impl IntoElement {
+        let pending = self.store.read(cx).plan_queue().len();
+        let label = if pending == 0 {
+            "Plan mode — edits will be queued for review".to_string()
+        } else {
+            format!("Plan mode — {pending} change(s) pending review")
+        };
+        div()
+            .flex()
+            .items_center()
+            .justify_between()
+            .gap_2()
+            .px_1p5()
+            .py_0p5()
+            .rounded_sm()
+            .bg(c.accent.opacity(0.12))
+            .border_1()
+            .border_color(c.accent.opacity(0.4))
+            .text_size(px(10.0))
+            .text_color(c.fg)
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap_1()
+                    .child(IconName::SquareCheck.svg(c.accent).size(px(11.0)))
+                    .child(SharedString::from(label)),
+            )
+            .child(
+                div()
+                    .id("ai-plan-exit")
+                    .px_1()
+                    .rounded_sm()
+                    .text_color(c.muted)
+                    .hover(|s| s.text_color(c.fg))
+                    .child("Exit")
+                    .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
+                        this.store.update(cx, |s, cx| {
+                            s.set_plan_mode(false, cx);
+                            s.plan_discard_all(cx);
+                        });
+                        cx.notify();
+                    })),
+            )
+    }
+
+    /// Full-panel plan-review overlay (reference `PlanDiffReview`).
+    fn render_plan_review(
+        &self,
+        c: &ChatColors,
+        cx: &mut Context<Self>,
+    ) -> Option<gpui::AnyElement> {
+        let queue = self.store.read(cx).plan_queue().to_vec();
+        if queue.is_empty() {
+            return None;
+        }
+        let count = queue.len();
+        let rows: Vec<gpui::AnyElement> = queue
+            .iter()
+            .map(|e| self.render_plan_row(e, c, cx))
+            .collect();
+        Some(
+            div()
+                .absolute()
+                .inset_0()
+                .flex()
+                .flex_col()
+                .bg(c.bg.opacity(0.97))
+                .child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .justify_between()
+                        .px_3()
+                        .py_2()
+                        .border_b_1()
+                        .border_color(c.border)
+                        .child(
+                            div()
+                                .flex()
+                                .flex_col()
+                                .child(
+                                    div()
+                                        .text_xs()
+                                        .font_weight(FontWeight::SEMIBOLD)
+                                        .text_color(c.fg)
+                                        .child("Plan review"),
+                                )
+                                .child(div().text_size(px(10.0)).text_color(c.muted).child(
+                                    SharedString::from(format!("{count} pending change(s)")),
+                                )),
+                        )
+                        .child(
+                            div()
+                                .flex()
+                                .items_center()
+                                .gap_1p5()
+                                .child(
+                                    div()
+                                        .id("ai-plan-discard")
+                                        .px_2()
+                                        .py_0p5()
+                                        .rounded_sm()
+                                        .border_1()
+                                        .border_color(c.border)
+                                        .text_size(px(10.0))
+                                        .text_color(c.muted)
+                                        .hover(|s| s.text_color(c.error).border_color(c.error))
+                                        .child("Discard all")
+                                        .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
+                                            this.store.update(cx, |s, cx| s.plan_discard_all(cx));
+                                            cx.notify();
+                                        })),
+                                )
+                                .child(
+                                    div()
+                                        .id("ai-plan-apply")
+                                        .px_2()
+                                        .py_0p5()
+                                        .rounded_sm()
+                                        .bg(c.accent)
+                                        .text_color(c.bg)
+                                        .text_size(px(10.0))
+                                        .child(SharedString::from(format!("Apply {count}")))
+                                        .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
+                                            this.store.update(cx, |s, cx| s.plan_apply_all(cx));
+                                            cx.notify();
+                                        })),
+                                ),
+                        ),
+                )
+                .child(
+                    div()
+                        .id("ai-plan-list")
+                        .flex_1()
+                        .min_h_0()
+                        .overflow_y_scroll()
+                        .flex()
+                        .flex_col()
+                        .gap_1p5()
+                        .p_3()
+                        .children(rows),
+                )
+                .into_any_element(),
+        )
+    }
+
+    fn render_plan_row(
+        &self,
+        e: &PlanEdit,
+        c: &ChatColors,
+        cx: &mut Context<Self>,
+    ) -> gpui::AnyElement {
+        let is_dir = e.kind == "create_directory";
+        let expanded = self.expanded_plan.contains(&e.id);
+        let (added, removed) = plan_diff_stats(&e.original, &e.proposed);
+        let id_toggle = e.id.clone();
+        let id_reject = e.id.clone();
+        let name = std::path::Path::new(&e.path)
+            .file_name()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_else(|| e.path.clone());
+        div()
+            .flex()
+            .flex_col()
+            .rounded_md()
+            .border_1()
+            .border_color(c.border)
+            .bg(c.card)
+            .overflow_hidden()
+            .child(
+                div()
+                    .id(SharedString::from(format!("plan-row-{}", e.id)))
+                    .flex()
+                    .items_start()
+                    .gap_2()
+                    .px_2p5()
+                    .py_1p5()
+                    .when(!is_dir, |d| {
+                        d.on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                            if !this.expanded_plan.remove(&id_toggle) {
+                                this.expanded_plan.insert(id_toggle.clone());
+                            }
+                            cx.notify();
+                        }))
+                    })
+                    .child(
+                        div()
+                            .text_color(c.muted)
+                            .text_size(px(10.0))
+                            .child(if is_dir {
+                                " "
+                            } else if expanded {
+                                "\u{25be}"
+                            } else {
+                                "\u{25b8}"
+                            }),
+                    )
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .flex()
+                            .flex_col()
+                            .child(
+                                div()
+                                    .flex()
+                                    .items_center()
+                                    .gap_1p5()
+                                    .font_family("mono")
+                                    .text_size(px(11.0))
+                                    .text_color(c.fg)
+                                    .child(SharedString::from(name))
+                                    .when(e.is_new && !is_dir, |d| {
+                                        d.child(
+                                            div()
+                                                .text_size(px(9.0))
+                                                .text_color(c.accent)
+                                                .child("new"),
+                                        )
+                                    }),
+                            )
+                            .child(
+                                div()
+                                    .font_family("mono")
+                                    .text_size(px(9.0))
+                                    .text_color(c.muted)
+                                    .overflow_hidden()
+                                    .whitespace_nowrap()
+                                    .child(SharedString::from(e.path.clone())),
+                            )
+                            .child(if is_dir {
+                                div()
+                                    .text_size(px(9.0))
+                                    .text_color(c.muted)
+                                    .child("create directory")
+                            } else {
+                                div()
+                                    .flex()
+                                    .items_center()
+                                    .gap_2()
+                                    .text_size(px(9.0))
+                                    .child(
+                                        div()
+                                            .text_color(c.accent)
+                                            .child(SharedString::from(format!("+{added}"))),
+                                    )
+                                    .child(
+                                        div()
+                                            .text_color(c.error)
+                                            .child(SharedString::from(format!("-{removed}"))),
+                                    )
+                                    .child(
+                                        div()
+                                            .text_color(c.muted)
+                                            .child(SharedString::from(e.kind.clone())),
+                                    )
+                            }),
+                    )
+                    .child(
+                        div()
+                            .id(SharedString::from(format!("plan-reject-{}", e.id)))
+                            .text_color(c.muted)
+                            .text_size(px(11.0))
+                            .hover(|s| s.text_color(c.error))
+                            .child(IconName::X.svg(c.muted).size(px(11.0)))
+                            .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                                this.store.update(cx, |s, cx| s.plan_reject(&id_reject, cx));
+                                cx.notify();
+                            })),
+                    ),
+            )
+            .when(expanded && !is_dir, |d| {
+                d.child(
+                    div()
+                        .border_t_1()
+                        .border_color(c.border)
+                        .bg(c.code_bg)
+                        .px_2p5()
+                        .py_2()
+                        .child(plan_diff_preview(&e.original, &e.proposed, c)),
+                )
+            })
+            .into_any_element()
+    }
+
     fn render_composer_popup(
         &self,
         c: &ChatColors,
@@ -2168,6 +2642,9 @@ impl AiChatView {
                         .child(IconName::Zap.svg(c.error).size(px(11.0)))
                         .child("No model connected — add a key in Settings → AI"),
                 )
+            })
+            .when(self.store.read(cx).plan_mode(), |d| {
+                d.child(self.render_plan_strip(c, cx))
             })
             .when(!self.attachments.is_empty(), |d| {
                 d.child(div().flex().flex_wrap().gap_1().children(
@@ -2378,8 +2855,10 @@ impl Render for AiChatView {
         let header = self.render_header(&c, cx);
         let messages = self.render_messages(&c, cx);
         let composer = self.render_composer(&c, cx);
+        let plan_review = self.render_plan_review(&c, cx);
 
         div()
+            .relative()
             .flex()
             .flex_col()
             .size_full()
@@ -2389,10 +2868,73 @@ impl Render for AiChatView {
             .child(header)
             .child(messages)
             .child(composer)
+            .children(plan_review)
     }
 }
 
 // ── free helpers ──────────────────────────────────────────────────────────
+
+/// `(added, removed)` line counts between two file contents.
+fn plan_diff_stats(original: &str, proposed: &str) -> (usize, usize) {
+    let d = Diff::compute(original, proposed);
+    let mut add = 0;
+    let mut del = 0;
+    for l in &d.lines {
+        match l.tag {
+            ChangeTag::Insert => add += 1,
+            ChangeTag::Delete => del += 1,
+            ChangeTag::Equal => {}
+        }
+    }
+    (add, del)
+}
+
+/// Compact +/- line preview for a plan-review row.
+fn plan_diff_preview(original: &str, proposed: &str, c: &ChatColors) -> gpui::AnyElement {
+    let d = Diff::compute(original, proposed);
+    let changed: Vec<&labonair_editor::diff::DiffLine> = d
+        .lines
+        .iter()
+        .filter(|l| l.tag != ChangeTag::Equal)
+        .collect();
+    if changed.is_empty() {
+        return div()
+            .text_size(px(10.0))
+            .text_color(c.muted)
+            .child("no line-level changes")
+            .into_any_element();
+    }
+    const MAX: usize = 80;
+    let rest = changed.len().saturating_sub(MAX);
+    div()
+        .font_family("mono")
+        .text_size(px(10.5))
+        .flex()
+        .flex_col()
+        .children(changed.iter().take(MAX).map(|l| {
+            let (sign, col) = match l.tag {
+                ChangeTag::Insert => ("+", c.accent),
+                ChangeTag::Delete => ("-", c.error),
+                ChangeTag::Equal => (" ", c.muted),
+            };
+            div()
+                .flex()
+                .gap_1()
+                .text_color(col)
+                .whitespace_nowrap()
+                .child(sign)
+                .child(SharedString::from(l.text.clone()))
+        }))
+        .when(rest > 0, |dv| {
+            dv.child(
+                div()
+                    .text_size(px(9.0))
+                    .text_color(c.muted)
+                    .child(SharedString::from(format!("\u{2026} {rest} more"))),
+            )
+        })
+        .into_any_element()
+}
 
 fn truncate(s: &str, max: usize) -> String {
     if s.chars().count() <= max {
@@ -2638,6 +3180,93 @@ mod tests {
             assert_eq!(store.run_status(), RunStatus::Error);
             assert!(store.active_messages()[0].content.contains("<selection"));
         });
+    }
+
+    #[test]
+    fn plan_edit_from_call_resolves_proposed_content() {
+        let dir = std::env::temp_dir().join(format!("plan-src-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let f = dir.join("a.txt");
+        std::fs::write(&f, "one\ntwo\nthree\n").unwrap();
+        let p = f.to_string_lossy().to_string();
+
+        let e = plan_edit_from_call(
+            "1",
+            "edit",
+            &serde_json::json!({ "path": p, "old_string": "two", "new_string": "TWO" }),
+        )
+        .unwrap();
+        assert_eq!(e.proposed, "one\nTWO\nthree\n");
+        assert!(!e.is_new);
+
+        let e = plan_edit_from_call(
+            "2",
+            "write_file",
+            &serde_json::json!({ "path": dir.join("new.txt").to_string_lossy(), "content": "x" }),
+        )
+        .unwrap();
+        assert_eq!(e.proposed, "x");
+        assert!(e.is_new);
+
+        let e = plan_edit_from_call(
+            "3",
+            "multi_edit",
+            &serde_json::json!({ "path": p, "edits": [
+                { "old_string": "one", "new_string": "1" },
+                { "old_string": "three", "new_string": "3" },
+            ]}),
+        )
+        .unwrap();
+        assert_eq!(e.proposed, "1\ntwo\n3\n");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[gpui::test]
+    fn plan_mode_queues_mutating_tool(cx: &mut TestAppContext) {
+        let (entity, _rt) = make(cx);
+        let tmp = std::env::temp_dir().join(format!("plan-q-{}.txt", uuid::Uuid::new_v4()));
+        entity.update(cx, |s, cx| {
+            s.set_plan_mode(true, cx);
+            s.send("write the file", cx);
+            s.store.apply_event(StreamEvent::ToolCallStart {
+                id: "w1".into(),
+                name: "write_file".into(),
+            });
+            s.store.apply_event(StreamEvent::ToolCallDelta {
+                id: "w1".into(),
+                arguments_delta: format!(
+                    "{{\"path\":{:?},\"content\":\"hello world\"}}",
+                    tmp.to_string_lossy()
+                ),
+            });
+            s.store
+                .apply_event(StreamEvent::ToolCallEnd { id: "w1".into() });
+            s.store.apply_event(StreamEvent::Done {
+                finish_reason: "tool_calls".into(),
+            });
+            s.test_dispatch_tool_calls(cx);
+
+            assert_eq!(s.plan_queue().len(), 1);
+            assert_eq!(s.plan_queue()[0].kind, "write_file");
+            assert_eq!(s.plan_queue()[0].proposed, "hello world");
+            assert!(!tmp.exists(), "plan mode must not write to disk yet");
+
+            s.plan_apply_all(cx);
+            assert!(s.plan_queue().is_empty());
+        });
+        let mut wrote = None;
+        for _ in 0..200 {
+            cx.run_until_parked();
+            if let Ok(s) = std::fs::read_to_string(&tmp) {
+                if !s.is_empty() {
+                    wrote = Some(s);
+                    break;
+                }
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        assert_eq!(wrote.as_deref(), Some("hello world"));
+        let _ = std::fs::remove_file(&tmp);
     }
 
     #[gpui::test]
