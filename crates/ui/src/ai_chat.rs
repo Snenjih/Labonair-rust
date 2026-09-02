@@ -43,6 +43,9 @@ pub struct AiChatStore {
     read_cache: Arc<Mutex<HashSet<String>>>,
     /// Approval-gated tool calls from the last model turn, awaiting the user.
     pending_calls: Vec<ToolCall>,
+    /// The active agent's instructions, prepended as a system message on every
+    /// turn (AgentSwitcher — T16-019). Empty = no agent system prompt.
+    agent_instructions: String,
 }
 
 impl AiChatStore {
@@ -81,7 +84,13 @@ impl AiChatStore {
             subagents: Arc::new(NoopSubagentRunner),
             read_cache: Arc::new(Mutex::new(HashSet::new())),
             pending_calls: Vec::new(),
+            agent_instructions: String::new(),
         }
+    }
+
+    /// Set the active agent's system instructions (used on the next turn).
+    pub fn set_agent_instructions(&mut self, instructions: impl Into<String>) {
+        self.agent_instructions = instructions.into();
     }
 
     /// Swap in a real live-bridge (active-terminal cwd + buffer). The default is
@@ -190,6 +199,16 @@ impl AiChatStore {
     /// Start (or continue) a streaming model turn over `history`. Shared by
     /// [`AiChatStore::send`] and the post-approval agent continuation.
     fn spawn_stream(&mut self, history: Vec<ChatMessage>, cx: &mut Context<Self>) {
+        let history = if self.agent_instructions.trim().is_empty()
+            || history.iter().any(|m| matches!(m.role, Role::System))
+        {
+            history
+        } else {
+            let mut with_sys = Vec::with_capacity(history.len() + 1);
+            with_sys.push(ChatMessage::system(self.agent_instructions.clone()));
+            with_sys.extend(history);
+            with_sys
+        };
         let target = match resolve_target(&self.model_ref, &self.instances, self.secrets.as_ref()) {
             Ok(t) => t,
             Err(err) => {
@@ -453,6 +472,53 @@ pub fn is_at_bottom(offset_y: f32, max_h: f32, threshold: f32) -> bool {
     (max_h - (-offset_y)) <= threshold
 }
 
+/// Icon for a tool-call chip, keyed on the tool name.
+fn tool_icon(name: &str) -> IconName {
+    let n = name.to_ascii_lowercase();
+    if n.contains("read") || n.contains("open") {
+        IconName::File
+    } else if n.contains("write") || n.contains("edit") || n.contains("create") {
+        IconName::Pencil
+    } else if n.contains("bash") || n.contains("run") || n.contains("exec") || n.contains("shell") {
+        IconName::Terminal
+    } else if n.contains("search") || n.contains("grep") || n.contains("glob") || n.contains("find")
+    {
+        IconName::Search
+    } else if n.contains("list") || n.contains("dir") {
+        IconName::Folder
+    } else {
+        IconName::Zap
+    }
+}
+
+/// A one-line summary of a tool call's arguments JSON — the first string-ish
+/// value (path / command / query), else a compacted preview.
+fn tool_summary(args_json: &str) -> String {
+    if args_json.trim().is_empty() {
+        return String::new();
+    }
+    if let Ok(serde_json::Value::Object(map)) = serde_json::from_str::<serde_json::Value>(args_json)
+    {
+        for key in [
+            "path",
+            "file_path",
+            "command",
+            "query",
+            "pattern",
+            "cmd",
+            "url",
+        ] {
+            if let Some(serde_json::Value::String(s)) = map.get(key) {
+                return truncate(s, 120);
+            }
+        }
+    }
+    truncate(
+        &args_json.split_whitespace().collect::<Vec<_>>().join(" "),
+        120,
+    )
+}
+
 fn run_status_label(status: RunStatus) -> Option<&'static str> {
     match status {
         RunStatus::Idle => None,
@@ -520,6 +586,15 @@ pub struct AiChatView {
     stick_bottom: bool,
     /// Session switcher dropdown open state.
     session_menu: bool,
+    /// Model-picker dropdown open state (T16-019 — was a click-cycle).
+    model_menu: bool,
+    /// Agent-switcher dropdown open state.
+    agent_menu: bool,
+    /// AI agents (builtin + user) + the active id (persisted via the backend).
+    agents: Vec<labonair_backend::modules::agents::Agent>,
+    active_agent_id: String,
+    /// Tool-call chips the user has expanded (tool call id).
+    expanded_tools: HashSet<String>,
     /// Reasoning blocks the user has expanded (message id).
     expanded_reasoning: HashSet<String>,
     /// Parsed-markdown cache keyed by message id → (content length, blocks).
@@ -534,6 +609,21 @@ impl AiChatView {
     ) -> Self {
         cx.observe(&store, |_, _, cx| cx.notify()).detach();
         cx.observe(&theme, |_, _, cx| cx.notify()).detach();
+
+        use labonair_backend::modules::agents;
+        let loaded = agents::load();
+        let mut all = agents::builtin_agents();
+        all.extend(loaded.custom);
+        let active_agent_id = if all.iter().any(|a| a.id == loaded.active_id) {
+            loaded.active_id
+        } else {
+            agents::default_active_id()
+        };
+        if let Some(a) = all.iter().find(|a| a.id == active_agent_id) {
+            let instr = a.instructions.clone();
+            store.update(cx, |s, _| s.set_agent_instructions(instr));
+        }
+
         Self {
             store,
             theme,
@@ -544,9 +634,51 @@ impl AiChatView {
             scroll: ScrollHandle::new(),
             stick_bottom: true,
             session_menu: false,
+            model_menu: false,
+            agent_menu: false,
+            agents: all,
+            active_agent_id,
+            expanded_tools: HashSet::new(),
             expanded_reasoning: HashSet::new(),
             md_cache: HashMap::new(),
         }
+    }
+
+    /// Switch the active agent — persists + pushes its instructions to the
+    /// store for the next turn.
+    fn set_agent(&mut self, id: String, cx: &mut Context<Self>) {
+        if self.active_agent_id == id {
+            self.agent_menu = false;
+            cx.notify();
+            return;
+        }
+        self.active_agent_id = id.clone();
+        self.agent_menu = false;
+        let instr = self
+            .agents
+            .iter()
+            .find(|a| a.id == id)
+            .map(|a| a.instructions.clone())
+            .unwrap_or_default();
+        self.store
+            .update(cx, |s, _| s.set_agent_instructions(instr));
+        use labonair_backend::modules::agents;
+        let custom: Vec<agents::Agent> = self
+            .agents
+            .iter()
+            .filter(|a| !a.built_in)
+            .cloned()
+            .collect();
+        let _ = agents::save(&custom, &id);
+        cx.notify();
+    }
+
+    fn active_agent_name(&self) -> String {
+        self.agents
+            .iter()
+            .find(|a| a.id == self.active_agent_id)
+            .map(|a| a.name.clone())
+            .unwrap_or_else(|| "Coder".to_string())
     }
 
     /// Attach a captured terminal/editor selection to the composer.
@@ -618,15 +750,6 @@ impl AiChatView {
 
     fn stop(&mut self, cx: &mut Context<Self>) {
         self.store.update(cx, |s, cx| s.stop(cx));
-        cx.notify();
-    }
-
-    fn cycle_model(&mut self, cx: &mut Context<Self>) {
-        let current = self.store.read(cx).model_ref().to_string();
-        let cur_id = current.split('@').next().unwrap_or(&current);
-        let pos = MODELS.iter().position(|m| m.id == cur_id).unwrap_or(0);
-        let next = MODELS[(pos + 1) % MODELS.len()].id;
-        self.store.update(cx, |s, cx| s.set_model_ref(next, cx));
         cx.notify();
     }
 
@@ -750,7 +873,34 @@ impl AiChatView {
                     )
                     .child(
                         div()
+                            .id("ai-agent-pick")
+                            .flex()
+                            .items_center()
+                            .gap_1()
+                            .px_1p5()
+                            .py_0p5()
+                            .rounded_sm()
+                            .border_1()
+                            .border_color(c.border)
+                            .text_color(c.muted)
+                            .text_size(px(10.0))
+                            .hover(|s| s.border_color(c.accent).text_color(c.fg))
+                            .child(IconName::Sparkles.svg(c.muted).size(px(11.0)))
+                            .child(SharedString::from(self.active_agent_name()))
+                            .child("\u{25be}")
+                            .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
+                                this.agent_menu = !this.agent_menu;
+                                this.model_menu = false;
+                                this.session_menu = false;
+                                cx.notify();
+                            })),
+                    )
+                    .child(
+                        div()
                             .id("ai-model-pick")
+                            .flex()
+                            .items_center()
+                            .gap_1()
                             .px_1p5()
                             .py_0p5()
                             .rounded_sm()
@@ -760,8 +910,12 @@ impl AiChatView {
                             .text_size(px(10.0))
                             .hover(|s| s.border_color(c.accent).text_color(c.fg))
                             .child(SharedString::from(model_label))
+                            .child("\u{25be}")
                             .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
-                                this.cycle_model(cx);
+                                this.model_menu = !this.model_menu;
+                                this.agent_menu = false;
+                                this.session_menu = false;
+                                cx.notify();
                             })),
                     )
                     .child(
@@ -796,6 +950,95 @@ impl AiChatView {
             .when(self.session_menu, |d| {
                 d.child(self.render_session_menu(&sessions, active_id.as_deref(), c, cx))
             })
+            .when(self.agent_menu, |d| d.child(self.render_agent_menu(c, cx)))
+            .when(self.model_menu, |d| d.child(self.render_model_menu(c, cx)))
+    }
+
+    fn render_agent_menu(&self, c: &ChatColors, cx: &mut Context<Self>) -> impl IntoElement {
+        let active = self.active_agent_id.clone();
+        div()
+            .id("ai-agent-menu")
+            .mt_1()
+            .flex()
+            .flex_col()
+            .rounded_sm()
+            .border_1()
+            .border_color(c.border)
+            .bg(c.card)
+            .p_1()
+            .children(self.agents.iter().map(|a| {
+                let id = a.id.clone();
+                let on = a.id == active;
+                div()
+                    .id(SharedString::from(format!("agent-{}", a.id)))
+                    .flex()
+                    .flex_col()
+                    .px_2()
+                    .py_1()
+                    .rounded_sm()
+                    .when(on, |d| d.bg(c.accent.opacity(0.15)))
+                    .hover(|s| s.bg(c.border))
+                    .child(
+                        div()
+                            .text_size(px(11.0))
+                            .text_color(c.fg)
+                            .child(SharedString::from(a.name.clone())),
+                    )
+                    .child(
+                        div()
+                            .text_size(px(9.0))
+                            .text_color(c.muted)
+                            .child(SharedString::from(a.description.clone())),
+                    )
+                    .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                        this.set_agent(id.clone(), cx)
+                    }))
+            }))
+    }
+
+    fn render_model_menu(&self, c: &ChatColors, cx: &mut Context<Self>) -> impl IntoElement {
+        let cur = self
+            .store
+            .read(cx)
+            .model_ref()
+            .split('@')
+            .next()
+            .unwrap_or("")
+            .to_string();
+        div()
+            .id("ai-model-menu")
+            .mt_1()
+            .flex()
+            .flex_col()
+            .max_h(px(240.0))
+            .overflow_y_scroll()
+            .rounded_sm()
+            .border_1()
+            .border_color(c.border)
+            .bg(c.card)
+            .p_1()
+            .children(MODELS.iter().map(|m| {
+                let id = m.id;
+                let on = m.id == cur;
+                div()
+                    .id(SharedString::from(format!("model-{}", m.id)))
+                    .flex()
+                    .items_center()
+                    .justify_between()
+                    .px_2()
+                    .py_1()
+                    .rounded_sm()
+                    .text_size(px(11.0))
+                    .text_color(if on { c.fg } else { c.muted })
+                    .when(on, |d| d.bg(c.accent.opacity(0.15)))
+                    .hover(|s| s.bg(c.border))
+                    .child(SharedString::from(m.label))
+                    .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                        this.store.update(cx, |s, cx| s.set_model_ref(id, cx));
+                        this.model_menu = false;
+                        cx.notify();
+                    }))
+            }))
     }
 
     fn render_session_menu(
@@ -1090,6 +1333,11 @@ impl AiChatView {
         };
         let id_ok = tc.id.clone();
         let id_no = tc.id.clone();
+        let id_tog = tc.id.clone();
+        let expanded = self.expanded_tools.contains(&tc.id);
+        let icon = tool_icon(&tc.name);
+        let has_detail = !tc.arguments.is_empty() || tc.result.is_some();
+        let summary = tool_summary(&tc.arguments);
         div()
             .flex()
             .flex_col()
@@ -1101,10 +1349,19 @@ impl AiChatView {
             .p_2()
             .child(
                 div()
+                    .id(SharedString::from(format!("toolchip-{}", tc.id)))
                     .flex()
                     .items_center()
-                    .justify_between()
                     .gap_2()
+                    .when(has_detail, |d| {
+                        d.on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                            if !this.expanded_tools.remove(&id_tog) {
+                                this.expanded_tools.insert(id_tog.clone());
+                            }
+                            cx.notify();
+                        }))
+                    })
+                    .child(icon.svg(c.muted).size(px(12.0)))
                     .child(
                         div()
                             .font_family("mono")
@@ -1112,32 +1369,55 @@ impl AiChatView {
                             .text_color(c.fg)
                             .child(SharedString::from(tc.name.clone())),
                     )
+                    .when(!summary.is_empty() && !expanded, |d| {
+                        d.child(
+                            div()
+                                .flex_1()
+                                .min_w_0()
+                                .overflow_hidden()
+                                .whitespace_nowrap()
+                                .text_size(px(10.0))
+                                .text_color(c.muted)
+                                .child(SharedString::from(summary.clone())),
+                        )
+                    })
+                    .when(summary.is_empty() || expanded, |d| d.child(div().flex_1()))
                     .child(
                         div()
                             .text_size(px(10.0))
                             .text_color(status_color)
                             .child(status_text),
-                    ),
+                    )
+                    .when(has_detail, |d| {
+                        d.child(
+                            div()
+                                .text_color(c.muted)
+                                .text_size(px(10.0))
+                                .child(if expanded { "\u{25be}" } else { "\u{25b8}" }),
+                        )
+                    }),
             )
-            .when(!tc.arguments.is_empty(), |d| {
+            .when(expanded && !tc.arguments.is_empty(), |d| {
                 d.child(
                     div()
                         .font_family("mono")
                         .text_size(px(10.0))
                         .text_color(c.muted)
                         .whitespace_normal()
-                        .child(SharedString::from(truncate(&tc.arguments, 600))),
+                        .child(SharedString::from(truncate(&tc.arguments, 4000))),
                 )
             })
-            .when_some(tc.result.clone(), |d, r| {
-                d.child(
-                    div()
-                        .font_family("mono")
-                        .text_size(px(10.0))
-                        .text_color(c.muted)
-                        .whitespace_normal()
-                        .child(SharedString::from(truncate(&r, 600))),
-                )
+            .when(expanded, |d| {
+                d.when_some(tc.result.clone(), |d, r| {
+                    d.child(
+                        div()
+                            .font_family("mono")
+                            .text_size(px(10.0))
+                            .text_color(c.muted)
+                            .whitespace_normal()
+                            .child(SharedString::from(truncate(&r, 4000))),
+                    )
+                })
             })
             .when(tc.status == ToolCallStatus::AwaitingApproval, |d| {
                 d.child(
@@ -1754,10 +2034,17 @@ mod tests {
     }
 
     #[gpui::test]
-    fn cycle_model_changes_ref(cx: &mut TestAppContext) {
+    fn model_picker_sets_ref(cx: &mut TestAppContext) {
         let (view, _rt) = make_view(cx);
         let before = view.read_with(cx, |v, cx| v.store.read(cx).model_ref().to_string());
-        view.update(cx, |v, cx| v.cycle_model(cx));
+        let other = MODELS
+            .iter()
+            .map(|m| m.id)
+            .find(|id| !before.starts_with(id))
+            .unwrap();
+        view.update(cx, |v, cx| {
+            v.store.update(cx, |s, cx| s.set_model_ref(other, cx))
+        });
         let after = view.read_with(cx, |v, cx| v.store.read(cx).model_ref().to_string());
         assert_ne!(before, after);
     }

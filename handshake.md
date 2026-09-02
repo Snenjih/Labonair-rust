@@ -4,7 +4,59 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
-## Last Session: 2026-09-02 (Block F Commit 3 — T16-018 theme marketplace rest)
+## Last Session: 2026-09-02 (Block F Commit 4 — T16-019 AI panel + agents/directives backend)
+
+### What Was Done (commit after `55f703f`)
+
+**Agents / Directives backend (deferred from Block C — DONE)**
+- New `crates/backend/src/modules/agents/` — `Agent` model, 5 built-in agents
+  (`builtin:coder|architect|reviewer|security|designer`), `load`/`save` to
+  `labonair-agents.json`, pure `upsert`/`remove`, `new_agent_id`. 4 tests.
+- New `crates/backend/src/modules/directives/` — `Directive` model (`#handle`
+  + content), `load`/`save` to `labonair-directives.json`, `normalize_handle`
+  (port of `normalizeHandle`), pure `upsert`/`remove`. 2 tests.
+
+**AI panel (`ai_chat.rs`) — partial decomposition**
+- **AgentSwitcher**: new header dropdown (`agent_menu`) listing all agents;
+  `AiChatView` loads agents on `new`, `set_agent` persists + pushes the
+  agent's instructions into `AiChatStore::agent_instructions`. `spawn_stream`
+  prepends a `ChatMessage::system(instructions)` to every turn's history
+  (unless one is already present).
+- **ModelPicker is now a dropdown** (`model_menu` + `render_model_menu` over
+  `MODELS`) — replaced the click-to-cycle `cycle_model`.
+- **Expandable `ToolCallChip`**: `expanded_tools` set; collapsed row = tool
+  icon (`tool_icon`) + name + one-line `tool_summary` (path/command/query
+  from the args JSON) + status + chevron; click expands to full args +
+  result (4000-char cap, was a flat 600-char truncation).
+- **Settings → AI**: the "Agents & Directives" placeholder is replaced with
+  real **Agents** (list, Set active, Delete custom, New Agent, open config
+  folder) and **Directives** (list, Delete, New Directive) sections backed
+  by the new stores.
+- Tests: `model_picker_sets_ref` (replaces `cycle_model_changes_ref`).
+
+**NOT done in T16-019** (documented for a follow-up — none block use):
+- Real `text_field` composer — the swap is invasive (window threading
+  through `new`/`send`/subscribe + the no-window test helper `make_view`);
+  the keydown-buffer composer still works. This is the one unmet "Verify"
+  bullet.
+- slash-commands (`/init`, `/plan`, …), `#`-directive inline expansion in
+  the composer, `@` file picker, QueueStrip, TodoStrip (a `TodoStore`
+  exists in `labonair_ai` but is unrendered), PlanModeStrip / PlanDiffReview,
+  ContextPillsRow, AI⇄Shell toggle, ⌘↵ enqueue, connect banner,
+  `CommandSnippet` rendering, voice/whisper stub, inline agent/directive
+  editors (currently edit the JSON files directly).
+
+### Verified
+`cargo fmt --all`, `cargo clippy --workspace --all-targets -D warnings`,
+`cargo test --workspace` — all green (695 tests).
+
+### Next
+Block F Commit 5 — palette ai-sessions/git-branches/outline pages; icon
+audit; `cmd-k` vs reference; remaining `vergleichsbericht-*` "not done" items.
+
+---
+
+## Session: 2026-09-02 (Block F Commit 3 — T16-018 theme marketplace rest)
 
 ### What Was Done (commit after `66c718a`)
 

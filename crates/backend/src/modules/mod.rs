@@ -1,6 +1,8 @@
+pub mod agents;
 pub mod backgrounds;
 pub mod bookmarks;
 pub mod credentials;
+pub mod directives;
 pub mod errors;
 pub mod fonts;
 pub mod fs;
