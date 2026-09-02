@@ -52,6 +52,19 @@ actions!(
         ZoomOut,
         ResetZoom,
         ToggleFullScreen,
+        ToggleZenMode,
+        // ── Tab index jumps / pane focus (no menu entry — parity with the
+        //    reference, which only exposes these as shortcuts, T13-005) ──────
+        SelectTab1,
+        SelectTab2,
+        SelectTab3,
+        SelectTab4,
+        SelectTab5,
+        SelectTab6,
+        SelectTab7,
+        SelectTab8,
+        SelectTab9,
+        FocusNextPane,
         // ── Terminal ──────────────────────────────────────────────────────
         SplitPaneRight,
         SplitPaneDown,
@@ -174,6 +187,17 @@ fn bindings(overrides: &KeybindMap) -> Vec<KeyBinding> {
     rebind!(v, ShortcutId::PaneSplitRight, SplitPaneRight);
     rebind!(v, ShortcutId::PaneSplitDown, SplitPaneDown);
     rebind!(v, ShortcutId::PaneClose, ClosePane);
+    rebind!(v, ShortcutId::PaneFocusNext, FocusNextPane);
+    rebind!(v, ShortcutId::TabSelect1, SelectTab1);
+    rebind!(v, ShortcutId::TabSelect2, SelectTab2);
+    rebind!(v, ShortcutId::TabSelect3, SelectTab3);
+    rebind!(v, ShortcutId::TabSelect4, SelectTab4);
+    rebind!(v, ShortcutId::TabSelect5, SelectTab5);
+    rebind!(v, ShortcutId::TabSelect6, SelectTab6);
+    rebind!(v, ShortcutId::TabSelect7, SelectTab7);
+    rebind!(v, ShortcutId::TabSelect8, SelectTab8);
+    rebind!(v, ShortcutId::TabSelect9, SelectTab9);
+    rebind!(v, ShortcutId::ViewZenMode, ToggleZenMode);
     rebind!(v, ShortcutId::SearchFocus, Find);
     rebind!(v, ShortcutId::AiToggle, ToggleAiPanel);
     rebind!(v, ShortcutId::AiAskSelection, AskAboutSelection);
@@ -311,8 +335,8 @@ mod tests {
     /// Every accelerator string parses (`KeyBinding::new` panics otherwise).
     #[test]
     fn bindings_parse() {
-        // 7 fixed + 19 rebindable defaults.
-        assert_eq!(bindings(&KeybindMap::new()).len(), 26);
+        // 7 fixed + 30 rebindable defaults.
+        assert_eq!(bindings(&KeybindMap::new()).len(), 37);
     }
 
     #[test]
@@ -322,7 +346,7 @@ mod tests {
         kb.insert("pane.close".into(), String::new()); // disabled
         let n = bindings(&kb).len();
         // TabNew still present (moved), PaneClose dropped → one fewer.
-        assert_eq!(n, 25);
+        assert_eq!(n, 36);
     }
 
     #[test]

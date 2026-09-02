@@ -4,7 +4,56 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
-## Last Session: 2026-09-02 (T12-003 — Path bookmarks)
+## Last Session: 2026-09-02 (T13-005 — Remaining shortcut handlers)
+
+### What Was Done
+- **T13-005 ✅ Done.** Wired the non-menu shortcuts the T15-006 audit flagged,
+  1:1 with `reference-src/src/modules/shortcuts/lib/useShortcutHandlers.ts`.
+  - **Preferences (`crates/backend/src/modules/settings/preferences.rs`):** new
+    `zen_mode_show_header` / `zen_mode_show_statusbar` bool fields (serde
+    `zenModeShowHeader` / `zenModeShowStatusbar`, default `true`) + roundtrip
+    test.
+  - **`crates/ui/src/menu.rs`:** `actions!` gains `SelectTab1..9`,
+    `FocusNextPane`, `ToggleZenMode` (no menu entries — reference has none);
+    11 new `rebind!` calls. Binding-count tests 26→37 / 25→36.
+  - **`crates/ui/src/command_palette.rs`:** `CommandId::{ToggleZenModeHeader,
+    ToggleZenModeStatusbar, ToggleZenMode}` + 3 `COMMANDS` rows in a new
+    "Settings" section ("Toggle: Show Header Bar / Show Status Bar / Zen Mode");
+    `ToggleZenMode` carries `shortcut: Some(ViewZenMode)` so
+    `command_for_shortcut` resolves. Tab-index / `pane.focusNext` stay
+    `None` (parity — dispatched via menu action, not the palette).
+  - **`crates/ui/src/workspace.rs`:** `select_tab_by_index(idx)` (port of
+    `selectByIndex`), `focus_next_pane` (port of `pane.focusNext` —
+    `leaves()` → next index cyclic, no-op on single pane / non-workspace).
+  - **`crates/ui/src/app_shell.rs`:** `select_tab_action!` macro → 9
+    `act_select_tab_N` handlers, `act_focus_next_pane`, `act_toggle_zen_mode`
+    + `toggle_zen_mode` / `toggle_zen_pref` helpers (persist via
+    `PreferencesStore::set_value`). All 11 registered as `on_action`; palette
+    arms for the 3 zen commands. `render` now hides header / statusbar per
+    the zen prefs (`.children(Option<AnyElement>)`).
+- **T15-006 checklist** updated (command-palette / shortcuts rows + follow-up
+  table mark T12-003 & T13-005 done).
+- Verify: `cargo fmt --all --check`, `cargo check --workspace --all-targets`,
+  `cargo clippy --workspace --all-targets -- -D warnings`,
+  `cargo test --workspace` — all green. backend 208→209 tests.
+
+### Current State
+- Branch `master`, committed. Pre-existing uncommitted `CLAUDE.md` edit is
+  **not ours** — left untouched, excluded from the commit.
+
+### What's Next
+- All roadmap tasks (`tasks/phase-*`) are ✅ Done. Only remaining item is the
+  **manual `cargo run` acceptance round** (T15-006 template) by the user.
+  `tasks/phase-14-testing/T15-001-feinschliff-catalog.md` is a living design
+  doc without a Status header, not a blocking task.
+
+### Blockers / notes for next session
+- Zen prefs are exposed only via the command palette + `Cmd+Shift+Z` (matches
+  reference — no settings-panel row).
+
+---
+
+## Prev Session: 2026-09-02 (T12-003 — Path bookmarks)
 
 ### What Was Done
 - **T12-003 ✅ Done.** Ported `reference-src/src/modules/bookmarks/`.

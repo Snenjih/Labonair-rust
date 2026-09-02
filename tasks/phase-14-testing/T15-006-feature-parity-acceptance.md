@@ -104,8 +104,8 @@ den Nutzer steht noch aus (Warnung oben); dieses Dokument ist die Vorlage dafür
 | `statusbar` | `ui/src/app_shell.rs` | T04-003 | ✅ | CWD-Breadcrumb, AI-Tools-Anzeige, Bar-Items. |
 | `notifications` | `ui/src/notifications.rs` | T04-004 | ✅ | Toast-Center, Fehler-Gate, Aktionen. |
 | `theme` | `ui/src/theme.rs`, `crates/theme` | T02-001..004 | ✅ | oklch-Tokens 1:1, Runtime-Provider, Import/Export, ANSI-Palette, Font-Overrides. |
-| `command-palette` | `ui/src/command_palette.rs` | T12-002 | ✅ | Registry + Picker + rebindbare Shortcuts. **Offen:** `tab.selectTab1..9`, `pane.focusNext`, `view.zenMode`, `bookmarks.open` haben noch keinen Dispatch → T13-005 / T12-003. |
-| `shortcuts` | `ui/src/command_palette.rs`, `ui/src/menu.rs` | T12-002, T13-004 | ✅ | Slug-Registry, Konflikt-Erkennung, Menü-Sync, Settings-Editor. Restliche Handler → T13-005. |
+| `command-palette` | `ui/src/command_palette.rs` | T12-002, T13-005 | ✅ | Registry + Picker + rebindbare Shortcuts. `tab.selectTab1..9`, `pane.focusNext`, `view.zenMode`, `bookmarks.open` haben jetzt Laufzeit-Dispatch (T13-005 / T12-003). |
+| `shortcuts` | `ui/src/command_palette.rs`, `ui/src/menu.rs` | T12-002, T13-004, T13-005 | ✅ | Slug-Registry, Konflikt-Erkennung, Menü-Sync, Settings-Editor, alle Nicht-Menü-Handler (Tab-Index/Pane-Fokus/Zen-Mode) verdrahtet. |
 | `git-graph` | `ui/src/git_graph.rs` | T11-001/2 | ✅ | Commit-Graph als Sidebar-Panel (`uniform_list`). |
 | `source-control` | `ui/src/git.rs` | T10-001..004 | ✅ | Staging, Diff, Branches, Stash, Hunk-Level — Sidebar-Panel. |
 | `snippets` | `ui/src/snippets.rs` | T12-001 | ✅ | lokal + SSH ausführbar, Gruppen, Abbruch. |
@@ -155,8 +155,8 @@ den Nutzer steht noch aus (Warnung oben); dieses Dokument ist die Vorlage dafür
 
 | Punkt | Task | Grund der Ausgliederung |
 |---|---|---|
-| Path-Bookmarks | **T12-003** | Umfang (Store + Popover + Persistenz); kein Blocker |
-| `tab.selectTab1..9`, `pane.focusNext`, `view.zenMode` + Zen-Prefs | **T13-005** | in T13-004 bewusst zurückgestellt; mechanisch |
+| Path-Bookmarks | **T12-003** ✅ erledigt | Umfang (Store + Popover + Persistenz); kein Blocker |
+| `tab.selectTab1..9`, `pane.focusNext`, `view.zenMode` + Zen-Prefs | **T13-005** ✅ erledigt | in T13-004 bewusst zurückgestellt; mechanisch |
 | Editor Soft-Wrap (`editor_word_wrap` ohne Renderer-Wirkung) | **T06-005** | echte Renderer-Arbeit (visuelle vs. logische Zeilen) |
 | Hörbare Terminal-Glocke (`terminal_bell` nur gespeichert) | **T06-005** | Audio-Ausgabe / Crate-Wahl offen |
 

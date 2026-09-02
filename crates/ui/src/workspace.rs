@@ -1151,6 +1151,34 @@ impl Workspace {
         self.cycle_tab(forward, window, cx);
     }
 
+    /// Jump to the tab at position `index` (0-based). No-op when no tab holds
+    /// that slot. Port of `useTabsStore.selectByIndex` (T13-005).
+    pub fn select_tab_by_index(
+        &mut self,
+        index: usize,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if let Some(id) = self.tabs.read(cx).tabs().get(index).map(|t| t.id) {
+            self.select_tab(id, window, cx);
+        }
+    }
+
+    /// Cycle focus to the next split leaf of the active workspace tab. No-op on
+    /// a single-pane tab or a non-workspace tab. Port of `pane.focusNext`
+    /// (`collectLeafIds` → next index, wrap) (T13-005).
+    pub fn focus_next_pane(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some((leaves, active)) = self.active_layout(cx).map(|l| (l.leaves(), l.active)) else {
+            return;
+        };
+        if leaves.len() <= 1 {
+            return;
+        }
+        let current = leaves.iter().position(|&p| p == active);
+        let next = leaves[current.map_or(0, |i| (i + 1) % leaves.len())];
+        self.set_pane_active(next, window, cx);
+    }
+
     /// Whether the active tab is a workspace tab whose layout is split.
     pub fn active_has_split(&self, cx: &App) -> bool {
         self.active_layout(cx).map(|l| l.len() > 1).unwrap_or(false)

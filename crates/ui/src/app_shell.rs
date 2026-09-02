@@ -157,6 +157,17 @@ pub struct AppShell {
     last_saved: Option<(Bounds<Pixels>, Instant)>,
 }
 
+/// Generate a `menu::SelectTabN` action handler that jumps to the tab at a
+/// fixed 0-based index (T13-005 — `Cmd+1..9`).
+macro_rules! select_tab_action {
+    ($name:ident, $action:ident, $idx:expr) => {
+        fn $name(&mut self, _: &menu::$action, window: &mut Window, cx: &mut Context<Self>) {
+            self.workspace
+                .update(cx, |w, cx| w.select_tab_by_index($idx, window, cx));
+        }
+    };
+}
+
 impl AppShell {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
@@ -610,6 +621,58 @@ impl AppShell {
         self.bookmarks.update(cx, |b, cx| b.toggle(window, cx));
     }
 
+    fn act_focus_next_pane(
+        &mut self,
+        _: &menu::FocusNextPane,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.workspace
+            .update(cx, |w, cx| w.focus_next_pane(window, cx));
+    }
+
+    fn act_toggle_zen_mode(
+        &mut self,
+        _: &menu::ToggleZenMode,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.toggle_zen_mode(cx);
+    }
+
+    /// `view.zenMode`: both bars visible → hide both, otherwise show both.
+    /// Port of `useShortcutHandlers`' `"view.zenMode"` handler.
+    fn toggle_zen_mode(&mut self, cx: &mut Context<Self>) {
+        let p = self.prefs.read(cx).get();
+        let next = !(p.zen_mode_show_header || p.zen_mode_show_statusbar);
+        self.prefs.update(cx, |s, cx| {
+            s.set_value("zenModeShowHeader", serde_json::Value::Bool(next), cx);
+            s.set_value("zenModeShowStatusbar", serde_json::Value::Bool(next), cx);
+        });
+    }
+
+    fn toggle_zen_pref(&mut self, key: &str, cx: &mut Context<Self>) {
+        let cur = self
+            .prefs
+            .read(cx)
+            .value(key)
+            .and_then(|v| v.as_bool())
+            .unwrap_or(true);
+        self.prefs.update(cx, |s, cx| {
+            s.set_value(key, serde_json::Value::Bool(!cur), cx)
+        });
+    }
+
+    select_tab_action!(act_select_tab_1, SelectTab1, 0);
+    select_tab_action!(act_select_tab_2, SelectTab2, 1);
+    select_tab_action!(act_select_tab_3, SelectTab3, 2);
+    select_tab_action!(act_select_tab_4, SelectTab4, 3);
+    select_tab_action!(act_select_tab_5, SelectTab5, 4);
+    select_tab_action!(act_select_tab_6, SelectTab6, 5);
+    select_tab_action!(act_select_tab_7, SelectTab7, 6);
+    select_tab_action!(act_select_tab_8, SelectTab8, 7);
+    select_tab_action!(act_select_tab_9, SelectTab9, 8);
+
     /// Drain palette picks queued by the `PaletteEvent` subscription, now
     /// that a `&mut Window` is available (called from `render`).
     fn drain_pending_commands(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -686,6 +749,9 @@ impl AppShell {
             CommandId::OpenPathBookmarks => self.bookmarks.update(cx, |b, cx| b.toggle(window, cx)),
             CommandId::OpenGitGraph => self.select_panel(SidebarPanel::GitGraph, cx),
             CommandId::FocusSourceControl => self.select_panel(SidebarPanel::SourceControl, cx),
+            CommandId::ToggleZenMode => self.toggle_zen_mode(cx),
+            CommandId::ToggleZenModeHeader => self.toggle_zen_pref("zenModeShowHeader", cx),
+            CommandId::ToggleZenModeStatusbar => self.toggle_zen_pref("zenModeShowStatusbar", cx),
             // Resolved inside the palette (opens a follow-up page).
             CommandId::SwitchTab => {}
             // No handler yet — the editor formatter arrives with its phase,
@@ -1208,11 +1274,13 @@ impl Render for AppShell {
         let ui_font_size = self.theme.read(cx).ui_font_size();
         let background_layer = self.background.read(cx).layer(LayerScope::App);
         let toasts = notifications::render_overlay(&self.notifications, &self.theme, cx);
-        let header = self.render_header(cx);
+        let show_header = self.prefs.read(cx).get().zen_mode_show_header;
+        let show_statusbar = self.prefs.read(cx).get().zen_mode_show_statusbar;
+        let header = show_header.then(|| self.render_header(cx).into_any_element());
         let sidebar = self
             .sidebar_open
             .then(|| self.render_sidebar(cx).into_any_element());
-        let statusbar = self.render_statusbar(cx);
+        let statusbar = show_statusbar.then(|| self.render_statusbar(cx).into_any_element());
         let workspace = self.workspace.clone();
         let can_split = self.workspace.read(cx).active_is_terminal(cx);
         let has_split = self.workspace.read(cx).active_has_split(cx);
@@ -1239,6 +1307,17 @@ impl Render for AppShell {
             .on_action(cx.listener(Self::act_zoom_window))
             .on_action(cx.listener(Self::act_next_tab))
             .on_action(cx.listener(Self::act_prev_tab))
+            .on_action(cx.listener(Self::act_focus_next_pane))
+            .on_action(cx.listener(Self::act_toggle_zen_mode))
+            .on_action(cx.listener(Self::act_select_tab_1))
+            .on_action(cx.listener(Self::act_select_tab_2))
+            .on_action(cx.listener(Self::act_select_tab_3))
+            .on_action(cx.listener(Self::act_select_tab_4))
+            .on_action(cx.listener(Self::act_select_tab_5))
+            .on_action(cx.listener(Self::act_select_tab_6))
+            .on_action(cx.listener(Self::act_select_tab_7))
+            .on_action(cx.listener(Self::act_select_tab_8))
+            .on_action(cx.listener(Self::act_select_tab_9))
             .on_action(cx.listener(Self::act_command_palette))
             .on_action(cx.listener(Self::act_open_path_bookmarks))
             .on_action(cx.listener(Self::act_open_settings))
@@ -1250,7 +1329,7 @@ impl Render for AppShell {
             .when(has_split, |d| {
                 d.on_action(cx.listener(Self::act_close_pane))
             })
-            .child(header)
+            .children(header)
             .child(
                 div()
                     .flex_1()
@@ -1266,7 +1345,7 @@ impl Render for AppShell {
                         },
                     )),
             )
-            .child(statusbar)
+            .children(statusbar)
             .children(background_layer)
             .child(self.command_palette.clone())
             .child(self.bookmarks.clone())

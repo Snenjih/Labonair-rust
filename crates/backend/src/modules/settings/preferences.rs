@@ -96,6 +96,11 @@ pub struct Preferences {
     /// UI font family (empty = system default).
     pub app_font_family: String,
     pub reduce_motion: bool,
+    /// Zen mode (T13-005): show the window header bar. Both zen flags visible =
+    /// zen mode off; `view.zenMode` toggles both together.
+    pub zen_mode_show_header: bool,
+    /// Zen mode (T13-005): show the bottom status bar.
+    pub zen_mode_show_statusbar: bool,
 
     // ── Terminal ─────────────────────────────────────────────────────────
     pub terminal_shell: String,
@@ -170,6 +175,8 @@ impl Default for Preferences {
             app_line_height: 1.5,
             app_font_family: String::new(),
             reduce_motion: false,
+            zen_mode_show_header: true,
+            zen_mode_show_statusbar: true,
 
             terminal_shell: String::new(),
             terminal_font_family: "JetBrains Mono".to_string(),
@@ -372,6 +379,26 @@ mod tests {
         assert!(!p.editor_vim_mode);
         assert!(!p.editor_relative_line_numbers);
         assert!(p.session_restore, "session restore is on by default");
+        assert!(p.zen_mode_show_header, "header shown by default");
+        assert!(p.zen_mode_show_statusbar, "status bar shown by default");
+    }
+
+    #[test]
+    fn zen_mode_prefs_roundtrip() {
+        let dir = tmp();
+        let p = Preferences {
+            zen_mode_show_header: false,
+            zen_mode_show_statusbar: false,
+            ..Default::default()
+        };
+        save_to(&dir, &p).unwrap();
+        let back = load_from(&dir);
+        assert!(!back.zen_mode_show_header);
+        assert!(!back.zen_mode_show_statusbar);
+        let json = serde_json::to_value(&p).unwrap();
+        assert_eq!(json["zenModeShowHeader"], false);
+        assert_eq!(json["zenModeShowStatusbar"], false);
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]

@@ -1,7 +1,7 @@
 # T13-005: Restliche Shortcut-Handler (Tab-Index, Pane-Fokus, Zen-Mode)
 
 ## Status
-⏳ Pending
+✅ Done
 
 ## Phase
 12 — Settings & Preferences

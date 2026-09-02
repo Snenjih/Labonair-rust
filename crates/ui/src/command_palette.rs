@@ -356,6 +356,10 @@ pub enum CommandId {
     FormatDocument,
     /// Opens the path-bookmarks popover (T12-003).
     OpenPathBookmarks,
+    /// Zen-mode toggles (T13-005) — mirror `useSettingsCommands.ts`.
+    ToggleZenModeHeader,
+    ToggleZenModeStatusbar,
+    ToggleZenMode,
 }
 
 pub struct Command {
@@ -400,6 +404,9 @@ static COMMANDS: &[Command] = &[
     Command { id: CommandId::OpenGitGraph,       title: "Open Git Graph",          section: "Source Control", contexts: &[],                            shortcut: None },
     Command { id: CommandId::FocusSourceControl, title: "Focus Source Control",    section: "Source Control", contexts: &[],                            shortcut: None },
     Command { id: CommandId::FormatDocument,     title: "Format Document",         section: "Editor",         contexts: &[CtxEditor],                   shortcut: None },
+    Command { id: CommandId::ToggleZenModeHeader,    title: "Toggle: Show Header Bar",   section: "Settings",       contexts: &[],                         shortcut: None },
+    Command { id: CommandId::ToggleZenModeStatusbar, title: "Toggle: Show Status Bar",   section: "Settings",       contexts: &[],                         shortcut: None },
+    Command { id: CommandId::ToggleZenMode,          title: "Toggle: Zen Mode",         section: "Settings",       contexts: &[],                         shortcut: Some(ViewZenMode) },
     Command { id: CommandId::OpenShortcuts,      title: "Keyboard Shortcuts",      section: "Application",    contexts: &[],                            shortcut: Some(ShortcutsOpen) },
     Command { id: CommandId::OpenSettings,       title: "Open Settings",           section: "Application",    contexts: &[],                            shortcut: None },
     Command { id: CommandId::CheckForUpdates,    title: "Check for Updates\u{2026}", section: "Application",   contexts: &[],                            shortcut: None },
@@ -940,6 +947,7 @@ mod tests {
             "Snippets",
             "Source Control",
             "Editor",
+            "Settings",
             "Application",
         ] {
             assert!(sections.contains(expected), "missing domain {expected}");
@@ -1008,8 +1016,13 @@ mod tests {
             command_for_shortcut(ShortcutId::BookmarksOpen),
             Some(CommandId::OpenPathBookmarks),
         );
-        // A shortcut with no palette command (tab-number jumps).
+        assert_eq!(
+            command_for_shortcut(ShortcutId::ViewZenMode),
+            Some(CommandId::ToggleZenMode),
+        );
+        // Shortcuts with no palette command (tab-number jumps, pane focus).
         assert_eq!(command_for_shortcut(ShortcutId::TabSelect5), None);
+        assert_eq!(command_for_shortcut(ShortcutId::PaneFocusNext), None);
     }
 
     #[test]
