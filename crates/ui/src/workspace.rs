@@ -56,6 +56,7 @@ use crate::background::BackgroundStore;
 use crate::editor::{EditorEvent, EditorView};
 use crate::hosts::{ActiveTunnelRow, HostManagerEvent, HostManagerView, HostStatus};
 use crate::pane::{CloseOutcome, PaneId, PaneNode, SplitAxis, WorkspaceLayout};
+use crate::preview::PreviewView;
 use crate::session::{
     plan_restore, PaneSessionKind, PaneSessionSnapshot, RestoreAction, RestoreResult,
     SessionSnapshot, TabSnapshot, WorkspaceTabSnapshot,
@@ -255,6 +256,8 @@ pub struct Workspace {
     editors: HashMap<u64, Entity<EditorView>>,
     /// SFTP browser view per `Sftp` tab id (T08-001).
     sftp_views: HashMap<u64, Entity<SftpView>>,
+    /// Native preview view per `Preview` tab id (T15-006 — WebView replacement).
+    previews: HashMap<u64, Entity<PreviewView>>,
     /// SFTP session id per `Sftp` tab id — kept alongside the view so the
     /// session can be torn down from `retire_tab` (which has no `cx`).
     sftp_sessions: HashMap<u64, String>,
@@ -444,6 +447,7 @@ impl Workspace {
             panes: HashMap::new(),
             editors: HashMap::new(),
             sftp_views: HashMap::new(),
+            previews: HashMap::new(),
             sftp_sessions: HashMap::new(),
             remote_edits: HashMap::new(),
             pending_sftp: Vec::new(),
@@ -665,6 +669,10 @@ impl Workspace {
                 }
                 RestoreAction::Editor { path } => {
                     self.open_file(path, false, window, cx);
+                    Some(self.tabs.read(cx).active_id())
+                }
+                RestoreAction::Preview { url } => {
+                    self.open_preview(url, window, cx);
                     Some(self.tabs.read(cx).active_id())
                 }
                 RestoreAction::Sftp { host_id, .. } => {
@@ -978,6 +986,65 @@ impl Workspace {
         let view = self.new_editor_view(cx);
         self.watch_editor(tab_id, &view, cx);
         self.editors.insert(tab_id, view);
+        self.focus_active(window, cx);
+    }
+
+    /// File ▸ New Preview Tab — an empty native preview pane (the WebView
+    /// replacement). Opens the address bar ready for a path or URL.
+    pub fn new_preview_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let tab_id = self
+            .tabs
+            .update(cx, |s, cx| s.open(TabKind::Preview, TabData::default(), cx));
+        let theme = self.theme.clone();
+        let view = cx.new(|cx| PreviewView::new(theme, cx));
+        self.previews.insert(tab_id, view);
+        self.focus_active(window, cx);
+    }
+
+    /// Open `target` (a local path or URL) in a preview tab, reusing the active
+    /// preview tab if one is already open.
+    pub fn open_preview(&mut self, target: String, window: &mut Window, cx: &mut Context<Self>) {
+        let title = std::path::Path::new(&target)
+            .file_name()
+            .and_then(|s| s.to_str())
+            .map(str::to_string)
+            .unwrap_or_else(|| target.clone());
+
+        let existing = self
+            .tabs
+            .read(cx)
+            .tabs_by_kind(TabKind::Preview)
+            .first()
+            .map(|t| t.id);
+
+        let tab_id = if let Some(tab_id) = existing {
+            self.tabs.update(cx, |s, cx| {
+                s.set_custom_title(tab_id, Some(title.clone()), cx);
+                s.set_active(tab_id, cx);
+            });
+            tab_id
+        } else {
+            let tab_id = self.tabs.update(cx, |s, cx| {
+                let id = s.open(
+                    TabKind::Preview,
+                    TabData {
+                        url: Some(target.clone()),
+                        ..TabData::default()
+                    },
+                    cx,
+                );
+                s.set_custom_title(id, Some(title.clone()), cx);
+                id
+            });
+            let theme = self.theme.clone();
+            let view = cx.new(|cx| PreviewView::new(theme, cx));
+            self.previews.insert(tab_id, view);
+            tab_id
+        };
+
+        if let Some(view) = self.previews.get(&tab_id).cloned() {
+            view.update(cx, |p, cx| p.set_url(target, cx));
+        }
         self.focus_active(window, cx);
     }
 
@@ -1447,6 +1514,7 @@ impl Workspace {
             }
         }
         self.editors.remove(&tab.id);
+        self.previews.remove(&tab.id);
 
         // SFTP browser tab: drop the view and close its SFTP/SSH session.
         self.sftp_views.remove(&tab.id);
@@ -2605,6 +2673,13 @@ impl Workspace {
                     view.clone().into_any_element()
                 } else {
                     self.placeholder("SFTP", cx).into_any_element()
+                }
+            }
+            TabKind::Preview => {
+                if let Some(view) = self.previews.get(&active.id) {
+                    view.clone().into_any_element()
+                } else {
+                    self.placeholder("Preview", cx).into_any_element()
                 }
             }
             other => self

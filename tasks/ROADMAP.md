@@ -91,6 +91,7 @@ Nummerierung: `T{NN}-{OOO}` wobei NN die Phase (01–15) und OOO die Task-Nummer
 | **T06-002** | Syntax-Highlighting & Sprach-Erkennung | T06-001 |
 | **T06-003** | Vim-Modus | T06-001 |
 | **T06-004** | Diff-Ansicht | T06-001 |
+| **T06-005** | Editor Soft-Wrap + hörbare Terminal-Glocke (aus T15-006) | T06-001, T03-002 |
 
 ### Phase 06 — SSH-UI & Host-Manager ·`/tasks/phase-06-ssh-ui/`
 | Task | Titel | Abhängigkeit |
@@ -131,6 +132,7 @@ Nummerierung: `T{NN}-{OOO}` wobei NN die Phase (01–15) und OOO die Task-Nummer
 |---|---|---|
 | **T12-001** | Befehl-Snippets-System | T04-001, T07-001, T03-001 |
 | **T12-002** | Command-Palette & Shortcut-System | T04-001 |
+| **T12-003** | Path-Bookmarks (Verzeichnis-Lesezeichen, aus T15-006) | T12-002, T13-001 |
 
 ### Phase 12 — Settings & Preferences ·`/tasks/phase-12-settings/`
 | Task | Titel | Abhängigkeit |
@@ -139,6 +141,7 @@ Nummerierung: `T{NN}-{OOO}` wobei NN die Phase (01–15) und OOO die Task-Nummer
 | **T13-002** | Appearance- & Theme-Einstellungen | T13-001, T02-002/3/4 |
 | **T13-003** | Terminal- & Editor-Einstellungen | T13-001, Phase 2/5 |
 | **T13-004** | Shortcut-Konfiguration | T13-001, T12-002 |
+| **T13-005** | Restliche Shortcut-Handler (Tab-Index, Pane-Fokus, Zen-Mode, aus T15-006) | T13-004, T04-002 |
 
 ### Phase 13 — Session-Persistenz & Scrollback ·`/tasks/phase-13-session/`
 | Task | Titel | Abhängigkeit |

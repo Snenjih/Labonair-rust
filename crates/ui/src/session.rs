@@ -148,6 +148,8 @@ pub enum RestoreAction {
     },
     /// Re-open a local editor tab for `path`.
     Editor { path: String },
+    /// Re-open a native preview tab for `url` (path or URL).
+    Preview { url: String },
     /// Re-open an SFTP browser for `host_id`.
     Sftp {
         host_id: String,
@@ -192,10 +194,7 @@ pub fn plan_restore(
                     }
                 }
             }
-            TabSnapshot::Preview(p) => RestoreAction::Skip {
-                title: p.url.clone(),
-                reason: "Preview tabs are not restored".to_string(),
-            },
+            TabSnapshot::Preview(p) => RestoreAction::Preview { url: p.url.clone() },
             TabSnapshot::Sftp(s) => {
                 let title = s.title.clone().unwrap_or_else(|| s.host_id.clone());
                 if host_exists(&s.host_id) {
@@ -565,7 +564,10 @@ mod tests {
             matches!(actions[4], RestoreAction::Skip { .. }),
             "missing file"
         );
-        assert!(matches!(actions[5], RestoreAction::Skip { .. }), "preview");
+        assert!(
+            matches!(actions[5], RestoreAction::Preview { .. }),
+            "preview"
+        );
         assert_eq!(
             actions[6],
             RestoreAction::Sftp {

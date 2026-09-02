@@ -526,6 +526,16 @@ impl AppShell {
             .update(cx, |w, cx| w.new_editor_tab(window, cx));
     }
 
+    fn act_new_preview_tab(
+        &mut self,
+        _: &menu::NewPreviewTab,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.workspace
+            .update(cx, |w, cx| w.new_preview_tab(window, cx));
+    }
+
     fn act_toggle_sidebar(
         &mut self,
         _: &menu::ToggleSidebar,
@@ -1176,6 +1186,7 @@ impl Render for AppShell {
             .text_size(px(ui_font_size))
             .on_action(cx.listener(Self::act_new_terminal_tab))
             .on_action(cx.listener(Self::act_new_editor_tab))
+            .on_action(cx.listener(Self::act_new_preview_tab))
             .on_action(cx.listener(Self::act_save))
             .on_action(cx.listener(Self::act_close_tab))
             .on_action(cx.listener(Self::act_find))

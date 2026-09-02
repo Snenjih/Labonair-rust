@@ -824,6 +824,14 @@ impl ExplorerView {
         cx.notify();
     }
 
+    fn open_in_preview(&mut self, path: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
+        self.context_menu = None;
+        let target = path.to_string_lossy().to_string();
+        self.workspace
+            .update(cx, |w, cx| w.open_preview(target, window, cx));
+        cx.notify();
+    }
+
     fn open_file(&mut self, path: &Path, peek: bool, window: &mut Window, cx: &mut Context<Self>) {
         let path = path.to_string_lossy().to_string();
         self.workspace
@@ -1434,6 +1442,8 @@ impl ExplorerView {
         let t_rename = target.clone();
         let t_delete = target.clone();
         let t_copy = target.clone();
+        let t_preview = target.clone();
+        let can_preview = !is_dir && crate::preview::is_previewable(&target.to_string_lossy());
         let t_cc = self.action_paths(&target);
         let t_cx = t_cc.clone();
         let has_clip = self.clipboard.is_some();
@@ -1507,7 +1517,16 @@ impl ExplorerView {
                     .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
                         this.open_in_terminal(d3.clone(), window, cx)
                     })),
-            );
+            )
+            .when(can_preview, |menu| {
+                menu.child(
+                    item("Open in Preview".into())
+                        .id("cm-preview")
+                        .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
+                            this.open_in_preview(t_preview.clone(), window, cx)
+                        })),
+                )
+            });
 
         div().absolute().inset_0().child(backdrop).child(menu)
     }

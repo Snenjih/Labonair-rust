@@ -4,7 +4,70 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
-## Last Session: 2026-09-02 (T15-005 — Auto-updater, macOS)
+## Last Session: 2026-09-02 (T15-006 — Feature-parity acceptance / FINAL roadmap task)
+
+### What Was Done
+- **T15-006 ✅ Done.** Full module inventory of the pure-Rust port against
+  `reference-src/` (every `src/modules/` + `src-tauri/src/modules/` folder + the
+  ~150 `generate_handler!` commands). Result checklist + deviation list written
+  into `tasks/phase-14-testing/T15-006-feature-parity-acceptance.md`.
+  - **Findings:** the port is functionally complete for every backend module
+    (ssh/sftp/git/fs/pty/hosts/credentials/snippets/secrets/themes/backgrounds/
+    scrollback/settings/shell/terminal_exec/mcp/fonts/errors/menu_sync/dock_menu/
+    updater) and every frontend module — **except** the `preview/` tab, which
+    was a placeholder (`other => placeholder(...)` in `workspace.rs`, menu action
+    `NewPreviewTab` unhandled).
+  - **Gap fixed this session — native Preview pane (`crates/ui/src/preview.rs`,
+    new, +3 tests, ui 194→197):** the documented WebView replacement, now real.
+    - Images (`png/jpg/jpeg/gif/webp/bmp/ico`) → native `img()` (validate +
+      re-encode to PNG via the `image` crate, same as `background.rs`).
+    - Markdown/text (`md/markdown/txt/text`) → native render via the existing
+      `crate::markdown` parser (own compact block renderer in `preview.rs`).
+    - HTML/PDF/SVG/`http(s)` URLs → address bar + **"Open in system browser"**
+      button (`/usr/bin/open` macOS, `xdg-open` Linux).
+    - Wired: `menu::NewPreviewTab` handler `act_new_preview_tab` +
+      `.on_action` (`app_shell.rs`); `Workspace::new_preview_tab` /
+      `open_preview` + `previews: HashMap<u64, Entity<PreviewView>>` + render
+      arm + `retire_tab` cleanup (`workspace.rs`); Explorer context-menu
+      **"Open in Preview"** for previewable files (`explorer.rs`,
+      `open_in_preview`); session restore now `RestoreAction::Preview { url }`
+      instead of Skip (`session.rs`, test updated).
+  - **Version bumped:** `crates/app/Cargo.toml` `0.1.0` → **`1.0.0`** (first
+    feature-complete release; single source for packaging/updater/smoke-test).
+  - **Remaining gaps → follow-up task files created (all non-core):**
+    - `tasks/phase-11-snippets-palette/T12-003-path-bookmarks.md` — `bookmarks/`
+      module (local/remote dir bookmarks, `Cmd+Shift+O`) not ported.
+    - `tasks/phase-12-settings/T13-005-remaining-shortcut-handlers.md` —
+      `tab.selectTab1..9`, `pane.focusNext`, `view.zenMode` (+ zen prefs) have
+      no dispatch (deferred & signed off in T13-004).
+    - `tasks/phase-05-editor/T06-005-soft-wrap-and-terminal-bell.md` — editor
+      `editor_word_wrap` has no renderer effect; `terminal_bell` is a stored
+      pref with no audible beep.
+    - ROADMAP.md updated with the 3 new task rows.
+- Verify: `cargo fmt --all --check`, `cargo check --workspace --all-targets`,
+  `cargo clippy --workspace --all-targets -- -D warnings`,
+  `cargo test --workspace` — all green. ui **194→197**, all others unchanged
+  (backend 193, terminal 67, editor 60, theme 25, ai 75, app-smoke 3).
+
+### Current State
+- Branch `master`, committed. Pre-existing uncommitted `CLAUDE.md` edit is
+  **not ours** — left untouched, excluded from the commit.
+
+### What's Next
+- **Roadmap complete.** Remaining work = the 3 follow-up tasks above
+  (T12-003, T13-005, T06-005) + the manual `cargo run` acceptance round by the
+  user (T15-006 warning: only sign off after real side-by-side testing).
+- Bake in the real `UPDATE_PUBLIC_KEY` minisign pubkey before first signed
+  release (unchanged blocker from T15-005).
+
+### Blockers / notes for next session
+- Preview markdown renderer has no inline styling (bold/italic/link render as
+  plain text) and no syntax highlighting in code blocks — deliberately compact.
+- `docs/performance.md` "Recorded runs" table still empty.
+
+---
+
+## Prev Session: 2026-09-02 (T15-005 — Auto-updater, macOS)
 
 ### What Was Done
 - **T15-005 ✅ Done.** Native reimplementation of the Tauri updater flow

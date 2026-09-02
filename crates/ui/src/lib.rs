@@ -17,6 +17,7 @@ pub mod markdown;
 pub mod menu;
 pub mod notifications;
 pub mod pane;
+pub mod preview;
 pub mod session;
 pub mod settings;
 pub mod sftp;
@@ -55,6 +56,7 @@ pub use notifications::{
     Notification, NotificationAction, NotificationCenter, Severity,
 };
 pub use pane::{CloseOutcome, PaneId, PaneNode, SplitAxis, WorkspaceLayout};
+pub use preview::{is_previewable, PreviewView};
 pub use session::{
     clear_snapshot, load_snapshot, save_snapshot, RestoreResult, SessionSnapshot, TabSnapshot,
 };
