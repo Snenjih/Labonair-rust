@@ -4,7 +4,90 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
-## Last Session: 2026-09-02 (Block B cont. — unibar model, bar-item ctx menu, breadcrumb)
+## Last Session: 2026-09-02 (Block C — Settings: full preference model)
+
+### What Was Done (commit after `634706f`)
+
+- **T16-011 — preference model expansion + compat/default fixes (DONE).**
+  `crates/backend/src/modules/settings/preferences.rs`: `Preferences` grew from
+  46 fields to ~165, matching `reference-src/.../store.ts::DEFAULT_PREFERENCES`
+  key-by-key (camelCase serde names; `lmstudioBaseURL`/`mlxBaseURL`/
+  `openaiCompatibleBaseURL`/`ollamaBaseURL` carry explicit `#[serde(rename)]`
+  for the capital `URL`). Added groups: Appearance & Layout (appTheme,
+  themeVariantOverrides, background*, appCornerRadius, tabsLocation,
+  sidebarTabInfoLine, sidebarGroup*, barItemPlacements, barLayoutMigrated,
+  badgesAlwaysVisible, titlebarsIconsPosition), Status Bar toggles (7),
+  Sidebar/HM state (sidebar*, hm*), Terminal (terminalDefaultPath,
+  newTabInheritsCwd, confirmCloseTerminalTab, terminalFontWeight,
+  terminalLetterSpacing, terminalLineHeight, terminalCursorBlinkInterval,
+  terminalRightClickPastes, terminalWordSeparator, terminalScrollSensitivity,
+  terminalFastScrollModifier, terminalShowPaneHeader/Footer, terminalUseWebGL,
+  terminalComposer*/terminalBlocks*), Editor (editorLineHeight, editorAutoSave
+  + delay, trim/insertFinalNewline, bracketMatching, showCursorPosition,
+  showSelectionStats, showOutline, indentationGuides, autocompleteDebounceMs,
+  maxFileSizeMb), File Manager (sftpShowUpFolder, explorerShowHiddenByDefault,
+  sftpColumn*, sftpRemoteEditShowTransfers, sftpMaxRemoteFileSizeMb,
+  sftpDefaultConflictResolution, sftpChunkSizeKb, sftpOnFolderFileError),
+  Connections (hostPingInterval, ssh*, explorer*), Command Palette (blur,
+  opacity, position, animation, historySize, closeOnOverlayClick), Bookmarks
+  (7 keys), AI (temperature, autoOpenMiniOnSend, notifyOnHeadlessCommand,
+  shellMax*, defaultModelId, customInstructions, autocomplete*, provider
+  base-URL/model-id pairs), MCP mirror (mcpBridge*/mcpNotifyOnActivity).
+  - **BUG FIX**: `vimMode` was serialized as `editorVimMode` — now
+    `#[serde(rename = "vimMode")]`; the settings UI `FIELDS` key updated to match.
+  - **Default fixes** (reference parity): sessionRestore→false,
+    defaultStartupTab→host-manager (enum `#[default]` moved), notifyOnErrors→false,
+    sessionScrollbackLines→1000, scrollbackMaxSizeMb→10, scrollbackRetentionDays→0,
+    terminalFontSize→14, terminalCursorStyle→bar, terminalScrollback→5000,
+    editorTabSize→2, editorTheme→"atomone", sftpMaxConcurrentTransfers→2,
+    gitStatusPollIntervalMs→5000, aiMaxAgentSteps→24, aiTerminalContextLines→300,
+    appFontFamily→`"Inter Variable", sans-serif`, terminal/editor font family→
+    full `"JetBrains Mono", SFMono-Regular, Menlo, monospace` stack.
+  - **PORT-ONLY fields kept + documented in doc-comments**: `terminal_opacity`,
+    `editor_relative_line_numbers`, `editor_theme:"auto"` (Vim/GPUI extensions;
+    `editor_relative_line_numbers` still feeds `editor_prefs()`).
+  - New tests: `reference_settings_blob_roundtrips` (30+ reference keys),
+    updated `enums_serialize_to_reference_token_strings` (asserts `vimMode`,
+    no `editorVimMode`), updated default assertions. `cargo test --workspace` green.
+  - Design decision: `bar_item_placements` / `theme_variant_overrides` kept as
+    `BTreeMap<String, serde_json::Value>` for lossless roundtrip (typed access
+    stays in `bar_items.rs`); string-valued selects modelled as `String` not new
+    enums (matches existing `editor_theme`; keeps `set_value` validation lossless).
+  - Editor dotted reference keys (`editor.fontFamily`, `editor.formatOnSave`,
+    `editor.indentWithTabs`, `editor.showCursorPosition`, …) are stored as flat
+    camelCase (`editorFontFamily`, …) — the port already nests everything under a
+    `"preferences"` object so the flat reference file never roundtrips 1:1 anyway;
+    only the explicitly-flagged `vimMode` rename was applied.
+
+- **T16-010 (PARTIAL).** `crates/ui/src/settings.rs`: added `Connections` and
+  `Bookmarks` top-level categories; `FIELDS` grew by ~80 rows covering the new
+  model keys (Switch / Int-stepper / cycle-Select / Text — the existing modal's
+  control set). `render_appearance` gained a "Layout" sub-section
+  (tabsLocation, appCornerRadius, sidebarGroup*, badgesAlwaysVisible, zen flags).
+
+### NOT Done (remaining Block C — needs its own session)
+
+- **T16-009 — Settings as its own OS window.** Still a modal overlay in
+  `AppShell`. Needs `cx.open_window` (pattern in `crates/app/src/main.rs`),
+  `SettingsWindow` root wrapped in `gpui_component::Root`, shared entities,
+  close=hide, reopen-focuses, `SettingsTab` deep-link enum + menu "Settings → AI".
+- **T16-010 remainder** — real `Select` dropdown (still click-to-cycle), Slider,
+  FontPicker, Float NumInput, conditional rows, About hero, nested Section→Group
+  tree matching `reference-src/src/settings/sections/*`, move AI Agent Bridge
+  under Connections, merge Command Palette + Source Control under "Workspace",
+  add a "Themes" top-level entry, `SETTING_DEFINITIONS`-style registry + grouped
+  global search.
+- **T16-012 — special sections** — Theme grid (ThemeCard/ThemeThumbnail),
+  background image mgmt polish, bar-item layout editor (reuse `bar_items.rs`),
+  Providers/Agents/Directives (need new backend modules + keychain wiring).
+- **Side-effect propagation** (`set_pref`) for the new keys (reference
+  `applySettingChange`) — currently only `theme`/`keybinds`/typography propagate.
+
+### Next: finish T16-009 → T16-010 → T16-012, then Block D (Command Palette).
+
+---
+
+## Prior Session: 2026-09-02 (Block B cont. — unibar model, bar-item ctx menu, breadcrumb)
 
 ### What Was Done (commit after `b463874`)
 
