@@ -112,6 +112,48 @@ impl EditorThemeId {
     ];
 }
 
+/// Runtime typography overrides driven by the Terminal / Editor / Appearance
+/// settings (T13-003). An empty family or a non-positive size means "keep the
+/// theme's value". Applied on top of the built-in and imported themes so every
+/// `ThemeStore` typography accessor reflects the user's choice live.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct FontOverrides {
+    pub app_family: String,
+    pub app_size: f32,
+    pub editor_family: String,
+    pub editor_size: f32,
+    pub terminal_family: String,
+    pub terminal_size: f32,
+    pub terminal_line_height: f32,
+}
+
+impl FontOverrides {
+    fn apply(&self, theme: &mut Theme) {
+        let ty = &mut theme.typography;
+        if !self.app_family.is_empty() {
+            ty.app_font_family = self.app_family.clone();
+        }
+        if self.app_size > 0.0 {
+            ty.app_font_size = self.app_size;
+        }
+        if !self.editor_family.is_empty() {
+            ty.buffer_font_family = self.editor_family.clone();
+        }
+        if self.editor_size > 0.0 {
+            ty.buffer_font_size = self.editor_size;
+        }
+        if !self.terminal_family.is_empty() {
+            ty.terminal_font_family = self.terminal_family.clone();
+        }
+        if self.terminal_size > 0.0 {
+            ty.terminal_font_size = self.terminal_size;
+        }
+        if self.terminal_line_height > 0.0 {
+            ty.terminal_line_height = self.terminal_line_height;
+        }
+    }
+}
+
 /// Central theme state. Created once at startup and stored as a GPUI entity;
 /// exposed app-wide via [`GlobalTheme`].
 pub struct ThemeStore {
@@ -121,14 +163,19 @@ pub struct ThemeStore {
     /// Default themes, built once from the design tokens — never recomputed.
     light: Theme,
     dark: Theme,
-    /// An imported user theme, resolved for the current mode. When set it
-    /// overrides the default theme (T02-003).
+    /// An imported user theme, resolved for the current mode + font overrides.
+    /// When set it overrides the default theme (T02-003).
     custom: Option<Theme>,
+    /// `custom` before the runtime font overrides are applied — the source the
+    /// overridden `custom` is rebuilt from when the overrides change (T13-003).
+    custom_base: Option<Theme>,
     /// The source file for `custom`, kept so the imported theme can be
     /// re-resolved for the other mode when the appearance changes.
     custom_file: Option<ThemeFile>,
     /// The editor syntax-highlighting colour scheme (T06-002).
     editor_theme: EditorThemeId,
+    /// Runtime typography overrides from settings (T13-003).
+    font_overrides: FontOverrides,
 }
 
 impl ThemeStore {
@@ -140,9 +187,32 @@ impl ThemeStore {
             light: Theme::light(),
             dark: Theme::dark(),
             custom: None,
+            custom_base: None,
             custom_file: None,
             editor_theme: EditorThemeId::default(),
+            font_overrides: FontOverrides::default(),
         }
+    }
+
+    /// The active runtime typography overrides.
+    pub fn font_overrides(&self) -> &FontOverrides {
+        &self.font_overrides
+    }
+
+    /// Replace the runtime typography overrides (settings → live). Rebuilds the
+    /// built-in themes and re-resolves any imported theme so every typography
+    /// accessor reflects the new values. Re-renders only on a real change.
+    pub fn set_font_overrides(&mut self, overrides: FontOverrides, cx: &mut Context<Self>) {
+        if self.font_overrides == overrides {
+            return;
+        }
+        self.font_overrides = overrides;
+        self.light = Theme::light();
+        self.dark = Theme::dark();
+        self.font_overrides.apply(&mut self.light);
+        self.font_overrides.apply(&mut self.dark);
+        self.reresolve_custom();
+        cx.notify();
     }
 
     /// The active editor syntax colour scheme.
@@ -159,15 +229,24 @@ impl ThemeStore {
         cx.notify();
     }
 
-    /// Re-resolves the imported theme (if any) against the current mode.
+    /// Re-resolves the imported theme (if any) against the current mode, then
+    /// re-applies the runtime font overrides.
     fn reresolve_custom(&mut self) {
-        let Some(file) = self.custom_file.clone() else {
-            return;
-        };
-        let dark = self.mode() == ThemeMode::Dark;
-        if let Ok((theme, _warnings)) = Theme::from_theme_file(&file, dark) {
-            self.custom = Some(theme);
+        if let Some(file) = self.custom_file.clone() {
+            let dark = self.mode() == ThemeMode::Dark;
+            if let Ok((theme, _warnings)) = Theme::from_theme_file(&file, dark) {
+                self.custom_base = Some(theme);
+            }
         }
+        self.rebuild_custom();
+    }
+
+    /// Rebuilds `custom` from `custom_base` with the current font overrides.
+    fn rebuild_custom(&mut self) {
+        self.custom = self.custom_base.clone().map(|mut t| {
+            self.font_overrides.apply(&mut t);
+            t
+        });
     }
 
     /// The mode after applying the preference (System falls back to the
@@ -230,11 +309,12 @@ impl ThemeStore {
     /// Clears any imported [`ThemeFile`] source — use [`Self::import_theme_file`]
     /// to keep mode-following behaviour.
     pub fn set_custom_theme(&mut self, theme: Option<Theme>, cx: &mut Context<Self>) {
-        if self.custom == theme && self.custom_file.is_none() {
+        if self.custom_base == theme && self.custom_file.is_none() {
             return;
         }
-        self.custom = theme;
+        self.custom_base = theme;
         self.custom_file = None;
+        self.rebuild_custom();
         cx.notify();
     }
 
@@ -250,8 +330,9 @@ impl ThemeStore {
         file.validate()?;
         let dark = self.mode() == ThemeMode::Dark;
         let (theme, warnings) = Theme::from_theme_file(&file, dark)?;
-        self.custom = Some(theme);
+        self.custom_base = Some(theme);
         self.custom_file = Some(file);
+        self.rebuild_custom();
         cx.notify();
         Ok(warnings)
     }
@@ -263,6 +344,7 @@ impl ThemeStore {
             return;
         }
         self.custom = None;
+        self.custom_base = None;
         self.custom_file = None;
         cx.notify();
     }
@@ -413,6 +495,11 @@ impl ThemeStore {
         }
     }
 
+    /// UI font size in pixels (`preferencesStore.appFontSize`).
+    pub fn ui_font_size(&self) -> f32 {
+        self.theme().typography.app_font_size
+    }
+
     /// Code-editor font size in pixels (`preferencesStore.editorFontSize`).
     pub fn buffer_font_size(&self) -> f32 {
         self.theme().typography.buffer_font_size
@@ -541,6 +628,35 @@ mod tests {
             assert_eq!(s.radius(), t.radius);
             assert_eq!(s.shadows(), &t.shadows);
             assert_eq!(s.animation(), &t.animation);
+        });
+    }
+
+    #[gpui::test]
+    fn font_overrides_apply_live_and_revert(cx: &mut TestAppContext) {
+        cx.update(|cx| {
+            let store = cx.new(|_| ThemeStore::new(WindowAppearance::Dark));
+            store.update(cx, |s, cx| {
+                let base_term = s.terminal_font_size();
+                s.set_font_overrides(
+                    FontOverrides {
+                        terminal_size: base_term + 7.0,
+                        editor_size: 21.0,
+                        terminal_family: "Iosevka".to_string(),
+                        ..FontOverrides::default()
+                    },
+                    cx,
+                );
+                assert_eq!(s.terminal_font_size(), base_term + 7.0);
+                assert_eq!(s.buffer_font_size(), 21.0);
+                assert_eq!(s.terminal_font().family.as_ref(), "Iosevka");
+
+                // An imported theme keeps the overrides on top.
+                s.set_custom_theme(Some(Theme::light()), cx);
+                assert_eq!(s.terminal_font_size(), base_term + 7.0);
+
+                s.set_font_overrides(FontOverrides::default(), cx);
+                assert_eq!(s.terminal_font_size(), base_term);
+            });
         });
     }
 

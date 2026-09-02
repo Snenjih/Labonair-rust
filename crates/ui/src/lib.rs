@@ -53,7 +53,8 @@ pub use notifications::{
 };
 pub use pane::{CloseOutcome, PaneId, PaneNode, SplitAxis, WorkspaceLayout};
 pub use settings::{
-    FieldDef, FieldKind, PreferencesStore, SettingsView, CATEGORIES as SETTINGS_CATEGORIES, FIELDS,
+    FieldDef, FieldKind, GlobalPreferences, PreferencesStore, SettingsView,
+    CATEGORIES as SETTINGS_CATEGORIES, FIELDS,
 };
 pub use sftp::{SftpEvent, SftpView};
 pub use snippets::{
@@ -64,8 +65,8 @@ pub use syntax_theme::EditorPalette;
 pub use tabs::{Tab, TabData, TabKind, TabStore};
 pub use terminal::TerminalView;
 pub use theme::{
-    active_theme, init as init_theme, init_fonts, theme_store, EditorThemeId, GlobalTheme,
-    ThemeMode, ThemePreference, ThemeStore,
+    active_theme, init as init_theme, init_fonts, theme_store, EditorThemeId, FontOverrides,
+    GlobalTheme, ThemeMode, ThemePreference, ThemeStore,
 };
 pub use transfers::{TransferBusEvent, TransfersEvent, TransfersView};
 pub use workspace::Workspace;

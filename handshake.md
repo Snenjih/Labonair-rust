@@ -4,7 +4,60 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
-## Last Session: 2026-09-02 (T13-002 — Appearance & theme settings)
+## Last Session: 2026-09-02 (T13-003 — Terminal & Editor settings)
+
+### What Was Done
+- **T13-003 ✅ Done.** Terminal / Editor preference fields wired so changes
+  take effect live and persist.
+  - **`crates/backend/.../settings/preferences.rs`** — new fields
+    `terminal_opacity` (100), `editor_relative_line_numbers`, `editor_vim_mode`,
+    `editor_theme` ("auto"); `Preferences::editor_prefs()` projects the editor
+    fields onto the existing `settings::editor::EditorPrefs` (keeps the
+    persisted `hlsearch`/`incsearch`/`smartcase` Vim search opts). +2 tests.
+  - **`crates/ui/src/settings.rs`** — new `GlobalPreferences(Preferences)` gpui
+    `Global`, republished by `PreferencesStore::set_value` (and a startup
+    `publish_global`). New FIELDS rows: `terminalOpacity`,
+    `editorRelativeLineNumbers`, `editorVimMode`, `editorTheme` (Select of the
+    10 `EditorThemeId` slugs). `apply_prefs_to_theme()` / `font_overrides_from()`
+    push font + editor-syntax settings into `ThemeStore` at startup and on every
+    `set_pref`. +2 tests.
+  - **`crates/ui/src/theme.rs`** — `ThemeStore` gained `FontOverrides`
+    (app / editor / terminal family + size, empty/0 = keep theme value),
+    applied on top of the built-in *and* imported themes. New `custom_base`
+    holds the pristine imported theme so `set_font_overrides()` can rebuild the
+    overridden `custom` without baking values in destructively
+    (`rebuild_custom()` / `reresolve_custom()`). New `ui_font_size()`. +1 test.
+  - **`crates/ui/src/editor.rs`** — `EditorView` observes `GlobalPreferences`;
+    `apply_prefs()` reconciles the Vim layer (on/off/opts) *without touching the
+    document buffer*; `indent_unit()` makes a Tab press honour
+    `editor_tab_size` / `editor_indent_with_tabs`; the gutter line-number
+    visibility now follows `editor_line_numbers` / `editor_relative_line_numbers`
+    (Vim `:set number` still overrides while Vim mode is on). +1 test.
+  - **`crates/terminal`** — new `EmulatorConfig` + `TerminalEmulator::new_with`;
+    `SessionOptions` gained `scrollback` / `cursor_shape` / `cursor_blink`,
+    threaded into the alacritty `Config` (`scrolling_history` +
+    `default_cursor_style`). Applies to **new** sessions only. +1 test.
+  - **`crates/ui/src/workspace.rs`** — `spawn_session` reads
+    `GlobalPreferences` for the shell program, scrollback depth and cursor
+    shape/blink of each new local terminal.
+  - **`crates/ui/src/terminal.rs`** — copy-on-select is now gated by
+    `terminal_copy_on_select` (was unconditional); `terminal_opacity < 100`
+    dims the root background and drops the fill on cells that keep the default
+    background so the app wallpaper shows through.
+  - **`crates/ui/src/app_shell.rs`** — root element gets
+    `.font(ui_font()).text_size(ui_font_size())` so the UI font family + size
+    settings apply app-wide.
+- Verify: `cargo fmt --all --check`, `cargo clippy --workspace --all-targets
+  -- -D warnings`, `cargo test --workspace` — all green. backend **158 → 160**,
+  ui **163 → 166**, terminal **63 → 64**, ai 75 unchanged.
+- **Known gaps / for later:** editor soft-wrap is not implemented — the Phase 5
+  editor is a fixed-line-height absolute grid; `editor_word_wrap` is stored +
+  shown in settings but has no renderer effect yet. Audible `terminal_bell` is
+  a stored pref only (no sound hooked up). Scrollback / cursor-style changes
+  apply to newly-spawned sessions, not already-running PTYs.
+- **Next task:** T13-004 — Shortcut configuration.
+
+### (previous) T13-002 — Appearance & theme settings
 
 ### What Was Done
 - **T13-002 ✅ Done.** Appearance pane in the settings modal, wiring the

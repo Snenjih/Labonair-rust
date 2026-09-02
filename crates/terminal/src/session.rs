@@ -39,6 +39,12 @@ pub struct SessionOptions {
     /// (analogous to Labonair's "startup snippet"). The shell stays interactive
     /// afterwards — this is fed as if the user typed it, not `exec`'d.
     pub startup_command: Option<String>,
+    /// Scrollback history depth. `None` → engine default (T13-003).
+    pub scrollback: Option<usize>,
+    /// Default cursor shape until a program overrides it (T13-003).
+    pub cursor_shape: Option<crate::CursorShape>,
+    /// Whether the default cursor blinks (T13-003).
+    pub cursor_blink: Option<bool>,
 }
 
 /// A read of the active terminal for the AI companion: working directory,
@@ -112,10 +118,21 @@ impl TerminalSession {
         let writer = Arc::new(Mutex::new(writer));
 
         let (event_tx, events): (Sender<TerminalEvent>, Receiver<TerminalEvent>) = channel();
-        let emulator = Arc::new(Mutex::new(TerminalEmulator::new(
+        let mut emu_cfg = crate::EmulatorConfig::default();
+        if let Some(sb) = options.scrollback {
+            emu_cfg.scrollback = sb;
+        }
+        if let Some(shape) = options.cursor_shape {
+            emu_cfg.cursor_shape = shape;
+        }
+        if let Some(blink) = options.cursor_blink {
+            emu_cfg.cursor_blink = blink;
+        }
+        let emulator = Arc::new(Mutex::new(TerminalEmulator::new_with(
             colors,
             dimensions,
             event_tx.clone(),
+            emu_cfg,
         )));
         // Seed the working directory so the UI has one before the first prompt.
         {

@@ -104,6 +104,8 @@ pub struct Preferences {
     pub terminal_cursor_blink: bool,
     pub terminal_copy_on_select: bool,
     pub terminal_bell: bool,
+    /// Terminal background opacity in percent (100 = fully opaque).
+    pub terminal_opacity: u32,
 
     // ── Editor ───────────────────────────────────────────────────────────
     pub editor_font_family: String,
@@ -111,8 +113,12 @@ pub struct Preferences {
     pub editor_tab_size: u32,
     pub editor_word_wrap: bool,
     pub editor_line_numbers: bool,
+    pub editor_relative_line_numbers: bool,
     pub editor_indent_with_tabs: bool,
     pub editor_format_on_save: bool,
+    pub editor_vim_mode: bool,
+    /// Syntax colour scheme slug (`auto`, `nord`, `tokyo-night`, …).
+    pub editor_theme: String,
 
     // ── File Manager ─────────────────────────────────────────────────────
     pub sftp_show_hidden_files: bool,
@@ -156,14 +162,18 @@ impl Default for Preferences {
             terminal_cursor_blink: true,
             terminal_copy_on_select: false,
             terminal_bell: false,
+            terminal_opacity: 100,
 
             editor_font_family: "JetBrains Mono".to_string(),
             editor_font_size: 13,
             editor_tab_size: 4,
             editor_word_wrap: false,
             editor_line_numbers: true,
+            editor_relative_line_numbers: false,
             editor_indent_with_tabs: false,
             editor_format_on_save: false,
+            editor_vim_mode: false,
+            editor_theme: "auto".to_string(),
 
             sftp_show_hidden_files: false,
             sftp_font_size: 13,
@@ -178,6 +188,24 @@ impl Default for Preferences {
             ai_max_agent_steps: 12,
             ai_terminal_context_lines: 200,
             ai_warn_destructive_commands: true,
+        }
+    }
+}
+
+impl Preferences {
+    /// Project the editor-relevant preferences onto the [`EditorPrefs`] the
+    /// editor view consumes, keeping the search-related Vim options
+    /// (`hlsearch` / `incsearch` / `smartcase`) at their persisted values.
+    pub fn editor_prefs(&self) -> super::editor::EditorPrefs {
+        let base = super::editor::editor_prefs_load();
+        super::editor::EditorPrefs {
+            vim_mode: self.editor_vim_mode,
+            number: self.editor_line_numbers,
+            relative_number: self.editor_relative_line_numbers,
+            expandtab: !self.editor_indent_with_tabs,
+            tabstop: self.editor_tab_size as usize,
+            shiftwidth: self.editor_tab_size as usize,
+            ..base
         }
     }
 }
@@ -309,6 +337,34 @@ mod tests {
             "corrupt file preserved as .bak"
         );
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn new_terminal_editor_fields_have_sensible_defaults() {
+        let p = Preferences::default();
+        assert_eq!(p.terminal_opacity, 100);
+        assert_eq!(p.editor_theme, "auto");
+        assert!(!p.editor_vim_mode);
+        assert!(!p.editor_relative_line_numbers);
+    }
+
+    #[test]
+    fn editor_prefs_projection_maps_fields() {
+        let p = Preferences {
+            editor_vim_mode: true,
+            editor_line_numbers: false,
+            editor_relative_line_numbers: true,
+            editor_indent_with_tabs: true,
+            editor_tab_size: 2,
+            ..Default::default()
+        };
+        let e = p.editor_prefs();
+        assert!(e.vim_mode);
+        assert!(!e.number);
+        assert!(e.relative_number);
+        assert!(!e.expandtab);
+        assert_eq!(e.tabstop, 2);
+        assert_eq!(e.shiftwidth, 2);
     }
 
     #[test]

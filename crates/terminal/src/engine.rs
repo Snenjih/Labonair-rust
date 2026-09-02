@@ -552,6 +552,27 @@ pub struct TerminalEmulator {
     metadata: SessionMetadata,
 }
 
+/// Tunable emulator parameters sourced from the app preferences (T13-003).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EmulatorConfig {
+    /// Lines of scrollback history kept above the viewport.
+    pub scrollback: usize,
+    /// Default cursor shape (until a program overrides it via DECSCUSR).
+    pub cursor_shape: CursorShape,
+    /// Whether the default cursor blinks.
+    pub cursor_blink: bool,
+}
+
+impl Default for EmulatorConfig {
+    fn default() -> Self {
+        Self {
+            scrollback: DEFAULT_SCROLLBACK_LINES,
+            cursor_shape: CursorShape::Block,
+            cursor_blink: false,
+        }
+    }
+}
+
 impl TerminalEmulator {
     /// Create an emulator with the given palette and initial size. Events go to
     /// `event_tx`.
@@ -560,8 +581,22 @@ impl TerminalEmulator {
         dimensions: TermDimensions,
         event_tx: Sender<TerminalEvent>,
     ) -> Self {
+        Self::new_with(colors, dimensions, event_tx, EmulatorConfig::default())
+    }
+
+    /// Like [`Self::new`] but with explicit [`EmulatorConfig`] tunables.
+    pub fn new_with(
+        colors: TerminalColors,
+        dimensions: TermDimensions,
+        event_tx: Sender<TerminalEvent>,
+        cfg: EmulatorConfig,
+    ) -> Self {
         let config = Config {
-            scrolling_history: DEFAULT_SCROLLBACK_LINES,
+            scrolling_history: cfg.scrollback.max(1),
+            default_cursor_style: alacritty_terminal::vte::ansi::CursorStyle {
+                shape: cfg.cursor_shape,
+                blinking: cfg.cursor_blink,
+            },
             ..Config::default()
         };
         let pty_out = Arc::new(Mutex::new(Vec::new()));
@@ -882,6 +917,29 @@ mod tests {
             TerminalEmulator::new(colors, TermDimensions::new(cols, rows), tx),
             rx,
         )
+    }
+
+    #[test]
+    fn emulator_config_caps_scrollback_history() {
+        let (tx, _rx) = channel();
+        let colors = TerminalColors::from_theme(&labonair_theme::Theme::dark());
+        let mut term = TerminalEmulator::new_with(
+            colors,
+            TermDimensions::new(20, 5),
+            tx,
+            EmulatorConfig {
+                scrollback: 5,
+                ..EmulatorConfig::default()
+            },
+        );
+        for _ in 0..100 {
+            term.feed(b"line\r\n");
+        }
+        assert!(
+            term.history_len() <= 5,
+            "history {} exceeded configured cap",
+            term.history_len()
+        );
     }
 
     #[test]

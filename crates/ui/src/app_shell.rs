@@ -240,6 +240,13 @@ impl AppShell {
             };
             theme.update(cx, |t, cx| t.set_preference(pref, cx));
         }
+        // Publish the global snapshot and push font / editor-syntax settings
+        // into the ThemeStore so terminals + editors start with them (T13-003).
+        {
+            let p = prefs.read(cx).get().clone();
+            prefs.update(cx, |s, cx| s.publish_global(cx));
+            crate::settings::apply_prefs_to_theme(&p, &theme, cx);
+        }
         let settings = cx.new(|cx| {
             SettingsView::new(
                 prefs.clone(),
@@ -1096,6 +1103,8 @@ impl Render for AppShell {
         self.drain_pending_commands(window, cx);
 
         let bg = self.theme.read(cx).background();
+        let ui_font = self.theme.read(cx).ui_font();
+        let ui_font_size = self.theme.read(cx).ui_font_size();
         let background_layer = self.background.read(cx).layer(LayerScope::App);
         let toasts = notifications::render_overlay(&self.notifications, &self.theme, cx);
         let header = self.render_header(cx);
@@ -1115,7 +1124,8 @@ impl Render for AppShell {
             .flex_col()
             .size_full()
             .bg(bg)
-            .text_xs()
+            .font(ui_font)
+            .text_size(px(ui_font_size))
             .on_action(cx.listener(Self::act_new_terminal_tab))
             .on_action(cx.listener(Self::act_new_editor_tab))
             .on_action(cx.listener(Self::act_save))

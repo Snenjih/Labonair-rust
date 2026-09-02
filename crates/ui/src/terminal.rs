@@ -40,6 +40,7 @@ use labonair_terminal::{
 
 use crate::background::{BackgroundStore, LayerScope};
 use crate::explorer::{quote_paths, DraggedPaths};
+use crate::settings::GlobalPreferences;
 use crate::theme::ThemeStore;
 
 /// How often the view polls the session for new terminal output.
@@ -255,7 +256,10 @@ impl Render for TerminalView {
             .max(1.0);
         let cell_h = (font_px * line_height).ceil().max(1.0);
 
-        let bg = to_hsla(colors.background, 1.0);
+        let opacity = (terminal_opacity(cx) as f32 / 100.0).clamp(0.05, 1.0);
+        let translucent = opacity < 1.0;
+        let default_bg = colors.background;
+        let bg = to_hsla(colors.background, opacity);
         let fg = to_hsla(colors.foreground, 1.0);
 
         let exited = match self.handle.status() {
@@ -321,13 +325,16 @@ impl Render for TerminalView {
             } else {
                 to_hsla(run.style.fg, 1.0)
             };
+            // When the terminal is translucent, cells that keep the default
+            // background paint nothing so the wallpaper / desktop shows through.
+            let paint_bg = !(translucent && run.style.bg == default_bg);
             let mut el = div()
                 .absolute()
                 .left(left)
                 .top(top)
                 .w(px(run.width() as f32 * cell_w))
                 .h(px(cell_h))
-                .bg(to_hsla(run.style.bg, 1.0))
+                .when(paint_bg, |el| el.bg(to_hsla(run.style.bg, 1.0)))
                 .text_color(text_color)
                 .text_size(px(font_px))
                 .line_height(px(cell_h))
@@ -441,8 +448,8 @@ impl Render for TerminalView {
                         &mode,
                     ) {
                         this.send_input(&bytes);
-                    } else if this.drag_anchor.is_some() {
-                        // Copy-on-select parity with the reference terminal.
+                    } else if this.drag_anchor.is_some() && copy_on_select(cx) {
+                        // Copy-on-select — gated by the terminal preference (T13-003).
                         this.copy_selection(cx);
                     }
                     this.drag_anchor = None;
@@ -579,6 +586,20 @@ fn cursor_overlay(
             .h(px(cell_h))
             .bg(with_alpha(color, 0.55)),
     })
+}
+
+/// Terminal background opacity in percent from the live preferences (T13-003).
+fn terminal_opacity(cx: &App) -> u32 {
+    cx.try_global::<GlobalPreferences>()
+        .map(|g| g.0.terminal_opacity)
+        .unwrap_or(100)
+}
+
+/// Whether selecting text should copy it to the clipboard (T13-003).
+fn copy_on_select(cx: &App) -> bool {
+    cx.try_global::<GlobalPreferences>()
+        .map(|g| g.0.terminal_copy_on_select)
+        .unwrap_or(false)
 }
 
 fn to_hsla(c: Rgb, alpha: f32) -> Hsla {

@@ -23,7 +23,9 @@ use gpui::{
 use labonair_backend::modules::fs::file::{
     file_mtime_sync, load_editor_file_sync, save_editor_file_sync, EditorLoad,
 };
-use labonair_backend::modules::settings::editor::editor_prefs_load;
+use labonair_backend::modules::settings::preferences::Preferences;
+
+use crate::settings::GlobalPreferences;
 use labonair_editor::{
     document::Motion, find_all, next_match, Document, Language, Match, Position, SearchQuery,
     SyntaxHighlighter, Vim, VimKey, VimMode, VimOptions,
@@ -91,24 +93,39 @@ pub struct EditorView {
     syntax_rev: u64,
     /// Vim keybinding state machine (T06-003) — `None` when Vim mode is off.
     vim: Option<Vim>,
+    /// Live editor preferences mirror (font/indent/line-numbers), refreshed
+    /// from [`GlobalPreferences`] (T13-003).
+    prefs: Preferences,
+}
+
+/// The current preferences snapshot (defaults before the global is published).
+fn current_prefs(cx: &App) -> Preferences {
+    cx.try_global::<GlobalPreferences>()
+        .map(|g| g.0.clone())
+        .unwrap_or_default()
+}
+
+fn vim_options(p: &Preferences) -> VimOptions {
+    let e = p.editor_prefs();
+    VimOptions {
+        number: e.number,
+        relativenumber: e.relative_number,
+        hlsearch: e.hlsearch,
+        incsearch: e.incsearch,
+        smartcase: e.smartcase,
+        expandtab: e.expandtab,
+        tabstop: e.tabstop,
+        shiftwidth: e.shiftwidth,
+    }
 }
 
 impl EditorView {
     pub fn new(theme: Entity<ThemeStore>, cx: &mut Context<Self>) -> Self {
         cx.observe(&theme, |_, _, cx| cx.notify()).detach();
-        let prefs = editor_prefs_load();
-        let vim = prefs.vim_mode.then(|| {
-            Vim::new(VimOptions {
-                number: prefs.number,
-                relativenumber: prefs.relative_number,
-                hlsearch: prefs.hlsearch,
-                incsearch: prefs.incsearch,
-                smartcase: prefs.smartcase,
-                expandtab: prefs.expandtab,
-                tabstop: prefs.tabstop,
-                shiftwidth: prefs.shiftwidth,
-            })
-        });
+        cx.observe_global::<GlobalPreferences>(|this, cx| this.apply_prefs(cx))
+            .detach();
+        let prefs = current_prefs(cx);
+        let vim = prefs.editor_vim_mode.then(|| Vim::new(vim_options(&prefs)));
         Self {
             doc: Document::empty(),
             theme,
@@ -121,6 +138,33 @@ impl EditorView {
             syntax: SyntaxHighlighter::new(Language::PlainText),
             syntax_rev: 0,
             vim,
+            prefs,
+        }
+    }
+
+    /// Re-read the live preferences and reconcile the Vim layer without
+    /// touching the document buffer (T13-003).
+    fn apply_prefs(&mut self, cx: &mut Context<Self>) {
+        let p = current_prefs(cx);
+        if p == self.prefs {
+            return;
+        }
+        self.prefs = p;
+        match (&mut self.vim, self.prefs.editor_vim_mode) {
+            (Some(vim), true) => vim.options = vim_options(&self.prefs),
+            (Some(_), false) => self.vim = None,
+            (None, true) => self.vim = Some(Vim::new(vim_options(&self.prefs))),
+            (None, false) => {}
+        }
+        cx.notify();
+    }
+
+    /// One indentation step for a Tab press outside Vim mode.
+    fn indent_unit(&self) -> String {
+        if self.prefs.editor_indent_with_tabs {
+            "\t".to_string()
+        } else {
+            " ".repeat((self.prefs.editor_tab_size.max(1)) as usize)
         }
     }
 
@@ -589,7 +633,10 @@ impl EditorView {
             "pageup" => self.navigate(Motion::PageUp(rows), m.shift, cx),
             "pagedown" => self.navigate(Motion::PageDown(rows), m.shift, cx),
             "enter" => self.edit(cx, |d| d.insert("\n")),
-            "tab" => self.edit(cx, |d| d.insert("    ")),
+            "tab" => {
+                let indent = self.indent_unit();
+                self.edit(cx, move |d| d.insert(&indent));
+            }
             "backspace" => self.edit(cx, Document::backspace),
             "delete" => self.edit(cx, Document::delete_forward),
             "escape" => {}
@@ -954,13 +1001,16 @@ impl Render for EditorView {
         self.syntax
             .update(&doc_text, self.syntax_rev, visible_start..visible_end);
 
-        // Gutter rows. Vim's `number` / `relativenumber` options apply when
-        // Vim mode is on (T06-003).
+        // Gutter rows. Line-number visibility follows the editor preferences
+        // (T13-003); Vim's `:set number` overrides them while Vim mode is on.
         let (show_numbers, relative) = self
             .vim
             .as_ref()
             .map(|v| (v.options.number, v.options.relativenumber))
-            .unwrap_or((true, false));
+            .unwrap_or((
+                self.prefs.editor_line_numbers,
+                self.prefs.editor_relative_line_numbers,
+            ));
         let gutter = (first..last).map(|line| {
             let on_cursor = line == cursor.line;
             let label = if !show_numbers {
@@ -1220,6 +1270,37 @@ mod tests {
                 assert_eq!(v.find.as_ref().unwrap().matches.len(), 3);
                 v.find_step(true, cx);
                 assert!(v.doc.selection().is_some());
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn live_prefs_toggle_vim_and_indent(cx: &mut TestAppContext) {
+        let view = setup(cx);
+        cx.update(|cx| {
+            let p = Preferences {
+                editor_indent_with_tabs: false,
+                editor_tab_size: 3,
+                editor_vim_mode: true,
+                ..Default::default()
+            };
+            cx.set_global(GlobalPreferences(p));
+        });
+        cx.update(|cx| {
+            view.update(cx, |v, cx| {
+                v.apply_prefs(cx);
+                assert!(v.vim.is_some(), "vim enabled via prefs");
+                assert_eq!(v.indent_unit(), "   ");
+
+                let p = Preferences {
+                    editor_vim_mode: false,
+                    editor_indent_with_tabs: true,
+                    ..Default::default()
+                };
+                cx.set_global(GlobalPreferences(p));
+                v.apply_prefs(cx);
+                assert!(v.vim.is_none(), "vim disabled via prefs");
+                assert_eq!(v.indent_unit(), "\t");
             });
         });
     }

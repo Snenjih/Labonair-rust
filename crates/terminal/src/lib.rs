@@ -22,8 +22,9 @@ pub mod shell_integration;
 pub use alacritty_terminal::grid::Scroll;
 pub use alacritty_terminal::vte::ansi::{CursorShape, Rgb};
 pub use engine::{
-    ModeState, PromptPhase, RenderableCell, RenderableCursor, RenderableScreen, SelectionSpan,
-    SessionMetadata, TermDimensions, TerminalEmulator, TerminalEvent, DEFAULT_SCROLLBACK_LINES,
+    EmulatorConfig, ModeState, PromptPhase, RenderableCell, RenderableCursor, RenderableScreen,
+    SelectionSpan, SessionMetadata, TermDimensions, TerminalEmulator, TerminalEvent,
+    DEFAULT_SCROLLBACK_LINES,
 };
 pub use input::{
     key_to_bytes, mouse_report, paste_payload, wheel_action, Key, KeyInput, Modifiers, MouseButton,

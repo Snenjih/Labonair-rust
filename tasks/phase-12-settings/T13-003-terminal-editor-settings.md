@@ -1,7 +1,7 @@
 # T13-003: Terminal- & Editor-Einstellungen
 
 ## Status
-⏳ Pending
+✅ Done
 
 ## Phase
 12 — Settings & Preferences

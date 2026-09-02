@@ -30,6 +30,7 @@ use gpui::{
 use labonair_backend::modules::mcp::{
     mcp_set_session_grant, mcp_tab_op_response, SessionKind, TabOpResult,
 };
+use labonair_backend::modules::settings::preferences::CursorStyle as PrefCursorStyle;
 use labonair_backend::modules::sftp::commands::enqueue_transfer;
 use labonair_backend::modules::sftp::connection::sftp_disconnect as sftp_tab_disconnect;
 use labonair_backend::modules::ssh::client::{ssh_connect, ssh_disconnect, ssh_trust_host};
@@ -774,8 +775,22 @@ impl Workspace {
 
     /// Spawn a local terminal session in `cwd` and return its id + handle.
     fn spawn_session(&self, cwd: Option<String>, cx: &App) -> Option<(SessionId, SessionHandle)> {
+        let p = cx
+            .try_global::<crate::settings::GlobalPreferences>()
+            .map(|g| g.0.clone())
+            .unwrap_or_default();
+        let shell = (!p.terminal_shell.trim().is_empty()).then(|| p.terminal_shell.clone());
+        let cursor_shape = Some(match p.terminal_cursor_style {
+            PrefCursorStyle::Block => labonair_terminal::CursorShape::Block,
+            PrefCursorStyle::Underline => labonair_terminal::CursorShape::Underline,
+            PrefCursorStyle::Bar => labonair_terminal::CursorShape::Beam,
+        });
         let options = SessionOptions {
             working_directory: cwd,
+            shell,
+            scrollback: Some(p.terminal_scrollback.max(1) as usize),
+            cursor_shape,
+            cursor_blink: Some(p.terminal_cursor_blink),
             ..SessionOptions::default()
         };
         let session_id =

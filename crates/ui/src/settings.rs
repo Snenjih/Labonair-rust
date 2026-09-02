@@ -22,7 +22,7 @@ use std::path::{Path, PathBuf};
 
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, px, App, ClickEvent, ClipboardItem, Context, Entity, FocusHandle, Focusable,
+    div, px, App, ClickEvent, ClipboardItem, Context, Entity, FocusHandle, Focusable, Global,
     InteractiveElement, IntoElement, KeyDownEvent, ParentElement, PathPromptOptions, Render,
     SharedString, StatefulInteractiveElement, Styled, Window,
 };
@@ -47,6 +47,17 @@ use labonair_backend::App as Backend;
 
 use crate::notifications::{notification_center, Notification};
 use crate::theme::{ThemePreference, ThemeStore};
+
+// ─────────────────────────── Global snapshot ─────────────────────────────
+
+/// App-wide read-only snapshot of [`Preferences`], republished by
+/// [`PreferencesStore`] on every change. Modules that can't hold an
+/// `Entity<PreferencesStore>` (the terminal engine spawn path, editor views)
+/// read it via `cx.global::<GlobalPreferences>()` / `cx.observe_global`.
+#[derive(Clone, Default)]
+pub struct GlobalPreferences(pub Preferences);
+
+impl Global for GlobalPreferences {}
 
 // ─────────────────────────── Preferences store ───────────────────────────
 
@@ -95,6 +106,12 @@ impl PreferencesStore {
         &self.prefs
     }
 
+    /// (Re)publish the current model into the [`GlobalPreferences`] global.
+    /// Call once at startup after construction; `set_value` keeps it current.
+    pub fn publish_global(&self, cx: &mut App) {
+        cx.set_global(GlobalPreferences(self.prefs.clone()));
+    }
+
     /// The current JSON value for one camelCase key.
     pub fn value(&self, key: &str) -> Option<Value> {
         serde_json::to_value(&self.prefs).ok()?.get(key).cloned()
@@ -112,6 +129,7 @@ impl PreferencesStore {
                 if let Err(e) = self.persist() {
                     tracing::warn!("failed to persist preferences: {e}");
                 }
+                cx.set_global(GlobalPreferences(self.prefs.clone()));
                 cx.notify();
             }
             Ok(_) => {}
@@ -296,6 +314,17 @@ pub const FIELDS: &[FieldDef] = &[
         "Terminal",
         Switch,
     ),
+    d(
+        "terminalOpacity",
+        "Background opacity",
+        "Terminal background opacity in percent (100 = opaque).",
+        "Terminal",
+        Int {
+            min: 20,
+            max: 100,
+            step: 5,
+        },
+    ),
     // Editor
     d(
         "editorFontFamily",
@@ -339,6 +368,38 @@ pub const FIELDS: &[FieldDef] = &[
         "Show the line-number gutter.",
         "Editor",
         Switch,
+    ),
+    d(
+        "editorRelativeLineNumbers",
+        "Relative line numbers",
+        "Number lines relative to the cursor.",
+        "Editor",
+        Switch,
+    ),
+    d(
+        "editorVimMode",
+        "Vim mode",
+        "Enable the modal Vim keybinding layer.",
+        "Editor",
+        Switch,
+    ),
+    d(
+        "editorTheme",
+        "Syntax theme",
+        "Editor colour scheme (auto follows the app theme).",
+        "Editor",
+        Select(&[
+            "auto",
+            "atomone",
+            "aura",
+            "copilot",
+            "github-dark",
+            "github-light",
+            "nord",
+            "tokyo-night",
+            "xcode-dark",
+            "xcode-light",
+        ]),
     ),
     d(
         "editorIndentWithTabs",
@@ -750,7 +811,17 @@ impl SettingsView {
             };
             self.theme.update(cx, |t, cx| t.set_preference(pref, cx));
         }
+        // Typography + editor syntax scheme are pushed into the ThemeStore so
+        // open terminals / editors pick them up live (T13-003).
+        self.sync_theme_from_prefs(cx);
         cx.notify();
+    }
+
+    /// Mirror the font / editor-theme preferences into the [`ThemeStore`].
+    fn sync_theme_from_prefs(&mut self, cx: &mut Context<Self>) {
+        let p = self.prefs.read(cx).get().clone();
+        let theme = self.theme.clone();
+        apply_prefs_to_theme(&p, &theme, cx);
     }
 
     fn toggle_bool(&mut self, key: &str, cx: &mut Context<Self>) {
@@ -1684,6 +1755,30 @@ struct Palette {
     accent: gpui::Hsla,
 }
 
+/// Build the [`FontOverrides`] snapshot from the typography-relevant
+/// preferences. A blank family / zero size means "keep the theme default".
+pub(crate) fn font_overrides_from(p: &Preferences) -> crate::theme::FontOverrides {
+    crate::theme::FontOverrides {
+        app_family: p.app_font_family.clone(),
+        app_size: p.app_font_size as f32,
+        editor_family: p.editor_font_family.clone(),
+        editor_size: p.editor_font_size as f32,
+        terminal_family: p.terminal_font_family.clone(),
+        terminal_size: p.terminal_font_size as f32,
+        terminal_line_height: 0.0,
+    }
+}
+
+/// Push the font + editor-syntax-theme preferences into the [`ThemeStore`].
+/// Used at startup (`AppShell`) and on every settings change.
+pub(crate) fn apply_prefs_to_theme(p: &Preferences, theme: &Entity<ThemeStore>, cx: &mut App) {
+    let overrides = font_overrides_from(p);
+    theme.update(cx, |t, cx| t.set_font_overrides(overrides, cx));
+    if let Some(id) = crate::theme::EditorThemeId::from_slug(&p.editor_theme) {
+        theme.update(cx, |t, cx| t.set_editor_theme(id, cx));
+    }
+}
+
 fn themes_dir() -> PathBuf {
     config_dir().join("themes")
 }
@@ -1995,6 +2090,36 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn editor_theme_options_are_known_slugs() {
+        let opts = FIELDS
+            .iter()
+            .find(|f| f.key == "editorTheme")
+            .map(|f| match f.kind {
+                FieldKind::Select(o) => o,
+                _ => panic!("editorTheme should be a Select"),
+            })
+            .unwrap();
+        for slug in opts {
+            assert!(
+                crate::theme::EditorThemeId::from_slug(slug).is_some(),
+                "unknown editor theme slug `{slug}`"
+            );
+        }
+    }
+
+    #[test]
+    fn font_overrides_snapshot_maps_prefs() {
+        let p = Preferences {
+            terminal_font_size: 18,
+            editor_font_family: "Iosevka".to_string(),
+            ..Default::default()
+        };
+        let o = font_overrides_from(&p);
+        assert_eq!(o.terminal_size, 18.0);
+        assert_eq!(o.editor_family, "Iosevka");
     }
 
     #[gpui::test]
