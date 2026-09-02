@@ -9,10 +9,12 @@
 //! tokens where 1:1 reference values matter (button radii/heights, icon sizes).
 
 mod button;
+mod context_menu;
 mod icon;
 mod text_field;
 
 pub use button::{button, ButtonSize, ButtonVariant, DISABLED_OPACITY};
+pub use context_menu::{context_menu, MenuClick, MenuItem};
 pub use icon::{file_icon, folder_icon, IconName};
 pub use text_field::{field_input, text_field, InputEvent, InputState};
 

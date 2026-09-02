@@ -16,8 +16,9 @@ use std::time::Duration;
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, px, App, AppContext, ClickEvent, ClipboardItem, Context, Entity, EventEmitter,
-    FocusHandle, Focusable, InteractiveElement, IntoElement, KeyDownEvent, ParentElement, Render,
-    SharedString, StatefulInteractiveElement, Styled, Task, Window,
+    FocusHandle, Focusable, InteractiveElement, IntoElement, KeyDownEvent, MouseButton,
+    MouseDownEvent, ParentElement, Pixels, Point, Render, SharedString, StatefulInteractiveElement,
+    Styled, Task, Window,
 };
 use labonair_backend::modules::credentials::{self, Credential};
 use labonair_backend::modules::hosts::{self, Group, Host, ReorderItem};
@@ -27,7 +28,7 @@ use labonair_backend::modules::ssh::config_parser::{self, ImportConflict, SshCon
 use labonair_backend::App as Backend;
 use tokio::runtime::Handle as TokioHandle;
 
-use crate::components::IconName;
+use crate::components::{context_menu, IconName, MenuItem};
 use crate::notifications::{notification_center, Notification};
 use crate::theme::ThemeStore;
 
@@ -553,6 +554,13 @@ pub struct HostManagerView {
     import: Option<ImportState>,
     /// SSH-config export dialog, `Some` while open.
     export: Option<ExportState>,
+    /// Open host list-item right-click menu: `(host id, cursor)`.
+    host_menu: Option<(String, Point<Pixels>)>,
+    /// Open group-chip right-click menu: `(group id, group name, cursor)`.
+    group_menu: Option<(String, String, Point<Pixels>)>,
+    /// In-progress inline group rename: `(group id, buffer)`.
+    group_rename: Option<(String, String)>,
+    group_rename_focus: FocusHandle,
     // ── master/detail state (T16-014) ──────────────────────────────────────
     /// Left-pane search / quick-connect box.
     search: String,
@@ -613,6 +621,10 @@ impl HostManagerView {
             group_focus: cx.focus_handle(),
             import: None,
             export: None,
+            host_menu: None,
+            group_menu: None,
+            group_rename: None,
+            group_rename_focus: cx.focus_handle(),
             search: String::new(),
             search_focus: cx.focus_handle(),
             sort: HostSort::LastConnected,
@@ -1777,6 +1789,13 @@ impl HostManagerView {
                     this.select_host(&h, w, cx);
                 }
             }))
+            .on_mouse_down(MouseButton::Right, {
+                let id = id.clone();
+                cx.listener(move |this, ev: &MouseDownEvent, _w, cx| {
+                    this.host_menu = Some((id.clone(), ev.position));
+                    cx.notify();
+                })
+            })
             .on_drag(DraggedHost { id: id.clone() }, |_, _, _, cx| {
                 cx.new(|_| HostDragGhost)
             })
@@ -1852,11 +1871,21 @@ impl HostManagerView {
                 .count();
             let gid = g.id.clone();
             let gid_del = g.id.clone();
+            let (gid_menu, gname_menu) = (g.id.clone(), g.name.clone());
             row = row.child(
                 div()
+                    .id(SharedString::from(format!("gchip-{}", g.id)))
                     .flex()
                     .items_center()
                     .gap_0p5()
+                    .on_mouse_down(
+                        MouseButton::Right,
+                        cx.listener(move |this, ev: &MouseDownEvent, _w, cx| {
+                            this.group_menu =
+                                Some((gid_menu.clone(), gname_menu.clone(), ev.position));
+                            cx.notify();
+                        }),
+                    )
                     .child(chip(
                         "chip-group",
                         format!("{} ({count})", g.name),
@@ -3333,6 +3362,285 @@ impl Render for HostManagerView {
             .children(cred_overlay)
             .children(import_overlay)
             .children(export_overlay)
+            .children(self.render_host_menu(&p, cx))
+            .children(self.render_group_menu(&p, cx))
+            .children(self.render_group_rename(&p, cx))
+    }
+}
+
+impl HostManagerView {
+    /// Copy a single host's SSH-config block to the clipboard.
+    fn export_host(&mut self, id: String, cx: &mut Context<Self>) {
+        let app = self.app.clone();
+        let jh = self
+            .tokio
+            .spawn(async move { config_parser::export_ssh_config(vec![id], &app.db).await });
+        cx.spawn(async move |this, cx| {
+            if let Ok(Ok(block)) = jh.await {
+                let _ = this.update(cx, |_this, cx| {
+                    cx.write_to_clipboard(ClipboardItem::new_string(block));
+                });
+            }
+        })
+        .detach();
+    }
+
+    fn rename_group(&mut self, id: String, name: String, cx: &mut Context<Self>) {
+        let name = name.trim().to_string();
+        if name.is_empty() {
+            return;
+        }
+        let app = self.app.clone();
+        let jh = self
+            .tokio
+            .spawn(async move { hosts::db::groups_update(&app.db, id, name).await });
+        cx.spawn(async move |this, cx| {
+            let _ = jh.await;
+            let _ = this.update(cx, |this, cx| this.reload(cx));
+        })
+        .detach();
+    }
+
+    fn render_host_menu(&self, _p: &Palette, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
+        let (id, pos) = self.host_menu.clone()?;
+        let host = self.hosts.iter().find(|h| h.id == id)?.clone();
+        let view = cx.entity();
+        let close = |v: &Entity<Self>, cx: &mut App| {
+            v.update(cx, |this, cx| {
+                this.host_menu = None;
+                cx.notify();
+            })
+        };
+        let items = vec![
+            MenuItem::new("hm-ssh", "Connect SSH")
+                .icon(IconName::Terminal)
+                .on_click({
+                    let v = view.clone();
+                    let id = id.clone();
+                    move |_, _w, cx| {
+                        let id = id.clone();
+                        v.update(cx, |this, cx| {
+                            this.host_menu = None;
+                            cx.emit(HostManagerEvent::Connect(id));
+                        });
+                    }
+                }),
+            MenuItem::new("hm-sftp", "Open SFTP")
+                .icon(IconName::Folder)
+                .on_click({
+                    let v = view.clone();
+                    let id = id.clone();
+                    move |_, _w, cx| {
+                        let id = id.clone();
+                        v.update(cx, |this, cx| {
+                            this.host_menu = None;
+                            cx.emit(HostManagerEvent::OpenSftp(id));
+                        });
+                    }
+                }),
+            MenuItem::separator(),
+            MenuItem::new("hm-edit", "Edit")
+                .icon(IconName::Pencil)
+                .on_click({
+                    let v = view.clone();
+                    let host = host.clone();
+                    move |_, w, cx| {
+                        let host = host.clone();
+                        v.update(cx, |this, cx| {
+                            this.host_menu = None;
+                            this.select_host(&host, w, cx);
+                        });
+                    }
+                }),
+            MenuItem::new("hm-dup", "Duplicate")
+                .icon(IconName::Copy)
+                .on_click({
+                    let v = view.clone();
+                    let id = id.clone();
+                    move |_, _w, cx| {
+                        let id = id.clone();
+                        v.update(cx, |this, cx| {
+                            this.host_menu = None;
+                            this.duplicate_host(id, cx);
+                        });
+                    }
+                }),
+            MenuItem::new("hm-export", "Export to SSH Config").on_click({
+                let v = view.clone();
+                let id = id.clone();
+                move |_, _w, cx| {
+                    let id = id.clone();
+                    v.update(cx, |this, cx| {
+                        this.host_menu = None;
+                        this.export_host(id, cx);
+                    });
+                }
+            }),
+            MenuItem::separator(),
+            MenuItem::new("hm-del", "Delete")
+                .icon(IconName::Trash)
+                .destructive()
+                .on_click({
+                    let v = view.clone();
+                    let id = id.clone();
+                    move |_, _w, cx| {
+                        let id = id.clone();
+                        v.update(cx, |this, cx| {
+                            this.host_menu = None;
+                            this.delete_host(id, cx);
+                        });
+                    }
+                }),
+        ];
+        let v = view.clone();
+        Some(context_menu(
+            pos,
+            self.theme.read(cx),
+            move |_w, cx| close(&v, cx),
+            items,
+        ))
+    }
+
+    fn render_group_menu(&self, _p: &Palette, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
+        let (gid, gname, pos) = self.group_menu.clone()?;
+        let view = cx.entity();
+        let items = vec![
+            MenuItem::new("gm-rename", "Rename Group")
+                .icon(IconName::Pencil)
+                .on_click({
+                    let v = view.clone();
+                    let (gid, gname) = (gid.clone(), gname.clone());
+                    move |_, w, cx| {
+                        let (gid, gname) = (gid.clone(), gname.clone());
+                        v.update(cx, |this, cx| {
+                            this.group_menu = None;
+                            this.group_rename = Some((gid, gname));
+                            w.focus(&this.group_rename_focus);
+                            cx.notify();
+                        });
+                    }
+                }),
+            MenuItem::new("gm-del", "Delete Group")
+                .icon(IconName::Trash)
+                .destructive()
+                .on_click({
+                    let v = view.clone();
+                    let gid = gid.clone();
+                    move |_, _w, cx| {
+                        let gid = gid.clone();
+                        v.update(cx, |this, cx| {
+                            this.group_menu = None;
+                            this.delete_group(gid, cx);
+                        });
+                    }
+                }),
+        ];
+        let v = view.clone();
+        Some(context_menu(
+            pos,
+            self.theme.read(cx),
+            move |_w, cx| {
+                v.update(cx, |this, cx| {
+                    this.group_menu = None;
+                    cx.notify();
+                })
+            },
+            items,
+        ))
+    }
+
+    fn render_group_rename(&self, p: &Palette, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
+        let (_, buf) = self.group_rename.as_ref()?;
+        Some(
+            div()
+                .absolute()
+                .inset_0()
+                .flex()
+                .items_center()
+                .justify_center()
+                .bg(crate::theme::modal_scrim())
+                .on_mouse_down(
+                    MouseButton::Left,
+                    cx.listener(|this, _: &MouseDownEvent, _w, cx| {
+                        this.group_rename = None;
+                        cx.notify();
+                    }),
+                )
+                .child(
+                    div()
+                        .track_focus(&self.group_rename_focus)
+                        .key_context("HostGroupRename")
+                        .on_key_down(cx.listener(Self::on_group_rename_key))
+                        .on_mouse_down(
+                            MouseButton::Left,
+                            cx.listener(|_, _: &MouseDownEvent, _w, cx| cx.stop_propagation()),
+                        )
+                        .flex()
+                        .flex_col()
+                        .gap_2()
+                        .w(px(300.0))
+                        .p_3()
+                        .rounded_md()
+                        .bg(p.card)
+                        .border_1()
+                        .border_color(p.border)
+                        .child(
+                            div()
+                                .text_size(px(12.0))
+                                .text_color(p.fg)
+                                .child("Rename group"),
+                        )
+                        .child(
+                            div()
+                                .px_2()
+                                .py_1()
+                                .rounded_sm()
+                                .border_1()
+                                .border_color(p.accent)
+                                .text_size(px(12.0))
+                                .text_color(p.fg)
+                                .child(SharedString::from(format!("{buf}\u{2502}"))),
+                        ),
+                )
+                .into_any_element(),
+        )
+    }
+
+    fn on_group_rename_key(
+        &mut self,
+        ev: &KeyDownEvent,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some((gid, buf)) = self.group_rename.as_mut() else {
+            return;
+        };
+        match ev.keystroke.key.as_str() {
+            "enter" => {
+                let (gid, name) = (gid.clone(), buf.clone());
+                self.group_rename = None;
+                self.rename_group(gid, name, cx);
+            }
+            "escape" => {
+                self.group_rename = None;
+                cx.notify();
+            }
+            "backspace" => {
+                buf.pop();
+                cx.notify();
+            }
+            _ => {
+                if let Some(ch) = ev
+                    .keystroke
+                    .key_char
+                    .as_ref()
+                    .filter(|s| !s.is_empty() && !s.chars().any(|c| c.is_control()))
+                {
+                    buf.push_str(ch);
+                    cx.notify();
+                }
+            }
+        }
     }
 }
 

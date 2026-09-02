@@ -53,6 +53,7 @@ use labonair_terminal::{
 use tokio::runtime::Handle as TokioHandle;
 
 use crate::background::BackgroundStore;
+use crate::components::{context_menu, IconName, MenuItem};
 use crate::editor::{EditorEvent, EditorView};
 use crate::git_graph::GitGraphView;
 use crate::hosts::{ActiveTunnelRow, HostManagerEvent, HostManagerView, HostStatus};
@@ -305,6 +306,9 @@ pub struct Workspace {
     context_menu: Option<(u64, gpui::Point<gpui::Pixels>)>,
     /// Anchor position of the open "+" new-tab dropdown, if any.
     new_tab_menu: Option<gpui::Point<gpui::Pixels>>,
+    /// Tab whose title is being edited inline: `(tab id, buffer)`.
+    rename_tab: Option<(u64, String)>,
+    rename_focus: FocusHandle,
     focus_handle: FocusHandle,
     _meta_sync: Task<()>,
 
@@ -495,6 +499,8 @@ impl Workspace {
             confirm_close: None,
             context_menu: None,
             new_tab_menu: None,
+            rename_tab: None,
+            rename_focus: cx.focus_handle(),
             focus_handle: cx.focus_handle(),
             _meta_sync: meta_sync,
             _session_save: session_save,
@@ -1492,6 +1498,9 @@ impl Workspace {
     }
 
     fn select_tab(&mut self, id: u64, window: &mut Window, cx: &mut Context<Self>) {
+        if self.rename_tab.is_some() {
+            self.commit_tab_rename(cx);
+        }
         self.tabs.update(cx, |s, cx| s.set_active(id, cx));
         self.focus_active(window, cx);
     }
@@ -3103,12 +3112,29 @@ impl Workspace {
             .when(!active, |d| d.hover(|s| s.bg(border)))
             .child(div().child(tab.kind.indicator().svg(muted)))
             .child(
-                div()
-                    .max_w(px(180.0))
-                    .overflow_hidden()
-                    .whitespace_nowrap()
-                    .when(tab.kind == TabKind::Editor && tab.peek, |d| d.italic())
-                    .child(label.clone()),
+                match self.rename_tab.as_ref().filter(|(rid, _)| *rid == id) {
+                    Some((_, buf)) => div()
+                        .track_focus(&self.rename_focus)
+                        .key_context("TabRename")
+                        .on_key_down(cx.listener(Self::on_rename_key))
+                        .on_mouse_down(
+                            MouseButton::Left,
+                            cx.listener(|_, _: &MouseDownEvent, _w, cx| cx.stop_propagation()),
+                        )
+                        .min_w(px(80.0))
+                        .max_w(px(180.0))
+                        .px_1()
+                        .rounded_sm()
+                        .border_1()
+                        .border_color(accent)
+                        .child(SharedString::from(format!("{buf}\u{2502}"))),
+                    None => div()
+                        .max_w(px(180.0))
+                        .overflow_hidden()
+                        .whitespace_nowrap()
+                        .when(tab.kind == TabKind::Editor && tab.peek, |d| d.italic())
+                        .child(label.clone()),
+                },
             )
             .when(tab.kind == TabKind::Editor && tab.dirty, |d| {
                 d.child(div().size(px(6.0)).rounded_full().bg(fg).opacity(0.7))
@@ -3213,144 +3239,121 @@ impl Workspace {
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let recent = self.recent_hosts(cx, 5);
-        let theme = self.theme.read(cx);
-        let (card, fg, border, muted) = (
-            theme.card(),
-            theme.foreground(),
-            theme.border(),
-            theme.muted_foreground(),
+        let view = cx.entity();
+        let mut items: Vec<MenuItem> = vec![
+            MenuItem::new("nt-term", "Terminal")
+                .icon(IconName::Terminal)
+                .on_click({
+                    let v = view.clone();
+                    move |_, w, cx| {
+                        v.update(cx, |this, cx| {
+                            this.new_tab_menu = None;
+                            this.new_terminal_tab(w, cx)
+                        })
+                    }
+                }),
+            MenuItem::new("nt-editor", "Editor")
+                .icon(IconName::File)
+                .on_click({
+                    let v = view.clone();
+                    move |_, w, cx| {
+                        v.update(cx, |this, cx| {
+                            this.new_tab_menu = None;
+                            this.new_editor_tab(w, cx)
+                        })
+                    }
+                }),
+            MenuItem::new("nt-preview", "Preview")
+                .icon(IconName::Globe)
+                .on_click({
+                    let v = view.clone();
+                    move |_, w, cx| {
+                        v.update(cx, |this, cx| {
+                            this.new_tab_menu = None;
+                            this.new_preview_tab(w, cx)
+                        })
+                    }
+                }),
+            MenuItem::new("nt-gitgraph", "Git Graph")
+                .icon(IconName::GitBranch)
+                .on_click({
+                    let v = view.clone();
+                    move |_, _w, cx| {
+                        v.update(cx, |this, cx| {
+                            this.new_tab_menu = None;
+                            this.open_git_graph_tab(cx)
+                        })
+                    }
+                }),
+        ];
+        if !recent.is_empty() {
+            items.push(MenuItem::separator());
+            items.push(MenuItem::label("SSH"));
+            for (id, name) in &recent {
+                let (id, name) = (id.clone(), name.clone());
+                items.push(
+                    MenuItem::new(
+                        SharedString::from(format!("nt-ssh-{id}")),
+                        format!("\u{00b7} {name}"),
+                    )
+                    .on_click({
+                        let v = view.clone();
+                        move |_, w, cx| {
+                            let id = id.clone();
+                            v.update(cx, |this, cx| {
+                                this.new_tab_menu = None;
+                                this.open_ssh_tab(id, w, cx)
+                            })
+                        }
+                    }),
+                );
+            }
+            items.push(MenuItem::label("SFTP"));
+            for (id, name) in &recent {
+                let (id, name) = (id.clone(), name.clone());
+                items.push(
+                    MenuItem::new(
+                        SharedString::from(format!("nt-sftp-{id}")),
+                        format!("\u{00b7} {name}"),
+                    )
+                    .on_click({
+                        let v = view.clone();
+                        move |_, w, cx| {
+                            let id = id.clone();
+                            v.update(cx, |this, cx| {
+                                this.new_tab_menu = None;
+                                this.open_sftp_tab(id, w, cx)
+                            })
+                        }
+                    }),
+                );
+            }
+        }
+        items.push(MenuItem::separator());
+        items.push(
+            MenuItem::new("nt-hosts", "All hosts\u{2026}")
+                .icon(IconName::Server)
+                .on_click({
+                    let v = view.clone();
+                    move |_, _w, cx| {
+                        v.update(cx, |this, cx| {
+                            this.new_tab_menu = None;
+                            this.open_host_manager(cx)
+                        })
+                    }
+                }),
         );
 
-        let section = |label: &str| {
-            div()
-                .px_3()
-                .py_0p5()
-                .text_size(px(10.0))
-                .text_color(muted)
-                .child(SharedString::from(label.to_string()))
-        };
-
-        let item = |label: &str, shortcut: &str, key: SharedString| {
-            div()
-                .id(key)
-                .flex()
-                .items_center()
-                .justify_between()
-                .gap_4()
-                .px_3()
-                .py_1()
-                .text_xs()
-                .rounded_sm()
-                .text_color(fg)
-                .hover(|s| s.bg(border))
-                .child(SharedString::from(label.to_string()))
-                .child(
-                    div()
-                        .text_color(muted)
-                        .child(SharedString::from(shortcut.to_string())),
-                )
-        };
-
-        div()
-            .absolute()
-            .inset_0()
-            .on_mouse_down(
-                MouseButton::Left,
-                cx.listener(|this, _: &MouseDownEvent, _w, cx| {
+        let dismiss = {
+            let v = view.clone();
+            move |_w: &mut Window, cx: &mut App| {
+                v.update(cx, |this, cx| {
                     this.new_tab_menu = None;
-                    cx.notify();
-                }),
-            )
-            .child(
-                div()
-                    .absolute()
-                    .left(pos.x)
-                    .top(pos.y)
-                    .flex()
-                    .flex_col()
-                    .gap_0p5()
-                    .p_1()
-                    .min_w(px(180.0))
-                    .rounded_md()
-                    .bg(card)
-                    .border_1()
-                    .border_color(border)
-                    .child(
-                        item("Terminal", "\u{2318}T", "nt-term".into()).on_click(cx.listener(
-                            move |this, _: &ClickEvent, window, cx| {
-                                this.new_tab_menu = None;
-                                this.new_terminal_tab(window, cx);
-                            },
-                        )),
-                    )
-                    .child(
-                        item("Editor", "\u{2318}E", "nt-editor".into()).on_click(cx.listener(
-                            move |this, _: &ClickEvent, window, cx| {
-                                this.new_tab_menu = None;
-                                this.new_editor_tab(window, cx);
-                            },
-                        )),
-                    )
-                    .child(
-                        item("Preview", "\u{2318}P", "nt-preview".into()).on_click(cx.listener(
-                            move |this, _: &ClickEvent, window, cx| {
-                                this.new_tab_menu = None;
-                                this.new_preview_tab(window, cx);
-                            },
-                        )),
-                    )
-                    .child(
-                        item("Git Graph", "", "nt-gitgraph".into()).on_click(cx.listener(
-                            move |this, _: &ClickEvent, _window, cx| {
-                                this.new_tab_menu = None;
-                                this.open_git_graph_tab(cx);
-                            },
-                        )),
-                    )
-                    .child(div().my_0p5().h(px(1.0)).bg(border))
-                    .when(!recent.is_empty(), |d| {
-                        d.child(section("SSH")).children(recent.iter().cloned().map(
-                            |(id, name)| {
-                                item(
-                                    &format!("\u{00b7} {name}"),
-                                    "",
-                                    format!("nt-ssh-{id}").into(),
-                                )
-                                .on_click(cx.listener(
-                                    move |this, _: &ClickEvent, window, cx| {
-                                        this.new_tab_menu = None;
-                                        this.open_ssh_tab(id.clone(), window, cx);
-                                    },
-                                ))
-                            },
-                        ))
-                    })
-                    .when(!recent.is_empty(), |d| {
-                        d.child(section("SFTP"))
-                            .children(recent.iter().cloned().map(|(id, name)| {
-                                item(
-                                    &format!("\u{00b7} {name}"),
-                                    "",
-                                    format!("nt-sftp-{id}").into(),
-                                )
-                                .on_click(cx.listener(
-                                    move |this, _: &ClickEvent, window, cx| {
-                                        this.new_tab_menu = None;
-                                        this.open_sftp_tab(id.clone(), window, cx);
-                                    },
-                                ))
-                            }))
-                    })
-                    .child(div().my_0p5().h(px(1.0)).bg(border))
-                    .child(
-                        item("All hosts\u{2026}", "", "nt-hosts".into()).on_click(cx.listener(
-                            move |this, _: &ClickEvent, _window, cx| {
-                                this.new_tab_menu = None;
-                                this.open_host_manager(cx);
-                            },
-                        )),
-                    ),
-            )
+                    cx.notify()
+                })
+            }
+        };
+        context_menu(pos, self.theme.read(cx), dismiss, items)
     }
 
     fn render_content(&mut self, cx: &mut Context<Self>) -> gpui::AnyElement {
@@ -3632,137 +3635,196 @@ impl Workspace {
             )
     }
 
+    /// Start editing a tab's title inline (from the tab context menu).
+    fn begin_tab_rename(&mut self, id: u64, window: &mut Window, cx: &mut Context<Self>) {
+        self.context_menu = None;
+        let current = self
+            .tabs
+            .read(cx)
+            .get(id)
+            .map(|t| t.label().to_string())
+            .unwrap_or_default();
+        self.rename_tab = Some((id, current));
+        window.focus(&self.rename_focus);
+        cx.notify();
+    }
+
+    fn commit_tab_rename(&mut self, cx: &mut Context<Self>) {
+        if let Some((id, buf)) = self.rename_tab.take() {
+            let trimmed = buf.trim();
+            let title = (!trimmed.is_empty()).then(|| trimmed.to_string());
+            self.tabs
+                .update(cx, |s, cx| s.set_custom_title(id, title, cx));
+        }
+        cx.notify();
+    }
+
+    fn on_rename_key(&mut self, ev: &KeyDownEvent, _window: &mut Window, cx: &mut Context<Self>) {
+        let Some((_, buf)) = self.rename_tab.as_mut() else {
+            return;
+        };
+        match ev.keystroke.key.as_str() {
+            "enter" => self.commit_tab_rename(cx),
+            "escape" => {
+                self.rename_tab = None;
+                cx.notify();
+            }
+            "backspace" => {
+                buf.pop();
+                cx.notify();
+            }
+            _ => {
+                if let Some(ch) = ev
+                    .keystroke
+                    .key_char
+                    .as_ref()
+                    .filter(|s| !s.is_empty() && !s.chars().any(|c| c.is_control()))
+                {
+                    buf.push_str(ch);
+                    cx.notify();
+                }
+            }
+        }
+    }
+
     fn render_context_menu(
         &mut self,
         id: u64,
         pos: gpui::Point<gpui::Pixels>,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
-        let theme = self.theme.read(cx);
-        let (card, fg, border, muted) = (
-            theme.card(),
-            theme.foreground(),
-            theme.border(),
-            theme.muted_foreground(),
-        );
         let tab = self.tabs.read(cx).get(id).cloned();
         let kind = tab.as_ref().map(|t| t.kind);
         let is_peek = tab.as_ref().map(|t| t.peek).unwrap_or(false);
+        let plural = kind.map(|k| k.plural_label().to_string());
         let grant_target = self.mcp_grant_target(id, cx);
         let is_granted = self.agent_access.read(cx).is_granted(id);
+        let multi = self.tabs.read(cx).len() > 1;
+        let view = cx.entity();
 
-        let item = |label: &str, key: &'static str| {
-            div()
-                .id(key)
-                .px_3()
-                .py_1()
-                .text_xs()
-                .rounded_sm()
-                .text_color(fg)
-                .hover(|s| s.bg(border))
-                .child(SharedString::from(label.to_string()))
-        };
-
-        div()
-            .absolute()
-            .inset_0()
-            .on_mouse_down(
-                MouseButton::Left,
-                cx.listener(|this, _: &MouseDownEvent, _w, cx| {
-                    this.context_menu = None;
-                    cx.notify();
-                }),
-            )
-            .child(
-                div()
-                    .absolute()
-                    .left(pos.x)
-                    .top(pos.y)
-                    .flex()
-                    .flex_col()
-                    .gap_0p5()
-                    .p_1()
-                    .min_w(px(160.0))
-                    .rounded_md()
-                    .bg(card)
-                    .border_1()
-                    .border_color(border)
-                    .text_color(muted)
-                    .when(kind == Some(TabKind::Editor) && is_peek, |el| {
-                        el.child(item("Keep Tab Open", "keep").on_click(cx.listener(
-                            move |this, _: &ClickEvent, _w, cx| {
+        let mut items: Vec<MenuItem> = Vec::new();
+        if kind == Some(TabKind::Editor) && is_peek {
+            items.push(
+                MenuItem::new("keep", "Keep Tab Open")
+                    .icon(IconName::Eye)
+                    .on_click({
+                        let v = view.clone();
+                        move |_, _w, cx| {
+                            v.update(cx, |this, cx| {
                                 this.context_menu = None;
                                 this.tabs.update(cx, |s, cx| s.set_peek(id, false, cx));
-                            },
-                        )))
-                    })
-                    .when(kind != Some(TabKind::Home), |el| {
-                        el.child(item("Duplicate", "dup").on_click(cx.listener(
-                            move |this, _: &ClickEvent, window, cx| {
+                            })
+                        }
+                    }),
+            );
+        }
+        if kind != Some(TabKind::Home) {
+            items.push(
+                MenuItem::new("rename", "Rename")
+                    .icon(IconName::Pencil)
+                    .on_click({
+                        let v = view.clone();
+                        move |_, w, cx| v.update(cx, |this, cx| this.begin_tab_rename(id, w, cx))
+                    }),
+            );
+            items.push(
+                MenuItem::new("dup", "Duplicate")
+                    .icon(IconName::Copy)
+                    .on_click({
+                        let v = view.clone();
+                        move |_, w, cx| {
+                            v.update(cx, |this, cx| {
                                 this.context_menu = None;
                                 this.tabs.update(cx, |s, cx| s.set_active(id, cx));
-                                this.duplicate_active_tab(window, cx);
-                            },
-                        )))
+                                this.duplicate_active_tab(w, cx);
+                            })
+                        }
+                    }),
+            );
+        }
+        items.push(MenuItem::separator());
+        if multi {
+            items.push(MenuItem::new("others", "Close Others").on_click({
+                let v = view.clone();
+                move |_, w, cx| {
+                    v.update(cx, |this, cx| {
+                        this.context_menu = None;
+                        this.close_others(id, w, cx)
                     })
-                    .child(item("Close", "close").on_click(cx.listener(
-                        move |this, _: &ClickEvent, window, cx| {
+                }
+            }));
+            items.push(MenuItem::new("all", "Close All").on_click({
+                let v = view.clone();
+                move |_, w, cx| {
+                    v.update(cx, |this, cx| {
+                        this.context_menu = None;
+                        this.close_all_tabs(w, cx)
+                    })
+                }
+            }));
+            if let (Some(k), Some(pl)) = (kind, plural) {
+                items.push(MenuItem::new("kind", format!("Close All {pl}")).on_click({
+                    let v = view.clone();
+                    move |_, w, cx| {
+                        v.update(cx, |this, cx| {
                             this.context_menu = None;
-                            this.request_close(id, window, cx);
-                        },
-                    )))
-                    .child(item("Close Others", "others").on_click(cx.listener(
-                        move |this, _: &ClickEvent, window, cx| {
-                            this.context_menu = None;
-                            this.close_others(id, window, cx);
-                        },
-                    )))
-                    .child(item("Close All", "all").on_click(cx.listener(
-                        move |this, _: &ClickEvent, window, cx| {
-                            this.context_menu = None;
-                            this.close_all_tabs(window, cx);
-                        },
-                    )))
-                    .when_some(kind, |el, kind| {
-                        let label = format!("Close All {}", kind.plural_label());
-                        el.child(item(&label, "kind").on_click(cx.listener(
-                            move |this, _: &ClickEvent, window, cx| {
+                            this.close_by_kind(k, w, cx)
+                        })
+                    }
+                }));
+            }
+        }
+        items.push(MenuItem::new("close", "Close").on_click({
+            let v = view.clone();
+            move |_, w, cx| {
+                v.update(cx, |this, cx| {
+                    this.context_menu = None;
+                    this.request_close(id, w, cx)
+                })
+            }
+        }));
+        if let Some((session_id, label, gkind, host_id, pty)) = grant_target {
+            items.push(MenuItem::separator());
+            items.push(
+                MenuItem::new("mcp-grant", "Grant AI Agent Access")
+                    .icon(IconName::Shield)
+                    .checked(is_granted)
+                    .on_click({
+                        let v = view.clone();
+                        move |_, _w, cx| {
+                            let (session_id, label, host_id) =
+                                (session_id.clone(), label.clone(), host_id.clone());
+                            v.update(cx, |this, cx| {
                                 this.context_menu = None;
-                                this.close_by_kind(kind, window, cx);
-                            },
-                        )))
-                    })
-                    .when_some(
-                        grant_target,
-                        |el, (session_id, label, gkind, host_id, pty)| {
-                            let text = if is_granted {
-                                "\u{2713} Grant AI Agent Access"
-                            } else {
-                                "Grant AI Agent Access"
-                            };
-                            el.child(item(text, "mcp-grant").on_click(cx.listener(
-                                move |this, _: &ClickEvent, _window, cx| {
-                                    this.context_menu = None;
-                                    let (session_id, label, host_id) =
-                                        (session_id.clone(), label.clone(), host_id.clone());
-                                    this.agent_access.update(cx, |s, cx| {
-                                        s.set_grant(
-                                            id,
-                                            session_id,
-                                            !is_granted,
-                                            label,
-                                            gkind,
-                                            host_id,
-                                            pty,
-                                            cx,
-                                        );
-                                    });
-                                    cx.notify();
-                                },
-                            )))
-                        },
-                    ),
-            )
+                                this.agent_access.update(cx, |s, cx| {
+                                    s.set_grant(
+                                        id,
+                                        session_id,
+                                        !is_granted,
+                                        label,
+                                        gkind,
+                                        host_id,
+                                        pty,
+                                        cx,
+                                    );
+                                });
+                                cx.notify();
+                            })
+                        }
+                    }),
+            );
+        }
+
+        let dismiss = {
+            let v = view.clone();
+            move |_w: &mut Window, cx: &mut App| {
+                v.update(cx, |this, cx| {
+                    this.context_menu = None;
+                    cx.notify()
+                })
+            }
+        };
+        context_menu(pos, self.theme.read(cx), dismiss, items)
     }
 
     /// Resolve the MCP agent-access grant target for a tab, when it's an SSH or

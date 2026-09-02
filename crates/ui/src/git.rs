@@ -23,15 +23,20 @@ use std::time::Duration;
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, px, App, ClickEvent, Context, Entity, FocusHandle, Focusable, InteractiveElement,
-    IntoElement, KeyDownEvent, ParentElement, Render, SharedString, StatefulInteractiveElement,
-    Styled, Window,
+    IntoElement, KeyDownEvent, MouseButton, MouseDownEvent, ParentElement, Pixels, Point, Render,
+    SharedString, StatefulInteractiveElement, Styled, Window,
 };
 use labonair_backend::modules::git::{self, Branch, FileStatus, GitStatus, WorkspaceGitState};
 use labonair_backend::App as Backend;
 use tokio::runtime::Handle as TokioHandle;
 
+use crate::components::{context_menu, IconName, MenuItem};
 use crate::notifications::notify_err;
 use crate::theme::ThemeStore;
+
+/// A source-control file-menu action, wrapped into a click handler by
+/// `render_file_menu`.
+type GitFileAct = Box<dyn Fn(&mut GitPanelView, &mut Context<GitPanelView>)>;
 
 /// Local git status poll interval (matches the reference default
 /// `gitStatusPollIntervalMs`). Remote targets back off (see
@@ -393,6 +398,8 @@ pub struct GitPanelView {
     selected: Option<Selected>,
     diff_text: Option<String>,
     diff_error: Option<String>,
+    /// Open source-control file right-click menu: `(path, section, cursor)`.
+    file_menu: Option<(String, Section, Point<Pixels>)>,
 
     commit_msg: String,
     commit_error: Option<String>,
@@ -485,6 +492,7 @@ impl GitPanelView {
             selected: None,
             diff_text: None,
             diff_error: None,
+            file_menu: None,
             commit_msg: String::new(),
             commit_error: None,
             force_push_armed: false,
@@ -1600,7 +1608,14 @@ impl GitPanelView {
                     .child(self.row_action(section, action_path, c, cx))
                     .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
                         this.select_file(sel.clone(), cx);
-                    }));
+                    }))
+                    .on_mouse_down(MouseButton::Right, {
+                        let mp = path.clone();
+                        cx.listener(move |this, ev: &MouseDownEvent, _w, cx| {
+                            this.file_menu = Some((mp.clone(), section, ev.position));
+                            cx.notify();
+                        })
+                    });
                 list = list.child(row);
             }
         }
@@ -2946,6 +2961,112 @@ impl Render for GitPanelView {
             .child(self.render_branch_picker(c, cx))
             .child(self.render_branch_bar(c, cx))
             .child(self.render_commit_form(c, cx))
+            .children(self.render_file_menu(cx))
+    }
+}
+
+impl GitPanelView {
+    fn add_to_gitignore(&mut self, path: String, cx: &mut Context<Self>) {
+        let Some((root, sid, be)) = self.ctx() else {
+            return;
+        };
+        self.run_op(
+            "Add to .gitignore failed",
+            async move { git::git_add_to_gitignore(root, path, sid, &be.ssh, be.clone()).await },
+            cx,
+        );
+    }
+
+    fn add_to_exclude(&mut self, path: String, cx: &mut Context<Self>) {
+        let Some((root, sid, be)) = self.ctx() else {
+            return;
+        };
+        self.run_op(
+            "Add to exclude failed",
+            async move { git::git_add_to_exclude(root, path, sid, &be.ssh, be.clone()).await },
+            cx,
+        );
+    }
+
+    fn render_file_menu(&self, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
+        let (path, section, pos) = self.file_menu.clone()?;
+        let staged = matches!(section, Section::Staged);
+        let can_discard = matches!(section, Section::Unstaged | Section::Conflicts);
+        let untracked = matches!(section, Section::Untracked);
+        let view = cx.entity();
+        let act = |f: GitFileAct| {
+            let v = view.clone();
+            move |_: &ClickEvent, _w: &mut Window, cx: &mut App| {
+                v.update(cx, |this, cx| {
+                    this.file_menu = None;
+                    f(this, cx);
+                });
+            }
+        };
+
+        let mut items: Vec<MenuItem> = Vec::new();
+        let p = path.clone();
+        if staged {
+            items.push(
+                MenuItem::new("gitm-unstage", "Unstage").on_click(act(Box::new(
+                    move |this, cx| this.unstage_file(p.clone(), cx),
+                ))),
+            );
+        } else {
+            items.push(
+                MenuItem::new("gitm-stage", "Stage")
+                    .icon(IconName::Plus)
+                    .on_click(act(Box::new(move |this, cx| {
+                        this.stage_file(p.clone(), cx)
+                    }))),
+            );
+        }
+        if can_discard {
+            let p = path.clone();
+            items.push(
+                MenuItem::new("gitm-discard", "Discard Changes")
+                    .icon(IconName::Trash)
+                    .destructive()
+                    .on_click(act(Box::new(move |this, cx| {
+                        this.discard_file(p.clone(), cx)
+                    }))),
+            );
+        }
+        items.push(MenuItem::separator());
+        let p = path.clone();
+        items.push(
+            MenuItem::new("gitm-ignore", "Add to .gitignore").on_click(act(Box::new(
+                move |this, cx| this.add_to_gitignore(p.clone(), cx),
+            ))),
+        );
+        let p = path.clone();
+        items.push(
+            MenuItem::new("gitm-exclude", "Add to .git/info/exclude").on_click(act(Box::new(
+                move |this, cx| this.add_to_exclude(p.clone(), cx),
+            ))),
+        );
+        if !untracked {
+            items.push(MenuItem::separator());
+            let sel = Selected {
+                path: path.clone(),
+                staged,
+                untracked,
+            };
+            items.push(
+                MenuItem::new("gitm-diff", "Open Diff").on_click(act(Box::new(move |this, cx| {
+                    this.select_file(sel.clone(), cx)
+                }))),
+            );
+        }
+
+        let v = view.clone();
+        let dismiss = move |_w: &mut Window, cx: &mut App| {
+            v.update(cx, |this, cx| {
+                this.file_menu = None;
+                cx.notify();
+            });
+        };
+        Some(context_menu(pos, self.theme.read(cx), dismiss, items))
     }
 }
 

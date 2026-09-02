@@ -26,13 +26,15 @@ use std::time::{Duration, Instant};
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, px, uniform_list, App, ClickEvent, ClipboardItem, Context, Div, Entity, FocusHandle,
-    Focusable, Font, Hsla, InteractiveElement, IntoElement, ParentElement, Render, SharedString,
-    Stateful, StatefulInteractiveElement, Styled, Window,
+    Focusable, Font, Hsla, InteractiveElement, IntoElement, KeyDownEvent, MouseButton,
+    MouseDownEvent, ParentElement, Pixels, Point, Render, SharedString, Stateful,
+    StatefulInteractiveElement, Styled, Window,
 };
 use labonair_backend::modules::git::{self, CommitInfo};
 use labonair_backend::App as Backend;
 use tokio::runtime::Handle as TokioHandle;
 
+use crate::components::{context_menu, IconName, MenuItem};
 use crate::theme::ThemeStore;
 
 // ── geometry ───────────────────────────────────────────────────────────────
@@ -458,6 +460,11 @@ pub struct GitGraphView {
     detail_numstat: Option<Vec<FileStat>>,
     detail_diff: Option<Result<String, String>>,
     show_diff: bool,
+    /// Open commit right-click menu: `(commit row index, cursor anchor)`.
+    commit_menu: Option<(usize, Point<Pixels>)>,
+    /// In-progress "Create Branch Here…" prompt: `(commit row index, buffer)`.
+    branch_prompt: Option<(usize, String)>,
+    branch_prompt_focus: FocusHandle,
 }
 
 impl GitGraphView {
@@ -507,6 +514,9 @@ impl GitGraphView {
             detail_numstat: None,
             detail_diff: None,
             show_diff: false,
+            commit_menu: None,
+            branch_prompt: None,
+            branch_prompt_focus: cx.focus_handle(),
         }
     }
 
@@ -865,11 +875,18 @@ impl GitGraphView {
                 .map(|i| {
                     let commit = &commits[i];
                     let v = view.clone();
-                    commit_row(i, c, commit, selected == Some(i), max_lanes, head, &mono).on_click(
-                        move |_e: &ClickEvent, _w, cx| {
+                    let v2 = view.clone();
+                    commit_row(i, c, commit, selected == Some(i), max_lanes, head, &mono)
+                        .on_click(move |_e: &ClickEvent, _w, cx| {
                             v.update(cx, |this, cx| this.select(i, cx));
-                        },
-                    )
+                        })
+                        .on_mouse_down(MouseButton::Right, move |ev: &MouseDownEvent, _w, cx| {
+                            v2.update(cx, |this, cx| {
+                                this.select(i, cx);
+                                this.commit_menu = Some((i, ev.position));
+                                cx.notify();
+                            });
+                        })
                 })
                 .collect::<Vec<_>>()
         })
@@ -1264,6 +1281,304 @@ impl Focusable for GitGraphView {
     }
 }
 
+impl GitGraphView {
+    fn commit_hash(&self, idx: usize) -> Option<String> {
+        self.commits.get(idx).map(|c| c.info.hash.clone())
+    }
+
+    /// Run one git subcommand against the repo, then reload the graph.
+    fn run_git_op(
+        &mut self,
+        label: &'static str,
+        op: impl FnOnce(
+                String,
+                Option<String>,
+                Backend,
+            ) -> std::pin::Pin<
+                Box<dyn std::future::Future<Output = Result<(), String>> + Send>,
+            > + Send
+            + 'static,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(repo) = self.repo_path.clone() else {
+            return;
+        };
+        let session = self.session_id.clone();
+        let backend = self.backend.clone();
+        let jh = self
+            .tokio
+            .spawn(async move { op(repo, session, backend).await });
+        cx.spawn(async move |this, cx| {
+            let res = jh.await.unwrap_or_else(|e| Err(e.to_string()));
+            let _ = this.update(cx, |this, cx| {
+                match res {
+                    Ok(()) => this.reload(cx),
+                    Err(e) => crate::notifications::notification_center(cx).update(cx, |n, cx| {
+                        n.push(crate::notifications::Notification::error(label, e), cx);
+                    }),
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn checkout_commit(&mut self, idx: usize, cx: &mut Context<Self>) {
+        let Some(hash) = self.commit_hash(idx) else {
+            return;
+        };
+        self.run_git_op(
+            "Checkout failed",
+            move |repo, session, backend| {
+                Box::pin(async move {
+                    git::git_checkout_branch(repo, hash, session, &backend.ssh, backend.clone())
+                        .await
+                })
+            },
+            cx,
+        );
+    }
+
+    fn cherry_pick_commit(&mut self, idx: usize, cx: &mut Context<Self>) {
+        let Some(hash) = self.commit_hash(idx) else {
+            return;
+        };
+        self.run_git_op(
+            "Cherry-pick failed",
+            move |repo, session, backend| {
+                Box::pin(async move {
+                    git::git_cherry_pick(repo, hash, session, &backend.ssh, backend.clone()).await
+                })
+            },
+            cx,
+        );
+    }
+
+    fn create_branch_at(&mut self, idx: usize, name: String, cx: &mut Context<Self>) {
+        let Some(hash) = self.commit_hash(idx) else {
+            return;
+        };
+        let name = name.trim().to_string();
+        if name.is_empty() {
+            return;
+        }
+        self.run_git_op(
+            "Create branch failed",
+            move |repo, session, backend| {
+                Box::pin(async move {
+                    git::git_create_branch(
+                        repo,
+                        name,
+                        Some(hash),
+                        true,
+                        session,
+                        &backend.ssh,
+                        backend.clone(),
+                    )
+                    .await
+                })
+            },
+            cx,
+        );
+    }
+
+    fn render_commit_menu(&self, _c: Colors, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
+        let (idx, pos) = self.commit_menu?;
+        let commit = self.commits.get(idx)?;
+        let full = commit.info.hash.clone();
+        let short: String = full.chars().take(7).collect();
+        let view = cx.entity();
+        let close = {
+            let v = view.clone();
+            move |cx: &mut App| {
+                v.update(cx, |this, cx| {
+                    this.commit_menu = None;
+                    cx.notify()
+                })
+            }
+        };
+        let items = vec![
+            MenuItem::new("gg-view", "View Changes").on_click({
+                let v = view.clone();
+                move |_, _w, cx| {
+                    v.update(cx, |this, cx| {
+                        this.commit_menu = None;
+                        this.select(idx, cx);
+                        if !this.show_diff {
+                            this.toggle_diff(cx);
+                        }
+                    })
+                }
+            }),
+            MenuItem::separator(),
+            MenuItem::new("gg-checkout", "Checkout (detached HEAD)").on_click({
+                let v = view.clone();
+                move |_, _w, cx| {
+                    v.update(cx, |this, cx| {
+                        this.commit_menu = None;
+                        this.checkout_commit(idx, cx)
+                    })
+                }
+            }),
+            MenuItem::new("gg-branch", "Create Branch Here\u{2026}")
+                .icon(IconName::GitBranch)
+                .on_click({
+                    let v = view.clone();
+                    move |_, w, cx| {
+                        v.update(cx, |this, cx| {
+                            this.commit_menu = None;
+                            this.branch_prompt = Some((idx, String::new()));
+                            w.focus(&this.branch_prompt_focus);
+                            cx.notify();
+                        })
+                    }
+                }),
+            MenuItem::separator(),
+            MenuItem::new("gg-cherry", "Cherry-pick").on_click({
+                let v = view.clone();
+                move |_, _w, cx| {
+                    v.update(cx, |this, cx| {
+                        this.commit_menu = None;
+                        this.cherry_pick_commit(idx, cx)
+                    })
+                }
+            }),
+            MenuItem::separator(),
+            MenuItem::new("gg-copy-hash", "Copy Hash")
+                .icon(IconName::Copy)
+                .on_click({
+                    let full = full.clone();
+                    let close = close.clone();
+                    move |_, _w, cx| {
+                        cx.write_to_clipboard(ClipboardItem::new_string(full.clone()));
+                        close(cx);
+                    }
+                }),
+            MenuItem::new("gg-copy-short", "Copy Short Hash")
+                .icon(IconName::Copy)
+                .on_click({
+                    let short = short.clone();
+                    let close = close.clone();
+                    move |_, _w, cx| {
+                        cx.write_to_clipboard(ClipboardItem::new_string(short.clone()));
+                        close(cx);
+                    }
+                }),
+        ];
+        let dismiss = {
+            let v = view.clone();
+            move |_w: &mut Window, cx: &mut App| {
+                v.update(cx, |this, cx| {
+                    this.commit_menu = None;
+                    cx.notify()
+                })
+            }
+        };
+        Some(context_menu(pos, self.theme.read(cx), dismiss, items))
+    }
+
+    fn render_branch_prompt(&self, c: Colors, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
+        let (_, buf) = self.branch_prompt.as_ref()?;
+        Some(
+            div()
+                .absolute()
+                .inset_0()
+                .flex()
+                .items_center()
+                .justify_center()
+                .bg(crate::theme::modal_scrim())
+                .on_mouse_down(
+                    MouseButton::Left,
+                    cx.listener(|this, _: &MouseDownEvent, _w, cx| {
+                        this.branch_prompt = None;
+                        cx.notify();
+                    }),
+                )
+                .child(
+                    div()
+                        .track_focus(&self.branch_prompt_focus)
+                        .key_context("GitGraphBranchPrompt")
+                        .on_key_down(cx.listener(Self::on_branch_prompt_key))
+                        .on_mouse_down(
+                            MouseButton::Left,
+                            cx.listener(|_, _: &MouseDownEvent, _w, cx| cx.stop_propagation()),
+                        )
+                        .flex()
+                        .flex_col()
+                        .gap_2()
+                        .w(px(320.0))
+                        .p_3()
+                        .rounded_md()
+                        .bg(c.card)
+                        .border_1()
+                        .border_color(c.border)
+                        .child(
+                            div()
+                                .text_size(px(12.0))
+                                .text_color(c.fg)
+                                .child("Create branch at this commit"),
+                        )
+                        .child(
+                            div()
+                                .px_2()
+                                .py_1()
+                                .rounded_sm()
+                                .border_1()
+                                .border_color(c.accent)
+                                .text_size(px(12.0))
+                                .text_color(c.fg)
+                                .child(SharedString::from(format!("{buf}\u{2502}"))),
+                        )
+                        .child(
+                            div()
+                                .text_size(px(10.0))
+                                .text_color(c.muted)
+                                .child("Enter to create \u{00b7} Esc to cancel"),
+                        ),
+                )
+                .into_any_element(),
+        )
+    }
+
+    fn on_branch_prompt_key(
+        &mut self,
+        ev: &KeyDownEvent,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some((idx, buf)) = self.branch_prompt.as_mut() else {
+            return;
+        };
+        let idx = *idx;
+        match ev.keystroke.key.as_str() {
+            "enter" => {
+                let name = buf.clone();
+                self.branch_prompt = None;
+                self.create_branch_at(idx, name, cx);
+            }
+            "escape" => {
+                self.branch_prompt = None;
+                cx.notify();
+            }
+            "backspace" => {
+                buf.pop();
+                cx.notify();
+            }
+            _ => {
+                if let Some(ch) = ev
+                    .keystroke
+                    .key_char
+                    .as_ref()
+                    .filter(|s| !s.is_empty() && !s.chars().any(|c| c.is_control()))
+                {
+                    buf.push_str(ch);
+                    cx.notify();
+                }
+            }
+        }
+    }
+}
+
 impl Render for GitGraphView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let c = self.colors(cx);
@@ -1284,6 +1599,8 @@ impl Render for GitGraphView {
                     .child(self.render_center(c, cx))
                     .child(self.render_detail(c, cx)),
             )
+            .children(self.render_commit_menu(c, cx))
+            .children(self.render_branch_prompt(c, cx))
     }
 }
 

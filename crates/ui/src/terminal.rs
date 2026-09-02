@@ -39,6 +39,7 @@ use labonair_terminal::{
 };
 
 use crate::background::{BackgroundStore, LayerScope};
+use crate::components::{context_menu, IconName, MenuItem};
 use crate::explorer::{quote_paths, DraggedPaths};
 use crate::settings::GlobalPreferences;
 use crate::theme::ThemeStore;
@@ -71,6 +72,9 @@ pub struct TerminalView {
     /// over the whole window's viewport so a terminal hosted in a split pane
     /// sizes its grid to the pane, not the window (T04-002).
     measured: Option<Size<Pixels>>,
+    /// Open right-click context menu anchor (when `terminalRightClickPastes`
+    /// is off — mirrors the reference `TerminalPane` `<ContextMenu>`).
+    menu: Option<Point<Pixels>>,
     _poll: Task<()>,
 }
 
@@ -131,6 +135,7 @@ impl TerminalView {
             cell_size: (8.0, 16.0),
             drag_anchor: None,
             measured: None,
+            menu: None,
             _poll: poll,
         }
     }
@@ -465,9 +470,18 @@ impl Render for TerminalView {
             )
             .on_mouse_down(
                 MouseButton::Right,
-                cx.listener(|this, _: &MouseDownEvent, _window, cx| {
-                    // Right-click pastes (reference `terminalRightClickPastes`).
-                    this.paste_from_clipboard(cx);
+                cx.listener(|this, ev: &MouseDownEvent, _window, cx| {
+                    // Reference `TerminalPane`: `terminalRightClickPastes` pref
+                    // toggles between paste-on-right-click and a context menu.
+                    let pastes = cx
+                        .try_global::<GlobalPreferences>()
+                        .map(|p| p.0.terminal_right_click_pastes)
+                        .unwrap_or(false);
+                    if pastes {
+                        this.paste_from_clipboard(cx);
+                    } else {
+                        this.menu = Some(ev.position);
+                    }
                     cx.notify();
                 }),
             )
@@ -554,7 +568,62 @@ impl Render for TerminalView {
                         ))),
                 )
             })
+            .children(self.menu.map(|pos| self.render_menu(pos, cx)))
             .into_any_element()
+    }
+}
+
+impl TerminalView {
+    fn render_menu(&self, pos: Point<Pixels>, cx: &mut Context<Self>) -> gpui::AnyElement {
+        let has_selection = self
+            .handle
+            .with(|s| s.selection_text())
+            .ok()
+            .flatten()
+            .is_some_and(|t| !t.is_empty());
+        let view = cx.entity();
+        let items = vec![
+            MenuItem::new("term-copy", "Copy")
+                .icon(IconName::Copy)
+                .disabled(!has_selection)
+                .on_click({
+                    let v = view.clone();
+                    move |_, _w, cx| {
+                        v.update(cx, |this, cx| {
+                            this.menu = None;
+                            this.copy_selection(cx);
+                        })
+                    }
+                }),
+            MenuItem::new("term-paste", "Paste").on_click({
+                let v = view.clone();
+                move |_, _w, cx| {
+                    v.update(cx, |this, cx| {
+                        this.menu = None;
+                        this.paste_from_clipboard(cx);
+                    })
+                }
+            }),
+            MenuItem::new("term-clear", "Clear").on_click({
+                let v = view.clone();
+                move |_, _w, cx| {
+                    v.update(cx, |this, _cx| {
+                        this.menu = None;
+                        this.send_input(b"\x0c");
+                    })
+                }
+            }),
+        ];
+        let dismiss = {
+            let v = view.clone();
+            move |_w: &mut Window, cx: &mut App| {
+                v.update(cx, |this, cx| {
+                    this.menu = None;
+                    cx.notify();
+                })
+            }
+        };
+        context_menu(pos, self.theme.read(cx), dismiss, items)
     }
 }
 

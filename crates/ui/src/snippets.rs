@@ -20,8 +20,8 @@ use std::collections::{HashMap, HashSet};
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, px, App, ClickEvent, Context, Entity, FocusHandle, Focusable, InteractiveElement,
-    IntoElement, KeyDownEvent, ParentElement, Render, SharedString, StatefulInteractiveElement,
-    Styled, Window,
+    IntoElement, KeyDownEvent, MouseButton, MouseDownEvent, ParentElement, Render, SharedString,
+    StatefulInteractiveElement, Styled, Window,
 };
 use labonair_backend::modules::hosts::{self, Host};
 use labonair_backend::modules::snippets::db as sdb;
@@ -32,7 +32,7 @@ use labonair_backend::modules::snippets::{CommandSnippet, SnippetGroup, SnippetR
 use labonair_backend::App as Backend;
 use tokio::runtime::Handle as TokioHandle;
 
-use crate::components::IconName;
+use crate::components::{context_menu, IconName, MenuItem};
 use crate::notifications::{notification_center, Notification};
 use crate::theme::ThemeStore;
 use crate::workspace::Workspace;
@@ -453,6 +453,9 @@ pub struct SnippetsView {
     log_open: bool,
     selected_run: Option<String>,
 
+    /// Open snippet-item right-click menu: `(snippet id, cursor anchor)`.
+    menu: Option<(String, gpui::Point<gpui::Pixels>)>,
+
     run_events: std::sync::mpsc::Receiver<RunEvent>,
     _poll: gpui::Task<()>,
 }
@@ -539,6 +542,7 @@ impl SnippetsView {
             host_picker: None,
             log_open: false,
             selected_run: None,
+            menu: None,
             run_events: rx,
             _poll: poll,
         };
@@ -1403,6 +1407,7 @@ impl SnippetsView {
         let s_del_id = s.id.clone();
         let s_up = s.id.clone();
         let s_down = s.id.clone();
+        let s_menu_id = s.id.clone();
 
         div()
             .flex()
@@ -1413,6 +1418,14 @@ impl SnippetsView {
             .border_1()
             .border_color(c.border)
             .bg(c.card)
+            .id(SharedString::from(format!("snip-row-{}", s.id)))
+            .on_mouse_down(
+                MouseButton::Right,
+                cx.listener(move |this, ev: &MouseDownEvent, _w, cx| {
+                    this.menu = Some((s_menu_id.clone(), ev.position));
+                    cx.notify();
+                }),
+            )
             .child(
                 div()
                     .flex()
@@ -2308,6 +2321,98 @@ impl Render for SnippetsView {
             .child(log_drawer)
             .children(var_prompt)
             .children(host_picker)
+            .children(self.render_snippet_menu(cx))
+    }
+}
+
+impl SnippetsView {
+    fn render_snippet_menu(&self, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
+        let (id, pos) = self.menu.clone()?;
+        let s = self.snippets.iter().find(|s| s.id == id)?.clone();
+        let view = cx.entity();
+        let run = |mode: Option<ExecMode>, s: CommandSnippet| {
+            let v = view.clone();
+            move |_: &ClickEvent, w: &mut Window, cx: &mut App| {
+                let s = s.clone();
+                v.update(cx, |this, cx| {
+                    this.menu = None;
+                    this.run(s, mode, w, cx);
+                });
+            }
+        };
+        let items = vec![
+            MenuItem::new("snip-cm-run", "Run in Terminal")
+                .icon(IconName::Terminal)
+                .on_click(run(Some(ExecMode::Terminal), s.clone())),
+            MenuItem::new("snip-cm-silent", "Run Silent")
+                .on_click(run(Some(ExecMode::Silent), s.clone())),
+            MenuItem::new("snip-cm-inject", "Run (Inject)")
+                .on_click(run(Some(ExecMode::Inject), s.clone())),
+            MenuItem::separator(),
+            MenuItem::new("snip-cm-copy", "Copy Command")
+                .icon(IconName::Copy)
+                .on_click({
+                    let cmd = s.command.clone();
+                    let v = view.clone();
+                    move |_, _w, cx| {
+                        cx.write_to_clipboard(gpui::ClipboardItem::new_string(cmd.clone()));
+                        v.update(cx, |this, cx| {
+                            this.menu = None;
+                            cx.notify()
+                        });
+                    }
+                }),
+            MenuItem::new("snip-cm-edit", "Edit")
+                .icon(IconName::Pencil)
+                .on_click({
+                    let s = s.clone();
+                    let v = view.clone();
+                    move |_, _w, cx| {
+                        let s = s.clone();
+                        v.update(cx, |this, cx| {
+                            this.menu = None;
+                            this.form = Some(FormState::from_snippet(&s));
+                            cx.notify();
+                        })
+                    }
+                }),
+            MenuItem::new("snip-cm-dup", "Duplicate")
+                .icon(IconName::Copy)
+                .on_click({
+                    let s = s.clone();
+                    let v = view.clone();
+                    move |_, _w, cx| {
+                        let s = s.clone();
+                        v.update(cx, |this, cx| {
+                            this.menu = None;
+                            this.duplicate_snippet(&s, cx)
+                        })
+                    }
+                }),
+            MenuItem::separator(),
+            MenuItem::new("snip-cm-del", "Delete")
+                .icon(IconName::Trash)
+                .destructive()
+                .on_click({
+                    let id = s.id.clone();
+                    let v = view.clone();
+                    move |_, _w, cx| {
+                        let id = id.clone();
+                        v.update(cx, |this, cx| {
+                            this.menu = None;
+                            this.delete_snippet(id, cx)
+                        })
+                    }
+                }),
+        ];
+        let v = view.clone();
+        let dismiss = move |_w: &mut Window, cx: &mut App| {
+            v.update(cx, |this, cx| {
+                this.menu = None;
+                cx.notify()
+            });
+        };
+        Some(context_menu(pos, self.theme.read(cx), dismiss, items))
     }
 }
 

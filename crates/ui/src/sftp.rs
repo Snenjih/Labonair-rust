@@ -30,8 +30,8 @@
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, px, App, AppContext, ClickEvent, Context, Entity, EventEmitter, FocusHandle, Focusable,
-    InteractiveElement, IntoElement, KeyDownEvent, MouseButton, ParentElement, Render,
-    SharedString, StatefulInteractiveElement, Styled, Window,
+    InteractiveElement, IntoElement, KeyDownEvent, MouseButton, MouseDownEvent, ParentElement,
+    Render, SharedString, StatefulInteractiveElement, Styled, Window,
 };
 use tokio::runtime::Handle as TokioHandle;
 
@@ -40,8 +40,11 @@ use labonair_backend::modules::sftp::connection::sftp_connect;
 use labonair_backend::modules::ssh::sftp as backend_sftp;
 use labonair_backend::App as Backend;
 
-use crate::components::IconName;
+use crate::components::{context_menu, IconName, MenuClick, MenuItem};
 use crate::theme::ThemeStore;
+
+/// A menu action against the SFTP view (wrapped into a [`MenuClick`]).
+type SftpAct = Box<dyn Fn(&mut SftpView, &mut Context<SftpView>)>;
 
 // ── pure helpers (unit-tested) ─────────────────────────────────────────────
 
@@ -273,6 +276,8 @@ struct Menu {
     side: Side,
     path: String,
     is_dir: bool,
+    /// Cursor anchor in window coordinates.
+    pos: gpui::Point<gpui::Pixels>,
     /// Two-click delete arm state (mirrors the reference).
     confirming_delete: bool,
 }
@@ -1162,7 +1167,7 @@ impl SftpView {
                     .overflow_y_scroll()
                     .on_mouse_down(
                         MouseButton::Right,
-                        cx.listener(move |this, _, _w, cx| {
+                        cx.listener(move |this, ev: &MouseDownEvent, _w, cx| {
                             // Right-click on empty space → menu anchored to the
                             // directory itself (new file / new folder only).
                             let path = match bhandler_side {
@@ -1173,6 +1178,7 @@ impl SftpView {
                                 side: bhandler_side,
                                 path,
                                 is_dir: true,
+                                pos: ev.position,
                                 confirming_delete: false,
                             });
                             cx.notify();
@@ -1370,12 +1376,13 @@ impl SftpView {
             }))
             .on_mouse_down(
                 MouseButton::Right,
-                cx.listener(move |this, _, _w, cx| {
+                cx.listener(move |this, ev: &MouseDownEvent, _w, cx| {
                     this.pane(side).selected = Some(e_menu.path.clone());
                     this.menu = Some(Menu {
                         side,
                         path: e_menu.path.clone(),
                         is_dir: e_menu.is_dir,
+                        pos: ev.position,
                         confirming_delete: false,
                     });
                     cx.notify();
@@ -1454,178 +1461,163 @@ impl SftpView {
             .into_any_element()
     }
 
-    fn render_menu(&self, c: Colors, cx: &mut Context<Self>) -> gpui::AnyElement {
+    fn render_menu(&self, _c: Colors, cx: &mut Context<Self>) -> gpui::AnyElement {
         let Some(menu) = self.menu.as_ref() else {
             return div().into_any_element();
         };
         let side = menu.side;
+        let pos = menu.pos;
         let has_entry = self.menu_entry().is_some();
         let (is_dir, is_remote) = (menu.is_dir, side == Side::Remote);
         let confirming = menu.confirming_delete;
-        let single_entry = self.menu_entry().map(|(_, e)| e);
+        let entry = self.menu_entry().map(|(_, e)| e);
+        let view = cx.entity();
 
-        let backdrop = div()
-            .id("sftp-menu-backdrop")
-            .absolute()
-            .inset_0()
-            .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
-                this.menu = None;
-                cx.notify();
-            }));
-
-        let item = move |id: &'static str, label: SharedString| {
-            div()
-                .id(id)
-                .px_2()
-                .py_1()
-                .text_sm()
-                .rounded_sm()
-                .hover(|s| s.bg(c.border))
-                .child(label)
+        let run = |f: SftpAct| -> MenuClick {
+            let v = view.clone();
+            Box::new(move |_ev, _w, cx| {
+                v.update(cx, |this, cx| f(this, cx));
+            })
         };
 
-        let mut menu_el = div()
-            .absolute()
-            .top(px(36.0))
-            .left(px(48.0))
-            .w(px(220.0))
-            .flex()
-            .flex_col()
-            .p_1()
-            .rounded_md()
-            .border_1()
-            .border_color(c.border)
-            .bg(c.card)
-            .shadow_lg()
-            .child(
-                item("sftp-cm-newdir", "New Folder".into()).on_click(cx.listener(
-                    move |this, _: &ClickEvent, _w, cx| this.start_edit(side, EditKind::NewDir, cx),
-                )),
-            )
-            .child(
-                item("sftp-cm-newfile", "New File".into()).on_click(cx.listener(
-                    move |this, _: &ClickEvent, _w, cx| {
-                        this.start_edit(side, EditKind::NewFile, cx)
-                    },
-                )),
+        let mut items: Vec<MenuItem> = Vec::new();
+        if has_entry {
+            let e = entry.clone().unwrap();
+            items.push(MenuItem::new("sftp-cm-open", "Open").on_click(run(Box::new(
+                move |this, cx| {
+                    this.menu = None;
+                    this.activate(side, &e, true, cx);
+                },
+            ))));
+            items.push(MenuItem::separator());
+        }
+        items.push(
+            MenuItem::new("sftp-cm-newdir", "New Folder")
+                .icon(IconName::Folder)
+                .on_click(run(Box::new(move |this, cx| {
+                    this.start_edit(side, EditKind::NewDir, cx)
+                }))),
+        );
+        items.push(
+            MenuItem::new("sftp-cm-newfile", "New File")
+                .icon(IconName::File)
+                .on_click(run(Box::new(move |this, cx| {
+                    this.start_edit(side, EditKind::NewFile, cx)
+                }))),
+        );
+        if has_entry {
+            items.push(
+                MenuItem::new("sftp-cm-rename", "Rename")
+                    .icon(IconName::Pencil)
+                    .on_click(run(Box::new(move |this, cx| {
+                        this.start_edit(side, EditKind::Rename, cx)
+                    }))),
             );
-
-        if has_entry {
-            menu_el = menu_el
-                .child(
-                    item("sftp-cm-rename", "Rename".into()).on_click(cx.listener(
-                        move |this, _: &ClickEvent, _w, cx| {
-                            this.start_edit(side, EditKind::Rename, cx)
-                        },
-                    )),
-                )
-                .child(
-                    item("sftp-cm-copypath", "Copy Path".into()).on_click(cx.listener(
-                        move |this, _: &ClickEvent, _w, cx| {
-                            if let Some((_, e)) = this.menu_entry() {
-                                cx.write_to_clipboard(gpui::ClipboardItem::new_string(e.path));
-                            }
-                            this.menu = None;
-                            cx.notify();
-                        },
-                    )),
-                )
-                .child(
-                    item(
-                        "sftp-cm-delete",
-                        if confirming {
-                            "Click again to delete".into()
-                        } else {
-                            SharedString::from("Delete\u{2026}")
-                        },
-                    )
-                    .text_color(c.err)
-                    .on_click(cx.listener(
-                        move |this, _: &ClickEvent, _w, cx| {
-                            let Some(menu) = this.menu.as_mut() else {
-                                return;
-                            };
-                            if menu.confirming_delete {
-                                let (side, path) = (menu.side, menu.path.clone());
-                                this.delete(side, path, cx);
-                            } else {
-                                menu.confirming_delete = true;
-                                cx.notify();
-                            }
-                        },
-                    )),
-                );
-        }
-
-        if has_entry {
-            let transfer_label: SharedString = if is_remote {
-                "Download to Local".into()
+            let transfer_label = if is_remote {
+                "Download to Local\u{2026}"
             } else {
-                "Upload to Remote".into()
+                "Upload to Remote\u{2026}"
             };
-            menu_el = menu_el.child(item("sftp-cm-transfer", transfer_label).on_click(
-                cx.listener(move |this, _: &ClickEvent, _w, cx| {
-                    if let Some((s, e)) = this.menu_entry() {
-                        this.enqueue(s, vec![e.path], cx);
-                    }
-                }),
-            ));
+            items.push(
+                MenuItem::new("sftp-cm-transfer", transfer_label)
+                    .icon(IconName::Download)
+                    .on_click(run(Box::new(move |this, cx| {
+                        if let Some((s, e)) = this.menu_entry() {
+                            this.enqueue(s, vec![e.path], cx);
+                        }
+                    }))),
+            );
+            items.push(MenuItem::separator());
+            items.push(
+                MenuItem::new("sftp-cm-copypath", "Copy Path")
+                    .icon(IconName::Copy)
+                    .on_click(run(Box::new(move |this, cx| {
+                        if let Some((_, e)) = this.menu_entry() {
+                            cx.write_to_clipboard(gpui::ClipboardItem::new_string(e.path));
+                        }
+                        this.menu = None;
+                        cx.notify();
+                    }))),
+            );
         }
-
         if is_remote && has_entry {
-            let e1 = single_entry.clone();
-            let e2 = single_entry.clone();
-            menu_el =
-                menu_el
-                    .child(item("sftp-cm-perm", "Permissions\u{2026}".into()).on_click(
-                        cx.listener(move |this, _: &ClickEvent, _w, cx| {
-                            if let Some(e) = e1.clone() {
-                                this.open_perm_dialog(&e, cx);
-                            }
-                        }),
-                    ))
-                    .child(item("sftp-cm-props", "Properties\u{2026}".into()).on_click(
-                        cx.listener(move |this, _: &ClickEvent, _w, cx| {
-                            if let Some(e) = e2.clone() {
-                                this.open_props(&e, cx);
-                            }
-                        }),
-                    ));
+            let e = entry.clone().unwrap();
+            let ep = e.clone();
+            items.push(
+                MenuItem::new("sftp-cm-perm", "Permissions\u{2026}").on_click(run(Box::new(
+                    move |this, cx| this.open_perm_dialog(&ep, cx),
+                ))),
+            );
+            let ep = e.clone();
+            items.push(
+                MenuItem::new("sftp-cm-props", "Properties\u{2026}")
+                    .icon(IconName::Info)
+                    .on_click(run(Box::new(move |this, cx| this.open_props(&ep, cx)))),
+            );
             if !is_dir {
-                let e3 = single_entry.clone();
-                menu_el = menu_el.child(
-                    item("sftp-cm-editremote", "Edit Remote File".into()).on_click(cx.listener(
-                        move |this, _: &ClickEvent, _w, cx| {
-                            if let Some(e) = e3.clone() {
-                                cx.emit(SftpEvent::OpenRemoteFile {
-                                    session_id: this.session_id.clone(),
-                                    remote_path: e.path,
-                                    host_id: this.host_id.clone(),
-                                });
-                            }
+                let ep = e.clone();
+                items.push(
+                    MenuItem::new("sftp-cm-editremote", "Edit Remote File")
+                        .icon(IconName::Pencil)
+                        .on_click(run(Box::new(move |this, cx| {
+                            cx.emit(SftpEvent::OpenRemoteFile {
+                                session_id: this.session_id.clone(),
+                                remote_path: ep.path.clone(),
+                                host_id: this.host_id.clone(),
+                            });
                             this.menu = None;
                             cx.notify();
-                        },
-                    )),
+                        }))),
                 );
             }
         }
-
-        menu_el = menu_el.child(
-            item("sftp-cm-refresh", "Refresh".into()).on_click(cx.listener(
-                move |this, _: &ClickEvent, _w, cx| {
+        items.push(MenuItem::separator());
+        items.push(
+            MenuItem::new("sftp-cm-refresh", "Refresh")
+                .icon(IconName::Refresh)
+                .on_click(run(Box::new(move |this, cx| {
                     this.menu = None;
                     this.reload(side, cx);
-                },
-            )),
+                }))),
         );
+        if has_entry {
+            let label = if confirming {
+                "Click again to delete"
+            } else {
+                "Delete\u{2026}"
+            };
+            items.push(
+                MenuItem::new("sftp-cm-delete", label)
+                    .icon(IconName::Trash)
+                    .destructive()
+                    .on_click({
+                        let v = view.clone();
+                        move |_ev, _w, cx| {
+                            v.update(cx, |this, cx| {
+                                let Some(menu) = this.menu.as_mut() else {
+                                    return;
+                                };
+                                if menu.confirming_delete {
+                                    let (side, path) = (menu.side, menu.path.clone());
+                                    this.delete(side, path, cx);
+                                } else {
+                                    menu.confirming_delete = true;
+                                    cx.notify();
+                                }
+                            });
+                        }
+                    }),
+            );
+        }
 
-        div()
-            .absolute()
-            .inset_0()
-            .child(backdrop)
-            .child(menu_el)
-            .into_any_element()
+        let v = view.clone();
+        let dismiss = move |_w: &mut Window, cx: &mut App| {
+            v.update(cx, |this, cx| {
+                this.menu = None;
+                cx.notify()
+            });
+        };
+        context_menu(pos, self.theme.read(cx), dismiss, items)
     }
 
     fn render_perm_dialog(&self, c: Colors, cx: &mut Context<Self>) -> gpui::AnyElement {

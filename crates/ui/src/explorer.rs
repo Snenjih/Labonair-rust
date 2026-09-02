@@ -37,17 +37,24 @@ use gpui::prelude::FluentBuilder;
 use gpui::{
     div, px, App, AppContext, ClickEvent, ClipboardItem, Context, Entity, ExternalPaths,
     FocusHandle, Focusable, Hsla, InteractiveElement, IntoElement, KeyDownEvent, MouseButton,
-    ParentElement, Render, SharedString, StatefulInteractiveElement, Styled, Task, Window,
+    MouseDownEvent, ParentElement, Pixels, Point, Render, SharedString, StatefulInteractiveElement,
+    Styled, Task, Window,
 };
 use notify::{RecommendedWatcher, RecursiveMode};
 use notify_debouncer_mini::{new_debouncer, Debouncer};
 
 use labonair_backend::modules::fs::{mutate, tree};
 
-use crate::components::{file_icon, folder_icon, IconName, InputEvent, InputState};
+use crate::components::{
+    context_menu, file_icon, folder_icon, IconName, InputEvent, InputState, MenuClick, MenuItem,
+};
 use crate::notifications::{notification_center, Notification};
 use crate::theme::ThemeStore;
 use crate::workspace::Workspace;
+
+/// A menu action expressed against the view + window (wrapped into a
+/// [`MenuClick`] by `render_context_menu`).
+type ExpAct = Box<dyn Fn(&mut ExplorerView, &mut Window, &mut Context<ExplorerView>)>;
 
 const PAGE_LIMIT: usize = tree::DEFAULT_LOCAL_PAGE_LIMIT;
 const INDENT: f32 = 12.0;
@@ -330,7 +337,7 @@ pub struct ExplorerView {
     /// Real text field backing the inline create/rename row (T16-002 canary).
     /// Lazily created on `begin_create` / `begin_rename` (needs a `Window`).
     edit_field: Option<Entity<InputState>>,
-    context_menu: Option<PathBuf>,
+    context_menu: Option<(PathBuf, Point<Pixels>)>,
     confirm_delete: Option<PathBuf>,
     focus: FocusHandle,
     /// Parent directories flagged dirty by the watcher, drained on a timer.
@@ -1108,8 +1115,8 @@ impl Render for ExplorerView {
             .children(self.render_clip_banner(c, cx))
             .child(list);
 
-        if let Some(target) = self.context_menu.clone() {
-            container = container.child(self.render_context_menu(target, c, cx));
+        if let Some((target, pos)) = self.context_menu.clone() {
+            container = container.child(self.render_context_menu(target, pos, c, cx));
         }
         if let Some(target) = self.confirm_delete.clone() {
             container = container.child(self.render_delete_confirm(target, c, cx));
@@ -1382,8 +1389,8 @@ impl ExplorerView {
                     }))
                     .on_mouse_down(
                         MouseButton::Right,
-                        cx.listener(move |this, _, _window, cx| {
-                            this.context_menu = Some(menu_path.clone());
+                        cx.listener(move |this, ev: &MouseDownEvent, _window, cx| {
+                            this.context_menu = Some((menu_path.clone(), ev.position));
                             cx.notify();
                         }),
                     )
@@ -1421,7 +1428,8 @@ impl ExplorerView {
     fn render_context_menu(
         &self,
         target: PathBuf,
-        c: Colors,
+        pos: Point<Pixels>,
+        _c: Colors,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let is_dir = matches!(
@@ -1441,128 +1449,172 @@ impl ExplorerView {
             .file_name()
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_default();
+        let can_preview = !is_dir && crate::preview::is_previewable(&target.to_string_lossy());
+        let has_clip = self.clipboard.is_some();
+        let rel = self
+            .root()
+            .as_ref()
+            .and_then(|r| target.strip_prefix(r).ok())
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|| target.to_string_lossy().to_string());
+        let view = cx.entity();
 
-        let backdrop = div()
-            .id("explorer-menu-backdrop")
-            .absolute()
-            .inset_0()
-            .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
-                this.context_menu = None;
-                cx.notify();
-            }));
-
-        let item = |label: SharedString| {
-            div()
-                .px_2()
-                .py_1()
-                .text_sm()
-                .rounded_sm()
-                .hover(|s| s.bg(c.border))
-                .child(label)
+        // Each entry: capture a fresh clone of the path(s) it needs, then run
+        // inside `view.update` (which supplies `&mut Self` + `Context`).
+        let win = move |v: &Entity<Self>, f: ExpAct| -> MenuClick {
+            let v = v.clone();
+            Box::new(move |_ev: &ClickEvent, w: &mut Window, cx: &mut App| {
+                v.update(cx, |this, cx| {
+                    this.context_menu = None;
+                    f(this, w, cx);
+                });
+            })
         };
 
-        let d1 = dir_for_ops.clone();
-        let d2 = dir_for_ops.clone();
-        let d3 = dir_for_ops.clone();
-        let d_paste = dir_for_ops.clone();
-        let d_bookmark = dir_for_ops.clone();
-        let t_rename = target.clone();
-        let t_delete = target.clone();
-        let t_copy = target.clone();
-        let t_preview = target.clone();
-        let can_preview = !is_dir && crate::preview::is_previewable(&target.to_string_lossy());
-        let t_cc = self.action_paths(&target);
-        let t_cx = t_cc.clone();
-        let has_clip = self.clipboard.is_some();
-
-        let menu = div()
-            .absolute()
-            .top(px(26.0))
-            .left(px(10.0))
-            .w(px(200.0))
-            .p_1()
-            .rounded_md()
-            .border_1()
-            .border_color(c.border)
-            .bg(c.card)
-            .text_color(c.fg)
-            .child(
-                div()
-                    .px_2()
-                    .py_1()
-                    .text_xs()
-                    .text_color(c.muted)
-                    .child(SharedString::from(name)),
-            )
-            .child(
-                item("New File".into())
-                    .id("cm-new-file")
-                    .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
-                        this.begin_create(d1.clone(), false, window, cx)
-                    })),
-            )
-            .child(
-                item("New Folder".into())
-                    .id("cm-new-dir")
-                    .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
-                        this.begin_create(d2.clone(), true, window, cx)
-                    })),
-            )
-            .child(item("Rename".into()).id("cm-rename").on_click(cx.listener(
-                move |this, _: &ClickEvent, window, cx| {
-                    this.begin_rename(t_rename.clone(), window, cx)
-                },
-            )))
-            .child(item("Delete".into()).id("cm-delete").on_click(cx.listener(
-                move |this, _: &ClickEvent, _window, cx| this.request_delete(t_delete.clone(), cx),
-            )))
-            .child(item("Copy".into()).id("cm-clip-copy").on_click(cx.listener(
-                move |this, _: &ClickEvent, _window, cx| {
-                    this.clip_set(ClipOp::Copy, t_cc.clone(), cx)
-                },
-            )))
-            .child(item("Cut".into()).id("cm-clip-cut").on_click(cx.listener(
-                move |this, _: &ClickEvent, _window, cx| {
-                    this.clip_set(ClipOp::Cut, t_cx.clone(), cx)
-                },
-            )))
-            .when(has_clip, |menu| {
-                menu.child(
-                    item("Paste".into())
-                        .id("cm-clip-paste")
-                        .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
-                            this.paste_into(d_paste.clone(), cx)
-                        })),
-                )
-            })
-            .child(item("Copy Path".into()).id("cm-copy").on_click(
-                cx.listener(move |this, _: &ClickEvent, _window, cx| this.copy_path(&t_copy, cx)),
-            ))
-            .child(
-                item("Open in Terminal".into())
-                    .id("cm-terminal")
-                    .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
-                        this.open_in_terminal(d3.clone(), window, cx)
-                    })),
-            )
-            .when(can_preview, |menu| {
-                menu.child(
-                    item("Open in Preview".into())
-                        .id("cm-preview")
-                        .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
-                            this.open_in_preview(t_preview.clone(), window, cx)
-                        })),
-                )
-            })
-            .child(
-                item("Bookmark This Folder".into())
-                    .id("cm-bookmark")
-                    .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
-                        this.bookmark_folder(d_bookmark.clone(), cx)
-                    })),
+        let mut items: Vec<MenuItem> = vec![MenuItem::label(name)];
+        if !is_dir {
+            let t = target.clone();
+            items.push(
+                MenuItem::new("cm-open", "Open")
+                    .icon(IconName::File)
+                    .on_click(win(
+                        &view,
+                        Box::new(move |this, w, cx| this.open_file(&t, false, w, cx)),
+                    )),
             );
+        }
+        if can_preview {
+            let t = target.clone();
+            items.push(
+                MenuItem::new("cm-preview", "Open Preview")
+                    .icon(IconName::Globe)
+                    .on_click(win(
+                        &view,
+                        Box::new(move |this, w, cx| this.open_in_preview(t.clone(), w, cx)),
+                    )),
+            );
+        }
+        items.push(MenuItem::separator());
+        let d = dir_for_ops.clone();
+        items.push(
+            MenuItem::new("cm-new-file", "New File")
+                .icon(IconName::File)
+                .on_click(win(
+                    &view,
+                    Box::new(move |this, w, cx| this.begin_create(d.clone(), false, w, cx)),
+                )),
+        );
+        let d = dir_for_ops.clone();
+        items.push(
+            MenuItem::new("cm-new-dir", "New Folder")
+                .icon(IconName::Folder)
+                .on_click(win(
+                    &view,
+                    Box::new(move |this, w, cx| this.begin_create(d.clone(), true, w, cx)),
+                )),
+        );
+        let d = dir_for_ops.clone();
+        items.push(
+            MenuItem::new("cm-terminal", "Reveal in Terminal")
+                .icon(IconName::Terminal)
+                .on_click(win(
+                    &view,
+                    Box::new(move |this, w, cx| this.open_in_terminal(d.clone(), w, cx)),
+                )),
+        );
+        {
+            let t = target.clone();
+            let v = view.clone();
+            items.push(MenuItem::new("cm-finder", "Reveal in Finder").on_click(
+                move |_, _w, cx| {
+                    cx.reveal_path(&t);
+                    v.update(cx, |this, cx| {
+                        this.context_menu = None;
+                        cx.notify()
+                    });
+                },
+            ));
+        }
+        items.push(MenuItem::separator());
+        let t = target.clone();
+        items.push(
+            MenuItem::new("cm-copy-path", "Copy Path")
+                .icon(IconName::Copy)
+                .on_click(win(
+                    &view,
+                    Box::new(move |this, _w, cx| this.copy_path(&t, cx)),
+                )),
+        );
+        {
+            let rel = rel.clone();
+            let v = view.clone();
+            items.push(
+                MenuItem::new("cm-copy-rel", "Copy Relative Path")
+                    .icon(IconName::Copy)
+                    .on_click(move |_, _w, cx| {
+                        cx.write_to_clipboard(gpui::ClipboardItem::new_string(rel.clone()));
+                        v.update(cx, |this, cx| {
+                            this.context_menu = None;
+                            cx.notify()
+                        });
+                    }),
+            );
+        }
+        let cc = self.action_paths(&target);
+        items.push(MenuItem::new("cm-clip-copy", "Copy").on_click(win(
+            &view,
+            Box::new(move |this, _w, cx| this.clip_set(ClipOp::Copy, cc.clone(), cx)),
+        )));
+        let cc = self.action_paths(&target);
+        items.push(MenuItem::new("cm-clip-cut", "Cut").on_click(win(
+            &view,
+            Box::new(move |this, _w, cx| this.clip_set(ClipOp::Cut, cc.clone(), cx)),
+        )));
+        if has_clip {
+            let d = dir_for_ops.clone();
+            items.push(MenuItem::new("cm-clip-paste", "Paste").on_click(win(
+                &view,
+                Box::new(move |this, _w, cx| this.paste_into(d.clone(), cx)),
+            )));
+        }
+        let d = dir_for_ops.clone();
+        items.push(
+            MenuItem::new("cm-bookmark", "Bookmark Path")
+                .icon(IconName::Bookmark)
+                .on_click(win(
+                    &view,
+                    Box::new(move |this, _w, cx| this.bookmark_folder(d.clone(), cx)),
+                )),
+        );
+        items.push(MenuItem::separator());
+        let t = target.clone();
+        items.push(
+            MenuItem::new("cm-rename", "Rename")
+                .icon(IconName::Pencil)
+                .on_click(win(
+                    &view,
+                    Box::new(move |this, w, cx| this.begin_rename(t.clone(), w, cx)),
+                )),
+        );
+        let t = target.clone();
+        items.push(
+            MenuItem::new("cm-delete", "Delete")
+                .icon(IconName::Trash)
+                .destructive()
+                .on_click(win(
+                    &view,
+                    Box::new(move |this, _w, cx| this.request_delete(t.clone(), cx)),
+                )),
+        );
 
-        div().absolute().inset_0().child(backdrop).child(menu)
+        let v = view.clone();
+        let dismiss = move |_w: &mut Window, cx: &mut App| {
+            v.update(cx, |this, cx| {
+                this.context_menu = None;
+                cx.notify()
+            });
+        };
+        context_menu(pos, self.theme.read(cx), dismiss, items)
     }
 
     fn render_delete_confirm(

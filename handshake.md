@@ -4,7 +4,77 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
-## Last Session: 2026-09-02 (Block F — partial: SFTP connecting screen, theme variants, palette fill-ins)
+## Last Session: 2026-09-02 (Block F Commit 1 — T16-017 shared ContextMenu + all view menus)
+
+### What Was Done (commit after `c366f7c`)
+
+**T16-017 — shared `ContextMenu` primitive + migrate/add every view menu**
+
+- **New `crates/ui/src/components/context_menu.rs`**: `MenuItem` builder
+  (`new`/`separator`/`label`/`submenu`, `.icon`/`.destructive`/`.disabled`/
+  `.checked`/`.on_click`) + `context_menu(anchor, &ThemeStore, dismiss, items)`
+  → full-screen backdrop (left+right click dismiss) + radix-styled card
+  (`popover` bg, `border`, `p-1`, `shadow_lg`, `min-w 160`, `rounded_sm`
+  items `px-2 py-1.5 text-13`, hover `accent`, destructive = `destructive`
+  colour, disabled dims + no handler, one-level hover sub-menus via
+  `group_hover`). Exported `MenuClick` alias for call-site helper sigs.
+  Unit test `builder_sets_item_flags`.
+- Handlers run with `&mut App`; call sites capture `cx.entity()` and
+  `v.update(cx, |this, cx| …)`.
+- **Migrated (were hand-rolled `div` menus):** workspace tab menu +
+  new-tab "+" menu (`workspace.rs`), explorer file-tree menu (`explorer.rs`
+  — also fixed the fixed `top:26/left:10` anchor → real cursor position),
+  SFTP file-list menu (`sftp.rs` — `Menu` now carries `pos`).
+- **New menus added (reference-parity item sets):**
+  - Workspace tab: **Rename** (new inline keydown-buffer editor, `rename_tab`
+    field + `on_rename_key`, commits on Enter / tab-switch), Duplicate,
+    Keep Tab Open, Close / Close Others / Close All / Close All ⟨kind⟩,
+    Grant AI Agent Access (checked).
+  - Explorer node: added Open, Reveal in Finder, Copy Relative Path (kept
+    Copy/Cut/Paste). Destructive Delete.
+  - SFTP list: added **Open**, transfer labels aligned ("Download to…/Upload
+    to Remote…"), two-click destructive Delete preserved.
+  - **Terminal pane** (`terminal.rs`, new): honours `terminalRightClickPastes`
+    pref — paste-on-right-click when set, else a menu **Copy** (disabled w/o
+    selection) / **Paste** / **Clear** (`^L`). Covers the SSH-terminal case
+    (unified `TerminalView`). "Ask AI about Selection" deferred (needs the
+    `AskAboutSelection` action wired end-to-end — see below).
+  - **Snippet item** (`snippets.rs`, new): Run in Terminal / Run Silent /
+    Run (Inject) / Copy Command / Edit / Duplicate / Delete (destructive) —
+    `menu` field + right-click on the row.
+  - **Git-graph commit** (`git_graph.rs`, new): View Changes, Checkout
+    (detached), **Create Branch Here…** (new modal keydown prompt →
+    `git_create_branch`), Cherry-pick, Copy Hash / Copy Short Hash.
+    New `run_git_op` helper.
+  - **Source-control file change** (`git.rs`, new): Stage/Unstage (per
+    section), Discard Changes (destructive), Add to .gitignore, Add to
+    .git/info/exclude (new `add_to_gitignore`/`add_to_exclude` methods),
+    Open Diff.
+  - **Host card / list item** (`hosts.rs`, new — one menu for list+grid):
+    Connect SSH, Open SFTP, Edit, Duplicate, Export to SSH Config (new
+    `export_host` → clipboard), Delete (destructive).
+  - **Host group chip** (`hosts.rs`, new): **Rename Group** (new modal
+    keydown prompt → `groups_update`), Delete Group (destructive).
+
+**Still not done in T16-017** (documented, low value / cross-cut):
+- Tab-bar empty-area menu (#3), CWD-breadcrumb menu (#15), bar-item /
+  Appearance-preview menu (#16/#17 — ties into T16-016 dual-dock; do there).
+- "Ask AI about Selection" terminal item + the `menu::AskAboutSelection`
+  action are still unwired end-to-end (`attach_selection` only called by
+  tests). Belongs in Commit 5.
+- "Open Diff (Split)" — the git panel has only an inline unified diff; no
+  split/editor-tab diff exists.
+
+### Verified
+`cargo fmt --all`, `cargo clippy --workspace --all-targets -D warnings`,
+`cargo test --workspace` — all green (680 tests).
+
+### Next
+Block F Commit 2 — T16-016 dual-dock dynamic sidebars.
+
+---
+
+## Session: 2026-09-02 (Block F — partial: SFTP connecting screen, theme variants, palette fill-ins)
 
 ### What Was Done (branch `master`, commit after `4976de9`)
 
