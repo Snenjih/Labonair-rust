@@ -263,6 +263,12 @@ impl EditorView {
         self.doc.path.clone()
     }
 
+    /// 1-based `(line, column)` of the caret — for the statusbar
+    /// `cursorPosition` bar item.
+    pub fn cursor_line_col(&self) -> (usize, usize) {
+        (self.doc.cursor.line + 1, self.doc.cursor.column + 1)
+    }
+
     pub fn is_dirty(&self) -> bool {
         self.doc.is_dirty()
     }

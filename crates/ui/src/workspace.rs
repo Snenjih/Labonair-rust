@@ -54,6 +54,7 @@ use tokio::runtime::Handle as TokioHandle;
 
 use crate::background::BackgroundStore;
 use crate::editor::{EditorEvent, EditorView};
+use crate::git_graph::GitGraphView;
 use crate::hosts::{ActiveTunnelRow, HostManagerEvent, HostManagerView, HostStatus};
 use crate::pane::{CloseOutcome, PaneId, PaneNode, SplitAxis, WorkspaceLayout};
 use crate::preview::PreviewView;
@@ -262,6 +263,8 @@ pub struct Workspace {
     sftp_views: HashMap<u64, Entity<SftpView>>,
     /// Native preview view per `Preview` tab id (T15-006 — WebView replacement).
     previews: HashMap<u64, Entity<PreviewView>>,
+    /// The shared commit-graph view, lazily created for the `GitGraph` tab.
+    git_graph: Option<Entity<GitGraphView>>,
     /// SFTP session id per `Sftp` tab id — kept alongside the view so the
     /// session can be torn down from `retire_tab` (which has no `cx`).
     sftp_sessions: HashMap<u64, String>,
@@ -454,6 +457,7 @@ impl Workspace {
             editors: HashMap::new(),
             sftp_views: HashMap::new(),
             previews: HashMap::new(),
+            git_graph: None,
             sftp_sessions: HashMap::new(),
             remote_edits: HashMap::new(),
             pending_sftp: Vec::new(),
@@ -760,6 +764,57 @@ impl Workspace {
     /// status-bar cwd breadcrumb (T04-003).
     pub fn active_cwd(&self, cx: &App) -> Option<String> {
         self.active_pane_view(cx).and_then(|v| v.read(cx).cwd())
+    }
+
+    /// The file path of the active editor tab, if the active tab is an editor
+    /// with a saved file — feeds the breadcrumb's "file mode" + the
+    /// `cursorPosition` bar item.
+    pub fn active_file_path(&self, cx: &App) -> Option<String> {
+        let active = self.tabs.read(cx).active()?.clone();
+        if active.kind != TabKind::Editor {
+            return None;
+        }
+        self.editors
+            .get(&active.id)?
+            .read(cx)
+            .path()
+            .map(|p| p.to_string_lossy().into_owned())
+    }
+
+    /// 1-based `(line, column)` of the active editor's caret, if an editor tab
+    /// is active.
+    pub fn active_editor_cursor(&self, cx: &App) -> Option<(usize, usize)> {
+        let active = self.tabs.read(cx).active()?.clone();
+        if active.kind != TabKind::Editor {
+            return None;
+        }
+        Some(self.editors.get(&active.id)?.read(cx).cursor_line_col())
+    }
+
+    /// `{hostId, sessionId}` of the SSH session backing the active pane, when
+    /// it's remote — lets the breadcrumb browse through the same session.
+    pub fn active_remote_target(&self, cx: &App) -> Option<(String, String)> {
+        let active = self.tabs.read(cx).active()?.clone();
+        let host_id = active.data.host_id.clone()?;
+        let session_id = active.data.session_id.map(|s| s.to_string())?;
+        Some((host_id, session_id))
+    }
+
+    /// Send a `cd <path>` into the active pane's shell (breadcrumb navigation).
+    pub fn send_cd(&self, path: &str, cx: &App) {
+        let cmd = format!("cd {}\n", shell_quote(path));
+        self.inject_into_active_terminal(&cmd, cx);
+    }
+
+    /// Open the SFTP transfer-queue panel (statusbar `transfers` bar item).
+    pub fn reveal_transfers(&self, cx: &mut Context<Self>) {
+        self.transfers.update(cx, |t, cx| t.reveal(cx));
+    }
+
+    /// Open a new local terminal tab rooted at `path` (breadcrumb "open in new
+    /// terminal").
+    pub fn cd_in_new_tab(&mut self, path: String, window: &mut Window, cx: &mut Context<Self>) {
+        self.run_snippet_local(Some(path), String::new(), window, cx);
     }
 
     /// The active tab's display label.
@@ -1545,6 +1600,46 @@ impl Workspace {
             Some(id) => s.set_active(id, cx),
             None => {
                 s.open(TabKind::Home, TabData::default(), cx);
+            }
+        });
+    }
+
+    /// Up to `n` known hosts, most-recently-connected first — feeds the `+`
+    /// new-tab dropdown's SSH / SFTP submenus.
+    pub fn recent_hosts(&self, cx: &App, n: usize) -> Vec<(String, String)> {
+        self.host_manager.read(cx).recent_hosts(n)
+    }
+
+    /// Open (or reuse) an SSH terminal tab for `host_id` (`+` dropdown / menu).
+    pub fn open_ssh_tab(&mut self, host_id: String, window: &mut Window, cx: &mut Context<Self>) {
+        let _ = self.connect_host(host_id, window, cx);
+    }
+
+    /// Open (or focus) the commit-graph tab (`+` dropdown / command palette).
+    pub fn open_git_graph_tab(&mut self, cx: &mut Context<Self>) {
+        if self.git_graph.is_none() {
+            let view = cx.new(|cx| {
+                GitGraphView::new(
+                    self.backend.clone(),
+                    self.tokio.clone(),
+                    self.theme.clone(),
+                    cx,
+                )
+            });
+            cx.observe(&view, |_, _, cx| cx.notify()).detach();
+            self.git_graph = Some(view);
+        }
+        let existing = self
+            .tabs
+            .read(cx)
+            .tabs()
+            .iter()
+            .find(|t| t.kind == TabKind::GitGraph)
+            .map(|t| t.id);
+        self.tabs.update(cx, |s, cx| match existing {
+            Some(id) => s.set_active(id, cx),
+            None => {
+                s.open(TabKind::GitGraph, TabData::default(), cx);
             }
         });
     }
@@ -2741,14 +2836,15 @@ impl Workspace {
             )
     }
 
-    /// The "+" new-tab dropdown (port of `NewTabDropdownItems`). SSH/SFTP
-    /// recent-host submenus are approximated by the "Open Host Manager" entry
-    /// for now.
+    /// The "+" new-tab dropdown (port of `NewTabDropdownItems`): Terminal /
+    /// Editor / Preview / Git Graph, then flattened "SSH · <host>" /
+    /// "SFTP · <host>" recent-host entries + "Open Host Manager".
     fn render_new_tab_menu(
         &mut self,
         pos: gpui::Point<gpui::Pixels>,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
+        let recent = self.recent_hosts(cx, 5);
         let theme = self.theme.read(cx);
         let (card, fg, border, muted) = (
             theme.card(),
@@ -2757,7 +2853,16 @@ impl Workspace {
             theme.muted_foreground(),
         );
 
-        let item = |label: &str, shortcut: &str, key: &'static str| {
+        let section = |label: &str| {
+            div()
+                .px_3()
+                .py_0p5()
+                .text_size(px(10.0))
+                .text_color(muted)
+                .child(SharedString::from(label.to_string()))
+        };
+
+        let item = |label: &str, shortcut: &str, key: SharedString| {
             div()
                 .id(key)
                 .flex()
@@ -2803,7 +2908,7 @@ impl Workspace {
                     .border_1()
                     .border_color(border)
                     .child(
-                        item("Terminal", "\u{2318}T", "nt-term").on_click(cx.listener(
+                        item("Terminal", "\u{2318}T", "nt-term".into()).on_click(cx.listener(
                             move |this, _: &ClickEvent, window, cx| {
                                 this.new_tab_menu = None;
                                 this.new_terminal_tab(window, cx);
@@ -2811,7 +2916,7 @@ impl Workspace {
                         )),
                     )
                     .child(
-                        item("Editor", "\u{2318}E", "nt-editor").on_click(cx.listener(
+                        item("Editor", "\u{2318}E", "nt-editor".into()).on_click(cx.listener(
                             move |this, _: &ClickEvent, window, cx| {
                                 this.new_tab_menu = None;
                                 this.new_editor_tab(window, cx);
@@ -2819,16 +2924,58 @@ impl Workspace {
                         )),
                     )
                     .child(
-                        item("Preview", "\u{2318}P", "nt-preview").on_click(cx.listener(
+                        item("Preview", "\u{2318}P", "nt-preview".into()).on_click(cx.listener(
                             move |this, _: &ClickEvent, window, cx| {
                                 this.new_tab_menu = None;
                                 this.new_preview_tab(window, cx);
                             },
                         )),
                     )
+                    .child(
+                        item("Git Graph", "", "nt-gitgraph".into()).on_click(cx.listener(
+                            move |this, _: &ClickEvent, _window, cx| {
+                                this.new_tab_menu = None;
+                                this.open_git_graph_tab(cx);
+                            },
+                        )),
+                    )
+                    .child(div().my_0p5().h(px(1.0)).bg(border))
+                    .when(!recent.is_empty(), |d| {
+                        d.child(section("SSH")).children(recent.iter().cloned().map(
+                            |(id, name)| {
+                                item(
+                                    &format!("\u{00b7} {name}"),
+                                    "",
+                                    format!("nt-ssh-{id}").into(),
+                                )
+                                .on_click(cx.listener(
+                                    move |this, _: &ClickEvent, window, cx| {
+                                        this.new_tab_menu = None;
+                                        this.open_ssh_tab(id.clone(), window, cx);
+                                    },
+                                ))
+                            },
+                        ))
+                    })
+                    .when(!recent.is_empty(), |d| {
+                        d.child(section("SFTP"))
+                            .children(recent.iter().cloned().map(|(id, name)| {
+                                item(
+                                    &format!("\u{00b7} {name}"),
+                                    "",
+                                    format!("nt-sftp-{id}").into(),
+                                )
+                                .on_click(cx.listener(
+                                    move |this, _: &ClickEvent, window, cx| {
+                                        this.new_tab_menu = None;
+                                        this.open_sftp_tab(id.clone(), window, cx);
+                                    },
+                                ))
+                            }))
+                    })
                     .child(div().my_0p5().h(px(1.0)).bg(border))
                     .child(
-                        item("Open Host Manager", "", "nt-hosts").on_click(cx.listener(
+                        item("All hosts\u{2026}", "", "nt-hosts".into()).on_click(cx.listener(
                             move |this, _: &ClickEvent, _window, cx| {
                                 this.new_tab_menu = None;
                                 this.open_host_manager(cx);
@@ -2878,6 +3025,10 @@ impl Workspace {
                     self.placeholder("Preview", cx).into_any_element()
                 }
             }
+            TabKind::GitGraph => match &self.git_graph {
+                Some(view) => view.clone().into_any_element(),
+                None => self.placeholder("Git Graph", cx).into_any_element(),
+            },
             other => self
                 .placeholder(other.default_title(), cx)
                 .into_any_element(),
@@ -3096,7 +3247,9 @@ impl Workspace {
             theme.border(),
             theme.muted_foreground(),
         );
-        let kind = self.tabs.read(cx).get(id).map(|t| t.kind);
+        let tab = self.tabs.read(cx).get(id).cloned();
+        let kind = tab.as_ref().map(|t| t.kind);
+        let is_peek = tab.as_ref().map(|t| t.peek).unwrap_or(false);
         let grant_target = self.mcp_grant_target(id, cx);
         let is_granted = self.agent_access.read(cx).is_granted(id);
 
@@ -3137,6 +3290,14 @@ impl Workspace {
                     .border_1()
                     .border_color(border)
                     .text_color(muted)
+                    .when(kind == Some(TabKind::Editor) && is_peek, |el| {
+                        el.child(item("Keep Tab Open", "keep").on_click(cx.listener(
+                            move |this, _: &ClickEvent, _w, cx| {
+                                this.context_menu = None;
+                                this.tabs.update(cx, |s, cx| s.set_peek(id, false, cx));
+                            },
+                        )))
+                    })
                     .when(kind != Some(TabKind::Home), |el| {
                         el.child(item("Duplicate", "dup").on_click(cx.listener(
                             move |this, _: &ClickEvent, window, cx| {
@@ -3341,9 +3502,20 @@ impl Workspace {
     }
 }
 
+/// POSIX single-quote a path for a `cd` command (breadcrumb navigation).
+fn shell_quote(s: &str) -> String {
+    format!("'{}'", s.replace('\'', "'\\''"))
+}
+
 #[cfg(test)]
 mod tests {
-    use super::ssh_tab_title;
+    use super::{shell_quote, ssh_tab_title};
+
+    #[test]
+    fn shell_quote_wraps_and_escapes() {
+        assert_eq!(shell_quote("/a/b"), "'/a/b'");
+        assert_eq!(shell_quote("/it's here"), "'/it'\\''s here'");
+    }
 
     #[test]
     fn ssh_tab_title_annotates_jump_route() {

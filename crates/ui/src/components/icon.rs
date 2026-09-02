@@ -35,6 +35,8 @@ macro_rules! icon_enum {
 
 icon_enum! {
     ArrowDownUp => "arrow-down-up",
+    Bell => "bell",
+    Bookmark => "bookmark",
     Braces => "braces",
     CircleCheck => "circle-check",
     CircleX => "circle-x",
@@ -43,6 +45,8 @@ icon_enum! {
     Command => "command",
     Copy => "copy",
     CornerDownRight => "corner-down-right",
+    Download => "download",
+    Ellipsis => "ellipsis",
     Eye => "eye",
     EyeOff => "eye-off",
     File => "file",
@@ -50,6 +54,7 @@ icon_enum! {
     FileText => "file-text",
     Folder => "folder",
     FolderOpen => "folder-open",
+    FolderTree => "folder-tree",
     GitBranch => "git-branch",
     GitCompare => "git-compare",
     Globe => "globe",
@@ -58,8 +63,11 @@ icon_enum! {
     Info => "info",
     Link => "link",
     Menu => "menu",
+    MessageSquare => "message-square",
     Minus => "minus",
+    PanelBottom => "panel-bottom",
     PanelLeft => "panel-left",
+    PanelTop => "panel-top",
     Paperclip => "paperclip",
     Pencil => "pencil",
     Plus => "plus",
@@ -75,6 +83,8 @@ icon_enum! {
     Trash => "trash-2",
     Warning => "triangle-alert",
     X => "x",
+    Server => "server",
+    Zap => "zap",
 }
 
 impl IconName {

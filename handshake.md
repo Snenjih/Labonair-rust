@@ -4,6 +4,88 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
+## Last Session: 2026-09-02 (Block B cont. — unibar model, bar-item ctx menu, breadcrumb)
+
+### What Was Done (commit after `b463874`)
+
+- **T16-005 — unibar model (DONE).**
+  - `crates/backend/src/modules/settings/mod.rs`: added `bar_item_placements_load[_from]`
+    (reads the `barItemPlacements` blob) + `set_bar_item_placement_in(dir,…)` as the
+    testable sync core of the existing async `settings_set_bar_item_placement`.
+    New backend test `bar_item_placement_round_trips_and_merges`.
+  - New `crates/ui/src/bar_items.rs` — pure model: `BarItemId` (15 variants, serde
+    strings 1:1 with `barItems.ts`), `BarCategory`, `BarLoc {Titlebar,Statusbar}`,
+    `BarSide {Left,Right}`, `BarItemPlacement {bar,side,hidden}`, `BAR_ITEM_ORDER`,
+    `default_placement` (= `DEFAULT_BAR_ITEM_PLACEMENTS`), `Placements`
+    (`from_blob` merge / `visible_items_for` / `panel_dock_side`), `placement_patch`,
+    `divider_indices` (the `withDividers` rule). 5 unit tests.
+  - `AppShell`: holds `placements: bar_items::Placements` (loaded from the backend
+    blob at construction), `backend`/`tokio` handles for persistence.
+    `build_bar_bucket(bar, side)` + `render_bar_item(id, compact)` are shared by
+    **both** `render_header` and `render_statusbar` — all hardcoded children removed.
+    Items implemented: updater (Download, shown only when an update is
+    pending/ready), notifications (Bell + count + popover with "Clear all"),
+    jumpHosts (Server → host manager), agentAccess (folds in the existing badge),
+    transfers (→ `reveal_transfers`), bookmarks (→ popover), explorer/snippets/
+    sourceControl panel toggles (drive `select_panel_on_side` honouring the item's
+    `side`), cwdBreadcrumb, cursorPosition (`Ln x, Col y` from the editor), aiMini /
+    aiPanel (toggle the AI dock). `tabsPanel` renders nothing (titlebar tabs
+    location, matching the reference `renderBarItem` null case); `previewUrl`
+    renders nothing (dev-server URL detection from terminal output is not ported).
+    Placement changes persist via `settings_set_bar_item_placement` (fire-and-forget).
+
+- **T16-006 — bar-item context menu + interactive breadcrumb (DONE).**
+  - `render_bar_menu` — the shared right-click menu on every non-breadcrumb bar
+    cluster: Left / Right, Titlebar / Status Bar, Hide (port of `BarItemContextMenu`).
+  - New `crates/ui/src/cwd_breadcrumb.rs` — pure `segments_from_cwd` / `relative_path`
+    / `dirname` / `basename` / `resolve_provider` ported from `pathUtils.ts` +
+    `CwdBreadcrumb.tsx`; 7 unit tests incl. the `CwdBreadcrumb.test.ts` provider
+    cases.
+  - `AppShell::render_cwd_breadcrumb` — real component: `~`/home collapse, click a
+    parent segment → `Workspace::send_cd` (POSIX-quoted `cd`), current segment →
+    subdirectory dropdown (`render_subdir_menu`, listed in the background via
+    `tree::read_dir_page`; remote SSH listing deferred), `…` overflow-collapse
+    (>4 parents) with an expand toggle, file-mode (dir segments navigate, filename
+    is a non-clickable leaf), "no directory" state. Per-segment right-click
+    (`render_crumb_menu`): Copy absolute / relative path, Open in current / new
+    terminal, then the bar-item Move to Titlebar / Status Bar / Hide.
+
+- **T16-004 / T16-007 leftovers.**
+  - The invented 44px activity rail is **gone** — panel switching now runs through
+    the statusbar panel-toggle bar items. Added a **right dock**: `sidebar_side`
+    follows the toggled item's `side`, and `render()` places the sidebar before or
+    after the workspace accordingly (resize handle + drag-delta flip with it).
+  - `⋯` header button now opens a dropdown (Settings / Keyboard Shortcuts / Themes…).
+  - `+` new-tab dropdown gained **Git Graph** (now a real `TabKind::GitGraph` tab —
+    `Workspace` lazily owns a `GitGraphView`; `CommandId::OpenGitGraph` opens the
+    tab too) and flattened **SSH · <host>** / **SFTP · <host>** recent-host entries
+    (`Workspace::recent_hosts`, sorted by `last_connected_at`) + "All hosts…".
+  - Tab context menu: added **Keep Tab Open** for peek editor tabs.
+
+### NOT Done / deferred
+- `previewUrl` bar item + dev-server URL detection from terminal output.
+- Remote (SSH) directory listing in the breadcrumb subdir dropdown (local only).
+- Inline tab **Rename** (needs a new tab-strip edit-state; `set_custom_title` exists).
+- `aiMini` `AgentStatusPill` (status text) — the item is a plain toggle for now.
+- True nested submenus in the `+` dropdown (flattened instead — the hand-rolled
+  overlay can't nest; a real menu primitive would be needed).
+- `badgesAlwaysVisible` preference (badges always self-hide when empty).
+
+### State
+- Branch `master`. `cargo fmt --check`, `cargo check/clippy --workspace
+  --all-targets -D warnings`, `cargo test --workspace` all green
+  (UI 221 tests, backend 210).
+
+### Risks for later blocks
+- `SidebarPanel::{GitGraph, Ai}` variants + `AppShell.git_graph` are now partly
+  vestigial (Git Graph is a tab; AI is the `aiPanel` dock). A later cleanup can
+  drop `SidebarPanel::GitGraph`.
+- Bar-item popovers (notifications, agent badge, ⋯) are hand-rolled absolute
+  overlays, not `gpui_component` popups — if Block A's Root overlay layers get
+  composed, migrate these.
+- The breadcrumb subdir dropdown and crumb/bar menus are AppShell-root overlays
+  anchored in window coords (correct there, unlike the Workspace-rooted tab menus).
+
 ## Last Session: 2026-09-02 (Block B — window chrome & unibar, partial)
 
 ### What Was Done

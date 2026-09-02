@@ -26,6 +26,8 @@ macro_rules! icons {
 
 const ICONS: &[(&str, &[u8])] = icons![
     "arrow-down-up",
+    "bell",
+    "bookmark",
     "braces",
     "circle-check",
     "circle-x",
@@ -34,6 +36,8 @@ const ICONS: &[(&str, &[u8])] = icons![
     "command",
     "copy",
     "corner-down-right",
+    "download",
+    "ellipsis",
     "eye",
     "eye-off",
     "file",
@@ -41,6 +45,7 @@ const ICONS: &[(&str, &[u8])] = icons![
     "file-text",
     "folder",
     "folder-open",
+    "folder-tree",
     "git-branch",
     "git-compare",
     "globe",
@@ -49,14 +54,18 @@ const ICONS: &[(&str, &[u8])] = icons![
     "info",
     "link",
     "menu",
+    "message-square",
     "minus",
+    "panel-bottom",
     "panel-left",
+    "panel-top",
     "paperclip",
     "pencil",
     "plus",
     "refresh-cw",
     "scissors",
     "search",
+    "server",
     "shield",
     "sparkles",
     "square",
@@ -66,6 +75,7 @@ const ICONS: &[(&str, &[u8])] = icons![
     "trash-2",
     "triangle-alert",
     "x",
+    "zap",
 ];
 
 /// Serves the bundled icon SVGs to GPUI's `svg()` element and to

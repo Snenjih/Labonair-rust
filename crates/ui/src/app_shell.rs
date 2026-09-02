@@ -23,8 +23,9 @@ use std::time::{Duration, Instant};
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, px, App, AppContext, Bounds, ClickEvent, Context, DragMoveEvent, Entity, FocusHandle,
-    Focusable, InteractiveElement, IntoElement, KeyDownEvent, ParentElement, Pixels, Render,
-    SharedString, StatefulInteractiveElement, Styled, Window, WindowBounds,
+    Focusable, InteractiveElement, IntoElement, KeyDownEvent, MouseButton, MouseDownEvent,
+    ParentElement, Pixels, Point, Render, SharedString, StatefulInteractiveElement, Styled, Window,
+    WindowBounds,
 };
 use labonair_backend::modules::mcp::{
     mcp_set_auto_revoke_minutes, mcp_set_enabled, mcp_set_max_command_timeout_secs, mcp_set_port,
@@ -37,9 +38,11 @@ use tokio::runtime::Handle as TokioHandle;
 use crate::agent_access::{AgentAccessEntry, AgentAccessStore};
 use crate::ai_chat::{AiChatStore, AiChatView};
 use crate::background::{BackgroundStore, LayerScope};
+use crate::bar_items::{self, BarItemId, BarLoc, BarSide};
 use crate::bookmarks::{BookmarkEvent, BookmarksView};
 use crate::command_palette::{CommandId, CommandPalette, PaletteEvent};
 use crate::components::IconName;
+use crate::cwd_breadcrumb as bc;
 use crate::explorer::ExplorerView;
 use crate::git::GitPanelView;
 use crate::git_graph::GitGraphView;
@@ -57,8 +60,6 @@ const HEADER_H: f32 = 40.0;
 const STATUS_H: f32 = 32.0;
 /// Left inset reserved for the macOS traffic-light buttons.
 const TRAFFIC_LIGHT_INSET: f32 = 78.0;
-/// Panel-switcher rail width.
-const RAIL_W: f32 = 44.0;
 const SIDEBAR_DEFAULT: f32 = 260.0;
 const SIDEBAR_MIN: f32 = 180.0;
 const SIDEBAR_MAX: f32 = 520.0;
@@ -80,15 +81,6 @@ pub enum SidebarPanel {
 }
 
 impl SidebarPanel {
-    /// All panels, in rail order.
-    const ALL: [SidebarPanel; 5] = [
-        SidebarPanel::Explorer,
-        SidebarPanel::Snippets,
-        SidebarPanel::SourceControl,
-        SidebarPanel::GitGraph,
-        SidebarPanel::Ai,
-    ];
-
     fn label(self) -> &'static str {
         match self {
             SidebarPanel::Explorer => "Explorer",
@@ -96,17 +88,6 @@ impl SidebarPanel {
             SidebarPanel::SourceControl => "Source Control",
             SidebarPanel::GitGraph => "Git Graph",
             SidebarPanel::Ai => "AI",
-        }
-    }
-
-    /// The switcher-rail icon for this panel (mirrors the reference tab icons).
-    fn glyph(self) -> IconName {
-        match self {
-            SidebarPanel::Explorer => IconName::Folder,
-            SidebarPanel::Snippets => IconName::Command,
-            SidebarPanel::SourceControl => IconName::GitBranch,
-            SidebarPanel::GitGraph => IconName::GitCompare,
-            SidebarPanel::Ai => IconName::Sparkles,
         }
     }
 }
@@ -138,6 +119,8 @@ pub struct AppShell {
     prefs: Entity<PreferencesStore>,
     settings: Entity<SettingsView>,
     updater: Entity<UpdaterView>,
+    backend: Backend,
+    tokio: TokioHandle,
     /// Palette picks awaiting a `&mut Window` (drained in `render`) — same
     /// pattern `Workspace` uses for its window-less subscriptions.
     pending_commands: Vec<PaletteEvent>,
@@ -148,7 +131,25 @@ pub struct AppShell {
     agent_access: Entity<AgentAccessStore>,
     /// Whether the header agent-access badge popover is open.
     agent_badge_open: bool,
+    /// Unified titlebar/statusbar item placement table (T16-005).
+    placements: bar_items::Placements,
+    /// Open bar-item right-click menu: `(item, anchor)` (T16-006).
+    bar_menu: Option<(BarItemId, Point<Pixels>)>,
+    /// Whether the notifications bar-item popover is open.
+    notif_open: bool,
+    /// Whether the `⋯` header app-menu dropdown is open.
+    app_menu_open: bool,
+    /// CWD breadcrumb: whether the collapsed middle segments are expanded.
+    breadcrumb_expanded: bool,
+    /// Open breadcrumb-segment right-click menu: `(segment, anchor)`.
+    crumb_menu: Option<(bc::Segment, Point<Pixels>)>,
+    /// Open current-segment subdirectory dropdown: `(dir, anchor, entries)`
+    /// (`entries == None` while the background listing is in flight).
+    subdir_menu: Option<(String, Point<Pixels>, Option<Vec<String>>)>,
     sidebar_open: bool,
+    /// Which dock the sidebar is currently shown in (driven by the toggled
+    /// panel item's `side` — port of the reference dual-dock).
+    sidebar_side: BarSide,
     sidebar_width: f32,
     active_panel: SidebarPanel,
     search_open: bool,
@@ -298,11 +299,17 @@ impl AppShell {
         }
 
         let snippets = cx.new(|cx| {
-            SnippetsView::new(backend, tokio.clone(), theme.clone(), workspace.clone(), cx)
+            SnippetsView::new(
+                backend.clone(),
+                tokio.clone(),
+                theme.clone(),
+                workspace.clone(),
+                cx,
+            )
         });
         cx.observe(&snippets, |_, _, cx| cx.notify()).detach();
 
-        let ai_store = cx.new(|_| AiChatStore::new(tokio));
+        let ai_store = cx.new(|_| AiChatStore::new(tokio.clone()));
         let ai_chat = cx.new(|cx| AiChatView::new(ai_store, theme.clone(), cx));
         cx.observe(&ai_chat, |_, _, cx| cx.notify()).detach();
 
@@ -401,11 +408,23 @@ impl AppShell {
             prefs,
             settings,
             updater,
+            backend: backend.clone(),
+            tokio: tokio.clone(),
             pending_commands: Vec::new(),
             pending_bookmarks: Vec::new(),
             agent_access,
             agent_badge_open: false,
+            placements: bar_items::Placements::from_blob(
+                &labonair_backend::modules::settings::bar_item_placements_load(),
+            ),
+            bar_menu: None,
+            notif_open: false,
+            app_menu_open: false,
+            breadcrumb_expanded: false,
+            crumb_menu: None,
+            subdir_menu: None,
             sidebar_open: true,
+            sidebar_side: BarSide::Left,
             sidebar_width: SIDEBAR_DEFAULT,
             active_panel: SidebarPanel::Explorer,
             search_open: false,
@@ -460,7 +479,7 @@ impl AppShell {
     }
 
     fn set_sidebar_width(&mut self, width: f32, cx: &mut Context<Self>) {
-        let clamped = (width - RAIL_W).clamp(SIDEBAR_MIN, SIDEBAR_MAX);
+        let clamped = width.clamp(SIDEBAR_MIN, SIDEBAR_MAX);
         if (clamped - self.sidebar_width).abs() > 0.5 {
             self.sidebar_width = clamped;
             cx.notify();
@@ -806,7 +825,7 @@ impl AppShell {
             CommandId::ToggleAiPanel => self.select_panel(SidebarPanel::Ai, cx),
             CommandId::OpenSnippetsPanel => self.select_panel(SidebarPanel::Snippets, cx),
             CommandId::OpenPathBookmarks => self.bookmarks.update(cx, |b, cx| b.toggle(window, cx)),
-            CommandId::OpenGitGraph => self.select_panel(SidebarPanel::GitGraph, cx),
+            CommandId::OpenGitGraph => self.workspace.update(cx, |w, cx| w.open_git_graph_tab(cx)),
             CommandId::FocusSourceControl => self.select_panel(SidebarPanel::SourceControl, cx),
             CommandId::ToggleZenMode => self.toggle_zen_mode(cx),
             CommandId::ToggleZenModeHeader => self.toggle_zen_pref("zenModeShowHeader", cx),
@@ -875,18 +894,16 @@ impl AppShell {
     // ── Rendering ───────────────────────────────────────────────────────────
 
     fn render_header(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
-        let theme = self.theme.read(cx);
-        let (toolbar, fg, muted, border) = (
-            theme.toolbar(),
-            theme.foreground(),
-            theme.muted_foreground(),
-            theme.border(),
-        );
+        let (toolbar, border) = {
+            let theme = self.theme.read(cx);
+            (theme.toolbar(), theme.border())
+        };
 
-        let aa = self.agent_access.read(cx);
-        let agent_entries = aa.entries();
-        let agent_badge_visible = aa.bridge_enabled() && !agent_entries.is_empty();
-        let agent_badge_open = self.agent_badge_open;
+        let left = self.build_bar_bucket(BarLoc::Titlebar, BarSide::Left, cx);
+        let right = self.build_bar_bucket(BarLoc::Titlebar, BarSide::Right, cx);
+        let tabs = self
+            .workspace
+            .update(cx, |w, cx| w.render_tab_bar(cx).into_any_element());
 
         div()
             .flex()
@@ -901,27 +918,106 @@ impl AppShell {
             .border_b_1()
             .border_color(border)
             .child(
-                div().flex_1().min_w_0().child(
-                    self.workspace
-                        .update(cx, |w, cx| w.render_tab_bar(cx).into_any_element()),
-                ),
+                div()
+                    .flex()
+                    .items_center()
+                    .gap_1()
+                    .flex_shrink_0()
+                    .children(left),
             )
+            .child(div().flex_1().min_w_0().child(tabs))
             .when(self.search_open, |d| d.child(self.render_search(cx)))
-            .when(agent_badge_visible, |d| {
-                d.child(self.render_agent_badge(agent_entries, agent_badge_open, cx))
-            })
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap_1()
+                    .flex_shrink_0()
+                    .children(right),
+            )
+            .child(self.render_app_menu(cx))
+    }
+
+    /// The `⋯` header app-menu button + its dropdown (port of `Header.tsx`
+    /// `sideButtons`: Settings / Keyboard Shortcuts / Themes…).
+    fn render_app_menu(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = self.theme.read(cx);
+        let (fg, muted, border, card) = (
+            theme.foreground(),
+            theme.muted_foreground(),
+            theme.border(),
+            theme.card(),
+        );
+        let open = self.app_menu_open;
+
+        let item = |label: &str, key: SharedString| {
+            div()
+                .id(key)
+                .px_2()
+                .py_1()
+                .text_xs()
+                .rounded_sm()
+                .text_color(fg)
+                .hover(|s| s.bg(border))
+                .child(SharedString::from(label.to_string()))
+        };
+
+        div()
+            .relative()
+            .flex_shrink_0()
             .child(
                 div()
                     .id("app-menu")
-                    .size(px(24.0))
+                    .size(px(26.0))
                     .flex()
                     .items_center()
                     .justify_center()
                     .rounded_md()
                     .text_color(muted)
                     .hover(|s| s.bg(border).text_color(fg))
-                    .child("\u{22EF}"),
+                    .child(IconName::Menu.svg(muted))
+                    .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
+                        this.app_menu_open = !this.app_menu_open;
+                        cx.notify();
+                    })),
             )
+            .when(open, |d| {
+                d.child(
+                    div()
+                        .absolute()
+                        .top(px(30.0))
+                        .right(px(0.0))
+                        .w(px(208.0))
+                        .flex()
+                        .flex_col()
+                        .gap_0p5()
+                        .p_1()
+                        .rounded_md()
+                        .bg(card)
+                        .border_1()
+                        .border_color(border)
+                        .child(item("Settings", "am-settings".into()).on_click(cx.listener(
+                            |this, _: &ClickEvent, window, cx| {
+                                this.app_menu_open = false;
+                                this.settings.update(cx, |s, cx| s.open(window, cx));
+                            },
+                        )))
+                        .child(item("Keyboard Shortcuts", "am-shortcuts".into()).on_click(
+                            cx.listener(|this, _: &ClickEvent, window, cx| {
+                                this.app_menu_open = false;
+                                window.dispatch_action(Box::new(menu::OpenShortcuts), cx);
+                            }),
+                        ))
+                        .child(
+                            item("Themes\u{2026}", "am-themes".into()).on_click(cx.listener(
+                                |this, _: &ClickEvent, window, cx| {
+                                    this.app_menu_open = false;
+                                    this.settings.update(cx, |s, cx| s.open(window, cx));
+                                },
+                            )),
+                        ),
+                )
+            })
     }
 
     /// Header badge listing the SSH/local tabs the user has granted MCP agent
@@ -1104,48 +1200,1061 @@ impl AppShell {
             .on_key_down(cx.listener(Self::on_search_key))
     }
 
-    fn render_sidebar(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
-        let theme = self.theme.read(cx);
-        let (sidebar_bg, sidebar_fg, sidebar_border, accent, muted) = (
-            theme.sidebar_bg(),
-            theme.sidebar_fg(),
-            theme.sidebar_border(),
-            theme.accent(),
-            theme.muted_foreground(),
-        );
-        let active = self.active_panel;
+    // ── Unified bar items ("unibar", T16-005 / T16-006) ────────────────────
+    //
+    // `render_header` and `render_statusbar` both drive their content from
+    // `build_bar_bucket`; nothing is hardcoded. Each item is individually
+    // placeable via the shared right-click menu (`render_bar_menu`) and
+    // persisted through the backend `settings_set_bar_item_placement`.
 
-        let rail = div()
-            .w(px(RAIL_W))
-            .h_full()
-            .flex_shrink_0()
+    /// Persist one item's placement (fire-and-forget; the in-memory
+    /// `self.placements` is the source of truth for rendering).
+    fn persist_placement(&self, id: BarItemId) {
+        let patch = bar_items::placement_patch(self.placements.get(id));
+        let backend = self.backend.clone();
+        let key = id.as_str().to_string();
+        self.tokio.spawn(async move {
+            if let Err(e) = labonair_backend::modules::settings::settings_set_bar_item_placement(
+                &backend.bar_item_lock,
+                key,
+                patch,
+            )
+            .await
+            {
+                tracing::warn!(error = %e, "failed to persist bar-item placement");
+            }
+        });
+    }
+
+    fn move_bar_item(
+        &mut self,
+        id: BarItemId,
+        bar: Option<BarLoc>,
+        side: Option<BarSide>,
+        hide: Option<bool>,
+        cx: &mut Context<Self>,
+    ) {
+        let mut p = self.placements.get(id);
+        if let Some(b) = bar {
+            p.bar = b;
+        }
+        if let Some(s) = side {
+            p.side = s;
+        }
+        if let Some(h) = hide {
+            p.hidden = h;
+        }
+        self.placements.set(id, p);
+        self.bar_menu = None;
+        self.persist_placement(id);
+        cx.notify();
+    }
+
+    fn panel_for_item(id: BarItemId) -> Option<SidebarPanel> {
+        match id {
+            BarItemId::ExplorerPanel => Some(SidebarPanel::Explorer),
+            BarItemId::SnippetsPanel => Some(SidebarPanel::Snippets),
+            BarItemId::SourceControlPanel => Some(SidebarPanel::SourceControl),
+            _ => None,
+        }
+    }
+
+    /// Toggle a dock panel, honouring the toggle item's own `side` for which
+    /// dock it opens into (port of `useBarPanelSync` / `sidebarSlotLogic`).
+    fn select_panel_on_side(&mut self, panel: SidebarPanel, side: BarSide, cx: &mut Context<Self>) {
+        if self.active_panel == panel && self.sidebar_open && self.sidebar_side == side {
+            self.sidebar_open = false;
+        } else {
+            self.active_panel = panel;
+            self.sidebar_side = side;
+            self.sidebar_open = true;
+        }
+        cx.notify();
+    }
+
+    /// One (bar, side) bucket, rendered + divider-inserted, shared by header
+    /// and statusbar. Port of `buildBarBucket` + `withDividers`.
+    fn build_bar_bucket(
+        &mut self,
+        bar: BarLoc,
+        side: BarSide,
+        cx: &mut Context<Self>,
+    ) -> Vec<gpui::AnyElement> {
+        let compact = bar == BarLoc::Statusbar;
+        let border = self.theme.read(cx).border();
+        let divider_h = if compact { 14.0 } else { 20.0 };
+
+        let ids = self.placements.visible_items_for(bar, side);
+        let mut clusters: Vec<(BarItemId, gpui::AnyElement)> = Vec::new();
+        for id in ids {
+            if let Some(el) = self.render_bar_item(id, compact, cx) {
+                clusters.push((id, el));
+            }
+        }
+        let cats: Vec<_> = clusters.iter().map(|(id, _)| id.category()).collect();
+        let dividers = bar_items::divider_indices(&cats);
+
+        let mut out: Vec<gpui::AnyElement> = Vec::new();
+        for (i, (id, el)) in clusters.into_iter().enumerate() {
+            if dividers.contains(&i) {
+                out.push(
+                    div()
+                        .w(px(1.0))
+                        .h(px(divider_h))
+                        .mx_1()
+                        .flex_shrink_0()
+                        .bg(border)
+                        .into_any_element(),
+                );
+            }
+            if id == BarItemId::CwdBreadcrumb {
+                // The breadcrumb manages its own right-click menu per segment.
+                out.push(
+                    div()
+                        .flex()
+                        .items_center()
+                        .min_w_0()
+                        .child(el)
+                        .into_any_element(),
+                );
+            } else {
+                out.push(
+                    div()
+                        .flex()
+                        .items_center()
+                        .flex_shrink_0()
+                        .gap_0p5()
+                        .on_mouse_down(
+                            MouseButton::Right,
+                            cx.listener(move |this, ev: &MouseDownEvent, _w, cx| {
+                                this.bar_menu = Some((id, ev.position));
+                                cx.notify();
+                            }),
+                        )
+                        .child(el)
+                        .into_any_element(),
+                );
+            }
+        }
+        out
+    }
+
+    fn render_bar_item(
+        &mut self,
+        id: BarItemId,
+        compact: bool,
+        cx: &mut Context<Self>,
+    ) -> Option<gpui::AnyElement> {
+        match id {
+            BarItemId::Updater => self.render_updater_item(compact, cx),
+            BarItemId::Notifications => self.render_notifications_item(compact, cx),
+            BarItemId::JumpHosts => Some(self.render_simple_bar_button(
+                "bar-jump-hosts",
+                IconName::Server,
+                compact,
+                cx,
+                |this, _window, cx| this.workspace.update(cx, |w, cx| w.open_host_manager(cx)),
+            )),
+            BarItemId::AgentAccess => {
+                let aa = self.agent_access.read(cx);
+                if !aa.bridge_enabled() || aa.entries().is_empty() {
+                    return None;
+                }
+                let entries = aa.entries();
+                let open = self.agent_badge_open;
+                Some(
+                    self.render_agent_badge(entries, open, cx)
+                        .into_any_element(),
+                )
+            }
+            BarItemId::Transfers => Some(self.render_simple_bar_button(
+                "bar-transfers",
+                IconName::ArrowDownUp,
+                compact,
+                cx,
+                |this, _window, cx| {
+                    this.workspace.update(cx, |w, cx| w.reveal_transfers(cx));
+                },
+            )),
+            BarItemId::Bookmarks => Some(self.render_simple_bar_button(
+                "bar-bookmarks",
+                IconName::Bookmark,
+                compact,
+                cx,
+                |this, window, cx| this.bookmarks.update(cx, |b, cx| b.toggle(window, cx)),
+            )),
+            BarItemId::ExplorerPanel | BarItemId::SnippetsPanel | BarItemId::SourceControlPanel => {
+                Some(self.render_panel_toggle(id, compact, cx))
+            }
+            // Tabs live in the titlebar in this port, so the sidebar tabs
+            // panel toggle renders nothing (reference `renderBarItem` returns
+            // null unless `tabsLocation === "sidebar"`).
+            BarItemId::TabsPanel => None,
+            BarItemId::CwdBreadcrumb => Some(self.render_cwd_breadcrumb(compact, cx)),
+            BarItemId::CursorPosition => {
+                let (line, col) = self.workspace.read(cx).active_editor_cursor(cx)?;
+                let muted = self.theme.read(cx).muted_foreground();
+                Some(
+                    div()
+                        .text_size(px(if compact { 11.0 } else { 12.0 }))
+                        .text_color(muted)
+                        .child(SharedString::from(format!("Ln {line}, Col {col}")))
+                        .into_any_element(),
+                )
+            }
+            // Dev-server URL detection from terminal output is not ported yet;
+            // the item stays placeable but self-hides.
+            BarItemId::PreviewUrl => None,
+            BarItemId::AiMini => Some(self.render_ai_toggle(IconName::MessageSquare, compact, cx)),
+            BarItemId::AiPanel => Some(self.render_ai_toggle(IconName::PanelBottom, compact, cx)),
+        }
+    }
+
+    /// A small icon-only bar button with the reference toggle styling. The
+    /// `on_click` closure runs with `(&mut AppShell, &mut Window, &mut Context)`.
+    fn render_simple_bar_button(
+        &self,
+        key: &'static str,
+        icon: IconName,
+        compact: bool,
+        cx: &mut Context<Self>,
+        on_click: impl Fn(&mut Self, &mut Window, &mut Context<Self>) + 'static,
+    ) -> gpui::AnyElement {
+        let theme = self.theme.read(cx);
+        let (fg, muted, border) = (theme.foreground(), theme.muted_foreground(), theme.border());
+        let size = if compact { 20.0 } else { 26.0 };
+        div()
+            .id(key)
+            .size(px(size))
             .flex()
-            .flex_col()
+            .items_center()
+            .justify_center()
+            .rounded_md()
+            .text_color(muted)
+            .hover(|s| s.bg(border).text_color(fg))
+            .child(icon.svg(muted))
+            .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
+                on_click(this, window, cx);
+            }))
+            .into_any_element()
+    }
+
+    fn render_updater_item(
+        &mut self,
+        compact: bool,
+        cx: &mut Context<Self>,
+    ) -> Option<gpui::AnyElement> {
+        use crate::updater::UpdaterStatus;
+        let ready = matches!(
+            self.updater.read(cx).status(),
+            UpdaterStatus::Available(_) | UpdaterStatus::Downloading { .. } | UpdaterStatus::Ready
+        );
+        if !ready {
+            return None;
+        }
+        let theme = self.theme.read(cx);
+        let (fg, accent, border) = (theme.foreground(), theme.accent(), theme.border());
+        let size = if compact { 20.0 } else { 26.0 };
+        Some(
+            div()
+                .id("bar-updater")
+                .relative()
+                .size(px(size))
+                .flex()
+                .items_center()
+                .justify_center()
+                .rounded_md()
+                .text_color(fg)
+                .hover(|s| s.bg(border))
+                .child(IconName::Download.svg(fg))
+                .child(
+                    div()
+                        .absolute()
+                        .top(px(-1.0))
+                        .right(px(-1.0))
+                        .size(px(6.0))
+                        .rounded_full()
+                        .bg(accent),
+                )
+                .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
+                    this.updater.update(cx, |u, cx| u.run_check(true, cx));
+                }))
+                .into_any_element(),
+        )
+    }
+
+    fn render_notifications_item(
+        &mut self,
+        compact: bool,
+        cx: &mut Context<Self>,
+    ) -> Option<gpui::AnyElement> {
+        let count = self.notifications.read(cx).len();
+        if count == 0 {
+            return None;
+        }
+        let theme = self.theme.read(cx);
+        let (fg, muted, accent, border, card) = (
+            theme.foreground(),
+            theme.muted_foreground(),
+            theme.accent(),
+            theme.border(),
+            theme.card(),
+        );
+        let size = if compact { 20.0 } else { 26.0 };
+        let open = self.notif_open;
+        let snapshots = self.notifications.read(cx).snapshots();
+        Some(
+            div()
+                .relative()
+                .flex_shrink_0()
+                .child(
+                    div()
+                        .id("bar-notifications")
+                        .relative()
+                        .size(px(size))
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .rounded_md()
+                        .text_color(muted)
+                        .hover(|s| s.bg(border).text_color(fg))
+                        .child(IconName::Bell.svg(muted))
+                        .child(
+                            div()
+                                .absolute()
+                                .top(px(-2.0))
+                                .right(px(-2.0))
+                                .min_w(px(13.0))
+                                .h(px(13.0))
+                                .px(px(2.0))
+                                .flex()
+                                .items_center()
+                                .justify_center()
+                                .rounded_full()
+                                .bg(accent)
+                                .text_color(fg)
+                                .text_size(px(8.0))
+                                .child(SharedString::from(count.to_string())),
+                        )
+                        .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
+                            this.notif_open = !this.notif_open;
+                            cx.notify();
+                        })),
+                )
+                .when(open, |d| {
+                    d.child(
+                        div()
+                            .absolute()
+                            .top(px(28.0))
+                            .right(px(0.0))
+                            .w(px(300.0))
+                            .flex()
+                            .flex_col()
+                            .rounded_md()
+                            .bg(card)
+                            .border_1()
+                            .border_color(border)
+                            .child(
+                                div()
+                                    .flex()
+                                    .items_center()
+                                    .justify_between()
+                                    .px_3()
+                                    .py_2()
+                                    .border_b_1()
+                                    .border_color(border)
+                                    .text_xs()
+                                    .font_weight(gpui::FontWeight::SEMIBOLD)
+                                    .text_color(fg)
+                                    .child("Notifications")
+                                    .child(
+                                        div()
+                                            .id("bar-notif-clear")
+                                            .text_xs()
+                                            .text_color(muted)
+                                            .hover(|s| s.text_color(fg))
+                                            .child("Clear all")
+                                            .on_click(cx.listener(
+                                                |this, _: &ClickEvent, _w, cx| {
+                                                    this.notifications
+                                                        .update(cx, |n, cx| n.clear_all(cx));
+                                                    this.notif_open = false;
+                                                    cx.notify();
+                                                },
+                                            )),
+                                    ),
+                            )
+                            .children(snapshots.into_iter().take(6).map(|s| {
+                                div()
+                                    .flex()
+                                    .flex_col()
+                                    .gap_0p5()
+                                    .px_3()
+                                    .py_1p5()
+                                    .border_b_1()
+                                    .border_color(border)
+                                    .child(
+                                        div()
+                                            .text_xs()
+                                            .text_color(fg)
+                                            .child(SharedString::from(s.title.to_string())),
+                                    )
+                                    .child(
+                                        div()
+                                            .text_size(px(11.0))
+                                            .text_color(muted)
+                                            .child(SharedString::from(s.body.to_string())),
+                                    )
+                            })),
+                    )
+                })
+                .into_any_element(),
+        )
+    }
+
+    fn render_panel_toggle(
+        &self,
+        id: BarItemId,
+        compact: bool,
+        cx: &mut Context<Self>,
+    ) -> gpui::AnyElement {
+        let panel = Self::panel_for_item(id).unwrap();
+        let side = self.placements.panel_dock_side(id);
+        let active = self.active_panel == panel && self.sidebar_open && self.sidebar_side == side;
+        let icon = id.icon().unwrap_or(IconName::Folder);
+        let theme = self.theme.read(cx);
+        let (fg, muted, accent, border) = (
+            theme.foreground(),
+            theme.muted_foreground(),
+            theme.accent(),
+            theme.border(),
+        );
+        let size = if compact { 20.0 } else { 26.0 };
+        div()
+            .id(SharedString::from(format!("bar-toggle-{}", id.as_str())))
+            .size(px(size))
+            .flex()
+            .items_center()
+            .justify_center()
+            .rounded_md()
+            .when(active, |d| d.bg(accent.opacity(0.2)).text_color(fg))
+            .when(!active, |d| {
+                d.text_color(muted).hover(|s| s.bg(border).text_color(fg))
+            })
+            .child(icon.svg(if active { fg } else { muted }))
+            .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                this.select_panel_on_side(panel, side, cx);
+            }))
+            .into_any_element()
+    }
+
+    fn render_ai_toggle(
+        &self,
+        icon: IconName,
+        compact: bool,
+        cx: &mut Context<Self>,
+    ) -> gpui::AnyElement {
+        let active = self.sidebar_open && self.active_panel == SidebarPanel::Ai;
+        let theme = self.theme.read(cx);
+        let (fg, muted, accent, border) = (
+            theme.foreground(),
+            theme.muted_foreground(),
+            theme.accent(),
+            theme.border(),
+        );
+        let size = if compact { 20.0 } else { 26.0 };
+        div()
+            .id(SharedString::from(format!("bar-ai-{}", icon.path())))
+            .size(px(size))
+            .flex()
+            .items_center()
+            .justify_center()
+            .rounded_md()
+            .when(active, |d| d.bg(accent.opacity(0.2)).text_color(fg))
+            .when(!active, |d| {
+                d.text_color(muted).hover(|s| s.bg(border).text_color(fg))
+            })
+            .child(icon.svg(if active { fg } else { muted }))
+            .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
+                this.select_panel_on_side(SidebarPanel::Ai, BarSide::Right, cx);
+            }))
+            .into_any_element()
+    }
+
+    /// The shared bar-item right-click menu (port of `BarItemContextMenu`):
+    /// Left / Right, then Titlebar / Statusbar, then Hide.
+    fn render_bar_menu(&mut self, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
+        let (id, pos) = self.bar_menu?;
+        let p = self.placements.get(id);
+        let theme = self.theme.read(cx);
+        let (card, fg, border, muted, accent) = (
+            theme.card(),
+            theme.foreground(),
+            theme.border(),
+            theme.muted_foreground(),
+            theme.accent(),
+        );
+
+        let radio = |label: &str, key: SharedString, on: bool| {
+            div()
+                .id(key)
+                .flex()
+                .items_center()
+                .gap_2()
+                .px_2()
+                .py_1()
+                .text_xs()
+                .rounded_sm()
+                .text_color(fg)
+                .hover(|s| s.bg(border))
+                .child(
+                    div()
+                        .size(px(6.0))
+                        .rounded_full()
+                        .when(on, |d| d.bg(accent))
+                        .when(!on, |d| d.border_1().border_color(muted)),
+                )
+                .child(SharedString::from(label.to_string()))
+        };
+
+        Some(
+            div()
+                .absolute()
+                .inset_0()
+                .on_mouse_down(
+                    MouseButton::Left,
+                    cx.listener(|this, _: &MouseDownEvent, _w, cx| {
+                        this.bar_menu = None;
+                        cx.notify();
+                    }),
+                )
+                .child(
+                    div()
+                        .absolute()
+                        .left(pos.x)
+                        .top(pos.y)
+                        .flex()
+                        .flex_col()
+                        .gap_0p5()
+                        .p_1()
+                        .min_w(px(176.0))
+                        .rounded_md()
+                        .bg(card)
+                        .border_1()
+                        .border_color(border)
+                        .child(
+                            radio("Left", "bm-left".into(), p.side == BarSide::Left).on_click(
+                                cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                                    this.move_bar_item(id, None, Some(BarSide::Left), None, cx);
+                                }),
+                            ),
+                        )
+                        .child(
+                            radio("Right", "bm-right".into(), p.side == BarSide::Right).on_click(
+                                cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                                    this.move_bar_item(id, None, Some(BarSide::Right), None, cx);
+                                }),
+                            ),
+                        )
+                        .child(div().my_0p5().h(px(1.0)).bg(border))
+                        .child(
+                            radio("Titlebar", "bm-title".into(), p.bar == BarLoc::Titlebar)
+                                .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                                    this.move_bar_item(id, Some(BarLoc::Titlebar), None, None, cx);
+                                })),
+                        )
+                        .child(
+                            radio("Status Bar", "bm-status".into(), p.bar == BarLoc::Statusbar)
+                                .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                                    this.move_bar_item(id, Some(BarLoc::Statusbar), None, None, cx);
+                                })),
+                        )
+                        .child(div().my_0p5().h(px(1.0)).bg(border))
+                        .child(
+                            div()
+                                .id("bm-hide")
+                                .px_2()
+                                .py_1()
+                                .text_xs()
+                                .rounded_sm()
+                                .text_color(fg)
+                                .hover(|s| s.bg(border))
+                                .child("Hide")
+                                .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                                    this.move_bar_item(id, None, None, Some(true), cx);
+                                })),
+                        ),
+                )
+                .into_any_element(),
+        )
+    }
+
+    // ── Interactive CWD breadcrumb (T16-006) ──────────────────────────────
+
+    fn home_dir() -> Option<String> {
+        dirs::home_dir().map(|p| p.to_string_lossy().into_owned())
+    }
+
+    fn open_crumb_menu(&mut self, seg: bc::Segment, pos: Point<Pixels>, cx: &mut Context<Self>) {
+        self.crumb_menu = Some((seg, pos));
+        self.subdir_menu = None;
+        cx.notify();
+    }
+
+    fn open_subdir_menu(&mut self, dir: String, pos: Point<Pixels>, cx: &mut Context<Self>) {
+        self.subdir_menu = Some((dir.clone(), pos, None));
+        self.crumb_menu = None;
+        cx.notify();
+        // Only local listing is wired; remote SSH browsing is deferred.
+        if self.workspace.read(cx).active_remote_target(cx).is_some() {
+            self.subdir_menu = Some((dir, pos, Some(Vec::new())));
+            return;
+        }
+        cx.spawn(async move |view, cx| {
+            let d = dir.clone();
+            let result = cx
+                .background_executor()
+                .spawn(async move {
+                    labonair_backend::modules::fs::tree::read_dir_page(&d, 0, 200, false)
+                })
+                .await;
+            let _ = view.update(cx, |this, cx| {
+                let Some((cur, _, entries)) = this.subdir_menu.as_mut() else {
+                    return;
+                };
+                if *cur != dir {
+                    return;
+                }
+                let names = result
+                    .map(|page| {
+                        page.entries
+                            .into_iter()
+                            .filter(|e| {
+                                matches!(
+                                    e.kind,
+                                    labonair_backend::modules::fs::tree::EntryKind::Dir
+                                )
+                            })
+                            .map(|e| e.name)
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                *entries = Some(names);
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn render_cwd_breadcrumb(&mut self, compact: bool, cx: &mut Context<Self>) -> gpui::AnyElement {
+        let cwd = self.workspace.read(cx).active_cwd(cx);
+        let file_path = self.workspace.read(cx).active_file_path(cx);
+        let home = Self::home_dir();
+        let (fg, muted, border) = {
+            let theme = self.theme.read(cx);
+            (theme.foreground(), theme.muted_foreground(), theme.border())
+        };
+        let text_px = if compact { 11.0 } else { 12.0 };
+
+        // File mode: dir segments navigate, filename is the leaf.
+        let (dir, leaf) = match &file_path {
+            Some(fp) => (bc::dirname(fp), Some(bc::basename(fp).to_string())),
+            None => match &cwd {
+                Some(c) => (c.clone(), None),
+                None => {
+                    return div()
+                        .id("crumb-empty")
+                        .text_size(px(text_px))
+                        .text_color(muted.opacity(0.7))
+                        .child("no directory")
+                        .on_mouse_down(
+                            MouseButton::Right,
+                            cx.listener(|this, ev: &MouseDownEvent, _w, cx| {
+                                this.open_crumb_menu(
+                                    bc::Segment {
+                                        label: String::new(),
+                                        full_path: String::new(),
+                                        is_home: false,
+                                    },
+                                    ev.position,
+                                    cx,
+                                );
+                            }),
+                        )
+                        .into_any_element();
+                }
+            },
+        };
+
+        let segments = bc::segments_from_cwd(&dir, home.as_deref());
+        let last_idx = segments.len().saturating_sub(1);
+        let current_is_dropdown = leaf.is_none();
+        let parent_count = if current_is_dropdown {
+            last_idx
+        } else {
+            segments.len()
+        };
+        let collapse = parent_count > 4 && !self.breadcrumb_expanded;
+
+        let mut row = div()
+            .flex()
             .items_center()
             .gap_1()
-            .py_2()
-            .bg(sidebar_bg)
-            .children(SidebarPanel::ALL.into_iter().map(|panel| {
-                let is_active = panel == active;
+            .min_w_0()
+            .overflow_hidden();
+
+        for (i, seg) in segments.iter().enumerate() {
+            let is_current = current_is_dropdown && i == last_idx;
+            if collapse && i > 0 && i < parent_count - 1 {
+                if i == 1 {
+                    row = row
+                        .child(
+                            div()
+                                .id("crumb-collapse")
+                                .px(px(6.0))
+                                .text_size(px(text_px))
+                                .text_color(muted)
+                                .rounded_sm()
+                                .hover(|s| s.bg(border).text_color(fg))
+                                .child(IconName::Ellipsis.svg(muted))
+                                .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
+                                    this.breadcrumb_expanded = true;
+                                    cx.notify();
+                                })),
+                        )
+                        .child(div().text_color(muted).text_size(px(text_px)).child("/"));
+                }
+                continue;
+            }
+            row = row.child(self.render_crumb_segment(
+                seg.clone(),
+                is_current,
+                current_is_dropdown,
+                text_px,
+                cx,
+            ));
+            if i != last_idx || leaf.is_some() {
+                row = row.child(div().text_color(muted).text_size(px(text_px)).child("/"));
+            }
+        }
+
+        if let Some(name) = leaf {
+            row = row.child(
                 div()
-                    .id(SharedString::from(panel.label()))
-                    .size(px(30.0))
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .rounded_md()
-                    .text_color(if is_active { sidebar_fg } else { muted })
-                    .when(is_active, |d| d.bg(accent))
-                    .when(!is_active, |d| d.hover(|s| s.bg(sidebar_border)))
-                    .child(
-                        panel
-                            .glyph()
-                            .svg(if is_active { sidebar_fg } else { muted }),
-                    )
-                    .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
-                        this.select_panel(panel, cx);
-                    }))
-            }));
+                    .text_size(px(text_px))
+                    .text_color(fg)
+                    .child(SharedString::from(name)),
+            );
+        }
+
+        row.into_any_element()
+    }
+
+    fn render_crumb_segment(
+        &self,
+        seg: bc::Segment,
+        is_current: bool,
+        current_is_dropdown: bool,
+        text_px: f32,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let (fg, muted, border) = {
+            let theme = self.theme.read(cx);
+            (theme.foreground(), theme.muted_foreground(), theme.border())
+        };
+        let label = if seg.is_home {
+            "~".to_string()
+        } else {
+            seg.label.clone()
+        };
+        let show_chevron = is_current && current_is_dropdown;
+        let seg_click = seg.clone();
+        let seg_menu = seg.clone();
+        div()
+            .id(SharedString::from(format!("crumb-{}", seg.full_path)))
+            .flex()
+            .items_center()
+            .gap_1()
+            .px(px(6.0))
+            .py(px(1.0))
+            .rounded_full()
+            .border_1()
+            .border_color(border)
+            .text_size(px(text_px))
+            .text_color(if is_current { fg } else { muted })
+            .hover(|s| s.text_color(fg))
+            .when(seg.is_home, |d| d.child(IconName::Home.svg(muted)))
+            .child(SharedString::from(label))
+            .when(show_chevron, |d| d.child(IconName::ChevronDown.svg(muted)))
+            .on_click(cx.listener(move |this, ev: &ClickEvent, _w, cx| {
+                if show_chevron {
+                    this.open_subdir_menu(seg_click.full_path.clone(), ev.position(), cx);
+                } else {
+                    let p = seg_click.full_path.clone();
+                    this.workspace.update(cx, |w, cx| w.send_cd(&p, cx));
+                }
+            }))
+            .on_mouse_down(
+                MouseButton::Right,
+                cx.listener(move |this, ev: &MouseDownEvent, _w, cx| {
+                    this.open_crumb_menu(seg_menu.clone(), ev.position, cx);
+                }),
+            )
+    }
+
+    fn render_crumb_menu(&mut self, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
+        let (seg, pos) = self.crumb_menu.clone()?;
+        let cwd = self.workspace.read(cx).active_cwd(cx);
+        let (card, fg, border, muted) = {
+            let theme = self.theme.read(cx);
+            (
+                theme.card(),
+                theme.foreground(),
+                theme.border(),
+                theme.muted_foreground(),
+            )
+        };
+        let has_path = !seg.full_path.is_empty();
+        let rel = cwd
+            .as_deref()
+            .map(|c| bc::relative_path(c, &seg.full_path))
+            .unwrap_or_else(|| seg.full_path.clone());
+        let abs = seg.full_path.clone();
+        let abs2 = seg.full_path.clone();
+        let abs3 = seg.full_path.clone();
+
+        let item = |label: &str, key: SharedString| {
+            div()
+                .id(key)
+                .px_2()
+                .py_1()
+                .text_xs()
+                .rounded_sm()
+                .text_color(fg)
+                .hover(|s| s.bg(border))
+                .child(SharedString::from(label.to_string()))
+        };
+
+        Some(
+            div()
+                .absolute()
+                .inset_0()
+                .on_mouse_down(
+                    MouseButton::Left,
+                    cx.listener(|this, _: &MouseDownEvent, _w, cx| {
+                        this.crumb_menu = None;
+                        cx.notify();
+                    }),
+                )
+                .child(
+                    div()
+                        .absolute()
+                        .left(pos.x)
+                        .top(pos.y)
+                        .flex()
+                        .flex_col()
+                        .gap_0p5()
+                        .p_1()
+                        .min_w(px(220.0))
+                        .rounded_md()
+                        .bg(card)
+                        .border_1()
+                        .border_color(border)
+                        .when(has_path, |d| {
+                            d.child(
+                                div()
+                                    .px_2()
+                                    .py_1()
+                                    .text_size(px(11.0))
+                                    .text_color(muted)
+                                    .child(SharedString::from(if seg.is_home {
+                                        "Home".to_string()
+                                    } else {
+                                        seg.label.clone()
+                                    })),
+                            )
+                            .child(div().my_0p5().h(px(1.0)).bg(border))
+                            .child(item("Copy absolute path", "cm-copy-abs".into()).on_click(
+                                cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                                    cx.write_to_clipboard(gpui::ClipboardItem::new_string(
+                                        abs.clone(),
+                                    ));
+                                    this.crumb_menu = None;
+                                    cx.notify();
+                                }),
+                            ))
+                            .child(item("Copy relative path", "cm-copy-rel".into()).on_click(
+                                cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                                    cx.write_to_clipboard(gpui::ClipboardItem::new_string(
+                                        rel.clone(),
+                                    ));
+                                    this.crumb_menu = None;
+                                    cx.notify();
+                                }),
+                            ))
+                            .child(div().my_0p5().h(px(1.0)).bg(border))
+                            .child(item("Open in current terminal", "cm-cd".into()).on_click(
+                                cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                                    let p = abs2.clone();
+                                    this.workspace.update(cx, |w, cx| w.send_cd(&p, cx));
+                                    this.crumb_menu = None;
+                                    cx.notify();
+                                }),
+                            ))
+                            .child(item("Open in new terminal", "cm-cd-new".into()).on_click(
+                                cx.listener(move |this, _: &ClickEvent, window, cx| {
+                                    this.workspace.update(cx, |w, cx| {
+                                        w.cd_in_new_tab(abs3.clone(), window, cx)
+                                    });
+                                    this.crumb_menu = None;
+                                    cx.notify();
+                                }),
+                            ))
+                            .child(div().my_0p5().h(px(1.0)).bg(border))
+                        })
+                        .child(item("Move to Titlebar", "cm-move-title".into()).on_click(
+                            cx.listener(|this, _: &ClickEvent, _w, cx| {
+                                this.crumb_menu = None;
+                                this.move_bar_item(
+                                    BarItemId::CwdBreadcrumb,
+                                    Some(BarLoc::Titlebar),
+                                    None,
+                                    None,
+                                    cx,
+                                );
+                            }),
+                        ))
+                        .child(
+                            item("Move to Status Bar", "cm-move-status".into()).on_click(
+                                cx.listener(|this, _: &ClickEvent, _w, cx| {
+                                    this.crumb_menu = None;
+                                    this.move_bar_item(
+                                        BarItemId::CwdBreadcrumb,
+                                        Some(BarLoc::Statusbar),
+                                        None,
+                                        None,
+                                        cx,
+                                    );
+                                }),
+                            ),
+                        )
+                        .child(item("Hide", "cm-hide".into()).on_click(cx.listener(
+                            |this, _: &ClickEvent, _w, cx| {
+                                this.crumb_menu = None;
+                                this.move_bar_item(
+                                    BarItemId::CwdBreadcrumb,
+                                    None,
+                                    None,
+                                    Some(true),
+                                    cx,
+                                );
+                            },
+                        ))),
+                )
+                .into_any_element(),
+        )
+    }
+
+    fn render_subdir_menu(&mut self, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
+        let (dir, pos, entries) = self.subdir_menu.clone()?;
+        let theme = self.theme.read(cx);
+        let (card, fg, border, muted) = (
+            theme.card(),
+            theme.foreground(),
+            theme.border(),
+            theme.muted_foreground(),
+        );
+
+        let body: Vec<gpui::AnyElement> = match &entries {
+            None => vec![div()
+                .px_2()
+                .py_1()
+                .text_xs()
+                .text_color(muted)
+                .child("Loading\u{2026}")
+                .into_any_element()],
+            Some(list) if list.is_empty() => vec![div()
+                .px_2()
+                .py_1()
+                .text_xs()
+                .text_color(muted)
+                .child("No subfolders")
+                .into_any_element()],
+            Some(list) => list
+                .iter()
+                .take(50)
+                .map(|name| {
+                    let full = if dir == "/" {
+                        format!("/{name}")
+                    } else {
+                        format!("{dir}/{name}")
+                    };
+                    div()
+                        .id(SharedString::from(format!("subdir-{name}")))
+                        .px_2()
+                        .py_1()
+                        .text_xs()
+                        .rounded_sm()
+                        .text_color(fg)
+                        .hover(|s| s.bg(border))
+                        .child(SharedString::from(name.clone()))
+                        .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                            let full = full.clone();
+                            this.workspace.update(cx, |w, cx| w.send_cd(&full, cx));
+                            this.subdir_menu = None;
+                            cx.notify();
+                        }))
+                        .into_any_element()
+                })
+                .collect(),
+        };
+
+        Some(
+            div()
+                .absolute()
+                .inset_0()
+                .on_mouse_down(
+                    MouseButton::Left,
+                    cx.listener(|this, _: &MouseDownEvent, _w, cx| {
+                        this.subdir_menu = None;
+                        cx.notify();
+                    }),
+                )
+                .child(
+                    div()
+                        .absolute()
+                        .left(pos.x)
+                        .top(pos.y)
+                        .flex()
+                        .flex_col()
+                        .gap_0p5()
+                        .p_1()
+                        .min_w(px(180.0))
+                        .max_h(px(320.0))
+                        .overflow_hidden()
+                        .rounded_md()
+                        .bg(card)
+                        .border_1()
+                        .border_color(border)
+                        .children(body),
+                )
+                .into_any_element(),
+        )
+    }
+
+    fn render_sidebar(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
+        let (sidebar_bg, sidebar_fg, sidebar_border, accent, muted) = {
+            let theme = self.theme.read(cx);
+            (
+                theme.sidebar_bg(),
+                theme.sidebar_fg(),
+                theme.sidebar_border(),
+                theme.accent(),
+                theme.muted_foreground(),
+            )
+        };
+        let active = self.active_panel;
+        let on_right = self.sidebar_side == BarSide::Right;
 
         let panel = div()
             .w(px(self.sidebar_width))
@@ -1167,26 +2276,28 @@ impl AppShell {
 
         // A thin resize affordance: a 1px border line with a wider transparent
         // grab zone (mirrors the reference `ResizableHandle`), not a solid bar.
-        let handle = div()
-            .id("sidebar-handle")
-            .w(px(HANDLE))
-            .h_full()
-            .flex_shrink_0()
-            .flex()
-            .justify_center()
-            .cursor_col_resize()
-            .hover(|s| s.bg(accent.opacity(0.4)))
-            .child(div().w(px(1.0)).h_full().bg(sidebar_border))
-            .on_drag(SidebarResize, |_, _, _, cx| cx.new(|_| DragGhost));
+        let handle = || {
+            div()
+                .id("sidebar-handle")
+                .w(px(HANDLE))
+                .h_full()
+                .flex_shrink_0()
+                .flex()
+                .justify_center()
+                .cursor_col_resize()
+                .hover(|s| s.bg(accent.opacity(0.4)))
+                .child(div().w(px(1.0)).h_full().bg(sidebar_border))
+                .on_drag(SidebarResize, |_, _, _, cx| cx.new(|_| DragGhost))
+        };
 
         div()
             .flex_shrink_0()
             .h_full()
             .flex()
             .flex_row()
-            .child(rail)
+            .when(on_right, |d| d.child(handle()))
             .child(panel)
-            .child(handle)
+            .when(!on_right, |d| d.child(handle()))
     }
 
     /// Placeholder body for each sidebar panel. Later phases replace the arm
@@ -1225,54 +2336,13 @@ impl AppShell {
     }
 
     fn render_statusbar(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
-        let workspace = self.workspace.read(cx);
-        let cwd = workspace.active_cwd(cx);
-        let panes = workspace.active_pane_count(cx);
-        let label = workspace.active_tab_label(cx);
-
-        let theme = self.theme.read(cx);
-        let (status_bar, fg, muted, border) = (
-            theme.status_bar(),
-            theme.foreground(),
-            theme.muted_foreground(),
-            theme.border(),
-        );
-
-        let breadcrumb = match cwd.as_deref().map(display_path) {
-            Some(path) => {
-                let segments: Vec<SharedString> = path
-                    .split('/')
-                    .filter(|s| !s.is_empty())
-                    .map(|s| SharedString::from(s.to_string()))
-                    .collect();
-                let last = segments.len().saturating_sub(1);
-                div()
-                    .flex()
-                    .items_center()
-                    .min_w_0()
-                    .when(path.starts_with('/'), |d| {
-                        d.child(div().text_color(muted).child("/"))
-                    })
-                    .children(segments.into_iter().enumerate().map(|(i, seg)| {
-                        div()
-                            .flex()
-                            .items_center()
-                            .child(
-                                div()
-                                    .text_color(if i == last { fg } else { muted })
-                                    .child(seg),
-                            )
-                            .when(i != last, |d| {
-                                d.child(div().px_0p5().text_color(muted).child("/"))
-                            })
-                    }))
-                    .into_any_element()
-            }
-            None => div()
-                .text_color(muted)
-                .child(SharedString::from(label))
-                .into_any_element(),
+        let (status_bar, muted, border) = {
+            let theme = self.theme.read(cx);
+            (theme.status_bar(), theme.muted_foreground(), theme.border())
         };
+
+        let left = self.build_bar_bucket(BarLoc::Statusbar, BarSide::Left, cx);
+        let right = self.build_bar_bucket(BarLoc::Statusbar, BarSide::Right, cx);
 
         div()
             .flex()
@@ -1286,6 +2356,7 @@ impl AppShell {
             .bg(status_bar)
             .border_t_1()
             .border_color(border)
+            .text_size(px(11.0))
             .text_color(muted)
             .child(
                 div()
@@ -1295,19 +2366,15 @@ impl AppShell {
                     .items_center()
                     .gap_1()
                     .overflow_hidden()
-                    .child(breadcrumb),
+                    .children(left),
             )
             .child(
                 div()
                     .flex()
                     .flex_shrink_0()
                     .items_center()
-                    .gap_2()
-                    // Connection / jump-host / AI badge slots stay empty until
-                    // their phases (06 / 10) provide data.
-                    .when(panes > 1, |d| {
-                        d.child(SharedString::from(format!("{panes} panes")))
-                    }),
+                    .gap_1()
+                    .children(right),
             )
     }
 }
@@ -1339,6 +2406,10 @@ impl Render for AppShell {
         let workspace = self.workspace.clone();
         let can_split = self.workspace.read(cx).active_is_terminal(cx);
         let has_split = self.workspace.read(cx).active_has_split(cx);
+        let sidebar_on_right = self.sidebar_side == BarSide::Right;
+        let bar_menu = self.render_bar_menu(cx);
+        let crumb_menu = self.render_crumb_menu(cx);
+        let subdir_menu = self.render_subdir_menu(cx);
 
         div()
             .track_focus(&self.focus_handle)
@@ -1393,42 +2464,38 @@ impl Render for AppShell {
                 d.on_action(cx.listener(Self::act_close_pane))
             })
             .children(header)
-            .child(
-                div()
-                    .flex_1()
-                    .min_h_0()
-                    .flex()
-                    .flex_row()
-                    .children(sidebar)
-                    .child(div().flex_1().min_w_0().child(workspace))
-                    .on_drag_move(cx.listener(
-                        |this, ev: &DragMoveEvent<SidebarResize>, _window, cx| {
-                            let w = f32::from(ev.event.position.x - ev.bounds.origin.x);
-                            this.set_sidebar_width(w, cx);
-                        },
-                    )),
-            )
+            .child({
+                let ws_pane = div().flex_1().min_w_0().child(workspace);
+                let row = div().flex_1().min_h_0().flex().flex_row();
+                let row = if sidebar_on_right {
+                    row.child(ws_pane).children(sidebar)
+                } else {
+                    row.children(sidebar).child(ws_pane)
+                };
+                row.on_drag_move(cx.listener(
+                    |this, ev: &DragMoveEvent<SidebarResize>, _window, cx| {
+                        let w = if this.sidebar_side == BarSide::Right {
+                            f32::from(
+                                ev.bounds.origin.x + ev.bounds.size.width - ev.event.position.x,
+                            )
+                        } else {
+                            f32::from(ev.event.position.x - ev.bounds.origin.x)
+                        };
+                        this.set_sidebar_width(w, cx);
+                    },
+                ))
+            })
             .children(statusbar)
             .children(background_layer)
             .child(self.command_palette.clone())
             .child(self.bookmarks.clone())
             .child(self.settings.clone())
             .child(self.updater.clone())
+            .children(bar_menu)
+            .children(crumb_menu)
+            .children(subdir_menu)
             .children(toasts)
     }
-}
-
-/// Substitute the user's home directory with `~` for display.
-fn display_path(path: &str) -> String {
-    if let Some(home) = dirs::home_dir().and_then(|p| p.to_str().map(str::to_string)) {
-        if path == home {
-            return "~".to_string();
-        }
-        if let Some(rest) = path.strip_prefix(&format!("{home}/")) {
-            return format!("~/{rest}");
-        }
-    }
-    path.to_string()
 }
 
 fn bounds_differ(a: Bounds<Pixels>, b: Bounds<Pixels>) -> bool {
