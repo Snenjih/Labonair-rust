@@ -551,10 +551,28 @@ pub fn active_theme(cx: &App) -> &Theme {
     cx.global::<GlobalTheme>().0.read(cx).theme()
 }
 
+/// The backdrop fill for modal overlays (command palette, dialogs, sheets,
+/// picker popovers). The reference paints every `DialogOverlay` /
+/// `AlertDialogOverlay` / `SheetOverlay` with the same `bg-black/30`
+/// (`src/components/ui/{dialog,alert-dialog,sheet}.tsx`), independent of the
+/// light/dark theme — so this is a fixed value, not a theme token.
+pub fn modal_scrim() -> Hsla {
+    gpui::black().opacity(0.30)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use gpui::TestAppContext;
+
+    #[test]
+    fn modal_scrim_matches_reference_dialog_overlay() {
+        // reference-src `dialog.tsx` / `alert-dialog.tsx` / `sheet.tsx` all use
+        // `bg-black/30` — one shared value, theme-independent.
+        let s = modal_scrim();
+        assert_eq!((s.h, s.s, s.l), (0.0, 0.0, 0.0));
+        assert!((s.a - 0.30).abs() < 1e-6);
+    }
 
     #[gpui::test]
     fn preference_resolves_to_the_right_theme(cx: &mut TestAppContext) {

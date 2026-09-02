@@ -2079,7 +2079,7 @@ impl Render for SettingsView {
             .flex()
             .items_center()
             .justify_center()
-            .bg(gpui::hsla(0.0, 0.0, 0.0, 0.5))
+            .bg(crate::theme::modal_scrim())
             .on_key_down(cx.listener(Self::on_key))
             .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| this.close(cx)))
             .child(

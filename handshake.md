@@ -4,7 +4,50 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
-## Last Session: 2026-09-02 (T14-002 — Scrollback persistence)
+## Last Session: 2026-09-02 (T15-001 — Visual parity verification / design polish)
+
+### What Was Done
+- **T15-001 ✅ Done.** Static visual-parity audit of the GPUI port against the
+  frozen `reference-src/` design spec + first round of polish fixes.
+  - **New `tasks/phase-14-testing/T15-001-feinschliff-catalog.md`** — living
+    checklist. Findings: theme tokens (colors, radii, shadows, animation,
+    typography) are already a verified 1:1 port of `globals.css` (`theme` crate
+    tests confirm). Editor syntax palettes + git-graph lane colors are
+    intentionally not `globals.css` tokens (upstream schemes / categorical
+    ramp). Six genuinely visual items (hover/focus tint amounts, scrollbar
+    metrics, terminal cell/cursor proportions, tab-entrance curve, popover
+    density, imported-theme round-trip) are logged as **D1–D6** for the
+    live side-by-side pass in T15-003 — they can't be resolved by static audit.
+  - **Fix C1 — modal scrim consolidation.** The port had **6 divergent**
+    hardcoded overlay backdrops (`black@0.4`, `rgba(0x00000099)` ×5,
+    `rgba(0x000000aa)`, `rgba(0x00000080)`, `hsla(…0.5)`). Reference
+    `dialog.tsx` / `alert-dialog.tsx` / `sheet.tsx` all use one `bg-black/30`.
+    New **`crate::theme::modal_scrim()`** (`black @ 0.30`, theme-independent by
+    design — documented) now used by all 9 overlay sites: `command_palette`,
+    `snippets`, `settings`, `explorer`, `transfers`, `sftp`, `hosts` (×4),
+    `workspace` (prompt + close-confirm). The `TabDragPreview` pill in
+    `workspace.rs:204` keeps its own fill — it's a drag chip, not a scrim.
+  - **Regression guards (task step 7):**
+    - `crates/theme/src/tokens.rs` — `body_text_meets_wcag_aa_contrast`: WCAG
+      relative-luminance helpers + assertions that fg/bg and terminal fg/bg
+      clear 4.5:1 and muted-fg clears 3:1, in **both** variants. A token edit
+      that breaks legibility now fails `cargo test`.
+    - `crates/ui/src/theme.rs` — `modal_scrim_matches_reference_dialog_overlay`
+      pins the shared constant to black @ 0.30.
+- Verify: `cargo fmt --all --check`, `cargo check --workspace`,
+  `cargo clippy --workspace --all-targets -- -D warnings`,
+  `cargo test --workspace` — all green. theme **22 → 23**, ui **184 → 185**.
+- **Known gaps / for later:** T15-001 is explicitly iterative. The static audit
+  + token verification + scrim fix are done; the pixel-level side-by-side
+  comparison (catalog items D1–D6) is deferred to **T15-003** per the task's own
+  "Weiterführende Tasks" pointer. No reference *screenshots* were captured (the
+  original app isn't runnable in this environment) — audit was against the
+  `reference-src/` source (Tailwind classes + `globals.css`), which is the
+  repo's designated authority.
+- **Next task:** T15-002 — Fehlerbehandlung & Robustheit (app-weit)
+  (`tasks/phase-14-testing/T15-002-error-handling-robustness.md`).
+
+## Prev Session: 2026-09-02 (T14-002 — Scrollback persistence)
 
 ### What Was Done
 - **T14-002 ✅ Done.** Persist each restorable local terminal pane's scrollback

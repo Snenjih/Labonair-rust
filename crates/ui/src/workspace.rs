@@ -2333,7 +2333,7 @@ impl Workspace {
             .flex()
             .items_center()
             .justify_center()
-            .bg(gpui::rgba(0x000000aa))
+            .bg(crate::theme::modal_scrim())
             .child(
                 div()
                     .track_focus(&self.prompt_focus)
@@ -2732,7 +2732,7 @@ impl Workspace {
             .flex()
             .items_center()
             .justify_center()
-            .bg(gpui::rgba(0x00000080))
+            .bg(crate::theme::modal_scrim())
             .child(
                 div()
                     .flex()

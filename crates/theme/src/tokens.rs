@@ -612,6 +612,56 @@ mod tests {
         assert_eq!(a.dur_slow, Duration::from_millis(320));
     }
 
+    /// WCAG 2.x relative luminance of an opaque color.
+    fn luminance(c: Hsla) -> f64 {
+        let lin = |v: f64| {
+            if v <= 0.03928 {
+                v / 12.92
+            } else {
+                ((v + 0.055) / 1.055).powf(2.4)
+            }
+        };
+        let [r, g, b] = to_rgb8(c);
+        0.2126 * lin(r as f64 / 255.0)
+            + 0.7152 * lin(g as f64 / 255.0)
+            + 0.0722 * lin(b as f64 / 255.0)
+    }
+
+    fn contrast(a: Hsla, b: Hsla) -> f64 {
+        let (l1, l2) = (luminance(a), luminance(b));
+        let (hi, lo) = if l1 > l2 { (l1, l2) } else { (l2, l1) };
+        (hi + 0.05) / (lo + 0.05)
+    }
+
+    #[test]
+    fn body_text_meets_wcag_aa_contrast() {
+        // Primary UI + terminal text on their own backgrounds must clear the
+        // 4.5:1 AA threshold in both variants — a regression guard so a token
+        // edit can't silently make text unreadable.
+        for t in [Theme::light(), Theme::dark()] {
+            assert!(
+                contrast(t.core.foreground, t.core.background) >= 4.5,
+                "fg/bg contrast too low ({}): {:.2}",
+                if t.is_dark { "dark" } else { "light" },
+                contrast(t.core.foreground, t.core.background)
+            );
+            assert!(
+                contrast(t.terminal.foreground, t.terminal.background) >= 4.5,
+                "terminal fg/bg contrast too low ({}): {:.2}",
+                if t.is_dark { "dark" } else { "light" },
+                contrast(t.terminal.foreground, t.terminal.background)
+            );
+            // Muted/secondary text is allowed to be dimmer but must stay legible
+            // (WCAG AA large-text / UI-component threshold of 3:1).
+            assert!(
+                contrast(t.core.muted_foreground, t.core.background) >= 3.0,
+                "muted-fg contrast too low ({}): {:.2}",
+                if t.is_dark { "dark" } else { "light" },
+                contrast(t.core.muted_foreground, t.core.background)
+            );
+        }
+    }
+
     #[test]
     fn terminal_palette_is_fully_populated() {
         // Compile-time guarantee of 8+8+8; here assert the groups differ so we

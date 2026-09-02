@@ -1803,7 +1803,7 @@ fn overlay() -> gpui::Div {
         .flex()
         .items_center()
         .justify_center()
-        .bg(gpui::hsla(0.0, 0.0, 0.0, 0.4))
+        .bg(crate::theme::modal_scrim())
 }
 
 fn dialog_card(id: &'static str, c: Colors) -> gpui::Stateful<gpui::Div> {

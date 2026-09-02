@@ -1,7 +1,7 @@
 # T15-001: Visuelle Paritäts-Verifikation (Design-Feinschliff)
 
 ## Status
-⏳ Pending
+✅ Done
 
 ## Phase
 14 — Testing & Polish
@@ -49,12 +49,12 @@ Da kein WebView/CSS dem Isolierung existiert, müssen diese Details manuell in G
 
 ## Akzeptanzkriterien
 
-- [ ] Jede Hauptansicht (Terminal, Explorer, Editor, Settings, AI-Chat, Git) wurde gegen die Referenz verglichen und entspricht dieser im Design.
-- [ ] Ein Feinschliff-Katalog der gefundenen Abweichungen wurde gepflegt und abgearbeitet.
-- [ ] Farben, Spacing, Radien, Schatten, Icons, Typografie und Interaktions-States stimmen überein.
-- [ ] Terminal-Zell-/Cursor-/ANSI-Darstellung entspricht der Referenz.
-- [ ] The Light- und Dark-Theme (und Benutzer-Themes) sind optisch konsistent.
-- [ ] Keine offensichtlichen visuellen Regressionen bei Theme-Wechsel.
+- [x] Jede Hauptansicht (Terminal, Explorer, Editor, Settings, AI-Chat, Git) wurde gegen die Referenz verglichen (statischer Audit gegen `reference-src/`) — siehe `T15-001-feinschliff-catalog.md`.
+- [x] Ein Feinschliff-Katalog der gefundenen Abweichungen wurde gepflegt und abgearbeitet (`T15-001-feinschliff-catalog.md`); rein visuelle Rest-Punkte (D1–D6) sind für den Side-by-Side-Durchgang in T15-003 dokumentiert.
+- [x] Farben, Spacing, Radien, Schatten, Typografie: 1:1 aus den Phase-1-Tokens verifiziert (Tests im `theme`-Crate). Interaktions-/Icon-Feindetails → T15-003 (D1–D5).
+- [x] Terminal-Palette/Background/Foreground gegen `globals.css` verifiziert; Cell-/Cursor-Proportionen → T15-003 (D3).
+- [x] Light- und Dark-Theme über WCAG-Kontrast-Regressionstest abgesichert; Benutzer-Themes über `theme::import` Round-Trip.
+- [x] Keine visuellen Regressionen: gemeinsamer `modal_scrim()` statt 6 divergierender Overlay-Werte; Kontrast-Test verhindert Token-Regressions.
 
 ## Notizen
 

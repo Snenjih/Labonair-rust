@@ -1934,7 +1934,7 @@ impl SnippetsView {
             .flex()
             .items_center()
             .justify_center()
-            .bg(gpui::black().opacity(0.4))
+            .bg(crate::theme::modal_scrim())
             .child(
                 div()
                     .w(px(280.0))

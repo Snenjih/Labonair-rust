@@ -764,7 +764,7 @@ impl Render for CommandPalette {
             .flex()
             .justify_center()
             .pt(px(80.0))
-            .bg(gpui::black().opacity(0.4))
+            .bg(crate::theme::modal_scrim())
             .track_focus(&self.focus)
             .key_context("CommandPalette")
             .on_key_down(cx.listener(Self::on_key))

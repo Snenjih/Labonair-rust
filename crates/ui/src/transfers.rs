@@ -854,7 +854,7 @@ impl TransfersView {
                 .flex()
                 .items_center()
                 .justify_center()
-                .bg(gpui::hsla(0.0, 0.0, 0.0, 0.4))
+                .bg(crate::theme::modal_scrim())
                 .child(
                     div()
                         .id("transfer-modal")

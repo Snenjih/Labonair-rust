@@ -1416,7 +1416,7 @@ impl HostManagerView {
             .flex()
             .items_center()
             .justify_center()
-            .bg(gpui::rgba(0x00000099))
+            .bg(crate::theme::modal_scrim())
             .child(
                 div()
                     .track_focus(&self.form_focus)
@@ -1673,7 +1673,7 @@ impl HostManagerView {
             .flex()
             .items_center()
             .justify_center()
-            .bg(gpui::rgba(0x00000099))
+            .bg(crate::theme::modal_scrim())
             .child(
                 div()
                     .flex()
@@ -1920,7 +1920,7 @@ impl HostManagerView {
             .flex()
             .items_center()
             .justify_center()
-            .bg(gpui::rgba(0x00000099))
+            .bg(crate::theme::modal_scrim())
             .child(
                 self.modal_shell(500.0, p)
                     .child(
@@ -2056,7 +2056,7 @@ impl HostManagerView {
             .flex()
             .items_center()
             .justify_center()
-            .bg(gpui::rgba(0x00000099))
+            .bg(crate::theme::modal_scrim())
             .child(
                 self.modal_shell(500.0, p)
                     .child(
