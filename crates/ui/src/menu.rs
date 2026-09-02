@@ -21,7 +21,7 @@
 //! manager, zoom) have no handler and therefore render disabled, per the task
 //! note; their phase wires a handler in and they light up.
 
-use gpui::{actions, App, KeyBinding, Keystroke, Menu, MenuItem, OsAction, SystemMenuType};
+use gpui::{actions, App, KeyBinding, Keystroke, Menu, MenuItem, OsAction};
 
 use crate::command_palette::{effective_binding, KeybindMap, ShortcutId};
 use crate::notifications::{notification_center, Notification};
@@ -216,12 +216,10 @@ fn app_menus() -> Vec<Menu> {
             name: "Labonair".into(),
             items: vec![
                 MenuItem::action("About Labonair", About),
-                MenuItem::separator(),
                 MenuItem::action("Settings\u{2026}", OpenSettings),
-                MenuItem::separator(),
+                // Not in the reference menu — a deliberate T15-005 addition
+                // (the app ships its own macOS auto-updater).
                 MenuItem::action("Check for Updates\u{2026}", CheckForUpdates),
-                MenuItem::separator(),
-                MenuItem::os_submenu("Services", SystemMenuType::Services),
                 MenuItem::separator(),
                 MenuItem::action("Hide Labonair", HideApp),
                 MenuItem::action("Hide Others", HideOthers),
@@ -238,8 +236,6 @@ fn app_menus() -> Vec<Menu> {
                 MenuItem::action("New SFTP Tab", NewSftpTab),
                 MenuItem::action("New Preview Tab", NewPreviewTab),
                 MenuItem::action("New Editor Tab", NewEditorTab),
-                MenuItem::separator(),
-                MenuItem::action("Save", Save),
                 MenuItem::separator(),
                 MenuItem::action("Close Tab", CloseTab),
                 MenuItem::action("Close Pane", ClosePane),
@@ -306,7 +302,6 @@ fn app_menus() -> Vec<Menu> {
                 MenuItem::action("Minimize", Minimize),
                 MenuItem::action("Zoom", ZoomWindow),
                 MenuItem::separator(),
-                MenuItem::action("Command Palette\u{2026}", CommandPalette),
                 MenuItem::action("Keyboard Shortcuts", OpenShortcuts),
                 MenuItem::action("Settings", OpenSettings),
                 MenuItem::separator(),

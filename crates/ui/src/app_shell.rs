@@ -603,6 +603,64 @@ impl AppShell {
             .update(cx, |w, cx| w.cycle(false, window, cx));
     }
 
+    fn act_toggle_ai_panel(
+        &mut self,
+        _: &menu::ToggleAiPanel,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.select_panel(SidebarPanel::Ai, cx);
+    }
+
+    fn act_new_ai_session(
+        &mut self,
+        _: &menu::NewAiSession,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.ai_chat.update(cx, |v, cx| v.new_session(cx));
+        if self.active_panel != SidebarPanel::Ai || !self.sidebar_open {
+            self.select_panel(SidebarPanel::Ai, cx);
+        }
+    }
+
+    fn act_clear_chat(&mut self, _: &menu::ClearChat, _: &mut Window, cx: &mut Context<Self>) {
+        self.ai_chat.update(cx, |v, cx| v.clear_active_chat(cx));
+    }
+
+    /// `Open Host Manager` / `New SSH Tab` / `New SFTP Tab` / `New SSH
+    /// Connection…` / `New Quick SSH…` all just focus the Home dashboard in the
+    /// reference (`useMenuBridge` → `actions.openHomeTab()`).
+    fn act_open_host_manager(
+        &mut self,
+        _: &menu::OpenHostManager,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.workspace.update(cx, |w, cx| w.open_host_manager(cx));
+    }
+
+    fn act_new_ssh_tab(&mut self, _: &menu::NewSshTab, _: &mut Window, cx: &mut Context<Self>) {
+        self.workspace.update(cx, |w, cx| w.open_host_manager(cx));
+    }
+
+    fn act_new_sftp_tab(&mut self, _: &menu::NewSftpTab, _: &mut Window, cx: &mut Context<Self>) {
+        self.workspace.update(cx, |w, cx| w.open_host_manager(cx));
+    }
+
+    fn act_new_ssh_connection(
+        &mut self,
+        _: &menu::NewSshConnection,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.workspace.update(cx, |w, cx| w.open_host_manager(cx));
+    }
+
+    fn act_new_quick_ssh(&mut self, _: &menu::NewQuickSsh, _: &mut Window, cx: &mut Context<Self>) {
+        self.workspace.update(cx, |w, cx| w.open_host_manager(cx));
+    }
+
     fn act_command_palette(
         &mut self,
         _: &menu::CommandPalette,
@@ -843,22 +901,11 @@ impl AppShell {
             .border_b_1()
             .border_color(border)
             .child(
-                div()
-                    .id("sidebar-toggle")
-                    .size(px(24.0))
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .rounded_md()
-                    .text_color(muted)
-                    .hover(|s| s.bg(border).text_color(fg))
-                    .child(IconName::PanelLeft.svg(muted))
-                    .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
-                        this.toggle_sidebar(cx);
-                    })),
+                div().flex_1().min_w_0().child(
+                    self.workspace
+                        .update(cx, |w, cx| w.render_tab_bar(cx).into_any_element()),
+                ),
             )
-            .child(div().text_xs().text_color(fg).child("Labonair"))
-            .child(div().flex_1())
             .when(self.search_open, |d| d.child(self.render_search(cx)))
             .when(agent_badge_visible, |d| {
                 d.child(self.render_agent_badge(agent_entries, agent_badge_open, cx))
@@ -1077,8 +1124,7 @@ impl AppShell {
             .items_center()
             .gap_1()
             .py_2()
-            .border_r_1()
-            .border_color(sidebar_border)
+            .bg(sidebar_bg)
             .children(SidebarPanel::ALL.into_iter().map(|panel| {
                 let is_active = panel == active;
                 div()
@@ -1119,14 +1165,18 @@ impl AppShell {
             )
             .child(self.render_panel_body(active, cx));
 
+        // A thin resize affordance: a 1px border line with a wider transparent
+        // grab zone (mirrors the reference `ResizableHandle`), not a solid bar.
         let handle = div()
             .id("sidebar-handle")
             .w(px(HANDLE))
             .h_full()
             .flex_shrink_0()
+            .flex()
+            .justify_center()
             .cursor_col_resize()
-            .bg(sidebar_border)
-            .hover(|s| s.bg(accent))
+            .hover(|s| s.bg(accent.opacity(0.4)))
+            .child(div().w(px(1.0)).h_full().bg(sidebar_border))
             .on_drag(SidebarResize, |_, _, _, cx| cx.new(|_| DragGhost));
 
         div()
@@ -1312,6 +1362,14 @@ impl Render for AppShell {
             .on_action(cx.listener(Self::act_zoom_window))
             .on_action(cx.listener(Self::act_next_tab))
             .on_action(cx.listener(Self::act_prev_tab))
+            .on_action(cx.listener(Self::act_toggle_ai_panel))
+            .on_action(cx.listener(Self::act_new_ai_session))
+            .on_action(cx.listener(Self::act_clear_chat))
+            .on_action(cx.listener(Self::act_open_host_manager))
+            .on_action(cx.listener(Self::act_new_ssh_tab))
+            .on_action(cx.listener(Self::act_new_sftp_tab))
+            .on_action(cx.listener(Self::act_new_ssh_connection))
+            .on_action(cx.listener(Self::act_new_quick_ssh))
             .on_action(cx.listener(Self::act_focus_next_pane))
             .on_action(cx.listener(Self::act_toggle_zen_mode))
             .on_action(cx.listener(Self::act_select_tab_1))

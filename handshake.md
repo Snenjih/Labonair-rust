@@ -4,6 +4,95 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
+## Last Session: 2026-09-02 (Block B — window chrome & unibar, partial)
+
+### What Was Done
+Feature-parity audit **Block B — Window Chrome & Unibar** (`vergleichsbericht-subagent-1.md`).
+
+- **T16-004 — single transparent titlebar (DONE).**
+  - `crates/app/src/main.rs`: `TitlebarOptions` → `appears_transparent: true`,
+    `title: None` (macOS `hiddenTitle` equivalent), `traffic_light_position:
+    Some(point(px(19.0), px(13.0)))` so the lights vertically-centre in the 40px
+    header. Added `point` import.
+  - `crates/ui/src/app_shell.rs` `render_header`: deleted the hardcoded
+    `"Labonair"` text node and the stray hamburger sidebar-toggle. The header is
+    now the ONE bar; it hosts the tab strip (`flex_1`) + the traffic-light left
+    inset. The dead `⋯` app-menu button is still there (no dropdown yet — its
+    4-item menu is a T16-005 follow-up).
+  - `render_sidebar`: removed the 44px activity rail's `border_r_1` (the
+    "phantom vertical bar") and gave the rail a `sidebar_bg`; replaced the 6px
+    solid resize `handle` with a 1px border line inside a transparent grab zone
+    (reference `ResizableHandle` shape). **The rail itself is kept** for now —
+    it is still the only panel switcher until the T16-005 panel-toggle bar
+    items land; removing it without a replacement would break panel switching.
+  - `crates/ui/src/workspace.rs`: `render_tab_bar` is now `pub(crate)`, `h-7`,
+    no bottom border / bg, and is rendered **inside** `AppShell::render_header`
+    (`self.workspace.update(|w,cx| w.render_tab_bar(cx))`). Removed the standalone
+    36px bordered strip from `Workspace::render` (the "third location").
+  - Tab-menu / new-tab-menu anchors are captured in window coords but drawn in
+    the `Workspace` overlay (which starts below the 40px header), so both now
+    subtract `TITLEBAR_OFFSET = 40.0`.
+
+- **T16-007 — tabs (PARTIAL).**
+  - `+` button now opens a dropdown (`render_new_tab_menu`, new `new_tab_menu:
+    Option<Point>` state on `Workspace`): Terminal ⌘T / Editor ⌘E / Preview ⌘P /
+    ─ / Open Host Manager. **Not done:** Git Graph entry (no tab opener exists —
+    it's still a sidebar panel), SSH▶/SFTP▶ recent-host submenus (hand-rolled
+    overlay can't nest; needs the host list + a submenu primitive).
+  - Tab context menu: added **Duplicate** (sets active + `duplicate_active_tab`),
+    **Close All** (`close_all_tabs` — new, closes every non-Home tab), and the
+    per-kind plural label ("Close All Terminals" etc. via new
+    `TabKind::plural_label`, ported from `pluralLabelFor`). **Not done:** inline
+    Rename (needs a new tab-strip edit state), Keep Tab Open, the
+    workspace-vs-non-workspace menu split, icons/separators,
+    `host.block_agent_access` disabled state.
+
+- **T16-008 — native menu + handler gaps (DONE).**
+  - `menu.rs`: App menu — dropped the extra separators + the `Services`
+    os_submenu (removed `SystemMenuType` import); kept `Check for Updates…` as a
+    documented deliberate T15-005 addition, now placed cleanly. File menu —
+    removed the `Save` item (reference has none; the `cmd-s` binding stays).
+    Window menu — removed `Command Palette…` (the shortcut stays).
+  - Wired previously-dead `on_action` handlers on `AppShell`:
+    `menu::ToggleAiPanel` (Cmd+I now works → `select_panel(Ai)`), `NewAiSession`
+    (→ `AiChatView::new_session` + reveal panel), `ClearChat` (→
+    `AiChatView::clear_active_chat` — new: delete active session + new, mirrors
+    `menu:clear_chat`), `OpenHostManager` / `NewSshTab` / `NewSftpTab` /
+    `NewSshConnection` / `NewQuickSsh` (all → `Workspace::open_host_manager`,
+    new: focus/open the Home dashboard, matching every reference
+    `useMenuBridge` handler which is just `openHomeTab()`).
+  - New tests: `menu` binding counts unchanged (still 37/36); added
+    `tabs::plural_labels_match_reference`.
+
+### NOT Done (remaining Block B)
+- **T16-005 — unibar model.** `BarItemId` enum / `BarItemPlacement` /
+  `build_bar_bucket` / `render_bar_item` / persistence via the existing (still
+  dead) `settings_set_bar_item_placement` backend fn — **not started.** Header
+  and statusbar still hardcode their children. This is the biggest remaining
+  piece; `vergleichsbericht-subagent-1.md` §2 is the spec.
+- **T16-006 — bar-item context menu + interactive CwdBreadcrumb.** Not started;
+  breadcrumb is still non-interactive split-on-`/` text (`app_shell.rs`).
+- **T16-004 leftovers:** the activity rail still exists (kept for function); the
+  `⋯` header button still has no dropdown; no right dock / `side` honouring.
+- **T16-007 leftovers:** SSH/SFTP submenus, inline rename, menu split.
+
+### State
+- Branch `master`, committed on top of `f9a10c3` (Block A).
+- `cargo fmt --check`, `cargo check --workspace --all-targets`,
+  `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test
+  --workspace` all green.
+
+### Risks for later blocks
+- **C (Settings):** T16-005 persistence must use
+  `settings_set_bar_item_placement`; add the `BarItemId`↔serde map there.
+- **F (Sidebars/CtxMenus):** the kept activity rail + `SidebarPanel::{GitGraph,
+  Ai}` variants should be removed when the bar-item panel toggles + dual dock
+  land; Git Graph should become a `TabKind::GitGraph` tab (also unblocks the
+  `+` dropdown's "Git Graph" entry).
+- Tab/new-tab overlay menus use a fixed `TITLEBAR_OFFSET = 40.0` fudge because
+  they're anchored from window coords into the `Workspace` overlay — if the
+  header height or layout changes, revisit.
+
 ## Last Session: 2026-09-02 (Block A — shared component + icon layer)
 
 ### What Was Done

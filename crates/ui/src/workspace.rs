@@ -23,7 +23,7 @@ use std::time::Duration;
 use crate::agent_access::AgentAccessStore;
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, px, relative, Animation, AnimationExt, App, AppContext, ClickEvent, Context,
+    div, point, px, relative, Animation, AnimationExt, App, AppContext, ClickEvent, Context,
     DragMoveEvent, Entity, FocusHandle, Focusable, InteractiveElement, IntoElement, KeyDownEvent,
     MouseButton, MouseDownEvent, ParentElement, Render, SharedString, StatefulInteractiveElement,
     Styled, Task, Window,
@@ -146,6 +146,10 @@ const SESSION_SAVE_INTERVAL: Duration = Duration::from_secs(30);
 
 /// Thickness of a split-divider resize handle.
 const HANDLE: f32 = 6.0;
+/// Height of `AppShell`'s overlay titlebar. The tab strip now lives inside it,
+/// so tab-menu / new-tab-menu anchors (captured in window coords) are shifted
+/// up by this much to land in the `Workspace`'s own coordinate space.
+const TITLEBAR_OFFSET: f32 = 40.0;
 
 /// Per-file byte ceiling for a persisted scrollback, from the `scrollbackMaxSizeMb`
 /// preference (T14-002).
@@ -272,6 +276,8 @@ pub struct Workspace {
     confirm_close: Option<u64>,
     /// Open tab context menu: `(tab id, anchor position)`.
     context_menu: Option<(u64, gpui::Point<gpui::Pixels>)>,
+    /// Anchor position of the open "+" new-tab dropdown, if any.
+    new_tab_menu: Option<gpui::Point<gpui::Pixels>>,
     focus_handle: FocusHandle,
     _meta_sync: Task<()>,
 
@@ -455,6 +461,7 @@ impl Workspace {
             next_pane_id: 1,
             confirm_close: None,
             context_menu: None,
+            new_tab_menu: None,
             focus_handle: cx.focus_handle(),
             _meta_sync: meta_sync,
             _session_save: session_save,
@@ -1453,6 +1460,21 @@ impl Workspace {
         self.focus_active(window, cx);
     }
 
+    /// Close every non-`Home` tab (tab context menu "Close All").
+    fn close_all_tabs(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let ids: Vec<u64> = self
+            .tabs
+            .read(cx)
+            .tabs()
+            .iter()
+            .filter(|t| t.kind != TabKind::Home)
+            .map(|t| t.id)
+            .collect();
+        for id in ids {
+            self.request_close(id, window, cx);
+        }
+    }
+
     fn close_by_kind(&mut self, kind: TabKind, window: &mut Window, cx: &mut Context<Self>) {
         let removed = self.tabs.update(cx, |s, cx| s.close_by_kind(kind, cx));
         for tab in &removed {
@@ -1507,6 +1529,24 @@ impl Workspace {
     /// Open (or re-focus) an SFTP browser tab for `host_id` — path-bookmarks jump.
     pub fn open_sftp_tab(&mut self, host_id: String, window: &mut Window, cx: &mut Context<Self>) {
         self.open_sftp(host_id, window, cx);
+    }
+
+    /// Focus the host-manager dashboard (the `Home` tab), opening one if the
+    /// snapshot somehow lacks it. Wired to the `Open Host Manager` menu item.
+    pub fn open_host_manager(&mut self, cx: &mut Context<Self>) {
+        let existing = self
+            .tabs
+            .read(cx)
+            .tabs()
+            .iter()
+            .find(|t| t.kind == TabKind::Home)
+            .map(|t| t.id);
+        self.tabs.update(cx, |s, cx| match existing {
+            Some(id) => s.set_active(id, cx),
+            None => {
+                s.open(TabKind::Home, TabData::default(), cx);
+            }
+        });
     }
 
     /// Close every tab except the active one (palette "Close Other Tabs").
@@ -2625,7 +2665,8 @@ impl Workspace {
             .on_mouse_down(
                 MouseButton::Right,
                 cx.listener(move |this, ev: &MouseDownEvent, _window, cx| {
-                    this.context_menu = Some((id, ev.position));
+                    this.context_menu =
+                        Some((id, ev.position - point(px(0.0), px(TITLEBAR_OFFSET))));
                     cx.notify();
                 }),
             )
@@ -2651,27 +2692,21 @@ impl Workspace {
             )
     }
 
-    fn render_tab_bar(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
+    /// The tab strip. Rendered inside `AppShell`'s single overlay titlebar
+    /// (the header) between the left/right bar-item buckets — mirrors the
+    /// reference `Header.tsx` where the `TabBar` lives in the titlebar.
+    pub(crate) fn render_tab_bar(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = self.theme.read(cx);
-        let (bg, muted, fg, border) = (
-            theme.background(),
-            theme.muted_foreground(),
-            theme.foreground(),
-            theme.border(),
-        );
+        let (muted, fg, border) = (theme.muted_foreground(), theme.foreground(), theme.border());
         let tabs = self.tabs.read(cx).tabs().to_vec();
 
         div()
             .flex()
             .items_center()
             .gap_1()
-            .h(px(36.0))
+            .h(px(28.0))
             .w_full()
             .flex_shrink_0()
-            .px_2()
-            .bg(bg)
-            .border_b_1()
-            .border_color(border)
             .child(
                 div()
                     .id("tab-strip")
@@ -2694,9 +2729,112 @@ impl Workspace {
                     .text_color(muted)
                     .hover(|s| s.bg(border).text_color(fg))
                     .child("+")
-                    .on_click(cx.listener(|this, _: &ClickEvent, window, cx| {
-                        this.open_terminal_tab(window, cx);
-                    })),
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(|this, ev: &MouseDownEvent, _window, cx| {
+                            this.new_tab_menu =
+                                Some(ev.position - point(px(0.0), px(TITLEBAR_OFFSET)));
+                            this.context_menu = None;
+                            cx.notify();
+                        }),
+                    ),
+            )
+    }
+
+    /// The "+" new-tab dropdown (port of `NewTabDropdownItems`). SSH/SFTP
+    /// recent-host submenus are approximated by the "Open Host Manager" entry
+    /// for now.
+    fn render_new_tab_menu(
+        &mut self,
+        pos: gpui::Point<gpui::Pixels>,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let theme = self.theme.read(cx);
+        let (card, fg, border, muted) = (
+            theme.card(),
+            theme.foreground(),
+            theme.border(),
+            theme.muted_foreground(),
+        );
+
+        let item = |label: &str, shortcut: &str, key: &'static str| {
+            div()
+                .id(key)
+                .flex()
+                .items_center()
+                .justify_between()
+                .gap_4()
+                .px_3()
+                .py_1()
+                .text_xs()
+                .rounded_sm()
+                .text_color(fg)
+                .hover(|s| s.bg(border))
+                .child(SharedString::from(label.to_string()))
+                .child(
+                    div()
+                        .text_color(muted)
+                        .child(SharedString::from(shortcut.to_string())),
+                )
+        };
+
+        div()
+            .absolute()
+            .inset_0()
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(|this, _: &MouseDownEvent, _w, cx| {
+                    this.new_tab_menu = None;
+                    cx.notify();
+                }),
+            )
+            .child(
+                div()
+                    .absolute()
+                    .left(pos.x)
+                    .top(pos.y)
+                    .flex()
+                    .flex_col()
+                    .gap_0p5()
+                    .p_1()
+                    .min_w(px(180.0))
+                    .rounded_md()
+                    .bg(card)
+                    .border_1()
+                    .border_color(border)
+                    .child(
+                        item("Terminal", "\u{2318}T", "nt-term").on_click(cx.listener(
+                            move |this, _: &ClickEvent, window, cx| {
+                                this.new_tab_menu = None;
+                                this.new_terminal_tab(window, cx);
+                            },
+                        )),
+                    )
+                    .child(
+                        item("Editor", "\u{2318}E", "nt-editor").on_click(cx.listener(
+                            move |this, _: &ClickEvent, window, cx| {
+                                this.new_tab_menu = None;
+                                this.new_editor_tab(window, cx);
+                            },
+                        )),
+                    )
+                    .child(
+                        item("Preview", "\u{2318}P", "nt-preview").on_click(cx.listener(
+                            move |this, _: &ClickEvent, window, cx| {
+                                this.new_tab_menu = None;
+                                this.new_preview_tab(window, cx);
+                            },
+                        )),
+                    )
+                    .child(div().my_0p5().h(px(1.0)).bg(border))
+                    .child(
+                        item("Open Host Manager", "", "nt-hosts").on_click(cx.listener(
+                            move |this, _: &ClickEvent, _window, cx| {
+                                this.new_tab_menu = None;
+                                this.open_host_manager(cx);
+                            },
+                        )),
+                    ),
             )
     }
 
@@ -2999,6 +3137,15 @@ impl Workspace {
                     .border_1()
                     .border_color(border)
                     .text_color(muted)
+                    .when(kind != Some(TabKind::Home), |el| {
+                        el.child(item("Duplicate", "dup").on_click(cx.listener(
+                            move |this, _: &ClickEvent, window, cx| {
+                                this.context_menu = None;
+                                this.tabs.update(cx, |s, cx| s.set_active(id, cx));
+                                this.duplicate_active_tab(window, cx);
+                            },
+                        )))
+                    })
                     .child(item("Close", "close").on_click(cx.listener(
                         move |this, _: &ClickEvent, window, cx| {
                             this.context_menu = None;
@@ -3011,8 +3158,15 @@ impl Workspace {
                             this.close_others(id, window, cx);
                         },
                     )))
+                    .child(item("Close All", "all").on_click(cx.listener(
+                        move |this, _: &ClickEvent, window, cx| {
+                            this.context_menu = None;
+                            this.close_all_tabs(window, cx);
+                        },
+                    )))
                     .when_some(kind, |el, kind| {
-                        el.child(item("Close All Of This Type", "kind").on_click(cx.listener(
+                        let label = format!("Close All {}", kind.plural_label());
+                        el.child(item(&label, "kind").on_click(cx.listener(
                             move |this, _: &ClickEvent, window, cx| {
                                 this.context_menu = None;
                                 this.close_by_kind(kind, window, cx);
@@ -3130,7 +3284,6 @@ impl Render for Workspace {
         self.prompt_shown = want_prompt;
 
         let bg = self.theme.read(cx).background();
-        let tab_bar = self.render_tab_bar(cx);
         let content = self.render_content(cx);
         let confirm = self
             .confirm_close
@@ -3138,6 +3291,9 @@ impl Render for Workspace {
         let context_menu = self
             .context_menu
             .map(|(id, pos)| self.render_context_menu(id, pos, cx).into_any_element());
+        let new_tab_menu = self
+            .new_tab_menu
+            .map(|pos| self.render_new_tab_menu(pos, cx).into_any_element());
         let ssh_prompt = self
             .ssh_prompt
             .is_some()
@@ -3152,10 +3308,10 @@ impl Render for Workspace {
             .size_full()
             .bg(bg)
             .on_key_down(cx.listener(Self::on_key_down))
-            .child(tab_bar)
             .child(div().flex_1().min_h_0().child(content))
             .children(confirm)
             .children(context_menu)
+            .children(new_tab_menu)
             .children(ssh_prompt)
             .child(self.transfers.clone())
     }

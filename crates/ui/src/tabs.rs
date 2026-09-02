@@ -61,6 +61,22 @@ impl TabKind {
         }
     }
 
+    /// Plural label for "Close All {kind}" menu entries (port of
+    /// `tabUtils.tsx` `pluralLabelFor`).
+    pub fn plural_label(&self) -> &'static str {
+        match self {
+            TabKind::Home => "Home Tabs",
+            TabKind::Workspace => "Terminals",
+            TabKind::Editor => "Editors",
+            TabKind::Preview => "Previews",
+            TabKind::AiDiff => "AI Diffs",
+            TabKind::Sftp => "SFTP Tabs",
+            TabKind::GitGraph => "Git Graphs",
+            TabKind::GitDiff => "Git Diffs",
+            TabKind::CommitDiff => "Commit Diffs",
+        }
+    }
+
     /// The default title used before anything more specific is known.
     pub fn default_title(&self) -> &'static str {
         match self {
@@ -428,6 +444,15 @@ mod tests {
             session_id: Some(sid),
             ..TabData::default()
         }
+    }
+
+    #[test]
+    fn plural_labels_match_reference() {
+        assert_eq!(TabKind::Workspace.plural_label(), "Terminals");
+        assert_eq!(TabKind::Editor.plural_label(), "Editors");
+        assert_eq!(TabKind::Preview.plural_label(), "Previews");
+        assert_eq!(TabKind::Sftp.plural_label(), "SFTP Tabs");
+        assert_eq!(TabKind::GitGraph.plural_label(), "Git Graphs");
     }
 
     #[gpui::test]

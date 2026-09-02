@@ -1,5 +1,6 @@
 use gpui::{
-    prelude::*, px, size, App, Application, Bounds, TitlebarOptions, WindowBounds, WindowOptions,
+    point, prelude::*, px, size, App, Application, Bounds, TitlebarOptions, WindowBounds,
+    WindowOptions,
 };
 
 use gpui_component::Root;
@@ -72,9 +73,15 @@ fn main() {
                 WindowOptions {
                     window_bounds: Some(WindowBounds::Windowed(bounds)),
                     titlebar: Some(TitlebarOptions {
-                        title: Some("Labonair".into()),
-                        appears_transparent: false,
-                        traffic_light_position: None,
+                        // Reference uses macOS `titleBarStyle: "Overlay"` +
+                        // `hiddenTitle: true`: one transparent overlay titlebar
+                        // with the traffic lights floating over the app's own
+                        // header. No OS-drawn title text.
+                        title: None,
+                        appears_transparent: true,
+                        // Vertically centre the 14px-tall traffic lights inside
+                        // the 40px custom header.
+                        traffic_light_position: Some(point(px(19.0), px((40.0 - 14.0) / 2.0))),
                     }),
                     window_min_size: Some(size(px(720.0), px(480.0))),
                     ..Default::default()

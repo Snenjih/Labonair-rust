@@ -578,6 +578,26 @@ impl AiChatView {
         cx.notify();
     }
 
+    /// Start a fresh AI session (menu "New AI Session").
+    pub fn new_session(&mut self, cx: &mut Context<Self>) {
+        self.store.update(cx, |s, cx| {
+            s.new_session(cx);
+        });
+        cx.notify();
+    }
+
+    /// Discard the active session and start a new empty one (menu
+    /// "Clear Current Chat"). Mirrors the reference `menu:clear_chat`.
+    pub fn clear_active_chat(&mut self, cx: &mut Context<Self>) {
+        self.store.update(cx, |s, cx| {
+            if let Some(id) = s.active_id().map(str::to_string) {
+                s.delete_session(&id, cx);
+            }
+            s.new_session(cx);
+        });
+        cx.notify();
+    }
+
     fn can_send(&self, cx: &App) -> bool {
         !self.store.read(cx).is_streaming()
             && (!self.composer.trim().is_empty() || !self.attachments.is_empty())
