@@ -1704,6 +1704,47 @@ struct ThemeEntry {
     builtin: bool,
 }
 
+/// One entry of the community theme index (port of `RemoteTheme`).
+#[derive(Clone, Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RemoteTheme {
+    id: String,
+    name: String,
+    #[serde(default)]
+    description: String,
+    #[serde(default)]
+    author: String,
+    raw_url: String,
+}
+
+const COMMUNITY_INDEX_URL: &str =
+    "https://raw.githubusercontent.com/Snenjih/labonair-themes/main/index.json";
+
+/// Fallback shown when the remote index cannot be fetched (port of
+/// `MOCK_COMMUNITY_THEMES`).
+fn mock_community_themes() -> Vec<RemoteTheme> {
+    vec![
+        RemoteTheme {
+            id: "catppuccin".into(),
+            name: "Catppuccin".into(),
+            description: "Soothing pastel theme — Latte, Frappé, Macchiato, Mocha".into(),
+            author: "Catppuccin".into(),
+            raw_url:
+                "https://raw.githubusercontent.com/Snenjih/labonair-themes/main/themes/catppuccin.json"
+                    .into(),
+        },
+        RemoteTheme {
+            id: "nord".into(),
+            name: "Nord".into(),
+            description: "An arctic, north-bluish color palette".into(),
+            author: "arcticicestudio".into(),
+            raw_url:
+                "https://raw.githubusercontent.com/Snenjih/labonair-themes/main/themes/nord.json"
+                    .into(),
+        },
+    ]
+}
+
 pub struct SettingsView {
     prefs: Entity<PreferencesStore>,
     theme: Entity<ThemeStore>,
@@ -1720,6 +1761,17 @@ pub struct SettingsView {
     theme_files: Vec<ThemeEntry>,
     /// Which listed theme is active (`None` = built-in light/dark, no override).
     active_theme_id: Option<String>,
+    /// Themes pane: `false` = Installed tab, `true` = Community tab.
+    themes_community_tab: bool,
+    /// Community/marketplace theme index (mock fallback on fetch failure).
+    community_themes: Vec<RemoteTheme>,
+    community_error: Option<String>,
+    community_loading: bool,
+    /// Community theme ids currently being downloaded.
+    installing_themes: std::collections::HashSet<String>,
+    /// In-progress "New Theme…" name prompt.
+    new_theme_prompt: Option<String>,
+    new_theme_focus: FocusHandle,
     /// Shortcut currently capturing a new key combination (`Keyboard` pane).
     recording: Option<ShortcutId>,
     /// A captured combination that collides with another shortcut, awaiting
@@ -1794,6 +1846,13 @@ impl SettingsView {
             mcp_token: None,
             theme_files: Vec::new(),
             active_theme_id: None,
+            themes_community_tab: false,
+            community_themes: Vec::new(),
+            community_error: None,
+            community_loading: false,
+            installing_themes: std::collections::HashSet::new(),
+            new_theme_prompt: None,
+            new_theme_focus: cx.focus_handle(),
             recording: None,
             kb_conflict: None,
             windowed: false,
@@ -2105,6 +2164,142 @@ impl SettingsView {
         }
         self.refresh_themes();
         cx.notify();
+    }
+
+    // ── Community / marketplace (T16-018) ─────────────────────────────────
+
+    /// Fetch the remote theme index; on failure fall back to the mock list.
+    fn fetch_community_themes(&mut self, cx: &mut Context<Self>) {
+        if self.community_loading {
+            return;
+        }
+        self.community_loading = true;
+        self.community_error = None;
+        let jh = self.tokio.spawn(async move {
+            labonair_backend::modules::themes::theme_fetch_index(COMMUNITY_INDEX_URL.to_string())
+                .await
+        });
+        cx.spawn(async move |this, cx| {
+            let res = jh.await.unwrap_or_else(|e| Err(e.to_string()));
+            let _ = this.update(cx, |this, cx| {
+                this.community_loading = false;
+                match res.and_then(|raw| {
+                    serde_json::from_str::<Vec<RemoteTheme>>(&raw).map_err(|e| e.to_string())
+                }) {
+                    Ok(list) => this.community_themes = list,
+                    Err(_) => {
+                        this.community_error = Some(
+                            "Could not reach the theme registry — showing cached entries."
+                                .to_string(),
+                        );
+                        this.community_themes = mock_community_themes();
+                    }
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn install_community_theme(&mut self, remote: RemoteTheme, cx: &mut Context<Self>) {
+        if self.installing_themes.contains(&remote.id) {
+            return;
+        }
+        self.installing_themes.insert(remote.id.clone());
+        cx.notify();
+        let app = self.backend.clone();
+        let url = remote.raw_url.clone();
+        let jh = self.tokio.spawn(async move {
+            labonair_backend::modules::themes::theme_download(app, url).await
+        });
+        cx.spawn(async move |this, cx| {
+            let res = jh.await.unwrap_or_else(|e| Err(e.to_string()));
+            let _ = this.update(cx, |this, cx| {
+                this.installing_themes.remove(&remote.id);
+                match res {
+                    Ok(_) => {
+                        this.refresh_themes();
+                        this.notify(
+                            cx,
+                            Notification::success("Theme installed", remote.name.clone()),
+                        );
+                    }
+                    Err(e) => this.notify_error(cx, "Install failed", e),
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    /// "New Theme…" — seed a file from the default and activate it.
+    fn create_theme(&mut self, name: String, cx: &mut Context<Self>) {
+        let name = name.trim().to_string();
+        if name.is_empty() {
+            return;
+        }
+        let app = self.backend.clone();
+        let jh = self
+            .tokio
+            .spawn(async move { labonair_backend::modules::themes::theme_create(app, name).await });
+        cx.spawn(async move |this, cx| {
+            let res = jh.await.unwrap_or_else(|e| Err(e.to_string()));
+            let _ = this.update(cx, |this, cx| {
+                match res {
+                    Ok((meta, _path)) => {
+                        this.refresh_themes();
+                        this.activate_theme(&meta.id, cx);
+                        this.notify(
+                            cx,
+                            Notification::success(
+                                "Theme created",
+                                "Edit it in the themes folder, then re-activate.".to_string(),
+                            ),
+                        );
+                    }
+                    Err(e) => this.notify_error(cx, "Create failed", e),
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn on_new_theme_key(
+        &mut self,
+        ev: &gpui::KeyDownEvent,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(buf) = self.new_theme_prompt.as_mut() else {
+            return;
+        };
+        match ev.keystroke.key.as_str() {
+            "enter" => {
+                let name = buf.clone();
+                self.new_theme_prompt = None;
+                self.create_theme(name, cx);
+            }
+            "escape" => {
+                self.new_theme_prompt = None;
+                cx.notify();
+            }
+            "backspace" => {
+                buf.pop();
+                cx.notify();
+            }
+            _ => {
+                if let Some(ch) = ev
+                    .keystroke
+                    .key_char
+                    .as_ref()
+                    .filter(|s| !s.is_empty() && !s.chars().any(|c| c.is_control()))
+                {
+                    buf.push_str(ch);
+                    cx.notify();
+                }
+            }
+        }
     }
 
     fn notify(&self, cx: &mut Context<Self>, n: Notification) {
@@ -4035,11 +4230,239 @@ impl SettingsView {
                             .on_click(cx.listener(|_, _: &ClickEvent, _w, cx| {
                                 cx.reveal_path(&themes_dir());
                             })),
+                    )
+                    .child(
+                        div()
+                            .id("theme-new")
+                            .px_2()
+                            .py(px(3.0))
+                            .rounded_sm()
+                            .border_1()
+                            .border_color(c.accent)
+                            .text_color(c.fg)
+                            .hover(|s| s.bg(c.border))
+                            .child("New Theme\u{2026}")
+                            .on_click(cx.listener(|this, _: &ClickEvent, w, cx| {
+                                this.new_theme_prompt = Some(String::new());
+                                w.focus(&this.new_theme_focus);
+                                cx.notify();
+                            })),
                     ),
             )
-            .children(self.render_variant_picker(c, cx))
-            .child(div().flex().flex_wrap().gap_3().py_2().children(cards))
+            .child(self.render_theme_tabs(c, cx))
+            .child(if self.themes_community_tab {
+                self.render_community_themes(c, cx)
+            } else {
+                div()
+                    .flex()
+                    .flex_col()
+                    .children(self.render_variant_picker(c, cx))
+                    .child(div().flex().flex_wrap().gap_3().py_2().children(cards))
+                    .into_any_element()
+            })
+            .children(self.render_new_theme_prompt(c, cx))
             .into_any_element()
+    }
+
+    fn render_theme_tabs(&self, c: &Palette, cx: &mut Context<Self>) -> gpui::AnyElement {
+        let tab = |id: &'static str, label: &str, on: bool, community: bool| {
+            div()
+                .id(id)
+                .px_3()
+                .py_1()
+                .rounded_sm()
+                .text_size(px(11.5))
+                .border_1()
+                .border_color(if on { c.accent } else { c.border })
+                .text_color(if on { c.fg } else { c.muted })
+                .hover(|s| s.bg(c.border))
+                .child(SharedString::from(label.to_string()))
+                .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                    this.themes_community_tab = community;
+                    if community && this.community_themes.is_empty() {
+                        this.fetch_community_themes(cx);
+                    }
+                    cx.notify();
+                }))
+        };
+        div()
+            .flex()
+            .gap_2()
+            .py_1()
+            .child(tab(
+                "theme-tab-installed",
+                "Installed",
+                !self.themes_community_tab,
+                false,
+            ))
+            .child(tab(
+                "theme-tab-community",
+                "Community",
+                self.themes_community_tab,
+                true,
+            ))
+            .into_any_element()
+    }
+
+    fn render_community_themes(&self, c: &Palette, cx: &mut Context<Self>) -> gpui::AnyElement {
+        let installed: std::collections::HashSet<&str> =
+            self.theme_files.iter().map(|t| t.id.as_str()).collect();
+        let cards: Vec<_> =
+            self.community_themes
+                .iter()
+                .map(|r| {
+                    let is_installed = installed.contains(r.id.as_str());
+                    let is_installing = self.installing_themes.contains(&r.id);
+                    let remote = r.clone();
+                    let id_un = r.id.clone();
+                    div()
+                        .w(px(220.0))
+                        .flex()
+                        .flex_col()
+                        .gap_1()
+                        .p_2()
+                        .rounded_md()
+                        .border_1()
+                        .border_color(c.border)
+                        .child(
+                            div()
+                                .text_color(c.fg)
+                                .text_size(px(12.0))
+                                .child(SharedString::from(r.name.clone())),
+                        )
+                        .child(div().text_size(px(10.0)).text_color(c.muted).child(
+                            SharedString::from(if r.author.is_empty() {
+                                r.description.clone()
+                            } else {
+                                format!("{} \u{2014} {}", r.author, r.description)
+                            }),
+                        ))
+                        .child(if is_installed {
+                            div()
+                                .id(SharedString::from(format!("comm-un-{id_un}")))
+                                .px_2()
+                                .py(px(2.0))
+                                .rounded_sm()
+                                .border_1()
+                                .border_color(c.border)
+                                .text_size(px(11.0))
+                                .text_color(c.muted)
+                                .hover(|s| s.text_color(c.fg))
+                                .child("Uninstall")
+                                .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                                    this.delete_theme(&id_un, cx);
+                                }))
+                        } else {
+                            div()
+                                .id(SharedString::from(format!("comm-in-{}", r.id)))
+                                .px_2()
+                                .py(px(2.0))
+                                .rounded_sm()
+                                .border_1()
+                                .border_color(c.accent)
+                                .text_size(px(11.0))
+                                .text_color(c.fg)
+                                .hover(|s| s.bg(c.border))
+                                .child(if is_installing {
+                                    "Installing\u{2026}"
+                                } else {
+                                    "Install"
+                                })
+                                .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                                    this.install_community_theme(remote.clone(), cx);
+                                }))
+                        })
+                })
+                .collect();
+        div()
+            .flex()
+            .flex_col()
+            .gap_2()
+            .py_2()
+            .children(self.community_error.clone().map(|e| {
+                div()
+                    .text_size(px(10.5))
+                    .text_color(c.muted)
+                    .child(SharedString::from(e))
+            }))
+            .child(if self.community_loading {
+                div()
+                    .text_size(px(11.0))
+                    .text_color(c.muted)
+                    .child("Loading community themes\u{2026}")
+                    .into_any_element()
+            } else {
+                div()
+                    .flex()
+                    .flex_wrap()
+                    .gap_3()
+                    .children(cards)
+                    .into_any_element()
+            })
+            .into_any_element()
+    }
+
+    fn render_new_theme_prompt(
+        &self,
+        c: &Palette,
+        cx: &mut Context<Self>,
+    ) -> Option<gpui::AnyElement> {
+        let buf = self.new_theme_prompt.as_ref()?;
+        Some(
+            div()
+                .absolute()
+                .inset_0()
+                .flex()
+                .items_center()
+                .justify_center()
+                .bg(crate::theme::modal_scrim())
+                .on_mouse_down(
+                    gpui::MouseButton::Left,
+                    cx.listener(|this, _: &gpui::MouseDownEvent, _w, cx| {
+                        this.new_theme_prompt = None;
+                        cx.notify();
+                    }),
+                )
+                .child(
+                    div()
+                        .track_focus(&self.new_theme_focus)
+                        .key_context("NewThemePrompt")
+                        .on_key_down(cx.listener(Self::on_new_theme_key))
+                        .on_mouse_down(
+                            gpui::MouseButton::Left,
+                            cx.listener(|_, _: &gpui::MouseDownEvent, _w, cx| {
+                                cx.stop_propagation()
+                            }),
+                        )
+                        .flex()
+                        .flex_col()
+                        .gap_2()
+                        .w(px(320.0))
+                        .p_3()
+                        .rounded_md()
+                        .bg(c.card)
+                        .border_1()
+                        .border_color(c.border)
+                        .child(
+                            div()
+                                .text_size(px(12.0))
+                                .text_color(c.fg)
+                                .child("New theme name"),
+                        )
+                        .child(
+                            div()
+                                .px_2()
+                                .py_1()
+                                .rounded_sm()
+                                .border_1()
+                                .border_color(c.accent)
+                                .text_size(px(12.0))
+                                .text_color(c.fg)
+                                .child(SharedString::from(format!("{buf}\u{2502}"))),
+                        ),
+                )
+                .into_any_element(),
+        )
     }
 
     /// A segmented control over the named variants of the active imported theme
@@ -4330,6 +4753,45 @@ pub(crate) fn theme_choices() -> Vec<(String, String)> {
         .into_iter()
         .map(|e| (e.id, e.name))
         .collect()
+}
+
+/// Live hover-preview of a theme by id (`Some`) or revert (`None`) — no
+/// persistence. Used by the command palette's Themes sub-page.
+pub(crate) fn preview_app_theme(
+    id: Option<&str>,
+    prefs: &Entity<PreferencesStore>,
+    theme: &Entity<ThemeStore>,
+    cx: &mut App,
+) {
+    match id {
+        None | Some("default") => theme.update(cx, |t, cx| {
+            if id.is_none() {
+                t.cancel_preview(cx);
+            } else {
+                t.preview_theme_file(None, None, cx);
+            }
+        }),
+        Some(id) => {
+            let Ok(file) = read_theme_file_in(&themes_dir(), id) else {
+                return;
+            };
+            let mode = match theme.read(cx).mode() {
+                crate::theme::ThemeMode::Dark => "dark",
+                crate::theme::ThemeMode::Light => "light",
+            };
+            let key = prefs
+                .read(cx)
+                .get()
+                .theme_variant_overrides
+                .get(id)
+                .and_then(|v| v.get(mode))
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+            theme.update(cx, |t, cx| {
+                t.preview_theme_file(Some(&file), key.as_deref(), cx)
+            });
+        }
+    }
 }
 
 /// Activate a JSON app theme by id (`"default"` = built-in), persist the

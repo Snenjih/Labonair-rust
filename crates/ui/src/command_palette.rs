@@ -717,6 +717,9 @@ pub enum PaletteEvent {
     },
     /// Activate a JSON app theme by id (`"default"` = built-in light/dark).
     SetAppTheme(String),
+    /// Live hover-preview a theme by id (`Some`) or revert (`None`) — fired as
+    /// the highlight moves across the `Themes` sub-page.
+    PreviewAppTheme(Option<String>),
     /// Run a saved snippet by id with its default execution mode.
     RunSnippet(String),
 }
@@ -887,6 +890,7 @@ impl CommandPalette {
         self.query.clear();
         self.pages = vec![Page::Root];
         self.selected = 0;
+        cx.emit(PaletteEvent::PreviewAppTheme(None));
         cx.notify();
     }
 
@@ -894,6 +898,7 @@ impl CommandPalette {
         self.pages.push(page);
         self.query.clear();
         self.selected = 0;
+        self.sync_theme_preview(cx);
         cx.notify();
     }
 
@@ -902,6 +907,7 @@ impl CommandPalette {
             self.pages.pop();
             self.query.clear();
             self.selected = 0;
+            self.sync_theme_preview(cx);
             cx.notify();
         }
     }
@@ -911,8 +917,23 @@ impl CommandPalette {
             self.pages.truncate(index + 1);
             self.query.clear();
             self.selected = 0;
+            self.sync_theme_preview(cx);
             cx.notify();
         }
+    }
+
+    /// Emit a live theme-preview for the highlighted row on the `Themes`
+    /// sub-page, or a revert (`None`) on any other page. Called on every
+    /// selection / navigation change while the palette is open.
+    fn sync_theme_preview(&mut self, cx: &mut Context<Self>) {
+        if matches!(self.page(), Page::Themes) {
+            let rows = self.rows(cx);
+            if let Some(RowKey::SetAppTheme(id)) = rows.get(self.selected).map(|r| r.key.clone()) {
+                cx.emit(PaletteEvent::PreviewAppTheme(Some(id)));
+                return;
+            }
+        }
+        cx.emit(PaletteEvent::PreviewAppTheme(None));
     }
 
     fn active_context(&self, cx: &App) -> Option<CommandContext> {
@@ -1255,6 +1276,9 @@ impl CommandPalette {
                     cx.notify();
                 }
             }
+        }
+        if self.open {
+            self.sync_theme_preview(cx);
         }
         cx.stop_propagation();
     }

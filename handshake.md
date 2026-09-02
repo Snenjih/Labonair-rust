@@ -4,7 +4,46 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
-## Last Session: 2026-09-02 (Block F Commit 2 — T16-016 dual-dock dynamic sidebars)
+## Last Session: 2026-09-02 (Block F Commit 3 — T16-018 theme marketplace rest)
+
+### What Was Done (commit after `66c718a`)
+
+The backend already had `theme_fetch_index` / `theme_download` / `theme_create`
+/ `theme_delete` / `themes_get_all` (`crates/backend/src/modules/themes/`) —
+this commit is the **UI wiring**.
+
+- **`settings.rs` Themes pane**: new **Installed / Community tabs**
+  (`themes_community_tab`). Community tab lists `RemoteTheme` entries fetched
+  from `COMMUNITY_INDEX_URL` (`Snenjih/labonair-themes/main/index.json`), with
+  a `mock_community_themes()` fallback + error banner on fetch failure.
+  Per-entry **Install** (`theme_download` → `refresh_themes`, `installing_themes`
+  spinner) / **Uninstall** (reuses `delete_theme` — resets `appTheme` if
+  active). New **"New Theme…"** button → keydown-buffer name prompt →
+  `theme_create` → activate.
+- **Palette hover-preview** (Block D leftover): `ThemeStore` gains a transient
+  `preview: Option<Theme>` (overrides `theme()`, never persisted) +
+  `preview_theme_file` / `cancel_preview` (cleared by `reresolve_custom`).
+  `command_palette.rs`: new `PaletteEvent::PreviewAppTheme(Option<String>)`
+  emitted by `sync_theme_preview` on every selection/navigation change while
+  on `Page::Themes` (and a revert `None` on leave / close / any other page).
+  `app_shell` drain → new `settings::preview_app_theme` (resolves the file +
+  persisted variant, calls `ThemeStore::preview_theme_file` / `cancel_preview`).
+  Unit test `hover_preview_overrides_then_reverts`.
+
+**Not done in T16-018**: `themes_get_dir` "open folder" is the existing
+"Open themes folder" button (fine); palette theme rows don't preview on
+mouse-hover (no hover-to-select in the palette — keyboard nav only).
+
+### Verified
+`cargo fmt --all`, `cargo clippy --workspace --all-targets -D warnings`,
+`cargo test --workspace` — all green (689 tests).
+
+### Next
+Block F Commit 4 — T16-019 AI panel decomposition + agents/directives backend.
+
+---
+
+## Session: 2026-09-02 (Block F Commit 2 — T16-016 dual-dock dynamic sidebars)
 
 ### What Was Done (commit after `8d12e1f`)
 

@@ -1024,6 +1024,9 @@ impl AppShell {
                 PaletteEvent::SetAppTheme(id) => {
                     crate::settings::activate_app_theme(&id, &self.prefs, &self.theme, cx);
                 }
+                PaletteEvent::PreviewAppTheme(id) => {
+                    crate::settings::preview_app_theme(id.as_deref(), &self.prefs, &self.theme, cx);
+                }
                 PaletteEvent::RunSnippet(id) => {
                     self.snippets
                         .update(cx, |s, cx| s.run_by_id(&id, window, cx));

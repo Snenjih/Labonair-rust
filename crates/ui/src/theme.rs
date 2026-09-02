@@ -172,6 +172,9 @@ pub struct ThemeStore {
     /// The source file for `custom`, kept so the imported theme can be
     /// re-resolved for the other mode when the appearance changes.
     custom_file: Option<ThemeFile>,
+    /// A transient live preview (command-palette theme hover) — overrides
+    /// everything while set, never persisted. Cleared by `cancel_preview`.
+    preview: Option<Theme>,
     /// Selected named variant key for `custom_file` (e.g. Catppuccin `"mocha"`).
     /// `None` = auto-pick the first variant of the resolved mode.
     custom_variant: Option<String>,
@@ -192,6 +195,7 @@ impl ThemeStore {
             custom: None,
             custom_base: None,
             custom_file: None,
+            preview: None,
             custom_variant: None,
             editor_theme: EditorThemeId::default(),
             font_overrides: FontOverrides::default(),
@@ -236,6 +240,7 @@ impl ThemeStore {
     /// Re-resolves the imported theme (if any) against the current mode, then
     /// re-applies the runtime font overrides.
     fn reresolve_custom(&mut self) {
+        self.preview = None;
         if let Some(file) = self.custom_file.clone() {
             let dark = self.mode() == ThemeMode::Dark;
             if let Ok((theme, _warnings)) =
@@ -274,9 +279,13 @@ impl ThemeStore {
         self.custom.is_some()
     }
 
-    /// The active theme: the custom theme if one is set, otherwise the default
-    /// theme for the resolved mode. Cheap — no allocation.
+    /// The active theme: a live hover-preview if one is set (command palette),
+    /// else the custom theme if one is set, otherwise the default theme for
+    /// the resolved mode. Cheap — no allocation.
     pub fn theme(&self) -> &Theme {
+        if let Some(preview) = &self.preview {
+            return preview;
+        }
         if let Some(custom) = &self.custom {
             return custom;
         }
@@ -359,6 +368,35 @@ impl ThemeStore {
     /// The active imported theme file (for a variant picker), if any.
     pub fn custom_theme_file(&self) -> Option<&ThemeFile> {
         self.custom_file.as_ref()
+    }
+
+    /// Live-preview a theme file (or `None` to preview the built-in default)
+    /// without touching the persisted selection — command-palette hover.
+    pub fn preview_theme_file(
+        &mut self,
+        file: Option<&ThemeFile>,
+        variant_key: Option<&str>,
+        cx: &mut Context<Self>,
+    ) {
+        let dark = self.mode() == ThemeMode::Dark;
+        let mut theme = match file {
+            Some(f) => match Theme::from_theme_file_variant(f, dark, variant_key) {
+                Ok((t, _)) => t,
+                Err(_) => return,
+            },
+            None if dark => Theme::dark(),
+            None => Theme::light(),
+        };
+        self.font_overrides.apply(&mut theme);
+        self.preview = Some(theme);
+        cx.notify();
+    }
+
+    /// Drop any live preview, reverting to the persisted active theme.
+    pub fn cancel_preview(&mut self, cx: &mut Context<Self>) {
+        if self.preview.take().is_some() {
+            cx.notify();
+        }
     }
 
     /// The selected named variant key of the active imported theme, if any.
@@ -746,6 +784,28 @@ mod tests {
                 s.set_custom_theme(None, cx);
                 assert!(!s.has_custom_theme());
                 assert!(s.theme().is_dark, "falls back to the dark default");
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn hover_preview_overrides_then_reverts(cx: &mut TestAppContext) {
+        let json = r##"{
+            "name": "Preview",
+            "variants": {
+                "dark":  { "mode": "dark",  "colors": { "primary": "#abcdef" } },
+                "light": { "mode": "light", "colors": {} }
+            }
+        }"##;
+        let file = ThemeFile::from_json(json).unwrap();
+        cx.update(|cx| {
+            let store = cx.new(|_| ThemeStore::new(WindowAppearance::Dark));
+            store.update(cx, |s, cx| {
+                let base = s.theme().core.primary;
+                s.preview_theme_file(Some(&file), None, cx);
+                assert_ne!(s.theme().core.primary, base, "preview overrides the theme");
+                s.cancel_preview(cx);
+                assert_eq!(s.theme().core.primary, base, "cancel reverts");
             });
         });
     }
