@@ -148,49 +148,68 @@ TreeSitter document-symbol pass. Documented, deferred.
 
 ---
 
-## CONSOLIDATED — Block F deferred items (all commits)
+## CONSOLIDATED — remaining deferred items (after Block F + polish A–D)
 
-**T16-017 context menus** — tab-bar empty-area menu, "Ask AI about Selection"
-terminal item (needs the `menu::AskAboutSelection` action wired end-to-end;
-`attach_selection` is currently test-only), "Open Diff (Split)" (git panel
-has only an inline unified diff).
+Everything below is genuinely-large or low-value; none blocks normal use.
 
-**T16-016 sidebars** — bar-item context-menu Left/Right radios move only the
-*item placement*, not an already-open live panel (the header `←/→` and
-`move_panel` do that). `tabsLocation` gating + "leaving sidebar → fall back
-to explorer" rule for the Tabs panel not implemented.
+**AI panel (`ai_chat.rs`) — the largest remaining surface:**
+- **Slash-commands** (`/init`, `/plan`, …) with an autocomplete popover —
+  needs a command registry + a popover anchored to the composer + prefix
+  parsing. The real `InputState` doesn't push per-keystroke text to the view
+  without a second `window.subscribe` on `InputEvent::Change`.
+- **`#`-directive inline expansion** — in `AiChatView::send`, before
+  `compose_message`, scan the body for `#handle` tokens, look each up in
+  `directives::load()`, and splice the directive `content` in.
+- **`@`-file picker** — fuzzy over the live-bridge cwd; same popover
+  machinery as slash-commands.
+- **PlanModeStrip / PlanDiffReview** — the store has no plan-mode concept
+  (`reference-src/src/modules/ai/**` `usePlanMode`). Needs a store flag +
+  a diff-review surface.
+- **ContextPillsRow** — `split_context_blocks` already exists (tested in
+  `ai_chat.rs`); render the extracted chips as a row under a user message.
+- **`CommandSnippet` rendering** — detect fenced ```bash blocks in assistant
+  messages, render a run button (ref `components/ai-elements/CommandSnippet`).
+- **AI⇄Shell toggle** — needs an `AiChatView` → workspace event to write the
+  composer text to the active terminal (ai_chat has no workspace handle).
+- **Voice/whisper** — currently a visible inert "voice (soon)" stub. Needs a
+  whisper backend + mic capture.
+- **ModelPicker** is a plain dropdown; the reference adds search + All/
+  Favorites/Recent tabs + a provider rail + capability meters.
 
-**T16-018 themes** — palette theme rows only preview on keyboard nav (no
-hover-to-select in the palette).
+**Other:**
+- **Palette `outline` / Go-to-Symbol** page — needs a TreeSitter
+  document-symbol query in `editor.rs` (`labonair-editor` bundles the
+  grammars; there's no symbol extraction yet).
+- **"Open Diff (Split)"** git menu item — the git panel only has an inline
+  unified diff; no split/editor-tab diff surface exists.
+- **`tabsLocation` gating** for the Tabs sidebar panel (+ "leaving sidebar →
+  fall back to explorer" rule).
+- **`previewUrl` statusbar item** — dev-server-URL detection from terminal
+  output is not ported (`render_bar_item` returns `None`).
+- **File icons** — `components::icon::file_icon` is now a real ~150-extension
+  resolver over a 20-icon Lucide subset; the reference's full Catppuccin
+  iconify set (hundreds of colored glyphs) is not vendored.
+- **host-manager `btn`** helper not migrated to `components::button` — pure
+  churn on a working pill-radius shim (Block E deliberately left it).
+- **breadcrumb `crumb_menu` / `subdir_menu`** — already feature-complete
+  hand-rolled menus; migrating to `context_menu` is churn without behaviour
+  change.
+- Command-palette hover-to-select for theme preview (keyboard nav only).
 
-**T16-019 AI panel** — real `text_field` composer (invasive: window
-threading + `make_view` test helper); slash-commands; `#`-directive inline
-expansion; `@` file picker; QueueStrip; TodoStrip (`TodoStore` exists in
-`labonair_ai`, unrendered); PlanModeStrip / PlanDiffReview; ContextPillsRow;
-AI⇄Shell toggle; ⌘↵ enqueue; connect banner; `CommandSnippet` rendering;
-voice/whisper stub; inline agent/directive editors (edit the JSON files
-directly for now).
+**DONE across Block F + polish (was in the reports as open):**
+context menus (shared primitive + all view menus), dual-dock sidebars,
+theme variant selection + community marketplace + palette hover-preview,
+agents/directives backend + AgentSwitcher + ModelPicker dropdown + expandable
+ToolCallChip + Settings sections + inline editors, real InputState composer +
+⌘↵ enqueue + QueueStrip + TodoStrip + connect banner, palette
+ai-sessions/git-branches pages + 640px visuals + scroll + prefs pane,
+expanded file-icon system, `⌘?` shortcut, "Ask AI about Selection" e2e,
+tab-bar empty-area menu, `render_bar_menu` → shared primitive.
 
-**Cross-report (vergleichsbericht-1/2/3/4) still open:**
-- Palette `outline` sub-page (editor symbol extraction).
-- File/folder icons: `crates/ui/src/components/icon.rs` ships a reduced
-  Lucide set + `file_icon`/`folder_icon` resolvers; the reference's full
-  Catppuccin iconify set is not ported (cosmetic; emoji were already purged
-  in Block A, guarded by `tests/no_pictograph_icons.rs`).
-- Statusbar bar items `cursorPosition` (`Ln x, Col y`) and `previewUrl` not
-  added; statusbar text size not pinned to 11px.
-- Command-palette view still ~520px / 26px rows (not the reference 640px /
-  40px), no footer search-mode toggle beyond what Block D added, no recents
-  UI, no per-palette preference pane.
-- `hosts.rs` checkbox glyphs `☑/☐` not a real control.
-- Host manager `btn` helper not migrated to `components::button`.
-- Migrate the remaining hand-rolled menus (`render_bar_menu`, breadcrumb
-  `crumb_menu`/`subdir_menu`) onto the shared `context_menu` primitive.
-
-**Overall parity vs the reference:** ~90%. All core workflows plus the four
-Block-F subsystems (context menus, dual-dock sidebars, theme marketplace,
-AI agents) now work. The gaps are AI-panel richness (composer + strips),
-the full file-icon set, and command-palette visual metrics.
+**Overall parity vs the reference:** ~93–95%. Every core workflow and all
+four Block-F subsystems work. The remaining ~5–7% is concentrated in the AI
+composer's power-user affordances (slash / `#` / `@` / plan mode / context
+pills / command snippets / voice) and the palette `outline` page.
 
 ---
 
