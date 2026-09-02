@@ -1658,6 +1658,12 @@ impl Workspace {
     }
 
     /// Open (or focus) the commit-graph tab (`+` dropdown / command palette).
+    /// Share the app-shell's `GitGraphView` entity so the Git Graph tab and
+    /// the shell's CWD feed operate on the same view.
+    pub fn set_git_graph(&mut self, view: Entity<GitGraphView>) {
+        self.git_graph = Some(view);
+    }
+
     pub fn open_git_graph_tab(&mut self, cx: &mut Context<Self>) {
         if self.git_graph.is_none() {
             let view = cx.new(|cx| {

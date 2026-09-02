@@ -60,7 +60,6 @@ const HEADER_H: f32 = 40.0;
 const STATUS_H: f32 = 32.0;
 /// Left inset reserved for the macOS traffic-light buttons.
 const TRAFFIC_LIGHT_INSET: f32 = 78.0;
-const SIDEBAR_DEFAULT: f32 = 260.0;
 const SIDEBAR_MIN: f32 = 180.0;
 const SIDEBAR_MAX: f32 = 520.0;
 /// Sidebar resize-handle thickness.
@@ -76,7 +75,8 @@ pub enum SidebarPanel {
     Explorer,
     Snippets,
     SourceControl,
-    GitGraph,
+    Tabs,
+    Hosts,
     Ai,
 }
 
@@ -86,14 +86,48 @@ impl SidebarPanel {
             SidebarPanel::Explorer => "Explorer",
             SidebarPanel::Snippets => "Snippets",
             SidebarPanel::SourceControl => "Source Control",
-            SidebarPanel::GitGraph => "Git Graph",
+            SidebarPanel::Tabs => "Tabs",
+            SidebarPanel::Hosts => "Hosts",
             SidebarPanel::Ai => "AI",
         }
     }
+
+    /// The persisted-preference token (`sidebarActivePanel` etc.).
+    fn slug(self) -> &'static str {
+        match self {
+            SidebarPanel::Explorer => "explorer",
+            SidebarPanel::Snippets => "snippets",
+            SidebarPanel::SourceControl => "source-control",
+            SidebarPanel::Tabs => "tabs",
+            SidebarPanel::Hosts => "hosts",
+            SidebarPanel::Ai => "ai",
+        }
+    }
+
+    fn from_slug(s: &str) -> Option<Self> {
+        Some(match s {
+            "explorer" => SidebarPanel::Explorer,
+            "snippets" => SidebarPanel::Snippets,
+            "source-control" => SidebarPanel::SourceControl,
+            "tabs" => SidebarPanel::Tabs,
+            "hosts" => SidebarPanel::Hosts,
+            "ai" => SidebarPanel::Ai,
+            _ => return None,
+        })
+    }
 }
 
-/// Value carried while dragging the sidebar's edge handle.
-struct SidebarResize;
+/// Value carried while dragging a sidebar slot's edge handle — the side tells
+/// the drop handler which slot to resize.
+#[derive(Clone, Copy)]
+struct SidebarResize(BarSide);
+
+fn side_slug(side: BarSide) -> &'static str {
+    match side {
+        BarSide::Left => "left",
+        BarSide::Right => "right",
+    }
+}
 
 struct DragGhost;
 
@@ -112,7 +146,6 @@ pub struct AppShell {
     explorer: Entity<ExplorerView>,
     bookmarks: Entity<BookmarksView>,
     git_panel: Entity<GitPanelView>,
-    git_graph: Entity<GitGraphView>,
     snippets: Entity<SnippetsView>,
     ai_chat: Entity<AiChatView>,
     command_palette: Entity<CommandPalette>,
@@ -145,12 +178,13 @@ pub struct AppShell {
     /// Open current-segment subdirectory dropdown: `(dir, anchor, entries)`
     /// (`entries == None` while the background listing is in flight).
     subdir_menu: Option<(String, Point<Pixels>, Option<Vec<String>>)>,
-    sidebar_open: bool,
-    /// Which dock the sidebar is currently shown in (driven by the toggled
-    /// panel item's `side` — port of the reference dual-dock).
-    sidebar_side: BarSide,
-    sidebar_width: f32,
-    active_panel: SidebarPanel,
+    /// Two independent dock slots — both can be open at once (port of the
+    /// reference dual-dock `useSidebar`). `left`/`right` are the physical
+    /// window edges.
+    left_slot: crate::sidebar_slot::SidebarSlot,
+    right_slot: crate::sidebar_slot::SidebarSlot,
+    /// Throttle for the debounced width/state persistence.
+    last_sidebar_save: Option<Instant>,
     search_open: bool,
     search_query: String,
     search_focus: FocusHandle,
@@ -253,6 +287,10 @@ impl AppShell {
         let git_graph =
             cx.new(|cx| GitGraphView::new(backend.clone(), tokio.clone(), theme.clone(), cx));
         cx.observe(&git_graph, |_, _, cx| cx.notify()).detach();
+        // The workspace renders the Git Graph as a `TabKind::GitGraph` tab
+        // (Block B) — share this single entity so the app-shell keeps feeding
+        // it the active CWD.
+        workspace.update(cx, |w, _cx| w.set_git_graph(git_graph.clone()));
 
         // Central preferences store + settings modal (T13-001). Apply the
         // persisted theme preference to the ThemeStore once at startup; further
@@ -393,6 +431,26 @@ impl AppShell {
             }
         });
 
+        let (left_slot, right_slot) = {
+            use crate::sidebar_slot::SidebarSlot;
+            let p = prefs.read(cx).get();
+            let clamp = |w: u32| (w as f32).clamp(SIDEBAR_MIN, SIDEBAR_MAX);
+            (
+                SidebarSlot::new(
+                    p.sidebar_open,
+                    clamp(p.sidebar_width),
+                    SidebarPanel::from_slug(&p.sidebar_active_panel)
+                        .unwrap_or(SidebarPanel::Explorer),
+                ),
+                SidebarSlot::new(
+                    p.sidebar_right_open,
+                    clamp(p.sidebar_right_width),
+                    SidebarPanel::from_slug(&p.sidebar_right_active_panel)
+                        .unwrap_or(SidebarPanel::Ai),
+                ),
+            )
+        };
+
         Self {
             theme,
             background,
@@ -401,7 +459,6 @@ impl AppShell {
             explorer,
             bookmarks,
             git_panel,
-            git_graph,
             snippets,
             ai_chat,
             command_palette,
@@ -422,10 +479,9 @@ impl AppShell {
             breadcrumb_expanded: false,
             crumb_menu: None,
             subdir_menu: None,
-            sidebar_open: true,
-            sidebar_side: BarSide::Left,
-            sidebar_width: SIDEBAR_DEFAULT,
-            active_panel: SidebarPanel::Explorer,
+            left_slot,
+            right_slot,
+            last_sidebar_save: None,
             search_open: false,
             search_query: String::new(),
             search_focus: cx.focus_handle(),
@@ -471,27 +527,130 @@ impl AppShell {
         self.updater.update(cx, |u, cx| u.run_check(true, cx));
     }
 
+    fn slot(&self, side: BarSide) -> &crate::sidebar_slot::SidebarSlot {
+        match side {
+            BarSide::Left => &self.left_slot,
+            BarSide::Right => &self.right_slot,
+        }
+    }
+
+    fn slot_mut(&mut self, side: BarSide) -> &mut crate::sidebar_slot::SidebarSlot {
+        match side {
+            BarSide::Left => &mut self.left_slot,
+            BarSide::Right => &mut self.right_slot,
+        }
+    }
+
+    /// The "primary" edge per the `sidebarPosition` preference.
+    fn primary_side(&self, cx: &App) -> BarSide {
+        if self.prefs.read(cx).get().sidebar_position == "right" {
+            BarSide::Right
+        } else {
+            BarSide::Left
+        }
+    }
+
+    /// `Cmd+B` — toggle the primary slot open/closed.
     fn toggle_sidebar(&mut self, cx: &mut Context<Self>) {
-        self.sidebar_open = !self.sidebar_open;
+        let side = self.primary_side(cx);
+        let s = self.slot_mut(side);
+        s.open = !s.open;
+        self.persist_sidebar(cx);
         cx.notify();
+    }
+
+    /// The dock a panel opens into: its registered bar-item side, else the
+    /// primary edge.
+    fn side_for_panel(&self, panel: SidebarPanel, cx: &App) -> BarSide {
+        match panel {
+            SidebarPanel::Ai => BarSide::Right,
+            _ => Self::item_for_panel(panel)
+                .map(|id| self.placements.panel_dock_side(id))
+                .unwrap_or_else(|| self.primary_side(cx)),
+        }
     }
 
     fn select_panel(&mut self, panel: SidebarPanel, cx: &mut Context<Self>) {
-        if self.active_panel == panel && self.sidebar_open {
-            self.sidebar_open = false;
-        } else {
-            self.active_panel = panel;
-            self.sidebar_open = true;
-        }
+        let side = self.side_for_panel(panel, cx);
+        self.select_panel_on_side(panel, side, cx);
+    }
+
+    /// "show me X" — never toggles the slot closed (palette / menu intent).
+    fn open_panel(&mut self, panel: SidebarPanel, cx: &mut Context<Self>) {
+        let side = self.side_for_panel(panel, cx);
+        let s = self.slot_mut(side);
+        s.panel = panel;
+        s.open = true;
+        self.persist_sidebar(cx);
         cx.notify();
     }
 
-    fn set_sidebar_width(&mut self, width: f32, cx: &mut Context<Self>) {
+    /// Move a panel to the other dock, updating its persisted bar-item side.
+    fn move_panel(&mut self, panel: SidebarPanel, to: BarSide, cx: &mut Context<Self>) {
+        let from = if to == BarSide::Left {
+            BarSide::Right
+        } else {
+            BarSide::Left
+        };
+        if self.slot(from).panel == panel && self.slot(from).open {
+            self.slot_mut(from).open = false;
+        }
+        let s = self.slot_mut(to);
+        s.panel = panel;
+        s.open = true;
+        if let Some(id) = Self::item_for_panel(panel) {
+            self.move_bar_item(id, None, Some(to), None, cx);
+        }
+        self.persist_sidebar(cx);
+        cx.notify();
+    }
+
+    fn set_slot_width(&mut self, side: BarSide, width: f32, cx: &mut Context<Self>) {
         let clamped = width.clamp(SIDEBAR_MIN, SIDEBAR_MAX);
-        if (clamped - self.sidebar_width).abs() > 0.5 {
-            self.sidebar_width = clamped;
+        let s = self.slot_mut(side);
+        if (clamped - s.width).abs() > 0.5 {
+            s.width = clamped;
+            s.last_open_width = clamped;
+            self.persist_sidebar(cx);
             cx.notify();
         }
+    }
+
+    /// Debounced write of both slots into preferences (mirrors the reference
+    /// `onLayoutChanged` 300ms persist).
+    fn persist_sidebar(&mut self, cx: &mut Context<Self>) {
+        let now = Instant::now();
+        if let Some(last) = self.last_sidebar_save {
+            if now.duration_since(last) < Duration::from_millis(300) {
+                return;
+            }
+        }
+        self.last_sidebar_save = Some(now);
+        let (l, r) = (self.left_slot, self.right_slot);
+        self.prefs.update(cx, |s, cx| {
+            s.set_value("sidebarOpen", serde_json::Value::Bool(l.open), cx);
+            s.set_value(
+                "sidebarActivePanel",
+                serde_json::Value::String(l.panel.slug().into()),
+                cx,
+            );
+            s.set_value(
+                "sidebarWidth",
+                serde_json::Value::from(l.width.round() as u32),
+                cx,
+            );
+            s.set_value("sidebarRightOpen", serde_json::Value::Bool(r.open), cx);
+            s.set_value(
+                "sidebarRightActivePanel",
+                serde_json::Value::String(r.panel.slug().into()),
+                cx,
+            );
+            s.set_value(
+                "sidebarRightWidth",
+                serde_json::Value::from(r.width.round() as u32),
+                cx,
+            );
+        });
     }
 
     fn open_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -646,9 +805,7 @@ impl AppShell {
         cx: &mut Context<Self>,
     ) {
         self.ai_chat.update(cx, |v, cx| v.new_session(cx));
-        if self.active_panel != SidebarPanel::Ai || !self.sidebar_open {
-            self.select_panel(SidebarPanel::Ai, cx);
-        }
+        self.open_panel(SidebarPanel::Ai, cx);
     }
 
     fn act_clear_chat(&mut self, _: &menu::ClearChat, _: &mut Window, cx: &mut Context<Self>) {
@@ -956,10 +1113,10 @@ impl AppShell {
                 .workspace
                 .update(cx, |w, cx| w.clear_active_terminal(cx)),
             CommandId::ToggleAiPanel => self.select_panel(SidebarPanel::Ai, cx),
-            CommandId::OpenSnippetsPanel => self.select_panel(SidebarPanel::Snippets, cx),
+            CommandId::OpenSnippetsPanel => self.open_panel(SidebarPanel::Snippets, cx),
             CommandId::OpenPathBookmarks => self.bookmarks.update(cx, |b, cx| b.toggle(window, cx)),
             CommandId::OpenGitGraph => self.workspace.update(cx, |w, cx| w.open_git_graph_tab(cx)),
-            CommandId::FocusSourceControl => self.select_panel(SidebarPanel::SourceControl, cx),
+            CommandId::FocusSourceControl => self.open_panel(SidebarPanel::SourceControl, cx),
             CommandId::ToggleZenMode => self.toggle_zen_mode(cx),
             CommandId::ToggleZenModeHeader => self.toggle_zen_pref("zenModeShowHeader", cx),
             CommandId::ToggleZenModeStatusbar => self.toggle_zen_pref("zenModeShowStatusbar", cx),
@@ -1411,16 +1568,20 @@ impl AppShell {
         }
     }
 
-    /// Toggle a dock panel, honouring the toggle item's own `side` for which
-    /// dock it opens into (port of `useBarPanelSync` / `sidebarSlotLogic`).
+    fn item_for_panel(panel: SidebarPanel) -> Option<BarItemId> {
+        Some(match panel {
+            SidebarPanel::Explorer => BarItemId::ExplorerPanel,
+            SidebarPanel::Snippets => BarItemId::SnippetsPanel,
+            SidebarPanel::SourceControl => BarItemId::SourceControlPanel,
+            _ => return None,
+        })
+    }
+
+    /// Toggle a dock panel in the given slot, via the pure `sidebar_slot`
+    /// logic (port of `useBarPanelSync` / `sidebarSlotLogic`).
     fn select_panel_on_side(&mut self, panel: SidebarPanel, side: BarSide, cx: &mut Context<Self>) {
-        if self.active_panel == panel && self.sidebar_open && self.sidebar_side == side {
-            self.sidebar_open = false;
-        } else {
-            self.active_panel = panel;
-            self.sidebar_side = side;
-            self.sidebar_open = true;
-        }
+        self.slot_mut(side).toggle(panel);
+        self.persist_sidebar(cx);
         cx.notify();
     }
 
@@ -1772,7 +1933,8 @@ impl AppShell {
     ) -> gpui::AnyElement {
         let panel = Self::panel_for_item(id).unwrap();
         let side = self.placements.panel_dock_side(id);
-        let active = self.active_panel == panel && self.sidebar_open && self.sidebar_side == side;
+        let slot = self.slot(side);
+        let active = slot.open && slot.panel == panel;
         let icon = id.icon().unwrap_or(IconName::Folder);
         let theme = self.theme.read(cx);
         let (fg, muted, accent, border) = (
@@ -1806,7 +1968,7 @@ impl AppShell {
         compact: bool,
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
-        let active = self.sidebar_open && self.active_panel == SidebarPanel::Ai;
+        let active = self.right_slot.open && self.right_slot.panel == SidebarPanel::Ai;
         let theme = self.theme.read(cx);
         let (fg, muted, accent, border) = (
             theme.foreground(),
@@ -2394,7 +2556,7 @@ impl AppShell {
         )
     }
 
-    fn render_sidebar(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render_sidebar(&mut self, side: BarSide, cx: &mut Context<Self>) -> impl IntoElement {
         let (sidebar_bg, sidebar_fg, sidebar_border, accent, muted) = {
             let theme = self.theme.read(cx);
             (
@@ -2405,11 +2567,16 @@ impl AppShell {
                 theme.muted_foreground(),
             )
         };
-        let active = self.active_panel;
-        let on_right = self.sidebar_side == BarSide::Right;
+        let slot = *self.slot(side);
+        let on_right = side == BarSide::Right;
+        let opp = if on_right {
+            BarSide::Left
+        } else {
+            BarSide::Right
+        };
 
         let panel = div()
-            .w(px(self.sidebar_width))
+            .w(px(slot.width))
             .h_full()
             .flex_shrink_0()
             .flex()
@@ -2418,38 +2585,52 @@ impl AppShell {
             .text_color(sidebar_fg)
             .child(
                 div()
+                    .flex()
+                    .items_center()
+                    .justify_between()
                     .px_3()
                     .py_2()
                     .text_xs()
                     .text_color(muted)
-                    .child(SharedString::from(active.label().to_uppercase())),
+                    .child(SharedString::from(slot.panel.label().to_uppercase()))
+                    .child(
+                        div()
+                            .id(SharedString::from(format!(
+                                "sidebar-move-{}",
+                                slot.panel.slug()
+                            )))
+                            .cursor_pointer()
+                            .text_color(muted)
+                            .hover(|s| s.text_color(sidebar_fg))
+                            .child(if on_right { "\u{2190}" } else { "\u{2192}" })
+                            .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                                this.move_panel(this.slot(side).panel, opp, cx);
+                            })),
+                    ),
             )
-            .child(self.render_panel_body(active, cx));
+            .child(self.render_panel_body(slot.panel, cx));
 
-        // A thin resize affordance: a 1px border line with a wider transparent
-        // grab zone (mirrors the reference `ResizableHandle`), not a solid bar.
-        let handle = || {
-            div()
-                .id("sidebar-handle")
-                .w(px(HANDLE))
-                .h_full()
-                .flex_shrink_0()
-                .flex()
-                .justify_center()
-                .cursor_col_resize()
-                .hover(|s| s.bg(accent.opacity(0.4)))
-                .child(div().w(px(1.0)).h_full().bg(sidebar_border))
-                .on_drag(SidebarResize, |_, _, _, cx| cx.new(|_| DragGhost))
-        };
-
-        div()
-            .flex_shrink_0()
+        let handle = div()
+            .id(SharedString::from(format!(
+                "sidebar-handle-{}",
+                side_slug(side)
+            )))
+            .w(px(HANDLE))
             .h_full()
+            .flex_shrink_0()
             .flex()
-            .flex_row()
-            .when(on_right, |d| d.child(handle()))
-            .child(panel)
-            .when(!on_right, |d| d.child(handle()))
+            .justify_center()
+            .cursor_col_resize()
+            .hover(|s| s.bg(accent.opacity(0.4)))
+            .child(div().w(px(1.0)).h_full().bg(sidebar_border))
+            .on_drag(SidebarResize(side), |_, _, _, cx| cx.new(|_| DragGhost));
+
+        let row = div().flex_shrink_0().h_full().flex().flex_row();
+        if on_right {
+            row.child(handle).child(panel)
+        } else {
+            row.child(panel).child(handle)
+        }
     }
 
     /// Placeholder body for each sidebar panel. Later phases replace the arm
@@ -2461,14 +2642,17 @@ impl AppShell {
         if panel == SidebarPanel::SourceControl {
             return self.git_panel.clone().into_any_element();
         }
-        if panel == SidebarPanel::GitGraph {
-            return self.git_graph.clone().into_any_element();
-        }
         if panel == SidebarPanel::Snippets {
             return self.snippets.clone().into_any_element();
         }
         if panel == SidebarPanel::Ai {
             return self.ai_chat.clone().into_any_element();
+        }
+        if panel == SidebarPanel::Tabs {
+            return self.render_tabs_panel(cx);
+        }
+        if panel == SidebarPanel::Hosts {
+            return self.render_hosts_panel(cx);
         }
         let muted = self.theme.read(cx).muted_foreground();
         div()
@@ -2484,6 +2668,104 @@ impl AppShell {
                 "{} \u{2014} coming in a later phase",
                 panel.label()
             )))
+            .into_any_element()
+    }
+
+    /// Tabs-in-sidebar panel (port of `SidebarTabList`, reduced) — a flat
+    /// clickable list of the open tabs.
+    fn render_tabs_panel(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
+        let (fg, muted, accent, border) = {
+            let t = self.theme.read(cx);
+            (t.foreground(), t.muted_foreground(), t.accent(), t.border())
+        };
+        let store = self.workspace.read(cx).tab_store().read(cx);
+        let active = store.active_id();
+        let rows: Vec<_> = store
+            .tabs()
+            .iter()
+            .map(|tab| {
+                let id = tab.id;
+                let is_active = id == active;
+                div()
+                    .id(SharedString::from(format!("sb-tab-{id}")))
+                    .flex()
+                    .items_center()
+                    .gap_2()
+                    .px_3()
+                    .py_1()
+                    .text_xs()
+                    .text_color(if is_active { fg } else { muted })
+                    .when(is_active, |d| d.bg(accent.opacity(0.15)))
+                    .hover(|s| s.bg(border))
+                    .child(tab.kind.indicator().svg(muted).size(px(12.0)))
+                    .child(SharedString::from(tab.label()))
+                    .on_click(cx.listener(move |this, _: &ClickEvent, w, cx| {
+                        this.workspace.update(cx, |ws, cx| ws.reveal_tab(id, w, cx));
+                    }))
+            })
+            .collect();
+        div()
+            .id("sb-tabs-list")
+            .flex_1()
+            .flex()
+            .flex_col()
+            .py_1()
+            .overflow_y_scroll()
+            .children(rows)
+            .into_any_element()
+    }
+
+    /// Hosts-in-sidebar panel — a compact list of known hosts, click to
+    /// connect (SSH).
+    fn render_hosts_panel(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
+        let (fg, muted, border) = {
+            let t = self.theme.read(cx);
+            (t.foreground(), t.muted_foreground(), t.border())
+        };
+        let hosts = self.workspace.read(cx).known_hosts(cx);
+        if hosts.is_empty() {
+            return div()
+                .flex_1()
+                .flex()
+                .items_center()
+                .justify_center()
+                .px_3()
+                .text_xs()
+                .text_color(muted)
+                .child("No hosts — add one in the Host Manager")
+                .into_any_element();
+        }
+        let rows: Vec<_> = hosts
+            .into_iter()
+            .map(|(hid, name)| {
+                let hid2 = hid.clone();
+                div()
+                    .id(SharedString::from(format!("sb-host-{hid}")))
+                    .flex()
+                    .items_center()
+                    .gap_2()
+                    .px_3()
+                    .py_1()
+                    .text_xs()
+                    .text_color(fg)
+                    .hover(|s| s.bg(border))
+                    .child(IconName::Server.svg(muted).size(px(12.0)))
+                    .child(SharedString::from(name))
+                    .on_click(cx.listener(move |this, _: &ClickEvent, w, cx| {
+                        let hid = hid2.clone();
+                        this.workspace
+                            .update(cx, |ws, cx| ws.open_ssh_tab(hid, w, cx));
+                    }))
+            })
+            .collect();
+        div()
+            .id("sb-hosts-list")
+            .flex_1()
+            .flex()
+            .flex_col()
+            .py_1()
+            .overflow_y_scroll()
+            .children(rows)
             .into_any_element()
     }
 
@@ -2555,14 +2837,18 @@ impl Render for AppShell {
         let show_header = self.prefs.read(cx).get().zen_mode_show_header;
         let show_statusbar = self.prefs.read(cx).get().zen_mode_show_statusbar;
         let header = show_header.then(|| self.render_header(cx).into_any_element());
-        let sidebar = self
-            .sidebar_open
-            .then(|| self.render_sidebar(cx).into_any_element());
+        let left_sidebar = self
+            .left_slot
+            .open
+            .then(|| self.render_sidebar(BarSide::Left, cx).into_any_element());
+        let right_sidebar = self
+            .right_slot
+            .open
+            .then(|| self.render_sidebar(BarSide::Right, cx).into_any_element());
         let statusbar = show_statusbar.then(|| self.render_statusbar(cx).into_any_element());
         let workspace = self.workspace.clone();
         let can_split = self.workspace.read(cx).active_is_terminal(cx);
         let has_split = self.workspace.read(cx).active_has_split(cx);
-        let sidebar_on_right = self.sidebar_side == BarSide::Right;
         let bar_menu = self.render_bar_menu(cx);
         let crumb_menu = self.render_crumb_menu(cx);
         let subdir_menu = self.render_subdir_menu(cx);
@@ -2623,24 +2909,27 @@ impl Render for AppShell {
             .children(header)
             .child({
                 let ws_pane = div().flex_1().min_w_0().child(workspace);
-                let row = div().flex_1().min_h_0().flex().flex_row();
-                let row = if sidebar_on_right {
-                    row.child(ws_pane).children(sidebar)
-                } else {
-                    row.children(sidebar).child(ws_pane)
-                };
-                row.on_drag_move(cx.listener(
-                    |this, ev: &DragMoveEvent<SidebarResize>, _window, cx| {
-                        let w = if this.sidebar_side == BarSide::Right {
-                            f32::from(
-                                ev.bounds.origin.x + ev.bounds.size.width - ev.event.position.x,
-                            )
-                        } else {
-                            f32::from(ev.event.position.x - ev.bounds.origin.x)
-                        };
-                        this.set_sidebar_width(w, cx);
-                    },
-                ))
+                div()
+                    .flex_1()
+                    .min_h_0()
+                    .flex()
+                    .flex_row()
+                    .children(left_sidebar)
+                    .child(ws_pane)
+                    .children(right_sidebar)
+                    .on_drag_move(cx.listener(
+                        |this, ev: &DragMoveEvent<SidebarResize>, _window, cx| {
+                            let side = ev.drag(cx).0;
+                            let w = if side == BarSide::Right {
+                                f32::from(
+                                    ev.bounds.origin.x + ev.bounds.size.width - ev.event.position.x,
+                                )
+                            } else {
+                                f32::from(ev.event.position.x - ev.bounds.origin.x)
+                            };
+                            this.set_slot_width(side, w, cx);
+                        },
+                    ))
             })
             .children(statusbar)
             .children(background_layer)

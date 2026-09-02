@@ -4,7 +4,60 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
-## Last Session: 2026-09-02 (Block F Commit 1 — T16-017 shared ContextMenu + all view menus)
+## Last Session: 2026-09-02 (Block F Commit 2 — T16-016 dual-dock dynamic sidebars)
+
+### What Was Done (commit after `8d12e1f`)
+
+**T16-016 — dual-dock dynamic sidebars**
+
+- **New pure module `crates/ui/src/sidebar_slot.rs`** — Rust port of
+  `sidebarSlotLogic.ts` + its test file: `is_collapsed`, `resolve_toggle`
+  (Expand / Collapse / Switch), `resolve_resize`, and a `SidebarSlot`
+  struct (`open` / `width` / `panel` / `last_open_width`) with `toggle`.
+  8 unit tests (all reference cases ported).
+- **`app_shell.rs` refactor**: the single `sidebar_open/sidebar_side/
+  sidebar_width/active_panel` quartet → **two independent `SidebarSlot`s**
+  (`left_slot`, `right_slot`) that can both be open at once (Explorer left +
+  AI right, etc. — previously AI toggling closed Explorer).
+  - `slot`/`slot_mut(side)`, `primary_side` (from `sidebarPosition` pref),
+    `side_for_panel` (per-item `bar_item_placements` side → global → AI=Right).
+  - `select_panel` / `select_panel_on_side` route through `SidebarSlot::toggle`.
+  - **`open_panel`** (show, never toggle-closed) — palette `OpenSnippetsPanel`
+    / `FocusSourceControl` / new-AI-session now use it instead of the toggle.
+  - **`move_panel(panel, to)`** — collapses the panel in its old slot, opens
+    it in the new one, and persists the bar-item side. Exposed via a `←/→`
+    affordance in each sidebar's header.
+  - **Debounced persistence** (`persist_sidebar`, 300ms throttle) writes all
+    six `sidebar*` / `sidebarRight*` pref keys; **restore-from-prefs** in
+    `AppShell::new`.
+  - `SidebarResize(BarSide)` payload → the resize handler resizes the right
+    slot (`set_slot_width`).
+- **`SidebarPanel`**: removed vestigial `GitGraph` (it's a `TabKind` from
+  Block B — the shell no longer owns a `GitGraphView`; the workspace's tab
+  view is now the shared entity via new `Workspace::set_git_graph`, which
+  also finally wires the CWD feed to the Git Graph tab). Added **`Tabs`** and
+  **`Hosts`** panels + `render_tabs_panel` (clickable open-tab list →
+  `reveal_tab`) / `render_hosts_panel` (known-host list → `open_ssh_tab`).
+  `slug`/`from_slug` for persistence.
+
+**Not done in T16-016**: the bar-item context menu's Left/Right radios still
+only move the *item* placement (next toggle picks up the new dock) — they
+don't relocate an already-open panel live (the header `←/→` affordance and
+`move_panel` do). Tabs-in-sidebar `tabsLocation` gating + "leaving sidebar →
+fall back to explorer" rule not implemented (the Tabs panel is always
+available as a dock panel).
+
+### Verified
+`cargo fmt --all`, `cargo clippy --workspace --all-targets -D warnings`,
+`cargo test --workspace` — all green (688 tests).
+
+### Next
+Block F Commit 3 — T16-018 theme marketplace (fetch index / download /
+install / uninstall / theme_create + Community tab + palette hover-preview).
+
+---
+
+## Session: 2026-09-02 (Block F Commit 1 — T16-017 shared ContextMenu + all view menus)
 
 ### What Was Done (commit after `c366f7c`)
 
