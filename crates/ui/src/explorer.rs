@@ -1866,7 +1866,7 @@ mod tests {
     #[test]
     fn file_icon_maps_known_extensions() {
         assert_eq!(file_icon("main.rs"), IconName::FileCode);
-        assert_eq!(file_icon("Cargo.toml"), IconName::Braces);
+        assert_eq!(file_icon("data.json"), IconName::FileJson);
         assert_eq!(file_icon("weird.unknownext"), IconName::File);
     }
 }
