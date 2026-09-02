@@ -4,7 +4,72 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
-## Last Session: 2026-09-02 (Block C cont. 2/2 — dropdowns, special sections)
+## Last Session: 2026-09-02 (Block D — Command Palette rebuild, T16-013)
+
+### What Was Done (commit after `16495bd`, branch `master`)
+
+- **`crates/ui/src/command_palette.rs`** — full view rebuild + data-layer growth:
+  - **Layout parity**: 640px card, 40px min rows, left accent bar on the active
+    row (`border_l_2` + `primary`), 28px icon chip (`IconName` on every row),
+    title + subtitle, right-aligned `<Kbd>` chips + `rightLabel` (ON/OFF/active,
+    success-tinted), section headings, "Recently Used" group, footer bar
+    (search-mode toggle + result count + `↑↓/↵/⌫/Esc` hints), breadcrumb with
+    clickable segments when inside a sub-page, "No results found." empty state.
+  - **Fuzzy search**: new `SearchMode {Contains,StartsWith,Fuzzy}` + `match_score`
+    (ranked — consecutive/prefix bonuses, gap penalty). Reads
+    `commandPaletteSearchMode`; footer chip cycles + persists it. `search_mode()`
+    ranks; old `search()` kept as a Contains shim for existing tests.
+  - **Sub-pages**: `Page` enum 2 → 12 (`Root` + 11 named: Zoom, Tabs, ColorMode,
+    EditorTheme, Themes, HostsSsh, HostsSftp, Snippets, AiSessions, Outline,
+    GitBranches). Multi-level page stack (`Vec<Page>`), push/pop, Esc clears
+    query → pops → closes, Backspace-on-empty pops.
+  - **Dynamic sources**: `PaletteData` snapshot (`AppShell::build_palette_data`,
+    synced each render via `CommandPalette::set_data`). Wired now: open tabs,
+    color mode, editor themes, terminal font size, ~9 settings toggles (live
+    `rightLabel`). Hosts / snippets / AI sessions / git branches / editor outline
+    pages render a clean empty state — `PaletteData` has the fields ready for
+    Blocks E/F to populate.
+  - **Static registry** grew ~33 → ~50 commands (icons on all; nav rows for
+    Adjust Font Size, Connect SSH, Open SFTP, Change App/Color/Editor Theme,
+    Switch AI Session, Run Snippet, Git Switch Branch, Go to Symbol; toggle
+    commands for word-wrap / line-numbers / format-on-save / cursor-blink /
+    pane header+footer / vim mode; Manage AI Keys & Models).
+  - **Palette prefs honored**: position (top/high/center), opacity (card alpha),
+    show-recent, history-size (recent list cap), close-on-overlay-click.
+  - **Recently Used** persisted to `command-palette-recent.json` in the config
+    dir (`recent` submodule; debug-formatted `CommandId` slugs).
+  - New `PaletteEvent::{SetColorMode,SetEditorTheme}`; `command_palette.rs` tests
+    +8 (fuzzy modes, ranking, mode cycle, page metadata, toggle-key map,
+    editor-theme label, distinct page labels).
+- **`crates/ui/src/app_shell.rs`** — `CommandPalette::new` takes `Entity<PreferencesStore>`;
+  `build_palette_data` + `set_data` sync in `render`; `drain_pending_commands`
+  handles the 2 new events (persist pref + `apply_prefs_to_theme`);
+  `run_palette_command` gains toggle arms (reusing `toggle_zen_pref`) + AI-settings
+  dispatch + exhaustive no-op arms for the sub-page navigator ids.
+
+### State / Verified
+- `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -D warnings`,
+  `cargo test --workspace` — all green.
+
+### Not Done / Deferred (for Blocks E/F)
+- **Live theme hover-preview** + populated **Themes** page — needs the multi-theme
+  list / preview API that the theme audit (subagent-3 §Theme system) assigns to
+  Block F.
+- **Hosts / Snippets / AI-sessions / Git-branches / Outline** sub-page *data* —
+  those stores aren't reachable from `AppShell` yet (Blocks E/F). Pages + the
+  `PaletteData` fields + `PaletteChoice` shape are in place; wiring is a
+  fill-in-the-vec once the entities exist.
+- **Backdrop blur** (`commandPaletteBlur`) and **entrance animation**
+  (`commandPaletteAnimation`) — GPUI has no `backdrop-filter` and no trivial
+  fade/zoom entrance; approximated by the modal scrim. Revisit if GPUI gains it.
+- **ConnectSsh / OpenSftp / RunSnippet / CheckoutBranch / GoToSymbol** execution
+  paths (events not added yet — nav rows currently dead-end at the empty page).
+
+### Next: Block E (Hosts / SSH)
+
+---
+
+## Prev Session: 2026-09-02 (Block C cont. 2/2 — dropdowns, special sections)
 
 ### What Was Done (commit after `47f6127`)
 

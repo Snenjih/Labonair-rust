@@ -40,7 +40,7 @@ use crate::ai_chat::{AiChatStore, AiChatView};
 use crate::background::{BackgroundStore, LayerScope};
 use crate::bar_items::{self, BarItemId, BarLoc, BarSide};
 use crate::bookmarks::{BookmarkEvent, BookmarksView};
-use crate::command_palette::{CommandId, CommandPalette, PaletteEvent};
+use crate::command_palette::{CommandId, CommandPalette, PaletteChoice, PaletteData, PaletteEvent};
 use crate::components::IconName;
 use crate::cwd_breadcrumb as bc;
 use crate::explorer::ExplorerView;
@@ -314,7 +314,7 @@ impl AppShell {
         cx.observe(&ai_chat, |_, _, cx| cx.notify()).detach();
 
         let command_palette =
-            cx.new(|cx| CommandPalette::new(theme.clone(), workspace.clone(), cx));
+            cx.new(|cx| CommandPalette::new(theme.clone(), workspace.clone(), prefs.clone(), cx));
         cx.observe(&command_palette, |_, _, cx| cx.notify())
             .detach();
         cx.subscribe(&command_palette, |this, _, event: &PaletteEvent, cx| {
@@ -759,6 +759,48 @@ impl AppShell {
     select_tab_action!(act_select_tab_8, SelectTab8, 7);
     select_tab_action!(act_select_tab_9, SelectTab9, 8);
 
+    /// Snapshot the live state the command palette needs for its dynamic
+    /// sub-pages and `rightLabel` states. Domains not yet ported (hosts,
+    /// snippets, AI sessions, git branches, editor outline) stay empty — the
+    /// pages exist and show an empty state until their block lands.
+    fn build_palette_data(&self, cx: &App) -> PaletteData {
+        let ts = self.workspace.read(cx).tab_store();
+        let ts = ts.read(cx);
+        let active = ts.active_id();
+        let tabs = ts
+            .tabs()
+            .iter()
+            .map(|t| PaletteChoice {
+                id: t.id.to_string(),
+                title: t.label(),
+                subtitle: Some(t.kind.default_title().to_string()),
+                active: t.id == active,
+            })
+            .collect();
+
+        let theme = self.theme.read(cx);
+        let p = self.prefs.read(cx).get();
+        let mut toggles = std::collections::HashMap::new();
+        toggles.insert("zenModeShowHeader", p.zen_mode_show_header);
+        toggles.insert("zenModeShowStatusbar", p.zen_mode_show_statusbar);
+        toggles.insert("editorWordWrap", p.editor_word_wrap);
+        toggles.insert("editorLineNumbers", p.editor_line_numbers);
+        toggles.insert("editorFormatOnSave", p.editor_format_on_save);
+        toggles.insert("terminalCursorBlink", p.terminal_cursor_blink);
+        toggles.insert("terminalShowPaneHeader", p.terminal_show_pane_header);
+        toggles.insert("terminalShowPaneFooter", p.terminal_show_pane_footer);
+        toggles.insert("vimMode", p.editor_vim_mode);
+
+        PaletteData {
+            tabs,
+            color_mode: theme.preference(),
+            editor_theme: theme.editor_theme(),
+            font_size: Some(p.terminal_font_size),
+            toggles,
+            ..Default::default()
+        }
+    }
+
     /// Drain palette picks queued by the `PaletteEvent` subscription, now
     /// that a `&mut Window` is available (called from `render`).
     fn drain_pending_commands(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -769,6 +811,29 @@ impl AppShell {
                         .update(cx, |w, cx| w.reveal_tab(id, window, cx));
                 }
                 PaletteEvent::Run(id) => self.run_palette_command(id, window, cx),
+                PaletteEvent::SetColorMode(pref) => {
+                    let key = match pref {
+                        crate::theme::ThemePreference::System => "system",
+                        crate::theme::ThemePreference::Light => "light",
+                        crate::theme::ThemePreference::Dark => "dark",
+                    };
+                    self.prefs.update(cx, |s, cx| {
+                        s.set_value("theme", serde_json::Value::String(key.into()), cx)
+                    });
+                    let p = self.prefs.read(cx).get().clone();
+                    crate::settings::apply_prefs_to_theme(&p, &self.theme, cx);
+                }
+                PaletteEvent::SetEditorTheme(id) => {
+                    self.prefs.update(cx, |s, cx| {
+                        s.set_value(
+                            "editorTheme",
+                            serde_json::Value::String(id.slug().into()),
+                            cx,
+                        )
+                    });
+                    let p = self.prefs.read(cx).get().clone();
+                    crate::settings::apply_prefs_to_theme(&p, &self.theme, cx);
+                }
             }
         }
     }
@@ -838,8 +903,27 @@ impl AppShell {
             CommandId::ToggleZenMode => self.toggle_zen_mode(cx),
             CommandId::ToggleZenModeHeader => self.toggle_zen_pref("zenModeShowHeader", cx),
             CommandId::ToggleZenModeStatusbar => self.toggle_zen_pref("zenModeShowStatusbar", cx),
-            // Resolved inside the palette (opens a follow-up page).
-            CommandId::SwitchTab => {}
+            CommandId::OpenAiSettings => dispatch!(menu::AiSettings),
+            CommandId::ToggleEditorWordWrap => self.toggle_zen_pref("editorWordWrap", cx),
+            CommandId::ToggleLineNumbers => self.toggle_zen_pref("editorLineNumbers", cx),
+            CommandId::ToggleFormatOnSave => self.toggle_zen_pref("editorFormatOnSave", cx),
+            CommandId::ToggleCursorBlink => self.toggle_zen_pref("terminalCursorBlink", cx),
+            CommandId::TogglePaneHeader => self.toggle_zen_pref("terminalShowPaneHeader", cx),
+            CommandId::TogglePaneFooter => self.toggle_zen_pref("terminalShowPaneFooter", cx),
+            CommandId::ToggleVimMode => self.toggle_zen_pref("vimMode", cx),
+            // Sub-page navigators — resolved inside the palette, never emitted
+            // as `Run`. Listed so the match stays exhaustive.
+            CommandId::SwitchTab
+            | CommandId::AdjustFontSize
+            | CommandId::ConnectSsh
+            | CommandId::OpenSftp
+            | CommandId::ChangeAppTheme
+            | CommandId::ChangeColorMode
+            | CommandId::ChangeEditorTheme
+            | CommandId::SwitchAiSession
+            | CommandId::RunSnippet
+            | CommandId::GitSwitchBranch
+            | CommandId::GoToSymbol => {}
             // No handler yet — the editor formatter arrives with its phase,
             // at which point this command starts working (see menu.rs on the
             // same "stub now, wire later" convention).
@@ -2398,6 +2482,10 @@ impl Render for AppShell {
         self.maybe_persist_geometry(window);
         self.drain_pending_commands(window, cx);
         self.drain_pending_bookmarks(window, cx);
+
+        let palette_data = self.build_palette_data(cx);
+        self.command_palette
+            .update(cx, |p, _| p.set_data(palette_data));
 
         let bg = self.theme.read(cx).background();
         let ui_font = self.theme.read(cx).ui_font();
