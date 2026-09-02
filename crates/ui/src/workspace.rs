@@ -30,6 +30,9 @@ use gpui::{
 use labonair_backend::modules::mcp::{
     mcp_set_session_grant, mcp_tab_op_response, SessionKind, TabOpResult,
 };
+use labonair_backend::modules::scrollback::{
+    scrollback_cleanup, scrollback_delete, scrollback_load, scrollback_save,
+};
 use labonair_backend::modules::settings::preferences::CursorStyle as PrefCursorStyle;
 use labonair_backend::modules::sftp::commands::enqueue_transfer;
 use labonair_backend::modules::sftp::connection::sftp_disconnect as sftp_tab_disconnect;
@@ -142,6 +145,30 @@ const SESSION_SAVE_INTERVAL: Duration = Duration::from_secs(30);
 /// Thickness of a split-divider resize handle.
 const HANDLE: f32 = 6.0;
 
+/// Per-file byte ceiling for a persisted scrollback, from the `scrollbackMaxSizeMb`
+/// preference (T14-002).
+fn scrollback_max_bytes(
+    p: &labonair_backend::modules::settings::preferences::Preferences,
+) -> usize {
+    (p.scrollback_max_size_mb.max(1) as usize) * 1024 * 1024
+}
+
+/// Retention window in seconds for persisted scrollback files (`None` = keep for
+/// the session's lifetime), from the `scrollbackRetentionDays` preference.
+fn scrollback_retention_secs(
+    p: &labonair_backend::modules::settings::preferences::Preferences,
+) -> Option<u64> {
+    (p.scrollback_retention_days > 0).then(|| p.scrollback_retention_days as u64 * 86_400)
+}
+
+/// Rows of scrollback to persist per pane (`None` = all), from the
+/// `sessionScrollbackLines` preference.
+fn session_scrollback_lines(
+    p: &labonair_backend::modules::settings::preferences::Preferences,
+) -> Option<usize> {
+    (p.session_scrollback_lines > 0).then_some(p.session_scrollback_lines as usize)
+}
+
 /// Value carried by a tab drag.
 struct DraggedTab {
     id: u64,
@@ -184,6 +211,8 @@ impl Render for TabDragPreview {
 struct PaneEntry {
     session_id: SessionId,
     view: Entity<TerminalView>,
+    /// Stable UUID keying this pane's persisted scrollback file (T14-002).
+    scrollback_id: String,
 }
 
 /// A remote file staged into a local temp copy for editing (T08-001). Keyed
@@ -471,6 +500,10 @@ impl Workspace {
             this.tabs
                 .update(cx, |s, cx| s.open(TabKind::Home, TabData::default(), cx));
         }
+        // Scrollback cleanup (T14-002): drop files for panes that no longer
+        // exist plus anything past the retention window. Runs once on startup,
+        // after restore has re-registered the panes it could bring back.
+        this.cleanup_scrollback(cx);
         this
     }
 
@@ -519,6 +552,9 @@ impl Workspace {
 
     fn snapshot_workspace_tab(&self, tab: &Tab, cx: &App) -> Option<TabSnapshot> {
         let layout = self.layouts.get(&tab.id)?.clone();
+        let prefs = cx.try_global::<GlobalPreferences>().map(|g| g.0.clone());
+        let max_lines = prefs.as_ref().and_then(session_scrollback_lines);
+        let max_bytes = prefs.as_ref().map(scrollback_max_bytes);
         let sessions = layout
             .root
             .leaves()
@@ -526,14 +562,24 @@ impl Workspace {
             .map(|leaf| {
                 let entry = self.panes.get(leaf);
                 let ssh = entry.and_then(|e| self.ssh_tabs.get(&e.session_id));
+                let is_local = ssh.is_none();
+                // Persist this local pane's scrollback so the restored shell
+                // shows its prior history above the fresh prompt (T14-002).
+                let scrollback_id = entry.filter(|_| is_local).map(|e| {
+                    if let Some(ansi) = e.view.read(cx).handle().serialize_scrollback(max_lines) {
+                        let _ = scrollback_save(&e.scrollback_id, &ansi, max_bytes);
+                    }
+                    e.scrollback_id.clone()
+                });
                 PaneSessionSnapshot {
-                    kind: if ssh.is_some() {
-                        PaneSessionKind::Ssh
-                    } else {
+                    kind: if is_local {
                         PaneSessionKind::Local
+                    } else {
+                        PaneSessionKind::Ssh
                     },
                     cwd: entry.and_then(|e| e.view.read(cx).cwd()),
                     host_id: ssh.map(|s| s.host_id.clone()),
+                    scrollback_id,
                 }
             })
             .collect();
@@ -542,6 +588,22 @@ impl Workspace {
             layout,
             sessions,
         }))
+    }
+
+    /// Scrollback-file UUIDs of every currently-open local pane.
+    fn known_scrollback_ids(&self) -> Vec<String> {
+        self.panes
+            .values()
+            .map(|e| e.scrollback_id.clone())
+            .collect()
+    }
+
+    /// Remove orphaned / stale persisted scrollback files (T14-002).
+    pub fn cleanup_scrollback(&self, cx: &App) {
+        let retention = cx
+            .try_global::<GlobalPreferences>()
+            .and_then(|g| scrollback_retention_secs(&g.0));
+        scrollback_cleanup(&self.known_scrollback_ids(), retention);
     }
 
     /// Persist the snapshot now if the `sessionRestore` preference is on;
@@ -586,9 +648,11 @@ impl Workspace {
                     self.tabs
                         .update(cx, |s, cx| s.open(TabKind::Home, TabData::default(), cx)),
                 ),
-                RestoreAction::LocalWorkspace { layout, cwds } => {
-                    self.restore_local_workspace(layout, cwds, window, cx)
-                }
+                RestoreAction::LocalWorkspace {
+                    layout,
+                    cwds,
+                    scrollback_ids,
+                } => self.restore_local_workspace(layout, cwds, scrollback_ids, window, cx),
                 RestoreAction::SshWorkspace { host_id, title } => {
                     self.connect_host(host_id, window, cx);
                     let id = self.tabs.read(cx).active_id();
@@ -635,31 +699,34 @@ impl Workspace {
         &mut self,
         layout: WorkspaceLayout,
         cwds: Vec<Option<String>>,
+        scrollback_ids: Vec<Option<String>>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Option<u64> {
         let leaves = layout.root.leaves();
         // Spawn one session per leaf; bail if the very first cannot start.
-        let mut spawned: Vec<(PaneId, SessionId, SessionHandle)> = Vec::new();
-        for (leaf, cwd) in leaves.iter().zip(cwds.iter()) {
-            match self.spawn_session(cwd.clone(), cx) {
-                Some((sid, handle)) => spawned.push((*leaf, sid, handle)),
+        let mut spawned: Vec<(PaneId, SessionId, SessionHandle, String)> = Vec::new();
+        for (i, (leaf, cwd)) in leaves.iter().zip(cwds.iter()).enumerate() {
+            let replay_id = scrollback_ids.get(i).and_then(|s| s.as_deref());
+            match self.spawn_session(cwd.clone(), replay_id, cx) {
+                Some((sid, handle, sb_id)) => spawned.push((*leaf, sid, handle, sb_id)),
                 None if spawned.is_empty() => return None,
                 None => {}
             }
         }
-        let (_, first_sid, _) = spawned.first()?;
+        let (_, first_sid, _, _) = spawned.first()?;
         let first_cwd = cwds.first().cloned().flatten();
         let tab_id = self
             .tabs
             .update(cx, |s, cx| s.open_workspace(*first_sid, first_cwd, cx));
-        for (leaf, sid, handle) in spawned {
+        for (leaf, sid, handle, scrollback_id) in spawned {
             let view = self.new_terminal_view(handle, window, cx);
             self.panes.insert(
                 leaf,
                 PaneEntry {
                     session_id: sid,
                     view,
+                    scrollback_id,
                 },
             );
         }
@@ -736,7 +803,8 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some((session_id, handle)) = self.spawn_session(cwd.clone(), cx) else {
+        let Some((session_id, handle, scrollback_id)) = self.spawn_session(cwd.clone(), None, cx)
+        else {
             return;
         };
         let pane_id = self.alloc_pane();
@@ -744,7 +812,14 @@ impl Workspace {
             .tabs
             .update(cx, |s, cx| s.open_workspace(session_id, cwd, cx));
         let view = self.new_terminal_view(handle, window, cx);
-        self.panes.insert(pane_id, PaneEntry { session_id, view });
+        self.panes.insert(
+            pane_id,
+            PaneEntry {
+                session_id,
+                view,
+                scrollback_id,
+            },
+        );
         self.layouts.insert(tab_id, WorkspaceLayout::new(pane_id));
         self.focus_active(window, cx);
     }
@@ -769,7 +844,8 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some((session_id, handle)) = self.spawn_session(cwd.clone(), cx) else {
+        let Some((session_id, handle, scrollback_id)) = self.spawn_session(cwd.clone(), None, cx)
+        else {
             return;
         };
         let pane_id = self.alloc_pane();
@@ -777,7 +853,14 @@ impl Workspace {
             .tabs
             .update(cx, |s, cx| s.open_workspace(session_id, cwd, cx));
         let view = self.new_terminal_view(handle.clone(), window, cx);
-        self.panes.insert(pane_id, PaneEntry { session_id, view });
+        self.panes.insert(
+            pane_id,
+            PaneEntry {
+                session_id,
+                view,
+                scrollback_id,
+            },
+        );
         self.layouts.insert(tab_id, WorkspaceLayout::new(pane_id));
         self.focus_active(window, cx);
         let _ = handle.write(format!("{}\n", command.trim_end()).as_bytes());
@@ -1015,8 +1098,17 @@ impl Workspace {
         id
     }
 
-    /// Spawn a local terminal session in `cwd` and return its id + handle.
-    fn spawn_session(&self, cwd: Option<String>, cx: &App) -> Option<(SessionId, SessionHandle)> {
+    /// Spawn a local terminal session in `cwd` and return its id + handle +
+    /// scrollback-file UUID. When `replay_scrollback_id` is `Some`, that id is
+    /// reused (session restore) and its persisted scrollback — if any — is fed
+    /// into the emulator before the shell starts (T14-002); otherwise a fresh
+    /// id is minted.
+    fn spawn_session(
+        &self,
+        cwd: Option<String>,
+        replay_scrollback_id: Option<&str>,
+        cx: &App,
+    ) -> Option<(SessionId, SessionHandle, String)> {
         let p = cx
             .try_global::<crate::settings::GlobalPreferences>()
             .map(|g| g.0.clone())
@@ -1027,10 +1119,16 @@ impl Workspace {
             PrefCursorStyle::Underline => labonair_terminal::CursorShape::Underline,
             PrefCursorStyle::Bar => labonair_terminal::CursorShape::Beam,
         });
+        let scrollback_id = replay_scrollback_id
+            .map(str::to_string)
+            .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+        let replay_scrollback =
+            replay_scrollback_id.and_then(|id| scrollback_load(id, Some(scrollback_max_bytes(&p))));
         let options = SessionOptions {
             working_directory: cwd,
             shell,
             scrollback: Some(p.terminal_scrollback.max(1) as usize),
+            replay_scrollback,
             cursor_shape,
             cursor_blink: Some(p.terminal_cursor_blink),
             ..SessionOptions::default()
@@ -1047,7 +1145,7 @@ impl Workspace {
                 }
             };
         let handle = self.registry.handle(session_id)?;
-        Some((session_id, handle))
+        Some((session_id, handle, scrollback_id))
     }
 
     fn new_terminal_view(
@@ -1064,7 +1162,8 @@ impl Workspace {
     /// Spawn a new local terminal session and open a workspace tab for it.
     fn open_terminal_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let cwd = self.active_pane_view(cx).and_then(|v| v.read(cx).cwd());
-        let Some((session_id, handle)) = self.spawn_session(cwd.clone(), cx) else {
+        let Some((session_id, handle, scrollback_id)) = self.spawn_session(cwd.clone(), None, cx)
+        else {
             return;
         };
         let pane_id = self.alloc_pane();
@@ -1072,7 +1171,14 @@ impl Workspace {
             .tabs
             .update(cx, |s, cx| s.open_workspace(session_id, cwd, cx));
         let view = self.new_terminal_view(handle, window, cx);
-        self.panes.insert(pane_id, PaneEntry { session_id, view });
+        self.panes.insert(
+            pane_id,
+            PaneEntry {
+                session_id,
+                view,
+                scrollback_id,
+            },
+        );
         self.layouts.insert(tab_id, WorkspaceLayout::new(pane_id));
         self.focus_active(window, cx);
     }
@@ -1084,7 +1190,7 @@ impl Workspace {
             return;
         };
         let cwd = self.active_pane_view(cx).and_then(|v| v.read(cx).cwd());
-        let Some((session_id, handle)) = self.spawn_session(cwd, cx) else {
+        let Some((session_id, handle, scrollback_id)) = self.spawn_session(cwd, None, cx) else {
             return;
         };
         let split_id = self.alloc_pane();
@@ -1093,7 +1199,14 @@ impl Workspace {
             layout.split(split_id, new_pane, axis);
         }
         let view = self.new_terminal_view(handle, window, cx);
-        self.panes.insert(new_pane, PaneEntry { session_id, view });
+        self.panes.insert(
+            new_pane,
+            PaneEntry {
+                session_id,
+                view,
+                scrollback_id,
+            },
+        );
         self.focus_active(window, cx);
         cx.notify();
     }
@@ -1303,6 +1416,9 @@ impl Workspace {
     fn retire_pane(&mut self, pane_id: PaneId) {
         if let Some(entry) = self.panes.remove(&pane_id) {
             self.registry.close(entry.session_id);
+            // Drop this pane's persisted scrollback — a closed pane is never
+            // restored (T14-002).
+            scrollback_delete(&entry.scrollback_id);
         }
     }
 
@@ -1783,7 +1899,15 @@ impl Workspace {
             id
         });
         let view = self.new_terminal_view(handle, window, cx);
-        self.panes.insert(pane_id, PaneEntry { session_id, view });
+        self.panes.insert(
+            pane_id,
+            PaneEntry {
+                session_id,
+                view,
+                // SSH panes are not persisted with scrollback (T14-002).
+                scrollback_id: uuid::Uuid::new_v4().to_string(),
+            },
+        );
         self.layouts.insert(tab_id, WorkspaceLayout::new(pane_id));
         self.ssh_tabs.insert(
             session_id,

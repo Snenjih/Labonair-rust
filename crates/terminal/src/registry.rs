@@ -96,6 +96,17 @@ impl SessionBackend {
             SessionBackend::Remote(s) => s,
         }
     }
+
+    fn serialize_scrollback(&self, max_lines: Option<usize>) -> Option<String> {
+        match self {
+            SessionBackend::Local(s) => s
+                .with_emulator(|e| e.serialize_scrollback(max_lines))
+                .ok()
+                .filter(|t| !t.trim().is_empty()),
+            // Remote (SSH) panes are not persisted with scrollback.
+            SessionBackend::Remote(_) => None,
+        }
+    }
 }
 
 /// Opaque, process-unique identifier for a local terminal session. Starts at 1
@@ -178,6 +189,17 @@ impl SessionHandle {
             }
         }
         events
+    }
+
+    /// Serialize this session's scrollback + visible screen as plain text for
+    /// session persistence (T14-002). `None` for a remote session, an
+    /// alt-screen buffer, or an empty grid.
+    pub fn serialize_scrollback(&self, max_lines: Option<usize>) -> Option<String> {
+        self.slot
+            .session
+            .lock()
+            .unwrap()
+            .serialize_scrollback(max_lines)
     }
 
     /// Current lifecycle state of the shell.

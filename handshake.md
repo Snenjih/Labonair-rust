@@ -4,7 +4,64 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
-## Last Session: 2026-09-02 (T14-001 — Session persistence: tabs/layout)
+## Last Session: 2026-09-02 (T14-002 — Scrollback persistence)
+
+### What Was Done
+- **T14-002 ✅ Done.** Persist each restorable local terminal pane's scrollback
+  on quit and replay it into the re-spawned shell on the next launch, plus
+  orphan/retention cleanup. Port of reference `src/modules/session/scrollback.ts`
+  + `src-tauri/src/modules/scrollback/`.
+  - **`crates/backend/.../modules/scrollback/mod.rs`** — the module already
+    existed (only `truncate_scrollback` was live). Converted `scrollback_save`
+    / `scrollback_load` / `scrollback_cleanup` from unused `async` to sync
+    small-file IO (called from the same startup/shutdown paths as
+    `session.json`), added `scrollback_delete`, and split each into a
+    dir-parametrized `*_in` core so they're unit-testable against a temp dir.
+    Storage: gzip `<data_dir>/scrollback/<pane-uuid>.ansi.gz`, atomic
+    tmp+rename, front-truncation with visible overflow notice, absolute
+    `HARD_MAX_UNCOMPRESSED_BYTES` ceiling. +6 tests.
+  - **`crates/terminal/src/engine.rs`** — `TerminalEmulator::serialize_scrollback(max_lines)`:
+    history + visible grid as plain text (`\r\n`-joined, trailing blanks
+    trimmed, leading blanks dropped). Returns `""` on the alternate screen
+    (don't persist a TUI's transient buffer). +2 tests.
+  - **`crates/terminal/src/session.rs`** — new `SessionOptions::replay_scrollback`;
+    `TerminalSession::spawn` feeds it into the emulator *before* starting the
+    reader thread, so restored history lands above fresh shell output with no
+    race. +1 test.
+  - **`crates/terminal/src/registry.rs`** — `SessionHandle::serialize_scrollback`
+    (Local only; `None` for remote/alt-screen/empty).
+  - **`crates/backend/.../settings/preferences.rs`** — new `session_scrollback_lines`
+    (5000), `scrollback_max_size_mb` (5), `scrollback_retention_days` (14).
+  - **`crates/ui/src/settings.rs`** — 3 new Terminal FIELDS rows (generic path).
+  - **`crates/ui/src/session.rs`** — `PaneSessionSnapshot.scrollback_id: Option<String>`
+    (`#[serde(default)]`, no version bump — old snapshots restore w/o
+    scrollback); `RestoreAction::LocalWorkspace` carries `scrollback_ids`. +1 test.
+  - **`crates/ui/src/workspace.rs`** — `PaneEntry.scrollback_id`; `spawn_session`
+    gained `replay_scrollback_id` + returns the id (loads persisted scrollback
+    when restoring); `snapshot_workspace_tab` serializes + `scrollback_save`s
+    each local pane on every capture (30s timer + quit); `restore_local_workspace`
+    threads the ids through; `retire_pane` → `scrollback_delete`; new
+    `cleanup_scrollback` runs once at end of `Workspace::new`.
+  - **`crates/ui/src/app_shell.rs`** — quit hook wipes all scrollback via
+    `scrollback_cleanup(&[], None)` when `session_restore` is off.
+- Verify: `cargo check --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`,
+  `cargo test --workspace` (backend 161→167, terminal 64→67, ui 183→184),
+  `cargo fmt --all --check` — all green.
+- **Known gaps / for later:**
+  - Scrollback is persisted as plain text (no colors) — matches the task note
+    ("Zellen ohne überflüssige Ansi"); the reference keeps SGR via xterm's
+    SerializeAddon. Revisit if colored replay is wanted.
+  - No dormant-ring / background-tab buffering (reference `flushDormantScrollback`)
+    — our sessions never pause, so the emulator always holds current history;
+    the 30s capture covers force-quit.
+  - Manual in-place shell restart (`SessionHandle::restart`) reuses the stored
+    `SessionOptions`, so it would re-replay the original scrollback. Minor;
+    not wired to persistence. Noted in bugs_and_fixes.
+  - Alt-screen quit: scrollback capture is skipped entirely while a TUI holds
+    the alt screen (returns `""`, existing file left as-is). No primary-grid
+    extraction (alacritty doesn't expose the inactive grid cleanly).
+
+## Previous Session: 2026-09-02 (T14-001 — Session persistence: tabs/layout)
 
 ### What Was Done
 - **T14-001 ✅ Done.** Restore the previous tabs + split-pane layout on
@@ -61,8 +118,8 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
     editors are re-opened from disk (unsaved buffer content is not stored).
   - `restore_session` runs inside `Workspace::new`; `connect_host` /
     `open_sftp` there spawn async tasks — fine, non-blocking.
-- **Next task:** **T14-002** — Scrollback persistence (depends on T14-001 ✅,
-  Phase 2, T03-001).
+- **Next task:** Phase 13 is complete. Next is **Phase 14 — Testing & Polish**,
+  starting with **T15-001** — Visual parity (`tasks/phase-14-testing/`).
 
 ### (previous) T13-004 — Shortcut configuration
 

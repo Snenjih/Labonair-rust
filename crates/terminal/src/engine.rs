@@ -899,6 +899,46 @@ impl TerminalEmulator {
             selection,
         }
     }
+
+    /// Serialize the scrollback history plus the visible screen as plain text,
+    /// one grid row per line, `\r\n`-joined, with trailing blanks trimmed and
+    /// leading blank lines dropped. Feeds the session scrollback-persistence
+    /// layer (T14-002).
+    ///
+    /// `max_lines` caps how many of the most recent rows are kept (`None` or
+    /// `Some(0)` = all). Returns an empty string while a full-screen app holds
+    /// the alternate screen — a TUI's transient buffer is not history worth
+    /// persisting.
+    pub fn serialize_scrollback(&self, max_lines: Option<usize>) -> String {
+        if self.is_alt_screen() {
+            return String::new();
+        }
+        let grid = self.term.grid();
+        let history = grid.history_size() as i32;
+        let screen_lines = self.dimensions.screen_lines as i32;
+        let cols = self.dimensions.columns;
+        let total = history + screen_lines;
+        let keep = match max_lines {
+            Some(0) | None => total,
+            Some(m) => (m as i32).min(total),
+        }
+        .max(1);
+        let first = screen_lines - keep;
+        let mut lines: Vec<String> = Vec::with_capacity(keep.max(0) as usize);
+        for l in first..screen_lines {
+            let row = &grid[Line(l)];
+            let mut s = String::new();
+            for c in 0..cols {
+                s.push(row[Column(c)].c);
+            }
+            lines.push(s.trim_end().to_string());
+        }
+        let start = lines
+            .iter()
+            .position(|l| !l.is_empty())
+            .unwrap_or(lines.len());
+        lines[start..].join("\r\n")
+    }
 }
 
 /// A grid position, re-exported for renderer/tests without pulling the whole
@@ -1103,6 +1143,34 @@ mod tests {
         assert!(term.render().display_offset > 0);
         term.scroll(Scroll::Bottom);
         assert_eq!(term.render().display_offset, 0);
+    }
+
+    #[test]
+    fn serialize_scrollback_captures_history_and_visible_rows() {
+        let (mut term, _rx) = emulator(12, 3);
+        for i in 0..20 {
+            term.feed(format!("line{i}\r\n").as_bytes());
+        }
+        let all = term.serialize_scrollback(None);
+        assert!(all.contains("line0"), "oldest line missing:\n{all}");
+        assert!(all.contains("line19"), "newest line missing:\n{all}");
+        assert!(all.contains("\r\n"), "rows must be CRLF-joined");
+        // No trailing spaces on padded rows.
+        assert!(all.lines().all(|l| l == l.trim_end()));
+
+        // max_lines keeps only the most recent rows.
+        let tail = term.serialize_scrollback(Some(3));
+        assert!(!tail.contains("line0"));
+        assert!(tail.contains("line19"));
+        assert!(tail.lines().count() <= 3);
+    }
+
+    #[test]
+    fn serialize_scrollback_is_empty_on_the_alternate_screen() {
+        let (mut term, _rx) = emulator(20, 5);
+        term.feed(b"visible history\r\n");
+        term.feed(b"\x1b[?1049h");
+        assert_eq!(term.serialize_scrollback(None), "");
     }
 
     #[test]

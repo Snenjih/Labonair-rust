@@ -1,7 +1,7 @@
 # T14-002: Scrollback-Persistenz
 
 ## Status
-⏳ Pending
+✅ Done
 
 ## Phase
 13 — Session-Persistence & Scrollback
@@ -45,12 +45,12 @@ Mechanik: Beim Beenden wird der Scrollback-Inhalt (die Zellen des Terminals) ein
 
 ## Akzeptanzkriterien
 
-- [ ] Scrollback-Inhalt lässt sich persistieren (in eine Datei) und wieder laden.
-- [ ] Nach einem simulierten Restart zeigt eine wiederhergestellte Terminal-Session den vorherigen Verlauf (dahinter die neue Ausgabe).
-- [ ] Verwaiste Scrollback-Dateien werden aufgeräumt; Alt-Screen-Sonderfälle behandelt.
-- [ ] Beim Löschen einer Session wird deren Scrollback entfernt.
-- [ ] Eine Größen-/Anzahl-Obergrenze verhindert Dateisystem-Überlauf.
-- [ ] Alle Tests laufen grün.
+- [x] Scrollback-Inhalt lässt sich persistieren (in eine Datei) und wieder laden. (`scrollback_save`/`scrollback_load`, gzip, `save_then_load_round_trips_the_scrollback`)
+- [x] Nach einem simulierten Restart zeigt eine wiederhergestellte Terminal-Session den vorherigen Verlauf (dahinter die neue Ausgabe). (`SessionOptions::replay_scrollback` + `replayed_scrollback_appears_above_fresh_shell_output`)
+- [x] Verwaiste Scrollback-Dateien werden aufgeräumt; Alt-Screen-Sonderfälle behandelt. (`scrollback_cleanup` + `serialize_scrollback` returns "" on the alt screen)
+- [x] Beim Löschen einer Session wird deren Scrollback entfernt. (`retire_pane` → `scrollback_delete`)
+- [x] Eine Größen-/Anzahl-Obergrenze verhindert Dateisystem-Überlauf. (`scrollbackMaxSizeMb` + `HARD_MAX_UNCOMPRESSED_BYTES` + `truncate_scrollback`; `sessionScrollbackLines` row cap; `scrollbackRetentionDays` retention)
+- [x] Alle Tests laufen grün. (backend 167, terminal 67, ui 184)
 
 ## Notizen
 

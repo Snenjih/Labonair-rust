@@ -41,6 +41,10 @@ pub struct SessionOptions {
     pub startup_command: Option<String>,
     /// Scrollback history depth. `None` → engine default (T13-003).
     pub scrollback: Option<usize>,
+    /// Previously-persisted scrollback text (T14-002) fed into the emulator
+    /// once, before the fresh shell produces any output, so a restored session
+    /// shows its prior history above the new prompt.
+    pub replay_scrollback: Option<String>,
     /// Default cursor shape until a program overrides it (T13-003).
     pub cursor_shape: Option<crate::CursorShape>,
     /// Whether the default cursor blinks (T13-003).
@@ -143,6 +147,19 @@ impl TerminalSession {
             });
             if let (Some(cwd), Ok(mut guard)) = (initial_cwd, emulator.lock()) {
                 guard.set_initial_cwd(cwd);
+            }
+        }
+
+        // Replay persisted scrollback (T14-002) straight into the emulator
+        // before the reader thread starts, so it lands above the fresh shell
+        // output rather than racing with it.
+        if let Some(replay) = &options.replay_scrollback {
+            let trimmed = replay.trim_end_matches(['\r', '\n']);
+            if !trimmed.is_empty() {
+                if let Ok(mut guard) = emulator.lock() {
+                    let _ = guard.feed(trimmed.as_bytes());
+                    let _ = guard.feed(b"\r\n");
+                }
             }
         }
 
@@ -675,6 +692,39 @@ mod tests {
             t.contains("PARITYCHECK_OK")
         });
         assert!(text.contains("PARITYCHECK_OK"), "screen was:\n{text}");
+    }
+
+    #[test]
+    fn replayed_scrollback_appears_above_fresh_shell_output() {
+        let session = TerminalSession::spawn(
+            dark_colors(),
+            TermDimensions::new(80, 24),
+            SessionOptions {
+                shell: Some("/bin/sh".to_string()),
+                replay_scrollback: Some("OLD_HISTORY_LINE".to_string()),
+                ..SessionOptions::default()
+            },
+        )
+        .unwrap();
+        // The replayed line is present immediately, before any shell output.
+        assert!(session
+            .with_emulator(|e| e.serialize_scrollback(None))
+            .unwrap()
+            .contains("OLD_HISTORY_LINE"));
+        session.write(b"printf 'FRESH_OUTPUT\\n'\n").unwrap();
+        let text = wait_for(&session, Duration::from_secs(5), |t| {
+            t.contains("FRESH_OUTPUT")
+        });
+        assert!(text.contains("FRESH_OUTPUT"), "screen:\n{text}");
+        let full = session
+            .with_emulator(|e| e.serialize_scrollback(None))
+            .unwrap();
+        let old_at = full.find("OLD_HISTORY_LINE");
+        let fresh_at = full.find("FRESH_OUTPUT");
+        assert!(
+            matches!((old_at, fresh_at), (Some(o), Some(f)) if o < f),
+            "history order wrong:\n{full}"
+        );
     }
 
     #[test]

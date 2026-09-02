@@ -102,6 +102,14 @@ pub struct Preferences {
     pub terminal_font_family: String,
     pub terminal_font_size: u32,
     pub terminal_scrollback: u32,
+    /// Rows of scrollback persisted per pane on quit and replayed on the next
+    /// launch (T14-002). `0` = persist everything the buffer holds.
+    pub session_scrollback_lines: u32,
+    /// Per-file ceiling for a persisted scrollback, in MB.
+    pub scrollback_max_size_mb: u32,
+    /// Days a persisted scrollback file is kept before cleanup deletes it.
+    /// `0` = keep until the pane/session goes away.
+    pub scrollback_retention_days: u32,
     pub terminal_cursor_style: CursorStyle,
     pub terminal_cursor_blink: bool,
     pub terminal_copy_on_select: bool,
@@ -167,6 +175,9 @@ impl Default for Preferences {
             terminal_font_family: "JetBrains Mono".to_string(),
             terminal_font_size: 13,
             terminal_scrollback: 10_000,
+            session_scrollback_lines: 5_000,
+            scrollback_max_size_mb: 5,
+            scrollback_retention_days: 14,
             terminal_cursor_style: CursorStyle::Block,
             terminal_cursor_blink: true,
             terminal_copy_on_select: false,
@@ -354,6 +365,9 @@ mod tests {
     fn new_terminal_editor_fields_have_sensible_defaults() {
         let p = Preferences::default();
         assert_eq!(p.terminal_opacity, 100);
+        assert_eq!(p.session_scrollback_lines, 5_000);
+        assert_eq!(p.scrollback_max_size_mb, 5);
+        assert_eq!(p.scrollback_retention_days, 14);
         assert_eq!(p.editor_theme, "auto");
         assert!(!p.editor_vim_mode);
         assert!(!p.editor_relative_line_numbers);

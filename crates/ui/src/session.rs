@@ -92,6 +92,10 @@ pub struct PaneSessionSnapshot {
     pub cwd: Option<String>,
     /// Host id for an SSH pane.
     pub host_id: Option<String>,
+    /// Stable UUID keying this pane's persisted scrollback file (T14-002).
+    /// `None` for older snapshots / panes with no captured scrollback.
+    #[serde(default)]
+    pub scrollback_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -133,6 +137,9 @@ pub enum RestoreAction {
     LocalWorkspace {
         layout: WorkspaceLayout,
         cwds: Vec<Option<String>>,
+        /// Scrollback-file UUID per leaf (same order as `cwds`), to replay each
+        /// re-spawned pane's persisted history (T14-002).
+        scrollback_ids: Vec<Option<String>>,
     },
     /// Reconnect an SSH workspace tab (single pane) for `host_id`.
     SshWorkspace {
@@ -247,15 +254,18 @@ fn plan_workspace(
     // Re-order the per-leaf cwds to match the freshly-remapped leaf order
     // (`remap_layout` preserves left→right order, so this is a straight zip).
     let _ = order;
-    let cwds = w
-        .layout
-        .root
-        .leaves()
-        .iter()
-        .enumerate()
-        .map(|(i, _)| w.sessions.get(i).and_then(|s| s.cwd.clone()))
+    let leaf_count = w.layout.root.leaves().len();
+    let cwds = (0..leaf_count)
+        .map(|i| w.sessions.get(i).and_then(|s| s.cwd.clone()))
         .collect();
-    RestoreAction::LocalWorkspace { layout, cwds }
+    let scrollback_ids = (0..leaf_count)
+        .map(|i| w.sessions.get(i).and_then(|s| s.scrollback_id.clone()))
+        .collect();
+    RestoreAction::LocalWorkspace {
+        layout,
+        cwds,
+        scrollback_ids,
+    }
 }
 
 /// Rebuild a [`WorkspaceLayout`] with fresh pane/split ids, preserving the tree
@@ -391,16 +401,19 @@ mod tests {
                             kind: PaneSessionKind::Local,
                             cwd: Some("/a".into()),
                             host_id: None,
+                            scrollback_id: Some("sb-a".into()),
                         },
                         PaneSessionSnapshot {
                             kind: PaneSessionKind::Local,
                             cwd: Some("/b".into()),
                             host_id: None,
+                            scrollback_id: None,
                         },
                         PaneSessionSnapshot {
                             kind: PaneSessionKind::Local,
                             cwd: None,
                             host_id: None,
+                            scrollback_id: None,
                         },
                     ],
                 }),
@@ -411,6 +424,7 @@ mod tests {
                         kind: PaneSessionKind::Ssh,
                         cwd: Some("/srv".into()),
                         host_id: Some("host-1".into()),
+                        scrollback_id: None,
                     }],
                 }),
                 TabSnapshot::Editor(EditorTabSnapshot {
@@ -467,6 +481,14 @@ mod tests {
     }
 
     #[test]
+    fn pane_snapshot_without_scrollback_id_defaults_to_none() {
+        let json = r#"{"kind":"local","cwd":"/x","hostId":null}"#;
+        let p: PaneSessionSnapshot = serde_json::from_str(json).unwrap();
+        assert_eq!(p.scrollback_id, None);
+        assert_eq!(p.cwd.as_deref(), Some("/x"));
+    }
+
+    #[test]
     fn missing_file_loads_as_none() {
         let dir = tmp_dir();
         assert_eq!(load_from(&dir.join("nope.json")), None);
@@ -511,12 +533,17 @@ mod tests {
         assert_eq!(actions[0], RestoreAction::Home);
 
         match &actions[1] {
-            RestoreAction::LocalWorkspace { layout, cwds } => {
+            RestoreAction::LocalWorkspace {
+                layout,
+                cwds,
+                scrollback_ids,
+            } => {
                 assert_eq!(layout.root.leaves().len(), 3);
                 assert_eq!(
                     cwds,
                     &vec![Some("/a".to_string()), Some("/b".to_string()), None]
                 );
+                assert_eq!(scrollback_ids, &vec![Some("sb-a".to_string()), None, None]);
             }
             other => panic!("expected local workspace, got {other:?}"),
         }

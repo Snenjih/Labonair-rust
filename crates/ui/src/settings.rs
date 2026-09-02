@@ -340,6 +340,39 @@ pub const FIELDS: &[FieldDef] = &[
         },
     ),
     d(
+        "sessionScrollbackLines",
+        "Persisted scrollback lines",
+        "Rows of history saved per pane on quit and replayed on the next launch (0 = all).",
+        "Terminal",
+        Int {
+            min: 0,
+            max: 100_000,
+            step: 500,
+        },
+    ),
+    d(
+        "scrollbackMaxSizeMb",
+        "Persisted scrollback size cap",
+        "Per-file ceiling for a saved scrollback, in MB.",
+        "Terminal",
+        Int {
+            min: 1,
+            max: 100,
+            step: 1,
+        },
+    ),
+    d(
+        "scrollbackRetentionDays",
+        "Persisted scrollback retention",
+        "Days a saved scrollback file is kept before cleanup removes it (0 = keep with the session).",
+        "Terminal",
+        Int {
+            min: 0,
+            max: 365,
+            step: 1,
+        },
+    ),
+    d(
         "terminalCursorStyle",
         "Cursor style",
         "Shape of the terminal cursor.",

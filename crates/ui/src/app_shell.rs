@@ -343,6 +343,9 @@ impl AppShell {
                     crate::session::save_snapshot(&snapshot);
                 } else {
                     crate::session::clear_snapshot();
+                    // Session restore is off — no persisted scrollback is ever
+                    // replayed, so wipe it all (T14-002).
+                    labonair_backend::modules::scrollback::scrollback_cleanup(&[], None);
                 }
                 true
             }
