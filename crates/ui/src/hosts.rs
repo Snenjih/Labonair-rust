@@ -434,6 +434,11 @@ impl HostManagerView {
         }
     }
 
+    /// All known host ids (for session restore — T14-001).
+    pub fn host_ids(&self) -> Vec<String> {
+        self.hosts.iter().map(|h| h.id.clone()).collect()
+    }
+
     /// Display name for a host id, if known.
     pub fn host_name(&self, host_id: &str) -> Option<String> {
         self.hosts

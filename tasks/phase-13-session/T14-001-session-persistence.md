@@ -1,7 +1,7 @@
 # T14-001: Session-Persistenz (Tabs/Layout wiederherstellen)
 
 ## Status
-⏳ Pending
+✅ Done
 
 ## Phase
 13 — Session-Persistence & Scrollback

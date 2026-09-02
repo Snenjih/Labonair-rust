@@ -4,7 +4,67 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
-## Last Session: 2026-09-02 (T13-004 — Shortcut configuration)
+## Last Session: 2026-09-02 (T14-001 — Session persistence: tabs/layout)
+
+### What Was Done
+- **T14-001 ✅ Done.** Restore the previous tabs + split-pane layout on
+  restart. Port of reference `src/modules/session/` (`types.ts` / `capture.ts`
+  / `restore.ts` / `store.ts`).
+  - **`crates/ui/src/session.rs`** (new) — pure model + decision layer, no
+    GPUI. `SessionSnapshot { version, saved_at, active_tab_index, tabs }`;
+    `TabSnapshot` enum (`Home` / `Workspace` / `Editor` / `Preview` / `Sftp`;
+    transient AiDiff/Git* kinds are not persisted, like the reference skipping
+    `ai-diff`). `WorkspaceTabSnapshot` carries `custom_title`, the serde-able
+    `WorkspaceLayout` (structure + ratios + active leaf — already `Serialize`
+    from T04-002) and a per-leaf `Vec<PaneSessionSnapshot>` (`Local`/`Ssh`,
+    cwd, host_id) in `layout.leaves()` order. `plan_restore(snapshot,
+    host_exists, file_exists, alloc_pane) -> Vec<RestoreAction>` is the
+    testable decision fn: missing file / deleted host → `RestoreAction::Skip`;
+    single-pane SSH tab → `SshWorkspace` (lazy reconnect); multi-pane →
+    `LocalWorkspace` with a fresh-id-remapped layout (`remap_layout`).
+    Persistence to `<data_dir>/labonair/session.json` (`load_snapshot` /
+    `save_snapshot` / `clear_snapshot`, version-checked, stale file deleted).
+    +7 unit tests.
+  - **`crates/backend/.../settings/preferences.rs`** — new
+    `session_restore: bool` (default **true**). +1 assertion.
+  - **`crates/ui/src/settings.rs`** — new General FIELDS row `sessionRestore`
+    (Switch). Works through the existing generic `set_value` path.
+  - **`crates/ui/src/workspace.rs`** — `Workspace::new` gained an
+    `Option<SessionSnapshot>` arg: if present it calls the new
+    `restore_session()` (plan + execute: `open_workspace` / `connect_host` /
+    `open_file` / `open_sftp`, re-spawn one PTY per leaf via
+    `restore_local_workspace`, then re-activate the snapshot's active tab),
+    else falls back to the old Home + terminal bootstrap. New
+    `session_snapshot(&self, cx)` capture. New `_session_save` task writes a
+    snapshot every 30s (`SESSION_SAVE_INTERVAL`) when `session_restore` is on
+    (covers force-quit).
+  - **`crates/ui/src/hosts.rs`** — new `HostManagerView::host_ids()`.
+  - **`crates/ui/src/app_shell.rs`** — loads the snapshot up-front
+    (`preferences_load().session_restore.then(load_snapshot)`) and passes it to
+    `Workspace::new`; the `on_window_should_close` hook now also captures
+    (`session_snapshot` → `save_snapshot`) or `clear_snapshot()`s when the pref
+    is off.
+- Verify: `cargo check`, `cargo clippy --workspace --all-targets -- -D
+  warnings`, `cargo test --workspace` (ui 176→183, backend 161 unchanged),
+  `cargo fmt --all --check` — all green.
+- **Known gaps / for later:**
+  - Preview and Git* tabs are captured-skipped (Preview) / not captured
+    (Git*) — those tab kinds have no real workspace implementation yet
+    (placeholders), so persisting them would be speculative. Revisit when the
+    web-preview replacement / git-graph tabs land.
+  - Multi-pane workspace tabs that contained an SSH pane are restored as
+    all-local terminals (matches the reference's `kind:"local"` fallback for
+    panes it can't reconnect). Single-pane SSH tabs reconnect via
+    `connect_host` (already non-blocking, shows "Connecting…").
+  - No unsaved-editor "ask before quit" dialog on the capture path yet
+    (task ⚠); untitled editors are simply not persisted. Dirty *named*
+    editors are re-opened from disk (unsaved buffer content is not stored).
+  - `restore_session` runs inside `Workspace::new`; `connect_host` /
+    `open_sftp` there spawn async tasks — fine, non-blocking.
+- **Next task:** **T14-002** — Scrollback persistence (depends on T14-001 ✅,
+  Phase 2, T03-001).
+
+### (previous) T13-004 — Shortcut configuration
 
 ### What Was Done
 - **T13-004 ✅ Done.** Persistent, user-editable keyboard-shortcut bindings

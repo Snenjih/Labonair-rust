@@ -204,6 +204,15 @@ impl AppShell {
         }
 
         let registry = Arc::new(TerminalRegistry::new());
+        // Session restore (T14-001): load the previous snapshot up-front so the
+        // workspace can replay it instead of opening the default tabs.
+        let session_snapshot = {
+            use labonair_backend::modules::settings::preferences::preferences_load;
+            preferences_load()
+                .session_restore
+                .then(crate::session::load_snapshot)
+                .flatten()
+        };
         let workspace = cx.new(|cx| {
             Workspace::new(
                 registry,
@@ -212,6 +221,7 @@ impl AppShell {
                 backend.clone(),
                 tokio.clone(),
                 agent_access.clone(),
+                session_snapshot,
                 window,
                 cx,
             )
@@ -319,11 +329,23 @@ impl AppShell {
 
         // Persist the final window geometry on close (the throttled per-render
         // save covers force-quit within the last second).
-        window.on_window_should_close(cx, |window, _cx| {
-            if let WindowBounds::Windowed(bounds) = window.window_bounds() {
-                window_state::save(bounds);
+        window.on_window_should_close(cx, {
+            let workspace = workspace.clone();
+            let prefs = prefs.clone();
+            move |window, cx| {
+                if let WindowBounds::Windowed(bounds) = window.window_bounds() {
+                    window_state::save(bounds);
+                }
+                // Session snapshot (T14-001): capture on the normal quit path,
+                // or wipe a stale snapshot when the preference is off.
+                if prefs.read(cx).get().session_restore {
+                    let snapshot = workspace.read(cx).session_snapshot(cx);
+                    crate::session::save_snapshot(&snapshot);
+                } else {
+                    crate::session::clear_snapshot();
+                }
+                true
             }
-            true
         });
 
         Self {

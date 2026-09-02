@@ -52,6 +52,11 @@ use crate::background::BackgroundStore;
 use crate::editor::{EditorEvent, EditorView};
 use crate::hosts::{ActiveTunnelRow, HostManagerEvent, HostManagerView, HostStatus};
 use crate::pane::{CloseOutcome, PaneId, PaneNode, SplitAxis, WorkspaceLayout};
+use crate::session::{
+    plan_restore, PaneSessionKind, PaneSessionSnapshot, RestoreAction, RestoreResult,
+    SessionSnapshot, TabSnapshot, WorkspaceTabSnapshot,
+};
+use crate::settings::GlobalPreferences;
 use crate::sftp::{SftpEvent, SftpView};
 use crate::tabs::{Tab, TabData, TabKind, TabStore};
 use crate::terminal::TerminalView;
@@ -130,6 +135,9 @@ impl SshPrompt {
 
 /// Interval for syncing terminal cwd/title into their tab labels.
 const META_SYNC_INTERVAL: Duration = Duration::from_millis(400);
+
+/// How often the session snapshot is re-written while the app runs (T14-001).
+const SESSION_SAVE_INTERVAL: Duration = Duration::from_secs(30);
 
 /// Thickness of a split-divider resize handle.
 const HANDLE: f32 = 6.0;
@@ -250,6 +258,9 @@ pub struct Workspace {
     /// Backend → workspace SSH events, forwarded off the broadcast bus.
     ssh_events: std::sync::mpsc::Receiver<AppEvent>,
     _ssh_poll: Task<()>,
+    /// Periodic session-snapshot writer (T14-001) — covers force-quit; the
+    /// window-close hook in `AppShell` covers the normal path.
+    _session_save: Task<()>,
 
     // ── SFTP transfers (T08-002) ──────────────────────────────────────────
     transfers: Entity<TransfersView>,
@@ -278,6 +289,7 @@ impl Workspace {
         backend: Backend,
         tokio: TokioHandle,
         agent_access: Entity<AgentAccessStore>,
+        restore: Option<SessionSnapshot>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -383,6 +395,16 @@ impl Workspace {
             }
         });
 
+        let session_save = cx.spawn(async move |this, cx| loop {
+            cx.background_executor().timer(SESSION_SAVE_INTERVAL).await;
+            if this
+                .update(cx, |this, cx| this.maybe_save_session(cx))
+                .is_err()
+            {
+                break;
+            }
+        });
+
         let mut this = Self {
             registry,
             tabs,
@@ -401,6 +423,7 @@ impl Workspace {
             context_menu: None,
             focus_handle: cx.focus_handle(),
             _meta_sync: meta_sync,
+            _session_save: session_save,
             backend,
             tokio,
             host_manager,
@@ -419,11 +442,230 @@ impl Workspace {
         };
         cx.observe(&this.agent_access, |_, _, cx| cx.notify())
             .detach();
-        // Landing tab: the host-manager dashboard.
-        this.tabs
-            .update(cx, |s, cx| s.open(TabKind::Home, TabData::default(), cx));
-        this.open_terminal_tab(window, cx);
+
+        // Session restore (T14-001): replay the previous tabs / layout if a
+        // snapshot was passed in, otherwise open the default Home + terminal.
+        let restored = restore
+            .filter(|s| !s.tabs.is_empty())
+            .map(|snap| this.restore_session(&snap, window, cx));
+        let opened_any = restored.as_ref().map(|r| r.restored > 0).unwrap_or(false);
+        if let Some(result) = &restored {
+            for (title, reason) in &result.failed {
+                tracing::warn!(title, reason, "session tab not restored");
+            }
+        }
+        if !opened_any {
+            // Landing tab: the host-manager dashboard.
+            this.tabs
+                .update(cx, |s, cx| s.open(TabKind::Home, TabData::default(), cx));
+            this.open_terminal_tab(window, cx);
+        } else if !this
+            .tabs
+            .read(cx)
+            .tabs()
+            .iter()
+            .any(|t| t.kind == TabKind::Home)
+        {
+            // Home is never closable, so a snapshot should always carry one;
+            // guard anyway so the dashboard is always reachable.
+            this.tabs
+                .update(cx, |s, cx| s.open(TabKind::Home, TabData::default(), cx));
+        }
         this
+    }
+
+    // ── Session persistence (T14-001) ─────────────────────────────────────
+
+    /// Snapshot every persistable tab + each workspace tab's split-pane tree.
+    pub fn session_snapshot(&self, cx: &App) -> SessionSnapshot {
+        let store = self.tabs.read(cx);
+        let active_id = store.active_id();
+        let mut tabs = Vec::new();
+        let mut active_index = 0;
+        for tab in store.tabs() {
+            let snap = match tab.kind {
+                TabKind::Home => Some(TabSnapshot::Home),
+                TabKind::Workspace => self.snapshot_workspace_tab(tab, cx),
+                TabKind::Editor => tab
+                    .data
+                    .path
+                    .clone()
+                    .filter(|_| tab.data.host_id.is_none())
+                    .map(|path| TabSnapshot::Editor(crate::session::EditorTabSnapshot { path })),
+                TabKind::Preview => tab
+                    .data
+                    .url
+                    .clone()
+                    .map(|url| TabSnapshot::Preview(crate::session::PreviewTabSnapshot { url })),
+                TabKind::Sftp => tab.data.host_id.clone().map(|host_id| {
+                    TabSnapshot::Sftp(crate::session::SftpTabSnapshot {
+                        host_id,
+                        title: tab.custom_title.clone(),
+                    })
+                }),
+                TabKind::AiDiff | TabKind::GitGraph | TabKind::GitDiff | TabKind::CommitDiff => {
+                    None
+                }
+            };
+            if let Some(snap) = snap {
+                if tab.id == active_id {
+                    active_index = tabs.len();
+                }
+                tabs.push(snap);
+            }
+        }
+        SessionSnapshot::new(tabs, active_index)
+    }
+
+    fn snapshot_workspace_tab(&self, tab: &Tab, cx: &App) -> Option<TabSnapshot> {
+        let layout = self.layouts.get(&tab.id)?.clone();
+        let sessions = layout
+            .root
+            .leaves()
+            .iter()
+            .map(|leaf| {
+                let entry = self.panes.get(leaf);
+                let ssh = entry.and_then(|e| self.ssh_tabs.get(&e.session_id));
+                PaneSessionSnapshot {
+                    kind: if ssh.is_some() {
+                        PaneSessionKind::Ssh
+                    } else {
+                        PaneSessionKind::Local
+                    },
+                    cwd: entry.and_then(|e| e.view.read(cx).cwd()),
+                    host_id: ssh.map(|s| s.host_id.clone()),
+                }
+            })
+            .collect();
+        Some(TabSnapshot::Workspace(WorkspaceTabSnapshot {
+            title: tab.custom_title.clone(),
+            layout,
+            sessions,
+        }))
+    }
+
+    /// Persist the snapshot now if the `sessionRestore` preference is on;
+    /// otherwise remove any stale snapshot. Returns nothing — best effort.
+    fn maybe_save_session(&self, cx: &App) {
+        if cx
+            .try_global::<GlobalPreferences>()
+            .map(|g| g.0.session_restore)
+            .unwrap_or(false)
+        {
+            crate::session::save_snapshot(&self.session_snapshot(cx));
+        }
+    }
+
+    /// Replay `snapshot`, recreating tabs and the active selection.
+    pub fn restore_session(
+        &mut self,
+        snapshot: &SessionSnapshot,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> RestoreResult {
+        let known_hosts: std::collections::HashSet<String> =
+            self.host_manager.read(cx).host_ids().into_iter().collect();
+        let mut next_pane = self.next_pane_id;
+        let actions = plan_restore(
+            snapshot,
+            |h| known_hosts.contains(h),
+            |f| std::path::Path::new(f).is_file(),
+            || {
+                let id = next_pane;
+                next_pane += 1;
+                id
+            },
+        );
+        self.next_pane_id = next_pane;
+
+        let mut result = RestoreResult::default();
+        let mut created: Vec<Option<u64>> = Vec::with_capacity(actions.len());
+        for action in actions {
+            let tab_id = match action {
+                RestoreAction::Home => Some(
+                    self.tabs
+                        .update(cx, |s, cx| s.open(TabKind::Home, TabData::default(), cx)),
+                ),
+                RestoreAction::LocalWorkspace { layout, cwds } => {
+                    self.restore_local_workspace(layout, cwds, window, cx)
+                }
+                RestoreAction::SshWorkspace { host_id, title } => {
+                    self.connect_host(host_id, window, cx);
+                    let id = self.tabs.read(cx).active_id();
+                    if let Some(title) = title {
+                        self.tabs
+                            .update(cx, |s, cx| s.set_custom_title(id, Some(title), cx));
+                    }
+                    Some(id)
+                }
+                RestoreAction::Editor { path } => {
+                    self.open_file(path, false, window, cx);
+                    Some(self.tabs.read(cx).active_id())
+                }
+                RestoreAction::Sftp { host_id, .. } => {
+                    self.open_sftp(host_id, window, cx);
+                    Some(self.tabs.read(cx).active_id())
+                }
+                RestoreAction::Skip { title, reason } => {
+                    result.failed.push((title, reason));
+                    None
+                }
+            };
+            if tab_id.is_some() {
+                result.restored += 1;
+            }
+            created.push(tab_id);
+        }
+
+        // Re-activate the previously-active tab (fall back to the first that
+        // came back if it was dropped).
+        let target = created
+            .get(snapshot.active_tab_index)
+            .copied()
+            .flatten()
+            .or_else(|| created.iter().find_map(|c| *c));
+        if let Some(id) = target {
+            self.select_tab(id, window, cx);
+        }
+        result
+    }
+
+    /// Re-spawn a local terminal workspace tab from a remapped layout.
+    fn restore_local_workspace(
+        &mut self,
+        layout: WorkspaceLayout,
+        cwds: Vec<Option<String>>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Option<u64> {
+        let leaves = layout.root.leaves();
+        // Spawn one session per leaf; bail if the very first cannot start.
+        let mut spawned: Vec<(PaneId, SessionId, SessionHandle)> = Vec::new();
+        for (leaf, cwd) in leaves.iter().zip(cwds.iter()) {
+            match self.spawn_session(cwd.clone(), cx) {
+                Some((sid, handle)) => spawned.push((*leaf, sid, handle)),
+                None if spawned.is_empty() => return None,
+                None => {}
+            }
+        }
+        let (_, first_sid, _) = spawned.first()?;
+        let first_cwd = cwds.first().cloned().flatten();
+        let tab_id = self
+            .tabs
+            .update(cx, |s, cx| s.open_workspace(*first_sid, first_cwd, cx));
+        for (leaf, sid, handle) in spawned {
+            let view = self.new_terminal_view(handle, window, cx);
+            self.panes.insert(
+                leaf,
+                PaneEntry {
+                    session_id: sid,
+                    view,
+                },
+            );
+        }
+        // Keep only the leaves that actually got a pane (should be all).
+        self.layouts.insert(tab_id, layout);
+        Some(tab_id)
     }
 
     /// The tab store (for later phases / command palette wiring).

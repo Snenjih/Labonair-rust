@@ -263,6 +263,13 @@ pub const FIELDS: &[FieldDef] = &[
         Switch,
     ),
     d(
+        "sessionRestore",
+        "Session restore",
+        "Reopen all tabs, SSH connections, SFTP paths and editor files on the next launch.",
+        "General",
+        Switch,
+    ),
+    d(
         "checkForUpdates",
         "Check for updates",
         "Check for new versions automatically.",

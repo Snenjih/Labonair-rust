@@ -87,6 +87,8 @@ pub struct Preferences {
     pub notify_on_errors: bool,
     pub confirm_quit_with_ssh: bool,
     pub check_for_updates: bool,
+    /// Reopen the previous tabs / split layout on the next launch (T14-001).
+    pub session_restore: bool,
 
     // ── Appearance ───────────────────────────────────────────────────────
     pub app_font_size: u32,
@@ -154,6 +156,7 @@ impl Default for Preferences {
             notify_on_errors: true,
             confirm_quit_with_ssh: true,
             check_for_updates: true,
+            session_restore: true,
 
             app_font_size: 13,
             app_line_height: 1.5,
@@ -354,6 +357,7 @@ mod tests {
         assert_eq!(p.editor_theme, "auto");
         assert!(!p.editor_vim_mode);
         assert!(!p.editor_relative_line_numbers);
+        assert!(p.session_restore, "session restore is on by default");
     }
 
     #[test]
