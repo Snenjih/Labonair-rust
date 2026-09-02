@@ -1,7 +1,7 @@
 # T15-002: FAQ d. Kommentarseite nutzen - Fehlerbehandlung & Robustheit (App-weit)
 
 ## Status
-⏳ Pending
+✅ Done
 
 ## Phase
 14 — Testing & Polish

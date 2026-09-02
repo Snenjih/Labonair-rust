@@ -446,29 +446,10 @@ pub async fn ssh_connect(
     result.map_err(classify_ssh_error)
 }
 
-/// Maps a string error from ssh_connect_async to a structured LabonairError variant.
+/// Maps a string error from ssh_connect_async to a structured LabonairError
+/// variant. Delegates to the shared [`LabonairError::classify`] catalog.
 fn classify_ssh_error(s: String) -> LabonairError {
-    let lower = s.to_lowercase();
-    if lower.contains("authentication failed")
-        || lower.contains("not authenticated")
-        || s == "passphrase_required"
-    {
-        LabonairError::AuthFailed(s)
-    } else if lower.contains("tcp connect")
-        || lower.contains("network")
-        || lower.contains("connection reset")
-        || lower.contains("broken pipe")
-        || lower.contains("no route to host")
-    {
-        LabonairError::NetworkError(s)
-    } else if lower.contains("mismatch")
-        || lower.contains("host key")
-        || lower.contains("user rejected host")
-    {
-        LabonairError::HostKeyMismatch(s)
-    } else {
-        LabonairError::Internal(s)
-    }
+    LabonairError::classify(s)
 }
 
 /// Quick-connect: initiate an SSH connection without a saved host record.

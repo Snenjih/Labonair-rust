@@ -4,7 +4,70 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
-## Last Session: 2026-09-02 (T15-001 — Visual parity verification / design polish)
+## Last Session: 2026-09-02 (T15-002 — Error handling & robustness, app-wide)
+
+### What Was Done
+- **T15-002 ✅ Done.** Formalised the app-wide error catalog on top of the
+  existing `LabonairError` (T01-002) + notification system (T04-004). The
+  codebase was already disciplined (Critical Rule 6 — near-zero risky
+  `unwrap()`/`expect()` in non-test code; a grep for `parse().unwrap()` /
+  `read_to_string().unwrap()` / `env::var().unwrap()` etc. across all crates
+  turned up **only test code**), so this task was about consolidation, not a
+  panic hunt.
+  - **`crates/backend/src/modules/errors.rs`** — rewrote:
+    - **7 new `LabonairError` variants** (kept the original 5 +
+      all serde `code` tags): `NotConnected`, `NotFound`, `PermissionDenied`,
+      `InvalidInput`, `Timeout`, `Conflict`. (`NotConnected` = "no live session"
+      vs `NetworkError` = "wire failed".)
+    - **`ErrorCategory`** enum (Ssh/Sftp/Fs/Git/Ai/Terminal/Settings/Network/
+      Other, kebab-case serde) + `LabonairError::category()`.
+    - **`LabonairError::user_message()`** — friendly sentence per variant:
+      "what went wrong" + "what to do next", carries the raw detail but never
+      the serde code tag / stack trace.
+    - **`RecoveryHint`** enum (Reconnect/Retry/Resend/Diagnose/GoBack/FixInput/
+      CheckSettings) + `LabonairError::recovery()` mapping (NetworkError /
+      NotConnected → Reconnect, Timeout → Retry, InvalidInput → FixInput, …).
+    - **`LabonairError::classify(msg)`** — one shared heuristic string
+      classifier that replaces the 2 near-identical `classify_ssh_error` /
+      inline sftp matchers. Order: auth → host-key → timeout → network →
+      not-connected → permission → not-found → conflict → Internal. Always
+      preserves the original string as the variant detail.
+    - **Smarter `From` impls:** `std::io::Error` now maps by `ErrorKind`
+      (NotFound/PermissionDenied/TimedOut/AlreadyExists/connection-family →
+      the matching variant, else `IoError`); `rusqlite::Error::QueryReturnedNoRows`
+      → `NotFound`; `russh` / `russh-sftp` errors route through `classify`.
+    - **+13 tests** (backend 167 → 180): classify buckets + detail
+      preservation, per-variant category stability, friendly-message content,
+      recovery-hint mapping, every `ErrorKind` branch.
+  - **`crates/backend/src/modules/ssh/client.rs`** — `classify_ssh_error` now
+    delegates to `LabonairError::classify` (behaviour is a superset of the old
+    inline matcher).
+  - **`crates/backend/src/modules/sftp/connection.rs`** — the inline
+    `result.map_err(|s| …)` block replaced with `.map_err(LabonairError::classify)`.
+  - **`crates/backend/src/lib.rs`** — re-exports `ErrorCategory`, `RecoveryHint`.
+- Verify: `cargo fmt --all --check`, `cargo check --workspace`,
+  `cargo clippy --workspace --all-targets -- -D warnings`,
+  `cargo test --workspace` — all green. backend **167 → 180**, all other
+  crates unchanged (ai 75, terminal 67, editor 60, theme 23, ui 185, app 0).
+- **Known gaps / for later (deliberately not done — this task is "polish", not
+  a rewrite):**
+  - `crates/backend/src/modules/sftp/net_error.rs::is_network_error` was left
+    as-is. Its semantics intentionally differ from `classify` (it treats
+    "no sftp session" / timeouts as *network* so the transfer worker drops the
+    session + shows a reconnect affordance). Aligning it would need re-checking
+    its ~15 tests; not worth the churn.
+  - `git::classify_apply_error` and `ai::AiError` keep their own domain-specific
+    catalogs (already user-friendly, already tested). They are peers of
+    `LabonairError`, not folded into it.
+  - The new `user_message()` / `recovery()` / `category()` are available for the
+    UI to consume; wiring every existing toast call-site to route through them
+    is a broader UI pass — the notification infra (`notify_err`,
+    `Notification::error().action(…)`) and SSH reconnect affordance already
+    exist and already produce readable messages.
+- **Next task:** T15-003 — Cross-platform & performance optimization
+  (`tasks/phase-14-testing/T15-003-cross-platform-performance.md`).
+
+## Prev Session: 2026-09-02 (T15-001 — Visual parity verification / design polish)
 
 ### What Was Done
 - **T15-001 ✅ Done.** Static visual-parity audit of the GPUI port against the

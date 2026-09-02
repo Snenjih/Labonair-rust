@@ -259,24 +259,7 @@ pub async fn sftp_connect(
         );
     }
 
-    result.map_err(|s| {
-        let lower = s.to_lowercase();
-        if lower.contains("authentication failed")
-            || lower.contains("not authenticated")
-            || s == "passphrase_required"
-        {
-            LabonairError::AuthFailed(s)
-        } else if lower.contains("tcp connect")
-            || lower.contains("network")
-            || lower.contains("broken pipe")
-        {
-            LabonairError::NetworkError(s)
-        } else if lower.contains("host key") {
-            LabonairError::HostKeyMismatch(s)
-        } else {
-            LabonairError::Internal(s)
-        }
-    })
+    result.map_err(LabonairError::classify)
 }
 
 #[allow(clippy::too_many_arguments)]

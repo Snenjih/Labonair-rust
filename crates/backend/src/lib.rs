@@ -11,5 +11,6 @@ pub use app::{App, AppState};
 pub use events::{AppEvent, EventBus, EventChannel, RawEvent};
 pub use modules::errors::LabonairError;
 pub use modules::errors::LabonairError as AppError;
+pub use modules::errors::{ErrorCategory, RecoveryHint};
 
 pub type AppResult<T> = std::result::Result<T, AppError>;
