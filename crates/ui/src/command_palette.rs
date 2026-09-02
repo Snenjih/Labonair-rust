@@ -725,6 +725,8 @@ pub enum PaletteEvent {
     SwitchAiSession(String),
     /// Check out a git branch by name.
     SwitchBranch(String),
+    /// Jump the active editor's caret to a 0-based line (Go to Symbol).
+    GoToLine(usize),
 }
 
 /// A dynamic choice rendered on a sub-page (tab, host, session, branch…).
@@ -809,6 +811,8 @@ enum RowKey {
     SwitchAiSession(String),
     /// Check out a git branch by name.
     SwitchBranch(String),
+    /// Jump the active editor's caret to a 0-based line (Go to Symbol).
+    GoToLine(usize),
     /// Non-actionable (empty-state placeholder line).
     Noop,
 }
@@ -1175,7 +1179,11 @@ impl CommandPalette {
                 IconName::FileCode,
                 mode,
                 "No symbols found",
-                |_| RowKey::Noop,
+                |c| {
+                    c.id.parse::<usize>()
+                        .map(RowKey::GoToLine)
+                        .unwrap_or(RowKey::Noop)
+                },
             ),
             Page::GitBranches => self.choice_rows(
                 &self.data.git_branches,
@@ -1232,6 +1240,10 @@ impl CommandPalette {
             RowKey::SwitchBranch(name) => {
                 self.close(cx);
                 cx.emit(PaletteEvent::SwitchBranch(name));
+            }
+            RowKey::GoToLine(line) => {
+                self.close(cx);
+                cx.emit(PaletteEvent::GoToLine(line));
             }
         }
     }

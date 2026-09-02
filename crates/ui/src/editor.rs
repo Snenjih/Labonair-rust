@@ -273,6 +273,21 @@ impl EditorView {
         self.doc.is_dirty()
     }
 
+    /// Document symbols for the palette "Go to Symbol" / outline page.
+    pub fn document_symbols(&self) -> Vec<labonair_editor::DocumentSymbol> {
+        labonair_editor::document_symbols(self.syntax.language(), &self.doc.text())
+    }
+
+    /// Move the caret to the start of `line0` (0-based, clamped) and scroll it
+    /// into view — palette symbol jump.
+    pub fn goto_line(&mut self, line0: usize, cx: &mut Context<Self>) {
+        let max = self.doc.buffer.line_count().saturating_sub(1);
+        let line = line0.min(max);
+        self.doc.set_caret(Position::new(line, 0), false);
+        self.ensure_cursor_visible();
+        cx.notify();
+    }
+
     pub fn title(&self) -> String {
         let base = self
             .doc

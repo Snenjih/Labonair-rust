@@ -1019,6 +1019,19 @@ impl AppShell {
             })
             .collect();
 
+        let symbols = self
+            .workspace
+            .read(cx)
+            .active_editor_symbols(cx)
+            .into_iter()
+            .map(|s| PaletteChoice {
+                id: s.line.to_string(),
+                title: s.name,
+                subtitle: Some(format!("{}  ·  line {}", s.kind.label(), s.line + 1)),
+                active: false,
+            })
+            .collect();
+
         let app_themes = crate::settings::theme_choices()
             .into_iter()
             .map(|(id, name)| PaletteChoice {
@@ -1045,12 +1058,12 @@ impl AppShell {
             snippets,
             ai_sessions,
             git_branches,
+            symbols,
             app_themes,
             color_mode: theme.preference(),
             editor_theme: theme.editor_theme(),
             font_size: Some(p.terminal_font_size),
             toggles,
-            ..Default::default()
         }
     }
 
@@ -1090,6 +1103,10 @@ impl AppShell {
                 }
                 PaletteEvent::SwitchBranch(name) => {
                     self.git_panel.update(cx, |g, cx| g.checkout(name, cx));
+                }
+                PaletteEvent::GoToLine(line) => {
+                    self.workspace
+                        .update(cx, |w, cx| w.active_editor_goto_line(line, cx));
                 }
                 PaletteEvent::SetColorMode(pref) => {
                     let key = match pref {

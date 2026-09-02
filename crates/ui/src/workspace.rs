@@ -830,6 +830,33 @@ impl Workspace {
         Some(self.editors.get(&active.id)?.read(cx).cursor_line_col())
     }
 
+    /// Document symbols of the active editor tab (palette "Go to Symbol").
+    pub fn active_editor_symbols(&self, cx: &App) -> Vec<labonair_editor::DocumentSymbol> {
+        let Some(active) = self.tabs.read(cx).active().cloned() else {
+            return Vec::new();
+        };
+        if active.kind != TabKind::Editor {
+            return Vec::new();
+        }
+        self.editors
+            .get(&active.id)
+            .map(|e| e.read(cx).document_symbols())
+            .unwrap_or_default()
+    }
+
+    /// Jump the active editor's caret to `line0` (0-based).
+    pub fn active_editor_goto_line(&self, line0: usize, cx: &mut Context<Self>) {
+        let Some(active) = self.tabs.read(cx).active().cloned() else {
+            return;
+        };
+        if active.kind != TabKind::Editor {
+            return;
+        }
+        if let Some(e) = self.editors.get(&active.id) {
+            e.update(cx, |e, cx| e.goto_line(line0, cx));
+        }
+    }
+
     /// `{hostId, sessionId}` of the SSH session backing the active pane, when
     /// it's remote — lets the breadcrumb browse through the same session.
     pub fn active_remote_target(&self, cx: &App) -> Option<(String, String)> {

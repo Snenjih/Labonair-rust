@@ -13,6 +13,7 @@ pub mod document;
 pub mod history;
 pub mod language;
 pub mod search;
+pub mod symbols;
 pub mod syntax;
 pub mod vim;
 
@@ -21,5 +22,6 @@ pub use diff::{side_by_side, ChangeTag, Diff, DiffLine, Hunk, RowKind, SideCell,
 pub use document::{Document, Motion};
 pub use language::Language;
 pub use search::{find_all, next_match, replace_all, Match, SearchQuery};
+pub use symbols::{document_symbols, DocumentSymbol, SymbolKind};
 pub use syntax::{HighlightKind, HighlightSpan, StyledRun, SyntaxHighlighter};
 pub use vim::{Vim, VimKey, VimMode, VimOptions, VimResponse};
