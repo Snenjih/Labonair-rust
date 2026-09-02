@@ -69,6 +69,7 @@ actions!(
         Minimize,
         ZoomWindow,
         OpenShortcuts,
+        OpenPathBookmarks,
         CommandPalette,
         NextTab,
         PrevTab,
@@ -163,6 +164,7 @@ fn bindings(overrides: &KeybindMap) -> Vec<KeyBinding> {
 
     rebind!(v, ShortcutId::CommandPalette, CommandPalette);
     rebind!(v, ShortcutId::ShortcutsOpen, OpenShortcuts);
+    rebind!(v, ShortcutId::BookmarksOpen, OpenPathBookmarks);
     rebind!(v, ShortcutId::TabNew, NewTerminalTab);
     rebind!(v, ShortcutId::TabNewPreview, NewPreviewTab);
     rebind!(v, ShortcutId::TabNewEditor, NewEditorTab);
@@ -309,8 +311,8 @@ mod tests {
     /// Every accelerator string parses (`KeyBinding::new` panics otherwise).
     #[test]
     fn bindings_parse() {
-        // 7 fixed + 18 rebindable defaults.
-        assert_eq!(bindings(&KeybindMap::new()).len(), 25);
+        // 7 fixed + 19 rebindable defaults.
+        assert_eq!(bindings(&KeybindMap::new()).len(), 26);
     }
 
     #[test]
@@ -320,7 +322,7 @@ mod tests {
         kb.insert("pane.close".into(), String::new()); // disabled
         let n = bindings(&kb).len();
         // TabNew still present (moved), PaneClose dropped → one fewer.
-        assert_eq!(n, 24);
+        assert_eq!(n, 25);
     }
 
     #[test]

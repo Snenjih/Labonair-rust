@@ -4,7 +4,57 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
-## Last Session: 2026-09-02 (T06-005 — Editor soft-wrap + audible terminal bell)
+## Last Session: 2026-09-02 (T12-003 — Path bookmarks)
+
+### What Was Done
+- **T12-003 ✅ Done.** Ported `reference-src/src/modules/bookmarks/`.
+  - **Model (`crates/backend/src/modules/bookmarks/mod.rs`, new):** `PathBookmark`
+    `{ id, path, label?, host_id? }`, `bookmark_key` (`local` for `None`),
+    `is_bookmark_orphaned` (host gone → flag, keep), `compute_add_bookmark`
+    (dedupe per `(host_id, path)`; `None` = no-op; label-update instead of a
+    second entry), `compute_remove_by_path` / `_by_id`, `is_bookmarked`,
+    `find_bookmark`, `BookmarkContext` (Local/Host/Sftp/None) +
+    `filter_for_context` → host-grouped `BookmarkSection`s, and JSON persistence
+    (`load`/`save` → `<config_dir>/labonair/bookmarks.json`, corrupt file = empty).
+    +15 unit tests. Registered in `modules/mod.rs`.
+  - **UI (`crates/ui/src/bookmarks.rs`, new):** `BookmarksView` overlay popover
+    (same "always a child, toggle `open`" pattern as `CommandPalette`), grouped
+    list + per-row remove (`×`) + orphan tag + "+ Add current folder" header
+    action. Emits `BookmarkEvent::{OpenLocal, OpenRemote}`.
+  - **Wiring:** `command_palette.rs` — `CommandId::OpenPathBookmarks` + COMMANDS
+    row with `shortcut: Some(BookmarksOpen)` (so `command_for_shortcut` resolves;
+    +assert). `menu.rs` — `OpenPathBookmarks` action + `rebind!` for
+    `ShortcutId::BookmarksOpen` (Cmd+Shift+O), bindings-count tests 25→26 / 24→25.
+    `app_shell.rs` — `bookmarks` field, observe+subscribe, `pending_bookmarks`
+    drained in `render` (`drain_pending_bookmarks`): OpenLocal → explorer
+    `set_root_str` + focus Explorer panel; OpenRemote → `workspace.open_sftp_tab`.
+    `act_open_path_bookmarks` on_action + `run_palette_command` arm.
+  - **Explorer:** `ExplorerView::root()` getter + "Bookmark This Folder" context
+    menu item (`bookmark_folder`, local-only, saves via the model).
+  - **Workspace:** `known_hosts` / `active_host_id` / `open_sftp_tab` accessors.
+- Verify: `cargo fmt --all --check`, `cargo check --workspace --all-targets`,
+  `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`
+  — all green. backend 193 → **208**; ui 202 (unchanged count).
+
+### Current State
+- Branch `master`, committed. Pre-existing uncommitted `CLAUDE.md` edit is
+  **not ours** — left untouched, excluded from the commit.
+
+### What's Next
+- Remaining follow-ups: **T13-005** (remaining shortcut handlers). Plus the
+  manual `cargo run` acceptance round (T15-006).
+
+### Blockers / notes for next session
+- Remote bookmark jump opens/focuses the host's SFTP tab but does not yet
+  navigate that tab to the bookmarked path (SFTP view has no external
+  "goto path" API) — acceptable for now, note for a later polish pass.
+- Explorer is always local in the current port, so the context-menu
+  "Bookmark This Folder" only ever creates local bookmarks; remote bookmarks
+  are added via the popover's "Add current folder" while an SSH/SFTP tab is active.
+
+---
+
+## Prev Session: 2026-09-02 (T06-005 — Editor soft-wrap + audible terminal bell)
 
 ### What Was Done
 - **T06-005 ✅ Done.** Closed the two parity gaps logged by the T15-006 audit.

@@ -37,6 +37,7 @@ use tokio::runtime::Handle as TokioHandle;
 use crate::agent_access::{AgentAccessEntry, AgentAccessStore};
 use crate::ai_chat::{AiChatStore, AiChatView};
 use crate::background::{BackgroundStore, LayerScope};
+use crate::bookmarks::{BookmarkEvent, BookmarksView};
 use crate::command_palette::{CommandId, CommandPalette, PaletteEvent};
 use crate::explorer::ExplorerView;
 use crate::git::GitPanelView;
@@ -127,6 +128,7 @@ pub struct AppShell {
     notifications: Entity<NotificationCenter>,
     workspace: Entity<Workspace>,
     explorer: Entity<ExplorerView>,
+    bookmarks: Entity<BookmarksView>,
     git_panel: Entity<GitPanelView>,
     git_graph: Entity<GitGraphView>,
     snippets: Entity<SnippetsView>,
@@ -138,6 +140,8 @@ pub struct AppShell {
     /// Palette picks awaiting a `&mut Window` (drained in `render`) — same
     /// pattern `Workspace` uses for its window-less subscriptions.
     pending_commands: Vec<PaletteEvent>,
+    /// Bookmark picks awaiting a `&mut Window` (drained in `render`).
+    pending_bookmarks: Vec<BookmarkEvent>,
     /// Client-side mirror of the MCP bridge's per-tab agent-access grants,
     /// shared with `Workspace` (T11-006).
     agent_access: Entity<AgentAccessStore>,
@@ -302,6 +306,15 @@ impl AppShell {
 
         let explorer = cx.new(|cx| ExplorerView::new(theme.clone(), workspace.clone(), cx));
         cx.observe(&explorer, |_, _, cx| cx.notify()).detach();
+
+        let bookmarks =
+            cx.new(|cx| BookmarksView::new(theme.clone(), workspace.clone(), explorer.clone(), cx));
+        cx.observe(&bookmarks, |_, _, cx| cx.notify()).detach();
+        cx.subscribe(&bookmarks, |this, _, event: &BookmarkEvent, cx| {
+            this.pending_bookmarks.push(event.clone());
+            cx.notify();
+        })
+        .detach();
         // Root tracks the active terminal's cwd (falls back to $HOME).
         {
             let initial = workspace
@@ -367,6 +380,7 @@ impl AppShell {
             notifications,
             workspace,
             explorer,
+            bookmarks,
             git_panel,
             git_graph,
             snippets,
@@ -376,6 +390,7 @@ impl AppShell {
             settings,
             updater,
             pending_commands: Vec::new(),
+            pending_bookmarks: Vec::new(),
             agent_access,
             agent_badge_open: false,
             sidebar_open: true,
@@ -586,6 +601,15 @@ impl AppShell {
             .update(cx, |p, cx| p.toggle(window, cx));
     }
 
+    fn act_open_path_bookmarks(
+        &mut self,
+        _: &menu::OpenPathBookmarks,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.bookmarks.update(cx, |b, cx| b.toggle(window, cx));
+    }
+
     /// Drain palette picks queued by the `PaletteEvent` subscription, now
     /// that a `&mut Window` is available (called from `render`).
     fn drain_pending_commands(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -596,6 +620,23 @@ impl AppShell {
                         .update(cx, |w, cx| w.reveal_tab(id, window, cx));
                 }
                 PaletteEvent::Run(id) => self.run_palette_command(id, window, cx),
+            }
+        }
+    }
+
+    /// Drain bookmark picks queued by the `BookmarkEvent` subscription.
+    fn drain_pending_bookmarks(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        for event in std::mem::take(&mut self.pending_bookmarks) {
+            match event {
+                BookmarkEvent::OpenLocal(path) => {
+                    self.explorer
+                        .update(cx, |e, cx| e.set_root_str(Some(path), cx));
+                    self.select_panel(SidebarPanel::Explorer, cx);
+                }
+                BookmarkEvent::OpenRemote { host_id, .. } => {
+                    self.workspace
+                        .update(cx, |w, cx| w.open_sftp_tab(host_id, window, cx));
+                }
             }
         }
     }
@@ -642,6 +683,7 @@ impl AppShell {
                 .update(cx, |w, cx| w.clear_active_terminal(cx)),
             CommandId::ToggleAiPanel => self.select_panel(SidebarPanel::Ai, cx),
             CommandId::OpenSnippetsPanel => self.select_panel(SidebarPanel::Snippets, cx),
+            CommandId::OpenPathBookmarks => self.bookmarks.update(cx, |b, cx| b.toggle(window, cx)),
             CommandId::OpenGitGraph => self.select_panel(SidebarPanel::GitGraph, cx),
             CommandId::FocusSourceControl => self.select_panel(SidebarPanel::SourceControl, cx),
             // Resolved inside the palette (opens a follow-up page).
@@ -1159,6 +1201,7 @@ impl Render for AppShell {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.maybe_persist_geometry(window);
         self.drain_pending_commands(window, cx);
+        self.drain_pending_bookmarks(window, cx);
 
         let bg = self.theme.read(cx).background();
         let ui_font = self.theme.read(cx).ui_font();
@@ -1197,6 +1240,7 @@ impl Render for AppShell {
             .on_action(cx.listener(Self::act_next_tab))
             .on_action(cx.listener(Self::act_prev_tab))
             .on_action(cx.listener(Self::act_command_palette))
+            .on_action(cx.listener(Self::act_open_path_bookmarks))
             .on_action(cx.listener(Self::act_open_settings))
             .on_action(cx.listener(Self::act_check_for_updates))
             .when(can_split, |d| {
@@ -1225,6 +1269,7 @@ impl Render for AppShell {
             .child(statusbar)
             .children(background_layer)
             .child(self.command_palette.clone())
+            .child(self.bookmarks.clone())
             .child(self.settings.clone())
             .child(self.updater.clone())
             .children(toasts)

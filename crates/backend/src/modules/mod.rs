@@ -1,4 +1,5 @@
 pub mod backgrounds;
+pub mod bookmarks;
 pub mod credentials;
 pub mod errors;
 pub mod fonts;

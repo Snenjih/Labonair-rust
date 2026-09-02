@@ -815,6 +815,35 @@ impl ExplorerView {
         cx.notify();
     }
 
+    /// Save `dir` as a local path bookmark (T12-003 context-menu entry).
+    fn bookmark_folder(&mut self, dir: PathBuf, cx: &mut Context<Self>) {
+        self.context_menu = None;
+        let path = dir.to_string_lossy().to_string();
+        let current = labonair_backend::modules::bookmarks::load();
+        match labonair_backend::modules::bookmarks::compute_add_bookmark(
+            &current, None, &path, None,
+        ) {
+            Some(next) => {
+                let result = labonair_backend::modules::bookmarks::save(&next);
+                notification_center(cx).update(cx, |c, cx| match result {
+                    Ok(()) => c.push(Notification::success("Bookmarked", path.clone()), cx),
+                    Err(message) => c.push(Notification::error("Bookmark failed", message), cx),
+                });
+            }
+            None => {
+                notification_center(cx).update(cx, |c, cx| {
+                    c.push(Notification::info("Already bookmarked", path.clone()), cx);
+                });
+            }
+        }
+        cx.notify();
+    }
+
+    /// The current local root directory, if any (feeds the bookmarks popover).
+    pub fn root(&self) -> Option<PathBuf> {
+        self.model.root.clone()
+    }
+
     fn open_in_terminal(&mut self, dir: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
         self.context_menu = None;
         let cwd = dir.to_string_lossy().to_string();
@@ -1439,6 +1468,7 @@ impl ExplorerView {
         let d2 = dir_for_ops.clone();
         let d3 = dir_for_ops.clone();
         let d_paste = dir_for_ops.clone();
+        let d_bookmark = dir_for_ops.clone();
         let t_rename = target.clone();
         let t_delete = target.clone();
         let t_copy = target.clone();
@@ -1526,7 +1556,14 @@ impl ExplorerView {
                             this.open_in_preview(t_preview.clone(), window, cx)
                         })),
                 )
-            });
+            })
+            .child(
+                item("Bookmark This Folder".into())
+                    .id("cm-bookmark")
+                    .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
+                        this.bookmark_folder(d_bookmark.clone(), cx)
+                    })),
+            );
 
         div().absolute().inset_0().child(backdrop).child(menu)
     }

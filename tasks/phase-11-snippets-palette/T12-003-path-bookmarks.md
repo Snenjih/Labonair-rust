@@ -1,7 +1,7 @@
 # T12-003: Path-Bookmarks (Verzeichnis-Lesezeichen)
 
 ## Status
-⏳ Pending
+✅ Done
 
 ## Phase
 11 — Snippets & Command-Palette

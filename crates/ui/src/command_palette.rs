@@ -354,6 +354,8 @@ pub enum CommandId {
     OpenSettings,
     CheckForUpdates,
     FormatDocument,
+    /// Opens the path-bookmarks popover (T12-003).
+    OpenPathBookmarks,
 }
 
 pub struct Command {
@@ -394,6 +396,7 @@ static COMMANDS: &[Command] = &[
     Command { id: CommandId::AskSelection,       title: "Ask AI About Selection",  section: "AI",             contexts: &[],                            shortcut: Some(AiAskSelection) },
     Command { id: CommandId::NewAiSession,       title: "New AI Session",          section: "AI",             contexts: &[],                            shortcut: None },
     Command { id: CommandId::OpenSnippetsPanel,  title: "Open Snippets Panel",     section: "Snippets",       contexts: &[],                            shortcut: None },
+    Command { id: CommandId::OpenPathBookmarks,  title: "Open Path Bookmarks",     section: "Bookmarks",      contexts: &[],                            shortcut: Some(BookmarksOpen) },
     Command { id: CommandId::OpenGitGraph,       title: "Open Git Graph",          section: "Source Control", contexts: &[],                            shortcut: None },
     Command { id: CommandId::FocusSourceControl, title: "Focus Source Control",    section: "Source Control", contexts: &[],                            shortcut: None },
     Command { id: CommandId::FormatDocument,     title: "Format Document",         section: "Editor",         contexts: &[CtxEditor],                   shortcut: None },
@@ -1000,6 +1003,10 @@ mod tests {
         assert_eq!(
             command_for_shortcut(ShortcutId::PaneSplitRight),
             Some(CommandId::SplitRight),
+        );
+        assert_eq!(
+            command_for_shortcut(ShortcutId::BookmarksOpen),
+            Some(CommandId::OpenPathBookmarks),
         );
         // A shortcut with no palette command (tab-number jumps).
         assert_eq!(command_for_shortcut(ShortcutId::TabSelect5), None);

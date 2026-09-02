@@ -7,6 +7,7 @@ pub mod ai_chat;
 pub mod app_shell;
 pub mod background;
 pub mod bell;
+pub mod bookmarks;
 pub mod command_palette;
 pub mod diff;
 pub mod editor;
@@ -39,6 +40,7 @@ pub use background::{
     background_store, init as init_background, BackgroundFit, BackgroundStore, BackgroundTarget,
     GlobalBackground, LayerScope,
 };
+pub use bookmarks::{BookmarkEvent, BookmarksView};
 pub use command_palette::{
     command_for_shortcut, effective_binding, find_conflict, resolve_conflict, shortcut,
     shortcut_from_slug, shortcut_slug, shortcuts, CommandId, CommandPalette, Conflict, KeybindMap,

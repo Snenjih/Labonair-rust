@@ -1451,6 +1451,36 @@ impl Workspace {
         crate::command_palette::context_of(active.kind, is_ssh)
     }
 
+    /// `(id, name)` for every known host — feeds the path-bookmarks popover's
+    /// section titles and orphan detection (T12-003).
+    pub fn known_hosts(&self, cx: &App) -> Vec<(String, String)> {
+        let hm = self.host_manager.read(cx);
+        hm.host_ids()
+            .into_iter()
+            .map(|id| {
+                let name = hm.host_name(&id).unwrap_or_else(|| id.clone());
+                (id, name)
+            })
+            .collect()
+    }
+
+    /// The host the active tab targets (SSH terminal or SFTP browser), if any.
+    pub fn active_host_id(&self, cx: &App) -> Option<String> {
+        let active = self.tabs.read(cx).active()?;
+        if let Some(t) = self.ssh_tabs.values().find(|t| t.tab_id == active.id) {
+            return Some(t.host_id.clone());
+        }
+        if active.kind == TabKind::Sftp {
+            return active.data.host_id.clone();
+        }
+        None
+    }
+
+    /// Open (or re-focus) an SFTP browser tab for `host_id` — path-bookmarks jump.
+    pub fn open_sftp_tab(&mut self, host_id: String, window: &mut Window, cx: &mut Context<Self>) {
+        self.open_sftp(host_id, window, cx);
+    }
+
     /// Close every tab except the active one (palette "Close Other Tabs").
     pub fn close_other_tabs(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let id = self.tabs.read(cx).active_id();
