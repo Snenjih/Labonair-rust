@@ -4,7 +4,90 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
-## Last Session: 2026-09-02 (T15-003 — Cross-platform & performance + deferred pixel items D1–D6)
+## Last Session: 2026-09-02 (T15-004 — Packaging & release + license audit)
+
+### What Was Done
+- **T15-004 ✅ Done.** Release/distribution foundation for the GPUI binary
+  (no `tauri bundle` equivalent — hand-rolled).
+  - **`crates/backend/src/modules/updater/mod.rs`** (new, +6 tests, backend
+    180→186) — Tauri-compatible `latest.json` decision layer:
+    `UpdateManifest { version, notes, pub_date, platforms }` /
+    `UpdatePlatform { url, signature }`, dependency-free `SemVer` (ignores
+    `-pre`/`+build`, optional leading `v`), `UpdateManifest::available_for
+    (current, target)` / `available()` → `Option<AvailableUpdate>` only on a
+    strictly-newer version *with* an artifact for this platform.
+    `UPDATE_TARGET` const (`darwin-aarch64|darwin-x86_64|linux-x86_64|
+    linux-aarch64`), `DEFAULT_UPDATE_ENDPOINT` (this fork's GH releases
+    `latest.json`), `CURRENT_VERSION = env!("CARGO_PKG_VERSION")`. Re-exported
+    from `labonair_backend`. Download/verify/apply + "update available" dialog
+    are explicitly **T15-005** — this is only the format + version check.
+  - **`packaging/macos/`** — `Info.plist` (template with `__VERSION__` /
+    `__BUILD__`, id `com.labonair.app`, developer-tools category, doc types),
+    `Labonair.entitlements` (copied from reference — keychain group, sandbox
+    off, network client), `AppIcon.icns` + `icon.png` (copied from
+    `reference-src/src-tauri/icons/`).
+  - **`scripts/package-macos.sh`** — `cargo build --release -p labonair` →
+    assembles `target/release/bundle/macos/Labonair.app/Contents/{MacOS,
+    Resources}`, version from `crates/app/Cargo.toml` (the single source),
+    `CFBundleVersion` = `git rev-list --count HEAD`, `plutil -lint`. Opt-in
+    `--dmg` (hdiutil), opt-in codesign (`LABONAIR_SIGN_IDENTITY`, hardened
+    runtime + entitlements) and notarization (`LABONAIR_NOTARY_PROFILE`,
+    `notarytool --wait` + `stapler`). Never blocks when unset. bash 3.2-safe
+    array expansion.
+  - **`scripts/smoke-test.sh`** + **`crates/app/tests/smoke.rs`** (+3 tests) —
+    build bundle → structural checks (binary executable, `Info.plist` lints,
+    version substituted, identifier, icon, PkgInfo, optional signature) →
+    `cargo test -p labonair --test smoke` (backend SQLite init in a temp dir,
+    real `/bin/sh` PTY round-trip via `TerminalSession`, update-manifest check
+    against the bundled version). `LABONAIR_SMOKE_LAUNCH=1` also `open`s the
+    app 5s then quits it (needs a window server).
+  - **`.github/workflows/release.yml`** (new) — on `v*` tag: run smoke-test +
+    `package-macos.sh --dmg` on `macos-latest`, attach the dmg to the GH
+    release. Signing secrets optional.
+  - **`docs/RELEASE.md`** — version source, build/sign/notarize procedure,
+    universal-binary recipe, Linux perspective (AppImage/Flatpak later,
+    `scripts/package-<os>.sh` switch), auto-update foundation, artifact table,
+    known limitations vs. the original (no WebView preview, macOS/Linux only,
+    update check-only until T15-005, no packaged Linux release).
+  - **`docs/LICENSES.md`** — full `Cargo.lock` license sweep (~1000 crate
+    versions). **Result: clear.** No GPL/AGPL/LGPL-only dependency. **GPUI
+    0.2.2 + all `gpui_*` crates are `Apache-2.0`** (the historical GPL concern
+    is moot). `self_cell` (`Apache-2.0 OR GPL-2.0-only`) and `r-efi` take the
+    permissive branch. MPL-2.0: `option-ext` (file-level, compliant as-is),
+    `dwrote` (Windows-only, not compiled), `cbindgen` (build tool, not
+    distributed). Fonts = SIL OFL 1.1. Ship a `cargo-about`-generated
+    `THIRD-PARTY-LICENSES.txt` per release (not committed).
+  - **`CHANGELOG.md`** (new, repo root) — Keep-a-Changelog, `[Unreleased]`
+    documents this task + known limitations.
+- Version left at **0.1.0** (port not yet feature-complete — T15-006 is the
+  acceptance gate). Bump in `crates/app/Cargo.toml` at first real release.
+- Verify: `cargo fmt --all --check`, `cargo check --workspace --all-targets`,
+  `cargo clippy --workspace --all-targets -- -D warnings`,
+  `cargo test --workspace` — all green. backend **180→186**, app smoke
+  **0→3**; theme 25, ui 188, ai 75, terminal 67, editor 60 unchanged.
+  `scripts/smoke-test.sh` run locally end-to-end (release build + bundle +
+  structural checks + smoke tests).
+
+### Current State
+- Branch `master`, committed. Pre-existing uncommitted `CLAUDE.md` edit is
+  **not ours** — left untouched, excluded from the commit.
+
+### What's Next
+- **T15-005** — Auto-updater (download + minisign verify + apply + "update
+  available" dialog, on top of `labonair_backend::updater`).
+- Then T15-006 — feature-parity acceptance (final gate; bump version there).
+
+### Blockers / notes for next session
+- `docs/performance.md` "Recorded runs" table still empty — fill from a
+  `cargo run --release` on Apple Silicon.
+- `latest.json` must be generated + uploaded alongside release artifacts
+  (format documented in `docs/RELEASE.md` / the `updater` module).
+- No signing certs available in this environment — signing/notarization is
+  written + documented but never executed here.
+
+---
+
+## Prev Session: 2026-09-02 (T15-003 — Cross-platform & performance + deferred pixel items D1–D6)
 
 ### What Was Done
 - **T15-003 ✅ Done.** Measure-first per the task warning: the GPUI-native

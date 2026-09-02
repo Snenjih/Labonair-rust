@@ -1,7 +1,7 @@
 # T15-004: Verpackung & Release
 
 ## Status
-⏳ Pending
+✅ Done
 
 ## Phase
 14 — Testing & Polish
@@ -52,14 +52,14 @@ Dieser Task setzt das Release-Fundament und bereitet potenzielle zukünftige Aut
 
 ## Akzeptanzkriterien
 
-- [ ] Ein macOS-.app-Bundle lässt sich bauen und starten.
-- [ ] Info.plist, Icon und Versionsnummern sind korrekt gesetzt; Ressourcen (Fonts, Grammatiken) eingebettet.
-- [ ] Ein reproduzierbarer Release-Build-Prozess existiert (Skript).
-- [ ] Code-Signierung/Notarisierung ist vorbereitet/dokumentiert (sofern Zertifikate vorhanden).
-- [ ] Die Grundlage für Auto-Updates ist definiert (Manifest/Mechanik), sofern gewünscht.
-- [ ] Eine Perspektive für die Linux-Verpackung ist vorbereitet (später Ziel).
-- [ ] Ein Release-Dokument/Changelog existiert.
-- [ ] Ein End-to-End-Smoke-Test verifiziert, dass das Bundle startet und Kernfunktionen funktionieren.
+- [x] Ein macOS-.app-Bundle lässt sich bauen und starten. (`scripts/package-macos.sh`)
+- [x] Info.plist, Icon und Versionsnummern sind korrekt gesetzt; Ressourcen (Fonts, Grammatiken) eingebettet. (Fonts/Grammatiken sind in die Binary einkompiliert — keine losen Ressourcen; Version aus `crates/app/Cargo.toml`.)
+- [x] Ein reproduzierbarer Release-Build-Prozess existiert (Skript). (`scripts/package-macos.sh`, `.github/workflows/release.yml`)
+- [x] Code-Signierung/Notarisierung ist vorbereitet/dokumentiert (sofern Zertifikate vorhanden). (Opt-in via `LABONAIR_SIGN_IDENTITY`/`LABONAIR_NOTARY_PROFILE`, `docs/RELEASE.md`; blockiert CI nie.)
+- [x] Die Grundlage für Auto-Updates ist definiert (Manifest/Mechanik). (`labonair_backend::updater` — `latest.json`-Format, Endpunkt, `SemVer`-Check; Download/Apply = T15-005.)
+- [x] Eine Perspektive für die Linux-Verpackung ist vorbereitet (später Ziel). (`docs/RELEASE.md` — AppImage/Flatpak hinter `scripts/package-<os>.sh`.)
+- [x] Ein Release-Dokument/Changelog existiert. (`docs/RELEASE.md`, `docs/LICENSES.md`, `CHANGELOG.md`)
+- [x] Ein End-to-End-Smoke-Test verifiziert, dass das Bundle startet und Kernfunktionen funktionieren. (`scripts/smoke-test.sh` + `crates/app/tests/smoke.rs`)
 
 ## Notizen
 
