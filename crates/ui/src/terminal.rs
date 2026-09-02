@@ -165,6 +165,16 @@ impl TerminalView {
         detect_preview_url(&ctx.lines)
     }
 
+    /// The last `n` visible/scrollback lines of this terminal — feeds the AI
+    /// live bridge's `terminal_context`.
+    pub fn recent_lines(&self, n: usize) -> Vec<String> {
+        self.handle
+            .with(|s| s.ai_context(n))
+            .ok()
+            .map(|c| c.lines)
+            .unwrap_or_default()
+    }
+
     /// The process/window title set via OSC 0/2, if any.
     pub fn shell_title(&self) -> Option<String> {
         self.handle

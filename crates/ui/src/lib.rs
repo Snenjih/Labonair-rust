@@ -20,6 +20,7 @@ pub mod explorer;
 pub mod git;
 pub mod git_graph;
 pub mod hosts;
+pub mod live_bridge;
 pub mod markdown;
 pub mod menu;
 pub mod notifications;

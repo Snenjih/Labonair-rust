@@ -972,6 +972,13 @@ impl Workspace {
         self.active_pane_view(cx)?.read(cx).preview_url()
     }
 
+    /// Last `n` lines of the active terminal's buffer (AI live bridge).
+    pub fn active_terminal_lines(&self, n: usize, cx: &App) -> Vec<String> {
+        self.active_pane_view(cx)
+            .map(|v| v.read(cx).recent_lines(n))
+            .unwrap_or_default()
+    }
+
     pub fn inject_into_active_terminal(&self, text: &str, cx: &App) {
         if let Some(view) = self.active_pane_view(cx) {
             let _ = view.read(cx).handle().write(text.as_bytes());

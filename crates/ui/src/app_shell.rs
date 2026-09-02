@@ -160,6 +160,9 @@ pub struct AppShell {
     pending_bookmarks: Vec<BookmarkEvent>,
     /// AI-panel events (run-in-terminal) awaiting a `&mut Window`.
     pending_ai: Vec<AiChatEvent>,
+    /// Real `LiveBridge` for the AI agent — snapshot refreshed + command queue
+    /// drained each render.
+    live_bridge: crate::live_bridge::WorkspaceLiveBridge,
     /// Client-side mirror of the MCP bridge's per-tab agent-access grants,
     /// shared with `Workspace` (T11-006).
     agent_access: Entity<AgentAccessStore>,
@@ -349,7 +352,12 @@ impl AppShell {
         });
         cx.observe(&snippets, |_, _, cx| cx.notify()).detach();
 
+        let live_bridge = crate::live_bridge::WorkspaceLiveBridge::new();
         let ai_store = cx.new(|_| AiChatStore::new(tokio.clone()));
+        ai_store.update(cx, {
+            let lb = live_bridge.clone();
+            move |s, _| s.set_live_bridge(std::sync::Arc::new(lb))
+        });
         let ai_chat = cx.new(|cx| AiChatView::new(ai_store, theme.clone(), cx));
         cx.observe(&ai_chat, |_, _, cx| cx.notify()).detach();
         cx.subscribe(&ai_chat, |this, _, event: &AiChatEvent, cx| {
@@ -476,6 +484,7 @@ impl AppShell {
             pending_commands: Vec::new(),
             pending_bookmarks: Vec::new(),
             pending_ai: Vec::new(),
+            live_bridge,
             agent_access,
             agent_badge_open: false,
             placements: bar_items::Placements::from_blob(
@@ -1148,6 +1157,34 @@ impl AppShell {
                     self.workspace
                         .update(cx, |w, cx| w.open_sftp_tab(host_id, window, cx));
                 }
+            }
+        }
+    }
+
+    /// Refresh the AI live-bridge snapshot from the workspace + explorer and
+    /// drain any commands the agent's terminal tools queued.
+    fn sync_live_bridge(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let ws = self.workspace.read(cx);
+        let snap = crate::live_bridge::LiveSnapshot {
+            cwd: ws.active_cwd(cx),
+            workspace_root: self
+                .explorer
+                .read(cx)
+                .root()
+                .map(|p| p.display().to_string()),
+            terminal_lines: ws.active_terminal_lines(200, cx),
+            ssh_tab_id: ws.active_remote_target(cx).map(|(_, sid)| sid),
+            has_terminal: ws.active_is_terminal(cx),
+        };
+        self.live_bridge.set_snapshot(snap);
+        for cmd in self.live_bridge.drain_commands() {
+            if cmd.execute {
+                self.workspace
+                    .update(cx, |w, cx| w.run_in_active_terminal(cmd.text, window, cx));
+            } else {
+                self.workspace
+                    .read(cx)
+                    .inject_into_active_terminal(&cmd.text, cx);
             }
         }
     }
@@ -2886,6 +2923,7 @@ impl Render for AppShell {
         self.drain_pending_commands(window, cx);
         self.drain_pending_bookmarks(window, cx);
         self.drain_pending_ai(window, cx);
+        self.sync_live_bridge(window, cx);
 
         let palette_data = self.build_palette_data(cx);
         self.command_palette
