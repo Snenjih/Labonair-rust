@@ -1,7 +1,7 @@
 # T16-005: `labonair-panel` Contracts-Crate
 
 ## Status
-📋 Geplant
+✅ Done
 
 ## Phase
 15 — Crate-Zerlegung & Fundament

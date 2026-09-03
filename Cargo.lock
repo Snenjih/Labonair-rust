@@ -4129,6 +4129,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "labonair-panel"
+version = "0.1.0"
+dependencies = [
+ "gpui",
+ "labonair-gpui-ext",
+]
+
+[[package]]
 name = "labonair-terminal"
 version = "0.1.0"
 dependencies = [

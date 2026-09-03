@@ -4,7 +4,77 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
-## Last Session: 2026-09-03 (T16-004 — extract labonair-command-palette)
+## Last Session: 2026-09-03 (T16-005 — labonair-panel contracts crate)
+
+Fifth code task of the architecture rework. **New leaf contracts crate, no
+existing code migrated, no behaviour change.**
+
+### What Was Done (T16-005)
+- **`crates/panel/`** (`labonair-panel`) created — lib root `src/panel.rs`
+  (`[lib] name = "labonair_panel"`, `path = "src/panel.rs"`). Two modules:
+  * `src/dock.rs` — `DockPosition {Left,Right,Bottom}` (+ `ALL`, `next()`),
+    `PanelIcon` (small closed enum: `Explorer|SourceControl|GitGraph|Hosts|
+    Snippets|Ai` — deliberately NOT importing `labonair_ui_kit::IconName`, so
+    the crate stays a near-leaf; shell maps variants to real icons),
+    `PanelEvent {Activate,Close,ZoomIn,ZoomOut}`, `trait Panel: Focusable +
+    Render + Sized` (`persistent_name`, `title`, `icon`, `position`,
+    `position_is_valid`, `set_position`, `default_size`, `min_size`),
+    `trait PanelHandle: Send + Sync` + blanket `impl<T: Panel + 'static> for
+    Entity<T>` + `type AnyPanelHandle = Arc<dyn PanelHandle>` (Zed's
+    handle-wrapper pattern for object safety), `PanelConstructor` alias,
+    `PanelRegistration`, `PanelRegistry` (`register`/`iter`/`for_position`/
+    `get`/`len`/`is_empty`, `impl Global`).
+  * `src/status.rs` — `StatusSide {Left,Right}`, `StatusItemHide` (port of
+    Zed `HideStatusItem`; carries `Arc<dyn Fn(&mut App)>` — no serde/settings
+    dep yet, T18-005 swaps the body), `trait StatusItem: Render` (`id`,
+    `default_side`, `render_status` [named to avoid `Render::render`
+    collision], `hide`), `trait StatusItemHandle` + blanket impl +
+    `AnyStatusItemHandle`, `StatusItemConstructor`, `StatusItemRegistration`,
+    `StatusItemRegistry` (same method surface, `impl Global`).
+  * Every trait/enum has a doc comment citing the Zed source file and listing
+    the deliberate omissions vs. the Zed original.
+- **Deps** (`cargo tree -p labonair-panel`): `gpui`, `labonair-gpui-ext` only.
+  `cargo tree` shows **no** edge to `labonair-workspace` / `labonair-shell` /
+  any `labonair-panel-*` (none exist yet) — architecture §3 rule 1 satisfied.
+  `docs/architecture.md` already listed this crate; no doc change needed (the
+  `PanelIcon` decision matches the "define a light enum here" option it
+  offered).
+- **No existing code migrated.** `SidebarPanel` / `BarItemId` in
+  `crates/ui/src/app_shell.rs` are untouched — T17-001/003 will rebuild on
+  these contracts. `Tabs` is intentionally absent from `PanelIcon` (it becomes
+  titlebar chrome, not a panel).
+- **Workspace `Cargo.toml`**: `crates/panel` added as a member before
+  `crates/ui`. No crate depends on it yet.
+- **Tests**: 7 unit tests in the new crate (registry register/replace/filter/
+  lookup for both registries, `DockPosition::next` wrap). Stub constructors use
+  `Arc::new(|_, _| unreachable!())` — never invoked by the bookkeeping methods,
+  so no `gpui::App` needed.
+
+### Verification (T16-005)
+- `cargo fmt --check` (workspace) — clean.
+- `cargo check --workspace --all-targets` — exit 0 (6m full rebuild).
+- `cargo clippy --workspace --all-targets -- -D warnings` — exit 0
+  (pre-existing `proc-macro-error2` future-incompat note only).
+- `RUSTDOCFLAGS="-D warnings" cargo doc -p labonair-panel --no-deps` — clean.
+- `cargo test -p labonair-panel` — 7 passed, 0 failed.
+- `cargo test --workspace` was started but **killed to protect disk** (free
+  space fell 18G→8G during the test-binary codegen). Scoped per-crate test is
+  the sanctioned fallback here (see session prompt): the only touched crate
+  with tests is the new leaf `labonair-panel`; no other crate depends on it or
+  changed, and workspace check + clippy (both `--all-targets`) pass.
+  Reclaimed space afterwards with `rm -rf target/debug/incremental`.
+
+### What's Next
+- **T16-006** `tasks/phase-15-crate-split/T16-006-extract-workspace-crate.md`
+  — extract `labonair-workspace`.
+
+### Blockers
+- None. Disk is tight (~11G free after cleanup); prefer scoped `cargo test -p`
+  over `--workspace` for the next tasks.
+
+---
+
+## Prior Session: 2026-09-03 (T16-004 — extract labonair-command-palette)
 
 Fourth code task of the architecture rework. **Move + proper decoupling
 (Option 1), zero behaviour change.**

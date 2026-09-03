@@ -6,6 +6,7 @@ members = [
     "crates/ui-kit",
     "crates/notifications",
     "crates/command-palette",
+    "crates/panel",
     "crates/ui",
     "crates/terminal",
     "crates/editor",
