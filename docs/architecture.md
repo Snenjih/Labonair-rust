@@ -147,6 +147,42 @@ Today's monolith is `crates/ui/src/` (~40 files, ~48k lines; `settings.rs`
 > (orphan rule — `labonair-theme` must not depend on `labonair-ui-kit`).
 > `crates/ui` keeps thin `pub use` shims for every moved symbol.
 
+> **T16-009 outcome note.** `crates/ui` is **deleted**. `labonair-shell`
+> (`crates/shell/`, lib root `src/shell.rs`) now owns the last real files that
+> lived in the monolith: `app_shell.rs` (unchanged — its diet is T17-006),
+> `menu.rs` (native macOS menu bar + `apply_keybinds`), `window_state.rs`
+> (window-geometry persistence), `assets.rs` + the `assets/icons/` SVG bundle
+> (`include_bytes!` paths are crate-relative — moved together), and the
+> shell-near helpers `updater.rs`, `cwd_breadcrumb.rs`, `sidebar_slot.rs`
+> (Phase 17 may re-home these as statusbar items). `no_pictograph_icons.rs`
+> moved to `crates/shell/tests/`.
+>
+> **Theme-store home (task instruction 3): decided = `labonair-theme`.** No
+> further move — T16-006 already relocated the runtime `ThemeStore` closure to
+> `labonair_theme::store`, and `background`/`syntax_theme`/`markdown`/`tabs`
+> already live in `labonair-workspace` (T16-006). Task instructions 3–4
+> proposed relocations that T16-006 superseded; T16-009 only confirms the
+> current homes. `crates/app` reaches every init hook through one
+> `labonair_shell::` import root — `labonair-shell` re-exports
+> `labonair_theme::{init_fonts, init_theme}`,
+> `labonair_notifications::init as init_notifications` and
+> `labonair_workspace::background::init as init_background`, so `main.rs`
+> changed import paths only (no bootstrap logic). Inside `labonair-shell`,
+> `crate::{background,bar_items,live_bridge,pane,session,theme,workspace}` are
+> `pub(crate)` re-export shims forwarding to `labonair-workspace` /
+> `labonair-theme`, so `app_shell.rs` / `updater.rs` moved byte-for-byte.
+>
+> `transfers.rs` / `views/hosts.rs` stay in `labonair-workspace` for now
+> (`Workspace` still owns `Entity<TransfersView>` / `Entity<HostManagerView>`);
+> decoupling them into `labonair-shell` is deferred to the T17 workspace/shell
+> rework rather than done here (would be a logic refactor, out of T16-009
+> scope). `labonair-shell` deps: `labonair-workspace` + `labonair-settings-ui`
+> + all five `labonair-panel-*` + `labonair-command-palette` +
+> `labonair-notifications` + `labonair-theme` + `labonair-ui-kit` +
+> `labonair-gpui-ext` + `labonair-terminal` + `labonair-backend`. `crates/app`
+> now depends on `labonair-shell` (not `labonair-ui`); no crate has a
+> `labonair-ui` edge.
+
 ---
 
 ## 3. Dependency rules (binding — CI-checked in T16-010)

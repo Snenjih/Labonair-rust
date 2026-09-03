@@ -15,7 +15,7 @@ members = [
     "crates/panel-git-graph",
     "crates/panel-snippets",
     "crates/panel-ai",
-    "crates/ui",
+    "crates/shell",
     "crates/terminal",
     "crates/editor",
     "crates/backend",

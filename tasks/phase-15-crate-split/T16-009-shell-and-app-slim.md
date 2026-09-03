@@ -1,7 +1,7 @@
 # T16-009: `labonair-shell` + `labonair-app` schlank
 
 ## Status
-📋 Geplant
+✅ Done
 
 ## Phase
 15 — Crate-Zerlegung & Fundament

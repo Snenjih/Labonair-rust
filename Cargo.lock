@@ -4009,9 +4009,9 @@ dependencies = [
  "labonair-ai",
  "labonair-backend",
  "labonair-editor",
+ "labonair-shell",
  "labonair-terminal",
  "labonair-theme",
- "labonair-ui",
  "tokio",
  "tracing",
  "tracing-subscriber",
@@ -4243,6 +4243,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "labonair-shell"
+version = "0.1.0"
+dependencies = [
+ "dirs 6.0.0",
+ "gpui",
+ "gpui-component",
+ "labonair-backend",
+ "labonair-command-palette",
+ "labonair-gpui-ext",
+ "labonair-notifications",
+ "labonair-panel-ai",
+ "labonair-panel-explorer",
+ "labonair-panel-git-graph",
+ "labonair-panel-scm",
+ "labonair-panel-snippets",
+ "labonair-settings-ui",
+ "labonair-terminal",
+ "labonair-theme",
+ "labonair-ui-kit",
+ "labonair-workspace",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "labonair-terminal"
 version = "0.1.0"
 dependencies = [
@@ -4262,35 +4289,6 @@ dependencies = [
  "palette",
  "serde",
  "serde_json",
-]
-
-[[package]]
-name = "labonair-ui"
-version = "0.1.0"
-dependencies = [
- "dirs 6.0.0",
- "gpui",
- "gpui-component",
- "image",
- "labonair-backend",
- "labonair-command-palette",
- "labonair-gpui-ext",
- "labonair-hosts-ui",
- "labonair-notifications",
- "labonair-panel-ai",
- "labonair-panel-explorer",
- "labonair-panel-git-graph",
- "labonair-panel-scm",
- "labonair-panel-snippets",
- "labonair-settings-ui",
- "labonair-terminal",
- "labonair-theme",
- "labonair-ui-kit",
- "labonair-workspace",
- "serde",
- "serde_json",
- "tokio",
- "tracing",
 ]
 
 [[package]]

@@ -5,7 +5,7 @@ use gpui::{
 
 use gpui_component::Root;
 use labonair_backend::{App as Backend, AppEvent};
-use labonair_ui::{window_state, AppShell};
+use labonair_shell::{window_state, AppShell};
 use tokio::sync::broadcast::error::RecvError;
 use tracing_subscriber::EnvFilter;
 
@@ -63,9 +63,9 @@ fn main() {
     tracing::info!("Labonair-rust starting");
 
     Application::new()
-        .with_assets(labonair_ui::Assets)
+        .with_assets(labonair_shell::Assets)
         .run(move |cx: &mut App| {
-            labonair_ui::init_fonts(cx);
+            labonair_shell::init_fonts(cx);
             gpui_component::init(cx);
             let bounds = window_state::load()
                 .unwrap_or_else(|| Bounds::centered(None, size(px(1200.0), px(800.0)), cx));
@@ -87,7 +87,7 @@ fn main() {
                     ..Default::default()
                 },
                 move |window, cx| {
-                    let theme = labonair_ui::init_theme(window.appearance(), cx);
+                    let theme = labonair_shell::init_theme(window.appearance(), cx);
                     window
                         .observe_window_appearance({
                             let theme = theme.clone();
@@ -99,8 +99,8 @@ fn main() {
                             }
                         })
                         .detach();
-                    let background = labonair_ui::init_background(cx);
-                    let notifications = labonair_ui::init_notifications(cx);
+                    let background = labonair_shell::init_background(cx);
+                    let notifications = labonair_shell::init_notifications(cx);
                     let backend = backend.clone();
                     let tokio_handle = tokio_handle.clone();
                     // The window's first layer must be a `gpui_component::Root`
@@ -122,7 +122,7 @@ fn main() {
                 },
             )
             .expect("failed to open window");
-            labonair_ui::init_menus(cx);
+            labonair_shell::init_menus(cx);
             cx.activate(true);
         });
 }

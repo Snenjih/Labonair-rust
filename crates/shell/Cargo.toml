@@ -1,12 +1,20 @@
 [package]
-name = "labonair-ui"
+name = "labonair-shell"
 version = "0.1.0"
 edition = "2021"
+
+[lib]
+name = "labonair_shell"
+path = "src/shell.rs"
 
 [dependencies]
 gpui = { workspace = true }
 gpui-component = { workspace = true }
-image = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+dirs = { workspace = true }
+tokio = { workspace = true }
 labonair-theme = { path = "../theme" }
 labonair-ui-kit = { path = "../ui-kit" }
 labonair-gpui-ext = { path = "../gpui-ext" }
@@ -14,7 +22,6 @@ labonair-notifications = { path = "../notifications" }
 labonair-command-palette = { path = "../command-palette" }
 labonair-workspace = { path = "../workspace" }
 labonair-settings-ui = { path = "../settings-ui" }
-labonair-hosts-ui = { path = "../hosts-ui" }
 labonair-panel-explorer = { path = "../panel-explorer" }
 labonair-panel-scm = { path = "../panel-scm" }
 labonair-panel-git-graph = { path = "../panel-git-graph" }
@@ -22,11 +29,6 @@ labonair-panel-snippets = { path = "../panel-snippets" }
 labonair-panel-ai = { path = "../panel-ai" }
 labonair-terminal = { path = "../terminal" }
 labonair-backend = { path = "../backend" }
-tracing = { workspace = true }
-serde = { workspace = true }
-serde_json = { workspace = true }
-dirs = { workspace = true }
-tokio = { workspace = true }
 
 [dev-dependencies]
 gpui = { workspace = true, features = ["test-support"] }

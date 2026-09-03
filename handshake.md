@@ -4,6 +4,77 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
+## Last Session: 2026-09-03 (T16-009 — `labonair-shell` extracted, `crates/ui` deleted)
+
+Ninth code task of the architecture rework. The `crates/ui` monolith is now
+**gone**. Pure mechanical move — `app_shell.rs` is unchanged (its diet is
+T17-006).
+
+### What Was Done (T16-009)
+- **New crate `labonair-shell`** — `crates/shell/`, explicit
+  `[lib] name = "labonair_shell" path = "src/shell.rs"`, workspace member in
+  place of `crates/ui` (after `crates/panel-ai`, before `crates/terminal`).
+- **`git mv` into `crates/shell/src/`** (history preserved): `app_shell.rs`
+  (byte-for-byte), `menu.rs`, `window_state.rs`, `assets.rs` (+ the whole
+  `assets/` dir — `include_bytes!("../assets/icons/…")` is crate-relative),
+  `updater.rs`, `cwd_breadcrumb.rs`, `sidebar_slot.rs`. `tests/` (only
+  `no_pictograph_icons.rs`, `CARGO_MANIFEST_DIR`-relative) moved too.
+- **`crates/ui` deleted** (`git rm -r crates/ui`). Everything else in it was
+  already a T16-006/007/008 re-export shim; only `crates/app` depended on
+  `labonair-ui`.
+- **Theme-store home decision (task instr. 3): `labonair-theme`, no move.**
+  T16-006 already moved the runtime `ThemeStore` closure to
+  `labonair_theme::store`; `background`/`syntax_theme`/`markdown`/`tabs` already
+  in `labonair-workspace`. Task instructions 3–4 were superseded by T16-006 —
+  T16-009 only confirms current homes. Recorded in `docs/architecture.md`
+  (new "T16-009 outcome note").
+- **Coupling via `pub(crate) mod` shims in `crates/shell/src/shell.rs`**
+  (T16-006/008 pattern): `crate::{background,bar_items,live_bridge,pane,session}`
+  → `labonair_workspace::…`, `crate::theme` → `labonair_theme::store`,
+  `crate::workspace` → `labonair_workspace::Workspace`. Zero edits to
+  `app_shell.rs` / `updater.rs`.
+- **`crates/app/src/main.rs`: import paths only, no logic line changed.**
+  `labonair_ui::` → `labonair_shell::` (sed). `labonair-shell` re-exports the
+  init hooks it doesn't own — `labonair_theme::{init_fonts, init_theme}`,
+  `labonair_notifications::init as init_notifications`,
+  `labonair_workspace::background::init as init_background` — so `main.rs` keeps
+  one import root.
+- **`transfers.rs` / `views/hosts.rs` stay in `labonair-workspace`.** `Workspace`
+  still owns `Entity<TransfersView>` / `Entity<HostManagerView>`; moving them to
+  the shell is a logic refactor, deferred to T17 (out of T16-009 scope). Noted
+  in the architecture outcome note.
+- **`labonair-shell` deps:** workspace, settings-ui, all 5 `panel-*`,
+  command-palette, notifications, theme, ui-kit, gpui-ext, terminal, backend
+  (+ gpui, gpui-component, serde, serde_json, tracing, dirs, tokio).
+
+### Verification (T16-009)
+- `cargo fmt --check` — ✅
+- `cargo check --workspace --all-targets` — ✅ (clean; only pre-existing
+  `proc-macro-error2` third-party future-incompat warning)
+- `cargo clippy --workspace --all-targets -- -D warnings` — ✅
+- `cargo test` — **scoped per touched crate** (`cargo test --workspace` is
+  banned in this env — link-storms the disk; accepted coordinator-forced
+  deviation): `cargo test -p labonair-shell` ✅ (26 lib + 1 integration:
+  cwd_breadcrumb/menu/sidebar_slot/updater/app_shell/assets/window_state +
+  `no_pictograph_icons`), `cargo test -p labonair` ✅ (3 smoke).
+- `cargo tree --workspace | grep 'labonair-ui '` → **0 matches**.
+  `cargo tree -p labonair` — direct deps: shell, terminal, editor, backend, ai,
+  theme (matches `docs/architecture.md §3` rule 3).
+- **`cargo run` end-to-end visual check: not possible — headless VPS, no
+  display.** Build + app smoke tests stand in (same constraint as every prior
+  crate-split task).
+
+### State / Next
+- Branch `master`, committed (see trailer). Working tree still carries the
+  parallel planning session's untracked `bericht-*.md` / `zed-refrence/` /
+  `tasks/phase-1*/` and modified `tasks/ROADMAP.md` / `docs/adr/0001` — left
+  untouched, not staged.
+- Disk: ~7.6 G free after this task (parallel session also building). `cargo
+  clean` was run at task start per coordinator instructions.
+- **Next task:** T16-010 — build-hygiene + baseline.
+
+---
+
 ## Last Session: 2026-09-03 (T16-008 — split six panel crates out of `crates/ui`)
 
 Eighth code task of the architecture rework. Pure mechanical crate split — no
