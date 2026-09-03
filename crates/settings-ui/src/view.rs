@@ -1,0 +1,1097 @@
+//! The `SettingsView` entity: its state struct, construction, lifecycle,
+//! keyboard handling, the generic dropdown/edit plumbing, `Render`, and the
+//! small render helpers + `Palette`. The large per-pane render code lives in the
+//! sibling `panes/*` modules (each a separate `impl SettingsView` block). Split
+//! out of the old `crates/ui/src/settings.rs` monolith in T16-007 (mechanical
+//! move — no logic change).
+
+pub use gpui::prelude::FluentBuilder;
+pub use gpui::{
+    anchored, deferred, div, px, App, AppContext, ClickEvent, ClipboardItem, Context, Entity,
+    FocusHandle, Focusable, InteractiveElement, IntoElement, KeyDownEvent, ParentElement,
+    PathPromptOptions, Pixels, Point, Render, SharedString, StatefulInteractiveElement, Styled,
+    Window,
+};
+pub use serde_json::Value;
+pub use std::fs;
+pub use std::path::PathBuf;
+pub use tokio::runtime::Handle as TokioHandle;
+
+pub use labonair_backend::modules::fs::paths::config_dir;
+pub use labonair_backend::modules::mcp::{
+    mcp_get_status, mcp_regenerate_token, mcp_set_auto_revoke_minutes, mcp_set_enabled,
+    mcp_set_max_command_timeout_secs, mcp_set_port,
+};
+pub use labonair_backend::modules::settings::mcp::{mcp_prefs_load, mcp_prefs_save, McpPrefs};
+pub use labonair_backend::modules::settings::preferences::ThemePref;
+pub use labonair_backend::App as Backend;
+pub use labonair_command_palette::{
+    effective_binding, shortcut, shortcut_slug, shortcuts, KeybindMap, PalettePrefs, ShortcutId,
+};
+pub use labonair_notifications::{notification_center, Notification};
+pub use labonair_theme::{ThemeFile, ThemePreference, ThemeStore};
+pub use labonair_workspace::background::BackgroundStore;
+pub use labonair_workspace::bar_items::{
+    self, default_placement, placement_patch, BarItemId, BarLoc, BarSide, BAR_ITEM_ORDER,
+};
+
+pub(crate) use crate::apply::*;
+pub(crate) use crate::fields::*;
+pub(crate) use crate::sections::*;
+pub(crate) use crate::store::*;
+pub(crate) use crate::window::*;
+
+pub(crate) struct EditState {
+    pub(crate) key: String,
+    pub(crate) buffer: String,
+    pub(crate) numeric: bool,
+}
+
+/// One row in the Appearance theme list (built-in default + user themes).
+pub(crate) struct ThemeEntry {
+    /// Filename stem — `"default"` for the built-in.
+    pub(crate) id: String,
+    /// Display name from the theme file.
+    pub(crate) name: String,
+    /// Built-in themes can be activated/exported but never deleted.
+    pub(crate) builtin: bool,
+}
+
+/// One entry of the community theme index (port of `RemoteTheme`).
+#[derive(Clone, Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct RemoteTheme {
+    pub(crate) id: String,
+    pub(crate) name: String,
+    #[serde(default)]
+    pub(crate) description: String,
+    #[serde(default)]
+    pub(crate) author: String,
+    pub(crate) raw_url: String,
+}
+
+/// Inline agent/directive editor state — three keydown-buffer fields.
+pub(crate) struct AiEditor {
+    pub(crate) kind: AiEditKind,
+    pub(crate) id: String,
+    pub(crate) labels: [&'static str; 3],
+    pub(crate) fields: [String; 3],
+    pub(crate) focus_idx: usize,
+    pub(crate) multiline_last: bool,
+}
+
+#[derive(PartialEq)]
+pub(crate) enum AiEditKind {
+    Agent,
+    Directive,
+}
+
+pub(crate) const COMMUNITY_INDEX_URL: &str =
+    "https://raw.githubusercontent.com/Snenjih/labonair-themes/main/index.json";
+
+/// Fallback shown when the remote index cannot be fetched (port of
+/// `MOCK_COMMUNITY_THEMES`).
+pub(crate) fn mock_community_themes() -> Vec<RemoteTheme> {
+    vec![
+        RemoteTheme {
+            id: "catppuccin".into(),
+            name: "Catppuccin".into(),
+            description: "Soothing pastel theme — Latte, Frappé, Macchiato, Mocha".into(),
+            author: "Catppuccin".into(),
+            raw_url:
+                "https://raw.githubusercontent.com/Snenjih/labonair-themes/main/themes/catppuccin.json"
+                    .into(),
+        },
+        RemoteTheme {
+            id: "nord".into(),
+            name: "Nord".into(),
+            description: "An arctic, north-bluish color palette".into(),
+            author: "arcticicestudio".into(),
+            raw_url:
+                "https://raw.githubusercontent.com/Snenjih/labonair-themes/main/themes/nord.json"
+                    .into(),
+        },
+    ]
+}
+
+pub struct SettingsView {
+    pub(crate) prefs: Entity<PreferencesStore>,
+    pub(crate) theme: Entity<ThemeStore>,
+    pub(crate) background: Entity<BackgroundStore>,
+    pub(crate) backend: Backend,
+    pub(crate) tokio: TokioHandle,
+    pub(crate) open: bool,
+    pub(crate) active_cat: usize,
+    pub(crate) search: String,
+    pub(crate) editing: Option<EditState>,
+    pub(crate) mcp: McpPrefs,
+    pub(crate) mcp_token: Option<String>,
+    /// Available themes for the Appearance pane, refreshed when the modal opens.
+    pub(crate) theme_files: Vec<ThemeEntry>,
+    /// Which listed theme is active (`None` = built-in light/dark, no override).
+    pub(crate) active_theme_id: Option<String>,
+    /// Themes pane: `false` = Installed tab, `true` = Community tab.
+    pub(crate) themes_community_tab: bool,
+    /// Community/marketplace theme index (mock fallback on fetch failure).
+    pub(crate) community_themes: Vec<RemoteTheme>,
+    pub(crate) community_error: Option<String>,
+    pub(crate) community_loading: bool,
+    /// Community theme ids currently being downloaded.
+    pub(crate) installing_themes: std::collections::HashSet<String>,
+    /// In-progress "New Theme…" name prompt.
+    pub(crate) new_theme_prompt: Option<String>,
+    pub(crate) new_theme_focus: FocusHandle,
+    /// Shortcut currently capturing a new key combination (`Keyboard` pane).
+    pub(crate) recording: Option<ShortcutId>,
+    /// A captured combination that collides with another shortcut, awaiting
+    /// the user's overwrite / cancel decision.
+    pub(crate) kb_conflict: Option<KbConflict>,
+    /// `true` when this view is the root of its own OS window (T16-009); `false`
+    /// for the legacy in-`AppShell` modal path (kept for tests only).
+    pub(crate) windowed: bool,
+    /// An open `Select` dropdown (key + anchor position + options), drawn as a
+    /// deferred floating layer so it escapes the scroll clip.
+    pub(crate) dropdown: Option<SelectMenu>,
+    /// Live bar-item layout, edited by the Layout section (T16-012). Persisted
+    /// through the backend blob; the running `AppShell` bar re-reads it via
+    /// [`bar_items::BarLayoutTick`].
+    pub(crate) placements: bar_items::Placements,
+    /// AI provider instances + their keychain-backed API keys (T16-012).
+    pub(crate) instances: labonair_ai::InstanceStore,
+    pub(crate) secrets: std::sync::Arc<labonair_ai::KeyringSecretStore>,
+    /// Scanned system font family names for the `FontFamily` picker, loaded
+    /// once asynchronously when the window opens.
+    pub(crate) system_fonts: Vec<SharedString>,
+    /// AI agents + directives (T16-019) — loaded when the window opens.
+    pub(crate) agents: Vec<labonair_backend::modules::agents::Agent>,
+    pub(crate) active_agent_id: String,
+    pub(crate) directives: Vec<labonair_backend::modules::directives::Directive>,
+    /// Open inline agent/directive editor (keydown-buffer modal).
+    pub(crate) ai_editor: Option<AiEditor>,
+    pub(crate) ai_editor_focus: FocusHandle,
+    pub(crate) focus: FocusHandle,
+}
+
+pub(crate) struct SelectMenu {
+    pub(crate) key: &'static str,
+    pub(crate) options: Vec<SharedString>,
+    pub(crate) at: Point<Pixels>,
+    /// The `"(default)"` font entry — selecting it clears the pref to `""`.
+    pub(crate) default_sentinel: Option<SharedString>,
+}
+
+pub(crate) struct KbConflict {
+    pub(crate) id: ShortcutId,
+    pub(crate) binding: String,
+    pub(crate) other: ShortcutId,
+}
+
+impl SettingsView {
+    pub fn new(
+        prefs: Entity<PreferencesStore>,
+        theme: Entity<ThemeStore>,
+        background: Entity<BackgroundStore>,
+        backend: Backend,
+        tokio: TokioHandle,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        cx.observe(&prefs, |_, _, cx| cx.notify()).detach();
+        cx.observe(&theme, |_, _, cx| cx.notify()).detach();
+        cx.observe(&background, |_, _, cx| cx.notify()).detach();
+        // Deep-link: jump to the requested tab when another part of the app
+        // asks for a specific settings section while this window is open.
+        cx.observe_global::<SettingsTarget>(|this, cx| {
+            if let Some(SettingsTarget(Some(tab))) = cx.try_global::<SettingsTarget>().copied() {
+                this.active_cat = tab.category_index();
+                this.search.clear();
+                cx.notify();
+            }
+        })
+        .detach();
+        Self {
+            prefs,
+            theme,
+            background,
+            backend,
+            tokio,
+            open: false,
+            active_cat: 0,
+            search: String::new(),
+            editing: None,
+            mcp: mcp_prefs_load(),
+            mcp_token: None,
+            theme_files: Vec::new(),
+            active_theme_id: None,
+            themes_community_tab: false,
+            community_themes: Vec::new(),
+            community_error: None,
+            community_loading: false,
+            installing_themes: std::collections::HashSet::new(),
+            new_theme_prompt: None,
+            new_theme_focus: cx.focus_handle(),
+            recording: None,
+            kb_conflict: None,
+            windowed: false,
+            dropdown: None,
+            placements: bar_items::Placements::from_blob(
+                &labonair_backend::modules::settings::bar_item_placements_load(),
+            ),
+            instances: labonair_ai::InstanceStore::open_default(),
+            secrets: std::sync::Arc::new(labonair_ai::KeyringSecretStore),
+            system_fonts: Vec::new(),
+            agents: Vec::new(),
+            active_agent_id: String::new(),
+            directives: Vec::new(),
+            ai_editor: None,
+            ai_editor_focus: cx.focus_handle(),
+            focus: cx.focus_handle(),
+        }
+    }
+
+    pub fn is_open(&self) -> bool {
+        self.open
+    }
+
+    pub fn open(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.open = true;
+        self.editing = None;
+        self.recording = None;
+        self.kb_conflict = None;
+        self.search.clear();
+        window.focus(&self.focus);
+        self.refresh_mcp_status(cx);
+        self.refresh_themes();
+        if self.active_theme_id.is_none() {
+            let stored = self.prefs.read(cx).get().app_theme.clone();
+            if !stored.is_empty() && stored != "default" {
+                self.active_theme_id = Some(stored);
+            }
+        }
+        self.load_system_fonts(cx);
+        self.refresh_agents_directives();
+        cx.notify();
+    }
+
+    pub fn close(&mut self, cx: &mut Context<Self>) {
+        self.open = false;
+        self.editing = None;
+        cx.notify();
+    }
+
+    /// Close request from Esc / the header close button. In windowed mode this
+    /// destroys the OS window (GPUI 0.2.2 has no per-window hide); the shared
+    /// [`PreferencesStore`] keeps all persistent state so the next open is
+    /// instant and lossless.
+    pub(crate) fn request_close(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.windowed {
+            cx.set_global(SettingsWindowRef { handle: None });
+            self.editing = None;
+            window.remove_window();
+        } else {
+            self.close(cx);
+        }
+    }
+
+    pub fn toggle(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.open {
+            self.close(cx);
+        } else {
+            self.open(window, cx);
+        }
+    }
+
+    pub(crate) fn refresh_mcp_status(&self, cx: &mut Context<Self>) {
+        let app = self.backend.clone();
+        let task = self
+            .tokio
+            .spawn(async move { mcp_get_status(app.clone(), &app.mcp, &app.secrets).await });
+        cx.spawn(async move |this, cx| {
+            if let Ok(Ok(status)) = task.await {
+                let _ = this.update(cx, |this, cx| {
+                    this.mcp_token = status.token;
+                    this.mcp.bridge_port = status.port;
+                    this.mcp.max_command_timeout_secs = status.max_command_timeout_secs;
+                    this.mcp.auto_revoke_minutes = status.auto_revoke_minutes;
+                    cx.notify();
+                });
+            }
+        })
+        .detach();
+    }
+
+    pub(crate) fn notify(&self, cx: &mut Context<Self>, n: Notification) {
+        notification_center(cx).update(cx, |c, cx| {
+            c.push(n, cx);
+        });
+    }
+
+    pub(crate) fn notify_error(&self, cx: &mut Context<Self>, title: &'static str, body: String) {
+        self.notify(cx, Notification::error(title, body));
+    }
+
+    // ── generic field mutation ────────────────────────────────────────────
+
+    pub(crate) fn set_pref(&mut self, key: &str, value: Value, cx: &mut Context<Self>) {
+        let key_owned = key.to_string();
+        self.prefs
+            .update(cx, |p, cx| p.set_value(&key_owned, value, cx));
+        // Propagate the values modules can't observe generically.
+        if key == "theme" {
+            let pref = match self.prefs.read(cx).get().theme {
+                ThemePref::System => ThemePreference::System,
+                ThemePref::Light => ThemePreference::Light,
+                ThemePref::Dark => ThemePreference::Dark,
+            };
+            self.theme.update(cx, |t, cx| t.set_preference(pref, cx));
+        }
+        // Rebind the keymap so a changed shortcut takes effect immediately
+        // (and the native menu accelerators re-derive) (T13-004).
+        if key == "keybinds" {
+            let kb = self.prefs.read(cx).get().keybinds.clone();
+            crate::window::apply_keybinds(cx, &kb);
+        }
+        // The `Preferences` store already republishes `GlobalPreferences` on
+        // every change (see `PreferencesStore::set_value`); terminal / editor /
+        // workspace all `observe_global` / re-read it, so most keys propagate
+        // for free — this is the port's generic `applySettingChange`. The rest
+        // are the non-observable side effects (T16-012):
+        match key {
+            // Keep the AI chat's active model in sync with the settings pref.
+            "defaultModelId" => {
+                let v = self.prefs.read(cx).get().default_model_id.clone();
+                if !v.is_empty() {
+                    let _ = self.instances.set_active_model_ref(&v);
+                }
+            }
+            // Reduce-motion and corner radius feed the theme/layout layer.
+            "reduceMotion" | "appCornerRadius" | "appLineHeight" => {
+                self.sync_theme_from_prefs(cx);
+            }
+            _ => {}
+        }
+        // Typography + editor syntax scheme are pushed into the ThemeStore so
+        // open terminals / editors pick them up live (T13-003).
+        self.sync_theme_from_prefs(cx);
+        cx.notify();
+    }
+
+    // ── bar-item layout editor (T16-012) ─────────────────────────────────
+
+    /// Mutate one bar item's placement, persist the blob, and bump
+    /// [`bar_items::BarLayoutTick`] so the running `AppShell` bar re-reads it.
+    pub(crate) fn move_bar_item(
+        &mut self,
+        id: BarItemId,
+        bar: Option<BarLoc>,
+        side: Option<BarSide>,
+        hidden: Option<bool>,
+        cx: &mut Context<Self>,
+    ) {
+        let mut p = self.placements.get(id);
+        if let Some(b) = bar {
+            p.bar = b;
+        }
+        if let Some(s) = side {
+            p.side = s;
+        }
+        if let Some(h) = hidden {
+            p.hidden = h;
+        }
+        self.placements.set(id, p);
+        self.persist_bar_item(id, cx);
+    }
+
+    pub(crate) fn reset_bar_layout(&mut self, cx: &mut Context<Self>) {
+        for id in BAR_ITEM_ORDER {
+            self.placements.set(id, default_placement(id));
+            self.persist_bar_item(id, cx);
+        }
+        cx.notify();
+    }
+
+    pub(crate) fn persist_bar_item(&mut self, id: BarItemId, cx: &mut Context<Self>) {
+        let patch = placement_patch(self.placements.get(id));
+        let backend = self.backend.clone();
+        let key = id.as_str().to_string();
+        self.tokio.spawn(async move {
+            let _ = labonair_backend::modules::settings::settings_set_bar_item_placement(
+                &backend.bar_item_lock,
+                key,
+                patch,
+            )
+            .await;
+        });
+        let next = cx
+            .try_global::<bar_items::BarLayoutTick>()
+            .map(|t| t.0)
+            .unwrap_or(0)
+            + 1;
+        cx.set_global(bar_items::BarLayoutTick(next));
+        cx.notify();
+    }
+
+    // ── AI providers (T16-012) ───────────────────────────────────────────
+
+    pub(crate) fn add_provider(
+        &mut self,
+        provider: labonair_ai::ProviderId,
+        cx: &mut Context<Self>,
+    ) {
+        match self.instances.add(provider) {
+            Ok(_) => cx.notify(),
+            Err(e) => self.notify_error(cx, "Could not add provider", e),
+        }
+    }
+
+    pub(crate) fn remove_provider(&mut self, id: String, cx: &mut Context<Self>) {
+        if let Err(e) = self.instances.remove(&id) {
+            self.notify_error(cx, "Could not remove provider", e);
+        }
+        let _ = labonair_ai::secret_store::clear_instance_key(&*self.secrets, &id);
+        cx.notify();
+    }
+
+    /// Mirror the font / editor-theme preferences into the [`ThemeStore`].
+    pub(crate) fn sync_theme_from_prefs(&mut self, cx: &mut Context<Self>) {
+        let p = self.prefs.read(cx).get().clone();
+        let theme = self.theme.clone();
+        apply_prefs_to_theme(&p, &theme, cx);
+    }
+
+    pub(crate) fn toggle_bool(&mut self, key: &str, cx: &mut Context<Self>) {
+        let cur = self
+            .prefs
+            .read(cx)
+            .value(key)
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        self.set_pref(key, Value::Bool(!cur), cx);
+    }
+
+    pub(crate) fn bump_int(
+        &mut self,
+        key: &str,
+        min: i64,
+        max: i64,
+        delta: i64,
+        cx: &mut Context<Self>,
+    ) {
+        let cur = self
+            .prefs
+            .read(cx)
+            .value(key)
+            .and_then(|v| v.as_i64())
+            .unwrap_or(min);
+        let next = (cur + delta).clamp(min, max);
+        self.set_pref(key, Value::from(next), cx);
+    }
+
+    /// Float stepper: `min/max/delta` are in hundredths.
+    pub(crate) fn bump_float(
+        &mut self,
+        key: &str,
+        min_centi: i64,
+        max_centi: i64,
+        delta_centi: i64,
+        cx: &mut Context<Self>,
+    ) {
+        let cur_centi = self
+            .prefs
+            .read(cx)
+            .value(key)
+            .and_then(|v| v.as_f64())
+            .map(|f| (f * 100.0).round() as i64)
+            .unwrap_or(min_centi);
+        let next = (cur_centi + delta_centi).clamp(min_centi, max_centi);
+        let n = serde_json::Number::from_f64(next as f64 / 100.0)
+            .unwrap_or_else(|| serde_json::Number::from(0));
+        self.set_pref(key, Value::Number(n), cx);
+    }
+
+    pub(crate) fn begin_edit(&mut self, key: &str, numeric: bool, cx: &mut Context<Self>) {
+        let buffer = self
+            .prefs
+            .read(cx)
+            .value(key)
+            .map(|v| match v {
+                Value::String(s) => s,
+                other => other.to_string(),
+            })
+            .unwrap_or_default();
+        self.editing = Some(EditState {
+            key: key.to_string(),
+            buffer,
+            numeric,
+        });
+        cx.notify();
+    }
+
+    pub(crate) fn commit_edit(&mut self, cx: &mut Context<Self>) {
+        let Some(edit) = self.editing.take() else {
+            return;
+        };
+        // Provider API keys are keychain-backed, never a preference key.
+        if let Some(instance_id) = edit.key.strip_prefix("provkey:") {
+            let trimmed = edit.buffer.trim();
+            let res = if trimmed.is_empty() {
+                labonair_ai::secret_store::clear_instance_key(&*self.secrets, instance_id)
+            } else {
+                labonair_ai::secret_store::set_instance_key(&*self.secrets, instance_id, trimmed)
+            };
+            match res {
+                Ok(()) => self.notify(
+                    cx,
+                    Notification::success("API key saved", "Stored in the OS keychain."),
+                ),
+                Err(e) => self.notify_error(cx, "Could not save API key", e),
+            }
+            cx.notify();
+            return;
+        }
+        let value = if edit.numeric {
+            match edit.buffer.trim().parse::<i64>() {
+                Ok(n) => Value::from(n),
+                Err(_) => {
+                    cx.notify();
+                    return;
+                }
+            }
+        } else {
+            Value::String(edit.buffer.trim().to_string())
+        };
+        self.set_pref(&edit.key, value, cx);
+    }
+
+    // ── key handling ──────────────────────────────────────────────────────
+
+    pub(crate) fn on_key(
+        &mut self,
+        ev: &KeyDownEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.recording.is_some() {
+            self.record_key(ev, window, cx);
+            cx.stop_propagation();
+            return;
+        }
+        let ks = &ev.keystroke;
+        let key = ks.key.as_str();
+        if self.editing.is_some() {
+            match key {
+                "escape" => {
+                    self.editing = None;
+                    cx.notify();
+                }
+                "enter" => self.commit_edit(cx),
+                "backspace" => {
+                    if let Some(e) = self.editing.as_mut() {
+                        e.buffer.pop();
+                    }
+                    cx.notify();
+                }
+                _ => {
+                    if ks.modifiers.platform || ks.modifiers.control || ks.modifiers.alt {
+                        return;
+                    }
+                    if let Some(ch) = char_of(ks) {
+                        if let Some(e) = self.editing.as_mut() {
+                            e.buffer.push_str(&ch);
+                        }
+                        cx.notify();
+                    }
+                }
+            }
+            cx.stop_propagation();
+            return;
+        }
+
+        match key {
+            "escape" => self.request_close(window, cx),
+            "backspace" => {
+                self.search.pop();
+                cx.notify();
+            }
+            _ => {
+                if ks.modifiers.platform || ks.modifiers.control || ks.modifiers.alt {
+                    return;
+                }
+                if let Some(ch) = char_of(ks) {
+                    self.search.push_str(&ch);
+                    cx.notify();
+                }
+            }
+        }
+        cx.stop_propagation();
+    }
+
+    /// The General pane: an About hero followed by the grouped rows.
+    pub(crate) fn render_general(&self, c: &Palette, cx: &mut Context<Self>) -> gpui::AnyElement {
+        div()
+            .flex()
+            .flex_col()
+            .child(self.render_about_hero(c, cx))
+            .child(self.render_grouped("General", c, cx))
+            .into_any_element()
+    }
+
+    pub(crate) fn render_about_hero(
+        &self,
+        c: &Palette,
+        cx: &mut Context<Self>,
+    ) -> gpui::AnyElement {
+        let link = |id: &'static str, label: &'static str, url: &'static str| {
+            div()
+                .id(id)
+                .px_2()
+                .py(px(3.0))
+                .rounded_sm()
+                .border_1()
+                .border_color(c.border)
+                .text_size(px(11.5))
+                .text_color(c.fg)
+                .hover(|s| s.bg(c.border))
+                .child(label)
+                .on_click(cx.listener(move |_, _: &ClickEvent, _w, cx| {
+                    cx.open_url(url);
+                }))
+        };
+        div()
+            .flex()
+            .flex_col()
+            .items_center()
+            .gap_1()
+            .py_4()
+            .border_b_1()
+            .border_color(c.border)
+            .child(
+                div()
+                    .size(px(56.0))
+                    .rounded_lg()
+                    .bg(c.accent)
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .text_color(c.bg)
+                    .font_weight(gpui::FontWeight::BOLD)
+                    .child("L"),
+            )
+            .child(
+                div()
+                    .text_color(c.fg)
+                    .font_weight(gpui::FontWeight::SEMIBOLD)
+                    .child("Labonair"),
+            )
+            .child(
+                div()
+                    .text_size(px(11.0))
+                    .text_color(c.muted)
+                    .child(SharedString::from(format!(
+                        "Version {}  \u{2022}  {} {}",
+                        env!("CARGO_PKG_VERSION"),
+                        std::env::consts::OS,
+                        std::env::consts::ARCH,
+                    ))),
+            )
+            .child(
+                div()
+                    .mt_1()
+                    .flex()
+                    .gap_2()
+                    .child(link(
+                        "about-report",
+                        "Report a problem",
+                        "https://github.com/Snenjih/Labonair-rust/issues/new",
+                    ))
+                    .child(link(
+                        "about-github",
+                        "GitHub",
+                        "https://github.com/Snenjih/Labonair-rust",
+                    ))
+                    .child(link(
+                        "about-website",
+                        "Website",
+                        "https://github.com/Snenjih/Labonair-rust",
+                    )),
+            )
+            .into_any_element()
+    }
+}
+
+impl Focusable for SettingsView {
+    fn focus_handle(&self, _cx: &App) -> FocusHandle {
+        self.focus.clone()
+    }
+}
+
+impl Render for SettingsView {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        if !self.windowed && !self.open {
+            return div().into_any_element();
+        }
+        let t = self.theme.read(cx);
+        let c = Palette {
+            bg: t.background(),
+            fg: t.foreground(),
+            muted: t.muted_foreground(),
+            border: t.border(),
+            card: t.card(),
+            accent: t.accent(),
+        };
+        let active_cat = self.active_cat;
+        let searching = !self.search.trim().is_empty();
+
+        let search_box = div()
+            .mb_2()
+            .px_2()
+            .py(px(4.0))
+            .rounded_sm()
+            .border_1()
+            .border_color(if searching { c.accent } else { c.border })
+            .bg(c.bg)
+            .text_size(px(11.5))
+            .text_color(if self.search.is_empty() {
+                c.muted
+            } else {
+                c.fg
+            })
+            .child(SharedString::from(if self.search.is_empty() {
+                "Search settings\u{2026}".to_string()
+            } else {
+                self.search.clone()
+            }));
+
+        let sidebar = div()
+            .w(px(208.0))
+            .flex_shrink_0()
+            .flex()
+            .flex_col()
+            .gap_0p5()
+            .p_2()
+            .border_r_1()
+            .border_color(c.border)
+            .child(search_box)
+            .children(CATEGORIES.iter().enumerate().map(|(i, name)| {
+                let is_active = i == active_cat && !searching;
+                div()
+                    .id(SharedString::from(*name))
+                    .px_2()
+                    .py(px(5.0))
+                    .rounded_sm()
+                    .text_size(px(12.0))
+                    .text_color(if is_active { c.fg } else { c.muted })
+                    .when(is_active, |d| d.bg(c.accent))
+                    .when(!is_active, |d| d.hover(|s| s.bg(c.border)))
+                    .child(SharedString::from(*name))
+                    .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                        this.active_cat = i;
+                        this.search.clear();
+                        cx.notify();
+                    }))
+            }));
+
+        let body = self.render_body(&c, cx);
+        let windowed = self.windowed;
+
+        let header = div()
+            .h(px(44.0))
+            .flex_shrink_0()
+            .flex()
+            .items_center()
+            .justify_between()
+            .px_3()
+            .border_b_1()
+            .border_color(c.border)
+            .child(
+                div()
+                    .id("settings-open-json")
+                    .text_size(px(11.0))
+                    .text_color(c.muted)
+                    .hover(|s| s.text_color(c.fg))
+                    .child("Open settings.json")
+                    .on_click(cx.listener(|_, _: &ClickEvent, _w, cx| {
+                        cx.reveal_path(&config_dir().join("labonair-settings.json"));
+                    })),
+            )
+            .child(
+                div()
+                    .text_color(c.fg)
+                    .font_weight(gpui::FontWeight::SEMIBOLD)
+                    .text_size(px(12.5))
+                    .child("Settings"),
+            )
+            .child(
+                div()
+                    .id("settings-close")
+                    .text_color(c.muted)
+                    .hover(|s| s.text_color(c.fg))
+                    .child("\u{2715}")
+                    .on_click(cx.listener(|this, _: &ClickEvent, window, cx| {
+                        this.request_close(window, cx)
+                    })),
+            );
+
+        let content = div().flex_1().min_h_0().flex().child(sidebar).child(
+            div()
+                .id("settings-scroll")
+                .flex_1()
+                .min_w_0()
+                .flex()
+                .flex_col()
+                .items_center()
+                .p_4()
+                .overflow_y_scroll()
+                .child(
+                    div()
+                        .w_full()
+                        .max_w(px(580.0))
+                        .flex()
+                        .flex_col()
+                        .child(body),
+                ),
+        );
+
+        let card = div()
+            .id("settings-card")
+            .track_focus(&self.focus)
+            .key_context("Settings")
+            .flex()
+            .flex_col()
+            .bg(c.card)
+            .text_color(c.fg)
+            .on_key_down(cx.listener(Self::on_key))
+            .child(header)
+            .child(content)
+            .children(self.render_dropdown(&c, cx));
+
+        if windowed {
+            return card.size_full().into_any_element();
+        }
+
+        // Legacy in-`AppShell` modal path (kept for tests only).
+        div()
+            .id("settings-overlay")
+            .absolute()
+            .inset_0()
+            .flex()
+            .items_center()
+            .justify_center()
+            .bg(labonair_theme::modal_scrim())
+            .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| this.close(cx)))
+            .child(
+                card.w(px(820.0))
+                    .h(px(560.0))
+                    .rounded_lg()
+                    .border_1()
+                    .border_color(c.border)
+                    .overflow_hidden()
+                    .on_click(|_, _w, cx| cx.stop_propagation()),
+            )
+            .into_any_element()
+    }
+}
+
+#[derive(Clone, Copy)]
+pub(crate) struct Palette {
+    pub(crate) bg: gpui::Hsla,
+    pub(crate) fg: gpui::Hsla,
+    pub(crate) muted: gpui::Hsla,
+    pub(crate) border: gpui::Hsla,
+    pub(crate) card: gpui::Hsla,
+    pub(crate) accent: gpui::Hsla,
+}
+
+/// A read-only filled progress track shown under a bounded numeric stepper,
+/// giving it a slider appearance (`fraction` is clamped to `0.0..=1.0`).
+pub(crate) fn slider_track(fraction: f32, c: &Palette) -> impl IntoElement {
+    let pct = (fraction.clamp(0.0, 1.0) * 100.0).round();
+    div()
+        .mt(px(4.0))
+        .w(px(120.0))
+        .h(px(4.0))
+        .rounded_full()
+        .bg(c.border)
+        .child(
+            div()
+                .h_full()
+                .rounded_full()
+                .bg(c.accent)
+                .w(gpui::relative(pct / 100.0)),
+        )
+}
+
+pub(crate) fn section_label(text: &'static str, c: &Palette) -> impl IntoElement {
+    div()
+        .pt_3()
+        .pb_1()
+        .text_size(px(11.0))
+        .font_weight(gpui::FontWeight::SEMIBOLD)
+        .text_color(c.muted)
+        .child(text)
+}
+
+pub(crate) fn bg_tile(
+    id: &str,
+    label: &str,
+    selected: bool,
+    c: &Palette,
+    cx: &mut Context<SettingsView>,
+    f: impl Fn(&mut SettingsView, &mut Context<SettingsView>) + 'static,
+) -> impl IntoElement {
+    div()
+        .id(SharedString::from(id.to_string()))
+        .w(px(96.0))
+        .h(px(60.0))
+        .flex()
+        .items_end()
+        .p_1()
+        .rounded_md()
+        .border_1()
+        .border_color(if selected { c.accent } else { c.border })
+        .bg(c.bg)
+        .text_color(if selected { c.fg } else { c.muted })
+        .text_size(px(10.0))
+        .overflow_hidden()
+        .child(SharedString::from(label.to_string()))
+        .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| f(this, cx)))
+}
+
+pub(crate) fn step_btn(
+    tag: &'static str,
+    key: &'static str,
+    glyph: &'static str,
+    c: &Palette,
+    cx: &mut Context<SettingsView>,
+    f: impl Fn(&mut SettingsView, &mut Context<SettingsView>) + 'static,
+) -> impl IntoElement {
+    div()
+        .id(SharedString::from(format!("{tag}-{key}")))
+        .size(px(20.0))
+        .flex()
+        .items_center()
+        .justify_center()
+        .rounded_sm()
+        .border_1()
+        .border_color(c.border)
+        .text_color(c.fg)
+        .hover(|s| s.bg(c.border))
+        .child(glyph)
+        .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| f(this, cx)))
+}
+
+pub(crate) fn bridge_switch_row(
+    title: &'static str,
+    desc: &'static str,
+    on: bool,
+    c: &Palette,
+    cx: &mut Context<SettingsView>,
+    f: impl Fn(&mut SettingsView, &mut Context<SettingsView>) + 'static,
+) -> impl IntoElement {
+    div()
+        .flex()
+        .items_center()
+        .justify_between()
+        .gap_4()
+        .py_2()
+        .border_b_1()
+        .border_color(c.border)
+        .child(
+            div()
+                .flex()
+                .flex_col()
+                .gap_0p5()
+                .flex_1()
+                .min_w_0()
+                .child(div().text_color(c.fg).child(title))
+                .child(div().text_size(px(11.0)).text_color(c.muted).child(desc)),
+        )
+        .child(
+            div()
+                .id(SharedString::from(format!("mcp-sw-{title}")))
+                .w(px(38.0))
+                .h(px(20.0))
+                .rounded_full()
+                .flex()
+                .items_center()
+                .px(px(2.0))
+                .bg(if on { c.accent } else { c.border })
+                .child(
+                    div()
+                        .size(px(16.0))
+                        .rounded_full()
+                        .bg(c.bg)
+                        .when(on, |d| d.ml(px(16.0))),
+                )
+                .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| f(this, cx))),
+        )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn bridge_int_row(
+    title: &'static str,
+    value: i64,
+    min: i64,
+    max: i64,
+    step: i64,
+    c: &Palette,
+    cx: &mut Context<SettingsView>,
+    f: impl Fn(&mut SettingsView, i64, &mut Context<SettingsView>) + Clone + 'static,
+) -> impl IntoElement {
+    let f_dec = f.clone();
+    div()
+        .flex()
+        .items_center()
+        .justify_between()
+        .gap_4()
+        .py_2()
+        .border_b_1()
+        .border_color(c.border)
+        .child(div().text_color(c.fg).flex_1().min_w_0().child(title))
+        .child(
+            div()
+                .flex()
+                .items_center()
+                .gap_1()
+                .child(
+                    div()
+                        .id(SharedString::from(format!("mcp-dec-{title}")))
+                        .size(px(20.0))
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .rounded_sm()
+                        .border_1()
+                        .border_color(c.border)
+                        .text_color(c.fg)
+                        .hover(|s| s.bg(c.border))
+                        .child("\u{2212}")
+                        .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                            f_dec(this, (value - step).clamp(min, max), cx)
+                        })),
+                )
+                .child(
+                    div()
+                        .min_w(px(52.0))
+                        .text_center()
+                        .text_color(c.fg)
+                        .child(SharedString::from(value.to_string())),
+                )
+                .child(
+                    div()
+                        .id(SharedString::from(format!("mcp-inc-{title}")))
+                        .size(px(20.0))
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .rounded_sm()
+                        .border_1()
+                        .border_color(c.border)
+                        .text_color(c.fg)
+                        .hover(|s| s.bg(c.border))
+                        .child("+")
+                        .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                            f(this, (value + step).clamp(min, max), cx)
+                        })),
+                ),
+        )
+}

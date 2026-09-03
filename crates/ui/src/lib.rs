@@ -23,7 +23,6 @@ pub mod menu;
 pub mod pane;
 pub mod preview;
 pub mod session;
-pub mod settings;
 pub mod sftp;
 pub mod sidebar_slot;
 pub mod snippets;
@@ -61,6 +60,10 @@ pub use labonair_notifications::{
     init as init_notifications, notification_center, notify_err, GlobalNotificationCenter,
     Notification, NotificationAction, NotificationCenter, Severity,
 };
+pub use labonair_settings_ui::{
+    FieldDef, FieldKind, GlobalPreferences, PreferencesStore, SettingsView,
+    CATEGORIES as SETTINGS_CATEGORIES, FIELDS,
+};
 pub use labonair_theme::{ThemeFile, ThemeFileVariant};
 pub use labonair_ui_kit::{
     button, field_input, file_icon, folder_icon, text_field, ButtonSize, ButtonVariant, IconName,
@@ -70,10 +73,6 @@ pub use pane::{CloseOutcome, PaneId, PaneNode, SplitAxis, WorkspaceLayout};
 pub use preview::{is_previewable, PreviewView};
 pub use session::{
     clear_snapshot, load_snapshot, save_snapshot, RestoreResult, SessionSnapshot, TabSnapshot,
-};
-pub use settings::{
-    FieldDef, FieldKind, GlobalPreferences, PreferencesStore, SettingsView,
-    CATEGORIES as SETTINGS_CATEGORIES, FIELDS,
 };
 pub use sftp::{SftpEvent, SftpView};
 pub use snippets::{

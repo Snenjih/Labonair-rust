@@ -46,16 +46,18 @@ use crate::git::GitPanelView;
 use crate::git_graph::GitGraphView;
 use crate::menu;
 use crate::pane::SplitAxis;
-use crate::settings::{open_settings_window, set_settings_deps, PreferencesStore, SettingsTab};
 use crate::snippets::SnippetsView;
 use crate::theme::{ThemePreference, ThemeStore};
 use crate::updater::UpdaterView;
 use crate::window_state;
 use crate::workspace::Workspace;
 use labonair_command_palette::{
-    CommandId, CommandPalette, PaletteChoice, PaletteData, PaletteEvent,
+    CommandId, CommandPalette, Page as PalettePage, PaletteChoice, PaletteData, PaletteEvent,
 };
 use labonair_notifications::{self as notifications, NotificationCenter};
+use labonair_settings_ui::{
+    open_settings_window, set_settings_deps, PreferencesStore, SettingsTab,
+};
 use labonair_ui_kit::IconName;
 
 const HEADER_H: f32 = 40.0;
@@ -319,13 +321,16 @@ impl AppShell {
         {
             let p = prefs.read(cx).get().clone();
             prefs.update(cx, |s, cx| s.publish_global(cx));
-            crate::settings::apply_prefs_to_theme(&p, &theme, cx);
+            labonair_settings_ui::apply_prefs_to_theme(&p, &theme, cx);
             // Apply the persisted keyboard-shortcut overrides (T13-004).
             crate::menu::apply_keybinds(cx, &p.keybinds);
         }
         // Publish the shared handles the settings window (its own OS window,
         // T16-009) builds from — it is opened lazily on `Cmd+,`.
         set_settings_deps(prefs.clone(), backend.clone(), tokio.clone(), cx);
+        // The Shortcuts pane lives in `labonair-settings-ui` (which cannot depend
+        // on this crate's concrete `actions!`); hand it the keybind applier.
+        labonair_settings_ui::set_keybind_apply_hook(crate::menu::apply_keybinds, cx);
         // Re-read the bar-item layout when the settings window edits it
         // (T16-012).
         cx.observe_global::<bar_items::BarLayoutTick>(|this, cx| {
@@ -871,10 +876,13 @@ impl AppShell {
     fn act_new_ssh_connection(
         &mut self,
         _: &menu::NewSshConnection,
-        _: &mut Window,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.workspace.update(cx, |w, cx| w.open_host_manager(cx));
+        // `Cmd+Shift+N` now opens the command palette straight to the Hosts page
+        // (`Enter` = SSH, `Shift+Enter` = SFTP) instead of the Host-Manager tab.
+        self.command_palette
+            .update(cx, |p, cx| p.open_to_page(PalettePage::Hosts, window, cx));
     }
 
     fn act_new_quick_ssh(&mut self, _: &menu::NewQuickSsh, _: &mut Window, cx: &mut Context<Self>) {
@@ -984,6 +992,19 @@ impl AppShell {
             })
             .collect();
 
+        let recent_hosts = self
+            .workspace
+            .read(cx)
+            .recent_hosts(cx, 5)
+            .into_iter()
+            .map(|(id, name)| PaletteChoice {
+                id,
+                title: name,
+                subtitle: None,
+                active: false,
+            })
+            .collect();
+
         let theme = self.theme.read(cx);
         let p = self.prefs.read(cx).get();
 
@@ -1044,7 +1065,7 @@ impl AppShell {
             })
             .collect();
 
-        let app_themes = crate::settings::theme_choices()
+        let app_themes = labonair_settings_ui::theme_choices()
             .into_iter()
             .map(|(id, name)| PaletteChoice {
                 active: id == active_theme_id,
@@ -1067,6 +1088,7 @@ impl AppShell {
         PaletteData {
             tabs,
             hosts,
+            recent_hosts,
             snippets,
             ai_sessions,
             git_branches,
@@ -1099,10 +1121,15 @@ impl AppShell {
                     });
                 }
                 PaletteEvent::SetAppTheme(id) => {
-                    crate::settings::activate_app_theme(&id, &self.prefs, &self.theme, cx);
+                    labonair_settings_ui::activate_app_theme(&id, &self.prefs, &self.theme, cx);
                 }
                 PaletteEvent::PreviewAppTheme(id) => {
-                    crate::settings::preview_app_theme(id.as_deref(), &self.prefs, &self.theme, cx);
+                    labonair_settings_ui::preview_app_theme(
+                        id.as_deref(),
+                        &self.prefs,
+                        &self.theme,
+                        cx,
+                    );
                 }
                 PaletteEvent::RunSnippet(id) => {
                     self.snippets
@@ -1130,7 +1157,7 @@ impl AppShell {
                         s.set_value("theme", serde_json::Value::String(key.into()), cx)
                     });
                     let p = self.prefs.read(cx).get().clone();
-                    crate::settings::apply_prefs_to_theme(&p, &self.theme, cx);
+                    labonair_settings_ui::apply_prefs_to_theme(&p, &self.theme, cx);
                 }
                 PaletteEvent::SetEditorTheme(id) => {
                     self.prefs.update(cx, |s, cx| {
@@ -1141,7 +1168,7 @@ impl AppShell {
                         )
                     });
                     let p = self.prefs.read(cx).get().clone();
-                    crate::settings::apply_prefs_to_theme(&p, &self.theme, cx);
+                    labonair_settings_ui::apply_prefs_to_theme(&p, &self.theme, cx);
                 }
             }
         }

@@ -182,8 +182,7 @@ pub enum Page {
     ColorMode,
     EditorTheme,
     Themes,
-    HostsSsh,
-    HostsSftp,
+    Hosts,
     Snippets,
     AiSessions,
     Outline,
@@ -200,8 +199,7 @@ impl Page {
             Page::ColorMode => "Search color modes\u{2026}",
             Page::EditorTheme => "Search editor themes\u{2026}",
             Page::Themes => "Search themes\u{2026}",
-            Page::HostsSsh => "Search SSH hosts\u{2026}",
-            Page::HostsSftp => "Search SFTP hosts\u{2026}",
+            Page::Hosts => "Search hosts\u{2026}",
             Page::Snippets => "Search snippets\u{2026}",
             Page::AiSessions => "Search sessions\u{2026}",
             Page::Outline => "Search symbols\u{2026}",
@@ -218,8 +216,7 @@ impl Page {
             Page::ColorMode => "Color Mode",
             Page::EditorTheme => "Editor Theme",
             Page::Themes => "App Theme",
-            Page::HostsSsh => "SSH Hosts",
-            Page::HostsSftp => "SFTP Hosts",
+            Page::Hosts => "Hosts",
             Page::Snippets => "Snippets",
             Page::AiSessions => "AI Sessions",
             Page::Outline => "Symbols",
@@ -263,8 +260,8 @@ static COMMANDS: &[Command] = &[
     Command { id: CommandId::PrevTab,            title: "Previous Tab",            section: "Tab Actions",    contexts: &[],                            shortcut: Some(TabPrev),       icon: I::ChevronRight,sub_page: None },
     Command { id: CommandId::ClearTerminal,      title: "Clear Terminal",          section: "Terminal",       contexts: &[CtxTerminal, SshTerminal],    shortcut: None,                icon: I::Trash,      sub_page: None },
     Command { id: CommandId::OpenHostManager,    title: "Open Host Manager",       section: "Connections",    contexts: &[],                            shortcut: None,                icon: I::Server,     sub_page: None },
-    Command { id: CommandId::ConnectSsh,         title: "Connect SSH\u{2026}",     section: "Connections",    contexts: &[],                            shortcut: None,                icon: I::Terminal,   sub_page: Some(Page::HostsSsh) },
-    Command { id: CommandId::OpenSftp,           title: "Open SFTP\u{2026}",       section: "Connections",    contexts: &[],                            shortcut: None,                icon: I::Folder,     sub_page: Some(Page::HostsSftp) },
+    Command { id: CommandId::ConnectSsh,         title: "Connect SSH\u{2026}",     section: "Connections",    contexts: &[],                            shortcut: None,                icon: I::Terminal,   sub_page: Some(Page::Hosts) },
+    Command { id: CommandId::OpenSftp,           title: "Open SFTP\u{2026}",       section: "Connections",    contexts: &[],                            shortcut: None,                icon: I::Folder,     sub_page: Some(Page::Hosts) },
     Command { id: CommandId::Find,               title: "Find in Current Pane",    section: "Search",         contexts: &[],                            shortcut: Some(SearchFocus),   icon: I::Search,     sub_page: None },
     Command { id: CommandId::ToggleSidebar,      title: "Toggle File Explorer",    section: "View",           contexts: &[],                            shortcut: Some(SidebarToggle), icon: I::PanelLeft,  sub_page: None },
     Command { id: CommandId::ToggleFullScreen,   title: "Toggle Full Screen",      section: "View",           contexts: &[],                            shortcut: None,                icon: I::Square,     sub_page: None },
@@ -427,6 +424,9 @@ pub struct PaletteChoice {
 pub struct PaletteData {
     pub tabs: Vec<PaletteChoice>,
     pub hosts: Vec<PaletteChoice>,
+    /// Most-recently-connected hosts (host pre-sorts by `last_connected_at`,
+    /// caps at 5) — shown as quick-connect rows at the palette root.
+    pub recent_hosts: Vec<PaletteChoice>,
     pub ai_sessions: Vec<PaletteChoice>,
     pub snippets: Vec<PaletteChoice>,
     pub git_branches: Vec<PaletteChoice>,
@@ -497,8 +497,18 @@ enum RowKey {
     Noop,
 }
 
+/// A `Shift+Enter` alternate action for a row (e.g. "Open SFTP" on a host
+/// row whose primary action is "Open SSH").
+#[derive(Clone)]
+struct SecondaryAction {
+    label: &'static str,
+    key: RowKey,
+}
+
 struct PaletteRow {
     key: RowKey,
+    /// Optional `Shift+Enter` action; a footer hint is shown when present.
+    secondary: Option<SecondaryAction>,
     icon: Option<IconName>,
     title: String,
     subtitle: Option<String>,
@@ -593,6 +603,16 @@ where
         cx.notify();
     }
 
+    /// Open the palette navigated straight to `page` (used by `Cmd+Shift+N` →
+    /// the Hosts page).
+    pub fn open_to_page(&mut self, page: Page, window: &mut Window, cx: &mut Context<Self>) {
+        self.open(window, cx);
+        if page != Page::Root {
+            self.pages.push(page);
+        }
+        cx.notify();
+    }
+
     pub fn close(&mut self, cx: &mut Context<Self>) {
         self.open = false;
         self.query.clear();
@@ -673,6 +693,7 @@ where
         if choices.is_empty() {
             return vec![PaletteRow {
                 key: RowKey::Noop,
+                secondary: None,
                 icon: None,
                 title: empty_hint.to_string(),
                 subtitle: None,
@@ -695,7 +716,64 @@ where
             .into_iter()
             .map(|(_, _, c)| PaletteRow {
                 key: key_for(c),
+                secondary: None,
                 icon: Some(icon),
+                title: c.title.clone(),
+                subtitle: c.subtitle.clone(),
+                section: section.to_string(),
+                keys: vec![],
+                right_label: c.active.then(|| "active".to_string()),
+                has_sub: false,
+            })
+            .collect()
+    }
+
+    /// Host rows for the `Hosts` page and the root quick-connect section:
+    /// primary action opens an SSH terminal, `Shift+Enter` opens SFTP. Port of
+    /// `reference-src/src/modules/command-palette/hooks/useHostCommands.ts`.
+    fn host_rows(
+        &self,
+        hosts: &[PaletteChoice],
+        section: &str,
+        mode: SearchMode,
+    ) -> Vec<PaletteRow> {
+        if hosts.is_empty() {
+            return vec![PaletteRow {
+                key: RowKey::Noop,
+                secondary: None,
+                icon: None,
+                title: "No hosts configured yet".to_string(),
+                subtitle: None,
+                section: section.to_string(),
+                keys: vec![],
+                right_label: None,
+                has_sub: false,
+            }];
+        }
+        let mut scored: Vec<(i64, usize, &PaletteChoice)> = hosts
+            .iter()
+            .enumerate()
+            .filter_map(|(i, c)| {
+                let hay = format!("{} {}", c.title, c.subtitle.as_deref().unwrap_or(""));
+                match_score(mode, &hay, &self.query).map(|s| (s, i, c))
+            })
+            .collect();
+        scored.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.cmp(&b.1)));
+        scored
+            .into_iter()
+            .map(|(_, _, c)| PaletteRow {
+                key: RowKey::ConnectHost {
+                    host_id: c.id.clone(),
+                    sftp: false,
+                },
+                secondary: Some(SecondaryAction {
+                    label: "Open SFTP",
+                    key: RowKey::ConnectHost {
+                        host_id: c.id.clone(),
+                        sftp: true,
+                    },
+                }),
+                icon: Some(IconName::Server),
                 title: c.title.clone(),
                 subtitle: c.subtitle.clone(),
                 section: section.to_string(),
@@ -711,7 +789,7 @@ where
         match self.page() {
             Page::Root => {
                 let ctx = self.active_context(cx);
-                search_mode(&self.query, ctx, mode)
+                let mut root: Vec<PaletteRow> = search_mode(&self.query, ctx, mode)
                     .into_iter()
                     .map(|c| {
                         let right_label = toggle_pref_key(c.id).map(|k| {
@@ -733,6 +811,7 @@ where
                                 .sub_page
                                 .map(RowKey::Navigate)
                                 .unwrap_or(RowKey::Command(c.id)),
+                            secondary: None,
                             icon: Some(c.icon),
                             title: c.title.to_string(),
                             subtitle,
@@ -745,7 +824,11 @@ where
                             has_sub: c.sub_page.is_some(),
                         }
                     })
-                    .collect()
+                    .collect();
+                if !self.data.recent_hosts.is_empty() {
+                    root.extend(self.host_rows(&self.data.recent_hosts, "Hosts", mode));
+                }
+                root
             }
             Page::Tabs => {
                 let q = self.query.trim().to_lowercase();
@@ -756,6 +839,7 @@ where
                     .filter(|t| q.is_empty() || t.label.to_lowercase().contains(&q))
                     .map(|t| PaletteRow {
                         key: RowKey::Tab(t.id),
+                        secondary: None,
                         icon: Some(IconName::Terminal),
                         title: t.label,
                         subtitle: Some(t.kind_title),
@@ -775,6 +859,7 @@ where
             .filter(|(_, title, _)| match_score(mode, title, &self.query).is_some())
             .map(|(id, title, sc)| PaletteRow {
                 key: RowKey::Command(id),
+                secondary: None,
                 icon: Some(IconName::ArrowDownUp),
                 title: title.to_string(),
                 subtitle: self.data.font_size.map(|s| format!("{s}px")),
@@ -793,6 +878,7 @@ where
             .filter(|(_, title)| match_score(mode, title, &self.query).is_some())
             .map(|(pref, title)| PaletteRow {
                 key: RowKey::SetColorMode(pref),
+                secondary: None,
                 icon: Some(IconName::Refresh),
                 title: title.to_string(),
                 subtitle: None,
@@ -808,6 +894,7 @@ where
                 .filter(|(_, label)| match_score(mode, label, &self.query).is_some())
                 .map(|(id, label)| PaletteRow {
                     key: RowKey::SetEditorTheme(id),
+                    secondary: None,
                     icon: Some(IconName::Sparkles),
                     title: label,
                     subtitle: None,
@@ -825,28 +912,7 @@ where
                 "No themes installed yet",
                 |c| RowKey::SetAppTheme(c.id.clone()),
             ),
-            Page::HostsSsh => self.choice_rows(
-                &self.data.hosts,
-                "SSH Hosts",
-                IconName::Terminal,
-                mode,
-                "No hosts — add one in the Host Manager",
-                |c| RowKey::ConnectHost {
-                    host_id: c.id.clone(),
-                    sftp: false,
-                },
-            ),
-            Page::HostsSftp => self.choice_rows(
-                &self.data.hosts,
-                "SFTP Hosts",
-                IconName::Folder,
-                mode,
-                "No hosts — add one in the Host Manager",
-                |c| RowKey::ConnectHost {
-                    host_id: c.id.clone(),
-                    sftp: true,
-                },
-            ),
+            Page::Hosts => self.host_rows(&self.data.hosts, "Hosts", mode),
             Page::Snippets => self.choice_rows(
                 &self.data.snippets,
                 "Snippets",
@@ -888,10 +954,23 @@ where
 
     fn run_selected(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
         let rows = self.rows(cx);
-        let Some(row) = rows.get(self.selected) else {
+        let Some(key) = rows.get(self.selected).map(|r| r.key.clone()) else {
             return;
         };
-        match row.key.clone() {
+        self.dispatch(key, cx);
+    }
+
+    /// `Shift+Enter` — run the selected row's secondary action, if it has one.
+    fn run_secondary(&mut self, cx: &mut Context<Self>) {
+        let rows = self.rows(cx);
+        let Some(sec) = rows.get(self.selected).and_then(|r| r.secondary.clone()) else {
+            return;
+        };
+        self.dispatch(sec.key, cx);
+    }
+
+    fn dispatch(&mut self, key: RowKey, cx: &mut Context<Self>) {
+        match key {
             RowKey::Noop => {}
             RowKey::Navigate(page) => self.navigate(page, cx),
             RowKey::Command(id) => {
@@ -956,7 +1035,13 @@ where
                     self.close(cx);
                 }
             }
-            "enter" => self.run_selected(window, cx),
+            "enter" => {
+                if ks.modifiers.shift {
+                    self.run_secondary(cx);
+                } else {
+                    self.run_selected(window, cx);
+                }
+            }
             "down" => {
                 if len > 0 {
                     self.selected = (self.selected + 1) % len;
@@ -1098,6 +1183,7 @@ where
                         .sub_page
                         .map(RowKey::Navigate)
                         .unwrap_or(RowKey::Command(id)),
+                    secondary: None,
                     icon: Some(c.icon),
                     title: c.title.to_string(),
                     subtitle: None,
@@ -1306,6 +1392,18 @@ where
                     .child(kbd("\u{21b5}", muted, border))
                     .child("select"),
             );
+        if let Some(sec) = rows.get(selected).and_then(|r| r.secondary.as_ref()) {
+            hints = hints.child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(4.0))
+                    .text_size(px(11.0))
+                    .text_color(muted)
+                    .child(kbd("\u{21e7}\u{21b5}", muted, border))
+                    .child(SharedString::from(sec.label)),
+            );
+        }
         if self.pages.len() > 1 {
             hints = hints.child(
                 div()
@@ -1575,8 +1673,7 @@ mod tests {
             Page::ColorMode,
             Page::EditorTheme,
             Page::Themes,
-            Page::HostsSsh,
-            Page::HostsSftp,
+            Page::Hosts,
             Page::Snippets,
             Page::AiSessions,
             Page::Outline,

@@ -1,7 +1,7 @@
 # T16-007: `labonair-settings-ui` extrahieren
 
 ## Status
-📋 Geplant
+✅ Done
 
 ## Phase
 15 — Crate-Zerlegung & Fundament

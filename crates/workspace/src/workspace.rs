@@ -26,6 +26,7 @@
 
 pub mod agent_access;
 pub mod background;
+pub mod bar_items;
 pub mod bell;
 pub mod drag;
 pub mod live_bridge;

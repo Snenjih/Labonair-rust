@@ -4,6 +4,128 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
+## Last Session: 2026-09-03 (T16-007 — extract `labonair-settings-ui` + palette Hosts page)
+
+Seventh code task of the architecture rework. Pure mechanical crate split of
+`crates/ui/src/settings.rs` (5 998 lines) + the bundled "Zusatz" palette
+host-access rework.
+
+### What Was Done (T16-007)
+- **`crates/settings-ui/`** (`labonair-settings-ui`) created — `[lib] name =
+  "labonair_settings_ui"`, `path = "src/settings_ui.rs"`. Member added **before**
+  `crates/ui`. Deps: `gpui`, `gpui-component`, `serde`/`serde_json`, `tokio`,
+  `tracing`, `uuid`, `labonair-theme`, `-ui-kit`, `-gpui-ext`, `-notifications`,
+  `-command-palette`, `-workspace`, `-backend`, `-ai`. **No `labonair-ui` /
+  `labonair-shell`** (`cargo tree -p labonair-settings-ui` confirmed —
+  `labonair-workspace` + `labonair-ai` are beyond the task's literal dep list
+  but required, same as T16-006's `labonair-ai`: `SettingsView` holds
+  `Entity<BackgroundStore>` (workspace) + `labonair_ai::InstanceStore`).
+- **`settings.rs` sliced into 13 modules** (`git rm`'d, re-created — the file was
+  too intertwined for `git mv` to help). Only `mod`/`use`/`pub use`/visibility
+  lines changed; every logic line is a verbatim line-range slice of the
+  original:
+  * `store.rs` (144) — `PreferencesStore`, `impl PalettePrefs`, `pub use
+    labonair_workspace::prefs::GlobalPreferences`.
+  * `window.rs` (~210) — `open_settings_window`, `settings_bounds`,
+    `SettingsDeps`/`SettingsWindowRef`/`SettingsTarget` (now `pub(crate)` so
+    `view.rs` can name them), `set_settings_deps`, **plus** the new
+    `KeybindApplyHook` global + `set_keybind_apply_hook` + `apply_keybinds`
+    (see coupling note).
+  * `fields.rs` (1149) — `SettingsTab`(+`category_index` now `pub(crate)`),
+    `FieldKind`, `FieldDef`, category consts, `CATEGORIES`, `FIELDS`, `d()`.
+  * `sections.rs` (257) — `FieldGroup`, `SECTION_GROUPS`.
+  * `apply.rs` (251) — `KbCapture`/`capture_keybind`/`overwrite_keybind`,
+    `font_overrides_from` (pub(crate)), `apply_prefs_to_theme` / `theme_choices`
+    / `preview_app_theme` / `activate_app_theme` (`pub` — cross-crate consumers
+    in `app_shell.rs`), `scan_themes`/`read`/`save`/`delete_theme_in`/`slugify`/
+    `trim_ext`/`char_of` (pub(crate)).
+  * `view.rs` (~1030) — `SettingsView` struct (all fields `pub(crate)`), helper
+    structs (`EditState`/`ThemeEntry`/`RemoteTheme`/`AiEditor`/`SelectMenu`/
+    `KbConflict`, fields `pub(crate)`), `Palette`, `mock_community_themes`,
+    lifecycle + generic-edit + `on_key` methods, `impl Focusable` + `impl
+    Render`, the small render helpers (`slider_track`/`section_label`/`bg_tile`/
+    `step_btn`) and `bridge_switch_row`/`bridge_int_row`. Declares a
+    `pub use` re-export prelude (gpui/serde/backend imports) + `pub(crate) use
+    crate::{apply,fields,sections,store,window}::*` so the pane modules only
+    need `use crate::view::*`.
+  * `panes/{generic,shortcuts,ai,themes}.rs` — four more `impl SettingsView`
+    blocks (Rust allows an inherent impl split across files of one crate). All
+    inherent methods bumped `fn` → `pub(crate) fn` (mechanical, not logic) so
+    they resolve cross-module; the 5 originally-`pub` lifecycle methods stay
+    `pub`. Each pane file < 1150 lines.
+  * `tests.rs` — the `#[cfg(test)]` module (inner mod renamed `tests`→`cases`
+    to dodge clippy `module_inception`); `use super::*` → explicit
+    `use crate::{apply,fields,store}::…`.
+  * `settings_ui.rs` — lib root: `mod` decls + `pub use` of the same symbols
+    `crates/ui/src/lib.rs` used to export from `settings`.
+- **`bar_items` relocated** `crates/ui/src/bar_items.rs` →
+  `labonair_workspace::bar_items` (`git mv`) + a `pub use
+  labonair_workspace::bar_items::*;` shim in `crates/ui` (T16-006 pattern).
+  Needed because `labonair-settings-ui`'s Layout pane uses `BarItemId` /
+  `Placements` / `placement_patch` and must not depend on `crates/ui`.
+  `pub mod bar_items;` added to `crates/workspace/src/workspace.rs`. `app_shell`
+  keeps `use crate::bar_items::…` unchanged (resolves through the shim).
+- **`crates/ui`:** `pub mod settings;` removed, `settings.rs` deleted;
+  `pub use settings::{…}` → `pub use labonair_settings_ui::{…}`;
+  `crate::settings::X` → `labonair_settings_ui::X` in `app_shell.rs` (menu.rs
+  had no `crate::settings::` refs — the task's note was stale). `crates/ui`
+  gained a `labonair-settings-ui` path dep. `crates/app/src/main.rs` untouched
+  (no settings init calls).
+- **Keybind-apply coupling** (`view.rs` called `crate::menu::apply_keybinds`):
+  broke it with the `set_settings_deps` pattern — a `fn(&mut App, &KeybindMap)`
+  hook stored in a GPUI global (`KeybindApplyHook` in `window.rs`), installed by
+  `AppShell::new` via `labonair_settings_ui::set_keybind_apply_hook(
+  crate::menu::apply_keybinds, cx)`. `view.rs` now calls
+  `crate::window::apply_keybinds(cx, &kb)` which is a no-op when no hook is set
+  (tests/headless).
+- **Palette "Zusatz" (`labonair-command-palette`, additive):**
+  * `PaletteRow` gained `secondary: Option<SecondaryAction>` (`{ label:
+    &'static str, key: RowKey }`). `Shift+Enter` on a row with a secondary runs
+    it (`run_secondary` → shared `dispatch(RowKey)` extracted from
+    `run_selected`). Footer hint bar shows `⇧↵ <label>` for the selected row.
+  * `Page::HostsSsh` + `Page::HostsSftp` → single **`Page::Hosts`**
+    (placeholder "Search hosts…", label "Hosts"). New `host_rows()` helper:
+    primary = `ConnectHost{sftp:false}`, secondary "Open SFTP" =
+    `ConnectHost{sftp:true}`, subtitle = the host `PaletteChoice.subtitle`.
+  * `PaletteData.recent_hosts: Vec<PaletteChoice>` — quick-connect rows
+    appended to `Page::Root` (host pre-sorts by `last_connected_at`, cap 5;
+    `app_shell` fills it from `Workspace::recent_hosts(cx, 5)`).
+  * `ConnectSsh` / `OpenSftp` commands both `sub_page = Page::Hosts`.
+  * `CommandPalette::open_to_page(Page, …)` added; `Cmd+Shift+N`
+    (`act_new_ssh_connection`) now opens the palette to `Page::Hosts` instead of
+    `Workspace::open_host_manager`.
+  * `OpenHostManager` command unchanged (T19-010 will re-point it). No
+    `command-palette → hosts-ui` edge (`cargo tree` confirmed).
+  * `subtitle = user@addr:port` from item 7 is **not** wired — `Workspace::
+    recent_hosts`/`known_hosts` only expose `(id, name)`; subtitle stays `None`
+    for now. Note for T19-010.
+
+### Verification (T16-007) — all green
+- `cargo fmt --check` — exit 0 (whole workspace).
+- `cargo check --workspace --all-targets` — exit 0.
+- `cargo clippy --workspace --all-targets -- -D warnings` — exit 0 (only the
+  pre-existing `proc-macro-error2` future-incompat note).
+- `cargo test --workspace` — 0 failed. `labonair-settings-ui` = **75 passed**
+  (the moved field/category/keybind/theme-file tests); `labonair-command-palette`
+  = 63 passed (incl. the updated `Page::Hosts` list tests).
+- `cargo tree -p labonair-settings-ui` — no `labonair-ui` / `labonair-shell`.
+  `cargo tree -p labonair-command-palette` — no `labonair-hosts-ui`.
+- ⚠️ Disk hit 100 % during the `cargo test --workspace` test-binary link storm.
+  Recovered by `rm -rf target/debug/deps/*.tmp*` + deleting stale test/bin
+  executables in `target/debug/deps` (NOT `.rlib`/`.rmeta`), then re-ran
+  serialized (`cargo test -j 1`). **Do not** `rm -rf target/debug/build` — it
+  forces a full from-scratch rebuild.
+
+### What's Next
+- **T16-008** `tasks/phase-15-crate-split/T16-008-split-panel-crates.md` —
+  ausgliedern der Panel-Crates (+ `labonair-hosts-ui`).
+
+### Blockers
+- None. Disk very tight (~4-5 G free after the test run; `cargo clean` may be
+  needed before T16-008).
+
+---
+
 ## Last Session: 2026-09-03 (T16-006 — extract `labonair-workspace`)
 
 Sixth code task of the architecture rework. **Largest single move of the phase.**
