@@ -2615,10 +2615,10 @@ impl Workspace {
                 ),
             },
             AppEvent::McpServerError { message } => {
-                let center = crate::notifications::notification_center(cx);
+                let center = labonair_notifications::notification_center(cx);
                 center.update(cx, |c, cx| {
                     c.push_action_result(
-                        crate::notifications::Notification::error(
+                        labonair_notifications::Notification::error(
                             "AI Agent Bridge failed to start",
                             message,
                         ),
@@ -2641,10 +2641,10 @@ impl Workspace {
             } => {
                 tracing::debug!(%label, %action, %detail, "mcp agent activity");
                 if self.agent_access.read(cx).notify_on_activity() {
-                    let center = crate::notifications::notification_center(cx);
+                    let center = labonair_notifications::notification_center(cx);
                     center.update(cx, |c, cx| {
                         c.push(
-                            crate::notifications::Notification::info(
+                            labonair_notifications::Notification::info(
                                 format!("Agent: {action} \u{2014} {label}"),
                                 detail.clone(),
                             ),

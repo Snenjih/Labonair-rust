@@ -28,8 +28,8 @@ use labonair_backend::modules::ssh::config_parser::{self, ImportConflict, SshCon
 use labonair_backend::App as Backend;
 use tokio::runtime::Handle as TokioHandle;
 
-use crate::notifications::{notification_center, Notification};
 use crate::theme::ThemeStore;
+use labonair_notifications::{notification_center, Notification};
 use labonair_ui_kit::{context_menu, IconName, MenuItem};
 
 /// Connection status for a host, tracked live off the SSH event stream.

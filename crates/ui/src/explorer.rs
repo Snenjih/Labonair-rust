@@ -45,9 +45,9 @@ use notify_debouncer_mini::{new_debouncer, Debouncer};
 
 use labonair_backend::modules::fs::{mutate, tree};
 
-use crate::notifications::{notification_center, Notification};
 use crate::theme::ThemeStore;
 use crate::workspace::Workspace;
+use labonair_notifications::{notification_center, Notification};
 use labonair_ui_kit::{
     context_menu, file_icon, folder_icon, IconName, InputEvent, InputState, MenuClick, MenuItem,
 };

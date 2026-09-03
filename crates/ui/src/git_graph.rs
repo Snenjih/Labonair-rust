@@ -1313,9 +1313,11 @@ impl GitGraphView {
             let _ = this.update(cx, |this, cx| {
                 match res {
                     Ok(()) => this.reload(cx),
-                    Err(e) => crate::notifications::notification_center(cx).update(cx, |n, cx| {
-                        n.push(crate::notifications::Notification::error(label, e), cx);
-                    }),
+                    Err(e) => {
+                        labonair_notifications::notification_center(cx).update(cx, |n, cx| {
+                            n.push(labonair_notifications::Notification::error(label, e), cx);
+                        })
+                    }
                 }
                 cx.notify();
             });

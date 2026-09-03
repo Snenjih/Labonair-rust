@@ -1,0 +1,17 @@
+[package]
+name = "labonair-notifications"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "labonair_notifications"
+path = "src/notifications.rs"
+
+[dependencies]
+gpui = { workspace = true }
+labonair-theme = { path = "../theme" }
+labonair-ui-kit = { path = "../ui-kit" }
+labonair-gpui-ext = { path = "../gpui-ext" }
+
+[dev-dependencies]
+gpui = { workspace = true, features = ["test-support"] }

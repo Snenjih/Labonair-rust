@@ -4,7 +4,74 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
-## Last Session: 2026-09-03 (T16-002 — labonair-gpui-ext + labonair-ui-kit skeleton)
+## Last Session: 2026-09-03 (T16-003 — extract labonair-notifications)
+
+Third code task of the architecture rework. **Pure move + generic-over-theme,
+zero behaviour change.**
+
+### What Was Done (T16-003)
+- **`crates/notifications/`** (`labonair-notifications`) created — lib root
+  `src/notifications.rs` (explicit `[lib] name = "labonair_notifications"`,
+  `path = "src/notifications.rs"`). `crates/ui/src/notifications.rs` moved 1:1
+  via `git mv`. File is 685 lines but not split (task said splitting is
+  optional; kept as one file to minimise churn).
+- **Public API unchanged**: `NotificationCenter`, `Notification`,
+  `NotificationAction`, `Severity`, `GlobalNotificationCenter`,
+  `notification_center`, `notify_err`, `init` (re-exported as
+  `init_notifications`), `render_overlay`.
+- **Theme decoupling** (the one non-trivial bit): the old file used
+  `crate::theme::ThemeStore` (a `crates/ui` type) directly. Replaced with the
+  `labonair_ui_kit::UiTheme` trait — same pattern T16-002 used for `button()`.
+  * `Severity::color` → `fn color(self, theme: &impl UiTheme)`, reads
+    `theme.theme().status.{info,success,warning,error}`.
+  * `render_overlay` → `pub fn render_overlay<Th: UiTheme + 'static>(center,
+    theme: &Entity<Th>, cx)`. Reads `theme.theme().core.{card,foreground}` +
+    `theme.muted_foreground()` / `theme.border()`. Token values identical to
+    the old `ThemeStore` accessors (they were 1:1 field reads). Call site in
+    `app_shell.rs` (`render_overlay(&self.notifications, &self.theme, cx)`)
+    unchanged — `ThemeStore: UiTheme` already holds, `Th` infers.
+- **Deps**: `gpui`, `labonair-theme`, `labonair-ui-kit`, `labonair-gpui-ext`.
+  No dep on `labonair-ui` (verified via `cargo tree -p labonair-notifications`).
+- **`crates/ui`**: `pub mod notifications;` removed; `pub use notifications::{…}`
+  → `pub use labonair_notifications::{…}` (re-export kept so
+  `labonair_ui::init_notifications` etc. and `crates/app/src/main.rs` are
+  untouched). All `crate::notifications::` → `labonair_notifications::` across
+  13 files (sed + `cargo fmt` to re-group `use` lines). `app_shell.rs` import
+  became `use labonair_notifications::{self as notifications, NotificationCenter};`
+  to keep the `notifications::render_overlay` call site verbatim.
+  `crates/ui/Cargo.toml` gains the `labonair-notifications` path dep.
+- **Workspace `Cargo.toml`**: `members` gains `crates/notifications` (before
+  `crates/ui`). Direct `path = "../notifications"` dep, matching the repo's
+  existing convention (the task text mentioned a `[workspace.dependencies]`
+  entry, but T16-001/T16-002 established that local crates use direct path deps
+  — followed prior art for consistency).
+
+### Verification (T16-003)
+- `cargo fmt --check` — clean (exit 0).
+- `cargo check --workspace --all-targets` — exit 0.
+- `cargo clippy --workspace --all-targets -- -D warnings` — exit 0.
+- `cargo test -p labonair-notifications` — 8 passed (all the moved tests).
+  `cargo test -p labonair-ui` — 246 + 1 passed (nothing broke).
+- `cargo tree -p labonair-notifications` — deps are only gpui-ext / theme /
+  ui-kit; **no** `labonair-ui`.
+- `cargo run` GUI check (startup toast + error toast position/dismiss/styling)
+  not performed — headless VPS, no display. The change is behaviour-neutral
+  (import paths + a generic theme param over identical token reads), covered by
+  the 8 passing tests and a full workspace compile.
+- Pre-existing unrelated `proc-macro-error2 v2.0.1` future-incompat note — not a
+  `-D warnings` failure.
+
+### What's Next
+- **T16-004** `tasks/phase-15-crate-split/T16-004-extract-command-palette-crate.md`
+  — extract `crates/ui/src/command_palette.rs` into `labonair-command-palette`.
+  Dependencies (T16-002, T16-003) now satisfied.
+
+### Blockers
+- None.
+
+---
+
+## Prior Session: 2026-09-03 (T16-002 — labonair-gpui-ext + labonair-ui-kit skeleton)
 
 First code task of the architecture rework. **Pure move + re-export, zero
 behaviour change.** Rust toolchain is now installed on the VPS

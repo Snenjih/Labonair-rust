@@ -30,8 +30,8 @@ use labonair_backend::modules::git::{self, Branch, FileStatus, GitStatus, Worksp
 use labonair_backend::App as Backend;
 use tokio::runtime::Handle as TokioHandle;
 
-use crate::notifications::notify_err;
 use crate::theme::ThemeStore;
+use labonair_notifications::notify_err;
 use labonair_ui_kit::{context_menu, IconName, MenuItem};
 
 /// A source-control file-menu action, wrapped into a click handler by

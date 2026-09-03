@@ -8,7 +8,7 @@
 //! user-initiated action results. All of that is kept here.
 //!
 //! On top of the reference the pure-Rust port renders the list as **stacked
-//! toasts** in the top-right of the [`crate::app_shell::AppShell`] with
+//! toasts** in the top-right of the app shell with
 //! per-severity auto-dismiss, manual close and an optional action button — the
 //! reference relied on `motion/react` + a Radix popover for the same UX.
 //!
@@ -20,7 +20,7 @@ use std::time::{Duration, Instant};
 
 use gpui::{App, AppContext, Context, Entity, Global, SharedString, Window};
 
-use crate::theme::ThemeStore;
+use labonair_ui_kit::UiTheme;
 
 /// Severity of a notification. Names match the reference `NotificationType`
 /// (`error | warning | info | success`).
@@ -57,12 +57,13 @@ impl Severity {
         }
     }
 
-    fn color(self, theme: &ThemeStore) -> gpui::Hsla {
+    fn color(self, theme: &impl UiTheme) -> gpui::Hsla {
+        let status = &theme.theme().status;
         match self {
-            Severity::Info => theme.status_info(),
-            Severity::Success => theme.status_success(),
-            Severity::Warning => theme.status_warning(),
-            Severity::Error => theme.status_error(),
+            Severity::Info => status.info,
+            Severity::Success => status.success,
+            Severity::Warning => status.warning,
+            Severity::Error => status.error,
         }
     }
 }
@@ -395,9 +396,9 @@ use gpui::{
 /// there is nothing to show. The overlay container only occupies its own
 /// top-right box, so clicks elsewhere pass through untouched; only the toast
 /// cards are interactive.
-pub fn render_overlay(
+pub fn render_overlay<Th: UiTheme + 'static>(
     center: &Entity<NotificationCenter>,
-    theme: &Entity<ThemeStore>,
+    theme: &Entity<Th>,
     cx: &mut App,
 ) -> Option<gpui::AnyElement> {
     let snapshots = center.read(cx).snapshots();
@@ -405,9 +406,10 @@ pub fn render_overlay(
         return None;
     }
     let theme = theme.read(cx);
+    let core = &theme.theme().core;
     let (card, fg, muted, border) = (
-        theme.card(),
-        theme.foreground(),
+        core.card,
+        core.foreground,
         theme.muted_foreground(),
         theme.border(),
     );

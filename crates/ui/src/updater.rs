@@ -24,8 +24,8 @@ use labonair_backend::modules::updater as backend;
 use labonair_backend::AvailableUpdate;
 use tokio::runtime::Handle as TokioHandle;
 
-use crate::notifications::{notification_center, Notification};
 use crate::theme::ThemeStore;
+use labonair_notifications::{notification_center, Notification};
 
 const RESTART_DELAY: Duration = Duration::from_millis(700);
 

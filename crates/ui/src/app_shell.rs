@@ -46,7 +46,6 @@ use crate::explorer::ExplorerView;
 use crate::git::GitPanelView;
 use crate::git_graph::GitGraphView;
 use crate::menu;
-use crate::notifications::{self, NotificationCenter};
 use crate::pane::SplitAxis;
 use crate::settings::{open_settings_window, set_settings_deps, PreferencesStore, SettingsTab};
 use crate::snippets::SnippetsView;
@@ -54,6 +53,7 @@ use crate::theme::{ThemePreference, ThemeStore};
 use crate::updater::UpdaterView;
 use crate::window_state;
 use crate::workspace::Workspace;
+use labonair_notifications::{self as notifications, NotificationCenter};
 use labonair_ui_kit::IconName;
 
 const HEADER_H: f32 = 40.0;
@@ -228,7 +228,7 @@ impl AppShell {
         #[cfg(debug_assertions)]
         notifications.update(cx, |center, cx| {
             center.push(
-                crate::notifications::Notification::info(
+                labonair_notifications::Notification::info(
                     "Welcome to Labonair",
                     "Notifications appear here. This demo toast auto-dismisses.",
                 ),

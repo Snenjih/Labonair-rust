@@ -22,7 +22,6 @@ pub mod hosts;
 pub mod live_bridge;
 pub mod markdown;
 pub mod menu;
-pub mod notifications;
 pub mod pane;
 pub mod preview;
 pub mod session;
@@ -60,15 +59,15 @@ pub use explorer::{DraggedPaths, ExplorerView};
 pub use git::GitPanelView;
 pub use git_graph::GitGraphView;
 pub use hosts::{HostManagerEvent, HostManagerView, HostStatus};
+pub use labonair_notifications::{
+    init as init_notifications, notification_center, notify_err, GlobalNotificationCenter,
+    Notification, NotificationAction, NotificationCenter, Severity,
+};
 pub use labonair_theme::{ThemeFile, ThemeFileVariant};
 pub use labonair_ui_kit::{
     button, field_input, file_icon, folder_icon, text_field, ButtonSize, ButtonVariant, IconName,
 };
 pub use menu::{apply_keybinds, init as init_menus};
-pub use notifications::{
-    init as init_notifications, notification_center, notify_err, GlobalNotificationCenter,
-    Notification, NotificationAction, NotificationCenter, Severity,
-};
 pub use pane::{CloseOutcome, PaneId, PaneNode, SplitAxis, WorkspaceLayout};
 pub use preview::{is_previewable, PreviewView};
 pub use session::{

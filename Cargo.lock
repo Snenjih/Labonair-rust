@@ -4107,6 +4107,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "labonair-notifications"
+version = "0.1.0"
+dependencies = [
+ "gpui",
+ "labonair-gpui-ext",
+ "labonair-theme",
+ "labonair-ui-kit",
+]
+
+[[package]]
 name = "labonair-terminal"
 version = "0.1.0"
 dependencies = [
@@ -4140,6 +4150,7 @@ dependencies = [
  "labonair-backend",
  "labonair-editor",
  "labonair-gpui-ext",
+ "labonair-notifications",
  "labonair-terminal",
  "labonair-theme",
  "labonair-ui-kit",

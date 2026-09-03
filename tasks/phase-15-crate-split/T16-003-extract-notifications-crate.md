@@ -1,7 +1,7 @@
 # T16-003: `labonair-notifications` extrahieren
 
 ## Status
-📋 Geplant
+✅ Done
 
 ## Phase
 15 — Crate-Zerlegung & Fundament

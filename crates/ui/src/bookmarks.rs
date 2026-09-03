@@ -112,9 +112,9 @@ impl BookmarksView {
 
     fn persist(&mut self, next: Vec<PathBookmark>, cx: &mut Context<Self>) {
         if let Err(message) = model::save(&next) {
-            crate::notifications::notification_center(cx).update(cx, |c, cx| {
+            labonair_notifications::notification_center(cx).update(cx, |c, cx| {
                 c.push(
-                    crate::notifications::Notification::error("Bookmark save failed", message),
+                    labonair_notifications::Notification::error("Bookmark save failed", message),
                     cx,
                 )
             });

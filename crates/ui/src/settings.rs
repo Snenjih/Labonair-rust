@@ -68,8 +68,8 @@ use labonair_backend::modules::settings::preferences::{
 };
 use labonair_backend::App as Backend;
 
-use crate::notifications::{notification_center, Notification};
 use crate::theme::{ThemePreference, ThemeStore};
+use labonair_notifications::{notification_center, Notification};
 
 // ─────────────────────────── Global snapshot ─────────────────────────────
 

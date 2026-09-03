@@ -31,9 +31,9 @@ use labonair_editor::{
     SyntaxHighlighter, Vim, VimKey, VimMode, VimOptions,
 };
 
-use crate::notifications::{notification_center, Notification};
 use crate::syntax_theme::EditorPalette;
 use crate::theme::ThemeStore;
+use labonair_notifications::{notification_center, Notification};
 
 /// Editor → workspace notifications.
 #[derive(Clone, Copy, Debug)]

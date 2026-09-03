@@ -24,7 +24,7 @@
 use gpui::{actions, App, KeyBinding, Keystroke, Menu, MenuItem, OsAction};
 
 use crate::command_palette::{effective_binding, KeybindMap, ShortcutId};
-use crate::notifications::{notification_center, Notification};
+use labonair_notifications::{notification_center, Notification};
 
 actions!(
     labonair,

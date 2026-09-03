@@ -19,7 +19,7 @@ use tokio::runtime::Handle as TokioHandle;
 use labonair_backend::modules::mcp::{mcp_set_session_grant, SessionKind};
 use labonair_backend::App as Backend;
 
-use crate::notifications::{notification_center, Notification};
+use labonair_notifications::{notification_center, Notification};
 
 /// One tab the user has granted MCP agent access to.
 #[derive(Clone, Debug, PartialEq, Eq)]
