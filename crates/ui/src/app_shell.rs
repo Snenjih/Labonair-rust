@@ -2415,183 +2415,147 @@ impl AppShell {
     }
 
     fn render_crumb_menu(&mut self, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
+        use crate::components::{context_menu, MenuItem};
         let (seg, pos) = self.crumb_menu.clone()?;
         let cwd = self.workspace.read(cx).active_cwd(cx);
-        let (card, fg, border, muted) = {
-            let theme = self.theme.read(cx);
-            (
-                theme.card(),
-                theme.foreground(),
-                theme.border(),
-                theme.muted_foreground(),
-            )
-        };
         let has_path = !seg.full_path.is_empty();
         let rel = cwd
             .as_deref()
             .map(|c| bc::relative_path(c, &seg.full_path))
             .unwrap_or_else(|| seg.full_path.clone());
         let abs = seg.full_path.clone();
-        let abs2 = seg.full_path.clone();
-        let abs3 = seg.full_path.clone();
-
-        let item = |label: &str, key: SharedString| {
-            div()
-                .id(key)
-                .px_2()
-                .py_1()
-                .text_xs()
-                .rounded_sm()
-                .text_color(fg)
-                .hover(|s| s.bg(border))
-                .child(SharedString::from(label.to_string()))
+        let view = cx.entity();
+        let close = {
+            let v = view.clone();
+            move |cx: &mut App| {
+                v.update(cx, |this, cx| {
+                    this.crumb_menu = None;
+                    cx.notify();
+                })
+            }
         };
 
-        Some(
-            div()
-                .absolute()
-                .inset_0()
-                .on_mouse_down(
-                    MouseButton::Left,
-                    cx.listener(|this, _: &MouseDownEvent, _w, cx| {
+        let mut items: Vec<MenuItem> = Vec::new();
+        if has_path {
+            items.push(MenuItem::label(if seg.is_home {
+                "Home".to_string()
+            } else {
+                seg.label.clone()
+            }));
+            items.push(MenuItem::separator());
+            items.push(
+                MenuItem::new("cm-copy-abs", "Copy absolute path").on_click({
+                    let close = close.clone();
+                    let abs = abs.clone();
+                    move |_, _w, cx| {
+                        cx.write_to_clipboard(gpui::ClipboardItem::new_string(abs.clone()));
+                        close(cx);
+                    }
+                }),
+            );
+            items.push(
+                MenuItem::new("cm-copy-rel", "Copy relative path").on_click({
+                    let close = close.clone();
+                    let rel = rel.clone();
+                    move |_, _w, cx| {
+                        cx.write_to_clipboard(gpui::ClipboardItem::new_string(rel.clone()));
+                        close(cx);
+                    }
+                }),
+            );
+            items.push(MenuItem::separator());
+            items.push(
+                MenuItem::new("cm-cd", "Open in current terminal").on_click({
+                    let v = view.clone();
+                    let abs = abs.clone();
+                    move |_, _w, cx| {
+                        v.update(cx, |this, cx| {
+                            this.workspace.update(cx, |w, cx| w.send_cd(&abs, cx));
+                            this.crumb_menu = None;
+                            cx.notify();
+                        });
+                    }
+                }),
+            );
+            items.push(
+                MenuItem::new("cm-cd-new", "Open in new terminal").on_click({
+                    let v = view.clone();
+                    let abs = abs.clone();
+                    move |_, window, cx| {
+                        v.update(cx, |this, cx| {
+                            this.workspace
+                                .update(cx, |w, cx| w.cd_in_new_tab(abs.clone(), window, cx));
+                            this.crumb_menu = None;
+                            cx.notify();
+                        });
+                    }
+                }),
+            );
+            items.push(MenuItem::separator());
+        }
+        let move_item =
+            |id: &'static str, label: &'static str, bar: Option<BarLoc>, hide: Option<bool>| {
+                let v = view.clone();
+                MenuItem::new(id, label).on_click(move |_, _w, cx| {
+                    v.update(cx, |this, cx| {
                         this.crumb_menu = None;
-                        cx.notify();
-                    }),
-                )
-                .child(
-                    div()
-                        .absolute()
-                        .left(pos.x)
-                        .top(pos.y)
-                        .flex()
-                        .flex_col()
-                        .gap_0p5()
-                        .p_1()
-                        .min_w(px(220.0))
-                        .rounded_md()
-                        .bg(card)
-                        .border_1()
-                        .border_color(border)
-                        .when(has_path, |d| {
-                            d.child(
-                                div()
-                                    .px_2()
-                                    .py_1()
-                                    .text_size(px(11.0))
-                                    .text_color(muted)
-                                    .child(SharedString::from(if seg.is_home {
-                                        "Home".to_string()
-                                    } else {
-                                        seg.label.clone()
-                                    })),
-                            )
-                            .child(div().my_0p5().h(px(1.0)).bg(border))
-                            .child(item("Copy absolute path", "cm-copy-abs".into()).on_click(
-                                cx.listener(move |this, _: &ClickEvent, _w, cx| {
-                                    cx.write_to_clipboard(gpui::ClipboardItem::new_string(
-                                        abs.clone(),
-                                    ));
-                                    this.crumb_menu = None;
-                                    cx.notify();
-                                }),
-                            ))
-                            .child(item("Copy relative path", "cm-copy-rel".into()).on_click(
-                                cx.listener(move |this, _: &ClickEvent, _w, cx| {
-                                    cx.write_to_clipboard(gpui::ClipboardItem::new_string(
-                                        rel.clone(),
-                                    ));
-                                    this.crumb_menu = None;
-                                    cx.notify();
-                                }),
-                            ))
-                            .child(div().my_0p5().h(px(1.0)).bg(border))
-                            .child(item("Open in current terminal", "cm-cd".into()).on_click(
-                                cx.listener(move |this, _: &ClickEvent, _w, cx| {
-                                    let p = abs2.clone();
-                                    this.workspace.update(cx, |w, cx| w.send_cd(&p, cx));
-                                    this.crumb_menu = None;
-                                    cx.notify();
-                                }),
-                            ))
-                            .child(item("Open in new terminal", "cm-cd-new".into()).on_click(
-                                cx.listener(move |this, _: &ClickEvent, window, cx| {
-                                    this.workspace.update(cx, |w, cx| {
-                                        w.cd_in_new_tab(abs3.clone(), window, cx)
-                                    });
-                                    this.crumb_menu = None;
-                                    cx.notify();
-                                }),
-                            ))
-                            .child(div().my_0p5().h(px(1.0)).bg(border))
-                        })
-                        .child(item("Move to Titlebar", "cm-move-title".into()).on_click(
-                            cx.listener(|this, _: &ClickEvent, _w, cx| {
-                                this.crumb_menu = None;
-                                this.move_bar_item(
-                                    BarItemId::CwdBreadcrumb,
-                                    Some(BarLoc::Titlebar),
-                                    None,
-                                    None,
-                                    cx,
-                                );
-                            }),
-                        ))
-                        .child(
-                            item("Move to Status Bar", "cm-move-status".into()).on_click(
-                                cx.listener(|this, _: &ClickEvent, _w, cx| {
-                                    this.crumb_menu = None;
-                                    this.move_bar_item(
-                                        BarItemId::CwdBreadcrumb,
-                                        Some(BarLoc::Statusbar),
-                                        None,
-                                        None,
-                                        cx,
-                                    );
-                                }),
-                            ),
-                        )
-                        .child(item("Hide", "cm-hide".into()).on_click(cx.listener(
-                            |this, _: &ClickEvent, _w, cx| {
-                                this.crumb_menu = None;
-                                this.move_bar_item(
-                                    BarItemId::CwdBreadcrumb,
-                                    None,
-                                    None,
-                                    Some(true),
-                                    cx,
-                                );
-                            },
-                        ))),
-                )
-                .into_any_element(),
-        )
+                        this.move_bar_item(BarItemId::CwdBreadcrumb, bar, None, hide, cx);
+                    });
+                })
+            };
+        items.push(move_item(
+            "cm-move-title",
+            "Move to Titlebar",
+            Some(BarLoc::Titlebar),
+            None,
+        ));
+        items.push(move_item(
+            "cm-move-status",
+            "Move to Status Bar",
+            Some(BarLoc::Statusbar),
+            None,
+        ));
+        items.push(
+            MenuItem::new("cm-hide", "Hide")
+                .icon(IconName::EyeOff)
+                .on_click({
+                    let v = view.clone();
+                    move |_, _w, cx| {
+                        v.update(cx, |this, cx| {
+                            this.crumb_menu = None;
+                            this.move_bar_item(
+                                BarItemId::CwdBreadcrumb,
+                                None,
+                                None,
+                                Some(true),
+                                cx,
+                            );
+                        });
+                    }
+                }),
+        );
+
+        let dismiss = move |_w: &mut Window, cx: &mut App| close(cx);
+        Some(context_menu(pos, self.theme.read(cx), dismiss, items))
     }
 
     fn render_subdir_menu(&mut self, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
+        use crate::components::{context_menu, MenuItem};
         let (dir, pos, entries) = self.subdir_menu.clone()?;
-        let theme = self.theme.read(cx);
-        let (card, fg, border, muted) = (
-            theme.card(),
-            theme.foreground(),
-            theme.border(),
-            theme.muted_foreground(),
-        );
+        let view = cx.entity();
+        let close = {
+            let v = view.clone();
+            move |cx: &mut App| {
+                v.update(cx, |this, cx| {
+                    this.subdir_menu = None;
+                    cx.notify();
+                })
+            }
+        };
 
-        let body: Vec<gpui::AnyElement> = match &entries {
-            None => vec![div()
-                .px_2()
-                .py_1()
-                .text_xs()
-                .text_color(muted)
-                .child("Loading\u{2026}")
-                .into_any_element()],
-            Some(list) if list.is_empty() => vec![div()
-                .px_2()
-                .py_1()
-                .text_xs()
-                .text_color(muted)
-                .child("No subfolders")
-                .into_any_element()],
+        let items: Vec<MenuItem> = match &entries {
+            None => vec![MenuItem::label("Loading\u{2026}")],
+            Some(list) if list.is_empty() => vec![MenuItem::label("No subfolders")],
             Some(list) => list
                 .iter()
                 .take(50)
@@ -2601,57 +2565,22 @@ impl AppShell {
                     } else {
                         format!("{dir}/{name}")
                     };
-                    div()
-                        .id(SharedString::from(format!("subdir-{name}")))
-                        .px_2()
-                        .py_1()
-                        .text_xs()
-                        .rounded_sm()
-                        .text_color(fg)
-                        .hover(|s| s.bg(border))
-                        .child(SharedString::from(name.clone()))
-                        .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                    let v = view.clone();
+                    MenuItem::new(SharedString::from(format!("subdir-{name}")), name.clone())
+                        .on_click(move |_, _w, cx| {
                             let full = full.clone();
-                            this.workspace.update(cx, |w, cx| w.send_cd(&full, cx));
-                            this.subdir_menu = None;
-                            cx.notify();
-                        }))
-                        .into_any_element()
+                            v.update(cx, |this, cx| {
+                                this.workspace.update(cx, |w, cx| w.send_cd(&full, cx));
+                                this.subdir_menu = None;
+                                cx.notify();
+                            });
+                        })
                 })
                 .collect(),
         };
 
-        Some(
-            div()
-                .absolute()
-                .inset_0()
-                .on_mouse_down(
-                    MouseButton::Left,
-                    cx.listener(|this, _: &MouseDownEvent, _w, cx| {
-                        this.subdir_menu = None;
-                        cx.notify();
-                    }),
-                )
-                .child(
-                    div()
-                        .absolute()
-                        .left(pos.x)
-                        .top(pos.y)
-                        .flex()
-                        .flex_col()
-                        .gap_0p5()
-                        .p_1()
-                        .min_w(px(180.0))
-                        .max_h(px(320.0))
-                        .overflow_hidden()
-                        .rounded_md()
-                        .bg(card)
-                        .border_1()
-                        .border_color(border)
-                        .children(body),
-                )
-                .into_any_element(),
-        )
+        let dismiss = move |_w: &mut Window, cx: &mut App| close(cx);
+        Some(context_menu(pos, self.theme.read(cx), dismiss, items))
     }
 
     fn render_sidebar(&mut self, side: BarSide, cx: &mut Context<Self>) -> impl IntoElement {

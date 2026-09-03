@@ -1602,40 +1602,28 @@ impl HostManagerView {
         }
     }
 
-    /// Small host-manager action button. Visual language (pill `rounded-4xl`
-    /// radius, transparent border, `default` vs `outline` variant) tracks
-    /// `reference-src/src/components/ui/button.tsx` / [`crate::components`];
-    /// the shared `components::button` builder will replace this helper once
-    /// the whole host-manager panel is migrated (Block B).
+    /// Small host-manager action button — thin wrapper over the shared
+    /// [`crate::components::button`] builder (`Xs` size; `Default` variant for
+    /// primary actions, `Outline` otherwise).
     fn btn(
         &self,
         id: &'static str,
         label: impl Into<SharedString>,
-        p: &Palette,
+        _p: &Palette,
         primary: bool,
+        cx: &App,
     ) -> gpui::Stateful<gpui::Div> {
-        // `--radius-4xl` == 13px (see `labonair_theme::RadiusScale`).
-        let base = div()
-            .id(id)
-            .flex()
-            .items_center()
-            .justify_center()
-            .px_3()
-            .py_1()
-            .rounded(px(13.0))
-            .border_1()
-            .border_color(gpui::transparent_black())
-            .text_xs()
-            .cursor_pointer();
-        if primary {
-            base.bg(p.accent)
-                .text_color(p.fg)
-                .hover(|s| s.opacity(0.85))
+        let variant = if primary {
+            crate::components::ButtonVariant::Default
         } else {
-            base.text_color(p.muted)
-                .border_color(p.border)
-                .hover(|s| s.bg(p.border).text_color(p.fg))
-        }
+            crate::components::ButtonVariant::Outline
+        };
+        crate::components::button(
+            id,
+            self.theme.read(cx),
+            variant,
+            crate::components::ButtonSize::Xs,
+        )
         .child(label.into())
     }
 
@@ -2066,7 +2054,7 @@ impl HostManagerView {
             )
             .children(rows)
             .child(
-                self.btn("tun-add", "Add Tunnel", p, false)
+                self.btn("tun-add", "Add Tunnel", p, false, cx)
                     .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
                         if let Some(f) = this.form.as_mut() {
                             f.tunnels.push(TunnelDraft::new());
@@ -2122,92 +2110,95 @@ impl HostManagerView {
 
         // ── header ────────────────────────────────────────────────────────
         let (id_conn, id_sftp) = (editing.clone(), editing.clone());
-        let header =
-            div()
-                .flex()
-                .items_center()
-                .gap_2()
-                .child(
-                    self.btn("host-icon", "", p, false)
-                        .child(head_icon.svg(p.fg).size(px(14.0)))
-                        .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
-                            this.icon_picker_open = !this.icon_picker_open;
-                            cx.notify();
+        let header = div()
+            .flex()
+            .items_center()
+            .gap_2()
+            .child(
+                self.btn("host-icon", "", p, false, cx)
+                    .child(head_icon.svg(p.fg).size(px(14.0)))
+                    .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
+                        this.icon_picker_open = !this.icon_picker_open;
+                        cx.notify();
+                    })),
+            )
+            .child(
+                div()
+                    .flex_1()
+                    .text_xs()
+                    .text_color(p.muted)
+                    .child(if is_new { "NEW HOST" } else { "HOST DETAILS" }),
+            )
+            .when(self.save_state != SaveState::Idle, |d| {
+                d.child(
+                    div()
+                        .text_xs()
+                        .text_color(if self.save_state == SaveState::Error {
+                            p.fg
+                        } else {
+                            p.muted
+                        })
+                        .child(self.save_state.label()),
+                )
+            })
+            .when(!is_new, |d| {
+                d.child(
+                    self.btn("hd-connect", "Connect", p, true, cx)
+                        .on_click(cx.listener(move |_this, _: &ClickEvent, _w, cx| {
+                            if let Some(id) = id_conn.clone() {
+                                cx.emit(HostManagerEvent::Connect(id));
+                            }
                         })),
                 )
                 .child(
-                    div()
-                        .flex_1()
-                        .text_xs()
-                        .text_color(p.muted)
-                        .child(if is_new { "NEW HOST" } else { "HOST DETAILS" }),
-                )
-                .when(self.save_state != SaveState::Idle, |d| {
-                    d.child(
-                        div()
-                            .text_xs()
-                            .text_color(if self.save_state == SaveState::Error {
-                                p.fg
-                            } else {
-                                p.muted
-                            })
-                            .child(self.save_state.label()),
-                    )
-                })
-                .when(!is_new, |d| {
-                    d.child(
-                        self.btn("hd-connect", "Connect", p, true)
-                            .on_click(cx.listener(move |_this, _: &ClickEvent, _w, cx| {
-                                if let Some(id) = id_conn.clone() {
-                                    cx.emit(HostManagerEvent::Connect(id));
-                                }
-                            })),
-                    )
-                    .child(self.btn("hd-sftp", "SFTP", p, false).on_click(cx.listener(
-                        move |_this, _: &ClickEvent, _w, cx| {
+                    self.btn("hd-sftp", "SFTP", p, false, cx)
+                        .on_click(cx.listener(move |_this, _: &ClickEvent, _w, cx| {
                             if let Some(id) = id_sftp.clone() {
                                 cx.emit(HostManagerEvent::OpenSftp(id));
                             }
-                        },
-                    )))
-                    .child(self.btn("hd-test", "Test Connection", p, false).on_click(
-                        cx.listener(|this, _: &ClickEvent, _w, cx| this.test_connection(cx)),
-                    ))
-                    .child(
-                        self.btn("hd-dup", "Duplicate", p, false)
-                            .on_click(cx.listener({
-                                let id = editing.clone();
-                                move |this, _: &ClickEvent, _w, cx| {
-                                    if let Some(id) = id.clone() {
-                                        this.duplicate_host(id, cx);
-                                    }
-                                }
-                            })),
-                    )
-                    .child(
-                        self.btn("hd-del", "Delete", p, false)
-                            .on_click(cx.listener({
-                                let id = editing.clone();
-                                move |this, _: &ClickEvent, _w, cx| {
-                                    if let Some(id) = id.clone() {
-                                        this.delete_host(id, cx);
-                                    }
-                                }
-                            })),
-                    )
-                })
-                .child(
-                    self.btn("hd-close", "", p, false)
-                        .child(IconName::X.svg(p.muted).size(px(12.0)))
-                        .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
-                            if this.save_state == SaveState::Pending {
-                                this.submit_form(true, cx);
-                            }
-                            this.form = None;
-                            this.save_state = SaveState::Idle;
-                            cx.notify();
                         })),
-                );
+                )
+                .child(
+                    self.btn("hd-test", "Test Connection", p, false, cx)
+                        .on_click(
+                            cx.listener(|this, _: &ClickEvent, _w, cx| this.test_connection(cx)),
+                        ),
+                )
+                .child(
+                    self.btn("hd-dup", "Duplicate", p, false, cx)
+                        .on_click(cx.listener({
+                            let id = editing.clone();
+                            move |this, _: &ClickEvent, _w, cx| {
+                                if let Some(id) = id.clone() {
+                                    this.duplicate_host(id, cx);
+                                }
+                            }
+                        })),
+                )
+                .child(
+                    self.btn("hd-del", "Delete", p, false, cx)
+                        .on_click(cx.listener({
+                            let id = editing.clone();
+                            move |this, _: &ClickEvent, _w, cx| {
+                                if let Some(id) = id.clone() {
+                                    this.delete_host(id, cx);
+                                }
+                            }
+                        })),
+                )
+            })
+            .child(
+                self.btn("hd-close", "", p, false, cx)
+                    .child(IconName::X.svg(p.muted).size(px(12.0)))
+                    .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
+                        if this.save_state == SaveState::Pending {
+                            this.submit_form(true, cx);
+                        }
+                        this.form = None;
+                        this.save_state = SaveState::Idle;
+                        cx.notify();
+                    })),
+            );
 
         let icon_row = self.icon_picker_open.then(|| {
             div()
@@ -2217,7 +2208,7 @@ impl HostManagerView {
                 .children(HOST_ICONS.iter().map(|(key, ic)| {
                     let key = key.to_string();
                     let active = form.icon.as_deref() == Some(key.as_str());
-                    self.btn("host-icon-opt", "", p, active)
+                    self.btn("host-icon-opt", "", p, active, cx)
                         .child(ic.svg(if active { p.fg } else { p.muted }).size(px(13.0)))
                         .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
                             if let Some(f) = this.form.as_mut() {
@@ -2247,6 +2238,7 @@ impl HostManagerView {
                     t.title(),
                     p,
                     form.tab == t,
+                    cx,
                 )
                 .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
                     if let Some(f) = this.form.as_mut() {
@@ -2269,7 +2261,7 @@ impl HostManagerView {
 
         let footer = is_new.then(|| {
             div().flex().gap_2().justify_end().pt_2().child(
-                self.btn("hd-add", "Add Host", p, true).on_click(
+                self.btn("hd-add", "Add Host", p, true, cx).on_click(
                     cx.listener(|this, _: &ClickEvent, _w, cx| this.submit_form(false, cx)),
                 ),
             )
@@ -2370,6 +2362,7 @@ impl HostManagerView {
                                         m.title(),
                                         p,
                                         m == auth,
+                                        cx,
                                     )
                                     .on_click(cx.listener(
                                         move |this, _: &ClickEvent, _w, cx| {
@@ -2404,8 +2397,15 @@ impl HostManagerView {
                 })
                 .when(auth == AuthMethod::Credential, |el| {
                     el.child(
-                        self.btn("cred-cycle", format!("Credential: {cred_label}"), p, false)
-                            .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
+                        self.btn(
+                            "cred-cycle",
+                            format!("Credential: {cred_label}"),
+                            p,
+                            false,
+                            cx,
+                        )
+                        .on_click(cx.listener(
+                            |this, _: &ClickEvent, _w, cx| {
                                 let n = this.credentials.len();
                                 if let Some(f) = this.form.as_mut() {
                                     f.credential = match f.credential {
@@ -2415,11 +2415,12 @@ impl HostManagerView {
                                     };
                                 }
                                 this.schedule_autosave(cx);
-                            })),
+                            },
+                        )),
                     )
                 })
                 .child(
-                    self.btn("group-cycle", format!("Group: {group_label}"), p, false)
+                    self.btn("group-cycle", format!("Group: {group_label}"), p, false, cx)
                         .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
                             let n = this.groups.len();
                             if let Some(f) = this.form.as_mut() {
@@ -2444,7 +2445,7 @@ impl HostManagerView {
                                 .child("Jump host (ProxyJump)"),
                         )
                         .child(
-                            self.btn("jump-cycle", format!("Route: {jump_label}"), p, false)
+                            self.btn("jump-cycle", format!("Route: {jump_label}"), p, false, cx)
                                 .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
                                     let editing =
                                         this.form.as_ref().and_then(|f| f.editing_id.clone());
@@ -2482,6 +2483,7 @@ impl HostManagerView {
                         },
                         p,
                         form.pin_to_top,
+                        cx,
                     )
                     .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
                         if let Some(f) = this.form.as_mut() {
@@ -2571,6 +2573,7 @@ impl HostManagerView {
                                         format!("Snippet: {snippet_label}"),
                                         p,
                                         false,
+                                        cx,
                                     )
                                     .on_click(cx.listener(
                                         |this, _: &ClickEvent, _w, cx| {
@@ -2607,6 +2610,7 @@ impl HostManagerView {
                                             },
                                             p,
                                             true,
+                                            cx,
                                         )
                                         .on_click(
                                             cx.listener(|this, _: &ClickEvent, _w, cx| {
@@ -2640,6 +2644,7 @@ impl HostManagerView {
                                 },
                                 p,
                                 form.block_agent_access,
+                                cx,
                             )
                             .on_click(cx.listener(
                                 |this, _: &ClickEvent, _w, cx| {
@@ -2713,12 +2718,11 @@ impl HostManagerView {
                                     if c.has_secret { " (secret set)" } else { "" }
                                 )),
                             ))
-                            .child(
-                                self.btn("cred-del", "Delete", p, false)
-                                    .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
-                                        this.delete_credential(id.clone(), cx)
-                                    })),
-                            )
+                            .child(self.btn("cred-del", "Delete", p, false, cx).on_click(
+                                cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                                    this.delete_credential(id.clone(), cx)
+                                }),
+                            ))
                     }))
                     .child(match draft {
                         Some(d) => div()
@@ -2747,6 +2751,7 @@ impl HostManagerView {
                                     if d.is_key { "key" } else { "password" },
                                     p,
                                     false,
+                                    cx,
                                 )
                                 .on_click(cx.listener(
                                     |this, _: &ClickEvent, _w, cx| {
@@ -2757,28 +2762,29 @@ impl HostManagerView {
                                     },
                                 )),
                             )
-                            .child(self.btn("cred-add", "Add", p, true).on_click(
+                            .child(self.btn("cred-add", "Add", p, true, cx).on_click(
                                 cx.listener(|this, _: &ClickEvent, _w, cx| this.add_credential(cx)),
                             ))
                             .into_any_element(),
                         None => div()
                             .flex()
                             .gap_2()
-                            .child(self.btn("cred-new", "New credential", p, false).on_click(
-                                cx.listener(|this, _: &ClickEvent, w, cx| {
-                                    this.cred_draft = Some(CredDraft {
-                                        name: String::new(),
-                                        is_key: false,
-                                    });
-                                    w.focus(&this.cred_focus);
-                                    cx.notify();
-                                }),
-                            ))
+                            .child(
+                                self.btn("cred-new", "New credential", p, false, cx)
+                                    .on_click(cx.listener(|this, _: &ClickEvent, w, cx| {
+                                        this.cred_draft = Some(CredDraft {
+                                            name: String::new(),
+                                            is_key: false,
+                                        });
+                                        w.focus(&this.cred_focus);
+                                        cx.notify();
+                                    })),
+                            )
                             .into_any_element(),
                     })
                     .child(
                         div().flex().justify_end().pt_2().child(
-                            self.btn("cred-close", "Close", p, false)
+                            self.btn("cred-close", "Close", p, false, cx)
                                 .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
                                     this.creds_open = false;
                                     this.cred_draft = None;
@@ -2939,32 +2945,38 @@ impl HostManagerView {
                                 div()
                                     .flex()
                                     .gap_2()
-                                    .child(self.btn("imp-all", "Select all", p, false).on_click(
-                                        cx.listener(|this, _: &ClickEvent, _w, cx| {
-                                            if let Some(s) = this.import.as_mut() {
-                                                s.selected = s
-                                                    .entries
-                                                    .iter()
-                                                    .map(|e| e.alias.clone())
-                                                    .collect();
-                                            }
-                                            cx.notify();
-                                        }),
-                                    ))
-                                    .child(self.btn("imp-none", "Deselect all", p, false).on_click(
-                                        cx.listener(|this, _: &ClickEvent, _w, cx| {
-                                            if let Some(s) = this.import.as_mut() {
-                                                s.selected.clear();
-                                            }
-                                            cx.notify();
-                                        }),
-                                    ))
+                                    .child(
+                                        self.btn("imp-all", "Select all", p, false, cx).on_click(
+                                            cx.listener(|this, _: &ClickEvent, _w, cx| {
+                                                if let Some(s) = this.import.as_mut() {
+                                                    s.selected = s
+                                                        .entries
+                                                        .iter()
+                                                        .map(|e| e.alias.clone())
+                                                        .collect();
+                                                }
+                                                cx.notify();
+                                            }),
+                                        ),
+                                    )
+                                    .child(
+                                        self.btn("imp-none", "Deselect all", p, false, cx)
+                                            .on_click(cx.listener(
+                                                |this, _: &ClickEvent, _w, cx| {
+                                                    if let Some(s) = this.import.as_mut() {
+                                                        s.selected.clear();
+                                                    }
+                                                    cx.notify();
+                                                },
+                                            )),
+                                    )
                                     .child(
                                         self.btn(
                                             "imp-conflict",
                                             format!("On conflict: {}", conflict_label(conflict)),
                                             p,
                                             false,
+                                            cx,
                                         )
                                         .on_click(
                                             cx.listener(|this, _: &ClickEvent, _w, cx| {
@@ -2993,15 +3005,18 @@ impl HostManagerView {
                                     )),
                                 ))
                             })
-                            .child(self.btn("imp-cancel", "Cancel", p, false).on_click(
+                            .child(self.btn("imp-cancel", "Cancel", p, false, cx).on_click(
                                 cx.listener(|this, _: &ClickEvent, _w, cx| {
                                     this.import = None;
                                     cx.notify();
                                 }),
                             ))
-                            .child(self.btn("imp-run", "Import Selected", p, true).on_click(
-                                cx.listener(|this, _: &ClickEvent, _w, cx| this.run_import(cx)),
-                            )),
+                            .child(
+                                self.btn("imp-run", "Import Selected", p, true, cx)
+                                    .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
+                                        this.run_import(cx)
+                                    })),
+                            ),
                     ),
             )
             .into_any_element()
@@ -3098,20 +3113,20 @@ impl HostManagerView {
                                     SharedString::from(format!("{selected_count} selected")),
                                 ),
                             )
-                            .child(self.btn("exp-cancel", "Cancel", p, false).on_click(
+                            .child(self.btn("exp-cancel", "Cancel", p, false, cx).on_click(
                                 cx.listener(|this, _: &ClickEvent, _w, cx| {
                                     this.export = None;
                                     cx.notify();
                                 }),
                             ))
                             .child(
-                                self.btn("exp-copy", "Copy to clipboard", p, false)
+                                self.btn("exp-copy", "Copy to clipboard", p, false, cx)
                                     .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
                                         this.run_export(false, cx)
                                     })),
                             )
                             .child(
-                                self.btn("exp-append", "Append to ~/.ssh/config", p, true)
+                                self.btn("exp-append", "Append to ~/.ssh/config", p, true, cx)
                                     .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
                                         this.run_export(true, cx)
                                     })),
@@ -3194,7 +3209,7 @@ impl Render for HostManagerView {
             .items_center()
             .gap_1()
             .child(
-                self.btn("new-host", "New Host", &p, true)
+                self.btn("new-host", "New Host", &p, true, cx)
                     .on_click(cx.listener(|this, _: &ClickEvent, w, cx| {
                         this.form = Some(HostForm::blank());
                         this.save_state = SaveState::Idle;
@@ -3219,7 +3234,7 @@ impl Render for HostManagerView {
                     .child(SharedString::from(format!("{b}\u{2502}")))
                     .into_any_element(),
                 None => self
-                    .btn("new-group", "New Group", &p, false)
+                    .btn("new-group", "New Group", &p, false, cx)
                     .on_click(cx.listener(|this, _: &ClickEvent, w, cx| {
                         this.group_draft = Some(String::new());
                         w.focus(&this.group_focus);
@@ -3233,6 +3248,7 @@ impl Render for HostManagerView {
                     format!("Sort: {}", self.sort.label()),
                     &p,
                     false,
+                    cx,
                 )
                 .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
                     this.sort = this.sort.next();
@@ -3245,6 +3261,7 @@ impl Render for HostManagerView {
                     if self.grid_view { "Grid" } else { "List" },
                     &p,
                     false,
+                    cx,
                 )
                 .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
                     this.grid_view = !this.grid_view;
@@ -3252,18 +3269,18 @@ impl Render for HostManagerView {
                 })),
             )
             .child(
-                self.btn("open-creds", "Credentials", &p, false)
+                self.btn("open-creds", "Credentials", &p, false, cx)
                     .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
                         this.creds_open = true;
                         cx.notify();
                     })),
             )
             .child(
-                self.btn("import-ssh-config", "Import", &p, false)
+                self.btn("import-ssh-config", "Import", &p, false, cx)
                     .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| this.open_import(cx))),
             )
             .child(
-                self.btn("export-ssh-config", "Export", &p, false)
+                self.btn("export-ssh-config", "Export", &p, false, cx)
                     .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| this.open_export(cx))),
             );
 
