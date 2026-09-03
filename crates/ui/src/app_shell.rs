@@ -41,7 +41,6 @@ use crate::background::{BackgroundStore, LayerScope};
 use crate::bar_items::{self, BarItemId, BarLoc, BarSide};
 use crate::bookmarks::{BookmarkEvent, BookmarksView};
 use crate::command_palette::{CommandId, CommandPalette, PaletteChoice, PaletteData, PaletteEvent};
-use crate::components::IconName;
 use crate::cwd_breadcrumb as bc;
 use crate::explorer::ExplorerView;
 use crate::git::GitPanelView;
@@ -55,6 +54,7 @@ use crate::theme::{ThemePreference, ThemeStore};
 use crate::updater::UpdaterView;
 use crate::window_state;
 use crate::workspace::Workspace;
+use labonair_ui_kit::IconName;
 
 const HEADER_H: f32 = 40.0;
 const STATUS_H: f32 = 32.0;
@@ -2160,7 +2160,7 @@ impl AppShell {
     /// The shared bar-item right-click menu (port of `BarItemContextMenu`):
     /// Left / Right, then Titlebar / Statusbar, then Hide.
     fn render_bar_menu(&mut self, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
-        use crate::components::{context_menu, MenuItem};
+        use labonair_ui_kit::{context_menu, MenuItem};
         let (id, pos) = self.bar_menu?;
         let p = self.placements.get(id);
         let view = cx.entity();
@@ -2416,7 +2416,7 @@ impl AppShell {
     }
 
     fn render_crumb_menu(&mut self, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
-        use crate::components::{context_menu, MenuItem};
+        use labonair_ui_kit::{context_menu, MenuItem};
         let (seg, pos) = self.crumb_menu.clone()?;
         let cwd = self.workspace.read(cx).active_cwd(cx);
         let has_path = !seg.full_path.is_empty();
@@ -2541,7 +2541,7 @@ impl AppShell {
     }
 
     fn render_subdir_menu(&mut self, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
-        use crate::components::{context_menu, MenuItem};
+        use labonair_ui_kit::{context_menu, MenuItem};
         let (dir, pos, entries) = self.subdir_menu.clone()?;
         let view = cx.entity();
         let close = {

@@ -12,7 +12,6 @@ pub mod bar_items;
 pub mod bell;
 pub mod bookmarks;
 pub mod command_palette;
-pub mod components;
 pub mod cwd_breadcrumb;
 pub mod diff;
 pub mod editor;
@@ -55,9 +54,6 @@ pub use command_palette::{
     shortcut_from_slug, shortcut_slug, shortcuts, CommandId, CommandPalette, Conflict, KeybindMap,
     PaletteEvent, ShortcutId,
 };
-pub use components::{
-    button, field_input, file_icon, folder_icon, text_field, ButtonSize, ButtonVariant, IconName,
-};
 pub use diff::{DiffLayout, DiffView};
 pub use editor::{EditorEvent, EditorView};
 pub use explorer::{DraggedPaths, ExplorerView};
@@ -65,6 +61,9 @@ pub use git::GitPanelView;
 pub use git_graph::GitGraphView;
 pub use hosts::{HostManagerEvent, HostManagerView, HostStatus};
 pub use labonair_theme::{ThemeFile, ThemeFileVariant};
+pub use labonair_ui_kit::{
+    button, field_input, file_icon, folder_icon, text_field, ButtonSize, ButtonVariant, IconName,
+};
 pub use menu::{apply_keybinds, init as init_menus};
 pub use notifications::{
     init as init_notifications, notification_center, notify_err, GlobalNotificationCenter,

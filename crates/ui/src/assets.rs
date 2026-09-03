@@ -14,7 +14,7 @@ use gpui::{AssetSource, Result, SharedString};
 
 /// Every embedded icon file, as `("icons/<name>.svg", bytes)`.
 ///
-/// Keep this list in sync with [`crate::components::IconName`].
+/// Keep this list in sync with [`labonair_ui_kit::IconName`].
 macro_rules! icons {
     ($($name:literal),* $(,)?) => {
         &[$((
@@ -125,6 +125,20 @@ mod tests {
             assert!(
                 Assets.load(name).unwrap().is_some(),
                 "asset source failed to load {name}"
+            );
+        }
+    }
+
+    /// Cross-crate invariant: every `labonair_ui_kit::IconName` variant resolves
+    /// to a bundled SVG served by this source. (The enum lives in
+    /// `labonair-ui-kit`; the SVG bundle lives here.)
+    #[test]
+    fn every_icon_variant_has_an_asset() {
+        for icon in labonair_ui_kit::IconName::ALL {
+            assert!(
+                Assets.load(icon.path()).unwrap().is_some(),
+                "missing asset for {icon:?} ({})",
+                icon.path()
             );
         }
     }

@@ -30,9 +30,9 @@ use labonair_backend::modules::git::{self, Branch, FileStatus, GitStatus, Worksp
 use labonair_backend::App as Backend;
 use tokio::runtime::Handle as TokioHandle;
 
-use crate::components::{context_menu, IconName, MenuItem};
 use crate::notifications::notify_err;
 use crate::theme::ThemeStore;
+use labonair_ui_kit::{context_menu, IconName, MenuItem};
 
 /// A source-control file-menu action, wrapped into a click handler by
 /// `render_file_menu`.
@@ -2442,7 +2442,7 @@ impl GitPanelView {
                     .text_size(px(11.0))
                     .hover(|s| s.text_color(c.fg))
                     .child(
-                        crate::components::IconName::Pencil
+                        labonair_ui_kit::IconName::Pencil
                             .svg(c.muted)
                             .size(px(11.0)),
                     )

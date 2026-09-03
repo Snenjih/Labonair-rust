@@ -53,7 +53,6 @@ use labonair_terminal::{
 use tokio::runtime::Handle as TokioHandle;
 
 use crate::background::BackgroundStore;
-use crate::components::{context_menu, IconName, MenuItem};
 use crate::editor::{EditorEvent, EditorView};
 use crate::git_graph::GitGraphView;
 use crate::hosts::{ActiveTunnelRow, HostManagerEvent, HostManagerView, HostStatus};
@@ -72,6 +71,7 @@ use crate::tabs::{Tab, TabData, TabKind, TabStore};
 use crate::terminal::TerminalView;
 use crate::theme::ThemeStore;
 use crate::transfers::{TransferBusEvent, TransfersEvent, TransfersView};
+use labonair_ui_kit::{context_menu, IconName, MenuItem};
 
 /// Interval for draining backend SSH events into the workspace.
 const SSH_POLL_INTERVAL: Duration = Duration::from_millis(40);

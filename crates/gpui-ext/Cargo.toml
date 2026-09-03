@@ -1,0 +1,11 @@
+[package]
+name = "labonair-gpui-ext"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "labonair_gpui_ext"
+path = "src/gpui_ext.rs"
+
+[dependencies]
+gpui = { workspace = true }

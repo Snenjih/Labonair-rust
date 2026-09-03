@@ -8,7 +8,7 @@
 use gpui::{div, px, Div, InteractiveElement, Stateful, Styled};
 use labonair_theme::CoreColors;
 
-use crate::theme::ThemeStore;
+use crate::theme::UiTheme;
 
 /// `disabled:opacity-50` from the cva base.
 pub const DISABLED_OPACITY: f32 = 0.5;
@@ -75,7 +75,7 @@ impl ButtonSize {
 /// `btn`-helper call sites.
 pub fn button(
     id: impl Into<gpui::ElementId>,
-    theme: &ThemeStore,
+    theme: &impl UiTheme,
     variant: ButtonVariant,
     size: ButtonSize,
 ) -> Stateful<Div> {
@@ -133,12 +133,20 @@ fn apply_variant(el: Stateful<Div>, variant: ButtonVariant, c: CoreColors) -> St
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::theme::ThemeStore;
-    use gpui::WindowAppearance;
+    use labonair_theme::Theme;
+
+    /// Bare [`UiTheme`] impl over a fixed [`Theme`] — the primitives only read
+    /// tokens, so no runtime store is needed in these unit tests.
+    struct TestTheme(Theme);
+    impl UiTheme for TestTheme {
+        fn theme(&self) -> &Theme {
+            &self.0
+        }
+    }
 
     #[test]
     fn builds_every_variant_and_size() {
-        let theme = ThemeStore::new(WindowAppearance::Dark);
+        let theme = TestTheme(Theme::dark());
         for v in [
             ButtonVariant::Default,
             ButtonVariant::Outline,
@@ -165,7 +173,7 @@ mod tests {
 
     #[test]
     fn pill_radius_matches_reference_radius_4xl() {
-        let theme = ThemeStore::new(WindowAppearance::Dark);
+        let theme = TestTheme(Theme::dark());
         assert!((theme.radius().xl4 - 13.0).abs() < 1e-6);
     }
 }

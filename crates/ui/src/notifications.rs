@@ -47,8 +47,8 @@ impl Severity {
     }
 
     /// The toast icon for this severity.
-    fn glyph(self) -> crate::components::IconName {
-        use crate::components::IconName;
+    fn glyph(self) -> labonair_ui_kit::IconName {
+        use labonair_ui_kit::IconName;
         match self {
             Severity::Info => IconName::Info,
             Severity::Success => IconName::CircleCheck,

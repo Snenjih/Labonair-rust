@@ -16,6 +16,16 @@ use gpui::{
 };
 use labonair_theme::{Animation, MonoFontWeight, RadiusScale, Shadows, Theme, ThemeFile};
 
+/// Lets the `labonair-ui-kit` primitives read tokens off the runtime store
+/// without depending on it. Only `theme()` is provided here — `radius()` /
+/// `muted_foreground()` / `border()` fall through to the trait defaults, which
+/// match `ThemeStore`'s inherent methods of the same name 1:1.
+impl labonair_ui_kit::UiTheme for ThemeStore {
+    fn theme(&self) -> &Theme {
+        ThemeStore::theme(self)
+    }
+}
+
 /// The theme preference the user picked in settings.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ThemePreference {

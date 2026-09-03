@@ -4,7 +4,80 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
-## Last Session: 2026-09-03 (T16-001 — architecture-rework ADR + target crate graph)
+## Last Session: 2026-09-03 (T16-002 — labonair-gpui-ext + labonair-ui-kit skeleton)
+
+First code task of the architecture rework. **Pure move + re-export, zero
+behaviour change.** Rust toolchain is now installed on the VPS
+(`source "$HOME/.cargo/env"` if `cargo` is not on PATH).
+
+### What Was Done (T16-002)
+- **`crates/gpui-ext/`** (`labonair-gpui-ext`) created — lib root
+  `src/gpui_ext.rs` (explicit `[lib] name/path`). One module: `pub mod prelude`
+  re-exporting `gpui::prelude::*` plus the ~30 concrete `gpui` types that recur
+  across the port's `use gpui::{…}` lines (derived from a `grep`, not guessed).
+  Leaf crate, dep = `gpui` only.
+- **`crates/ui-kit/`** (`labonair-ui-kit`) created — lib root `src/ui_kit.rs`
+  (explicit `[lib] name/path`). `button.rs`, `context_menu.rs`, `icon.rs`,
+  `text_field.rs` moved 1:1 from `crates/ui/src/components/` via `git mv`.
+  `ui_kit.rs` re-exports the **exact** old symbol set from `components/mod.rs`
+  (`button`, `ButtonSize`, `ButtonVariant`, `DISABLED_OPACITY`, `context_menu`,
+  `MenuClick`, `MenuItem`, `file_icon`, `folder_icon`, `IconName`, `field_input`,
+  `text_field`, `InputEvent`, `InputState`, + `Badge`, `Switch`, `Tooltip` from
+  `gpui-component`) plus the new `UiTheme`. Deps = gpui, gpui-component,
+  labonair-theme, labonair-gpui-ext.
+- **`UiTheme` trait** (`crates/ui-kit/src/theme.rs`) — thin token accessor so
+  ui-kit does not depend on `crates/ui`'s runtime `ThemeStore` (a GPUI entity,
+  not pure-token → cannot move to `labonair-theme` yet; the Zed `ui`/`theme`
+  split, `docs/architecture.md` §2.1). One required method
+  `theme(&self) -> &labonair_theme::Theme`; `radius()` / `muted_foreground()` /
+  `border()` are defaulted 1:1 derivations. `button()` / `context_menu()` /
+  `colors()` now take `&impl UiTheme`. `crates/ui/src/theme.rs` gains
+  `impl labonair_ui_kit::UiTheme for ThemeStore`. Call sites (`self.theme.read(cx)`)
+  unchanged — they only satisfy the bound.
+- **`IconName::ALL`** promoted from `#[cfg(test)] const` to `pub const` so the
+  icon→asset cross-check test can run from `crates/ui` (the SVG bundle stays in
+  `crates/ui/src/assets.rs`, which is `labonair-app`-bound per the arch table).
+  `every_icon_variant_has_an_asset` now lives in `assets.rs`; `ui-kit`'s
+  `icon.rs` keeps a self-contained path-format/uniqueness test.
+- **`crates/ui`**: `mod components` removed; all `crate::components::` usages in
+  17 files re-pointed to `labonair_ui_kit::` (mechanical sed + `cargo fmt` to
+  re-group the new external `use` lines). `crates/ui/Cargo.toml` gains
+  `labonair-ui-kit` + `labonair-gpui-ext` path deps.
+- **Workspace `Cargo.toml`**: `members` gains `crates/gpui-ext` + `crates/ui-kit`
+  (before `crates/ui`). Local-crate deps follow the repo's existing direct
+  `path = "../x"` convention (repo does not use `[workspace.dependencies]` for
+  local crates).
+
+### Verification
+- `cargo fmt --check` — clean (exit 0).
+- `cargo check --workspace --all-targets` — exit 0 (compiles all test/bench/
+  example code too, so every test still compiles).
+- `cargo clippy --workspace --all-targets -- -D warnings` — exit 0.
+- `cargo test -p labonair-gpui-ext -p labonair-ui-kit -p labonair-ui --lib` —
+  exit 0: `labonair-ui-kit` 5 passed (button ×2, context_menu ×1, icon ×2),
+  `labonair-ui` 254 passed (incl. the relocated `every_icon_variant_has_an_asset`),
+  `labonair-gpui-ext` 0 tests. These are exactly the crates T16-002 touches.
+- Full `cargo test --workspace` could **not** complete: the VPS root FS is at
+  ~100 % (110 G/118 G used, external pressure) and cargo ran out of space
+  linking the per-crate test binaries for the *unmodified* crates
+  (`labonair-terminal`/`-ai`/`-backend`) — `No space left on device (os error 28)`
+  and `-lxcb` link errors before X11 dev libs were apt-installed. Not a
+  T16-002 regression. Freed space by `rm -rf target/debug/incremental` +
+  `cargo clean`; per-crate testing of the changed crates then passed.
+- Pre-existing, unrelated `cargo` note about `proc-macro-error2 v2.0.1`
+  (transitive dep of `gpui-component`) — does not fail `-D warnings`.
+
+### What's Next
+- **T16-003** `tasks/phase-15-crate-split/T16-003-extract-notifications-crate.md`
+  — extract `crates/ui/src/notifications.rs` into `labonair-notifications`.
+  Dependency (T16-002) now satisfied.
+
+### Blockers
+- None.
+
+---
+
+## Prior Session: 2026-09-03 (T16-001 — architecture-rework ADR + target crate graph)
 
 Kicked off the architecture rework (roadmap phases 15–21). **Documentation only;
 no `crates/` change.**

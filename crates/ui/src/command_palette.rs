@@ -26,12 +26,12 @@ use gpui::{
     StatefulInteractiveElement, Styled, Window,
 };
 
-use crate::components::IconName;
 use crate::settings::PreferencesStore;
 use crate::tabs::TabKind;
 use crate::theme::{EditorThemeId, ThemePreference, ThemeStore};
 use crate::workspace::Workspace;
 use labonair_backend::modules::settings::preferences::PaletteSearchMode;
+use labonair_ui_kit::IconName;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Shortcut table (port of shortcuts.ts)

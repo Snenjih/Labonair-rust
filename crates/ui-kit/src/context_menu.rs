@@ -36,7 +36,7 @@ use gpui::{
 };
 
 use super::IconName;
-use crate::theme::ThemeStore;
+use crate::theme::UiTheme;
 
 type Handler = Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>;
 
@@ -174,7 +174,7 @@ struct Colors {
     destructive: Hsla,
 }
 
-fn colors(theme: &ThemeStore) -> Colors {
+fn colors(theme: &impl UiTheme) -> Colors {
     let core = &theme.theme().core;
     Colors {
         card: core.popover,
@@ -302,7 +302,7 @@ fn render_item(item: MenuItem, c: Colors, depth: usize) -> AnyElement {
 /// coordinates). `dismiss` fires on a click anywhere outside the menu card.
 pub fn context_menu(
     anchor: Point<Pixels>,
-    theme: &ThemeStore,
+    theme: &impl UiTheme,
     dismiss: impl Fn(&mut Window, &mut App) + 'static,
     items: Vec<MenuItem>,
 ) -> AnyElement {

@@ -1,0 +1,17 @@
+[package]
+name = "labonair-ui-kit"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "labonair_ui_kit"
+path = "src/ui_kit.rs"
+
+[dependencies]
+gpui = { workspace = true }
+gpui-component = { workspace = true }
+labonair-theme = { path = "../theme" }
+labonair-gpui-ext = { path = "../gpui-ext" }
+
+[dev-dependencies]
+gpui = { workspace = true, features = ["test-support"] }

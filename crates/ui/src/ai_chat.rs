@@ -674,10 +674,10 @@ use crate::ai_composer::{
     apply_file_mention, detect_popup, filter_files, filter_slash, parse_slash,
     wrap_with_command_marker, ComposerPopup, SlashOutcome,
 };
-use crate::components::{field_input, IconName, InputEvent, InputState};
 use crate::markdown::{parse_markdown, Inline, MdBlock};
 use crate::syntax_theme::EditorPalette;
 use crate::theme::ThemeStore;
+use labonair_ui_kit::{field_input, IconName, InputEvent, InputState};
 
 /// A composer attachment shown as a chip and embedded into the outgoing message.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -3076,7 +3076,7 @@ impl AiChatView {
                                     .id("ai-voice")
                                     .px_1()
                                     .rounded_sm()
-                                    .opacity(super::components::DISABLED_OPACITY)
+                                    .opacity(labonair_ui_kit::DISABLED_OPACITY)
                                     .text_size(px(9.0))
                                     .text_color(c.muted)
                                     .child("voice (soon)"),

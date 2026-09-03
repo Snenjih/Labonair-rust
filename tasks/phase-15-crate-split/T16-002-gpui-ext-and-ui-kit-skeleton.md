@@ -1,7 +1,7 @@
 # T16-002: `labonair-gpui-ext` + `labonair-ui-kit` (Skeleton)
 
 ## Status
-📋 Geplant
+✅ Done
 
 ## Phase
 15 — Crate-Zerlegung & Fundament

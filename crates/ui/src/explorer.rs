@@ -45,12 +45,12 @@ use notify_debouncer_mini::{new_debouncer, Debouncer};
 
 use labonair_backend::modules::fs::{mutate, tree};
 
-use crate::components::{
-    context_menu, file_icon, folder_icon, IconName, InputEvent, InputState, MenuClick, MenuItem,
-};
 use crate::notifications::{notification_center, Notification};
 use crate::theme::ThemeStore;
 use crate::workspace::Workspace;
+use labonair_ui_kit::{
+    context_menu, file_icon, folder_icon, IconName, InputEvent, InputState, MenuClick, MenuItem,
+};
 
 /// A menu action expressed against the view + window (wrapped into a
 /// [`MenuClick`] by `render_context_menu`).
@@ -1287,7 +1287,7 @@ impl ExplorerView {
                     .rounded_sm()
                     .border_1()
                     .border_color(c.accent)
-                    .child(crate::components::field_input(field)),
+                    .child(labonair_ui_kit::field_input(field)),
             );
         }
         row

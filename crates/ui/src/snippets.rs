@@ -32,10 +32,10 @@ use labonair_backend::modules::snippets::{CommandSnippet, SnippetGroup, SnippetR
 use labonair_backend::App as Backend;
 use tokio::runtime::Handle as TokioHandle;
 
-use crate::components::{context_menu, IconName, MenuItem};
 use crate::notifications::{notification_center, Notification};
 use crate::theme::ThemeStore;
 use crate::workspace::Workspace;
+use labonair_ui_kit::{context_menu, IconName, MenuItem};
 
 // ── Pure helpers: variable extraction / substitution ─────────────────────────
 

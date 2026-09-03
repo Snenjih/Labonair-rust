@@ -19,7 +19,7 @@ use std::collections::HashMap;
 use gpui::Global;
 use serde_json::{json, Value};
 
-use crate::components::IconName;
+use labonair_ui_kit::IconName;
 
 /// Bumped whenever the settings window edits a bar-item placement so the live
 /// `AppShell` bar re-reads the persisted blob (`cx.observe_global`).

@@ -17,8 +17,8 @@
 
 use gpui::{Context, EventEmitter};
 
-use crate::components::IconName;
 use labonair_terminal::SessionId;
+use labonair_ui_kit::IconName;
 
 /// The category of a tab. Content views for most kinds arrive in later phases;
 /// the model already covers them so the tab bar and store are stable.

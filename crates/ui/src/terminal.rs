@@ -39,10 +39,10 @@ use labonair_terminal::{
 };
 
 use crate::background::{BackgroundStore, LayerScope};
-use crate::components::{context_menu, IconName, MenuItem};
 use crate::explorer::{quote_paths, DraggedPaths};
 use crate::settings::GlobalPreferences;
 use crate::theme::ThemeStore;
+use labonair_ui_kit::{context_menu, IconName, MenuItem};
 
 /// How often the view polls the session for new terminal output.
 const POLL_INTERVAL: Duration = Duration::from_millis(16);

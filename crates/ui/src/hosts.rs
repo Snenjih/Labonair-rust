@@ -28,9 +28,9 @@ use labonair_backend::modules::ssh::config_parser::{self, ImportConflict, SshCon
 use labonair_backend::App as Backend;
 use tokio::runtime::Handle as TokioHandle;
 
-use crate::components::{context_menu, IconName, MenuItem};
 use crate::notifications::{notification_center, Notification};
 use crate::theme::ThemeStore;
+use labonair_ui_kit::{context_menu, IconName, MenuItem};
 
 /// Connection status for a host, tracked live off the SSH event stream.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -1603,7 +1603,7 @@ impl HostManagerView {
     }
 
     /// Small host-manager action button — thin wrapper over the shared
-    /// [`crate::components::button`] builder (`Xs` size; `Default` variant for
+    /// [`labonair_ui_kit::button`] builder (`Xs` size; `Default` variant for
     /// primary actions, `Outline` otherwise).
     fn btn(
         &self,
@@ -1614,15 +1614,15 @@ impl HostManagerView {
         cx: &App,
     ) -> gpui::Stateful<gpui::Div> {
         let variant = if primary {
-            crate::components::ButtonVariant::Default
+            labonair_ui_kit::ButtonVariant::Default
         } else {
-            crate::components::ButtonVariant::Outline
+            labonair_ui_kit::ButtonVariant::Outline
         };
-        crate::components::button(
+        labonair_ui_kit::button(
             id,
             self.theme.read(cx),
             variant,
-            crate::components::ButtonSize::Xs,
+            labonair_ui_kit::ButtonSize::Xs,
         )
         .child(label.into())
     }

@@ -40,8 +40,8 @@ use labonair_backend::modules::sftp::connection::sftp_connect;
 use labonair_backend::modules::ssh::sftp as backend_sftp;
 use labonair_backend::App as Backend;
 
-use crate::components::{context_menu, IconName, MenuClick, MenuItem};
 use crate::theme::ThemeStore;
+use labonair_ui_kit::{context_menu, IconName, MenuClick, MenuItem};
 
 /// A menu action against the SFTP view (wrapped into a [`MenuClick`]).
 type SftpAct = Box<dyn Fn(&mut SftpView, &mut Context<SftpView>)>;
@@ -1322,7 +1322,7 @@ impl SftpView {
         } else if entry.is_symlink {
             IconName::Link
         } else {
-            crate::components::file_icon(&entry.name)
+            labonair_ui_kit::file_icon(&entry.name)
         };
         let id: SharedString = format!("row:{:?}:{}", side_key(side), entry.path).into();
         let e_click = entry.clone();

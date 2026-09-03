@@ -592,7 +592,7 @@ impl Render for TransfersView {
                 .text_xs()
                 .shadow_lg()
                 .child(
-                    crate::components::IconName::ArrowDownUp
+                    labonair_ui_kit::IconName::ArrowDownUp
                         .svg(c.fg)
                         .size(px(12.0)),
                 )

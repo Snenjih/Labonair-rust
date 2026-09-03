@@ -26,9 +26,10 @@ macro_rules! icon_enum {
                 }
             }
 
-            /// Every variant — used by the asset round-trip test.
-            #[cfg(test)]
-            const ALL: &'static [IconName] = &[$(IconName::$variant),*];
+            /// Every variant, in declaration order. Consumed by the asset
+            /// round-trip test in `crates/ui` (the icon SVG bundle lives
+            /// there, not in this crate).
+            pub const ALL: &'static [IconName] = &[$(IconName::$variant),*];
         }
     };
 }
@@ -227,17 +228,18 @@ pub fn folder_icon(expanded: bool) -> IconName {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::assets::Assets;
-    use gpui::AssetSource;
+    use std::collections::HashSet;
 
     #[test]
-    fn every_icon_variant_has_an_asset() {
+    fn every_icon_path_is_well_formed_and_unique() {
+        let mut seen = HashSet::new();
         for icon in IconName::ALL {
+            let path = icon.path();
             assert!(
-                Assets.load(icon.path()).unwrap().is_some(),
-                "missing asset for {icon:?} ({})",
-                icon.path()
+                path.starts_with("icons/") && path.ends_with(".svg"),
+                "malformed icon path for {icon:?}: {path}"
             );
+            assert!(seen.insert(path), "duplicate icon path: {path}");
         }
     }
 

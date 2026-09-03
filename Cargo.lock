@@ -4100,6 +4100,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "labonair-gpui-ext"
+version = "0.1.0"
+dependencies = [
+ "gpui",
+]
+
+[[package]]
 name = "labonair-terminal"
 version = "0.1.0"
 dependencies = [
@@ -4132,8 +4139,10 @@ dependencies = [
  "labonair-ai",
  "labonair-backend",
  "labonair-editor",
+ "labonair-gpui-ext",
  "labonair-terminal",
  "labonair-theme",
+ "labonair-ui-kit",
  "notify 6.1.1",
  "notify-debouncer-mini",
  "serde",
@@ -4141,6 +4150,16 @@ dependencies = [
  "tokio",
  "tracing",
  "uuid",
+]
+
+[[package]]
+name = "labonair-ui-kit"
+version = "0.1.0"
+dependencies = [
+ "gpui",
+ "gpui-component",
+ "labonair-gpui-ext",
+ "labonair-theme",
 ]
 
 [[package]]

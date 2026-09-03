@@ -34,8 +34,8 @@ use labonair_backend::modules::git::{self, CommitInfo};
 use labonair_backend::App as Backend;
 use tokio::runtime::Handle as TokioHandle;
 
-use crate::components::{context_menu, IconName, MenuItem};
 use crate::theme::ThemeStore;
+use labonair_ui_kit::{context_menu, IconName, MenuItem};
 
 // ── geometry ───────────────────────────────────────────────────────────────
 

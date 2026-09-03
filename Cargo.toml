@@ -2,6 +2,8 @@
 resolver = "2"
 members = [
     "crates/app",
+    "crates/gpui-ext",
+    "crates/ui-kit",
     "crates/ui",
     "crates/terminal",
     "crates/editor",
