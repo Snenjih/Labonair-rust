@@ -4,7 +4,69 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
-## Last Session: 2026-09-03 (settings-window audit — docs correction)
+## Last Session: 2026-09-03 (T16-001 — architecture-rework ADR + target crate graph)
+
+Kicked off the architecture rework (roadmap phases 15–21). **Documentation only;
+no `crates/` change.**
+
+### What Was Done (T16-001)
+- **`docs/architecture.md`** created — the authoritative target for every rework
+  task (T16-002 … T22-001). Seven sections: (1) philosophy + the four
+  principles; (2) target crate graph (7 → ~22 crates) with a per-crate purpose
+  sentence and a table mapping every current `crates/ui/src/*.rs` to its target
+  crate; (3) eight binding, CI-checkable dependency rules (`labonair-panel` has
+  no workspace-track dep; panel crates never depend on each other / `shell` /
+  `workspace`; `shell` is the only crate that knows concrete panels;
+  backend/ai/terminal/editor have no UI dep; `ui-kit` deps limited to
+  gpui/gpui-component/theme/gpui-ext; graph acyclic); (4) layout contract with
+  the ASCII diagram + explicit removals (header inline search, `⋯` app-menu
+  button, 44px activity rail, titlebar bar-item scope, `drain_pending_*`);
+  (5) Zed pattern catalog — table, each row a concrete `zed-refrence/zed/crates/`
+  path; (6) settings-layer overview default→user→OS→project→language;
+  (7) naming convention `labonair-<name>` / `crates/<name>/` / explicit
+  `[lib] path = crates/<name>/src/<name>.rs`.
+- **`docs/adr/0001-crate-decomposition.md`** created (new `docs/adr/` dir) —
+  standard ADR format: Context (monolith numbers: ui ~48k lines, settings.rs
+  5 957, workspace.rs 4 076, app_shell.rs 2 983; god-object, frame buffers,
+  latent Panel↔Workspace cycle, parallel `FIELDS` table, slow builds),
+  Decision (~22 crates + trait registries), Alternatives (status quo / extract
+  only settings / feature folders — all rejected, with reasons), Consequences
+  (more `Cargo.toml`, compiler-enforced APIs, faster incremental builds,
+  one-time migration cost).
+- **`CLAUDE.md`** — the "## Architecture" section now points to both new docs as
+  the authoritative target architecture.
+- **`tasks/ROADMAP.md`** — "## Vision" gained a philosophy paragraph (parity is
+  now the *minimum*, not the goal). The phases 15–21 section + rework success
+  criteria 22–26 (present as an uncommitted change) are committed with this task.
+- This commit also stages the previously-untracked task dirs
+  `tasks/phase-15-crate-split/` … `tasks/phase-21-gpui-decision/`, plus the two
+  new planning reports `bericht-architektur-rework-roadmap.md` and
+  `vergleichsbericht-zed-vs-rust.md`. `zed-refrence/` left untracked (local Zed
+  checkout for API spelunking).
+
+### Verification
+- Gates **not run**: this environment has no Rust toolchain (`cargo`/`rustc`
+  absent, no `~/.cargo`). T16-001 touches zero files under `crates/`
+  (`docs/*.md`, `CLAUDE.md`, `tasks/*.md` only), so `cargo fmt --check` /
+  `check` / `clippy -D warnings` / `test` are unchanged-green by construction.
+  Recorded in `memory/bugs_and_fixes.md`.
+- All six non-gate acceptance criteria met (7 sections present; dep rules
+  explicit + testable; removals named; ADR in standard format; ROADMAP lists
+  phases 15–21 with every task id; CLAUDE.md references `docs/architecture.md`).
+
+### What's Next
+- **T16-002** `tasks/phase-15-crate-split/T16-002-gpui-ext-and-ui-kit-skeleton.md`
+  — extract `crates/ui/src/components/*` into `labonair-ui-kit`, create the
+  `labonair-gpui-ext` prelude crate, re-export, re-point all call sites.
+  Deps (T16-001) satisfied. **Needs a Rust toolchain to verify.**
+
+### Blockers
+- No Rust toolchain in the current environment — future code tasks must install
+  `rustup` before they can run the gates.
+
+---
+
+## Prior Session: 2026-09-03 (settings-window audit — docs correction)
 
 Investigated the settings system vs. the reference Tauri `open_settings_window`.
 **Finding: the port is already at parity with what GPUI 0.2.2 allows.** Since

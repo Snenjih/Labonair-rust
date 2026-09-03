@@ -47,6 +47,8 @@ Labonair-rust (single GPUI binary)
 
 Platform: **macOS first, Linux later, no Windows.** The GPUI renderer differs per platform (macOS Metal / Linux Vulkan); keep platform-specific integration isolated.
 
+The authoritative **target architecture** for the ongoing crate-split rework (roadmap phases 15–21) is [`docs/architecture.md`](./docs/architecture.md) — the target crate graph, the binding dependency rules, the layout contract, and the Zed pattern catalog. Its rationale is recorded in [`docs/adr/0001-crate-decomposition.md`](./docs/adr/0001-crate-decomposition.md). When a rework task is unclear, consult that document before deciding.
+
 ## Critical Rules (NEVER Violate)
 
 1. **Reference, don't edit the source** — `reference-src/` is a read-only design/behavioral reference (a frozen copy). Never modify files there. Never add a link/symlink/submodule to any external Labonair repo — this fork is standalone.

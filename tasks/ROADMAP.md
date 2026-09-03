@@ -4,6 +4,8 @@
 
 Portierung von Labonair (Tauri v2 + React 19) zu einer reinen nativen Rust-App mit GPUI als UI-Framework — als **Hard Fork**: vollständig standalone, keine Verbindung (Symlink/Submodul/Pfad-Dependency) zum Original-Repo. Ziel ist eine 1:1 funktionsfähige Replik mit identischem Design und spürbar besserer Performance (kein WebView, kein IPC, direkter Prozess).
 
+**Neue Philosophie (ab dem Architektur-Rework, Phasen 15–21):** „Der effizienteste Weg, seine Arbeit in Labonair fertig zu bekommen — mit maximaler Performance und Modularität für Personalisierung." Feature-Parität mit der Referenz-App bleibt Pflicht, ist ab hier aber das *Minimum*, nicht das Ziel: viele fokussierte Crates statt `ui`-Monolith, Trait-Registries statt God-Object, ein fester Layout-Vertrag mit erstklassiger Personalisierung. Maßgebliche Ziel-Architektur: [`docs/architecture.md`](../docs/architecture.md); Begründung: [`docs/adr/0001-crate-decomposition.md`](../docs/adr/0001-crate-decomposition.md).
+
 ## Feature-Parität (alles muss am Ende funktionieren)
 
 **Kein Feature ist out-of-scope.** Alles, was Labonair heute kann, muss am Ende in der puren Rust-Version laufen — inklusive: Auto-Updater, Terminal-Hintergrundbilder, native macOS-Menüs (App-Menüleiste + Dock-Menü), MCP-Bridge (externe Agenten steuern SSH/lokale Tabs), Font-Handling, Notifications/Toasts.
@@ -182,3 +184,109 @@ Nummerierung: `T{NN}-{OOO}` wobei NN die Phase (01–15) und OOO die Task-Nummer
 19. **MCP-Bridge** — eine externe Agent-CLI kann einen freigegebenen Tab steuern (list/run/read/send/open/close).
 20. **Auto-Updater** prüft, lädt und installiert Updates auf macOS.
 21. **Feature-Parität** — jedes Modul aus `reference-src/` ist abgehakt (T15-006). Einzige Abweichung: Web-Preview-Tab → nativer Markdown + System-Browser.
+
+---
+
+## Architektur-Rework (Phasen 15–21) — Zed-Architektur-Stil
+
+Nach Erreichen der Feature-Parität (Phasen 00–14) folgt ein Umbau der internen
+Architektur in Richtung des Zed-Musterkatalogs: viele fokussierte Crates statt
+`ui`-Monolith, Trait-Registries statt God-Object, typisierter Settings-Merge-Baum
+mit generierter UI, ein durchgängiges UI-Kit, ein Theme-/Icon-Theme-Registry, und
+ein fester Layout-Vertrag mit erstklassiger Personalisierung.
+
+**Neue Philosophie:** „Der effizienteste Weg, seine Arbeit in Labonair fertig zu
+bekommen — mit maximaler Performance und Modularität für Personalisierung."
+Feature-Parität ist ab hier das *Minimum*, nicht das Ziel.
+
+**Layout-Vertrag:** Titlebar = nur Tabs + ein Icon-Button (Settings/Profile-
+Dropdown). Workspace = Tab-Inhalt + rekursiver Split-Baum. Side Panels = Docks
+links/rechts/unten. Statusbar = links Panel-Steuerung, rechts Info-Dropdowns
+(Notifications-Badge, CWD, Updater, Transfers, Agent-Access), jedes Item per
+Rechtsklick links/rechts/ausblendbar. Overlays nur über `ModalLayer`/`ToastLayer`.
+
+Details: [`docs/architecture.md`](../docs/architecture.md),
+Planungsbericht: [`bericht-architektur-rework-roadmap.md`](../bericht-architektur-rework-roadmap.md),
+Vergleichsbericht: [`vergleichsbericht-zed-vs-rust.md`](../vergleichsbericht-zed-vs-rust.md).
+
+### Phase 15 — Crate-Zerlegung & Fundament ·`/tasks/phase-15-crate-split/`
+| Task | Titel | Abhängigkeit |
+|---|---|---|
+| **T16-001** | ADR & Ziel-Crate-Graph festschreiben | — |
+| **T16-002** | `labonair-gpui-ext` + `labonair-ui-kit` (Skeleton) | T16-001 |
+| **T16-003** | `labonair-notifications` extrahieren | T16-002 |
+| **T16-004** | `labonair-command-palette` extrahieren | T16-002, T16-003 |
+| **T16-005** | `labonair-panel` Contracts-Crate | T16-001 |
+| **T16-006** | `labonair-workspace` extrahieren | T16-002, T16-005 |
+| **T16-007** | `labonair-settings-ui` extrahieren | T16-002, T16-004 |
+| **T16-008** | Panel-Crates ausgliedern (explorer/scm/git-graph/hosts/snippets/ai) | T16-006, T16-005 |
+| **T16-009** | `labonair-shell` + `labonair-app` schlank | T16-006–008 |
+| **T16-010** | Build-Hygiene & Baseline (Dep-Regeln, Crate-Graph, Zeit-Baseline) | T16-009 |
+
+### Phase 16 — Root-Objekt & Registries ·`/tasks/phase-16-registries/`
+| Task | Titel | Abhängigkeit |
+|---|---|---|
+| **T17-001** | `Panel`-Trait & `PanelRegistry` verdrahten (`enum SidebarPanel` weg) | Phase 15 |
+| **T17-002** | `Dock`-Modell (Links/Rechts/Unten), mehrere Panels je Dock | T17-001 |
+| **T17-003** | `StatusItem`-Trait & `StatusItemRegistry` (`render_bar_item`-`match` weg) | T16-005, T17-001 |
+| **T17-004** | `PaneGroup` — rekursiver Split-Baum + Persistenz | T16-006, T17-002 |
+| **T17-005** | `ModalLayer` + `ToastLayer` (Overlays entkoppeln, `drain_pending_*` weg) | T16-006, T16-003, T16-004 |
+| **T17-006** | `AppShell` → reine Komposition (God-Object auflösen) | T17-002–005 |
+| **T17-007** | `CommandRegistry` (Palette + Keymap teilen die Registry) | T16-004, T17-006 |
+| **T17-008** | `AppEvent`-Bus entscheiden (nutzen oder streichen) | T17-006 |
+
+### Phase 17 — Neues Layout & Statusbar-Personalisierung ·`/tasks/phase-17-layout/`
+| Task | Titel | Abhängigkeit |
+|---|---|---|
+| **T18-001** | Titlebar-Redesign — nur Tabs + ein Icon-Button | T17-006 |
+| **T18-002** | Suche als transientes Overlay (`Cmd+F`) | T17-005, T18-001 |
+| **T18-003** | Statusbar links — Panel-Steuerung (Activity-Rail weg) | T17-002, T17-003 |
+| **T18-004** | Statusbar rechts — Info-Dropdowns | T17-003, T18-003 |
+| **T18-005** | Statusbar-Item-Personalisierung (RMB → links/rechts/ausblenden) | T18-004 |
+| **T18-006** | Migrator `barItemPlacements` → `statusBarItemPlacements` | T18-005 |
+| **T18-007** | Philosophie verankern + Personalisierungs-Settings-Seite | T18-005, T18-003 |
+
+### Phase 18 — Settings-System Zed-Style ·`/tasks/phase-18-settings-core/`
+| Task | Titel | Abhängigkeit |
+|---|---|---|
+| **T19-001** | `labonair-settings-content` — typisierter Baum + `MergeFrom` | T16-001, T16-007 |
+| **T19-002** | `SettingsStore` + Layer-Merge + `Settings`-Trait/Registrierung | T19-001 |
+| **T19-003** | Projekt-/Ordner-Settings (`.labonair/settings.json`, Whitelist) | T19-002 |
+| **T19-004** | Settings-UI aus dem Modell generieren (`FIELDS`-Array weg) | T19-002, T16-007 |
+| **T19-005** | Rohe `settings.json` editierbar (kommentar-erhaltend) | T19-002, T19-004 |
+| **T19-006** | JSON-Schema-Generierung + Validierung | T19-001, T19-005 |
+| **T19-007** | Globale Settings-Suche über alle Seiten | T19-004 |
+| **T19-008** | Keymap als Datei mit Kontexten + Chords (`keymap.json`) | T17-007, T19-002 |
+| **T19-009** | Settings-Migrator (`preferences`/`editor`/`mcp` → `SettingsContent`, Keybinds → `keymap.json`) | T19-004, T19-008 |
+
+### Phase 19 — UI-Kit & Theme-System ·`/tasks/phase-19-ui-kit/`
+| Task | Titel | Abhängigkeit |
+|---|---|---|
+| **T20-001** | `ui-kit` Primitive-Set vervollständigen | T16-002 |
+| **T20-002** | View-Migration Welle 1 (Terminal, Editor, Explorer, SCM) | T20-001 |
+| **T20-003** | View-Migration Welle 2 (Hosts, Snippets, AI, SFTP, Git-Graph, Settings-UI) | T20-002 |
+| **T20-004** | Component-Gallery (Debug-Fenster) | T20-001 |
+| **T20-005** | `ThemeRegistry` + JSON-Theme-Familien | T16-009, T19-002 |
+| **T20-006** | Icon-Themes (JSON, umschaltbar) | T20-005 |
+| **T20-007** | `theme_settings`-Layer (Dichte, Font-Skalen, Radius) | T20-005, T19-002, T20-001 |
+
+### Phase 20 — Performance & Modularitäts-Abnahme ·`/tasks/phase-20-perf-signoff/`
+| Task | Titel | Abhängigkeit |
+|---|---|---|
+| **T21-001** | Render-Pfad-Profiling & Frame-Hygiene | T17-006, T20-003 |
+| **T21-002** | Build-Budget & Crate-Graph-Verifikation | T16-010, T19-009 |
+| **T21-003** | Startup-Profiling (Zeit bis erstes Frame, Speicher) | T17-006, T19-002 |
+| **T21-004** | Modularitäts- & Personalisierungs-Abnahme + Parität-Regression | Phasen 15–19, T21-001–003 |
+| **T21-005** | Architektur-Doku finalisieren | T21-004 |
+
+### Phase 21 — Decision-Gate ·`/tasks/phase-21-gpui-decision/`
+| Task | Titel | Abhängigkeit |
+|---|---|---|
+| **T22-001** | vendored `gpui` — Entscheidungs-Task (P4, Gate) | T21-004, T21-005 |
+
+### Rework-Erfolgskriterien (zusätzlich zu 1–21)
+22. **Modularität** — neues Panel / Statusbar-Item / Kommando / `bool`-Setting = je *eine* Registrierungszeile; Crate-Graph azyklisch; `app_shell.rs` < 400 Z., kein `drain_pending_*`.
+23. **Layout-Vertrag** — Titlebar nur Tabs + ein Button; Statusbar links Panel-Steuerung / rechts Info-Dropdowns; Overlays nur `ModalLayer`/`ToastLayer`.
+24. **Personalisierung** — Statusbar-Items per RMB links/rechts/aus (persistent); Panels zwischen Docks (L/R/B) verschiebbar; mehrere Themes + Icon-Themes + UI-Dichte; `keymap.json` mit Kontexten/Chords; Projekt-`.labonair/settings.json` greift.
+25. **Settings-Modell** — eine typisierte `SettingsContent`-Quelle; UI generiert (kein paralleles `FIELDS`-Array); `settings.json` roh editierbar mit Kommentar-Erhalt; Migrator verliert keine Nutzerdaten.
+26. **Performance** — Idle = 0 Kern-View-Renders; kein Pro-Frame-Recompute; inkrementeller `-p labonair-shell`-Build deutlich schneller als der alte `app_shell.rs`-Änderungsfall.

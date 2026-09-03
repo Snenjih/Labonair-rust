@@ -1,0 +1,101 @@
+# T17-004: `PaneGroup` — rekursiver Split-Baum + Persistenz
+
+## Status
+📋 Geplant
+
+## Phase
+16 — Root-Objekt & Registries
+
+## Abhängigkeiten
+T16-006 (`labonair-workspace`), T17-002 (`Dock`-Modell)
+
+## Ziel
+Das heutige Split-Layout (flacher `SplitAxis` + eine Split-Ebene) durch einen
+echten rekursiven Split-Baum nach Zed-Vorbild ersetzen: beliebig tief
+verschachtelte horizontale/vertikale Splits, mit Größen-Verhältnissen und
+vollständiger Persistenz.
+
+## Kontext
+- Heute: `crates/workspace/src/pane.rs` + `pane_group.rs` (aus T16-006) —
+  `enum SplitAxis`, ein Split-Container. `Workspace::active_has_split`,
+  `act_split_right`/`act_split_down`/`act_close_pane` in `app_shell.rs`.
+  Vermutlich nur eine Split-Ebene (kein Baum).
+- Zed-Vorbild: `zed-refrence/zed/crates/workspace/src/pane_group.rs` —
+  `enum Member { Pane(Entity<Pane>), Axis(PaneAxis) }`,
+  `struct PaneAxis { axis: Axis, members: Vec<Member>, flexes: Vec<f32>,
+  bounding_boxes: … }`, `PaneGroup::{split, remove, swap, resize}`,
+  `SplitDirection` (`Up`/`Down`/`Left`/`Right`).
+  `zed-refrence/zed/crates/workspace/src/persistence.rs` +
+  `persistence/model.rs` — `SerializedPaneGroup` (rekursiv).
+- Session-Persistenz heute: `crates/workspace/src/session.rs` (aus T16-006) —
+  Tab-/Layout-Snapshot; T14-001 hat das eingeführt.
+
+## Anweisungen zur Umsetzung
+1. **`pane_group.rs` zum Baum ausbauen**:
+   - `enum Member { Pane(PaneId), Axis(PaneAxis) }`
+   - `struct PaneAxis { axis: Axis (Horizontal|Vertical), members: Vec<Member>,
+     flexes: Vec<f32> }` (Summe der `flexes` = 1.0).
+   - `struct PaneGroup { root: Member }` mit:
+     - `split(target: PaneId, new: PaneId, direction: SplitDirection)` —
+       erzeugt/erweitert eine Achse an der Zielstelle.
+     - `remove(pane: PaneId)` — kollabiert leere Achsen, promotet einzige
+       Kinder.
+     - `resize(axis_path, member_ix, delta)` — passt zwei benachbarte `flexes`
+       an.
+     - `panes() -> Vec<PaneId>`, `find_pane(...)`.
+   - `render(&self, window, cx)` — rekursiv: `Axis` → `flex` Row/Col mit
+     Resize-Handles zwischen den Membern; `Pane` → die Pane-View.
+2. **`Workspace`** hält `PaneGroup` statt des flachen Split-Zustands. Panes
+   sind `Entity<Pane>`, referenziert über `PaneId` (stabile ID). Der aktive
+   Pane bleibt `Workspace`-State (`active_pane: PaneId`).
+3. **Aktionen** neu verdrahten (bleiben im `CommandRegistry`, T17-007, bzw.
+   vorerst im Shell): `split_right`/`split_down`/`split_left`/`split_up`
+   (heute nur right/down) → `PaneGroup::split(active, new, dir)`;
+   `close_pane` → `PaneGroup::remove(active)` + Nachbar aktivieren;
+   `focus_next_pane` → Reihenfolge aus `panes()`.
+4. **Persistenz**: `SerializedPaneGroup` (rekursives Serde-Enum) in
+   `session.rs` integrieren — beim Speichern den Baum + `flexes` +
+   Tab-Zuordnung je Pane serialisieren; beim Laden rekonstruieren. Bestehende
+   Session-Snapshots (flach) müssen weiter laden (Migration: flacher Split →
+   1-Achsen-Baum; fehlender Baum → einzelner Pane).
+5. **Splits pro Dock?** Nein — Splits gelten für den zentralen Workspace-
+   Bereich (Tab-Inhalt). Docks bleiben single-panel (T17-002). In
+   `docs/architecture.md` festhalten.
+6. `cargo run`: mehrfach horizontal + vertikal verschachteln (z.B. 2×2 +
+   ein weiterer Split in einer Zelle); Resize an inneren Grenzen; einzelne
+   Panes schließen bis einer übrig ist; Neustart stellt den exakten Baum +
+   die Verhältnisse wieder her.
+
+## Akzeptanzkriterien
+- [ ] `PaneGroup` ist ein rekursiver `Member`-Baum mit `flexes`; beliebige
+      Verschachtelungstiefe.
+- [ ] `split` in alle vier Richtungen; `remove` kollabiert leere Achsen
+      korrekt; `resize` verändert nur die zwei benachbarten Verhältnisse.
+- [ ] `cargo run`: 2×2-Layout + verschachtelter Sub-Split funktionieren
+      visuell; Resize-Handles an allen inneren Grenzen.
+- [ ] Session-Persistenz: der komplette Baum inkl. Verhältnisse und
+      Tab-Zuordnung überlebt Neustart; alte flache Snapshots laden weiter.
+- [ ] `close_pane` aktiviert einen sinnvollen Nachbarn; `focus_next_pane`
+      läuft die Panes stabil durch.
+- [ ] Gates grün: `cargo fmt --check`, `cargo check --workspace --all-targets`,
+      `cargo clippy --workspace --all-targets -- -D warnings`,
+      `cargo test --workspace` (inkl. neuer PaneGroup-Unit-Tests:
+      split/remove/resize/serde-round-trip).
+
+## Notizen
+- Zeds `pane_group.rs` ist die beste Vorlage — Struktur 1:1 übernehmen,
+  Zed-spezifische Teile (Collab-Cursor, `bounding_boxes` für Drag-Drop von
+  Items) weglassen, bis sie gebraucht werden.
+- Terminal-Panes dürfen beim Split ihre Prozesse **nicht** verlieren
+  (bestehende Regel aus T04-001/T03-005).
+
+## Warnungen
+- ⚠️ `flexes`-Summe muss invariant 1.0 bleiben (Rundungsdrift abfangen) — sonst
+  „wandern" Splits über viele Resizes.
+- ⚠️ Rekursives `render` mit GPUI: auf übermäßiges Neu-Allozieren pro Frame
+  achten (der Baum sollte klein sein, aber `into_any_element` je Knoten kostet).
+  In T21-001 wird das gemessen.
+
+## Weiterführende Tasks
+- [T17-006: `AppShell` → reine Komposition](./T17-006-appshell-composition-only.md)
+- [T17-007: `CommandRegistry`](./T17-007-command-registry.md)
