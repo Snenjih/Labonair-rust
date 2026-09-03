@@ -15,7 +15,8 @@ einem UI-Vokabular besteht. Danach gibt es keine hand-gerollten Buttons/
 Listen/Menüs/Felder mehr außerhalb von `labonair-ui-kit`.
 
 ## Kontext
-- Betroffen: `labonair-panel-hosts`, `labonair-panel-snippets`,
+- Betroffen: `labonair-hosts-ui` (kein Panel — Host-Liste + Formular, wird von
+  `labonair-settings-ui` eingebettet, T19-010), `labonair-panel-snippets`,
   `labonair-panel-ai` (Chat + Composer + ModelPicker + Plan-Mode +
   Agent-Access), `labonair-workspace::views::sftp`,
   `labonair-panel-git-graph`, `labonair-settings-ui` (die generischen Teile;

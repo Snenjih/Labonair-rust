@@ -7,7 +7,7 @@
 18 — Settings-System Zed-Style
 
 ## Abhängigkeiten
-T16-001 (ADR & Ziel-Crate-Graph), T16-007 (`labonair-settings-ui` extrahiert)
+T16-001 (ADR & Ziel-Crate-Graph), T16-007 (`labonair-settings-ui` extrahiert), T19-000 (Settings-Design-Kontrakt)
 
 ## Ziel
 Das Fundament des neuen Settings-Systems: ein Crate `labonair-settings-content`
@@ -48,8 +48,19 @@ mit dem vollständig typisierten `SettingsContent`-Baum (alle Bereiche) und dem
    - `terminal: TerminalContent`
    - `editor: EditorContent` (den heutigen `"editor"`-Key hier eingliedern)
    - `file_manager: FileManagerContent`
-   - `connections: ConnectionsContent` (SSH/Explorer/Host-Availability +
-     die im `subagent-2.md` als fehlend markierten Felder — jetzt modellieren)
+   - `connections: ConnectionsContent` (Explorer/Host-Availability-Polling +
+     die im `subagent-2.md` als fehlend markierten Felder — jetzt modellieren;
+     **die eigentlichen Host-Einträge/Credentials NICHT hier**, siehe `hosts`)
+   - `hosts: HostsContent` — **eigener Top-Level-Bereich** (nicht unter
+     `connections`), Vorbild „Themes ist eigener Bereich"
+     (`docs/architecture.md §8.1`). Enthält: `entries: Vec<HostEntry>`
+     (Name, Adresse, Port, User, Auth-Methode, Jump-Host-Ref, Tunnel-Liste,
+     `last_connected_at`, Gruppe/Tag), `default_shell`, `keepalive`,
+     `ssh_config_import`-Optionen. **Credentials/Secrets** werden **nicht** in
+     `SettingsContent`/`settings.json` serialisiert — nur eine Keyring-Referenz
+     (`credential_ref: Option<String>`); die Secrets bleiben im OS-Keychain
+     (Critical Rule: keine Secrets in SQLite/JSON). Feldnamen 1:1 aus dem
+     heutigen `backend::modules::ssh`/`hosts`-Modell ableiten.
    - `workspace: WorkspaceContent` (command-palette, bookmarks, source-control,
      dock-layout-Referenz)
    - `ai: AiContent` (defaults/providers/behaviour/agents/directives)
@@ -77,17 +88,33 @@ mit dem vollständig typisierten `SettingsContent`-Baum (alle Bereiche) und dem
    (mit `.unwrap_or_default()` je Feld über die `defaults()`), damit der
    bestehende Code (Terminal/Editor/Theme lesen `Preferences`) unverändert
    weiterläuft, bis T19-002 den Store umstellt.
-7. **Tests**: `defaults()` == geparste `default.json`; `MergeFrom` (user über
+7. **Kategorie-Metadaten** (Vorbereitung T19-004): eine kleine, deklarative
+   Liste `AREAS: &[AreaMeta]` mit `{ key, title, slug, kind }`, wobei
+   `kind ∈ { Generated, Custom }`. `Generated` = Felder werden aus dem Typ
+   gerendert (General, Appearance, Terminal, Editor, File Manager, Connections,
+   Workspace). `Custom` = Sonder-Pane als **Top-Level-Kategorie** (Themes,
+   **Hosts**, Shortcuts, AI, MCP, Personalisierung). Diese Liste ist die
+   einzige Stelle, an der eine neue Top-Level-Kategorie registriert wird —
+   „Custom-Top-Level" ist damit ein **sanktionierter Sonderfall**, kein Hack
+   (`docs/settings-guidelines.md` Punkt 4). Kein UI hier, nur die Daten.
+8. **Tests**: `defaults()` == geparste `default.json`; `MergeFrom` (user über
    default, projekt über user); `parse` mit einem kaputten Feld ⇒ Default +
    gemeldeter Fehler, restliche Felder intakt; `SettingsContent → Preferences`
-   Round-Trip der Default-Werte.
+   Round-Trip der Default-Werte; `hosts.entries`-Round-Trip **ohne** Secrets
+   (nur `credential_ref`); jede `AREAS`-`key` trifft ein reales Feld/Submodul.
 
 ## Akzeptanzkriterien
 - [ ] `crates/settings-content/` + `crates/settings-macros/` existieren,
       Workspace-Members, ohne GPUI-/UI-/backend-Deps.
 - [ ] `SettingsContent` deckt alle heutigen `Preferences`-Felder ab **plus**
       die in `subagent-2.md` als fehlend markierten (Connections, Bookmarks,
-      Statusbar-Toggles) — Feldnamen camelCase-serde wie bisher.
+      Statusbar-Toggles) **plus** `hosts: HostsContent` als eigener
+      Top-Level-Bereich — Feldnamen camelCase-serde wie bisher.
+- [ ] `hosts`-Einträge serialisieren **keine** Secrets, nur `credential_ref`
+      (Test).
+- [ ] `AREAS` listet die Top-Level-Kategorien mit `kind` (Generated/Custom);
+      „Themes", „Hosts", „Shortcuts", „AI", „MCP", „Personalisierung" sind
+      `Custom`.
 - [ ] `MergeFrom` + `#[derive(MergeFrom)]` funktionieren; Schicht-Merge
       getestet.
 - [ ] `SettingsContent::defaults()` und `assets/settings/default.json` sind
@@ -110,6 +137,10 @@ mit dem vollständig typisierten `SettingsContent`-Baum (alle Bereiche) und dem
 - ⚠️ `Option<T>` überall macht den Zugriff im restlichen Code umständlich —
   deshalb die `Preferences`-Ableitung als Brücke. Nicht den ganzen Codebase
   jetzt auf `Option`-Zugriffe umstellen.
+- ⚠️ **Keine Secrets in `SettingsContent`.** `hosts.entries` hält nur eine
+  `credential_ref` auf den OS-Keychain — Passwörter/Keys werden nie
+  serialisiert. Der heutige Host-`Credential`-Typ aus `labonair-backend` darf
+  nicht 1:1 in den Baum wandern; nur die nicht-geheimen Felder + die Referenz.
 - ⚠️ camelCase-serde-Keys **exakt** wie heute (`editorVimMode`→`vimMode` war
   laut Handshake schon eine Korrektur) — sonst laden bestehende Dateien nicht.
 - ⚠️ `schemars`-Derive kann bei komplexen Enums zicken — früh `cargo check`

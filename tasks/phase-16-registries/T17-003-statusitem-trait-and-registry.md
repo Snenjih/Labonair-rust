@@ -63,6 +63,11 @@ die Registry.
    - `TransfersStatusItem` — aus `transfers.rs`.
    - `AgentAccessStatusItem` — aus `agent_access` Badge-Popover.
    - `JumpHostsStatusItem`, `BookmarksStatusItem` — die „simple bar buttons".
+     Hinweis: `JumpHostsStatusItem` ruft heute `open_host_manager`
+     (`app_shell.rs:1806`); dieser Aufruf folgt dem Thema-2-Umbau — bis
+     T17-009/T19-010 bleibt er (Host-Tab), danach zeigt er auf
+     `OpenHostSettings` bzw. die Palette-`Page::Hosts`. Hier nur 1:1
+     übernehmen, nicht neu verdrahten.
    - **Panel-Toggle-Items**: entweder ein einziges
      `PanelTogglesStatusItem`, das über die `PanelRegistry` iteriert und pro
      Panel einen Toggle rendert (bevorzugt — T18-003 baut es aus), oder je

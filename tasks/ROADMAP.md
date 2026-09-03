@@ -168,7 +168,7 @@ Nummerierung: `T{NN}-{OOO}` wobei NN die Phase (01–15) und OOO die Task-Nummer
 3. **Tabs** funktionieren (neu, schließen, wechseln, splitten).
 4. **File-Explorer** zeigt den lokalen Dateibaum.
 5. **Editor** öffnet Dateien mit Syntax-Highlighting (+ Vim optional).
-6. **SSH-UI** zeigt Host-Manager und Verbindungs-Status; SSH-Terminals laufen.
+6. **SSH-UI** — Hosts verbinden (Command-Palette-`Page::Hosts` + `＋▾`-Menü) und verwalten (Settings › Hosts, ab Rework); Verbindungs-Status sichtbar; SSH-Terminals laufen. (Bis Phase 18: noch als Host-Manager-Tab.)
 7. **SFTP** zeigt Remote-Dateiliste und unterstützt Transfers.
 8. **Git-UI** zeigt Staging, Diff, Branches, Stash.
 9. **Git-Graph** rendert den Commit-Graph.
@@ -209,6 +209,22 @@ Details: [`docs/architecture.md`](../docs/architecture.md),
 Planungsbericht: [`bericht-architektur-rework-roadmap.md`](../bericht-architektur-rework-roadmap.md),
 Vergleichsbericht: [`vergleichsbericht-zed-vs-rust.md`](../vergleichsbericht-zed-vs-rust.md).
 
+**Workflow-Rework (Themen 1–3, in die Phasen 15–18 integriert — nach T16-005
+vereinbart).** Erweitert den Plan, ohne Muster/Regeln/Graph zu brechen; jede
+Abweichung ist in [`docs/architecture.md §8`](../docs/architecture.md)
+festgehalten. Begründung: [`bericht-workflow-rework.md`](../bericht-workflow-rework.md).
+1. **Tabs sind optional** — alle Tabs schließbar → leere Workspace-Fläche
+   (Doppelklick → lokales Terminal); `TabKind::Home` entfällt (T17-009,
+   T18-001).
+2. **Host-Zugang ohne Host-Manager-Tab/-Panel** — Verbinden über
+   Command-Palette-`Page::Hosts` (`Enter` = SSH, `Shift+Enter` = SFTP) +
+   `＋▾`-Menü; Verwalten über **Settings › Hosts** (T16-007, T16-008, T17-001,
+   T19-001, T19-010).
+3. **Settings-Redesign** — Zed-Settings-System wie geplant, **plus**
+   Design-Kontrakt (`docs/settings-guidelines.md`), Kategorie→Abschnitt-
+   Disclosure-Navigation und ein erstklassiger Pfad für Custom-Top-Level-
+   Kategorien (T19-000, T19-001, T19-004, T19-010).
+
 ### Phase 15 — Crate-Zerlegung & Fundament ·`/tasks/phase-15-crate-split/`
 | Task | Titel | Abhängigkeit |
 |---|---|---|
@@ -218,27 +234,28 @@ Vergleichsbericht: [`vergleichsbericht-zed-vs-rust.md`](../vergleichsbericht-zed
 | **T16-004** | `labonair-command-palette` extrahieren | T16-002, T16-003 |
 | **T16-005** | `labonair-panel` Contracts-Crate | T16-001 |
 | **T16-006** | `labonair-workspace` extrahieren | T16-002, T16-005 |
-| **T16-007** | `labonair-settings-ui` extrahieren | T16-002, T16-004 |
-| **T16-008** | Panel-Crates ausgliedern (explorer/scm/git-graph/hosts/snippets/ai) | T16-006, T16-005 |
+| **T16-007** | `labonair-settings-ui` extrahieren (+ Palette-`Page::Hosts` mit `Enter`/`Shift+Enter`, Thema 2) | T16-002, T16-004 |
+| **T16-008** | Panel-Crates ausgliedern (explorer/scm/git-graph/snippets/ai) + `labonair-hosts-ui` (kein Panel, Thema 2) | T16-006, T16-005 |
 | **T16-009** | `labonair-shell` + `labonair-app` schlank | T16-006–008 |
 | **T16-010** | Build-Hygiene & Baseline (Dep-Regeln, Crate-Graph, Zeit-Baseline) | T16-009 |
 
 ### Phase 16 — Root-Objekt & Registries ·`/tasks/phase-16-registries/`
 | Task | Titel | Abhängigkeit |
 |---|---|---|
-| **T17-001** | `Panel`-Trait & `PanelRegistry` verdrahten (`enum SidebarPanel` weg) | Phase 15 |
+| **T17-001** | `Panel`-Trait & `PanelRegistry` verdrahten (`enum SidebarPanel` weg; **kein Hosts-Panel**) | Phase 15 |
 | **T17-002** | `Dock`-Modell (Links/Rechts/Unten), mehrere Panels je Dock | T17-001 |
 | **T17-003** | `StatusItem`-Trait & `StatusItemRegistry` (`render_bar_item`-`match` weg) | T16-005, T17-001 |
-| **T17-004** | `PaneGroup` — rekursiver Split-Baum + Persistenz | T16-006, T17-002 |
+| **T17-004** | `PaneGroup` — rekursiver Split-Baum + Persistenz (**`Option`ale Wurzel**) | T16-006, T17-002 |
 | **T17-005** | `ModalLayer` + `ToastLayer` (Overlays entkoppeln, `drain_pending_*` weg) | T16-006, T16-003, T16-004 |
 | **T17-006** | `AppShell` → reine Komposition (God-Object auflösen) | T17-002–005 |
 | **T17-007** | `CommandRegistry` (Palette + Keymap teilen die Registry) | T16-004, T17-006 |
 | **T17-008** | `AppEvent`-Bus entscheiden (nutzen oder streichen) | T17-006 |
+| **T17-009** | Tabs optional — Empty-Workspace-State + `TabKind::Home`/Host-Manager-Tab weg (Thema 1) | T17-004, T17-006 |
 
 ### Phase 17 — Neues Layout & Statusbar-Personalisierung ·`/tasks/phase-17-layout/`
 | Task | Titel | Abhängigkeit |
 |---|---|---|
-| **T18-001** | Titlebar-Redesign — nur Tabs + ein Icon-Button | T17-006 |
+| **T18-001** | Titlebar-Redesign — Tabs + `＋▾`-Neuer-Tab-Menü + rechter Icon-Button; Empty-Surface (Thema 1) | T17-006, T17-009 |
 | **T18-002** | Suche als transientes Overlay (`Cmd+F`) | T17-005, T18-001 |
 | **T18-003** | Statusbar links — Panel-Steuerung (Activity-Rail weg) | T17-002, T17-003 |
 | **T18-004** | Statusbar rechts — Info-Dropdowns | T17-003, T18-003 |
@@ -249,15 +266,17 @@ Vergleichsbericht: [`vergleichsbericht-zed-vs-rust.md`](../vergleichsbericht-zed
 ### Phase 18 — Settings-System Zed-Style ·`/tasks/phase-18-settings-core/`
 | Task | Titel | Abhängigkeit |
 |---|---|---|
-| **T19-001** | `labonair-settings-content` — typisierter Baum + `MergeFrom` | T16-001, T16-007 |
+| **T19-000** | Settings-Design-Kontrakt festschreiben (`docs/settings-guidelines.md` + Critical Rule 9) (Thema 3) | T16-007 |
+| **T19-001** | `labonair-settings-content` — typisierter Baum + `MergeFrom` (**`hosts` als eigener Top-Level-Bereich**) | T16-001, T16-007, T19-000 |
 | **T19-002** | `SettingsStore` + Layer-Merge + `Settings`-Trait/Registrierung | T19-001 |
 | **T19-003** | Projekt-/Ordner-Settings (`.labonair/settings.json`, Whitelist) | T19-002 |
-| **T19-004** | Settings-UI aus dem Modell generieren (`FIELDS`-Array weg) | T19-002, T16-007 |
+| **T19-004** | Settings-UI aus dem Modell generieren (`FIELDS`-Array weg) + Kategorie→Abschnitt-Disclosure-Navigation + Custom-Top-Level-Pfad (Thema 3) | T19-002, T16-007, T19-000 |
 | **T19-005** | Rohe `settings.json` editierbar (kommentar-erhaltend) | T19-002, T19-004 |
 | **T19-006** | JSON-Schema-Generierung + Validierung | T19-001, T19-005 |
 | **T19-007** | Globale Settings-Suche über alle Seiten | T19-004 |
 | **T19-008** | Keymap als Datei mit Kontexten + Chords (`keymap.json`) | T17-007, T19-002 |
-| **T19-009** | Settings-Migrator (`preferences`/`editor`/`mcp` → `SettingsContent`, Keybinds → `keymap.json`) | T19-004, T19-008 |
+| **T19-009** | Settings-Migrator (`preferences`/`editor`/`mcp` → `SettingsContent`, Keybinds → `keymap.json`, SQLite-Hosts → `hosts.entries`) | T19-004, T19-008, T19-010 |
+| **T19-010** | Settings › Hosts — Host-/Credential-Verwaltung als Top-Level-Kategorie; `TabKind::Hosts` weg (Thema 2) | T19-004, T16-008, T19-001 |
 
 ### Phase 19 — UI-Kit & Theme-System ·`/tasks/phase-19-ui-kit/`
 | Task | Titel | Abhängigkeit |
@@ -285,8 +304,9 @@ Vergleichsbericht: [`vergleichsbericht-zed-vs-rust.md`](../vergleichsbericht-zed
 | **T22-001** | vendored `gpui` — Entscheidungs-Task (P4, Gate) | T21-004, T21-005 |
 
 ### Rework-Erfolgskriterien (zusätzlich zu 1–21)
-22. **Modularität** — neues Panel / Statusbar-Item / Kommando / `bool`-Setting = je *eine* Registrierungszeile; Crate-Graph azyklisch; `app_shell.rs` < 400 Z., kein `drain_pending_*`.
-23. **Layout-Vertrag** — Titlebar nur Tabs + ein Button; Statusbar links Panel-Steuerung / rechts Info-Dropdowns; Overlays nur `ModalLayer`/`ToastLayer`.
+22. **Modularität** — neues Panel / Statusbar-Item / Kommando / `bool`-Setting / Custom-Settings-Kategorie = je *eine* Registrierungszeile; Crate-Graph azyklisch; `app_shell.rs` < 400 Z., kein `drain_pending_*`.
+23. **Layout-Vertrag** — Titlebar nur Tabs + `＋▾`-Menü + ein rechter Button; Statusbar links Panel-Steuerung / rechts Info-Dropdowns; Overlays nur `ModalLayer`/`ToastLayer`.
 24. **Personalisierung** — Statusbar-Items per RMB links/rechts/aus (persistent); Panels zwischen Docks (L/R/B) verschiebbar; mehrere Themes + Icon-Themes + UI-Dichte; `keymap.json` mit Kontexten/Chords; Projekt-`.labonair/settings.json` greift.
-25. **Settings-Modell** — eine typisierte `SettingsContent`-Quelle; UI generiert (kein paralleles `FIELDS`-Array); `settings.json` roh editierbar mit Kommentar-Erhalt; Migrator verliert keine Nutzerdaten.
+25. **Settings-Modell** — eine typisierte `SettingsContent`-Quelle; UI generiert (kein paralleles `FIELDS`-Array); `settings.json` roh editierbar mit Kommentar-Erhalt; Migrator verliert keine Nutzerdaten; alle Seiten folgen `docs/settings-guidelines.md` (ein Navigations-Modell, Custom-Panes nur im Standard-Chrome).
 26. **Performance** — Idle = 0 Kern-View-Renders; kein Pro-Frame-Recompute; inkrementeller `-p labonair-shell`-Build deutlich schneller als der alte `app_shell.rs`-Änderungsfall.
+27. **Workflow-Rework (Themen 1–3)** — (a) alle Tabs schließbar → leere Fläche, Doppelklick öffnet lokales Terminal, `startup_tab = empty` greift; (b) der Host-Manager ist weder Tab noch Panel: Verbinden nur über Palette-`Page::Hosts` (`Enter`/`Shift+Enter`) + `＋▾`-Menü, Verwalten nur über Settings › Hosts; (c) „Hosts" ist eine erstklassige Custom-Top-Level-Settings-Kategorie.

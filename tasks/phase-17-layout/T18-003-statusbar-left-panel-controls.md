@@ -49,9 +49,11 @@ alte 44px-Activity-Rail und die Sidebar-Umschaltleiste.
 4. **Alte Teile entfernen**: 44px-Activity-Rail, `render_panel_toggle`,
    `render_ai_toggle` (AI ist normales Panel), Sidebar-Umschaltleiste —
    restlos.
-5. **Default-Sichtbarkeit**: alle sechs Panels erscheinen initial als Toggle.
-   `git-graph` (Bottom-Dock) ebenfalls — sein Toggle schaltet den Bottom-Dock.
-6. `cargo run`: links in der Statusbar sechs Panel-Toggles; Klick öffnet/
+5. **Default-Sichtbarkeit**: alle fünf Panels (Explorer, SCM, Git-Graph,
+   Snippets, AI) erscheinen initial als Toggle. `git-graph` (Bottom-Dock)
+   ebenfalls — sein Toggle schaltet den Bottom-Dock. **Kein Hosts-Toggle**
+   (Host-Manager ist kein Panel — `docs/architecture.md §8.1`).
+6. `cargo run`: links in der Statusbar fünf Panel-Toggles; Klick öffnet/
    schließt das jeweilige Panel im richtigen Dock; aktives Panel visuell
    markiert; Rechtsklick → Andock-Menü; Tooltips mit Titel + Keybind;
    Kompakt-Modus bei schmalem Fenster.

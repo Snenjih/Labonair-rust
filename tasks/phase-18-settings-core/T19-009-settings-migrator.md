@@ -1,4 +1,4 @@
-# T19-009: Settings-Migrator (`preferences`/`editor`/`mcp` → `SettingsContent`, Keybinds → `keymap.json`)
+# T19-009: Settings-Migrator (`preferences`/`editor`/`mcp` → `SettingsContent`, Keybinds → `keymap.json`, SQLite-Hosts → `hosts.entries`)
 
 ## Status
 📋 Geplant
@@ -7,13 +7,15 @@
 18 — Settings-System Zed-Style
 
 ## Abhängigkeiten
-T19-004 (Settings-UI aus Modell), T19-008 (Keymap als Datei)
+T19-004 (Settings-UI aus Modell), T19-008 (Keymap als Datei), T19-010 (Settings › Hosts)
 
 ## Ziel
 Ein einmaliger, idempotenter Migrator, der die alte `labonair-settings.json`
 (getrennte Keys `preferences`, `editor`, `mcp`, `keybinds`-Blob) in das neue
-flache `SettingsContent`-Layout überführt und die Keybind-Overrides in eine
-`keymap.json` schreibt — ohne Nutzerdaten zu verlieren.
+flache `SettingsContent`-Layout überführt, die Keybind-Overrides in eine
+`keymap.json` schreibt und die **SQLite-Hosts** (`backend::modules::hosts`) in
+`hosts.entries` (nicht-geheime Felder) + OS-Keychain (Secrets) hydratisiert —
+ohne Nutzerdaten zu verlieren.
 
 ## Kontext
 - Alt: `crates/backend/src/modules/settings/` — `preferences.rs`
@@ -61,22 +63,34 @@ flache `SettingsContent`-Layout überführt und die Keybind-Overrides in eine
    den Bereichs-Keys; alte `preferences`/`editor`-Keys entfernt **oder** nach
    `preferences_legacy`/`editor_legacy` umbenannt (Default: umbenennen —
    Sicherheitsnetz, wie T18-006).
-5. **Aufruf**: in `bootstrap` (T17-006), **vor** `labonair_settings::init(cx)`
+5. **SQLite-Hosts → `hosts.entries`** (Thema 2, `docs/architecture.md §8.1`):
+   - Alle Hosts aus `backend::modules::hosts` (rusqlite) lesen; je Host die
+     **nicht-geheimen** Felder nach `hosts.entries` (`SettingsContent`)
+     schreiben, das Secret (falls in SQLite/Keychain vorhanden) in den
+     OS-Keychain legen und `credential_ref` setzen.
+   - **Kein** Secret landet in `labonair-settings.json` (Test).
+   - Idempotent: zweiter Lauf erkennt bereits migrierte Hosts (Marker
+     `hostsMigrated: true` o.ä.) und macht nichts.
+   - SQLite-Tabelle **nicht** löschen (Rückweg offen) — nur nicht mehr lesen.
+6. **Aufruf**: in `bootstrap` (T17-006), **vor** `labonair_settings::init(cx)`
    (T19-002) und vor dem Keymap-Load (T19-008). Reihenfolge:
-   `migrate_bar_item_placements` (T18-006) → `migrate_settings_v1_to_v2` →
-   `settings::init` → `keymap::load`.
-6. **Tests**:
+   `migrate_bar_item_placements` (T18-006) → `migrate_settings_v1_to_v2`
+   (inkl. Hosts-Hydrate) → `settings::init` → `keymap::load`.
+7. **Tests**:
    - Voll ausgefüllte alte Datei → jedes Feld landet am neuen Ort; Zählung
      alt==neu (minus bewusst entfernte, gelistet).
    - Keybind-Overrides inkl. Unbind (`""`) → korrektes `keymap.json` mit
      `context` + `null`.
+   - SQLite-Hosts → `hosts.entries` (nicht-geheim) + Keychain (Secret);
+     `settings.json` enthält **kein** Secret; zweiter Lauf = no-op.
    - Zweiter Aufruf = no-op (`schemaVersion: 2` erkannt).
    - Datei bereits v2 → unangetastet.
    - Teilweise alte Datei (nur `preferences`, kein `editor`) → funktioniert.
-7. `cargo run` mit einer echten alten `labonair-settings.json` (aus einem
-   Pre-Rework-Build): App startet, alle bisherigen Einstellungen sind in der
-   neuen GUI sichtbar, Custom-Keybinds funktionieren, `.bak` + `_legacy` sind
-   da.
+8. `cargo run` mit einer echten alten `labonair-settings.json` + SQLite-Hosts
+   (aus einem Pre-Rework-Build): App startet, alle bisherigen Einstellungen
+   sind in der neuen GUI sichtbar, Custom-Keybinds funktionieren, die Hosts
+   erscheinen in Settings › Hosts und der Command-Palette, `.bak` + `_legacy`
+   sind da.
 
 ## Akzeptanzkriterien
 - [ ] `migrate_settings_v1_to_v2` ist idempotent, macht `.bak`, erkennt
@@ -86,6 +100,8 @@ flache `SettingsContent`-Layout überführt und die Keybind-Overrides in eine
 - [ ] `"editor"`- und `"mcp"`-Keys wandern in die neuen Bereiche.
 - [ ] Keybind-Overrides → `keymap.json` mit `context` + `null`-Unbind; keine
       Datei, wenn es keine Overrides gab.
+- [ ] SQLite-Hosts sind nach `hosts.entries` + Keychain hydratisiert, kein
+      Secret in `settings.json`, idempotent; SQLite-Tabelle unangetastet.
 - [ ] Alte Keys als `*_legacy` erhalten; neue Datei hat `schemaVersion: 2`.
 - [ ] Aufreihung beim Start korrekt (bar-items → settings-v2 → settings::init
       → keymap::load).

@@ -71,8 +71,15 @@ kein manuelles `observe`-Boilerplate für ein Dutzend Entities.
    registriert. Wenn T17-007 vorgezogen wird, hier direkt komplett.
 6. **Zeilenbudget**: `app_shell.rs` < ~400 Z. nach der Task (Titlebar-Inhalt
    ist eigene Datei, T18-001).
-7. `cargo run`: vollständige App, End-to-End identisch — nur der Shell-Code ist
-   klein.
+7. **Leerer Workspace**: `render` muss auch mit 0 Tabs / `PaneGroup::root ==
+   None` sauber komponieren (Titlebar + leerer Workspace-Bereich + Statusbar +
+   Layer). Kein `unwrap` auf einen aktiven Tab/Pane im Shell-`render`. Die
+   eigentliche Empty-Surface (Hinweis, Doppelklick→Terminal) baut T18-001; das
+   `Option`-Audit über `Workspace` macht T17-009. Hier nur: Shell rendert
+   nicht kaputt, wenn nichts offen ist.
+8. `cargo run`: vollständige App, End-to-End identisch — nur der Shell-Code ist
+   klein; zusätzlich einmal alle Tabs schließen → App bleibt stehen (leerer
+   Mittelbereich, Titlebar/Statusbar da).
 
 ## Akzeptanzkriterien
 - [ ] `struct AppShell` hat ≤ 8 Felder; `AppShell::new` hat genau ein

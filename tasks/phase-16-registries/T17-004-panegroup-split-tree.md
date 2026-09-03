@@ -15,6 +15,12 @@ echten rekursiven Split-Baum nach Zed-Vorbild ersetzen: beliebig tief
 verschachtelte horizontale/vertikale Splits, mit Größen-Verhältnissen und
 vollständiger Persistenz.
 
+**Zusätzlich (Thema 1):** Die Wurzel des Baums ist **optional**. Ein Workspace
+ohne offene Tabs hat *keinen* Pane-Baum (`root: None`) und rendert nichts bzw.
+die Empty-Surface (die visuelle Ausgestaltung macht T18-001). `remove` des
+letzten Panes führt zu `root = None` — das ist **kein** Fehlerfall mehr.
+Siehe `docs/architecture.md §8.2`.
+
 ## Kontext
 - Heute: `crates/workspace/src/pane.rs` + `pane_group.rs` (aus T16-006) —
   `enum SplitAxis`, ein Split-Container. `Workspace::active_has_split`,
@@ -35,29 +41,37 @@ vollständiger Persistenz.
    - `enum Member { Pane(PaneId), Axis(PaneAxis) }`
    - `struct PaneAxis { axis: Axis (Horizontal|Vertical), members: Vec<Member>,
      flexes: Vec<f32> }` (Summe der `flexes` = 1.0).
-   - `struct PaneGroup { root: Member }` mit:
+   - `struct PaneGroup { root: Option<Member> }` mit:
      - `split(target: PaneId, new: PaneId, direction: SplitDirection)` —
-       erzeugt/erweitert eine Achse an der Zielstelle.
+       erzeugt/erweitert eine Achse an der Zielstelle. Bei `root == None`
+       wird `new` die neue Wurzel (`Member::Pane`).
      - `remove(pane: PaneId)` — kollabiert leere Achsen, promotet einzige
-       Kinder.
+       Kinder; Entfernen des letzten Panes ⇒ `root = None` (kein Fehler).
      - `resize(axis_path, member_ix, delta)` — passt zwei benachbarte `flexes`
        an.
-     - `panes() -> Vec<PaneId>`, `find_pane(...)`.
+     - `panes() -> Vec<PaneId>` (leer bei `root == None`), `find_pane(...)`,
+       `is_empty() -> bool`.
    - `render(&self, window, cx)` — rekursiv: `Axis` → `flex` Row/Col mit
-     Resize-Handles zwischen den Membern; `Pane` → die Pane-View.
+     Resize-Handles zwischen den Membern; `Pane` → die Pane-View;
+     `None` → leeres Element (die Empty-Surface rendert T18-001 auf
+     Workspace-Ebene, nicht hier).
 2. **`Workspace`** hält `PaneGroup` statt des flachen Split-Zustands. Panes
    sind `Entity<Pane>`, referenziert über `PaneId` (stabile ID). Der aktive
-   Pane bleibt `Workspace`-State (`active_pane: PaneId`).
+   Pane ist `Workspace`-State (`active_pane: Option<PaneId>` — `None` bei
+   leerem Baum). Kein Code darf einen aktiven Pane voraussetzen; das volle
+   `Option`-Audit über `Workspace` macht T17-009, hier nur die Signatur
+   richtig anlegen.
 3. **Aktionen** neu verdrahten (bleiben im `CommandRegistry`, T17-007, bzw.
    vorerst im Shell): `split_right`/`split_down`/`split_left`/`split_up`
    (heute nur right/down) → `PaneGroup::split(active, new, dir)`;
    `close_pane` → `PaneGroup::remove(active)` + Nachbar aktivieren;
    `focus_next_pane` → Reihenfolge aus `panes()`.
-4. **Persistenz**: `SerializedPaneGroup` (rekursives Serde-Enum) in
-   `session.rs` integrieren — beim Speichern den Baum + `flexes` +
+4. **Persistenz**: `SerializedPaneGroup` (rekursives Serde-Enum, `Option`ale
+   Wurzel) in `session.rs` integrieren — beim Speichern den Baum + `flexes` +
    Tab-Zuordnung je Pane serialisieren; beim Laden rekonstruieren. Bestehende
    Session-Snapshots (flach) müssen weiter laden (Migration: flacher Split →
-   1-Achsen-Baum; fehlender Baum → einzelner Pane).
+   1-Achsen-Baum; fehlender Baum → einzelner Pane; **leerer/kein Baum →
+   `root = None`**, gültig).
 5. **Splits pro Dock?** Nein — Splits gelten für den zentralen Workspace-
    Bereich (Tab-Inhalt). Docks bleiben single-panel (T17-002). In
    `docs/architecture.md` festhalten.
@@ -67,10 +81,12 @@ vollständiger Persistenz.
    die Verhältnisse wieder her.
 
 ## Akzeptanzkriterien
-- [ ] `PaneGroup` ist ein rekursiver `Member`-Baum mit `flexes`; beliebige
-      Verschachtelungstiefe.
-- [ ] `split` in alle vier Richtungen; `remove` kollabiert leere Achsen
-      korrekt; `resize` verändert nur die zwei benachbarten Verhältnisse.
+- [ ] `PaneGroup` ist ein rekursiver `Member`-Baum mit `flexes` und
+      **`Option`aler Wurzel**; beliebige Verschachtelungstiefe.
+- [ ] `split` in alle vier Richtungen (inkl. aus `root == None` heraus);
+      `remove` kollabiert leere Achsen korrekt und ergibt bei letztem Pane
+      `root = None` ohne Panic; `resize` verändert nur die zwei benachbarten
+      Verhältnisse.
 - [ ] `cargo run`: 2×2-Layout + verschachtelter Sub-Split funktionieren
       visuell; Resize-Handles an allen inneren Grenzen.
 - [ ] Session-Persistenz: der komplette Baum inkl. Verhältnisse und
@@ -99,3 +115,4 @@ vollständiger Persistenz.
 ## Weiterführende Tasks
 - [T17-006: `AppShell` → reine Komposition](./T17-006-appshell-composition-only.md)
 - [T17-007: `CommandRegistry`](./T17-007-command-registry.md)
+- [T17-009: Tabs optional & Empty-Workspace](./T17-009-optional-tabs-empty-workspace.md)
