@@ -4,7 +4,71 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
-## Last Session: 2026-09-03 (T16-009 — `labonair-shell` extracted, `crates/ui` deleted)
+## Last Session: 2026-09-03 (T16-010 — build hygiene, crate-graph lint, perf baseline · **Phase 15 COMPLETE**)
+
+Tenth and final code task of Phase 15. No crate source touched — this task adds
+tooling, CI enforcement, docs and a baseline.
+
+### What Was Done (T16-010)
+- **`scripts/check-crate-deps.sh` + `scripts/check_crate_deps.py`** — mechanical
+  guard for `docs/architecture.md` §3. Parses `cargo metadata --no-deps` for the
+  workspace-internal edges, then enforces: a **per-crate allow-list** (each entry
+  annotated with the §3 rule it follows), **acyclicity** (memoised DFS), and
+  transitive **must-not-reach** invariants (no `panel-*` reaches `shell` by any
+  path; no *direct* `panel→panel` edge; `panel` never reaches
+  `workspace`/`shell`; `backend`/`ai`/`editor` reach no UI crate; `ui-kit` reach
+  limits). Green for the real graph; verified it fails on an injected
+  `panel-ai → panel-scm` edge, then reverted.
+- **Two accepted deviations** encoded in the allow-list with `[deviation]`
+  comments + written up in `docs/architecture.md` §8.5:
+  `labonair-terminal → labonair-theme` (ANSI palette; terminal also renders GPUI
+  cells) and `labonair-panel-ai → {command-palette, editor}` (slash-command
+  model + composer buffer). Panels transitively reaching `panel-git-graph`
+  *through* `workspace` is sanctioned per §8.4 — the check only forbids direct
+  panel→panel and any path to `shell`.
+- **CI**: new `crate-deps` job in `.github/workflows/ci.yml` (ubuntu, ~10 min,
+  blocking) running `scripts/check-crate-deps.sh`. A PR with a forbidden edge
+  goes red.
+- **Crate-graph doc**: `scripts/gen-crate-graph.sh` + `scripts/gen_crate_graph.py`
+  emit `docs/assets/crate-graph.dot` + a self-contained tiered
+  `docs/assets/crate-graph.svg` (no Graphviz on this box; the script uses `dot`
+  if present, else a built-in tiered renderer) and print the Markdown adjacency
+  list now embedded in `docs/architecture.md` **§9 "Ist-Graph after Phase 15"**
+  (20 crates, 81 edges, 8 tiers).
+- **`docs/perf-baseline.md`** — environment (Xeon E5-2695 v4, 4 vCPU, rustc
+  1.98.0, 2026-09-03) + measurements: cold `cargo check --workspace
+  --all-targets` **327 s**, warm **2 s**, clippy-after-check **23 s**,
+  **incremental `cargo check -p labonair-shell` after a 1-line edit in
+  `app_shell.rs` ≈ 3 s** (stabilised; a 158 s first-run outlier is explained).
+  The ~3 s incremental is the key number for T21-002 — the split means a
+  1-line `app_shell.rs` edit no longer recompiles the old `ui` monolith.
+
+### Coordinator-forced deviations (recorded)
+- `cargo test --workspace` is **disk-banned** on this VPS. Gate actually run:
+  `cargo fmt --check` ✓, `cargo check --workspace --all-targets` ✓,
+  `cargo clippy --workspace --all-targets -- -D warnings` ✓,
+  `scripts/check-crate-deps.sh` ✓. No crate source was modified, so there is no
+  touched crate to run `cargo test -p` against.
+- Baseline omits cold/warm `cargo build --release` and `cargo test --workspace`
+  timings (disk budget) — deferred to T21-002 on CI hardware. Noted in
+  `docs/perf-baseline.md`.
+
+### State
+- Branch `master`. **Phase 15 (T16-001 … T16-010) is COMPLETE** — the crate
+  graph stands: 20 crates, acyclic, CI-enforced.
+- Untracked concurrent-session edits left alone: `docs/adr/0001-crate-decomposition.md`
+  (modified by another session — NOT staged), `bericht-*.md`, `zed-refrence/`.
+
+### Next Task
+**T17-001** — `tasks/phase-16-registries/T17-001-panel-trait-and-registry.md`
+(`Panel` trait + `PanelRegistry` wiring). Its dep (T16-008 panel crates) is Done.
+
+### Blockers
+None.
+
+---
+
+## Session: 2026-09-03 (T16-009 — `labonair-shell` extracted, `crates/ui` deleted)
 
 Ninth code task of the architecture rework. The `crates/ui` monolith is now
 **gone**. Pure mechanical move — `app_shell.rs` is unchanged (its diet is

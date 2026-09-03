@@ -14,6 +14,19 @@ env:
   RUSTFLAGS: -D warnings
 
 jobs:
+  crate-deps:
+    name: Crate dependency rules (docs/architecture.md §3)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Check crate dependency graph
+        run: scripts/check-crate-deps.sh
+
   macos:
     name: macOS (fmt · check · clippy · test)
     runs-on: macos-latest

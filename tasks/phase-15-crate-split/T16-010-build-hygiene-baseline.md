@@ -1,7 +1,7 @@
 # T16-010: Build-Hygiene & Baseline
 
 ## Status
-📋 Geplant
+✅ Done
 
 ## Phase
 15 — Crate-Zerlegung & Fundament
