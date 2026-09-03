@@ -9,6 +9,7 @@ pub mod fs;
 pub mod git;
 pub mod hosts;
 pub mod mcp;
+pub mod model_prefs;
 pub mod pty;
 pub mod scrollback;
 pub mod secrets;

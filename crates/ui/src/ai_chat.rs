@@ -663,7 +663,10 @@ use gpui::{
     HighlightStyle, InteractiveElement, IntoElement, ParentElement, Render, ScrollHandle,
     ScrollWheelEvent, SharedString, StatefulInteractiveElement, Styled, StyledText, Window,
 };
-use labonair_ai::{find_model, MessageStatus, Role, SessionToolCall, ToolCallStatus, MODELS};
+use labonair_ai::{
+    find_model, MessageStatus, ProviderId, Role, SessionToolCall, ToolCallStatus, MODELS,
+};
+use labonair_backend::modules::model_prefs::{self, ModelPrefs};
 use labonair_editor::diff::{ChangeTag, Diff};
 use labonair_editor::{Language, SyntaxHighlighter};
 
@@ -902,6 +905,24 @@ struct ChatColors {
     link: gpui::Hsla,
 }
 
+/// ModelPicker tab (reference: All / Favorites / Recent).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ModelTab {
+    All,
+    Favorites,
+    Recent,
+}
+
+impl ModelTab {
+    fn label(self) -> &'static str {
+        match self {
+            ModelTab::All => "All",
+            ModelTab::Favorites => "Favorites",
+            ModelTab::Recent => "Recent",
+        }
+    }
+}
+
 /// The GPUI chat panel — renders off an [`AiChatStore`] and owns the composer.
 pub struct AiChatView {
     store: Entity<AiChatStore>,
@@ -921,6 +942,16 @@ pub struct AiChatView {
     session_menu: bool,
     /// Model-picker dropdown open state (T16-019 — was a click-cycle).
     model_menu: bool,
+    /// ModelPicker: active tab (All / Favorites / Recent).
+    model_tab: ModelTab,
+    /// ModelPicker: provider-rail filter (`None` = all providers).
+    model_provider: Option<ProviderId>,
+    /// ModelPicker: fuzzy search text.
+    model_search: String,
+    /// ModelPicker: lazily-built search input.
+    model_search_input: Option<Entity<InputState>>,
+    /// Favourites + recently-used model ids (persisted).
+    model_prefs: ModelPrefs,
     /// Agent-switcher dropdown open state.
     agent_menu: bool,
     /// AI agents (builtin + user) + the active id (persisted via the backend).
@@ -977,6 +1008,11 @@ impl AiChatView {
             stick_bottom: true,
             session_menu: false,
             model_menu: false,
+            model_tab: ModelTab::All,
+            model_provider: None,
+            model_search: String::new(),
+            model_search_input: None,
+            model_prefs: model_prefs::load(),
             agent_menu: false,
             agents: all,
             active_agent_id,
@@ -1520,6 +1556,72 @@ impl AiChatView {
             }))
     }
 
+    /// Models visible under the current tab / provider / search filter.
+    fn visible_models(&self) -> Vec<&'static labonair_ai::ModelInfo> {
+        let q = self.model_search.trim().to_lowercase();
+        let mut v: Vec<&'static labonair_ai::ModelInfo> = MODELS
+            .iter()
+            .filter(|m| {
+                let tab_ok = match self.model_tab {
+                    ModelTab::All => true,
+                    ModelTab::Favorites => self.model_prefs.is_favorite(m.id),
+                    ModelTab::Recent => self.model_prefs.recent.iter().any(|r| r == m.id),
+                };
+                let prov_ok = self.model_provider.is_none_or(|p| m.provider == p);
+                let search_ok = q.is_empty()
+                    || m.label.to_lowercase().contains(&q)
+                    || m.id.to_lowercase().contains(&q)
+                    || m.provider.label().to_lowercase().contains(&q);
+                tab_ok && prov_ok && search_ok
+            })
+            .collect();
+        if self.model_tab == ModelTab::Recent {
+            v.sort_by_key(|m| {
+                self.model_prefs
+                    .recent
+                    .iter()
+                    .position(|r| r == m.id)
+                    .unwrap_or(usize::MAX)
+            });
+        }
+        v
+    }
+
+    fn select_model(&mut self, id: &'static str, cx: &mut Context<Self>) {
+        self.store.update(cx, |s, cx| s.set_model_ref(id, cx));
+        self.model_prefs.push_recent(id);
+        let _ = model_prefs::save(&self.model_prefs);
+        self.model_menu = false;
+        cx.notify();
+    }
+
+    fn toggle_model_favorite(&mut self, id: &str, cx: &mut Context<Self>) {
+        self.model_prefs.toggle_favorite(id);
+        let _ = model_prefs::save(&self.model_prefs);
+        cx.notify();
+    }
+
+    /// Lazily build the ModelPicker search input (needs a `Window`).
+    fn ensure_model_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.model_search_input.is_some() {
+            return;
+        }
+        let input = cx.new(|cx| InputState::new(window, cx).placeholder("Search models\u{2026}"));
+        let view = cx.entity();
+        window
+            .subscribe(&input, cx, move |input, ev: &InputEvent, _w, cx| {
+                if matches!(ev, InputEvent::Change) {
+                    let v = input.read(cx).value().to_string();
+                    view.update(cx, |this, cx| {
+                        this.model_search = v;
+                        cx.notify();
+                    });
+                }
+            })
+            .detach();
+        self.model_search_input = Some(input);
+    }
+
     fn render_model_menu(&self, c: &ChatColors, cx: &mut Context<Self>) -> impl IntoElement {
         let cur = self
             .store
@@ -1529,40 +1631,222 @@ impl AiChatView {
             .next()
             .unwrap_or("")
             .to_string();
+        // Providers that actually have a catalog entry.
+        let providers: Vec<ProviderId> = ProviderId::ALL
+            .into_iter()
+            .filter(|p| MODELS.iter().any(|m| m.provider == *p))
+            .collect();
+        let models = self.visible_models();
+
+        let tab_btn = |tab: ModelTab| {
+            let on = self.model_tab == tab;
+            div()
+                .id(SharedString::from(format!("mtab-{}", tab.label())))
+                .px_2()
+                .py_0p5()
+                .rounded_sm()
+                .text_size(px(10.0))
+                .text_color(if on { c.fg } else { c.muted })
+                .when(on, |d| d.bg(c.accent.opacity(0.15)))
+                .hover(|s| s.bg(c.border))
+                .child(tab.label())
+                .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                    this.model_tab = tab;
+                    cx.notify();
+                }))
+        };
+
         div()
             .id("ai-model-menu")
             .mt_1()
             .flex()
             .flex_col()
-            .max_h(px(240.0))
-            .overflow_y_scroll()
+            .w(px(380.0))
+            .max_h(px(360.0))
             .rounded_sm()
             .border_1()
             .border_color(c.border)
             .bg(c.card)
-            .p_1()
-            .children(MODELS.iter().map(|m| {
-                let id = m.id;
-                let on = m.id == cur;
+            .overflow_hidden()
+            // Search + tabs.
+            .child(
                 div()
-                    .id(SharedString::from(format!("model-{}", m.id)))
                     .flex()
-                    .items_center()
-                    .justify_between()
-                    .px_2()
-                    .py_1()
-                    .rounded_sm()
-                    .text_size(px(11.0))
-                    .text_color(if on { c.fg } else { c.muted })
-                    .when(on, |d| d.bg(c.accent.opacity(0.15)))
-                    .hover(|s| s.bg(c.border))
-                    .child(SharedString::from(m.label))
-                    .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
-                        this.store.update(cx, |s, cx| s.set_model_ref(id, cx));
-                        this.model_menu = false;
-                        cx.notify();
-                    }))
-            }))
+                    .flex_col()
+                    .gap_1()
+                    .p_1p5()
+                    .border_b_1()
+                    .border_color(c.border)
+                    .child(
+                        div()
+                            .rounded_sm()
+                            .border_1()
+                            .border_color(c.border)
+                            .px_1p5()
+                            .py_0p5()
+                            .text_size(px(11.0))
+                            .children(
+                                self.model_search_input
+                                    .as_ref()
+                                    .map(|i| field_input(i).appearance(false)),
+                            ),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .gap_1()
+                            .child(tab_btn(ModelTab::All))
+                            .child(tab_btn(ModelTab::Favorites))
+                            .child(tab_btn(ModelTab::Recent)),
+                    ),
+            )
+            .child(
+                div()
+                    .flex()
+                    .flex_1()
+                    .min_h_0()
+                    // Provider rail.
+                    .child(
+                        div()
+                            .id("ai-model-providers")
+                            .flex()
+                            .flex_col()
+                            .w(px(104.0))
+                            .flex_shrink_0()
+                            .border_r_1()
+                            .border_color(c.border)
+                            .overflow_y_scroll()
+                            .p_1()
+                            .child(
+                                div()
+                                    .id("mp-all")
+                                    .px_1p5()
+                                    .py_1()
+                                    .rounded_sm()
+                                    .text_size(px(10.0))
+                                    .text_color(if self.model_provider.is_none() {
+                                        c.fg
+                                    } else {
+                                        c.muted
+                                    })
+                                    .when(self.model_provider.is_none(), |d| {
+                                        d.bg(c.accent.opacity(0.15))
+                                    })
+                                    .hover(|s| s.bg(c.border))
+                                    .child("All providers")
+                                    .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
+                                        this.model_provider = None;
+                                        cx.notify();
+                                    })),
+                            )
+                            .children(providers.into_iter().map(|p| {
+                                let on = self.model_provider == Some(p);
+                                div()
+                                    .id(SharedString::from(format!("mp-{}", p.as_str())))
+                                    .px_1p5()
+                                    .py_1()
+                                    .rounded_sm()
+                                    .text_size(px(10.0))
+                                    .text_color(if on { c.fg } else { c.muted })
+                                    .when(on, |d| d.bg(c.accent.opacity(0.15)))
+                                    .hover(|s| s.bg(c.border))
+                                    .child(SharedString::from(p.label()))
+                                    .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                                        this.model_provider = Some(p);
+                                        cx.notify();
+                                    }))
+                            })),
+                    )
+                    // Model list.
+                    .child(
+                        div()
+                            .id("ai-model-list")
+                            .flex_1()
+                            .min_w_0()
+                            .overflow_y_scroll()
+                            .p_1()
+                            .when(models.is_empty(), |d| {
+                                d.child(
+                                    div()
+                                        .p_2()
+                                        .text_size(px(10.0))
+                                        .text_color(c.muted)
+                                        .child("No models match"),
+                                )
+                            })
+                            .children(models.into_iter().map(|m| {
+                                let id = m.id;
+                                let on = m.id == cur;
+                                let fav = self.model_prefs.is_favorite(m.id);
+                                let caps = {
+                                    let ctx = if m.context_limit >= 1000 {
+                                        format!("{}K ctx", m.context_limit / 1000)
+                                    } else {
+                                        format!("{} ctx", m.context_limit)
+                                    };
+                                    let tags = m
+                                        .tags
+                                        .iter()
+                                        .map(|t| format!("{t:?}").to_lowercase())
+                                        .collect::<Vec<_>>()
+                                        .join(" \u{00b7} ");
+                                    if tags.is_empty() {
+                                        ctx
+                                    } else {
+                                        format!("{ctx} \u{00b7} {tags}")
+                                    }
+                                };
+                                div()
+                                    .flex()
+                                    .items_center()
+                                    .gap_1()
+                                    .px_2()
+                                    .py_1()
+                                    .rounded_sm()
+                                    .when(on, |d| d.bg(c.accent.opacity(0.12)))
+                                    .hover(|s| s.bg(c.border))
+                                    .child(
+                                        div()
+                                            .id(SharedString::from(format!("mfav-{}", m.id)))
+                                            .text_size(px(11.0))
+                                            .text_color(if fav { c.accent } else { c.muted })
+                                            .child(if fav { "\u{2605}" } else { "\u{2606}" })
+                                            .on_click(cx.listener(
+                                                move |this, _: &ClickEvent, _w, cx| {
+                                                    this.toggle_model_favorite(id, cx)
+                                                },
+                                            )),
+                                    )
+                                    .child(
+                                        div()
+                                            .id(SharedString::from(format!("model-{}", m.id)))
+                                            .flex_1()
+                                            .min_w_0()
+                                            .flex()
+                                            .flex_col()
+                                            .child(
+                                                div()
+                                                    .text_size(px(11.0))
+                                                    .text_color(c.fg)
+                                                    .child(SharedString::from(m.label)),
+                                            )
+                                            .child(
+                                                div()
+                                                    .text_size(px(9.0))
+                                                    .text_color(c.muted)
+                                                    .overflow_hidden()
+                                                    .whitespace_nowrap()
+                                                    .child(SharedString::from(caps)),
+                                            )
+                                            .on_click(cx.listener(
+                                                move |this, _: &ClickEvent, _w, cx| {
+                                                    this.select_model(id, cx)
+                                                },
+                                            )),
+                                    )
+                            })),
+                    ),
+            )
     }
 
     fn render_session_menu(
@@ -2854,6 +3138,7 @@ impl Focusable for AiChatView {
 impl Render for AiChatView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.ensure_composer(window, cx);
+        self.ensure_model_search(window, cx);
         let c = self.colors(cx);
         let header = self.render_header(&c, cx);
         let messages = self.render_messages(&c, cx);
@@ -3336,6 +3621,38 @@ mod tests {
         });
         let after = view.read_with(cx, |v, cx| v.store.read(cx).model_ref().to_string());
         assert_ne!(before, after);
+    }
+
+    #[gpui::test]
+    fn model_picker_filters_by_tab_provider_search(cx: &mut TestAppContext) {
+        let (view, _rt) = make_view(cx);
+        view.update(cx, |v, _cx| {
+            v.model_prefs = ModelPrefs::default();
+            assert_eq!(v.visible_models().len(), MODELS.len());
+
+            // Favorites tab: empty until something is starred.
+            v.model_tab = ModelTab::Favorites;
+            assert!(v.visible_models().is_empty());
+            v.model_prefs.toggle_favorite(MODELS[0].id);
+            assert_eq!(v.visible_models().len(), 1);
+
+            // Recent tab tracks recency order.
+            v.model_prefs.push_recent(MODELS[1].id);
+            v.model_prefs.push_recent(MODELS[2].id);
+            v.model_tab = ModelTab::Recent;
+            assert_eq!(v.visible_models()[0].id, MODELS[2].id);
+
+            // Provider rail + search narrow the All list.
+            v.model_tab = ModelTab::All;
+            v.model_provider = Some(MODELS[0].provider);
+            assert!(v
+                .visible_models()
+                .iter()
+                .all(|m| m.provider == MODELS[0].provider));
+            v.model_provider = None;
+            v.model_search = MODELS[0].label.to_string();
+            assert!(v.visible_models().iter().any(|m| m.id == MODELS[0].id));
+        });
     }
 
     #[gpui::test]
