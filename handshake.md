@@ -4,6 +4,127 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
+## Last Session: 2026-09-03 (T16-006 — extract `labonair-workspace`)
+
+Sixth code task of the architecture rework. **Largest single move of the phase.**
+Expanded scope beyond a "pure move" because `Workspace` is coupled (struct
+fields built in `Workspace::new`) to `ThemeStore`, `GlobalPreferences`,
+`AgentAccessStore`, `BackgroundStore`, `TabStore`/`TabKind` and owns
+`Entity<HostManagerView>` + `Entity<TransfersView>`. Followed the coordinator's
+resolution: move the **full structural closure** into `labonair-workspace`, plus
+relocate `ThemeStore` into `labonair-theme`.
+
+### What Was Done (T16-006)
+- **`crates/workspace/`** (`labonair-workspace`) created — `[lib] name =
+  "labonair_workspace"`, `path = "src/workspace.rs"` (lib root). Member added
+  before `crates/ui`. Deps: `gpui`, `image`, `serde`/`serde_json`, `tokio`,
+  `uuid`, `chrono`, `tracing`, `dirs`, `labonair-theme`, `-ui-kit`, `-gpui-ext`,
+  `-notifications`, `-command-palette`, `-panel`, `-terminal`, `-editor`,
+  `-backend`, `-ai`. **No `labonair-ui` / `labonair-shell`** (`cargo tree -p
+  labonair-workspace` confirmed — only `labonair-ui-kit` shows, which is
+  allowed). `labonair-ai` added beyond the task's literal dep list because
+  `live_bridge.rs`'s `WorkspaceLiveBridge` impls `labonair_ai::LiveBridge`.
+- **`git mv` into `crates/workspace/src/`** (history preserved):
+  `workspace.rs` (lib root), `pane.rs`, `session.rs`, `live_bridge.rs`,
+  `tabs.rs`, `agent_access.rs`, `background.rs`, `bell.rs`, `markdown.rs`,
+  `syntax_theme.rs`, `transfers.rs`; and into `src/views/`: `terminal.rs`,
+  `editor.rs`, `sftp.rs`, `preview.rs`, `ssh_connection.rs`, `git_graph.rs`,
+  `diff.rs`, `hosts.rs`.
+- **New modules in `labonair-workspace`:**
+  * `src/pane_group.rs` — the recursive split-tree (`PaneNode`,
+    `WorkspaceLayout` + all tree tests) split out of `pane.rs`; `pane.rs` keeps
+    the leaf primitives (`PaneId`, `SplitAxis`, `CloseOutcome`, `MIN_RATIO`) and
+    re-exports `PaneNode`/`WorkspaceLayout` so `crate::pane::…` paths keep
+    resolving. Minimal split for T17-004; no full refactor.
+  * `src/prefs.rs` — `GlobalPreferences(pub Preferences)` newtype + `impl
+    Global`, moved out of `crates/ui/src/settings.rs`. `settings.rs` now does
+    `pub use labonair_workspace::prefs::GlobalPreferences;`.
+  * `src/drag.rs` — `DraggedPaths` + `shell_quote` + `quote_paths`, extracted
+    from `crates/ui/src/explorer.rs` (needed by `views::terminal` for
+    drag-into-terminal). `explorer.rs` re-imports them from here.
+  * `AskAboutSelection` gpui action defined in the lib root (extracted from
+    `crates/ui/src/menu.rs`'s `actions!` block) so `views::terminal` can
+    dispatch it without a cycle; `menu.rs` re-exports it.
+  * `pub mod theme { pub use labonair_theme::store::*; }` shim so every
+    `crate::theme::…` path in the moved code resolves unchanged.
+- **`hosts` + `transfers` are acknowledged TEMPORARY residents** of
+  `labonair-workspace` — `Workspace` owns those view entities today. Long term
+  `views/hosts.rs` → `labonair-panel-hosts` (T16-008), `transfers.rs` →
+  `labonair-shell`. `TODO(T16-008)` / `TODO(shell)` comments added at each
+  module head; `docs/architecture.md` records the temporary placement (plus a
+  full "T16-006 outcome note").
+- **ThemeStore relocation:** `crates/ui/src/theme.rs` → `labonair_theme::store`
+  (`ThemeStore`, `ThemeMode`, `FontOverrides`, `GlobalTheme`, `init`,
+  `init_fonts`, `theme_store`, `active_theme`, `modal_scrim`, `SCROLLBAR_SIZE`,
+  `menu_metrics`). Re-exported from `labonair_theme`'s lib root. The
+  `impl labonair_ui_kit::UiTheme for ThemeStore` moved into `crates/ui-kit`
+  (`impl UiTheme for labonair_theme::ThemeStore`) — orphan rule: `crates/theme`
+  must not depend on `crates/ui-kit`. `crates/theme` gained a `[dev-dependencies]
+  gpui { test-support }` for the moved `ThemeStore` tests. `crates/ui/src/
+  theme.rs` shrank to `pub use labonair_theme::store::*;`.
+- **`crates/ui` keeps thin `pub use` shims** for every moved module
+  (`agent_access`, `background`, `live_bridge`, `markdown`, `syntax_theme`,
+  `tabs`, `transfers`, `session`, `pane`, `workspace`, `views/*`), so
+  `app_shell.rs` / `menu.rs` / `snippets.rs` / `bookmarks.rs` / `explorer.rs`
+  needed no import-path churn. `bell` module removed from `crates/ui` (no
+  remaining consumer there). One real cross-crate visibility fix:
+  `Workspace::render_tab_bar` was `pub(crate)` (called only from `app_shell`) →
+  now `pub`.
+- `Workspace::new` argument list/order unchanged.
+
+### Verification (T16-006) — all green
+- `cargo fmt --check` — clean (after `cargo fmt` fixed import ordering in the
+  rewritten `workspace.rs` use-block).
+- `cargo check --workspace --all-targets` — exit 0.
+- `cargo clippy --workspace --all-targets -- -D warnings` — exit 0 (only the
+  pre-existing `proc-macro-error2` future-incompat *note*, not a lint).
+- `cargo test --workspace` — exit 0, 0 failed (moved tests run in the new crate:
+  `pane_group`, `drag`, `background`, `views::terminal`, `views::hosts`,
+  session/live_bridge, etc.).
+- `cargo tree -p labonair-workspace` — no `labonair-ui` / `labonair-shell` edge.
+- Disk fell to ~8.9G free during `cargo test` link; still completed. Consider
+  `rm -rf target/debug/incremental` before the next heavy task.
+
+### What's Next
+- **T16-007** `tasks/phase-15-crate-split/T16-007-extract-settings-ui-crate.md`
+  — extract `labonair-settings-ui`.
+
+### Blockers
+- None. Disk tight (~9G free).
+
+---
+
+## Planning Update: 2026-09-03 (Workflow-Rework — Themen 1–3 in Phasen 15–18 eingearbeitet)
+
+**Nur Task-/Doku-Änderungen, kein Code.** Drei Workflow-Reworks in den laufenden
+Architektur-Rework integriert. T16-006 lief währenddessen → alles konzeptionell
+≤ T16-006 ging in **T16-007**.
+
+1. **Tabs optional** — alle Tabs schließbar → leere Workspace-Fläche
+   (Doppelklick → lokales Terminal); `TabKind::Home` entfällt.
+2. **Host-Zugang ohne Host-Manager-Tab/-Panel** — Verbinden über
+   Command-Palette-`Page::Hosts` (`Enter` = SSH, `Shift+Enter` = SFTP) +
+   `＋▾`-Titlebar-Menü; Verwalten über neue Top-Level-Kategorie **Settings ›
+   Hosts**. `labonair-panel-hosts` entfällt aus dem Ziel-Graph →
+   `labonair-hosts-ui` (kein Panel, kein `impl Panel`). `PanelIcon::Hosts`
+   (aus T16-005) wird in T17-001 mit entfernt.
+3. **Settings-Redesign** — Zed-Settings-System wie geplant, **plus**
+   Design-Kontrakt (`docs/settings-guidelines.md`, T19-000), Kategorie→Abschnitt-
+   Disclosure-Navigation, erstklassiger Pfad für Custom-Top-Level-Kategorien.
+
+**Geändert:** `docs/architecture.md` (neuer §8 „Deviations"), `tasks/ROADMAP.md`
+(Tabellen 15–18 + Workflow-Rework-Abschnitt + Erfolgskriterium 27), `T16-007`,
+`T16-008`, `T17-001`, `T17-004`, `T17-006`, `T18-001`, `T18-003`, `T19-001`,
+`T19-004`, `T19-009`.
+**Neu:** `T17-009` (Tabs optional / Empty-Workspace), `T19-000`
+(Settings-Design-Kontrakt), `T19-010` (Settings › Hosts),
+`bericht-workflow-rework.md` (Begründung).
+
+Nächster Task unverändert: **T16-006** (läuft) → dann **T16-007** (jetzt inkl.
+Palette-`Page::Hosts`-Zusatz).
+
+---
+
 ## Last Session: 2026-09-03 (T16-005 — labonair-panel contracts crate)
 
 Fifth code task of the architecture rework. **New leaf contracts crate, no

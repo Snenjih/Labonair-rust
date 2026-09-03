@@ -1,7 +1,7 @@
 # T16-006: `labonair-workspace` extrahieren
 
 ## Status
-📋 Geplant
+✅ Done
 
 ## Phase
 15 — Crate-Zerlegung & Fundament
