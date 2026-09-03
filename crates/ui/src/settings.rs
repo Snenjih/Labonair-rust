@@ -74,13 +74,11 @@ use labonair_notifications::{notification_center, Notification};
 // ─────────────────────────── Global snapshot ─────────────────────────────
 
 /// App-wide read-only snapshot of [`Preferences`], republished by
-/// [`PreferencesStore`] on every change. Modules that can't hold an
-/// `Entity<PreferencesStore>` (the terminal engine spawn path, editor views)
-/// read it via `cx.global::<GlobalPreferences>()` / `cx.observe_global`.
-#[derive(Clone, Default)]
-pub struct GlobalPreferences(pub Preferences);
-
-impl Global for GlobalPreferences {}
+/// [`PreferencesStore`] on every change. Moved to `labonair-workspace` in
+/// T16-006 (so the workspace + its tab views can read it without depending on
+/// `labonair-ui`); re-exported here so every `crate::settings::GlobalPreferences`
+/// path keeps resolving.
+pub use labonair_workspace::prefs::GlobalPreferences;
 
 // ─────────────────────────── Settings OS window ──────────────────────────
 

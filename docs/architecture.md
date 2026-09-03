@@ -81,7 +81,14 @@ labonair-shell                  – AppShell: composes titlebar + docks + worksp
 
 ── Panels (one crate each) ──────────────────────────────────────────────────
 labonair-panel-explorer  · labonair-panel-scm  · labonair-panel-git-graph
-labonair-panel-hosts     · labonair-panel-snippets  · labonair-panel-ai
+labonair-panel-snippets  · labonair-panel-ai
+
+── Host access (NOT a dock panel — see §8) ──────────────────────────────────
+labonair-hosts-ui               – host connect list + host / credential editing
+                                  UI. Management surface embedded by
+                                  labonair-settings-ui (Settings › Hosts);
+                                  connect surface fed to the command palette
+                                  as data. No dock panel, no tab.
 
 ── Unchanged (possible later split) ─────────────────────────────────────────
 labonair-terminal (engine) · labonair-editor · labonair-backend · labonair-ai
@@ -111,13 +118,34 @@ Today's monolith is `crates/ui/src/` (~40 files, ~48k lines; `settings.rs`
 | `labonair-panel-explorer` | File-explorer panel. | `ui/explorer.rs` |
 | `labonair-panel-scm` | Source-control (status / staging) panel. | `ui/git.rs` |
 | `labonair-panel-git-graph` | Commit-graph panel. | `ui/git_graph.rs` |
-| `labonair-panel-hosts` | SSH host-manager panel. | `ui/hosts.rs`, `ui/ssh_connection.rs` |
+| `labonair-hosts-ui` | Host connect list + host / credential editing UI. **Not a dock panel and not a tab** (see §8): the connect surface is rendered by the command palette (`Enter` = SSH, `Shift+Enter` = SFTP), the management surface is embedded in **Settings › Hosts** (a first-class top-level category). | `ui/hosts.rs`, `ui/ssh_connection.rs` |
 | `labonair-panel-snippets` | Command-snippets panel. | `ui/snippets.rs` |
 | `labonair-panel-ai` | AI-chat panel. | `ui/ai_chat.rs`, `ui/ai_composer.rs`, `ui/live_bridge.rs` |
 | `labonair-terminal` | Terminal engine (alacritty), unchanged; audible bell. | today's `crates/terminal`, `ui/bell.rs` |
 | `labonair-editor` | TreeSitter editor core, unchanged. | today's `crates/editor` |
 | `labonair-backend` | SSH / SFTP / Git / PTY / SQLite / keyring, unchanged; no UI deps. | today's `crates/backend` |
 | `labonair-ai` | AI providers / streaming / tools, unchanged; no UI deps. | today's `crates/ai` |
+
+> **T16-006 outcome note.** `labonair-workspace` was extracted with its full
+> structural closure: `workspace.rs` (lib root), `pane.rs` + `pane_group.rs`
+> (recursive split tree split out), `session.rs`, `live_bridge.rs`, `tabs.rs`,
+> `agent_access.rs`, `background.rs`, `bell.rs`, `markdown.rs`, `syntax_theme.rs`,
+> `drag.rs` (extracted from `explorer.rs`), `prefs.rs` (`GlobalPreferences`
+> newtype extracted from `ui/settings.rs`), the `AskAboutSelection` action, and
+> the tab-content views under `src/views/` (`terminal`, `editor`, `sftp`,
+> `preview`, `ssh_connection`, `git_graph`, `diff`, `hosts`). **`views/hosts.rs`
+> and `transfers.rs` are acknowledged *temporary* residents** — `Workspace` owns
+> `Entity<HostManagerView>` / `Entity<TransfersView>` today; `hosts` moves to
+> `labonair-hosts-ui` (T16-008 — **not** a panel crate; see §8) and `transfers`
+> to `labonair-shell` later (see `TODO(T16-008)` / `TODO(shell)` at those module
+> heads). The `TabKind::Home` host-manager tab is removed in T17-009; the
+> management UI re-surfaces in **Settings › Hosts** (T19-010). The runtime
+> `ThemeStore` (+ `ThemeMode`, `FontOverrides`, `GlobalTheme`, `init`,
+> `init_fonts`, `theme_store`, `active_theme`, `modal_scrim`, `SCROLLBAR_SIZE`,
+> `menu_metrics`) moved from `ui/theme.rs` into `labonair_theme::store`; the
+> `impl labonair_ui_kit::UiTheme for ThemeStore` lives in `crates/ui-kit`
+> (orphan rule — `labonair-theme` must not depend on `labonair-ui-kit`).
+> `crates/ui` keeps thin `pub use` shims for every moved symbol.
 
 ---
 
@@ -149,8 +177,16 @@ These are stated so T16-010 can derive a mechanical check (e.g. `cargo-depgraph`
 7. **Settings track:** `labonair-settings-content` has no UI dep;
    `labonair-settings` depends on `labonair-settings-content` (+ `gpui` for the
    store handle) but not on `labonair-settings-ui`; `labonair-settings-ui`
-   depends on `labonair-settings` + `labonair-ui-kit`.
+   depends on `labonair-settings` + `labonair-ui-kit` (+ `labonair-hosts-ui`
+   for the Hosts category, see rule 9).
 8. **The crate graph is acyclic.** Verified in CI (T16-010).
+9. **`labonair-hosts-ui` is not a panel crate.** It depends only on
+   `labonair-backend` (hosts, ssh, keyring) + `labonair-ui-kit` +
+   `labonair-theme`. It depends on **no** `labonair-workspace` / `-shell` /
+   `-panel*` — opening a tab is passed in as a callback. `labonair-settings-ui`
+   depends on it (embeds the management page). `labonair-command-palette` does
+   **not** depend on it: the shell injects the host list + connect callbacks
+   into the palette as data (the reference's `RegistryCallbacks` pattern).
 
 ---
 
@@ -158,7 +194,7 @@ These are stated so T16-010 can derive a mechanical check (e.g. `cargo-depgraph`
 
 ```
 ┌─ Titlebar ────────────────────────────────────────────────────────────────┐
-│  [Tab] [Tab] [Tab] [+]                                            [◉ ▾]     │  ← tabs + 1 button only
+│  [Tab] [Tab] [Tab] [＋▾]                                          [◉ ▾]     │  ← tabs + new-tab menu (left) + 1 button (right)
 ├─ Docks + Workspace ──────────────────────────────────────────────────────┤
 │ ┌ left dock ┐                                              ┌ right dock ┐ │
 │ │  Panel    │            Workspace (split tree)            │   Panel    │ │
@@ -167,23 +203,29 @@ These are stated so T16-010 can derive a mechanical check (e.g. `cargo-depgraph`
 │ │  Panel                                                                │ │
 │ └──────────────────────────────────────────────────────────────────────┘ │
 ├─ Statusbar ──────────────────────────────────────────────────────────────┤
-│ [Explorer][SCM][Git][Hosts][Snippets][AI]  ·············  [⟳][CWD ▸][🔔³] │
-│  └─ panel toggles (left, default) ───────┘   └─ info dropdowns (right) ───┘│
+│ [Explorer][SCM][Git][Snippets][AI]  ················  [⟳][CWD ▸][🔔³] │
+│  └─ panel toggles (left, default) ──┘   └─ info dropdowns (right) ────────┘│
 └──────────────────────────────────────────────────────────────────────────┘
    Overlay layer: command palette · dialogs · Cmd+F search · toasts
 ```
 
-* **Titlebar** — tabs plus the split-tree tab content region. On the right,
-  exactly **one** icon button `[◉ ▾]` → dropdown: `Settings…`, `Profile`
-  (placeholder), separator, room for planned entries. The macOS traffic-light
-  inset stays.
+* **Titlebar** — tabs plus, at the left end of the tab strip, a **`＋▾`
+  new-tab menu button** (Terminal / Editor / Preview / Git Graph · separator ·
+  `SSH ▸` recent-hosts submenu · `SFTP ▸` recent-hosts submenu · `Host
+  settings…`). On the right, exactly **one** icon button `[◉ ▾]` → dropdown:
+  `Settings…`, `Profile` (placeholder), separator, room for planned entries.
+  The `＋▾` menu counts as part of the tab strip, not a second right-hand
+  button — the contract still holds. The macOS traffic-light inset stays.
 * **Workspace** — the active tab's content plus the recursive `Member::Axis`
-  split tree.
+  split tree. **May hold zero tabs** — then it renders the empty surface:
+  a centred hint with the key shortcuts; double-click opens a local terminal;
+  a dropped file opens an editor tab.
 * **Side Panels** — `Dock` on left / right / bottom; each dock holds several
   registered panels, one active, resizable, zoomable, persisted.
-* **Statusbar** — left: one toggle per registered panel (from `PanelRegistry`),
-  active highlighted. Right: info dropdowns — Notifications (badge dropdown),
-  CWD breadcrumb, Updater, Transfers, Agent-Access — each a `StatusItem`.
+* **Statusbar** — left: one toggle per registered panel (from `PanelRegistry`;
+  five — Explorer, SCM, Git-Graph, Snippets, AI), active highlighted. Right:
+  info dropdowns — Notifications (badge dropdown), CWD breadcrumb, Updater,
+  Transfers, Agent-Access, Jump-Hosts — each a `StatusItem`.
 * **Modal / Overlay layer** — `ModalLayer` (command palette, dialogs, bookmarks,
   updater modal, transient `Cmd+F` search) and `ToastLayer` (toasts). Nothing
   else renders overlays.
@@ -202,6 +244,15 @@ These are stated so T16-010 can derive a mechanical check (e.g. `cargo-depgraph`
   Titlebar-scoped items map to the statusbar default (migrator T18-006).
 * **`drain_pending_*` frame buffers** in `render()` — gone; events are handled
   directly via `cx.subscribe_in` / `window.defer`.
+* **The Host-Manager tab and the `SidebarPanel::Hosts` list** — gone. Not a
+  tab, not a dock panel. Connecting to a host runs through the command-palette
+  **Hosts** page (`Enter` = SSH, `Shift+Enter` = SFTP), quick-connect rows at
+  palette root, the titlebar `＋▾` submenu, and the native menu; `Cmd+Shift+N`
+  opens the Hosts page. Adding / editing hosts and credentials lives in
+  **Settings › Hosts**, a first-class top-level category. (§8.1)
+* **The "always at least one tab" rule** — gone. Closing every tab yields the
+  empty workspace surface; `TabKind::Home` is deleted. `startup_tab` gains an
+  `empty` value; an empty last session restores empty. (§8.2)
 
 The native macOS menu bar stays (parity); the titlebar dropdown is the
 cross-platform, discoverable second path.
@@ -259,3 +310,80 @@ user keymap). `enum ShortcutId` is only the default source.
 * Existing crates (`app`, `terminal`, `editor`, `backend`, `ai`, `theme`) are
   renamed to the `labonair-<name>` package name over the rework; `crates/ui`
   becomes a shrinking facade and is deleted in T16-009.
+
+---
+
+## 8. Deviations recorded after T16-001 (workflow rework)
+
+The header rule of this file: *every deviation from the T16-001 plan is written
+back here.* These three come from the tab / host-access / settings workflow
+rework agreed after T16-005. They **extend** the plan — the registry patterns,
+dependency rules and acyclic graph are unchanged. Rationale:
+[`bericht-workflow-rework.md`](../bericht-workflow-rework.md).
+
+### 8.1 Host access — no Host-Manager tab, no hosts panel
+
+`labonair-panel-hosts` is **dropped** from the crate graph. The SSH host
+manager splits into two surfaces:
+
+* **Connect** — the command palette gains a single **Hosts** page (replacing
+  the separate `HostsSsh` / `HostsSftp` pages): one row per host,
+  `Enter` = open SSH terminal, `Shift+Enter` = open SFTP, with a footer hint
+  bar. The most-recent hosts also appear as quick-connect rows at palette root.
+  `Cmd+Shift+N` opens the Hosts page. The titlebar `＋▾` menu and the native
+  menu keep an `SSH ▸` / `SFTP ▸` recent-hosts submenu.
+* **Manage** — **Settings › Hosts**, a first-class top-level settings category
+  (peer of Themes): add / edit / delete / duplicate hosts, credentials via
+  keyring, jump-hosts, tunnels, SSH-config import/export, availability polling.
+
+View code (`ui/hosts.rs`, `ui/ssh_connection.rs`) moves to **`labonair-hosts-ui`**
+in T16-008 — a plain view crate, **not** a `labonair-panel-*` crate, with no
+`impl Panel`. `labonair-settings-ui` depends on it and embeds the management
+page (T19-010). The palette receives the host list + connect callbacks as
+injected data from the shell (no `labonair-command-palette` → `labonair-hosts-ui`
+edge). `enum SidebarPanel` (incl. `Hosts`) and the `TabKind::Home` host tab are
+deleted (T17-001 / T17-009).
+
+Tasks: T16-007 (palette Hosts page + secondary action), T16-008
+(`labonair-hosts-ui`), T17-001 (drop from `PanelRegistry`), T19-001
+(`hosts` area in `SettingsContent`), T19-010 (Settings › Hosts page).
+
+### 8.2 Tabs are optional — empty workspace surface
+
+`TabKind::Home` is removed. The workspace may hold **zero** tabs and then
+renders the empty surface (centred shortcut hint; double-click → local
+terminal; dropped file → editor tab). `close`/`close_all` no longer stop at
+one tab. `PaneGroup`'s root is optional (empty = no split tree). `startup_tab`
+gains `empty`; session-restore of an empty last state stays empty (respecting
+`session_restore`). The titlebar `＋▾` menu and the command palette re-open any
+tab type.
+
+Tasks: T17-004 (optional `PaneGroup` root), T17-006 (empty render path),
+T17-009 (the `Option<ActiveTab>` audit + `TabKind::Home` removal + empty
+surface), T18-001 (`＋▾` menu + empty-surface visuals).
+
+### 8.3 Settings design contract
+
+A written contract — [`docs/settings-guidelines.md`](./settings-guidelines.md),
+created in **T19-000** before any other Phase 18 task — governs every settings
+page so they cannot drift the way the Tauri version did:
+
+1. One navigation model: **top-level category → in-page disclosure section →
+   optional sub-page** (`SubPageLink`). No category deviates.
+2. Every setting is a typed field in `SettingsContent` with metadata (title,
+   description, unit, range, `requires_restart`). No setting exists only in UI.
+3. The field UI is **generated from the Rust type** via the renderer registry
+   (T19-004). No bespoke toggles.
+4. **Custom panes** (Themes, Hosts, Shortcuts, AI providers, MCP) are a
+   sanctioned first-class registration path — a `SettingsPage { kind: Custom }`
+   that can also be a **top-level category** — not a hack around the registry.
+   They still render inside the standard page chrome (header, search, origin
+   badges).
+5. Every field shows its effective layer (default / user / project) + a reset
+   affordance. Search covers every page (T19-007). Every category and section
+   has a stable deep-link slug.
+
+Tasks: T19-000 (contract doc + `CLAUDE.md` rule), T19-001 (`hosts` +
+`personalization` as areas; custom-category marker), T19-004 (disclosure nav +
+custom top-level category path), T19-010 (Hosts as the first new custom
+top-level category).

@@ -12,6 +12,7 @@ mod color;
 pub mod fonts;
 mod import;
 mod prefs;
+pub mod store;
 mod tokens;
 
 pub use color::{oklch, oklch_a, parse_color, to_hex, to_rgb8, transparent};
@@ -20,6 +21,10 @@ pub use fonts::{
 };
 pub use import::{ThemeFile, ThemeFileVariant, COLOR_TOKENS};
 pub use prefs::{EditorThemeId, ThemePreference};
+pub use store::{
+    active_theme, init as init_theme, init_fonts, menu_metrics, modal_scrim, theme_store,
+    FontOverrides, GlobalTheme, ThemeMode, ThemeStore, SCROLLBAR_SIZE,
+};
 pub use tokens::{
     Animation, AnsiColors, BorderVariants, CoreColors, CubicBezier, InteractionColors,
     MonoFontWeight, RadiusScale, ShadowLayer, Shadows, SidebarColors, StatusColors, SurfaceColors,

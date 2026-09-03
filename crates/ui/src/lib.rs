@@ -9,7 +9,6 @@ pub mod app_shell;
 pub mod assets;
 pub mod background;
 pub mod bar_items;
-pub mod bell;
 pub mod bookmarks;
 pub mod cwd_breadcrumb;
 pub mod diff;

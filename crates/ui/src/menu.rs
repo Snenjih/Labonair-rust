@@ -26,6 +26,11 @@ use gpui::{actions, App, KeyBinding, Keystroke, Menu, MenuItem, OsAction};
 use labonair_command_palette::{effective_binding, KeybindMap, ShortcutId};
 use labonair_notifications::{notification_center, Notification};
 
+/// `AskAboutSelection` is defined in `labonair-workspace` (so `views::terminal`
+/// can dispatch it without a dependency cycle, T16-006); re-exported here so the
+/// menu / keybind wiring below and `crate::menu::AskAboutSelection` still work.
+pub use labonair_workspace::AskAboutSelection;
+
 actions!(
     labonair,
     [
@@ -75,7 +80,6 @@ actions!(
         NewQuickSsh,
         // ── AI ────────────────────────────────────────────────────────────
         NewAiSession,
-        AskAboutSelection,
         ClearChat,
         AiSettings,
         // ── Window ────────────────────────────────────────────────────────

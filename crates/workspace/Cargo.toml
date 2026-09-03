@@ -1,30 +1,32 @@
 [package]
-name = "labonair-ui"
+name = "labonair-workspace"
 version = "0.1.0"
 edition = "2021"
 
+[lib]
+name = "labonair_workspace"
+path = "src/workspace.rs"
+
 [dependencies]
 gpui = { workspace = true }
-gpui-component = { workspace = true }
 image = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+tracing = { workspace = true }
+dirs = { workspace = true }
 labonair-theme = { path = "../theme" }
 labonair-ui-kit = { path = "../ui-kit" }
 labonair-gpui-ext = { path = "../gpui-ext" }
 labonair-notifications = { path = "../notifications" }
 labonair-command-palette = { path = "../command-palette" }
-labonair-workspace = { path = "../workspace" }
+labonair-panel = { path = "../panel" }
 labonair-terminal = { path = "../terminal" }
 labonair-editor = { path = "../editor" }
 labonair-backend = { path = "../backend" }
 labonair-ai = { path = "../ai" }
-tracing = { workspace = true }
-serde = { workspace = true }
-serde_json = { workspace = true }
-dirs = { workspace = true }
-tokio = { workspace = true }
-uuid = { workspace = true }
-notify = "6"
-notify-debouncer-mini = "0.4"
 
 [dev-dependencies]
 gpui = { workspace = true, features = ["test-support"] }

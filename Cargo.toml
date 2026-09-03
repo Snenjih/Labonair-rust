@@ -7,6 +7,7 @@ members = [
     "crates/notifications",
     "crates/command-palette",
     "crates/panel",
+    "crates/workspace",
     "crates/ui",
     "crates/terminal",
     "crates/editor",

@@ -67,3 +67,15 @@ pub trait UiTheme {
         self.muted()
     }
 }
+
+/// Lets the ui-kit primitives read tokens off the runtime [`labonair_theme::ThemeStore`]
+/// without that store depending on ui-kit. The impl lives here (not in
+/// `crates/theme`) because of the orphan rule: `labonair-theme` must not depend
+/// on `labonair-ui-kit`, and `UiTheme` is defined in this crate. Only `theme()`
+/// is provided — the rest fall through to the trait defaults, which match
+/// `ThemeStore`'s inherent methods of the same name 1:1.
+impl UiTheme for labonair_theme::ThemeStore {
+    fn theme(&self) -> &Theme {
+        labonair_theme::ThemeStore::theme(self)
+    }
+}

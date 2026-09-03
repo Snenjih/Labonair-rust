@@ -61,14 +61,11 @@ const INDENT: f32 = 12.0;
 const WATCH_DEBOUNCE: Duration = Duration::from_millis(300);
 const DRAIN_INTERVAL: Duration = Duration::from_millis(400);
 
-/// Payload of an in-tree drag (T05-002). Pure-data drag, mirroring the
-/// reference `explorerDrag` module singleton — carries the selected paths from
-/// an explorer row to a drop target (a folder in the same tree, or a terminal
-/// pane which inserts the quoted path).
-#[derive(Clone)]
-pub struct DraggedPaths {
-    pub paths: Vec<PathBuf>,
-}
+/// `DraggedPaths` / `shell_quote` / `quote_paths` moved to
+/// `labonair_workspace::drag` in T16-006 (so `views::terminal` can accept
+/// explorer-row drops without `labonair-workspace` depending on `labonair-ui`).
+/// Re-exported here so `crate::explorer::DraggedPaths` keeps resolving.
+pub use labonair_workspace::drag::{quote_paths, shell_quote, DraggedPaths};
 
 /// The little chip that follows the pointer while dragging explorer rows.
 pub struct DragPreview {
@@ -100,29 +97,6 @@ enum ClipOp {
 struct Clipboard {
     op: ClipOp,
     paths: Vec<PathBuf>,
-}
-
-/// Shell-quote a single path for insertion into a terminal (single-quote wrap
-/// unless it is entirely "safe" characters).
-pub fn shell_quote(path: &Path) -> String {
-    let s = path.to_string_lossy();
-    let safe = !s.is_empty()
-        && s.chars()
-            .all(|c| c.is_alphanumeric() || "-_./=:@%+,".contains(c));
-    if safe {
-        s.into_owned()
-    } else {
-        format!("'{}'", s.replace('\'', "'\\''"))
-    }
-}
-
-/// Space-joined shell-quoted paths (drag-into-terminal payload).
-pub fn quote_paths(paths: &[PathBuf]) -> String {
-    paths
-        .iter()
-        .map(|p| shell_quote(p))
-        .collect::<Vec<_>>()
-        .join(" ")
 }
 
 /// A move/drop is a no-op (already in `dest_dir`) or invalid (into itself or a
