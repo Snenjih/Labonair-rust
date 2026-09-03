@@ -1,23 +1,17 @@
-//! Command palette + keyboard-shortcut system (T12-002).
-//!
-//! Port of `reference-src/src/modules/command-palette/*` and
-//! `reference-src/src/modules/shortcuts/*`. Two layers:
+//! Command registry + the [`CommandPalette`] modal overlay view.
 //!
 //! * **Data** — a static [`Command`] registry (id / title / section /
-//!   contexts / optional shortcut) and a static [`Shortcut`] table (the
-//!   single source of truth the reference kept in `shortcuts.ts`), plus
-//!   pure filtering / search / conflict-detection helpers. All unit-tested,
-//!   no GPUI needed.
-//! * **View** — [`CommandPalette`], a modal overlay opened with `Cmd+P`
-//!   (bound in [`crate::menu`]). Type to filter, arrow keys to move, `Enter`
-//!   to run, `Esc` to close. Commands that need an argument ("Switch
-//!   Tab\u{2026}") push a follow-up page listing the choices.
+//!   contexts / optional shortcut) plus pure filtering / search helpers. All
+//!   unit-tested, no GPUI needed.
+//! * **View** — [`CommandPalette`], a modal overlay opened with `Cmd+P`. Type
+//!   to filter, arrow keys to move, `Enter` to run, `Esc` to close. Commands
+//!   that need an argument ("Switch Tab\u{2026}") push a follow-up page.
 //!
 //! Execution: the palette does not own the app state — on `Enter` it emits
-//! [`PaletteEvent`], which [`crate::app_shell::AppShell`] turns into either a
-//! GPUI action dispatch (same code path as the native menu, so later phases
-//! that wire a handler light the command up automatically) or a direct
-//! workspace call. This mirrors the reference `RegistryCallbacks` indirection.
+//! [`PaletteEvent`], which the host shell turns into either a GPUI action
+//! dispatch or a direct workspace call. The host wires the palette to its
+//! concrete stores through the [`PalettePrefs`] / [`PaletteWorkspace`] /
+//! [`UiTheme`] contracts.
 
 use gpui::prelude::FluentBuilder;
 use gpui::{
@@ -26,285 +20,60 @@ use gpui::{
     StatefulInteractiveElement, Styled, Window,
 };
 
-use crate::settings::PreferencesStore;
-use crate::tabs::TabKind;
-use crate::theme::{EditorThemeId, ThemePreference, ThemeStore};
-use crate::workspace::Workspace;
-use labonair_backend::modules::settings::preferences::PaletteSearchMode;
-use labonair_ui_kit::IconName;
+use labonair_theme::{EditorThemeId, ThemePreference};
+use labonair_ui_kit::{IconName, UiTheme};
+
+use crate::fuzzy::{match_score, SearchMode};
+use crate::keybind::{shortcut_keys, ShortcutId};
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Shortcut table (port of shortcuts.ts)
+// Host contracts (decoupling — the palette crate never names `crates/ui`)
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Every rebindable keyboard shortcut. IDs match the reference `ShortcutId`.
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
-pub enum ShortcutId {
-    CommandPalette,
-    ShortcutsOpen,
-    TabNew,
-    TabNewPreview,
-    TabNewEditor,
-    TabClose,
-    TabNext,
-    TabPrev,
-    TabSelect1,
-    TabSelect2,
-    TabSelect3,
-    TabSelect4,
-    TabSelect5,
-    TabSelect6,
-    TabSelect7,
-    TabSelect8,
-    TabSelect9,
-    PaneSplitRight,
-    PaneSplitDown,
-    PaneClose,
-    PaneFocusNext,
-    SearchFocus,
-    AiToggle,
-    AiAskSelection,
-    SidebarToggle,
-    ViewZenMode,
-    ViewZoomIn,
-    ViewZoomOut,
-    ViewZoomReset,
-    BookmarksOpen,
-}
-
+/// The tab-kind surface [`context_of`] maps to a [`CommandContext`]. The
+/// palette crate owns this enum so it never has to name `crates/ui`'s
+/// `TabKind`.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum ShortcutGroup {
-    General,
-    Tabs,
-    Search,
-    Ai,
-    View,
-    Bookmarks,
+pub enum PaletteTabKind {
+    Workspace,
+    Editor,
+    Sftp,
+    Home,
+    /// Any other tab kind — maps to no context.
+    Other,
 }
 
-/// One shortcut entry: display tokens for the cheat sheet + the GPUI
-/// keystroke string the runtime actually binds.
-pub struct Shortcut {
-    pub id: ShortcutId,
-    pub label: &'static str,
-    pub keys: &'static [&'static str],
-    pub group: ShortcutGroup,
-    /// GPUI keystroke (e.g. `"cmd-shift-p"`) — parseable by
-    /// [`gpui::Keystroke::parse`].
-    pub binding: &'static str,
+/// One open tab, as the host workspace exposes it for the `Switch Tab\u{2026}`
+/// sub-page.
+#[derive(Clone, Debug)]
+pub struct PaletteTabRow {
+    pub id: u64,
+    pub label: String,
+    pub kind_title: String,
+    pub is_ssh: bool,
 }
 
-use ShortcutGroup::*;
-use ShortcutId::*;
-
-#[rustfmt::skip]
-static SHORTCUTS: &[Shortcut] = &[
-    Shortcut { id: CommandPalette,  label: "Open command palette",      keys: &["\u{2318}", "P"],                 group: General,   binding: "cmd-p" },
-    Shortcut { id: ShortcutsOpen,   label: "Show keyboard shortcuts",   keys: &["\u{2318}", "?"],                 group: General,   binding: "cmd-shift-/" },
-    Shortcut { id: TabNew,          label: "New tab",                   keys: &["\u{2318}", "T"],                 group: Tabs,      binding: "cmd-t" },
-    Shortcut { id: TabNewPreview,   label: "New preview tab",           keys: &["\u{2318}", "\u{21e7}", "P"],     group: Tabs,      binding: "cmd-shift-p" },
-    Shortcut { id: TabNewEditor,    label: "New editor tab",            keys: &["\u{2318}", "E"],                 group: Tabs,      binding: "cmd-e" },
-    Shortcut { id: TabClose,        label: "Close tab",                 keys: &["\u{2318}", "W"],                 group: Tabs,      binding: "cmd-w" },
-    Shortcut { id: TabNext,         label: "Next tab",                  keys: &["\u{2303}", "\u{21e5}"],          group: Tabs,      binding: "ctrl-tab" },
-    Shortcut { id: TabPrev,         label: "Previous tab",              keys: &["\u{2303}", "\u{21e7}", "\u{21e5}"], group: Tabs,   binding: "ctrl-shift-tab" },
-    Shortcut { id: TabSelect1,      label: "Jump to tab 1",             keys: &["\u{2318}", "1"],                 group: Tabs,      binding: "cmd-1" },
-    Shortcut { id: TabSelect2,      label: "Jump to tab 2",             keys: &["\u{2318}", "2"],                 group: Tabs,      binding: "cmd-2" },
-    Shortcut { id: TabSelect3,      label: "Jump to tab 3",             keys: &["\u{2318}", "3"],                 group: Tabs,      binding: "cmd-3" },
-    Shortcut { id: TabSelect4,      label: "Jump to tab 4",             keys: &["\u{2318}", "4"],                 group: Tabs,      binding: "cmd-4" },
-    Shortcut { id: TabSelect5,      label: "Jump to tab 5",             keys: &["\u{2318}", "5"],                 group: Tabs,      binding: "cmd-5" },
-    Shortcut { id: TabSelect6,      label: "Jump to tab 6",             keys: &["\u{2318}", "6"],                 group: Tabs,      binding: "cmd-6" },
-    Shortcut { id: TabSelect7,      label: "Jump to tab 7",             keys: &["\u{2318}", "7"],                 group: Tabs,      binding: "cmd-7" },
-    Shortcut { id: TabSelect8,      label: "Jump to tab 8",             keys: &["\u{2318}", "8"],                 group: Tabs,      binding: "cmd-8" },
-    Shortcut { id: TabSelect9,      label: "Jump to tab 9",             keys: &["\u{2318}", "9"],                 group: Tabs,      binding: "cmd-9" },
-    Shortcut { id: PaneSplitRight,  label: "Split pane right",          keys: &["\u{2318}", "D"],                 group: Tabs,      binding: "cmd-d" },
-    Shortcut { id: PaneSplitDown,   label: "Split pane down",           keys: &["\u{2318}", "\u{21e7}", "D"],     group: Tabs,      binding: "cmd-shift-d" },
-    Shortcut { id: PaneClose,       label: "Close pane",               keys: &["\u{2318}", "\u{21e7}", "W"],     group: Tabs,      binding: "cmd-shift-w" },
-    Shortcut { id: PaneFocusNext,   label: "Focus next pane",           keys: &["\u{2318}", "]"],                 group: Tabs,      binding: "cmd-]" },
-    Shortcut { id: SearchFocus,     label: "Find in current pane",      keys: &["\u{2318}", "F"],                 group: Search,    binding: "cmd-f" },
-    Shortcut { id: AiToggle,        label: "Toggle AI agent",           keys: &["\u{2318}", "I"],                 group: Ai,        binding: "cmd-i" },
-    Shortcut { id: AiAskSelection,  label: "Ask AI about selection",    keys: &["\u{2318}", "L"],                 group: Ai,        binding: "cmd-l" },
-    Shortcut { id: SidebarToggle,   label: "Toggle file explorer",      keys: &["\u{2318}", "B"],                 group: View,      binding: "cmd-b" },
-    Shortcut { id: ViewZenMode,     label: "Toggle Zen mode",           keys: &["\u{2318}", "\u{21e7}", "Z"],     group: View,      binding: "cmd-shift-z" },
-    Shortcut { id: ViewZoomIn,      label: "Zoom in",                   keys: &["\u{2318}", "+"],                 group: View,      binding: "cmd-=" },
-    Shortcut { id: ViewZoomOut,     label: "Zoom out",                  keys: &["\u{2318}", "\u{2212}"],          group: View,      binding: "cmd--" },
-    Shortcut { id: ViewZoomReset,   label: "Reset zoom",                keys: &["\u{2318}", "0"],                 group: View,      binding: "cmd-0" },
-    Shortcut { id: BookmarksOpen,   label: "Open path bookmarks",       keys: &["\u{2318}", "\u{21e7}", "O"],     group: Bookmarks, binding: "cmd-shift-o" },
-];
-
-/// All shortcuts, in cheat-sheet order.
-pub fn shortcuts() -> &'static [Shortcut] {
-    SHORTCUTS
+/// The preference surface the palette view reads. Implemented for the host
+/// app's preferences store in `crates/ui`.
+pub trait PalettePrefs {
+    fn command_palette_search_mode(&self) -> SearchMode;
+    fn command_palette_history_size(&self) -> u32;
+    fn command_palette_opacity(&self) -> u32;
+    fn command_palette_position(&self) -> String;
+    fn command_palette_show_recent(&self) -> bool;
+    fn command_palette_close_on_overlay_click(&self) -> bool;
+    /// Persist a new search mode (`set_value("commandPaletteSearchMode", …)`).
+    fn set_command_palette_search_mode(&mut self, mode: SearchMode, cx: &mut Context<Self>)
+    where
+        Self: Sized;
 }
 
-/// The shortcut for `id` (every [`ShortcutId`] has exactly one entry).
-pub fn shortcut(id: ShortcutId) -> &'static Shortcut {
-    SHORTCUTS
-        .iter()
-        .find(|s| s.id == id)
-        .expect("every ShortcutId has a SHORTCUTS entry")
-}
-
-/// Display tokens (`["\u{2318}", "P"]`) for a shortcut — the palette's
-/// right-aligned hint, mirroring the reference `useShortcutHint`.
-pub fn shortcut_keys(id: ShortcutId) -> &'static [&'static str] {
-    shortcut(id).keys
-}
-
-/// Native-menu-only accelerators with no [`ShortcutId`] — hardcoded in
-/// [`crate::menu`] and never customizable. Kept here so conflict detection
-/// can block a user from rebinding onto one.
-pub const RESERVED_ACCELERATORS: &[(&str, &str)] =
-    &[("cmd-,", "Settings"), ("cmd-shift-n", "New SSH Connection")];
-
-/// The thing a candidate binding collides with.
-#[derive(Debug, PartialEq, Eq)]
-pub enum Conflict {
-    /// A native-menu accelerator (label).
-    Reserved(&'static str),
-    /// Another shortcut.
-    Shortcut(ShortcutId),
-}
-
-/// Canonicalise a keystroke string so equivalent bindings compare equal
-/// regardless of modifier order (`"shift-cmd-d"` == `"cmd-shift-d"`).
-fn normalize(binding: &str) -> String {
-    let mut parts: Vec<&str> = binding.split('-').filter(|s| !s.is_empty()).collect();
-    // Trailing "" from a literal "cmd--" (minus key) — restore it.
-    let key = if binding.ends_with("--") {
-        parts.pop();
-        "-"
-    } else {
-        parts.pop().unwrap_or("")
-    };
-    let rank = |m: &str| match m {
-        "ctrl" | "control" => 0,
-        "alt" | "option" => 1,
-        "shift" => 2,
-        "cmd" | "super" | "platform" | "win" => 3,
-        _ => 4,
-    };
-    parts.sort_by_key(|m| rank(m));
-    parts.dedup();
-    let mods = parts.join("-");
-    if mods.is_empty() {
-        key.to_string()
-    } else {
-        format!("{mods}-{key}")
-    }
-}
-
-/// Detect whether `binding` collides with a reserved accelerator or another
-/// shortcut. `exclude` is the shortcut being rebound (skipped in the scan).
-/// Port of `conflictDetector.ts::findConflict`.
-pub fn find_conflict(binding: &str, exclude: Option<ShortcutId>) -> Option<Conflict> {
-    let n = normalize(binding);
-    for (b, label) in RESERVED_ACCELERATORS {
-        if normalize(b) == n {
-            return Some(Conflict::Reserved(label));
-        }
-    }
-    for s in SHORTCUTS {
-        if Some(s.id) == exclude {
-            continue;
-        }
-        if normalize(s.binding) == n {
-            return Some(Conflict::Shortcut(s.id));
-        }
-    }
-    None
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// User keybind overrides (port of shortcuts/keybinds-store.ts + useKeybindsStore)
-// ─────────────────────────────────────────────────────────────────────────────
-
-/// Stable string id for a shortcut, matching the reference `ShortcutId`
-/// string literals in `shortcuts.ts`. This is the persisted key in the
-/// user's keybind-override map.
-pub fn shortcut_slug(id: ShortcutId) -> &'static str {
-    match id {
-        CommandPalette => "command.palette",
-        ShortcutsOpen => "shortcuts.open",
-        TabNew => "tab.new",
-        TabNewPreview => "tab.newPreview",
-        TabNewEditor => "tab.newEditor",
-        TabClose => "tab.close",
-        TabNext => "tab.next",
-        TabPrev => "tab.prev",
-        TabSelect1 => "tab.selectTab1",
-        TabSelect2 => "tab.selectTab2",
-        TabSelect3 => "tab.selectTab3",
-        TabSelect4 => "tab.selectTab4",
-        TabSelect5 => "tab.selectTab5",
-        TabSelect6 => "tab.selectTab6",
-        TabSelect7 => "tab.selectTab7",
-        TabSelect8 => "tab.selectTab8",
-        TabSelect9 => "tab.selectTab9",
-        PaneSplitRight => "pane.splitRight",
-        PaneSplitDown => "pane.splitDown",
-        PaneClose => "pane.close",
-        PaneFocusNext => "pane.focusNext",
-        SearchFocus => "search.focus",
-        AiToggle => "ai.toggle",
-        AiAskSelection => "ai.askSelection",
-        SidebarToggle => "sidebar.toggle",
-        ViewZenMode => "view.zenMode",
-        ViewZoomIn => "view.zoomIn",
-        ViewZoomOut => "view.zoomOut",
-        ViewZoomReset => "view.zoomReset",
-        BookmarksOpen => "bookmarks.open",
-    }
-}
-
-/// Reverse of [`shortcut_slug`].
-pub fn shortcut_from_slug(slug: &str) -> Option<ShortcutId> {
-    SHORTCUTS
-        .iter()
-        .map(|s| s.id)
-        .find(|id| shortcut_slug(*id) == slug)
-}
-
-/// User keybind overrides: shortcut slug → keystroke string. An empty
-/// string means the shortcut is explicitly disabled (unbound). An absent
-/// key means "use the registry default" — so an empty map is a fresh
-/// install running entirely on defaults.
-pub type KeybindMap = std::collections::BTreeMap<String, String>;
-
-/// The keystroke a shortcut currently resolves to, honouring user
-/// overrides. `None` = the shortcut is disabled (overridden to empty).
-pub fn effective_binding(id: ShortcutId, overrides: &KeybindMap) -> Option<String> {
-    match overrides.get(shortcut_slug(id)) {
-        Some(s) if s.is_empty() => None,
-        Some(s) => Some(s.clone()),
-        None => Some(shortcut(id).binding.to_string()),
-    }
-}
-
-/// Like [`find_conflict`] but resolves every shortcut through `overrides`
-/// first, so a rebound shortcut is compared at its *current* keystroke.
-/// Port of the override-aware conflict check in `useKeybindsStore`.
-pub fn resolve_conflict(
-    binding: &str,
-    exclude: Option<ShortcutId>,
-    overrides: &KeybindMap,
-) -> Option<Conflict> {
-    let n = normalize(binding);
-    for (b, label) in RESERVED_ACCELERATORS {
-        if normalize(b) == n {
-            return Some(Conflict::Reserved(label));
-        }
-    }
-    for s in SHORTCUTS {
-        if Some(s.id) == exclude {
-            continue;
-        }
-        if let Some(eff) = effective_binding(s.id, overrides) {
-            if normalize(&eff) == n {
-                return Some(Conflict::Shortcut(s.id));
-            }
-        }
-    }
-    None
+/// The workspace surface the palette view reads.
+pub trait PaletteWorkspace {
+    /// The active tab's [`CommandContext`], if it maps to one.
+    fn palette_active_context(&self, cx: &App) -> Option<CommandContext>;
+    /// Every open tab, for the `Switch Tab\u{2026}` sub-page.
+    fn palette_tab_rows(&self, cx: &App) -> Vec<PaletteTabRow>;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -323,7 +92,7 @@ pub enum CommandContext {
 }
 
 /// Every palette command. New domains/phases add a variant + a [`COMMANDS`]
-/// row + an arm in `AppShell::run_palette_command`.
+/// row + an arm in the host's `run_palette_command`.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 pub enum CommandId {
     NewTerminalTab,
@@ -459,97 +228,6 @@ impl Page {
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Fuzzy / prefix / substring matcher (port of the reference `filter` in
-// `CommandPalette.tsx`, which switches on `commandPaletteSearchMode`)
-// ─────────────────────────────────────────────────────────────────────────────
-
-/// The three search modes the reference footer cycles through.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum SearchMode {
-    Contains,
-    StartsWith,
-    Fuzzy,
-}
-
-impl SearchMode {
-    pub fn from_pref(p: PaletteSearchMode) -> Self {
-        match p {
-            PaletteSearchMode::Contains => SearchMode::Contains,
-            PaletteSearchMode::StartsWith => SearchMode::StartsWith,
-            PaletteSearchMode::Fuzzy => SearchMode::Fuzzy,
-        }
-    }
-    pub fn to_pref(self) -> PaletteSearchMode {
-        match self {
-            SearchMode::Contains => PaletteSearchMode::Contains,
-            SearchMode::StartsWith => PaletteSearchMode::StartsWith,
-            SearchMode::Fuzzy => PaletteSearchMode::Fuzzy,
-        }
-    }
-    /// Next mode in the cycle (matches the reference `cycleSearchMode` order).
-    pub fn next(self) -> Self {
-        match self {
-            SearchMode::Contains => SearchMode::StartsWith,
-            SearchMode::StartsWith => SearchMode::Fuzzy,
-            SearchMode::Fuzzy => SearchMode::Contains,
-        }
-    }
-    pub fn label(self) -> &'static str {
-        match self {
-            SearchMode::Contains => "contains",
-            SearchMode::StartsWith => "startsWith",
-            SearchMode::Fuzzy => "fuzzy",
-        }
-    }
-}
-
-/// Score `needle` against `haystack` under `mode`. `None` = no match.
-/// Higher score = better; an empty needle matches everything with score `0`.
-/// The port adds ranking (the reference `filter` is boolean) so results order
-/// by relevance, mirroring `cmdk`'s built-in scoring.
-pub fn match_score(mode: SearchMode, haystack: &str, needle: &str) -> Option<i64> {
-    let h = haystack.to_lowercase();
-    let n = needle.trim().to_lowercase();
-    if n.is_empty() {
-        return Some(0);
-    }
-    match mode {
-        SearchMode::StartsWith => h.starts_with(&n).then_some(1_000),
-        SearchMode::Contains => h.find(&n).map(|idx| 1_000 - idx as i64),
-        SearchMode::Fuzzy => {
-            let hb: Vec<char> = h.chars().collect();
-            let nb: Vec<char> = n.chars().collect();
-            let mut hi = 0;
-            let mut score = 0i64;
-            let mut last_hit: Option<usize> = None;
-            for &nc in &nb {
-                let mut found = false;
-                while hi < hb.len() {
-                    if hb[hi] == nc {
-                        if last_hit == Some(hi.wrapping_sub(1)) {
-                            score += 8; // consecutive-match bonus
-                        }
-                        if hi == 0 {
-                            score += 6; // start-of-string bonus
-                        }
-                        last_hit = Some(hi);
-                        hi += 1;
-                        found = true;
-                        break;
-                    }
-                    score -= 1; // gap penalty
-                    hi += 1;
-                }
-                if !found {
-                    return None;
-                }
-            }
-            Some(score)
-        }
-    }
-}
-
 pub struct Command {
     pub id: CommandId,
     pub title: &'static str,
@@ -567,6 +245,7 @@ pub struct Command {
 
 use CommandContext::{Editor as CtxEditor, SshTerminal, Terminal as CtxTerminal};
 use IconName as I;
+use ShortcutId::*;
 
 #[rustfmt::skip]
 static COMMANDS: &[Command] = &[
@@ -685,14 +364,14 @@ pub fn command_for_shortcut(id: ShortcutId) -> Option<CommandId> {
 }
 
 /// The active tab's [`CommandContext`], if it maps to one.
-pub fn context_of(tab_kind: TabKind, is_ssh: bool) -> Option<CommandContext> {
-    Some(match tab_kind {
-        TabKind::Workspace if is_ssh => CommandContext::SshTerminal,
-        TabKind::Workspace => CommandContext::Terminal,
-        TabKind::Editor => CommandContext::Editor,
-        TabKind::Sftp => CommandContext::Sftp,
-        TabKind::Home => CommandContext::Home,
-        _ => return None,
+pub fn context_of(kind: PaletteTabKind, is_ssh: bool) -> Option<CommandContext> {
+    Some(match kind {
+        PaletteTabKind::Workspace if is_ssh => CommandContext::SshTerminal,
+        PaletteTabKind::Workspace => CommandContext::Terminal,
+        PaletteTabKind::Editor => CommandContext::Editor,
+        PaletteTabKind::Sftp => CommandContext::Sftp,
+        PaletteTabKind::Home => CommandContext::Home,
+        PaletteTabKind::Other => return None,
     })
 }
 
@@ -700,7 +379,8 @@ pub fn context_of(tab_kind: TabKind, is_ssh: bool) -> Option<CommandContext> {
 // View
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Emitted when the user picks something in the palette. `AppShell` handles it.
+/// Emitted when the user picks something in the palette. The host shell
+/// handles it.
 #[derive(Clone, Debug)]
 pub enum PaletteEvent {
     Run(CommandId),
@@ -739,7 +419,7 @@ pub struct PaletteChoice {
 }
 
 /// Live application state the palette needs for its dynamic sub-pages and
-/// `rightLabel` states. `AppShell` rebuilds this each render and hands it over
+/// `rightLabel` states. The host rebuilds this each render and hands it over
 /// via [`CommandPalette::set_data`]. Domains not wired yet (hosts, snippets,
 /// AI sessions, git branches, editor outline) stay empty until their block
 /// lands — the pages exist and render a clean empty state meanwhile.
@@ -828,11 +508,17 @@ struct PaletteRow {
     has_sub: bool,
 }
 
+/// The backdrop fill for the palette overlay. The reference paints every
+/// `DialogOverlay` with `bg-black/30`, theme-independent.
+fn modal_scrim() -> Hsla {
+    gpui::black().opacity(0.30)
+}
+
 /// The Cmd+P command palette overlay.
-pub struct CommandPalette {
-    theme: Entity<ThemeStore>,
-    workspace: Entity<Workspace>,
-    prefs: Entity<PreferencesStore>,
+pub struct CommandPalette<P, W, Th> {
+    theme: Entity<Th>,
+    workspace: Entity<W>,
+    prefs: Entity<P>,
     open: bool,
     /// Navigation stack — `[Root]` at rest, pushed on drill-in.
     pages: Vec<Page>,
@@ -843,13 +529,24 @@ pub struct CommandPalette {
     focus: FocusHandle,
 }
 
-impl EventEmitter<PaletteEvent> for CommandPalette {}
+impl<P, W, Th> EventEmitter<PaletteEvent> for CommandPalette<P, W, Th>
+where
+    P: 'static,
+    W: 'static,
+    Th: 'static,
+{
+}
 
-impl CommandPalette {
+impl<P, W, Th> CommandPalette<P, W, Th>
+where
+    P: PalettePrefs + 'static,
+    W: PaletteWorkspace + 'static,
+    Th: UiTheme + 'static,
+{
     pub fn new(
-        theme: Entity<ThemeStore>,
-        workspace: Entity<Workspace>,
-        prefs: Entity<PreferencesStore>,
+        theme: Entity<Th>,
+        workspace: Entity<W>,
+        prefs: Entity<P>,
         cx: &mut Context<Self>,
     ) -> Self {
         Self {
@@ -870,7 +567,7 @@ impl CommandPalette {
         self.open
     }
 
-    /// Refresh the live-state snapshot (called from `AppShell::render`).
+    /// Refresh the live-state snapshot (called from the host's `render`).
     pub fn set_data(&mut self, data: PaletteData) {
         self.data = data;
     }
@@ -948,20 +645,15 @@ impl CommandPalette {
     }
 
     fn active_context(&self, cx: &App) -> Option<CommandContext> {
-        self.workspace.read(cx).active_context(cx)
+        self.workspace.read(cx).palette_active_context(cx)
     }
 
     fn search_mode(&self, cx: &App) -> SearchMode {
-        SearchMode::from_pref(self.prefs.read(cx).get().command_palette_search_mode)
+        self.prefs.read(cx).command_palette_search_mode()
     }
 
     fn push_recent(&mut self, id: CommandId, cx: &App) {
-        let max = self
-            .prefs
-            .read(cx)
-            .get()
-            .command_palette_history_size
-            .max(1) as usize;
+        let max = self.prefs.read(cx).command_palette_history_size().max(1) as usize;
         self.recent.retain(|&r| r != id);
         self.recent.insert(0, id);
         self.recent.truncate(max);
@@ -1059,16 +751,14 @@ impl CommandPalette {
                 let q = self.query.trim().to_lowercase();
                 self.workspace
                     .read(cx)
-                    .tab_store()
-                    .read(cx)
-                    .tabs()
-                    .iter()
-                    .filter(|t| q.is_empty() || t.label().to_lowercase().contains(&q))
+                    .palette_tab_rows(cx)
+                    .into_iter()
+                    .filter(|t| q.is_empty() || t.label.to_lowercase().contains(&q))
                     .map(|t| PaletteRow {
                         key: RowKey::Tab(t.id),
                         icon: Some(IconName::Terminal),
-                        title: t.label(),
-                        subtitle: Some(t.kind.default_title().to_string()),
+                        title: t.label,
+                        subtitle: Some(t.kind_title),
                         section: "Open Tabs".to_string(),
                         keys: vec![],
                         right_label: None,
@@ -1312,13 +1002,8 @@ impl CommandPalette {
 
     fn cycle_search_mode(&mut self, cx: &mut Context<Self>) {
         let next = self.search_mode(cx).next();
-        self.prefs.update(cx, |s, cx| {
-            s.set_value(
-                "commandPaletteSearchMode",
-                serde_json::Value::String(next.label().to_string()),
-                cx,
-            )
-        });
+        self.prefs
+            .update(cx, |s, cx| s.set_command_palette_search_mode(next, cx));
         cx.notify();
     }
 }
@@ -1338,7 +1023,12 @@ fn editor_theme_label(id: EditorThemeId) -> String {
         .join(" ")
 }
 
-impl Focusable for CommandPalette {
+impl<P, W, Th> Focusable for CommandPalette<P, W, Th>
+where
+    P: PalettePrefs + 'static,
+    W: PaletteWorkspace + 'static,
+    Th: UiTheme + 'static,
+{
     fn focus_handle(&self, _cx: &App) -> FocusHandle {
         self.focus.clone()
     }
@@ -1357,17 +1047,22 @@ fn kbd(label: impl Into<SharedString>, fg: Hsla, border: Hsla) -> impl IntoEleme
         .child(label.into())
 }
 
-impl Render for CommandPalette {
+impl<P, W, Th> Render for CommandPalette<P, W, Th>
+where
+    P: PalettePrefs + 'static,
+    W: PaletteWorkspace + 'static,
+    Th: UiTheme + 'static,
+{
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         if !self.open {
             return div().into_any_element();
         }
 
-        let p = self.prefs.read(cx).get();
-        let opacity = (p.command_palette_opacity as f32 / 100.0).clamp(0.35, 1.0);
-        let position = p.command_palette_position.clone();
-        let show_recent = p.command_palette_show_recent;
-        let close_on_overlay = p.command_palette_close_on_overlay_click;
+        let p = self.prefs.read(cx);
+        let opacity = (p.command_palette_opacity() as f32 / 100.0).clamp(0.35, 1.0);
+        let position = p.command_palette_position();
+        let show_recent = p.command_palette_show_recent();
+        let close_on_overlay = p.command_palette_close_on_overlay_click();
         let mode = self.search_mode(cx);
 
         let t = self.theme.read(cx);
@@ -1685,7 +1380,7 @@ impl Render for CommandPalette {
             .flex()
             .justify_center()
             .pt(top)
-            .bg(crate::theme::modal_scrim())
+            .bg(modal_scrim())
             .track_focus(&self.focus)
             .key_context("CommandPalette")
             .on_key_down(cx.listener(Self::on_key))
@@ -1723,121 +1418,6 @@ impl Render for CommandPalette {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn every_shortcut_id_has_one_entry_and_parses() {
-        for s in shortcuts() {
-            assert_eq!(shortcut(s.id).id, s.id);
-            gpui::Keystroke::parse(s.binding)
-                .unwrap_or_else(|e| panic!("bad binding {:?}: {e:?}", s.binding));
-        }
-    }
-
-    #[test]
-    fn default_bindings_have_no_conflicts() {
-        for s in shortcuts() {
-            assert_eq!(
-                find_conflict(s.binding, Some(s.id)),
-                None,
-                "default binding {:?} conflicts",
-                s.binding
-            );
-        }
-    }
-
-    #[test]
-    fn conflict_detects_duplicate_shortcut() {
-        // cmd-t is TabNew; trying to bind it elsewhere collides.
-        assert_eq!(
-            find_conflict("cmd-t", Some(ShortcutId::CommandPalette)),
-            Some(Conflict::Shortcut(ShortcutId::TabNew)),
-        );
-        // Modifier order does not matter.
-        assert_eq!(
-            find_conflict("shift-cmd-d", Some(ShortcutId::CommandPalette)),
-            Some(Conflict::Shortcut(ShortcutId::PaneSplitDown)),
-        );
-    }
-
-    #[test]
-    fn conflict_detects_reserved_accelerator() {
-        assert_eq!(
-            find_conflict("cmd-,", None),
-            Some(Conflict::Reserved("Settings")),
-        );
-        assert_eq!(
-            find_conflict("cmd-shift-n", None),
-            Some(Conflict::Reserved("New SSH Connection")),
-        );
-    }
-
-    #[test]
-    fn conflict_none_for_free_binding() {
-        assert_eq!(find_conflict("cmd-shift-y", None), None);
-    }
-
-    #[test]
-    fn slug_roundtrips_for_every_shortcut() {
-        for s in shortcuts() {
-            assert_eq!(shortcut_from_slug(shortcut_slug(s.id)), Some(s.id));
-        }
-    }
-
-    #[test]
-    fn first_start_uses_registry_defaults() {
-        let empty = KeybindMap::new();
-        for s in shortcuts() {
-            assert_eq!(
-                effective_binding(s.id, &empty).as_deref(),
-                Some(s.binding),
-                "{:?} default binding",
-                s.id
-            );
-        }
-    }
-
-    #[test]
-    fn effective_binding_honours_overrides() {
-        let mut m = KeybindMap::new();
-        assert_eq!(
-            effective_binding(ShortcutId::TabNew, &m).as_deref(),
-            Some("cmd-t")
-        );
-        m.insert("tab.new".into(), "cmd-shift-t".into());
-        assert_eq!(
-            effective_binding(ShortcutId::TabNew, &m).as_deref(),
-            Some("cmd-shift-t")
-        );
-        m.insert("tab.new".into(), String::new());
-        assert_eq!(effective_binding(ShortcutId::TabNew, &m), None);
-    }
-
-    #[test]
-    fn resolve_conflict_follows_rebinds() {
-        let mut m = KeybindMap::new();
-        // cmd-t is TabNew's default → collides for anyone else.
-        assert_eq!(
-            resolve_conflict("cmd-t", Some(ShortcutId::CommandPalette), &m),
-            Some(Conflict::Shortcut(ShortcutId::TabNew))
-        );
-        // Disable TabNew → cmd-t is now free.
-        m.insert("tab.new".into(), String::new());
-        assert_eq!(
-            resolve_conflict("cmd-t", Some(ShortcutId::CommandPalette), &m),
-            None
-        );
-        // Rebind CommandPalette onto cmd-t → it becomes the new owner.
-        m.insert("command.palette".into(), "cmd-t".into());
-        assert_eq!(
-            resolve_conflict("cmd-t", None, &m),
-            Some(Conflict::Shortcut(ShortcutId::CommandPalette))
-        );
-        // Reserved accelerators stay blocked regardless of overrides.
-        assert_eq!(
-            resolve_conflict("cmd-,", None, &m),
-            Some(Conflict::Reserved("Settings"))
-        );
-    }
 
     #[test]
     fn registry_lists_all_domains() {
@@ -1934,54 +1514,18 @@ mod tests {
     #[test]
     fn context_of_maps_tab_kinds() {
         assert_eq!(
-            context_of(TabKind::Workspace, false),
+            context_of(PaletteTabKind::Workspace, false),
             Some(CommandContext::Terminal)
         );
         assert_eq!(
-            context_of(TabKind::Workspace, true),
+            context_of(PaletteTabKind::Workspace, true),
             Some(CommandContext::SshTerminal)
         );
         assert_eq!(
-            context_of(TabKind::Editor, false),
+            context_of(PaletteTabKind::Editor, false),
             Some(CommandContext::Editor)
         );
-        assert_eq!(context_of(TabKind::GitGraph, false), None);
-    }
-
-    // ── Block D: fuzzy matcher / search modes / sub-pages ─────────────────
-
-    #[test]
-    fn match_score_modes() {
-        // Empty needle always matches.
-        assert!(match_score(SearchMode::Fuzzy, "anything", "").is_some());
-        // StartsWith is anchored.
-        assert!(match_score(SearchMode::StartsWith, "split pane right", "split").is_some());
-        assert!(match_score(SearchMode::StartsWith, "split pane right", "pane").is_none());
-        // Contains is a substring anywhere, earlier = higher score.
-        let early = match_score(SearchMode::Contains, "split pane", "split").unwrap();
-        let late = match_score(SearchMode::Contains, "split pane", "pane").unwrap();
-        assert!(early > late);
-        // Fuzzy matches a subsequence with gaps.
-        assert!(match_score(SearchMode::Fuzzy, "split pane right", "spr").is_some());
-        assert!(match_score(SearchMode::Fuzzy, "split pane right", "xyz").is_none());
-        // Consecutive letters outrank scattered ones.
-        let consec = match_score(SearchMode::Fuzzy, "format document", "format").unwrap();
-        let scattered = match_score(SearchMode::Fuzzy, "focus source control mode", "format");
-        assert!(scattered.is_none() || consec > scattered.unwrap());
-    }
-
-    #[test]
-    fn search_mode_cycles_and_maps_prefs() {
-        assert_eq!(SearchMode::Contains.next(), SearchMode::StartsWith);
-        assert_eq!(SearchMode::StartsWith.next(), SearchMode::Fuzzy);
-        assert_eq!(SearchMode::Fuzzy.next(), SearchMode::Contains);
-        for m in [
-            SearchMode::Contains,
-            SearchMode::StartsWith,
-            SearchMode::Fuzzy,
-        ] {
-            assert_eq!(SearchMode::from_pref(m.to_pref()), m);
-        }
+        assert_eq!(context_of(PaletteTabKind::Other, false), None);
     }
 
     #[test]

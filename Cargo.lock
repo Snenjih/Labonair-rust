@@ -4078,6 +4078,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "labonair-command-palette"
+version = "0.1.0"
+dependencies = [
+ "gpui",
+ "labonair-backend",
+ "labonair-gpui-ext",
+ "labonair-theme",
+ "labonair-ui-kit",
+ "serde_json",
+]
+
+[[package]]
 name = "labonair-editor"
 version = "0.1.0"
 dependencies = [
@@ -4148,6 +4160,7 @@ dependencies = [
  "image",
  "labonair-ai",
  "labonair-backend",
+ "labonair-command-palette",
  "labonair-editor",
  "labonair-gpui-ext",
  "labonair-notifications",

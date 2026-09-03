@@ -1,0 +1,19 @@
+[package]
+name = "labonair-command-palette"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "labonair_command_palette"
+path = "src/command_palette.rs"
+
+[dependencies]
+gpui = { workspace = true }
+serde_json = { workspace = true }
+labonair-theme = { path = "../theme" }
+labonair-ui-kit = { path = "../ui-kit" }
+labonair-gpui-ext = { path = "../gpui-ext" }
+labonair-backend = { path = "../backend" }
+
+[dev-dependencies]
+gpui = { workspace = true, features = ["test-support"] }

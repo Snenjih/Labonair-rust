@@ -40,7 +40,6 @@ use crate::ai_chat::{AiChatEvent, AiChatStore, AiChatView};
 use crate::background::{BackgroundStore, LayerScope};
 use crate::bar_items::{self, BarItemId, BarLoc, BarSide};
 use crate::bookmarks::{BookmarkEvent, BookmarksView};
-use crate::command_palette::{CommandId, CommandPalette, PaletteChoice, PaletteData, PaletteEvent};
 use crate::cwd_breadcrumb as bc;
 use crate::explorer::ExplorerView;
 use crate::git::GitPanelView;
@@ -53,6 +52,9 @@ use crate::theme::{ThemePreference, ThemeStore};
 use crate::updater::UpdaterView;
 use crate::window_state;
 use crate::workspace::Workspace;
+use labonair_command_palette::{
+    CommandId, CommandPalette, PaletteChoice, PaletteData, PaletteEvent,
+};
 use labonair_notifications::{self as notifications, NotificationCenter};
 use labonair_ui_kit::IconName;
 
@@ -148,7 +150,7 @@ pub struct AppShell {
     git_panel: Entity<GitPanelView>,
     snippets: Entity<SnippetsView>,
     ai_chat: Entity<AiChatView>,
-    command_palette: Entity<CommandPalette>,
+    command_palette: Entity<CommandPalette<PreferencesStore, Workspace, ThemeStore>>,
     prefs: Entity<PreferencesStore>,
     updater: Entity<UpdaterView>,
     backend: Backend,

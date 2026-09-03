@@ -4,7 +4,7 @@
 //! `@` / `/` autocomplete-popover behaviour from
 //! `reference-src/src/modules/ai/components/AiInputBar.tsx`.
 
-use crate::command_palette::{match_score, SearchMode};
+use labonair_command_palette::{match_score, SearchMode};
 
 /// The `/init` prompt body (verbatim from `slashCommands.ts`).
 pub const INIT_PROMPT: &str =

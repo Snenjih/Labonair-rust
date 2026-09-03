@@ -11,6 +11,7 @@
 mod color;
 pub mod fonts;
 mod import;
+mod prefs;
 mod tokens;
 
 pub use color::{oklch, oklch_a, parse_color, to_hex, to_rgb8, transparent};
@@ -18,6 +19,7 @@ pub use fonts::{
     embedded_fonts, MONO_FONT_FALLBACKS, MONO_FONT_FAMILY, UI_FONT_FALLBACKS, UI_FONT_FAMILY,
 };
 pub use import::{ThemeFile, ThemeFileVariant, COLOR_TOKENS};
+pub use prefs::{EditorThemeId, ThemePreference};
 pub use tokens::{
     Animation, AnsiColors, BorderVariants, CoreColors, CubicBezier, InteractionColors,
     MonoFontWeight, RadiusScale, ShadowLayer, Shadows, SidebarColors, StatusColors, SurfaceColors,

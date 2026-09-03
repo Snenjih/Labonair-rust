@@ -34,4 +34,36 @@ pub trait UiTheme {
     fn border(&self) -> Hsla {
         self.theme().core.border
     }
+
+    /// `--foreground`.
+    fn foreground(&self) -> Hsla {
+        self.theme().core.foreground
+    }
+
+    /// `--card`.
+    fn card(&self) -> Hsla {
+        self.theme().core.card
+    }
+
+    /// `--muted`.
+    fn muted(&self) -> Hsla {
+        self.theme().core.muted
+    }
+
+    /// `--primary`.
+    fn primary(&self) -> Hsla {
+        self.theme().core.primary
+    }
+
+    /// `--success` status color (severity: success).
+    fn status_success(&self) -> Hsla {
+        self.theme().status.success
+    }
+
+    /// Canonical selected/active fill for list selection (Explorer rows,
+    /// command-palette results). The reference `cmdk` command items use
+    /// `data-selected:bg-muted`.
+    fn selected_fill(&self) -> Hsla {
+        self.muted()
+    }
 }

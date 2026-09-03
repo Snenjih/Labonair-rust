@@ -52,9 +52,9 @@ use crate::background::BackgroundStore;
 use crate::bar_items::{
     self, default_placement, placement_patch, BarItemId, BarLoc, BarSide, BAR_ITEM_ORDER,
 };
-use crate::command_palette::{
+use labonair_command_palette::{
     effective_binding, resolve_conflict, shortcut, shortcut_slug, shortcuts, Conflict, KeybindMap,
-    ShortcutId,
+    PalettePrefs, SearchMode, ShortcutId,
 };
 
 use labonair_backend::modules::mcp::{
@@ -63,8 +63,8 @@ use labonair_backend::modules::mcp::{
 };
 use labonair_backend::modules::settings::mcp::{mcp_prefs_load, mcp_prefs_save, McpPrefs};
 use labonair_backend::modules::settings::preferences::{
-    preferences_load, preferences_load_from, preferences_save, preferences_save_to, Preferences,
-    ThemePref,
+    preferences_load, preferences_load_from, preferences_save, preferences_save_to,
+    PaletteSearchMode, Preferences, ThemePref,
 };
 use labonair_backend::App as Backend;
 
@@ -351,6 +351,49 @@ impl PreferencesStore {
             Ok(_) => {}
             Err(e) => tracing::warn!("rejected preference `{key}`: {e}"),
         }
+    }
+}
+
+/// Bridges the [`PreferencesStore`] to the `labonair-command-palette` view's
+/// [`PalettePrefs`] contract (T16-004 decoupling). Every accessor is a verbatim
+/// field read of the `command_palette_*` preferences; the setter is the same
+/// `set_value("commandPaletteSearchMode", …)` call the palette footer used to
+/// make directly.
+impl PalettePrefs for PreferencesStore {
+    fn command_palette_search_mode(&self) -> SearchMode {
+        match self.prefs.command_palette_search_mode {
+            PaletteSearchMode::Contains => SearchMode::Contains,
+            PaletteSearchMode::StartsWith => SearchMode::StartsWith,
+            PaletteSearchMode::Fuzzy => SearchMode::Fuzzy,
+        }
+    }
+
+    fn command_palette_history_size(&self) -> u32 {
+        self.prefs.command_palette_history_size
+    }
+
+    fn command_palette_opacity(&self) -> u32 {
+        self.prefs.command_palette_opacity
+    }
+
+    fn command_palette_position(&self) -> String {
+        self.prefs.command_palette_position.clone()
+    }
+
+    fn command_palette_show_recent(&self) -> bool {
+        self.prefs.command_palette_show_recent
+    }
+
+    fn command_palette_close_on_overlay_click(&self) -> bool {
+        self.prefs.command_palette_close_on_overlay_click
+    }
+
+    fn set_command_palette_search_mode(&mut self, mode: SearchMode, cx: &mut Context<Self>) {
+        self.set_value(
+            "commandPaletteSearchMode",
+            Value::String(mode.label().to_string()),
+            cx,
+        );
     }
 }
 

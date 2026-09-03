@@ -4,7 +4,88 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
-## Last Session: 2026-09-03 (T16-003 — extract labonair-notifications)
+## Last Session: 2026-09-03 (T16-004 — extract labonair-command-palette)
+
+Fourth code task of the architecture rework. **Move + proper decoupling
+(Option 1), zero behaviour change.**
+
+### What Was Done (T16-004)
+- **`crates/command-palette/`** (`labonair-command-palette`) created — lib root
+  `src/command_palette.rs` (`[lib] name = "labonair_command_palette"`,
+  `path = "src/command_palette.rs"`). Split into three modules:
+  * `src/fuzzy.rs` — `SearchMode` + `match_score`. `from_pref`/`to_pref`
+    (which named `labonair_backend::…::PaletteSearchMode`) dropped; replaced by
+    `SearchMode::from_label` / `label`. The `PaletteSearchMode → SearchMode`
+    conversion now lives in the `crates/ui` `PalettePrefs` impl.
+  * `src/keybind.rs` — `ShortcutId`, `ShortcutGroup`, `Shortcut`, `SHORTCUTS`,
+    `shortcuts`/`shortcut`/`shortcut_keys`, `RESERVED_ACCELERATORS`, `Conflict`,
+    `normalize` (priv), `find_conflict`, `shortcut_slug`/`shortcut_from_slug`,
+    `KeybindMap`, `effective_binding`, `resolve_conflict` + their 9 tests.
+  * `src/palette.rs` — `CommandContext`, `CommandId`, `toggle_pref_key`, `Page`,
+    `Command`/`COMMANDS`, `commands`/`command`/`available`/`search_mode`/
+    `search`/`command_for_shortcut`/`context_of`, `PaletteEvent`,
+    `PaletteChoice`, `PaletteData`, `recent` mod, `RowKey`/`PaletteRow`, the
+    generic `CommandPalette<P, W, Th>` view + its 11 tests.
+- **Decoupling (the non-trivial bit).** The view no longer names any
+  `crates/ui` type. It is generic over three contracts:
+  * `Th: labonair_ui_kit::UiTheme` — added defaulted accessors `foreground`,
+    `card`, `muted`, `primary`, `status_success`, `selected_fill` (verbatim
+    `theme().core.*` / `theme().status.success` reads, matching `ThemeStore`'s
+    inherent methods 1:1). `modal_scrim()` inlined in `palette.rs` as
+    `gpui::black().opacity(0.30)`.
+  * `P: PalettePrefs` (new trait in `palette.rs`) — the 6 `command_palette_*`
+    getters the view reads + `set_command_palette_search_mode`. `impl` for
+    `PreferencesStore` in `crates/ui/src/settings.rs` (verbatim field reads;
+    setter is the old `set_value("commandPaletteSearchMode", …)` call).
+  * `W: PaletteWorkspace` (new trait) — `palette_active_context` +
+    `palette_tab_rows` (owned `PaletteTabRow { id, label, kind_title, is_ssh }`).
+    `impl` for `Workspace` in `crates/ui/src/workspace.rs`.
+  * `context_of` now takes the palette-owned `PaletteTabKind` (not `crates/ui`'s
+    `TabKind`). `workspace.rs` gained a private `palette_tab_kind(TabKind)` map.
+- **Theme enums moved.** `ThemePreference` + `EditorThemeId` (with `slug`,
+  `from_slug`, `ALL`) moved from `crates/ui/src/theme.rs` to a new
+  `crates/theme/src/prefs.rs`, re-exported from `labonair_theme` **and** from
+  `crate::theme` (`pub use labonair_theme::{EditorThemeId, ThemePreference};`)
+  so every existing `crate::theme::` / `labonair_ui::` path is unchanged.
+  `ThemeMode` stayed in `crates/ui` (not needed below).
+- **Deps** (`cargo tree -p labonair-command-palette`): `gpui`, `serde_json`,
+  `labonair-theme`, `labonair-ui-kit`, `labonair-gpui-ext`, `labonair-backend`.
+  **No** `labonair-ui`. `labonair-backend` is a UI-free leaf — needed for
+  `recent`'s `config_dir()` + `serde_json` (kept the recents-file behaviour 1:1
+  rather than routing it through another trait). Acyclic graph preserved.
+- **`crates/ui`**: `pub mod command_palette;` removed, old
+  `crates/ui/src/command_palette.rs` `git rm`'d. `pub use command_palette::{…}`
+  → `pub use labonair_command_palette::{…}` (re-export list unchanged, so
+  `labonair_ui::CommandPalette` etc. still resolve). Import paths updated in
+  `ai_composer.rs`, `menu.rs`, `settings.rs`, `app_shell.rs`, `workspace.rs`.
+  `app_shell` field is now
+  `Entity<CommandPalette<PreferencesStore, Workspace, ThemeStore>>`; the
+  `CommandPalette::new(theme, workspace, prefs, cx)` call site is unchanged
+  (types infer from the field).
+- **Workspace `Cargo.toml`**: `crates/command-palette` added as a member
+  (before `crates/ui`) + direct `path` dep in `crates/ui/Cargo.toml`.
+
+### Verification (T16-004)
+- `cargo fmt --check` — clean.
+- `cargo check --workspace --all-targets` — exit 0.
+- `cargo clippy --workspace --all-targets -- -D warnings` — exit 0
+  (pre-existing `proc-macro-error2` future-incompat note only).
+- `cargo test --workspace` — see commit; palette/keybind/fuzzy tests run in the
+  new crate (20 tests), `labonair-ui` + others unaffected.
+- `cargo run` GUI check not performed (headless VPS). Change is import paths +
+  a generic-over-contracts view over identical token/pref/tab reads; covered by
+  the moved unit tests + full workspace compile.
+
+### What's Next
+- **T16-005** `tasks/phase-15-crate-split/T16-005-panel-contracts-crate.md`
+  — `labonair-panel` contracts crate.
+
+### Blockers
+- None.
+
+---
+
+## Prior Session: 2026-09-03 (T16-003 — extract labonair-notifications)
 
 Third code task of the architecture rework. **Pure move + generic-over-theme,
 zero behaviour change.**

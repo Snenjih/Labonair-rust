@@ -16,6 +16,12 @@ use gpui::{
 };
 use labonair_theme::{Animation, MonoFontWeight, RadiusScale, Shadows, Theme, ThemeFile};
 
+/// Re-exported from `labonair-theme` (moved there in T16-004 so the
+/// command-palette and settings crates can name them without depending on
+/// `crates/ui`). Existing `crate::theme::{EditorThemeId, ThemePreference}`
+/// paths keep working unchanged.
+pub use labonair_theme::{EditorThemeId, ThemePreference};
+
 /// Lets the `labonair-ui-kit` primitives read tokens off the runtime store
 /// without depending on it. Only `theme()` is provided here — `radius()` /
 /// `muted_foreground()` / `border()` fall through to the trait defaults, which
@@ -24,18 +30,6 @@ impl labonair_ui_kit::UiTheme for ThemeStore {
     fn theme(&self) -> &Theme {
         ThemeStore::theme(self)
     }
-}
-
-/// The theme preference the user picked in settings.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum ThemePreference {
-    /// Follow the operating-system appearance.
-    #[default]
-    System,
-    /// Always use the light theme.
-    Light,
-    /// Always use the dark theme.
-    Dark,
 }
 
 /// The concrete appearance mode after resolving [`ThemePreference::System`]
@@ -55,71 +49,6 @@ impl ThemeMode {
             WindowAppearance::Dark | WindowAppearance::VibrantDark => ThemeMode::Dark,
         }
     }
-}
-
-/// The editor colour scheme the user picked. `Auto` derives syntax colours
-/// from the active app theme's tokens (so it follows light/dark and imported
-/// themes); the named schemes mirror Labonair's CodeMirror theme set.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum EditorThemeId {
-    #[default]
-    Auto,
-    Atomone,
-    Aura,
-    Copilot,
-    GithubDark,
-    GithubLight,
-    Nord,
-    TokyoNight,
-    XcodeDark,
-    XcodeLight,
-}
-
-impl EditorThemeId {
-    /// The stable slug used in settings / theme files.
-    pub fn slug(&self) -> &'static str {
-        match self {
-            EditorThemeId::Auto => "auto",
-            EditorThemeId::Atomone => "atomone",
-            EditorThemeId::Aura => "aura",
-            EditorThemeId::Copilot => "copilot",
-            EditorThemeId::GithubDark => "github-dark",
-            EditorThemeId::GithubLight => "github-light",
-            EditorThemeId::Nord => "nord",
-            EditorThemeId::TokyoNight => "tokyo-night",
-            EditorThemeId::XcodeDark => "xcode-dark",
-            EditorThemeId::XcodeLight => "xcode-light",
-        }
-    }
-
-    pub fn from_slug(slug: &str) -> Option<Self> {
-        Some(match slug {
-            "auto" => EditorThemeId::Auto,
-            "atomone" => EditorThemeId::Atomone,
-            "aura" => EditorThemeId::Aura,
-            "copilot" => EditorThemeId::Copilot,
-            "github-dark" => EditorThemeId::GithubDark,
-            "github-light" => EditorThemeId::GithubLight,
-            "nord" => EditorThemeId::Nord,
-            "tokyo-night" => EditorThemeId::TokyoNight,
-            "xcode-dark" => EditorThemeId::XcodeDark,
-            "xcode-light" => EditorThemeId::XcodeLight,
-            _ => return None,
-        })
-    }
-
-    pub const ALL: [EditorThemeId; 10] = [
-        EditorThemeId::Auto,
-        EditorThemeId::Atomone,
-        EditorThemeId::Aura,
-        EditorThemeId::Copilot,
-        EditorThemeId::GithubDark,
-        EditorThemeId::GithubLight,
-        EditorThemeId::Nord,
-        EditorThemeId::TokyoNight,
-        EditorThemeId::XcodeDark,
-        EditorThemeId::XcodeLight,
-    ];
 }
 
 /// Runtime typography overrides driven by the Terminal / Editor / Appearance

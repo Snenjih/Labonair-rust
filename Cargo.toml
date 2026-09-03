@@ -5,6 +5,7 @@ members = [
     "crates/gpui-ext",
     "crates/ui-kit",
     "crates/notifications",
+    "crates/command-palette",
     "crates/ui",
     "crates/terminal",
     "crates/editor",

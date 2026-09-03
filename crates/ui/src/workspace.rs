@@ -1665,12 +1665,12 @@ impl Workspace {
 
     // ── Command-palette entry points (T12-002) ─────────────────────────────
 
-    /// The [`CommandContext`] the active tab exposes, driving which
+    /// The `CommandContext` the active tab exposes, driving which
     /// context-scoped palette commands are offered.
-    pub fn active_context(&self, cx: &App) -> Option<crate::command_palette::CommandContext> {
+    pub fn active_context(&self, cx: &App) -> Option<labonair_command_palette::CommandContext> {
         let active = self.tabs.read(cx).active()?;
         let is_ssh = self.ssh_tabs.values().any(|t| t.tab_id == active.id);
-        crate::command_palette::context_of(active.kind, is_ssh)
+        labonair_command_palette::context_of(palette_tab_kind(active.kind), is_ssh)
     }
 
     /// `(id, name)` for every known host — feeds the path-bookmarks popover's
@@ -4053,6 +4053,43 @@ impl Workspace {
 /// POSIX single-quote a path for a `cd` command (breadcrumb navigation).
 fn shell_quote(s: &str) -> String {
     format!("'{}'", s.replace('\'', "'\\''"))
+}
+
+/// Maps a [`TabKind`] onto the palette crate's owned tab-kind enum so
+/// `crates/ui` never passes its `TabKind` across the crate boundary (T16-004).
+fn palette_tab_kind(kind: TabKind) -> labonair_command_palette::PaletteTabKind {
+    use labonair_command_palette::PaletteTabKind as K;
+    match kind {
+        TabKind::Workspace => K::Workspace,
+        TabKind::Editor => K::Editor,
+        TabKind::Sftp => K::Sftp,
+        TabKind::Home => K::Home,
+        _ => K::Other,
+    }
+}
+
+/// Bridges [`Workspace`] to the `labonair-command-palette` view's
+/// [`PaletteWorkspace`](labonair_command_palette::PaletteWorkspace) contract
+/// (T16-004 decoupling). Both accessors mirror what the palette view read
+/// directly from `Workspace` before the split.
+impl labonair_command_palette::PaletteWorkspace for Workspace {
+    fn palette_active_context(&self, cx: &App) -> Option<labonair_command_palette::CommandContext> {
+        self.active_context(cx)
+    }
+
+    fn palette_tab_rows(&self, cx: &App) -> Vec<labonair_command_palette::PaletteTabRow> {
+        self.tabs
+            .read(cx)
+            .tabs()
+            .iter()
+            .map(|t| labonair_command_palette::PaletteTabRow {
+                id: t.id,
+                label: t.label(),
+                kind_title: t.kind.default_title().to_string(),
+                is_ssh: self.ssh_tabs.values().any(|s| s.tab_id == t.id),
+            })
+            .collect()
+    }
 }
 
 #[cfg(test)]

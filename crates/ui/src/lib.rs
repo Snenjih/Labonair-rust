@@ -11,7 +11,6 @@ pub mod background;
 pub mod bar_items;
 pub mod bell;
 pub mod bookmarks;
-pub mod command_palette;
 pub mod cwd_breadcrumb;
 pub mod diff;
 pub mod editor;
@@ -48,17 +47,17 @@ pub use background::{
     GlobalBackground, LayerScope,
 };
 pub use bookmarks::{BookmarkEvent, BookmarksView};
-pub use command_palette::{
-    command_for_shortcut, effective_binding, find_conflict, resolve_conflict, shortcut,
-    shortcut_from_slug, shortcut_slug, shortcuts, CommandId, CommandPalette, Conflict, KeybindMap,
-    PaletteEvent, ShortcutId,
-};
 pub use diff::{DiffLayout, DiffView};
 pub use editor::{EditorEvent, EditorView};
 pub use explorer::{DraggedPaths, ExplorerView};
 pub use git::GitPanelView;
 pub use git_graph::GitGraphView;
 pub use hosts::{HostManagerEvent, HostManagerView, HostStatus};
+pub use labonair_command_palette::{
+    command_for_shortcut, effective_binding, find_conflict, resolve_conflict, shortcut,
+    shortcut_from_slug, shortcut_slug, shortcuts, CommandId, CommandPalette, Conflict, KeybindMap,
+    PaletteEvent, ShortcutId,
+};
 pub use labonair_notifications::{
     init as init_notifications, notification_center, notify_err, GlobalNotificationCenter,
     Notification, NotificationAction, NotificationCenter, Severity,

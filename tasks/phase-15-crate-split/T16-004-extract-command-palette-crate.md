@@ -1,7 +1,7 @@
 # T16-004: `labonair-command-palette` extrahieren
 
 ## Status
-📋 Geplant
+✅ Done
 
 ## Phase
 15 — Crate-Zerlegung & Fundament
