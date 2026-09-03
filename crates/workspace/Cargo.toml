@@ -23,6 +23,8 @@ labonair-gpui-ext = { path = "../gpui-ext" }
 labonair-notifications = { path = "../notifications" }
 labonair-command-palette = { path = "../command-palette" }
 labonair-panel = { path = "../panel" }
+labonair-panel-git-graph = { path = "../panel-git-graph" }
+labonair-hosts-ui = { path = "../hosts-ui" }
 labonair-terminal = { path = "../terminal" }
 labonair-editor = { path = "../editor" }
 labonair-backend = { path = "../backend" }

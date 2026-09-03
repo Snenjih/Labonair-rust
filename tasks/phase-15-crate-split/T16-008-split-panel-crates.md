@@ -1,7 +1,7 @@
 # T16-008: Panel-Crates ausgliedern
 
 ## Status
-📋 Geplant
+✅ Done
 
 ## Phase
 15 — Crate-Zerlegung & Fundament

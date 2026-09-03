@@ -15,6 +15,18 @@
 //!   [`crate::workspace::Workspace`] (terminal / inject) or
 //!   `modules::snippets::exec` (silent).
 
+// Crate root (T16-008): this file is the `labonair-panel-snippets` lib root.
+// The `theme` / `workspace` shims keep the pre-split `crate::…` paths resolving
+// against their new home crates.
+
+pub(crate) mod theme {
+    pub use labonair_theme::store::*;
+}
+
+pub(crate) mod workspace {
+    pub use labonair_workspace::Workspace;
+}
+
 use std::collections::{HashMap, HashSet};
 
 use gpui::prelude::FluentBuilder;

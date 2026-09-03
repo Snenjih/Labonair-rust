@@ -19,6 +19,14 @@
 //! wrapper). Every call is dispatched onto the tokio runtime and folded back
 //! on the GPUI thread; a generation guard (`gen`, bumped on every
 //! root/session/reload change) drops stale responses.
+//!
+//! Crate root (T16-008): this file is the `labonair-panel-git-graph` lib root.
+//! The `theme` shim keeps the pre-split `crate::theme::…` paths resolving
+//! against `labonair_theme::store`.
+
+pub(crate) mod theme {
+    pub use labonair_theme::store::*;
+}
 
 use std::sync::Arc;
 use std::time::{Duration, Instant};

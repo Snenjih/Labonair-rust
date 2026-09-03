@@ -113,9 +113,9 @@ Today's monolith is `crates/ui/src/` (~40 files, ~48k lines; `settings.rs`
 | `labonair-settings` | `SettingsStore` (layer merge), `Settings` trait + registration, `keymap.json` loader, comment-preserving JSON surgical edit, schema generation. | new, extracted from the store logic in `ui/settings.rs` |
 | `labonair-settings-ui` | Settings window, pages, generated per-type field renderers. | `ui/settings.rs` (UI part: pages, `FIELDS`/`SECTION_GROUPS` stay unchanged initially) |
 | `labonair-panel` | Contracts only: `Panel` trait, `PanelRegistry`, `StatusItem` trait, `StatusItemRegistry` — signatures ported from Zed, initially unused. Breaks the Panel ↔ Workspace cycle. | new; trait extraction target of `ui/sidebar_slot.rs` and the `BarItemId` model in `ui/bar_items.rs` |
-| `labonair-workspace` | `Workspace`, `Pane`, `PaneGroup` (recursive split tree), `Dock` (L/R/B), `StatusBar` host, `ModalLayer`, `ToastLayer` host, layout/session persistence. | `ui/workspace.rs`, `ui/pane.rs`, `ui/tabs.rs`, `ui/sidebar_slot.rs`, `ui/session.rs`, `ui/window_state.rs` (persistence part), `ui/bookmarks.rs`, `ui/preview.rs`, `ui/sftp.rs`, `ui/terminal.rs` (view), `ui/editor.rs` (view), `ui/diff.rs` (view) — terminal/editor/sftp views stay here for now (§7 of the report) |
+| `labonair-workspace` | `Workspace`, `Pane`, `PaneGroup` (recursive split tree), `Dock` (L/R/B), `StatusBar` host, `ModalLayer`, `ToastLayer` host, layout/session persistence. | `ui/workspace.rs`, `ui/pane.rs`, `ui/tabs.rs`, `ui/sidebar_slot.rs`, `ui/session.rs`, `ui/window_state.rs` (persistence part), `ui/preview.rs`, `ui/sftp.rs`, `ui/terminal.rs` (view), `ui/editor.rs` (view), `ui/diff.rs` (view) — terminal/editor/sftp views stay here for now (§7 of the report); `ui/bookmarks.rs` moved on to `labonair-panel-explorer` in T16-008 (§8.4) |
 | `labonair-shell` | `AppShell`: composes titlebar + docks + workspace + statusbar + modal layer; the only crate that knows concrete panel types (registration). Thin, no feature code. | `ui/app_shell.rs`, `ui/lib.rs`, `ui/menu.rs`, `ui/bar_items.rs` (concrete items), `ui/cwd_breadcrumb.rs`, `ui/transfers.rs` (statusbar item + progress UI), `ui/updater.rs`, `ui/agent_access.rs` |
-| `labonair-panel-explorer` | File-explorer panel. | `ui/explorer.rs` |
+| `labonair-panel-explorer` | File-explorer panel (also hosts the path-bookmarks overlay view — see §8.4). | `ui/explorer.rs`, `ui/bookmarks.rs` |
 | `labonair-panel-scm` | Source-control (status / staging) panel. | `ui/git.rs` |
 | `labonair-panel-git-graph` | Commit-graph panel. | `ui/git_graph.rs` |
 | `labonair-hosts-ui` | Host connect list + host / credential editing UI. **Not a dock panel and not a tab** (see §8): the connect surface is rendered by the command palette (`Enter` = SSH, `Shift+Enter` = SFTP), the management surface is embedded in **Settings › Hosts** (a first-class top-level category). | `ui/hosts.rs`, `ui/ssh_connection.rs` |
@@ -387,3 +387,21 @@ Tasks: T19-000 (contract doc + `CLAUDE.md` rule), T19-001 (`hosts` +
 `personalization` as areas; custom-category marker), T19-004 (disclosure nav +
 custom top-level category path), T19-010 (Hosts as the first new custom
 top-level category).
+
+### 8.4 Bookmarks live in `labonair-panel-explorer` (no `panel-bookmarks` crate)
+
+T16-008 default taken: the path-bookmarks overlay (`ui/bookmarks.rs` →
+`BookmarksView` / `BookmarkEvent`) moves into **`labonair-panel-explorer`** as a
+`bookmarks` submodule rather than its own crate — bookmarks are directory-near
+and the view already couples to `ExplorerView` (needs the local explorer root).
+It stays an `EventEmitter` overlay view: `AppShell` keeps `self.bookmarks:
+Entity<BookmarksView>` and renders it as an overlay (unchanged semantics); the
+crate boundary is the only thing that moved.
+
+Directed edges added in T16-008 (all acyclic): `labonair-workspace` →
+`labonair-hosts-ui` and → `labonair-panel-git-graph` (it owns the tab-view
+entities); `labonair-panel-{explorer,snippets,ai}` → `labonair-workspace`
+(`Workspace`, `markdown`, `syntax_theme`, `agent_access`). `labonair-hosts-ui`
+and `labonair-panel-git-graph` do **not** depend on `labonair-workspace`, so no
+cycle. `AgentAccessStore` stays in `labonair-workspace::agent_access` and is
+re-exported by `labonair-panel-ai`.

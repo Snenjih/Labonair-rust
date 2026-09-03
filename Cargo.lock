@@ -4119,6 +4119,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "labonair-hosts-ui"
+version = "0.1.0"
+dependencies = [
+ "gpui",
+ "labonair-backend",
+ "labonair-notifications",
+ "labonair-theme",
+ "labonair-ui-kit",
+ "serde_json",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
 name = "labonair-notifications"
 version = "0.1.0"
 dependencies = [
@@ -4134,6 +4148,77 @@ version = "0.1.0"
 dependencies = [
  "gpui",
  "labonair-gpui-ext",
+]
+
+[[package]]
+name = "labonair-panel-ai"
+version = "0.1.0"
+dependencies = [
+ "gpui",
+ "labonair-ai",
+ "labonair-backend",
+ "labonair-command-palette",
+ "labonair-editor",
+ "labonair-theme",
+ "labonair-ui-kit",
+ "labonair-workspace",
+ "serde_json",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
+name = "labonair-panel-explorer"
+version = "0.1.0"
+dependencies = [
+ "gpui",
+ "labonair-backend",
+ "labonair-notifications",
+ "labonair-theme",
+ "labonair-ui-kit",
+ "labonair-workspace",
+ "notify 6.1.1",
+ "notify-debouncer-mini",
+ "tracing",
+]
+
+[[package]]
+name = "labonair-panel-git-graph"
+version = "0.1.0"
+dependencies = [
+ "gpui",
+ "labonair-backend",
+ "labonair-notifications",
+ "labonair-theme",
+ "labonair-ui-kit",
+ "tokio",
+]
+
+[[package]]
+name = "labonair-panel-scm"
+version = "0.1.0"
+dependencies = [
+ "gpui",
+ "labonair-backend",
+ "labonair-notifications",
+ "labonair-theme",
+ "labonair-ui-kit",
+ "tokio",
+]
+
+[[package]]
+name = "labonair-panel-snippets"
+version = "0.1.0"
+dependencies = [
+ "gpui",
+ "labonair-backend",
+ "labonair-notifications",
+ "labonair-theme",
+ "labonair-ui-kit",
+ "labonair-workspace",
+ "serde_json",
+ "tokio",
+ "uuid",
 ]
 
 [[package]]
@@ -4187,24 +4272,25 @@ dependencies = [
  "gpui",
  "gpui-component",
  "image",
- "labonair-ai",
  "labonair-backend",
  "labonair-command-palette",
- "labonair-editor",
  "labonair-gpui-ext",
+ "labonair-hosts-ui",
  "labonair-notifications",
+ "labonair-panel-ai",
+ "labonair-panel-explorer",
+ "labonair-panel-git-graph",
+ "labonair-panel-scm",
+ "labonair-panel-snippets",
  "labonair-settings-ui",
  "labonair-terminal",
  "labonair-theme",
  "labonair-ui-kit",
  "labonair-workspace",
- "notify 6.1.1",
- "notify-debouncer-mini",
  "serde",
  "serde_json",
  "tokio",
  "tracing",
- "uuid",
 ]
 
 [[package]]
@@ -4230,8 +4316,10 @@ dependencies = [
  "labonair-command-palette",
  "labonair-editor",
  "labonair-gpui-ext",
+ "labonair-hosts-ui",
  "labonair-notifications",
  "labonair-panel",
+ "labonair-panel-git-graph",
  "labonair-terminal",
  "labonair-theme",
  "labonair-ui-kit",

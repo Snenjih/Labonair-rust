@@ -35,18 +35,11 @@ use labonair_backend::App as Backend;
 use labonair_terminal::TerminalRegistry;
 use tokio::runtime::Handle as TokioHandle;
 
-use crate::agent_access::{AgentAccessEntry, AgentAccessStore};
-use crate::ai_chat::{AiChatEvent, AiChatStore, AiChatView};
 use crate::background::{BackgroundStore, LayerScope};
 use crate::bar_items::{self, BarItemId, BarLoc, BarSide};
-use crate::bookmarks::{BookmarkEvent, BookmarksView};
 use crate::cwd_breadcrumb as bc;
-use crate::explorer::ExplorerView;
-use crate::git::GitPanelView;
-use crate::git_graph::GitGraphView;
 use crate::menu;
 use crate::pane::SplitAxis;
-use crate::snippets::SnippetsView;
 use crate::theme::{ThemePreference, ThemeStore};
 use crate::updater::UpdaterView;
 use crate::window_state;
@@ -55,10 +48,16 @@ use labonair_command_palette::{
     CommandId, CommandPalette, Page as PalettePage, PaletteChoice, PaletteData, PaletteEvent,
 };
 use labonair_notifications::{self as notifications, NotificationCenter};
+use labonair_panel_ai::{AiChatEvent, AiChatStore, AiChatView};
+use labonair_panel_explorer::{BookmarkEvent, BookmarksView, ExplorerView};
+use labonair_panel_git_graph::GitGraphView;
+use labonair_panel_scm::GitPanelView;
+use labonair_panel_snippets::SnippetsView;
 use labonair_settings_ui::{
     open_settings_window, set_settings_deps, PreferencesStore, SettingsTab,
 };
 use labonair_ui_kit::IconName;
+use labonair_workspace::agent_access::{AgentAccessEntry, AgentAccessStore};
 
 const HEADER_H: f32 = 40.0;
 const STATUS_H: f32 = 32.0;

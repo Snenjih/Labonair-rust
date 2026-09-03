@@ -105,14 +105,14 @@ use crate::tabs::{Tab, TabData, TabKind, TabStore};
 use crate::theme::ThemeStore;
 use crate::transfers::{TransferBusEvent, TransfersEvent, TransfersView};
 use crate::views::editor::{EditorEvent, EditorView};
-use crate::views::git_graph::GitGraphView;
-use crate::views::hosts::{ActiveTunnelRow, HostManagerEvent, HostManagerView, HostStatus};
 use crate::views::preview::PreviewView;
 use crate::views::sftp::{SftpEvent, SftpView};
-use crate::views::ssh_connection::{
+use crate::views::terminal::TerminalView;
+use labonair_hosts_ui::ssh_connection::{
     ConnStage, ConnectionKind, ConnectionState, ConnectionStatusStore, StageStatus,
 };
-use crate::views::terminal::TerminalView;
+use labonair_hosts_ui::{ActiveTunnelRow, HostManagerEvent, HostManagerView, HostStatus};
+use labonair_panel_git_graph::GitGraphView;
 use labonair_ui_kit::{context_menu, IconName, MenuItem};
 
 /// Interval for draining backend SSH events into the workspace.
@@ -2787,7 +2787,7 @@ impl Workspace {
     /// / error with retry+edit-host).
     fn render_ssh_loading(
         &mut self,
-        entry: crate::views::ssh_connection::ConnectionEntry,
+        entry: labonair_hosts_ui::ssh_connection::ConnectionEntry,
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
         let theme = self.theme.read(cx);

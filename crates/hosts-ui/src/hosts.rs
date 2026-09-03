@@ -1,8 +1,8 @@
 //! Host-Manager dashboard — the "Home" tab (T07-001).
 //!
-//! TODO(T16-008): temporary resident of `labonair-workspace` — `Workspace` owns
-//! `Entity<HostManagerView>` today. This module's long-term home is
-//! `labonair-panel-hosts`.
+//! Lives in `labonair-hosts-ui` since T16-008 (moved out of `labonair-workspace`,
+//! which only briefly hosted it after T16-006). `Workspace` still owns the
+//! `Entity<HostManagerView>` and drives connecting via [`HostManagerEvent`].
 //!
 //! Ports `reference-src/src/modules/hosts/*` behaviour: hosts grouped by group,
 //! a status indicator per host, connect / edit / duplicate / delete actions, a
@@ -10,7 +10,7 @@
 //! `labonair_backend::modules::{hosts, credentials}` (SQLite + the app secret
 //! store); secrets are never shown in clear text here.
 //!
-//! Connecting is delegated to the [`Workspace`](crate::Workspace):
+//! Connecting is delegated to the `Workspace`:
 //! this view emits [`HostManagerEvent::Connect`] and the workspace opens the
 //! SSH terminal tab and drives the trust / auth prompts.
 

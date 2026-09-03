@@ -17,6 +17,14 @@
 //! repo/session change) plus an in-flight flag so a slow response for a
 //! previous target can never overwrite a newer target's state — mirrors
 //! `useGitStatus.ts`'s `generationRef` / `isRefreshingRef`.
+//!
+//! Crate root (T16-008): this file is the `labonair-panel-scm` lib root. The
+//! `theme` shim keeps the pre-split `crate::theme::…` paths resolving against
+//! `labonair_theme::store`.
+
+pub(crate) mod theme {
+    pub use labonair_theme::store::*;
+}
 
 use std::time::Duration;
 

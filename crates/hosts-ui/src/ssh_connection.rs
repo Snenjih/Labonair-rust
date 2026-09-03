@@ -2,7 +2,7 @@
 //!
 //! Port of `reference-src/src/modules/hosts/store/connectionStatusStore.ts`: a
 //! single observable map, keyed by backend SSH session id, that the
-//! [`SshLoadingScreen`](crate::Workspace) full-pane view, the status bar and
+//! `SshLoadingScreen` full-pane view, the status bar and
 //! the command palette all read. It tracks, per session:
 //!
 //! * the [`ConnectionState`] state-machine value (the reference `Status` union
@@ -222,7 +222,7 @@ pub fn detect_stage(line: &str) -> Option<(usize, bool)> {
 /// Emitted on any change so views can `cx.observe` / re-render.
 pub struct ConnectionStatusChanged;
 
-/// The store itself — one per [`Workspace`](crate::Workspace).
+/// The store itself — one per `Workspace`.
 #[derive(Default)]
 pub struct ConnectionStatusStore {
     entries: HashMap<String, ConnectionEntry>,

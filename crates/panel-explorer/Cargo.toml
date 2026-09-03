@@ -1,0 +1,22 @@
+[package]
+name = "labonair-panel-explorer"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "labonair_panel_explorer"
+path = "src/panel_explorer.rs"
+
+[dependencies]
+gpui = { workspace = true }
+tracing = { workspace = true }
+notify = "6"
+notify-debouncer-mini = "0.4"
+labonair-theme = { path = "../theme" }
+labonair-ui-kit = { path = "../ui-kit" }
+labonair-notifications = { path = "../notifications" }
+labonair-backend = { path = "../backend" }
+labonair-workspace = { path = "../workspace" }
+
+[dev-dependencies]
+gpui = { workspace = true, features = ["test-support"] }

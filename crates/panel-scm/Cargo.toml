@@ -1,0 +1,19 @@
+[package]
+name = "labonair-panel-scm"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "labonair_panel_scm"
+path = "src/panel_scm.rs"
+
+[dependencies]
+gpui = { workspace = true }
+tokio = { workspace = true }
+labonair-theme = { path = "../theme" }
+labonair-ui-kit = { path = "../ui-kit" }
+labonair-notifications = { path = "../notifications" }
+labonair-backend = { path = "../backend" }
+
+[dev-dependencies]
+gpui = { workspace = true, features = ["test-support"] }

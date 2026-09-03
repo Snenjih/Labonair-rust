@@ -1,14 +1,11 @@
 //! Tab-content views owned by [`Workspace`](crate::Workspace).
 //!
-//! Moved out of `crates/ui` in T16-006. `hosts` and `git_graph` keep their
-//! current tab-view form here; their *panel* variants are T16-008 (`hosts` →
-//! `labonair-panel-hosts`, `git_graph` panel → `labonair-panel-scm`).
+//! Moved out of `crates/ui` in T16-006. In T16-008 `git_graph` moved on to
+//! `labonair-panel-git-graph` and `hosts` / `ssh_connection` to
+//! `labonair-hosts-ui`; `Workspace` now imports those from their own crates.
 
 pub mod diff;
 pub mod editor;
-pub mod git_graph;
-pub mod hosts;
 pub mod preview;
 pub mod sftp;
-pub mod ssh_connection;
 pub mod terminal;

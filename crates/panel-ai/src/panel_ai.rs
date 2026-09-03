@@ -6,6 +6,28 @@
 //! streams the response on a Tokio task, and each [`StreamEvent`] is folded back
 //! into the store via [`SessionStore::apply_event`] followed by `cx.notify()`.
 //! The chat UI itself lands in T11-003 and renders off this entity.
+//!
+//! Crate root (T16-008): this file is the `labonair-panel-ai` lib root. The
+//! `theme` / `markdown` / `syntax_theme` shims keep the pre-split `crate::…`
+//! paths resolving against their new home crates; `AgentAccessStore` stays in
+//! `labonair-workspace` (shared with `Workspace`, T11-006) and is re-exported
+//! here for the shell.
+
+pub mod ai_composer;
+
+pub use labonair_workspace::agent_access::{AgentAccessEntry, AgentAccessStore};
+
+pub(crate) mod theme {
+    pub use labonair_theme::store::*;
+}
+
+pub(crate) mod markdown {
+    pub use labonair_workspace::markdown::*;
+}
+
+pub(crate) mod syntax_theme {
+    pub use labonair_workspace::syntax_theme::*;
+}
 
 use std::sync::{Arc, Mutex};
 

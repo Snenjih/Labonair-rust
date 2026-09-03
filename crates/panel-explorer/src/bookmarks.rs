@@ -16,9 +16,9 @@ use gpui::{
 use labonair_backend::modules::bookmarks as model;
 use labonair_backend::modules::bookmarks::{BookmarkContext, PathBookmark};
 
-use crate::explorer::ExplorerView;
 use crate::theme::ThemeStore;
 use crate::workspace::Workspace;
+use crate::ExplorerView;
 
 /// Emitted when the user picks a bookmark. `AppShell` resolves the jump.
 #[derive(Clone, Debug)]

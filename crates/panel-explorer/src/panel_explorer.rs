@@ -28,6 +28,29 @@
 //! * File-type icons are a small glyph map, not the full material-icon-theme
 //!   port.
 
+// Crate root (T16-008): this file is the `labonair-panel-explorer` lib root.
+// It also hosts the path-bookmarks overlay view (`bookmarks` module) — the
+// bookmarks feature is directory-near, so it lives here rather than in its own
+// crate (see `docs/architecture.md §2`). The `theme` / `workspace` / `preview`
+// shims keep the pre-split `crate::…` paths resolving against their new home
+// crates.
+
+pub mod bookmarks;
+
+pub use bookmarks::{BookmarkEvent, BookmarksView};
+
+pub(crate) mod theme {
+    pub use labonair_theme::store::*;
+}
+
+pub(crate) mod workspace {
+    pub use labonair_workspace::Workspace;
+}
+
+pub(crate) mod preview {
+    pub use labonair_workspace::views::preview::*;
+}
+
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};

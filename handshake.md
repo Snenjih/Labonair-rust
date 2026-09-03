@@ -4,6 +4,96 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
+## Last Session: 2026-09-03 (T16-008 — split six panel crates out of `crates/ui`)
+
+Eighth code task of the architecture rework. Pure mechanical crate split — no
+logic refactor; `impl Panel` for the five panels is deferred to T17-001.
+
+### What Was Done (T16-008)
+Six new crates, all with explicit `[lib] name/path`, all workspace members
+placed **before** `crates/ui`:
+
+| Crate | `[lib] path` | Moved source | Direct deps beyond gpui |
+|---|---|---|---|
+| `labonair-panel-explorer` | `src/panel_explorer.rs` | `ui/explorer.rs` (root) + `ui/bookmarks.rs` (`bookmarks` submod) | workspace, backend, theme, ui-kit, notifications, tracing, notify, notify-debouncer-mini |
+| `labonair-panel-scm` | `src/panel_scm.rs` | `ui/git.rs` | tokio, backend, theme, ui-kit, notifications |
+| `labonair-panel-git-graph` | `src/panel_git_graph.rs` | `workspace/src/views/git_graph.rs` | tokio, backend, theme, ui-kit, notifications |
+| `labonair-panel-snippets` | `src/panel_snippets.rs` | `ui/snippets.rs` | tokio, uuid, serde_json, backend, theme, ui-kit, notifications, **workspace** |
+| `labonair-panel-ai` | `src/panel_ai.rs` | `ui/ai_chat.rs` (root) + `ui/ai_composer.rs` (`ai_composer` submod) | tokio, uuid, serde_json, ai, backend, editor, command-palette, theme, ui-kit, **workspace** |
+| `labonair-hosts-ui` | `src/hosts_ui.rs` | `workspace/src/views/{hosts,ssh_connection}.rs` | tokio, uuid, serde_json, backend, theme, ui-kit, notifications |
+
+- **Coupling broken via `pub(crate) mod` shims** inside each moved lib-root file
+  (T16-006 precedent): `theme` → `labonair_theme::store`, `workspace` →
+  `labonair_workspace::Workspace`, `preview` →
+  `labonair_workspace::views::preview`, `markdown` /`syntax_theme` →
+  `labonair_workspace::{markdown,syntax_theme}`. `bookmarks.rs`'s one non-shim
+  edit: `use crate::explorer::ExplorerView` → `use crate::ExplorerView`.
+- **No contract traits needed.** `hosts.rs` already emits `HostManagerEvent`
+  (Connect/OpenSftp) — no direct `Workspace`/tab calls — so the "callback
+  parameter" fallback in the task Warnung was unnecessary; `labonair-hosts-ui`
+  has **zero** `labonair-workspace`/`labonair-panel` deps (rule 9 satisfied,
+  `cargo tree -p labonair-hosts-ui` confirmed).
+- **`AgentAccessStore` stays in `labonair_workspace::agent_access`** (shared with
+  `Workspace`, T11-006); `labonair-panel-ai` re-exports it
+  (`pub use labonair_workspace::agent_access::{AgentAccessEntry, AgentAccessStore}`).
+- **New directed edges (all acyclic):** `labonair-workspace` →
+  `labonair-panel-git-graph` + `labonair-hosts-ui` (it owns the tab-view
+  entities: `git_graph`, `host_manager`, `ssh_connection` status store);
+  `labonair-panel-{explorer,snippets,ai}` → `labonair-workspace`. Neither
+  `panel-git-graph` nor `hosts-ui` depends back on `workspace`, so no cycle.
+  `cargo tree` shows **no direct** `panel-* → panel-*`, `panel-* → labonair-ui`,
+  or `panel-* → labonair-shell` edge. (A transitive
+  `panel-explorer → workspace → panel-git-graph` path exists and is inherent /
+  allowed — documented in `docs/architecture.md §8.4`.)
+- **Bookmarks decision:** embedded in `labonair-panel-explorer` as a `bookmarks`
+  submodule (default per task). Still an `EventEmitter` overlay view — `AppShell`
+  keeps `self.bookmarks: Entity<BookmarksView>` and renders it as an overlay,
+  semantics unchanged. Recorded in `docs/architecture.md §8.4`.
+- **`crates/ui`:** removed the 10 `pub mod`s (explorer/git/git_graph/hosts/
+  ssh_connection/snippets/ai_chat/ai_composer/agent_access/bookmarks); deleted
+  the four remaining shim files (`git_graph.rs`, `hosts.rs`, `ssh_connection.rs`,
+  `agent_access.rs`); repointed `lib.rs` `pub use` + `app_shell.rs` `use` at the
+  new crates. Dropped now-orphaned deps: `labonair-ai`, `labonair-editor`,
+  `uuid`, `notify`, `notify-debouncer-mini`.
+- **`crates/workspace`:** `views.rs` lost `pub mod git_graph/hosts/
+  ssh_connection`; `workspace.rs` imports `GitGraphView` from
+  `labonair_panel_git_graph`, and `HostManagerView`/`HostManagerEvent`/
+  `HostStatus`/`ActiveTunnelRow` + the `ssh_connection` types from
+  `labonair_hosts_ui`.
+- **`docs/architecture.md`:** added §8.4 (bookmarks decision + the new acyclic
+  edges), updated the per-crate source-file table rows for `labonair-workspace`
+  (bookmarks removed) and `labonair-panel-explorer` (+ bookmarks).
+
+### Verification (T16-008)
+- `cargo fmt --check` — ✅
+- `cargo check --workspace --all-targets` — ✅
+- `cargo clippy --workspace --all-targets -- -D warnings` — ✅ (two doc-comment
+  notes converted from `//!` to `//` to dodge `clippy::doc_lazy_continuation`
+  after a list item, in `panel_snippets.rs` / `panel_explorer.rs`).
+- `cargo test` — **scoped per touched crate, all green**: `labonair-hosts-ui`,
+  `-panel-scm` (16), `-panel-git-graph` (10), `-panel-explorer` (9),
+  `-panel-snippets` (15), `-panel-ai` (19), `labonair-workspace` (84),
+  `labonair-ui` (26+1). Full `cargo test --workspace` could **not** be run to
+  completion: the host filesystem is exhausted (≈20 MB free on `/`; every
+  `--workspace` test build writes multi-GB fresh artifacts and `ld` dies with
+  SIGBUS/ENOSPC while linking the `labonair` **bin** — untouched by this task).
+  Per the coordinator's disk-exhaustion fallback, scoped `-p <crate>` runs for
+  every touched crate stand in; `check`/`clippy` pass workspace-wide.
+- `cargo tree` forbidden-edge audit — ✅ (see edges note above).
+
+### State / Next
+- Branch `master`, committed (see commit trailer). Working tree also carries an
+  unrelated in-flight `docs/adr/0001-crate-decomposition.md` edit + untracked
+  `bericht-*.md` / `zed-refrence/` from the parallel planning session — left
+  untouched.
+- **Blocker for the next session:** host disk is full (`/` at 100%, ~20 MB
+  free). A `cargo` full rebuild / `cargo test --workspace` will fail on linking
+  until space is reclaimed (`target/debug/deps` is ~24 GB; `cargo clean` or a
+  selective prune needed, or free space outside the repo).
+- **Next task:** T16-009 — `labonair-shell` + `labonair-app` slim.
+
+---
+
 ## Last Session: 2026-09-03 (T16-007 — extract `labonair-settings-ui` + palette Hosts page)
 
 Seventh code task of the architecture rework. Pure mechanical crate split of
