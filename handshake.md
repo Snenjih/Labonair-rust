@@ -4,7 +4,38 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
-## Last Session: 2026-09-03 (Final-3% round — LiveBridge + churn + icons + ModelPicker)
+## Last Session: 2026-09-03 (settings-window audit — docs correction)
+
+Investigated the settings system vs. the reference Tauri `open_settings_window`.
+**Finding: the port is already at parity with what GPUI 0.2.2 allows.** Since
+the Block C `open_settings_window` work, settings render in their own
+`cx.open_window` OS window (860 px × 80 %-display clamp `[580, 900]`, min
+720×480, transparent titlebar, `SettingsTab` deep-links, live re-target via the
+`SettingsTarget` global). The in-`AppShell` overlay is gone (legacy `render`
+branch kept for tests only). T16-011 already fixed the model (46→165 fields,
+default parity, `editorVimMode`→`vimMode` serde key).
+
+Verified against docs.rs: **`gpui` 0.2.2 `WindowOptions`** has *no* always-on-top
+/ window-level, *no* max-size, *no* parent-window field. So the reference
+`always_on_top(true)`, `max_inner_size(1400,900)` and `parent(main)` lifecycle
+tie are **unportable** on this GPUI — same class as the missing WebView preview.
+There is also no per-window hide (close destroys; state is in shared entities so
+reopen is lossless).
+
+- **`b3a5ccd` docs(settings): correct stale "modal overlay" comments.** The
+  module doc comment in `crates/ui/src/settings.rs` and the `AppShell` comment
+  at `app_shell.rs:300` still described the old modal overlay. Rewrote both to
+  describe the real separate-window impl + document the GPUI limitations above.
+  Comment-only; no gate run (no Rust toolchain in this session's environment —
+  needs `cargo fmt --check` / `check` / `clippy -D warnings` / `test` on a dev
+  box, but the change cannot affect compilation).
+
+Untracked `zed-refrence/` (local Zed source checkout for API spelunking) — not
+committed, not gitignored; leave as-is unless the user wants it ignored.
+
+---
+
+## Prior Session: 2026-09-03 (Final-3% round — LiveBridge + churn + icons + ModelPicker)
 
 Four commits after `860e9dc`, all four gates green each time:
 

@@ -297,9 +297,10 @@ impl AppShell {
         // it the active CWD.
         workspace.update(cx, |w, _cx| w.set_git_graph(git_graph.clone()));
 
-        // Central preferences store + settings modal (T13-001). Apply the
-        // persisted theme preference to the ThemeStore once at startup; further
-        // changes flow through `SettingsView::set_pref`.
+        // Central preferences store (T13-001); the settings UI lives in its own
+        // OS window (`open_settings_window`). Apply the persisted theme
+        // preference to the ThemeStore once at startup; further changes flow
+        // through `SettingsView::set_pref`.
         let prefs = cx.new(|_| PreferencesStore::new());
         cx.observe(&prefs, |_, _, cx| cx.notify()).detach();
         {

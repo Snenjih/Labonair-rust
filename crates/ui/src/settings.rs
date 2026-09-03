@@ -1,21 +1,34 @@
 //! Settings window & preferences store (T13-001).
 //!
 //! Port of `reference-src/src/settings/*` + `reference-src/src/modules/settings/
-//! preferences.ts`. The web app rendered a separate OS window; GPUI has no
-//! child-window story wired here yet, so the settings surface is a modal
-//! overlay over [`crate::app_shell::AppShell`] (same pattern the command
-//! palette uses). It is opened by the `Settings…` menu item / `cmd-,` and the
-//! `OpenSettings` command-palette entry.
+//! preferences.ts`. Like the web app, settings live in their **own OS window**
+//! (`open_settings_window` → `cx.open_window`), not an in-app overlay — 860 px
+//! wide, height = 80 % of the display clamped to `[580, 900]`, a straight port
+//! of the reference `settings_window_size()`. Opened by the `Settings…` menu
+//! item / `cmd-,`, the `OpenSettings` command-palette entry, and the app-menu
+//! `AiSettings…` deep-link. A second open focuses the live window and jumps it
+//! to the requested tab via the `SettingsTarget` global.
+//!
+//! **GPUI 0.2.2 limitations vs. the reference Tauri window** (unportable, same
+//! class as the missing WebView preview): `WindowOptions` has no always-on-top
+//! / window-level field, no max-size, and no parent-window handle — so the
+//! reference `always_on_top(true)`, `max_inner_size(1400, 900)` and
+//! `parent(main)` lifecycle tie (minimise/close with the main window) have no
+//! equivalent. There is also no per-window hide, so `request_close` destroys
+//! the window; all persistent state lives in the shared [`PreferencesStore`] /
+//! theme / background entities, so the next open rebuilds it losslessly.
 //!
 //! Two pieces live here:
 //! * [`PreferencesStore`] — a GPUI entity holding the typed
 //!   [`Preferences`] model, with generic key-addressed read/write that
 //!   persists (`preferences_save`) and notifies on every change. Modules
 //!   observe it and re-read their slice.
-//! * [`SettingsView`] — the modal UI. A category sidebar + a field list
-//!   rendered from the static [`FIELDS`] definitions (Switch / Int / Select /
-//!   Text), plus a hand-built **AI Agent Bridge** pane (MCP) that the
-//!   T11-006 work deferred here because no settings window existed yet.
+//! * [`SettingsView`] — the window UI. A category sidebar + a field list
+//!   rendered from the static [`FIELDS`] definitions (Switch / Int / Float /
+//!   Select / FontFamily / Text) grouped by [`SECTION_GROUPS`], plus
+//!   hand-built panes (Appearance/theme grid, Shortcuts, AI providers/agents/
+//!   directives, and the **AI Agent Bridge** MCP pane). The legacy in-`AppShell`
+//!   overlay path in `render` is kept only for tests.
 
 use std::fs;
 use std::path::{Path, PathBuf};
