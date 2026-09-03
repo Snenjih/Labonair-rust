@@ -4,7 +4,42 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
-## Last Session: 2026-09-03 (Final-5% round — AI composer power-user + palette symbols + small items)
+## Last Session: 2026-09-03 (Final-3% round — LiveBridge + churn + icons + ModelPicker)
+
+Four commits after `860e9dc`, all four gates green each time:
+
+- **`463a361` feat(ai): real LiveBridge wiring.** `AiChatStore` was on
+  `NoLiveBridge` → agent terminal tools inert + relative paths resolved
+  against the process cwd. New `crate::live_bridge::WorkspaceLiveBridge`:
+  `Send + Sync` handle with a snapshot cell (cwd / workspace_root / terminal
+  buffer / ssh tab id / has_terminal) + a command queue.
+  `AppShell::sync_live_bridge` (each render) writes the snapshot from
+  workspace+explorer and drains queued writes into
+  `Workspace::run_in_active_terminal` / `inject_into_active_terminal`.
+  `Workspace::active_terminal_lines`, `TerminalView::recent_lines`. Tests for
+  snapshot read-through + write gating / queue drain.
+- **`946023f` refactor(ui): unify buttons + breadcrumb menus.** hosts.rs
+  `btn()` now delegates to `crate::components::button` (Xs; Default/Outline)
+  — all ~39 call sites unchanged bar a trailing `cx`. `render_crumb_menu` +
+  `render_subdir_menu` rebuilt on the shared `components::context_menu`
+  primitive. No behaviour change.
+- **`d33fcfe` feat(ui): broaden file-icon coverage.** 8 new Lucide glyphs
+  (archive, brackets, file-terminal, film, key-round, music, table, type) +
+  reworked `file_icon`: ~90 extensions over ~18 distinct icons (JS/TS →
+  braces, other scripts → brackets, shell → file-terminal, spreadsheets →
+  table, video → film, audio → music, fonts → type, keys → key-round).
+- **`20f77ee` feat(ai): ModelPicker — search + All/Favorites/Recent + provider
+  rail.** New backend `model_prefs` module (`ModelPrefs { favorites, recent }`,
+  toggle/push_recent + JSON persist, 3 tests). `AiChatView` ModelPicker
+  rebuilt: 380px panel, lazy `InputState` search, tab row, provider rail,
+  per-row star toggle, capability line. `select_model` records recency.
+
+**Voice / whisper** — deliberately left a stub (needs an external whisper
+backend + a user decision); the TODO in `render_composer` is precise.
+
+---
+
+## Prior Session: 2026-09-03 (Final-5% round — AI composer power-user + palette symbols + small items)
 
 Five commits after `1ed4481`, all four gates green each time
 (`cargo fmt --all`, `cargo check --workspace --all-targets`,
@@ -219,33 +254,32 @@ TreeSitter document-symbol pass. Documented, deferred.
 - ~~`tabsLocation` gating~~ — DONE `fd445c9`.
 - ~~`previewUrl` statusbar detection~~ — DONE `fd445c9`.
 
+**Done in the Final-3% round:** real `LiveBridge` wiring (`463a361`),
+host-manager `btn` + breadcrumb menu unification (`946023f`), file-icon
+coverage (`d33fcfe`), ModelPicker search/tabs/provider-rail (`20f77ee`).
+
 **Still open (each with a concrete reason):**
-- **Real `LiveBridge` wiring** — `AiChatStore` still uses `NoLiveBridge`; the
-  agent's `bash_run` / cwd resolution / `@`-file root all fall back to the
-  process cwd. Wiring a live bridge needs a `Send + Sync` handle from an
-  `Arc<dyn LiveBridge>` back into the GPUI `Workspace` entity (only reachable
-  via an `AsyncApp`). Pre-existing gap, out of scope for this round.
 - **Voice / whisper** — inert stub with a concrete TODO in `render_composer`
   (`crates/ui/src/ai_chat.rs`): needs a mic-capture path + a local whisper
-  transcription backend; no Rust crate wired.
-- **ModelPicker** — plain dropdown; the reference adds search + All/Favorites/
-  Recent tabs + a provider rail + capability meters. Enhancement only.
-- **host-manager `btn` → `components::button`** — pure churn on a working
-  pill-radius shim (Block E deliberately left it); no behaviour change.
-- **breadcrumb `crumb_menu` / `subdir_menu` → `context_menu`** — churn on
-  feature-complete hand-rolled menus; no behaviour change.
-- **File icons** — `file_icon` is a ~150-extension resolver over a ~20-icon
-  Lucide subset; the reference's full Catppuccin iconify set is not vendored.
+  transcription backend + a user decision on which backend. No Rust crate
+  wired.
+- **File icons — colour** — the port's icons are monochrome (tinted by the
+  theme); the reference's Catppuccin set is per-type coloured. ~18 distinct
+  shapes now, but not coloured. Vendoring a coloured iconify set is a
+  separate, large asset task.
 - **Tabs-panel fallback** — if `tabsLocation` flips away from `"sidebar"`
   while the Tabs panel is active, the panel body still shows Tabs until the
   user switches panels (the toggle disappears correctly). Minor edge.
+- **LiveBridge terminal-context cost** — `sync_live_bridge` re-reads the last
+  200 terminal lines every render; fine in practice but could be throttled /
+  made lazy if it ever shows up in a profile.
 - Command-palette hover-to-select for theme preview (keyboard nav only).
 
-**Overall parity vs the reference:** ~97%. Every core workflow, all four
-Block-F subsystems, and all the AI-composer power-user affordances now work.
-The residual ~3% is the live-bridge plumbing (agent shell tools don't reach
-the real terminal in-app), voice input, and cosmetic polish (full icon set,
-ModelPicker tabs).
+**Overall parity vs the reference:** ~98–99%. Every core workflow, all
+Block-F subsystems, the AI-composer power-user affordances, plan mode, palette
+Go-to-Symbol, previewUrl / tabsLocation / split-diff, the real LiveBridge, and
+the full ModelPicker all work. The residual is voice input (needs a backend +
+a decision) and coloured file icons (asset task).
 
 ---
 
