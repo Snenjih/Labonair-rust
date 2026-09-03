@@ -61,9 +61,9 @@ Platform: **macOS first, Linux later, no Windows.** The GPUI renderer differs pe
 
 The source of truth for what to build is the **roadmap in [`tasks/ROADMAP.md`](./tasks/ROADMAP.md)** with exhaustive task files in [`tasks/phase-*`](./tasks/). Work proceeds **strictly task-by-task in order**. When asked to "work on the next task" — or when starting any implementation session — do the following:
 
-1. **Find the next task.** Read `tasks/ROADMAP.md` and scan the `tasks/phase-*/` task files. Each task file has a `## Status` header followed by a status value on the next line (`⏳ Pending`, `🔄 In Progress`, `✅ Done`). The next task is the earliest-phase, lowest-numbered `T*\-\*` file whose status is `⏳ Pending` (or `🔄 In Progress` if its dependencies are satisfied). Respect the `## Abhängigkeiten` (dependencies) listed in that task — only start it once its dependencies are marked Done.
+1. **Find the next task.** Read `tasks/ROADMAP.md` and scan the `tasks/phase-*/` task files. Each task file has a `## Status` header followed by a status value on the next line ( `✅ Done`). The next task is the earliest-phase, lowest-numbered `T*\-\*` file. Respect the `## Abhängigkeiten` (dependencies) listed in that task — only start it once its dependencies are marked Done.
 2. **Read the full task file.** Understand its `## Ziel` (goal), `## Kontext`, `## Anweisungen` (instructions), `## Akzeptanzkriterien` (acceptance criteria), `## Notizen`, `## Warnungen` (warnings) before writing any code.
-3. **Set its status.** Change the value line under the task file's `## Status` header to `🔄 In Progress` (if not already).
+3. **Set its status.** Change the value line under the task file's `## Status` header to .
 4. **Implement.** Write the code following the task's instructions and the Critical Rules above. Use the `cargo` commands to compile/test frequently. When you need to check the reference app's exact behavior/values, read the corresponding files under `reference-src` (e.g. `src/styles/globals.css` for theme, `src-tauri/src/modules/*/` for backend logic to port, `src/modules/*/` for UI behavior to replicate).
 5. **Verify.** Satisfy the task's `## Akzeptanzkriterien`:
    - Run `cargo check`, `cargo clippy -- -D warnings`, and `cargo test`. All must pass (add/adjust tests as the task requires).
