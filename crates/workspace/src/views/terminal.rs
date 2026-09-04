@@ -181,35 +181,36 @@ impl TerminalView {
             .with(|s| s.metadata().ok().and_then(|m| m.title))
     }
 
-    /// Find `query` in the currently visible screen and select the first
-    /// match (top-to-bottom, left-to-right). Returns `true` if a match was
-    /// found. An empty query just clears any active selection.
-    ///
-    /// This is the target of the header's inline search (T04-003). A full
-    /// scrollback-spanning find widget with next/previous navigation is a
-    /// later search-module concern.
-    pub fn search(&self, query: &str, cx: &mut Context<Self>) -> bool {
-        if query.is_empty() {
-            let _ = self.handle.with(|s| s.clear_selection());
-            cx.notify();
-            return false;
-        }
-        let Ok(screen) = self.handle.with(|s| s.render()) else {
-            return false;
-        };
-        let text = screen.to_text();
-        for (row, line) in text.lines().enumerate() {
-            if let Some(byte_idx) = line.find(query) {
-                let col = line[..byte_idx].chars().count();
-                let len = query.chars().count();
-                let _ = self
-                    .handle
-                    .with(|s| s.update_selection((col, row), (col + len, row)));
-                cx.notify();
-                return true;
-            }
-        }
-        false
+    /// Start / update a literal scrollback search (T18-002 search overlay).
+    /// Returns `(current_1_based, total)` — `(0, 0)` on an empty query.
+    pub fn search_set(
+        &self,
+        query: &str,
+        case_sensitive: bool,
+        cx: &mut Context<Self>,
+    ) -> (usize, usize) {
+        let r = self
+            .handle
+            .with(|s| s.search_set(query, case_sensitive))
+            .unwrap_or((0, 0));
+        cx.notify();
+        r
+    }
+
+    /// Step to the next / previous match. Returns `(current, total)`.
+    pub fn search_step(&self, forward: bool, cx: &mut Context<Self>) -> (usize, usize) {
+        let r = self
+            .handle
+            .with(|s| s.search_step(forward))
+            .unwrap_or((0, 0));
+        cx.notify();
+        r
+    }
+
+    /// Drop the search state / clear the match highlight.
+    pub fn search_end(&self, cx: &mut Context<Self>) {
+        let _ = self.handle.with(|s| s.search_clear());
+        cx.notify();
     }
 
     /// The current terminal mode snapshot (falls back to defaults on error).
@@ -342,6 +343,7 @@ impl Render for TerminalView {
                     },
                     cells: Vec::new(),
                     selection: Vec::new(),
+                    search: Vec::new(),
                 });
 
         // Background image overlay (only when the target is Terminal-only;
@@ -405,6 +407,19 @@ impl Render for TerminalView {
                 .w(px((span.end_col - span.start_col) as f32 * cell_w))
                 .h(px(cell_h))
                 .bg(selection_color)
+        });
+
+        // Inactive search matches (the active one is drawn as the selection).
+        let search_color = to_hsla(colors.foreground, 0.16);
+        let search_elements = screen.search.clone().into_iter().map(move |span| {
+            let (left, top) = cell(span.start_col, span.line);
+            div()
+                .absolute()
+                .left(left)
+                .top(top)
+                .w(px((span.end_col - span.start_col) as f32 * cell_w))
+                .h(px(cell_h))
+                .bg(search_color)
         });
 
         let cursor_element = cursor_overlay(&screen, cell_w, cell_h, to_hsla(colors.cursor, 1.0));
@@ -575,6 +590,7 @@ impl Render for TerminalView {
                 this.send_input(text.as_bytes());
             }))
             .children(run_elements)
+            .children(search_elements)
             .children(selection_elements)
             .children(cursor_element)
             .children(background_layer)

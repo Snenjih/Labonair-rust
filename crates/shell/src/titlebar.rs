@@ -11,10 +11,9 @@
 //!   dropdown (`Settings…`, `Profile`, room for more).
 //!
 //! Gone from the old header: the app title, the `⋯` app-menu, the inline search
-//! box (its `⌘F` fallback is kept here as a **provisional floating overlay**
-//! until T18-002 gives search its own overlay), every bar item / badge (they
-//! are `StatusItem`s since T17-003) and the sidebar toggle (a status-bar
-//! control since T18-003).
+//! box (`⌘F` now opens the workspace's [`labonair_workspace::search_overlay::SearchOverlay`],
+//! T18-002), every bar item / badge (they are `StatusItem`s since T17-003) and
+//! the sidebar toggle (a status-bar control since T18-003).
 //!
 //! Window chrome: the whole titlebar background is a drag region
 //! (`WindowControlArea::Drag` + a `start_window_move` on drag), and a
@@ -28,9 +27,8 @@
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, px, App, ClickEvent, Context, Entity, FocusHandle, Focusable, InteractiveElement,
-    IntoElement, KeyDownEvent, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
-    ParentElement, Render, SharedString, StatefulInteractiveElement, Styled, Window,
-    WindowControlArea,
+    IntoElement, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, Render,
+    SharedString, StatefulInteractiveElement, Styled, Window, WindowControlArea,
 };
 use labonair_notifications::{notification_center, Notification};
 use labonair_settings_ui::{open_settings_window, PreferencesStore};
@@ -56,11 +54,7 @@ pub struct Titlebar {
     /// Drag-to-move latch: set on a background press, consumed on the first
     /// move (→ `start_window_move`), cleared on release.
     should_move: bool,
-    /// Provisional `⌘F` search overlay state — moves to a dedicated overlay in
-    /// T18-002.
-    search_open: bool,
-    search_query: String,
-    search_focus: FocusHandle,
+    focus_handle: FocusHandle,
 }
 
 impl Titlebar {
@@ -79,69 +73,8 @@ impl Titlebar {
             workspace,
             menu_open: false,
             should_move: false,
-            search_open: false,
-            search_query: String::new(),
-            search_focus: cx.focus_handle(),
+            focus_handle: cx.focus_handle(),
         }
-    }
-
-    /// `Cmd+F` fallback when the active pane is not an editor.
-    ///
-    /// PROVISIONAL (T18-002): this opens a floating overlay attached to the
-    /// titlebar. Once the dedicated search overlay lands, `act_find` binds
-    /// there and this method + the `search_*` fields go away.
-    pub fn open_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.search_open = true;
-        window.focus(&self.search_focus);
-        cx.notify();
-    }
-
-    fn close_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.search_open = false;
-        self.search_query.clear();
-        self.workspace.update(cx, |w, cx| w.search_active("", cx));
-        self.workspace.update(cx, |w, cx| w.focus(window, cx));
-        cx.notify();
-    }
-
-    fn run_search(&mut self, cx: &mut Context<Self>) {
-        let query = self.search_query.clone();
-        self.workspace
-            .update(cx, |w, cx| w.search_active(&query, cx));
-    }
-
-    fn on_search_key(&mut self, ev: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
-        let ks = &ev.keystroke;
-        let m = &ks.modifiers;
-        if m.control || m.alt {
-            return;
-        }
-        if m.platform {
-            // Let Cmd-F / Cmd-W etc. bubble; don't type them.
-            return;
-        }
-        match ks.key.as_str() {
-            "escape" => self.close_search(window, cx),
-            "enter" => self.run_search(cx),
-            "backspace" => {
-                self.search_query.pop();
-                self.run_search(cx);
-                cx.notify();
-            }
-            key => {
-                let ch = ks
-                    .key_char
-                    .clone()
-                    .filter(|s| !s.is_empty() && !s.chars().any(|c| c.is_control()))
-                    .or_else(|| (key.chars().count() == 1).then(|| key.to_string()));
-                if let Some(ch) = ch {
-                    self.search_query.push_str(&ch);
-                    self.run_search(cx);
-                    cx.notify();
-                }
-            }
-        }
-        cx.stop_propagation();
     }
 
     /// The single right-hand icon button + its dropdown.
@@ -231,50 +164,6 @@ impl Titlebar {
                 )
             })
     }
-
-    /// Provisional `⌘F` search box, floated just under the titlebar (T18-002
-    /// replaces it with a real overlay).
-    fn render_search(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
-        let theme = self.theme.read(cx);
-        let (bg, fg, muted, ring) = (
-            theme.background(),
-            theme.foreground(),
-            theme.muted_foreground(),
-            theme.accent(),
-        );
-        let is_terminal = self.workspace.read(cx).active_is_terminal(cx);
-        let placeholder = if is_terminal {
-            "Search terminal\u{2026}"
-        } else {
-            "Search\u{2026}"
-        };
-        let (text, color) = if self.search_query.is_empty() {
-            (placeholder.to_string(), muted)
-        } else {
-            (self.search_query.clone(), fg)
-        };
-
-        div()
-            .absolute()
-            .top(px(HEADER_H + 6.0))
-            .right(px(12.0))
-            .id("header-search")
-            .track_focus(&self.search_focus)
-            .key_context("HeaderSearch")
-            .flex()
-            .items_center()
-            .h(px(24.0))
-            .w(px(240.0))
-            .px_2()
-            .rounded_md()
-            .bg(bg)
-            .border_1()
-            .border_color(ring)
-            .text_xs()
-            .text_color(color)
-            .child(SharedString::from(text))
-            .on_key_down(cx.listener(Self::on_search_key))
-    }
 }
 
 impl Render for Titlebar {
@@ -345,13 +234,12 @@ impl Render for Titlebar {
             }))
             .child(div().flex_1().min_w_0().children(tabs))
             .child(self.render_account_menu(cx))
-            .when(self.search_open, |d| d.child(self.render_search(cx)))
             .into_any_element()
     }
 }
 
 impl Focusable for Titlebar {
     fn focus_handle(&self, _cx: &App) -> FocusHandle {
-        self.search_focus.clone()
+        self.focus_handle.clone()
     }
 }

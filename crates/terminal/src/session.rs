@@ -447,6 +447,13 @@ pub trait SessionAccess {
     fn clear_selection(&self) -> Result<(), String>;
     fn update_selection(&self, anchor: (usize, usize), head: (usize, usize)) -> Result<(), String>;
     fn ai_context(&self, max_lines: usize) -> Result<TerminalContext, String>;
+    /// Start / update a literal scrollback search (T18-002). Returns
+    /// `(current_1_based, total)`.
+    fn search_set(&self, query: &str, case_sensitive: bool) -> Result<(usize, usize), String>;
+    /// Step to the next / previous match. Returns `(current, total)`.
+    fn search_step(&self, forward: bool) -> Result<(usize, usize), String>;
+    /// Drop all search state / clear the match highlight.
+    fn search_clear(&self) -> Result<(), String>;
 }
 
 impl SessionAccess for TerminalSession {
@@ -476,6 +483,15 @@ impl SessionAccess for TerminalSession {
     }
     fn ai_context(&self, max_lines: usize) -> Result<TerminalContext, String> {
         TerminalSession::ai_context(self, max_lines)
+    }
+    fn search_set(&self, query: &str, case_sensitive: bool) -> Result<(usize, usize), String> {
+        self.with_emulator(|e| e.search_set(query, case_sensitive))
+    }
+    fn search_step(&self, forward: bool) -> Result<(usize, usize), String> {
+        self.with_emulator(|e| e.search_step(forward))
+    }
+    fn search_clear(&self) -> Result<(), String> {
+        self.with_emulator(|e| e.search_clear())
     }
 }
 
@@ -639,6 +655,15 @@ impl SessionAccess for RemoteSession {
             title: meta.title,
             lines: all[start..].to_vec(),
         })
+    }
+    fn search_set(&self, query: &str, case_sensitive: bool) -> Result<(usize, usize), String> {
+        self.with_emulator(|e| e.search_set(query, case_sensitive))
+    }
+    fn search_step(&self, forward: bool) -> Result<(usize, usize), String> {
+        self.with_emulator(|e| e.search_step(forward))
+    }
+    fn search_clear(&self) -> Result<(), String> {
+        self.with_emulator(|e| e.search_clear())
     }
 }
 

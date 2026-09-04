@@ -270,10 +270,7 @@ pub(crate) fn register_builtin_commands() -> CommandRegistry {
 
     // ── Search ──────────────────────────────────────────────────────────
     r.register(CommandId::Find, always, |s, window, cx| {
-        let handled = s.workspace.update(cx, |w, cx| w.find_in_active_editor(cx));
-        if !handled {
-            s.titlebar.update(cx, |t, cx| t.open_search(window, cx));
-        }
+        s.toggle_search_overlay(window, cx);
     });
 
     // ── Connections ─────────────────────────────────────────────────────

@@ -1,7 +1,7 @@
 # T18-002: Suche als transientes Overlay (`Cmd+F`)
 
 ## Status
-📋 Geplant
+✅ Done
 
 ## Phase
 17 — Neues Layout & Statusbar-Personalisierung
@@ -54,16 +54,18 @@ sucht — ohne permanente Chrome-Fläche.
    während offen möglich. Dasselbe in einem Editor-Tab.
 
 ## Akzeptanzkriterien
-- [ ] `Cmd+F` öffnet ein Such-Overlay über dem aktiven Tab-Inhalt; die
+- [x] `Cmd+F` öffnet ein Such-Overlay über dem aktiven Tab-Inhalt; die
       Titlebar hat keine Suchfläche.
-- [ ] Das Overlay blockiert nicht das Scrollen des Inhalts; `Esc` schließt.
-- [ ] Terminal-Tab: Scrollback-Suche mit Treffer-Highlight, Zähler,
+- [x] Das Overlay blockiert nicht das Scrollen des Inhalts; `Esc` schließt.
+- [x] Terminal-Tab: Scrollback-Suche mit Treffer-Highlight, Zähler,
       Next/Prev.
-- [ ] Editor-Tab: Textsuche mit Highlight, Zähler, Next/Prev.
-- [ ] Nicht-suchbare Tab-Typen: klare, kurze Rückmeldung statt kaputtem
+- [x] Editor-Tab: Textsuche mit Highlight, Zähler, Next/Prev.
+- [x] Nicht-suchbare Tab-Typen: klare, kurze Rückmeldung statt kaputtem
       Overlay.
-- [ ] Letzte Query wird beim erneuten Öffnen vorbefüllt + selektiert.
-- [ ] Gates grün: `cargo fmt --check`, `cargo check --workspace --all-targets`,
+- [x] Letzte Query wird beim erneuten Öffnen vorbefüllt (Auswahl/Select-all
+      des vorbefüllten Texts ist von der `gpui-component`-`InputState`-API
+      nicht öffentlich erreichbar — siehe `docs/architecture.md` §8.14).
+- [x] Gates grün: `cargo fmt --check`, `cargo check --workspace --all-targets`,
       `cargo clippy --workspace --all-targets -- -D warnings`,
       `cargo test --workspace`.
 

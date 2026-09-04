@@ -46,33 +46,14 @@ pub enum EditorEvent {
     CloseRequested,
 }
 
-/// Which field the find bar is typing into.
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum FindFocus {
-    Query,
-    Replace,
-}
-
-struct FindBar {
+/// Editor find state, driven entirely by the workspace `Cmd+F` search overlay
+/// (T18-002) — the editor no longer paints its own find bar. The active match
+/// is shown as the editor selection.
+#[derive(Default)]
+struct EditorSearch {
     query: SearchQuery,
-    replacement: String,
-    focus: FindFocus,
-    replace_visible: bool,
     matches: Vec<Match>,
     active: usize,
-}
-
-impl Default for FindBar {
-    fn default() -> Self {
-        Self {
-            query: SearchQuery::default(),
-            replacement: String::new(),
-            focus: FindFocus::Query,
-            replace_visible: false,
-            matches: Vec::new(),
-            active: 0,
-        }
-    }
 }
 
 pub struct EditorView {
@@ -86,7 +67,7 @@ pub struct EditorView {
     /// Cached glyph metrics `(char_width, line_height)` in px.
     metrics: (f32, f32),
     gutter_width: f32,
-    find: Option<FindBar>,
+    search: Option<EditorSearch>,
     /// Tree-sitter syntax highlighter for the current document (T06-002).
     syntax: SyntaxHighlighter,
     /// Bumped on every buffer mutation / load — the highlighter's cache key.
@@ -134,7 +115,7 @@ impl EditorView {
             scroll_top: 0,
             metrics: (8.0, 18.0),
             gutter_width: 48.0,
-            find: None,
+            search: None,
             syntax: SyntaxHighlighter::new(Language::PlainText),
             syntax_rev: 0,
             vim,
@@ -420,18 +401,6 @@ impl EditorView {
 
     // ── Editing helpers ─────────────────────────────────────────────────────
 
-    fn after_edit(&mut self, cx: &mut Context<Self>) {
-        let was_first = self.doc.is_dirty();
-        self.bump_syntax();
-        self.ensure_cursor_visible();
-        self.refresh_matches();
-        cx.emit(EditorEvent::Changed);
-        if was_first {
-            cx.emit(EditorEvent::Edited);
-        }
-        cx.notify();
-    }
-
     fn edit(&mut self, cx: &mut Context<Self>, f: impl FnOnce(&mut Document)) {
         let dirty_before = self.doc.is_dirty();
         f(&mut self.doc);
@@ -512,165 +481,102 @@ impl EditorView {
         }
     }
 
-    // ── Find / replace ──────────────────────────────────────────────────────
+    // ── Find (driven by the workspace search overlay, T18-002) ──────────────
 
-    pub fn toggle_find(&mut self, cx: &mut Context<Self>) {
-        if self.find.is_some() {
-            self.find = None;
-        } else {
-            let mut bar = FindBar::default();
-            if let Some(sel) = self.doc.selected_text() {
-                if !sel.contains('\n') {
-                    bar.query.text = sel;
-                }
-            }
-            self.find = Some(bar);
-            self.refresh_matches();
+    /// A one-line pre-fill for the search overlay (current selection).
+    pub fn search_seed(&self) -> Option<String> {
+        self.doc
+            .selected_text()
+            .filter(|s| !s.is_empty() && !s.contains('\n'))
+    }
+
+    /// Start / update the editor search. Selects the nearest match at or after
+    /// the cursor and scrolls it into view. Returns `(current_1_based, total)`
+    /// — `(0, 0)` on an empty query, `(0, n)` when nothing matched.
+    pub fn search_set(
+        &mut self,
+        text: &str,
+        case_sensitive: bool,
+        cx: &mut Context<Self>,
+    ) -> (usize, usize) {
+        if text.is_empty() {
+            self.search = None;
+            cx.notify();
+            return (0, 0);
         }
+        let query = SearchQuery {
+            text: text.to_string(),
+            case_sensitive,
+            whole_word: false,
+        };
+        let matches = find_all(&self.doc.buffer, &query);
+        let from = self.doc.cursor;
+        let active = next_match(&matches, from, true).unwrap_or(0);
+        self.search = Some(EditorSearch {
+            query,
+            matches,
+            active,
+        });
+        self.select_search_match(active);
+        cx.notify();
+        self.search_count()
+    }
+
+    /// Step to the next / previous match (wrapping). Returns `(current, total)`.
+    pub fn search_step(&mut self, forward: bool, cx: &mut Context<Self>) -> (usize, usize) {
+        let Some(s) = &self.search else {
+            return (0, 0);
+        };
+        if s.matches.is_empty() {
+            return (0, 0);
+        }
+        let from = self.doc.cursor;
+        let idx = next_match(&s.matches, from, forward).unwrap_or(0);
+        self.select_search_match(idx);
+        cx.notify();
+        self.search_count()
+    }
+
+    /// Close the search / clear the match state.
+    pub fn search_close(&mut self, cx: &mut Context<Self>) {
+        self.search = None;
         cx.notify();
     }
 
+    /// `(current_1_based, total)` — `0` current means no match / no search.
+    pub fn search_count(&self) -> (usize, usize) {
+        match &self.search {
+            Some(s) if !s.matches.is_empty() => (s.active + 1, s.matches.len()),
+            Some(s) => (0, s.matches.len()),
+            None => (0, 0),
+        }
+    }
+
+    /// Re-run the active search's matcher after a buffer edit, keeping the
+    /// active index in range. No-op when no search is active.
     fn refresh_matches(&mut self) {
-        if let Some(bar) = &mut self.find {
-            bar.matches = find_all(&self.doc.buffer, &bar.query);
-            if bar.active >= bar.matches.len() {
-                bar.active = 0;
+        if let Some(s) = &mut self.search {
+            s.matches = find_all(&self.doc.buffer, &s.query);
+            if s.active >= s.matches.len() {
+                s.active = 0;
             }
         }
     }
 
-    fn select_match(&mut self, idx: usize) {
-        let Some(bar) = &mut self.find else { return };
-        let Some(m) = bar.matches.get(idx).copied() else {
+    fn select_search_match(&mut self, idx: usize) {
+        let Some(s) = &mut self.search else { return };
+        let Some(m) = s.matches.get(idx).copied() else {
             return;
         };
-        bar.active = idx;
+        s.active = idx;
         self.doc.set_caret(m.start, false);
         self.doc.set_caret(m.end, true);
         self.ensure_cursor_visible();
     }
 
-    fn find_step(&mut self, forward: bool, cx: &mut Context<Self>) {
-        self.refresh_matches();
-        let Some(bar) = &self.find else { return };
-        if bar.matches.is_empty() {
-            return;
-        }
-        let from = self.doc.cursor;
-        let idx = if forward {
-            next_match(&bar.matches, from, true).unwrap_or(0)
-        } else {
-            next_match(&bar.matches, from, false).unwrap_or(0)
-        };
-        self.select_match(idx);
-        cx.notify();
-    }
-
-    fn replace_current(&mut self, cx: &mut Context<Self>) {
-        let Some(bar) = &self.find else { return };
-        let replacement = bar.replacement.clone();
-        if self.doc.selected_text().is_some() {
-            self.edit(cx, |d| d.insert(&replacement));
-            self.find_step(true, cx);
-        } else {
-            self.find_step(true, cx);
-        }
-    }
-
-    fn replace_all(&mut self, cx: &mut Context<Self>) {
-        let Some(bar) = &self.find else { return };
-        let query = bar.query.clone();
-        let replacement = bar.replacement.clone();
-        if query.text.is_empty() {
-            return;
-        }
-        let n = self.doc.replace_all(&query, &replacement);
-        self.refresh_matches();
-        self.after_edit(cx);
-        notify_info(cx, "Replace all", &format!("{n} replacement(s)"));
-    }
-
-    fn find_key(&mut self, ev: &KeyDownEvent, cx: &mut Context<Self>) -> bool {
-        let Some(bar) = self.find.as_mut() else {
-            return false;
-        };
-        let ks = &ev.keystroke;
-        let m = &ks.modifiers;
-        match ks.key.as_str() {
-            "escape" => {
-                self.find = None;
-                cx.notify();
-                return true;
-            }
-            "enter" => {
-                if m.platform {
-                    self.replace_all(cx);
-                } else {
-                    self.find_step(!m.shift, cx);
-                }
-                return true;
-            }
-            "tab" => {
-                bar.replace_visible = true;
-                bar.focus = match bar.focus {
-                    FindFocus::Query => FindFocus::Replace,
-                    FindFocus::Replace => FindFocus::Query,
-                };
-                cx.notify();
-                return true;
-            }
-            "backspace" => {
-                match bar.focus {
-                    FindFocus::Query => {
-                        bar.query.text.pop();
-                    }
-                    FindFocus::Replace => {
-                        bar.replacement.pop();
-                    }
-                }
-                self.refresh_matches();
-                cx.notify();
-                return true;
-            }
-            _ => {}
-        }
-        if m.platform && !m.control && !m.alt {
-            match ks.key.as_str() {
-                "c" => {
-                    bar.query.case_sensitive = !bar.query.case_sensitive;
-                    self.refresh_matches();
-                    cx.notify();
-                    return true;
-                }
-                "w" => {
-                    bar.query.whole_word = !bar.query.whole_word;
-                    self.refresh_matches();
-                    cx.notify();
-                    return true;
-                }
-                _ => return true, // swallow other cmd combos while the bar is open
-            }
-        }
-        if let Some(text) = printable(ks) {
-            match bar.focus {
-                FindFocus::Query => bar.query.text.push_str(&text),
-                FindFocus::Replace => bar.replacement.push_str(&text),
-            }
-            self.refresh_matches();
-            cx.notify();
-            return true;
-        }
-        false
-    }
-
     // ── Key handling ────────────────────────────────────────────────────────
 
     fn on_key(&mut self, ev: &KeyDownEvent, _window: &mut Window, cx: &mut Context<Self>) {
-        if self.find.is_some() && self.find_key(ev, cx) {
-            cx.stop_propagation();
-            return;
-        }
-
         let ks = &ev.keystroke;
         let m = &ks.modifiers;
 
@@ -687,7 +593,6 @@ impl EditorView {
                 "c" => self.copy(cx),
                 "x" => self.cut(cx),
                 "v" => self.paste(cx),
-                "f" => self.toggle_find(cx),
                 "left" => self.navigate(Motion::LineStart, m.shift, cx),
                 "right" => self.navigate(Motion::LineEnd, m.shift, cx),
                 "up" => self.navigate(Motion::DocStart, m.shift, cx),
@@ -854,132 +759,6 @@ impl EditorView {
     }
 
     // ── Rendering ───────────────────────────────────────────────────────────
-
-    fn render_find_bar(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let theme = self.theme.read(cx);
-        let (card, fg, muted, border, accent) = (
-            theme.card(),
-            theme.foreground(),
-            theme.muted_foreground(),
-            theme.border(),
-            theme.accent(),
-        );
-        let bar = self.find.as_ref().unwrap();
-        let count = if bar.matches.is_empty() {
-            "No results".to_string()
-        } else {
-            format!("{}/{}", bar.active + 1, bar.matches.len())
-        };
-
-        let field = |label: &str, value: &str, focused: bool| {
-            div()
-                .flex()
-                .items_center()
-                .gap_1()
-                .px_2()
-                .py_0p5()
-                .min_w(px(200.0))
-                .rounded_sm()
-                .border_1()
-                .border_color(if focused { accent } else { border })
-                .text_color(fg)
-                .child(div().text_xs().text_color(muted).child(label.to_string()))
-                .child(SharedString::from(value.to_string()))
-        };
-
-        let toggle = |on: bool, glyph: &str| {
-            div()
-                .px_1()
-                .rounded_sm()
-                .text_xs()
-                .text_color(if on { accent } else { muted })
-                .child(glyph.to_string())
-        };
-
-        div()
-            .flex()
-            .items_center()
-            .gap_2()
-            .w_full()
-            .flex_shrink_0()
-            .px_2()
-            .py_1()
-            .bg(card)
-            .border_b_1()
-            .border_color(border)
-            .child(field(
-                "Find",
-                &bar.query.text,
-                bar.focus == FindFocus::Query,
-            ))
-            .when(bar.replace_visible, |d| {
-                d.child(field(
-                    "Replace",
-                    &bar.replacement,
-                    bar.focus == FindFocus::Replace,
-                ))
-            })
-            .child(toggle(bar.query.case_sensitive, "Aa"))
-            .child(toggle(bar.query.whole_word, "\u{2039}W\u{203a}"))
-            .child(div().text_xs().text_color(muted).child(count))
-            .child(
-                div()
-                    .id("find-prev")
-                    .px_1()
-                    .rounded_sm()
-                    .text_color(muted)
-                    .hover(|s| s.bg(border).text_color(fg))
-                    .child("\u{2191}")
-                    .on_click(
-                        cx.listener(|this, _: &ClickEvent, _w, cx| this.find_step(false, cx)),
-                    ),
-            )
-            .child(
-                div()
-                    .id("find-next")
-                    .px_1()
-                    .rounded_sm()
-                    .text_color(muted)
-                    .hover(|s| s.bg(border).text_color(fg))
-                    .child("\u{2193}")
-                    .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| this.find_step(true, cx))),
-            )
-            .child(
-                div()
-                    .id("replace-one")
-                    .px_1()
-                    .text_xs()
-                    .rounded_sm()
-                    .text_color(muted)
-                    .hover(|s| s.bg(border).text_color(fg))
-                    .child("Replace")
-                    .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| this.replace_current(cx))),
-            )
-            .child(
-                div()
-                    .id("replace-all")
-                    .px_1()
-                    .text_xs()
-                    .rounded_sm()
-                    .text_color(muted)
-                    .hover(|s| s.bg(border).text_color(fg))
-                    .child("All")
-                    .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| this.replace_all(cx))),
-            )
-            .child(
-                div()
-                    .id("find-close")
-                    .px_1()
-                    .rounded_sm()
-                    .text_color(muted)
-                    .hover(|s| s.bg(border).text_color(fg))
-                    .child("\u{2715}")
-                    .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
-                        this.find = None;
-                        cx.notify();
-                    })),
-            )
-    }
 
     fn render_conflict_banner(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = self.theme.read(cx);
@@ -1386,7 +1165,6 @@ impl Render for EditorView {
             .when(self.doc.external_change, |d| {
                 d.child(self.render_conflict_banner(cx))
             })
-            .when(self.find.is_some(), |d| d.child(self.render_find_bar(cx)))
             .child(text_area)
             .when(self.vim.is_some(), |d| d.child(self.render_vim_status(cx)))
             .on_key_down(cx.listener(Self::on_key))
@@ -1451,13 +1229,6 @@ fn notify(cx: &mut App, title: &str, body: &str) {
     });
 }
 
-fn notify_info(cx: &mut App, title: &str, body: &str) {
-    let (title, body) = (title.to_string(), body.to_string());
-    notification_center(cx).update(cx, |center, cx| {
-        center.push(Notification::info(title, body), cx);
-    });
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1490,11 +1261,11 @@ mod tests {
         cx.update(|cx| {
             view.update(cx, |v, cx| {
                 v.doc = Document::from_file("t.txt".into(), "x y x y x", 1);
-                v.toggle_find(cx);
-                v.find.as_mut().unwrap().query.text = "x".to_string();
-                v.refresh_matches();
-                assert_eq!(v.find.as_ref().unwrap().matches.len(), 3);
-                v.find_step(true, cx);
+                let (cur, total) = v.search_set("x", false, cx);
+                assert_eq!(total, 3);
+                assert!(cur >= 1);
+                let (cur2, _) = v.search_step(true, cx);
+                assert_ne!(cur, cur2);
                 assert!(v.doc.selection().is_some());
             });
         });

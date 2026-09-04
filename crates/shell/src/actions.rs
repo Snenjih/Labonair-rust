@@ -15,6 +15,8 @@ use labonair_command_palette::{Page as PalettePage, PaletteChoice, PaletteData, 
 use labonair_panel::DockPosition;
 use labonair_panel_explorer::BookmarkEvent;
 
+use labonair_workspace::search_overlay::SearchOverlay;
+
 use crate::app_shell::AppShell;
 use crate::menu;
 use crate::modals::{BookmarksModal, CommandPaletteModal, UpdaterModal};
@@ -130,6 +132,17 @@ impl AppShell {
                     None => p.open(window, cx),
                 });
                 CommandPaletteModal::new(palette.clone(), cx)
+            });
+        });
+    }
+
+    /// `Cmd+F` — toggle the workspace's transient search overlay (T18-002).
+    pub(crate) fn toggle_search_overlay(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let workspace = self.workspace.clone();
+        let theme = self.theme.clone();
+        self.modal_layer.update(cx, |layer, cx| {
+            layer.toggle_modal::<SearchOverlay, _>(window, cx, move |window, cx| {
+                SearchOverlay::new(workspace, theme, window, cx)
             });
         });
     }

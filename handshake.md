@@ -4,6 +4,82 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
+## Last Session: 2026-09-04 (T18-002 — `Cmd+F` search overlay)
+
+**T18-002 done.** The titlebar's provisional inline search (T18-001) and the
+editor's own in-buffer find bar are both gone — one workspace-level overlay
+now drives search for every tab kind. Scope was widened beyond the task text
+on explicit user request: full real scrollback search for terminals (not
+"first visible match"), and the overlay fully replaces the editor's find bar
+(not kept alongside it).
+
+### What Was Done (T18-002)
+- **`crates/terminal/src/engine.rs`** — `TerminalEmulator` gained literal
+  scrollback search on top of `alacritty_terminal::term::search::{RegexSearch,
+  RegexIter}`: `search_set`/`search_step`/`search_clear`/`search_count`, plus
+  a `to_regex_literal` escaper with an explicit `(?-i)`/`(?i)` prefix (needed
+  to override alacritty's built-in smart-case, which otherwise silently
+  ignores an explicit case-sensitive request for all-lowercase queries — see
+  `docs/architecture.md` §8.14). The active match is mirrored into
+  `term.selection` (free rendering + `scroll_to_point`); the rest are exposed
+  as a new `RenderableScreen::search` span list. 6 new engine tests.
+- **`crates/terminal/src/session.rs`** — 3 new `SessionAccess` trait methods,
+  implemented for both `TerminalSession` and `RemoteSession` (SSH search works
+  identically to local).
+- **`crates/workspace/src/views/terminal.rs`** — `search`(old, first-visible-
+  match) replaced by `search_set`/`search_step`/`search_end`; renders the new
+  search spans in a dim highlight color between the cell runs and the
+  selection layer.
+- **`crates/workspace/src/views/editor.rs`** — the whole old `FindBar` UI
+  (`render_find_bar`, `FindFocus`, Tab-to-replace, Replace/Replace-All,
+  `find_key`, the editor's own `Cmd+F`) deleted; replaced by a minimal
+  `EditorSearch` (query + matches + active, no replace) driven externally via
+  `search_set`/`search_step`/`search_close`/`search_seed`. `Document::
+  replace_all` itself is untouched (still backs vim `:s`).
+- **`crates/workspace/src/workspace.rs`** — new `SearchTarget` enum +
+  `active_search_target`/`search_seed`/`search_set`/`search_step`/`search_end`
+  route by tab kind (editor / terminal / unavailable); replaced the old
+  `search_active`/`find_in_active_editor`.
+- **`crates/workspace/src/search_overlay.rs`** (new) — `SearchOverlay`, a
+  **bare** `ModalView` (no scrim, no `occlude()` — content stays scrollable
+  while it holds keyboard focus, see §8.14 for the "no new OverlayLayer"
+  decision), real `InputState` field, case-toggle, Prev/Next, Esc-close,
+  process-lifetime last-query prefill (no select-all — API not reachable, see
+  §8.14).
+- **`crates/shell/src/titlebar.rs`** — provisional `render_search` +
+  `search_*` fields/methods removed entirely.
+- **`crates/shell/src/actions.rs`** / **`commands.rs`** — `toggle_search_overlay`
+  helper; `CommandId::Find` now just calls it.
+- **`docs/architecture.md` §8.14** (new) — full deviation record.
+
+### Gate Results (T18-002)
+- `cargo fmt --check` ✅ · `cargo check --workspace --all-targets` ✅ ·
+  `cargo clippy --workspace --all-targets -- -D warnings` ✅ ·
+  `cargo test --workspace` ✅ (all crates, incl. 6 new terminal-engine search
+  tests + adjusted `views::editor::tests::find_navigates_matches`) ·
+  `scripts/check-crate-deps.sh` ✅ (20 crates, 87 edges, no new edge, acyclic)
+  — this session ran on a normal macOS dev machine, so `cargo test` actually
+  linked and ran (unlike prior headless-VPS sessions).
+
+### Deviations
+- Editor find bar fully removed rather than kept alongside the overlay (user
+  decision).
+- Terminal search is full scrollback + count + next/prev rather than
+  "first visible match" (user decision).
+- No select-all on the pre-filled query (API not reachable in gpui-component
+  0.5.1).
+- `cargo run` visual checks not done (see §8.14 — same caveat as T18-001, now
+  because this session had no display, not because the machine was headless).
+
+### State
+- Branch `master`, committing now. No blockers.
+
+### Next
+- **T18-003** — Statusbar links: Panel-Steuerung
+  (`tasks/phase-17-layout/T18-003-statusbar-left-panel-controls.md`).
+
+---
+
 ## Last Session: 2026-09-04 (T18-001 — Titlebar redesign · **Phase 17 START**)
 
 **T18-001 done — first task of Phase 17.** The titlebar is now tab strip +

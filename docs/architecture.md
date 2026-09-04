@@ -824,6 +824,81 @@ Implements the §4 layout contract for the top chrome. Notes / deviations:
 
 ---
 
+### 8.14 `Cmd+F` search overlay — T18-002
+
+**Focus-trap decision (instruction 1).** No new `OverlayLayer` and no
+`ModalView::traps_focus()` extension: [`SearchOverlay`]
+(`crates/workspace/src/search_overlay.rs`) is a plain **bare**
+[`ModalView`](../crates/workspace/src/modal_layer.rs) (`render_bare() ==
+true`). `ModalLayer`'s bare path already renders the view directly with no
+scrim and no `occlude()` wrapper — only `open_modal`/`toggle_modal` move
+keyboard focus into it. Since the overlay itself doesn't `occlude()` its
+container either (its `absolute` box only covers its own small footprint),
+mouse wheel / drag on the rest of the active tab keeps working while the
+overlay has keyboard focus. This is the same mechanism the command palette /
+bookmarks popover already use for their own full-screen paint; the overlay
+just doesn't paint a scrim.
+
+**Scope widening vs. the task text (user decision, 2026-09-04).** The task
+allowed keeping the editor's own find bar and a "current match only, no
+scrollback" terminal search as acceptable minimums. The user asked for the
+fuller version instead:
+
+* **The overlay is the *only* find UI, including for editors.** The editor's
+  old in-buffer find bar (`FindBar`, `render_find_bar`, its own `Cmd+F`
+  binding, Tab-to-replace-field, Replace/Replace-All) was deleted from
+  `crates/workspace/src/views/editor.rs`, not kept alongside the overlay.
+  `EditorView` now exposes a minimal `EditorSearch` state (query + matches +
+  active index, no replace) through `search_set` / `search_step` /
+  `search_close` / `search_seed`; the active match is still shown as the
+  ordinary editor selection (unchanged rendering path). `Document::replace_all`
+  itself is untouched and still backs the vim `:s` command.
+* **Terminal search is real scrollback search, not "first visible match".**
+  `TerminalEmulator` (`crates/terminal/src/engine.rs`) gained literal search
+  built on `alacritty_terminal::term::search::{RegexSearch, RegexIter}` over
+  the whole buffer (`grid().topmost_line()..grid().bottommost_line()`), with
+  `search_set` / `search_step` / `search_clear` / `search_count`. The query is
+  escaped into a literal regex-automata pattern; **an explicit `(?-i)` /
+  `(?i)` prefix is required** because `RegexSearch::new` derives its own
+  case-(in)sensitivity from whether the *pattern text* contains an uppercase
+  character (alacritty's built-in smart-case) — without the explicit prefix an
+  all-lowercase query silently ignores an explicit case-sensitive request (hit
+  in `search_is_case_sensitive_when_requested`, fixed before landing). The
+  active match is mirrored into `term.selection` (so it paints through the
+  existing selection-span code for free and `scroll_to_point` keeps it on
+  screen); the other matches are exposed as a second `RenderableScreen::search`
+  span list and painted by `TerminalView` in a dim overlay color between the
+  cell runs and the selection layer. `SessionAccess` (`crates/terminal/src/
+  session.rs`) grew the three methods so both local (`TerminalSession`) and
+  SSH-backed (`RemoteSession`) sessions search identically.
+* **Routing.** `Workspace::active_search_target` / `search_set` / `search_step`
+  / `search_end` (`crates/workspace/src/workspace.rs`) pick editor vs. terminal
+  vs. `SearchTarget::Unavailable` by tab kind (`self.editors` map vs.
+  `active_pane_view`) — SFTP/git-graph/host-manager tabs get the "not
+  available" message the task asked for, no crash.
+* **Pre-fill without select-all.** `SearchOverlay` seeds the input from the
+  editor selection or the last query via `InputState::default_value`, but does
+  not select it — `InputState::select_all` (`gpui-component` 0.5.1) is
+  `pub(super)`, not reachable from outside the crate, and there's no `SelectAll`
+  action re-export to dispatch instead. The seed still runs the initial search
+  immediately (so reopening the overlay shows results right away); a user who
+  wants to replace the seed has to clear it manually first. Minor polish gap,
+  not a correctness one.
+* **Last query.** Kept as a single process-lifetime `static LAST_QUERY:
+  Mutex<String>` in `search_overlay.rs` rather than on `Workspace` /
+  `PreferencesStore` — the task only asked for it to survive across overlay
+  opens within a session, not across app restarts, so no persistence layer was
+  added.
+* **Not verified with `cargo run`.** Same headless-VPS caveat as §8.13; typing
+  / highlight / count / next-prev / Esc-close were exercised through the new
+  `crates/terminal/src/engine.rs` unit tests (`search_set_counts_matches_and_selects_one`,
+  `search_step_wraps_and_updates_the_selection`, `search_is_case_sensitive_when_requested`,
+  `search_finds_matches_in_scrollback_history`, `search_clear_drops_matches_and_selection`,
+  `empty_query_clears_search`) and the adjusted `views::editor::tests::find_navigates_matches`,
+  not a live window.
+
+---
+
 ## 9. Ist-Graph after Phase 15 (T16-010)
 
 Regenerate with [`scripts/gen-crate-graph.sh`](../scripts/gen-crate-graph.sh)

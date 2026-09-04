@@ -37,6 +37,7 @@ pub mod modal_layer;
 pub mod pane;
 pub mod pane_group;
 pub mod prefs;
+pub mod search_overlay;
 pub mod session;
 pub mod status_bar;
 pub mod syntax_theme;
@@ -126,6 +127,17 @@ use labonair_ui_kit::{context_menu, IconName, MenuItem};
 
 /// Interval for draining backend SSH events into the workspace.
 const SSH_POLL_INTERVAL: Duration = Duration::from_millis(40);
+
+/// Which surface the `Cmd+F` search overlay (T18-002) drives for the active tab.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SearchTarget {
+    /// A code editor tab — literal in-buffer search.
+    Editor,
+    /// A terminal pane — literal scrollback search.
+    Terminal,
+    /// SFTP list, git graph, host manager, … — search is not offered.
+    Unavailable,
+}
 
 /// One open SSH terminal tab: its backend session id, the host it targets and
 /// the [`RemoteFeed`] used to push remote output / signal disconnects.
@@ -955,12 +967,60 @@ impl Workspace {
             .unwrap_or(false)
     }
 
-    /// Run the header's inline search against the active terminal pane.
-    pub fn search_active(&mut self, query: &str, cx: &mut Context<Self>) -> bool {
-        let Some(view) = self.active_pane_view(cx) else {
-            return false;
-        };
-        view.update(cx, |v, cx| v.search(query, cx))
+    /// Which surface the `Cmd+F` search overlay (T18-002) targets for the
+    /// active tab.
+    pub fn active_search_target(&self, cx: &App) -> SearchTarget {
+        let id = self.tabs.read(cx).active_id();
+        if self.editors.contains_key(&id) {
+            SearchTarget::Editor
+        } else if self.active_pane_view(cx).is_some() {
+            SearchTarget::Terminal
+        } else {
+            SearchTarget::Unavailable
+        }
+    }
+
+    /// One-line pre-fill for the search overlay (editor selection only).
+    pub fn search_seed(&self, cx: &App) -> Option<String> {
+        let id = self.tabs.read(cx).active_id();
+        self.editors.get(&id).and_then(|e| e.read(cx).search_seed())
+    }
+
+    /// Start / update the search against whichever surface the active tab owns.
+    /// Returns `(current_1_based, total)`; `None` when the tab is not searchable.
+    pub fn search_set(
+        &mut self,
+        query: &str,
+        case_sensitive: bool,
+        cx: &mut Context<Self>,
+    ) -> Option<(usize, usize)> {
+        let id = self.tabs.read(cx).active_id();
+        if let Some(e) = self.editors.get(&id).cloned() {
+            return Some(e.update(cx, |e, cx| e.search_set(query, case_sensitive, cx)));
+        }
+        let view = self.active_pane_view(cx)?;
+        Some(view.update(cx, |v, cx| v.search_set(query, case_sensitive, cx)))
+    }
+
+    /// Step to the next / previous match. Returns `(current, total)`.
+    pub fn search_step(&mut self, forward: bool, cx: &mut Context<Self>) -> Option<(usize, usize)> {
+        let id = self.tabs.read(cx).active_id();
+        if let Some(e) = self.editors.get(&id).cloned() {
+            return Some(e.update(cx, |e, cx| e.search_step(forward, cx)));
+        }
+        let view = self.active_pane_view(cx)?;
+        Some(view.update(cx, |v, cx| v.search_step(forward, cx)))
+    }
+
+    /// Clear all search state / match highlights on the active surface.
+    pub fn search_end(&mut self, cx: &mut Context<Self>) {
+        let id = self.tabs.read(cx).active_id();
+        if let Some(e) = self.editors.get(&id).cloned() {
+            e.update(cx, |e, cx| e.search_close(cx));
+        }
+        if let Some(view) = self.active_pane_view(cx) {
+            view.update(cx, |v, cx| v.search_end(cx));
+        }
     }
 
     /// Focus the active pane (called by the app shell after closing an overlay).
@@ -1262,18 +1322,6 @@ impl Workspace {
         let id = self.tabs.read(cx).active_id();
         if let Some(view) = self.editors.get(&id).cloned() {
             view.update(cx, |e, cx| e.save(cx));
-        }
-    }
-
-    /// Route the header's Find action: editor tab → editor find bar (returns
-    /// `true`); otherwise let the caller open the terminal search.
-    pub fn find_in_active_editor(&mut self, cx: &mut Context<Self>) -> bool {
-        let id = self.tabs.read(cx).active_id();
-        if let Some(view) = self.editors.get(&id).cloned() {
-            view.update(cx, |e, cx| e.toggle_find(cx));
-            true
-        } else {
-            false
         }
     }
 

@@ -15,8 +15,10 @@ use std::sync::{Arc, Mutex};
 
 use alacritty_terminal::event::{Event as AlacEvent, EventListener, WindowSize};
 use alacritty_terminal::grid::{Dimensions, Scroll};
-use alacritty_terminal::index::{Column, Line, Point};
+use alacritty_terminal::index::{Column, Direction, Line, Point, Side};
+use alacritty_terminal::selection::{Selection, SelectionType};
 use alacritty_terminal::term::cell::Flags;
+use alacritty_terminal::term::search::{RegexIter, RegexSearch};
 use alacritty_terminal::term::{Config, Term, TermMode};
 use alacritty_terminal::vte::ansi::{Color as AnsiColor, CursorShape, NamedColor, Processor, Rgb};
 
@@ -284,6 +286,9 @@ pub struct RenderableScreen {
     /// Highlighted selection, split per visible row (empty when nothing is
     /// selected or the selection lies entirely in hidden scrollback).
     pub selection: Vec<SelectionSpan>,
+    /// Inactive search matches (the active one is in `selection`), split per
+    /// visible row. Drawn with a distinct "find" highlight (T18-002).
+    pub search: Vec<SelectionSpan>,
 }
 
 impl RenderableScreen {
@@ -550,6 +555,38 @@ pub struct TerminalEmulator {
     sniffer: OscSniffer,
     pty_out: Arc<Mutex<Vec<u8>>>,
     metadata: SessionMetadata,
+    search: SearchState,
+}
+
+/// Literal (non-regex) scrollback search state (T18-002). `matches` hold
+/// absolute grid points; the active match is mirrored into `term.selection` so
+/// the renderer highlights it like a normal selection, while the rest are
+/// exposed as [`RenderableScreen::search`] spans.
+#[derive(Default)]
+struct SearchState {
+    query: String,
+    case_sensitive: bool,
+    matches: Vec<std::ops::RangeInclusive<Point>>,
+    active: Option<usize>,
+}
+
+/// Escape `q` into a regex-automata pattern that matches it literally.
+///
+/// [`RegexSearch::new`] derives its own case-insensitivity from whether the
+/// *pattern* contains an uppercase character (alacritty's smart-case), which
+/// would silently override an explicit case-sensitive request whenever the
+/// query itself happens to be all-lowercase. An explicit `(?i)` / `(?-i)`
+/// prefix pins the flag regardless of that heuristic.
+fn to_regex_literal(q: &str, case_sensitive: bool) -> String {
+    let mut out = String::new();
+    out.push_str(if case_sensitive { "(?-i)" } else { "(?i)" });
+    for c in q.chars() {
+        if "\\.+*?()|[]{}^$#&~-".contains(c) {
+            out.push('\\');
+        }
+        out.push(c);
+    }
+    out
 }
 
 /// Tunable emulator parameters sourced from the app preferences (T13-003).
@@ -610,6 +647,7 @@ impl TerminalEmulator {
             sniffer: OscSniffer::default(),
             pty_out,
             metadata: SessionMetadata::default(),
+            search: SearchState::default(),
         }
     }
 
@@ -686,8 +724,117 @@ impl TerminalEmulator {
         for &byte in bytes {
             self.parser.advance(&mut self.term, byte);
         }
+        if !self.search.query.is_empty() {
+            self.refresh_search_matches();
+        }
         extra.push(TerminalEvent::Wakeup);
         extra
+    }
+
+    // ── Literal scrollback search (T18-002) ───────────────────────────────
+
+    /// Start / update a literal search over the whole buffer (scrollback +
+    /// screen). Selects the first match at or after the current viewport top
+    /// and scrolls it into view. Returns `(current_1_based, total)` — `(0, n)`
+    /// when there are no matches, `(0, 0)` on an empty query.
+    pub fn search_set(&mut self, query: &str, case_sensitive: bool) -> (usize, usize) {
+        self.search.query = query.to_string();
+        self.search.case_sensitive = case_sensitive;
+        self.search.matches.clear();
+        self.search.active = None;
+        if query.is_empty() {
+            self.term.selection = None;
+            return (0, 0);
+        }
+        self.compute_search_matches();
+        let offset = self.term.grid().display_offset() as i32;
+        let top = Point::new(Line(-offset), Column(0));
+        self.search.active = self
+            .search
+            .matches
+            .iter()
+            .position(|m| *m.start() >= top)
+            .or_else(|| (!self.search.matches.is_empty()).then_some(0));
+        self.focus_active_match();
+        self.search_count()
+    }
+
+    /// Move to the next / previous match (wrapping). Returns `(current, total)`.
+    pub fn search_step(&mut self, forward: bool) -> (usize, usize) {
+        let n = self.search.matches.len();
+        if n == 0 {
+            return (0, 0);
+        }
+        let cur = self.search.active.unwrap_or(0);
+        let next = if forward {
+            (cur + 1) % n
+        } else {
+            (cur + n - 1) % n
+        };
+        self.search.active = Some(next);
+        self.focus_active_match();
+        (next + 1, n)
+    }
+
+    /// Drop all search state and clear the match selection.
+    pub fn search_clear(&mut self) {
+        self.search = SearchState::default();
+        self.term.selection = None;
+    }
+
+    /// `(current_1_based, total)` for the active search (`0` current = none).
+    pub fn search_count(&self) -> (usize, usize) {
+        (
+            self.search.active.map(|i| i + 1).unwrap_or(0),
+            self.search.matches.len(),
+        )
+    }
+
+    /// Re-run the matcher after buffer mutation, keeping the active index in
+    /// range.
+    fn refresh_search_matches(&mut self) {
+        self.compute_search_matches();
+        match self.search.active {
+            Some(i) if i >= self.search.matches.len() => {
+                self.search.active =
+                    (!self.search.matches.is_empty()).then_some(self.search.matches.len() - 1);
+            }
+            None if !self.search.matches.is_empty() => self.search.active = Some(0),
+            _ => {}
+        }
+    }
+
+    fn compute_search_matches(&mut self) {
+        self.search.matches.clear();
+        let pattern = to_regex_literal(&self.search.query, self.search.case_sensitive);
+        let Ok(mut regex) = RegexSearch::new(&pattern) else {
+            return;
+        };
+        let grid = self.term.grid();
+        let start = Point::new(grid.topmost_line(), Column(0));
+        let end = Point::new(grid.bottommost_line(), grid.last_column());
+        let iter = RegexIter::new(start, end, Direction::Right, &self.term, &mut regex);
+        for m in iter {
+            self.search.matches.push(m);
+            if self.search.matches.len() >= 10_000 {
+                break;
+            }
+        }
+    }
+
+    fn focus_active_match(&mut self) {
+        let Some(m) = self
+            .search
+            .active
+            .and_then(|i| self.search.matches.get(i).cloned())
+        else {
+            self.term.selection = None;
+            return;
+        };
+        let mut selection = Selection::new(SelectionType::Simple, *m.start(), Side::Left);
+        selection.update(*m.end(), Side::Right);
+        self.term.selection = Some(selection);
+        self.term.scroll_to_point(*m.start());
     }
 
     /// Swap in a new theme palette (e.g. on light/dark switch).
@@ -890,6 +1037,36 @@ impl TerminalEmulator {
             }
         }
 
+        let mut search = Vec::new();
+        let offset = display_offset as i32;
+        let columns = self.dimensions.columns;
+        let screen_lines = self.dimensions.screen_lines as i32;
+        for (idx, m) in self.search.matches.iter().enumerate() {
+            if self.search.active == Some(idx) {
+                continue;
+            }
+            let (s, e) = (*m.start(), *m.end());
+            let s_row = s.line.0 + offset;
+            let e_row = e.line.0 + offset;
+            for row in s_row.max(0)..=e_row.min(screen_lines - 1) {
+                let start_col = if row == s_row { s.column.0 } else { 0 };
+                let end_col = if row == e_row {
+                    e.column.0 + 1
+                } else {
+                    columns
+                };
+                let start_col = start_col.min(columns);
+                let end_col = end_col.min(columns);
+                if end_col > start_col {
+                    search.push(SelectionSpan {
+                        line: row as usize,
+                        start_col,
+                        end_col,
+                    });
+                }
+            }
+        }
+
         RenderableScreen {
             columns: self.dimensions.columns,
             screen_lines: self.dimensions.screen_lines,
@@ -897,6 +1074,7 @@ impl TerminalEmulator {
             cursor,
             cells,
             selection,
+            search,
         }
     }
 
@@ -1220,5 +1398,72 @@ mod tests {
             .unwrap();
         assert_eq!(cell.fg, palette.background);
         assert!(cell.inverse);
+    }
+
+    #[test]
+    fn search_set_counts_matches_and_selects_one() {
+        let (mut term, _rx) = emulator(20, 5);
+        term.feed(b"foo bar foo baz foo\r\n");
+        let (current, total) = term.search_set("foo", false);
+        assert_eq!(total, 3);
+        assert_eq!(current, 1);
+        assert!(term.render().selection.iter().any(|s| s.start_col == 0));
+    }
+
+    #[test]
+    fn search_step_wraps_and_updates_the_selection() {
+        let (mut term, _rx) = emulator(20, 5);
+        term.feed(b"foo bar foo baz foo\r\n");
+        term.search_set("foo", false);
+        let (second, total) = term.search_step(true);
+        assert_eq!((second, total), (2, 3));
+        let (third, _) = term.search_step(true);
+        assert_eq!(third, 3);
+        // Wraps back to the first match.
+        let (wrapped, _) = term.search_step(true);
+        assert_eq!(wrapped, 1);
+        let (prev, _) = term.search_step(false);
+        assert_eq!(prev, 3);
+    }
+
+    #[test]
+    fn search_is_case_sensitive_when_requested() {
+        let (mut term, _rx) = emulator(20, 5);
+        term.feed(b"Foo foo FOO\r\n");
+        assert_eq!(term.search_set("foo", false).1, 3);
+        assert_eq!(term.search_set("foo", true).1, 1);
+    }
+
+    #[test]
+    fn search_finds_matches_in_scrollback_history() {
+        let (mut term, _rx) = emulator(20, 3);
+        term.feed(b"NEEDLE\r\n");
+        for _ in 0..50 {
+            term.feed(b"filler\r\n");
+        }
+        assert!(term.history_len() > 0);
+        let (current, total) = term.search_set("NEEDLE", false);
+        assert_eq!(total, 1);
+        assert_eq!(current, 1);
+    }
+
+    #[test]
+    fn search_clear_drops_matches_and_selection() {
+        let (mut term, _rx) = emulator(20, 5);
+        term.feed(b"foo foo\r\n");
+        term.search_set("foo", false);
+        assert_eq!(term.search_count(), (1, 2));
+        term.search_clear();
+        assert_eq!(term.search_count(), (0, 0));
+        assert!(term.render().selection.is_empty());
+    }
+
+    #[test]
+    fn empty_query_clears_search() {
+        let (mut term, _rx) = emulator(20, 5);
+        term.feed(b"foo foo\r\n");
+        term.search_set("foo", false);
+        assert_eq!(term.search_set("", false), (0, 0));
+        assert!(term.render().selection.is_empty());
     }
 }
