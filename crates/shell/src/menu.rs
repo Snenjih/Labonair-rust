@@ -58,6 +58,9 @@ actions!(
         ResetZoom,
         ToggleFullScreen,
         ToggleZenMode,
+        // Temporary T17-002 dock debug shortcuts (no menu entry).
+        DebugCyclePanelDock,
+        DebugToggleDockZoom,
         // ── Tab index jumps / pane focus (no menu entry — parity with the
         //    reference, which only exposes these as shortcuts, T13-005) ──────
         SelectTab1,
@@ -208,6 +211,20 @@ fn bindings(overrides: &KeybindMap) -> Vec<KeyBinding> {
     rebind!(v, ShortcutId::ViewZoomIn, ZoomIn);
     rebind!(v, ShortcutId::ViewZoomOut, ZoomOut);
     rebind!(v, ShortcutId::ViewZoomReset, ResetZoom);
+
+    // Temporary T17-002 debug affordances (no menu entry): cycle the active
+    // panel of the primary dock through left → right → bottom, and toggle the
+    // primary dock's zoom. Removed once T18-003 / T18-007 add the real UI.
+    v.push(KeyBinding::new(
+        "cmd-alt-shift-m",
+        DebugCyclePanelDock,
+        None,
+    ));
+    v.push(KeyBinding::new(
+        "cmd-alt-shift-z",
+        DebugToggleDockZoom,
+        None,
+    ));
     v
 }
 
@@ -333,8 +350,8 @@ mod tests {
     /// Every accelerator string parses (`KeyBinding::new` panics otherwise).
     #[test]
     fn bindings_parse() {
-        // 7 fixed + 30 rebindable defaults.
-        assert_eq!(bindings(&KeybindMap::new()).len(), 37);
+        // 7 fixed + 30 rebindable defaults + 2 temporary T17-002 dock debug.
+        assert_eq!(bindings(&KeybindMap::new()).len(), 39);
     }
 
     #[test]
@@ -344,7 +361,7 @@ mod tests {
         kb.insert("pane.close".into(), String::new()); // disabled
         let n = bindings(&kb).len();
         // TabNew still present (moved), PaneClose dropped → one fewer.
-        assert_eq!(n, 36);
+        assert_eq!(n, 38);
     }
 
     #[test]

@@ -4,6 +4,97 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
+## Last Session: 2026-09-04 (T17-002 — `Dock` model (Left / Right / Bottom) · **Phase 16**)
+
+Replaces the shell's ad-hoc dual-slot sidebar (`left_slot`/`right_slot`,
+one panel each) with a real three-dock model owned by the `Workspace`.
+
+### What Was Done (T17-002)
+- **`crates/workspace/src/dock.rs`** — NEW. `struct Dock { position, panels:
+  Vec<AnyPanelHandle>, active, open, size, zoomed }` — reduced port of Zed's
+  `dock.rs`. Methods: `add_panel` / `remove_panel` (with active-index fixup) /
+  `activate_panel` / `toggle_open` / `toggle_panel` (open+activate, or close if
+  already active) / `set_zoomed` / `set_size` (clamped to per-position
+  `min_size`/`max_size`, plus the active panel's own `min_size` floor) /
+  `apply_order` / `apply_scalars` / `to_data`. `RESIZE_HANDLE_SIZE = px(6.)`,
+  per-position `default_size`/`min_size`/`max_size`, `position_slug` /
+  `position_from_slug` (the serde bridge `labonair-panel` deliberately omits).
+  `DockData` serde struct `{ position, open, size, zoomed, active_panel,
+  panel_order }` (Zed's `panel_positions` map dropped — a moved panel is just
+  the one that appears in another dock's `panel_order`). 5 unit tests.
+- **`crates/workspace/src/workspace.rs`** — `left_dock` / `right_dock` /
+  `bottom_dock: Dock` fields (empty at construction). `dock()` / `dock_mut()` /
+  `docks()` / `dock_of_panel()` accessors. `init_docks(layout_json, window,
+  cx)` builds every registered panel once and drops it into the dock its
+  persisted `panel_order` names, else its registry `default_position`, then
+  applies per-dock order + scalars; first run (no layout) opens the left dock.
+  `move_panel(name, to, cx) -> bool` removes from the old dock, validates via
+  `PanelHandle::position_is_valid`, adds+activates+opens the new dock.
+- **`crates/shell/src/app_shell.rs`** — deleted `left_slot`/`right_slot`/
+  `slot`/`slot_mut`/`side_for_panel`/`select_panel_on_side`/`persist_sidebar`/
+  `set_slot_width`/`render_sidebar` and the `resolve_persisted_panel` helper.
+  New: `primary_dock`, `dock_for_panel` (live membership), `panel_is_active`,
+  `select_panel`/`open_panel`/`move_panel`/`set_dock_size` (all operate on
+  `workspace.dock_mut(pos)`), `persist_docks` (throttled write of the whole
+  `[DockData;3]` to the new `dockLayout` pref), `migrate_dock_layout` (first-run
+  port of the legacy `sidebar_*` prefs), and `render_dock(pos)` — one function
+  for all three edges: header (title / multi-panel switcher / "move to next
+  dock" arrow), active-panel body, resize handle on the inner edge
+  (col-resize L/R, row-resize bottom), zoom = fill + no handle. Body layout:
+  `row[ left_dock | col[ workspace / bottom_dock ] | right_dock ]` with the
+  bottom dock nested inside the centre column (Zed's `workspace.rs` nesting),
+  status bar a sibling below. `DockResize(DockPosition)` drag value; the
+  `on_drag_move` math handles the bottom (vertical) edge too.
+- **`crates/shell/src/menu.rs`** — `DebugCyclePanelDock` (`cmd-alt-shift-m`) and
+  `DebugToggleDockZoom` (`cmd-alt-shift-z`) — temporary T17-002 debug
+  affordances (no menu entry) to exercise `move_panel` / zoom until T18-003 /
+  T18-007 add the real status-bar UI. `bindings_parse` asserts bumped 37→39,
+  36→38.
+- **`crates/shell/src/shell.rs`** — dropped `pub mod sidebar_slot;`.
+- **`crates/shell/src/sidebar_slot.rs`** — DELETED (212 lines; its
+  `sidebarSlotLogic` port is superseded by `Dock::toggle_panel`/`set_size`).
+- **`crates/backend/src/modules/settings/preferences.rs`** — new `dock_layout:
+  String` field (key `dockLayout`, default `""`). Legacy `sidebar_*` fields
+  kept for the one-time migration read.
+
+### Deviations from the task text (recorded)
+- The task asked for `Dock::render` + the resize `on_drag_move` to live in
+  `labonair-workspace`. `Dock` is a plain struct (not `Entity<Dock>` — no panel
+  subscribes to its dock yet, per the task's own note), so rendering + the drag
+  listener stay in the shell (`render_dock`), which owns the `Render` view and
+  `cx.listener`. The dock *state/geometry/persistence* is fully in
+  `labonair-workspace` as required.
+- Debug affordance is two fixed keybindings, not a command-palette entry
+  (equivalent, less invasive — palette `CommandId`s are a separate crate).
+- "44px activity rail" — never existed in the shell code (only a stale doc
+  comment), so nothing to remove.
+
+### Gates
+- `cargo fmt --check` ✓
+- `cargo check --workspace --all-targets` ✓ (only the pre-existing
+  `proc-macro-error2` future-incompat dep warning)
+- `cargo clippy --workspace --all-targets -- -D warnings` ✓ (fixed one
+  `type_complexity` in `render_dock` by splitting the collected tuple)
+- `scripts/check-crate-deps.sh` ✓ (20 crates, 87 edges, acyclic — no new edges)
+- `cargo test` cannot run in this VPS environment: linking a test binary fails
+  with `rust-lld: unable to find library -lxcb / -lxkbcommon / -lxkbcommon-x11`
+  (no X11 dev libs installed on the headless box — `ldconfig -p` has neither).
+  This is pre-existing and unrelated to T17-002. Both `labonair-workspace`
+  and `labonair-shell` **compiled** their test modules cleanly under
+  `cargo check --all-targets` + `clippy --all-targets` (which build the
+  `#[cfg(test)]` code but skip the link); only the final link of the test
+  executable fails, for the missing system libs. The new `dock.rs` tests and
+  the adjusted `menu.rs` assert counts are therefore type-checked but not
+  executed here.
+
+### State / Next
+- Branch `master`, committed on top of `792129e` (T17-001).
+- Concurrent-session files left unstaged / untouched:
+  `docs/adr/0001-crate-decomposition.md`, `bericht-workflow-rework.md`,
+  `zed-refrence/`.
+- **Next task: T17-003** (`StatusItem` trait & registry,
+  `tasks/phase-16-registries/`).
+
 ## Last Session: 2026-09-04 (T17-001 — `Panel` trait & `PanelRegistry` wired · **Phase 16 started**)
 
 First code task of Phase 16. Replaces the `enum SidebarPanel` + `render_panel_body`

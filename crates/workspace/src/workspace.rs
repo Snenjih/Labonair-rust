@@ -28,6 +28,7 @@ pub mod agent_access;
 pub mod background;
 pub mod bar_items;
 pub mod bell;
+pub mod dock;
 pub mod drag;
 pub mod live_bridge;
 pub mod markdown;
@@ -338,6 +339,12 @@ pub struct Workspace {
     /// replaces the shell's ad-hoc per-side slot state with a real `Dock` that
     /// will also hang off the `Workspace`.
     panel_registry: labonair_panel::PanelRegistry,
+    /// The three edge docks (T17-002). Empty at construction; populated by
+    /// [`Workspace::init_docks`] once the shell has registered the builtin
+    /// panels. Replaces the shell's former ad-hoc `left_slot`/`right_slot`.
+    left_dock: crate::dock::Dock,
+    right_dock: crate::dock::Dock,
+    bottom_dock: crate::dock::Dock,
     /// SFTP session id per `Sftp` tab id — kept alongside the view so the
     /// session can be torn down from `retire_tab` (which has no `cx`).
     sftp_sessions: HashMap<u64, String>,
@@ -540,6 +547,9 @@ impl Workspace {
             previews: HashMap::new(),
             git_graph: None,
             panel_registry: labonair_panel::PanelRegistry::new(),
+            left_dock: crate::dock::Dock::new(labonair_panel::DockPosition::Left),
+            right_dock: crate::dock::Dock::new(labonair_panel::DockPosition::Right),
+            bottom_dock: crate::dock::Dock::new(labonair_panel::DockPosition::Bottom),
             sftp_sessions: HashMap::new(),
             remote_edits: HashMap::new(),
             pending_sftp: Vec::new(),
@@ -1799,6 +1809,112 @@ impl Workspace {
     /// Mutable access, for the one-time builtin-panel registration in the shell.
     pub fn panel_registry_mut(&mut self) -> &mut labonair_panel::PanelRegistry {
         &mut self.panel_registry
+    }
+
+    /// One of the three edge docks (T17-002).
+    pub fn dock(&self, position: labonair_panel::DockPosition) -> &crate::dock::Dock {
+        use labonair_panel::DockPosition::*;
+        match position {
+            Left => &self.left_dock,
+            Right => &self.right_dock,
+            Bottom => &self.bottom_dock,
+        }
+    }
+
+    /// Mutable access to one of the three edge docks.
+    pub fn dock_mut(&mut self, position: labonair_panel::DockPosition) -> &mut crate::dock::Dock {
+        use labonair_panel::DockPosition::*;
+        match position {
+            Left => &mut self.left_dock,
+            Right => &mut self.right_dock,
+            Bottom => &mut self.bottom_dock,
+        }
+    }
+
+    /// `[left, right, bottom]`, for read-only iteration (status-bar toggles,
+    /// persistence).
+    pub fn docks(&self) -> [&crate::dock::Dock; 3] {
+        [&self.left_dock, &self.right_dock, &self.bottom_dock]
+    }
+
+    /// Which dock currently holds the panel named `name`, if any.
+    pub fn dock_of_panel(&self, name: &str) -> Option<labonair_panel::DockPosition> {
+        labonair_panel::DockPosition::ALL
+            .into_iter()
+            .find(|p| self.dock(*p).has_panel(name))
+    }
+
+    /// Populate the docks from the [`PanelRegistry`](labonair_panel::PanelRegistry)
+    /// and an optional persisted layout (`layout_json` is a JSON array of
+    /// [`dock::DockData`](crate::dock::DockData); empty / invalid = first run).
+    ///
+    /// Each registered panel is built once here and placed in the dock its
+    /// persisted `panel_order` names, else its registry `default_position`.
+    pub fn init_docks(&mut self, layout_json: &str, window: &mut Window, cx: &mut App) {
+        use crate::dock::{position_from_slug, DockData};
+
+        let parsed: Vec<DockData> = serde_json::from_str(layout_json).unwrap_or_default();
+
+        let regs: Vec<(
+            &'static str,
+            labonair_panel::DockPosition,
+            labonair_panel::PanelConstructor,
+        )> = self
+            .panel_registry
+            .iter()
+            .map(|r| (r.persistent_name, r.default_position, r.build.clone()))
+            .collect();
+
+        for (name, default_pos, build) in regs {
+            let handle = build(window, cx);
+            let target = parsed
+                .iter()
+                .find(|d| d.panel_order.iter().any(|n| n == name))
+                .and_then(|d| position_from_slug(&d.position))
+                .filter(|pos| handle.position_is_valid(*pos, cx))
+                .unwrap_or(default_pos);
+            self.dock_mut(target).add_panel(handle);
+        }
+
+        for pos in labonair_panel::DockPosition::ALL {
+            if let Some(data) = parsed
+                .iter()
+                .find(|d| position_from_slug(&d.position) == Some(pos))
+            {
+                let dock = self.dock_mut(pos);
+                dock.apply_order(&data.panel_order);
+                dock.apply_scalars(data);
+            }
+        }
+
+        // First run (no persisted layout at all): open the left dock so the
+        // explorer is visible, matching the pre-T17-002 default.
+        if parsed.is_empty() {
+            self.left_dock.set_open(true);
+        }
+    }
+
+    /// Move the panel `name` to the dock at `to`, if the panel allows that
+    /// position. Returns `true` when the move happened. (T17-002 — the UI that
+    /// calls this lands in T18-007; a debug shortcut exercises it meanwhile.)
+    pub fn move_panel(&mut self, name: &str, to: labonair_panel::DockPosition, cx: &App) -> bool {
+        let Some(from) = self.dock_of_panel(name) else {
+            return false;
+        };
+        if from == to {
+            return true;
+        }
+        if !self.dock(from).panel_allows(name, to, cx) {
+            return false;
+        }
+        let Some(handle) = self.dock_mut(from).remove_panel(name) else {
+            return false;
+        };
+        let dest = self.dock_mut(to);
+        dest.add_panel(handle);
+        dest.activate_panel(name);
+        dest.set_open(true);
+        true
     }
 
     pub fn open_git_graph_tab(&mut self, cx: &mut Context<Self>) {

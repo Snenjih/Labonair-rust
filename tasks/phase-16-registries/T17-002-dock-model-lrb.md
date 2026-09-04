@@ -1,7 +1,7 @@
 # T17-002: `Dock`-Modell (Links / Rechts / Unten)
 
 ## Status
-📋 Geplant
+✅ Done
 
 ## Phase
 16 — Root-Objekt & Registries

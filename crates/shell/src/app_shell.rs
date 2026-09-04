@@ -59,15 +59,12 @@ use labonair_settings_ui::{
 };
 use labonair_ui_kit::IconName;
 use labonair_workspace::agent_access::{AgentAccessEntry, AgentAccessStore};
+use labonair_workspace::dock::{position_slug, DockData, RESIZE_HANDLE_SIZE};
 
 const HEADER_H: f32 = 40.0;
 const STATUS_H: f32 = 32.0;
 /// Left inset reserved for the macOS traffic-light buttons.
 const TRAFFIC_LIGHT_INSET: f32 = 78.0;
-const SIDEBAR_MIN: f32 = 180.0;
-const SIDEBAR_MAX: f32 = 520.0;
-/// Sidebar resize-handle thickness.
-const HANDLE: f32 = 6.0;
 /// Minimum interval between window-geometry writes.
 const SAVE_THROTTLE: Duration = Duration::from_millis(1000);
 
@@ -119,39 +116,49 @@ fn register_builtin_panels(
     });
 }
 
-/// Persisted `sidebarActivePanel` / `sidebarRightActivePanel` values are panel
-/// [`persistent_name`](labonair_panel::Panel::persistent_name)s. Migrate the
-/// two removed panels (`hosts` — host access moved to the command palette /
-/// Settings; `tabs` — the tab strip is a titlebar concern) and any unknown
-/// value onto `fallback`, and only accept a name the registry actually knows.
-fn resolve_persisted_panel(
-    workspace: &Entity<Workspace>,
-    raw: &str,
-    fallback: &str,
-    cx: &App,
-) -> SharedString {
-    let candidate = match raw {
-        "hosts" | "tabs" | "" => fallback,
-        other => other,
-    };
-    let name = if workspace.read(cx).panel_registry().get(candidate).is_some() {
-        candidate
-    } else {
-        fallback
-    };
-    SharedString::from(name.to_owned())
-}
-
-/// Value carried while dragging a sidebar slot's edge handle — the side tells
-/// the drop handler which slot to resize.
+/// Value carried while dragging a dock's edge handle — the position tells the
+/// drop handler which dock to resize and along which axis.
 #[derive(Clone, Copy)]
-struct SidebarResize(BarSide);
+struct DockResize(DockPosition);
 
-fn side_slug(side: BarSide) -> &'static str {
-    match side {
-        BarSide::Left => "left",
-        BarSide::Right => "right",
-    }
+/// Build the persisted [`DockData`] array from the legacy `sidebar_*`
+/// preferences (T17-002 first-run migration). Panel membership is left empty so
+/// every panel falls back to its registry `default_position`; only the
+/// open / size / active-panel state carries over.
+fn migrate_dock_layout(
+    p: &labonair_backend::modules::settings::preferences::Preferences,
+) -> String {
+    let migrate_name = |raw: &str, fallback: &str| match raw {
+        "hosts" | "tabs" | "" => fallback.to_string(),
+        other => other.to_string(),
+    };
+    let docks = [
+        DockData {
+            position: "left".to_string(),
+            open: p.sidebar_open,
+            size: p.sidebar_width as f32,
+            zoomed: false,
+            active_panel: Some(migrate_name(&p.sidebar_active_panel, "explorer")),
+            panel_order: Vec::new(),
+        },
+        DockData {
+            position: "right".to_string(),
+            open: p.sidebar_right_open,
+            size: p.sidebar_right_width as f32,
+            zoomed: false,
+            active_panel: Some(migrate_name(&p.sidebar_right_active_panel, "ai")),
+            panel_order: Vec::new(),
+        },
+        DockData {
+            position: "bottom".to_string(),
+            open: false,
+            size: 320.0,
+            zoomed: false,
+            active_panel: None,
+            panel_order: Vec::new(),
+        },
+    ];
+    serde_json::to_string(&docks).unwrap_or_default()
 }
 
 struct DragGhost;
@@ -208,13 +215,9 @@ pub struct AppShell {
     /// Open current-segment subdirectory dropdown: `(dir, anchor, entries)`
     /// (`entries == None` while the background listing is in flight).
     subdir_menu: Option<(String, Point<Pixels>, Option<Vec<String>>)>,
-    /// Two independent dock slots — both can be open at once (port of the
-    /// reference dual-dock `useSidebar`). `left`/`right` are the physical
-    /// window edges.
-    left_slot: crate::sidebar_slot::SidebarSlot,
-    right_slot: crate::sidebar_slot::SidebarSlot,
-    /// Throttle for the debounced width/state persistence.
-    last_sidebar_save: Option<Instant>,
+    /// Throttle for the debounced dock-layout persistence (T17-002). The dock
+    /// state itself lives on the [`Workspace`] now.
+    last_dock_save: Option<Instant>,
     search_open: bool,
     search_query: String,
     search_focus: FocusHandle,
@@ -475,29 +478,23 @@ impl AppShell {
             }
         });
 
-        // The registry must be populated before the persisted slot state is
-        // resolved against it (T17-001).
+        // The registry must be populated before the docks are built from it
+        // (T17-001 / T17-002).
         register_builtin_panels(
             &workspace, &explorer, &git_panel, &git_graph, &snippets, &ai_chat, cx,
         );
 
-        let (left_slot, right_slot) = {
-            use crate::sidebar_slot::SidebarSlot;
+        // Build the three docks from the registry + the persisted layout
+        // (falling back to a migration of the legacy `sidebar_*` prefs).
+        let dock_layout = {
             let p = prefs.read(cx).get();
-            let clamp = |w: u32| (w as f32).clamp(SIDEBAR_MIN, SIDEBAR_MAX);
-            (
-                SidebarSlot::new(
-                    p.sidebar_open,
-                    clamp(p.sidebar_width),
-                    resolve_persisted_panel(&workspace, &p.sidebar_active_panel, "explorer", cx),
-                ),
-                SidebarSlot::new(
-                    p.sidebar_right_open,
-                    clamp(p.sidebar_right_width),
-                    resolve_persisted_panel(&workspace, &p.sidebar_right_active_panel, "ai", cx),
-                ),
-            )
+            if p.dock_layout.trim().is_empty() {
+                migrate_dock_layout(p)
+            } else {
+                p.dock_layout.clone()
+            }
         };
+        workspace.update(cx, |w, cx| w.init_docks(&dock_layout, window, cx));
 
         Self {
             theme,
@@ -529,9 +526,7 @@ impl AppShell {
             breadcrumb_expanded: false,
             crumb_menu: None,
             subdir_menu: None,
-            left_slot,
-            right_slot,
-            last_sidebar_save: None,
+            last_dock_save: None,
             search_open: false,
             search_query: String::new(),
             search_focus: cx.focus_handle(),
@@ -577,20 +572,6 @@ impl AppShell {
         self.updater.update(cx, |u, cx| u.run_check(true, cx));
     }
 
-    fn slot(&self, side: BarSide) -> &crate::sidebar_slot::SidebarSlot {
-        match side {
-            BarSide::Left => &self.left_slot,
-            BarSide::Right => &self.right_slot,
-        }
-    }
-
-    fn slot_mut(&mut self, side: BarSide) -> &mut crate::sidebar_slot::SidebarSlot {
-        match side {
-            BarSide::Left => &mut self.left_slot,
-            BarSide::Right => &mut self.right_slot,
-        }
-    }
-
     /// The "primary" edge per the `sidebarPosition` preference.
     fn primary_side(&self, cx: &App) -> BarSide {
         if self.prefs.read(cx).get().sidebar_position == "right" {
@@ -600,115 +581,125 @@ impl AppShell {
         }
     }
 
-    /// `Cmd+B` — toggle the primary slot open/closed.
+    /// The primary edge as a [`DockPosition`].
+    fn primary_dock(&self, cx: &App) -> DockPosition {
+        match self.primary_side(cx) {
+            BarSide::Right => DockPosition::Right,
+            BarSide::Left => DockPosition::Left,
+        }
+    }
+
+    /// `Cmd+B` — toggle the primary dock open/closed.
     fn toggle_sidebar(&mut self, cx: &mut Context<Self>) {
-        let side = self.primary_side(cx);
-        let s = self.slot_mut(side);
-        s.open = !s.open;
-        self.persist_sidebar(cx);
+        let pos = self.primary_dock(cx);
+        self.workspace
+            .update(cx, |w, _| w.dock_mut(pos).toggle_open());
+        self.persist_docks(cx);
         cx.notify();
     }
 
-    /// The dock a panel opens into: its registered bar-item side if it has one,
-    /// else the panel's registry `default_position`, else the primary edge.
-    fn side_for_panel(&self, name: &str, cx: &App) -> BarSide {
-        if let Some(id) = Self::item_for_panel(name) {
-            return self.placements.panel_dock_side(id);
+    /// Which dock currently hosts `name` — its live dock membership, falling
+    /// back to the primary edge if the panel is somehow unregistered.
+    fn dock_for_panel(&self, name: &str, cx: &App) -> DockPosition {
+        self.workspace
+            .read(cx)
+            .dock_of_panel(name)
+            .unwrap_or_else(|| self.primary_dock(cx))
+    }
+
+    /// Whether `name` is the active panel of an open dock.
+    fn panel_is_active(&self, name: &str, cx: &App) -> bool {
+        self.workspace
+            .read(cx)
+            .docks()
+            .iter()
+            .any(|d| d.is_open() && d.active_name() == Some(name))
+    }
+
+    /// Status-bar-toggle intent: open + activate `name`, or close its dock if
+    /// it is already the active panel there.
+    fn select_panel(&mut self, name: &str, cx: &mut Context<Self>) {
+        let pos = self.dock_for_panel(name, cx);
+        self.workspace
+            .update(cx, |w, _| w.dock_mut(pos).toggle_panel(name));
+        self.persist_docks(cx);
+        cx.notify();
+    }
+
+    /// "show me X" — never closes the dock (palette / menu intent).
+    fn open_panel(&mut self, name: &str, cx: &mut Context<Self>) {
+        let pos = self.dock_for_panel(name, cx);
+        self.workspace.update(cx, |w, _| {
+            let dock = w.dock_mut(pos);
+            dock.activate_panel(name);
+            dock.set_open(true);
+        });
+        self.persist_docks(cx);
+        cx.notify();
+    }
+
+    /// Move a panel to another dock (T17-002 API; the UI lands in T18-007, a
+    /// debug shortcut exercises it now). Keeps the panel's bar-item side hint
+    /// roughly in sync for the left/right edges.
+    fn move_panel(&mut self, name: &str, to: DockPosition, cx: &mut Context<Self>) {
+        let moved = self
+            .workspace
+            .update(cx, |w, cx| w.move_panel(name, to, cx));
+        if !moved {
+            return;
         }
-        match self
+        if let Some(id) = Self::item_for_panel(name) {
+            match to {
+                DockPosition::Left => self.move_bar_item(id, None, Some(BarSide::Left), None, cx),
+                DockPosition::Right => self.move_bar_item(id, None, Some(BarSide::Right), None, cx),
+                DockPosition::Bottom => {}
+            }
+        }
+        self.persist_docks(cx);
+        cx.notify();
+    }
+
+    /// Resize the dock at `pos`, clamped by the active panel's `min_size` and
+    /// the dock's own bounds.
+    fn set_dock_size(&mut self, pos: DockPosition, size: f32, cx: &mut Context<Self>) {
+        let floor = self
             .workspace
             .read(cx)
-            .panel_registry()
-            .get(name)
-            .map(|r| r.default_position)
-        {
-            Some(DockPosition::Right) => BarSide::Right,
-            Some(DockPosition::Left) => BarSide::Left,
-            // No bottom dock until T17-002 — fall back to the primary edge.
-            Some(DockPosition::Bottom) | None => self.primary_side(cx),
-        }
-    }
-
-    fn select_panel(&mut self, name: &str, cx: &mut Context<Self>) {
-        let side = self.side_for_panel(name, cx);
-        self.select_panel_on_side(name, side, cx);
-    }
-
-    /// "show me X" — never toggles the slot closed (palette / menu intent).
-    fn open_panel(&mut self, name: &str, cx: &mut Context<Self>) {
-        let side = self.side_for_panel(name, cx);
-        let s = self.slot_mut(side);
-        s.panel = SharedString::from(name.to_owned());
-        s.open = true;
-        self.persist_sidebar(cx);
-        cx.notify();
-    }
-
-    /// Move a panel to the other dock, updating its persisted bar-item side.
-    fn move_panel(&mut self, name: &str, to: BarSide, cx: &mut Context<Self>) {
-        let from = if to == BarSide::Left {
-            BarSide::Right
-        } else {
-            BarSide::Left
-        };
-        if self.slot(from).panel.as_ref() == name && self.slot(from).open {
-            self.slot_mut(from).open = false;
-        }
-        let s = self.slot_mut(to);
-        s.panel = SharedString::from(name.to_owned());
-        s.open = true;
-        if let Some(id) = Self::item_for_panel(name) {
-            self.move_bar_item(id, None, Some(to), None, cx);
-        }
-        self.persist_sidebar(cx);
-        cx.notify();
-    }
-
-    fn set_slot_width(&mut self, side: BarSide, width: f32, cx: &mut Context<Self>) {
-        let clamped = width.clamp(SIDEBAR_MIN, SIDEBAR_MAX);
-        let s = self.slot_mut(side);
-        if (clamped - s.width).abs() > 0.5 {
-            s.width = clamped;
-            s.last_open_width = clamped;
-            self.persist_sidebar(cx);
+            .dock(pos)
+            .active_panel()
+            .and_then(|p| p.min_size(cx));
+        let changed = self.workspace.update(cx, |w, _| {
+            let dock = w.dock_mut(pos);
+            let before = dock.size();
+            dock.set_size(px(size), floor);
+            (f32::from(dock.size()) - f32::from(before)).abs() > 0.5
+        });
+        if changed {
+            self.persist_docks(cx);
             cx.notify();
         }
     }
 
-    /// Debounced write of both slots into preferences (mirrors the reference
-    /// `onLayoutChanged` 300ms persist).
-    fn persist_sidebar(&mut self, cx: &mut Context<Self>) {
+    /// Debounced write of the full dock layout into the `dockLayout`
+    /// preference (mirrors the reference `onLayoutChanged` 300ms persist).
+    fn persist_docks(&mut self, cx: &mut Context<Self>) {
         let now = Instant::now();
-        if let Some(last) = self.last_sidebar_save {
+        if let Some(last) = self.last_dock_save {
             if now.duration_since(last) < Duration::from_millis(300) {
                 return;
             }
         }
-        self.last_sidebar_save = Some(now);
-        let (l, r) = (self.left_slot.clone(), self.right_slot.clone());
+        self.last_dock_save = Some(now);
+        let data: Vec<DockData> = self
+            .workspace
+            .read(cx)
+            .docks()
+            .iter()
+            .map(|d| d.to_data())
+            .collect();
+        let json = serde_json::to_string(&data).unwrap_or_default();
         self.prefs.update(cx, |s, cx| {
-            s.set_value("sidebarOpen", serde_json::Value::Bool(l.open), cx);
-            s.set_value(
-                "sidebarActivePanel",
-                serde_json::Value::String(l.panel.to_string()),
-                cx,
-            );
-            s.set_value(
-                "sidebarWidth",
-                serde_json::Value::from(l.width.round() as u32),
-                cx,
-            );
-            s.set_value("sidebarRightOpen", serde_json::Value::Bool(r.open), cx);
-            s.set_value(
-                "sidebarRightActivePanel",
-                serde_json::Value::String(r.panel.to_string()),
-                cx,
-            );
-            s.set_value(
-                "sidebarRightWidth",
-                serde_json::Value::from(r.width.round() as u32),
-                cx,
-            );
+            s.set_value("dockLayout", serde_json::Value::String(json), cx);
         });
     }
 
@@ -855,6 +846,45 @@ impl AppShell {
         cx: &mut Context<Self>,
     ) {
         self.select_panel("ai", cx);
+    }
+
+    /// Temporary T17-002 debug shortcut (`Cmd+Alt+Shift+M`): move the active
+    /// panel of the primary dock to the next dock position.
+    fn act_debug_cycle_panel_dock(
+        &mut self,
+        _: &menu::DebugCyclePanelDock,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let pos = self.primary_dock(cx);
+        let Some(name) = self
+            .workspace
+            .read(cx)
+            .dock(pos)
+            .active_name()
+            .map(str::to_owned)
+        else {
+            return;
+        };
+        self.move_panel(&name, pos.next(), cx);
+    }
+
+    /// Temporary T17-002 debug shortcut (`Cmd+Alt+Shift+Z`): toggle the primary
+    /// dock's zoom state.
+    fn act_debug_toggle_dock_zoom(
+        &mut self,
+        _: &menu::DebugToggleDockZoom,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let pos = self.primary_dock(cx);
+        self.workspace.update(cx, |w, _| {
+            let dock = w.dock_mut(pos);
+            let z = dock.is_zoomed();
+            dock.set_zoomed(!z);
+        });
+        self.persist_docks(cx);
+        cx.notify();
     }
 
     /// "Ask AI about Selection" — capture the active editor/terminal selection
@@ -1777,14 +1807,6 @@ impl AppShell {
         })
     }
 
-    /// Toggle a dock panel in the given slot, via the pure `sidebar_slot`
-    /// logic (port of `useBarPanelSync` / `sidebarSlotLogic`).
-    fn select_panel_on_side(&mut self, name: &str, side: BarSide, cx: &mut Context<Self>) {
-        self.slot_mut(side).toggle(name.to_owned());
-        self.persist_sidebar(cx);
-        cx.notify();
-    }
-
     /// One (bar, side) bucket, rendered + divider-inserted, shared by header
     /// and statusbar. Port of `buildBarBucket` + `withDividers`.
     fn build_bar_bucket(
@@ -2153,9 +2175,7 @@ impl AppShell {
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
         let name = Self::panel_for_item(id).unwrap();
-        let side = self.placements.panel_dock_side(id);
-        let slot = self.slot(side);
-        let active = slot.open && slot.panel.as_ref() == name;
+        let active = self.panel_is_active(name, cx);
         let icon = id.icon().unwrap_or(IconName::Folder);
         let theme = self.theme.read(cx);
         let (fg, muted, accent, border) = (
@@ -2178,7 +2198,7 @@ impl AppShell {
             })
             .child(icon.svg(if active { fg } else { muted }))
             .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
-                this.select_panel_on_side(name, side, cx);
+                this.select_panel(name, cx);
             }))
             .into_any_element()
     }
@@ -2189,7 +2209,7 @@ impl AppShell {
         compact: bool,
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
-        let active = self.right_slot.open && self.right_slot.panel.as_ref() == "ai";
+        let active = self.panel_is_active("ai", cx);
         let theme = self.theme.read(cx);
         let (fg, muted, accent, border) = (
             theme.foreground(),
@@ -2211,7 +2231,7 @@ impl AppShell {
             })
             .child(icon.svg(if active { fg } else { muted }))
             .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
-                this.select_panel_on_side("ai", BarSide::Right, cx);
+                this.select_panel("ai", cx);
             }))
             .into_any_element()
     }
@@ -2643,10 +2663,16 @@ impl AppShell {
         Some(context_menu(pos, self.theme.read(cx), dismiss, items))
     }
 
-    fn render_sidebar(
+    /// Render one edge dock (T17-002): a header (active panel title + a
+    /// per-panel switcher when the dock holds more than one + a "move to next
+    /// dock" affordance), the active panel's body, and a resize handle on the
+    /// inner edge. Left/right docks are vertical + width-resizable; the bottom
+    /// dock is horizontal + height-resizable. A zoomed dock fills its axis and
+    /// drops the handle.
+    fn render_dock(
         &mut self,
-        side: BarSide,
-        window: &mut Window,
+        pos: DockPosition,
+        _window: &mut Window,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let (sidebar_bg, sidebar_fg, sidebar_border, accent, muted) = {
@@ -2659,88 +2685,144 @@ impl AppShell {
                 theme.muted_foreground(),
             )
         };
-        let slot = self.slot(side).clone();
-        let on_right = side == BarSide::Right;
-        let opp = if on_right {
-            BarSide::Left
-        } else {
-            BarSide::Right
+
+        let is_bottom = pos == DockPosition::Bottom;
+        let (size, zoomed, tabs, body, title) = {
+            let ws = self.workspace.read(cx);
+            let dock = ws.dock(pos);
+            let tabs: Vec<(SharedString, SharedString, bool)> = dock
+                .panels()
+                .iter()
+                .map(|p| {
+                    (
+                        SharedString::from(p.persistent_name()),
+                        p.title(cx),
+                        dock.active_name() == Some(p.persistent_name()),
+                    )
+                })
+                .collect();
+            let body: Option<gpui::AnyElement> = dock
+                .active_panel()
+                .map(|handle| handle.to_any().into_any_element());
+            let title: SharedString = match dock.active_panel() {
+                Some(handle) => handle.title(cx).to_string().to_uppercase().into(),
+                None => SharedString::from(""),
+            };
+            (f32::from(dock.size()), dock.is_zoomed(), tabs, body, title)
         };
 
-        // The active panel is resolved entirely through the workspace's
-        // `PanelRegistry` — there is no `match` on a panel enum left in the
-        // shell (T17-001). The registry constructor hands back the shell's
-        // shared panel entity.
-        let build = self
-            .workspace
-            .read(cx)
-            .panel_registry()
-            .get(slot.panel.as_ref())
-            .map(|r| r.build.clone());
-        let (title, body): (SharedString, gpui::AnyElement) = match build {
-            Some(build) => {
-                let handle = build(window, cx);
-                (
-                    handle.title(cx).to_string().to_uppercase().into(),
-                    handle.to_any().into_any_element(),
-                )
-            }
-            None => (slot.panel.clone(), div().flex_1().into_any_element()),
-        };
-
-        let panel = div()
-            .w(px(slot.width))
-            .h_full()
-            .flex_shrink_0()
+        let multi = tabs.len() > 1;
+        let header = div()
             .flex()
-            .flex_col()
-            .bg(sidebar_bg)
-            .text_color(sidebar_fg)
-            .child(
+            .items_center()
+            .justify_between()
+            .gap_2()
+            .px_3()
+            .py_2()
+            .text_xs()
+            .text_color(muted)
+            .child(if multi {
                 div()
                     .flex()
                     .items_center()
-                    .justify_between()
-                    .px_3()
-                    .py_2()
-                    .text_xs()
-                    .text_color(muted)
-                    .child(title)
-                    .child(
+                    .gap_1()
+                    .children(tabs.into_iter().map(|(name, label, is_active)| {
+                        let n = name.clone();
                         div()
-                            .id(SharedString::from(format!("sidebar-move-{}", slot.panel)))
+                            .id(SharedString::from(format!("dock-tab-{name}")))
+                            .px_1p5()
+                            .rounded_sm()
                             .cursor_pointer()
-                            .text_color(muted)
-                            .hover(|s| s.text_color(sidebar_fg))
-                            .child(if on_right { "\u{2190}" } else { "\u{2192}" })
+                            .when(is_active, |d| {
+                                d.bg(accent.opacity(0.2)).text_color(sidebar_fg)
+                            })
+                            .when(!is_active, |d| d.hover(|s| s.text_color(sidebar_fg)))
+                            .child(label)
                             .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
-                                let name = this.slot(side).panel.clone();
-                                this.move_panel(&name, opp, cx);
-                            })),
-                    ),
-            )
-            .child(body);
+                                this.workspace
+                                    .update(cx, |w, _| w.dock_mut(pos).activate_panel(&n));
+                                this.persist_docks(cx);
+                                cx.notify();
+                            }))
+                    }))
+                    .into_any_element()
+            } else {
+                div().child(title).into_any_element()
+            })
+            .child(
+                div()
+                    .id(SharedString::from(format!(
+                        "dock-move-{}",
+                        position_slug(pos)
+                    )))
+                    .cursor_pointer()
+                    .text_color(muted)
+                    .hover(|s| s.text_color(sidebar_fg))
+                    .child(if is_bottom { "\u{2191}" } else { "\u{21C4}" })
+                    .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                        if let Some(name) = this.workspace.read(cx).dock(pos).active_name() {
+                            let name = name.to_owned();
+                            this.move_panel(&name, pos.next(), cx);
+                        }
+                    })),
+            );
 
-        let handle = div()
-            .id(SharedString::from(format!(
-                "sidebar-handle-{}",
-                side_slug(side)
-            )))
-            .w(px(HANDLE))
-            .h_full()
+        let panel = div()
+            .when(!zoomed && !is_bottom, |d| d.w(px(size)).flex_shrink_0())
+            .when(!zoomed && is_bottom, |d| d.h(px(size)).flex_shrink_0())
+            .when(zoomed, |d| d.flex_1())
+            .when(!is_bottom, |d| d.h_full())
+            .when(is_bottom, |d| d.w_full())
+            .flex()
+            .flex_col()
+            .min_h_0()
+            .bg(sidebar_bg)
+            .text_color(sidebar_fg)
+            .child(header)
+            .children(body);
+
+        let handle = (!zoomed).then(|| {
+            div()
+                .id(SharedString::from(format!(
+                    "dock-handle-{}",
+                    position_slug(pos)
+                )))
+                .flex_shrink_0()
+                .flex()
+                .when(!is_bottom, |d| {
+                    d.w(RESIZE_HANDLE_SIZE)
+                        .h_full()
+                        .justify_center()
+                        .cursor_col_resize()
+                })
+                .when(is_bottom, |d| {
+                    d.h(RESIZE_HANDLE_SIZE)
+                        .w_full()
+                        .items_center()
+                        .cursor_row_resize()
+                })
+                .hover(|s| s.bg(accent.opacity(0.4)))
+                .child(
+                    div()
+                        .when(!is_bottom, |d| d.w(px(1.0)).h_full())
+                        .when(is_bottom, |d| d.h(px(1.0)).w_full())
+                        .bg(sidebar_border),
+                )
+                .on_drag(DockResize(pos), |_, _, _, cx| cx.new(|_| DragGhost))
+        });
+
+        let container = div()
             .flex_shrink_0()
             .flex()
-            .justify_center()
-            .cursor_col_resize()
-            .hover(|s| s.bg(accent.opacity(0.4)))
-            .child(div().w(px(1.0)).h_full().bg(sidebar_border))
-            .on_drag(SidebarResize(side), |_, _, _, cx| cx.new(|_| DragGhost));
+            .when(!is_bottom, |d| d.h_full().flex_row())
+            .when(is_bottom, |d| d.w_full().flex_col())
+            .when(zoomed, |d| d.flex_1());
 
-        let row = div().flex_shrink_0().h_full().flex().flex_row();
-        if on_right {
-            row.child(handle).child(panel)
-        } else {
-            row.child(panel).child(handle)
+        // Handle sits on the inner edge: right of a left dock, above a bottom
+        // dock, left of a right dock.
+        match pos {
+            DockPosition::Left => container.child(panel).children(handle),
+            DockPosition::Right | DockPosition::Bottom => container.children(handle).child(panel),
         }
     }
 
@@ -2814,12 +2896,25 @@ impl Render for AppShell {
         let show_header = self.prefs.read(cx).get().zen_mode_show_header;
         let show_statusbar = self.prefs.read(cx).get().zen_mode_show_statusbar;
         let header = show_header.then(|| self.render_header(cx).into_any_element());
-        let left_sidebar = self.left_slot.open.then(|| {
-            self.render_sidebar(BarSide::Left, window, cx)
+        let dock_open = |pos: DockPosition, this: &Workspace| this.dock(pos).is_open();
+        let (left_open, right_open, bottom_open) = {
+            let ws = self.workspace.read(cx);
+            (
+                dock_open(DockPosition::Left, ws),
+                dock_open(DockPosition::Right, ws),
+                dock_open(DockPosition::Bottom, ws),
+            )
+        };
+        let left_dock = left_open.then(|| {
+            self.render_dock(DockPosition::Left, window, cx)
                 .into_any_element()
         });
-        let right_sidebar = self.right_slot.open.then(|| {
-            self.render_sidebar(BarSide::Right, window, cx)
+        let right_dock = right_open.then(|| {
+            self.render_dock(DockPosition::Right, window, cx)
+                .into_any_element()
+        });
+        let bottom_dock = bottom_open.then(|| {
+            self.render_dock(DockPosition::Bottom, window, cx)
                 .into_any_element()
         });
         let statusbar = show_statusbar.then(|| self.render_statusbar(cx).into_any_element());
@@ -2853,6 +2948,8 @@ impl Render for AppShell {
             .on_action(cx.listener(Self::act_next_tab))
             .on_action(cx.listener(Self::act_prev_tab))
             .on_action(cx.listener(Self::act_toggle_ai_panel))
+            .on_action(cx.listener(Self::act_debug_cycle_panel_dock))
+            .on_action(cx.listener(Self::act_debug_toggle_dock_zoom))
             .on_action(cx.listener(Self::act_ask_about_selection))
             .on_action(cx.listener(Self::act_new_ai_session))
             .on_action(cx.listener(Self::act_clear_chat))
@@ -2886,26 +2983,36 @@ impl Render for AppShell {
             })
             .children(header)
             .child({
-                let ws_pane = div().flex_1().min_w_0().child(workspace);
+                // Center column: workspace on top, the bottom dock beneath it
+                // (inside this column so it never overlaps the side docks —
+                // Zed's `workspace.rs` nesting).
+                let center = div()
+                    .flex_1()
+                    .min_w_0()
+                    .min_h_0()
+                    .flex()
+                    .flex_col()
+                    .child(div().flex_1().min_h_0().min_w_0().child(workspace))
+                    .children(bottom_dock);
                 div()
                     .flex_1()
                     .min_h_0()
                     .flex()
                     .flex_row()
-                    .children(left_sidebar)
-                    .child(ws_pane)
-                    .children(right_sidebar)
+                    .children(left_dock)
+                    .child(center)
+                    .children(right_dock)
                     .on_drag_move(cx.listener(
-                        |this, ev: &DragMoveEvent<SidebarResize>, _window, cx| {
-                            let side = ev.drag(cx).0;
-                            let w = if side == BarSide::Right {
-                                f32::from(
-                                    ev.bounds.origin.x + ev.bounds.size.width - ev.event.position.x,
-                                )
-                            } else {
-                                f32::from(ev.event.position.x - ev.bounds.origin.x)
+                        |this, ev: &DragMoveEvent<DockResize>, _window, cx| {
+                            let pos = ev.drag(cx).0;
+                            let b = ev.bounds;
+                            let p = ev.event.position;
+                            let size = match pos {
+                                DockPosition::Left => f32::from(p.x - b.origin.x),
+                                DockPosition::Right => f32::from(b.origin.x + b.size.width - p.x),
+                                DockPosition::Bottom => f32::from(b.origin.y + b.size.height - p.y),
                             };
-                            this.set_slot_width(side, w, cx);
+                            this.set_dock_size(pos, size, cx);
                         },
                     ))
             })

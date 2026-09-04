@@ -152,6 +152,10 @@ pub struct Preferences {
     pub sidebar_right_active_panel: String,
     pub sidebar_width: u32,
     pub sidebar_right_width: u32,
+    /// T17-002 dock layout: JSON array of `DockData` (open / size / zoom /
+    /// active / panel order per edge dock). Empty string = not yet persisted;
+    /// the shell then migrates the legacy `sidebar_*` fields above on first run.
+    pub dock_layout: String,
     pub hm_layout: String,
     pub hm_sort: String,
     pub hm_card_scale: u32,
@@ -385,6 +389,7 @@ impl Default for Preferences {
             sidebar_right_active_panel: "explorer".to_string(),
             sidebar_width: 225,
             sidebar_right_width: 225,
+            dock_layout: String::new(),
             hm_layout: "grid".to_string(),
             hm_sort: "last_connected".to_string(),
             hm_card_scale: 100,

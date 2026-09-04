@@ -9,15 +9,15 @@
 //! Modules kept here are shell-near: the native macOS menu bar (`menu`), the
 //! window-geometry persistence (`window_state`), the bundled icon assets
 //! (`assets`), plus the shell-near overlays / statusbar helpers
-//! (`updater`, `cwd_breadcrumb`, `sidebar_slot`). Some of these move again in
-//! Phase 17 (into dedicated statusbar items), but they belong to the shell
-//! composition until then.
+//! (`updater`, `cwd_breadcrumb`). Some of these move again in Phase 17 (into
+//! dedicated statusbar items), but they belong to the shell composition until
+//! then. The former `sidebar_slot` module was removed in T17-002 — the dock
+//! model now lives in `labonair-workspace` (`dock.rs`).
 
 pub mod app_shell;
 pub mod assets;
 pub mod cwd_breadcrumb;
 pub mod menu;
-pub mod sidebar_slot;
 pub mod updater;
 pub mod window_state;
 
