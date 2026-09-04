@@ -4,6 +4,51 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
+## Last Session: 2026-09-04 (T19-000 — Settings design contract)
+
+**T19-000 done.** Phase 17 (T18-001..T18-007) was already complete; this is
+the first task of Phase 18 — Settings-System Zed-Style. Pure documentation
+task, no code changes.
+
+- New `docs/settings-guidelines.md`: the 9-point settings design contract
+  (one navigation model / every setting is a typed `SettingsContent` field /
+  field UI generated from the Rust type / custom panes as a sanctioned
+  first-class path that still uses standard chrome / origin+reset on every
+  field / global search / deep-link slugs / copy rules / no window sprawl),
+  plus a Non-Goals section (pixels/widgets are `T19-004`'s job, not this
+  doc's) and a Deviation process section (must cite the rule, record the
+  rationale in `docs/architecture.md`, scoped to that page only — not a
+  blanket exemption).
+- `CLAUDE.md`: added Critical Rule 9 ("Settings-Design-Kontrakt einhalten"),
+  pointing at the new doc. Rules 1–8 left untouched.
+- `docs/architecture.md` §8.3 and `tasks/ROADMAP.md` (Phase-18 table listing
+  T19-000 first, Erfolgskriterium 25's `docs/settings-guidelines.md`
+  half-sentence) already referenced this contract from earlier planning —
+  verified both match what was written, no further edits needed there.
+- This is now **normative**: any settings page/field added from `T19-001`
+  onward is reviewed against `docs/settings-guidelines.md`; deviations must
+  be justified and recorded per its Deviation process, not silently made.
+
+### Gate results
+`cargo fmt --check` ✅ · `cargo check --workspace --all-targets` ✅ ·
+`cargo clippy --workspace --all-targets -- -D warnings` ✅ · `cargo test
+--workspace` ✅. No code touched — `git diff --stat` for the commit shows
+only `.md` files (`CLAUDE.md`, `docs/settings-guidelines.md`,
+`tasks/phase-18-settings-core/T19-000-settings-design-contract.md`).
+
+### Next task
+**T19-001** (`labonair-settings-content` — typisierter Baum + `MergeFrom`,
+`hosts` als eigener Top-Level-Bereich), file:
+`tasks/phase-18-settings-core/T19-001-settings-content-tree.md`. Its
+dependencies (T16-001, T16-007, T19-000) are all Done. Note: T19-002
+(`SettingsStore` + layer merge) depends on T19-001, not directly on T19-000 —
+so T19-001 is next in strict roadmap order, not T19-002.
+
+### Note on repo state at session start
+An unrelated submodule pointer drift in `zed-refrence/zed` (1-line diff, not
+part of this task) was present before this session and left untouched —
+not committed here.
+
 ## Last Session: 2026-09-04 (T18-007 — Philosophy verankert + Personalization settings page)
 
 **T18-007 done.** Phase 17 is now complete (T18-001..T18-007 all Done).

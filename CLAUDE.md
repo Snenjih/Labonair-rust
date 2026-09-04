@@ -63,6 +63,7 @@ The authoritative **target architecture** for the ongoing crate-split rework (ro
 6. **No `unwrap()` on predictable errors** — return `Result<T, String>` (or GPUI error type) with descriptive messages.
 7. **Verify before completing** — a task is only `completed` after `cargo check` + `cargo clippy -- -D warnings` + `cargo test` pass.
 8. **Layout-Vertrag einhalten** — Titlebar nur Tabs + der eine Menü-Button; Statusbar = Panel-Steuerung links / Info-Dropdowns rechts; Overlays nur über `ModalLayer`/`ToastLayer`. Abweichungen zuerst in `docs/architecture.md` begründen.
+9. **Settings-Design-Kontrakt einhalten** — jede Einstellung ist ein typisiertes `SettingsContent`-Feld mit generierter UI; ein Navigations-Modell (Kategorie → Abschnitt → optionale Unter-Seite); Custom-Panes nur für echte Nicht-Feld-UIs und immer im Standard-Chrome. Details + Abweichungs-Prozess: `docs/settings-guidelines.md`.
 
 ## Next Task Protocol (THE core workflow)
 

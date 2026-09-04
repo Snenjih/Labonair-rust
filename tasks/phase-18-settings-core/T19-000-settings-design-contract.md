@@ -1,7 +1,7 @@
 # T19-000: Settings-Design-Kontrakt festschreiben
 
 ## Status
-📋 Geplant
+✅ Done
 
 ## Phase
 18 — Settings-System Zed-Style
@@ -83,14 +83,18 @@ gegen die T19-001–T19-010 implementieren.
 5. **`handshake.md`** — Eintrag, dass der Kontrakt ab jetzt normativ ist.
 
 ## Akzeptanzkriterien
-- [ ] `docs/settings-guidelines.md` existiert mit den 9 Punkten, jeweils
+- [x] `docs/settings-guidelines.md` existiert mit den 9 Punkten, jeweils
       konkret genug, um in einem Review „verstößt gegen Punkt X" sagen zu
       können.
-- [ ] `CLAUDE.md` hat Critical Rule 9 (Settings-Kontrakt) mit Verweis.
-- [ ] `docs/architecture.md §8.3` verweist auf das Dokument.
-- [ ] `ROADMAP.md` listet T19-000 als erste Phase-18-Task.
-- [ ] Reines Doku-Change: `git diff --stat` zeigt nur `.md`-Dateien.
-- [ ] Gates unverändert grün (keine Code-Änderung): `cargo fmt --check`,
+- [x] `CLAUDE.md` hat Critical Rule 9 (Settings-Kontrakt) mit Verweis.
+- [x] `docs/architecture.md §8.3` verweist auf das Dokument (bereits vorab so
+      geschrieben; verifiziert, keine Änderung nötig).
+- [x] `ROADMAP.md` listet T19-000 als erste Phase-18-Task (bereits vorab so
+      geschrieben; verifiziert, keine Änderung nötig). Erfolgskriterium 25
+      enthält bereits den Halbsatz „…gemäß `docs/settings-guidelines.md`".
+- [x] Reines Doku-Change: `git diff --stat` (für die committeten Dateien)
+      zeigt nur `.md`-Dateien.
+- [x] Gates unverändert grün (keine Code-Änderung): `cargo fmt --check`,
       `cargo check --workspace --all-targets`,
       `cargo clippy --workspace --all-targets -- -D warnings`,
       `cargo test --workspace`.
