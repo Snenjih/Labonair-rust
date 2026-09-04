@@ -1,7 +1,7 @@
 # T19-006: JSON-Schema-Generierung für Settings
 
 ## Status
-📋 Geplant
+✅ Done
 
 ## Phase
 18 — Settings-System Zed-Style
@@ -65,17 +65,22 @@ Feld"), (b) die Grundlage für spätere Editor-Autocomplete in der
    Rest lädt; Hover über `terminal.fontSize` im Editor zeigt die Beschreibung.
 
 ## Akzeptanzkriterien
-- [ ] `labonair_settings::json_schema()` liefert ein Schema, das alle
+- [x] `labonair_settings::json_schema()` liefert ein Schema, das alle
       `SettingsContent`-Bereiche + Enum-Werte + Beschreibungen abdeckt.
-- [ ] Beim Laden wird jeder Layer validiert; Typ-/Enum-Fehler ⇒ Feld-Default +
+- [x] Beim Laden wird jeder Layer validiert; Typ-/Enum-Fehler ⇒ Feld-Default +
       gesammelter Fehler mit `json_path` (+ Zeile, wenn ermittelbar).
-- [ ] Unbekannte Keys sind nur Warnungen, nicht fatal.
-- [ ] Die Fehler erscheinen im Settings-UI-Banner mit lesbarem Pfad/Wert.
-- [ ] `settings.schema.json` wird bereitgestellt (Datei oder Embed).
-- [ ] Editor: mind. Hover-Beschreibung über Settings-Keys (Autocomplete
+      (`User`- und `Project`-Layer, den einzigen beiden Layern mit einem
+      echten Text-Loader — `Os`/`Profile` sind laut `store.rs` weiterhin nur
+      strukturelle Platzhalter ohne Loader.)
+- [x] Unbekannte Keys sind nur Warnungen, nicht fatal.
+- [x] Die Fehler erscheinen im Settings-UI-Banner mit lesbarem Pfad/Wert.
+- [x] `settings.schema.json` wird bereitgestellt (Datei oder Embed).
+- [x] Editor: mind. Hover-Beschreibung über Settings-Keys (Autocomplete
       optional / Folge-Ticket, falls Aufwand zu groß — dann im PR begründen).
-- [ ] Tests decken Schema-Vollständigkeit + die drei Fehlerklassen + Gutfall.
-- [ ] Gates grün: `cargo fmt --check`, `cargo check --workspace --all-targets`,
+      (Nur Hover implementiert — Autocomplete als Folgeticket, siehe Notizen
+      unten.)
+- [x] Tests decken Schema-Vollständigkeit + die drei Fehlerklassen + Gutfall.
+- [x] Gates grün: `cargo fmt --check`, `cargo check --workspace --all-targets`,
       `cargo clippy --workspace --all-targets -- -D warnings`,
       `cargo test --workspace`.
 
@@ -84,6 +89,20 @@ Feld"), (b) die Grundlage für spätere Editor-Autocomplete in der
   T19-001 schon als Dep vorgesehen.
 - Der Editor-Helfer ist der einzige Teil mit Unsicherheit — Hover ist Pflicht,
   Autocomplete ist „wenn machbar".
+- **Umsetzung (2026-09-04):** Hover implementiert
+  (`EditorView::update_hover`/`render_hover_tooltip`,
+  `crates/workspace/src/views/editor.rs`) — Maus-Move über einer
+  `labonair-settings.json`/`.labonair/settings.json`-Tab löst per
+  `labonair_settings_json::json_path_at_offset` den Key-Pfad an der
+  Cursorposition auf und zeigt `labonair_settings::description_for_path`s
+  Schema-Beschreibung in einer schwebenden Karte. Autocomplete (Ctrl-Space)
+  wurde bewusst ausgelassen — GPUI hat keine Autocomplete-Popup-Grundlage
+  hier (`crates/workspace/src/views/editor.rs` hat keinen bestehenden
+  Overlay/Popup-Mechanismus außerhalb der bereits vorhandenen KI-`@`-Datei-
+  Mention-Popover in `panel-ai`, die pro-Kontext gebaut ist und nicht generisch
+  wiederverwendbar ist) und der Aufwand (echtes Popup + Tastatur-Routing +
+  Einfüge-Logik) hätte die für diesen Task veranschlagte Zeit gesprengt —
+  als Folgeticket vorgemerkt, nicht Teil von T19-006/T19-007.
 
 ## Warnungen
 - ⚠️ `schemars`-Derive-Ausgabe für getaggte Enums / `Option`-verschachtelte

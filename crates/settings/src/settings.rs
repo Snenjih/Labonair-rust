@@ -20,6 +20,7 @@ extern crate self as labonair_settings;
 mod concrete;
 pub mod project;
 mod registry;
+pub mod schema;
 mod settings_trait;
 mod store;
 mod watch;
@@ -30,9 +31,11 @@ pub use concrete::{
 };
 pub use project::{ensure_project_settings_file, PROJECT_SETTINGS_WHITELIST};
 pub use registry::{register_all, RegisteredSetting};
+pub use schema::{description_for_path, json_schema, SettingsValidationError};
 pub use settings_trait::Settings;
 pub use store::{
-    ensure_user_settings_file, user_settings_path, SettingsLayer, SettingsStore, WorktreeId,
+    ensure_user_settings_file, settings_schema_path, user_settings_path, SettingsLayer,
+    SettingsStore, WorktreeId,
 };
 
 // Re-exported so `#[derive(RegisterSetting)]`'s generated code can address
@@ -56,6 +59,7 @@ pub fn init(cx: &mut App) {
     register_all(cx);
     let user_path = cx.global::<SettingsStore>().user_path().to_path_buf();
     watch::spawn(cx, user_path);
+    store::write_schema_file();
 }
 
 /// Set (or clear, with `None`) the active project root — the folder the

@@ -63,12 +63,17 @@ ALLOWED = {
     # T19-002: ThemeSettings/TerminalSettings real consumers
     # (workspace.rs::reduce_motion, views/terminal.rs opacity/copy-on-select/
     # right-click-pastes) pull the typed settings store directly.
+    # T19-006: the code-editor view's settings.json schema-hover helper
+    # (`views/editor.rs::update_hover`) calls
+    # `labonair_settings_json::json_path_at_offset` directly to resolve the
+    # key path under the mouse — a leaf crate (`labonair-settings-json`),
+    # no cycle.
     "labonair-workspace": {
         "labonair-theme", "labonair-ui-kit", "labonair-gpui-ext",
         "labonair-notifications", "labonair-command-palette",
         "labonair-panel", "labonair-panel-git-graph", "labonair-hosts-ui",
         "labonair-terminal", "labonair-editor", "labonair-backend",
-        "labonair-ai", "labonair-settings",
+        "labonair-ai", "labonair-settings", "labonair-settings-json",
     },
     # rule 3: the only crate that knows every concrete panel type — it also
     # touches the `labonair-panel` contracts crate to register them (T17-001).
@@ -132,11 +137,21 @@ ALLOWED = {
     # Settings track (T19-001) — pure data model, no GPUI/UI/backend deps.
     "labonair-settings-content": {"labonair-settings-macros"},
     "labonair-settings-macros": set(),
-    # Settings track (T19-002) — the layered SettingsStore. Depends only on
-    # the pure data model + its own derive-macro crate; `gpui` is used (Store
-    # as a Global + App/AsyncApp access) but that's an external dep, not a
+    # Settings track (T19-005) — surgical `settings.json` text edits via a
+    # real `tree-sitter-json` syntax tree. A leaf: only `tree-sitter`/
+    # `tree-sitter-json`/`serde_json` (external), no workspace deps.
+    "labonair-settings-json": set(),
+    # Settings track (T19-002) — the layered SettingsStore. Depends on the
+    # pure data model + its own derive-macro crate; `gpui` is used (Store as
+    # a Global + App/AsyncApp access) but that's an external dep, not a
     # workspace edge, so it doesn't show up here. No UI crate, no backend.
-    "labonair-settings": {"labonair-settings-content", "labonair-settings-macros"},
+    # T19-005 added `labonair-settings-json` for the surgical write path;
+    # T19-006 reuses it (`find_value_range`/`json_path_at_offset`) for
+    # schema-validation error positions.
+    "labonair-settings": {
+        "labonair-settings-content", "labonair-settings-macros",
+        "labonair-settings-json",
+    },
 }
 
 # UI crates the engines (backend/ai/editor) must not reach, even transitively.

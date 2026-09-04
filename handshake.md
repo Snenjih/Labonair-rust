@@ -4,6 +4,118 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
+## Last Session: 2026-09-04 (T19-006 — JSON-Schema generation + settings.json validation)
+
+**T19-006 done.** `SettingsContent` now drives a real generated JSON Schema
+used for both file-write convenience and on-load validation of both text-
+backed settings layers (`User` + `Project`), matching Zed's
+`SettingsJsonSchemaParams`/`json_schema` design at a scope this repo needs.
+New/changed:
+
+- **`crates/settings/src/schema.rs`** (new file) — `json_schema()` ==
+  `serde_json::to_value(schemars::schema_for!(SettingsContent))` (schemars
+  0.8 was already derived on `SettingsContent` since T19-001, so this is a
+  pure wrapper, no drift risk). `validate(instance, raw_text) ->
+  (Vec<SettingsValidationError>, Vec<SettingsValidationError>)` runs the
+  `jsonschema` crate (0.53, added with `default-features = false` — its
+  defaults pull in `reqwest`/TLS for remote `$ref` resolution, which this
+  offline desktop app never needs) against the schema for type/enum errors
+  (`json_path` from `ValidationError::instance_path()`, JSON-Pointer ->
+  dotted path via `pointer_to_json_path`), plus a hand-rolled recursive
+  `unknown_key_warnings` walker (jsonschema's own `additionalProperties`
+  keyword isn't useful here — schemars 0.8 doesn't emit `additionalProperties:
+  false` for plain structs, so every struct node is `properties`-shaped and
+  "extra key" has to be detected by walking `properties`/`$ref`/`allOf`
+  manually; `HashMap<String,T>`-shaped fields are recognized by
+  `additionalProperties` being a sub-schema with no `properties` sibling and
+  their *keys* are never flagged, only recursed into by value — those keys
+  are user data like host ids/panel names, not settings fields).
+  `description_for_path(json_path)` walks the same `$ref`/`allOf` resolution
+  to pull a field's doc-comment description (or its nearest ancestor's) for
+  the editor-hover helper below. 8 unit tests: schema completeness (every
+  `SettingsContent` serde key + the `CursorStyle` enum's 3 variants),
+  `SettingsContent::defaults()` round-trips with zero errors/warnings
+  (the Warnungen's required round-trip check), one test per error class
+  (wrong type, invalid enum, unknown key incl. a legacy top-level key like
+  `preferences`), a map-shaped field never warning on its own keys, and both
+  `description_for_path` cases.
+- **`crates/settings-json/src/settings_json.rs`** — two new read-only
+  helpers reusing the crate's existing `tree-sitter-json` parse (kept
+  read-only, separate from the surgical-write path): `find_value_range(text,
+  key_path) -> Option<Range<usize>>` (byte range of an existing key's value,
+  used to derive line/col for a schema error) and `json_path_at_offset(text,
+  byte_offset) -> Option<Vec<String>>` (walks *down* from a byte offset to
+  the dotted key path containing it — the editor-hover helper's reverse
+  lookup), plus `line_col_at(text, offset) -> (usize, usize)` (1-based,
+  UTF-8-byte columns). 5 new tests.
+- **`crates/settings/src/store.rs`** — `SettingsStore` gained
+  `schema_errors`/`schema_warnings` (from `reload_user_layer`) and
+  `project_schema_errors`/`project_schema_warnings` (from
+  `reload_project_layer`, both new getters) — both computed via
+  `schema::validate` right after each layer's existing JSON/JSONC parse and
+  per-area `FieldError` parse, using the just-parsed `serde_json::Value` +
+  raw text (so `find_value_range`'s line lookup can resolve). Cleared
+  whenever a reload short-circuits on unparsable JSON/JSONC (same "stay at
+  last-good-value" contract `parse_errors`/`user_json_error` already had).
+  New `settings_schema_path()` (`~/.config/labonair/settings.schema.json`,
+  next to `labonair-settings.json`) + `pub(crate) write_schema_file()`
+  (best-effort, logged not fatal), called once from `labonair_settings::init`
+  after the fs-watch spawn — satisfies the task's "schema file is written at
+  startup" criterion without adding a second entry point callers have to
+  remember to call.
+- **`crates/settings-ui/src/view.rs`** — a second banner (`schema_banner`,
+  next to the existing T19-005 JSON-syntax-error banner) lists every
+  `schema_errors`/`project_schema_errors` entry in red (each formatted via
+  `SettingsValidationError`'s new `Display` impl: `"{json_path}: {message}
+  (line {line})"`) and every `schema_warnings`/`project_schema_warnings`
+  entry in yellow, prefixed `"warning: "`. Both layers' lists are `.chain`ed
+  so one banner covers whichever layer(s) are active.
+- **`crates/workspace/src/views/editor.rs`** — the settings.json schema-
+  hover helper (Anweisung #5; Autocomplete explicitly deferred — see the
+  task file's Notizen for the reasoning): new `EditorView::hover: Option<
+  (Point<Pixels>, SharedString)>` field, `is_settings_json()` (path equals
+  `labonair_settings::user_settings_path()`, or is `.labonair/settings.json`
+  under any project root), `byte_offset_for(Position)` (char-based Position
+  -> byte offset, matching this editor's existing char-column convention),
+  `update_hover(mouse_pos, cx)` (wired to a new `.on_mouse_move` listener on
+  the text-area div — computes the doc `Position` at the mouse via the
+  pre-existing `position_at`, then `json_path_at_offset` +
+  `description_for_path`), and `render_hover_tooltip` (an absolute
+  window-relative floating card glued to the last mouse position — not
+  GPUI's trigger-based `.tooltip()` widget, since the hover target here is a
+  specific character position inside one big text-row div rather than one
+  fixed element). New `labonair-settings-json` dep on `labonair-workspace`
+  (leaf, no cycle).
+- **`scripts/check_crate_deps.py`** — fixed a pre-existing gap from T19-005
+  (never caught because nothing runs this script as part of `cargo test`):
+  `labonair-settings`'s `ALLOWED` entry was missing `labonair-settings-json`
+  even though T19-005 already added that dependency. Added it, added a
+  `labonair-settings-json` leaf entry, and added
+  `labonair-workspace -> labonair-settings-json` for this task's editor-hover
+  dep. `cargo metadata --no-deps --format-version 1 | python3
+  scripts/check_crate_deps.py` now reports clean (24 crates, 98 edges,
+  acyclic) — this script is not wired into `cargo test`/CI here, so it's
+  worth an occasional manual run when touching cross-crate deps in the
+  settings track.
+- 15 new tests total (8 `schema.rs`, 5 `settings_json.rs`, 1
+  `store.rs::project_layer_schema_error_is_reported`, 1 pre-existing test
+  file's `schema_covers_every_area_and_an_enum` fixed to compare against a
+  real serialized `SettingsContent` instance's keys rather than
+  `AreaMeta::target_module` — `file_manager` (Rust field name) vs.
+  `fileManager` (its `#[serde(rename)]`) don't match, so iterating
+  `AREAS` directly for this check was wrong from the start). 4 gates green:
+  `cargo fmt --check`, `cargo check --workspace --all-targets`, `cargo
+  clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`
+  (workspace-wide, zero failures).
+
+Branch: `master`, working tree has this session's changes staged for commit
+(not yet committed as of this handshake write — see the commit right after
+this entry lands, `feat(settings): T19-006 json schema generation`).
+
+**Next: T19-007** (Globale Settings-Suche) —
+`tasks/phase-18-settings-core/T19-007-global-settings-search.md`. No known
+blockers.
+
 ## Last Session: 2026-09-04 (T19-005 — raw `settings.json` editor, comment-preserving)
 
 **T19-005 done.** `settings.json` is now a first-class, comment-preserving

@@ -773,6 +773,121 @@ pub fn to_pretty_json(
     adjusted_text
 }
 
+/// Read-only lookup: the byte range of the value at `key_path` in `text`, if
+/// present (T19-006 — settings.json schema-validation errors want a line
+/// number next to their `json_path`, and this crate already parses the file
+/// into a real `tree-sitter-json` syntax tree for the surgical-edit path
+/// above). Returns `None` if any segment of `key_path` isn't found (e.g. the
+/// key is missing, or a non-object value is indexed into) — callers fall
+/// back to reporting the `json_path` alone, no line, which is an accepted
+/// degraded mode per this task's Warnungen.
+pub fn find_value_range(text: &str, key_path: &[&str]) -> Option<Range<usize>> {
+    let mut parser = tree_sitter::Parser::new();
+    parser
+        .set_language(&tree_sitter_json::LANGUAGE.into())
+        .ok()?;
+    let tree = parser.parse(text, None)?;
+    let mut node = tree.root_node();
+    if node.kind() == "document" {
+        node = node.named_child(0)?;
+    }
+
+    for key in key_path {
+        if node.kind() != "object" {
+            return None;
+        }
+        let mut cursor = node.walk();
+        let mut found = None;
+        for child in node.named_children(&mut cursor) {
+            if child.kind() != "pair" {
+                continue;
+            }
+            let key_node = child.child_by_field_name("key")?;
+            let key_text = text.get(key_node.byte_range())?.trim_matches('"');
+            if key_text == *key {
+                found = child.child_by_field_name("value");
+                break;
+            }
+        }
+        node = found?;
+    }
+
+    Some(node.byte_range())
+}
+
+/// The dotted key path leading to the JSON value at `offset` (a byte offset
+/// into `text`), if `offset` falls inside some nested object's pair — used
+/// by the settings-editor's schema-hover helper (T19-006 Anweisung #5):
+/// hovering the mouse over a key/value in `labonair-settings.json` needs to
+/// know which `SettingsContent` field is under the cursor. Returns `None`
+/// if `offset` isn't inside any pair (e.g. it's on punctuation/whitespace
+/// between top-level entries, or the text doesn't parse).
+pub fn json_path_at_offset(text: &str, offset: usize) -> Option<Vec<String>> {
+    let mut parser = tree_sitter::Parser::new();
+    parser
+        .set_language(&tree_sitter_json::LANGUAGE.into())
+        .ok()?;
+    let tree = parser.parse(text, None)?;
+    let mut node = tree.root_node();
+    if node.kind() == "document" {
+        node = node.named_child(0)?;
+    }
+
+    let mut path = Vec::new();
+    loop {
+        if node.kind() != "object" || !node.byte_range().contains(&offset) {
+            break;
+        }
+        let mut cursor = node.walk();
+        let mut matched = None;
+        for child in node.named_children(&mut cursor) {
+            if child.kind() != "pair" || !child.byte_range().contains(&offset) {
+                continue;
+            }
+            let key_node = child.child_by_field_name("key")?;
+            let key_text = text
+                .get(key_node.byte_range())?
+                .trim_matches('"')
+                .to_string();
+            let value_node = child.child_by_field_name("value")?;
+            matched = Some((key_text, value_node));
+            break;
+        }
+        match matched {
+            Some((key, value_node)) => {
+                path.push(key);
+                node = value_node;
+            }
+            None => break,
+        }
+    }
+
+    if path.is_empty() {
+        None
+    } else {
+        Some(path)
+    }
+}
+
+/// 1-based `(line, column)` for a byte offset into `text` (columns counted in
+/// UTF-8 bytes on the line, which is what most editors show for a JSON
+/// document since it's ASCII-heavy). Used to turn [`find_value_range`]'s
+/// byte offset into the human-readable position a validation-error banner
+/// wants.
+pub fn line_col_at(text: &str, byte_offset: usize) -> (usize, usize) {
+    let mut line = 1;
+    let mut col = 1;
+    for ch in text[..byte_offset.min(text.len())].chars() {
+        if ch == '\n' {
+            line += 1;
+            col = 1;
+        } else {
+            col += ch.len_utf8();
+        }
+    }
+    (line, col)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -958,5 +1073,39 @@ mod tests {
         assert!(!edits.is_empty());
         let parsed: Value = serde_json::from_str(&text).unwrap();
         assert_eq!(parsed["terminal"]["terminalFontSize"], 20);
+    }
+
+    #[test]
+    fn find_value_range_locates_nested_key() {
+        let text = "{\n  \"terminal\": {\n    \"terminalFontSize\": \"gross\"\n  }\n}";
+        let range = find_value_range(text, &["terminal", "terminalFontSize"]).unwrap();
+        assert_eq!(&text[range], "\"gross\"");
+    }
+
+    #[test]
+    fn find_value_range_missing_key_is_none() {
+        let text = "{\"terminal\": {}}";
+        assert!(find_value_range(text, &["terminal", "terminalFontSize"]).is_none());
+    }
+
+    #[test]
+    fn json_path_at_offset_finds_nested_key() {
+        let text = "{\n  \"terminal\": {\n    \"terminalFontSize\": 14\n  }\n}";
+        let offset = text.find("14").unwrap();
+        let path = json_path_at_offset(text, offset).unwrap();
+        assert_eq!(path, vec!["terminal", "terminalFontSize"]);
+    }
+
+    #[test]
+    fn json_path_at_offset_outside_any_pair_is_none() {
+        let text = "{\"a\": 1}";
+        assert!(json_path_at_offset(text, 0).is_none());
+    }
+
+    #[test]
+    fn line_col_at_counts_lines() {
+        let text = "{\n  \"a\": 1,\n  \"b\": 2\n}";
+        let offset = text.find("\"b\"").unwrap();
+        assert_eq!(line_col_at(text, offset), (3, 3));
     }
 }

@@ -970,6 +970,55 @@ impl Render for SettingsView {
                     )))
             });
 
+        // Schema-validation findings (T19-006): shown alongside (not instead
+        // of) the syntax-error banner above — a file can be valid JSON but
+        // still have a field with the wrong type/enum value, which is what
+        // this banner reports (one line per finding, worst first: type/enum
+        // errors before unknown-key warnings).
+        let schema_banner = cx.try_global::<SettingsStore>().and_then(|s| {
+            let errors: Vec<_> = s
+                .schema_errors()
+                .iter()
+                .chain(s.project_schema_errors())
+                .collect();
+            let warnings: Vec<_> = s
+                .schema_warnings()
+                .iter()
+                .chain(s.project_schema_warnings())
+                .collect();
+            if errors.is_empty() && warnings.is_empty() {
+                return None;
+            }
+            let mut lines: Vec<SharedString> = errors
+                .iter()
+                .map(|e| SharedString::from(e.to_string()))
+                .collect();
+            lines.extend(
+                warnings
+                    .iter()
+                    .map(|w| SharedString::from(format!("warning: {w}"))),
+            );
+            let is_error = !errors.is_empty();
+            Some(
+                div()
+                    .flex_shrink_0()
+                    .flex()
+                    .flex_col()
+                    .gap_0p5()
+                    .px_3()
+                    .py(px(6.0))
+                    .when(is_error, |d| {
+                        d.bg(gpui::red().opacity(0.15)).text_color(gpui::red())
+                    })
+                    .when(!is_error, |d| {
+                        d.bg(gpui::yellow().opacity(0.15))
+                            .text_color(gpui::yellow())
+                    })
+                    .text_size(px(11.0))
+                    .children(lines.into_iter().map(|line| div().child(line))),
+            )
+        });
+
         let content = div().flex_1().min_h_0().flex().child(sidebar).child(
             div()
                 .id("settings-scroll")
@@ -1002,6 +1051,7 @@ impl Render for SettingsView {
             .on_key_down(cx.listener(Self::on_key))
             .child(header)
             .children(json_error_banner)
+            .children(schema_banner)
             .child(content)
             .children(self.render_dropdown(&c, cx));
 

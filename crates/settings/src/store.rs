@@ -17,6 +17,7 @@ use serde_json::Value;
 use labonair_settings_content::{FieldError, MergeFrom, SettingsContent};
 
 use crate::project;
+use crate::schema::{self, SettingsValidationError};
 use crate::settings_trait::Settings;
 
 /// Placeholder identity for a worktree/project root. `T19-003` (project/
@@ -88,6 +89,24 @@ pub struct SettingsStore {
     /// valid document — that case still allows GUI writes to every other
     /// area.
     user_json_error: Option<String>,
+    /// Schema-validation findings from the last `User` layer (re)load
+    /// (T19-006): `schema_errors` are type/enum mismatches at leaf
+    /// granularity (the offending field already fell back to its default —
+    /// same guarantee `parse_errors` gives at area granularity, this is the
+    /// finer-grained, `json_schema()`-driven sibling); `schema_warnings` are
+    /// unknown object keys, always non-fatal. Both are empty while
+    /// `user_json_error` is set (validation needs a parsed value, which an
+    /// unparsable file doesn't have).
+    schema_errors: Vec<SettingsValidationError>,
+    schema_warnings: Vec<SettingsValidationError>,
+    /// Same as `schema_errors`/`schema_warnings` above, but for the active
+    /// `Project` layer's `.labonair/settings.json` (T19-006 Anweisung #2's
+    /// "jeder Layer wird validiert" — the project layer already has its own
+    /// whitelist-rejection reporting (`project_rejected`); this is the
+    /// schema-shaped sibling of that, same "field falls back / non-fatal
+    /// warning" split as the `User` layer's).
+    project_schema_errors: Vec<SettingsValidationError>,
+    project_schema_warnings: Vec<SettingsValidationError>,
     /// Whether [`Self::persist_user_settings_surgical`] has already written a
     /// `.json.bak` safety copy this process run — only the *first* surgical
     /// write per session backs up the pre-session file (Anweisung #2), not
@@ -135,6 +154,10 @@ impl SettingsStore {
             user_path,
             parse_errors: Vec::new(),
             user_json_error: None,
+            schema_errors: Vec::new(),
+            schema_warnings: Vec::new(),
+            project_schema_errors: Vec::new(),
+            project_schema_warnings: Vec::new(),
             bak_written_this_session: false,
             current_project: None,
             next_worktree_id: 0,
@@ -185,6 +208,32 @@ impl SettingsStore {
         self.user_json_error.as_deref()
     }
 
+    /// Leaf-granularity type/enum mismatches from the last `User` layer
+    /// (re)load's schema validation (T19-006) — each offending field fell
+    /// back to its default; the rest of the tree loaded normally.
+    pub fn schema_errors(&self) -> &[SettingsValidationError] {
+        &self.schema_errors
+    }
+
+    /// Unknown object keys found in the last `User` layer (re)load
+    /// (T19-006) — always non-fatal, purely informational (forward
+    /// compatibility: an older binary opening a newer settings file must
+    /// keep every setting it does understand).
+    pub fn schema_warnings(&self) -> &[SettingsValidationError] {
+        &self.schema_warnings
+    }
+
+    /// The `Project` layer's equivalents of [`Self::schema_errors`] /
+    /// [`Self::schema_warnings`] (T19-006) — empty while no project root is
+    /// active.
+    pub fn project_schema_errors(&self) -> &[SettingsValidationError] {
+        &self.project_schema_errors
+    }
+
+    pub fn project_schema_warnings(&self) -> &[SettingsValidationError] {
+        &self.project_schema_warnings
+    }
+
     /// Replace one layer's content and recompute. `Default` may not be
     /// replaced this way (use is a logic error — the default tree is fixed
     /// at construction from `SettingsContent::defaults()`).
@@ -212,23 +261,30 @@ impl SettingsStore {
             // No file yet (first run) — an absent file is not a corrupt one;
             // treat it as an empty User layer.
             self.user_json_error = None;
+            self.schema_errors.clear();
+            self.schema_warnings.clear();
             self.raw
                 .insert(SettingsLayer::User, SettingsContent::default());
             self.recompute();
             return;
         };
 
-        if let Err(e) = jsonc_parser::parse_to_serde_value(&raw, &Default::default()) {
-            let line = raw[..e.range.start.min(raw.len())].matches('\n').count() + 1;
-            let message = format!("Line {line}: {}", e.message);
-            tracing::warn!(
-                path = %self.user_path.display(),
-                message = %message,
-                "labonair-settings.json is not valid JSON/JSONC — keeping the last good settings",
-            );
-            self.user_json_error = Some(message);
-            return;
-        }
+        let parsed_value = match jsonc_parser::parse_to_serde_value(&raw, &Default::default()) {
+            Ok(v) => v,
+            Err(e) => {
+                let line = raw[..e.range.start.min(raw.len())].matches('\n').count() + 1;
+                let message = format!("Line {line}: {}", e.message);
+                tracing::warn!(
+                    path = %self.user_path.display(),
+                    message = %message,
+                    "labonair-settings.json is not valid JSON/JSONC — keeping the last good settings",
+                );
+                self.user_json_error = Some(message);
+                self.schema_errors.clear();
+                self.schema_warnings.clear();
+                return;
+            }
+        };
         self.user_json_error = None;
 
         let (content, errors) = labonair_settings_content::parse(&raw);
@@ -238,6 +294,18 @@ impl SettingsStore {
             }
         }
         self.parse_errors = errors;
+
+        let instance = parsed_value.unwrap_or_else(|| Value::Object(Default::default()));
+        let (schema_errors, schema_warnings) = schema::validate(&instance, Some(&raw));
+        for e in &schema_errors {
+            tracing::warn!(json_path = %e.json_path, message = %e.message, "settings value failed schema validation, field uses its default");
+        }
+        for w in &schema_warnings {
+            tracing::warn!(json_path = %w.json_path, "unknown settings key (ignored)");
+        }
+        self.schema_errors = schema_errors;
+        self.schema_warnings = schema_warnings;
+
         self.raw.insert(SettingsLayer::User, content);
         self.recompute();
     }
@@ -434,17 +502,22 @@ impl SettingsStore {
             self.raw
                 .insert(SettingsLayer::Project(id), SettingsContent::default());
             self.project_rejected.clear();
+            self.project_schema_errors.clear();
+            self.project_schema_warnings.clear();
             self.recompute();
             return;
         };
 
-        if jsonc_parser::parse_to_serde_value(&raw, &Default::default()).is_err() {
-            tracing::warn!(
-                path = %path.display(),
-                "project .labonair/settings.json is not valid JSON/JSONC — keeping the last good settings",
-            );
-            return;
-        }
+        let parsed_value = match jsonc_parser::parse_to_serde_value(&raw, &Default::default()) {
+            Ok(v) => v,
+            Err(_) => {
+                tracing::warn!(
+                    path = %path.display(),
+                    "project .labonair/settings.json is not valid JSON/JSONC — keeping the last good settings",
+                );
+                return;
+            }
+        };
 
         let (content, rejected) = project::filter_and_parse(&raw);
         for key in &rejected {
@@ -457,6 +530,15 @@ impl SettingsStore {
             }
         }
         self.project_rejected = rejected;
+
+        let instance = parsed_value.unwrap_or_else(|| Value::Object(Default::default()));
+        let (errors, warnings) = schema::validate(&instance, Some(&raw));
+        for e in &errors {
+            tracing::warn!(json_path = %e.json_path, message = %e.message, "project settings value failed schema validation, field uses its default");
+        }
+        self.project_schema_errors = errors;
+        self.project_schema_warnings = warnings;
+
         self.raw.insert(SettingsLayer::Project(id), content);
         self.recompute();
     }
@@ -571,6 +653,38 @@ pub fn ensure_user_settings_file() -> Result<PathBuf, String> {
         std::fs::write(&path, INITIAL_USER_SETTINGS).map_err(|e| e.to_string())?;
     }
     Ok(path)
+}
+
+/// Where [`write_schema_file`] (re)writes the generated JSON Schema
+/// (T19-006 Anweisung #4) — `~/.config/labonair/settings.schema.json`, next
+/// to `labonair-settings.json`. Exposed so external editors/tooling that
+/// want to point their own JSON-schema-aware editing at this file know
+/// where to look.
+pub fn settings_schema_path() -> PathBuf {
+    default_user_path()
+        .parent()
+        .expect("default_user_path always has a parent dir")
+        .join("settings.schema.json")
+}
+
+/// (Re)write the schema file at [`settings_schema_path`]. Called once at
+/// startup ([`crate::init`]); best-effort — a write failure (e.g. a
+/// read-only config dir) is logged, not fatal, since the schema file is
+/// purely a convenience for external editors and this task's own in-app
+/// validation ([`crate::schema::validate`]) never reads it back off disk.
+pub(crate) fn write_schema_file() {
+    let path = settings_schema_path();
+    let schema = crate::schema::json_schema();
+    let text = match serde_json::to_string_pretty(&schema) {
+        Ok(t) => t,
+        Err(e) => {
+            tracing::warn!(error = %e, "failed to serialize settings.schema.json");
+            return;
+        }
+    };
+    if let Err(e) = std::fs::write(&path, text) {
+        tracing::warn!(path = %path.display(), error = %e, "failed to write settings.schema.json");
+    }
 }
 
 /// Build the store, load the `User` layer once, and publish it as the
@@ -926,6 +1040,25 @@ mod tests {
         store.set_active_project_root(Some(root));
         assert_eq!(store.merged().mcp.bridge_port, Some(47823)); // untouched default
         assert_eq!(store.project_rejected_keys(), &["mcp".to_string()]);
+    }
+
+    #[test]
+    fn project_layer_schema_error_is_reported() {
+        let mut store = SettingsStore::new(tmp_path());
+        let root = tmp_project_root();
+        std::fs::create_dir_all(root.join(".labonair")).unwrap();
+        std::fs::write(
+            root.join(".labonair/settings.json"),
+            r#"{"general":{"startupTerminalCount":"no"}}"#,
+        )
+        .unwrap();
+
+        store.set_active_project_root(Some(root));
+        assert_eq!(store.project_schema_errors().len(), 1);
+        assert_eq!(
+            store.project_schema_errors()[0].json_path,
+            "general.startupTerminalCount"
+        );
     }
 
     #[test]

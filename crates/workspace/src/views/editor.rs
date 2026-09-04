@@ -17,8 +17,8 @@ use gpui::prelude::FluentBuilder;
 use gpui::{
     canvas, div, px, App, Bounds, ClickEvent, ClipboardItem, Context, Entity, EventEmitter,
     FocusHandle, Focusable, HighlightStyle, InteractiveElement, IntoElement, KeyDownEvent,
-    MouseButton, MouseDownEvent, ParentElement, Pixels, Point, Render, ScrollWheelEvent,
-    SharedString, StatefulInteractiveElement, Styled, StyledText, Window,
+    MouseButton, MouseDownEvent, MouseMoveEvent, ParentElement, Pixels, Point, Render,
+    ScrollWheelEvent, SharedString, StatefulInteractiveElement, Styled, StyledText, Window,
 };
 use labonair_backend::modules::fs::file::{
     file_mtime_sync, load_editor_file_sync, save_editor_file_sync, EditorLoad,
@@ -77,6 +77,14 @@ pub struct EditorView {
     /// Live editor preferences mirror (font/indent/line-numbers), refreshed
     /// from [`GlobalPreferences`] (T13-003).
     prefs: Preferences,
+    /// Settings-schema hover text (T19-006 Anweisung #5) — `Some((mouse
+    /// position, description))` while the mouse is over a key/value in a
+    /// `labonair-settings.json`/`.labonair/settings.json` tab and that key
+    /// path has a schema description. `None` everywhere else (including
+    /// every non-settings file — [`Self::is_settings_json`] gates this on
+    /// every mouse-move so a plain source file never pays the tree-sitter
+    /// lookup cost).
+    hover: Option<(Point<Pixels>, SharedString)>,
 }
 
 /// The current preferences snapshot (defaults before the global is published).
@@ -120,6 +128,69 @@ impl EditorView {
             syntax_rev: 0,
             vim,
             prefs,
+            hover: None,
+        }
+    }
+
+    /// Whether this tab's file is a settings.json the schema-hover helper
+    /// applies to: the user file (`~/.config/labonair/labonair-settings.json`)
+    /// or a project file (`<root>/.labonair/settings.json`, T19-003).
+    fn is_settings_json(&self) -> bool {
+        let Some(path) = &self.doc.path else {
+            return false;
+        };
+        if *path == labonair_settings::user_settings_path() {
+            return true;
+        }
+        path.file_name().and_then(|n| n.to_str()) == Some("settings.json")
+            && path
+                .parent()
+                .and_then(|p| p.file_name())
+                .and_then(|n| n.to_str())
+                == Some(".labonair")
+    }
+
+    /// Byte offset into the document text for a buffer [`Position`]
+    /// (line/column are char-based; this walks prior lines' byte lengths
+    /// plus the target line's char-to-byte offset for the column — exact
+    /// for the schema-hover lookup's purposes).
+    fn byte_offset_for(&self, pos: Position) -> usize {
+        let mut offset = 0usize;
+        for i in 0..pos.line.min(self.doc.buffer.line_count()) {
+            offset += self.doc.buffer.line(i).len() + 1;
+        }
+        if pos.line < self.doc.buffer.line_count() {
+            let line = self.doc.buffer.line(pos.line);
+            offset += line
+                .char_indices()
+                .nth(pos.column)
+                .map(|(b, _)| b)
+                .unwrap_or(line.len());
+        }
+        offset
+    }
+
+    /// Recompute [`Self::hover`] for a mouse position over the text area
+    /// (T19-006 Anweisung #5). No-op (clears hover) unless
+    /// [`Self::is_settings_json`] and the cursor lands inside a JSON pair
+    /// whose key path has a schema description.
+    fn update_hover(&mut self, mouse_pos: Point<Pixels>, cx: &mut Context<Self>) {
+        let next = if self.is_settings_json() {
+            let doc_pos = self.position_at(mouse_pos);
+            let offset = self.byte_offset_for(doc_pos);
+            let text = self.doc.buffer.text();
+            labonair_settings_json::json_path_at_offset(&text, offset).and_then(|path| {
+                let refs: Vec<&str> = path.iter().map(String::as_str).collect();
+                labonair_settings::description_for_path(&refs)
+                    .map(|desc| (mouse_pos, SharedString::from(desc)))
+            })
+        } else {
+            None
+        };
+        let changed = next.is_some() || self.hover.is_some();
+        self.hover = next;
+        if changed {
+            cx.notify();
         }
     }
 
@@ -854,6 +925,37 @@ impl EditorView {
                 cursor.column + 1
             ))))
     }
+
+    /// The schema-hover tooltip (T19-006 Anweisung #5) — a small floating
+    /// card glued to the last mouse position, shown only while
+    /// [`Self::hover`] is `Some`. A window-relative absolute overlay rather
+    /// than GPUI's trigger-based `.tooltip()` widget: that widget attaches
+    /// to one fixed element, but the hover target here is a specific
+    /// character position inside one big text-row div, which
+    /// [`Self::update_hover`] already resolves on every mouse move.
+    fn render_hover_tooltip(&self, cx: &mut Context<Self>) -> Option<impl IntoElement> {
+        let (pos, desc) = self.hover.clone()?;
+        let theme = self.theme.read(cx);
+        let (card, fg, border) = (theme.card(), theme.foreground(), theme.border());
+        let origin = self.bounds.map(|b| b.origin).unwrap_or_default();
+        Some(
+            div()
+                .absolute()
+                .top(pos.y - origin.y + px(16.0))
+                .left(pos.x - origin.x)
+                .max_w(px(320.0))
+                .px_2()
+                .py_1()
+                .rounded_sm()
+                .border_1()
+                .border_color(border)
+                .bg(card)
+                .text_size(px(11.0))
+                .text_color(fg)
+                .shadow_md()
+                .child(desc),
+        )
+    }
 }
 
 impl EventEmitter<EditorEvent> for EditorView {}
@@ -1177,6 +1279,10 @@ impl Render for EditorView {
                     cx.notify();
                 }),
             )
+            .on_mouse_move(cx.listener(|this, ev: &MouseMoveEvent, _window, cx| {
+                this.update_hover(ev.position, cx);
+            }))
+            .children(self.render_hover_tooltip(cx))
             .on_scroll_wheel(cx.listener(|this, ev: &ScrollWheelEvent, window, cx| {
                 let dy = match ev.delta {
                     gpui::ScrollDelta::Lines(p) => p.y,

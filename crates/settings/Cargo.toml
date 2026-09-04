@@ -36,6 +36,8 @@ notify-debouncer-mini = "0.4"
 inventory = "0.3"
 dirs = { workspace = true }
 tracing = { workspace = true }
+jsonschema = { version = "0.53.0", default-features = false }
+schemars = "0.8"
 
 [dev-dependencies]
 gpui = { workspace = true, features = ["test-support"] }
