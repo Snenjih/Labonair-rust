@@ -3,7 +3,8 @@
 //!
 //! `render` composes a small fixed set of children, top to bottom:
 //!
-//! * the [`Titlebar`] entity (tab strip + transient search + app-menu);
+//! * the [`Titlebar`] entity (tab strip + `＋` new-tab menu + one right-hand
+//!   icon button; redesigned in T18-001);
 //! * the [`Workspace`] entity — which now composes the three edge docks and the
 //!   split-pane [`PaneGroup`](labonair_workspace::pane_group) itself;
 //! * the [`StatusBar`] entity — renders purely from the workspace's

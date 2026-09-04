@@ -4,6 +4,69 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
+## Last Session: 2026-09-04 (T18-001 — Titlebar redesign · **Phase 17 START**)
+
+**T18-001 done — first task of Phase 17.** The titlebar is now tab strip +
+`＋` new-tab menu (left) + one `⋯` icon button (right); the empty surface got
+its final look + file-drop.
+
+### What Was Done (T18-001)
+- **`crates/shell/src/titlebar.rs`** — full redesign. Removed `render_app_menu`
+  / the `⋯` app-menu branch. New `render_account_menu`: single
+  `IconName::Ellipsis` button → hand-rolled dropdown (`absolute` under the
+  button) with `Settings…` (→ `open_settings_window(None)`) + a `Profile`
+  placeholder (→ "coming soon" toast via `labonair_notifications::notification_center`,
+  no new crate edge). Titlebar root is now `.window_control_area(Drag)` +
+  `should_move` latch (`on_mouse_down`→`on_mouse_move`→`window.start_window_move()`
+  →`on_mouse_up`) and `on_click` `click_count == 2` → `window.titlebar_double_click()`
+  (Zed `platform_title_bar` mechanism). `TRAFFIC_LIGHT_INSET` `#[cfg]`-split
+  78 px macOS / 8 px else. `render_search` kept but **rendered as a floating
+  `absolute` overlay** (provisional until T18-002); `open_search` still drives
+  the `⌘F` fallback from `commands.rs`. `render` returns `AnyElement` (the
+  hidden-header early-return needs the same type as the `Stateful<Div>` body).
+- **`crates/workspace/src/workspace.rs`** — `render_empty_surface` rewrite:
+  centred "Labonair" wordmark over shortcut-hint rows (`⌘T` New Terminal, `⌘E`
+  Editor, `⌘K` Commands, `⌘,` Settings, `⌘⇧N` Hosts) with bordered key chips,
+  muted-foreground. `on_drop::<ExternalPaths>` → one `open_file(path, false, …)`
+  per dropped file; double-click → `new_terminal_tab` (kept). Added
+  `ExternalPaths` to the `gpui` import.
+  The `＋` new-tab menu + `NewTabDropdownItems` port
+  (`render_tab_bar` / `render_new_tab_menu`) already existed from the T17-009
+  groundwork — retained unchanged (whole `＋` opens the menu; `⌘T` quick action;
+  SSH/SFTP recent hosts via `recent_hosts`, no `hosts-ui` edge).
+- **`crates/shell/src/app_shell.rs`** — doc-comment only (Titlebar description).
+- **`docs/architecture.md` §8.13** (new) — full deviation record.
+
+### Deviations (T18-001)
+- Task's removal targets (`render_header`/`render_search`/`render_agent_badge`)
+  were already in `titlebar.rs` after T17-006, not `app_shell.rs`;
+  `render_agent_badge` no longer existed.
+- Right button uses `IconName::Ellipsis` (no `Settings2`/`CircleUser` glyph).
+- Right dropdown hand-rolled, not `context_menu` (its full-screen overlay can't
+  render from the 40 px titlebar container).
+- No separate `▾` split-button; `render_search` kept as provisional overlay.
+- `cargo run` visual checks (traffic-light inset, live drag, zoom, dropdown
+  look, file-drop) not possible on this headless VPS.
+
+### Gate Results (T18-001)
+- `cargo fmt --check` ✅ · `cargo check --workspace --all-targets` ✅ ·
+  `cargo clippy --workspace --all-targets -- -D warnings` ✅ ·
+  `scripts/check-crate-deps.sh` ✅ (20 crates, **87** internal edges — no new
+  edge, acyclic).
+- `cargo test --workspace` **not run** — test binaries cannot link on this
+  headless VPS (missing X11 dev libs); `cargo check/clippy --all-targets`
+  compiled all `#[cfg(test)]` code (project-accepted substitute).
+
+### State
+- Branch `master`, committing now. No blockers.
+
+### Next
+- **T18-002** — Suche als Overlay (`tasks/phase-17-layout/T18-002-search-overlay.md`):
+  move the provisional titlebar search into a dedicated overlay, then delete
+  `render_search` + the `search_*` fields from `Titlebar`.
+
+---
+
 ## Last Session: 2026-09-04 (T17-009 — Tabs optional / empty workspace · **Phase 16 DONE**)
 
 **T17-009 done — this is the last task of Phase 16.** The workspace may now hold

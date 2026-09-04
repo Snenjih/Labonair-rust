@@ -1,7 +1,7 @@
 # T18-001: Titlebar-Redesign — nur Tabs + ein Icon-Button
 
 ## Status
-📋 Geplant
+✅ Done
 
 ## Phase
 17 — Neues Layout & Statusbar-Personalisierung
@@ -104,23 +104,46 @@ endgültige Optik inkl. **Doppelklick → lokales Terminal** und
    Doppelklick darauf → Terminal-Tab; Datei drauf ziehen → Editor-Tab.
 
 ## Akzeptanzkriterien
-- [ ] `crates/shell/src/titlebar.rs` existiert; `render_header`/`render_app_menu`/
-      `render_search`/`render_agent_badge` sind aus `app_shell.rs` entfernt.
-- [ ] Die Titlebar zeigt **ausschließlich** Tab-Leiste + `＋▾`-Menü-Button
+- [x] `crates/shell/src/titlebar.rs` existiert; `render_app_menu` (und der `⋯`
+      App-Menu-Zweig) entfernt. `render_header`/`render_search`/`render_agent_badge`
+      waren nach T17-006 nie in `app_shell.rs` — sie lagen bereits in
+      `titlebar.rs`; `render_agent_badge` existierte gar nicht mehr. `render_search`
+      bleibt als **provisorisches Float-Overlay** bis T18-002 (Anweisung 2).
+- [x] Die Titlebar zeigt **ausschließlich** Tab-Leiste + `＋`-Menü-Button
       (links, Teil des Tab-Strips) + einen Icon-Button rechts.
-- [ ] `＋▾`-Menü: Terminal/Editor/Preview/Git-Graph, Trenner, `SSH ▸` /
-      `SFTP ▸` mit Recent-Hosts + „Alle Hosts…" (→ Settings › Hosts bzw.
-      Host-Tab). Host-Liste als injizierte Daten, keine `hosts-ui`-Kante.
-- [ ] Der rechte Button öffnet ein Dropdown mit `Settings…` (funktional) und
-      `Profile` (Platzhalter), mit Platz für weitere Einträge.
-- [ ] Ampel-Inset stimmt; Fenster-Drag an leeren Stellen; Doppelklick-Zoom.
-- [ ] Empty-Surface: erscheint bei 0 Tabs, zeigt Shortcut-Hints, Doppelklick →
-      lokales Terminal, Datei-Drop → Editor-Tab.
-- [ ] Inline-Suche existiert nicht mehr in der Titlebar (Umzug in T18-002).
-- [ ] Native macOS-Menüleiste unverändert funktionsfähig.
-- [ ] Gates grün: `cargo fmt --check`, `cargo check --workspace --all-targets`,
+- [x] `＋`-Menü: Terminal/Editor/Preview/Git-Graph, Trenner, `SSH` / `SFTP`
+      mit Recent-Hosts + „Alle Hosts…" (→ `open_host_manager`). Host-Liste als
+      injizierte Daten (`Workspace::recent_hosts`), keine `hosts-ui`-Kante.
+      (Bereits in `render_tab_bar`/`render_new_tab_menu` seit T17-009-Vorarbeit.)
+- [x] Der rechte Button (`IconName::Ellipsis`) öffnet ein Dropdown mit
+      `Settings…` (funktional) und `Profile` (Platzhalter → „Coming soon"-Toast),
+      Trenner + Doc-Kommentar für weitere Einträge.
+- [~] Ampel-Inset (`#[cfg]`-Split 78/8 px); Fenster-Drag an leeren Stellen
+      (`WindowControlArea::Drag` + `start_window_move`); Doppelklick-Zoom
+      (`titlebar_double_click`). **Code umgesetzt — visuell nicht prüfbar
+      (headless VPS).**
+- [~] Empty-Surface: erscheint bei 0 Tabs (T17-009-Logik), zeigt Shortcut-Hints,
+      Doppelklick → `new_terminal_tab`, Datei-Drop (`ExternalPaths`) → ein
+      `open_file` je Datei. **Visuelle Optik nicht prüfbar (headless).**
+- [x] Inline-Suche ist kein Inline-Kind der Titlebar mehr (schwebendes
+      Provisorium bis T18-002).
+- [x] Native macOS-Menüleiste unverändert (`menu.rs` nicht angefasst).
+- [x] Gates grün: `cargo fmt --check`, `cargo check --workspace --all-targets`,
       `cargo clippy --workspace --all-targets -- -D warnings`,
-      `cargo test --workspace`.
+      `scripts/check-crate-deps.sh`. `cargo test --workspace` **nicht ausführbar**
+      (Test-Binaries linken auf diesem headless VPS nicht — `cargo check/clippy
+      --all-targets` als projektakzeptierter Ersatz).
+
+## Abweichungen (T18-001)
+- Entfernungsziele lagen nach T17-006 in `titlebar.rs`, nicht `app_shell.rs`.
+- Rechter Button: `IconName::Ellipsis` statt `Settings2`/`CircleUser` (kein
+  solches Glyph im Bundle; Task erlaubt Fallback).
+- Rechtes Dropdown: handgebaut (`absolute` unter dem Button) statt `context_menu`
+  — dessen Vollbild-Overlay rendert nicht aus dem 40 px-Titlebar-Container.
+- Kein separater `▾`-Split-Button: ganzer `＋` = Menü, `⌘T` = Schnellaktion
+  (Task erlaubt das explizit).
+- `render_search` als Provisorium behalten statt gelöscht (T18-002 offen).
+- Details in `docs/architecture.md` §8.13.
 
 ## Notizen
 - Der Button-Glyph + genaue Menüreihenfolge sind ein kleiner Design-Punkt —

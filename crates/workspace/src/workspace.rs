@@ -72,9 +72,9 @@ use crate::backend_event_bridge::BackendEventBridge;
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, point, px, relative, Animation, AnimationExt, App, AppContext, ClickEvent, Context,
-    DragMoveEvent, Entity, FocusHandle, Focusable, InteractiveElement, IntoElement, KeyDownEvent,
-    MouseButton, MouseDownEvent, ParentElement, Render, SharedString, StatefulInteractiveElement,
-    Styled, Task, Window,
+    DragMoveEvent, Entity, ExternalPaths, FocusHandle, Focusable, InteractiveElement, IntoElement,
+    KeyDownEvent, MouseButton, MouseDownEvent, ParentElement, Render, SharedString,
+    StatefulInteractiveElement, Styled, Task, Window,
 };
 use labonair_backend::modules::mcp::{
     mcp_set_session_grant, mcp_tab_op_response, SessionKind, TabOpResult,
@@ -3927,21 +3927,72 @@ impl Workspace {
     /// Deliberately minimal — the styled version plus the `＋▾` menu and
     /// file-drop land in T18-001. Double-click opens a local terminal so the
     /// area is not a dead end.
+    /// The surface shown when zero tabs are open (T17-009 gates it; T18-001
+    /// gives it its final look). A small wordmark over a column of
+    /// keyboard-shortcut hints. Double-click anywhere → new local terminal;
+    /// drop files → one editor tab each. No own state — pure `Workspace` read.
     fn render_empty_surface(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = self.theme.read(cx);
+        let (bg, fg, muted, border) = (
+            theme.background(),
+            theme.foreground(),
+            theme.muted_foreground(),
+            theme.border(),
+        );
+
+        let hint = move |keys: &'static str, label: &'static str| {
+            div()
+                .flex()
+                .items_center()
+                .gap_3()
+                .child(
+                    div()
+                        .min_w(px(56.0))
+                        .flex()
+                        .justify_center()
+                        .px_2()
+                        .py_0p5()
+                        .rounded_sm()
+                        .border_1()
+                        .border_color(border)
+                        .text_color(muted)
+                        .text_xs()
+                        .child(keys),
+                )
+                .child(div().text_sm().text_color(muted).child(label))
+        };
+
         div()
             .id("empty-workspace")
             .size_full()
             .flex()
+            .flex_col()
             .items_center()
             .justify_center()
-            .bg(theme.background())
-            .text_color(theme.muted_foreground())
-            .text_sm()
-            .child("No tabs open · \u{2318}T new terminal · \u{2318}K commands")
+            .gap_4()
+            .bg(bg)
+            .child(div().text_sm().text_color(fg).child("Labonair"))
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap_2()
+                    .child(hint("\u{2318}T", "New Terminal"))
+                    .child(hint("\u{2318}E", "Editor"))
+                    .child(hint("\u{2318}K", "Commands"))
+                    .child(hint("\u{2318},", "Settings"))
+                    .child(hint("\u{2318}\u{21e7}N", "Hosts")),
+            )
             .on_click(cx.listener(|this, ev: &ClickEvent, window, cx| {
                 if ev.click_count() >= 2 {
                     this.new_terminal_tab(window, cx);
+                }
+            }))
+            .on_drop(cx.listener(|this, paths: &ExternalPaths, window, cx| {
+                for path in paths.paths() {
+                    if let Some(p) = path.to_str() {
+                        this.open_file(p.to_string(), false, window, cx);
+                    }
                 }
             }))
     }

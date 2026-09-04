@@ -1,35 +1,63 @@
-//! [`Titlebar`] — the app's top chrome: the tab strip, a transient inline
-//! search box and the `⋯` app-menu dropdown.
+//! [`Titlebar`] — the app's top chrome, redesigned in T18-001.
 //!
-//! Extracted verbatim from `AppShell::render_header` / `render_app_menu` /
-//! `render_search` in T17-006 so the shell root is pure composition. The
-//! titlebar owns its own `zen_mode_show_header` reactivity (it renders an empty
-//! element when the header is hidden) and its own search state. The full
-//! titlebar redesign (`＋▾` menu, origin-badge search, single `[◉ ▾]` button)
-//! is T18-001 — this is the behavior-preserving intermediate.
+//! The titlebar now carries **only**:
+//!
+//! * **left** — the tab strip (`workspace.render_tab_bar`), which already owns
+//!   its trailing `＋` new-tab button + `NewTabDropdownItems` port (Terminal /
+//!   Editor / Preview / Git Graph · SSH ▸ / SFTP ▸ recent hosts · All hosts…).
+//!   The `＋` button is part of the tab strip, so it does not count as a
+//!   "second button" against the layout contract (`docs/architecture.md` §4).
+//! * **right** — exactly one [`IconName::Ellipsis`] button that opens a small
+//!   dropdown (`Settings…`, `Profile`, room for more).
+//!
+//! Gone from the old header: the app title, the `⋯` app-menu, the inline search
+//! box (its `⌘F` fallback is kept here as a **provisional floating overlay**
+//! until T18-002 gives search its own overlay), every bar item / badge (they
+//! are `StatusItem`s since T17-003) and the sidebar toggle (a status-bar
+//! control since T18-003).
+//!
+//! Window chrome: the whole titlebar background is a drag region
+//! (`WindowControlArea::Drag` + a `start_window_move` on drag), and a
+//! double-click zooms the window (`titlebar_double_click`) — same mechanism as
+//! Zed's `platform_title_bar`. Interactive children handle their own clicks;
+//! only a bare press-then-drag on empty background moves the window.
+//!
+//! `zen_mode_show_header` still gates the whole thing — when off, the titlebar
+//! renders nothing and the OS window frame / traffic lights take over.
 
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, px, App, ClickEvent, Context, Entity, FocusHandle, Focusable, InteractiveElement,
-    IntoElement, KeyDownEvent, ParentElement, Render, SharedString, StatefulInteractiveElement,
-    Styled, Window,
+    IntoElement, KeyDownEvent, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
+    ParentElement, Render, SharedString, StatefulInteractiveElement, Styled, Window,
+    WindowControlArea,
 };
-use labonair_settings_ui::{open_settings_window, PreferencesStore, SettingsTab};
+use labonair_notifications::{notification_center, Notification};
+use labonair_settings_ui::{open_settings_window, PreferencesStore};
 use labonair_ui_kit::IconName;
 
-use crate::menu;
 use crate::theme::ThemeStore;
 use crate::workspace::Workspace;
 
 const HEADER_H: f32 = 40.0;
-/// Left inset reserved for the macOS traffic-light buttons.
+/// Left inset reserved for the macOS traffic-light buttons. Linux has no
+/// traffic lights, so the tab strip starts flush there.
+#[cfg(target_os = "macos")]
 const TRAFFIC_LIGHT_INSET: f32 = 78.0;
+#[cfg(not(target_os = "macos"))]
+const TRAFFIC_LIGHT_INSET: f32 = 8.0;
 
 pub struct Titlebar {
     theme: Entity<ThemeStore>,
     prefs: Entity<PreferencesStore>,
     workspace: Entity<Workspace>,
-    app_menu_open: bool,
+    /// The right-hand `Settings… / Profile` dropdown.
+    menu_open: bool,
+    /// Drag-to-move latch: set on a background press, consumed on the first
+    /// move (→ `start_window_move`), cleared on release.
+    should_move: bool,
+    /// Provisional `⌘F` search overlay state — moves to a dedicated overlay in
+    /// T18-002.
     search_open: bool,
     search_query: String,
     search_focus: FocusHandle,
@@ -49,7 +77,8 @@ impl Titlebar {
             theme,
             prefs,
             workspace,
-            app_menu_open: false,
+            menu_open: false,
+            should_move: false,
             search_open: false,
             search_query: String::new(),
             search_focus: cx.focus_handle(),
@@ -57,6 +86,10 @@ impl Titlebar {
     }
 
     /// `Cmd+F` fallback when the active pane is not an editor.
+    ///
+    /// PROVISIONAL (T18-002): this opens a floating overlay attached to the
+    /// titlebar. Once the dedicated search overlay lands, `act_find` binds
+    /// there and this method + the `search_*` fields go away.
     pub fn open_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.search_open = true;
         window.focus(&self.search_focus);
@@ -111,7 +144,12 @@ impl Titlebar {
         cx.stop_propagation();
     }
 
-    fn render_app_menu(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
+    /// The single right-hand icon button + its dropdown.
+    ///
+    /// `Settings…` is functional; `Profile` is a deliberate placeholder — a
+    /// future account / profile surface hangs off this entry. The separator +
+    /// this doc-comment mark where further entries slot in.
+    fn render_account_menu(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = self.theme.read(cx);
         let (fg, muted, border, card) = (
             theme.foreground(),
@@ -119,7 +157,7 @@ impl Titlebar {
             theme.border(),
             theme.card(),
         );
-        let open = self.app_menu_open;
+        let open = self.menu_open;
 
         let item = |label: &str, key: SharedString| {
             div()
@@ -138,7 +176,7 @@ impl Titlebar {
             .flex_shrink_0()
             .child(
                 div()
-                    .id("app-menu")
+                    .id("account-menu")
                     .size(px(26.0))
                     .flex()
                     .items_center()
@@ -146,9 +184,9 @@ impl Titlebar {
                     .rounded_md()
                     .text_color(muted)
                     .hover(|s| s.bg(border).text_color(fg))
-                    .child(IconName::Menu.svg(muted))
+                    .child(IconName::Ellipsis.svg(muted))
                     .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
-                        this.app_menu_open = !this.app_menu_open;
+                        this.menu_open = !this.menu_open;
                         cx.notify();
                     })),
             )
@@ -167,30 +205,35 @@ impl Titlebar {
                         .bg(card)
                         .border_1()
                         .border_color(border)
-                        .child(item("Settings", "am-settings".into()).on_click(cx.listener(
-                            |this, _: &ClickEvent, _window, cx| {
-                                this.app_menu_open = false;
+                        .child(item("Settings\u{2026}", "acc-settings".into()).on_click(
+                            cx.listener(|this, _: &ClickEvent, _window, cx| {
+                                this.menu_open = false;
                                 open_settings_window(None, cx);
-                            },
-                        )))
-                        .child(item("Keyboard Shortcuts", "am-shortcuts".into()).on_click(
-                            cx.listener(|this, _: &ClickEvent, window, cx| {
-                                this.app_menu_open = false;
-                                window.dispatch_action(Box::new(menu::OpenShortcuts), cx);
                             }),
                         ))
-                        .child(
-                            item("Themes\u{2026}", "am-themes".into()).on_click(cx.listener(
-                                |this, _: &ClickEvent, _window, cx| {
-                                    this.app_menu_open = false;
-                                    open_settings_window(Some(SettingsTab::Themes), cx);
-                                },
-                            )),
-                        ),
+                        .child(div().my_1().h(px(1.0)).bg(border))
+                        // Placeholder — future account / profile features hang
+                        // off this entry. Add further items below the divider.
+                        .child(item("Profile", "acc-profile".into()).on_click(cx.listener(
+                            |this, _: &ClickEvent, _window, cx| {
+                                this.menu_open = false;
+                                notification_center(cx).update(cx, |c, cx| {
+                                    c.push(
+                                        Notification::info(
+                                            "Profile",
+                                            "Account & profile features are coming soon.",
+                                        ),
+                                        cx,
+                                    );
+                                });
+                            },
+                        ))),
                 )
             })
     }
 
+    /// Provisional `⌘F` search box, floated just under the titlebar (T18-002
+    /// replaces it with a real overlay).
     fn render_search(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = self.theme.read(cx);
         let (bg, fg, muted, ring) = (
@@ -212,6 +255,9 @@ impl Titlebar {
         };
 
         div()
+            .absolute()
+            .top(px(HEADER_H + 6.0))
+            .right(px(12.0))
             .id("header-search")
             .track_focus(&self.search_focus)
             .key_context("HeaderSearch")
@@ -234,7 +280,11 @@ impl Titlebar {
 impl Render for Titlebar {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         if !self.prefs.read(cx).get().zen_mode_show_header {
-            return div();
+            // `zen_mode_show_header == false`: no custom titlebar — the OS
+            // frame / traffic lights take over. On macOS the window still uses
+            // `appears_transparent`, so the tabs simply move into the Tabs
+            // sidebar panel via `tabs_location` if the user wants them.
+            return div().into_any_element();
         }
 
         let (toolbar, border) = {
@@ -250,9 +300,9 @@ impl Render for Titlebar {
                 .update(cx, |w, cx| w.render_tab_bar(cx).into_any_element())
         });
 
-        // T17-003: the titlebar carries no bar items — every former badge /
-        // toggle is a `StatusItem` in the status bar now.
         div()
+            .id("titlebar")
+            .relative()
             .flex()
             .items_center()
             .gap_2()
@@ -264,9 +314,39 @@ impl Render for Titlebar {
             .bg(toolbar)
             .border_b_1()
             .border_color(border)
+            // Whole background is a window drag region; a bare press-then-drag
+            // starts a window move (Zed `platform_title_bar` mechanism). A
+            // double-click zooms. Interactive children consume their own
+            // clicks, so this only fires on empty background.
+            .window_control_area(WindowControlArea::Drag)
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(|this, _: &MouseDownEvent, _w, cx| {
+                    this.should_move = true;
+                    cx.notify();
+                }),
+            )
+            .on_mouse_up(
+                MouseButton::Left,
+                cx.listener(|this, _: &MouseUpEvent, _w, _cx| {
+                    this.should_move = false;
+                }),
+            )
+            .on_mouse_move(cx.listener(|this, _: &MouseMoveEvent, window, _cx| {
+                if this.should_move {
+                    this.should_move = false;
+                    window.start_window_move();
+                }
+            }))
+            .on_click(cx.listener(|_, ev: &ClickEvent, window, _cx| {
+                if ev.click_count() == 2 {
+                    window.titlebar_double_click();
+                }
+            }))
             .child(div().flex_1().min_w_0().children(tabs))
+            .child(self.render_account_menu(cx))
             .when(self.search_open, |d| d.child(self.render_search(cx)))
-            .child(self.render_app_menu(cx))
+            .into_any_element()
     }
 }
 

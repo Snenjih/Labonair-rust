@@ -770,6 +770,58 @@ Implements §8.2. Notes / small deviations:
   migration. The zero-tab render path is exercised structurally
   (`render_content` `None` arm → `render_empty_surface`, no `unwrap`).
 
+### 8.13 Titlebar redesign — T18-001
+
+Implements the §4 layout contract for the top chrome. Notes / deviations:
+
+* **Removal targets had already moved.** The task text points at
+  `app_shell.rs::render_header` (line ~1334), but T17-006 (§8.9) already
+  extracted `render_header` / `render_app_menu` / `render_search` verbatim into
+  `crates/shell/src/titlebar.rs`. So T18-001's removals happened in
+  `titlebar.rs`, not `app_shell.rs`. `render_agent_badge` and the
+  `agent_badge_open` / `app_menu_open` fields never existed in the post-T17-006
+  code (the agent badge became a `StatusItem` in T17-003); nothing to delete.
+* **`titlebar.rs` now = tab strip + one right-hand icon button.** The `⋯`
+  app-menu (`render_app_menu`) is gone; the right button (`IconName::Ellipsis`
+  — the bundle has no `Settings2` / `CircleUser` glyph; the task allowed a
+  fallback) opens a hand-rolled dropdown (`absolute` under the button, same
+  pattern the old app-menu used — `context_menu`'s full-screen overlay can't
+  render from the 40 px titlebar container) with `Settings…` (→
+  `open_settings_window(None)`) and `Profile` (placeholder → "coming soon"
+  toast via `notification_center`; the `labonair-notifications → labonair-shell`
+  edge already exists, no new crate edge).
+* **`＋` new-tab menu was already there.** `Workspace::render_tab_bar` /
+  `render_new_tab_menu` (built in the T17-009 groundwork) already port
+  `NewTabDropdownItems` — Terminal / Editor / Preview / Git Graph, separator,
+  `SSH` / `SFTP` recent-host rows (injected via `Workspace::recent_hosts`, no
+  `titlebar → hosts-ui` edge), "All hosts…" → `open_host_manager`. No separate
+  `▾` split-button: the whole `＋` opens the menu, `⌘T` is the quick action
+  (task explicitly allowed this: "ganzer Button = Menü, ⌘T bleibt die
+  Schnellaktion").
+* **Inline search kept as a provisional floating overlay.** Instruction 2 says
+  to keep the old search until T18-002 ships the real overlay. `render_search`
+  is retained but now rendered `absolute` just below the titlebar (not an
+  inline flex child), with `open_search` still driving the `⌘F` fallback from
+  `commands.rs`. T18-002 removes it and the `search_*` fields.
+* **Window chrome.** Titlebar root is `.window_control_area(Drag)` +
+  `should_move` latch (`on_mouse_down` set → first `on_mouse_move` →
+  `window.start_window_move()` → `on_mouse_up` clear), and `on_click` with
+  `click_count == 2` → `window.titlebar_double_click()` — the Zed
+  `platform_title_bar` mechanism. Interactive children consume their own
+  clicks. `TRAFFIC_LIGHT_INSET` is now `#[cfg]`-split: 78 px on macOS, 8 px
+  elsewhere (Linux has no traffic lights).
+* **Empty surface final look.** `Workspace::render_empty_surface` — centred
+  "Labonair" wordmark over a column of shortcut-hint rows (`⌘T` New Terminal,
+  `⌘E` Editor, `⌘K` Commands, `⌘,` Settings, `⌘⇧N` Hosts), muted-foreground +
+  bordered key chips. Double-click anywhere → `new_terminal_tab`; `on_drop`
+  `ExternalPaths` → one `open_file(path, false, …)` per dropped file. No own
+  state.
+* **Not verifiable here.** Instruction 7 and several acceptance rows need a
+  `cargo run` on macOS (traffic-light inset, live window-drag, double-click
+  zoom, dropdown visuals, file-drop). This is a headless Linux VPS — not done;
+  gates were the `cargo check/clippy --all-targets` + `check-crate-deps.sh`
+  substitute (`cargo test` can't link here).
+
 ---
 
 ## 9. Ist-Graph after Phase 15 (T16-010)
