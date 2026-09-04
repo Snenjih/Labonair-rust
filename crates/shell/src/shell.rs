@@ -14,17 +14,22 @@
 //! then. The former `sidebar_slot` module was removed in T17-002 — the dock
 //! model now lives in `labonair-workspace` (`dock.rs`).
 
+pub mod actions;
 pub mod app_shell;
 pub mod assets;
+pub mod bootstrap;
 pub mod cwd_breadcrumb;
 pub mod menu;
+pub mod modals;
 pub mod status_items;
+pub mod titlebar;
 pub mod updater;
 pub mod window_state;
 
 pub use app_shell::AppShell;
 pub use assets::Assets;
 pub use menu::{apply_keybinds, init as init_menus};
+pub use titlebar::Titlebar;
 pub use updater::{UpdaterStatus, UpdaterView};
 
 // --- Convenience re-exports for the `crates/app` bootstrap -----------------
@@ -46,9 +51,6 @@ pub(crate) mod background {
 }
 pub(crate) mod bar_items {
     pub use labonair_workspace::bar_items::*;
-}
-pub(crate) mod live_bridge {
-    pub use labonair_workspace::live_bridge::*;
 }
 pub(crate) mod pane {
     pub use labonair_workspace::pane::*;

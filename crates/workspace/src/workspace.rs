@@ -99,6 +99,8 @@ use labonair_terminal::{
 use tokio::runtime::Handle as TokioHandle;
 
 use crate::background::BackgroundStore;
+use crate::dock::{position_slug, RESIZE_HANDLE_SIZE};
+use crate::live_bridge::LiveCommand;
 use crate::pane::{CloseOutcome, Member, PaneId, SplitAxis, SplitDirection, WorkspaceLayout};
 use crate::prefs::GlobalPreferences;
 use crate::session::{
@@ -4255,6 +4257,229 @@ impl Focusable for Workspace {
     }
 }
 
+/// Value carried while dragging a dock's edge handle — the position tells the
+/// drop handler which dock to resize and along which axis. Moved off `AppShell`
+/// in T17-006 together with [`Workspace::render_dock`].
+#[derive(Clone, Copy)]
+struct DockResize(labonair_panel::DockPosition);
+
+impl Workspace {
+    /// Resize the dock at `pos`, clamped by the active panel's `min_size` and
+    /// the dock's own bounds, then persist. Ported verbatim off `AppShell`
+    /// (T17-006).
+    fn set_dock_size(
+        &mut self,
+        pos: labonair_panel::DockPosition,
+        size: f32,
+        cx: &mut Context<Self>,
+    ) {
+        let floor = self.dock(pos).active_panel().and_then(|p| p.min_size(cx));
+        let changed = {
+            let dock = self.dock_mut(pos);
+            let before = dock.size();
+            dock.set_size(px(size), floor);
+            (f32::from(dock.size()) - f32::from(before)).abs() > 0.5
+        };
+        if changed {
+            self.persist_docks(cx);
+            cx.notify();
+        }
+    }
+
+    /// Move `name` to dock `to`, persisting + notifying on a real move.
+    fn move_panel_persist(
+        &mut self,
+        name: &str,
+        to: labonair_panel::DockPosition,
+        cx: &mut Context<Self>,
+    ) {
+        if self.move_panel(name, to, cx) {
+            self.persist_docks(cx);
+            cx.notify();
+        }
+    }
+
+    /// Apply one queued [`LiveCommand`] from the AI live-bridge to the active
+    /// terminal (T17-006 — replaces `AppShell::sync_live_bridge`'s per-frame
+    /// `drain_commands` loop). Queued commands only ever exist while a terminal
+    /// is active (the bridge gates `enqueue` on `has_terminal`), so no
+    /// new-tab / `&mut Window` path is needed here.
+    pub fn apply_live_command(&mut self, cmd: LiveCommand, cx: &mut Context<Self>) {
+        let Some(view) = self.active_pane_view(cx) else {
+            return;
+        };
+        let payload = if cmd.execute {
+            format!("{}\n", cmd.text.trim_end())
+        } else {
+            cmd.text.clone()
+        };
+        let _ = view.read(cx).handle().write(payload.as_bytes());
+        cx.notify();
+    }
+
+    /// Render one edge dock (T17-002): a header (active panel title + a
+    /// per-panel switcher when the dock holds more than one + a "move to next
+    /// dock" affordance), the active panel's body, and a resize handle on the
+    /// inner edge. Left/right docks are vertical + width-resizable; the bottom
+    /// dock is horizontal + height-resizable. A zoomed dock fills its axis and
+    /// drops the handle. Ported off `AppShell` in T17-006.
+    fn render_dock(
+        &mut self,
+        pos: labonair_panel::DockPosition,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        use labonair_panel::DockPosition;
+
+        let (sidebar_bg, sidebar_fg, sidebar_border, accent, muted) = {
+            let theme = self.theme.read(cx);
+            (
+                theme.sidebar_bg(),
+                theme.sidebar_fg(),
+                theme.sidebar_border(),
+                theme.accent(),
+                theme.muted_foreground(),
+            )
+        };
+
+        let is_bottom = pos == DockPosition::Bottom;
+        let (size, zoomed, tabs, body, title) = {
+            let dock = self.dock(pos);
+            let tabs: Vec<(SharedString, SharedString, bool)> = dock
+                .panels()
+                .iter()
+                .map(|p| {
+                    (
+                        SharedString::from(p.persistent_name()),
+                        p.title(cx),
+                        dock.active_name() == Some(p.persistent_name()),
+                    )
+                })
+                .collect();
+            let body: Option<gpui::AnyElement> = dock
+                .active_panel()
+                .map(|handle| handle.to_any().into_any_element());
+            let title: SharedString = match dock.active_panel() {
+                Some(handle) => handle.title(cx).to_string().to_uppercase().into(),
+                None => SharedString::from(""),
+            };
+            (f32::from(dock.size()), dock.is_zoomed(), tabs, body, title)
+        };
+
+        let multi = tabs.len() > 1;
+        let header = div()
+            .flex()
+            .items_center()
+            .justify_between()
+            .gap_2()
+            .px_3()
+            .py_2()
+            .text_xs()
+            .text_color(muted)
+            .child(if multi {
+                div()
+                    .flex()
+                    .items_center()
+                    .gap_1()
+                    .children(tabs.into_iter().map(|(name, label, is_active)| {
+                        let n = name.clone();
+                        div()
+                            .id(SharedString::from(format!("dock-tab-{name}")))
+                            .px_1p5()
+                            .rounded_sm()
+                            .cursor_pointer()
+                            .when(is_active, |d| {
+                                d.bg(accent.opacity(0.2)).text_color(sidebar_fg)
+                            })
+                            .when(!is_active, |d| d.hover(|s| s.text_color(sidebar_fg)))
+                            .child(label)
+                            .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                                this.dock_mut(pos).activate_panel(&n);
+                                this.persist_docks(cx);
+                                cx.notify();
+                            }))
+                    }))
+                    .into_any_element()
+            } else {
+                div().child(title).into_any_element()
+            })
+            .child(
+                div()
+                    .id(SharedString::from(format!(
+                        "dock-move-{}",
+                        position_slug(pos)
+                    )))
+                    .cursor_pointer()
+                    .text_color(muted)
+                    .hover(|s| s.text_color(sidebar_fg))
+                    .child(if is_bottom { "\u{2191}" } else { "\u{21C4}" })
+                    .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                        if let Some(name) = this.dock(pos).active_name() {
+                            let name = name.to_owned();
+                            this.move_panel_persist(&name, pos.next(), cx);
+                        }
+                    })),
+            );
+
+        let panel = div()
+            .when(!zoomed && !is_bottom, |d| d.w(px(size)).flex_shrink_0())
+            .when(!zoomed && is_bottom, |d| d.h(px(size)).flex_shrink_0())
+            .when(zoomed, |d| d.flex_1())
+            .when(!is_bottom, |d| d.h_full())
+            .when(is_bottom, |d| d.w_full())
+            .flex()
+            .flex_col()
+            .min_h_0()
+            .bg(sidebar_bg)
+            .text_color(sidebar_fg)
+            .child(header)
+            .children(body);
+
+        let handle = (!zoomed).then(|| {
+            div()
+                .id(SharedString::from(format!(
+                    "dock-handle-{}",
+                    position_slug(pos)
+                )))
+                .flex_shrink_0()
+                .flex()
+                .when(!is_bottom, |d| {
+                    d.w(RESIZE_HANDLE_SIZE)
+                        .h_full()
+                        .justify_center()
+                        .cursor_col_resize()
+                })
+                .when(is_bottom, |d| {
+                    d.h(RESIZE_HANDLE_SIZE)
+                        .w_full()
+                        .items_center()
+                        .cursor_row_resize()
+                })
+                .hover(|s| s.bg(accent.opacity(0.4)))
+                .child(
+                    div()
+                        .when(!is_bottom, |d| d.w(px(1.0)).h_full())
+                        .when(is_bottom, |d| d.h(px(1.0)).w_full())
+                        .bg(sidebar_border),
+                )
+                .on_drag(DockResize(pos), |_, _, _, cx| cx.new(|_| DragGhost))
+        });
+
+        let container = div()
+            .flex_shrink_0()
+            .flex()
+            .when(!is_bottom, |d| d.h_full().flex_row())
+            .when(is_bottom, |d| d.w_full().flex_col())
+            .when(zoomed, |d| d.flex_1());
+
+        // Handle sits on the inner edge: right of a left dock, above a bottom
+        // dock, left of a right dock.
+        match pos {
+            DockPosition::Left => container.child(panel).children(handle),
+            DockPosition::Right | DockPosition::Bottom => container.children(handle).child(panel),
+        }
+    }
+}
+
 impl Render for Workspace {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         // Drain host-manager connect requests here — `connect_host` needs a
@@ -4308,6 +4533,54 @@ impl Render for Workspace {
         let new_tab_menu = self
             .new_tab_menu
             .map(|pos| self.render_new_tab_menu(pos, cx).into_any_element());
+
+        // T17-006: the three edge docks + the drag-to-resize handler used to
+        // live in `AppShell::render`; they compose here now so the shell only
+        // has to `.child(workspace.clone())`.
+        use labonair_panel::DockPosition;
+        let (left_open, right_open, bottom_open) = (
+            self.dock(DockPosition::Left).is_open(),
+            self.dock(DockPosition::Right).is_open(),
+            self.dock(DockPosition::Bottom).is_open(),
+        );
+        let left_dock =
+            left_open.then(|| self.render_dock(DockPosition::Left, cx).into_any_element());
+        let right_dock =
+            right_open.then(|| self.render_dock(DockPosition::Right, cx).into_any_element());
+        let bottom_dock = bottom_open.then(|| {
+            self.render_dock(DockPosition::Bottom, cx)
+                .into_any_element()
+        });
+        let center = div()
+            .flex_1()
+            .min_w_0()
+            .min_h_0()
+            .flex()
+            .flex_col()
+            .child(div().flex_1().min_h_0().min_w_0().child(content))
+            .children(bottom_dock);
+        let docked = div()
+            .flex_1()
+            .min_h_0()
+            .flex()
+            .flex_row()
+            .children(left_dock)
+            .child(center)
+            .children(right_dock)
+            .on_drag_move(
+                cx.listener(|this, ev: &DragMoveEvent<DockResize>, _window, cx| {
+                    let pos = ev.drag(cx).0;
+                    let b = ev.bounds;
+                    let p = ev.event.position;
+                    let size = match pos {
+                        DockPosition::Left => f32::from(p.x - b.origin.x),
+                        DockPosition::Right => f32::from(b.origin.x + b.size.width - p.x),
+                        DockPosition::Bottom => f32::from(b.origin.y + b.size.height - p.y),
+                    };
+                    this.set_dock_size(pos, size, cx);
+                }),
+            );
+
         div()
             .track_focus(&self.focus_handle)
             .key_context("Workspace")
@@ -4317,7 +4590,7 @@ impl Render for Workspace {
             .size_full()
             .bg(bg)
             .on_key_down(cx.listener(Self::on_key_down))
-            .child(div().flex_1().min_h_0().child(content))
+            .child(docked)
             .children(confirm)
             .children(context_menu)
             .children(new_tab_menu)

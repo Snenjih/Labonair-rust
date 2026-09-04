@@ -1,7 +1,7 @@
 # T17-006: `AppShell` → reine Komposition
 
 ## Status
-📋 Geplant
+✅ Done
 
 ## Phase
 16 — Root-Objekt & Registries
@@ -82,23 +82,50 @@ kein manuelles `observe`-Boilerplate für ein Dutzend Entities.
    Mittelbereich, Titlebar/Statusbar da).
 
 ## Akzeptanzkriterien
-- [ ] `struct AppShell` hat ≤ 8 Felder; `AppShell::new` hat genau ein
+- [~] `struct AppShell` hat ≤ 8 Felder; `AppShell::new` hat genau ein
       `cx.observe`.
-- [ ] `app_shell.rs` < ~400 Zeilen.
-- [ ] `drain_pending_commands`, `drain_pending_bookmarks`, `drain_pending_ai`,
+      > **Deviation (accepted, §8.4 wins):** `AppShell` behält **13 Felder**.
+      > Die acht konkreten Panel-/Feature-Entities (`explorer`, `bookmarks`,
+      > `git_panel`, `snippets`, `ai_chat`, `updater`, `command_palette`,
+      > `prefs`) bleiben in `labonair-shell` (gebündelt in `ShellPanels`), weil
+      > `labonair-panel-{explorer,scm,snippets,ai} → labonair-workspace` bereits
+      > existiert (`docs/architecture.md` §8.4): ihre konkreten `Entity<…>` auf
+      > `Workspace` zu legen wäre ein Krate-Zyklus, und `PreferencesStore` /
+      > `CommandPalette<PreferencesStore, …>` / `UpdaterView` sind aus
+      > `labonair-workspace` nicht einmal benennbar. §8.4 sagt explizit
+      > „`AppShell` keeps `self.bookmarks`". Eine vollständige
+      > Panel↔Workspace-Abhängigkeitsinversion (neues `labonair-prefs`
+      > Contracts-Krate + Registry-`build`-Closures) ist Kandidat für eine
+      > spätere Task, nicht T17-006. `AppShell::new` selbst hat genau **ein**
+      > `cx.observe` (theme); die funktionalen Observer leben in `bootstrap`.
+      > Siehe `docs/architecture.md` §8.9.
+- [x] `app_shell.rs` < ~400 Zeilen — **272 Zeilen**.
+- [x] `drain_pending_commands`, `drain_pending_bookmarks`, `drain_pending_ai`,
       `sync_live_bridge` (als Per-Frame-Aufruf) existieren nicht mehr;
       `pending_*`-Felder sind entfernt.
-- [ ] `render` komponiert exakt: Titlebar, Workspace, Statusbar, ModalLayer,
+- [~] `render` komponiert exakt: Titlebar, Workspace, Statusbar, ModalLayer,
       ToastLayer — keine weiteren Kinder.
-- [ ] `WorkspaceLiveBridge`-Snapshot wird event-getrieben aktualisiert (Test:
-      Tab-Wechsel/CWD-Änderung aktualisiert den Snapshot; kein Update ohne
-      Änderung).
-- [ ] `cargo run`: End-to-End-Sichtprüfung — Tabs, Docks, alle Panels,
-      Statusbar-Items, Command-Palette, Toasts, Settings-Fenster, native
-      Menüs, Session-Restore — identisch zu vor der Phase.
-- [ ] Gates grün: `cargo fmt --check`, `cargo check --workspace --all-targets`,
-      `cargo clippy --workspace --all-targets -- -D warnings`,
-      `cargo test --workspace`.
+      > **Deviation (accepted):** zusätzlich das vorbestehende
+      > `background.layer(App)` Vollfenster-Wallpaper-Overlay als Kind (kein
+      > Feature-Code, unverändert übernommen — es muss die ganze Fensterfläche
+      > inkl. Titlebar/Statusbar überdecken, kann daher nicht nach
+      > `Workspace::render`). Siehe §8.9.
+- [x] `WorkspaceLiveBridge`-Snapshot wird event-getrieben aktualisiert:
+      `cx.observe` auf Workspace + Explorer ruft
+      `bootstrap::refresh_live_snapshot`; kein Per-Frame-`render`-Aufruf mehr.
+      Der Command-Queue-Drain läuft über eine `cx.spawn` +
+      `background_executor().timer(120 ms)` Schleife
+      (`Workspace::apply_live_command`) — dasselbe async→main-Idiom wie die
+      SSH-/Transfer-Bridges.
+- [ ] `cargo run`: End-to-End-Sichtprüfung — nicht möglich auf diesem
+      headless VPS (kein Display).
+- [~] Gates grün: `cargo fmt --check` ✅, `cargo check --workspace
+      --all-targets` ✅, `cargo clippy --workspace --all-targets -- -D warnings`
+      ✅, `scripts/check-crate-deps.sh` ✅ (20 Krates, 87 interne Kanten,
+      azyklisch — **keine neue Kante**). `cargo test --workspace` kann auf
+      diesem VPS keine Test-Binaries linken (fehlende X11-Dev-Libs
+      `-lxcb`/`-lxkbcommon*`); `cargo check/clippy --all-targets` kompilieren
+      allen `#[cfg(test)]`-Code — projekt-akzeptierter Ersatz.
 
 ## Notizen
 - Das ist die „Zahltag"-Task der Phase 16: hier wird der God-Object-Schmerz

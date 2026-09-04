@@ -577,6 +577,69 @@ Deviations from the literal task text, all accepted:
 Bar / breadcrumb context menus were **not** forced into the modal layer (per
 the task): they remain `PopoverMenu`/`StatusItem`-local, pending T20-001.
 
+### 8.9 `AppShell` → composition-only — T17-006
+
+`crates/shell/src/app_shell.rs` dropped from 2 072 to **272 lines**. The
+2 000-line startup body + action cascade split into shell submodules and one
+`Workspace` addition:
+
+* **`crate::bootstrap`** — the whole former `AppShell::new` body: builds every
+  child entity, runs the ordered startup sequence (MCP-prefs hydrate → session
+  snapshot → theme preference → `apply_prefs_to_theme` → keybinds → settings
+  deps → updater check), wires the reactive edges, returns
+  `AppShell::from_parts(…)`. The ~15 `cx.observe(&x, |_,_,cx| cx.notify())`
+  lines collapsed to the handful that still do real work (`background`, `prefs`,
+  `workspace` for `.when(can_split)` staleness, the two CWD-feed closures, the
+  live-snapshot refresh, the `BarLayoutTick` global).
+* **`crate::actions`** — every `act_*` handler + `build_palette_data` +
+  `run_palette_command` + `handle_palette_event` / `handle_bookmark_event` as an
+  `impl AppShell` block. The `.on_action(...)` registration list stays in
+  `render`; only the bodies moved. `build_palette_data` is now snapshotted when
+  the palette opens, not every frame. T17-007 replaces this module with a
+  `CommandRegistry`.
+* **`crate::titlebar`** — `Titlebar` entity: tab strip + transient inline search
+  + `⋯` app-menu, ported verbatim from `render_header` / `render_app_menu` /
+  `render_search`. Owns its own `zen_mode_show_header` reactivity (renders an
+  empty element when hidden) and its search state. The redesign is T18-001.
+* **`crate::modals`** — the three `ModalView` wrapper newtypes (moved out of
+  `app_shell.rs`, unchanged).
+* **`Workspace::render_dock` + `Workspace::render` (`labonair-workspace`)** — the
+  three edge docks, the `DockResize` drag payload and the drag-to-resize handler
+  moved off `AppShell` into `Workspace`, which now composes
+  `[left dock | (pane group + bottom dock) | right dock]` itself (Zed's
+  `Workspace::render` model). The shell just does `.child(workspace.clone())`.
+  `set_dock_size` / `move_panel_persist` moved with it. **No new crate edge**
+  (87 internal edges, unchanged).
+* **`drain_pending_ai` / `sync_live_bridge` deleted.** AI "run in terminal" is
+  serviced straight from a `cx.subscribe_in(&ai_chat, window, …)` in
+  `bootstrap` (no `pending_ai` buffer). The `WorkspaceLiveBridge` **snapshot**
+  is refreshed event-driven via `cx.observe` on the workspace + explorer
+  (`bootstrap::refresh_live_snapshot`); the bridge's **command queue** is
+  drained by a light `cx.spawn` + `background_executor().timer(120 ms)` loop
+  (`AppShell::_live_drain`) applying each via `Workspace::apply_live_command` —
+  the same async→main idiom `Workspace` already uses for its SSH / transfer
+  bridges, and no longer a per-frame `render` call.
+
+**Deviation from the task's "≤ 8 fields / panel entities move to `Workspace`"
+acceptance criterion (§8.4 wins).** `struct AppShell` keeps **13 fields**; the
+eight concrete panel / feature entities (`explorer`, `bookmarks`, `git_panel`,
+`snippets`, `ai_chat`, `updater`, `command_palette`, `prefs`) stay in
+`labonair-shell` — grouped in `ShellPanels` — because
+`labonair-panel-{explorer,scm,snippets,ai}` already depend on
+`labonair-workspace` (§8.4), so storing their concrete `Entity<…>` on
+`Workspace` would be a dependency cycle, and `PreferencesStore` /
+`CommandPalette<PreferencesStore, …>` / `UpdaterView` cannot even be named from
+`labonair-workspace`. `docs/architecture.md` §8.4 explicitly says "`AppShell`
+keeps `self.bookmarks: Entity<BookmarksView>`" — the crate boundary is the only
+thing that could move, and it can't here. A full panel↔workspace dependency
+inversion (a new `labonair-prefs` contracts crate + registry `build` closures
+that let `Workspace` own the panels type-erased) is a candidate future task,
+**not** T17-006. `AppShell::new` itself has exactly one `cx.observe` (theme);
+the functional observes live in `bootstrap`. `render` also carries the
+pre-existing full-window `background.layer(App)` wallpaper overlay as a child
+(not feature logic) alongside Titlebar / Workspace / StatusBar / ModalLayer /
+ToastLayer.
+
 ---
 
 ## 9. Ist-Graph after Phase 15 (T16-010)

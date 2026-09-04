@@ -4,6 +4,91 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
+## Last Session: 2026-09-04 (T17-006 — `AppShell` → reine Komposition · **Phase 16**)
+
+The "payday" task of Phase 16. `crates/shell/src/app_shell.rs` went from
+**2 072 → 272 lines**; no `drain_pending_*`, no per-frame `sync_live_bridge`,
+no per-frame `build_palette_data`.
+
+### What Was Done (T17-006)
+- **`crates/shell/src/bootstrap.rs`** (new, ~490 Z.) — the entire former
+  `AppShell::new` body: builds every child entity, runs the ordered startup
+  sequence (MCP-prefs hydrate → session snapshot → theme pref → keybinds →
+  settings deps → updater check), wires the reactive edges, returns
+  `AppShell::from_parts(…)`. Also `register_builtin_panels` /
+  `migrate_dock_layout` / `refresh_live_snapshot` moved here. The ~15
+  `cx.observe(&x, |_,_,cx| cx.notify())` collapsed to the handful that still do
+  work (`background`, `prefs`, `workspace`, two CWD-feed closures, live-snapshot
+  refresh, `BarLayoutTick`).
+- **`crates/shell/src/actions.rs`** (new, ~860 Z.) — every `act_*` handler +
+  `build_palette_data` + `run_palette_command` + `handle_palette_event` /
+  `handle_bookmark_event` as an `impl AppShell` block + the `select_tab_action!`
+  macro. `.on_action(...)` registration list stays in `render`; only bodies
+  moved. `build_palette_data` now runs at palette-open (`show_command_palette`),
+  not per frame. T17-007 replaces this module with a `CommandRegistry`.
+- **`crates/shell/src/titlebar.rs`** (new, ~275 Z.) — `Titlebar` entity: tab
+  strip + transient inline search + `⋯` app-menu, ported verbatim from
+  `render_header` / `render_app_menu` / `render_search`. Owns its own
+  `zen_mode_show_header` reactivity (empty element when hidden). Redesign =
+  T18-001.
+- **`crates/shell/src/modals.rs`** (new, ~148 Z.) — the three `ModalView`
+  wrapper newtypes + `ShellPalette` alias, moved out of `app_shell.rs`
+  unchanged.
+- **`crates/workspace/src/workspace.rs`** — `Workspace::render_dock` +
+  `DockResize` drag payload + `set_dock_size` + `move_panel_persist` +
+  `apply_live_command` added; `Workspace::render` now composes
+  `[left dock | (pane group + bottom dock) | right dock]` + the drag-to-resize
+  handler itself (Zed model). Shell just does `.child(workspace.clone())`.
+  Reuses the existing `DragGhost`. **No new crate edge.**
+- **`crates/shell/src/app_shell.rs`** — now only: `struct AppShell` (13 fields;
+  8 concrete entities grouped in `ShellPanels`), `new` (one `cx.observe(theme)`
+  + delegate to `bootstrap`), `from_parts`, `workspace()`/`preferences()`,
+  `maybe_persist_geometry` + `bounds_differ`, `Focusable`, `Render` (pure
+  composition + the `.on_action` list + the two modal-sync calls +
+  `maybe_persist_geometry`).
+- **`crates/shell/src/shell.rs`** — declares `actions` / `bootstrap` / `modals`
+  / `titlebar`; dropped the now-dead `live_bridge` re-export shim.
+- **`drain_pending_ai` / `sync_live_bridge` deleted.** AI "run in terminal" →
+  `cx.subscribe_in(&ai_chat, window, …)` in `bootstrap`. LiveBridge snapshot →
+  `cx.observe` on workspace + explorer (`refresh_live_snapshot`); command queue
+  → `cx.spawn` + `background_executor().timer(120 ms)` loop
+  (`AppShell::_live_drain`) → `Workspace::apply_live_command`.
+- **`docs/architecture.md` §8.9** (new) — records the split + the accepted
+  deviations (13 fields not 8; §8.4 wins; `background.layer(App)` overlay is an
+  extra render child; `AppShell::new` has one observe, functional ones in
+  `bootstrap`).
+
+### Deviations (accepted, recorded in task file + §8.9 + this entry)
+- `struct AppShell` keeps **13 fields**, not ≤ 8. The 8 concrete panel/feature
+  entities cannot move to `Workspace` — `labonair-panel-{explorer,scm,snippets,
+  ai} → labonair-workspace` already exists, so the reverse edge is a cycle; and
+  `PreferencesStore` / `CommandPalette<PreferencesStore,…>` / `UpdaterView` are
+  not nameable from `labonair-workspace`. `docs/architecture.md` §8.4 (which the
+  project calls authoritative) explicitly says `AppShell` keeps the concrete
+  handles. Grouped in `ShellPanels` for readability.
+- `render` also carries the pre-existing full-window `background.layer(App)`
+  wallpaper overlay (must cover titlebar+statusbar too, so it can't sink into
+  `Workspace::render`).
+
+### Gate Results (T17-006)
+- `cargo fmt --check` ✅ · `cargo check --workspace --all-targets` ✅ ·
+  `cargo clippy --workspace --all-targets -- -D warnings` ✅ ·
+  `scripts/check-crate-deps.sh` ✅ (20 crates, **87** internal edges — no new
+  edge, acyclic).
+- `cargo test --workspace` **not run** — test binaries cannot link on this
+  headless VPS (missing `-lxcb` / `-lxkbcommon*`); `cargo check/clippy
+  --all-targets` compiled all `#[cfg(test)]` code (project-accepted
+  substitute). `cargo run` E2E visual check **not possible** (no display).
+
+### State
+- Branch `master`, committing now. No blockers.
+
+### Next
+- **T17-007** — `CommandRegistry` (replaces `crate::actions` / the `.on_action`
+  cascade with a data-driven registry).
+
+---
+
 ## Last Session: 2026-09-04 (T17-005 — `ModalLayer` + `ToastLayer` · **Phase 16**)
 
 Replaced the six hand-wired overlay children in `AppShell::render` with **two**
