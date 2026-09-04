@@ -72,6 +72,11 @@ fn main() {
         .with_assets(labonair_shell::Assets)
         .run(move |cx: &mut App| {
             labonair_shell::init_fonts(cx);
+            // T19-002: layered SettingsStore (default < user < …) — before
+            // the first render, before gpui-component so nothing built below
+            // can race a `XSettings::get(cx)` call against an unpopulated
+            // store.
+            labonair_settings::init(cx);
             gpui_component::init(cx);
             let bounds = window_state::load()
                 .unwrap_or_else(|| Bounds::centered(None, size(px(1200.0), px(800.0)), cx));

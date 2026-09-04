@@ -16,6 +16,7 @@ labonair-editor = { path = "../editor" }
 labonair-backend = { path = "../backend" }
 labonair-ai = { path = "../ai" }
 labonair-theme = { path = "../theme" }
+labonair-settings = { path = "../settings" }
 tokio = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }

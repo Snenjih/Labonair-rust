@@ -4018,6 +4018,7 @@ dependencies = [
  "labonair-ai",
  "labonair-backend",
  "labonair-editor",
+ "labonair-settings",
  "labonair-shell",
  "labonair-terminal",
  "labonair-theme",
@@ -4237,6 +4238,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "labonair-settings"
+version = "0.1.0"
+dependencies = [
+ "dirs 6.0.0",
+ "gpui",
+ "inventory",
+ "jsonc-parser",
+ "labonair-settings-content",
+ "labonair-settings-macros",
+ "notify 6.1.1",
+ "notify-debouncer-mini",
+ "serde",
+ "serde_json",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
 name = "labonair-settings-content"
 version = "0.1.0"
 dependencies = [
@@ -4355,6 +4374,7 @@ dependencies = [
  "labonair-notifications",
  "labonair-panel",
  "labonair-panel-git-graph",
+ "labonair-settings",
  "labonair-terminal",
  "labonair-theme",
  "labonair-ui-kit",

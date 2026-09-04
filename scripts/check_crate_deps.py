@@ -17,6 +17,7 @@ ALLOWED = {
     "labonair": {
         "labonair-shell", "labonair-terminal", "labonair-editor",
         "labonair-backend", "labonair-ai", "labonair-theme",
+        "labonair-settings",
     },
 
     # Foundation ------------------------------------------------------------
@@ -53,12 +54,15 @@ ALLOWED = {
     "labonair-panel": {"labonair-gpui-ext"},
     # rule 3 + §8.4: workspace owns the tab-view entities, so it pulls
     # hosts-ui and panel-git-graph (acyclic — neither depends back on it).
+    # T19-002: ThemeSettings/TerminalSettings real consumers
+    # (workspace.rs::reduce_motion, views/terminal.rs opacity/copy-on-select/
+    # right-click-pastes) pull the typed settings store directly.
     "labonair-workspace": {
         "labonair-theme", "labonair-ui-kit", "labonair-gpui-ext",
         "labonair-notifications", "labonair-command-palette",
         "labonair-panel", "labonair-panel-git-graph", "labonair-hosts-ui",
         "labonair-terminal", "labonair-editor", "labonair-backend",
-        "labonair-ai",
+        "labonair-ai", "labonair-settings",
     },
     # rule 3: the only crate that knows every concrete panel type — it also
     # touches the `labonair-panel` contracts crate to register them (T17-001).
@@ -122,6 +126,11 @@ ALLOWED = {
     # Settings track (T19-001) — pure data model, no GPUI/UI/backend deps.
     "labonair-settings-content": {"labonair-settings-macros"},
     "labonair-settings-macros": set(),
+    # Settings track (T19-002) — the layered SettingsStore. Depends only on
+    # the pure data model + its own derive-macro crate; `gpui` is used (Store
+    # as a Global + App/AsyncApp access) but that's an external dep, not a
+    # workspace edge, so it doesn't show up here. No UI crate, no backend.
+    "labonair-settings": {"labonair-settings-content", "labonair-settings-macros"},
 }
 
 # UI crates the engines (backend/ai/editor) must not reach, even transitively.

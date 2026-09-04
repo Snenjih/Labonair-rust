@@ -4,7 +4,98 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
-## Last Session: 2026-09-04 (T19-001 — `labonair-settings-content` tree + `MergeFrom`)
+## Last Session: 2026-09-04 (T19-002 — `SettingsStore` layered merge + `Settings` trait)
+
+**T19-002 done.** New crate `crates/settings` (`labonair-settings`), workspace
+member. Its only workspace deps are `labonair-settings-content` +
+`labonair-settings-macros` (enforced by `scripts/check-crate-deps.sh`); no UI
+crate, no `labonair-backend`.
+
+- `store.rs`: `SettingsLayer` enum (`Default < User < Os < Profile <
+  Project(WorktreeId) < Language(String)`) — **declaration order is the merge
+  order** because `#[derive(Ord)]` on an enum compares by variant index
+  first, so a `BTreeMap<SettingsLayer, SettingsContent>`'s key iteration
+  order *is* the normative merge order for free (no separate `rank()` fn
+  needed). `SettingsStore` is a GPUI `Global`; every mutator only reaches its
+  fields through `cx.global_mut::<SettingsStore>()`, which GPUI's
+  `Effect::NotifyGlobalObservers` already turns into an automatic
+  `cx.observe_global::<SettingsStore>` notification on `recompute` — no
+  bespoke observer list was needed.
+  `Os`/`Profile`/`Project`/`Language` are structurally present but always
+  empty this task (no `platform_overrides`/`profiles` wrapper exists yet in
+  `SettingsContent`; `Project` is T19-003's job).
+- `reload_user_layer`: reads `~/.config/labonair/labonair-settings.json`.
+  Genuinely-corrupt JSON (fails even `jsonc_parser::parse_to_serde_value`)
+  keeps the **last-good** `User` layer rather than resetting to empty — a
+  distinct, stronger guarantee than `labonair_settings_content::parse`'s own
+  per-area fallback (which still applies for a file that parses as JSON but
+  has one broken area — that area alone defaults, the rest of the tree is
+  unaffected).
+- `persist_user_layer` ("dumb" write, T19-005 makes it surgical): re-reads
+  the file as a generic JSON object, overwrites only the 12
+  `SettingsContent` top-level keys, preserves every other key
+  (`preferences`, `dockLayout`, …) untouched, `.bak`-copies the existing file
+  first, atomic tmp+rename.
+- `trait Settings` (`settings_trait.rs`): `from_settings`, `register(cx)`,
+  `get(cx) -> &Self` (panics if never registered — mirrors Zed), plus a
+  **new, non-Zed** `try_get(cx) -> Option<&Self>` for render paths that might
+  run before `labonair_settings::init` (headless test harnesses).
+- `#[derive(RegisterSetting)]` added to `labonair-settings-macros` (alongside
+  the existing `MergeFrom` derive) — emits `inventory::submit! {
+  RegisteredSetting { register: |cx| <Self as Settings>::register(cx) } }`.
+  Only usable from within `labonair-settings` itself: the generated code
+  addresses `::labonair_settings::{inventory,gpui,Settings,RegisteredSetting}`
+  absolutely, resolvable via `extern crate self as labonair_settings;` in
+  `settings.rs` (crate root re-exports `gpui`/`inventory` for exactly this).
+- 6 concrete `Settings` structs (`concrete.rs`), each a newtype over its
+  `SettingsContent` area merged onto that area's own `defaults()` so every
+  field is guaranteed `Some`: `ThemeSettings` (wraps `appearance` —
+  named for the `themes` custom-category `target_module`, not
+  `AppearanceSettings`), `TerminalSettings`, `EditorSettings`, `AiSettings`,
+  `WorkspaceSettings`, `PersonalizationSettings`.
+- Real consumers (the task's explicit minimum): `ThemeSettings::try_get(cx)
+  .reduce_motion()` in `crates/workspace/src/workspace.rs`'s `render_tab`
+  (was `GlobalPreferences`); `TerminalSettings::try_get(cx)` for
+  `terminal_opacity`/`copy_on_select`/right-click-pastes in
+  `crates/workspace/src/views/terminal.rs`. `GlobalPreferences`/
+  `PreferencesStore` are otherwise **untouched** — full migration off them is
+  explicitly out of scope per the task's `## Notizen`; `try_get` (not `get`)
+  was used at both sites specifically so nothing panics if a future headless
+  test never calls `labonair_settings::init`.
+- `watch.rs`: live fs-watch, same `notify` + `notify_debouncer_mini` pattern
+  as `labonair_backend::modules::fs::watcher`. The debouncer callback (a
+  background thread) only flips an `AtomicBool` — never touches GPUI
+  directly, per the task's `## Warnungen`; a `cx.spawn`ed foreground `Task`
+  polls that flag every 150 ms and calls `reload_user_layer` via
+  `cx.update`. Watches the settings file's **parent directory**, not the
+  file itself (an atomic rename-based save, which is exactly how
+  `persist_user_layer` writes, replaces the inode a direct file-watch would
+  go stale against) and matches by `file_name()`, not full path (macOS
+  `/var/folders/...` vs `/private/var/folders/...` — see Bug memory).
+- `init(cx)` wired into `crates/app/src/main.rs`, right after
+  `labonair_shell::init_fonts` and before `gpui_component::init` — loads
+  layers, calls `register_all(cx)`, starts the watch.
+- 26 tests total in `labonair-settings` (13 unit/registry/watch — one is a
+  real-filesystem `notify` round-trip, no GPUI clock involved on purpose —
+  see Bug memory for why) + `#[gpui::test]`s proving observer notification
+  and full registration.
+
+### Gate results
+`cargo fmt --check` ✅ · `cargo check --workspace --all-targets` ✅ ·
+`cargo clippy --workspace --all-targets -- -D warnings` ✅ · `cargo test
+--workspace` ✅ (no failures anywhere) · `scripts/check-crate-deps.sh` ✅ (23
+workspace crates, 94 internal edges, acyclic).
+
+### Next task
+**T19-003** (project/folder settings,
+`tasks/phase-18-settings-core/T19-003-project-folder-settings.md`) — its own
+`## Abhängigkeiten` lists only T19-002, now done. (T19-004 also only needs
+T19-002 + already-done tasks, but T19-003 is the lower-numbered one and
+nothing blocks it from going first.)
+
+---
+
+## Session: 2026-09-04 (T19-001 — `labonair-settings-content` tree + `MergeFrom`)
 
 **T19-001 done.** New crates `crates/settings-content` (`labonair-settings-content`)
 and `crates/settings-macros` (`labonair-settings-macros`), added as workspace

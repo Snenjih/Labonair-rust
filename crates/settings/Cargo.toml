@@ -1,0 +1,39 @@
+[package]
+name = "labonair-settings"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "labonair_settings"
+path = "src/settings.rs"
+
+[dependencies]
+# The typed settings tree (T19-001) this store layers default < user <
+# os/profile < project < language. Pure data model, no GPUI/UI dep.
+labonair-settings-content = { path = "../settings-content" }
+# `#[derive(RegisterSetting)]` (this task) alongside the pre-existing
+# `#[derive(MergeFrom)]` (T19-001) — shared derive-macro crate, still no
+# non-macro deps of its own.
+labonair-settings-macros = { path = "../settings-macros" }
+# Store as a GPUI `Global` + `App`/`AsyncApp` access for `register()`/`get()`
+# and the fs-watch poll task. This is the store's only GPUI-ish dependency —
+# no `gpui-component`, no other UI crate.
+gpui = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+# Accepts the same JSONC-tolerant `labonair-settings.json` the shipped
+# `default.json` uses (mirrors `labonair-settings-content::fallible`).
+jsonc-parser = { version = "0.23", features = ["serde"] }
+# Live fs-watch on the user settings file (same crates + debounce pattern as
+# `labonair-backend::modules::fs::watcher`).
+notify = "6"
+notify-debouncer-mini = "0.4"
+# Compile-time `Settings` registration (`#[derive(RegisterSetting)]` +
+# `inventory::submit!`/`inventory::iter!`), Zed's own pattern.
+inventory = "0.3"
+dirs = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+gpui = { workspace = true, features = ["test-support"] }
+uuid = { workspace = true }

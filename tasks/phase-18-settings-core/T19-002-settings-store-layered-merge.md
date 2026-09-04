@@ -1,7 +1,7 @@
 # T19-002: `SettingsStore` + Layer-Merge + `Settings`-Trait
 
 ## Status
-📋 Geplant
+✅ Done
 
 ## Phase
 18 — Settings-System Zed-Style
@@ -82,21 +82,44 @@ Settings-Slices über ein `Settings`-Trait + Registrierung bereit. Die
    Observer aus (mit GPUI-Test-Executor); kaputte Datei ⇒ letzter guter Wert.
 
 ## Akzeptanzkriterien
-- [ ] `crates/settings/` + `crates/settings-macros/` existieren, ohne
-      UI-Deps.
-- [ ] `SettingsStore` merged Default → User (→ Os/Profile/Project/Language)
+- [x] `crates/settings/` + `crates/settings-macros/` existieren, ohne
+      UI-Deps. (`labonair-settings`'s only workspace deps are
+      `labonair-settings-content` + `labonair-settings-macros`, enforced by
+      `scripts/check-crate-deps.sh`.)
+- [x] `SettingsStore` merged Default → User (→ Os/Profile/Project/Language)
       in fester Reihenfolge; `recompute` benachrichtigt Observer.
-- [ ] `trait Settings` + `#[derive(RegisterSetting)]` + `inventory`
+      (`SettingsLayer`'s derived `Ord` — declaration order = merge order —
+      drives a `BTreeMap<SettingsLayer, SettingsContent>` iteration;
+      `SettingsStore` is a GPUI `Global`, so `cx.global_mut` already queues
+      `NotifyGlobalObservers`; proven by
+      `store::tests::recompute_notifies_global_observers`.)
+- [x] `trait Settings` + `#[derive(RegisterSetting)]` + `inventory`
       funktionieren; ≥6 konkrete `Settings`-Structs registriert.
-- [ ] `ThemeSettings` und `TerminalSettings` werden von den echten Modulen
+      (`ThemeSettings`, `TerminalSettings`, `EditorSettings`, `AiSettings`,
+      `WorkspaceSettings`, `PersonalizationSettings` — all `#[derive(
+      RegisterSetting)]`, verified by
+      `registry::tests::register_all_registers_every_concrete_setting`.)
+- [x] `ThemeSettings` und `TerminalSettings` werden von den echten Modulen
       über `XSettings::get(cx)` konsumiert (nicht mehr über
-      `GlobalPreferences`).
-- [ ] Live-fs-Watch: externe Änderung an `labonair-settings.json` wirkt ohne
-      Neustart; kaputte Datei crasht nicht.
-- [ ] `GlobalPreferences`-Brücke bleibt für nicht-migrierte Module aktuell.
-- [ ] Gates grün: `cargo fmt --check`, `cargo check --workspace --all-targets`,
+      `GlobalPreferences`). (`crates/workspace/src/workspace.rs`
+      `render_tab`'s `reduce_motion`; `crates/workspace/src/views/
+      terminal.rs`'s `terminal_opacity`/`copy_on_select`/right-click-pastes.)
+- [x] Live-fs-Watch: externe Änderung an `labonair-settings.json` wirkt ohne
+      Neustart; kaputte Datei crasht nicht. (`crates/settings/src/watch.rs`
+      — `notify_debouncer_mini` on a background thread flips an
+      `AtomicBool`, a `cx.spawn`ed foreground poll reloads via
+      `SettingsStore::reload_user_layer`, which keeps the last-good `User`
+      layer on a totally-unparseable file and per-area-defaults on a
+      partially-broken one.)
+- [x] `GlobalPreferences`-Brücke bleibt für nicht-migrierte Module aktuell.
+      (Untouched — `labonair-settings` doesn't publish/consume it; every
+      other `GlobalPreferences` call site keeps working exactly as before.
+      Full `PreferencesStore` delegation to `SettingsStore` is explicitly
+      out of scope per `## Notizen`.)
+- [x] Gates grün: `cargo fmt --check`, `cargo check --workspace --all-targets`,
       `cargo clippy --workspace --all-targets -- -D warnings`,
-      `cargo test --workspace`.
+      `cargo test --workspace`. Also `scripts/check-crate-deps.sh` (OK — 23
+      workspace crates, 94 internal edges, acyclic).
 
 ## Notizen
 - `inventory` auf macOS **und** Linux verifizieren (Linker-Sektionen) — früh,

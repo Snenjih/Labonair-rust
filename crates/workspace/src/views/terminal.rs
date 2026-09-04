@@ -42,6 +42,7 @@ use crate::background::{BackgroundStore, LayerScope};
 use crate::drag::{quote_paths, DraggedPaths};
 use crate::prefs::GlobalPreferences;
 use crate::theme::ThemeStore;
+use labonair_settings::Settings as _;
 use labonair_ui_kit::{context_menu, IconName, MenuItem};
 
 /// How often the view polls the session for new terminal output.
@@ -515,9 +516,10 @@ impl Render for TerminalView {
                 cx.listener(|this, ev: &MouseDownEvent, _window, cx| {
                     // Reference `TerminalPane`: `terminalRightClickPastes` pref
                     // toggles between paste-on-right-click and a context menu.
-                    let pastes = cx
-                        .try_global::<GlobalPreferences>()
-                        .map(|p| p.0.terminal_right_click_pastes)
+                    // T19-002: real `TerminalSettings::get(cx)` consumer (was
+                    // `GlobalPreferences`).
+                    let pastes = labonair_settings::TerminalSettings::try_get(cx)
+                        .map(|s| s.right_click_pastes())
                         .unwrap_or(false);
                     if pastes {
                         this.paste_from_clipboard(cx);
@@ -735,16 +737,18 @@ fn cursor_overlay(
 }
 
 /// Terminal background opacity in percent from the live preferences (T13-003).
+/// T19-002: real `TerminalSettings::get(cx)` consumer (was `GlobalPreferences`).
 fn terminal_opacity(cx: &App) -> u32 {
-    cx.try_global::<GlobalPreferences>()
-        .map(|g| g.0.terminal_opacity)
+    labonair_settings::TerminalSettings::try_get(cx)
+        .map(|s| s.terminal_opacity())
         .unwrap_or(100)
 }
 
 /// Whether selecting text should copy it to the clipboard (T13-003).
+/// T19-002: real `TerminalSettings::get(cx)` consumer (was `GlobalPreferences`).
 fn copy_on_select(cx: &App) -> bool {
-    cx.try_global::<GlobalPreferences>()
-        .map(|g| g.0.terminal_copy_on_select)
+    labonair_settings::TerminalSettings::try_get(cx)
+        .map(|s| s.copy_on_select())
         .unwrap_or(false)
 }
 

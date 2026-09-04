@@ -29,6 +29,7 @@ labonair-terminal = { path = "../terminal" }
 labonair-editor = { path = "../editor" }
 labonair-backend = { path = "../backend" }
 labonair-ai = { path = "../ai" }
+labonair-settings = { path = "../settings" }
 
 [dev-dependencies]
 gpui = { workspace = true, features = ["test-support"] }

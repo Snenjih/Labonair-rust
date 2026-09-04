@@ -3594,9 +3594,13 @@ impl Workspace {
             let a = self.theme.read(cx).animation();
             (a.ease_premium, a.dur_base)
         };
-        let reduce_motion = cx
-            .try_global::<GlobalPreferences>()
-            .map(|p| p.0.reduce_motion)
+        // T19-002: real `ThemeSettings::get(cx)` consumer (was
+        // `GlobalPreferences`) — `SettingsStore` merges default < user for
+        // `appearance.reduceMotion`. `try_get` (not `get`) so a headless test
+        // harness that never called `labonair_settings::init` still renders.
+        use labonair_settings::Settings as _;
+        let reduce_motion = labonair_settings::ThemeSettings::try_get(cx)
+            .map(|s| s.reduce_motion())
             .unwrap_or(false);
         let tab_in_dur = if reduce_motion {
             Duration::from_micros(10)
