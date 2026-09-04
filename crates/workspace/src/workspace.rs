@@ -83,6 +83,7 @@ use labonair_backend::modules::scrollback::{
     scrollback_cleanup, scrollback_delete, scrollback_load, scrollback_save,
 };
 use labonair_backend::modules::settings::preferences::CursorStyle as PrefCursorStyle;
+use labonair_backend::modules::settings::preferences::StartupTab;
 use labonair_backend::modules::sftp::commands::enqueue_transfer;
 use labonair_backend::modules::sftp::connection::sftp_disconnect as sftp_tab_disconnect;
 use labonair_backend::modules::ssh::client::{ssh_connect, ssh_disconnect, ssh_trust_host};
@@ -573,33 +574,29 @@ impl Workspace {
         cx.observe(&this.ssh_connection, |_, _, cx| cx.notify())
             .detach();
 
-        // Session restore (T14-001): replay the previous tabs / layout if a
-        // snapshot was passed in, otherwise open the default Home + terminal.
-        let restored = restore
-            .filter(|s| !s.tabs.is_empty())
-            .map(|snap| this.restore_session(&snap, window, cx));
-        let opened_any = restored.as_ref().map(|r| r.restored > 0).unwrap_or(false);
-        if let Some(result) = &restored {
-            for (title, reason) in &result.failed {
-                tracing::warn!(title, reason, "session tab not restored");
+        // Startup (T14-001 / T17-009). A passed-in snapshot means session
+        // restore is on *and* a snapshot was found — replay it verbatim, even
+        // if it restores zero tabs (an empty workspace is a valid state). With
+        // no snapshot, honour the `startup_tab` preference: `terminal` opens
+        // one local terminal, `empty` opens nothing. There is no automatic
+        // host-manager tab any more.
+        match restore {
+            Some(snap) => {
+                let result = this.restore_session(&snap, window, cx);
+                for (title, reason) in &result.failed {
+                    tracing::warn!(title, reason, "session tab not restored");
+                }
             }
-        }
-        if !opened_any {
-            // Landing tab: the host-manager dashboard.
-            this.tabs
-                .update(cx, |s, cx| s.open(TabKind::Home, TabData::default(), cx));
-            this.open_terminal_tab(window, cx);
-        } else if !this
-            .tabs
-            .read(cx)
-            .tabs()
-            .iter()
-            .any(|t| t.kind == TabKind::Home)
-        {
-            // Home is never closable, so a snapshot should always carry one;
-            // guard anyway so the dashboard is always reachable.
-            this.tabs
-                .update(cx, |s, cx| s.open(TabKind::Home, TabData::default(), cx));
+            None => {
+                let startup = cx
+                    .try_global::<GlobalPreferences>()
+                    .map(|g| g.0.default_startup_tab)
+                    .unwrap_or_default();
+                match startup {
+                    StartupTab::Terminal => this.open_terminal_tab(window, cx),
+                    StartupTab::Empty => {}
+                }
+            }
         }
         // Scrollback cleanup (T14-002): drop files for panes that no longer
         // exist plus anything past the retention window. Runs once on startup,
@@ -618,7 +615,6 @@ impl Workspace {
         let mut active_index = 0;
         for tab in store.tabs() {
             let snap = match tab.kind {
-                TabKind::Home => Some(TabSnapshot::Home),
                 TabKind::Workspace => self.snapshot_workspace_tab(tab, cx),
                 TabKind::Editor => tab
                     .data
@@ -637,9 +633,13 @@ impl Workspace {
                         title: tab.custom_title.clone(),
                     })
                 }),
-                TabKind::AiDiff | TabKind::GitGraph | TabKind::GitDiff | TabKind::CommitDiff => {
-                    None
-                }
+                // The host-manager tab is an on-demand helper (removed in
+                // T19-010) — not persisted, like the transient diff kinds.
+                TabKind::Hosts
+                | TabKind::AiDiff
+                | TabKind::GitGraph
+                | TabKind::GitDiff
+                | TabKind::CommitDiff => None,
             };
             if let Some(snap) = snap {
                 if tab.id == active_id {
@@ -744,10 +744,10 @@ impl Workspace {
         let mut created: Vec<Option<u64>> = Vec::with_capacity(actions.len());
         for action in actions {
             let tab_id = match action {
-                RestoreAction::Home => Some(
-                    self.tabs
-                        .update(cx, |s, cx| s.open(TabKind::Home, TabData::default(), cx)),
-                ),
+                // Legacy snapshots (pre-T17-009) carried a "home" tab. That
+                // tab kind no longer exists — skip the slot silently, as if it
+                // had held nothing.
+                RestoreAction::Home => None,
                 RestoreAction::LocalWorkspace {
                     layout,
                     cwds,
@@ -1677,16 +1677,11 @@ impl Workspace {
         self.focus_active(window, cx);
     }
 
-    /// Close every non-`Home` tab (tab context menu "Close All").
+    /// Close every tab (tab context menu "Close All"). Routed through
+    /// `request_close` per tab so unsaved editors still prompt; the workspace
+    /// is left showing its empty surface.
     fn close_all_tabs(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let ids: Vec<u64> = self
-            .tabs
-            .read(cx)
-            .tabs()
-            .iter()
-            .filter(|t| t.kind != TabKind::Home)
-            .map(|t| t.id)
-            .collect();
+        let ids: Vec<u64> = self.tabs.read(cx).tabs().iter().map(|t| t.id).collect();
         for id in ids {
             self.request_close(id, window, cx);
         }
@@ -1748,20 +1743,22 @@ impl Workspace {
         self.open_sftp(host_id, window, cx);
     }
 
-    /// Focus the host-manager dashboard (the `Home` tab), opening one if the
-    /// snapshot somehow lacks it. Wired to the `Open Host Manager` menu item.
+    /// Open (or re-focus) the host-manager dashboard as a normal, closable
+    /// [`TabKind::Hosts`] tab. Wired to the `Open Host Manager` menu item /
+    /// `CommandId::OpenHostManager`. T19-010 replaces this with a Settings
+    /// entry and removes the tab kind.
     pub fn open_host_manager(&mut self, cx: &mut Context<Self>) {
         let existing = self
             .tabs
             .read(cx)
             .tabs()
             .iter()
-            .find(|t| t.kind == TabKind::Home)
+            .find(|t| t.kind == TabKind::Hosts)
             .map(|t| t.id);
         self.tabs.update(cx, |s, cx| match existing {
             Some(id) => s.set_active(id, cx),
             None => {
-                s.open(TabKind::Home, TabData::default(), cx);
+                s.open(TabKind::Hosts, TabData::default(), cx);
             }
         });
     }
@@ -3404,8 +3401,9 @@ impl Workspace {
         );
         let id = tab.id;
         let active = self.tabs.read(cx).active_id() == id;
-        let total = self.tabs.read(cx).len();
-        let closable = total > 1 && tab.kind != TabKind::Home;
+        // Every tab is closable now — closing the last one just leaves the
+        // empty-workspace surface (T17-009).
+        let closable = true;
         let label = SharedString::from(tab.label());
 
         // D4 — tab-entrance animation (`@keyframes labonair-tab-in` in the
@@ -3713,11 +3711,11 @@ impl Workspace {
     fn render_content(&mut self, cx: &mut Context<Self>) -> gpui::AnyElement {
         let active = self.tabs.read(cx).active().cloned();
         let Some(active) = active else {
-            return div().size_full().into_any_element();
+            return self.render_empty_surface(cx).into_any_element();
         };
 
         match active.kind {
-            TabKind::Home => self.host_manager.clone().into_any_element(),
+            TabKind::Hosts => self.host_manager.clone().into_any_element(),
             TabKind::Workspace => {
                 // While an SSH session for this tab is still connecting (or in
                 // a prompt / error state), the loading screen replaces the
@@ -3925,6 +3923,29 @@ impl Workspace {
             )))
     }
 
+    /// The empty-workspace surface, shown when no tabs are open (T17-009).
+    /// Deliberately minimal — the styled version plus the `＋▾` menu and
+    /// file-drop land in T18-001. Double-click opens a local terminal so the
+    /// area is not a dead end.
+    fn render_empty_surface(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = self.theme.read(cx);
+        div()
+            .id("empty-workspace")
+            .size_full()
+            .flex()
+            .items_center()
+            .justify_center()
+            .bg(theme.background())
+            .text_color(theme.muted_foreground())
+            .text_sm()
+            .child("No tabs open · \u{2318}T new terminal · \u{2318}K commands")
+            .on_click(cx.listener(|this, ev: &ClickEvent, window, cx| {
+                if ev.click_count() >= 2 {
+                    this.new_terminal_tab(window, cx);
+                }
+            }))
+    }
+
     fn render_confirm(&mut self, id: u64, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = self.theme.read(cx);
         let (card, fg, border, accent, muted) = (
@@ -4084,7 +4105,7 @@ impl Workspace {
                     }),
             );
         }
-        if kind != Some(TabKind::Home) {
+        if kind != Some(TabKind::Hosts) {
             items.push(
                 MenuItem::new("rename", "Rename")
                     .icon(IconName::Pencil)
@@ -4609,7 +4630,7 @@ fn palette_tab_kind(kind: TabKind) -> labonair_command_palette::PaletteTabKind {
         TabKind::Workspace => K::Workspace,
         TabKind::Editor => K::Editor,
         TabKind::Sftp => K::Sftp,
-        TabKind::Home => K::Home,
+        TabKind::Hosts => K::Home,
         _ => K::Other,
     }
 }

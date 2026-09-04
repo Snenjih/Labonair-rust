@@ -139,9 +139,9 @@ pub const FIELDS: &[FieldDef] = &[
     d(
         "defaultStartupTab",
         "Startup tab",
-        "Which tab opens on launch.",
+        "What opens on launch when there is no session to restore.",
         "General",
-        Select(&["terminal", "host-manager"]),
+        Select(&["terminal", "empty"]),
     ),
     d(
         "notifyOnErrors",

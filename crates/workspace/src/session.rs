@@ -62,7 +62,9 @@ impl SessionSnapshot {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "lowercase")]
 pub enum TabSnapshot {
-    /// The landing / host-manager dashboard.
+    /// Legacy landing / host-manager dashboard tab. Kept only so pre-T17-009
+    /// snapshots still deserialise; `plan_restore` turns it into a silent
+    /// no-op and nothing ever writes it any more.
     Home,
     /// A terminal workspace tab with its split-pane tree.
     Workspace(WorkspaceTabSnapshot),
@@ -274,7 +276,8 @@ pub struct SftpTabSnapshot {
 /// of [`plan_restore`]; [`Workspace`](crate::Workspace) executes it.
 #[derive(Debug, Clone, PartialEq)]
 pub enum RestoreAction {
-    /// Open the home dashboard tab.
+    /// A legacy "home" snapshot tab (pre-T17-009). The executor drops it
+    /// silently — there is no home tab kind any more.
     Home,
     /// Re-spawn a local terminal workspace. `layout` has fresh pane ids;
     /// `cwds[i]` is the start directory for `layout.leaves()[i]`.
@@ -604,6 +607,26 @@ mod tests {
         assert_eq!(snap, back);
         assert!(json.contains("\"kind\":\"workspace\""));
         assert!(json.contains("\"activeTabIndex\":1"));
+    }
+
+    #[test]
+    fn zero_tab_snapshot_round_trips_on_disk() {
+        let dir = tmp_dir();
+        let path = dir.join("session.json");
+        let snap = SessionSnapshot::new(Vec::new(), 0);
+        save_to(&path, &snap);
+        assert_eq!(load_from(&path), Some(snap));
+    }
+
+    #[test]
+    fn legacy_home_snapshot_tab_still_deserialises() {
+        // A pre-T17-009 snapshot with a `home` tab must load, not error.
+        let json = r#"{"version":1,"savedAt":0,"activeTabIndex":0,
+            "tabs":[{"kind":"home"}]}"#;
+        let snap: SessionSnapshot = serde_json::from_str(json).unwrap();
+        assert_eq!(snap.tabs, vec![TabSnapshot::Home]);
+        let actions = plan_restore(&snap, |_| false, |_| false, || 1);
+        assert_eq!(actions, vec![RestoreAction::Home]);
     }
 
     #[test]

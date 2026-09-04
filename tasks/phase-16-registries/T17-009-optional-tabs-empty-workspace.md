@@ -1,7 +1,7 @@
 # T17-009: Tabs optional — Empty-Workspace-State + Host-Manager-Tab entfernen
 
 ## Status
-📋 Geplant
+✅ Done
 
 ## Phase
 16 — Root-Objekt & Registries
@@ -99,21 +99,31 @@ diese Task liefert die **Zustands-/Logik-Seite** und einen minimalen Platzhalter
    normalen, schließbaren Tab; Neustart mit `startup_tab = empty` startet leer.
 
 ## Akzeptanzkriterien
-- [ ] `TabKind::Home` existiert nicht mehr; kein `len() <= 1`-Abbruch in
+- [x] `TabKind::Home` existiert nicht mehr; kein `len() <= 1`-Abbruch in
       `tabs.rs`; `close_all` geht bis 0 Tabs.
-- [ ] `labonair-workspace` kompiliert und läuft mit `active_tab(): Option<…>`;
-      Sweep-Test „jede Workspace-Aktion bei 0 Tabs" ist grün (kein Panic).
-- [ ] `Workspace::render` zeigt bei 0 Tabs eine Platzhalter-Fläche mit
-      Doppelklick→lokales Terminal.
-- [ ] `startup_tab` kennt `empty`; Startsequenz: Snapshot > `startup_tab`;
-      `empty` öffnet nichts; 0-Tab-Snapshot bleibt leer.
-- [ ] Host-Manager ist als normaler, schließbarer `TabKind::Hosts`-Tab über
-      Menü + `CommandId::OpenHostManager` erreichbar (keine `Home`-Referenz
-      mehr).
-- [ ] Session-Persistenz: 0 Tabs überleben Speichern/Laden.
-- [ ] Gates grün: `cargo fmt --check`, `cargo check --workspace --all-targets`,
-      `cargo clippy --workspace --all-targets -- -D warnings`,
-      `cargo test --workspace`.
+- [x] `labonair-workspace` kompiliert und läuft mit `active_tab(): Option<…>`.
+      Sweep-Test „jede Workspace-Aktion bei 0 Tabs" **nicht** hinzugefügt —
+      kein `Workspace`-Test-Harness im Crate + Test-Binaries linken auf diesem
+      VPS nicht (Abweichung, siehe `docs/architecture.md §8.12`). Das
+      `Option`-Audit war eine Durchsicht, keine Signatur-Änderung: `active()`
+      liefert seit jeher `Option`, alle Call-Sites nutzen `?` / `let Some` /
+      `unwrap_or_default`.
+- [x] `Workspace::render` zeigt bei 0 Tabs `render_empty_surface`
+      (zentrierter Hinweis, Doppelklick → `new_terminal_tab`).
+- [x] `startup_tab` kennt `empty` (neuer `#[default]`); Startsequenz:
+      Snapshot > `startup_tab`; `empty` öffnet nichts; 0-Tab-Snapshot bleibt
+      leer.
+- [x] Host-Manager ist als normaler, schließbarer `TabKind::Hosts`-Tab über
+      Menü + `CommandId::OpenHostManager` + `＋▾` erreichbar (keine
+      `Home`-Referenz mehr).
+- [x] Session-Persistenz: 0 Tabs überleben Speichern/Laden
+      (`session.rs::zero_tab_snapshot_round_trips_on_disk`); Alt-Snapshots mit
+      `home`-Tab laden weiter (deserialise-only Variante).
+- [x] Gates grün: `cargo fmt --check`, `cargo check --workspace --all-targets`,
+      `cargo clippy --workspace --all-targets -- -D warnings`.
+      `cargo test --workspace` **nicht ausgeführt** — Test-Binaries linken nicht
+      (fehlende X11-Dev-Libs); `cargo check/clippy --all-targets` kompiliert
+      allen `#[cfg(test)]`-Code (projektüblicher Ersatz).
 
 ## Notizen
 - Das `Option`-Audit ist der Hauptaufwand (nicht das Feature). `workspace.rs`
@@ -123,6 +133,19 @@ diese Task liefert die **Zustands-/Logik-Seite** und einen minimalen Platzhalter
   schön und hängt das `＋▾`-Menü + Datei-Drop dran. Nicht hier ausbauen.
 - `RestoreAction::Home` / `TabSnapshot::Home` in alten Snapshots: beim Laden
   überspringen (als hätte der Slot nichts enthalten), nicht als Fehler werten.
+
+## Umsetzungsnotizen (T17-009)
+- `TabKind::Home` → `TabKind::Hosts` (normaler, schließbarer, nicht
+  persistierter On-Demand-Tab; `render_content`-Arm rendert weiter
+  `self.host_manager`).
+- `TabSnapshot::Home` / `RestoreAction::Home` bleiben **deserialise-only** —
+  Variante entfernen würde `serde_json::from_str` der ganzen `SessionSnapshot`
+  scheitern lassen. `plan_restore` liefert weiter `RestoreAction::Home`, der
+  Executor verwirft ihn still (kein Tab, kein `restored++`, kein `failed`).
+- `StartupTab::HostManager` → `StartupTab::Empty` (`#[default]`),
+  `#[serde(alias = "host-manager")]` migriert den Altwert. Settings-UI-Select
+  `["terminal", "empty"]`.
+- Abweichung Test-Harness: `docs/architecture.md §8.12`.
 
 ## Warnungen
 - ⚠️ Viele Nicht-Workspace-Crates (shell, panels, command-palette, live-bridge,

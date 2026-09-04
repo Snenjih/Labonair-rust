@@ -49,13 +49,17 @@ impl ThemePref {
     }
 }
 
-/// Which tab the app opens on launch.
+/// What the app opens on launch (when session restore has no snapshot).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum StartupTab {
+    /// Open one local terminal tab.
     Terminal,
+    /// Open nothing — start on the empty-workspace surface (T17-009). The old
+    /// `host-manager` value migrates here (there is no landing tab any more).
     #[default]
-    HostManager,
+    #[serde(alias = "host-manager")]
+    Empty,
 }
 
 /// Terminal cursor shape.
@@ -342,7 +346,7 @@ impl Default for Preferences {
         Self {
             theme: ThemePref::System,
             restore_window_state: true,
-            default_startup_tab: StartupTab::HostManager,
+            default_startup_tab: StartupTab::Empty,
             startup_terminal_count: 1,
             autostart: false,
             credential_encryption: false,
@@ -754,11 +758,23 @@ mod tests {
     fn enums_serialize_to_reference_token_strings() {
         let json = serde_json::to_value(Preferences::default()).unwrap();
         assert_eq!(json["theme"], "system");
-        assert_eq!(json["defaultStartupTab"], "host-manager");
+        assert_eq!(json["defaultStartupTab"], "empty");
         assert_eq!(json["terminalCursorStyle"], "bar");
         assert_eq!(json["commandPaletteSearchMode"], "contains");
         assert_eq!(json["vimMode"], false, "vim mode uses the reference key");
         assert!(json.get("editorVimMode").is_none(), "no legacy vim key");
+    }
+
+    #[test]
+    fn legacy_host_manager_startup_tab_migrates_to_empty() {
+        let dir = tmp();
+        std::fs::write(
+            dir.join(SETTINGS_FILE),
+            r#"{"preferences":{"defaultStartupTab":"host-manager"}}"#,
+        )
+        .unwrap();
+        assert_eq!(load_from(&dir).default_startup_tab, StartupTab::Empty);
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]

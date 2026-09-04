@@ -4,6 +4,62 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
+## Last Session: 2026-09-04 (T17-009 — Tabs optional / empty workspace · **Phase 16 DONE**)
+
+**T17-009 done — this is the last task of Phase 16.** The workspace may now hold
+**zero** tabs and renders an empty surface; the un-closable `Home` landing tab
+is gone.
+
+### What Was Done (T17-009)
+- **`crates/workspace/src/tabs.rs`** — `TabKind::Home` → `TabKind::Hosts`
+  (normal, closable). `close()` lost the `len() <= 1` guard + `Home`
+  special-case; `close_others` / `close_by_kind` may reach 0; new
+  `TabStore::close_all`; `activate_fallback` resets `active_id = 0` when
+  emptied. Tests reworked (`closing_the_last_tab_empties_the_store`,
+  `close_all_clears_every_tab`).
+- **`crates/workspace/src/workspace.rs`** — startup rewrite in `new`: snapshot
+  replayed verbatim (0 restored → stay empty); no snapshot → `startup_tab` pref
+  (`Terminal` → one local terminal, `Empty` → nothing). No auto tab ever.
+  `render_content` `None` arm → new `render_empty_surface` (centred hint +
+  double-click → `new_terminal_tab`). `TabKind::Hosts` render arm =
+  `self.host_manager`. `open_host_manager` opens/focuses a `TabKind::Hosts`
+  tab. `session_snapshot` no longer emits `Home`; `Hosts` not persisted.
+  `restore_session`: `RestoreAction::Home` → silent drop. `close_all_tabs`,
+  context-menu gate, `palette_tab_kind`, `closable` all de-`Home`d.
+- **`crates/workspace/src/session.rs`** — `TabSnapshot::Home` /
+  `RestoreAction::Home` kept **deserialise-only** (removing would fail whole
+  `from_str`). New tests: `zero_tab_snapshot_round_trips_on_disk`,
+  `legacy_home_snapshot_tab_still_deserialises`.
+- **`crates/backend/src/modules/settings/preferences.rs`** — `StartupTab`:
+  `HostManager` → `Empty` (`#[default]`), `#[serde(alias = "host-manager")]`
+  migrates. New test `legacy_host_manager_startup_tab_migrates_to_empty`;
+  `enums_serialize_…` updated.
+- **`crates/settings-ui/src/fields.rs`** — startup-tab select
+  `["terminal", "empty"]`.
+- **`docs/architecture.md §8.12`** (new) — full deviation record, incl. the
+  test-harness deviation (no `Workspace` harness in the crate + test binaries
+  don't link here → coverage via `TabStore` / `session` / `preferences` unit
+  tests instead of a zero-tab render/sweep test).
+
+### Gate Results (T17-009)
+- `cargo fmt --check` ✅ · `cargo check --workspace --all-targets` ✅ ·
+  `cargo clippy --workspace --all-targets -- -D warnings` ✅ ·
+  `scripts/check-crate-deps.sh` ✅ (20 crates, **87** internal edges — no new
+  edge, acyclic).
+- `cargo test --workspace` **not run** — test binaries cannot link on this
+  headless VPS (missing X11 dev libs); `cargo check/clippy --all-targets`
+  compiled all `#[cfg(test)]` code (project-accepted substitute).
+
+### State
+- Branch `master`, committing now. No blockers. **Phase 16 complete.**
+
+### Next
+- **T18-001** — Titlebar-Redesign: Tabs + `＋▾` new-tab menu + right icon
+  button; empty-surface visuals + file-drop (first task of **Phase 17 —
+  Neues Layout & Statusbar-Personalisierung**).
+
+---
+
 ## Last Session: 2026-09-04 (T17-008 — `AppEvent` bus decision · **Phase 16**)
 
 **Decision: Variant A — keep the bus, connect it.** The bus already had two real

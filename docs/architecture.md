@@ -722,6 +722,54 @@ GPUI-side entity.
   subscription onto the same foreground pattern; route `menu:activated` through
   `AppShell::dispatch_command`.
 
+### 8.12 Tabs optional — realised in T17-009
+
+Implements §8.2. Notes / small deviations:
+
+* **`TabKind::Home` → `TabKind::Hosts`.** The un-closable landing tab is gone.
+  The host-manager dashboard is now a normal, closable, non-persisted
+  `TabKind::Hosts` tab opened on demand via `open_host_manager` (menu /
+  `CommandId::OpenHostManager` / `＋▾` "All hosts…"). T19-010 removes this tab
+  kind and moves the entry point to Settings.
+* **`TabStore` close rules.** `close` dropped the `len() <= 1` guard and the
+  `Home` special-case; `close_others` / `close_by_kind` may reach zero; new
+  `close_all`. `activate_fallback` resets `active_id` to `0` (no active tab)
+  when the store empties.
+* **`Option<ActiveTab>` audit.** `TabStore::active()` already returned
+  `Option`; every `Workspace` call site already used `?` / `let Some` /
+  `unwrap_or_default`, so no signature changes were needed — the audit was a
+  read-through confirmation, not a refactor. Tab-dependent actions at zero tabs
+  are clean no-ops (`split_active`, `search_active`, `duplicate_active_tab`,
+  breadcrumb `send_cd`, …); `WorkspaceLiveBridge` reports `has_terminal: false`
+  / `None` fields (unchanged default path).
+* **Startup.** `Workspace::new`: a passed-in snapshot is replayed verbatim
+  (zero restored tabs → stay empty); with no snapshot the `startup_tab` pref
+  decides — `terminal` → one local terminal, `empty` → nothing. No automatic
+  tab is ever opened now.
+* **`StartupTab`.** `HostManager` variant replaced by `Empty` (the new
+  `#[default]`); `#[serde(alias = "host-manager")]` migrates the old value.
+  Settings-UI select is `["terminal", "empty"]`. Truly unknown enum strings
+  still fall back through the existing whole-`Preferences`→`Default` path
+  (pre-existing coarse behaviour, not changed here).
+* **Legacy session snapshots.** `TabSnapshot::Home` / `RestoreAction::Home` are
+  kept **deserialise-only** (removing the variant would fail the whole
+  `serde_json::from_str` and lose the session). `plan_restore` still emits
+  `RestoreAction::Home`; the executor now drops it silently (no tab, not
+  counted as restored, not a `failed` entry).
+* **Empty surface.** `Workspace::render_empty_surface` — minimal centred hint
+  (`No tabs open · ⌘T new terminal · ⌘K commands`) with a
+  double-click→`new_terminal_tab` handler. Styled version + `＋▾` menu +
+  file-drop are T18-001.
+* **Test-harness deviation.** The task asked for a "render builds at zero tabs"
+  + "sweep every public `Workspace` action at zero tabs" test. `labonair-workspace`
+  has **no** `Workspace` test harness (constructing one needs a live `Backend`,
+  `TokioHandle`, `TerminalRegistry`, `Window`), and test binaries cannot link
+  on this headless VPS anyway. Coverage is instead: `TabStore` unit tests
+  (close-last-tab-empties, `close_all`), `session.rs` zero-tab disk round-trip
+  + legacy-`home` deserialise, `preferences.rs` `host-manager`→`Empty`
+  migration. The zero-tab render path is exercised structurally
+  (`render_content` `None` arm → `render_empty_surface`, no `unwrap`).
+
 ---
 
 ## 9. Ist-Graph after Phase 15 (T16-010)

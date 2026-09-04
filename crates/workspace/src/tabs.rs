@@ -2,7 +2,7 @@
 //!
 //! Labonair's tab system is the central navigation element. A *tab* is a light
 //! descriptor with a [`TabKind`] discriminant (`workspace`, `editor`,
-//! `preview`, `home`, `sftp`, `git-graph`, `git-diff`, `commit-diff`,
+//! `preview`, `hosts`, `sftp`, `git-graph`, `git-diff`, `commit-diff`,
 //! `ai-diff`) plus kind-specific data in [`TabData`]. The reference keeps this
 //! in the `useTabs` Zustand store; here it is the GPUI [`TabStore`] entity.
 //!
@@ -24,8 +24,10 @@ use labonair_ui_kit::IconName;
 /// the model already covers them so the tab bar and store are stable.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum TabKind {
-    /// The landing / dashboard tab. Never closable, always present.
-    Home,
+    /// The host-manager dashboard. A normal, closable on-demand tab since
+    /// T17-009 (the old un-closable `Home` landing tab is gone); removed
+    /// entirely once T19-010 moves host management into Settings.
+    Hosts,
     /// A local (or, later, SSH) terminal workspace.
     Workspace,
     /// A code editor tab (Phase 05).
@@ -49,7 +51,7 @@ impl TabKind {
     /// `tabUtils.tsx` per-kind Hugeicons).
     pub fn indicator(&self) -> IconName {
         match self {
-            TabKind::Home => IconName::Home,
+            TabKind::Hosts => IconName::Server,
             TabKind::Workspace => IconName::Terminal,
             TabKind::Editor => IconName::SquarePen,
             TabKind::Preview => IconName::Globe,
@@ -65,7 +67,7 @@ impl TabKind {
     /// `tabUtils.tsx` `pluralLabelFor`).
     pub fn plural_label(&self) -> &'static str {
         match self {
-            TabKind::Home => "Home Tabs",
+            TabKind::Hosts => "Host Managers",
             TabKind::Workspace => "Terminals",
             TabKind::Editor => "Editors",
             TabKind::Preview => "Previews",
@@ -80,7 +82,7 @@ impl TabKind {
     /// The default title used before anything more specific is known.
     pub fn default_title(&self) -> &'static str {
         match self {
-            TabKind::Home => "Home",
+            TabKind::Hosts => "Hosts",
             TabKind::Workspace => "Terminal",
             TabKind::Editor => "Untitled",
             TabKind::Preview => "Preview",
@@ -280,32 +282,33 @@ impl TabStore {
         self.set_active(id, cx);
     }
 
-    /// Close a tab. `Home` and the last remaining tab can't be closed. If the
-    /// active tab is closed, its left neighbour (or index 0) becomes active.
-    /// Returns the removed tab so the caller can tear down its session.
+    /// Close a tab. Any tab can be closed — closing the last one leaves the
+    /// store empty and the workspace shows its empty surface (T17-009). If the
+    /// active tab is closed, its left neighbour (or the new first tab) becomes
+    /// active; an emptied store reports no active tab. Returns the removed tab
+    /// so the caller can tear down its session.
     pub fn close(&mut self, id: u64, cx: &mut Context<Self>) -> Option<Tab> {
-        if self.tabs.len() <= 1 {
-            return None;
-        }
         let idx = self.tabs.iter().position(|t| t.id == id)?;
-        if self.tabs[idx].kind == TabKind::Home {
-            return None;
-        }
         let removed = self.tabs.remove(idx);
         if self.active_id == id {
-            let neighbour = self.tabs[idx.saturating_sub(1).min(self.tabs.len() - 1)].id;
-            self.active_id = neighbour;
-            cx.emit(ActiveTabChanged(neighbour));
+            let next = if self.tabs.is_empty() {
+                0
+            } else {
+                self.tabs[idx.saturating_sub(1).min(self.tabs.len() - 1)].id
+            };
+            self.active_id = next;
+            cx.emit(ActiveTabChanged(next));
         }
         cx.notify();
         Some(removed)
     }
 
-    /// Close every tab except `keep` (and any `Home` tab). Returns removed tabs.
+    /// Close every tab except `keep`. Returns removed tabs. If `keep` is not a
+    /// real tab the store ends up empty.
     pub fn close_others(&mut self, keep: u64, cx: &mut Context<Self>) -> Vec<Tab> {
         let (kept, removed): (Vec<Tab>, Vec<Tab>) = std::mem::take(&mut self.tabs)
             .into_iter()
-            .partition(|t| t.id == keep || t.kind == TabKind::Home);
+            .partition(|t| t.id == keep);
         self.tabs = kept;
         if !self.tabs.iter().any(|t| t.id == self.active_id) {
             self.activate_fallback(cx);
@@ -314,36 +317,36 @@ impl TabStore {
         removed
     }
 
-    /// Close every tab of a given kind (except the last tab overall). Returns
-    /// removed tabs.
+    /// Close every tab of a given kind. Returns removed tabs. May empty the
+    /// store.
     pub fn close_by_kind(&mut self, kind: TabKind, cx: &mut Context<Self>) -> Vec<Tab> {
-        if kind == TabKind::Home {
-            return Vec::new();
-        }
         let (removed, kept): (Vec<Tab>, Vec<Tab>) = std::mem::take(&mut self.tabs)
             .into_iter()
             .partition(|t| t.kind == kind);
         self.tabs = kept;
-        let mut removed = removed;
-        if self.tabs.is_empty() {
-            // Never leave zero tabs — put the first one back.
-            if let Some(first) = removed.first().cloned() {
-                self.active_id = first.id;
-                self.tabs.push(first);
-                removed.remove(0);
-            }
-        } else if !self.tabs.iter().any(|t| t.id == self.active_id) {
+        if !self.tabs.iter().any(|t| t.id == self.active_id) {
             self.activate_fallback(cx);
         }
         cx.notify();
         removed
     }
 
-    fn activate_fallback(&mut self, cx: &mut Context<Self>) {
-        if let Some(first) = self.tabs.first() {
-            self.active_id = first.id;
-            cx.emit(ActiveTabChanged(first.id));
+    /// Close every tab, leaving the store empty. Returns all removed tabs so
+    /// the caller can tear down their sessions.
+    pub fn close_all(&mut self, cx: &mut Context<Self>) -> Vec<Tab> {
+        let removed = std::mem::take(&mut self.tabs);
+        if !removed.is_empty() {
+            self.active_id = 0;
+            cx.emit(ActiveTabChanged(0));
+            cx.notify();
         }
+        removed
+    }
+
+    fn activate_fallback(&mut self, cx: &mut Context<Self>) {
+        let id = self.tabs.first().map(|t| t.id).unwrap_or(0);
+        self.active_id = id;
+        cx.emit(ActiveTabChanged(id));
     }
 
     /// Move the tab `dragged` to the position currently held by `target`.
@@ -498,15 +501,31 @@ mod tests {
     }
 
     #[gpui::test]
-    fn last_tab_and_home_cannot_close(cx: &mut TestAppContext) {
+    fn closing_the_last_tab_empties_the_store(cx: &mut TestAppContext) {
         cx.update(|cx| {
             let store = cx.new(|_| TabStore::new());
             store.update(cx, |s, cx| {
-                let home = s.open(TabKind::Home, TabData::default(), cx);
-                assert!(s.close(home, cx).is_none(), "last tab stays");
-                let _t = s.open(TabKind::Workspace, ws(1), cx);
-                assert!(s.close(home, cx).is_none(), "home never closes");
-                assert_eq!(s.len(), 2);
+                let a = s.open(TabKind::Workspace, ws(1), cx);
+                let b = s.open(TabKind::Hosts, TabData::default(), cx);
+                assert!(s.close(a, cx).is_some());
+                assert!(s.close(b, cx).is_some(), "the last tab closes too");
+                assert!(s.is_empty());
+                assert!(s.active().is_none(), "no active tab in an empty store");
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn close_all_clears_every_tab(cx: &mut TestAppContext) {
+        cx.update(|cx| {
+            let store = cx.new(|_| TabStore::new());
+            store.update(cx, |s, cx| {
+                s.open(TabKind::Workspace, ws(1), cx);
+                s.open(TabKind::Editor, TabData::default(), cx);
+                let removed = s.close_all(cx);
+                assert_eq!(removed.len(), 2);
+                assert!(s.is_empty());
+                assert!(s.active().is_none());
             });
         });
     }
