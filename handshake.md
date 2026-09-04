@@ -4,7 +4,59 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
-## Last Session: 2026-09-04 (T19-000 — Settings design contract)
+## Last Session: 2026-09-04 (T19-001 — `labonair-settings-content` tree + `MergeFrom`)
+
+**T19-001 done.** New crates `crates/settings-content` (`labonair-settings-content`)
+and `crates/settings-macros` (`labonair-settings-macros`), added as workspace
+members. Both are leaves — no GPUI/UI/`labonair-backend` deps.
+
+- `labonair-settings-macros`: `#[proc_macro_derive(MergeFrom)]` — field-wise
+  `self.field.merge_from(&other.field)`, emits `impl crate::MergeFrom for …`
+  (only ever used from within `labonair-settings-content` itself).
+- `labonair-settings-content::merge_from`: trimmed port of Zed's `MergeFrom`
+  trait (`Option<T>` recurses/replaces, `BTreeMap<K,V>` merges key-wise,
+  everything else incl. `Vec<T>` overwrites).
+- 12 area modules (`general`, `appearance`, `terminal`, `editor`,
+  `file_manager`, `connections`, `hosts`, `workspace`, `ai`, `mcp`,
+  `personalization`, `keymap`), each `Option<T>`-leafed, camelCase serde,
+  `#[derive(... schemars::JsonSchema, MergeFrom)]`, own `defaults()`.
+  `hosts::HostsContent` is the new **top-level** area (`entries:
+  Vec<HostEntry>` — fresh non-secret model: `HostAuthMethod`/`HostEntry`
+  (`credential_ref: Option<String>`, never a password/key)/`HostTunnel`;
+  `T19-010` reconciles this with the SQLite `hosts::db::Host` row).
+- `areas::AREAS`: the category registry (`AreaMeta{key,title,slug,kind,
+  target_module}`), `Generated` = {general, appearance, terminal, editor,
+  file_manager, connections, workspace}, `Custom` = {themes, hosts,
+  shortcuts, ai, mcp, personalization} per `docs/settings-guidelines.md`
+  rule 4.
+- `fallible::parse`: JSONC-tolerant (via `jsonc-parser`), fault-tolerant at
+  **area granularity** (documented deviation from Zed's leaf-level
+  `FallibleOption` — see the task file's `## Notizen`).
+- `assets/settings/default.json`: commented JSONC, `SettingsContent::defaults()
+  == parse(DEFAULT_JSON)` enforced by a test.
+- `impl From<&SettingsContent> for Preferences` lives in **`labonair-backend`**
+  (`crates/backend/src/modules/settings/content_bridge.rs`), not in
+  settings-content (orphan-rule/dependency-direction constraint) — so
+  `labonair-backend` gained a new, documented one-way edge to
+  `labonair-settings-content`. Recorded as a deviation in
+  `docs/architecture.md` §8.15 (updates the old "`labonair-backend` → leaf"
+  Ist-Graph line from §9).
+- 14 tests in `labonair-settings-content`, 3 in the new
+  `content_bridge` module (`labonair-backend`) — all new, all green.
+
+### Gate results
+`cargo fmt --check` ✅ · `cargo check --workspace --all-targets` ✅ ·
+`cargo clippy --workspace --all-targets -- -D warnings` ✅ · `cargo test
+--workspace` ✅ (no failures anywhere in the workspace).
+
+### Next task
+**T19-002** (`SettingsStore` + layered merge + `Settings` trait,
+`tasks/phase-18-settings-core/T19-002-settings-store-layered-merge.md`) — its
+own `## Abhängigkeiten` lists only T19-001, now done.
+
+---
+
+## Session: 2026-09-04 (T19-000 — Settings design contract)
 
 **T19-000 done.** Phase 17 (T18-001..T18-007) was already complete; this is
 the first task of Phase 18 — Settings-System Zed-Style. Pure documentation

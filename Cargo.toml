@@ -9,6 +9,8 @@ members = [
     "crates/panel",
     "crates/workspace",
     "crates/settings-ui",
+    "crates/settings-content",
+    "crates/settings-macros",
     "crates/hosts-ui",
     "crates/panel-explorer",
     "crates/panel-scm",

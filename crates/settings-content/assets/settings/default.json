@@ -1,0 +1,255 @@
+// Labonair default settings. This is the innermost layer of the
+// default < user < project merge (T19-002's SettingsStore); every value here
+// must exactly match SettingsContent::defaults() — enforced by
+// settings_content::tests::defaults_matches_shipped_default_json.
+//
+// Vocabulary note: every field here is documented at its Rust definition
+// (crates/settings-content/src/*.rs) — this file re-states only what a user
+// editing settings.json would need, not the full rationale.
+{
+  "general": {
+    // "system" follows the OS appearance; "light"/"dark" pin it.
+    "theme": "system",
+    "restoreWindowState": true,
+    // "terminal" opens one local terminal on launch; "empty" starts on the
+    // empty-workspace surface.
+    "defaultStartupTab": "empty",
+    "startupTerminalCount": 1,
+    "autostart": false,
+    "credentialEncryption": false,
+    "notifyOnErrors": false,
+    "confirmQuitWithSsh": true,
+    "checkForUpdates": true,
+    "sessionRestore": false
+  },
+
+  "appearance": {
+    // "default" = the built-in light/dark JSON theme.
+    "appTheme": "default",
+    "themeVariantOverrides": {},
+    "appFontSize": 13,
+    "appLineHeight": 1.5,
+    "appFontFamily": "\"Inter Variable\", sans-serif",
+    "reduceMotion": false,
+    "appCornerRadius": 5,
+    "backgroundImage": "",
+    "backgroundOpacity": 30,
+    "backgroundBlur": 0,
+    "backgroundTintColor": "#000000",
+    "backgroundTintOpacity": 0,
+    // "titlebar" or "sidebar".
+    "tabsLocation": "titlebar",
+    "sidebarTabInfoLine": [],
+    "sidebarGroupByFolder": false,
+    "sidebarGroupSingleTabs": false,
+    "badgesAlwaysVisible": true,
+    "titlebarsIconsPosition": "auto",
+    "zenModeShowHeader": true,
+    "zenModeShowStatusbar": true
+  },
+
+  "terminal": {
+    // Empty = the user's login shell.
+    "terminalShell": "",
+    "terminalDefaultPath": "",
+    "newTabInheritsCwd": true,
+    "confirmCloseTerminalTab": false,
+    "terminalFontFamily": "\"JetBrains Mono\", SFMono-Regular, Menlo, monospace",
+    "terminalFontSize": 14,
+    "terminalFontWeight": "normal",
+    "terminalLetterSpacing": 0.0,
+    "terminalLineHeight": 1.05,
+    "terminalScrollback": 5000,
+    // Rows of scrollback replayed on the next launch; 0 = persist all.
+    "sessionScrollbackLines": 1000,
+    "scrollbackMaxSizeMb": 10,
+    // 0 = keep the persisted scrollback file until the pane/session goes away.
+    "scrollbackRetentionDays": 0,
+    "terminalCursorStyle": "bar",
+    "terminalCursorBlink": true,
+    "terminalCursorBlinkInterval": 1000,
+    "terminalCopyOnSelect": false,
+    "terminalRightClickPastes": false,
+    "terminalWordSeparator": " ()[]{}',\"`",
+    "terminalScrollSensitivity": 1,
+    "terminalFastScrollModifier": "alt",
+    "terminalShowPaneHeader": false,
+    "terminalShowPaneFooter": false,
+    "terminalUseWebgl": true,
+    "terminalComposerEnabled": false,
+    "terminalComposerHistoryPopup": false,
+    "terminalComposerArgumentCompletion": true,
+    "terminalBlocksEnabled": false,
+    "terminalBlocksAutoCollapseOnAltScreen": true,
+    "terminalBell": false,
+    // Whole-pane background opacity in percent; 100 = fully opaque.
+    "terminalOpacity": 100
+  },
+
+  "editor": {
+    "editorFontFamily": "\"JetBrains Mono\", SFMono-Regular, Menlo, monospace",
+    "editorFontSize": 13,
+    "editorLineHeight": 1.55,
+    "editorTabSize": 2,
+    "editorWordWrap": false,
+    "editorLineNumbers": true,
+    "editorRelativeLineNumbers": false,
+    "editorIndentWithTabs": false,
+    "editorFormatOnSave": false,
+    "editorTrimTrailingWhitespace": false,
+    "editorInsertFinalNewline": false,
+    "editorBracketMatching": true,
+    "editorShowCursorPosition": true,
+    "editorShowSelectionStats": true,
+    "editorShowOutline": false,
+    "editorIndentationGuides": true,
+    // "off" | "afterDelay" | "onFocusChange".
+    "editorAutoSave": "off",
+    "editorAutoSaveDelay": 1000,
+    "editorAutocompleteDebounceMs": 350,
+    "editorMaxFileSizeMb": 10,
+    "vimMode": false,
+    // Syntax colour scheme slug; "auto" (not the default) follows the app theme.
+    "editorTheme": "atomone",
+    // Folded in from the legacy standalone "editor" settings-file key.
+    "vimHlsearch": true,
+    "vimIncsearch": true,
+    "vimSmartcase": true
+  },
+
+  "fileManager": {
+    "sftpShowHiddenFiles": false,
+    "sftpShowUpFolder": true,
+    "explorerShowHiddenByDefault": false,
+    "sftpColumnSize": true,
+    "sftpColumnModified": true,
+    "sftpColumnPermissions": true,
+    "sftpColumnType": false,
+    "sftpRemoteEditShowTransfers": true,
+    "sftpMaxRemoteFileSizeMb": 5,
+    "sftpFontSize": 13,
+    "sftpMaxConcurrentTransfers": 2,
+    // "ask" | "overwrite" | "skip".
+    "sftpDefaultConflictResolution": "ask",
+    "sftpChunkSizeKb": 64,
+    // "ask" | "skip" | "abort".
+    "sftpOnFolderFileError": "ask"
+  },
+
+  "connections": {
+    "hostPingInterval": 60,
+    "sshConnectTimeoutSecs": 10,
+    "sshAutoReconnect": false,
+    "sshAutoReconnectDelay": 5,
+    "sshAutoReconnectMaxAttempts": 3,
+    "explorerRemotePollInterval": 20,
+    "explorerAutoReconnect": false,
+    "explorerIdleSessionTimeoutMin": 5,
+    "explorerMaxIdleSessions": 3,
+    "explorerMaxCachedRemoteScopes": 5
+  },
+
+  // Top-level (peer of "themes"), never nested under "connections" — see
+  // docs/architecture.md §8.1. No secrets: entries only ever carry
+  // `credentialRef`, a reference into the OS keychain.
+  "hosts": {
+    "entries": [],
+    "defaultShell": "",
+    "keepalive": {
+      "intervalSecs": 30,
+      "maxMissed": 3
+    },
+    "sshConfigImport": {
+      "autoImport": false,
+      "configPath": ""
+    },
+    // "grid" | "list".
+    "layout": "grid",
+    // "last_connected" | "name" | "manual".
+    "sort": "last_connected",
+    "cardScale": 100
+  },
+
+  "workspace": {
+    "commandPaletteSearchMode": "contains",
+    "commandPaletteShowRecent": true,
+    "commandPaletteBlur": 4,
+    "commandPaletteOpacity": 95,
+    // "top" | "high" | "center".
+    "commandPalettePosition": "top",
+    // "fast" | "normal" | "slow" | "none".
+    "commandPaletteAnimation": "normal",
+    "commandPaletteHistorySize": 5,
+    "commandPaletteCloseOnOverlayClick": true,
+    "gitStatusPollIntervalMs": 5000,
+    "bookmarksEnabled": true,
+    "bookmarksActionNewTerminal": true,
+    "bookmarksActionCurrentTerminal": true,
+    "bookmarksActionCurrentSftp": true,
+    "bookmarksActionNewSftp": true,
+    // "current" | "new".
+    "bookmarksPrimaryClickBehavior": "current",
+    "bookmarksShowBadge": true,
+    // Empty = not yet persisted (legacy sidebar_* fields below still apply).
+    "dockLayout": "",
+    "sidebarPosition": "left",
+    "sidebarOpen": true,
+    "sidebarActivePanel": "explorer",
+    "sidebarRightOpen": false,
+    "sidebarRightActivePanel": "explorer",
+    "sidebarWidth": 225,
+    "sidebarRightWidth": 225
+  },
+
+  "ai": {
+    "aiEnabled": true,
+    "aiMaxAgentSteps": 24,
+    "aiTerminalContextLines": 300,
+    "aiTemperature": 0.7,
+    "aiWarnDestructiveCommands": true,
+    "aiAutoOpenMiniOnSend": true,
+    "aiNotifyOnHeadlessCommand": true,
+    "aiShellMaxTimeoutSecs": 300,
+    "aiShellMaxOutputKb": 256,
+    "defaultModelId": "",
+    "customInstructions": "",
+    "autocompleteEnabled": false,
+    "autocompleteProvider": "cerebras",
+    "autocompleteModelId": "",
+    "lmstudioBaseURL": "http://localhost:1234/v1",
+    "lmstudioChatModelId": "",
+    "openaiCompatibleBaseURL": "",
+    "openaiCompatibleModelId": "",
+    "mlxBaseURL": "http://localhost:8080",
+    "mlxChatModelId": "",
+    "ollamaBaseURL": "http://localhost:11434",
+    "ollamaChatModelId": ""
+  },
+
+  "mcp": {
+    "bridgeEnabled": false,
+    "bridgePort": 47823,
+    "maxCommandTimeoutSecs": 300,
+    // 0 disables auto-revoke.
+    "autoRevokeMinutes": 0,
+    "notifyOnActivity": false
+  },
+
+  "personalization": {
+    "statusBarItemPlacements": {},
+    "panelToggleVisibility": {},
+    "statusBarShowExplorerButton": true,
+    "statusBarShowSnippetsButton": true,
+    "statusBarShowSourceControlButton": true,
+    "statusBarShowTabsButton": true,
+    "statusBarShowCwdBreadcrumb": true,
+    "statusBarShowPreviewUrl": true,
+    "statusBarShowAiControls": true
+  },
+
+  // Bindings live in a separate keymap.json (T19-008); this only picks which
+  // base preset a reset seeds from.
+  "keymap": {
+    "baseKeymap": "native"
+  }
+}

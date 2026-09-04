@@ -4,6 +4,15 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+# Typed settings tree (T19-001) — the `Preferences` bridge in
+# `modules::settings::content_bridge` derives `Preferences` from
+# `SettingsContent` so existing call sites keep working unchanged until
+# T19-002 swaps the runtime store over. Pure data model, no GPUI/UI, so this
+# is a one-way edge (`labonair-settings-content` never depends back on
+# `labonair-backend`); documented as a deviation from the target crate graph's
+# "`labonair-backend` -> leaf" line in `docs/architecture.md` §8.15.
+labonair-settings-content = { path = "../settings-content" }
+
 # SSH / SFTP — versions taken 1:1 from reference-src/src-tauri/Cargo.toml
 russh = { version = "0.62.2", default-features = false, features = ["ring", "flate2", "rsa"] }
 russh-sftp = "2.3.0"

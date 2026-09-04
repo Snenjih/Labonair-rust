@@ -111,8 +111,17 @@ ALLOWED = {
     # (see docs/perf-baseline.md). It must reach nothing else.
     "labonair-terminal": {"labonair-theme"},
     "labonair-editor": set(),
-    "labonair-backend": set(),
+    # [deviation, T19-001, docs/architecture.md §8.15] labonair-backend
+    # depends on labonair-settings-content for the
+    # `impl From<&SettingsContent> for Preferences` bridge — a pure,
+    # non-UI leaf crate (no cycle: labonair-settings-content never depends
+    # back on labonair-backend).
+    "labonair-backend": {"labonair-settings-content"},
     "labonair-ai": {"labonair-backend"},
+
+    # Settings track (T19-001) — pure data model, no GPUI/UI/backend deps.
+    "labonair-settings-content": {"labonair-settings-macros"},
+    "labonair-settings-macros": set(),
 }
 
 # UI crates the engines (backend/ai/editor) must not reach, even transitively.

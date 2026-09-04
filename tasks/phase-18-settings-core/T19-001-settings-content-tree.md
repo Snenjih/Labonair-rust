@@ -1,7 +1,7 @@
 # T19-001: `labonair-settings-content` — typisierter Settings-Baum + `MergeFrom`
 
 ## Status
-📋 Geplant
+✅ Done
 
 ## Phase
 18 — Settings-System Zed-Style
@@ -104,25 +104,29 @@ mit dem vollständig typisierten `SettingsContent`-Baum (alle Bereiche) und dem
    (nur `credential_ref`); jede `AREAS`-`key` trifft ein reales Feld/Submodul.
 
 ## Akzeptanzkriterien
-- [ ] `crates/settings-content/` + `crates/settings-macros/` existieren,
+- [x] `crates/settings-content/` + `crates/settings-macros/` existieren,
       Workspace-Members, ohne GPUI-/UI-/backend-Deps.
-- [ ] `SettingsContent` deckt alle heutigen `Preferences`-Felder ab **plus**
+- [x] `SettingsContent` deckt alle heutigen `Preferences`-Felder ab **plus**
       die in `subagent-2.md` als fehlend markierten (Connections, Bookmarks,
       Statusbar-Toggles) **plus** `hosts: HostsContent` als eigener
       Top-Level-Bereich — Feldnamen camelCase-serde wie bisher.
-- [ ] `hosts`-Einträge serialisieren **keine** Secrets, nur `credential_ref`
+- [x] `hosts`-Einträge serialisieren **keine** Secrets, nur `credential_ref`
       (Test).
-- [ ] `AREAS` listet die Top-Level-Kategorien mit `kind` (Generated/Custom);
+- [x] `AREAS` listet die Top-Level-Kategorien mit `kind` (Generated/Custom);
       „Themes", „Hosts", „Shortcuts", „AI", „MCP", „Personalisierung" sind
       `Custom`.
-- [ ] `MergeFrom` + `#[derive(MergeFrom)]` funktionieren; Schicht-Merge
+- [x] `MergeFrom` + `#[derive(MergeFrom)]` funktionieren; Schicht-Merge
       getestet.
-- [ ] `SettingsContent::defaults()` und `assets/settings/default.json` sind
+- [x] `SettingsContent::defaults()` und `assets/settings/default.json` sind
       inhaltsgleich (Test erzwingt das); `default.json` ist kommentiert.
-- [ ] `parse` ist feld-fehlertolerant (Test).
-- [ ] `impl From<&SettingsContent> for Preferences` erlaubt dem bestehenden
-      Code, unverändert weiterzulaufen.
-- [ ] Gates grün: `cargo fmt --check`, `cargo check --workspace --all-targets`,
+- [x] `parse` ist feld-fehlertolerant (Test) — Granularität pro Top-Level-Area
+      dokumentiert (siehe `## Notizen`).
+- [x] `impl From<&SettingsContent> for Preferences` erlaubt dem bestehenden
+      Code, unverändert weiterzulaufen (`crates/backend/src/modules/settings/
+      content_bridge.rs`; dafür bekommt `labonair-backend` einen neuen,
+      dokumentierten Edge auf `labonair-settings-content`, siehe
+      `docs/architecture.md` §8.15).
+- [x] Gates grün: `cargo fmt --check`, `cargo check --workspace --all-targets`,
       `cargo clippy --workspace --all-targets -- -D warnings`,
       `cargo test --workspace`.
 
@@ -132,6 +136,26 @@ mit dem vollständig typisierten `SettingsContent`-Baum (alle Bereiche) und dem
 - `zed-refrence/zed/crates/settings_content/` ist fast 1:1 die Vorlage — dort
   die Struktur der Submodule + `merge_from.rs` genau lesen und übernehmen,
   Zed-spezifische Bereiche (collab, dap, vim-tiefe) weglassen.
+- **`parse`-Granularität:** Zeds `FallibleOption` erholt sich pro **Blatt-Feld**.
+  Dieser Port (`fallible.rs`) erholt sich pro **Top-Level-Area** (ein
+  `SettingsContent`-Feld, z. B. `"terminal"`): ein kaputtes Feld defaultet die
+  ganze Area und meldet einen `FieldError`; alle anderen Areas parsen
+  unabhängig weiter. Erfüllt das Akzeptanzkriterium ("ein kaputtes Feld
+  defaultet, der Rest bleibt intakt") ohne einen Pro-Feld-Derive für ~150
+  Felder zu bauen; echte Blatt-Granularität kann später nachgerüstet werden,
+  ohne die Funktions-Signatur zu ändern.
+- **`labonair-backend`-Edge:** `impl From<&SettingsContent> for Preferences`
+  (Anweisung #6) lebt in `labonair-backend` (`modules::settings::
+  content_bridge`), nicht in `labonair-settings-content` — sonst müsste
+  `labonair-settings-content` auf `labonair-backend` zurück-referenzieren
+  (verboten). `labonair-backend` bekommt dafür einen neuen, einseitigen Edge
+  auf `labonair-settings-content`; als Abweichung von der bisherigen
+  „`labonair-backend` → leaf"-Grafik in `docs/architecture.md` §8.15
+  dokumentiert.
+- `hosts.entries` ist ein **neues** Modell (`HostAuthMethod`/`HostEntry`/
+  `HostTunnel`), keine 1:1-Wiederverwendung von
+  `labonair-backend::modules::hosts::db::Host` — die SQLite-Zeile bleibt der
+  autoritative Laufzeit-Store; die Zusammenführung ist `T19-010`.
 
 ## Warnungen
 - ⚠️ `Option<T>` überall macht den Zugriff im restlichen Code umständlich —

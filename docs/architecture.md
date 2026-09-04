@@ -940,6 +940,35 @@ fuller version instead:
   `empty_query_clears_search`) and the adjusted `views::editor::tests::find_navigates_matches`,
   not a live window.
 
+### 8.15 `labonair-settings-content` / `labonair-settings-macros` — T19-001
+
+Both new leaf crates land as specified in §2's settings track:
+`labonair-settings-content` (the typed `SettingsContent` tree — `general`,
+`appearance`, `terminal`, `editor`, `fileManager`, `connections`, `hosts`,
+`workspace`, `ai`, `mcp`, `personalization`, `keymap` — plus `MergeFrom`, the
+`AREAS` category registry, and the fault-tolerant `parse`) and
+`labonair-settings-macros` (`#[derive(MergeFrom)]`, used only inside
+`labonair-settings-content` itself). Neither depends on GPUI, any UI crate, or
+`labonair-backend`.
+
+**Deviation:** `labonair-backend` gains a new outgoing edge to
+`labonair-settings-content` (§9's "`labonair-backend` → *(leaf)*" line no
+longer holds). T19-001 asks for `impl From<&SettingsContent> for Preferences`
+(`crates/backend/src/modules/settings/content_bridge.rs`) so every existing
+call site that reads `Preferences` keeps working unchanged until `T19-002`
+swaps the runtime store over. That impl needs both types in scope; putting it
+in `labonair-settings-content` instead would require that crate to depend on
+`labonair-backend` (forbidden — it must stay backend-agnostic, `T19-001`'s own
+Anweisungen #1), so `labonair-backend` depends on `labonair-settings-content`
+instead. This is a one-way edge (`labonair-settings-content` never depends
+back), so no cycle; `labonair-ai`, `labonair-workspace`, and everything else
+that already reaches `labonair-backend` picks it up transitively without any
+edge of their own changing. `hosts.entries` in the new tree is a fresh,
+non-secret-only model (`HostAuthMethod`/`HostEntry`/`HostTunnel`) rather than
+a reuse of `labonair-backend::modules::hosts::db::Host` — that SQLite row
+stays the authoritative runtime store; reconciling the two is `T19-010`'s
+concern, not this task's.
+
 ---
 
 ## 9. Ist-Graph after Phase 15 (T16-010)
@@ -973,7 +1002,9 @@ Regenerate with [`scripts/gen-crate-graph.sh`](../scripts/gen-crate-graph.sh)
 - `labonair-ui-kit` → `labonair-gpui-ext`, `labonair-theme`
 - `labonair-workspace` → `labonair-ai`, `labonair-backend`, `labonair-command-palette`, `labonair-editor`, `labonair-gpui-ext`, `labonair-hosts-ui`, `labonair-notifications`, `labonair-panel`, `labonair-panel-git-graph`, `labonair-terminal`, `labonair-theme`, `labonair-ui-kit`
 
-`labonair-settings-content` / `labonair-settings` (§2, settings track) are not
-yet created — they land in Phase 18. `labonair-panel` is present as the
-contracts crate but is not yet consumed by any panel (`Panel` trait wiring is
-T17-001).
+`labonair-settings-content` and `labonair-settings-macros` (§2, settings
+track) landed in T19-001 (§8.15) — `labonair-backend` now depends on
+`labonair-settings-content` (a deviation from the graph above, which predates
+Phase 18). `labonair-settings` (the `SettingsStore`, T19-002) is not yet
+created. `labonair-panel` is present as the contracts crate but is not yet
+consumed by any panel (`Panel` trait wiring is T17-001).

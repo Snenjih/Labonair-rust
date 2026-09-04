@@ -2,6 +2,7 @@ use serde_json::{Map, Value};
 use std::path::Path;
 use tokio::sync::Mutex;
 
+pub mod content_bridge;
 pub mod editor;
 pub mod mcp;
 pub mod migrations;

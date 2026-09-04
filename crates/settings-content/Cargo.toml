@@ -1,0 +1,17 @@
+[package]
+name = "labonair-settings-content"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "labonair_settings_content"
+path = "src/settings_content.rs"
+
+[dependencies]
+labonair-settings-macros = { path = "../settings-macros" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+schemars = "0.8"
+# Accepts the commented `assets/settings/default.json` (JSONC) alongside a
+# plain-JSON user settings file.
+jsonc-parser = { version = "0.23", features = ["serde"] }
