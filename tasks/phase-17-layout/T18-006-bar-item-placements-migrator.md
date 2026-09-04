@@ -9,7 +9,7 @@ Blob-Parser stehen lassen, weil `labonair-settings-ui` sie noch nutzt und der
 Migrator hier lebt.
 
 ## Status
-📋 Geplant
+✅ Done
 
 ## Phase
 17 — Neues Layout & Statusbar-Personalisierung
@@ -72,15 +72,15 @@ Ein einmaliger, idempotenter Migrator: bestehende `barItemPlacements`-Daten
    Start rechts; ein früher ausgeblendetes Item ist ausgeblendet.
 
 ## Akzeptanzkriterien
-- [ ] `migrate_bar_item_placements` existiert, ist idempotent, macht `.bak`.
-- [ ] Titlebar-platzierte Alt-Items landen mit übernommener `side`/`hidden` in
+- [x] `migrate_bar_item_placements` existiert, ist idempotent, macht `.bak`.
+- [x] Titlebar-platzierte Alt-Items landen mit übernommener `side`/`hidden` in
       der Statusbar.
-- [ ] Entfallene IDs (`ai-mini`, `ai-panel`, Panel-Toggles) werden sauber
+- [x] Entfallene IDs (`aiMini`, `aiPanel`, Panel-Toggles) werden sauber
       verworfen.
-- [ ] `barItemPlacements` bleibt als `_legacy` erhalten (Sicherheitsnetz).
-- [ ] Aufruf beim Start vor Registry-Aufbau; Ergebnis wird geloggt.
-- [ ] Tests decken: Transformation, Verwerfen, Idempotenz, Leerfall.
-- [ ] Gates grün: `cargo fmt --check`, `cargo check --workspace --all-targets`,
+- [x] `barItemPlacements` bleibt als `_legacy` erhalten (Sicherheitsnetz).
+- [x] Aufruf beim Start vor Registry-Aufbau; Ergebnis wird geloggt.
+- [x] Tests decken: Transformation, Verwerfen, Idempotenz, Leerfall.
+- [x] Gates grün: `cargo fmt --check`, `cargo check --workspace --all-targets`,
       `cargo clippy --workspace --all-targets -- -D warnings`,
       `cargo test --workspace`.
 

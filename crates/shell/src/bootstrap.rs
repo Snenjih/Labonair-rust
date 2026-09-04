@@ -159,6 +159,17 @@ pub(crate) fn bootstrap(
     window: &mut Window,
     cx: &mut Context<AppShell>,
 ) -> AppShell {
+    // T18-006: one-time migration of the legacy `barItemPlacements` blob into
+    // `statusBarItemPlacements`. Must run before the first `StatusItemRegistry`
+    // build (`register_builtin_status_items` below reloads placements right
+    // after registering every item).
+    match labonair_backend::modules::settings::migrations::migrate_bar_item_placements(
+        &labonair_backend::modules::fs::paths::config_dir(),
+    ) {
+        Ok(outcome) => tracing::info!("bar item placement migration: {outcome:?}"),
+        Err(err) => tracing::warn!("bar item placement migration failed: {err}"),
+    }
+
     cx.observe(&background, |_, _, cx| cx.notify()).detach();
 
     // Demo: a startup toast proves the system is reachable from anywhere

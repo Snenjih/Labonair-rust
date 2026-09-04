@@ -285,7 +285,7 @@ These are stated so T16-010 can derive a mechanical check (e.g. `cargo-depgraph`
 * **The titlebar scope of bar items.** The old `barItemPlacements` schema had a
   titlebar side; the new `statusBarItemPlacements`
   (`{ itemId: { side, hidden } }`) has only `left` / `right` + `hidden`.
-  Titlebar-scoped items map to the statusbar default (migrator T18-006).
+  Titlebar-scoped items map to the statusbar default (migrator T18-006, §8.6).
 * **`drain_pending_*` frame buffers** in `render()` — gone; events are handled
   directly via `cx.subscribe_in` / `window.defer`.
 * **The Host-Manager tab and the `SidebarPanel::Hosts` list** — gone. Not a
@@ -471,7 +471,7 @@ The panel crates transitively reach `labonair-panel-git-graph` *through*
 indirection is sanctioned; the check only forbids a **direct** panel→panel
 edge and reaching `labonair-shell` by **any** path.
 
-### 8.6 `BarLoc` / bar-item blob kept transitionally through T17-003
+### 8.6 `BarLoc` / bar-item blob — resolved in T18-005 / T18-006
 
 T17-003 replaced the shell's `render_bar_item` `match` (plus
 `render_simple_bar_button`, every `render_*_item`, `render_bar_menu`,
@@ -482,21 +482,47 @@ views in `crates/shell/src/status_items.rs`, and a `StatusBar` component in
 `labonair-workspace` (`status_bar.rs`) that renders **only** from the registry
 (sorted per side by `order`). Header/titlebar carries no bar items.
 
-The task's AC1 also asked to delete `BarLoc`. That is **deferred to
-T18-005 / T18-006**: `BarItemId` / `BarLoc` / `BarSide` / `Placements` /
-`BAR_ITEM_ORDER` / `BarLayoutTick` in `labonair-workspace::bar_items` stay
-untouched because `labonair-settings-ui` (`view.rs`, `panes/themes.rs` — the
-titlebar/statusbar bar-item layout editor) still consumes them, and that
-editor + the `barItemPlacements → statusBarItemPlacements` migrator are
-explicitly the subject of T18-005 / T18-006 — collapsing `BarLoc` now would
-fold those tasks forward. The `BarLayoutTick` `observe_global` in `AppShell`
-stays wired (now a plain `cx.notify()`) so a settings-window edit still
-refreshes the live bar; T18-005 repoints it at
-`StatusItemRegistry::resolve_side`. Dock-layout persistence moved off
-`AppShell` onto `Workspace` (a `set_dock_persist_hook` callback, since
-`labonair-workspace` cannot depend on `labonair-settings-ui`'s
-`PreferencesStore`). No new crate edges (`shell`/`workspace` → `panel` and
-`shell` → `workspace` already existed).
+The task's AC1 also asked to delete `BarLoc`. That was completed across two
+follow-up tasks: **T18-005** deleted `BarItemId`/`BarLoc`/`BarSide`/
+`Placements`/`BAR_ITEM_ORDER`/`BarLayoutTick` (`labonair-workspace::bar_items`)
+and the `labonair-settings-ui` titlebar/statusbar bar-item layout editor that
+had been their only remaining consumer, replacing them with
+`labonair-workspace::status_placements` (`StatusPlacement { side, hidden }`,
+a `StatusBarLayoutTick` global for cross-window sync) and a right-click
+per-item context menu (move left/right, hide) on the new `StatusBar`. **T18-006**
+then added `labonair_backend::modules::settings::migrations::migrate_bar_item_placements`,
+a one-time idempotent migrator (run from `crates/shell/src/bootstrap.rs`,
+before the first `StatusItemRegistry` build) that reads the legacy
+`barItemPlacements` blob (`{ itemId: { itemId, bar: titlebar|statusbar, side,
+hidden } }`) and writes the new `statusBarItemPlacements` blob (`{ itemId:
+{ side, hidden } }`), renaming the old key to `barItemPlacements_legacy` as a
+safety net and `.bak`-ing the whole settings file first. Old ids are
+camelCase (the pre-T18 `BarItemId` enum's serde rename); new ids are the
+kebab-case strings `StatusItem::id()` returns in `status_items.rs` — several
+were renamed along the way, so this is an explicit id-remap table, not a
+same-name carry-over:
+
+| Old id | New id | Outcome |
+|---|---|---|
+| `agentAccess` | `agent-access` | kept, `side`/`hidden` carried over |
+| `jumpHosts` | `jump-hosts` | kept |
+| `cwdBreadcrumb` | `cwd` | kept (renamed) |
+| `previewUrl` | `preview-url` | kept |
+| `cursorPosition` | `cursor-position` | kept |
+| `bookmarks`, `notifications`, `transfers`, `updater` | unchanged | kept |
+| `ai`, `aiMini`, `aiPanel` | — | dropped — AI is a panel toggle now, not placeable |
+| `explorerPanel`, `snippetsPanel`, `sourceControlPanel`, `tabsPanel` | — | dropped — panel toggles are fixed-left, not placeable; Tabs is a sidebar panel now, not a status item |
+| any other/unrecognised id, or an entry with no `side` | — | dropped (falls back to the item's compiled-in `default_side`) |
+
+An old `bar: titlebar` entry gets the same treatment as `bar: statusbar` —
+`bar` is ignored, every surviving item just lands in the statusbar (the only
+bar that exists now).
+
+Dock-layout persistence moved off `AppShell` onto `Workspace` (a
+`set_dock_persist_hook` callback, since `labonair-workspace` cannot depend on
+`labonair-settings-ui`'s `PreferencesStore`). No new crate edges (`shell`/
+`workspace` → `panel`, `shell` → `workspace`, `shell` → `backend` all already
+existed).
 
 ### 8.7 `PaneGroup` — n-ary split tree done in T17-004
 

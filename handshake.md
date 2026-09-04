@@ -4,7 +4,91 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
-## Last Session: 2026-09-04 (T18-005 — Statusbar item personalization: right-click move/hide)
+## Last Session: 2026-09-04 (T18-006 — Migrator `barItemPlacements` → `statusBarItemPlacements`)
+
+**T18-006 done.** One-time, idempotent migrator for the legacy
+`barItemPlacements` blob into T18-005's `statusBarItemPlacements` schema, so
+users don't lose their titlebar/statusbar item customisations across the
+update.
+
+### What Was Done (T18-006)
+- **`crates/backend/src/modules/settings/migrations.rs`** (new) —
+  `migrate_bar_item_placements(dir: &Path) -> Result<MigrationOutcome, String>`.
+  `MigrationOutcome::{AlreadyMigrated, NothingToMigrate, Migrated { migrated,
+  discarded }}`. No-op if `statusBarItemPlacements` already exists or if
+  `barItemPlacements` is absent. Otherwise: `.bak`s the whole settings file,
+  transforms every recognised old id into the new schema, renames the old
+  key to `barItemPlacements_legacy` (kept, not deleted — safety net), writes.
+  4 unit tests (transform+remap, drop-obsolete, idempotency, empty case).
+- **Called from `crates/shell/src/bootstrap.rs`**, first line of `bootstrap()`
+  — before `register_builtin_status_items` (which calls
+  `w.reload_status_bar_placements()` right after registering every item, so
+  the migration must land before that first read). Logs the outcome via
+  `tracing`.
+- **`docs/architecture.md` §8.6** rewritten (was describing T17-003's
+  transitional state as still current — stale since T18-005 already deleted
+  `BarLoc`); now documents the T18-005+T18-006 end state including the id
+  mapping table. §4's "titlebar scope of bar items" bullet cross-references
+  it.
+
+### Important discovery (would have been a silent data-loss bug)
+The task file's own id list (`jump-hosts`, `agent-access`, `cwd-breadcrumb`,
+etc. — implying old ids equal new ids) is **wrong**. Checked the real
+`~/.config/labonair/labonair-settings.json` (dev machine) plus
+`StatusItem::id()` impls in `crates/shell/src/status_items.rs`:
+- **Old ids are camelCase** (`agentAccess`, `jumpHosts`, `cwdBreadcrumb`,
+  `previewUrl`, `cursorPosition`, `ai`, `aiMini`, `aiPanel`, `explorerPanel`,
+  `snippetsPanel`, `sourceControlPanel`, `tabsPanel`, plus same-name
+  `bookmarks`/`notifications`/`transfers`/`updater`) — the pre-T18
+  `BarItemId` enum's serde rename.
+- **New ids are kebab-case** and only 9 are placeable + 1 fixed
+  (`panel-toggles`): `agent-access`, `jump-hosts`, `cwd` (not
+  `cwd-breadcrumb`!), `preview-url`, `cursor-position`, `bookmarks`,
+  `notifications`, `transfers`, `updater`.
+- A "keep known ids unchanged" migrator (what the task prose implied) would
+  have silently dropped `agentAccess`/`jumpHosts`/`cwdBreadcrumb`/
+  `previewUrl`/`cursorPosition` — 5 of 9 real placements — on every real
+  user's machine. Implemented an explicit `ID_MAP: &[(&str, &str)]` instead,
+  verified end-to-end against the real dev settings file (see below), not
+  just unit tests with made-up fixture ids.
+- If a future task adds/renames a `StatusItem::id()`, this migrator's
+  `ID_MAP` does **not** need updating (it's a one-time historical migration
+  from the pre-T18 schema) — but flag it if another schema migration is ever
+  needed, the "verify against the real running id, not the task doc's
+  prose" lesson generalizes.
+
+### Manual verification (beyond the unit tests)
+Ran the actual `cargo run` against the real dev
+`~/.config/labonair/labonair-settings.json` (backed up first to
+`/tmp/labonair-settings.pre-migration-backup.json`, plus the migrator's own
+`.bak`): 16 old entries → 9 migrated / 7 discarded (`ai`, `aiMini`, `aiPanel`,
+`explorerPanel`, `snippetsPanel`, `sourceControlPanel`, `tabsPanel` — matches
+the id-mapping table exactly), verified only the 2 intended top-level keys
+changed (everything else in the settings file byte-identical), no panic. Ran
+a second time — `AlreadyMigrated`, file untouched (idempotency holds on real
+data, not just the temp-dir unit tests).
+
+### Gate Results (T18-006)
+- `cargo fmt` ✅ · `cargo check --workspace --all-targets` ✅ · `cargo clippy
+  --workspace --all-targets -- -D warnings` ✅ · `cargo test --workspace` ✅
+  (`labonair-backend` 226 tests incl. the 4 new migration tests) ·
+  `scripts/check-crate-deps.sh` ✅ (20 crates, 87 edges, acyclic, no new
+  edge — `shell → backend` already existed) · manual `cargo run` walkthrough
+  against real data as described above (this session's task explicitly
+  called for it, unlike prior GUI-only tasks that had to defer this to the
+  user).
+
+### State
+- Branch `master`, committing now. No blockers.
+
+### Next
+- **T18-007** — Philosophie verankern + Personalisierungs-Settings-Seite
+  (`tasks/phase-17-layout/T18-007-philosophy-and-personalization-page.md`),
+  deps: T18-005 (done), T18-003 (done).
+
+---
+
+## Previous Session: 2026-09-04 (T18-005 — Statusbar item personalization: right-click move/hide)
 
 **T18-005 done.** The user-requested core feature: right-click any statusbar
 item (except the fixed-left panel toggles) → "Move left" / "Move right" /

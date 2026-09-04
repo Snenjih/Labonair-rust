@@ -4,6 +4,7 @@ use tokio::sync::Mutex;
 
 pub mod editor;
 pub mod mcp;
+pub mod migrations;
 pub mod preferences;
 
 use crate::modules::fs::paths::config_dir;
