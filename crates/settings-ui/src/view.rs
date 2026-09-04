@@ -37,6 +37,7 @@ pub use labonair_workspace::background::BackgroundStore;
 pub(crate) use crate::apply::*;
 pub(crate) use crate::pages::*;
 pub(crate) use crate::schema::*;
+pub(crate) use crate::search::{SearchIndex, SearchRow, SearchTarget};
 pub(crate) use crate::store::*;
 pub(crate) use crate::window::*;
 
@@ -219,6 +220,26 @@ pub struct SettingsView {
     /// the jump bar can scroll-to-section and highlight the section that is
     /// currently topmost (rule 1's scroll-spy).
     pub(crate) content_scroll: ScrollHandle,
+    // ── T19-007: global settings search ─────────────────────────────────
+    /// Every field + custom pane, indexed once (`open()`) — never rebuilt per
+    /// keystroke (task Warnung).
+    pub(crate) search_index: SearchIndex,
+    /// The current query's scored, category-grouped hits — recomputed
+    /// whenever `search` changes, cached so `on_key`'s Up/Down/Enter can act
+    /// on the same list the sidebar is showing.
+    pub(crate) search_results: Vec<SearchRow>,
+    /// Index into `search_results` for keyboard navigation.
+    pub(crate) search_selected: usize,
+    /// A field's `json_path` currently pulsing (jumped-to via search),
+    /// cleared by a short timer.
+    pub(crate) highlight: Option<&'static str>,
+    /// Bumped on every `set_highlight` call so a stale timer from an earlier
+    /// jump can't clear a highlight set by a later one.
+    pub(crate) highlight_token: u64,
+    /// A field's `json_path` to scroll to once its (now-current) page has
+    /// rendered its rows — set by a search jump, consumed by
+    /// `render_generated_body`.
+    pub(crate) pending_scroll: Option<&'static str>,
 }
 
 pub(crate) struct SelectMenu {
@@ -275,6 +296,9 @@ impl SettingsView {
             }
         })
         .detach();
+        let all_fields = all_fields();
+        let pages = pages();
+        let search_index = SearchIndex::build(&all_fields, &pages);
         Self {
             prefs,
             theme,
@@ -311,10 +335,16 @@ impl SettingsView {
             ai_editor_focus: cx.focus_handle(),
             focus: cx.focus_handle(),
             workspace,
-            all_fields: all_fields(),
-            pages: pages(),
+            all_fields,
+            pages,
             collapsed_sections: HashSet::new(),
             content_scroll: ScrollHandle::new(),
+            search_index,
+            search_results: Vec::new(),
+            search_selected: 0,
+            highlight: None,
+            highlight_token: 0,
+            pending_scroll: None,
         }
     }
 
@@ -328,6 +358,10 @@ impl SettingsView {
         self.recording = None;
         self.kb_conflict = None;
         self.search.clear();
+        self.search_results.clear();
+        self.search_selected = 0;
+        self.highlight = None;
+        self.pending_scroll = None;
         window.focus(&self.focus);
         self.refresh_mcp_status(cx);
         self.refresh_themes();
@@ -453,6 +487,93 @@ impl SettingsView {
     pub(crate) fn go_back_to_main_page(&mut self, cx: &mut Context<Self>) {
         self.active_subpage = None;
         cx.notify();
+    }
+
+    // ── global search (T19-007) ─────────────────────────────────────────
+
+    /// Recompute `search_results` from the current query — cheap (index is
+    /// ~200 entries), called every render so keyboard/mouse selection always
+    /// acts on what's on screen. A no-op (empty results) when the query is
+    /// empty, which is also how the sidebar knows to fall back to the normal
+    /// category list.
+    pub(crate) fn refresh_search_results(&mut self) {
+        self.search_results = crate::search::search(&self.search_index, &self.search, 50);
+        if self.search_selected >= self.search_results.len() {
+            self.search_selected = self.search_results.len().saturating_sub(1);
+        }
+    }
+
+    /// Enter/click on a search result: navigate to its area (+ sub-page),
+    /// un-collapse the section it lives in, clear the query, and (for a
+    /// field) schedule a scroll-to + highlight pulse once the target page has
+    /// rendered (`render_generated_body` consumes `pending_scroll`).
+    pub(crate) fn activate_search_hit(&mut self, target: SearchTarget, cx: &mut Context<Self>) {
+        match target {
+            SearchTarget::Field(idx) => {
+                let Some(field) = self.all_fields.get(idx).copied() else {
+                    return;
+                };
+                let Some(area_index) = AREAS.iter().position(|a| a.target_module == field.area())
+                else {
+                    return;
+                };
+                let (subpage_index, section) =
+                    match section_label_for_field(field.area(), field.local_key()) {
+                        Some(("", label)) => (None, Some(label)),
+                        Some((slug, label)) => (
+                            self.pages[area_index]
+                                .sub_pages
+                                .iter()
+                                .position(|sp| sp.slug == slug),
+                            Some(label),
+                        ),
+                        // Not placed by any curated group — falls through to
+                        // the trailing "Other" section on the area's main page.
+                        None => (None, Some("Other")),
+                    };
+                self.active_area = area_index;
+                self.active_subpage = subpage_index;
+                if let Some(label) = section {
+                    let subpage_slug = self.active_subpage_slug();
+                    self.collapsed_sections
+                        .remove(&(area_index, subpage_slug, label));
+                }
+                self.pending_scroll = Some(field.json_path);
+                self.set_highlight(field.json_path, cx);
+            }
+            SearchTarget::Pane {
+                area_index,
+                subpage_index,
+            } => {
+                self.active_area = area_index;
+                self.active_subpage = subpage_index;
+            }
+        }
+        self.search.clear();
+        self.search_results.clear();
+        self.search_selected = 0;
+        cx.notify();
+    }
+
+    /// Pulse `json_path`'s row for ~1s (task step 4). `highlight_token`
+    /// guards against a stale timer from an earlier jump clearing a
+    /// highlight set by a later one.
+    pub(crate) fn set_highlight(&mut self, json_path: &'static str, cx: &mut Context<Self>) {
+        self.highlight_token = self.highlight_token.wrapping_add(1);
+        let token = self.highlight_token;
+        self.highlight = Some(json_path);
+        cx.spawn(async move |this, cx| {
+            cx.background_executor()
+                .timer(std::time::Duration::from_millis(1000))
+                .await;
+            let _ = this.update(cx, |this, cx| {
+                if this.highlight_token == token {
+                    this.highlight = None;
+                    cx.notify();
+                }
+            });
+        })
+        .detach();
     }
 
     pub(crate) fn toggle_section(&mut self, label: &'static str, cx: &mut Context<Self>) {
@@ -771,10 +892,36 @@ impl SettingsView {
         }
 
         match key {
-            "escape" => self.request_close(window, cx),
+            // Esc clears an active query first (task step 5); only closes
+            // the window once the query is already empty.
+            "escape" => {
+                if !self.search.is_empty() {
+                    self.search.clear();
+                    self.search_results.clear();
+                    self.search_selected = 0;
+                    cx.notify();
+                } else {
+                    self.request_close(window, cx);
+                }
+            }
             "backspace" => {
                 self.search.pop();
+                self.refresh_search_results();
                 cx.notify();
+            }
+            "down" if !self.search_results.is_empty() => {
+                self.search_selected = (self.search_selected + 1) % self.search_results.len();
+                cx.notify();
+            }
+            "up" if !self.search_results.is_empty() => {
+                self.search_selected = (self.search_selected + self.search_results.len() - 1)
+                    % self.search_results.len();
+                cx.notify();
+            }
+            "enter" => {
+                if let Some(row) = self.search_results.get(self.search_selected).copied() {
+                    self.activate_search_hit(row.target, cx);
+                }
             }
             _ => {
                 if ks.modifiers.platform || ks.modifiers.control || ks.modifiers.alt {
@@ -782,6 +929,7 @@ impl SettingsView {
                 }
                 if let Some(ch) = char_of(ks) {
                     self.search.push_str(&ch);
+                    self.refresh_search_results();
                     cx.notify();
                 }
             }
@@ -872,6 +1020,70 @@ impl SettingsView {
             )
             .into_any_element()
     }
+
+    /// The sidebar's content while a search query is active (T19-007 step
+    /// 3): a flat, category-grouped list of `search_results` replacing the
+    /// normal category nav. Selection follows keyboard Up/Down
+    /// (`search_selected`); click/Enter jump to the field (`on_key`,
+    /// `activate_search_hit`).
+    pub(crate) fn render_search_results(
+        &mut self,
+        c: &Palette,
+        cx: &mut Context<Self>,
+    ) -> gpui::AnyElement {
+        if self.search_results.is_empty() {
+            return div()
+                .p_2()
+                .text_size(px(11.0))
+                .text_color(c.muted)
+                .child(SharedString::from(format!(
+                    "No setting found for \u{201C}{}\u{201D}.",
+                    self.search.trim()
+                )))
+                .into_any_element();
+        }
+        let rows = self.search_results.clone();
+        let selected = self.search_selected;
+        let mut col = div().flex().flex_col().gap_0p5();
+        let mut last_area: Option<&'static str> = None;
+        for (i, row) in rows.into_iter().enumerate() {
+            if last_area != Some(row.area_title) {
+                col = col.child(section_label(row.area_title, c));
+                last_area = Some(row.area_title);
+            }
+            let is_selected = i == selected;
+            let target = row.target;
+            let mut item = div()
+                .id(SharedString::from(format!("search-hit-{i}")))
+                .px_2()
+                .py(px(4.0))
+                .rounded_sm()
+                .flex()
+                .flex_col()
+                .gap_0p5()
+                .when(is_selected, |d| d.bg(c.accent))
+                .when(!is_selected, |d| d.hover(|s| s.bg(c.border)))
+                .child(
+                    div()
+                        .text_size(px(12.0))
+                        .text_color(c.fg)
+                        .child(SharedString::from(row.title)),
+                )
+                .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                    this.activate_search_hit(target, cx);
+                }));
+            if !row.subtitle.is_empty() {
+                item = item.child(
+                    div()
+                        .text_size(px(10.0))
+                        .text_color(c.muted)
+                        .child(SharedString::from(row.subtitle)),
+                );
+            }
+            col = col.child(item);
+        }
+        col.into_any_element()
+    }
 }
 
 impl Focusable for SettingsView {
@@ -896,6 +1108,9 @@ impl Render for SettingsView {
         };
         let active_area = self.active_area;
         let searching = !self.search.trim().is_empty();
+        // T19-007: recompute every render so Up/Down/Enter and mouse clicks
+        // always act on what's currently on screen (cheap — ~200 entries).
+        self.refresh_search_results();
 
         let search_box = div()
             .mb_2()
@@ -922,32 +1137,45 @@ impl Render for SettingsView {
         // Personalization) is a normal entry here, exactly like a Generated
         // one (rule 4: "a custom pane may be registered as a top-level
         // category exactly like a field-based one").
+        let sidebar_body: gpui::AnyElement = if searching {
+            self.render_search_results(&c, cx)
+        } else {
+            div()
+                .flex()
+                .flex_col()
+                .gap_0p5()
+                .children(AREAS.iter().enumerate().map(|(i, area)| {
+                    let is_active = i == active_area;
+                    div()
+                        .id(SharedString::from(area.key))
+                        .px_2()
+                        .py(px(5.0))
+                        .rounded_sm()
+                        .text_size(px(12.0))
+                        .text_color(if is_active { c.fg } else { c.muted })
+                        .when(is_active, |d| d.bg(c.accent))
+                        .when(!is_active, |d| d.hover(|s| s.bg(c.border)))
+                        .child(SharedString::from(area.title))
+                        .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                            this.go_to_area(i, cx);
+                        }))
+                }))
+                .into_any_element()
+        };
+
         let sidebar = div()
+            .id("settings-sidebar")
             .w(px(208.0))
             .flex_shrink_0()
             .flex()
             .flex_col()
             .gap_0p5()
             .p_2()
+            .overflow_y_scroll()
             .border_r_1()
             .border_color(c.border)
             .child(search_box)
-            .children(AREAS.iter().enumerate().map(|(i, area)| {
-                let is_active = i == active_area && !searching;
-                div()
-                    .id(SharedString::from(area.key))
-                    .px_2()
-                    .py(px(5.0))
-                    .rounded_sm()
-                    .text_size(px(12.0))
-                    .text_color(if is_active { c.fg } else { c.muted })
-                    .when(is_active, |d| d.bg(c.accent))
-                    .when(!is_active, |d| d.hover(|s| s.bg(c.border)))
-                    .child(SharedString::from(area.title))
-                    .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
-                        this.go_to_area(i, cx);
-                    }))
-            }));
+            .child(sidebar_body);
 
         let body = self.render_body(&c, cx);
         let windowed = self.windowed;

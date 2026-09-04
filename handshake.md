@@ -4,6 +4,104 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
+## Last Session: 2026-09-04 (T19-007 — global settings search)
+
+**T19-007 done.** The per-category substring filter (`panes/generic.rs`'s old
+`render_global_search`, which re-rendered matched fields inline in the main
+content area) is replaced with a real global search: one query box, a
+pre-built index over every field + custom pane, fuzzy scoring, and a jump
+that navigates to the field's normal on-screen location with a highlight
+pulse — matching the task's Zed-inspired design (`settings_ui.rs`'s
+`StringMatchCandidate` index + `fuzzy::match_strings`).
+
+- **`crates/settings-ui/src/search.rs`** (new file) — pure, view-free module:
+  `SearchEntry`/`SearchIndex` (index built once from `all_fields()` + `pages()`
+  — every `AnyField` gets one entry, `haystack = title + description +
+  json_path`; every `AreaKind::Custom` page/sub-page gets one entry with a
+  hand-curated keyword list, `pane_keywords()` — e.g. "keymap shortcut
+  keybinding tastenkürzel hotkey" for Shortcuts, satisfying the task's own
+  example). `search(index, query, limit)` scores every entry with the shared
+  `labonair_command_palette::{match_score, SearchMode::Fuzzy}` (already used
+  by the command palette / `@`-file picker — re-exported at the crate root,
+  `fuzzy` itself is a private module), sorts descending, then groups hits by
+  category (category order = the order areas first appear in the
+  score-sorted list, so the best overall match's category sorts first),
+  capped at 50. `SearchTarget::{Field(usize), Pane { area_index,
+  subpage_index }}` is `Copy`, indexing back into `SettingsView::all_fields`/
+  `AREAS`. 5 unit tests: `cursor` finds Terminal + Editor fields, an exact
+  `json_path` finds its field, a keyword-only query (`tastenkürzel`) finds
+  the Shortcuts pane, empty query yields nothing, and the `limit` cap holds.
+- **`crates/settings-ui/src/pages.rs`** — new `section_label_for_field(area_key,
+  local_key) -> Option<(sub_page_slug, section_label)>`, scanning
+  `TERMINAL_MAIN`/`TERMINAL_ADVANCED`/`EDITOR_MAIN`/`EDITOR_DISPLAY`/
+  `AI_GROUPS`/`PERSONALIZATION_GROUPS`/`groups_for()` — lets a search jump
+  resolve which sub-page to open and which disclosure section to
+  un-collapse before scrolling. `None` means the field falls through to the
+  area's trailing "Other" section. 1 new test.
+- **`crates/settings-ui/src/view.rs`** — `SettingsView` gained `search_index`
+  (built once in `new()`, never rebuilt per keystroke per the task's own
+  Warnung), `search_results: Vec<SearchRow>` + `search_selected` (recomputed
+  every render via `refresh_search_results()` — cheap, ~200-entry index),
+  `highlight: Option<&'static str>` + `highlight_token: u64` (pulse state,
+  cleared by a `cx.spawn` + `cx.background_executor().timer(1s)` guarded by
+  the token so a stale timer from an earlier jump can't clear a later one —
+  same pattern as `NotificationCenter::insert`'s auto-dismiss), and
+  `pending_scroll: Option<&'static str>` (consumed once by the render pass
+  that lands on the target page). `activate_search_hit(target, cx)`
+  navigates `active_area`/`active_subpage`, un-collapses the owning section
+  via `section_label_for_field`, sets `pending_scroll` + `set_highlight`,
+  and clears the query. `on_key` gained `up`/`down` (wrap `search_selected`
+  through `search_results.len()`) and `enter` (activates the selected hit);
+  `escape` now clears an active query first and only closes the window once
+  the query is already empty (task step 5). The sidebar renders
+  `render_search_results` (category headers + title/subtitle rows, click or
+  Enter navigates) instead of the category list whenever the query is
+  non-empty — replacing the old behavior where the category list stayed put
+  and only the main content swapped.
+- **`crates/settings-ui/src/panes/generic.rs`** — deleted the old
+  `render_global_search` (T19-004's inline substring-filter renderer);
+  `render_body` no longer special-cases a non-empty query — the main content
+  area always renders the active category/sub-page normally, so a search
+  jump lands the field in its real spot instead of a duplicate inline list.
+  `render_generated_body` and `render_field_groups` (the AI/Personalization
+  custom-pane field grid renderer) both now consume `pending_scroll`
+  (tracking the row index of the matching field as rows are built, then
+  `content_scroll.scroll_to_item(row)` once) and `render_field` paints a
+  `c.accent.opacity(0.25)` background when `self.highlight == Some(json_path)`.
+- **Known limitation carried over, not introduced by this task:** GPUI's
+  `ScrollHandle::scroll_to_item(ix)` indexes the *immediate* children of the
+  `track_scroll`-tracked element (confirmed by reading
+  `zed-refrence/zed/crates/gpui/src/elements/div.rs`'s `child_bounds`
+  population — it's filled from `request_layout.child_layout_ids`, the
+  tracked div's own direct children). The settings window's tracked
+  `#settings-scroll` div has exactly **one** child (the `max-w` content
+  wrapper), so `scroll_to_item(row)` for `row > 0` is a no-op today — this
+  was already true of the pre-existing jump-bar feature
+  (`render_jump_bar`/`content_scroll.scroll_to_item(row)`, T19-004) before
+  this task touched anything. Not fixed here (a real fix needs restructuring
+  the scroll container so `rows` are its direct children, which is a larger,
+  separate change); the search jump still fully navigates + un-collapses +
+  highlights the field, only the auto-scroll-into-view is inert beyond the
+  first row. Worth a dedicated follow-up if scroll-to-field precision
+  matters before T19-008.
+- Gates green: `cargo fmt --check`, `cargo check --workspace --all-targets`,
+  `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test
+  --workspace` (30 tests in `labonair-settings-ui`, full workspace suite
+  unaffected). No new crate dependency (`labonair-command-palette` was
+  already a `settings-ui` dep) — `scripts/check_crate_deps.py` re-run clean
+  (24 crates, 98 edges, acyclic).
+
+**Current state:** branch `master`, commit after this session's own commit
+(see `git log`). Working tree also has a long-standing unrelated uncommitted
+`zed-refrence/zed` submodule-pointer change (pre-existing, not touched).
+
+**Next:** T19-008 (keymap as a file with contexts) —
+`tasks/phase-18-settings-core/T19-008-keymap-file-with-contexts.md`.
+
+**Blockers:** none. The `scroll_to_item` limitation above is a pre-existing
+gap worth flagging to whoever picks up scroll-precision work, but does not
+block T19-008.
+
 ## Last Session: 2026-09-04 (T19-006 — JSON-Schema generation + settings.json validation)
 
 **T19-006 done.** `SettingsContent` now drives a real generated JSON Schema

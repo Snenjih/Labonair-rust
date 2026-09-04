@@ -318,15 +318,22 @@ impl SettingsView {
 
         let origin = self.field_origin(field, cx);
         let non_default = origin != OriginBadge::Default;
+        // T19-007: a search jump briefly pulses the target row so the user
+        // can find it among a page's other fields.
+        let highlighted = self.highlight == Some(json_path);
 
         div()
+            .id(SharedString::from(format!("field-row-{json_path}")))
             .flex()
             .items_center()
             .justify_between()
             .gap_4()
             .py_2()
+            .px(px(4.0))
+            .rounded_sm()
             .border_b_1()
             .border_color(c.border)
+            .when(highlighted, |d| d.bg(c.accent.opacity(0.25)))
             .child(
                 div()
                     .flex()
@@ -622,11 +629,12 @@ impl SettingsView {
     // ── T19-004: top-level render dispatch ──────────────────────────────
 
     pub(crate) fn render_body(&mut self, c: &Palette, cx: &mut Context<Self>) -> gpui::AnyElement {
-        let query = self.search.trim().to_lowercase();
-        if !query.is_empty() {
-            return self.render_global_search(&query, c, cx);
-        }
-
+        // T19-007: the global search now lives in the sidebar (a flat,
+        // category-grouped result list, `SettingsView::render_search_results`)
+        // — the main content area always shows the active category/sub-page,
+        // exactly as when browsing, so a search jump lands the field in its
+        // normal place (with a highlight pulse) rather than a duplicate
+        // inline render.
         let area = &AREAS[self.active_area];
         match self.active_body_kind() {
             PageBodyKind::Generated => self.render_generated_body(c, cx),
@@ -642,47 +650,6 @@ impl SettingsView {
             PageBody::Generated(_) => PageBodyKind::Generated,
             PageBody::Custom => PageBodyKind::Custom,
         }
-    }
-
-    fn render_global_search(
-        &mut self,
-        query: &str,
-        c: &Palette,
-        cx: &mut Context<Self>,
-    ) -> gpui::AnyElement {
-        let mut root = div().flex().flex_col();
-        let mut any = false;
-        for area in AREAS {
-            let matches: Vec<usize> = self
-                .all_fields
-                .iter()
-                .enumerate()
-                .filter(|(_, f)| {
-                    f.area() == area.target_module
-                        && (f.meta.title.to_lowercase().contains(query)
-                            || f.meta.description.to_lowercase().contains(query)
-                            || f.local_key().to_lowercase().contains(query))
-                })
-                .map(|(i, _)| i)
-                .collect();
-            if matches.is_empty() {
-                continue;
-            }
-            any = true;
-            root = root.child(section_label(area.title, c));
-            for i in matches {
-                let field = self.all_fields[i];
-                root = root.child(self.render_field(&field, c, cx));
-            }
-        }
-        if !any {
-            return div()
-                .p_4()
-                .text_color(c.muted)
-                .child("No matching settings.")
-                .into_any_element();
-        }
-        root.into_any_element()
     }
 
     /// Render the active `PageBody::Generated` page/sub-page: collapsible
@@ -706,6 +673,11 @@ impl SettingsView {
         let mut rows: Vec<gpui::AnyElement> = Vec::new();
         let mut jump: Vec<(usize, &'static str)> = Vec::new();
         let mut current_section: Option<&'static str> = None;
+        // T19-007: a search jump asks to land on a specific field's row
+        // (`pending_scroll`) — recorded here so it can be scrolled to once
+        // all rows are built.
+        let pending_scroll = self.pending_scroll;
+        let mut scroll_to_row: Option<usize> = None;
 
         for item in &items {
             match item {
@@ -724,6 +696,9 @@ impl SettingsView {
                         .find(|f| f.area() == area.target_module && f.local_key() == *key)
                         .copied()
                     {
+                        if pending_scroll == Some(field.json_path) {
+                            scroll_to_row = Some(rows.len());
+                        }
                         rows.push(self.render_field(&field, c, cx));
                     }
                 }
@@ -743,8 +718,16 @@ impl SettingsView {
                 if current_section.is_some_and(|s| self.section_collapsed(s)) {
                     continue;
                 }
+                if pending_scroll == Some(field.json_path) {
+                    scroll_to_row = Some(rows.len());
+                }
                 rows.push(self.render_field(field, c, cx));
             }
+        }
+
+        if let Some(row) = scroll_to_row {
+            self.content_scroll.scroll_to_item(row);
+            self.pending_scroll = None;
         }
 
         let jump_bar = self.render_jump_bar(&jump, c, cx);
@@ -870,6 +853,8 @@ impl SettingsView {
         c: &Palette,
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
+        let pending_scroll = self.pending_scroll;
+        let mut scroll_to_row: Option<usize> = None;
         let mut rows = Vec::new();
         for (label, keys) in groups {
             rows.push(self.render_section_header(label, c, cx));
@@ -883,9 +868,16 @@ impl SettingsView {
                     .find(|f| f.area() == area_target_module && f.local_key() == *key)
                     .copied()
                 {
+                    if pending_scroll == Some(field.json_path) {
+                        scroll_to_row = Some(rows.len());
+                    }
                     rows.push(self.render_field(&field, c, cx));
                 }
             }
+        }
+        if let Some(row) = scroll_to_row {
+            self.content_scroll.scroll_to_item(row);
+            self.pending_scroll = None;
         }
         div().flex().flex_col().children(rows).into_any_element()
     }

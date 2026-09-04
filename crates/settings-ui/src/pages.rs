@@ -170,6 +170,34 @@ pub fn leftover_fields<'a>(area_key: &str, fields: &'a [AnyField]) -> Vec<&'a An
         .collect()
 }
 
+/// Which sub-page (slug, `""` for the main page) and section a field's local
+/// key is placed under by a curated group — used by the search jump (T19-007)
+/// to open the right sub-page and un-collapse the right section before
+/// scrolling. `None` means the field isn't placed by any curated group (it
+/// falls through to the trailing "Other" section on the area's main page).
+pub fn section_label_for_field(
+    area_key: &str,
+    local_key: &str,
+) -> Option<(&'static str, &'static str)> {
+    let find = |groups: &'static [Group]| -> Option<&'static str> {
+        groups
+            .iter()
+            .find(|(_, keys)| keys.contains(&local_key))
+            .map(|(label, _)| *label)
+    };
+    match area_key {
+        "terminal" => find(TERMINAL_MAIN)
+            .map(|l| ("", l))
+            .or_else(|| find(TERMINAL_ADVANCED).map(|l| ("advanced", l))),
+        "editor" => find(EDITOR_MAIN)
+            .map(|l| ("", l))
+            .or_else(|| find(EDITOR_DISPLAY).map(|l| ("display", l))),
+        "ai" => find(AI_GROUPS).map(|l| ("", l)),
+        "personalization" => find(PERSONALIZATION_GROUPS).map(|l| ("", l)),
+        _ => find(groups_for(area_key)).map(|l| ("", l)),
+    }
+}
+
 fn groups_for(area_key: &str) -> &'static [Group] {
     match area_key {
         "general" => GENERAL_GROUPS,
@@ -670,6 +698,19 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn section_label_for_field_resolves_sub_page_and_section() {
+        assert_eq!(
+            section_label_for_field("terminal", "terminalCursorStyle"),
+            Some(("", "Cursor"))
+        );
+        assert_eq!(
+            section_label_for_field("terminal", "terminalScrollSensitivity"),
+            Some(("advanced", "Scrolling"))
+        );
+        assert_eq!(section_label_for_field("terminal", "doesNotExist"), None);
     }
 
     #[test]

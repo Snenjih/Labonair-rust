@@ -15,6 +15,7 @@ mod apply;
 mod pages;
 mod panes;
 mod schema;
+mod search;
 mod store;
 mod view;
 mod window;

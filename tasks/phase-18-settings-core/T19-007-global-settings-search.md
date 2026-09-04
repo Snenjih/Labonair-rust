@@ -1,7 +1,7 @@
 # T19-007: Globale Settings-Suche über alle Seiten
 
 ## Status
-📋 Geplant
+✅ Done
 
 ## Phase
 18 — Settings-System Zed-Style
@@ -60,16 +60,16 @@ gruppiert nach Kategorie angezeigt und springen bei Auswahl direkt zum Feld
    springt + highlightet; `Esc` zurück zur Kategorie-Ansicht.
 
 ## Akzeptanzkriterien
-- [ ] Eine globale Suchleiste durchsucht Titel + Beschreibung + `json_path`
+- [x] Eine globale Suchleiste durchsucht Titel + Beschreibung + `json_path`
       aller Felder aller Kategorien.
-- [ ] Treffer sind nach Kategorie gruppiert; Auswahl springt zum Feld mit
+- [x] Treffer sind nach Kategorie gruppiert; Auswahl springt zum Feld mit
       kurzem Highlight.
-- [ ] Custom-Panes sind über Stichworte auffindbar.
-- [ ] Tastatur-Navigation (`↑/↓/Enter/Esc`); Fokus bleibt im Suchfeld.
-- [ ] Die alte per-Kategorie-Suche ist entfernt.
-- [ ] Tests decken Mehrkategorie-Treffer, `json_path`-Suche, Custom-Pane,
+- [x] Custom-Panes sind über Stichworte auffindbar.
+- [x] Tastatur-Navigation (`↑/↓/Enter/Esc`); Fokus bleibt im Suchfeld.
+- [x] Die alte per-Kategorie-Suche ist entfernt.
+- [x] Tests decken Mehrkategorie-Treffer, `json_path`-Suche, Custom-Pane,
       Leerfall.
-- [ ] Gates grün: `cargo fmt --check`, `cargo check --workspace --all-targets`,
+- [x] Gates grün: `cargo fmt --check`, `cargo check --workspace --all-targets`,
       `cargo clippy --workspace --all-targets -- -D warnings`,
       `cargo test --workspace`.
 
