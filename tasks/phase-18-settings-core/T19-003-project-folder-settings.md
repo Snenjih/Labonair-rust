@@ -1,7 +1,7 @@
 # T19-003: Projekt-/Ordner-Settings (`.labonair/settings.json`)
 
 ## Status
-📋 Geplant
+✅ Done
 
 ## Phase
 18 — Settings-System Zed-Style
@@ -72,16 +72,16 @@ diese AI-Directives".
    Herkunft; ein verbotener Key (`mcp.bridgePort`) wird ignoriert + getoastet.
 
 ## Akzeptanzkriterien
-- [ ] `.labonair/settings.json` unter der aktiven Projekt-Wurzel wird als
+- [x] `.labonair/settings.json` unter der aktiven Projekt-Wurzel wird als
       eigene Schicht über User gemerged; Wurzelwechsel lädt/entlädt korrekt.
-- [ ] Live-Watch der Projekt-Datei; Debounce; keine Crashes bei kaputter Datei.
-- [ ] Key-Whitelist: nur erlaubte Bereiche aus der Projekt-Schicht; verbotene
+- [x] Live-Watch der Projekt-Datei; Debounce; keine Crashes bei kaputter Datei.
+- [x] Key-Whitelist: nur erlaubte Bereiche aus der Projekt-Schicht; verbotene
       Keys werden ignoriert und **einmal** sichtbar gemeldet.
-- [ ] `SettingsStore::source_of(json_path)` liefert die Herkunfts-Schicht.
-- [ ] Command „Projekt-Settings öffnen/erstellen" legt ein kommentiertes
+- [x] `SettingsStore::source_of(json_path)` liefert die Herkunfts-Schicht.
+- [x] Command „Projekt-Settings öffnen/erstellen" legt ein kommentiertes
       Gerüst an und öffnet es.
-- [ ] Tests decken Merge-Vorrang, Whitelist-Ablehnung, Wurzelwechsel, Leerfall.
-- [ ] Gates grün: `cargo fmt --check`, `cargo check --workspace --all-targets`,
+- [x] Tests decken Merge-Vorrang, Whitelist-Ablehnung, Wurzelwechsel, Leerfall.
+- [x] Gates grün: `cargo fmt --check`, `cargo check --workspace --all-targets`,
       `cargo clippy --workspace --all-targets -- -D warnings`,
       `cargo test --workspace`.
 
@@ -90,6 +90,36 @@ diese AI-Directives".
   eigenes Projekt) ist ein sinnvolles, aber separates Feature.
 - Die Whitelist ist eher zu eng als zu weit anzusetzen — erweitern ist
   billig, ein Sicherheitsloch teuer.
+
+**Umsetzung (2026-09-04):** `crates/settings/src/project.rs` (neu) —
+`PROJECT_SETTINGS_WHITELIST` (nur `general`/`workspace`/`editor`-Bereiche,
+je eine explizite Leaf-Liste; `hosts`/`ai`/`mcp`/`connections`/`keymap`/
+`appearance`/`file_manager`/`personalization` komplett ausgeschlossen —
+`hosts`/`ai` bewusst, weil noch kein sicheres skalares "Referenz auf
+Host/Directives-Datei"-Feld existiert; das ist eine spätere, engere
+Whitelist-Erweiterung, keine Blockade dieser Task), `filter_and_parse`
+(whitelist-filtert dann parst über `labonair_settings_content::parse`),
+`ensure_project_settings_file` (+ `assets/settings/initial_project_settings.json`
+Gerüst). `SettingsStore` (`store.rs`) bekommt `current_project`/
+`next_worktree_id`/`project_watch_generation`/`project_rejected`,
+`set_active_project_root`/`reload_project_layer`/`rewatch_project`/
+`source_of`. Live-Watch: `watch::spawn_project` — generation-basiert (kein
+Cancel-Handle über die `cx.spawn`-Grenze nötig; ein Root-Wechsel bumpt die
+Generation, der alte Poll-Loop erkennt das und beendet sich selbst). Crate-
+Root-Wrapper `set_active_project_root(cx, root)` / `refresh_project_watch(cx)`
+in `settings.rs`, weil `labonair-settings` laut `scripts/check_crate_deps.py`
+ein reines Leaf-Crate bleiben muss (kein `labonair-workspace`-Dep) — die
+Anbindung an "aktive Pane-CWD" sitzt daher in `labonair-workspace`:
+`Workspace::sync_project_settings_root` (aufgerufen einmal pro `render`,
+no-op wenn CWD unverändert) + `Workspace::open_or_create_project_settings`
+(Command, öffnet die Datei über das bestehende `open_file`/Editor-Tab).
+Befehl als `CommandId::OpenProjectSettings` in der Command-Palette
+(`crates/command-palette/src/palette.rs`) + `crates/shell/src/commands.rs`
+registriert (keine Tastenkombination, wie bei den meisten
+Application-Commands). **Nicht mit `cargo run` verifiziert** (headless
+VPS — kein GUI-Fenster; wie bei mehreren vorherigen Titlebar/Overlay-Tasks
+in `docs/architecture.md` §8.13/§8.14 vermerkt). Settings-UI-Anzeige der
+Herkunft (`source_of`) ist explizit T19-004's Aufgabe — hier nur die API.
 
 ## Warnungen
 - ⚠️ Projekt-Settings sind **nicht vertrauenswürdig** (kommen mit dem Repo).

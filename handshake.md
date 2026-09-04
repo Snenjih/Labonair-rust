@@ -4,7 +4,89 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
-## Last Session: 2026-09-04 (T19-002 — `SettingsStore` layered merge + `Settings` trait)
+## Last Session: 2026-09-04 (T19-003 — project/folder settings layer, `.labonair/settings.json`)
+
+**T19-003 done.** Builds directly on T19-002's `SettingsStore`
+(`crates/settings`). New module `crates/settings/src/project.rs`:
+- `PROJECT_SETTINGS_WHITELIST` — `(area, &[leaf keys])` allowlist, only
+  `general` (startup tab/count/session-restore/restore-window-state),
+  `workspace` (dock/sidebar/command-palette/bookmarks layout knobs), `editor`
+  (format-on-save/tab-size/trim/insert-final-newline/word-wrap/…). Every
+  other top-level area (`hosts`, `ai`, `mcp`, `connections`, `keymap`,
+  `appearance`, `file_manager`, `personalization`) is dropped **entirely**
+  from a project file — deliberately narrower than the task's Kontext
+  examples ("Default-SSH-Host reference", "AI-directives file reference"):
+  no safe scalar field for either exists yet in `SettingsContent`, so
+  opening `hosts`/`ai`'s *existing* fields (credential-adjacent / network
+  endpoints) would be a real hole. Adding such a field is a future, narrower
+  whitelist entry, not something this task should improvise.
+- `filter_and_parse(raw) -> (SettingsContent, Vec<String> rejected)` —
+  whitelist-filters the raw JSON/JSONC first, then reuses
+  `labonair_settings_content::parse`'s per-area fault tolerance on what's
+  left. Never fails on garbage input.
+- `ensure_project_settings_file(root)` — creates `<root>/.labonair/
+  settings.json` from a commented scaffold
+  (`crates/settings/assets/settings/initial_project_settings.json`,
+  fully-commented so it parses to `{}` until edited) if missing; never
+  overwrites, never touches git.
+
+`SettingsStore` (`store.rs`) additions: `current_project: Option<(PathBuf,
+WorktreeId)>` + `next_worktree_id` (v1 = one root at a time, fresh id per
+switch, per the task's own Notizen), `project_watch_generation: u64` (bumped
+on every real root change — the fs-watch poll task compares its captured
+generation against the live one each tick and self-terminates on mismatch;
+this is how "old watch unregisters, new one registers" works without a
+cancel handle surviving the `cx.spawn` boundary), `project_rejected: Vec
+<String>` (deduped-logged rejections from the last load).
+`set_active_project_root(root)` (no-op if the canonicalized root is
+unchanged), `reload_project_layer`, `rewatch_project` (force-reload +
+fresh watch for the "just created `.labonair/`" case, where the root itself
+didn't change so `set_active_project_root` alone would stay a no-op), and
+`source_of(json_path: &str) -> SettingsLayer` (dot-path JSON walk over
+every layer's `serde_json::to_value`, highest-precedence non-null wins —
+generic, works for `User`/`Project`/any future layer, not project-specific).
+`watch.rs` gained `spawn_project`/`keep_alive_and_poll_project` mirroring
+the existing user-file watch but generation-guarded.
+
+Because `labonair-settings` must stay a leaf crate
+(`scripts/check_crate_deps.py`'s `ALLOWED["labonair-settings"]` = only
+`labonair-settings-content` + `labonair-settings-macros` — no
+`labonair-workspace`), the "which folder is the project root" question is
+answered by the crate-root wrappers `labonair_settings::
+set_active_project_root(cx, root)` / `refresh_project_watch(cx)` in
+`settings.rs`, called **from** `labonair-workspace`:
+`Workspace::sync_project_settings_root` (`crates/workspace/src/
+workspace.rs`, new — diffs `active_cwd(cx)` against a new
+`last_project_settings_root` field, called once per `render`, cheap no-op
+when unchanged) and `Workspace::open_or_create_project_settings` (new
+command: `ensure_project_settings_file` + `refresh_project_watch` + opens
+the file via the existing `open_file` editor-tab path — there was no prior
+"open a file as an in-app editor tab from a settings context" precedent;
+`labonair-settings-ui` only ever does `cx.reveal_path` (Finder), which
+doesn't fit "öffnet sie im Editor"). Wired as `CommandId::
+OpenProjectSettings` in `crates/command-palette/src/palette.rs` +
+registered in `crates/shell/src/commands.rs` (palette-only, no keybinding,
+same as most other Application-section commands).
+
+**Not verified with `cargo run`** — headless VPS, no GUI window (same
+caveat as several prior titlebar/overlay tasks, see `docs/architecture.md`
+§8.13/§8.14). Settings-UI display of `source_of`'s origin badge is
+explicitly T19-004's job per the task text itself ("hier mindestens die API
+bereitstellen") — not done here.
+
+All gates green: `cargo fmt --check`, `cargo check --workspace
+--all-targets`, `cargo clippy --workspace --all-targets -- -D warnings`,
+`cargo test --workspace` (0 failures across all 23 workspace crates,
+`labonair-settings` alone: 23 tests, all new ones — 5 in `project.rs`, 7 new
+in `store.rs`), `scripts/check-crate-deps.sh` (still acyclic, no new edges).
+
+**State:** branch `master`. Next task: **T19-004** (generated settings UI —
+field-renderer-from-Rust-type, per `docs/settings-guidelines.md`). Verified
+its dependencies (T19-002, T16-007, T19-000) are all `✅ Done` by checking
+each task file's own `## Abhängigkeiten` + `## Status` directly, not
+assumed.
+
+## Previous Session: 2026-09-04 (T19-002 — `SettingsStore` layered merge + `Settings` trait)
 
 **T19-002 done.** New crate `crates/settings` (`labonair-settings`), workspace
 member. Its only workspace deps are `labonair-settings-content` +

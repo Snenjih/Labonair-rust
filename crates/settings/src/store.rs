@@ -15,6 +15,7 @@ use serde_json::Value;
 
 use labonair_settings_content::{FieldError, MergeFrom, SettingsContent};
 
+use crate::project;
 use crate::settings_trait::Settings;
 
 /// Placeholder identity for a worktree/project root. `T19-003` (project/
@@ -77,6 +78,28 @@ pub struct SettingsStore {
     /// broken area falls back to its default, the rest of the tree is
     /// unaffected).
     parse_errors: Vec<FieldError>,
+    /// The active project root (`SettingsLayer::Project`'s source directory)
+    /// and the `WorktreeId` currently keying its layer in `raw`, if any
+    /// (T19-003). `None` = no project root is active — the `Project` layer
+    /// is absent from `raw` entirely, `merged` falls back to `User`.
+    current_project: Option<(PathBuf, WorktreeId)>,
+    /// Monotonic counter for the next `WorktreeId` a project root gets
+    /// (v1 = one active root at a time, per the task's Notizen — a fresh id
+    /// per root change is enough, no reuse needed).
+    next_worktree_id: u64,
+    /// Bumped every time `set_active_project_root` actually changes the
+    /// root (including to `None`). The project fs-watch's background poll
+    /// task captures the generation it was started with and stops itself
+    /// once this no longer matches — this is how "old watch abmelden, neuen
+    /// anmelden" (Anweisung #3) is implemented without needing a cancel
+    /// handle across the GPUI task boundary.
+    project_watch_generation: u64,
+    /// Dotted keys (`"mcp"`, `"general.credentialEncryption"`, …) the last
+    /// project-layer (re)load dropped for not being on
+    /// `project::PROJECT_SETTINGS_WHITELIST`. `SettingsStore::get`ers use
+    /// this to report rejections to the user (T19-004+); a freshly (re)set
+    /// root that hits no violations clears it back to empty.
+    project_rejected: Vec<String>,
     /// Per-`Settings`-type computed value, rebuilt by `builders` on every
     /// `recompute`.
     values: HashMap<TypeId, Box<dyn Any>>,
@@ -96,6 +119,10 @@ impl SettingsStore {
             merged: SettingsContent::default(),
             user_path,
             parse_errors: Vec::new(),
+            current_project: None,
+            next_worktree_id: 0,
+            project_watch_generation: 0,
+            project_rejected: Vec::new(),
             values: HashMap::new(),
             registered: HashSet::new(),
             builders: Vec::new(),
@@ -245,6 +272,142 @@ impl SettingsStore {
         std::fs::rename(&tmp, &self.user_path).map_err(|e| e.to_string())
     }
 
+    /// Currently active project root, if any (T19-003).
+    pub fn project_root(&self) -> Option<&Path> {
+        self.current_project
+            .as_ref()
+            .map(|(root, _)| root.as_path())
+    }
+
+    /// The current fs-watch generation (T19-003) — the project watch's
+    /// background poll task stops itself once this no longer matches the
+    /// generation it captured at spawn time.
+    pub fn project_watch_generation(&self) -> u64 {
+        self.project_watch_generation
+    }
+
+    /// Dotted whitelist-rejected keys from the last project-layer (re)load
+    /// (`"mcp"`, `"general.credentialEncryption"`, …) — empty if the current
+    /// project file (or no project root / no file) has no rejections.
+    pub fn project_rejected_keys(&self) -> &[String] {
+        &self.project_rejected
+    }
+
+    /// Set (or clear, with `None`) the active project root. A no-op —
+    /// returns `false`, nothing reloaded, the fs-watch generation
+    /// unchanged — if `root` (after best-effort canonicalization) is
+    /// already the active one. Otherwise: drops the old `Project` layer (if
+    /// any), bumps [`Self::project_watch_generation`] so any in-flight watch
+    /// for the previous root stops itself, and — for `Some(root)` — assigns
+    /// a fresh [`WorktreeId`] and loads `<root>/.labonair/settings.json`
+    /// (Anweisung #1/#2). Starting/stopping the actual fs-watch task is the
+    /// crate-root `set_active_project_root` wrapper's job (it needs `&mut
+    /// App` to spawn; this method only touches store state).
+    pub fn set_active_project_root(&mut self, root: Option<PathBuf>) -> bool {
+        let root = root.map(|r| std::fs::canonicalize(&r).unwrap_or(r));
+        if self.current_project.as_ref().map(|(r, _)| r) == root.as_ref() {
+            return false;
+        }
+
+        if let Some((_, old_id)) = self.current_project.take() {
+            self.raw.remove(&SettingsLayer::Project(old_id));
+        }
+        self.project_watch_generation = self.project_watch_generation.wrapping_add(1);
+        self.project_rejected.clear();
+
+        match root {
+            None => self.recompute(),
+            Some(root) => {
+                let id = WorktreeId(self.next_worktree_id);
+                self.next_worktree_id += 1;
+                self.current_project = Some((root, id));
+                self.reload_project_layer();
+            }
+        }
+        true
+    }
+
+    /// Bump the project fs-watch generation (invalidating any watch task
+    /// already running for the current root) and reload the project layer.
+    /// Used after the "open/create project settings" command creates
+    /// `.labonair/` for a root that had none yet — a plain
+    /// `set_active_project_root` call with the *same* root is a no-op
+    /// (Anweisung's dedup), so it wouldn't otherwise pick up the now-
+    /// watchable directory. Returns the new generation to (re)start the
+    /// watch with, or `None` if no project root is active.
+    pub fn rewatch_project(&mut self) -> Option<u64> {
+        self.current_project.as_ref()?;
+        self.project_watch_generation = self.project_watch_generation.wrapping_add(1);
+        self.reload_project_layer();
+        Some(self.project_watch_generation)
+    }
+
+    /// (Re)read the active project's `.labonair/settings.json` (Anweisung
+    /// #2), whitelist-filter + parse it (`project::filter_and_parse`), and
+    /// set/replace the `SettingsLayer::Project` layer. A no-op if no project
+    /// root is active. A missing file is not an error — it just means an
+    /// empty `Project` layer (e.g. a root with no `.labonair/settings.json`
+    /// yet). A file that fails even JSON/JSONC parsing keeps the last-good
+    /// `Project` layer, same guarantee `reload_user_layer` gives the `User`
+    /// layer — never crashes, never silently reverts to no overrides.
+    pub fn reload_project_layer(&mut self) {
+        let Some((root, id)) = self.current_project.clone() else {
+            return;
+        };
+        let path = root.join(project::PROJECT_SETTINGS_RELATIVE_PATH);
+
+        let Ok(raw) = std::fs::read_to_string(&path) else {
+            self.raw
+                .insert(SettingsLayer::Project(id), SettingsContent::default());
+            self.project_rejected.clear();
+            self.recompute();
+            return;
+        };
+
+        if jsonc_parser::parse_to_serde_value(&raw, &Default::default()).is_err() {
+            tracing::warn!(
+                path = %path.display(),
+                "project .labonair/settings.json is not valid JSON/JSONC — keeping the last good settings",
+            );
+            return;
+        }
+
+        let (content, rejected) = project::filter_and_parse(&raw);
+        for key in &rejected {
+            if !self.project_rejected.contains(key) {
+                tracing::warn!(
+                    key = %key,
+                    path = %path.display(),
+                    "project settings: key is not on the project whitelist, ignored",
+                );
+            }
+        }
+        self.project_rejected = rejected;
+        self.raw.insert(SettingsLayer::Project(id), content);
+        self.recompute();
+    }
+
+    /// Which layer currently supplies the effective value at `json_path` —
+    /// a dot-separated path of JSON (camelCase, `#[serde(rename_all =
+    /// "camelCase")]`) key names, e.g. `"terminal.terminalFontSize"`
+    /// (Anweisung #5). Walks every layer from highest to lowest precedence
+    /// and returns the first whose value at that path is present and
+    /// non-null. Falls back to `SettingsLayer::Default` if no layer has a
+    /// non-null value there (shouldn't happen — `SettingsContent::
+    /// defaults()` is fully populated — but a path that doesn't resolve to
+    /// any real field also lands here rather than panicking).
+    pub fn source_of(&self, json_path: &str) -> SettingsLayer {
+        for (layer, content) in self.raw.iter().rev() {
+            let Ok(value) = serde_json::to_value(content) else {
+                continue;
+            };
+            if json_leaf(&value, json_path).is_some_and(|v| !v.is_null()) {
+                return layer.clone();
+            }
+        }
+        SettingsLayer::Default
+    }
+
     /// Register a `Settings` type: compute its initial value from the
     /// current `merged` tree and remember how to recompute it on every
     /// future `recompute()`. Idempotent — re-registering the same type is a
@@ -283,6 +446,19 @@ impl SettingsStore {
                 )
             })
     }
+}
+
+/// Navigate `value` (expected to be a JSON object at every level except
+/// possibly the last) by a dot-separated path, e.g. `json_leaf(v,
+/// "terminal.terminalFontSize")` == `v["terminal"]["terminalFontSize"]`.
+/// `None` if any segment is missing or the value stops being an object
+/// before the path is exhausted.
+fn json_leaf<'a>(value: &'a Value, path: &str) -> Option<&'a Value> {
+    let mut cur = value;
+    for part in path.split('.') {
+        cur = cur.as_object()?.get(part)?;
+    }
+    Some(cur)
 }
 
 fn default_user_path() -> PathBuf {
@@ -477,6 +653,142 @@ mod tests {
         assert!(
             notified.get(),
             "reload_user_layer must notify SettingsStore's global observers"
+        );
+    }
+
+    fn tmp_project_root() -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("labonair-project-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn project_layer_wins_over_user_for_a_whitelisted_key() {
+        let mut store = SettingsStore::new(tmp_path());
+        store
+            .update_user(|c| c.general.startup_terminal_count = Some(2))
+            .unwrap();
+        assert_eq!(store.merged().general.startup_terminal_count, Some(2));
+
+        let root = tmp_project_root();
+        std::fs::create_dir_all(root.join(".labonair")).unwrap();
+        std::fs::write(
+            root.join(".labonair/settings.json"),
+            r#"{"general":{"startupTerminalCount":3}}"#,
+        )
+        .unwrap();
+
+        assert!(store.set_active_project_root(Some(root)));
+        assert_eq!(store.merged().general.startup_terminal_count, Some(3));
+        assert!(store.project_rejected_keys().is_empty());
+    }
+
+    #[test]
+    fn project_layer_forbidden_key_is_ignored_and_reported() {
+        let mut store = SettingsStore::new(tmp_path());
+        let root = tmp_project_root();
+        std::fs::create_dir_all(root.join(".labonair")).unwrap();
+        std::fs::write(
+            root.join(".labonair/settings.json"),
+            r#"{"mcp":{"bridgePort":9999}}"#,
+        )
+        .unwrap();
+
+        store.set_active_project_root(Some(root));
+        assert_eq!(store.merged().mcp.bridge_port, Some(47823)); // untouched default
+        assert_eq!(store.project_rejected_keys(), &["mcp".to_string()]);
+    }
+
+    #[test]
+    fn set_active_project_root_unloads_on_root_switch_and_clear() {
+        let mut store = SettingsStore::new(tmp_path());
+        let root_a = tmp_project_root();
+        std::fs::create_dir_all(root_a.join(".labonair")).unwrap();
+        std::fs::write(
+            root_a.join(".labonair/settings.json"),
+            r#"{"general":{"startupTerminalCount":3}}"#,
+        )
+        .unwrap();
+        let root_b = tmp_project_root();
+
+        store.set_active_project_root(Some(root_a));
+        assert_eq!(store.merged().general.startup_terminal_count, Some(3));
+        let gen_after_a = store.project_watch_generation();
+
+        store.set_active_project_root(Some(root_b));
+        assert_eq!(
+            store.merged().general.startup_terminal_count,
+            SettingsContent::defaults().general.startup_terminal_count,
+            "switching roots must drop the previous root's layer"
+        );
+        assert!(store.project_watch_generation() > gen_after_a);
+        // Only one Project(*) layer should ever be present at a time.
+        assert_eq!(
+            store
+                .raw
+                .keys()
+                .filter(|l| matches!(l, SettingsLayer::Project(_)))
+                .count(),
+            1
+        );
+
+        store.set_active_project_root(None);
+        assert_eq!(
+            store.merged().general.startup_terminal_count,
+            SettingsContent::defaults().general.startup_terminal_count
+        );
+        assert!(store
+            .raw
+            .keys()
+            .all(|l| !matches!(l, SettingsLayer::Project(_))));
+    }
+
+    #[test]
+    fn no_project_file_means_exactly_user_behavior() {
+        let mut store = SettingsStore::new(tmp_path());
+        store
+            .update_user(|c| c.general.startup_terminal_count = Some(2))
+            .unwrap();
+
+        let root = tmp_project_root(); // no .labonair dir at all
+        store.set_active_project_root(Some(root));
+        assert_eq!(store.merged().general.startup_terminal_count, Some(2));
+        assert!(store.project_rejected_keys().is_empty());
+    }
+
+    #[test]
+    fn source_of_reports_the_highest_precedence_layer_that_set_a_leaf() {
+        let mut store = SettingsStore::new(tmp_path());
+        assert_eq!(
+            store.source_of("terminal.terminalFontSize"),
+            SettingsLayer::Default
+        );
+
+        store
+            .update_user(|c| c.terminal.terminal_font_size = Some(18))
+            .unwrap();
+        assert_eq!(
+            store.source_of("terminal.terminalFontSize"),
+            SettingsLayer::User
+        );
+
+        let root = tmp_project_root();
+        std::fs::create_dir_all(root.join(".labonair")).unwrap();
+        std::fs::write(
+            root.join(".labonair/settings.json"),
+            r#"{"editor":{"editorTabSize":4}}"#,
+        )
+        .unwrap();
+        store.set_active_project_root(Some(root));
+        let id = store.current_project.as_ref().unwrap().1;
+        assert_eq!(
+            store.source_of("editor.editorTabSize"),
+            SettingsLayer::Project(id)
+        );
+        // Unrelated leaf the project layer never set still resolves to User.
+        assert_eq!(
+            store.source_of("terminal.terminalFontSize"),
+            SettingsLayer::User
         );
     }
 }

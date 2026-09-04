@@ -445,6 +445,13 @@ pub struct Workspace {
     /// Snippet commands waiting to be typed into a freshly-opened SSH tab
     /// once its session is established, keyed by `ssh_id`.
     pending_snippet_ssh: HashMap<String, String>,
+
+    // ── Project settings (T19-003) ──────────────────────────────────────
+    /// The active pane's cwd last time `sync_project_settings_root` ran, so
+    /// `labonair_settings::set_active_project_root` (which loads/reloads
+    /// `.labonair/settings.json` + its live-watch) is only called when it
+    /// actually changes, not on every render.
+    last_project_settings_root: Option<String>,
 }
 
 impl Workspace {
@@ -580,6 +587,7 @@ impl Workspace {
             pending_mcp: Vec::new(),
             agent_access,
             pending_snippet_ssh: HashMap::new(),
+            last_project_settings_root: None,
         };
         cx.observe(&this.agent_access, |_, _, cx| cx.notify())
             .detach();
@@ -860,6 +868,63 @@ impl Workspace {
     /// status-bar cwd breadcrumb (T04-003).
     pub fn active_cwd(&self, cx: &App) -> Option<String> {
         self.active_pane_view(cx).and_then(|v| v.read(cx).cwd())
+    }
+
+    /// Push the active pane's cwd into `labonair-settings` as the active
+    /// project root (T19-003) whenever it changes — `labonair-settings` is a
+    /// leaf crate with no notion of "pane"/"cwd" itself
+    /// (`docs/architecture.md` §3), so this is the one place that bridges
+    /// the two. Called once per `render` (cheap: a `String` compare plus,
+    /// only on an actual change, `labonair_settings::set_active_project_root`
+    /// — which is itself a no-op if the canonicalized root didn't change).
+    /// Also toasts newly-whitelist-rejected project-settings keys, if any
+    /// (Anweisung #4's "einmal sichtbar gemeldet").
+    fn sync_project_settings_root(&mut self, cx: &mut Context<Self>) {
+        let cwd = self.active_cwd(cx);
+        if cwd == self.last_project_settings_root {
+            return;
+        }
+        self.last_project_settings_root = cwd.clone();
+        labonair_settings::set_active_project_root(cx, cwd.map(std::path::PathBuf::from));
+
+        let rejected = cx
+            .global::<labonair_settings::SettingsStore>()
+            .project_rejected_keys();
+        if !rejected.is_empty() {
+            let body = format!(
+                "Ignored (not allowed from a project settings file): {}",
+                rejected.join(", ")
+            );
+            labonair_notifications::notify_err::<()>("Project settings", Err(body), cx);
+        }
+    }
+
+    /// Command: create (if missing) `<project root>/.labonair/settings.json`
+    /// from the commented scaffold and open it as an editor tab (T19-003
+    /// Anweisung #6). The "project root" is the active pane's cwd; a no-op
+    /// (returns `false`) if there isn't one (no active terminal/SSH pane).
+    pub fn open_or_create_project_settings(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let Some(cwd) = self.active_cwd(cx) else {
+            return false;
+        };
+        let root = std::path::PathBuf::from(cwd);
+        let path = match labonair_settings::ensure_project_settings_file(&root) {
+            Ok(path) => path,
+            Err(err) => {
+                labonair_notifications::notify_err::<()>("Project settings", Err(err), cx);
+                return false;
+            }
+        };
+        // The directory may not have existed (and thus not been watchable)
+        // before `ensure_project_settings_file` created it — force a
+        // reload + fresh watch rather than relying on the next cwd change.
+        labonair_settings::refresh_project_watch(cx);
+        self.open_file(path.to_string_lossy().into_owned(), false, window, cx);
+        true
     }
 
     /// The file path of the active editor tab, if the active tab is an editor
@@ -4710,6 +4775,10 @@ impl Workspace {
 
 impl Render for Workspace {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        // T19-003: keep `labonair-settings`'s active project root in sync
+        // with the active pane's cwd (cheap no-op unless it actually
+        // changed — see the method doc).
+        self.sync_project_settings_root(cx);
         // Drain host-manager connect requests here — `connect_host` needs a
         // `&mut Window` and `cx.subscribe` does not provide one.
         for host_id in std::mem::take(&mut self.pending_connect) {

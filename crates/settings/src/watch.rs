@@ -89,6 +89,79 @@ fn keep_alive_and_poll(cx: &App, debouncer: Debouncer<RecommendedWatcher>, dirty
     .detach();
 }
 
+/// Start watching `dir` (a project root's `.labonair` directory — must
+/// already exist, see `set_active_project_root`'s doc) for changes to
+/// `settings.json` and reload the project layer whenever it changes
+/// (T19-003 Anweisung #3). `generation` is the [`SettingsStore::
+/// project_watch_generation`] value captured when this watch was started;
+/// the poll loop stops itself the moment the store's live generation no
+/// longer matches — this is how a root switch "unregisters" the old watch
+/// without needing a cancel handle to survive the `cx.spawn` boundary.
+/// Best-effort, same as [`spawn`]: a watcher that fails to start just means
+/// project settings stay load-once for this root.
+pub(crate) fn spawn_project(cx: &App, dir: PathBuf, generation: u64) {
+    let dirty = Arc::new(AtomicBool::new(false));
+    let dirty_cb = dirty.clone();
+
+    let debouncer = new_debouncer(
+        POLL_INTERVAL,
+        move |res: Result<Vec<DebouncedEvent>, notify::Error>| {
+            if let Ok(events) = res {
+                if events
+                    .iter()
+                    .any(|e| e.path.file_name().and_then(|n| n.to_str()) == Some("settings.json"))
+                {
+                    dirty_cb.store(true, Ordering::SeqCst);
+                }
+            }
+        },
+    );
+
+    let Ok(mut debouncer) = debouncer else {
+        tracing::warn!("labonair-settings: failed to start the project fs-watch debouncer");
+        return;
+    };
+    if let Err(e) = debouncer.watcher().watch(&dir, RecursiveMode::NonRecursive) {
+        tracing::warn!(error = %e, dir = %dir.display(), "labonair-settings: failed to watch project settings dir");
+        return;
+    }
+
+    keep_alive_and_poll_project(cx, debouncer, dirty, generation);
+}
+
+fn keep_alive_and_poll_project(
+    cx: &App,
+    debouncer: Debouncer<RecommendedWatcher>,
+    dirty: Arc<AtomicBool>,
+    generation: u64,
+) {
+    cx.spawn(async move |cx| {
+        let _debouncer = debouncer;
+        loop {
+            cx.background_executor().timer(POLL_INTERVAL).await;
+            let still_current = cx
+                .update(|cx| cx.global::<SettingsStore>().project_watch_generation() == generation);
+            match still_current {
+                Ok(true) => {}
+                Ok(false) => break, // a newer root/rewatch superseded this task
+                Err(_) => break,    // app shutting down
+            }
+            if dirty.swap(false, Ordering::SeqCst) {
+                let updated = cx.update(|cx| {
+                    let store = cx.global_mut::<SettingsStore>();
+                    if store.project_watch_generation() == generation {
+                        store.reload_project_layer();
+                    }
+                });
+                if updated.is_err() {
+                    break;
+                }
+            }
+        }
+    })
+    .detach();
+}
+
 #[cfg(test)]
 mod tests {
     //! The GPUI-side poll loop is exercised end-to-end by

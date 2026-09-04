@@ -410,6 +410,10 @@ pub(crate) fn register_builtin_commands() -> CommandRegistry {
     r.register(CommandId::OpenAiSettings, always, |_s, _window, cx| {
         open_settings_window(Some(SettingsTab::Ai), cx);
     });
+    r.register(CommandId::OpenProjectSettings, always, |s, window, cx| {
+        s.workspace
+            .update(cx, |w, cx| w.open_or_create_project_settings(window, cx));
+    });
     r.register(CommandId::CheckForUpdates, always, |s, _window, cx| {
         s.panels.updater.update(cx, |u, cx| u.run_check(true, cx));
     });

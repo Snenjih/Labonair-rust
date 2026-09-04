@@ -137,6 +137,9 @@ pub enum CommandId {
     ClearTerminal,
     OpenShortcuts,
     OpenSettings,
+    /// Create (if missing) and open `<active pane's cwd>/.labonair/
+    /// settings.json` — the per-project settings layer (T19-003).
+    OpenProjectSettings,
     CheckForUpdates,
     FormatDocument,
     /// Opens the path-bookmarks popover (T12-003).
@@ -340,6 +343,7 @@ static COMMANDS: &[Command] = &[
     Command { id: CommandId::ToggleVimMode,          title: "Toggle: Vim Mode",         section: "Settings",  contexts: &[],                            shortcut: None,               icon: I::SquareCheck,sub_page: None },
     Command { id: CommandId::OpenShortcuts,      title: "Keyboard Shortcuts",      section: "Application",    contexts: &[],                            shortcut: Some(ShortcutsOpen), icon: I::SquareCheck,sub_page: None },
     Command { id: CommandId::OpenSettings,       title: "Open Settings",           section: "Application",    contexts: &[],                            shortcut: None,                icon: I::SquarePen,  sub_page: None },
+    Command { id: CommandId::OpenProjectSettings,title: "Open Project Settings (.labonair/settings.json)", section: "Application", contexts: &[],       shortcut: None,                icon: I::SquarePen,  sub_page: None },
     Command { id: CommandId::OpenAiSettings,     title: "Manage AI Keys & Models", section: "Application",    contexts: &[],                            shortcut: None,                icon: I::Sparkles,   sub_page: None },
     Command { id: CommandId::CheckForUpdates,    title: "Check for Updates\u{2026}", section: "Application",   contexts: &[],                            shortcut: None,                icon: I::Download,   sub_page: None },
 ];

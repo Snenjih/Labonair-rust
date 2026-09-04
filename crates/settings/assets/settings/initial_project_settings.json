@@ -1,0 +1,31 @@
+// Labonair project settings. This file, if present, is merged on top of
+// your personal (`~/.config/labonair/labonair-settings.json`) settings for
+// EVERYONE who opens this folder — it's meant to be committed alongside the
+// project.
+//
+// Only a small whitelist of keys is read from here (see
+// `labonair-settings::project::PROJECT_SETTINGS_WHITELIST`); anything else
+// — credentials, the MCP bridge, keymaps, host entries, AI provider
+// endpoints, … — is silently ignored, because this file travels with a
+// cloned repo and is never trusted the way your personal settings are.
+//
+// Uncomment and edit whatever you need; delete the rest.
+{
+  // "general": {
+  //   // "terminal" opens one local terminal on launch; "empty" starts on
+  //   // the empty-workspace surface.
+  //   "defaultStartupTab": "terminal",
+  //   "startupTerminalCount": 1
+  // },
+
+  // "workspace": {
+  //   "dockLayout": "bottom",
+  //   "sidebarActivePanel": "explorer"
+  // },
+
+  // "editor": {
+  //   "editorTabSize": 4,
+  //   "editorFormatOnSave": true,
+  //   "editorInsertFinalNewline": true
+  // }
+}
