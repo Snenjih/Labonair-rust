@@ -36,6 +36,7 @@ pub mod pane;
 pub mod pane_group;
 pub mod prefs;
 pub mod session;
+pub mod status_bar;
 pub mod syntax_theme;
 pub mod tabs;
 pub mod transfers;
@@ -314,6 +315,10 @@ enum PendingOpen {
     },
 }
 
+/// Persists the serialized dock layout (installed by the shell — see
+/// [`Workspace::set_dock_persist_hook`]).
+type DockPersistHook = Arc<dyn Fn(String, &mut App) + Send + Sync>;
+
 /// The tabbed, split-pane workspace shell.
 pub struct Workspace {
     registry: Arc<TerminalRegistry>,
@@ -339,6 +344,16 @@ pub struct Workspace {
     /// replaces the shell's ad-hoc per-side slot state with a real `Dock` that
     /// will also hang off the `Workspace`.
     panel_registry: labonair_panel::PanelRegistry,
+    /// Status-bar item registry (T17-003) — populated once by
+    /// `labonair_shell::register_builtin_status_items`. The `StatusBar`
+    /// component reads it instead of a hard-coded `render_bar_item` match.
+    status_item_registry: labonair_panel::StatusItemRegistry,
+    /// Set once by the shell: persists the serialized `[DockData; 3]` layout
+    /// (the shell owns the `PreferencesStore`, which this crate cannot depend
+    /// on — hence the callback indirection). T17-003 moved this off `AppShell`.
+    dock_persist_hook: Option<DockPersistHook>,
+    /// Debounce for [`Workspace::persist_docks`].
+    last_dock_save: Option<std::time::Instant>,
     /// The three edge docks (T17-002). Empty at construction; populated by
     /// [`Workspace::init_docks`] once the shell has registered the builtin
     /// panels. Replaces the shell's former ad-hoc `left_slot`/`right_slot`.
@@ -547,6 +562,9 @@ impl Workspace {
             previews: HashMap::new(),
             git_graph: None,
             panel_registry: labonair_panel::PanelRegistry::new(),
+            status_item_registry: labonair_panel::StatusItemRegistry::new(),
+            dock_persist_hook: None,
+            last_dock_save: None,
             left_dock: crate::dock::Dock::new(labonair_panel::DockPosition::Left),
             right_dock: crate::dock::Dock::new(labonair_panel::DockPosition::Right),
             bottom_dock: crate::dock::Dock::new(labonair_panel::DockPosition::Bottom),
@@ -1809,6 +1827,94 @@ impl Workspace {
     /// Mutable access, for the one-time builtin-panel registration in the shell.
     pub fn panel_registry_mut(&mut self) -> &mut labonair_panel::PanelRegistry {
         &mut self.panel_registry
+    }
+
+    /// The app's [`StatusItemRegistry`](labonair_panel::StatusItemRegistry).
+    /// Populated once by `labonair_shell::register_builtin_status_items`; read
+    /// by the [`StatusBar`](crate::status_bar::StatusBar) component.
+    pub fn status_item_registry(&self) -> &labonair_panel::StatusItemRegistry {
+        &self.status_item_registry
+    }
+
+    /// Mutable access, for the one-time builtin status-item registration.
+    pub fn status_item_registry_mut(&mut self) -> &mut labonair_panel::StatusItemRegistry {
+        &mut self.status_item_registry
+    }
+
+    /// Install the shell's dock-layout persistence callback (see
+    /// [`Workspace::dock_persist_hook`]).
+    pub fn set_dock_persist_hook(
+        &mut self,
+        hook: impl Fn(String, &mut App) + Send + Sync + 'static,
+    ) {
+        self.dock_persist_hook = Some(Arc::new(hook));
+    }
+
+    /// The "primary" edge per the `sidebarPosition` preference (read from the
+    /// [`GlobalPreferences`](crate::prefs::GlobalPreferences) global).
+    pub fn primary_dock(&self, cx: &App) -> labonair_panel::DockPosition {
+        let right = cx
+            .try_global::<crate::prefs::GlobalPreferences>()
+            .map(|g| g.0.sidebar_position == "right")
+            .unwrap_or(false);
+        if right {
+            labonair_panel::DockPosition::Right
+        } else {
+            labonair_panel::DockPosition::Left
+        }
+    }
+
+    /// Which dock hosts `name` — live membership, falling back to the primary
+    /// edge when the panel is somehow unregistered.
+    pub fn dock_for_panel(&self, name: &str, cx: &App) -> labonair_panel::DockPosition {
+        self.dock_of_panel(name)
+            .unwrap_or_else(|| self.primary_dock(cx))
+    }
+
+    /// Whether `name` is the active panel of an open dock.
+    pub fn panel_is_active(&self, name: &str) -> bool {
+        self.docks()
+            .iter()
+            .any(|d| d.is_open() && d.active_name() == Some(name))
+    }
+
+    /// Status-bar-toggle intent: open + activate `name`, or close its dock if it
+    /// is already the active panel there. Persists the layout.
+    pub fn select_panel(&mut self, name: &str, cx: &mut Context<Self>) {
+        let pos = self.dock_for_panel(name, cx);
+        self.dock_mut(pos).toggle_panel(name);
+        self.persist_docks(cx);
+        cx.notify();
+    }
+
+    /// "show me X" — never closes the dock (palette / menu intent).
+    pub fn open_panel(&mut self, name: &str, cx: &mut Context<Self>) {
+        let pos = self.dock_for_panel(name, cx);
+        {
+            let dock = self.dock_mut(pos);
+            dock.activate_panel(name);
+            dock.set_open(true);
+        }
+        self.persist_docks(cx);
+        cx.notify();
+    }
+
+    /// Debounced write of the full `[DockData; 3]` layout through the shell's
+    /// persistence hook (mirrors the reference `onLayoutChanged` 300ms persist).
+    pub fn persist_docks(&mut self, cx: &mut Context<Self>) {
+        let now = std::time::Instant::now();
+        if let Some(last) = self.last_dock_save {
+            if now.duration_since(last) < Duration::from_millis(300) {
+                return;
+            }
+        }
+        self.last_dock_save = Some(now);
+        let Some(hook) = self.dock_persist_hook.clone() else {
+            return;
+        };
+        let data: Vec<crate::dock::DockData> = self.docks().iter().map(|d| d.to_data()).collect();
+        let json = serde_json::to_string(&data).unwrap_or_default();
+        hook(json, cx);
     }
 
     /// One of the three edge docks (T17-002).

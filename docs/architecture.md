@@ -471,6 +471,33 @@ The panel crates transitively reach `labonair-panel-git-graph` *through*
 indirection is sanctioned; the check only forbids a **direct** panel→panel
 edge and reaching `labonair-shell` by **any** path.
 
+### 8.6 `BarLoc` / bar-item blob kept transitionally through T17-003
+
+T17-003 replaced the shell's `render_bar_item` `match` (plus
+`render_simple_bar_button`, every `render_*_item`, `render_bar_menu`,
+`build_bar_bucket`, `move_bar_item`, `persist_placement`,
+`panel_for_item`/`item_for_panel`) with a `StatusItemRegistry` (a `Workspace`
+field, mirroring `PanelRegistry` from T17-001), self-describing `StatusItem`
+views in `crates/shell/src/status_items.rs`, and a `StatusBar` component in
+`labonair-workspace` (`status_bar.rs`) that renders **only** from the registry
+(sorted per side by `order`). Header/titlebar carries no bar items.
+
+The task's AC1 also asked to delete `BarLoc`. That is **deferred to
+T18-005 / T18-006**: `BarItemId` / `BarLoc` / `BarSide` / `Placements` /
+`BAR_ITEM_ORDER` / `BarLayoutTick` in `labonair-workspace::bar_items` stay
+untouched because `labonair-settings-ui` (`view.rs`, `panes/themes.rs` — the
+titlebar/statusbar bar-item layout editor) still consumes them, and that
+editor + the `barItemPlacements → statusBarItemPlacements` migrator are
+explicitly the subject of T18-005 / T18-006 — collapsing `BarLoc` now would
+fold those tasks forward. The `BarLayoutTick` `observe_global` in `AppShell`
+stays wired (now a plain `cx.notify()`) so a settings-window edit still
+refreshes the live bar; T18-005 repoints it at
+`StatusItemRegistry::resolve_side`. Dock-layout persistence moved off
+`AppShell` onto `Workspace` (a `set_dock_persist_hook` callback, since
+`labonair-workspace` cannot depend on `labonair-settings-ui`'s
+`PreferencesStore`). No new crate edges (`shell`/`workspace` → `panel` and
+`shell` → `workspace` already existed).
+
 ---
 
 ## 9. Ist-Graph after Phase 15 (T16-010)

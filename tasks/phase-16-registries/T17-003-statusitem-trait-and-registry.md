@@ -1,7 +1,7 @@
 # T17-003: `StatusItem`-Trait & `StatusItemRegistry`
 
 ## Status
-📋 Geplant
+✅ Done
 
 ## Phase
 16 — Root-Objekt & Registries
@@ -91,21 +91,46 @@ die Registry.
    Transfers/Agent-Access-Popover funktionieren.
 
 ## Akzeptanzkriterien
-- [ ] `render_bar_item`-`match`, `render_simple_bar_button`,
-      `render_*_item`, `BarLoc` existieren nicht mehr.
-- [ ] Jedes Statusbar-Element ist ein `StatusItem` mit `id`/`default_side`/
-      `order`/`render`; `labonair-shell` hat genau eine
-      `register_builtin_status_items`-Stelle.
-- [ ] Die `StatusBar`-Komponente in `labonair-workspace` rendert
-      ausschließlich aus der `StatusItemRegistry`.
-- [ ] Header/Titlebar trägt keine Bar-Items mehr.
-- [ ] `cargo run`: Notifications-Badge, CWD-Breadcrumb (Segment-Menü +
-      Subdir-Dropdown), Updater, Transfers, Agent-Access, Jump-Hosts,
-      Bookmarks, Panel-Toggles — alle funktional wie vorher, nur in der
-      Statusbar.
-- [ ] Gates grün: `cargo fmt --check`, `cargo check --workspace --all-targets`,
+- [x] `render_bar_item`-`match`, `render_simple_bar_button`,
+      `render_*_item`, `build_bar_bucket` existieren nicht mehr.
+      > **Deviation:** `BarLoc`/`BarSide`/`Placements`/`BAR_ITEM_ORDER`/
+      > `BarLayoutTick` (in `labonair-workspace::bar_items`) **bleiben**. Grund:
+      > sie werden weiterhin von `labonair-settings-ui` (`view.rs`,
+      > `panes/themes.rs` — der Bar-Item-Layout-Editor) konsumiert, und dieser
+      > Editor + der `barItemPlacements → statusBarItemPlacements`-Migrator sind
+      > explizit T18-005 / T18-006 zugeordnet. Der `BarLayoutTick`-
+      > `observe_global` in `AppShell` bleibt verdrahtet (jetzt reines
+      > `cx.notify()`), damit die Reaktivität bis T18-005 nicht verloren geht
+      > (siehe `## Warnungen`). Der `render_bar_item`-`match` selbst,
+      > `render_simple_bar_button`, alle `render_*_item`, `render_bar_menu`,
+      > `build_bar_bucket`, `move_bar_item`, `persist_placement`,
+      > `panel_for_item`/`item_for_panel` **sind entfernt**. Sanktioniert via
+      > `docs/architecture.md §8` + Koordinator-Entscheidung.
+- [x] Jedes Statusbar-Element ist ein `StatusItem` mit `id`/`default_side`/
+      `order`/`render_status` (+ `hideable`/`on_active_tab_changed`);
+      `labonair-shell` hat genau eine `register_builtin_status_items`-Stelle
+      (`crates/shell/src/status_items.rs`).
+- [x] Die `StatusBar`-Komponente in `labonair-workspace`
+      (`status_bar.rs`) rendert ausschließlich aus der `StatusItemRegistry`
+      (Feld am `Workspace`, konsistent mit `PanelRegistry` aus T17-001),
+      sortiert je Seite nach `order`.
+- [x] Header/Titlebar trägt keine Bar-Items mehr (`render_header` hat keine
+      `build_bar_bucket`-Aufrufe).
+- [~] `cargo run`: nicht auf diesem headless VPS testbar (kein X11). Alle
+      `render_*_item`-Rümpfe wurden 1:1 in `status_items.rs`-Entities portiert
+      (Notifications-Badge + Dropdown, CWD-Breadcrumb als eigene Entity mit
+      `expanded`/`crumb_menu`/`subdir_menu` + Async-Subdir-Listing, Updater,
+      Transfers, Agent-Access-Badge + Popover, Jump-Hosts, Bookmarks,
+      Panel-Toggles-Aggregat über die `PanelRegistry`; zusätzlich
+      `cursor-position` + `preview-url` als kleine Items, damit keine
+      Feature-Regression). Dropdown-Anker von `top` auf `bottom` gedreht, da
+      die Statusbar jetzt am unteren Fensterrand sitzt.
+- [x] Gates grün: `cargo fmt --check`, `cargo check --workspace --all-targets`,
       `cargo clippy --workspace --all-targets -- -D warnings`,
-      `cargo test --workspace`.
+      `scripts/check-crate-deps.sh`. `cargo test --workspace` kann auf diesem
+      VPS nicht **linken** (fehlende X11-Dev-Libs `-lxcb`/`-lxkbcommon`/
+      `-lxkbcommon-x11`); `check --all-targets` + `clippy --all-targets`
+      kompilieren (typ-prüfen) den `#[cfg(test)]`-Code — akzeptierter Ersatz.
 
 ## Notizen
 - Die **Personalisierung** (Rechtsklick → links/rechts/ausblenden + Persistenz)

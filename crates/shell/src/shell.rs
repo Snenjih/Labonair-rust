@@ -18,6 +18,7 @@ pub mod app_shell;
 pub mod assets;
 pub mod cwd_breadcrumb;
 pub mod menu;
+pub mod status_items;
 pub mod updater;
 pub mod window_state;
 

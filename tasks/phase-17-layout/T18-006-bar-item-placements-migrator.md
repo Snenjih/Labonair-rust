@@ -1,5 +1,13 @@
 # T18-006: Migrator `barItemPlacements` → `statusBarItemPlacements`
 
+## Notiz (aus T17-003)
+Literaler `BarLoc`-Abbau + Settings-UI-Titlebar-Bucket-Kollaps ist hier (bzw.
+T18-005) eingeplant — T17-003 hat `render_bar_item`/`render_*_item`/
+`build_bar_bucket` entfernt, aber `BarItemId`/`BarLoc`/`Placements`/
+`BarLayoutTick` (`labonair-workspace::bar_items`) als transitionalen
+Blob-Parser stehen lassen, weil `labonair-settings-ui` sie noch nutzt und der
+Migrator hier lebt.
+
 ## Status
 📋 Geplant
 

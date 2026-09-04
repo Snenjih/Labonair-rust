@@ -1,5 +1,15 @@
 # T18-005: Statusbar-Item-Personalisierung (Rechtsklick → links/rechts/ausblenden)
 
+## Notiz (aus T17-003)
+Der literale `BarLoc`-Abbau + das Kollabieren des Titlebar-Buckets in
+`labonair-settings-ui` (`view.rs`, `panes/themes.rs` — Bar-Item-Layout-Editor)
+wurde in T17-003 **bewusst nicht** gemacht und ist hier eingeplant: T17-003
+hält `BarItemId`/`BarLoc`/`Placements`/`BarLayoutTick` in
+`labonair-workspace::bar_items` als transitionale Persistenz-/UI-Schicht am
+Leben; der `BarLayoutTick`-`observe_global` in `AppShell` ist noch verdrahtet
+(reines `cx.notify()`) und soll hier auf `statusBarItemPlacements` +
+`StatusItemRegistry::resolve_side` umgestellt werden.
+
 ## Status
 📋 Geplant
 

@@ -4,7 +4,88 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
-## Last Session: 2026-09-04 (T17-002 — `Dock` model (Left / Right / Bottom) · **Phase 16**)
+## Last Session: 2026-09-04 (T17-003 — `StatusItem` trait & `StatusItemRegistry` · **Phase 16**)
+
+Kills the shell's `render_bar_item`-`match` cascade. Every status-bar element
+is now a self-describing `StatusItem` view; `labonair-shell` registers the
+concrete ones once and a `StatusBar` component in `labonair-workspace` renders
+purely from the registry.
+
+### What Was Done (T17-003)
+- **`crates/panel/src/status.rs`** — `StatusItem` trait finalised: added
+  `order() -> i32`, `hideable() -> bool`, `on_active_tab_changed(&mut self,
+  cx)` (all defaulted); `StatusItemHandle` gained `order` / `hideable` /
+  `on_active_tab_changed`; `StatusItemRegistration` gained `order: i32`;
+  `StatusItemRegistry::resolve_side(id) -> StatusSide` (default-side for now,
+  TODO points at T18-005's placement-blob override). +1 unit test.
+- **`crates/workspace/src/status_bar.rs`** — NEW. `StatusBar` `Render` view:
+  lazily builds every registered item once (constructors hand back
+  pre-built-entity clones, mirroring `init_docks`), groups by side, sorts by
+  `order`, renders left/right clusters. Owns the status-bar chrome
+  (`h(32)` / `status_bar()` bg / `border_t`).
+- **`crates/workspace/src/workspace.rs`** — `status_item_registry:
+  StatusItemRegistry` + `dock_persist_hook: Option<DockPersistHook>` +
+  `last_dock_save` fields; `status_item_registry()/_mut()`,
+  `set_dock_persist_hook()`, `primary_dock()`, `dock_for_panel()`,
+  `panel_is_active()`, `select_panel()`, `open_panel()`, `persist_docks()`
+  moved here off `AppShell` (persistence goes through the shell-supplied
+  callback because this crate can't reach `PreferencesStore`).
+- **`crates/shell/src/status_items.rs`** — NEW. Concrete items ported 1:1 from
+  the old `render_*_item` bodies: `PanelTogglesStatusItem` (aggregate — one
+  toggle per `PanelRegistry` entry, AI folded in), `NotificationsStatusItem`
+  (badge + dropdown), `CwdStatusItem` (own entity: `expanded` / `crumb_menu` /
+  `subdir_menu` + async subdir listing + segment/subdir context menus),
+  `CursorPositionStatusItem`, `PreviewUrlStatusItem`, `UpdaterStatusItem`,
+  `TransfersStatusItem`, `AgentAccessStatusItem` (badge + popover),
+  `JumpHostsStatusItem`, `BookmarksStatusItem`. Single
+  `register_builtin_status_items(workspace, theme, notifications, updater,
+  agent_access, bookmarks, cx)`. Dropdown anchors flipped `top`→`bottom`
+  (status bar is at the window's bottom edge now).
+- **`crates/shell/src/app_shell.rs`** — deleted ~930 lines: `render_bar_item`,
+  `render_simple_bar_button`, `render_updater_item`,
+  `render_notifications_item`, `render_panel_toggle`, `render_ai_toggle`,
+  `render_bar_menu`, `build_bar_bucket`, `render_agent_badge`,
+  `render_cwd_breadcrumb` + `render_crumb_segment` + `render_crumb_menu` +
+  `render_subdir_menu` + `open_crumb_menu` + `open_subdir_menu` + `home_dir`,
+  `render_statusbar`, `persist_placement`, `move_bar_item`, `panel_for_item`,
+  `item_for_panel`, `primary_side`, `persist_docks`, and the fields
+  `agent_access` / `agent_badge_open` / `placements` / `bar_menu` /
+  `notif_open` / `breadcrumb_expanded` / `crumb_menu` / `subdir_menu` /
+  `last_dock_save` / `backend` / `tokio`. New `status_bar:
+  Entity<StatusBar>` field. `render_header` no longer builds bar buckets.
+  `toggle_sidebar` / `move_panel` / `set_dock_size` /
+  `act_debug_toggle_dock_zoom` / the dock-tab click now call
+  `Workspace::persist_docks`. `BarLayoutTick` `observe_global` kept as a plain
+  `cx.notify()` (T18-005 repurposes it).
+- **`crates/shell/src/shell.rs`** — `pub mod status_items;`.
+
+### Deviation (recorded — see `docs/architecture.md §8.6`, task file AC1)
+`BarLoc` was **not** removed (AC1 asked for it). `BarItemId`/`BarLoc`/
+`Placements`/`BAR_ITEM_ORDER`/`BarLayoutTick` in
+`labonair-workspace::bar_items` stay: `labonair-settings-ui` (`view.rs`,
+`panes/themes.rs` bar-item layout editor) still consumes them, and that editor
++ the `barItemPlacements → statusBarItemPlacements` migrator are explicitly
+T18-005 / T18-006. Notes added to both those task files.
+
+### Gates
+- `cargo fmt --check` ✓
+- `cargo check --workspace --all-targets` ✓ (only the pre-existing
+  `proc-macro-error2` future-incompat dep warning)
+- `cargo clippy --workspace --all-targets -- -D warnings` ✓ (added a
+  `DockPersistHook` type alias for `type_complexity`)
+- `scripts/check-crate-deps.sh` ✓ (20 crates, 87 edges, acyclic — no new
+  edges; `shell`/`workspace`→`panel` and `shell`→`workspace` already existed)
+- `cargo test` cannot **link** on this headless VPS (`rust-lld: unable to
+  find library -lxcb / -lxkbcommon / -lxkbcommon-x11`). `check --all-targets`
+  + `clippy --all-targets` type-check the `#[cfg(test)]` code — accepted
+  substitute; disk ~91 % full so `cargo test --workspace` not run.
+
+### What's Next
+**T17-004** — `PaneGroup` (recursive split tree + persistence, optional root).
+
+---
+
+## Prior Session: 2026-09-04 (T17-002 — `Dock` model (Left / Right / Bottom) · **Phase 16**)
 
 Replaces the shell's ad-hoc dual-slot sidebar (`left_slot`/`right_slot`,
 one panel each) with a real three-dock model owned by the `Workspace`.

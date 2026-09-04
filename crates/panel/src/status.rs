@@ -69,8 +69,26 @@ pub trait StatusItem: Render {
     /// Side the item shows on until the user moves it.
     fn default_side(&self) -> StatusSide;
 
+    /// Stable-sort key within a side (lower renders further from the centre).
+    fn order(&self) -> i32 {
+        0
+    }
+
     /// Render the item's content for the status bar row.
     fn render_status(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement;
+
+    /// Whether the user is offered a "hide" affordance for this item. The
+    /// persistence of that choice lands in T18-005; here it is only advisory.
+    fn hideable(&self) -> bool {
+        true
+    }
+
+    /// Notification hook for "the active workspace tab changed" — used by
+    /// context-sensitive items (CWD breadcrumb, editor cursor). Optional; most
+    /// items observe their own dependencies instead.
+    fn on_active_tab_changed(&mut self, cx: &mut Context<Self>) {
+        let _ = cx;
+    }
 
     /// How this item hides itself, or `None` if it is inherently conditional on
     /// another user-visible setting (Zed's rule for returning `None`).
@@ -92,6 +110,12 @@ pub trait StatusItemHandle: Send + Sync {
     fn id(&self, cx: &App) -> &'static str;
     /// See [`StatusItem::default_side`].
     fn default_side(&self, cx: &App) -> StatusSide;
+    /// See [`StatusItem::order`].
+    fn order(&self, cx: &App) -> i32;
+    /// See [`StatusItem::hideable`].
+    fn hideable(&self, cx: &App) -> bool;
+    /// See [`StatusItem::on_active_tab_changed`].
+    fn on_active_tab_changed(&self, cx: &mut App);
     /// See [`StatusItem::hide`].
     fn hide(&self, cx: &App) -> Option<StatusItemHide>;
     /// Type-erased view, for rendering inside the status bar.
@@ -109,6 +133,18 @@ impl<T: StatusItem + 'static> StatusItemHandle for Entity<T> {
 
     fn default_side(&self, cx: &App) -> StatusSide {
         self.read(cx).default_side()
+    }
+
+    fn order(&self, cx: &App) -> i32 {
+        self.read(cx).order()
+    }
+
+    fn hideable(&self, cx: &App) -> bool {
+        self.read(cx).hideable()
+    }
+
+    fn on_active_tab_changed(&self, cx: &mut App) {
+        self.update(cx, |item, cx| item.on_active_tab_changed(cx));
     }
 
     fn hide(&self, cx: &App) -> Option<StatusItemHide> {
@@ -133,6 +169,8 @@ pub struct StatusItemRegistration {
     pub id: &'static str,
     /// Side the item shows on before the user moves it.
     pub default_side: StatusSide,
+    /// Stable-sort key within a side (see [`StatusItem::order`]).
+    pub order: i32,
     /// Constructor invoked lazily when the status bar is built.
     pub build: StatusItemConstructor,
 }
@@ -178,6 +216,18 @@ impl StatusItemRegistry {
         self.items.iter().find(|i| i.id == id)
     }
 
+    /// The side an item renders on. Currently its registered
+    /// [`default_side`](StatusItemRegistration::default_side).
+    ///
+    /// TODO(T18-005): consult the persisted `statusBarItemPlacements` blob
+    /// first and only fall back to `default_side` — the blob override hook
+    /// wires in with the item-personalization task.
+    pub fn resolve_side(&self, id: &str) -> StatusSide {
+        self.get(id)
+            .map(|r| r.default_side)
+            .unwrap_or(StatusSide::Right)
+    }
+
     /// Number of registered status-item types.
     pub fn len(&self) -> usize {
         self.items.len()
@@ -199,6 +249,7 @@ mod tests {
         StatusItemRegistration {
             id,
             default_side: side,
+            order: 0,
             // Never invoked by the registry's bookkeeping methods.
             build: Arc::new(|_, _| unreachable!("stub constructor")),
         }
@@ -233,5 +284,16 @@ mod tests {
         let right: Vec<_> = reg.for_side(StatusSide::Right).map(|i| i.id).collect();
         assert_eq!(right, ["notifications", "cwd"]);
         assert_eq!(reg.for_side(StatusSide::Left).count(), 1);
+    }
+
+    #[test]
+    fn resolve_side_uses_default_side() {
+        let mut reg = StatusItemRegistry::new();
+        reg.register(stub_item("toggles", StatusSide::Left));
+        reg.register(stub_item("cwd", StatusSide::Right));
+        assert_eq!(reg.resolve_side("toggles"), StatusSide::Left);
+        assert_eq!(reg.resolve_side("cwd"), StatusSide::Right);
+        // Unknown id falls back to the right cluster.
+        assert_eq!(reg.resolve_side("missing"), StatusSide::Right);
     }
 }
