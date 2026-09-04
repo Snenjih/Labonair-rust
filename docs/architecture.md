@@ -498,6 +498,36 @@ refreshes the live bar; T18-005 repoints it at
 `PreferencesStore`). No new crate edges (`shell`/`workspace` → `panel` and
 `shell` → `workspace` already existed).
 
+### 8.7 `PaneGroup` — n-ary split tree done in T17-004
+
+`labonair-workspace::pane_group` was rebuilt from the pre-T17-004 flat binary
+tree (`enum PaneNode { Pane, Split{ratio,first,second} }`) into a Zed-style
+n-ary model: `enum Member { Pane(PaneId), Axis(PaneAxis) }`,
+`struct PaneAxis { id, axis, members: Vec<Member>, flexes: Vec<f32> }` with
+`sum(flexes) == 1.0` held invariant (resize only ever redistributes *within*
+one adjacent pair), and `struct PaneGroup { root: Option<Member> }`. Removing
+the last pane sets `root = None` — a valid state, not an error; the empty
+surface itself is T17-009 / T18-001 (the `render_content` Terminal arm still
+shows the old placeholder for `root == None`). `WorkspaceLayout` keeps its
+name and per-tab role but now wraps `PaneGroup` + `active: Option<PaneId>`
+(the full `Option` audit across `Workspace` is T17-009; only the signature
+lands here).
+
+* **Splits are central-area only.** `PaneGroup` applies to the workspace
+  tab content; **docks stay single-panel** (T17-002). No per-dock split tree.
+* **Directions.** `PaneGroup::split` / `WorkspaceLayout::split` take a
+  `SplitDirection` (`Up`/`Down`/`Left`/`Right`); `Workspace::split` too. The
+  shell's two existing actions map to `Right` / `Down`; `Left` / `Up` are
+  wired only through the API for now (user-facing bindings are T17-007's
+  `CommandRegistry`).
+* **Persistence.** `session.rs` gained `SerializedPaneGroup` (recursive serde
+  enum, legacy `split` variant retained for read-only migration to `Axis`)
+  and `SerializedLayout { root: Option<..>, active: Option<PaneId> }`.
+  `WorkspaceTabSnapshot.layout` changed type from `WorkspaceLayout` to
+  `SerializedLayout` but **kept its field name and nesting**, so
+  pre-T17-004 `session.json` files still deserialise with **no
+  `SNAPSHOT_VERSION` bump** (the new format is a superset).
+
 ---
 
 ## 9. Ist-Graph after Phase 15 (T16-010)

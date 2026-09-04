@@ -37,7 +37,7 @@ use tokio::runtime::Handle as TokioHandle;
 use crate::background::{BackgroundStore, LayerScope};
 use crate::bar_items;
 use crate::menu;
-use crate::pane::SplitAxis;
+use crate::pane::SplitDirection;
 use crate::theme::{ThemePreference, ThemeStore};
 use crate::updater::UpdaterView;
 use crate::window_state;
@@ -682,7 +682,7 @@ impl AppShell {
         cx: &mut Context<Self>,
     ) {
         self.workspace
-            .update(cx, |w, cx| w.split(SplitAxis::Horizontal, window, cx));
+            .update(cx, |w, cx| w.split(SplitDirection::Right, window, cx));
     }
 
     fn act_split_down(
@@ -692,7 +692,7 @@ impl AppShell {
         cx: &mut Context<Self>,
     ) {
         self.workspace
-            .update(cx, |w, cx| w.split(SplitAxis::Vertical, window, cx));
+            .update(cx, |w, cx| w.split(SplitDirection::Down, window, cx));
     }
 
     fn act_find(&mut self, _: &menu::Find, window: &mut Window, cx: &mut Context<Self>) {

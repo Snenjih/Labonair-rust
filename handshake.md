@@ -4,6 +4,75 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
+## Last Session: 2026-09-04 (T17-004 — `PaneGroup` n-ary split tree + persistence · **Phase 16**)
+
+Replaced the flat binary pane tree with a Zed-style n-ary `Member` tree that
+has an **optional root**, arbitrary nesting, `flexes` (sum-1.0 invariant), and
+full session persistence with backward compat.
+
+### What Was Done (T17-004)
+- **`crates/workspace/src/pane_group.rs`** — rewritten. `enum SplitDirection
+  {Up,Down,Left,Right}` (`axis()`, `increasing()`, `along(SplitAxis)`);
+  `enum Member { Pane(PaneId), Axis(PaneAxis) }`; `struct PaneAxis { id:
+  PaneId, axis: SplitAxis, members: Vec<Member>, flexes: Vec<f32> }` (even
+  redistribution on insert/remove, Zed-style; `with_flexes` validates &
+  renormalises a persisted vector); `struct PaneGroup { root: Option<Member> }`
+  with `split(new_axis_id, target, new_pane, dir)` (handles `root==None` →
+  new root; falls back to first pane if target vanished), `remove(pane) ->
+  RemoveOutcome{Removed{neighbor:Option<PaneId>}|NotFound}` (collapses
+  single-child axes, empties root), `set_boundary(axis_id, boundary, frac)`
+  (redistributes **only** the two adjacent flexes — whole-axis sum preserved
+  exactly), `reset_axis`, `panes`/`first_pane`/`find_pane`/`is_empty`.
+  `WorkspaceLayout` kept (per-tab) but now `{ group: PaneGroup, active:
+  Option<PaneId> }`; `split`/`close`(→`CloseOutcome` unchanged)/`set_active`/
+  `set_boundary`/`reset_axis`/`leaves`/`len`/`is_empty`. 6 new unit tests.
+  `PaneNode` deleted.
+- **`crates/workspace/src/pane.rs`** — re-exports updated to `Member`,
+  `PaneAxis`, `PaneGroup`, `RemoveOutcome`, `SplitDirection`, `WorkspaceLayout`.
+- **`crates/workspace/src/session.rs`** — new `SerializedPaneGroup` (recursive
+  serde enum: `Pane` / `Axis` + read-only legacy `Split` variant migrated to
+  `Axis`) and `SerializedLayout { root: Option<SerializedPaneGroup>, active:
+  Option<PaneId> }` (both `#[serde(default, skip_serializing_if)]`).
+  `WorkspaceTabSnapshot.layout` type `WorkspaceLayout` → `SerializedLayout`
+  **same field name + nesting** ⇒ old `session.json` still loads, **no
+  `SNAPSHOT_VERSION` bump**. `remap_layout` now takes `&SerializedLayout`,
+  rebuilds `Member` tree with fresh pane+axis ids preserving flexes & active.
+  `plan_workspace` uses `leaf_count()`. 3 tests added/adjusted.
+- **`crates/workspace/src/workspace.rs`** — `split`/`split_active` take
+  `SplitDirection`; `resize_split`→`resize_axis(axis_id,boundary,frac)`,
+  `reset_split`→`reset_axis(axis_id)`; `render_pane_node`→`render_member`
+  (recursive over `Member`, resize handle between every adjacent member pair,
+  `id("axis-handle-{axis_id}-{boundary}")`); `PaneResize { axis_id, boundary
+  }`; `layout.active` now `Option` (fixed `focus_next_pane`,
+  `close_active_pane`, `active_pane_view`, `sync_meta`, `render_content`
+  Terminal arm — `root==None` still shows the old placeholder, real empty
+  surface is T17-009/T18-001); snapshot uses
+  `SerializedLayout::from_layout(&layout)`.
+- **`crates/shell/src/app_shell.rs`** — `use crate::pane::SplitDirection`;
+  the two split actions pass `SplitDirection::Right` / `::Down`.
+- **`docs/architecture.md`** — new **§8.7** (n-ary `PaneGroup`, splits =
+  central area only / docks single-panel, direction API, persistence
+  superset / no version bump).
+
+### Gate Results (T17-004)
+- `cargo fmt --check` ✅ · `cargo check --workspace --all-targets` ✅ ·
+  `cargo clippy --workspace --all-targets -- -D warnings` ✅ ·
+  `scripts/check-crate-deps.sh` ✅ (20 crates, 87 edges, acyclic — no new edge).
+- `cargo test --workspace` **not run** — test binaries cannot link on this
+  headless VPS (missing `-lxcb` / `-lxkbcommon*`); disk ~91% full.
+  `cargo check/clippy --all-targets` compiled all `#[cfg(test)]` code — the
+  project-accepted substitute. `cargo run` visual 2×2 / nested check **not
+  possible** (no display).
+
+### State
+- Branch `master`, committed (see `git log`). No blockers.
+
+### Next
+- **T17-005** — next earliest unstarted task (see `tasks/ROADMAP.md` /
+  `tasks/phase-*`).
+
+---
+
 ## Last Session: 2026-09-04 (T17-003 — `StatusItem` trait & `StatusItemRegistry` · **Phase 16**)
 
 Kills the shell's `render_bar_item`-`match` cascade. Every status-bar element

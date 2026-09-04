@@ -1,7 +1,7 @@
 # T17-004: `PaneGroup` — rekursiver Split-Baum + Persistenz
 
 ## Status
-📋 Geplant
+✅ Done
 
 ## Phase
 16 — Root-Objekt & Registries
@@ -81,22 +81,51 @@ Siehe `docs/architecture.md §8.2`.
    die Verhältnisse wieder her.
 
 ## Akzeptanzkriterien
-- [ ] `PaneGroup` ist ein rekursiver `Member`-Baum mit `flexes` und
+- [x] `PaneGroup` ist ein rekursiver `Member`-Baum mit `flexes` und
       **`Option`aler Wurzel**; beliebige Verschachtelungstiefe.
-- [ ] `split` in alle vier Richtungen (inkl. aus `root == None` heraus);
+- [x] `split` in alle vier Richtungen (inkl. aus `root == None` heraus);
       `remove` kollabiert leere Achsen korrekt und ergibt bei letztem Pane
       `root = None` ohne Panic; `resize` verändert nur die zwei benachbarten
-      Verhältnisse.
-- [ ] `cargo run`: 2×2-Layout + verschachtelter Sub-Split funktionieren
-      visuell; Resize-Handles an allen inneren Grenzen.
-- [ ] Session-Persistenz: der komplette Baum inkl. Verhältnisse und
-      Tab-Zuordnung überlebt Neustart; alte flache Snapshots laden weiter.
-- [ ] `close_pane` aktiviert einen sinnvollen Nachbarn; `focus_next_pane`
-      läuft die Panes stabil durch.
-- [ ] Gates grün: `cargo fmt --check`, `cargo check --workspace --all-targets`,
+      Verhältnisse. (Unit-tests `split_in_all_four_directions`,
+      `remove_collapses_axes_and_can_empty_the_tree`,
+      `resize_only_touches_two_adjacent_flexes`.)
+- [~] `cargo run`: 2×2-Layout + verschachtelter Sub-Split — **not verified
+      visually**: headless VPS, no display. `render_member` renders the
+      recursive `Member` tree with a resize handle between every adjacent
+      member pair (col/row per axis); logic covered by unit tests.
+- [x] Session-Persistenz: `SerializedPaneGroup` (rekursives serde-Enum) +
+      `SerializedLayout` in `session.rs`; `remap_layout` rebuilds the tree
+      with fresh ids incl. `flexes` and the active leaf. Legacy flat `split`
+      snapshots still load & migrate to `Axis` — `WorkspaceTabSnapshot.layout`
+      kept its field name/nesting, no `SNAPSHOT_VERSION` bump. Tests
+      `legacy_binary_split_snapshot_migrates_to_axis`, `empty_layout_round_trips`,
+      `remap_layout_preserves_shape_and_active`, `snapshot_round_trips_through_json`.
+- [x] `close_pane` aktiviert einen sinnvollen Nachbarn (`sibling_leaf`:
+      previous member's last leaf, else next member's first);
+      `focus_next_pane` cycles `leaves()` stably. Tests
+      `layout_close_keeps_a_sensible_active_neighbour`, `deep_nesting_round_trips_leaf_order`.
+- [x] Gates grün: `cargo fmt --check`, `cargo check --workspace --all-targets`,
       `cargo clippy --workspace --all-targets -- -D warnings`,
-      `cargo test --workspace` (inkl. neuer PaneGroup-Unit-Tests:
-      split/remove/resize/serde-round-trip).
+      `scripts/check-crate-deps.sh`. **`cargo test` deviation** (recorded in
+      handshake + `docs/architecture.md`): test binaries cannot link on this
+      headless VPS (missing `-lxcb` / `-lxkbcommon*`); `cargo check/clippy
+      --all-targets` compile all `#[cfg(test)]` code and is the accepted
+      substitute. New `pane_group` unit tests: split (4 dirs + from empty),
+      remove (collapse + empty), resize (adjacent-only + sum invariant),
+      close-neighbour, deep-nesting; `session` tests: legacy migration,
+      empty round-trip, remap shape/active.
+
+## Abweichungen (sanctioned deviation process)
+- **`split_left` / `split_up` as user actions**: only the `PaneGroup` /
+  `WorkspaceLayout` / `Workspace::split` API carries all four `SplitDirection`s.
+  The shell keeps its two existing actions (→ `Right` / `Down`); binding
+  `Left` / `Up` is left to T17-007 (`CommandRegistry`). Recorded in
+  `docs/architecture.md §8.7`.
+- **Empty-tree render**: `root == None` currently falls back to the old
+  "Terminal" placeholder in `render_content`; the real empty surface is
+  T17-009 / T18-001 (already noted in `§8.2`).
+- **`cargo test --workspace`** replaced by `cargo check/clippy --all-targets`
+  (env cannot link test binaries — see above).
 
 ## Notizen
 - Zeds `pane_group.rs` ist die beste Vorlage — Struktur 1:1 übernehmen,

@@ -97,11 +97,11 @@ use labonair_terminal::{
 use tokio::runtime::Handle as TokioHandle;
 
 use crate::background::BackgroundStore;
-use crate::pane::{CloseOutcome, PaneId, PaneNode, SplitAxis, WorkspaceLayout};
+use crate::pane::{CloseOutcome, Member, PaneId, SplitAxis, SplitDirection, WorkspaceLayout};
 use crate::prefs::GlobalPreferences;
 use crate::session::{
     plan_restore, PaneSessionKind, PaneSessionSnapshot, RestoreAction, RestoreResult,
-    SessionSnapshot, TabSnapshot, WorkspaceTabSnapshot,
+    SerializedLayout, SessionSnapshot, TabSnapshot, WorkspaceTabSnapshot,
 };
 use crate::tabs::{Tab, TabData, TabKind, TabStore};
 use crate::theme::ThemeStore;
@@ -251,9 +251,11 @@ struct DraggedTab {
     label: SharedString,
 }
 
-/// Value carried while dragging a split divider.
+/// Value carried while dragging a split divider: which axis, and which
+/// boundary within it (between members `boundary` and `boundary + 1`).
 struct PaneResize {
-    split_id: PaneId,
+    axis_id: PaneId,
+    boundary: usize,
 }
 
 /// Minimal drag preview for the resize handles (the cursor does the work).
@@ -688,7 +690,6 @@ impl Workspace {
         let max_lines = prefs.as_ref().and_then(session_scrollback_lines);
         let max_bytes = prefs.as_ref().map(scrollback_max_bytes);
         let sessions = layout
-            .root
             .leaves()
             .iter()
             .map(|leaf| {
@@ -717,7 +718,7 @@ impl Workspace {
             .collect();
         Some(TabSnapshot::Workspace(WorkspaceTabSnapshot {
             title: tab.custom_title.clone(),
-            layout,
+            layout: SerializedLayout::from_layout(&layout),
             sessions,
         }))
     }
@@ -839,7 +840,7 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Option<u64> {
-        let leaves = layout.root.leaves();
+        let leaves = layout.leaves();
         // Spawn one session per leaf; bail if the very first cannot start.
         let mut spawned: Vec<(PaneId, SessionId, SessionHandle, String)> = Vec::new();
         for (i, (leaf, cwd)) in leaves.iter().zip(cwds.iter()).enumerate() {
@@ -1372,9 +1373,9 @@ impl Workspace {
         .detach();
     }
 
-    /// Split the active workspace pane along `axis`.
-    pub fn split(&mut self, axis: SplitAxis, window: &mut Window, cx: &mut Context<Self>) {
-        self.split_active(axis, window, cx);
+    /// Split the active workspace pane in `dir`.
+    pub fn split(&mut self, dir: SplitDirection, window: &mut Window, cx: &mut Context<Self>) {
+        self.split_active(dir, window, cx);
     }
 
     /// `Close Tab`: close the active pane if the tab is split, else the tab.
@@ -1415,7 +1416,7 @@ impl Workspace {
         if leaves.len() <= 1 {
             return;
         }
-        let current = leaves.iter().position(|&p| p == active);
+        let current = active.and_then(|a| leaves.iter().position(|&p| p == a));
         let next = leaves[current.map_or(0, |i| (i + 1) % leaves.len())];
         self.set_pane_active(next, window, cx);
     }
@@ -1522,7 +1523,7 @@ impl Workspace {
 
     /// Split the active pane of the active workspace tab, spawning a new
     /// terminal in the same cwd.
-    fn split_active(&mut self, axis: SplitAxis, window: &mut Window, cx: &mut Context<Self>) {
+    fn split_active(&mut self, dir: SplitDirection, window: &mut Window, cx: &mut Context<Self>) {
         let Some(tab_id) = self.active_ws_tab(cx) else {
             return;
         };
@@ -1530,10 +1531,10 @@ impl Workspace {
         let Some((session_id, handle, scrollback_id)) = self.spawn_session(cwd, None, cx) else {
             return;
         };
-        let split_id = self.alloc_pane();
+        let axis_id = self.alloc_pane();
         let new_pane = self.alloc_pane();
         if let Some(layout) = self.layouts.get_mut(&tab_id) {
-            layout.split(split_id, new_pane, axis);
+            layout.split(axis_id, new_pane, dir);
         }
         let view = self.new_terminal_view(handle, window, cx);
         self.panes.insert(
@@ -1571,7 +1572,7 @@ impl Workspace {
         let Some(tab_id) = self.active_ws_tab(cx) else {
             return;
         };
-        let Some(pane) = self.layouts.get(&tab_id).map(|l| l.active) else {
+        let Some(pane) = self.layouts.get(&tab_id).and_then(|l| l.active) else {
             return;
         };
         let outcome = self
@@ -1601,20 +1602,20 @@ impl Workspace {
         self.focus_active(window, cx);
     }
 
-    fn resize_split(&mut self, split_id: PaneId, ratio: f32, cx: &mut Context<Self>) {
+    fn resize_axis(&mut self, axis_id: PaneId, boundary: usize, frac: f32, cx: &mut Context<Self>) {
         if let Some(tab_id) = self.active_ws_tab(cx) {
             if let Some(layout) = self.layouts.get_mut(&tab_id) {
-                if layout.set_ratio(split_id, ratio) {
+                if layout.set_boundary(axis_id, boundary, frac) {
                     cx.notify();
                 }
             }
         }
     }
 
-    fn reset_split(&mut self, split_id: PaneId, cx: &mut Context<Self>) {
+    fn reset_axis(&mut self, axis_id: PaneId, cx: &mut Context<Self>) {
         if let Some(tab_id) = self.active_ws_tab(cx) {
             if let Some(layout) = self.layouts.get_mut(&tab_id) {
-                if layout.reset_ratio(split_id) {
+                if layout.reset_axis(axis_id) {
                     cx.notify();
                 }
             }
@@ -1633,7 +1634,7 @@ impl Workspace {
     }
 
     fn active_pane_view(&self, cx: &App) -> Option<Entity<TerminalView>> {
-        let pane = self.active_layout(cx)?.active;
+        let pane = self.active_layout(cx)?.active?;
         self.panes.get(&pane).map(|e| e.view.clone())
     }
 
@@ -3402,7 +3403,7 @@ impl Workspace {
             .layouts
             .iter()
             .filter_map(|(tab_id, layout)| {
-                let v = self.panes.get(&layout.active)?.view.read(cx);
+                let v = self.panes.get(&layout.active?)?.view.read(cx);
                 Some((*tab_id, v.cwd(), v.shell_title()))
             })
             .collect();
@@ -3761,10 +3762,16 @@ impl Workspace {
                 }
                 if let Some(layout) = self.layouts.get(&active.id).cloned() {
                     let multi = layout.len() > 1;
-                    div()
-                        .size_full()
-                        .child(self.render_pane_node(&layout.root, layout.active, multi, cx))
-                        .into_any_element()
+                    let active_pane = layout.active;
+                    match &layout.group.root {
+                        Some(root) => div()
+                            .size_full()
+                            .child(self.render_member(root, active_pane, multi, cx))
+                            .into_any_element(),
+                        // Empty tree — the empty-workspace surface (T17-009 /
+                        // T18-001) will replace this placeholder.
+                        None => self.placeholder("Terminal", cx).into_any_element(),
+                    }
                 } else {
                     self.placeholder("Terminal", cx).into_any_element()
                 }
@@ -3811,10 +3818,12 @@ impl Workspace {
         }
     }
 
-    fn render_pane_node(
+    /// Render one node of the recursive pane tree: a leaf pane, or an axis of
+    /// members laid out along `flexes` with a resize handle between each pair.
+    fn render_member(
         &mut self,
-        node: &PaneNode,
-        active_pane: PaneId,
+        node: &Member,
+        active_pane: Option<PaneId>,
         multi: bool,
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
@@ -3822,9 +3831,9 @@ impl Workspace {
         let (bg, border, accent) = (theme.background(), theme.border(), theme.accent());
 
         match node {
-            PaneNode::Pane { id } => {
+            Member::Pane(id) => {
                 let id = *id;
-                let is_active = id == active_pane;
+                let is_active = active_pane == Some(id);
                 let content: gpui::AnyElement = match self.panes.get(&id) {
                     Some(entry) => entry.view.clone().into_any_element(),
                     None => div().size_full().into_any_element(),
@@ -3847,63 +3856,67 @@ impl Workspace {
                     .child(content)
                     .into_any_element()
             }
-            PaneNode::Split {
-                id,
-                axis,
-                ratio,
-                first,
-                second,
-            } => {
-                let split_id = *id;
-                let row = *axis == SplitAxis::Horizontal;
-                let ratio = *ratio;
-                let first_el = self.render_pane_node(first, active_pane, multi, cx);
-                let second_el = self.render_pane_node(second, active_pane, multi, cx);
+            Member::Axis(ax) => {
+                let axis_id = ax.id;
+                let row = ax.axis == SplitAxis::Horizontal;
+                let n = ax.members.len();
+                let flexes = ax.flexes.clone();
 
-                let handle = div()
-                    .id(("split", split_id))
-                    .flex_shrink_0()
-                    .bg(border)
-                    .hover(|s| s.bg(accent))
-                    .when(row, |d| d.w(px(HANDLE)).h_full().cursor_col_resize())
-                    .when(!row, |d| d.h(px(HANDLE)).w_full().cursor_row_resize())
-                    .on_drag(PaneResize { split_id }, |_, _, _, cx| cx.new(|_| DragGhost))
-                    .on_click(cx.listener(move |this, ev: &ClickEvent, _window, cx| {
-                        if ev.click_count() >= 2 {
-                            this.reset_split(split_id, cx);
-                        }
-                    }));
-
-                div()
+                let mut container = div()
                     .flex()
                     .size_full()
                     .min_w_0()
                     .min_h_0()
                     .when(row, |d| d.flex_row())
-                    .when(!row, |d| d.flex_col())
-                    .child(
+                    .when(!row, |d| d.flex_col());
+
+                for (i, member) in ax.members.iter().enumerate() {
+                    let child_el = self.render_member(member, active_pane, multi, cx);
+                    let last = i + 1 == n;
+                    let basis = flexes.get(i).copied().unwrap_or(1.0 / n as f32);
+                    container = container.child(
                         div()
                             .min_w_0()
                             .min_h_0()
                             .overflow_hidden()
-                            .flex_basis(relative(ratio))
-                            .child(first_el),
-                    )
-                    .child(handle)
-                    .child(
-                        div()
-                            .min_w_0()
-                            .min_h_0()
-                            .overflow_hidden()
-                            .flex_grow()
-                            .flex_basis(relative(1.0 - ratio))
-                            .child(second_el),
-                    )
+                            .flex_basis(relative(basis))
+                            .when(last, |d| d.flex_grow())
+                            .child(child_el),
+                    );
+                    if !last {
+                        let boundary = i;
+                        container = container.child(
+                            div()
+                                .id(SharedString::from(format!(
+                                    "axis-handle-{axis_id}-{boundary}"
+                                )))
+                                .flex_shrink_0()
+                                .bg(border)
+                                .hover(|s| s.bg(accent))
+                                .when(row, |d| d.w(px(HANDLE)).h_full().cursor_col_resize())
+                                .when(!row, |d| d.h(px(HANDLE)).w_full().cursor_row_resize())
+                                .on_drag(PaneResize { axis_id, boundary }, |_, _, _, cx| {
+                                    cx.new(|_| DragGhost)
+                                })
+                                .on_click(cx.listener(
+                                    move |this, ev: &ClickEvent, _window, cx| {
+                                        if ev.click_count() >= 2 {
+                                            this.reset_axis(axis_id, cx);
+                                        }
+                                    },
+                                )),
+                        );
+                    }
+                }
+
+                container
                     .on_drag_move(cx.listener(
                         move |this, ev: &DragMoveEvent<PaneResize>, _window, cx| {
-                            if ev.drag(cx).split_id != split_id {
+                            let drag = ev.drag(cx);
+                            if drag.axis_id != axis_id {
                                 return;
                             }
+                            let boundary = drag.boundary;
                             let b = ev.bounds;
                             let p = ev.event.position;
                             let frac = if row {
@@ -3911,7 +3924,7 @@ impl Workspace {
                             } else {
                                 f32::from(p.y - b.origin.y) / f32::from(b.size.height).max(1.0)
                             };
-                            this.resize_split(split_id, frac, cx);
+                            this.resize_axis(axis_id, boundary, frac, cx);
                         },
                     ))
                     .into_any_element()

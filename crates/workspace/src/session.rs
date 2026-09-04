@@ -18,7 +18,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 
-use crate::pane::{PaneId, PaneNode, WorkspaceLayout};
+use crate::pane::{PaneId, SplitAxis, WorkspaceLayout};
+use crate::pane_group::{Member, PaneAxis, PaneGroup};
 
 /// Bumped whenever the snapshot layout changes incompatibly; an older/newer
 /// file is discarded rather than mis-read.
@@ -78,10 +79,153 @@ pub enum TabSnapshot {
 pub struct WorkspaceTabSnapshot {
     /// User rename (`custom_title`), if set.
     pub title: Option<String>,
-    /// The split-pane tree (structure + ratios + active leaf).
-    pub layout: WorkspaceLayout,
-    /// Per-pane session metadata, in `layout.leaves()` order.
+    /// The split-pane tree (structure + flexes + active leaf). Nesting and
+    /// field name are kept so pre-T17-004 snapshots (`layout.root` a binary
+    /// `split` node) still deserialise.
+    pub layout: SerializedLayout,
+    /// Per-pane session metadata, in visual leaf order.
     pub sessions: Vec<PaneSessionSnapshot>,
+}
+
+/// Persisted form of a [`WorkspaceLayout`]: an optional recursive tree plus the
+/// active leaf id. Both fields are optional so an empty workspace tab
+/// (`root == None`) is a valid snapshot.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SerializedLayout {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub root: Option<SerializedPaneGroup>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub active: Option<PaneId>,
+}
+
+/// Recursive, serde-friendly mirror of [`Member`]. New snapshots only ever
+/// contain [`SerializedPaneGroup::Pane`] / [`SerializedPaneGroup::Axis`]; the
+/// legacy [`SerializedPaneGroup::Split`] variant exists solely to load
+/// pre-T17-004 binary trees and is migrated to `Axis` on rebuild.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "lowercase")]
+pub enum SerializedPaneGroup {
+    /// A single content slot.
+    Pane { id: PaneId },
+    /// An n-ary split arranged along `axis`, sized by `flexes` (sum ≈ 1.0).
+    Axis {
+        #[serde(default)]
+        id: PaneId,
+        axis: SplitAxis,
+        members: Vec<SerializedPaneGroup>,
+        flexes: Vec<f32>,
+    },
+    /// Legacy binary split (`ratio` = first-child fraction). Never written by
+    /// current code; migrated to [`SerializedPaneGroup::Axis`] on load.
+    Split {
+        id: PaneId,
+        axis: SplitAxis,
+        ratio: f32,
+        first: Box<SerializedPaneGroup>,
+        second: Box<SerializedPaneGroup>,
+    },
+}
+
+impl SerializedPaneGroup {
+    /// Number of leaves in this subtree.
+    pub fn leaf_count(&self) -> usize {
+        match self {
+            SerializedPaneGroup::Pane { .. } => 1,
+            SerializedPaneGroup::Axis { members, .. } => {
+                members.iter().map(SerializedPaneGroup::leaf_count).sum()
+            }
+            SerializedPaneGroup::Split { first, second, .. } => {
+                first.leaf_count() + second.leaf_count()
+            }
+        }
+    }
+
+    /// Capture a runtime [`Member`] (always emits `Pane` / `Axis`).
+    fn from_member(m: &Member) -> Self {
+        match m {
+            Member::Pane(id) => SerializedPaneGroup::Pane { id: *id },
+            Member::Axis(ax) => SerializedPaneGroup::Axis {
+                id: ax.id,
+                axis: ax.axis,
+                members: ax
+                    .members
+                    .iter()
+                    .map(SerializedPaneGroup::from_member)
+                    .collect(),
+                flexes: ax.flexes.clone(),
+            },
+        }
+    }
+
+    /// Rebuild a runtime [`Member`] with fresh ids, recording
+    /// `(old_leaf, new_leaf)` pairs in visual order.
+    fn remap(
+        &self,
+        alloc: &mut impl FnMut() -> PaneId,
+        leaf_map: &mut Vec<(PaneId, PaneId)>,
+    ) -> Member {
+        match self {
+            SerializedPaneGroup::Pane { id } => {
+                let new = alloc();
+                leaf_map.push((*id, new));
+                Member::Pane(new)
+            }
+            SerializedPaneGroup::Axis {
+                axis,
+                members,
+                flexes,
+                ..
+            } => {
+                let members: Vec<Member> =
+                    members.iter().map(|m| m.remap(alloc, leaf_map)).collect();
+                Member::Axis(PaneAxis::with_flexes(
+                    alloc(),
+                    *axis,
+                    members,
+                    flexes.clone(),
+                ))
+            }
+            SerializedPaneGroup::Split {
+                axis,
+                ratio,
+                first,
+                second,
+                ..
+            } => {
+                let first = first.remap(alloc, leaf_map);
+                let second = second.remap(alloc, leaf_map);
+                let r = ratio.clamp(0.0, 1.0);
+                Member::Axis(PaneAxis::with_flexes(
+                    alloc(),
+                    *axis,
+                    vec![first, second],
+                    vec![r, 1.0 - r],
+                ))
+            }
+        }
+    }
+}
+
+impl SerializedLayout {
+    /// Capture a runtime [`WorkspaceLayout`].
+    pub fn from_layout(layout: &WorkspaceLayout) -> Self {
+        Self {
+            root: layout
+                .group
+                .root
+                .as_ref()
+                .map(SerializedPaneGroup::from_member),
+            active: layout.active,
+        }
+    }
+
+    /// Total leaf count (0 for an empty tree).
+    pub fn leaf_count(&self) -> usize {
+        self.root
+            .as_ref()
+            .map_or(0, SerializedPaneGroup::leaf_count)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -220,8 +364,8 @@ fn plan_workspace(
     alloc_pane: &mut impl FnMut() -> PaneId,
 ) -> RestoreAction {
     let title = w.title.clone().unwrap_or_default();
-    let leaves = w.layout.root.leaves();
-    if leaves.is_empty() || w.sessions.is_empty() {
+    let leaf_count = w.layout.leaf_count();
+    if leaf_count == 0 || w.sessions.is_empty() {
         return RestoreAction::Skip {
             title,
             reason: "Empty workspace tab".to_string(),
@@ -253,7 +397,6 @@ fn plan_workspace(
     // Re-order the per-leaf cwds to match the freshly-remapped leaf order
     // (`remap_layout` preserves left→right order, so this is a straight zip).
     let _ = order;
-    let leaf_count = w.layout.root.leaves().len();
     let cwds = (0..leaf_count)
         .map(|i| w.sessions.get(i).and_then(|s| s.cwd.clone()))
         .collect();
@@ -267,50 +410,33 @@ fn plan_workspace(
     }
 }
 
-/// Rebuild a [`WorkspaceLayout`] with fresh pane/split ids, preserving the tree
-/// shape, split axes/ratios and the active leaf. Returns the new layout and the
-/// new leaf ids in left→right order.
+/// Rebuild a [`WorkspaceLayout`] from its persisted form with fresh pane / axis
+/// ids, preserving the tree shape, split axes, flexes and the active leaf, and
+/// migrating any legacy binary `split` nodes to n-ary axes. Returns the new
+/// layout and the new leaf ids in visual order.
 pub fn remap_layout(
-    layout: &WorkspaceLayout,
+    layout: &SerializedLayout,
     alloc: &mut impl FnMut() -> PaneId,
 ) -> (WorkspaceLayout, Vec<PaneId>) {
     let mut leaf_map: Vec<(PaneId, PaneId)> = Vec::new();
-    let root = remap_node(&layout.root, alloc, &mut leaf_map);
-    let order = leaf_map.iter().map(|(_, new)| *new).collect();
-    let active = leaf_map
-        .iter()
-        .find(|(old, _)| *old == layout.active)
-        .map(|(_, new)| *new)
-        .or_else(|| leaf_map.first().map(|(_, new)| *new))
-        .unwrap_or_else(alloc);
-    (WorkspaceLayout { root, active }, order)
-}
-
-fn remap_node(
-    node: &PaneNode,
-    alloc: &mut impl FnMut() -> PaneId,
-    leaf_map: &mut Vec<(PaneId, PaneId)>,
-) -> PaneNode {
-    match node {
-        PaneNode::Pane { id } => {
-            let new = alloc();
-            leaf_map.push((*id, new));
-            PaneNode::Pane { id: new }
-        }
-        PaneNode::Split {
-            axis,
-            ratio,
-            first,
-            second,
-            ..
-        } => PaneNode::Split {
-            id: alloc(),
-            axis: *axis,
-            ratio: *ratio,
-            first: Box::new(remap_node(first, alloc, leaf_map)),
-            second: Box::new(remap_node(second, alloc, leaf_map)),
+    let root = layout.root.as_ref().map(|r| r.remap(alloc, &mut leaf_map));
+    let order: Vec<PaneId> = leaf_map.iter().map(|(_, new)| *new).collect();
+    let active = layout
+        .active
+        .and_then(|old| {
+            leaf_map
+                .iter()
+                .find(|(o, _)| *o == old)
+                .map(|(_, new)| *new)
+        })
+        .or_else(|| order.first().copied());
+    (
+        WorkspaceLayout {
+            group: PaneGroup { root },
+            active,
         },
-    }
+        order,
+    )
 }
 
 // ─────────────────────────────── storage ─────────────────────────────────
@@ -379,13 +505,35 @@ mod tests {
         d
     }
 
-    fn split_layout() -> WorkspaceLayout {
-        let mut l = WorkspaceLayout::new(1);
-        l.split(100, 2, SplitAxis::Horizontal);
-        l.split(101, 3, SplitAxis::Vertical);
-        l.set_ratio(100, 0.4);
-        l.set_active(2);
-        l
+    /// Persisted tree `[1 | (2 / 3)]`, outer boundary at 0.4, active leaf 2.
+    fn split_layout() -> SerializedLayout {
+        SerializedLayout {
+            root: Some(SerializedPaneGroup::Axis {
+                id: 100,
+                axis: SplitAxis::Horizontal,
+                members: vec![
+                    SerializedPaneGroup::Pane { id: 1 },
+                    SerializedPaneGroup::Axis {
+                        id: 101,
+                        axis: SplitAxis::Vertical,
+                        members: vec![
+                            SerializedPaneGroup::Pane { id: 2 },
+                            SerializedPaneGroup::Pane { id: 3 },
+                        ],
+                        flexes: vec![0.5, 0.5],
+                    },
+                ],
+                flexes: vec![0.4, 0.6],
+            }),
+            active: Some(2),
+        }
+    }
+
+    fn single_layout(id: PaneId) -> SerializedLayout {
+        SerializedLayout {
+            root: Some(SerializedPaneGroup::Pane { id }),
+            active: Some(id),
+        }
     }
 
     fn sample() -> SessionSnapshot {
@@ -418,7 +566,7 @@ mod tests {
                 }),
                 TabSnapshot::Workspace(WorkspaceTabSnapshot {
                     title: None,
-                    layout: WorkspaceLayout::new(9),
+                    layout: single_layout(9),
                     sessions: vec![PaneSessionSnapshot {
                         kind: PaneSessionKind::Ssh,
                         cwd: Some("/srv".into()),
@@ -502,17 +650,71 @@ mod tests {
             next
         });
         assert_eq!(order.len(), 3);
-        assert_eq!(remapped.root.leaves(), order);
+        assert_eq!(remapped.leaves(), order);
         // All ids are fresh (>= 501) and none collide with the originals.
         assert!(order.iter().all(|id| *id >= 501));
-        assert!(remapped.root.contains(remapped.active));
+        assert!(remapped.active.is_some_and(|a| remapped.group.find_pane(a)));
         // Active leaf (index 1, the "2" pane) maps to the 2nd new leaf.
-        assert_eq!(remapped.active, order[1]);
-        // Ratio survives.
-        match &remapped.root {
-            PaneNode::Split { ratio, .. } => assert!((*ratio - 0.4).abs() < 1e-6),
-            _ => panic!("root must stay a split"),
+        assert_eq!(remapped.active, Some(order[1]));
+        // Outer flexes survive the round-trip.
+        match remapped.group.root.as_ref().unwrap() {
+            Member::Axis(ax) => {
+                assert!((ax.flexes[0] - 0.4).abs() < 1e-4);
+                assert!((ax.flexes[1] - 0.6).abs() < 1e-4);
+            }
+            _ => panic!("root must stay an axis"),
         }
+    }
+
+    #[test]
+    fn legacy_binary_split_snapshot_migrates_to_axis() {
+        // A pre-T17-004 snapshot: nested binary `split` nodes.
+        let json = r#"{
+            "root": {
+                "type": "split", "id": 10, "axis": "horizontal", "ratio": 0.3,
+                "first": { "type": "pane", "id": 1 },
+                "second": {
+                    "type": "split", "id": 11, "axis": "vertical", "ratio": 0.5,
+                    "first": { "type": "pane", "id": 2 },
+                    "second": { "type": "pane", "id": 3 }
+                }
+            },
+            "active": 3
+        }"#;
+        let legacy: SerializedLayout = serde_json::from_str(json).unwrap();
+        assert_eq!(legacy.leaf_count(), 3);
+
+        let mut next = 0u64;
+        let (layout, order) = remap_layout(&legacy, &mut || {
+            next += 1;
+            next
+        });
+        assert_eq!(order.len(), 3);
+        assert_eq!(layout.leaves(), order);
+        assert_eq!(layout.active, Some(order[2]));
+        match layout.group.root.as_ref().unwrap() {
+            Member::Axis(ax) => {
+                assert_eq!(ax.axis, SplitAxis::Horizontal);
+                assert_eq!(ax.members.len(), 2);
+                assert!((ax.flexes[0] - 0.3).abs() < 1e-4);
+            }
+            _ => panic!("legacy split must become an axis"),
+        }
+    }
+
+    #[test]
+    fn empty_layout_round_trips() {
+        let empty = SerializedLayout::default();
+        let json = serde_json::to_string(&empty).unwrap();
+        assert_eq!(json, "{}");
+        let back: SerializedLayout = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, empty);
+        assert_eq!(back.leaf_count(), 0);
+
+        let (layout, order) = remap_layout(&empty, &mut || 1);
+        assert!(order.is_empty());
+        assert!(layout.is_empty());
+        assert_eq!(layout.active, None);
     }
 
     #[test]
@@ -537,7 +739,7 @@ mod tests {
                 cwds,
                 scrollback_ids,
             } => {
-                assert_eq!(layout.root.leaves().len(), 3);
+                assert_eq!(layout.leaves().len(), 3);
                 assert_eq!(
                     cwds,
                     &vec![Some("/a".to_string()), Some("/b".to_string()), None]
