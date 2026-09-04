@@ -62,6 +62,34 @@ fn main() {
     #[cfg(debug_assertions)]
     spawn_event_logger(&backend);
 
+    // T19-009: one-time migration of the legacy `preferences`/`editor`/`mcp`
+    // split into the flat `SettingsContent` area layout (+ `keymap.json` for
+    // keybind overrides, + SQLite hosts into `hosts.entries`). Must run
+    // before `labonair_settings::init(cx)` below, which reads the very same
+    // `labonair-settings.json` file and would otherwise silently see an
+    // all-defaults tree for an old-format file.
+    {
+        use labonair_backend::modules::fs::paths::config_dir;
+        use labonair_backend::modules::settings::migrate_v2::{
+            migrate_hosts_to_settings, migrate_settings_v1_to_v2,
+        };
+
+        let settings_dir = config_dir();
+        match migrate_settings_v1_to_v2(&settings_dir) {
+            Ok(outcome) => tracing::info!("settings v1->v2 migration: {outcome:?}"),
+            Err(err) => tracing::warn!("settings v1->v2 migration failed: {err}"),
+        }
+        runtime.block_on(async {
+            match labonair_backend::modules::hosts::db::hosts_get_all(&backend.db).await {
+                Ok(hosts) => match migrate_hosts_to_settings(&settings_dir, &hosts, &backend) {
+                    Ok(outcome) => tracing::info!("hosts v1->v2 migration: {outcome:?}"),
+                    Err(err) => tracing::warn!("hosts v1->v2 migration failed: {err}"),
+                },
+                Err(err) => tracing::warn!("failed to load hosts for v1->v2 migration: {err}"),
+            }
+        });
+    }
+
     drop(guard);
     // Keep the runtime (and its background workers) alive for the process.
     std::mem::forget(runtime);

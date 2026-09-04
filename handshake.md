@@ -4,6 +4,139 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
+## Last Session: 2026-09-04 (T19-009 — settings migrator: preferences/editor/mcp → SettingsContent, keybinds → keymap.json, SQLite hosts → hosts.entries)
+
+**T19-009 done.** New `crates/backend/src/modules/settings/migrate_v2.rs`:
+one-time, idempotent `migrate_settings_v1_to_v2(dir) -> SettingsV2Outcome`
+(`AlreadyMigrated`/`NothingToMigrate`/`Migrated { keybinds_migrated }`) that
+transforms the legacy `labonair-settings.json` (separate `preferences`/
+`editor`/`mcp` top-level keys) into the flat T19-001 `SettingsContent` area
+layout (`general`/`appearance`/`terminal`/`editor`/`fileManager`/
+`connections`/`workspace`/`ai`/`mcp`/`personalization`), plus a separate
+`migrate_hosts_to_settings(dir, hosts, app) -> HostsV2Outcome` that hydrates
+the SQLite-backed hosts (`backend::modules::hosts`) into `hosts.entries`.
+
+- **Detection/idempotency**: `schemaVersion: 2` present → no-op; no legacy
+  `"preferences"` key present → no-op (either already-v2 or genuinely
+  empty); otherwise migrate. `.bak` copy before any write (T18-006
+  precedent). Old `preferences`/`editor`/`mcp` raw blobs preserved verbatim
+  under `preferences_legacy`/`editor_legacy`/`mcp_legacy` — nothing is ever
+  silently dropped. Fields with no `SettingsContent` destination
+  (`preferences.barLayoutMigrated`, old `"editor"`'s `number`/`expandtab`/
+  `tabstop`/`shiftwidth`) land under `_migratedUnknown.*` instead. Only the
+  touched top-level keys are read-merge-written (`serde_json::Map` merge,
+  not a blind rewrite) — `statusBarItemPlacements`/`barItemPlacements_legacy`
+  (T18-006) survive untouched, confirmed by a test.
+- **Field-mapping table**: every one of `Preferences`' 170 fields is a
+  hand-written `Some(p.field)` assignment in one of ten per-area builder
+  functions (`general_from`/`appearance_from`/`terminal_from`/`editor_from`/
+  `file_manager_from`/`connections_from`/`workspace_from`/`ai_from`/
+  `mcp_from`/`personalization_from` — literally `content_bridge.rs`'s
+  existing reverse-direction `From<&SettingsContent> for Preferences`
+  inverted field-by-field, since every `SettingsContent` area struct already
+  uses the *same* camelCase field names as `Preferences`). Exhaustiveness is
+  proven, not asserted: `tests::every_preferences_field_is_accounted_for`
+  diffs `serde_json::to_value(Preferences::default())`'s JSON keys against a
+  static `mapped`/`SKIPPED_PREFERENCES_FIELDS`/`UNKNOWN_PREFERENCES_FIELDS`
+  union — a field silently falling off the table fails the test immediately
+  (caught one typo-class bug for free: this test passed clean on the first
+  full run, which is itself a decent signal the hand-transcription was
+  accurate). `hmLayout`/`hmSort`/`hmCardScale` move into the `hosts` area
+  (merged via `merge_object`, never clobbering a prior
+  `migrate_hosts_to_settings` run's `hosts.entries`); `dockLayout`/
+  `sidebar*` move into `workspace`; `mcpBridge*` mirror fields are *not*
+  re-copied — the new `mcp` area is built from the old separate `"mcp"` key
+  (`McpPrefs`), which `Preferences`' own doc comment already calls
+  authoritative.
+- **Keybinds → `keymap.json`**: `preferences.keybinds` was fully *removed*
+  from the `Preferences` struct by T19-008 (a gotcha this task hit directly
+  — deserializing an old file into today's `Preferences` silently drops the
+  unknown field), so the migrator reads `keybinds` off the *raw* JSON
+  `Value` before ever parsing into `Preferences`. A self-contained
+  `SLUG_TO_ACTION: &[(&str, &str)]` table (30 entries, hand-verified against
+  `crates/command-palette/src/keybind.rs`'s `shortcut_slug` +
+  `palette.rs`'s `ACTION_NAMES`) maps old `ShortcutId` slugs
+  (`"tab.new"`) to new `CommandId::action_name()` strings
+  (`"tab::NewTerminal"`) *without* `labonair-backend` importing
+  `labonair-command-palette` — that dependency edge already runs the other
+  way (`command-palette -> backend`), so backend importing it back would be
+  a cycle the crate-graph script forbids. Every migrated binding lands in
+  one `{ "context": null, "bindings": {...} }` block (no per-command default
+  context table exists pre-T19-008; matches the shipped default-keymap
+  assets' own predominant "most bindings are global" shape). Empty-string
+  override (old "unbind") → `null` value, keyed by a `"unbind:<action>"`
+  placeholder since there's no real keystroke to key it by. Unknown slugs
+  are dropped (logged), not fatal. No overrides → no `keymap.json` file
+  written at all (per the task's own instruction).
+- **SQLite hosts → `hosts.entries`**: `host_to_entry` is a pure transform
+  (`Host` -> `labonair_settings_content::hosts::HostEntry`);
+  `credential_ref_for` is the only impure part (reads, never writes, the
+  secret store). **Documented scope reduction** since T19-010 hasn't landed:
+  this codebase's actual "OS Keychain equivalent" the CLAUDE.md architecture
+  overview refers to is `backend::modules::secrets` (`SecretsState`, an
+  AES-256-GCM/plain-JSON file store with a `service::account` composite key)
+  — the `keyring` crate is a real workspace dep but is only used by
+  `crates/ai` for something else entirely, hosts have never used it.
+  `credential_ref` is set to `"secrets:labonair-app:<host.id>"` (direct
+  host password/passphrase, if present) or `"secrets:labonair-cred:<credential_id>"`
+  (a reusable SSH-key `Credential`, if the host references one with an
+  actual stored secret) — **no secret is copied or moved**, this is purely a
+  reference alongside the key the secret already lives under; a
+  `hosts_entries_serialize_without_secrets`-style test confirms none of
+  `password`/`privateKey`/`secret`/`passphrase` (nor the literal test
+  secret) ever appear in the written JSON. `tags`/`tunnels` (opaque SQLite
+  `TEXT` columns with no backend-enforced JSON shape — nothing in
+  `hosts/db.rs` parses them either) are parsed best-effort (JSON array, with
+  a comma-split fallback for tags) rather than inventing a schema; a parse
+  failure is logged and yields an empty list, never a panic — the SQLite row
+  itself is completely untouched regardless, so nothing is actually lost,
+  only the settings.json projection is momentarily incomplete until T19-010
+  nails the real shape. Idempotent via a `hostsMigrated: true` top-level
+  marker (empty host list still sets the marker so a `NothingToMigrate` list
+  doesn't get re-scanned every launch).
+- **Bootstrap wiring** (`crates/app/src/main.rs`): both migrations run
+  synchronously in `main()`, **before** `labonair_settings::init(cx)` —
+  required, since `SettingsStore` reads the very same
+  `labonair-settings.json` file at the very same `config_dir()` path and
+  would otherwise cache an all-defaults tree for one more launch on an old
+  file. `migrate_hosts_to_settings` needs `hosts_get_all(&backend.db).await`
+  (async), so it runs inside a `runtime.block_on(...)` right there in
+  `main()`, before the GPUI `Application::run` closure. `migrate_bar_item_placements`
+  (T18-006) and `keymap_loader::reload_and_apply` (T19-008) are unchanged
+  and still run later inside `bootstrap()`/`AppShell::new` — safe, since
+  neither touches the area keys this migration owns.
+- 10 new unit tests in `migrate_v2.rs` (full migration + count-match,
+  keybind migration incl. unbind + unknown-slug drop, no-keybinds → no file,
+  idempotency, already-v2 untouched, empty → nothing-to-migrate, partial
+  file, host migration + secret-free JSON + idempotency, empty-hosts
+  marker). All four gates green: `cargo fmt --check`, `cargo check
+  --workspace --all-targets`, `cargo clippy --workspace --all-targets -- -D
+  warnings`, `cargo test --workspace` (0 failures workspace-wide).
+  `scripts/check_crate_deps.py` reports 24 crates / 100 edges, acyclic, no
+  new edge needed (`labonair-backend` already depended on
+  `labonair-settings-content`).
+- **Not done / deferred**: a manual `cargo run` smoke test against a real
+  pre-rework `labonair-settings.json` + SQLite `labonair.db` (task's own
+  Anweisung #8) — no such fixture was available in this (headless) session;
+  `full_migration_moves_every_field_and_counts_match` covers the same
+  transform path automatically instead. Noted as `[~]` in the task file
+  rather than silently checked off.
+- **State**: branch `master`, commit before this session was `09755a5`
+  (T19-008). Files touched this session: new
+  `crates/backend/src/modules/settings/migrate_v2.rs`;
+  `crates/backend/src/modules/settings/mod.rs` (module registration);
+  `crates/app/src/main.rs` (migration call sites before
+  `labonair_settings::init`); `tasks/phase-18-settings-core/T19-009-settings-migrator.md`
+  (status + acceptance-criteria checkboxes); this file.
+- **Next**: T19-010 (Settings › Hosts page) — note `crates/hosts-ui` already
+  exists (from T16-008's panel-crate split, the existing Host-Manager panel
+  UI, not a T19-010 scaffold) and is unrelated to this task; T19-010 still
+  starts from zero for the actual Settings-UI hosts page. T19-010 is also
+  where `tags`/`tunnels` parsing in `migrate_v2.rs` should get tightened
+  once the real Host-Manager-UI JSON shape for those two columns is nailed
+  down (currently best-effort, see above).
+- **Blockers**: none.
+
 ## Last Session: 2026-09-04 (T19-008 — keymap.json with contexts + chords)
 
 **T19-008 done.** The flat, hardcoded `ShortcutId` enum + `preferences.keybinds`

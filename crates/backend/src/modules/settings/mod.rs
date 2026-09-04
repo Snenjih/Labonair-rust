@@ -5,6 +5,7 @@ use tokio::sync::Mutex;
 pub mod content_bridge;
 pub mod editor;
 pub mod mcp;
+pub mod migrate_v2;
 pub mod migrations;
 pub mod preferences;
 

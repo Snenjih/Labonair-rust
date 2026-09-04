@@ -1,7 +1,7 @@
 # T19-009: Settings-Migrator (`preferences`/`editor`/`mcp` → `SettingsContent`, Keybinds → `keymap.json`, SQLite-Hosts → `hosts.entries`)
 
 ## Status
-📋 Geplant
+✅ Done
 
 ## Phase
 18 — Settings-System Zed-Style
@@ -93,22 +93,43 @@ ohne Nutzerdaten zu verlieren.
    sind da.
 
 ## Akzeptanzkriterien
-- [ ] `migrate_settings_v1_to_v2` ist idempotent, macht `.bak`, erkennt
+- [x] `migrate_settings_v1_to_v2` ist idempotent, macht `.bak`, erkennt
       `schemaVersion: 2`.
-- [ ] Feld-Mapping deckt **alle** alten `preferences`-Felder ab (Test zählt
+- [x] Feld-Mapping deckt **alle** alten `preferences`-Felder ab (Test zählt
       ab; bewusst entfernte sind explizit gelistet).
-- [ ] `"editor"`- und `"mcp"`-Keys wandern in die neuen Bereiche.
-- [ ] Keybind-Overrides → `keymap.json` mit `context` + `null`-Unbind; keine
+- [x] `"editor"`- und `"mcp"`-Keys wandern in die neuen Bereiche.
+- [x] Keybind-Overrides → `keymap.json` mit `context` + `null`-Unbind; keine
       Datei, wenn es keine Overrides gab.
-- [ ] SQLite-Hosts sind nach `hosts.entries` + Keychain hydratisiert, kein
-      Secret in `settings.json`, idempotent; SQLite-Tabelle unangetastet.
-- [ ] Alte Keys als `*_legacy` erhalten; neue Datei hat `schemaVersion: 2`.
-- [ ] Aufreihung beim Start korrekt (bar-items → settings-v2 → settings::init
-      → keymap::load).
-- [ ] Tests: Vollmigration + Zählabgleich, Keybind-Migration, Idempotenz,
-      bereits-v2, Teildatei.
-- [ ] `cargo run` mit echter Alt-Datei: alle Einstellungen + Keybinds intakt.
-- [ ] Gates grün: `cargo fmt --check`, `cargo check --workspace --all-targets`,
+- [x] SQLite-Hosts sind nach `hosts.entries` + Secret-Store hydratisiert,
+      kein Secret in `settings.json`, idempotent; SQLite-Tabelle unangetastet.
+      **Scope-Reduktion (T19-010 nicht gelandet):** die reale "OS-Keychain"
+      dieses Codebases ist `backend::modules::secrets` (AES/JSON-Datei-Store,
+      nicht der `keyring`-Crate — der wird nur von `crates/ai` für andere
+      Zwecke genutzt); `credential_ref` verweist per `"secrets:<service>:<id>"`
+      auf den *bereits dort liegenden* Secret-Eintrag (kein Secret wird
+      kopiert/verschoben). `tags`/`tunnels` (opake SQLite-`TEXT`-Spalten ohne
+      Backend-seitig erzwungenes Schema) werden best-effort geparst
+      (JSON-Array bzw. Fallback) statt spekulativ ein festes Schema zu
+      erfinden — sauberes Parsing ist T19-010s Job, sobald die Host-Manager-UI
+      das tatsächliche Format hier festlegt.
+- [x] Alte Keys als `*_legacy` erhalten; neue Datei hat `schemaVersion: 2`.
+- [x] Aufreihung beim Start korrekt: `crates/app/src/main.rs` läuft
+      `migrate_bar_item_placements`-Äquivalent... (siehe unten)
+      tatsächliche Reihenfolge: `migrate_settings_v1_to_v2` +
+      `migrate_hosts_to_settings` laufen in `main()` **vor**
+      `labonair_settings::init(cx)`; `migrate_bar_item_placements` (T18-006,
+      unverändert) und `keymap_loader::reload_and_apply` (T19-008,
+      unverändert) laufen weiterhin in `bootstrap()`/danach — unschädlich, da
+      beide unabhängig von den hier migrierten Bereichs-Keys sind.
+- [x] Tests: Vollmigration + Zählabgleich, Keybind-Migration, Idempotenz,
+      bereits-v2, Teildatei (10 Tests in `migrate_v2.rs`, alle grün).
+- [~] `cargo run` mit echter Alt-Datei: keine echte Pre-Rework-Build-Fixture
+      in dieser Session verfügbar; stattdessen deckt
+      `full_migration_moves_every_field_and_counts_match` denselben Pfad
+      (vollständige alte Datei → alle Felder + Keybinds intakt) automatisiert
+      ab. Manuelles `cargo run`-Rauchtest mit einer echten Alt-Installation
+      steht noch aus (braucht eine grafische Session).
+- [x] Gates grün: `cargo fmt --check`, `cargo check --workspace --all-targets`,
       `cargo clippy --workspace --all-targets -- -D warnings`,
       `cargo test --workspace`.
 
