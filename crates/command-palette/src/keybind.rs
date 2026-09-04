@@ -241,6 +241,48 @@ pub fn effective_binding(id: ShortcutId, overrides: &KeybindMap) -> Option<Strin
     }
 }
 
+/// Split a GPUI keystroke string (`"cmd-shift-p"`, `"cmd--"`) into display
+/// tokens (`["\u{2318}", "\u{21e7}", "P"]`) — the modifier glyphs the cheat
+/// sheet and command palette render right-aligned.
+pub fn keystroke_tokens(binding: &str) -> Vec<String> {
+    let mut parts: Vec<&str> = binding.split('-').filter(|s| !s.is_empty()).collect();
+    let key = if binding.ends_with("--") {
+        parts.pop();
+        "-".to_string()
+    } else {
+        parts.pop().unwrap_or("").to_string()
+    };
+    let mut out: Vec<String> = parts
+        .iter()
+        .map(|m| match *m {
+            "ctrl" | "control" => "\u{2303}".to_string(),
+            "alt" | "option" => "\u{2325}".to_string(),
+            "shift" => "\u{21e7}".to_string(),
+            "cmd" | "super" | "platform" | "win" => "\u{2318}".to_string(),
+            other => other.to_string(),
+        })
+        .collect();
+    if !key.is_empty() {
+        out.push(if key.chars().count() == 1 {
+            key.to_uppercase()
+        } else {
+            key
+        });
+    }
+    out
+}
+
+/// Display tokens for a shortcut, honouring user overrides. Falls back to the
+/// registry's cheat-sheet glyphs ([`shortcut_keys`]) when the shortcut runs on
+/// its default binding; an explicitly-unbound shortcut yields no tokens.
+pub fn effective_keys(id: ShortcutId, overrides: &KeybindMap) -> Vec<String> {
+    match overrides.get(shortcut_slug(id)) {
+        None => shortcut_keys(id).iter().map(|k| k.to_string()).collect(),
+        Some(s) if s.is_empty() => Vec::new(),
+        Some(s) => keystroke_tokens(s),
+    }
+}
+
 /// Like [`find_conflict`] but resolves every shortcut through `overrides`
 /// first, so a rebound shortcut is compared at its *current* keystroke.
 /// Port of the override-aware conflict check in `useKeybindsStore`.

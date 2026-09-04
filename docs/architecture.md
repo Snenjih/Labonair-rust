@@ -640,6 +640,59 @@ pre-existing full-window `background.layer(App)` wallpaper overlay as a child
 (not feature logic) alongside Titlebar / Workspace / StatusBar / ModalLayer /
 ToastLayer.
 
+### 8.10 `CommandRegistry` — T17-007
+
+The ~50-entry `.on_action(cx.listener(Self::act_*))` chain on the shell root
+plus the parallel `run_palette_command` match are gone. Every command is now
+one [`CommandRegistry::register`] call in
+`crate::commands::register_builtin_commands` (the single definition site); the
+native menu bar, the key bindings and the command palette all dispatch the same
+`labonair_command_palette::CommandId` through `AppShell::dispatch_command` →
+`registry.run_for(id)`.
+
+* **`crate::commands`** (new, `crates/shell/src/commands.rs`) — `CommandRegistry`
+  (`register` / `run_for` / `iter` / `visible_in`), `register_builtin_commands`
+  (all former `act_*` bodies as `CommandFn` closures over `&mut AppShell`), and
+  `attach_action_handlers` — the Action → `CommandId` bridge that puts one
+  `.on_action` per `menu::` action on the shell root (context-gated
+  `SplitRight/Down` + `ClosePane` unchanged). `app_shell.rs::render` keeps only
+  **3** genuine window `.on_action`s (`ToggleFullScreen`, `Minimize`,
+  `ZoomWindow`) + one `attach_action_handlers(root, …)` call.
+* **`crate::actions`** slimmed to: the 3 window actions, the `AppShell` helper
+  methods the command closures call (`select_panel`, `toggle_zen_pref`,
+  `show_command_palette`, …), the modal-layer mirrors, `handle_palette_event`
+  (its `Run(id)` arm is now `self.dispatch_command(id, …)`),
+  `handle_bookmark_event`, and a **slimmed** `build_palette_data`.
+
+**Deviation 1 — registry lives in `labonair-shell`, not
+`labonair-command-palette` / a new `labonair-commands` crate.** A `CommandFn`
+body needs `&mut AppShell` to reach the shell-owned panel / feature entities
+(`panels.ai_chat`, `panels.updater`, `panels.command_palette`, `titlebar`, …)
+that §8.4 / §8.9 keep out of `Workspace` on a crate-cycle argument. `AppShell`
+is only nameable in `labonair-shell`, so `CommandFn` and the registry are too.
+Palette and keymap still *share* the registry: the shared vocabulary is the
+`CommandId` enum owned by `labonair-command-palette`. **No new crate edge** (87
+internal edges, unchanged).
+
+**Deviation 2 — `build_palette_data` is slimmed, not deleted.** The
+pref/theme-derived scalars (`color_mode`, `editor_theme`, `terminal_font_size`,
+the nine `Toggle: …` bools) plus the user keybind overrides moved to
+`PalettePrefs` trait reads — the palette holds `Entity<PreferencesStore>` and
+reads them itself, and renders shortcut hints through `effective_keys`
+(override-aware). What still flows through `CommandPalette::set_data` at
+palette-open is the genuinely panel-/workspace-/settings-sourced choice lists
+(`snippet_choices`, `session_choices`, `branch_choices`, `known_hosts`,
+`recent_hosts`, `active_editor_symbols`, `theme_choices`): the palette crate
+cannot pull those without a `labonair-panel-* → labonair-command-palette`
+back-edge (cycle) or a `labonair-settings-ui` dependency. `PaletteData` shrank
+from 12 fields to 7.
+
+**Deviation 3 — placeholder `CommandId`s stay unregistered.** `ZoomIn` /
+`ZoomOut` / `ZoomReset` / `OpenShortcuts` / `FormatDocument` and every palette
+sub-page navigator id have no `register` call; `dispatch_command` no-ops for
+them — byte-for-byte the pre-T17-007 behaviour (they were no-op `dispatch_action`
+calls). Their wiring lands with the phases that implement them.
+
 ---
 
 ## 9. Ist-Graph after Phase 15 (T16-010)

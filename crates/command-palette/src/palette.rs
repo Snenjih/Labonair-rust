@@ -24,7 +24,7 @@ use labonair_theme::{EditorThemeId, ThemePreference};
 use labonair_ui_kit::{IconName, UiTheme};
 
 use crate::fuzzy::{match_score, SearchMode};
-use crate::keybind::{shortcut_keys, ShortcutId};
+use crate::keybind::{effective_keys, KeybindMap, ShortcutId};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Host contracts (decoupling — the palette crate never names `crates/ui`)
@@ -66,6 +66,20 @@ pub trait PalettePrefs {
     fn set_command_palette_search_mode(&mut self, mode: SearchMode, cx: &mut Context<Self>)
     where
         Self: Sized;
+
+    // ── Live state the palette used to receive through `PaletteData` ──────
+    // Read straight off the preferences store now (T17-007) — no per-open
+    // `build_palette_data` snapshot for these pref/theme-derived values.
+    /// Current app color-mode preference (`Change Color Mode…` sub-page state).
+    fn color_mode(&self) -> ThemePreference;
+    /// Active editor theme (`Change Editor Theme…` sub-page state).
+    fn editor_theme(&self) -> EditorThemeId;
+    /// Terminal font size, shown as the `Adjust Font Size…` subtitle.
+    fn terminal_font_size(&self) -> u32;
+    /// Current value of the boolean preference `key` flips (`Toggle: …` rows).
+    fn toggle_state(&self, key: &str) -> bool;
+    /// User keybind overrides, for rendering `effective_binding` hints.
+    fn keybind_overrides(&self) -> KeybindMap;
 }
 
 /// The workspace surface the palette view reads.
@@ -150,6 +164,29 @@ pub enum CommandId {
     TogglePaneHeader,
     TogglePaneFooter,
     ToggleVimMode,
+    // ── Menu / keyboard-only ids (no `COMMANDS` row) ──────────────────────
+    // Dispatched through the shell's `CommandRegistry` (T17-007) from the
+    // native menu bar + key bindings; they never appear as palette rows.
+    OpenCommandPalette,
+    NewPreviewTab,
+    Save,
+    NewSshTab,
+    NewSftpTab,
+    NewSshConnection,
+    NewQuickSsh,
+    ClearChat,
+    FocusNextPane,
+    SelectTab1,
+    SelectTab2,
+    SelectTab3,
+    SelectTab4,
+    SelectTab5,
+    SelectTab6,
+    SelectTab7,
+    SelectTab8,
+    SelectTab9,
+    DebugCyclePanelDock,
+    DebugToggleDockZoom,
 }
 
 /// The camelCase preference key a `Toggle: …` command flips, if any.
@@ -420,9 +457,15 @@ pub struct PaletteChoice {
 /// via [`CommandPalette::set_data`]. Domains not wired yet (hosts, snippets,
 /// AI sessions, git branches, editor outline) stay empty until their block
 /// lands — the pages exist and render a clean empty state meanwhile.
+///
+/// Slimmed in T17-007: the pref/theme-derived scalars (`color_mode`,
+/// `editor_theme`, `font_size`, the toggle bools) moved to [`PalettePrefs`]
+/// reads. What remains is the genuinely panel-/workspace-/settings-sourced
+/// choice lists that the palette crate cannot pull itself without a crate
+/// cycle (`labonair-panel-* → labonair-command-palette` back-edge,
+/// `labonair-settings-ui` dependency).
 #[derive(Clone, Debug, Default)]
 pub struct PaletteData {
-    pub tabs: Vec<PaletteChoice>,
     pub hosts: Vec<PaletteChoice>,
     /// Most-recently-connected hosts (host pre-sorts by `last_connected_at`,
     /// caps at 5) — shown as quick-connect rows at the palette root.
@@ -432,11 +475,6 @@ pub struct PaletteData {
     pub git_branches: Vec<PaletteChoice>,
     pub symbols: Vec<PaletteChoice>,
     pub app_themes: Vec<PaletteChoice>,
-    pub color_mode: ThemePreference,
-    pub editor_theme: EditorThemeId,
-    pub font_size: Option<u32>,
-    /// camelCase pref key → current bool, for `Toggle: …` `rightLabel`s.
-    pub toggles: std::collections::HashMap<&'static str, bool>,
 }
 
 /// Persisted "recently used" command ids (mirrors the reference
@@ -800,24 +838,25 @@ where
 
     fn rows(&self, cx: &App) -> Vec<PaletteRow> {
         let mode = self.search_mode(cx);
+        let overrides = self.prefs.read(cx).keybind_overrides();
         match self.page() {
             Page::Root => {
                 let ctx = self.active_context(cx);
+                let font_size = self.prefs.read(cx).terminal_font_size();
+                let tab_count = self.workspace.read(cx).palette_tab_rows(cx).len();
                 let mut root: Vec<PaletteRow> = search_mode(&self.query, ctx, mode)
                     .into_iter()
                     .map(|c| {
                         let right_label = toggle_pref_key(c.id).map(|k| {
-                            if *self.data.toggles.get(k).unwrap_or(&false) {
+                            if self.prefs.read(cx).toggle_state(k) {
                                 "ON".to_string()
                             } else {
                                 "OFF".to_string()
                             }
                         });
                         let subtitle = match c.id {
-                            CommandId::AdjustFontSize => {
-                                self.data.font_size.map(|s| format!("{s}px"))
-                            }
-                            CommandId::SwitchTab => Some(format!("{} open", self.data.tabs.len())),
+                            CommandId::AdjustFontSize => Some(format!("{font_size}px")),
+                            CommandId::SwitchTab => Some(format!("{tab_count} open")),
                             _ => None,
                         };
                         PaletteRow {
@@ -832,7 +871,7 @@ where
                             section: c.section.to_string(),
                             keys: c
                                 .shortcut
-                                .map(|s| shortcut_keys(s).iter().map(|k| k.to_string()).collect())
+                                .map(|s| effective_keys(s, &overrides))
                                 .unwrap_or_default(),
                             right_label,
                             has_sub: c.sub_page.is_some(),
@@ -876,9 +915,9 @@ where
                 secondary: None,
                 icon: Some(IconName::ArrowDownUp),
                 title: title.to_string(),
-                subtitle: self.data.font_size.map(|s| format!("{s}px")),
+                subtitle: Some(format!("{}px", self.prefs.read(cx).terminal_font_size())),
                 section: "Font Size".to_string(),
-                keys: shortcut_keys(sc).iter().map(|k| k.to_string()).collect(),
+                keys: effective_keys(sc, &overrides),
                 right_label: None,
                 has_sub: false,
             })
@@ -898,7 +937,8 @@ where
                 subtitle: None,
                 section: "Color Mode".to_string(),
                 keys: vec![],
-                right_label: (self.data.color_mode == pref).then(|| "active".to_string()),
+                right_label: (self.prefs.read(cx).color_mode() == pref)
+                    .then(|| "active".to_string()),
                 has_sub: false,
             })
             .collect(),
@@ -914,7 +954,8 @@ where
                     subtitle: None,
                     section: "Editor Themes".to_string(),
                     keys: vec![],
-                    right_label: (self.data.editor_theme == id).then(|| "active".to_string()),
+                    right_label: (self.prefs.read(cx).editor_theme() == id)
+                        .then(|| "active".to_string()),
                     has_sub: false,
                 })
                 .collect(),
@@ -1188,6 +1229,7 @@ where
         let mut rows = Vec::new();
         if page == Page::Root && self.query.is_empty() && show_recent && !self.recent.is_empty() {
             let ctx = self.active_context(cx);
+            let overrides = self.prefs.read(cx).keybind_overrides();
             let avail: std::collections::HashSet<CommandId> =
                 available(ctx).into_iter().map(|c| c.id).collect();
             for id in self.recent.iter().copied().filter(|id| avail.contains(id)) {
@@ -1204,7 +1246,7 @@ where
                     section: "Recently Used".to_string(),
                     keys: c
                         .shortcut
-                        .map(|s| shortcut_keys(s).iter().map(|k| k.to_string()).collect())
+                        .map(|s| effective_keys(s, &overrides))
                         .unwrap_or_default(),
                     right_label: None,
                     has_sub: c.sub_page.is_some(),

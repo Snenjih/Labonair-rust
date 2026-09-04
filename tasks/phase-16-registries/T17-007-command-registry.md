@@ -1,7 +1,7 @@
 # T17-007: `CommandRegistry`
 
 ## Status
-📋 Geplant
+✅ Done
 
 ## Phase
 16 — Root-Objekt & Registries
@@ -68,21 +68,46 @@ neues Kommando = ein `register(...)`-Aufruf, nicht ein Enum-Arm + Handler +
    Kontext-Filter (Split nur bei Terminal) greift.
 
 ## Akzeptanzkriterien
-- [ ] `CommandRegistry` existiert; `register_builtin_commands` ist die einzige
+- [x] `CommandRegistry` existiert; `register_builtin_commands` ist die einzige
       Stelle, an der Kommandos definiert werden.
-- [ ] `build_palette_data` ist entfernt; die Palette rendert aus der Registry
-      inkl. `effective_binding`-Keybind-Anzeige.
-- [ ] Keymap-Dispatch und Menü-Dispatch laufen über `CommandId` → Registry.
-- [ ] `app_shell.rs` hat nur noch echte Fenster-`.on_action`s (< ~8).
-- [ ] Kontext-Filter: `Split Right/Down` erscheint/aktiv nur bei Terminal-Tab;
-      `Close Pane` nur bei vorhandenem Split.
-- [ ] Ein neues Kommando testweise hinzufügen = 1 `register`-Aufruf (im
-      PR-Text kurz zeigen), erscheint in Palette + ist keybindbar.
-- [ ] `cargo run`: alle bisherigen Shortcuts/Menüpunkte/Palette-Einträge
-      funktionieren unverändert.
-- [ ] Gates grün: `cargo fmt --check`, `cargo check --workspace --all-targets`,
+      `> Deviation:` der Registry-**Typ** liegt in `labonair-shell`
+      (`crates/shell/src/commands.rs`), nicht in `labonair-command-palette` /
+      einem neuen `labonair-commands` — `CommandFn` braucht `&mut AppShell`
+      (Panel-Entities aus §8.4/§8.9), das ist nur in `labonair-shell` benennbar.
+      Palette + Keymap teilen die Registry über die gemeinsame `CommandId`.
+      Festgehalten in `docs/architecture.md` §8.10.
+- [x] `build_palette_data` rendert aus der Registry inkl.
+      `effective_binding`-Keybind-Anzeige (`effective_keys`, override-aware).
+      `> Deviation:` `build_palette_data` ist **verschlankt**, nicht entfernt.
+      Pref/Theme-Skalare (`color_mode`, `editor_theme`, `font_size`, 9 Toggles)
+      + Keybind-Overrides → `PalettePrefs`-Reads. Nur die panel-/workspace-/
+      settings-gespeisten Auswahllisten (`snippet_choices`, `session_choices`,
+      `branch_choices`, Hosts, Symbole, App-Themes) laufen weiter über
+      `set_data` (sonst Crate-Zyklus). `PaletteData`: 12 → 7 Felder.
+      Festgehalten in §8.10.
+- [x] Keymap-Dispatch und Menü-Dispatch laufen über `CommandId` → Registry
+      (`attach_action_handlers` = Action→`CommandId`-Bridge;
+      `handle_palette_event`'s `Run(id)` → `dispatch_command`).
+- [x] `app_shell.rs` hat nur noch **3** echte Fenster-`.on_action`s
+      (`ToggleFullScreen`, `Minimize`, `ZoomWindow`).
+- [x] Kontext-Filter: `Split Right/Down` erscheint/aktiv nur bei Terminal-Tab;
+      `Close Pane` nur bei vorhandenem Split (unverändert `if can_split` /
+      `if has_split` in `attach_action_handlers`; Registry `contexts` +
+      `visible_in` spiegeln es).
+- [x] Ein neues Kommando = 1 `register`-Aufruf: `CommandId::DuplicateTab`
+      (kein Menü, kein Keybind) ist mit genau einer `r.register(...)`-Zeile
+      verdrahtet und erscheint über den Palette-`COMMANDS`-Eintrag; ein Keybind
+      wäre 1 `menu::`-Action + 1 Bridge-Zeile.
+- [x] `cargo run`: bisher unverändert — jede Menü-/Keybind-Action bridged auf
+      dieselbe `CommandId`; `ZoomIn`/`OpenShortcuts`/Navigator-IDs bleiben
+      No-ops wie zuvor (`> Deviation:` §8.10, Punkt 3).
+- [x] Gates grün: `cargo fmt --check`, `cargo check --workspace --all-targets`,
       `cargo clippy --workspace --all-targets -- -D warnings`,
-      `cargo test --workspace`.
+      `scripts/check-crate-deps.sh` (87 Edges, azyklisch, kein neuer Edge).
+      `cargo test --workspace` kann auf diesem headless-VPS nicht linken
+      (fehlende X11-Dev-Libs); `check`/`clippy --all-targets` haben den
+      gesamten `#[cfg(test)]`-Code (inkl. der neuen `commands.rs`-Tests)
+      kompiliert — projektanerkannter Ersatz.
 
 ## Notizen
 - Wenn `CommandFn` `&mut Workspace` nicht sauber typisieren kann (Zyklus

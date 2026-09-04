@@ -4,6 +4,90 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
+## Last Session: 2026-09-04 (T17-007 — `CommandRegistry` · **Phase 16**)
+
+The ~50-entry `.on_action(cx.listener(Self::act_*))` chain on the shell root
+and the parallel `run_palette_command` match are gone. Every command is one
+`r.register(...)` line in `crate::commands::register_builtin_commands`; the
+menu bar, key bindings and command palette dispatch the same
+`CommandId` through `AppShell::dispatch_command` → `registry.run_for(id)`.
+
+### What Was Done (T17-007)
+- **`crates/shell/src/commands.rs`** (new, ~330 Z.) — `CommandFn =
+  Rc<dyn Fn(&mut AppShell, &mut Window, &mut Context<AppShell>)>`, `struct
+  Command { id, contexts, run }`, `struct CommandRegistry` (`register` /
+  `run_for` / `iter` / `visible_in`), `register_builtin_commands()` (the
+  **single** definition site — every former `act_*` body as a closure),
+  `attach_action_handlers(root, can_split, has_split, cx)` = the
+  Action→`CommandId` bridge (one `.on_action` per `menu::` action;
+  context-gated `SplitRight/Down` + `ClosePane` via `if can_split` /
+  `if has_split`). `impl AppShell { dispatch_command }`. 2 unit tests
+  (id-uniqueness + context rules; unregistered ids → `None`).
+- **`crates/shell/src/app_shell.rs`** — `command_registry: CommandRegistry`
+  field + `from_parts` param; `render` now: **3** genuine window
+  `.on_action`s (`ToggleFullScreen` / `Minimize` / `ZoomWindow`) + one
+  `crate::commands::attach_action_handlers(root, …)` call. The 40-line
+  `.on_action` cascade + the `.when(can_split)` / `.when(has_split)` guards
+  are deleted.
+- **`crates/shell/src/actions.rs`** — gutted: all `act_*` handlers +
+  `select_tab_action!` macro + `run_palette_command` + its `dispatch!` macro
+  removed. Kept: the 3 window actions, the `AppShell` helper methods the
+  command closures call (now `pub(crate)`: `toggle_sidebar`, `move_panel`,
+  `primary_dock`, `toggle_zen_mode`, `toggle_zen_pref`,
+  `toggle_command_palette`, `show_command_palette`, `toggle_bookmarks`), the
+  modal-layer mirrors, `handle_palette_event` (`Run(id)` arm →
+  `self.dispatch_command`), `handle_bookmark_event`, and a **slimmed**
+  `build_palette_data` (7 fields, panel-sourced choices only).
+- **`crates/shell/src/{shell,bootstrap}.rs`** — `pub mod commands;`;
+  `bootstrap` calls `register_builtin_commands()` and threads it into
+  `from_parts`.
+- **`crates/command-palette/src/palette.rs`** — `CommandId` gained 20
+  menu/keyboard-only ids (`OpenCommandPalette`, `NewPreviewTab`, `Save`,
+  `NewSshTab/SftpTab/SshConnection/QuickSsh`, `ClearChat`, `FocusNextPane`,
+  `SelectTab1..9`, `DebugCyclePanelDock/DockZoom`). `PaletteData` slimmed
+  12 → 7 fields (dropped `tabs`, `color_mode`, `editor_theme`, `font_size`,
+  `toggles`). `PalettePrefs` gained `color_mode` / `editor_theme` /
+  `terminal_font_size` / `toggle_state` / `keybind_overrides`; `rows()` +
+  the Recently-Used block read those + render shortcut hints via
+  `effective_keys` (override-aware).
+- **`crates/command-palette/src/keybind.rs`** — new `keystroke_tokens` +
+  `effective_keys` (override-aware display tokens); re-exported.
+- **`crates/settings-ui/src/store.rs`** — the 5 new `PalettePrefs` methods
+  impl'd on `PreferencesStore` (verbatim field reads).
+
+### Deviations (accepted — task file ACs + `docs/architecture.md` §8.10 + commit)
+1. `CommandRegistry` **type** lives in `labonair-shell`, not
+   `labonair-command-palette` / a new crate: `CommandFn` needs `&mut AppShell`
+   (the §8.4/§8.9 panel entities), only nameable there. Palette + keymap share
+   the registry via the common `CommandId` enum. **No new crate edge.**
+2. `build_palette_data` is **slimmed, not deleted** — pref/theme scalars +
+   keybind overrides moved to `PalettePrefs` reads; panel-/settings-sourced
+   choice lists still fed via `set_data` (a `labonair-panel-* →
+   labonair-command-palette` back-edge / `labonair-settings-ui` dep would be a
+   cycle).
+3. Placeholder ids (`ZoomIn/Out/Reset`, `OpenShortcuts`, `FormatDocument`,
+   palette sub-page navigators) stay **unregistered**; `dispatch_command`
+   no-ops for them — byte-for-byte the pre-T17-007 no-op dispatch behaviour.
+
+### Gate Results (T17-007)
+- `cargo fmt --check` ✅ · `cargo check --workspace --all-targets` ✅ ·
+  `cargo clippy --workspace --all-targets -- -D warnings` ✅ ·
+  `scripts/check-crate-deps.sh` ✅ (20 crates, **87** internal edges — no new
+  edge, acyclic).
+- `cargo test --workspace` **not run** — test binaries cannot link on this
+  headless VPS (missing `-lxcb` / `-lxkbcommon*`); `cargo check/clippy
+  --all-targets` compiled all `#[cfg(test)]` code incl. the new
+  `commands.rs` tests (project-accepted substitute). `cargo run` E2E not
+  possible (no display).
+
+### State
+- Branch `master`, committing now. No blockers.
+
+### Next
+- **T17-008** — `AppEvent`-Bus entscheiden (nutzen oder streichen).
+
+---
+
 ## Last Session: 2026-09-04 (T17-006 — `AppShell` → reine Komposition · **Phase 16**)
 
 The "payday" task of Phase 16. `crates/shell/src/app_shell.rs` went from

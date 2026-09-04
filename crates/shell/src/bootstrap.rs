@@ -460,6 +460,10 @@ pub(crate) fn bootstrap(
 
     let titlebar = cx.new(|cx| Titlebar::new(theme.clone(), prefs.clone(), workspace.clone(), cx));
 
+    // The command table — the single definition site for every menu / keybind
+    // / palette command (T17-007).
+    let command_registry = crate::commands::register_builtin_commands();
+
     // `git_graph` is not kept on the shell: the workspace owns the shared
     // `Entity<GitGraphView>` (via `set_git_graph`) and the CWD-feed closure
     // above captured its own clone.
@@ -481,6 +485,7 @@ pub(crate) fn bootstrap(
         titlebar,
         panels,
         status_bar,
+        command_registry,
         modal_layer,
         toast_layer,
         live_bridge,

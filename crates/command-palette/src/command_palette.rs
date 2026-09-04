@@ -20,9 +20,9 @@ mod palette;
 
 pub use fuzzy::{match_score, SearchMode};
 pub use keybind::{
-    effective_binding, find_conflict, resolve_conflict, shortcut, shortcut_from_slug,
-    shortcut_keys, shortcut_slug, shortcuts, Conflict, KeybindMap, Shortcut, ShortcutGroup,
-    ShortcutId, RESERVED_ACCELERATORS,
+    effective_binding, effective_keys, find_conflict, keystroke_tokens, resolve_conflict, shortcut,
+    shortcut_from_slug, shortcut_keys, shortcut_slug, shortcuts, Conflict, KeybindMap, Shortcut,
+    ShortcutGroup, ShortcutId, RESERVED_ACCELERATORS,
 };
 pub use palette::{
     available, command, command_for_shortcut, commands, context_of, search, search_mode,

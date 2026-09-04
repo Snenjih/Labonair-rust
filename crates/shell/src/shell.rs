@@ -18,6 +18,7 @@ pub mod actions;
 pub mod app_shell;
 pub mod assets;
 pub mod bootstrap;
+pub mod commands;
 pub mod cwd_breadcrumb;
 pub mod menu;
 pub mod modals;

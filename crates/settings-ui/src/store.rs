@@ -8,9 +8,10 @@ use gpui::{App, Context};
 
 use labonair_backend::modules::settings::preferences::{
     preferences_load, preferences_load_from, preferences_save, preferences_save_to,
-    PaletteSearchMode, Preferences,
+    PaletteSearchMode, Preferences, ThemePref,
 };
-use labonair_command_palette::{PalettePrefs, SearchMode};
+use labonair_command_palette::{KeybindMap, PalettePrefs, SearchMode};
+use labonair_theme::{EditorThemeId, ThemePreference};
 
 // ─────────────────────────── Global snapshot ─────────────────────────────
 
@@ -140,5 +141,40 @@ impl PalettePrefs for PreferencesStore {
             Value::String(mode.label().to_string()),
             cx,
         );
+    }
+
+    fn color_mode(&self) -> ThemePreference {
+        match self.prefs.theme {
+            ThemePref::System => ThemePreference::System,
+            ThemePref::Light => ThemePreference::Light,
+            ThemePref::Dark => ThemePreference::Dark,
+        }
+    }
+
+    fn editor_theme(&self) -> EditorThemeId {
+        EditorThemeId::from_slug(&self.prefs.editor_theme).unwrap_or_default()
+    }
+
+    fn terminal_font_size(&self) -> u32 {
+        self.prefs.terminal_font_size
+    }
+
+    fn toggle_state(&self, key: &str) -> bool {
+        match key {
+            "zenModeShowHeader" => self.prefs.zen_mode_show_header,
+            "zenModeShowStatusbar" => self.prefs.zen_mode_show_statusbar,
+            "editorWordWrap" => self.prefs.editor_word_wrap,
+            "editorLineNumbers" => self.prefs.editor_line_numbers,
+            "editorFormatOnSave" => self.prefs.editor_format_on_save,
+            "terminalCursorBlink" => self.prefs.terminal_cursor_blink,
+            "terminalShowPaneHeader" => self.prefs.terminal_show_pane_header,
+            "terminalShowPaneFooter" => self.prefs.terminal_show_pane_footer,
+            "vimMode" => self.prefs.editor_vim_mode,
+            _ => false,
+        }
+    }
+
+    fn keybind_overrides(&self) -> KeybindMap {
+        self.prefs.keybinds.clone()
     }
 }

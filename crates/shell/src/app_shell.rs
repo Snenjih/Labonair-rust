@@ -44,6 +44,7 @@ use labonair_workspace::status_bar::StatusBar;
 use labonair_workspace::toast_layer::ToastLayer;
 
 use crate::background::{BackgroundStore, LayerScope};
+use crate::commands::CommandRegistry;
 use crate::modals::ShellPalette;
 use crate::theme::ThemeStore;
 use crate::titlebar::Titlebar;
@@ -81,6 +82,10 @@ pub struct AppShell {
     pub(crate) titlebar: Entity<Titlebar>,
     pub(crate) panels: ShellPanels,
     pub(crate) status_bar: Entity<StatusBar>,
+    /// Every menu / keybind / palette command. Single definition site:
+    /// [`register_builtin_commands`](crate::commands::register_builtin_commands)
+    /// (T17-007).
+    pub(crate) command_registry: CommandRegistry,
     /// The app's single modal-overlay slot (T17-005).
     pub(crate) modal_layer: Entity<ModalLayer>,
     /// The stacked, non-blocking toast overlay (T17-005).
@@ -131,6 +136,7 @@ impl AppShell {
         titlebar: Entity<Titlebar>,
         panels: ShellPanels,
         status_bar: Entity<StatusBar>,
+        command_registry: CommandRegistry,
         modal_layer: Entity<ModalLayer>,
         toast_layer: Entity<ToastLayer<ThemeStore>>,
         live_bridge: WorkspaceLiveBridge,
@@ -145,6 +151,7 @@ impl AppShell {
             titlebar,
             panels,
             status_bar,
+            command_registry,
             modal_layer,
             toast_layer,
             live_bridge,
@@ -197,7 +204,10 @@ impl Render for AppShell {
         let can_split = self.workspace.read(cx).active_is_terminal(cx);
         let has_split = self.workspace.read(cx).active_has_split(cx);
 
-        div()
+        // The shell root carries only the three genuine window actions; every
+        // other menu / keybind action is bridged to a `CommandId` and run
+        // through `self.command_registry` (T17-007).
+        let root = div()
             .track_focus(&self.focus_handle)
             .key_context("AppShell")
             .relative()
@@ -207,53 +217,12 @@ impl Render for AppShell {
             .bg(bg)
             .font(ui_font)
             .text_size(px(ui_font_size))
-            .on_action(cx.listener(Self::act_new_terminal_tab))
-            .on_action(cx.listener(Self::act_new_editor_tab))
-            .on_action(cx.listener(Self::act_new_preview_tab))
-            .on_action(cx.listener(Self::act_save))
-            .on_action(cx.listener(Self::act_close_tab))
-            .on_action(cx.listener(Self::act_find))
-            .on_action(cx.listener(Self::act_toggle_sidebar))
             .on_action(cx.listener(Self::act_toggle_fullscreen))
             .on_action(cx.listener(Self::act_minimize))
-            .on_action(cx.listener(Self::act_zoom_window))
-            .on_action(cx.listener(Self::act_next_tab))
-            .on_action(cx.listener(Self::act_prev_tab))
-            .on_action(cx.listener(Self::act_toggle_ai_panel))
-            .on_action(cx.listener(Self::act_debug_cycle_panel_dock))
-            .on_action(cx.listener(Self::act_debug_toggle_dock_zoom))
-            .on_action(cx.listener(Self::act_ask_about_selection))
-            .on_action(cx.listener(Self::act_new_ai_session))
-            .on_action(cx.listener(Self::act_clear_chat))
-            .on_action(cx.listener(Self::act_open_host_manager))
-            .on_action(cx.listener(Self::act_new_ssh_tab))
-            .on_action(cx.listener(Self::act_new_sftp_tab))
-            .on_action(cx.listener(Self::act_new_ssh_connection))
-            .on_action(cx.listener(Self::act_new_quick_ssh))
-            .on_action(cx.listener(Self::act_focus_next_pane))
-            .on_action(cx.listener(Self::act_toggle_zen_mode))
-            .on_action(cx.listener(Self::act_select_tab_1))
-            .on_action(cx.listener(Self::act_select_tab_2))
-            .on_action(cx.listener(Self::act_select_tab_3))
-            .on_action(cx.listener(Self::act_select_tab_4))
-            .on_action(cx.listener(Self::act_select_tab_5))
-            .on_action(cx.listener(Self::act_select_tab_6))
-            .on_action(cx.listener(Self::act_select_tab_7))
-            .on_action(cx.listener(Self::act_select_tab_8))
-            .on_action(cx.listener(Self::act_select_tab_9))
-            .on_action(cx.listener(Self::act_command_palette))
-            .on_action(cx.listener(Self::act_open_path_bookmarks))
-            .on_action(cx.listener(Self::act_open_settings))
-            .on_action(cx.listener(Self::act_open_ai_settings))
-            .on_action(cx.listener(Self::act_check_for_updates))
-            .when(can_split, |d| {
-                d.on_action(cx.listener(Self::act_split_right))
-                    .on_action(cx.listener(Self::act_split_down))
-            })
-            .when(has_split, |d| {
-                d.on_action(cx.listener(Self::act_close_pane))
-            })
-            .child(self.titlebar.clone())
+            .on_action(cx.listener(Self::act_zoom_window));
+        let root = crate::commands::attach_action_handlers(root, can_split, has_split, cx);
+
+        root.child(self.titlebar.clone())
             .child(
                 div()
                     .flex_1()
