@@ -695,6 +695,35 @@ calls). Their wiring lands with the phases that implement them.
 
 ---
 
+### 8.11 `AppEvent` bus kept + `BackendEventBridge` — T17-008
+
+Decision recorded in full in [`docs/adr/0002-app-event-bus.md`](adr/0002-app-event-bus.md):
+**keep** `labonair_backend::EventBus` / `AppEvent`, connect it through one
+GPUI-side entity.
+
+* **`labonair_workspace::backend_event_bridge::BackendEventBridge`** (new) is the
+  single foreground subscriber to `backend.events`. One `cx.spawn` loop
+  (`tokio::sync::broadcast::Receiver::recv` is runtime-agnostic) decodes each
+  `RawEvent` → `TransferBusEvent` / `AppEvent` and pushes it straight into the
+  `Workspace` entity via `entity.update`. `Lagged` → warn + resync; `Closed` /
+  workspace-dropped → stop. **No `tokio::spawn` + `mpsc` + poll-drain hop.**
+* `Workspace` gains `apply_transfer_bus_event`; `handle_ssh_event` is now
+  `pub(crate)`. The former 40 ms `ssh_poll` loop keeps only
+  `refresh_active_tunnels` (a genuine state poll).
+* **Reference consumer:** SFTP transfer progress (`transfer_progress` /
+  `transfer_step` / `transfer_completed` → `TransfersView::apply`) is
+  event-driven end-to-end through the bridge; the UI never polls it.
+* `spawn_event_logger` (`crates/app/src/main.rs`) is now `#[cfg(debug_assertions)]`
+  only — a developer trace, not a product path.
+* **No new crate edge** — the bridge is inside `labonair-workspace`, which
+  already depends on `labonair-backend` (87 internal edges, unchanged, acyclic).
+* **Follow-ups (not in T17-008):** `fs:dir-changed` → explorer auto-refresh;
+  git-status change → scm auto-refresh; move `panel-snippets`' run-log
+  subscription onto the same foreground pattern; route `menu:activated` through
+  `AppShell::dispatch_command`.
+
+---
+
 ## 9. Ist-Graph after Phase 15 (T16-010)
 
 Regenerate with [`scripts/gen-crate-graph.sh`](../scripts/gen-crate-graph.sh)

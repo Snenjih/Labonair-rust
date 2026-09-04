@@ -4,6 +4,58 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
+## Last Session: 2026-09-04 (T17-008 — `AppEvent` bus decision · **Phase 16**)
+
+**Decision: Variant A — keep the bus, connect it.** The bus already had two real
+UI consumers (`workspace.rs` SSH/transfer path, `panel-snippets` run-log) plus
+≥4 concrete follow-ups, so the "≥3 consumers → keep" bar is cleared. Rationale:
+`docs/adr/0002-app-event-bus.md` + `docs/architecture.md §8.11`.
+
+### What Was Done (T17-008)
+- **`crates/workspace/src/backend_event_bridge.rs`** (new, ~70 Z.) — entity
+  `BackendEventBridge`: one `cx.spawn` **foreground** loop over
+  `backend.events.subscribe()` (`tokio::sync::broadcast::recv` is
+  runtime-agnostic), decodes each `RawEvent` → `TransferBusEvent` / `AppEvent`
+  and pushes straight into `Workspace` via `entity.update`. `Lagged` → warn +
+  resync; `Closed` / workspace-dropped → stop. No `tokio::spawn` + `mpsc` +
+  poll-drain.
+- **`crates/workspace/src/workspace.rs`** — `pub mod backend_event_bridge;`;
+  removed the `ev_tx/ev_rx` + `tev_tx/tev_rx` `mpsc` plumbing + the
+  `tokio.spawn` forwarder; `Workspace` field `ssh_events` / `transfer_events`
+  gone, replaced by `_backend_event_bridge: Entity<BackendEventBridge>` built in
+  `new` from `cx.entity().downgrade()`. The 40 ms `ssh_poll` loop now only calls
+  `refresh_active_tunnels`. New `pub(crate) fn apply_transfer_bus_event`;
+  `handle_ssh_event` is now `pub(crate)`.
+- **`crates/app/src/main.rs`** — `spawn_event_logger` + its call + the
+  `AppEvent` / `RecvError` imports are `#[cfg(debug_assertions)]`.
+- **`docs/adr/0002-app-event-bus.md`** (new) + **`docs/architecture.md §8.11`**
+  (new) — decision, inventory, reference consumer, follow-up tickets.
+
+### Follow-ups noted (not in this task)
+`fs:dir-changed` → explorer auto-refresh; git-status → scm auto-refresh; move
+`panel-snippets` run-log onto the same foreground pattern; route
+`menu:activated` through `AppShell::dispatch_command`.
+
+### Gate Results (T17-008)
+- `cargo fmt --check` ✅ · `cargo check --workspace --all-targets` ✅ ·
+  `cargo clippy --workspace --all-targets -- -D warnings` ✅ ·
+  `scripts/check-crate-deps.sh` ✅ (20 crates, **87** internal edges — no new
+  edge, acyclic).
+- `cargo test --workspace` **not run** — test binaries cannot link on this
+  headless VPS (missing X11 dev libs); `cargo check/clippy --all-targets`
+  compiled all `#[cfg(test)]` code (project-accepted substitute). `cargo run`
+  E2E not possible (no display) — the transfer-progress push is event-driven by
+  construction (foreground `recv().await`, no poll).
+
+### State
+- Branch `master`, committing now. No blockers.
+
+### Next
+- **T17-009** — Tabs optional: Empty-Workspace-State + `TabKind::Home` /
+  Host-Manager-Tab weg (Thema 1).
+
+---
+
 ## Last Session: 2026-09-04 (T17-007 — `CommandRegistry` · **Phase 16**)
 
 The ~50-entry `.on_action(cx.listener(Self::act_*))` chain on the shell root

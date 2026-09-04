@@ -25,6 +25,7 @@
 //! to `labonair-shell`.
 
 pub mod agent_access;
+pub mod backend_event_bridge;
 pub mod background;
 pub mod bar_items;
 pub mod bell;
@@ -67,6 +68,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crate::agent_access::AgentAccessStore;
+use crate::backend_event_bridge::BackendEventBridge;
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, point, px, relative, Animation, AnimationExt, App, AppContext, ClickEvent, Context,
@@ -406,8 +408,11 @@ pub struct Workspace {
     ssh_connection: Entity<ConnectionStatusStore>,
     /// Tab ids the loading screen asked to close (needs `&mut Window`).
     pending_tab_close: Vec<u64>,
-    /// Backend → workspace SSH events, forwarded off the broadcast bus.
-    ssh_events: std::sync::mpsc::Receiver<AppEvent>,
+    /// Backend event bus → UI bridge (T17-008): decodes `AppEvent` /
+    /// `TransferBusEvent` off `backend.events` on the GPUI foreground and pushes
+    /// them straight into this entity — event-driven, no poll drain.
+    _backend_event_bridge: Entity<BackendEventBridge>,
+    /// Periodic tunnel-liveness refresh (state poll, not event-driven).
     _ssh_poll: Task<()>,
     /// Periodic session-snapshot writer (T14-001) — covers force-quit; the
     /// window-close hook in `AppShell` covers the normal path.
@@ -415,8 +420,6 @@ pub struct Workspace {
 
     // ── SFTP transfers (T08-002) ──────────────────────────────────────────
     transfers: Entity<TransfersView>,
-    /// Transfer-worker events forwarded off the same broadcast bus.
-    transfer_events: std::sync::mpsc::Receiver<TransferBusEvent>,
 
     // ── MCP bridge (T11-005) ──────────────────────────────────────────────
     /// Tab open/close requests from the MCP bridge, drained in `render`.
@@ -480,33 +483,15 @@ impl Workspace {
         )
         .detach();
 
-        // Forward the backend's broadcast event bus into a plain channel the
-        // GPUI poll loop can drain without an async runtime.
-        let (ev_tx, ev_rx) = std::sync::mpsc::channel::<AppEvent>();
-        let (tev_tx, tev_rx) = std::sync::mpsc::channel::<TransferBusEvent>();
-        {
-            let mut bus = backend.events.subscribe();
-            tokio.spawn(async move {
-                use tokio::sync::broadcast::error::RecvError;
-                loop {
-                    match bus.recv().await {
-                        Ok(raw) => {
-                            if let Some(tev) = TransferBusEvent::from_raw(&raw.name, &raw.payload) {
-                                if tev_tx.send(tev).is_err() {
-                                    break;
-                                }
-                            } else if let Some(ev) = AppEvent::from_raw(&raw) {
-                                if ev_tx.send(ev).is_err() {
-                                    break;
-                                }
-                            }
-                        }
-                        Err(RecvError::Lagged(_)) => continue,
-                        Err(RecvError::Closed) => break,
-                    }
-                }
-            });
-        }
+        // Backend event bus → UI (T17-008): one foreground subscription that
+        // decodes each raw event and pushes it straight into this entity. No
+        // `tokio::spawn` + `mpsc` + poll-drain hop.
+        let backend_event_bridge = {
+            let workspace = cx.entity().downgrade();
+            let backend = backend.clone();
+            cx.new(|cx| BackendEventBridge::new(backend, workspace, cx))
+        };
+
         let transfers =
             cx.new(|cx| TransfersView::new(backend.clone(), tokio.clone(), theme.clone(), cx));
         cx.observe(&transfers, |_, _, cx| cx.notify()).detach();
@@ -518,28 +503,7 @@ impl Workspace {
         let ssh_poll = cx.spawn(async move |this, cx| loop {
             cx.background_executor().timer(SSH_POLL_INTERVAL).await;
             let ok = this
-                .update(cx, |this, cx| {
-                    let mut events = Vec::new();
-                    while let Ok(ev) = this.ssh_events.try_recv() {
-                        events.push(ev);
-                    }
-                    for ev in events {
-                        this.handle_ssh_event(ev, cx);
-                    }
-                    let mut tevents = Vec::new();
-                    while let Ok(ev) = this.transfer_events.try_recv() {
-                        tevents.push(ev);
-                    }
-                    if !tevents.is_empty() {
-                        let view = this.transfers.clone();
-                        view.update(cx, |t, cx| {
-                            for ev in tevents {
-                                t.apply(ev, cx);
-                            }
-                        });
-                    }
-                    this.refresh_active_tunnels(cx);
-                })
+                .update(cx, |this, cx| this.refresh_active_tunnels(cx))
                 .is_ok();
             if !ok {
                 break;
@@ -597,10 +561,9 @@ impl Workspace {
             prompt_shown: false,
             ssh_connection: cx.new(|_| ConnectionStatusStore::new()),
             pending_tab_close: Vec::new(),
-            ssh_events: ev_rx,
+            _backend_event_bridge: backend_event_bridge,
             _ssh_poll: ssh_poll,
             transfers,
-            transfer_events: tev_rx,
             pending_mcp: Vec::new(),
             agent_access,
             pending_snippet_ssh: HashMap::new(),
@@ -2766,7 +2729,18 @@ impl Workspace {
         self.spawn_ssh_connect(ssh_id.to_string(), host_id, passphrase, password, feed, cx);
     }
 
-    fn handle_ssh_event(&mut self, ev: AppEvent, cx: &mut Context<Self>) {
+    /// Apply one transfer-worker bus event to the transfers view. Called by
+    /// [`BackendEventBridge`](crate::backend_event_bridge::BackendEventBridge).
+    pub(crate) fn apply_transfer_bus_event(
+        &mut self,
+        ev: TransferBusEvent,
+        cx: &mut Context<Self>,
+    ) {
+        let view = self.transfers.clone();
+        view.update(cx, |t, cx| t.apply(ev, cx));
+    }
+
+    pub(crate) fn handle_ssh_event(&mut self, ev: AppEvent, cx: &mut Context<Self>) {
         match ev {
             AppEvent::SshConnectLog {
                 session_id,

@@ -4,8 +4,11 @@ use gpui::{
 };
 
 use gpui_component::Root;
-use labonair_backend::{App as Backend, AppEvent};
+use labonair_backend::App as Backend;
+#[cfg(debug_assertions)]
+use labonair_backend::AppEvent;
 use labonair_shell::{window_state, AppShell};
+#[cfg(debug_assertions)]
 use tokio::sync::broadcast::error::RecvError;
 use tracing_subscriber::EnvFilter;
 
@@ -21,9 +24,11 @@ fn init_logging() {
         .init();
 }
 
-/// Subscribes to the backend event bus and logs every event, decoding the
-/// typed [`AppEvent`] form where possible. This is where the GPUI layer will
-/// later route events into views/entities (T04-003+).
+/// Debug-only: subscribes to the backend event bus and logs every event,
+/// decoding the typed [`AppEvent`] form where possible. The real UI routing
+/// lives in `labonair_workspace::backend_event_bridge::BackendEventBridge`
+/// (T17-008); this is purely a developer trace.
+#[cfg(debug_assertions)]
 fn spawn_event_logger(backend: &Backend) {
     let mut rx = backend.events.subscribe();
     tokio::spawn(async move {
@@ -54,6 +59,7 @@ fn main() {
         .join("labonair");
     let backend = Backend::new(&data_dir).expect("failed to initialize backend state");
     backend.spawn_workers();
+    #[cfg(debug_assertions)]
     spawn_event_logger(&backend);
 
     drop(guard);

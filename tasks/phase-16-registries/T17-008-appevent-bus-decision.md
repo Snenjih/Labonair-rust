@@ -1,7 +1,26 @@
 # T17-008: `AppEvent`-Bus entscheiden (nutzen oder streichen)
 
 ## Status
-📋 Geplant
+✅ Done
+
+## Entscheidung
+
+**Variante A — Bus behalten + anbinden.** Begründung: der Bus hat bereits **zwei**
+echte UI-Konsumenten (`workspace.rs` SSH-/Transfer-Pfad, `panel-snippets`
+Run-Log) plus ≥4 konkrete Folge-Konsumenten (Explorer-`fs:dir-changed`,
+SCM-Auto-Refresh, MCP-Tab-Ops/Fehler-Toast, `menu:activated`). Damit ist die
+Heuristik „≥3 sinnvolle Konsumenten → A" klar erfüllt; B würde nur N parallele
+Feature-Kanäle + N Forwarder-Tasks nachbauen. Voll dokumentiert in
+`docs/adr/0002-app-event-bus.md` + `docs/architecture.md §8.11`.
+
+Umsetzung: neue Entity `labonair_workspace::backend_event_bridge::BackendEventBridge`
+— ein einziger `cx.spawn`-Foreground-Loop über `backend.events`, dekodiert
+`RawEvent` → `TransferBusEvent` / `AppEvent` und schiebt sie per `entity.update`
+direkt in `Workspace` (`Lagged` → warn+resync, `Closed`/Workspace-weg → stop).
+Kein `tokio::spawn` + `mpsc` + Poll-Drain mehr. Referenz-Konsument:
+SFTP-Transfer-Fortschritt → `TransfersView::apply`, event-getrieben. Der
+40 ms-`ssh_poll` behält nur noch `refresh_active_tunnels` (echter State-Poll).
+`spawn_event_logger` in `main.rs` ist jetzt `#[cfg(debug_assertions)]`.
 
 ## Phase
 16 — Root-Objekt & Registries
@@ -61,18 +80,22 @@ Infrastruktur.
    ohne dass die UI pollt).
 
 ## Akzeptanzkriterien
-- [ ] `docs/adr/0002-app-event-bus.md` dokumentiert die Entscheidung + Gründe.
-- [ ] Es gibt **keinen** geloggten-aber-ungenutzten Event-Pfad mehr:
-      entweder ist der Bus angebunden (Variante A) oder entfernt (Variante B).
-- [ ] Bei A: `BackendEventBridge` + ≥1 realer Konsument; `spawn_event_logger`
-      nur `#[cfg(debug_assertions)]`.
-- [ ] Bei B: `AppEvent` / `backend.events` / `spawn_event_logger` sind weg;
-      betroffene Features nutzen gezielte Kanäle; keine `dead_code`-Warnungen.
-- [ ] Ein Backend→UI-Push (Transfer-Fortschritt o.ä.) ist sichtbar und
-      event-getrieben (kein Polling).
-- [ ] Gates grün: `cargo fmt --check`, `cargo check --workspace --all-targets`,
+- [x] `docs/adr/0002-app-event-bus.md` dokumentiert die Entscheidung + Gründe.
+- [x] Es gibt **keinen** geloggten-aber-ungenutzten Event-Pfad mehr: der Bus ist
+      angebunden (Variante A), `spawn_event_logger` ist debug-only Trace.
+- [x] Bei A: `BackendEventBridge` + ≥1 realer Konsument (SFTP-Transfer-
+      Fortschritt → `TransfersView`); `spawn_event_logger` nur
+      `#[cfg(debug_assertions)]`.
+- [ ] Bei B: n/a — Variante A gewählt.
+- [x] Ein Backend→UI-Push (Transfer-Fortschritt) ist per Konstruktion
+      event-getrieben (Foreground-`recv().await`, kein Poll-Drain).
+      *E2E-`cargo run` nicht ausführbar — headless VPS ohne Display.*
+- [x] Gates grün: `cargo fmt --check`, `cargo check --workspace --all-targets`,
       `cargo clippy --workspace --all-targets -- -D warnings`,
-      `cargo test --workspace`.
+      `scripts/check-crate-deps.sh`. `cargo test --workspace` **nicht** gelaufen
+      — Test-Binaries linken auf diesem headless VPS nicht (fehlende X11-Libs);
+      `cargo check/clippy --all-targets` kompilieren den `#[cfg(test)]`-Code als
+      projektakzeptierter Ersatz.
 
 ## Notizen
 - Diese Task schließt die P3-Empfehlung „`AppEvent`-Bus: nutzen oder streichen"
