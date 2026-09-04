@@ -10,6 +10,7 @@
 pub enum SettingsTab {
     General,
     Appearance,
+    Personalization,
     Themes,
     Terminal,
     Editor,
@@ -26,6 +27,7 @@ impl SettingsTab {
         let name = match self {
             SettingsTab::General => "General",
             SettingsTab::Appearance => CAT_APPEARANCE,
+            SettingsTab::Personalization => CAT_PERSONALIZATION,
             SettingsTab::Themes => "Themes",
             SettingsTab::Terminal => "Terminal",
             SettingsTab::Editor => "Editor",
@@ -45,6 +47,7 @@ impl SettingsTab {
         Some(match slug {
             "general" => SettingsTab::General,
             "appearance" | "layout" => SettingsTab::Appearance,
+            "personalization" => SettingsTab::Personalization,
             "themes" => SettingsTab::Themes,
             "terminal" => SettingsTab::Terminal,
             "editor" => SettingsTab::Editor,
@@ -101,11 +104,16 @@ pub struct FieldDef {
 pub const AGENT_BRIDGE: &str = "AI Agent Bridge";
 pub const KEYBOARD: &str = "Shortcuts";
 pub const CAT_APPEARANCE: &str = "Appearance & Layout";
+/// T18-007: bundles the statusbar layout editor + panel-toggle visibility
+/// that used to be scattered across per-item right-click menus.
+pub const CAT_PERSONALIZATION: &str = "Personalization";
 
-/// The 10 top-level settings sections, matching the reference sidebar order.
+/// The top-level settings sections, matching the reference sidebar order (plus
+/// "Personalization", added after "Appearance & Layout" in T18-007).
 pub const CATEGORIES: &[&str] = &[
     "General",
     CAT_APPEARANCE,
+    CAT_PERSONALIZATION,
     "Themes",
     "Terminal",
     "Editor",

@@ -1,7 +1,7 @@
 # T18-007: Philosophie verankern + Personalisierungs-Settings-Seite
 
 ## Status
-📋 Geplant
+✅ Done
 
 ## Phase
 17 — Neues Layout & Statusbar-Personalisierung
@@ -70,17 +70,17 @@ Panel-Sichtbarkeit — als überblickbares GUI.
    Defaults her; alles überlebt Neustart.
 
 ## Akzeptanzkriterien
-- [ ] `ROADMAP.md` + `CLAUDE.md` enthalten die Philosophie + den Layout-Vertrag
+- [x] `ROADMAP.md` + `CLAUDE.md` enthalten die Philosophie + den Layout-Vertrag
       als normative Aussage; neue Critical Rule 8 ergänzt.
-- [ ] Settings-Kategorie „Personalisierung" existiert, per Deep-Link
+- [x] Settings-Kategorie „Personalisierung" existiert, per Deep-Link
       (`personalization`) erreichbar.
-- [ ] Statusbar-Layout-Editor: Items nach links/rechts/aus, „Zurücksetzen",
+- [x] Statusbar-Layout-Editor: Items nach links/rechts/aus, „Zurücksetzen",
       schreibt dasselbe Blob wie das RMB-Menü (gemeinsame Funktion, kein
       Zweit-Pfad).
-- [ ] Panel-Sichtbarkeit: Switch je Panel; ausgeschaltet ⇒ kein Toggle, aber
+- [x] Panel-Sichtbarkeit: Switch je Panel; ausgeschaltet ⇒ kein Toggle, aber
       weiterhin per Command-Palette öffenbar; persistiert.
-- [ ] Änderungen wirken live (kein Neustart) und überleben Neustart.
-- [ ] Gates grün: `cargo fmt --check`, `cargo check --workspace --all-targets`,
+- [x] Änderungen wirken live (kein Neustart) und überleben Neustart.
+- [x] Gates grün: `cargo fmt --check`, `cargo check --workspace --all-targets`,
       `cargo clippy --workspace --all-targets -- -D warnings`,
       `cargo test --workspace`.
 

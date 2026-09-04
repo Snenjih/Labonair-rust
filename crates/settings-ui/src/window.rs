@@ -54,6 +54,11 @@ pub(crate) struct SettingsDeps {
     prefs: Entity<PreferencesStore>,
     backend: Backend,
     tokio: TokioHandle,
+    /// The app's single [`labonair_workspace::Workspace`] (T18-007) — the
+    /// Personalization pane reads/writes the statusbar layout + panel-toggle
+    /// visibility through it, the same methods the in-app right-click menus
+    /// use.
+    workspace: Entity<labonair_workspace::Workspace>,
 }
 
 impl Global for SettingsDeps {}
@@ -80,12 +85,14 @@ pub fn set_settings_deps(
     prefs: Entity<PreferencesStore>,
     backend: Backend,
     tokio: TokioHandle,
+    workspace: Entity<labonair_workspace::Workspace>,
     cx: &mut App,
 ) {
     cx.set_global(SettingsDeps {
         prefs,
         backend,
         tokio,
+        workspace,
     });
 }
 
@@ -151,6 +158,7 @@ pub fn open_settings_window(tab: Option<SettingsTab>, cx: &mut App) {
                     background,
                     deps.backend.clone(),
                     deps.tokio.clone(),
+                    deps.workspace.clone(),
                     cx,
                 );
                 v.windowed = true;

@@ -14,7 +14,9 @@ use crate::modules::hosts::{self, HostsDb};
 use crate::modules::mcp::McpState;
 use crate::modules::pty::PtyState;
 use crate::modules::secrets::SecretsState;
-use crate::modules::settings::{BarItemPlacementLock, StatusBarPlacementLock};
+use crate::modules::settings::{
+    BarItemPlacementLock, PanelToggleVisibilityLock, StatusBarPlacementLock,
+};
 use crate::modules::sftp::{ConflictMap, TransferSettings, TransferWorkerState, WorkerMessage};
 use crate::modules::shell::ShellState;
 use crate::modules::snippets::exec::SnippetRunState;
@@ -38,6 +40,7 @@ pub struct AppInner {
     pub transfer: TransferWorkerState,
     pub bar_item_lock: BarItemPlacementLock,
     pub status_bar_lock: StatusBarPlacementLock,
+    pub panel_toggle_visibility_lock: PanelToggleVisibilityLock,
     worker_rx: StdMutex<Option<tokio::sync::mpsc::Receiver<WorkerMessage>>>,
 }
 
@@ -89,6 +92,7 @@ impl App {
             transfer,
             bar_item_lock: BarItemPlacementLock::default(),
             status_bar_lock: StatusBarPlacementLock::default(),
+            panel_toggle_visibility_lock: PanelToggleVisibilityLock::default(),
             worker_rx: StdMutex::new(Some(rx)),
         })))
     }

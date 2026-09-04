@@ -594,6 +594,7 @@ impl SettingsView {
             "General" => return self.render_general(c, cx),
             "Themes" => return self.render_themes(c, cx),
             _ if cat == CAT_APPEARANCE => return self.render_appearance(c, cx),
+            _ if cat == CAT_PERSONALIZATION => return self.render_personalization(c, cx),
             "Connections" => {
                 return div()
                     .flex()

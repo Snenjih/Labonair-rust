@@ -163,6 +163,10 @@ pub struct SettingsView {
     pub(crate) ai_editor: Option<AiEditor>,
     pub(crate) ai_editor_focus: FocusHandle,
     pub(crate) focus: FocusHandle,
+    /// The app's [`labonair_workspace::Workspace`] (T18-007) — backs the
+    /// Personalization pane's statusbar-layout editor + panel-toggle
+    /// visibility switches.
+    pub(crate) workspace: Entity<labonair_workspace::Workspace>,
 }
 
 pub(crate) struct SelectMenu {
@@ -186,11 +190,20 @@ impl SettingsView {
         background: Entity<BackgroundStore>,
         backend: Backend,
         tokio: TokioHandle,
+        workspace: Entity<labonair_workspace::Workspace>,
         cx: &mut Context<Self>,
     ) -> Self {
         cx.observe(&prefs, |_, _, cx| cx.notify()).detach();
         cx.observe(&theme, |_, _, cx| cx.notify()).detach();
         cx.observe(&background, |_, _, cx| cx.notify()).detach();
+        cx.observe(&workspace, |_, _, cx| cx.notify()).detach();
+        // The statusbar layout (T18-005/T18-007) and panel-toggle visibility
+        // both bump this global — reload-and-repaint so the Personalization
+        // pane reflects the same live state as the in-app right-click menus.
+        cx.observe_global::<labonair_workspace::status_placements::StatusBarLayoutTick>(|_, cx| {
+            cx.notify()
+        })
+        .detach();
         // Deep-link: jump to the requested tab when another part of the app
         // asks for a specific settings section while this window is open.
         cx.observe_global::<SettingsTarget>(|this, cx| {
@@ -235,6 +248,7 @@ impl SettingsView {
             ai_editor: None,
             ai_editor_focus: cx.focus_handle(),
             focus: cx.focus_handle(),
+            workspace,
         }
     }
 

@@ -101,9 +101,10 @@ pub struct PanelTogglesStatusItem {
     theme: Entity<ThemeStore>,
     /// `(panel name, anchor)` of an open dock/hide context menu, or `None`.
     dock_menu: Option<(SharedString, Point<Pixels>)>,
-    /// Panels the user hid from this toggle strip this session. Persistence
-    /// of this choice is T18-007 ("panel visibility") — for now it resets on
-    /// restart.
+    /// Panels hidden from this toggle strip, mirrored from the persisted
+    /// `panelToggleVisibility` blob (T18-007). Reloaded whenever
+    /// `StatusBarLayoutTick` bumps — either this window's own write below, the
+    /// Personalization settings pane, or another window.
     hidden: std::collections::HashSet<SharedString>,
 }
 
@@ -115,12 +116,30 @@ impl PanelTogglesStatusItem {
     ) -> Self {
         cx.observe(&workspace, |_, _, cx| cx.notify()).detach();
         cx.observe(&theme, |_, _, cx| cx.notify()).detach();
-        Self {
+        cx.observe_global::<labonair_workspace::status_placements::StatusBarLayoutTick>(
+            |this, cx| {
+                this.reload_hidden();
+                cx.notify();
+            },
+        )
+        .detach();
+        let mut this = Self {
             workspace,
             theme,
             dock_menu: None,
             hidden: Default::default(),
-        }
+        };
+        this.reload_hidden();
+        this
+    }
+
+    /// Re-reads the persisted `panelToggleVisibility` blob (T18-007).
+    fn reload_hidden(&mut self) {
+        self.hidden = labonair_backend::modules::settings::panel_toggle_visibility_load()
+            .into_iter()
+            .filter(|(_, v)| !v.as_bool().unwrap_or(true))
+            .map(|(k, _)| SharedString::from(k))
+            .collect();
     }
 
     fn open_dock_menu(&mut self, name: SharedString, pos: Point<Pixels>, cx: &mut Context<Self>) {
@@ -178,14 +197,13 @@ impl PanelTogglesStatusItem {
         }
         items.push(MenuItem::separator());
         let hide_name = name.clone();
-        let view_hide = view.clone();
+        let ws_hide = self.workspace.clone();
         let close_hide = close.clone();
         items.push(MenuItem::new("dock-hide", "Hide from toggle bar").on_click(
             move |_, _w, cx| {
-                let hide_name = hide_name.clone();
-                view_hide.update(cx, |this, cx| {
-                    this.hidden.insert(hide_name);
-                    cx.notify();
+                let hide_name = hide_name.to_string();
+                ws_hide.update(cx, |w, cx| {
+                    w.set_panel_toggle_visible(hide_name, false, cx);
                 });
                 close_hide(cx);
             },

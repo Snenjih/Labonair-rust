@@ -4,7 +4,14 @@
 
 Portierung von Labonair (Tauri v2 + React 19) zu einer reinen nativen Rust-App mit GPUI als UI-Framework — als **Hard Fork**: vollständig standalone, keine Verbindung (Symlink/Submodul/Pfad-Dependency) zum Original-Repo. Ziel ist eine 1:1 funktionsfähige Replik mit identischem Design und spürbar besserer Performance (kein WebView, kein IPC, direkter Prozess).
 
-**Neue Philosophie (ab dem Architektur-Rework, Phasen 15–21):** „Der effizienteste Weg, seine Arbeit in Labonair fertig zu bekommen — mit maximaler Performance und Modularität für Personalisierung." Feature-Parität mit der Referenz-App bleibt Pflicht, ist ab hier aber das *Minimum*, nicht das Ziel: viele fokussierte Crates statt `ui`-Monolith, Trait-Registries statt God-Object, ein fester Layout-Vertrag mit erstklassiger Personalisierung. Maßgebliche Ziel-Architektur: [`docs/architecture.md`](../docs/architecture.md); Begründung: [`docs/adr/0001-crate-decomposition.md`](../docs/adr/0001-crate-decomposition.md).
+**Neue Philosophie (ab dem Architektur-Rework, Phasen 15–21):** „Der effizienteste Weg, seine Arbeit in Labonair fertig zu bekommen — mit maximaler Performance und Modularität für Personalisierung." Vier Prinzipien binden ab hier alle Tasks des Reworks (Details: `bericht-architektur-rework-roadmap.md` §1):
+
+1. **Simple, feste Grundstruktur** — genau vier sichtbare Zonen (Titlebar, Workspace, Side Panels, Statusbar) + eine Overlay-Ebene, nicht mehr.
+2. **Personalisierung ist erstklassig** — Statusbar-Items per Rechtsklick verschiebbar/ausblendbar, Panels zwischen Docks verschiebbar, Themes/Keymap editierbare Dateien, Settings global **und** pro Projektordner.
+3. **Modularität im Code = Modularität im Produkt** — jede Feature-Einheit ein eigener Crate mit klarer API, Registrierung über Traits statt zentralem God-Object.
+4. **Performance messbar** — kein Arbeiten pro Frame, das pro Event reicht; kein `cx.notify` ohne Zustandsänderung; Startup-/Build-Zeit dokumentiert.
+
+Feature-Parität mit der Referenz-App bleibt Pflicht, ist ab hier aber das *Minimum*, nicht das Ziel: viele fokussierte Crates statt `ui`-Monolith, Trait-Registries statt God-Object, ein fester Layout-Vertrag mit erstklassiger Personalisierung. Maßgebliche Ziel-Architektur: [`docs/architecture.md`](../docs/architecture.md); Begründung: [`docs/adr/0001-crate-decomposition.md`](../docs/adr/0001-crate-decomposition.md).
 
 ## Feature-Parität (alles muss am Ende funktionieren)
 

@@ -1911,6 +1911,79 @@ impl Workspace {
         .detach();
     }
 
+    /// "Reset to default" on the Personalization settings pane (T18-007):
+    /// clears every user override in the local registry immediately, then
+    /// deletes the persisted `statusBarItemPlacements` blob and bumps
+    /// [`status_placements::StatusBarLayoutTick`] so every window (including
+    /// this one) re-reads the now-empty blob. Only the statusbar layout is
+    /// reset — panel-toggle visibility is untouched (Notizen: scoped to this
+    /// pane's own data, not a global reset).
+    pub fn reset_status_bar_placements(&mut self, cx: &mut Context<Self>) {
+        self.status_item_registry.set_overrides(HashMap::new());
+        cx.notify();
+
+        let backend = self.backend.clone();
+        let jh = self.tokio.spawn(async move {
+            labonair_backend::modules::settings::settings_clear_status_bar_placements(
+                &backend.status_bar_lock,
+            )
+            .await
+        });
+        cx.spawn(async move |_this, cx| {
+            let _ = jh.await;
+            let _ = cx.update(|app| {
+                app.default_global::<status_placements::StatusBarLayoutTick>()
+                    .0 += 1;
+            });
+        })
+        .detach();
+    }
+
+    /// The persisted `panelToggleVisibility` blob (T18-007): whether `name`'s
+    /// toggle shows in the status bar's fixed-left panel-toggle cluster. A
+    /// panel absent from the blob defaults to visible. Does not affect the
+    /// panel's dock position or whether it can still be opened from the
+    /// command palette.
+    pub fn panel_toggle_visible(name: &str) -> bool {
+        labonair_backend::modules::settings::panel_toggle_visibility_load()
+            .get(name)
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(true)
+    }
+
+    /// The single write path for panel-toggle visibility (T18-007): both the
+    /// status bar's own "Hide from toggle bar" right-click action and the
+    /// Personalization settings pane's per-panel switch call this. Persists
+    /// through the backend's atomic read-merge-write and bumps
+    /// [`status_placements::StatusBarLayoutTick`] so every window's panel
+    /// toggle cluster (which observes that global) re-reads the blob and
+    /// reflects the change live.
+    pub fn set_panel_toggle_visible(
+        &mut self,
+        name: String,
+        visible: bool,
+        cx: &mut Context<Self>,
+    ) {
+        let backend = self.backend.clone();
+        let panel_name = name.clone();
+        let jh = self.tokio.spawn(async move {
+            labonair_backend::modules::settings::settings_set_panel_toggle_visibility(
+                &backend.panel_toggle_visibility_lock,
+                panel_name,
+                visible,
+            )
+            .await
+        });
+        cx.spawn(async move |_this, cx| {
+            let _ = jh.await;
+            let _ = cx.update(|app| {
+                app.default_global::<status_placements::StatusBarLayoutTick>()
+                    .0 += 1;
+            });
+        })
+        .detach();
+    }
+
     /// Install the shell's dock-layout persistence callback (see
     /// [`Workspace::dock_persist_hook`]).
     pub fn set_dock_persist_hook(

@@ -4237,6 +4237,7 @@ dependencies = [
  "labonair-command-palette",
  "labonair-gpui-ext",
  "labonair-notifications",
+ "labonair-panel",
  "labonair-theme",
  "labonair-ui-kit",
  "labonair-workspace",

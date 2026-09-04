@@ -20,7 +20,8 @@ mod tests;
 
 pub use apply::{activate_app_theme, apply_prefs_to_theme, preview_app_theme, theme_choices};
 pub use fields::{
-    FieldDef, FieldKind, SettingsTab, AGENT_BRIDGE, CATEGORIES, CAT_APPEARANCE, FIELDS, KEYBOARD,
+    FieldDef, FieldKind, SettingsTab, AGENT_BRIDGE, CATEGORIES, CAT_APPEARANCE,
+    CAT_PERSONALIZATION, FIELDS, KEYBOARD,
 };
 pub use sections::SECTION_GROUPS;
 pub use store::{GlobalPreferences, PreferencesStore};

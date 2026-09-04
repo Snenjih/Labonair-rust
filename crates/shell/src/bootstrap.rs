@@ -265,7 +265,13 @@ pub(crate) fn bootstrap(
         labonair_settings_ui::apply_prefs_to_theme(&p, &theme, cx);
         crate::menu::apply_keybinds(cx, &p.keybinds);
     }
-    set_settings_deps(prefs.clone(), backend.clone(), tokio.clone(), cx);
+    set_settings_deps(
+        prefs.clone(),
+        backend.clone(),
+        tokio.clone(),
+        workspace.clone(),
+        cx,
+    );
     labonair_settings_ui::set_keybind_apply_hook(crate::menu::apply_keybinds, cx);
 
     // Auto-updater (T15-005). Kicks a quiet background check at startup when the

@@ -21,6 +21,7 @@ labonair-gpui-ext = { path = "../gpui-ext" }
 labonair-notifications = { path = "../notifications" }
 labonair-command-palette = { path = "../command-palette" }
 labonair-workspace = { path = "../workspace" }
+labonair-panel = { path = "../panel" }
 labonair-backend = { path = "../backend" }
 labonair-ai = { path = "../ai" }
 

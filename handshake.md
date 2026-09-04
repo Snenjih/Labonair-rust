@@ -4,6 +4,90 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
+## Last Session: 2026-09-04 (T18-007 — Philosophy verankert + Personalization settings page)
+
+**T18-007 done.** Phase 17 is now complete (T18-001..T18-007 all Done).
+
+### Part A — Philosophy is now normative
+- `tasks/ROADMAP.md` "## Vision": added the four numbered principles from
+  `bericht-architektur-rework-roadmap.md` §1 (simple fixed structure /
+  personalization is first-class / modularity in code = modularity in
+  product / measurable performance) inline, alongside the pre-existing
+  "parity is the minimum, not the goal" sentence.
+- `CLAUDE.md` (repo root): new "## Philosophie (ab Architektur-Rework)"
+  section under the title block (leitsatz + link to `docs/architecture.md`);
+  Critical Rules got an added **Rule 8** ("Layout-Vertrag einhalten") —
+  rules 1–7 left untouched per the task's instruction.
+
+### Part B — "Personalization" settings page
+New settings category (`crates/settings-ui/src/panes/personalization.rs`,
+`SettingsTab::Personalization`, deep-link slug `personalization`, inserted
+into `CATEGORIES` right after "Appearance & Layout"). Two sections:
+- **Statusbar layout editor** — three columns (Left / Right / Hidden) of
+  chips (icon + title) for every placeable `StatusItem` except the fixed
+  `panel-toggles` cluster. Per chip: ←/→ move buttons + hide/show icon
+  button. "Reset to default" clears the whole `statusBarItemPlacements`
+  blob. **Every write goes through the exact same
+  `Workspace::set_status_bar_placement`** the in-app right-click menu
+  (`crates/workspace/src/status_bar.rs`) already called (T18-005) — no
+  second write path. Added `Workspace::reset_status_bar_placements` (clears
+  local overrides + calls new `settings_clear_status_bar_placements` +
+  bumps `StatusBarLayoutTick`) for the reset button.
+- **Panel visibility** — one switch per registered panel
+  (`Workspace::panel_registry()`). New persisted blob
+  `panelToggleVisibility: { panelName: bool }` (backend functions
+  `panel_toggle_visibility_load[_from]` / `settings_set_panel_toggle_visibility`
+  / `set_panel_toggle_visibility_in`, mirroring the existing
+  `statusBarItemPlacements` read-merge-write pattern in
+  `crates/backend/src/modules/settings/mod.rs`, new `PanelToggleVisibilityLock`
+  on `backend::App`). New shared write path **`Workspace::set_panel_toggle_visible`**
+  — both this pane's switches and `PanelTogglesStatusItem`'s "Hide from
+  toggle bar" right-click action (`crates/shell/src/status_items.rs`) call
+  it; the item's previously session-only `hidden: HashSet` is now loaded
+  from the persisted blob at construction and reloaded whenever
+  `StatusBarLayoutTick` bumps (same global as T18-005, now also covers
+  panel-toggle visibility — no new global introduced). Hiding a panel's
+  toggle does **not** close the panel or touch its dock position; it stays
+  reachable from the command palette (`Workspace::select_panel` is
+  independent of the toggle-visibility blob).
+
+### Plumbing to make this possible
+- `labonair-settings-ui` gained a direct `labonair-panel` dependency (to
+  name `StatusSide`/`PanelIcon`/`DockPosition` — it already reached these
+  transitively via `labonair-workspace`, but Rust requires a direct dep to
+  name a type). Updated `scripts/check_crate_deps.py`'s allow-list +
+  `docs/architecture.md` §8.6 (new paragraph, explicitly *not* a
+  resurrection of the T18-005-deleted `BarLoc` machinery).
+- `SettingsView` now holds `Entity<labonair_workspace::Workspace>`
+  (`SettingsView::new`'s 6th param); `SettingsDeps`/`set_settings_deps`
+  (`crates/settings-ui/src/window.rs`) carry it too, published from
+  `crates/shell/src/bootstrap.rs` right after `set_settings_deps(...)`'s
+  existing call site (the `workspace` entity already existed earlier in
+  `bootstrap()`).
+
+### Gate results
+`cargo fmt --check` ✅ · `cargo check --workspace --all-targets` ✅ ·
+`cargo clippy --workspace --all-targets -- -D warnings` ✅ · `cargo test
+--workspace` ✅ (all crates green, no new test failures) ·
+`scripts/check-crate-deps.sh` ✅ (20 crates, 88 edges, acyclic — one new
+edge, `settings-ui → panel`, allow-listed).
+
+### Non-obvious lesson (see also `bugs_and_fixes.md`)
+A local closure that itself takes a generic `f: impl Fn(...)` parameter
+does not compile (`E0562: impl Trait is not allowed in closure
+parameters`) — only `fn` items can have `impl Trait` params. Had to hoist
+the two little per-chip action-button builders out of
+`render_statusbar_chip` into free `fn`s (`statusbar_glyph_btn` /
+`statusbar_icon_btn`) instead of local closures capturing `id`/`c`.
+
+### Current state
+Branch `master`, working tree clean after this session's commit. Phase 17
+(T18-001..T18-007) fully done.
+
+### Next
+**T19-000** (`tasks/phase-18-settings-core/T19-000-settings-design-contract.md`)
+— first task of Phase 18 (Settings-System Zed-Style). No known blockers.
+
 ## Last Session: 2026-09-04 (T18-006 — Migrator `barItemPlacements` → `statusBarItemPlacements`)
 
 **T18-006 done.** One-time, idempotent migrator for the legacy

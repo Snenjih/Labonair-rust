@@ -9,6 +9,10 @@ This is a **hard fork** of Labonair — a Tauri v2 + React 19 web app being rewr
 
 **Goal is full feature parity:** everything Labonair does today must work in the pure-Rust version at the end — no feature is out of scope. The only unavoidable deviation is the in-app URL/web preview tab (GPUI cannot embed a WebView); that is replaced by native markdown rendering + "open in system browser".
 
+## Philosophie (ab Architektur-Rework)
+
+**„Der effizienteste Weg, seine Arbeit in Labonair fertig zu bekommen — mit maximaler Performance und Modularität für Personalisierung."** Ab den Roadmap-Phasen 15–21 ist das die normative Leitlinie für alle Tasks: Feature-Parität mit der Referenz-App bleibt Pflicht, ist aber ab hier das *Minimum*, nicht das Ziel. Maßgebliche Ziel-Architektur, Layout-Vertrag und Crate-Graph: [`docs/architecture.md`](./docs/architecture.md).
+
 ## Commands
 
 | Task | Command |
@@ -58,6 +62,7 @@ The authoritative **target architecture** for the ongoing crate-split rework (ro
 5. **No blocking on the main thread** — all I/O is `async`/`tokio::spawn` / `spawn_blocking`. Never `std::thread::sleep` on the main thread.
 6. **No `unwrap()` on predictable errors** — return `Result<T, String>` (or GPUI error type) with descriptive messages.
 7. **Verify before completing** — a task is only `completed` after `cargo check` + `cargo clippy -- -D warnings` + `cargo test` pass.
+8. **Layout-Vertrag einhalten** — Titlebar nur Tabs + der eine Menü-Button; Statusbar = Panel-Steuerung links / Info-Dropdowns rechts; Overlays nur über `ModalLayer`/`ToastLayer`. Abweichungen zuerst in `docs/architecture.md` begründen.
 
 ## Next Task Protocol (THE core workflow)
 

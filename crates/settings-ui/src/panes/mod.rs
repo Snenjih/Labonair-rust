@@ -5,5 +5,6 @@
 
 mod ai;
 mod generic;
+mod personalization;
 mod shortcuts;
 mod themes;

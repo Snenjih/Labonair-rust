@@ -524,6 +524,23 @@ Dock-layout persistence moved off `AppShell` onto `Workspace` (a
 `workspace` → `panel`, `shell` → `workspace`, `shell` → `backend` all already
 existed).
 
+**T18-007** re-added a settings-ui layout editor — deliberately *not* a
+resurrection of the deleted `BarLoc` machinery above. The new "Personalization"
+category (`crates/settings-ui/src/panes/personalization.rs`) is a thin
+GUI over the exact same `Workspace` methods the in-app right-click menus call:
+`set_status_bar_placement` (already existed, T18-005) and the new
+`set_panel_toggle_visible` / `reset_status_bar_placements`. `labonair-settings-ui`
+gained a direct `labonair-panel` dependency (to name `StatusSide`/`PanelIcon`/
+`DockPosition`) and now holds the app's `Entity<Workspace>` (`SettingsDeps`),
+published from `crates/shell/src/bootstrap.rs` alongside the existing
+`prefs`/`backend`/`tokio` deps — no back-edge, `labonair-workspace` still
+doesn't know `labonair-settings-ui` exists. A new `panelToggleVisibility`
+blob (`{ panelName: bool }`, mirroring `statusBarItemPlacements`'s
+read-merge-write pattern in `labonair_backend::modules::settings`) persists
+which panels get a status-bar toggle; `PanelTogglesStatusItem` (T18-003) now
+reads it and reloads on the same `StatusBarLayoutTick` global instead of the
+session-only `HashSet` it used before this task.
+
 ### 8.7 `PaneGroup` — n-ary split tree done in T17-004
 
 `labonair-workspace::pane_group` was rebuilt from the pre-T17-004 flat binary

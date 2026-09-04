@@ -39,10 +39,13 @@ ALLOWED = {
     # T19-010). settings-content / settings crates land in Phase 18.
     # [deviation] workspace / command-palette / ai edges are pre-Phase-18
     # couplings kept until the settings track exists.
+    # labonair-panel: T18-007's Personalization pane reads/writes the
+    # StatusItemRegistry / PanelRegistry contracts (StatusSide, DockPosition,
+    # …) directly, same as `labonair-workspace` already does.
     "labonair-settings-ui": {
         "labonair-theme", "labonair-ui-kit", "labonair-gpui-ext",
         "labonair-notifications", "labonair-command-palette",
-        "labonair-workspace", "labonair-backend", "labonair-ai",
+        "labonair-workspace", "labonair-panel", "labonair-backend", "labonair-ai",
     },
 
     # Workspace track --------------------------------------------------
