@@ -1,7 +1,7 @@
 # T18-003: Statusbar links — Panel-Steuerung
 
 ## Status
-📋 Geplant
+✅ Done
 
 ## Phase
 17 — Neues Layout & Statusbar-Personalisierung
@@ -59,17 +59,21 @@ alte 44px-Activity-Rail und die Sidebar-Umschaltleiste.
    Kompakt-Modus bei schmalem Fenster.
 
 ## Akzeptanzkriterien
-- [ ] Links in der Statusbar steht **ein** `PanelTogglesStatusItem`, das aus
+- [x] Links in der Statusbar steht **ein** `PanelTogglesStatusItem`, das aus
       der `PanelRegistry` alle Panels als Toggles rendert.
-- [ ] Toggle öffnet/schließt/aktiviert das Panel im korrekten Dock; aktiver
+- [x] Toggle öffnet/schließt/aktiviert das Panel im korrekten Dock; aktiver
       Zustand korrekt hervorgehoben.
-- [ ] Rechtsklick auf einen Toggle: Andocken links/rechts/unten +
+- [x] Rechtsklick auf einen Toggle: Andocken links/rechts/unten +
       Ausblenden.
-- [ ] 44px-Activity-Rail, `render_panel_toggle`, `render_ai_toggle`,
+- [x] 44px-Activity-Rail, `render_panel_toggle`, `render_ai_toggle`,
       Sidebar-Umschaltleiste sind entfernt.
-- [ ] Kompakt-Modus (nur Icons) bei schmalem Fenster.
-- [ ] Tooltip zeigt Panel-Titel + (falls vorhanden) Keybind.
-- [ ] Gates grün: `cargo fmt --check`, `cargo check --workspace --all-targets`,
+- [x] Kompakt-Modus (nur Icons) bei schmalem Fenster. **Deviation:** the
+      toggle strip was already icon-only in every width (no label text ever
+      existed on these buttons), so it is unconditionally in the "compact"
+      state rather than only below a width threshold — see Notizen ("Design-
+      Punkt für Nutzer-Sichtprüfung"); no width-observation code was added.
+- [x] Tooltip zeigt Panel-Titel + (falls vorhanden) Keybind.
+- [x] Gates grün: `cargo fmt --check`, `cargo check --workspace --all-targets`,
       `cargo clippy --workspace --all-targets -- -D warnings`,
       `cargo test --workspace`.
 

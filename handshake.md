@@ -4,6 +4,59 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
+## Last Session: 2026-09-04 (T18-003 — Statusbar left: panel controls)
+
+**T18-003 done.** `PanelTogglesStatusItem` (`crates/shell/src/status_items.rs`)
+already existed from T17-003 with the basic per-panel toggle (icon button,
+click → `Workspace::select_panel`, active-panel highlight); this task added
+the remaining pieces from the task file.
+
+### What Was Done (T18-003)
+- **`crates/shell/src/status_items.rs`** — `PanelTogglesStatusItem` gained:
+  - a right-click (`MouseButton::Right`) context menu per toggle (`dock_menu`
+    field), built with the shared `labonair_ui_kit::{context_menu, MenuItem}`
+    primitive: "Dock left/right/bottom" (current position omitted) →
+    `Workspace::move_panel` + `persist_docks`; "Hide from toggle bar" → a
+    session-only `hidden: HashSet<SharedString>` field that filters the
+    toggle list (no persistence yet — that is T18-007 "panel visibility",
+    per the task's own note).
+  - a real GPUI tooltip (`.tooltip(...)` + `labonair_ui_kit::Tooltip`) on
+    each toggle: panel title, plus the rebindable keybind
+    (`labonair_command_palette::effective_keys`) for the two panels that
+    have a dedicated `ShortcutId` today (`explorer` → `SidebarToggle`,
+    `ai` → `AiToggle`); the other three panels (source-control, git-graph,
+    snippets) show the title alone, matching the task's "keybind if set"
+    wording — they have no `ShortcutId` of their own.
+  - keybind overrides read from `labonair_workspace::prefs::GlobalPreferences`
+    (a `cx` global, same pattern `Workspace::primary_dock` already uses).
+- The old 44 px activity rail / `render_panel_toggle` / `render_ai_toggle` /
+  sidebar switch strip were already gone (confirmed by grep — no hits
+  anywhere in `crates/`), so nothing to remove there.
+- **Deviation (documented in the task file):** "compact mode (icons only) at
+  narrow width" — the toggle strip was already icon-only unconditionally (no
+  label text ever existed on these buttons since T17-003), so it is always in
+  the "compact" state rather than switching at a width threshold. No
+  window-width observation code was added; flagged as a call for the user's
+  visual pass, per the task's own "Design-Punkt für Nutzer-Sichtprüfung" note.
+
+### Gate Results (T18-003)
+- `cargo fmt --check` ✅ · `cargo check --workspace --all-targets` ✅ ·
+  `cargo clippy --workspace --all-targets -- -D warnings` ✅ ·
+  `cargo test --workspace` ✅ (no new tests — the change is pure UI wiring on
+  already-tested `Workspace::move_panel`/`persist_docks`/`dock_for_panel`) ·
+  `scripts/check-crate-deps.sh` ✅ (20 crates, 87 edges, acyclic, no new edge)
+  — ran on a normal macOS dev machine but no display, so `cargo run` visual
+  check was **not** done this session (same caveat as T18-001/T18-002).
+
+### State
+- Branch `master`, committing now. No blockers.
+
+### Next
+- **T18-004** — Statusbar rechts: Info-Dropdowns
+  (`tasks/phase-17-layout/T18-004-statusbar-right-info-dropdowns.md`).
+
+---
+
 ## Last Session: 2026-09-04 (T18-002 — `Cmd+F` search overlay)
 
 **T18-002 done.** The titlebar's provisional inline search (T18-001) and the

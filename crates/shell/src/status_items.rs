@@ -72,9 +72,39 @@ fn panel_toggle_icon(icon: PanelIcon) -> IconName {
 // Panel toggles (aggregate) — one toggle per registered panel.
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// Panel title + rebindable shortcut, for the toggle's tooltip. Only
+/// "explorer" (`SidebarToggle`) and "ai" (`AiToggle`) currently have a
+/// dedicated shortcut (`crates/command-palette/src/keybind.rs`); the others
+/// show the title alone, per the task's "keybind if set" wording.
+fn panel_toggle_shortcut(persistent_name: &str) -> Option<labonair_command_palette::ShortcutId> {
+    use labonair_command_palette::ShortcutId;
+    match persistent_name {
+        "explorer" => Some(ShortcutId::SidebarToggle),
+        "ai" => Some(ShortcutId::AiToggle),
+        _ => None,
+    }
+}
+
+fn panel_toggle_title(persistent_name: &str) -> &'static str {
+    match persistent_name {
+        "explorer" => "Explorer",
+        "source-control" => "Source Control",
+        "git-graph" => "Git Graph",
+        "snippets" => "Snippets",
+        "ai" => "AI",
+        _ => "Panel",
+    }
+}
+
 pub struct PanelTogglesStatusItem {
     workspace: Entity<Workspace>,
     theme: Entity<ThemeStore>,
+    /// `(panel name, anchor)` of an open dock/hide context menu, or `None`.
+    dock_menu: Option<(SharedString, Point<Pixels>)>,
+    /// Panels the user hid from this toggle strip this session. Persistence
+    /// of this choice is T18-007 ("panel visibility") — for now it resets on
+    /// restart.
+    hidden: std::collections::HashSet<SharedString>,
 }
 
 impl PanelTogglesStatusItem {
@@ -85,7 +115,84 @@ impl PanelTogglesStatusItem {
     ) -> Self {
         cx.observe(&workspace, |_, _, cx| cx.notify()).detach();
         cx.observe(&theme, |_, _, cx| cx.notify()).detach();
-        Self { workspace, theme }
+        Self {
+            workspace,
+            theme,
+            dock_menu: None,
+            hidden: Default::default(),
+        }
+    }
+
+    fn open_dock_menu(&mut self, name: SharedString, pos: Point<Pixels>, cx: &mut Context<Self>) {
+        self.dock_menu = Some((name, pos));
+        cx.notify();
+    }
+
+    fn render_dock_menu(&mut self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        use labonair_panel::DockPosition;
+        use labonair_ui_kit::{context_menu, MenuItem};
+
+        let (name, pos) = self.dock_menu.clone()?;
+        let current = self.workspace.read(cx).dock_for_panel(name.as_ref(), cx);
+        let view = cx.entity();
+        let close = {
+            let v = view.clone();
+            move |cx: &mut App| {
+                v.update(cx, |this, cx| {
+                    this.dock_menu = None;
+                    cx.notify();
+                })
+            }
+        };
+
+        let dest_label = |d: DockPosition| match d {
+            DockPosition::Left => "Dock left",
+            DockPosition::Right => "Dock right",
+            DockPosition::Bottom => "Dock bottom",
+        };
+
+        let mut items: Vec<MenuItem> = Vec::new();
+        for d in DockPosition::ALL {
+            if d == current {
+                continue;
+            }
+            let move_name = name.clone();
+            let ws = self.workspace.clone();
+            let close = close.clone();
+            items.push(
+                MenuItem::new(
+                    SharedString::from(format!("dock-move-{}", dest_label(d))),
+                    dest_label(d),
+                )
+                .on_click(move |_, _w, cx| {
+                    let move_name = move_name.clone();
+                    ws.update(cx, |w, cx| {
+                        if w.move_panel(move_name.as_ref(), d, cx) {
+                            w.persist_docks(cx);
+                            cx.notify();
+                        }
+                    });
+                    close(cx);
+                }),
+            );
+        }
+        items.push(MenuItem::separator());
+        let hide_name = name.clone();
+        let view_hide = view.clone();
+        let close_hide = close.clone();
+        items.push(MenuItem::new("dock-hide", "Hide from toggle bar").on_click(
+            move |_, _w, cx| {
+                let hide_name = hide_name.clone();
+                view_hide.update(cx, |this, cx| {
+                    this.hidden.insert(hide_name);
+                    cx.notify();
+                });
+                close_hide(cx);
+            },
+        ));
+
+        let dismiss = move |_w: &mut Window, cx: &mut App| close(cx);
+        Some(context_menu(pos, self.theme.read(cx), dismiss, items))
     }
 }
 
@@ -111,10 +218,15 @@ impl StatusItem for PanelTogglesStatusItem {
             let t = self.theme.read(cx);
             (t.foreground(), t.muted_foreground(), t.accent(), t.border())
         };
+        let keybind_overrides = cx
+            .try_global::<labonair_workspace::prefs::GlobalPreferences>()
+            .map(|g| g.0.keybinds.clone())
+            .unwrap_or_default();
         let panels: Vec<(SharedString, IconName, bool)> = {
             let ws = self.workspace.read(cx);
             ws.panel_registry()
                 .iter()
+                .filter(|r| !self.hidden.contains(r.persistent_name))
                 .map(|r| {
                     (
                         SharedString::from(r.persistent_name),
@@ -125,12 +237,25 @@ impl StatusItem for PanelTogglesStatusItem {
                 .collect()
         };
 
+        let dock_menu = self.render_dock_menu(cx);
+
         div()
+            .relative()
             .flex()
             .items_center()
             .gap_0p5()
             .children(panels.into_iter().map(|(name, icon, active)| {
                 let click_name = name.clone();
+                let rmb_name = name.clone();
+                let title = panel_toggle_title(name.as_ref());
+                let keys = panel_toggle_shortcut(name.as_ref())
+                    .map(|id| labonair_command_palette::effective_keys(id, &keybind_overrides))
+                    .unwrap_or_default();
+                let tooltip_text: SharedString = if keys.is_empty() {
+                    SharedString::from(title)
+                } else {
+                    SharedString::from(format!("{title} ({})", keys.join("")))
+                };
                 div()
                     .id(SharedString::from(format!("bar-toggle-{name}")))
                     .size(px(20.0))
@@ -143,12 +268,22 @@ impl StatusItem for PanelTogglesStatusItem {
                         d.text_color(muted).hover(|s| s.bg(border).text_color(fg))
                     })
                     .child(icon.svg(if active { fg } else { muted }))
+                    .tooltip(move |window, cx| {
+                        labonair_ui_kit::Tooltip::new(tooltip_text.clone()).build(window, cx)
+                    })
                     .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
                         let name = click_name.clone();
                         this.workspace
                             .update(cx, |w, cx| w.select_panel(name.as_ref(), cx));
                     }))
+                    .on_mouse_down(
+                        MouseButton::Right,
+                        cx.listener(move |this, ev: &MouseDownEvent, _w, cx| {
+                            this.open_dock_menu(rmb_name.clone(), ev.position, cx);
+                        }),
+                    )
             }))
+            .children(dock_menu)
             .into_any_element()
     }
 }
