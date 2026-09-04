@@ -295,7 +295,8 @@ impl StatusItem for PanelTogglesStatusItem {
 pub struct NotificationsStatusItem {
     center: Entity<labonair_notifications::NotificationCenter>,
     theme: Entity<ThemeStore>,
-    open: bool,
+    open: Option<Point<Pixels>>,
+    focus: gpui::FocusHandle,
 }
 
 impl NotificationsStatusItem {
@@ -309,8 +310,15 @@ impl NotificationsStatusItem {
         Self {
             center,
             theme,
-            open: false,
+            open: None,
+            focus: cx.focus_handle(),
         }
+    }
+}
+
+impl gpui::Focusable for NotificationsStatusItem {
+    fn focus_handle(&self, _cx: &App) -> gpui::FocusHandle {
+        self.focus.clone()
     }
 }
 
@@ -327,128 +335,154 @@ impl StatusItem for NotificationsStatusItem {
     fn default_side(&self) -> StatusSide {
         StatusSide::Right
     }
+    // Rightmost of the right cluster — always visible, own group (T18-004
+    // default order: … → Bookmarks → Notifications).
     fn order(&self) -> i32 {
-        10
+        100
+    }
+    fn group(&self) -> u32 {
+        2
     }
 
     fn render_status(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
+        // Bell stays visible even at 0 (T18-004 point 1: notifications is
+        // always shown, rightmost); only the badge disappears (point 3).
         let count = self.center.read(cx).len();
-        if count == 0 {
-            return div().into_any_element();
-        }
-        let (fg, muted, accent, border, card) = {
+        let (fg, muted, accent, border) = {
             let t = self.theme.read(cx);
-            (
-                t.foreground(),
-                t.muted_foreground(),
-                t.accent(),
-                t.border(),
-                t.card(),
-            )
+            (t.foreground(), t.muted_foreground(), t.accent(), t.border())
         };
-        let open = self.open;
-        let snapshots = self.center.read(cx).snapshots();
-        div()
+
+        let bell = div()
+            .id("bar-notifications")
+            .track_focus(&self.focus)
+            .key_context("StatusPopover")
             .relative()
-            .flex_shrink_0()
-            .child(
-                div()
-                    .id("bar-notifications")
-                    .relative()
-                    .size(px(20.0))
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .rounded_md()
-                    .text_color(muted)
-                    .hover(|s| s.bg(border).text_color(fg))
-                    .child(IconName::Bell.svg(muted))
-                    .child(
-                        div()
-                            .absolute()
-                            .top(px(-2.0))
-                            .right(px(-2.0))
-                            .min_w(px(13.0))
-                            .h(px(13.0))
-                            .px(px(2.0))
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .rounded_full()
-                            .bg(accent)
-                            .text_color(fg)
-                            .text_size(px(8.0))
-                            .child(SharedString::from(count.to_string())),
-                    )
-                    .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
-                        this.open = !this.open;
-                        cx.notify();
-                    })),
-            )
-            .when(open, |d| {
+            .size(px(20.0))
+            .flex()
+            .items_center()
+            .justify_center()
+            .rounded_md()
+            .text_color(muted)
+            .hover(|s| s.bg(border).text_color(fg))
+            .child(IconName::Bell.svg(muted))
+            .when(count > 0, |d| {
                 d.child(
                     div()
                         .absolute()
-                        .bottom(px(24.0))
-                        .right(px(0.0))
-                        .w(px(300.0))
+                        .top(px(-2.0))
+                        .right(px(-2.0))
+                        .min_w(px(13.0))
+                        .h(px(13.0))
+                        .px(px(2.0))
                         .flex()
-                        .flex_col()
-                        .rounded_md()
-                        .bg(card)
-                        .border_1()
-                        .border_color(border)
-                        .child(
-                            div()
-                                .flex()
-                                .items_center()
-                                .justify_between()
-                                .px_3()
-                                .py_2()
-                                .border_b_1()
-                                .border_color(border)
-                                .text_xs()
-                                .font_weight(gpui::FontWeight::SEMIBOLD)
-                                .text_color(fg)
-                                .child("Notifications")
-                                .child(
-                                    div()
-                                        .id("bar-notif-clear")
-                                        .text_xs()
-                                        .text_color(muted)
-                                        .hover(|s| s.text_color(fg))
-                                        .child("Clear all")
-                                        .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
-                                            this.center.update(cx, |n, cx| n.clear_all(cx));
-                                            this.open = false;
-                                            cx.notify();
-                                        })),
-                                ),
-                        )
-                        .children(snapshots.into_iter().take(6).map(|s| {
-                            div()
-                                .flex()
-                                .flex_col()
-                                .gap_0p5()
-                                .px_3()
-                                .py_1p5()
-                                .border_b_1()
-                                .border_color(border)
-                                .child(
-                                    div()
-                                        .text_xs()
-                                        .text_color(fg)
-                                        .child(SharedString::from(s.title.to_string())),
-                                )
-                                .child(
-                                    div()
-                                        .text_size(px(11.0))
-                                        .text_color(muted)
-                                        .child(SharedString::from(s.body.to_string())),
-                                )
-                        })),
+                        .items_center()
+                        .justify_center()
+                        .rounded_full()
+                        .bg(accent)
+                        .text_color(fg)
+                        .text_size(px(8.0))
+                        .child(SharedString::from(count.to_string())),
                 )
             })
+            .on_click(cx.listener(|this, ev: &ClickEvent, w, cx| {
+                if this.open.is_some() {
+                    this.open = None;
+                } else {
+                    this.open = Some(ev.position());
+                    w.focus(&this.focus);
+                }
+                cx.notify();
+            }))
+            .on_key_down(cx.listener(|this, ev: &gpui::KeyDownEvent, _w, cx| {
+                if this.open.is_some() && ev.keystroke.key == "escape" {
+                    this.open = None;
+                    cx.notify();
+                    cx.stop_propagation();
+                }
+            }));
+
+        let Some(anchor) = self.open else {
+            return bell.into_any_element();
+        };
+
+        let (fg2, muted2, border2) = (fg, muted, border);
+        let snapshots = self.center.read(cx).snapshots();
+        let view = cx.entity();
+        let dismiss = {
+            let v = view.clone();
+            move |_w: &mut Window, cx: &mut App| {
+                v.update(cx, |this, cx| {
+                    this.open = None;
+                    cx.notify();
+                })
+            }
+        };
+        let content = div()
+            .flex()
+            .flex_col()
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .justify_between()
+                    .px_3()
+                    .py_2()
+                    .border_b_1()
+                    .border_color(border2)
+                    .text_xs()
+                    .font_weight(gpui::FontWeight::SEMIBOLD)
+                    .text_color(fg2)
+                    .child("Notifications")
+                    .child(
+                        div()
+                            .id("bar-notif-clear")
+                            .text_xs()
+                            .text_color(muted2)
+                            .hover(|s| s.text_color(fg2))
+                            .child("Clear all")
+                            .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
+                                this.center.update(cx, |n, cx| n.clear_all(cx));
+                                this.open = None;
+                                cx.notify();
+                            })),
+                    ),
+            )
+            .children(snapshots.into_iter().take(6).map(|s| {
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap_0p5()
+                    .px_3()
+                    .py_1p5()
+                    .border_b_1()
+                    .border_color(border2)
+                    .child(
+                        div()
+                            .text_xs()
+                            .text_color(fg2)
+                            .child(SharedString::from(s.title.to_string())),
+                    )
+                    .child(
+                        div()
+                            .text_size(px(11.0))
+                            .text_color(muted2)
+                            .child(SharedString::from(s.body.to_string())),
+                    )
+            }))
+            .into_any_element();
+
+        div()
+            .relative()
+            .flex_shrink_0()
+            .child(bell)
+            .child(labonair_ui_kit::popover(
+                anchor,
+                px(300.0),
+                self.theme.read(cx),
+                dismiss,
+                content,
+            ))
             .into_any_element()
     }
 }
@@ -840,8 +874,12 @@ impl StatusItem for CwdStatusItem {
     fn default_side(&self) -> StatusSide {
         StatusSide::Right
     }
+    // Leftmost of the right cluster — widest item (T18-004 default order).
     fn order(&self) -> i32 {
-        20
+        10
+    }
+    fn group(&self) -> u32 {
+        0
     }
 
     fn on_active_tab_changed(&mut self, cx: &mut Context<Self>) {
@@ -897,8 +935,13 @@ impl StatusItem for CursorPositionStatusItem {
     fn default_side(&self) -> StatusSide {
         StatusSide::Right
     }
+    // Same breadcrumb group as `cwd`/`preview-url` — all three are
+    // active-tab-derived text, not a standalone action item.
     fn order(&self) -> i32 {
-        22
+        11
+    }
+    fn group(&self) -> u32 {
+        0
     }
 
     fn render_status(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
@@ -949,7 +992,10 @@ impl StatusItem for PreviewUrlStatusItem {
         StatusSide::Right
     }
     fn order(&self) -> i32 {
-        24
+        12
+    }
+    fn group(&self) -> u32 {
+        0
     }
 
     fn render_status(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
@@ -1015,7 +1061,10 @@ impl StatusItem for UpdaterStatusItem {
         StatusSide::Right
     }
     fn order(&self) -> i32 {
-        30
+        40
+    }
+    fn group(&self) -> u32 {
+        1
     }
 
     fn render_status(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
@@ -1051,7 +1100,7 @@ impl StatusItem for UpdaterStatusItem {
                     .bg(accent),
             )
             .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
-                this.updater.update(cx, |u, cx| u.run_check(true, cx));
+                this.updater.update(cx, |u, cx| u.open_dialog(cx));
             }))
             .into_any_element()
     }
@@ -1063,6 +1112,7 @@ impl StatusItem for UpdaterStatusItem {
 
 pub struct TransfersStatusItem {
     workspace: Entity<Workspace>,
+    transfers: Entity<labonair_workspace::transfers::TransfersView>,
     theme: Entity<ThemeStore>,
 }
 
@@ -1072,9 +1122,15 @@ impl TransfersStatusItem {
         theme: Entity<ThemeStore>,
         cx: &mut Context<Self>,
     ) -> Self {
+        let transfers = workspace.read(cx).transfers_entity();
         cx.observe(&workspace, |_, _, cx| cx.notify()).detach();
+        cx.observe(&transfers, |_, _, cx| cx.notify()).detach();
         cx.observe(&theme, |_, _, cx| cx.notify()).detach();
-        Self { workspace, theme }
+        Self {
+            workspace,
+            transfers,
+            theme,
+        }
     }
 }
 
@@ -1092,10 +1148,18 @@ impl StatusItem for TransfersStatusItem {
         StatusSide::Right
     }
     fn order(&self) -> i32 {
-        40
+        20
+    }
+    fn group(&self) -> u32 {
+        1
     }
 
     fn render_status(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
+        // Only shown while a transfer is queued/running (T18-004 point 5) —
+        // the reference "conditional status item" rule, same as `updater`.
+        if self.transfers.read(cx).active_count() == 0 {
+            return div().into_any_element();
+        }
         let (fg, muted, border) = {
             let t = self.theme.read(cx);
             (t.foreground(), t.muted_foreground(), t.border())
@@ -1122,7 +1186,8 @@ pub struct AgentAccessStatusItem {
     store: Entity<AgentAccessStore>,
     workspace: Entity<Workspace>,
     theme: Entity<ThemeStore>,
-    open: bool,
+    open: Option<Point<Pixels>>,
+    focus: gpui::FocusHandle,
 }
 
 impl AgentAccessStatusItem {
@@ -1139,7 +1204,8 @@ impl AgentAccessStatusItem {
             store,
             workspace,
             theme,
-            open: false,
+            open: None,
+            focus: cx.focus_handle(),
         }
     }
 
@@ -1148,138 +1214,157 @@ impl AgentAccessStatusItem {
         entries: Vec<AgentAccessEntry>,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let (fg, muted, border, card, accent) = {
+        let (fg, muted, border, accent) = {
             let t = self.theme.read(cx);
-            (
-                t.foreground(),
-                t.muted_foreground(),
-                t.border(),
-                t.card(),
-                t.accent(),
-            )
+            (t.foreground(), t.muted_foreground(), t.border(), t.accent())
         };
         let count = entries.len();
-        let open = self.open;
+
+        let badge = div()
+            .id("agent-access-badge")
+            .track_focus(&self.focus)
+            .key_context("StatusPopover")
+            .relative()
+            .size(px(20.0))
+            .flex()
+            .items_center()
+            .justify_center()
+            .rounded_md()
+            .text_color(muted)
+            .hover(|s| s.bg(border).text_color(fg))
+            .child(IconName::Shield.svg(muted))
+            .child(
+                div()
+                    .absolute()
+                    .top(px(-2.0))
+                    .right(px(-2.0))
+                    .min_w(px(13.0))
+                    .h(px(13.0))
+                    .px(px(2.0))
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .rounded_full()
+                    .bg(accent)
+                    .text_color(fg)
+                    .text_size(px(8.0))
+                    .child(SharedString::from(count.to_string())),
+            )
+            .on_click(cx.listener(|this, ev: &ClickEvent, w, cx| {
+                if this.open.is_some() {
+                    this.open = None;
+                } else {
+                    this.open = Some(ev.position());
+                    w.focus(&this.focus);
+                }
+                cx.notify();
+            }))
+            .on_key_down(cx.listener(|this, ev: &gpui::KeyDownEvent, _w, cx| {
+                if this.open.is_some() && ev.keystroke.key == "escape" {
+                    this.open = None;
+                    cx.notify();
+                    cx.stop_propagation();
+                }
+            }));
+
+        let Some(anchor) = self.open else {
+            return div()
+                .relative()
+                .flex_shrink_0()
+                .child(badge)
+                .into_any_element();
+        };
+
+        let view = cx.entity();
+        let dismiss = {
+            let v = view.clone();
+            move |_w: &mut Window, cx: &mut App| {
+                v.update(cx, |this, cx| {
+                    this.open = None;
+                    cx.notify();
+                })
+            }
+        };
+        let content = div()
+            .flex()
+            .flex_col()
+            .child(
+                div()
+                    .px_3()
+                    .py_2()
+                    .border_b_1()
+                    .border_color(border)
+                    .text_xs()
+                    .font_weight(gpui::FontWeight::SEMIBOLD)
+                    .text_color(fg)
+                    .child("AI Agent Access"),
+            )
+            .children(entries.into_iter().map(|entry| {
+                let tab_id = entry.tab_id;
+                let session_id = entry.session_id.clone();
+                div()
+                    .flex()
+                    .items_center()
+                    .gap_2()
+                    .px_3()
+                    .py_1p5()
+                    .hover(|s| s.bg(border))
+                    .child(
+                        div()
+                            .id(SharedString::from(format!("agent-jump-{tab_id}")))
+                            .flex_1()
+                            .min_w_0()
+                            .text_xs()
+                            .text_color(fg)
+                            .truncate()
+                            .child(SharedString::from(entry.label.clone()))
+                            .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
+                                this.open = None;
+                                this.workspace
+                                    .update(cx, |w, cx| w.reveal_tab(tab_id, window, cx));
+                                cx.notify();
+                            })),
+                    )
+                    .child(
+                        div()
+                            .id(SharedString::from(format!("agent-revoke-{tab_id}")))
+                            .px_1()
+                            .rounded_sm()
+                            .text_xs()
+                            .text_color(muted)
+                            .hover(|s| s.text_color(fg))
+                            .child("\u{2715}")
+                            .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                                let session_id = session_id.clone();
+                                this.store.update(cx, |s, cx| {
+                                    s.set_grant(
+                                        tab_id,
+                                        session_id,
+                                        false,
+                                        String::new(),
+                                        labonair_backend::modules::mcp::SessionKind::Ssh,
+                                        None,
+                                        None,
+                                        cx,
+                                    );
+                                });
+                                cx.notify();
+                            })),
+                    )
+            }))
+            .into_any_element();
 
         div()
             .relative()
             .flex_shrink_0()
-            .child(
-                div()
-                    .id("agent-access-badge")
-                    .relative()
-                    .size(px(20.0))
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .rounded_md()
-                    .text_color(muted)
-                    .hover(|s| s.bg(border).text_color(fg))
-                    .child(IconName::Shield.svg(muted))
-                    .child(
-                        div()
-                            .absolute()
-                            .top(px(-2.0))
-                            .right(px(-2.0))
-                            .min_w(px(13.0))
-                            .h(px(13.0))
-                            .px(px(2.0))
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .rounded_full()
-                            .bg(accent)
-                            .text_color(fg)
-                            .text_size(px(8.0))
-                            .child(SharedString::from(count.to_string())),
-                    )
-                    .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
-                        this.open = !this.open;
-                        cx.notify();
-                    })),
-            )
-            .when(open, |d| {
-                d.child(
-                    div()
-                        .absolute()
-                        .bottom(px(24.0))
-                        .right(px(0.0))
-                        .w(px(300.0))
-                        .flex()
-                        .flex_col()
-                        .rounded_md()
-                        .bg(card)
-                        .border_1()
-                        .border_color(border)
-                        .child(
-                            div()
-                                .px_3()
-                                .py_2()
-                                .border_b_1()
-                                .border_color(border)
-                                .text_xs()
-                                .font_weight(gpui::FontWeight::SEMIBOLD)
-                                .text_color(fg)
-                                .child("AI Agent Access"),
-                        )
-                        .children(entries.into_iter().map(|entry| {
-                            let tab_id = entry.tab_id;
-                            let session_id = entry.session_id.clone();
-                            div()
-                                .flex()
-                                .items_center()
-                                .gap_2()
-                                .px_3()
-                                .py_1p5()
-                                .hover(|s| s.bg(border))
-                                .child(
-                                    div()
-                                        .id(SharedString::from(format!("agent-jump-{tab_id}")))
-                                        .flex_1()
-                                        .min_w_0()
-                                        .text_xs()
-                                        .text_color(fg)
-                                        .truncate()
-                                        .child(SharedString::from(entry.label.clone()))
-                                        .on_click(cx.listener(
-                                            move |this, _: &ClickEvent, window, cx| {
-                                                this.open = false;
-                                                this.workspace.update(cx, |w, cx| {
-                                                    w.reveal_tab(tab_id, window, cx)
-                                                });
-                                                cx.notify();
-                                            },
-                                        )),
-                                )
-                                .child(
-                                    div()
-                                        .id(SharedString::from(format!("agent-revoke-{tab_id}")))
-                                        .px_1()
-                                        .rounded_sm()
-                                        .text_xs()
-                                        .text_color(muted)
-                                        .hover(|s| s.text_color(fg))
-                                        .child("\u{2715}")
-                                        .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
-                                            let session_id = session_id.clone();
-                                            this.store.update(cx, |s, cx| {
-                                                s.set_grant(
-                                                    tab_id,
-                                                    session_id,
-                                                    false,
-                                                    String::new(),
-                                                    labonair_backend::modules::mcp::SessionKind::Ssh,
-                                                    None,
-                                                    None,
-                                                    cx,
-                                                );
-                                            });
-                                            cx.notify();
-                                        })),
-                                )
-                        })),
-                )
-            })
+            .child(badge)
+            .child(labonair_ui_kit::popover(
+                anchor,
+                px(300.0),
+                self.theme.read(cx),
+                dismiss,
+                content,
+            ))
             .into_any_element()
     }
 }
@@ -1298,7 +1383,10 @@ impl StatusItem for AgentAccessStatusItem {
         StatusSide::Right
     }
     fn order(&self) -> i32 {
-        50
+        30
+    }
+    fn group(&self) -> u32 {
+        1
     }
 
     fn render_status(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
@@ -1348,7 +1436,10 @@ impl StatusItem for JumpHostsStatusItem {
         StatusSide::Right
     }
     fn order(&self) -> i32 {
-        60
+        50
+    }
+    fn group(&self) -> u32 {
+        1
     }
 
     fn render_status(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
@@ -1404,7 +1495,10 @@ impl StatusItem for BookmarksStatusItem {
         StatusSide::Right
     }
     fn order(&self) -> i32 {
-        70
+        60
+    }
+    fn group(&self) -> u32 {
+        1
     }
 
     fn render_status(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
@@ -1453,6 +1547,7 @@ pub fn register_builtin_status_items(
             id: view.read(cx).id(),
             default_side: view.read(cx).default_side(),
             order: view.read(cx).order(),
+            group: view.read(cx).group(),
             build: Arc::new(move |_window, _cx| Arc::new(handle.clone()) as AnyStatusItemHandle),
         }
     }
@@ -1473,6 +1568,13 @@ pub fn register_builtin_status_items(
     let bookmarks_item =
         cx.new(|cx| BookmarksStatusItem::new(bookmarks.clone(), theme.clone(), cx));
 
+    // Default right-cluster order (T18-004 point 1), each item's `order()`:
+    //   cwd(10)/cursor(11)/preview(12)  — group 0, active-tab-derived text,
+    //     widest first so it can collapse before anything else has to move.
+    //   transfers(20)/agent(30)/updater(40)/jump-hosts(50)/bookmarks(60) —
+    //     group 1, the "action" items in the order the task file lists them.
+    //   notifications(100) — group 2, always visible, pinned rightmost.
+    // `StatusBar::cluster` draws a divider between groups, never within one.
     let registrations = [
         reg(&panel_toggles, cx),
         reg(&notifications_item, cx),

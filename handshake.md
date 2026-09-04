@@ -4,6 +4,31 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
+## Last Session: 2026-09-04 (T18-004 — Statusbar right: info dropdowns)
+
+**T18-004 done.** Polish pass over the right-side statusbar cluster (`crates/shell/src/status_items.rs`) — default order, a shared popover primitive, dividers between logical groups, and a couple of real behavior fixes that fell out of reading the acceptance criteria closely.
+
+### What Was Done (T18-004)
+- **`crates/panel/src/status.rs`** — new `StatusItem::group()` (default 0) + `StatusItemRegistration::group` + `StatusItemHandle::group`, a second sort key alongside `order`.
+- **`crates/workspace/src/status_bar.rs`** — `StatusBar::cluster` draws a 1px divider between consecutive items whose `group()` differs, never within a group.
+- **`crates/shell/src/status_items.rs`** — reordered every right-side item to the task's default order (doc comment on `register_builtin_status_items` explains it): `cwd(10)/cursor(11)/preview(12)` group 0 → `transfers(20)/agent(30)/updater(40)/jump-hosts(50)/bookmarks(60)` group 1 → `notifications(100)` group 2, pinned rightmost and now **always visible** (only its unread badge disappears at 0 — previously the whole bell hid at 0, which contradicted the task's "immer sichtbar"). `Notifications` and `AgentAccess` dropdowns migrated off a bespoke `.absolute()` div (no outside-click/Esc close at all before) onto the new `labonair_ui_kit::popover` primitive. `Transfers` item now hides unless a transfer is queued/running (new `TransfersView::active_count()` + `Workspace::transfers_entity()`, observed directly — observing `Workspace` alone never fired, since `apply_transfer_bus_event` only notifies the `TransfersView` entity). `Updater` click now calls new `UpdaterView::open_dialog()` (reopens the existing dialog for an already-known update instead of silently re-running the network check `run_check` would have started for an `Available` state, since `is_busy()` doesn't cover `Available`).
+- **`crates/ui-kit/src/popover.rs`** (new) — `popover(anchor, width, theme, dismiss, content)`: `deferred` + `anchored().snap_to_window()` (same mechanics as `settings-ui`'s `render_dropdown`) + a transparent outside-click backdrop. `context_menu` (flat `MenuItem` lists — CWD's segment/subdir menus, the panel-toggle dock menu) was deliberately left alone: different content shape, ~10 existing call sites, and the task file itself says "bis T20-001" for a real shared primitive.
+
+### Deviations (documented in the task file)
+- Transfers' "dropdown with progress" is satisfied by the pre-existing `TransfersView` fixed bottom-right panel (already has per-job progress/step log/cancel) rather than an anchored-under-the-item popover — migrating that whole subsystem was out of scope for a polish task.
+- Updater's icon doesn't visually distinguish Available/Downloading/Ready (single icon+dot) — click behavior and visibility are correct; per-substate iconography wasn't touched.
+
+### Gate Results (T18-004)
+- `cargo fmt --check` ✅ · `cargo check --workspace --all-targets` ✅ · `cargo clippy --workspace --all-targets -- -D warnings` ✅ · `cargo test --workspace` ✅ (all existing tests still green; no new unit tests — the change is UI wiring + two small conditionals on already-tested state) · `scripts/check-crate-deps.sh` ✅ (20 crates, 87 edges, acyclic, no new edge) — no display available this session, so `cargo run` visual check was **not** done (same caveat as T18-001/002/003).
+
+### State
+- Branch `master`, committing now. No blockers.
+
+### Next
+- **T18-005** — Statusbar-Item-Personalisierung (`tasks/phase-17-layout/T18-005-statusbar-item-personalization.md`).
+
+---
+
 ## Last Session: 2026-09-04 (T18-003 — Statusbar left: panel controls)
 
 **T18-003 done.** `PanelTogglesStatusItem` (`crates/shell/src/status_items.rs`)

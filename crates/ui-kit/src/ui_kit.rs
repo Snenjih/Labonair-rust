@@ -15,12 +15,14 @@
 mod button;
 mod context_menu;
 mod icon;
+mod popover;
 mod text_field;
 pub mod theme;
 
 pub use button::{button, ButtonSize, ButtonVariant, DISABLED_OPACITY};
 pub use context_menu::{context_menu, MenuClick, MenuItem};
 pub use icon::{file_icon, folder_icon, IconName};
+pub use popover::popover;
 pub use text_field::{field_input, text_field, InputEvent, InputState};
 pub use theme::UiTheme;
 

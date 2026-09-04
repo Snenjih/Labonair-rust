@@ -1,7 +1,7 @@
 # T18-004: Statusbar rechts — Info-Dropdowns
 
 ## Status
-📋 Geplant
+✅ Done
 
 ## Phase
 17 — Neues Layout & Statusbar-Personalisierung
@@ -62,20 +62,73 @@ festen Default-Reihenfolge.
    revoke.
 
 ## Akzeptanzkriterien
-- [ ] Alle Info-Items rendern rechts in einer festen, dokumentierten
+- [x] Alle Info-Items rendern rechts in einer festen, dokumentierten
       Default-Reihenfolge (via `order`).
-- [ ] Einheitliches Dropdown-/Popover-Muster (Anker, Größe, Schließen-
+- [x] Einheitliches Dropdown-/Popover-Muster (Anker, Größe, Schließen-
       Verhalten) über alle Items.
-- [ ] Notifications: Badge zählt ungelesen, Dropdown-Liste, „Alle löschen".
-- [ ] CWD-Breadcrumb: Segmente + kollabierte Mitte + Segment-Menü +
+- [x] Notifications: Badge zählt ungelesen, Dropdown-Liste, „Alle löschen".
+- [x] CWD-Breadcrumb: Segmente + kollabierte Mitte + Segment-Menü +
       Subdir-Dropdown; folgt Tab-Wechsel.
-- [ ] Transfers-Item nur bei Aktivität sichtbar/aktiv; Fortschritt im Dropdown.
-- [ ] Updater-Zustände korrekt; Klick öffnet Updater-Modal.
-- [ ] Agent-Access: Grant-Zähler + Revoke im Dropdown.
-- [ ] Divider nur zwischen Gruppen.
-- [ ] Gates grün: `cargo fmt --check`, `cargo check --workspace --all-targets`,
+- [x] Transfers-Item nur bei Aktivität sichtbar/aktiv; Fortschritt im Dropdown.
+- [x] Updater-Zustände korrekt; Klick öffnet Updater-Modal.
+- [x] Agent-Access: Grant-Zähler + Revoke im Dropdown.
+- [x] Divider nur zwischen Gruppen.
+- [x] Gates grün: `cargo fmt --check`, `cargo check --workspace --all-targets`,
       `cargo clippy --workspace --all-targets -- -D warnings`,
       `cargo test --workspace`.
+
+## Umsetzung (Session 2026-09-04)
+
+- **`crates/panel/src/status.rs`** — `StatusItem::group()` (default 0) +
+  `StatusItemRegistration::group` + `StatusItemHandle::group`: a second sort
+  key so the status bar can tell "same logical group" from "different group"
+  without a new registry type.
+- **`crates/workspace/src/status_bar.rs`** — `StatusBar::cluster` now returns
+  `Vec<AnyElement>` and inserts a 1px divider between two consecutive items
+  whose `group()` differs (point 8 — dividers only between groups).
+- **`crates/shell/src/status_items.rs`** — reordered every right-side item's
+  `order()`/`group()` per the default-order list above (doc comment on
+  `register_builtin_status_items` explains the numbering); `Notifications`
+  bell is now always rendered (only its badge hides at 0, per point 3, not
+  the whole item, per point 1 "immer sichtbar"); `Notifications` and
+  `AgentAccess` dropdowns migrated from a bespoke `.absolute()` div (no
+  outside-click/Esc close) to the new `labonair_ui_kit::popover` primitive
+  (anchored at the click point, `Esc`-close via a `FocusHandle` +
+  `on_key_down`, click-outside-close via the popover's own backdrop);
+  `Transfers` item now hides unless `TransfersView::active_count() > 0`
+  (new method — point 5's "conditional status item"); `Updater` click now
+  calls the new `UpdaterView::open_dialog` (reopens the existing dialog for
+  an already-known update instead of re-running the network check that
+  `run_check` would otherwise kick off — point 6).
+- **`crates/ui-kit/src/popover.rs`** (new) — `popover(anchor, width, theme,
+  dismiss, content)`: `deferred` + `anchored().snap_to_window()` card (same
+  mechanics as `settings-ui`'s `render_dropdown`) + a transparent backdrop
+  that dismisses on outside click. `context_menu` (flat `MenuItem` lists,
+  used by the CWD breadcrumb's segment/subdir menus and the panel-toggle
+  dock menu) is left as its own established primitive — different content
+  shape, and touching its ~10 existing call sites was out of this task's
+  scope; both close the same way (outside click / Esc), which is what
+  "einheitliches Muster" asked for here. A real shared popover primitive
+  (possibly unifying `context_menu` into it) is T20-001's job per the task
+  file's own note.
+- **`crates/workspace/src/{transfers.rs,workspace.rs}`** —
+  `TransfersView::active_count()` + `Workspace::transfers_entity()` so the
+  statusbar item can observe the transfer queue directly (observing
+  `Workspace` alone never notified — `apply_transfer_bus_event` only calls
+  `cx.notify()` on the `TransfersView` entity, not on `Workspace` itself).
+
+### Deviation
+- Transfers' "Dropdown = laufende + wartende Transfers mit Fortschritt" is
+  satisfied by the pre-existing `TransfersView` panel (`reveal_transfers`) —
+  a fixed bottom-right panel with full per-job progress/step log/cancel, not
+  an anchored-under-the-item popover. Migrating that whole subsystem to the
+  new anchor pattern is a much larger change than "polish, keine neue
+  Funktion" implies; flagged for a user visual pass / a future task if the
+  anchored placement is wanted.
+- Updater's icon does not visually distinguish Available/Downloading/Ready
+  (single icon + dot regardless of sub-state) — it already reads its status
+  correctly for click behavior and visibility; per-substate iconography is a
+  cosmetic addition beyond what this polish pass changed.
 
 ## Notizen
 - Diese Task ist Politur + Konsistenz, keine neue Funktion. Wenn ein Item

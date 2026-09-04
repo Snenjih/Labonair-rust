@@ -13,7 +13,10 @@
 //! literal collapse of the transitional `bar_items` blob (`BarLoc`, the
 //! `barItemPlacements` → `statusBarItemPlacements` migrator) also lands there.
 
-use gpui::{div, px, AnyView, Context, Entity, IntoElement, ParentElement, Render, Styled, Window};
+use gpui::{
+    div, px, AnyElement, AnyView, Context, Entity, IntoElement, ParentElement, Render, Styled,
+    Window,
+};
 use labonair_panel::{AnyStatusItemHandle, StatusItemConstructor, StatusSide};
 
 use crate::theme::ThemeStore;
@@ -27,8 +30,8 @@ const STATUS_H: f32 = 32.0;
 pub struct StatusBar {
     workspace: Entity<Workspace>,
     theme: Entity<ThemeStore>,
-    /// Built once from the registry: `(side, order, handle)`.
-    items: Vec<(StatusSide, i32, AnyStatusItemHandle)>,
+    /// Built once from the registry: `(side, order, group, handle)`.
+    items: Vec<(StatusSide, i32, u32, AnyStatusItemHandle)>,
     built: bool,
 }
 
@@ -56,32 +59,55 @@ impl StatusBar {
         if self.built {
             return;
         }
-        let regs: Vec<(StatusSide, i32, StatusItemConstructor)> = self
+        let regs: Vec<(StatusSide, i32, u32, StatusItemConstructor)> = self
             .workspace
             .read(cx)
             .status_item_registry()
             .iter()
-            .map(|r| (r.default_side, r.order, r.build.clone()))
+            .map(|r| (r.default_side, r.order, r.group, r.build.clone()))
             .collect();
         if regs.is_empty() {
             return;
         }
-        for (side, order, build) in regs {
+        for (side, order, group, build) in regs {
             let handle = build(window, cx);
-            self.items.push((side, order, handle));
+            self.items.push((side, order, group, handle));
         }
         self.built = true;
     }
 
-    fn cluster(&self, side: StatusSide) -> Vec<AnyView> {
-        let mut v: Vec<(i32, AnyView)> = self
+    /// Views for `side`, sorted by `order`, with a divider inserted between
+    /// two consecutive items whose `group` differs (T18-004 point 8 — dividers
+    /// only between logical groups, never between every item).
+    fn cluster(&self, side: StatusSide, cx: &Context<Self>) -> Vec<AnyElement> {
+        let mut v: Vec<(i32, u32, AnyView)> = self
             .items
             .iter()
-            .filter(|(s, _, _)| *s == side)
-            .map(|(_, order, h)| (*order, h.to_any()))
+            .filter(|(s, _, _, _)| *s == side)
+            .map(|(_, order, group, h)| (*order, *group, h.to_any()))
             .collect();
-        v.sort_by_key(|(order, _)| *order);
-        v.into_iter().map(|(_, view)| view).collect()
+        v.sort_by_key(|(order, _, _)| *order);
+
+        let border = self.theme.read(cx).border();
+        let mut out = Vec::with_capacity(v.len() * 2);
+        let mut prev_group: Option<u32> = None;
+        for (_, group, view) in v {
+            if let Some(pg) = prev_group {
+                if pg != group {
+                    out.push(
+                        div()
+                            .flex_shrink_0()
+                            .w(px(1.0))
+                            .h(px(14.0))
+                            .bg(border)
+                            .into_any_element(),
+                    );
+                }
+            }
+            prev_group = Some(group);
+            out.push(view.into_any_element());
+        }
+        out
     }
 }
 
@@ -93,8 +119,8 @@ impl Render for StatusBar {
             let t = self.theme.read(cx);
             (t.status_bar(), t.muted_foreground(), t.border())
         };
-        let left = self.cluster(StatusSide::Left);
-        let right = self.cluster(StatusSide::Right);
+        let left = self.cluster(StatusSide::Left, cx);
+        let right = self.cluster(StatusSide::Right, cx);
 
         div()
             .flex()

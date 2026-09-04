@@ -934,6 +934,12 @@ impl Workspace {
         self.transfers.update(cx, |t, cx| t.reveal(cx));
     }
 
+    /// The transfer-queue view entity, so the shell can observe it directly
+    /// for the `transfers` statusbar item (T18-004).
+    pub fn transfers_entity(&self) -> Entity<TransfersView> {
+        self.transfers.clone()
+    }
+
     /// Open a new local terminal tab rooted at `path` (breadcrumb "open in new
     /// terminal").
     pub fn cd_in_new_tab(&mut self, path: String, window: &mut Window, cx: &mut Context<Self>) {

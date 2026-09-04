@@ -74,6 +74,15 @@ pub trait StatusItem: Render {
         0
     }
 
+    /// Logical group within a side (T18-004): the status bar draws a divider
+    /// between two consecutive items whose `group` differs, and none within a
+    /// group. Groups are only ever compared for equality, so any stable
+    /// numbering works; 0 (the default) puts every item that doesn't opt in
+    /// into one undivided group.
+    fn group(&self) -> u32 {
+        0
+    }
+
     /// Render the item's content for the status bar row.
     fn render_status(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement;
 
@@ -112,6 +121,8 @@ pub trait StatusItemHandle: Send + Sync {
     fn default_side(&self, cx: &App) -> StatusSide;
     /// See [`StatusItem::order`].
     fn order(&self, cx: &App) -> i32;
+    /// See [`StatusItem::group`].
+    fn group(&self, cx: &App) -> u32;
     /// See [`StatusItem::hideable`].
     fn hideable(&self, cx: &App) -> bool;
     /// See [`StatusItem::on_active_tab_changed`].
@@ -137,6 +148,10 @@ impl<T: StatusItem + 'static> StatusItemHandle for Entity<T> {
 
     fn order(&self, cx: &App) -> i32 {
         self.read(cx).order()
+    }
+
+    fn group(&self, cx: &App) -> u32 {
+        self.read(cx).group()
     }
 
     fn hideable(&self, cx: &App) -> bool {
@@ -171,6 +186,8 @@ pub struct StatusItemRegistration {
     pub default_side: StatusSide,
     /// Stable-sort key within a side (see [`StatusItem::order`]).
     pub order: i32,
+    /// Logical group within a side (see [`StatusItem::group`]).
+    pub group: u32,
     /// Constructor invoked lazily when the status bar is built.
     pub build: StatusItemConstructor,
 }
@@ -250,6 +267,7 @@ mod tests {
             id,
             default_side: side,
             order: 0,
+            group: 0,
             // Never invoked by the registry's bookkeeping methods.
             build: Arc::new(|_, _| unreachable!("stub constructor")),
         }

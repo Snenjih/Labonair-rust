@@ -377,6 +377,15 @@ impl TransfersView {
         cx.notify();
     }
 
+    /// Number of jobs still queued or running — the `transfers` statusbar
+    /// item (T18-004) is only visible/active while this is non-zero.
+    pub fn active_count(&self) -> usize {
+        self.jobs
+            .iter()
+            .filter(|r| is_active(&r.job.status))
+            .count()
+    }
+
     pub fn cancel(&mut self, id: String, cx: &mut Context<Self>) {
         let worker = self.backend.transfer.clone();
         self.tokio.spawn(async move {

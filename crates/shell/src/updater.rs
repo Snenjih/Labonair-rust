@@ -97,6 +97,22 @@ impl UpdaterView {
             )
     }
 
+    /// Statusbar `updater` item click (T18-004 point 6): a known update is
+    /// already loaded (`Available`/`Downloading`/`Ready` — the only states
+    /// that item renders in), so reopen its existing dialog instead of
+    /// re-running the network check that `run_check` would otherwise start.
+    pub fn open_dialog(&mut self, cx: &mut Context<Self>) {
+        if matches!(
+            self.status,
+            UpdaterStatus::Available(_) | UpdaterStatus::Downloading { .. } | UpdaterStatus::Ready
+        ) {
+            self.dialog_open = true;
+            cx.notify();
+        } else {
+            self.run_check(true, cx);
+        }
+    }
+
     /// Check for updates. `manual` (menu / settings) bypasses the 6 h backoff
     /// and always reports the outcome; the automatic startup check stays quiet
     /// unless an update is found.
