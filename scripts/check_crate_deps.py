@@ -56,6 +56,10 @@ ALLOWED = {
         # T19-008: surgical `keymap.json` edits reuse T19-005's tree-sitter
         # JSON editor.
         "labonair-settings-json",
+        # T19-010: Settings › Hosts embeds `HostManagerView` verbatim
+        # (rule 4's "may still read/write fields under `target_module`" —
+        # here, a whole existing component rather than a single field).
+        "labonair-hosts-ui",
     },
 
     # Workspace track --------------------------------------------------
@@ -123,9 +127,12 @@ ALLOWED = {
 
     # Host access — rule 9: not a panel crate; no workspace / shell / panel*.
     # [deviation] also pulls notifications for toast feedback.
+    # T19-010: `apply_host_change` projects into `hosts.entries` via
+    # `labonair-settings`'s layered store + `labonair-settings-content`'s
+    # typed model — a pure data/store edge, not workspace/shell/panel*.
     "labonair-hosts-ui": {
         "labonair-theme", "labonair-ui-kit", "labonair-notifications",
-        "labonair-backend",
+        "labonair-backend", "labonair-settings", "labonair-settings-content",
     },
 
     # Engines — rule 4: no UI dep.

@@ -340,6 +340,14 @@ enum PendingOpen {
 /// [`Workspace::set_dock_persist_hook`]).
 type DockPersistHook = Arc<dyn Fn(String, &mut App) + Send + Sync>;
 
+/// Opens the Settings window on the "Hosts" category (installed by the
+/// shell — see [`Workspace::set_open_host_settings_hook`]). `Workspace`
+/// cannot depend on `labonair-settings-ui` (that crate already depends on
+/// `labonair-workspace`), so — mirroring [`DockPersistHook`] — the shell
+/// hands in a plain closure at startup instead (T19-010, replacing the old
+/// `TabKind::Hosts` tab / `open_host_manager`).
+type OpenHostSettingsHook = Arc<dyn Fn(&mut App) + Send + Sync>;
+
 /// The tabbed, split-pane workspace shell.
 pub struct Workspace {
     registry: Arc<TerminalRegistry>,
@@ -373,6 +381,8 @@ pub struct Workspace {
     /// (the shell owns the `PreferencesStore`, which this crate cannot depend
     /// on — hence the callback indirection). T17-003 moved this off `AppShell`.
     dock_persist_hook: Option<DockPersistHook>,
+    /// Set once by the shell: opens Settings › Hosts (T19-010).
+    open_host_settings_hook: Option<OpenHostSettingsHook>,
     /// Debounce for [`Workspace::persist_docks`].
     last_dock_save: Option<std::time::Instant>,
     /// The three edge docks (T17-002). Empty at construction; populated by
@@ -554,6 +564,7 @@ impl Workspace {
             panel_registry: labonair_panel::PanelRegistry::new(),
             status_item_registry: labonair_panel::StatusItemRegistry::new(),
             dock_persist_hook: None,
+            open_host_settings_hook: None,
             last_dock_save: None,
             left_dock: crate::dock::Dock::new(labonair_panel::DockPosition::Left),
             right_dock: crate::dock::Dock::new(labonair_panel::DockPosition::Right),
@@ -653,13 +664,10 @@ impl Workspace {
                         title: tab.custom_title.clone(),
                     })
                 }),
-                // The host-manager tab is an on-demand helper (removed in
-                // T19-010) — not persisted, like the transient diff kinds.
-                TabKind::Hosts
-                | TabKind::AiDiff
-                | TabKind::GitGraph
-                | TabKind::GitDiff
-                | TabKind::CommitDiff => None,
+                // Transient kinds — never persisted.
+                TabKind::AiDiff | TabKind::GitGraph | TabKind::GitDiff | TabKind::CommitDiff => {
+                    None
+                }
             };
             if let Some(snap) = snap {
                 if tab.id == active_id {
@@ -1896,24 +1904,23 @@ impl Workspace {
         self.open_sftp(host_id, window, cx);
     }
 
-    /// Open (or re-focus) the host-manager dashboard as a normal, closable
-    /// [`TabKind::Hosts`] tab. Wired to the `Open Host Manager` menu item /
-    /// `CommandId::OpenHostManager`. T19-010 replaces this with a Settings
-    /// entry and removes the tab kind.
-    pub fn open_host_manager(&mut self, cx: &mut Context<Self>) {
-        let existing = self
-            .tabs
-            .read(cx)
-            .tabs()
-            .iter()
-            .find(|t| t.kind == TabKind::Hosts)
-            .map(|t| t.id);
-        self.tabs.update(cx, |s, cx| match existing {
-            Some(id) => s.set_active(id, cx),
-            None => {
-                s.open(TabKind::Hosts, TabData::default(), cx);
-            }
-        });
+    /// Open Settings › Hosts (T19-010 — replaces the old `TabKind::Hosts`
+    /// tab / `open_host_manager`). Wired to the `Open Host Settings` native
+    /// menu item / `CommandId::OpenHostSettings` and the `＋▾` "All
+    /// hosts…" entry. A no-op if the shell hasn't installed the hook yet
+    /// (headless/test contexts).
+    pub fn open_host_settings(&mut self, cx: &mut Context<Self>) {
+        if let Some(hook) = self.open_host_settings_hook.clone() {
+            hook(cx);
+        }
+    }
+
+    /// The shared host-manager entity (T19-010): embedded directly by
+    /// `labonair-settings-ui`'s Settings › Hosts pane, so an edit made there
+    /// is the exact same entity the connect flows / `known_hosts` already
+    /// read — no separate sync path needed.
+    pub fn host_manager(&self) -> Entity<HostManagerView> {
+        self.host_manager.clone()
     }
 
     /// Up to `n` known hosts, most-recently-connected first — feeds the `+`
@@ -2090,6 +2097,12 @@ impl Workspace {
         hook: impl Fn(String, &mut App) + Send + Sync + 'static,
     ) {
         self.dock_persist_hook = Some(Arc::new(hook));
+    }
+
+    /// Install the shell's "open Settings › Hosts" callback (T19-010, see
+    /// [`OpenHostSettingsHook`]).
+    pub fn set_open_host_settings_hook(&mut self, hook: impl Fn(&mut App) + Send + Sync + 'static) {
+        self.open_host_settings_hook = Some(Arc::new(hook));
     }
 
     /// The "primary" edge per the `sidebarPosition` preference (read from the
@@ -3445,7 +3458,7 @@ impl Workspace {
                     .child(
                         loading_btn("ssh-l-edit", "Edit Host", muted, border, false, fg).on_click(
                             cx.listener(move |this, _: &ClickEvent, _w, cx| {
-                                this.open_host_manager(cx)
+                                this.open_host_settings(cx)
                             }),
                         ),
                     )
@@ -3971,7 +3984,7 @@ impl Workspace {
                     move |_, _w, cx| {
                         v.update(cx, |this, cx| {
                             this.new_tab_menu = None;
-                            this.open_host_manager(cx)
+                            this.open_host_settings(cx)
                         })
                     }
                 }),
@@ -3996,7 +4009,6 @@ impl Workspace {
         };
 
         match active.kind {
-            TabKind::Hosts => self.host_manager.clone().into_any_element(),
             TabKind::Workspace => {
                 // While an SSH session for this tab is still connecting (or in
                 // a prompt / error state), the loading screen replaces the
@@ -4437,30 +4449,28 @@ impl Workspace {
                     }),
             );
         }
-        if kind != Some(TabKind::Hosts) {
-            items.push(
-                MenuItem::new("rename", "Rename")
-                    .icon(IconName::Pencil)
-                    .on_click({
-                        let v = view.clone();
-                        move |_, w, cx| v.update(cx, |this, cx| this.begin_tab_rename(id, w, cx))
-                    }),
-            );
-            items.push(
-                MenuItem::new("dup", "Duplicate")
-                    .icon(IconName::Copy)
-                    .on_click({
-                        let v = view.clone();
-                        move |_, w, cx| {
-                            v.update(cx, |this, cx| {
-                                this.context_menu = None;
-                                this.tabs.update(cx, |s, cx| s.set_active(id, cx));
-                                this.duplicate_active_tab(w, cx);
-                            })
-                        }
-                    }),
-            );
-        }
+        items.push(
+            MenuItem::new("rename", "Rename")
+                .icon(IconName::Pencil)
+                .on_click({
+                    let v = view.clone();
+                    move |_, w, cx| v.update(cx, |this, cx| this.begin_tab_rename(id, w, cx))
+                }),
+        );
+        items.push(
+            MenuItem::new("dup", "Duplicate")
+                .icon(IconName::Copy)
+                .on_click({
+                    let v = view.clone();
+                    move |_, w, cx| {
+                        v.update(cx, |this, cx| {
+                            this.context_menu = None;
+                            this.tabs.update(cx, |s, cx| s.set_active(id, cx));
+                            this.duplicate_active_tab(w, cx);
+                        })
+                    }
+                }),
+        );
         items.push(MenuItem::separator());
         if multi {
             items.push(MenuItem::new("others", "Close Others").on_click({
@@ -4966,7 +4976,6 @@ fn palette_tab_kind(kind: TabKind) -> labonair_command_palette::PaletteTabKind {
         TabKind::Workspace => K::Workspace,
         TabKind::Editor => K::Editor,
         TabKind::Sftp => K::Sftp,
-        TabKind::Hosts => K::Home,
         _ => K::Other,
     }
 }

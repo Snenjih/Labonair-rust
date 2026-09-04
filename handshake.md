@@ -4,7 +4,127 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
-## Last Session: 2026-09-04 (T19-009 — settings migrator: preferences/editor/mcp → SettingsContent, keybinds → keymap.json, SQLite hosts → hosts.entries)
+## Last Session: 2026-09-04 (T19-010 — Settings › Hosts, final task of Phase 18)
+
+**T19-010 done — Phase 18 (Settings-System Zed-Style, T19-000..T19-010) is
+now fully complete.** Host/credential management gets its permanent home: a
+top-level Settings category "Hosts" (`AreaMeta` already existed from
+T19-001), a peer of "Themes"; the interim `TabKind::Hosts` tab from T17-009
+is gone.
+
+- **Settings pane** — new `crates/settings-ui/src/panes/hosts.rs`: `labonair
+  -settings-ui` gained a dependency on `labonair-hosts-ui` (new allow-list
+  edge in `scripts/check_crate_deps.py`, both directions annotated). Per the
+  task's own Notizen ("nicht neu bauen"), the existing, mature
+  `HostManagerView` (T16-008/T07-*: list/edit form/jump-hosts/tunnels/
+  SSH-config import-export — all already built) is embedded **verbatim**,
+  not rebuilt. `pages.rs` gained a `hosts` `AreaKind::Custom` arm with two
+  `SubPage`s (`ssh-config`, `availability`); the main page serves both the
+  task's `hosts/list` and `hosts/edit` deep-links (`HostManagerView` already
+  toggles list ↔ edit form internally — there was never two components to
+  give two slugs to). `hosts/ssh-config` adds two buttons that call new
+  `pub fn open_import_dialog`/`open_export_dialog` wrappers on
+  `HostManagerView`. `hosts/availability` renders `connections.*` polling
+  fields as normal generated `SettingField`s via a new
+  `pages::HOSTS_AVAILABILITY_GROUPS` + the existing `render_field_groups`
+  helper (Notizen: "Custom-Body heißt nicht 'keine generierten Felder'").
+  `pages.rs`'s `navigate_to_slug` logic was extracted into a pure
+  `resolve_slug(pages, slug)` helper so deep-link resolution is unit-testable
+  without constructing a full `SettingsView` — tests added for `hosts` and
+  `hosts/ssh-config`.
+- **The shared `HostManagerView` entity, not a new one** — `Workspace`
+  gained `pub fn host_manager(&self) -> Entity<HostManagerView>`, threaded
+  through `SettingsDeps`/`set_settings_deps`/`SettingsView::new` into the
+  Settings window. Because it's the *exact same* entity `Workspace` already
+  built (own connect flows, `known_hosts`, `recent_hosts`), an edit made in
+  Settings is live everywhere with zero extra sync code, and clicking
+  Connect/SFTP inside the embedded view fires the same `HostManagerEvent`
+  `Workspace` already subscribes to — satisfying the task's
+  `on_open_ssh`/`on_open_sftp` callback requirement without adding a new
+  `settings-ui -> workspace` data-flow edge.
+- **Single write path — `labonair_hosts_ui::apply_host_change`** (new
+  `crates/hosts-ui/src/apply.rs`, new `labonair-settings`/
+  `labonair-settings-content` deps on `labonair-hosts-ui`, also added to the
+  allow-list). Design note/deviation from the task's literal wording:
+  `HostManagerView`'s pre-existing SQLite CRUD (`hosts::db::hosts_create`/
+  `hosts_update`/...) already correctly writes secrets into
+  `backend::modules::secrets` (never JSON) — that machinery is **not**
+  duplicated or moved. What's new is projecting the resulting *non-secret*
+  host list into `SettingsContent.hosts.entries` + `credential_ref` (new
+  public `labonair_backend::modules::hosts::credential_ref(app, id)`), from
+  exactly one function, called from exactly the two places
+  (`HostManagerView::reload`/`reload_list_only`) that refresh the host list
+  after *any* mutation (create/update/duplicate/delete/reorder all funnel
+  through one of them) — so there is still only one write path into
+  `hosts.entries`, it just sits at the read-refresh boundary rather than
+  inside each individual mutation call, which sidesteps needing to thread a
+  freshly-created host's id back out of a fire-and-forget async call. Full
+  integration test (`apply_host_change_writes_non_secret_fields_and_no_secret`)
+  creates a real host via `hosts_create` (so the password really lands in
+  the secret store), builds a real `SettingsStore` against a temp file
+  (`SettingsStore::new` made `pub`, T19-010, for exactly this — it was
+  previously only reachable inside the `labonair-settings` crate's own
+  tests), calls `apply_host_change`, and asserts the on-disk JSON contains
+  the host's name/address but never the plaintext password, plus
+  `credential_ref` is set correctly in the merged content.
+- **`TabKind::Hosts` / `open_host_manager` / `CommandId::OpenHostManager`
+  removed**, replaced by `Workspace::open_host_settings` +
+  `CommandId::OpenHostSettings` / native menu action `OpenHostSettings`.
+  Since `Workspace` cannot depend on `labonair-settings-ui` (already depends
+  on `labonair-workspace`, so the reverse edge would cycle),
+  `open_host_settings` calls a shell-installed closure
+  (`Workspace::set_open_host_settings_hook`, mirrors the pre-existing
+  `set_dock_persist_hook` pattern exactly) that calls
+  `labonair_settings_ui::open_settings_window(Some("hosts"), cx)`; wired in
+  `crates/shell/src/bootstrap.rs` next to `set_settings_deps`. The `＋▾`
+  "All hosts…" item and the status-bar hosts button now call
+  `open_host_settings`; `NewSshTab`/`NewSftpTab`/`NewQuickSsh`/
+  `NewSshConnection` were **repointed to the command-palette's Hosts connect
+  page** (they used to all share `open_host_manager`, which conflated
+  connect and manage) — `Cmd+Shift+N` (`NewSshConnection`) is unchanged
+  behaviorally, just no longer routed through the now-deleted function name.
+  Six `TabKind::Hosts` match arms across `workspace.rs`/`tabs.rs` removed
+  (compiler-guided, all exhaustive matches).
+- **Migration hookup already done by T19-009** — `migrate_hosts_to_settings`
+  was already called from `crates/app/src/main.rs` at startup; nothing to
+  wire for this task beyond confirming it (read the file first per the
+  task's own instruction).
+- **Deviations from the task's literal wording** (judgment calls made to
+  avoid a much larger, riskier rewrite of a mature, already-tested 4000-line
+  component; documented in code comments and reported explicitly): (1)
+  `hosts/list`/`hosts/edit` are not two separately-slugged bodies — they're
+  the same embedded `HostManagerView`, which already does master/detail
+  internally; only `ssh-config`/`availability` got real `SubPage` entries.
+  (2) `known_hosts`/`recent_hosts` in `workspace.rs` were **not** rewired to
+  read from `hosts.entries` — they still read the shared `HostManagerView`'s
+  SQLite-backed list directly (unchanged runtime behavior); `apply_host_change`
+  mirrors that same list into `hosts.entries` on every refresh, so the two
+  are always in sync, but "same known_hosts source" is true via that shared
+  entity/mirror rather than literally the same storage backend.
+- **Gates**: `cargo fmt --check` / `cargo check --workspace --all-targets` /
+  `cargo clippy --workspace --all-targets -- -D warnings` all green;
+  `cargo test --workspace` → 854 passed, 0 failed. `cargo tree -p
+  labonair-settings-ui` shows the `labonair-hosts-ui` edge; `cargo tree -p
+  labonair-hosts-ui` shows no `labonair-workspace`/`-shell`/`-panel*` edge;
+  `scripts/check_crate_deps.py` passes (24 crates, 103 edges, acyclic).
+
+**Current state**: branch `master`. **Phase 18 (Settings-System Zed-Style)
+is fully complete: T19-000 through T19-010 all `✅ Done`.** Files touched:
+`crates/settings-content/src/hosts.rs` (untouched, already correct from
+T19-001), `crates/settings-ui/src/{pages.rs,view.rs,window.rs,panes/{mod.rs,
+hosts.rs,generic.rs}}`, `crates/hosts-ui/src/{apply.rs (new),hosts.rs,
+hosts_ui.rs,Cargo.toml}`, `crates/settings-ui/Cargo.toml`,
+`crates/settings/src/store.rs` (`SettingsStore::new` made `pub`),
+`crates/backend/src/modules/hosts/mod.rs` (`credential_ref` helper),
+`crates/workspace/src/{workspace.rs,tabs.rs}`, `crates/shell/src/
+{bootstrap.rs,commands.rs,menu.rs,status_items.rs}`,
+`crates/command-palette/src/palette.rs`, `scripts/check_crate_deps.py`.
+
+**Next**: `T20-001` — starts **Phase 19 "UI-Kit"**, a new task-numbering
+phase (`tasks/phase-19-ui-kit/T20-001-ui-kit-primitive-set.md`). No
+blockers.
+
+## Previous Session: 2026-09-04 (T19-009 — settings migrator: preferences/editor/mcp → SettingsContent, keybinds → keymap.json, SQLite hosts → hosts.entries)
 
 **T19-009 done.** New `crates/backend/src/modules/settings/migrate_v2.rs`:
 one-time, idempotent `migrate_settings_v1_to_v2(dir) -> SettingsV2Outcome`

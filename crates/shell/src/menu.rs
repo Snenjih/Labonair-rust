@@ -82,7 +82,7 @@ actions!(
         SplitPaneDown,
         Find,
         // ── Connections ───────────────────────────────────────────────────
-        OpenHostManager,
+        OpenHostSettings,
         NewSshConnection,
         NewQuickSsh,
         // ── AI ────────────────────────────────────────────────────────────
@@ -219,7 +219,7 @@ fn action_for(name: &str) -> Option<Box<dyn Action>> {
         "ai::NewSession" => Box::new(NewAiSession),
         "ai::ClearChat" => Box::new(ClearChat),
         "bookmarks::Open" => Box::new(OpenPathBookmarks),
-        "connections::OpenHostManager" => Box::new(OpenHostManager),
+        "connections::OpenHostSettings" => Box::new(OpenHostSettings),
         "connections::NewSshConnection" => Box::new(NewSshConnection),
         "connections::NewQuickSsh" => Box::new(NewQuickSsh),
         "settings::Open" => Box::new(OpenSettings),
@@ -353,7 +353,7 @@ fn app_menus() -> Vec<Menu> {
         Menu {
             name: "Connections".into(),
             items: vec![
-                MenuItem::action("Open Host Manager", OpenHostManager),
+                MenuItem::action("Open Host Settings", OpenHostSettings),
                 MenuItem::separator(),
                 MenuItem::action("New SSH Connection\u{2026}", NewSshConnection),
                 MenuItem::action("New Quick SSH\u{2026}", NewQuickSsh),
@@ -394,7 +394,7 @@ fn dock_menu() -> Vec<MenuItem> {
         MenuItem::action("New Terminal Tab", NewTerminalTab),
         MenuItem::action("New SSH Connection\u{2026}", NewSshConnection),
         MenuItem::separator(),
-        MenuItem::action("Open Host Manager", OpenHostManager),
+        MenuItem::action("Open Host Settings", OpenHostSettings),
     ]
 }
 

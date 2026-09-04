@@ -144,7 +144,15 @@ pub struct SettingsStore {
 impl Global for SettingsStore {}
 
 impl SettingsStore {
-    fn new(user_path: PathBuf) -> Self {
+    /// Build a store rooted at `user_path`, with only the `Default` +
+    /// (empty) `User` layers — no file I/O yet (call
+    /// [`Self::reload_user_layer`] to actually read `user_path`). `pub`
+    /// (T19-010) so other crates' own tests can construct a store against a
+    /// temp path without touching the real `~/.config/labonair` directory,
+    /// the same way this crate's own tests already do — `labonair_settings::
+    /// init`/`init_at` remain the only ways to *publish* one as the live
+    /// global in the running app.
+    pub fn new(user_path: PathBuf) -> Self {
         let mut raw = BTreeMap::new();
         raw.insert(SettingsLayer::Default, SettingsContent::defaults());
         raw.insert(SettingsLayer::User, SettingsContent::default());

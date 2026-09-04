@@ -276,9 +276,18 @@ pub(crate) fn bootstrap(
         backend.clone(),
         tokio.clone(),
         workspace.clone(),
+        workspace.read(cx).host_manager(),
         cx,
     );
     labonair_settings_ui::set_keybind_apply_hook(crate::keymap_loader::reload_and_apply, cx);
+    // T19-010: `Workspace` cannot depend on `labonair-settings-ui` (the
+    // reverse edge already exists), so it asks the shell to open Settings ›
+    // Hosts via this callback (mirrors `set_dock_persist_hook`'s pattern).
+    workspace.update(cx, |w, _| {
+        w.set_open_host_settings_hook(|cx| {
+            labonair_settings_ui::open_settings_window(Some("hosts"), cx);
+        });
+    });
 
     // Auto-updater (T15-005). Kicks a quiet background check at startup when the
     // `checkForUpdates` preference is on (6 h backoff inside the store).

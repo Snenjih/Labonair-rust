@@ -2,9 +2,13 @@
 //!
 //! Labonair's tab system is the central navigation element. A *tab* is a light
 //! descriptor with a [`TabKind`] discriminant (`workspace`, `editor`,
-//! `preview`, `hosts`, `sftp`, `git-graph`, `git-diff`, `commit-diff`,
-//! `ai-diff`) plus kind-specific data in [`TabData`]. The reference keeps this
-//! in the `useTabs` Zustand store; here it is the GPUI [`TabStore`] entity.
+//! `preview`, `sftp`, `git-graph`, `git-diff`, `commit-diff`, `ai-diff`) plus
+//! kind-specific data in [`TabData`]. The reference keeps this in the
+//! `useTabs` Zustand store; here it is the GPUI [`TabStore`] entity. The
+//! host-manager dashboard was a `TabKind::Hosts` tab through T17-009; T19-010
+//! removed it — host management is now a Settings category
+//! (`labonair-settings-ui`'s Hosts pane), connecting is the command
+//! palette's `Page::Hosts`.
 //!
 //! "Tab" and "session" are deliberately **not** the same thing (mirrors the
 //! React version): the visible workspace tab is backed by a local PTY session
@@ -24,10 +28,6 @@ use labonair_ui_kit::IconName;
 /// the model already covers them so the tab bar and store are stable.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum TabKind {
-    /// The host-manager dashboard. A normal, closable on-demand tab since
-    /// T17-009 (the old un-closable `Home` landing tab is gone); removed
-    /// entirely once T19-010 moves host management into Settings.
-    Hosts,
     /// A local (or, later, SSH) terminal workspace.
     Workspace,
     /// A code editor tab (Phase 05).
@@ -51,7 +51,6 @@ impl TabKind {
     /// `tabUtils.tsx` per-kind Hugeicons).
     pub fn indicator(&self) -> IconName {
         match self {
-            TabKind::Hosts => IconName::Server,
             TabKind::Workspace => IconName::Terminal,
             TabKind::Editor => IconName::SquarePen,
             TabKind::Preview => IconName::Globe,
@@ -67,7 +66,6 @@ impl TabKind {
     /// `tabUtils.tsx` `pluralLabelFor`).
     pub fn plural_label(&self) -> &'static str {
         match self {
-            TabKind::Hosts => "Host Managers",
             TabKind::Workspace => "Terminals",
             TabKind::Editor => "Editors",
             TabKind::Preview => "Previews",
@@ -82,7 +80,6 @@ impl TabKind {
     /// The default title used before anything more specific is known.
     pub fn default_title(&self) -> &'static str {
         match self {
-            TabKind::Hosts => "Hosts",
             TabKind::Workspace => "Terminal",
             TabKind::Editor => "Untitled",
             TabKind::Preview => "Preview",
@@ -506,7 +503,7 @@ mod tests {
             let store = cx.new(|_| TabStore::new());
             store.update(cx, |s, cx| {
                 let a = s.open(TabKind::Workspace, ws(1), cx);
-                let b = s.open(TabKind::Hosts, TabData::default(), cx);
+                let b = s.open(TabKind::Sftp, TabData::default(), cx);
                 assert!(s.close(a, cx).is_some());
                 assert!(s.close(b, cx).is_some(), "the last tab closes too");
                 assert!(s.is_empty());

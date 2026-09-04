@@ -1473,7 +1473,7 @@ impl StatusItem for JumpHostsStatusItem {
             border,
             cx,
             |this, _window, cx| {
-                this.workspace.update(cx, |w, cx| w.open_host_manager(cx));
+                this.workspace.update(cx, |w, cx| w.open_host_settings(cx));
             },
         )
     }

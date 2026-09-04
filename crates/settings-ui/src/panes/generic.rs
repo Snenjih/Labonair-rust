@@ -832,7 +832,9 @@ impl SettingsView {
                 self.render_shortcuts(&query, c, cx)
             }
             ("mcp", _) => self.render_agent_bridge(c, cx),
-            ("hosts", _) => self.render_hosts_placeholder(c),
+            ("hosts", None) => self.render_hosts_pane(c, cx),
+            ("hosts", Some(0)) => self.render_hosts_ssh_config(c, cx),
+            ("hosts", Some(_)) => self.render_hosts_availability(c, cx),
             ("personalization", _) => self.render_personalization(c, cx),
             ("ai", None) => self.render_ai_overview(c, cx),
             ("ai", Some(_)) => self.render_ai_providers_subpage(c, cx),
@@ -880,19 +882,6 @@ impl SettingsView {
             self.pending_scroll = None;
         }
         div().flex().flex_col().children(rows).into_any_element()
-    }
-
-    /// Placeholder body for the Hosts custom category (`AREAS` slot only —
-    /// T19-010 fills the real Host Manager UI in here; every `hosts.*`
-    /// `SettingsContent` field is a documented `DEDICATED_PANE_EXEMPTIONS`
-    /// entry until then, per this task's own Notizen).
-    fn render_hosts_placeholder(&self, c: &Palette) -> gpui::AnyElement {
-        div()
-            .p_4()
-            .text_size(px(11.5))
-            .text_color(c.muted)
-            .child("Host settings move here in T19-010 — manage saved hosts from the Hosts panel for now.")
-            .into_any_element()
     }
 }
 

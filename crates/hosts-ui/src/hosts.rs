@@ -737,6 +737,10 @@ impl HostManagerView {
                     this.credentials = c;
                     this.snippets = s;
                     this.refresh_ping(cx);
+                    // T19-010: project into `hosts.entries` — the one write
+                    // path (`crate::apply::apply_host_change`), see its doc
+                    // comment.
+                    crate::apply::apply_host_change(&this.app, &this.hosts, cx);
                     cx.notify();
                 });
             }
@@ -983,6 +987,7 @@ impl HostManagerView {
                 let _ = this.update(cx, |this, cx| {
                     this.hosts = h;
                     this.groups = g;
+                    crate::apply::apply_host_change(&this.app, &this.hosts, cx);
                     cx.notify();
                 });
             }
@@ -1285,6 +1290,19 @@ impl HostManagerView {
     }
 
     // ── SSH-config import / export ─────────────────────────────────────────
+
+    /// Open the "Import from ~/.ssh/config" dialog (T19-010: a dedicated
+    /// button on the Settings › Hosts › SSH Config sub-page calls this
+    /// directly, alongside the toolbar entry point inside this view).
+    pub fn open_import_dialog(&mut self, cx: &mut Context<Self>) {
+        self.open_import(cx);
+    }
+
+    /// Open the "Export to ~/.ssh/config" dialog (T19-010, see
+    /// [`Self::open_import_dialog`]).
+    pub fn open_export_dialog(&mut self, cx: &mut Context<Self>) {
+        self.open_export(cx);
+    }
 
     /// Open the import dialog and kick off a `~/.ssh/config` parse.
     fn open_import(&mut self, cx: &mut Context<Self>) {

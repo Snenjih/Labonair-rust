@@ -143,7 +143,7 @@ pub(crate) fn attach_action_handlers(
     on!(menu::NewSftpTab => CommandId::NewSftpTab);
     on!(menu::NewSshConnection => CommandId::NewSshConnection);
     on!(menu::NewQuickSsh => CommandId::NewQuickSsh);
-    on!(menu::OpenHostManager => CommandId::OpenHostManager);
+    on!(menu::OpenHostSettings => CommandId::OpenHostSettings);
     on!(menu::Save => CommandId::Save);
     on!(menu::CloseTab => CommandId::CloseTab);
     on!(menu::NextTab => CommandId::NextTab);
@@ -275,21 +275,25 @@ pub(crate) fn register_builtin_commands() -> CommandRegistry {
     });
 
     // ── Connections ─────────────────────────────────────────────────────
+    // T19-010: connecting is exclusively the command palette's Hosts page
+    // (`Enter` = SSH, `Shift+Enter` = SFTP) — managing hosts (add/edit/
+    // delete/credentials/jump-hosts/tunnels/SSH-config) is exclusively
+    // Settings › Hosts. `OpenHostSettings` is the only one of these that
+    // opens Settings; the rest open the palette's connect page, same as
+    // `NewSshConnection` (`Cmd+Shift+N`).
+    r.register(CommandId::OpenHostSettings, always, |s, _window, cx| {
+        s.workspace.update(cx, |w, cx| w.open_host_settings(cx));
+    });
     for id in [
-        CommandId::OpenHostManager,
         CommandId::NewSshTab,
         CommandId::NewSftpTab,
         CommandId::NewQuickSsh,
+        CommandId::NewSshConnection,
     ] {
-        r.register(id, always, |s, _window, cx| {
-            s.workspace.update(cx, |w, cx| w.open_host_manager(cx));
+        r.register(id, always, |s, window, cx| {
+            s.show_command_palette(Some(PalettePage::Hosts), window, cx);
         });
     }
-    r.register(CommandId::NewSshConnection, always, |s, window, cx| {
-        // `Cmd+Shift+N` — open the palette straight to the Hosts page
-        // (`Enter` = SSH, `Shift+Enter` = SFTP).
-        s.show_command_palette(Some(PalettePage::Hosts), window, cx);
-    });
 
     // ── View / sidebar ─────────────────────────────────────────────────
     r.register(CommandId::ToggleSidebar, always, |s, _window, cx| {

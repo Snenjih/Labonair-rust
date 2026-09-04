@@ -19,6 +19,7 @@ use gpui_component::Root;
 use tokio::runtime::Handle as TokioHandle;
 
 use labonair_backend::App as Backend;
+use labonair_hosts_ui::HostManagerView;
 
 use crate::store::PreferencesStore;
 use crate::view::SettingsView;
@@ -59,6 +60,11 @@ pub(crate) struct SettingsDeps {
     /// visibility through it, the same methods the in-app right-click menus
     /// use.
     workspace: Entity<labonair_workspace::Workspace>,
+    /// The single shared [`HostManagerView`] (T19-010) — the Settings ›
+    /// Hosts pane embeds the exact same entity `Workspace` uses for
+    /// connecting / `known_hosts`, so an edit here is live everywhere with
+    /// no extra sync path.
+    host_manager: Entity<HostManagerView>,
 }
 
 impl Global for SettingsDeps {}
@@ -84,11 +90,13 @@ impl Global for SettingsTarget {}
 
 /// Publish the shared handles the settings window builds from. Call once from
 /// `AppShell::new` after the [`PreferencesStore`] exists.
+#[allow(clippy::too_many_arguments)]
 pub fn set_settings_deps(
     prefs: Entity<PreferencesStore>,
     backend: Backend,
     tokio: TokioHandle,
     workspace: Entity<labonair_workspace::Workspace>,
+    host_manager: Entity<HostManagerView>,
     cx: &mut App,
 ) {
     cx.set_global(SettingsDeps {
@@ -96,6 +104,7 @@ pub fn set_settings_deps(
         backend,
         tokio,
         workspace,
+        host_manager,
     });
 }
 
@@ -162,6 +171,7 @@ pub fn open_settings_window(slug: Option<&'static str>, cx: &mut App) {
                     deps.backend.clone(),
                     deps.tokio.clone(),
                     deps.workspace.clone(),
+                    deps.host_manager.clone(),
                     cx,
                 );
                 v.windowed = true;

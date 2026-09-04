@@ -207,6 +207,11 @@ pub struct SettingsView {
     /// Personalization pane's statusbar-layout editor + panel-toggle
     /// visibility switches.
     pub(crate) workspace: Entity<labonair_workspace::Workspace>,
+    /// The shared [`HostManagerView`] (T19-010) — embedded verbatim as the
+    /// body of the Hosts custom category; the exact same entity
+    /// `Workspace` uses for connecting / `known_hosts`, so an edit here is
+    /// live everywhere immediately, with no separate sync path.
+    pub(crate) host_manager: Entity<labonair_hosts_ui::HostManagerView>,
     // ── T19-004: generated settings UI ──────────────────────────────────
     /// Every generated field (`crate::schema::all_fields()`), computed once.
     pub(crate) all_fields: Vec<AnyField>,
@@ -258,6 +263,7 @@ pub(crate) struct KbConflict {
 }
 
 impl SettingsView {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         prefs: Entity<PreferencesStore>,
         theme: Entity<ThemeStore>,
@@ -265,12 +271,14 @@ impl SettingsView {
         backend: Backend,
         tokio: TokioHandle,
         workspace: Entity<labonair_workspace::Workspace>,
+        host_manager: Entity<labonair_hosts_ui::HostManagerView>,
         cx: &mut Context<Self>,
     ) -> Self {
         cx.observe(&prefs, |_, _, cx| cx.notify()).detach();
         cx.observe(&theme, |_, _, cx| cx.notify()).detach();
         cx.observe(&background, |_, _, cx| cx.notify()).detach();
         cx.observe(&workspace, |_, _, cx| cx.notify()).detach();
+        cx.observe(&host_manager, |_, _, cx| cx.notify()).detach();
         // The statusbar layout (T18-005/T18-007) and panel-toggle visibility
         // both bump this global — reload-and-repaint so the Personalization
         // pane reflects the same live state as the in-app right-click menus.
@@ -335,6 +343,7 @@ impl SettingsView {
             ai_editor_focus: cx.focus_handle(),
             focus: cx.focus_handle(),
             workspace,
+            host_manager,
             all_fields,
             pages,
             collapsed_sections: HashSet::new(),
@@ -438,20 +447,11 @@ impl SettingsView {
     /// Resolve a deep-link slug (`"terminal"`, `"terminal/advanced"`) to an
     /// area + optional sub-page and navigate there (rule 7).
     pub(crate) fn navigate_to_slug(&mut self, slug: &str) {
-        let (area_slug, sub_slug) = match slug.split_once('/') {
-            Some((a, s)) => (a, Some(s)),
-            None => (slug, None),
-        };
-        let Some(area_idx) = AREAS.iter().position(|a| a.slug == area_slug) else {
+        let Some((area_idx, sub_idx)) = crate::pages::resolve_slug(&self.pages, slug) else {
             return;
         };
         self.active_area = area_idx;
-        self.active_subpage = sub_slug.and_then(|s| {
-            self.pages[area_idx]
-                .sub_pages
-                .iter()
-                .position(|sp| sp.slug == s)
-        });
+        self.active_subpage = sub_idx;
     }
 
     /// The active page's own body (main page, or the followed sub-page).

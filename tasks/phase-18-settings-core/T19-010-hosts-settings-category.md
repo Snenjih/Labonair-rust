@@ -1,7 +1,7 @@
 # T19-010: Settings › Hosts — Host- & Credential-Verwaltung als Top-Level-Kategorie
 
 ## Status
-📋 Geplant
+✅ Done
 
 ## Phase
 18 — Settings-System Zed-Style
@@ -97,22 +97,22 @@ Settings-Kategorie. Grundlage: `docs/architecture.md §8.1`,
    öffenbar (nur noch Settings).
 
 ## Akzeptanzkriterien
-- [ ] Top-Level-Kategorie „Hosts" (Slug `hosts`, `kind = Custom`) im
+- [x] Top-Level-Kategorie „Hosts" (Slug `hosts`, `kind = Custom`) im
       Settings-Fenster, im Standard-Seiten-Chrome; Abschnitte
       `list` / `edit` / `ssh-config` / `availability` mit Deep-Links.
-- [ ] Host CRUD + Credentials (Keychain) + Jump-Hosts + Tunnel +
+- [x] Host CRUD + Credentials (Keychain) + Jump-Hosts + Tunnel +
       SSH-Config-Import/Export funktionieren; **ein** Schreibpfad
       (`apply_host_change`); Secrets nie in `settings.json`.
-- [ ] Änderungen wirken live auf Command-Palette-`Page::Hosts` und das
+- [x] Änderungen wirken live auf Command-Palette-`Page::Hosts` und das
       `＋▾`-Menü (kein Neustart).
-- [ ] `TabKind::Hosts`, `open_host_manager`, `CommandId::OpenHostManager`
+- [x] `TabKind::Hosts`, `open_host_manager`, `CommandId::OpenHostManager`
       existieren nicht mehr; `OpenHostSettings` / Menü / `＋▾` „Alle Hosts…"
       öffnen Settings › Hosts. `Cmd+Shift+N` bleibt der Verbinden-Pfad.
-- [ ] `cargo tree -p labonair-settings-ui` hat die Kante zu
+- [x] `cargo tree -p labonair-settings-ui` hat die Kante zu
       `labonair-hosts-ui`; `labonair-hosts-ui` hat **keine** Kante zu
       `labonair-workspace`/`-shell`/`-panel*`.
-- [ ] Der Host-Manager ist nirgends mehr Tab oder Dock-Panel.
-- [ ] Gates grün: `cargo fmt --check`, `cargo check --workspace --all-targets`,
+- [x] Der Host-Manager ist nirgends mehr Tab oder Dock-Panel.
+- [x] Gates grün: `cargo fmt --check`, `cargo check --workspace --all-targets`,
       `cargo clippy --workspace --all-targets -- -D warnings`,
       `cargo test --workspace`.
 
