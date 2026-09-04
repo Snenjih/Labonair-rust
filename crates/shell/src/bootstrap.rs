@@ -40,7 +40,6 @@ use labonair_workspace::toast_layer::ToastLayer;
 
 use crate::app_shell::{AppShell, ShellPanels};
 use crate::background::BackgroundStore;
-use crate::bar_items;
 use crate::status_items::register_builtin_status_items;
 use crate::theme::{ThemePreference, ThemeStore};
 use crate::titlebar::Titlebar;
@@ -257,10 +256,6 @@ pub(crate) fn bootstrap(
     }
     set_settings_deps(prefs.clone(), backend.clone(), tokio.clone(), cx);
     labonair_settings_ui::set_keybind_apply_hook(crate::menu::apply_keybinds, cx);
-    // Re-render when the settings window edits the (transitional) bar-item
-    // placement blob.
-    cx.observe_global::<bar_items::BarLayoutTick>(|_, cx| cx.notify())
-        .detach();
 
     // Auto-updater (T15-005). Kicks a quiet background check at startup when the
     // `checkForUpdates` preference is on (6 h backoff inside the store).

@@ -156,6 +156,10 @@ pub enum CommandId {
     RunSnippet,
     GitSwitchBranch,
     GoToSymbol,
+    /// Opens the "show hidden status-bar item" follow-up page (T18-005) —
+    /// the palette-side escape hatch for items the user hid via the
+    /// statusbar's right-click menu.
+    ShowStatusBarItem,
     OpenAiSettings,
     ToggleEditorWordWrap,
     ToggleLineNumbers,
@@ -224,6 +228,7 @@ pub enum Page {
     AiSessions,
     Outline,
     GitBranches,
+    StatusBarHidden,
 }
 
 impl Page {
@@ -241,6 +246,7 @@ impl Page {
             Page::AiSessions => "Search sessions\u{2026}",
             Page::Outline => "Search symbols\u{2026}",
             Page::GitBranches => "Search branches\u{2026}",
+            Page::StatusBarHidden => "Search hidden items\u{2026}",
         }
     }
 
@@ -258,6 +264,7 @@ impl Page {
             Page::AiSessions => "AI Sessions",
             Page::Outline => "Symbols",
             Page::GitBranches => "Branches",
+            Page::StatusBarHidden => "Hidden Status Bar Items",
         }
     }
 }
@@ -320,6 +327,7 @@ static COMMANDS: &[Command] = &[
     Command { id: CommandId::GitSwitchBranch,    title: "Git: Switch Branch\u{2026}",section: "Source Control",contexts: &[],                          shortcut: None,                icon: I::GitBranch,  sub_page: Some(Page::GitBranches) },
     Command { id: CommandId::FormatDocument,     title: "Format Document",         section: "Editor",         contexts: &[CtxEditor],                   shortcut: None,                icon: I::SquarePen,  sub_page: None },
     Command { id: CommandId::GoToSymbol,         title: "Go to Symbol\u{2026}",    section: "Editor",         contexts: &[CtxEditor],                   shortcut: None,                icon: I::FileCode,   sub_page: Some(Page::Outline) },
+    Command { id: CommandId::ShowStatusBarItem,  title: "Statusbar: Show Hidden Item\u{2026}", section: "View", contexts: &[],                           shortcut: None,                icon: I::Eye,        sub_page: Some(Page::StatusBarHidden) },
     Command { id: CommandId::ToggleZenModeHeader,    title: "Toggle: Show Header Bar",   section: "Settings",  contexts: &[],                           shortcut: None,                icon: I::Eye,        sub_page: None },
     Command { id: CommandId::ToggleZenModeStatusbar, title: "Toggle: Show Status Bar",   section: "Settings",  contexts: &[],                           shortcut: None,                icon: I::Eye,        sub_page: None },
     Command { id: CommandId::ToggleZenMode,          title: "Toggle: Zen Mode",         section: "Settings",  contexts: &[],                           shortcut: Some(ViewZenMode),   icon: I::Eye,        sub_page: None },
@@ -441,6 +449,8 @@ pub enum PaletteEvent {
     SwitchBranch(String),
     /// Jump the active editor's caret to a 0-based line (Go to Symbol).
     GoToLine(usize),
+    /// Un-hide a status-bar item by id (T18-005).
+    ShowStatusBarItem(String),
 }
 
 /// A dynamic choice rendered on a sub-page (tab, host, session, branch…).
@@ -475,6 +485,9 @@ pub struct PaletteData {
     pub git_branches: Vec<PaletteChoice>,
     pub symbols: Vec<PaletteChoice>,
     pub app_themes: Vec<PaletteChoice>,
+    /// Status-bar items the user has hidden via the right-click menu
+    /// (T18-005) — the `StatusBarHidden` page's "click to show again" list.
+    pub status_bar_hidden: Vec<PaletteChoice>,
 }
 
 /// Persisted "recently used" command ids (mirrors the reference
@@ -531,6 +544,8 @@ enum RowKey {
     SwitchBranch(String),
     /// Jump the active editor's caret to a 0-based line (Go to Symbol).
     GoToLine(usize),
+    /// Un-hide a status-bar item by id.
+    ShowStatusBarItem(String),
     /// Non-actionable (empty-state placeholder line).
     Noop,
 }
@@ -1004,6 +1019,14 @@ where
                 "No repository detected",
                 |c| RowKey::SwitchBranch(c.id.clone()),
             ),
+            Page::StatusBarHidden => self.choice_rows(
+                &self.data.status_bar_hidden,
+                "Hidden Status Bar Items",
+                IconName::Eye,
+                mode,
+                "No hidden status-bar items",
+                |c| RowKey::ShowStatusBarItem(c.id.clone()),
+            ),
         }
     }
 
@@ -1068,6 +1091,10 @@ where
             RowKey::GoToLine(line) => {
                 self.close(cx);
                 cx.emit(PaletteEvent::GoToLine(line));
+            }
+            RowKey::ShowStatusBarItem(id) => {
+                self.close(cx);
+                cx.emit(PaletteEvent::ShowStatusBarItem(id));
             }
         }
     }
@@ -1734,6 +1761,7 @@ mod tests {
             Page::AiSessions,
             Page::Outline,
             Page::GitBranches,
+            Page::StatusBarHidden,
         ];
         let labels: std::collections::HashSet<_> = pages.iter().map(|p| p.label()).collect();
         assert_eq!(labels.len(), pages.len());

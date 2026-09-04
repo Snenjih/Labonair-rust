@@ -11,7 +11,7 @@ Leben; der `BarLayoutTick`-`observe_global` in `AppShell` ist noch verdrahtet
 `StatusItemRegistry::resolve_side` umgestellt werden.
 
 ## Status
-📋 Geplant
+✅ Done
 
 ## Phase
 17 — Neues Layout & Statusbar-Personalisierung
@@ -80,19 +80,19 @@ Start wiederhergestellt. Ersetzt den alten titlebar+statusbar-übergreifenden
    übernommen (Lock + Tick).
 
 ## Akzeptanzkriterien
-- [ ] Rechtsklick auf jedes verschiebbare Statusbar-Item öffnet ein
+- [x] Rechtsklick auf jedes verschiebbare Statusbar-Item öffnet ein
       Kontextmenü mit links/rechts/ausblenden (kontextabhängig deaktiviert).
-- [ ] Die Wahl persistiert in `statusBarItemPlacements` und überlebt Neustart.
-- [ ] `default_side` greift, solange nichts gesetzt ist; verstecken lässt sich
+- [x] Die Wahl persistiert in `statusBarItemPlacements` und überlebt Neustart.
+- [x] `default_side` greift, solange nichts gesetzt ist; verstecken lässt sich
       nur, was `hideable()` meldet.
-- [ ] Ausgeblendete Items sind über die Command-Palette wieder einblendbar.
-- [ ] Panel-Toggles sind von diesem Menü ausgenommen (bleiben fix links).
-- [ ] Zwei Fenster: Placement-Änderung wird atomar geschrieben und im anderen
+- [x] Ausgeblendete Items sind über die Command-Palette wieder einblendbar.
+- [x] Panel-Toggles sind von diesem Menü ausgenommen (bleiben fix links).
+- [x] Zwei Fenster: Placement-Änderung wird atomar geschrieben und im anderen
       Fenster sichtbar (kein Verlust bei Interleaving).
-- [ ] `crates/shell/src/bar_items.rs` `BarLoc`/Titlebar-Scope ist entfernt;
-      es bleibt nur der Statusbar-Placement-Code (oder er zieht ganz nach
-      `labonair-workspace`).
-- [ ] Gates grün: `cargo fmt --check`, `cargo check --workspace --all-targets`,
+- [x] `crates/workspace/src/bar_items.rs` `BarLoc`/Titlebar-Scope ist entfernt
+      (Datei zu `crates/workspace/src/status_placements.rs` umgebaut — reines
+      Statusbar-JSON<->Struct-Modul, kein Titlebar-Konzept mehr).
+- [x] Gates grün: `cargo fmt --check`, `cargo check --workspace --all-targets`,
       `cargo clippy --workspace --all-targets -- -D warnings`,
       `cargo test --workspace` (inkl. Round-Trip-/Merge-Test des neuen Blobs,
       analog dem bestehenden `bar_item_placement_round_trips_and_merges`).

@@ -6,6 +6,7 @@
 //! chooses between the left and right side of the status bar and may describe
 //! how it hides itself.
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use gpui::{AnyElement, AnyView, EntityId, Global};
@@ -22,6 +23,16 @@ pub enum StatusSide {
     Left,
     /// Right cluster — by default the info dropdowns.
     Right,
+}
+
+/// A user-chosen override of one item's side / visibility (T18-005),
+/// persisted through `statusBarItemPlacements`. Absent from
+/// [`StatusItemRegistry`]'s override table means "use the compiled-in
+/// [`StatusItemRegistration::default_side`] and stay visible".
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct StatusPlacement {
+    pub side: StatusSide,
+    pub hidden: bool,
 }
 
 /// Describes that a status-bar item can be hidden by the user.
@@ -200,6 +211,11 @@ pub struct StatusItemRegistration {
 #[derive(Default)]
 pub struct StatusItemRegistry {
     items: Vec<StatusItemRegistration>,
+    /// User overrides (T18-005), keyed by [`StatusItem::id`]. Loaded from the
+    /// persisted `statusBarItemPlacements` blob by the workspace layer;
+    /// merged over `default_side` by [`Self::resolve_side`] /
+    /// [`Self::is_hidden`].
+    overrides: HashMap<String, StatusPlacement>,
 }
 
 impl StatusItemRegistry {
@@ -233,16 +249,55 @@ impl StatusItemRegistry {
         self.items.iter().find(|i| i.id == id)
     }
 
-    /// The side an item renders on. Currently its registered
+    /// The side an item renders on: the user's override if one is set
+    /// (T18-005), else its registered
     /// [`default_side`](StatusItemRegistration::default_side).
-    ///
-    /// TODO(T18-005): consult the persisted `statusBarItemPlacements` blob
-    /// first and only fall back to `default_side` — the blob override hook
-    /// wires in with the item-personalization task.
     pub fn resolve_side(&self, id: &str) -> StatusSide {
-        self.get(id)
-            .map(|r| r.default_side)
-            .unwrap_or(StatusSide::Right)
+        self.overrides.get(id).map(|p| p.side).unwrap_or_else(|| {
+            self.get(id)
+                .map(|r| r.default_side)
+                .unwrap_or(StatusSide::Right)
+        })
+    }
+
+    /// Whether the user has hidden this item (T18-005). Items with no
+    /// override are visible.
+    pub fn is_hidden(&self, id: &str) -> bool {
+        self.overrides.get(id).map(|p| p.hidden).unwrap_or(false)
+    }
+
+    /// The user's raw override for `id`, if any.
+    pub fn override_for(&self, id: &str) -> Option<StatusPlacement> {
+        self.overrides.get(id).copied()
+    }
+
+    /// Replace the whole override table (loaded from the persisted blob).
+    pub fn set_overrides(&mut self, overrides: HashMap<String, StatusPlacement>) {
+        self.overrides = overrides;
+    }
+
+    /// Merge a partial change (a right-click "move left/right" / "hide"
+    /// action) into one item's override, defaulting the unset half to the
+    /// item's current resolved placement, and return the result so the
+    /// caller can persist it.
+    pub fn set_override(
+        &mut self,
+        id: &str,
+        side: Option<StatusSide>,
+        hidden: Option<bool>,
+    ) -> StatusPlacement {
+        let mut p = self.overrides.get(id).copied().unwrap_or(StatusPlacement {
+            side: self.resolve_side(id),
+            hidden: self.is_hidden(id),
+        });
+        if let Some(s) = side {
+            p.side = s;
+        }
+        if let Some(h) = hidden {
+            p.hidden = h;
+        }
+        self.overrides.insert(id.to_string(), p);
+        p
     }
 
     /// Number of registered status-item types.
@@ -313,5 +368,50 @@ mod tests {
         assert_eq!(reg.resolve_side("cwd"), StatusSide::Right);
         // Unknown id falls back to the right cluster.
         assert_eq!(reg.resolve_side("missing"), StatusSide::Right);
+    }
+
+    #[test]
+    fn resolve_side_and_is_hidden_prefer_override() {
+        let mut reg = StatusItemRegistry::new();
+        reg.register(stub_item("cwd", StatusSide::Right));
+        assert_eq!(reg.resolve_side("cwd"), StatusSide::Right);
+        assert!(!reg.is_hidden("cwd"));
+
+        reg.set_overrides(HashMap::from([(
+            "cwd".to_string(),
+            StatusPlacement {
+                side: StatusSide::Left,
+                hidden: true,
+            },
+        )]));
+        assert_eq!(reg.resolve_side("cwd"), StatusSide::Left);
+        assert!(reg.is_hidden("cwd"));
+        // An item with no override still falls back to its default.
+        reg.register(stub_item("notifications", StatusSide::Right));
+        assert_eq!(reg.resolve_side("notifications"), StatusSide::Right);
+        assert!(!reg.is_hidden("notifications"));
+    }
+
+    #[test]
+    fn set_override_merges_partial_changes() {
+        let mut reg = StatusItemRegistry::new();
+        reg.register(stub_item("cwd", StatusSide::Right));
+
+        // Only moving the side leaves `hidden` at its current (false) value.
+        let p = reg.set_override("cwd", Some(StatusSide::Left), None);
+        assert_eq!(p.side, StatusSide::Left);
+        assert!(!p.hidden);
+        assert_eq!(reg.resolve_side("cwd"), StatusSide::Left);
+
+        // Only hiding leaves the side untouched.
+        let p = reg.set_override("cwd", None, Some(true));
+        assert_eq!(p.side, StatusSide::Left);
+        assert!(p.hidden);
+        assert!(reg.is_hidden("cwd"));
+
+        // Unhiding again keeps the moved side.
+        let p = reg.set_override("cwd", None, Some(false));
+        assert_eq!(p.side, StatusSide::Left);
+        assert!(!p.hidden);
     }
 }

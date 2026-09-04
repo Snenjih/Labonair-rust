@@ -25,5 +25,5 @@ pub use dock::{
 };
 pub use status::{
     AnyStatusItemHandle, StatusItem, StatusItemConstructor, StatusItemHandle, StatusItemHide,
-    StatusItemRegistration, StatusItemRegistry, StatusSide,
+    StatusItemRegistration, StatusItemRegistry, StatusPlacement, StatusSide,
 };

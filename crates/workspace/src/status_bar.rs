@@ -9,30 +9,45 @@
 //! `default_side` and its `order`, and renders its own content. Left = panel
 //! controls, right = info dropdowns (`docs/architecture.md` §4).
 //!
-//! Personalization (right-click → left/right/hide, persisted) is T18-005; the
-//! literal collapse of the transitional `bar_items` blob (`BarLoc`, the
-//! `barItemPlacements` → `statusBarItemPlacements` migrator) also lands there.
+//! Personalization (T18-005): every item except the fixed-left panel-toggle
+//! cluster (`"panel-toggles"`, see [`StatusItem::hideable`] /
+//! `crate::status_placements`) gets a right-click menu — "Move left" / "Move
+//! right" / "Hide" — that calls [`Workspace::set_status_bar_placement`]. The
+//! side/hidden overrides live on the registry
+//! ([`StatusItemRegistry::resolve_side`] / [`StatusItemRegistry::is_hidden`]);
+//! this component just reads them each render and re-reads them from disk
+//! whenever [`crate::status_placements::StatusBarLayoutTick`] bumps (another
+//! window persisted a change).
 
 use gpui::{
-    div, px, AnyElement, AnyView, Context, Entity, IntoElement, ParentElement, Render, Styled,
-    Window,
+    div, px, AnyElement, AnyView, Context, Entity, InteractiveElement, IntoElement, MouseButton,
+    MouseDownEvent, ParentElement, Pixels, Point, Render, SharedString, Styled, Window,
 };
 use labonair_panel::{AnyStatusItemHandle, StatusItemConstructor, StatusSide};
+use labonair_ui_kit::{context_menu, MenuItem};
 
+use crate::status_placements::StatusBarLayoutTick;
 use crate::theme::ThemeStore;
 use crate::Workspace;
 
 /// Status-bar row height — matches the shell's former `STATUS_H`.
 const STATUS_H: f32 = 32.0;
 
+/// Panel-toggles is fixed left, not moveable/hideable through this menu
+/// (T18-005 point 6) — individual panels are hidden via *its own* right-click
+/// menu (T18-003).
+const NOT_MOVEABLE: &str = "panel-toggles";
+
 /// Renders the registered [`StatusItem`](labonair_panel::StatusItem)s, sorted
 /// by `order` within each side.
 pub struct StatusBar {
     workspace: Entity<Workspace>,
     theme: Entity<ThemeStore>,
-    /// Built once from the registry: `(side, order, group, handle)`.
-    items: Vec<(StatusSide, i32, u32, AnyStatusItemHandle)>,
+    /// Built once from the registry: `(default_side, order, group, id, handle)`.
+    items: Vec<(StatusSide, i32, u32, &'static str, AnyStatusItemHandle)>,
     built: bool,
+    /// The open right-click placement menu, if any: `(item id, anchor)`.
+    menu: Option<(&'static str, Point<Pixels>)>,
 }
 
 impl StatusBar {
@@ -43,11 +58,20 @@ impl StatusBar {
     ) -> Self {
         cx.observe(&workspace, |_, _, cx| cx.notify()).detach();
         cx.observe(&theme, |_, _, cx| cx.notify()).detach();
+        // Another window persisted a placement change — reload the blob and
+        // re-render (T18-005 point 8, "two windows").
+        cx.observe_global::<StatusBarLayoutTick>(|this, cx| {
+            this.workspace
+                .update(cx, |w, _| w.reload_status_bar_placements());
+            cx.notify();
+        })
+        .detach();
         Self {
             workspace,
             theme,
             items: Vec::new(),
             built: false,
+            menu: None,
         }
     }
 
@@ -59,39 +83,132 @@ impl StatusBar {
         if self.built {
             return;
         }
-        let regs: Vec<(StatusSide, i32, u32, StatusItemConstructor)> = self
+        let regs: Vec<(StatusSide, i32, u32, &'static str, StatusItemConstructor)> = self
             .workspace
             .read(cx)
             .status_item_registry()
             .iter()
-            .map(|r| (r.default_side, r.order, r.group, r.build.clone()))
+            .map(|r| (r.default_side, r.order, r.group, r.id, r.build.clone()))
             .collect();
         if regs.is_empty() {
             return;
         }
-        for (side, order, group, build) in regs {
+        for (side, order, group, id, build) in regs {
             let handle = build(window, cx);
-            self.items.push((side, order, group, handle));
+            self.items.push((side, order, group, id, handle));
         }
         self.built = true;
     }
 
-    /// Views for `side`, sorted by `order`, with a divider inserted between
-    /// two consecutive items whose `group` differs (T18-004 point 8 — dividers
-    /// only between logical groups, never between every item).
-    fn cluster(&self, side: StatusSide, cx: &Context<Self>) -> Vec<AnyElement> {
-        let mut v: Vec<(i32, u32, AnyView)> = self
+    fn open_menu(&mut self, id: &'static str, pos: Point<Pixels>, cx: &mut Context<Self>) {
+        self.menu = Some((id, pos));
+        cx.notify();
+    }
+
+    /// The right-click "move left/right/hide" menu for `id` (T18-005 point 3).
+    fn render_menu(&mut self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        let (id, pos) = self.menu?;
+        let registry_snapshot = {
+            let ws = self.workspace.read(cx);
+            let registry = ws.status_item_registry();
+            (registry.resolve_side(id), registry.is_hidden(id))
+        };
+        let (side, hidden) = registry_snapshot;
+        let hideable = self
             .items
             .iter()
-            .filter(|(s, _, _, _)| *s == side)
-            .map(|(_, order, group, h)| (*order, *group, h.to_any()))
+            .find(|(_, _, _, item_id, _)| *item_id == id)
+            .map(|(_, _, _, _, h)| h.hideable(cx))
+            .unwrap_or(false);
+
+        let view = cx.entity();
+        let close = {
+            let v = view.clone();
+            move |cx: &mut gpui::App| {
+                v.update(cx, |this, cx| {
+                    this.menu = None;
+                    cx.notify();
+                })
+            }
+        };
+
+        let mut items: Vec<MenuItem> = Vec::new();
+        {
+            let ws = self.workspace.clone();
+            let close = close.clone();
+            items.push(
+                MenuItem::new("status-move-left", "Move left")
+                    .disabled(side == StatusSide::Left)
+                    .on_click(move |_, _w, cx| {
+                        ws.update(cx, |w, cx| {
+                            w.set_status_bar_placement(id, Some(StatusSide::Left), None, cx);
+                        });
+                        close(cx);
+                    }),
+            );
+        }
+        {
+            let ws = self.workspace.clone();
+            let close = close.clone();
+            items.push(
+                MenuItem::new("status-move-right", "Move right")
+                    .disabled(side == StatusSide::Right)
+                    .on_click(move |_, _w, cx| {
+                        ws.update(cx, |w, cx| {
+                            w.set_status_bar_placement(id, Some(StatusSide::Right), None, cx);
+                        });
+                        close(cx);
+                    }),
+            );
+        }
+        if hideable {
+            items.push(MenuItem::separator());
+            let ws = self.workspace.clone();
+            let close = close.clone();
+            items.push(
+                MenuItem::new("status-hide", "Hide")
+                    .disabled(hidden)
+                    .on_click(move |_, _w, cx| {
+                        ws.update(cx, |w, cx| {
+                            w.set_status_bar_placement(id, None, Some(true), cx);
+                        });
+                        close(cx);
+                    }),
+            );
+        }
+
+        let dismiss = move |_w: &mut Window, cx: &mut gpui::App| close(cx);
+        Some(context_menu(pos, self.theme.read(cx), dismiss, items))
+    }
+
+    /// Views for `side` (resolved through the registry's overrides — T18-005),
+    /// sorted by `order`, with a divider inserted between two consecutive
+    /// items whose `group` differs (T18-004 point 8 — dividers only between
+    /// logical groups, never between every item). Hidden items are omitted.
+    fn cluster(&mut self, side: StatusSide, cx: &mut Context<Self>) -> Vec<AnyElement> {
+        let registry_state: Vec<(&'static str, StatusSide, bool)> = {
+            let ws = self.workspace.read(cx);
+            let registry = ws.status_item_registry();
+            self.items
+                .iter()
+                .map(|(_, _, _, id, _)| (*id, registry.resolve_side(id), registry.is_hidden(id)))
+                .collect()
+        };
+
+        let mut v: Vec<(i32, u32, &'static str, AnyView)> = self
+            .items
+            .iter()
+            .zip(registry_state.iter())
+            .filter(|(_, (_, resolved_side, hidden))| *resolved_side == side && !hidden)
+            .map(|((_, order, group, id, h), _)| (*order, *group, *id, h.to_any()))
             .collect();
-        v.sort_by_key(|(order, _, _)| *order);
+        v.sort_by_key(|(order, _, _, _)| *order);
 
         let border = self.theme.read(cx).border();
+        let menu_open_id = self.menu.map(|(id, _)| id);
         let mut out = Vec::with_capacity(v.len() * 2);
         let mut prev_group: Option<u32> = None;
-        for (_, group, view) in v {
+        for (_, group, id, view) in v {
             if let Some(pg) = prev_group {
                 if pg != group {
                     out.push(
@@ -105,7 +222,31 @@ impl StatusBar {
                 }
             }
             prev_group = Some(group);
-            out.push(view.into_any_element());
+
+            if id == NOT_MOVEABLE {
+                out.push(view.into_any_element());
+                continue;
+            }
+
+            let menu = (menu_open_id == Some(id))
+                .then(|| self.render_menu(cx))
+                .flatten();
+            out.push(
+                div()
+                    .id(SharedString::from(format!("status-item-{id}")))
+                    .relative()
+                    .flex()
+                    .items_center()
+                    .child(view.into_any_element())
+                    .on_mouse_down(
+                        MouseButton::Right,
+                        cx.listener(move |this, ev: &MouseDownEvent, _w, cx| {
+                            this.open_menu(id, ev.position, cx);
+                        }),
+                    )
+                    .children(menu)
+                    .into_any_element(),
+            );
         }
         out
     }

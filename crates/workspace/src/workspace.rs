@@ -27,7 +27,6 @@
 pub mod agent_access;
 pub mod backend_event_bridge;
 pub mod background;
-pub mod bar_items;
 pub mod bell;
 pub mod dock;
 pub mod drag;
@@ -40,6 +39,7 @@ pub mod prefs;
 pub mod search_overlay;
 pub mod session;
 pub mod status_bar;
+pub mod status_placements;
 pub mod syntax_theme;
 pub mod tabs;
 pub mod toast_layer;
@@ -1858,6 +1858,57 @@ impl Workspace {
     /// Mutable access, for the one-time builtin status-item registration.
     pub fn status_item_registry_mut(&mut self) -> &mut labonair_panel::StatusItemRegistry {
         &mut self.status_item_registry
+    }
+
+    /// Re-reads the persisted `statusBarItemPlacements` blob from disk and
+    /// applies it to the [`StatusItemRegistry`](labonair_panel::StatusItemRegistry)
+    /// overrides (T18-005). Called once at startup and whenever another
+    /// window bumps [`status_placements::StatusBarLayoutTick`].
+    pub fn reload_status_bar_placements(&mut self) {
+        let blob = labonair_backend::modules::settings::status_bar_item_placements_load();
+        let overrides = status_placements::overrides_from_blob(&blob);
+        self.status_item_registry.set_overrides(overrides);
+    }
+
+    /// The right-click "move left/right" / "hide" action on a status-bar item
+    /// (T18-005): applies the change to the local registry immediately (so
+    /// this window's `StatusBar` re-renders without waiting on the write),
+    /// then persists it through the backend's atomic read-merge-write and, on
+    /// completion, bumps [`status_placements::StatusBarLayoutTick`] so every
+    /// *other* window's `StatusBar` reloads the blob and picks up the change
+    /// too. The tick bump is deliberately deferred until after the write
+    /// lands — bumping it eagerly would race the still-in-flight write, and
+    /// this window's own tick observer would reload the pre-write blob from
+    /// disk and clobber the override just set above.
+    pub fn set_status_bar_placement(
+        &mut self,
+        id: &'static str,
+        side: Option<labonair_panel::StatusSide>,
+        hidden: Option<bool>,
+        cx: &mut Context<Self>,
+    ) {
+        self.status_item_registry.set_override(id, side, hidden);
+        cx.notify();
+
+        let patch = status_placements::placement_patch(side, hidden);
+        let backend = self.backend.clone();
+        let item_id = id.to_string();
+        let jh = self.tokio.spawn(async move {
+            labonair_backend::modules::settings::settings_set_status_bar_placement(
+                &backend.status_bar_lock,
+                item_id,
+                patch,
+            )
+            .await
+        });
+        cx.spawn(async move |_this, cx| {
+            let _ = jh.await;
+            let _ = cx.update(|app| {
+                app.default_global::<status_placements::StatusBarLayoutTick>()
+                    .0 += 1;
+            });
+        })
+        .detach();
     }
 
     /// Install the shell's dock-layout persistence callback (see

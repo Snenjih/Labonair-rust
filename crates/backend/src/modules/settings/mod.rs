@@ -10,12 +10,18 @@ use crate::modules::fs::paths::config_dir;
 
 const SETTINGS_FILE: &str = "labonair-settings.json";
 const KEY_BAR_ITEM_PLACEMENTS: &str = "barItemPlacements";
+const KEY_STATUS_BAR_ITEM_PLACEMENTS: &str = "statusBarItemPlacements";
 
 /// Serializes every `settings_set_bar_item_placement` call across all
 /// windows (they share one Rust process) so the read-merge-write of the
 /// `barItemPlacements` blob can never interleave.
 #[derive(Default)]
 pub struct BarItemPlacementLock(pub Mutex<()>);
+
+/// Serializes every `settings_set_status_bar_placement` call across all
+/// windows, analogous to [`BarItemPlacementLock`] (T18-005).
+#[derive(Default)]
+pub struct StatusBarPlacementLock(pub Mutex<()>);
 
 fn read_settings_from(dir: &Path) -> Map<String, Value> {
     std::fs::read_to_string(dir.join(SETTINGS_FILE))
@@ -92,6 +98,68 @@ pub fn set_bar_item_placement_in(dir: &Path, item_id: String, patch: Value) -> R
     write_settings_to(dir, &settings)
 }
 
+/// The persisted `statusBarItemPlacements` blob (`{ itemId: { side, hidden } }`),
+/// or an empty map if nothing has been customised yet (T18-005).
+pub fn status_bar_item_placements_load() -> Map<String, Value> {
+    status_bar_item_placements_load_from(&config_dir())
+}
+
+/// [`status_bar_item_placements_load`] against an explicit config directory
+/// (tests / alternate profiles).
+pub fn status_bar_item_placements_load_from(dir: &Path) -> Map<String, Value> {
+    read_settings_from(dir)
+        .get(KEY_STATUS_BAR_ITEM_PLACEMENTS)
+        .and_then(|v| v.as_object().cloned())
+        .unwrap_or_default()
+}
+
+/// Atomically merges `patch` into `statusBarItemPlacements[item_id]` and
+/// persists it to the same `config_dir()` settings file the rest of the app
+/// reads.
+pub async fn settings_set_status_bar_placement(
+    lock: &StatusBarPlacementLock,
+    item_id: String,
+    patch: Value,
+) -> Result<(), String> {
+    let _guard = lock.0.lock().await;
+    set_status_bar_placement_in(&config_dir(), item_id, patch)
+}
+
+/// Synchronous read-merge-write core of [`settings_set_status_bar_placement`],
+/// parameterised on the config directory so it is unit-testable. Callers that
+/// aren't already serialised by [`StatusBarPlacementLock`] must not use this.
+pub fn set_status_bar_placement_in(
+    dir: &Path,
+    item_id: String,
+    patch: Value,
+) -> Result<(), String> {
+    let mut settings = read_settings_from(dir);
+
+    let mut placements = settings
+        .get(KEY_STATUS_BAR_ITEM_PLACEMENTS)
+        .and_then(|v| v.as_object().cloned())
+        .unwrap_or_default();
+
+    let mut entry = placements
+        .get(&item_id)
+        .and_then(|v| v.as_object().cloned())
+        .unwrap_or_default();
+
+    if let Some(patch_obj) = patch.as_object() {
+        for (k, v) in patch_obj {
+            entry.insert(k.clone(), v.clone());
+        }
+    }
+
+    placements.insert(item_id, Value::Object(entry));
+    settings.insert(
+        KEY_STATUS_BAR_ITEM_PLACEMENTS.to_string(),
+        Value::Object(placements),
+    );
+
+    write_settings_to(dir, &settings)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -140,6 +208,54 @@ mod tests {
                 .get("side")
                 .unwrap(),
             "left"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn status_bar_placement_round_trips_and_merges() {
+        let dir =
+            std::env::temp_dir().join(format!("labonair-status-bar-items-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        // Nothing persisted yet.
+        assert!(status_bar_item_placements_load_from(&dir).is_empty());
+
+        // First patch: move to left, hidden.
+        set_status_bar_placement_in(
+            &dir,
+            "cwd".into(),
+            json!({ "side": "left", "hidden": true }),
+        )
+        .unwrap();
+
+        let loaded = status_bar_item_placements_load_from(&dir);
+        let cwd = loaded.get("cwd").unwrap().as_object().unwrap();
+        assert_eq!(cwd.get("side").unwrap(), "left");
+        assert_eq!(cwd.get("hidden").unwrap(), &json!(true));
+
+        // Partial patch keeps the untouched keys (merge, not replace).
+        set_status_bar_placement_in(&dir, "cwd".into(), json!({ "hidden": false })).unwrap();
+        let loaded = status_bar_item_placements_load_from(&dir);
+        let cwd = loaded.get("cwd").unwrap().as_object().unwrap();
+        assert_eq!(cwd.get("side").unwrap(), "left");
+        assert_eq!(cwd.get("hidden").unwrap(), &json!(false));
+
+        // A second item does not disturb the first.
+        set_status_bar_placement_in(&dir, "bookmarks".into(), json!({ "side": "right" })).unwrap();
+        let loaded = status_bar_item_placements_load_from(&dir);
+        assert!(loaded.contains_key("cwd"));
+        assert_eq!(
+            loaded
+                .get("bookmarks")
+                .unwrap()
+                .as_object()
+                .unwrap()
+                .get("side")
+                .unwrap(),
+            "right"
         );
 
         let _ = std::fs::remove_dir_all(&dir);

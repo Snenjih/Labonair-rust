@@ -328,6 +328,21 @@ impl AppShell {
             })
             .collect();
 
+        let status_bar_hidden = {
+            let ws = self.workspace.read(cx);
+            let registry = ws.status_item_registry();
+            registry
+                .iter()
+                .filter(|r| registry.is_hidden(r.id))
+                .map(|r| PaletteChoice {
+                    id: r.id.to_string(),
+                    title: crate::status_items::status_item_label(r.id).to_string(),
+                    subtitle: None,
+                    active: false,
+                })
+                .collect()
+        };
+
         PaletteData {
             hosts,
             recent_hosts,
@@ -336,6 +351,7 @@ impl AppShell {
             git_branches,
             symbols,
             app_themes,
+            status_bar_hidden,
         }
     }
 
@@ -393,6 +409,13 @@ impl AppShell {
             PaletteEvent::GoToLine(line) => {
                 self.workspace
                     .update(cx, |w, cx| w.active_editor_goto_line(line, cx));
+            }
+            PaletteEvent::ShowStatusBarItem(id) => {
+                self.workspace.update(cx, |w, cx| {
+                    if let Some(sid) = w.status_item_registry().get(&id).map(|r| r.id) {
+                        w.set_status_bar_placement(sid, None, Some(false), cx);
+                    }
+                });
             }
             PaletteEvent::SetColorMode(pref) => {
                 let key = match pref {

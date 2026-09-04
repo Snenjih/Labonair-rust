@@ -1,4 +1,13 @@
-//! Appearance + Themes panes: theme scan / import / export / community fetch, the appearance grid, the bar-item layout editor, and the theme card grid.
+//! Appearance + Themes panes: theme scan / import / export / community fetch, the appearance grid, and the theme card grid.
+//!
+//! The old "Titlebar & Status Bar Items" layout editor (bar/side/hidden
+//! toggles over the transitional `BarItemId`/`BarLoc` model) was removed in
+//! T18-005 — it had no live consumer (the titlebar and statusbar have each
+//! rendered from their own registries since T17-003/T18-001) and its schema
+//! had no equivalent for a titlebar that no longer has moveable items. The
+//! statusbar's own items are now personalized directly via right-click
+//! (`crates/workspace/src/status_bar.rs`); a dedicated settings page is
+//! T18-007.
 //!
 //! Part of `SettingsView` — see `crate::view`. Mechanical T16-007 split, no
 //! logic change.
@@ -548,153 +557,7 @@ impl SettingsView {
             }
         }
 
-        root = root
-            .child(section_label("Titlebar & Status Bar Items", c))
-            .child(self.render_layout_editor(c, cx));
-
         root.into_any_element()
-    }
-
-    /// The bar-item layout editor — a port of `BarItemLayoutSettings`
-    /// (`reference-src/src/settings/sections/LayoutSection.tsx`). Every
-    /// positionable titlebar/statusbar item gets a Bar / Side / Hidden control;
-    /// changes persist through the backend blob and refresh the live bar via
-    /// [`bar_items::BarLayoutTick`].
-    pub(crate) fn layout_seg(
-        &self,
-        dom_id: String,
-        label: &'static str,
-        active: bool,
-        c: &Palette,
-        cx: &mut Context<Self>,
-        on: impl Fn(&mut Self, &mut Context<Self>) + 'static,
-    ) -> gpui::AnyElement {
-        div()
-            .id(SharedString::from(dom_id))
-            .px_2()
-            .py(px(2.0))
-            .rounded_sm()
-            .text_size(px(10.5))
-            .border_1()
-            .border_color(if active { c.accent } else { c.border })
-            .text_color(if active { c.fg } else { c.muted })
-            .when(!active, |d| d.hover(|s| s.bg(c.border)))
-            .child(label)
-            .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| on(this, cx)))
-            .into_any_element()
-    }
-
-    pub(crate) fn render_layout_editor(
-        &self,
-        c: &Palette,
-        cx: &mut Context<Self>,
-    ) -> gpui::AnyElement {
-        let rows = BAR_ITEM_ORDER.into_iter().map(|id| {
-            let p = self.placements.get(id);
-            let title = id.toggle_title();
-            let name = if title.is_empty() { id.as_str() } else { title };
-            let is_tb = p.bar == BarLoc::Titlebar;
-            let is_left = p.side == BarSide::Left;
-            div()
-                .flex()
-                .items_center()
-                .justify_between()
-                .gap_2()
-                .py(px(4.0))
-                .border_b_1()
-                .border_color(c.border)
-                .child(
-                    div()
-                        .flex_1()
-                        .min_w_0()
-                        .text_size(px(11.5))
-                        .text_color(if p.hidden { c.muted } else { c.fg })
-                        .child(SharedString::from(name.to_string())),
-                )
-                .child(
-                    div()
-                        .flex()
-                        .items_center()
-                        .gap_1()
-                        .child(self.layout_seg(
-                            format!("bar-tb-{}", id.as_str()),
-                            "Titlebar",
-                            is_tb,
-                            c,
-                            cx,
-                            move |this, cx| {
-                                this.move_bar_item(id, Some(BarLoc::Titlebar), None, None, cx)
-                            },
-                        ))
-                        .child(self.layout_seg(
-                            format!("bar-sb-{}", id.as_str()),
-                            "Status",
-                            !is_tb,
-                            c,
-                            cx,
-                            move |this, cx| {
-                                this.move_bar_item(id, Some(BarLoc::Statusbar), None, None, cx)
-                            },
-                        ))
-                        .child(div().w(px(6.0)))
-                        .child(self.layout_seg(
-                            format!("side-l-{}", id.as_str()),
-                            "L",
-                            is_left,
-                            c,
-                            cx,
-                            move |this, cx| {
-                                this.move_bar_item(id, None, Some(BarSide::Left), None, cx)
-                            },
-                        ))
-                        .child(self.layout_seg(
-                            format!("side-r-{}", id.as_str()),
-                            "R",
-                            !is_left,
-                            c,
-                            cx,
-                            move |this, cx| {
-                                this.move_bar_item(id, None, Some(BarSide::Right), None, cx)
-                            },
-                        ))
-                        .child(div().w(px(6.0)))
-                        .child(self.layout_seg(
-                            format!("hide-{}", id.as_str()),
-                            "Hidden",
-                            p.hidden,
-                            c,
-                            cx,
-                            move |this, cx| {
-                                let cur = this.placements.get(id).hidden;
-                                this.move_bar_item(id, None, None, Some(!cur), cx)
-                            },
-                        )),
-                )
-        });
-
-        div()
-            .flex()
-            .flex_col()
-            .children(rows.collect::<Vec<_>>())
-            .child(
-                div().pt_2().child(
-                    div()
-                        .id("bar-reset")
-                        .px_2()
-                        .py(px(3.0))
-                        .rounded_sm()
-                        .border_1()
-                        .border_color(c.border)
-                        .text_size(px(11.0))
-                        .text_color(c.fg)
-                        .hover(|s| s.bg(c.border))
-                        .child("Reset layout")
-                        .on_click(
-                            cx.listener(|this, _: &ClickEvent, _w, cx| this.reset_bar_layout(cx)),
-                        ),
-                ),
-            )
-            .into_any_element()
     }
 
     /// Themes pane — a card grid over the installed themes (built-in + user

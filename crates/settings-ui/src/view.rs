@@ -31,9 +31,6 @@ pub use labonair_command_palette::{
 pub use labonair_notifications::{notification_center, Notification};
 pub use labonair_theme::{ThemeFile, ThemePreference, ThemeStore};
 pub use labonair_workspace::background::BackgroundStore;
-pub use labonair_workspace::bar_items::{
-    self, default_placement, placement_patch, BarItemId, BarLoc, BarSide, BAR_ITEM_ORDER,
-};
 
 pub(crate) use crate::apply::*;
 pub(crate) use crate::fields::*;
@@ -152,10 +149,6 @@ pub struct SettingsView {
     /// An open `Select` dropdown (key + anchor position + options), drawn as a
     /// deferred floating layer so it escapes the scroll clip.
     pub(crate) dropdown: Option<SelectMenu>,
-    /// Live bar-item layout, edited by the Layout section (T16-012). Persisted
-    /// through the backend blob; the running `AppShell` bar re-reads it via
-    /// [`bar_items::BarLayoutTick`].
-    pub(crate) placements: bar_items::Placements,
     /// AI provider instances + their keychain-backed API keys (T16-012).
     pub(crate) instances: labonair_ai::InstanceStore,
     pub(crate) secrets: std::sync::Arc<labonair_ai::KeyringSecretStore>,
@@ -233,9 +226,6 @@ impl SettingsView {
             kb_conflict: None,
             windowed: false,
             dropdown: None,
-            placements: bar_items::Placements::from_blob(
-                &labonair_backend::modules::settings::bar_item_placements_load(),
-            ),
             instances: labonair_ai::InstanceStore::open_default(),
             secrets: std::sync::Arc::new(labonair_ai::KeyringSecretStore),
             system_fonts: Vec::new(),
@@ -372,61 +362,6 @@ impl SettingsView {
         // Typography + editor syntax scheme are pushed into the ThemeStore so
         // open terminals / editors pick them up live (T13-003).
         self.sync_theme_from_prefs(cx);
-        cx.notify();
-    }
-
-    // ── bar-item layout editor (T16-012) ─────────────────────────────────
-
-    /// Mutate one bar item's placement, persist the blob, and bump
-    /// [`bar_items::BarLayoutTick`] so the running `AppShell` bar re-reads it.
-    pub(crate) fn move_bar_item(
-        &mut self,
-        id: BarItemId,
-        bar: Option<BarLoc>,
-        side: Option<BarSide>,
-        hidden: Option<bool>,
-        cx: &mut Context<Self>,
-    ) {
-        let mut p = self.placements.get(id);
-        if let Some(b) = bar {
-            p.bar = b;
-        }
-        if let Some(s) = side {
-            p.side = s;
-        }
-        if let Some(h) = hidden {
-            p.hidden = h;
-        }
-        self.placements.set(id, p);
-        self.persist_bar_item(id, cx);
-    }
-
-    pub(crate) fn reset_bar_layout(&mut self, cx: &mut Context<Self>) {
-        for id in BAR_ITEM_ORDER {
-            self.placements.set(id, default_placement(id));
-            self.persist_bar_item(id, cx);
-        }
-        cx.notify();
-    }
-
-    pub(crate) fn persist_bar_item(&mut self, id: BarItemId, cx: &mut Context<Self>) {
-        let patch = placement_patch(self.placements.get(id));
-        let backend = self.backend.clone();
-        let key = id.as_str().to_string();
-        self.tokio.spawn(async move {
-            let _ = labonair_backend::modules::settings::settings_set_bar_item_placement(
-                &backend.bar_item_lock,
-                key,
-                patch,
-            )
-            .await;
-        });
-        let next = cx
-            .try_global::<bar_items::BarLayoutTick>()
-            .map(|t| t.0)
-            .unwrap_or(0)
-            + 1;
-        cx.set_global(bar_items::BarLayoutTick(next));
         cx.notify();
     }
 

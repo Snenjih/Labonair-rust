@@ -50,9 +50,6 @@ pub use labonair_workspace::background::init as init_background;
 pub(crate) mod background {
     pub use labonair_workspace::background::*;
 }
-pub(crate) mod bar_items {
-    pub use labonair_workspace::bar_items::*;
-}
 pub(crate) mod pane {
     pub use labonair_workspace::pane::*;
 }

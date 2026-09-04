@@ -4,6 +4,107 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
+## Last Session: 2026-09-04 (T18-005 — Statusbar item personalization: right-click move/hide)
+
+**T18-005 done.** The user-requested core feature: right-click any statusbar
+item (except the fixed-left panel toggles) → "Move left" / "Move right" /
+"Hide", persisted and synced across windows.
+
+### What Was Done (T18-005)
+- **`crates/panel/src/status.rs`** — new `StatusPlacement { side, hidden }`;
+  `StatusItemRegistry` gained an `overrides: HashMap<String, StatusPlacement>`
+  table + `set_overrides`/`set_override`/`override_for`; `resolve_side`/
+  `is_hidden` now consult it (falling back to `default_side`/visible). 5 new
+  unit tests.
+- **`crates/backend/src/modules/settings/mod.rs`** — `statusBarItemPlacements`
+  blob functions mirroring the existing `barItemPlacements` ones 1:1:
+  `StatusBarPlacementLock`, `status_bar_item_placements_load[_from]`,
+  `settings_set_status_bar_placement`/`set_status_bar_placement_in` (atomic
+  read-merge-write + `.tmp`+rename). New `status_bar_lock` field on
+  `backend::App`. Round-trip/merge test added.
+- **`crates/workspace/src/bar_items.rs` → `status_placements.rs`** (renamed,
+  content fully replaced) — the old titlebar-and-statusbar-spanning
+  `BarItemId`/`BarLoc`/`Placements` enum system (a closed 15-variant list from
+  before T17) is gone; it had **zero live consumers** (titlebar/statusbar have
+  rendered from their own string-keyed registries since T17-003/T18-001).
+  Replacement is a thin pure module: `overrides_from_blob` (JSON → `HashMap<String,
+  StatusPlacement>`), `placement_patch` (partial JSON patch), and the new
+  `StatusBarLayoutTick` global (cross-window reactivity tick).
+- **`crates/workspace/src/workspace.rs`** — `Workspace::reload_status_bar_placements`
+  (re-reads the blob, applies to the registry) and
+  `Workspace::set_status_bar_placement(id, side, hidden, cx)` (applies the
+  override locally + `cx.notify()` immediately, spawns the backend write, and
+  only *after that write completes* bumps `StatusBarLayoutTick` via
+  `cx.spawn` — bumping eagerly would race the write and this window's own
+  tick-observer would reload the pre-write blob and clobber the override just
+  set).
+- **`crates/workspace/src/status_bar.rs`** — every cluster item except
+  `"panel-toggles"` is now wrapped in a `.relative()` div with an
+  `on_mouse_down(Right)` → `labonair_ui_kit::context_menu` (Move left / Move
+  right / Hide, each disabled when already in that state; Hide omitted unless
+  `hideable()`). `cluster()` now resolves side/hidden per item through the
+  registry every render (was: static `default_side` captured once at build).
+  `StatusBar::new` adds `cx.observe_global::<StatusBarLayoutTick>` → reloads +
+  re-renders (the "two windows stay in sync" criterion).
+- **`crates/shell/src/status_items.rs`** — registration now calls
+  `w.reload_status_bar_placements()` right after registering every item (so
+  overrides apply from the first paint); new `status_item_label(id)` helper
+  (human titles) for the palette page below.
+- **Command palette escape hatch** (criterion "hidden items reachable"): new
+  `Page::StatusBarHidden` + `CommandId::ShowStatusBarItem` ("Statusbar: Show
+  Hidden Item…") + `PaletteData.status_bar_hidden` + `PaletteEvent::ShowStatusBarItem`,
+  wired end-to-end in `crates/shell/src/actions.rs` (`build_palette_data` /
+  `handle_palette_event`) — mirrors the existing AI-sessions/git-branches
+  sub-page pattern exactly.
+- **`crates/settings-ui`** — the old "Titlebar & Status Bar Items" layout
+  editor (`panes/themes.rs` `render_layout_editor`/`layout_seg`,
+  `view.rs` `move_bar_item`/`reset_bar_layout`/`persist_bar_item`/`placements`
+  field) is **deleted** — it was the only consumer of the old `BarLoc` system,
+  had no titlebar-scope equivalent in the new model, and duplicating it as a
+  "statusbar-only" editor now would just be redone by T18-007's real
+  personalization page. `crates/shell/src/bootstrap.rs`'s
+  `observe_global::<bar_items::BarLayoutTick>` (a bare repaint trigger, no
+  actual data flow) and the `crates/shell/src/shell.rs` `bar_items` re-export
+  shim are removed too — nothing else referenced them.
+
+### Deviations (documented here per the project's convention, not in the task file)
+- Point 7 ("Migrator … hier nur sicherstellen, dass das neue Schema sauber
+  ohne Altdaten funktioniert") is satisfied trivially: the old
+  `barItemPlacements` blob was never consumed by anything that affected
+  rendering, so there was no real user data to worry about clobbering. The
+  actual migrator ticket (T18-006) still stands as its own task if a
+  best-effort import of any `barItemPlacements`-shaped side hints is wanted.
+- Point 5 ("Personalisierungs-Seite T18-007 und/oder Command-Palette") — only
+  the command-palette page was built this session (page + event wiring); the
+  settings personalization page itself is still T18-007's job.
+
+### Gate Results (T18-005)
+- `cargo fmt` ✅ (ran, no diff after) · `cargo check --workspace --all-targets` ✅
+  · `cargo clippy --workspace --all-targets -- -D warnings` ✅ ·
+  `cargo test --workspace` ✅ (no failures; `labonair-panel` 10 tests,
+  `labonair-workspace` 92 tests — both include the new override/blob tests) ·
+  `scripts/check-crate-deps.sh` ✅ (20 crates, 87 edges, acyclic, no new edge)
+  · `cargo build` + a 5s `cargo run` smoke-launch succeeded with no panic (log
+  clean past the CoreText font warnings that predate this change) — this
+  session had no way to interact with the GUI, so the actual right-click →
+  menu → move/hide → persist → cross-window-sync behavior described in the
+  task's `cargo run` walkthrough (point 8) is **not** manually verified; flagged
+  for the user's visual pass, same caveat as T18-001/002/003/004.
+
+### State
+- Branch `master`, committing now. No blockers.
+
+### Next
+- **T18-006** — Migrator `barItemPlacements` → `statusBarItemPlacements`
+  (`tasks/phase-17-layout/T18-006-bar-item-placements-migrator.md`) — now that
+  the old blob-parsing code (`BarItemId`/`BarLoc`) is gone from
+  `labonair-workspace`, this task's framing needs a quick re-read before
+  starting: it may reduce to "read the legacy `barItemPlacements` JSON keys
+  directly with `serde_json` and best-effort map any recognizable ids into
+  `statusBarItemPlacements`" rather than reusing removed types.
+
+---
+
 ## Last Session: 2026-09-04 (T18-004 — Statusbar right: info dropdowns)
 
 **T18-004 done.** Polish pass over the right-side statusbar cluster (`crates/shell/src/status_items.rs`) — default order, a shared popover primitive, dividers between logical groups, and a couple of real behavior fixes that fell out of reading the acceptance criteria closely.
