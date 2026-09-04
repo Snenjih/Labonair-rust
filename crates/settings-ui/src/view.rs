@@ -510,13 +510,13 @@ impl SettingsView {
         if !cx.has_global::<SettingsStore>() {
             return;
         }
-        let accepted = cx
-            .global_mut::<SettingsStore>()
-            .update_user(move |c| {
-                (set)(c, value.clone());
-            })
-            .is_ok();
-        if !accepted {
+        let result = cx.global_mut::<SettingsStore>().update_user(move |c| {
+            (set)(c, value.clone());
+        });
+        if let Err(err) = result {
+            // Blocked (invalid JSON on disk, T19-005) — surface it rather
+            // than silently discarding the edit.
+            self.notify_error(cx, "Could not save setting", err);
             return;
         }
         self.prefs.update(cx, |p, cx| p.reload_from_disk(cx));
@@ -953,6 +953,22 @@ impl Render for SettingsView {
         let windowed = self.windowed;
 
         let header = self.render_header(&c, cx);
+        let json_error_banner = cx
+            .try_global::<SettingsStore>()
+            .and_then(|s| s.user_json_error())
+            .map(|err| {
+                div()
+                    .flex_shrink_0()
+                    .px_3()
+                    .py(px(6.0))
+                    .bg(gpui::red().opacity(0.15))
+                    .text_color(gpui::red())
+                    .text_size(px(11.0))
+                    .child(SharedString::from(format!(
+                        "labonair-settings.json has a syntax error ({err}) — fix it before \
+                         changing settings here.",
+                    )))
+            });
 
         let content = div().flex_1().min_h_0().flex().child(sidebar).child(
             div()
@@ -985,6 +1001,7 @@ impl Render for SettingsView {
             .text_color(c.fg)
             .on_key_down(cx.listener(Self::on_key))
             .child(header)
+            .children(json_error_banner)
             .child(content)
             .children(self.render_dropdown(&c, cx));
 

@@ -1,7 +1,7 @@
 # T19-005: Rohe `settings.json` editierbar (kommentar-erhaltend)
 
 ## Status
-📋 Geplant
+✅ Done
 
 ## Phase
 18 — Settings-System Zed-Style
@@ -80,19 +80,19 @@ synchron.
    einfügen → Banner + blockiertes GUI-Schreiben.
 
 ## Akzeptanzkriterien
-- [ ] `labonair-settings-json` (Crate/Modul) portiert `update_value_in_json_text`
+- [x] `labonair-settings-json` (Crate/Modul) portiert `update_value_in_json_text`
       + Indent-Inferenz; behandelt `//`-Kommentare und trailing commas.
-- [ ] `SettingsStore::update_user_settings` schreibt chirurgisch + atomar;
+- [x] `SettingsStore::update_user_settings` schreibt chirurgisch + atomar;
       Kommentare/Formatierung bleiben erhalten.
-- [ ] `SettingField.write` nutzt diesen Pfad; GUI-Änderungen zerstören keine
+- [x] `SettingField.write` nutzt diesen Pfad; GUI-Änderungen zerstören keine
       Kommentare.
-- [ ] Command „Open Settings (JSON)" öffnet die Datei (legt sie ggf.
+- [x] Command „Open Settings (JSON)" öffnet die Datei (legt sie ggf.
       kommentiert an).
-- [ ] Live-Sync in beide Richtungen ohne Neustart.
-- [ ] Kaputtes JSON: Banner + letzter guter Wert + blockiertes GUI-Schreiben,
+- [x] Live-Sync in beide Richtungen ohne Neustart.
+- [x] Kaputtes JSON: Banner + letzter guter Wert + blockiertes GUI-Schreiben,
       kein Crash, kein Blind-Überschreiben.
-- [ ] Tests decken surgische Edits, Key-Insert, Round-Trip, Kaputt-Fall.
-- [ ] Gates grün: `cargo fmt --check`, `cargo check --workspace --all-targets`,
+- [x] Tests decken surgische Edits, Key-Insert, Round-Trip, Kaputt-Fall.
+- [x] Gates grün: `cargo fmt --check`, `cargo check --workspace --all-targets`,
       `cargo clippy --workspace --all-targets -- -D warnings`,
       `cargo test --workspace`.
 

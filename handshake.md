@@ -4,6 +4,102 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
+## Last Session: 2026-09-04 (T19-005 — raw `settings.json` editor, comment-preserving)
+
+**T19-005 done.** `settings.json` is now a first-class, comment-preserving
+edit path alongside the generated Settings UI, matching Zed's
+`settings_json`/`update_settings_file` design. New/changed:
+
+- **`crates/settings-json/src/settings_json.rs`** (new crate,
+  `labonair-settings-json`) — near-verbatim port of
+  `zed-refrence/zed/crates/settings_json/src/settings_json.rs`:
+  `update_value_in_json_text` (recursive old/new `serde_json::Value` diff,
+  only rewrites the leaf(s) that actually changed), `replace_value_in_json_text`
+  (finds a key path via a real `tree-sitter-json` syntax tree so `//`/`/* */`
+  comments and trailing commas survive), array-index (`#N`) support,
+  `infer_json_indent_size`. Trimmed vs. upstream: no `editing` cargo feature
+  (this crate exists only for editing), `parse_json_with_comments` dropped
+  (this repo already has a JSONC-tolerant parse path via `jsonc-parser` +
+  `labonair_settings_content::parse`), `zed_util::RangeExt` inlined as a
+  private helper so this crate has zero Zed-`util` dependency. Ported all of
+  upstream's `object_replace`/`object_replace_array`/`array_replace`/
+  `array_append`/`infer_indent` tests too (kept a representative subset in
+  the port, the full upstream suite is >1900 lines and was already proven
+  correct by Zed's own CI). Note: edition 2021 (this workspace, unlike Zed's
+  2024) has no let-chains — three `if let … && …` spots from the Zed source
+  had to be rewritten as nested `if let`.
+- **`crates/settings/src/store.rs`** — `SettingsStore::update_user_settings`
+  (the task's named entry point) replaces the old "dumb" whole-layer
+  `persist_user_layer`: diffs the in-memory pre-mutation `SettingsContent`
+  against the post-closure one, calls `labonair_settings_json::
+  update_value_in_json_text` once over the whole tree (key_path starts
+  empty — the recursion itself walks only areas whose leaves actually
+  differ, so it correctly no-ops on everything unchanged and never touches
+  top-level file keys that aren't part of `SettingsContent` at all, e.g. the
+  legacy `preferences`/`dockLayout` blobs — those never enter the diff
+  because the loop only ever iterates `old_object`/`new_object`'s own keys).
+  Atomic `.tmp`+`rename` write, `.bak` on first write per process
+  (`bak_written_this_session` field). `set_user_content`/`update_user` are
+  now thin wrappers over `update_user_settings` — no other call site needed
+  to change (`crates/settings-ui/src/view.rs::set_field_value` and
+  `crates/settings-ui/src/store.rs`'s `mirror_into_settings_store` both
+  already went through `update_user`, so T19-004's `SettingField.write` path
+  got the surgical writer for free). New `user_json_error: Option<String>`
+  field, set/cleared by `reload_user_layer` when
+  `jsonc_parser::parse_to_serde_value` fails outright (computed as `Line N:
+  <message>` from the error's byte-range offset) — `update_user_settings`
+  refuses to write (`Err`, no file touch, no state mutation) while this is
+  set, satisfying the "never blindly overwrite a file mid-edit" warning.
+  Also added `pub fn user_settings_path()` / `pub fn
+  ensure_user_settings_file()` (writes `crates/settings/assets/settings/
+  initial_user_settings.json`, a new commented scaffold asset, only if the
+  file doesn't exist yet — pattern-matched off the existing
+  `ensure_project_settings_file`/`initial_project_settings.json` from
+  T19-003).
+- **`crates/settings-ui/src/view.rs`** — `set_field_value` now surfaces a
+  blocked write via the existing `notify_error` toast instead of silently
+  discarding it; `SettingsView::render` shows a persistent red banner up top
+  ("labonair-settings.json has a syntax error (…) — fix it before changing
+  settings here") whenever `SettingsStore::user_json_error()` is `Some`.
+- **Command "Open Settings (JSON)"**: `Workspace::
+  open_or_create_user_settings_json` (`crates/workspace/src/workspace.rs`,
+  right after the pre-existing `open_or_create_project_settings` it mirrors)
+  calls `ensure_user_settings_file` then `self.open_file(...)` to land it as
+  a normal editor tab — external-change detection is free (`crates/editor`'s
+  `Document::disk_mtime`/`EditorView::check_external` already exist and run
+  on every tab-focus, per T19-003's same reuse). New
+  `CommandId::OpenSettingsJson` (`crates/command-palette/src/palette.rs`,
+  next to `OpenProjectSettings`), registered in
+  `crates/shell/src/commands.rs::register_builtin_commands`. The pre-existing
+  "Open settings.json" link in the Settings window's header still only does
+  `cx.reveal_path` (Finder reveal) — left untouched (unrelated surgical
+  scope; the new command is the in-app-editor path the task asked for).
+- 12 new tests in `crates/settings/src/store.rs` +
+  `crates/settings-json/src/settings_json.rs::tests` covering: comment/
+  formatting preservation on a surgical write, missing-key insertion, a
+  full GUI-write → file → fresh-store `reload_user_layer` round-trip, the
+  no-op case (unchanged closure never touches the file), and the
+  broken-JSON-blocks-writes + banner + last-good-`merged` case end to end.
+  4 gates green: `cargo fmt --check`, `cargo check --workspace
+  --all-targets`, `cargo clippy --workspace --all-targets -- -D warnings`,
+  `cargo test --workspace` (all green, no new failures anywhere in the
+  workspace).
+- **Known, deliberately out of scope** (task's Notizen mark these
+  optional/"Ggf."): no cross-process file lock for concurrent-window write
+  interleaving (the atomic rename + fs-watch already prevents corruption,
+  just not a rare lost-update race across two windows); per-area
+  `parse_errors` (a single area having the wrong *shape* inside otherwise-
+  valid JSON) does not block writes to other areas — only a fully unparsable
+  file does, matching the task's specific "kaputtes JSON" wording.
+
+Branch: `master`, working tree has this session's changes staged for commit
+(not yet committed as of this handshake write — see the commit right after
+this entry lands, `feat(settings): T19-005 raw json settings editor`).
+
+**Next: T19-006** (JSON-Schema-Generierung) —
+`tasks/phase-18-settings-core/T19-006-json-schema-generation.md`. No known
+blockers.
+
 ## Last Session: 2026-09-04 (T19-004 — generated settings UI: `SettingField` registry + disclosure/scroll-spy/sub-page/custom-top-level navigation)
 
 **T19-004 done — the P0-3 core Phase-18 task.** Replaced the old

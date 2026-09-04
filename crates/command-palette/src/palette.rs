@@ -140,6 +140,10 @@ pub enum CommandId {
     /// Create (if missing) and open `<active pane's cwd>/.labonair/
     /// settings.json` — the per-project settings layer (T19-003).
     OpenProjectSettings,
+    /// Create (if missing) and open `~/.config/labonair/labonair-settings.json`
+    /// as an editor tab — the raw JSON path, alongside the Settings UI
+    /// (T19-005).
+    OpenSettingsJson,
     CheckForUpdates,
     FormatDocument,
     /// Opens the path-bookmarks popover (T12-003).
@@ -344,6 +348,7 @@ static COMMANDS: &[Command] = &[
     Command { id: CommandId::OpenShortcuts,      title: "Keyboard Shortcuts",      section: "Application",    contexts: &[],                            shortcut: Some(ShortcutsOpen), icon: I::SquareCheck,sub_page: None },
     Command { id: CommandId::OpenSettings,       title: "Open Settings",           section: "Application",    contexts: &[],                            shortcut: None,                icon: I::SquarePen,  sub_page: None },
     Command { id: CommandId::OpenProjectSettings,title: "Open Project Settings (.labonair/settings.json)", section: "Application", contexts: &[],       shortcut: None,                icon: I::SquarePen,  sub_page: None },
+    Command { id: CommandId::OpenSettingsJson,title: "Open Settings (JSON)", section: "Application", contexts: &[],       shortcut: None,                icon: I::SquarePen,  sub_page: None },
     Command { id: CommandId::OpenAiSettings,     title: "Manage AI Keys & Models", section: "Application",    contexts: &[],                            shortcut: None,                icon: I::Sparkles,   sub_page: None },
     Command { id: CommandId::CheckForUpdates,    title: "Check for Updates\u{2026}", section: "Application",   contexts: &[],                            shortcut: None,                icon: I::Download,   sub_page: None },
 ];

@@ -1,0 +1,21 @@
+[package]
+name = "labonair-settings-json"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "labonair_settings_json"
+path = "src/settings_json.rs"
+
+[dependencies]
+# Surgical single-node edits are found via a real JSON syntax tree (comments
+# + trailing commas tolerant), same approach as
+# `zed-refrence/zed/crates/settings_json`.
+tree-sitter = "0.25"
+tree-sitter-json = "0.24"
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+pretty_assertions = "1"
+unindent = "0.2"

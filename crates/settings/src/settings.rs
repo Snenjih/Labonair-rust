@@ -31,7 +31,9 @@ pub use concrete::{
 pub use project::{ensure_project_settings_file, PROJECT_SETTINGS_WHITELIST};
 pub use registry::{register_all, RegisteredSetting};
 pub use settings_trait::Settings;
-pub use store::{SettingsLayer, SettingsStore, WorktreeId};
+pub use store::{
+    ensure_user_settings_file, user_settings_path, SettingsLayer, SettingsStore, WorktreeId,
+};
 
 // Re-exported so `#[derive(RegisterSetting)]`'s generated code can address
 // `gpui`/`inventory` through this crate's own path, whatever the consuming

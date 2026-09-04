@@ -927,6 +927,26 @@ impl Workspace {
         true
     }
 
+    /// Command: "Open Settings (JSON)" (T19-005 Anweisung #4) — create (if
+    /// missing) `~/.config/labonair/labonair-settings.json` from the
+    /// commented scaffold and open it as an editor tab. Unlike the project
+    /// settings command above, this always succeeds (the user settings path
+    /// doesn't depend on an active pane's cwd).
+    pub fn open_or_create_user_settings_json(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let path = match labonair_settings::ensure_user_settings_file() {
+            Ok(path) => path,
+            Err(err) => {
+                labonair_notifications::notify_err::<()>("Settings", Err(err), cx);
+                return;
+            }
+        };
+        self.open_file(path.to_string_lossy().into_owned(), false, window, cx);
+    }
+
     /// The file path of the active editor tab, if the active tab is an editor
     /// with a saved file — feeds the breadcrumb's "file mode" + the
     /// `cursorPosition` bar item.

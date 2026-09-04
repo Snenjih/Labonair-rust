@@ -11,6 +11,9 @@ path = "src/settings.rs"
 # The typed settings tree (T19-001) this store layers default < user <
 # os/profile < project < language. Pure data model, no GPUI/UI dep.
 labonair-settings-content = { path = "../settings-content" }
+# Surgical single-node `settings.json` text edits (T19-005) — comments and
+# formatting of everything but the changed leaf(s) survive a GUI write.
+labonair-settings-json = { path = "../settings-json" }
 # `#[derive(RegisterSetting)]` (this task) alongside the pre-existing
 # `#[derive(MergeFrom)]` (T19-001) — shared derive-macro crate, still no
 # non-macro deps of its own.

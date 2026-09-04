@@ -414,6 +414,10 @@ pub(crate) fn register_builtin_commands() -> CommandRegistry {
         s.workspace
             .update(cx, |w, cx| w.open_or_create_project_settings(window, cx));
     });
+    r.register(CommandId::OpenSettingsJson, always, |s, window, cx| {
+        s.workspace
+            .update(cx, |w, cx| w.open_or_create_user_settings_json(window, cx));
+    });
     r.register(CommandId::CheckForUpdates, always, |s, _window, cx| {
         s.panels.updater.update(cx, |u, cx| u.run_check(true, cx));
     });

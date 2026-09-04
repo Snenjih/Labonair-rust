@@ -3,8 +3,9 @@
 //! Blueprint: `zed-refrence/zed/crates/settings/src/settings_store.rs`,
 //! trimmed to what this task needs: a fixed-order layer merge, per-type
 //! computed-value cache (`register_setting::<T>()` / `get::<T>()`), and a
-//! "dumb" (whole-layer) persist path — the surgical single-key JSON write
-//! lands in T19-005.
+//! surgical (leaf-diff, not whole-layer) persist path
+//! ([`SettingsStore::update_user_settings`], T19-005) built on
+//! `labonair-settings-json`.
 
 use std::any::{Any, TypeId};
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -78,6 +79,20 @@ pub struct SettingsStore {
     /// broken area falls back to its default, the rest of the tree is
     /// unaffected).
     parse_errors: Vec<FieldError>,
+    /// `Some(message)` when the `User` file's last (re)load found text that
+    /// isn't valid JSON/JSONC at all (T19-005 Akzeptanzkriterium: a banner +
+    /// blocked GUI writes, not a silent last-good fallback that also lets
+    /// the GUI clobber the broken file). `None` once a subsequent (re)load
+    /// parses cleanly again. Distinct from `parse_errors` above, which is
+    /// about a single *area* having the wrong shape inside an otherwise
+    /// valid document — that case still allows GUI writes to every other
+    /// area.
+    user_json_error: Option<String>,
+    /// Whether [`Self::persist_user_settings_surgical`] has already written a
+    /// `.json.bak` safety copy this process run — only the *first* surgical
+    /// write per session backs up the pre-session file (Anweisung #2), not
+    /// every single field edit.
+    bak_written_this_session: bool,
     /// The active project root (`SettingsLayer::Project`'s source directory)
     /// and the `WorktreeId` currently keying its layer in `raw`, if any
     /// (T19-003). `None` = no project root is active — the `Project` layer
@@ -119,6 +134,8 @@ impl SettingsStore {
             merged: SettingsContent::default(),
             user_path,
             parse_errors: Vec::new(),
+            user_json_error: None,
+            bak_written_this_session: false,
             current_project: None,
             next_worktree_id: 0,
             project_watch_generation: 0,
@@ -160,6 +177,14 @@ impl SettingsStore {
         &self.parse_errors
     }
 
+    /// `Some(message)` while the `User` settings file's text is not valid
+    /// JSON/JSONC at all — the UI's error banner (T19-005 Akzeptanzkriterium)
+    /// reads this, and [`Self::update_user_settings`] refuses to write while
+    /// it is set (never blindly overwrite a file the user is mid-edit on).
+    pub fn user_json_error(&self) -> Option<&str> {
+        self.user_json_error.as_deref()
+    }
+
     /// Replace one layer's content and recompute. `Default` may not be
     /// replaced this way (use is a logic error — the default tree is fixed
     /// at construction from `SettingsContent::defaults()`).
@@ -186,19 +211,25 @@ impl SettingsStore {
         let Ok(raw) = std::fs::read_to_string(&self.user_path) else {
             // No file yet (first run) — an absent file is not a corrupt one;
             // treat it as an empty User layer.
+            self.user_json_error = None;
             self.raw
                 .insert(SettingsLayer::User, SettingsContent::default());
             self.recompute();
             return;
         };
 
-        if jsonc_parser::parse_to_serde_value(&raw, &Default::default()).is_err() {
+        if let Err(e) = jsonc_parser::parse_to_serde_value(&raw, &Default::default()) {
+            let line = raw[..e.range.start.min(raw.len())].matches('\n').count() + 1;
+            let message = format!("Line {line}: {}", e.message);
             tracing::warn!(
                 path = %self.user_path.display(),
+                message = %message,
                 "labonair-settings.json is not valid JSON/JSONC — keeping the last good settings",
             );
+            self.user_json_error = Some(message);
             return;
         }
+        self.user_json_error = None;
 
         let (content, errors) = labonair_settings_content::parse(&raw);
         if !errors.is_empty() {
@@ -211,47 +242,92 @@ impl SettingsStore {
         self.recompute();
     }
 
-    /// Replace the `User` layer and persist it ("dumb" — the whole layer is
-    /// re-serialized; the surgical single-key write lands in T19-005). Other
+    /// Replace the `User` layer and persist it surgically (T19-005): only
+    /// the leaves that actually differ from the current in-memory `User`
+    /// content get their byte span rewritten in the on-disk text, so every
+    /// comment/formatting choice elsewhere in the file survives. Other
     /// top-level keys already in the file (`preferences`, `dockLayout`, the
-    /// legacy `editor`/`mcp` blobs, …) are preserved untouched.
+    /// legacy `editor`/`mcp` blobs, …) are untouched by construction — they
+    /// have no counterpart in [`SettingsContent`], so the leaf-by-leaf diff
+    /// this walks never visits them.
+    ///
+    /// Refuses to write (returns `Err`, no partial write, `raw`/`merged`
+    /// unchanged) while [`Self::user_json_error`] is set — writing into a
+    /// file whose text the store can't even parse would either silently
+    /// clobber the user's in-progress edit or throw a confusing tree-sitter
+    /// panic; the Akzeptanzkriterium is "fix the JSON first."
     pub fn set_user_content(&mut self, content: SettingsContent) -> Result<(), String> {
-        self.raw.insert(SettingsLayer::User, content);
+        self.update_user_settings(move |c| *c = content)
+    }
+
+    /// Mutate a clone of the current `User` layer, then diff + surgically
+    /// persist it in one step (T19-005's `SettingsStore::
+    /// update_user_settings`; `update_user` is kept as an alias for the
+    /// call sites that predate this task).
+    pub fn update_user_settings(
+        &mut self,
+        f: impl FnOnce(&mut SettingsContent),
+    ) -> Result<(), String> {
+        if let Some(err) = &self.user_json_error {
+            return Err(format!(
+                "labonair-settings.json has a syntax error and can't be edited from the GUI \
+                 until it's fixed: {err}"
+            ));
+        }
+
+        let old_content = self
+            .raw
+            .get(&SettingsLayer::User)
+            .cloned()
+            .unwrap_or_default();
+        let mut new_content = old_content.clone();
+        f(&mut new_content);
+        if new_content == old_content {
+            return Ok(()); // nothing actually changed — no write, no notify.
+        }
+
+        self.persist_user_settings_surgical(&old_content, &new_content)?;
+        self.raw.insert(SettingsLayer::User, new_content);
         self.recompute();
-        self.persist_user_layer()
+        Ok(())
     }
 
     /// Convenience wrapper: mutate a clone of the current `User` layer, then
-    /// commit + persist it in one step.
+    /// commit + persist it in one step. Alias for
+    /// [`Self::update_user_settings`] (kept so `crates/settings-ui`'s
+    /// pre-T19-005 call sites keep resolving unchanged).
     pub fn update_user(&mut self, f: impl FnOnce(&mut SettingsContent)) -> Result<(), String> {
-        let mut content = self
-            .raw
-            .get(&SettingsLayer::User)
-            .cloned()
-            .unwrap_or_default();
-        f(&mut content);
-        self.set_user_content(content)
+        self.update_user_settings(f)
     }
 
-    fn persist_user_layer(&self) -> Result<(), String> {
-        let content = self
-            .raw
-            .get(&SettingsLayer::User)
-            .cloned()
-            .unwrap_or_default();
-
-        let mut map = std::fs::read_to_string(&self.user_path)
-            .ok()
-            .and_then(|s| serde_json::from_str::<Value>(&s).ok())
-            .and_then(|v| v.as_object().cloned())
-            .unwrap_or_default();
-
-        let content_value = serde_json::to_value(&content).map_err(|e| e.to_string())?;
-        if let Value::Object(content_map) = content_value {
-            for (k, v) in content_map {
-                map.insert(k, v);
-            }
+    /// Diff `old_content`/`new_content` and apply the resulting minimal
+    /// text edits to the on-disk `User` file (Warnung: never re-serialize
+    /// the whole file — only the changed leaves' byte spans). Atomic write
+    /// (`.tmp` + `rename`); a `.json.bak` snapshot of the pre-write file is
+    /// taken once per process (Anweisung #2's "bei erstem Schreiben pro
+    /// Session").
+    fn persist_user_settings_surgical(
+        &mut self,
+        old_content: &SettingsContent,
+        new_content: &SettingsContent,
+    ) -> Result<(), String> {
+        let mut text = std::fs::read_to_string(&self.user_path).unwrap_or_default();
+        if text.trim().is_empty() {
+            text = "{}\n".to_string();
         }
+
+        let old_value = serde_json::to_value(old_content).map_err(|e| e.to_string())?;
+        let new_value = serde_json::to_value(new_content).map_err(|e| e.to_string())?;
+        let indent = labonair_settings_json::infer_json_indent_size(&text);
+        let mut edits = Vec::new();
+        labonair_settings_json::update_value_in_json_text(
+            &mut text,
+            &mut Vec::new(),
+            indent,
+            &old_value,
+            &new_value,
+            &mut edits,
+        );
 
         let dir = self
             .user_path
@@ -260,15 +336,13 @@ impl SettingsStore {
             .unwrap_or_else(|| PathBuf::from("."));
         std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
 
-        // `.bak` safety net before the atomic rename, same convention as
-        // `labonair_backend::modules::settings::preferences`.
-        if self.user_path.exists() {
+        if !self.bak_written_this_session && self.user_path.exists() {
             let _ = std::fs::copy(&self.user_path, self.user_path.with_extension("json.bak"));
+            self.bak_written_this_session = true;
         }
 
         let tmp = self.user_path.with_extension("json.tmp");
-        let json = serde_json::to_string_pretty(&Value::Object(map)).map_err(|e| e.to_string())?;
-        std::fs::write(&tmp, json).map_err(|e| e.to_string())?;
+        std::fs::write(&tmp, &text).map_err(|e| e.to_string())?;
         std::fs::rename(&tmp, &self.user_path).map_err(|e| e.to_string())
     }
 
@@ -474,6 +548,31 @@ fn default_user_path() -> PathBuf {
     dir.join("labonair-settings.json")
 }
 
+/// The commented scaffold [`ensure_user_settings_file`] writes for a user
+/// who has no `labonair-settings.json` yet (T19-005's "Open Settings (JSON)"
+/// command). Every existing key in this file also has a Settings UI row —
+/// the two paths edit the same file.
+const INITIAL_USER_SETTINGS: &str = include_str!("../assets/settings/initial_user_settings.json");
+
+/// Where the `User` settings layer lives on disk (`~/.config/labonair/
+/// labonair-settings.json`, or the platform equivalent) — the single source
+/// of truth for this path; callers outside this crate (the "Open Settings
+/// (JSON)" command) should use this rather than re-deriving it.
+pub fn user_settings_path() -> PathBuf {
+    default_user_path()
+}
+
+/// Create the user settings file with a commented scaffold if it doesn't
+/// exist yet (never overwrites an existing file), and return its path.
+/// Used by the "Open Settings (JSON)" command (T19-005 Anweisung #4).
+pub fn ensure_user_settings_file() -> Result<PathBuf, String> {
+    let path = default_user_path();
+    if !path.exists() {
+        std::fs::write(&path, INITIAL_USER_SETTINGS).map_err(|e| e.to_string())?;
+    }
+    Ok(path)
+}
+
 /// Build the store, load the `User` layer once, and publish it as the
 /// [`SettingsStore`] global. Registration of concrete `Settings` types and
 /// the fs-watch task are the caller's job (`labonair_settings::init`) —
@@ -601,6 +700,136 @@ mod tests {
         assert_eq!(value["preferences"]["theme"], "dark");
         assert_eq!(value["terminal"]["terminalFontSize"], 30);
         assert!(path.with_extension("json.bak").exists());
+    }
+
+    /// T19-005 Akzeptanzkriterium: a surgical write only touches the changed
+    /// leaf's byte span — comments and every unrelated field's formatting
+    /// survive.
+    #[test]
+    fn update_user_settings_preserves_comments_and_only_touches_the_changed_leaf() {
+        let path = tmp_path();
+        std::fs::write(
+            &path,
+            r#"{
+  // I like a big terminal font.
+  "terminal": {
+    "terminalFontSize": 14
+  },
+  "preferences": {
+    "theme": "dark"
+  }
+}
+"#,
+        )
+        .unwrap();
+        let mut store = SettingsStore::new(path.clone());
+        store.reload_user_layer();
+
+        store
+            .update_user_settings(|c| c.terminal.terminal_font_size = Some(22))
+            .unwrap();
+
+        let raw = std::fs::read_to_string(&path).unwrap();
+        assert!(
+            raw.contains("// I like a big terminal font."),
+            "comment must survive a surgical write:\n{raw}"
+        );
+        assert!(raw.contains("\"terminalFontSize\": 22"));
+        assert!(raw.contains("\"theme\": \"dark\""));
+        assert_eq!(store.merged().terminal.terminal_font_size, Some(22));
+    }
+
+    /// A field write inserts a brand-new key path when the area doesn't
+    /// exist in the file yet, without disturbing existing content.
+    #[test]
+    fn update_user_settings_inserts_a_missing_key_path() {
+        let path = tmp_path();
+        std::fs::write(&path, r#"{"preferences": {"theme": "dark"}}"#).unwrap();
+        let mut store = SettingsStore::new(path.clone());
+        store.reload_user_layer();
+
+        store
+            .update_user_settings(|c| c.terminal.terminal_font_size = Some(18))
+            .unwrap();
+
+        let raw = std::fs::read_to_string(&path).unwrap();
+        let value: Value = serde_json::from_str(&raw).unwrap();
+        assert_eq!(value["terminal"]["terminalFontSize"], 18);
+        assert_eq!(value["preferences"]["theme"], "dark");
+    }
+
+    /// Round-trip: a GUI change lands on disk, and a fresh `reload_user_layer`
+    /// (what the fs-watch poll task calls) picks the same value back up.
+    #[test]
+    fn update_user_settings_round_trips_through_reload() {
+        let path = tmp_path();
+        let mut store = SettingsStore::new(path.clone());
+        store.reload_user_layer();
+
+        store
+            .update_user_settings(|c| c.general.startup_terminal_count = Some(3))
+            .unwrap();
+
+        let mut reloaded = SettingsStore::new(path);
+        reloaded.reload_user_layer();
+        assert_eq!(reloaded.merged().general.startup_terminal_count, Some(3));
+    }
+
+    /// T19-005 Akzeptanzkriterium: invalid JSON in the file blocks GUI
+    /// writes (never blindly overwrite a file the user is mid-editing) and
+    /// keeps the last-good `merged` value + surfaces an error the UI banner
+    /// can show.
+    #[test]
+    fn update_user_settings_is_blocked_while_the_file_has_invalid_json() {
+        let path = tmp_path();
+        std::fs::write(&path, r#"{"terminal":{"terminalFontSize":20}}"#).unwrap();
+        let mut store = SettingsStore::new(path.clone());
+        store.reload_user_layer();
+        assert_eq!(store.merged().terminal.terminal_font_size, Some(20));
+        assert!(store.user_json_error().is_none());
+
+        std::fs::write(&path, "{ this is not json").unwrap();
+        store.reload_user_layer();
+        assert!(store.user_json_error().is_some());
+        // Last-good merged value is kept, not wiped.
+        assert_eq!(store.merged().terminal.terminal_font_size, Some(20));
+
+        let err = store
+            .update_user_settings(|c| c.terminal.terminal_font_size = Some(99))
+            .unwrap_err();
+        assert!(err.contains("syntax error"));
+        // The blocked write must not have touched the file or the merged value.
+        assert_eq!(store.merged().terminal.terminal_font_size, Some(20));
+        let raw = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(raw, "{ this is not json");
+
+        // Fixing the file clears the error and unblocks writes again.
+        std::fs::write(&path, r#"{"terminal":{"terminalFontSize":20}}"#).unwrap();
+        store.reload_user_layer();
+        assert!(store.user_json_error().is_none());
+        store
+            .update_user_settings(|c| c.terminal.terminal_font_size = Some(99))
+            .unwrap();
+        assert_eq!(store.merged().terminal.terminal_font_size, Some(99));
+    }
+
+    /// A no-op mutation (closure changes nothing) must not touch the file at
+    /// all — important so opening a settings panel and closing it again
+    /// without changing anything never disturbs formatting.
+    #[test]
+    fn update_user_settings_is_a_noop_when_nothing_changed() {
+        let path = tmp_path();
+        std::fs::write(&path, r#"{"terminal":{"terminalFontSize":20}}"#).unwrap();
+        let mut store = SettingsStore::new(path.clone());
+        store.reload_user_layer();
+        let before = std::fs::read_to_string(&path).unwrap();
+
+        store
+            .update_user_settings(|c| c.terminal.terminal_font_size = Some(20))
+            .unwrap();
+
+        let after = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(before, after);
     }
 
     #[derive(Debug, PartialEq)]

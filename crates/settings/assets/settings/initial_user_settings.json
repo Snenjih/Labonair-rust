@@ -1,0 +1,31 @@
+// Labonair settings.
+//
+// This file is your personal settings — it is merged on top of Labonair's
+// built-in defaults. Every setting here has a matching row in the Settings
+// UI (⌘,); changing it here or there updates the same file. Comments and
+// formatting you add here are preserved when the GUI writes to this file.
+//
+// Uncomment and edit whatever you need; delete the rest.
+{
+  // "general": {
+  //   "theme": "system",
+  //   "defaultStartupTab": "terminal",
+  //   "startupTerminalCount": 1
+  // },
+
+  // "appearance": {
+  //   "appFontSize": 13,
+  //   "appFontFamily": ""
+  // },
+
+  // "terminal": {
+  //   "terminalFontSize": 14,
+  //   "terminalFontFamily": ""
+  // },
+
+  // "editor": {
+  //   "editorTabSize": 4,
+  //   "editorFormatOnSave": true,
+  //   "editorInsertFinalNewline": true
+  // }
+}
