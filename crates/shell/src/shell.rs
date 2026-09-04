@@ -21,7 +21,7 @@ pub mod sidebar_slot;
 pub mod updater;
 pub mod window_state;
 
-pub use app_shell::{AppShell, SidebarPanel};
+pub use app_shell::AppShell;
 pub use assets::Assets;
 pub use menu::{apply_keybinds, init as init_menus};
 pub use updater::{UpdaterStatus, UpdaterView};

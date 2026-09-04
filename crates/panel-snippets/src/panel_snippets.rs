@@ -2428,6 +2428,54 @@ impl SnippetsView {
     }
 }
 
+/// [`Panel`](labonair_panel::Panel) wiring (T17-001).
+///
+/// Snippets docks on the **left** at **260 px** — the reference shows the
+/// command-snippets list in the left sidebar, same footprint as the file tree.
+/// It is a vertical list, so only side docks are valid. Dock move/persistence
+/// is T17-002; [`set_position`] is a no-op until then.
+impl labonair_panel::Panel for SnippetsView {
+    fn persistent_name() -> &'static str {
+        "snippets"
+    }
+
+    fn title(&self, _cx: &App) -> SharedString {
+        "Snippets".into()
+    }
+
+    fn icon(&self) -> labonair_panel::PanelIcon {
+        labonair_panel::PanelIcon::Snippets
+    }
+
+    fn position(&self, _cx: &App) -> labonair_panel::DockPosition {
+        labonair_panel::DockPosition::Left
+    }
+
+    fn position_is_valid(&self, position: labonair_panel::DockPosition) -> bool {
+        matches!(
+            position,
+            labonair_panel::DockPosition::Left | labonair_panel::DockPosition::Right
+        )
+    }
+
+    fn set_position(
+        &mut self,
+        _position: labonair_panel::DockPosition,
+        _window: &mut Window,
+        _cx: &mut Context<Self>,
+    ) {
+        // T17-002 owns the dock model; nothing to persist here yet.
+    }
+
+    fn default_size(&self, _cx: &App) -> gpui::Pixels {
+        px(260.0)
+    }
+
+    fn min_size(&self) -> Option<gpui::Pixels> {
+        Some(px(180.0))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

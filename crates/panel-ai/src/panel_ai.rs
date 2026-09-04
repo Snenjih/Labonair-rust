@@ -3338,6 +3338,55 @@ fn table_row(cells: &[Vec<Inline>], c: &ChatColors, header: bool) -> gpui::AnyEl
         .into_any_element()
 }
 
+/// [`Panel`](labonair_panel::Panel) wiring (T17-001).
+///
+/// The AI chat docks on the **right** at **380 px** — the reference pins the
+/// assistant to the right edge, opposite the file tree, and 380 px is the
+/// reference chat-column width (message bubbles + the composer). The composer
+/// and message list are a vertical stack, so only side docks are valid. Dock
+/// move/persistence is T17-002; [`set_position`] is a no-op until then.
+impl labonair_panel::Panel for AiChatView {
+    fn persistent_name() -> &'static str {
+        "ai"
+    }
+
+    fn title(&self, _cx: &App) -> SharedString {
+        "AI".into()
+    }
+
+    fn icon(&self) -> labonair_panel::PanelIcon {
+        labonair_panel::PanelIcon::Ai
+    }
+
+    fn position(&self, _cx: &App) -> labonair_panel::DockPosition {
+        labonair_panel::DockPosition::Right
+    }
+
+    fn position_is_valid(&self, position: labonair_panel::DockPosition) -> bool {
+        matches!(
+            position,
+            labonair_panel::DockPosition::Left | labonair_panel::DockPosition::Right
+        )
+    }
+
+    fn set_position(
+        &mut self,
+        _position: labonair_panel::DockPosition,
+        _window: &mut Window,
+        _cx: &mut Context<Self>,
+    ) {
+        // T17-002 owns the dock model; nothing to persist here yet.
+    }
+
+    fn default_size(&self, _cx: &App) -> gpui::Pixels {
+        px(380.0)
+    }
+
+    fn min_size(&self) -> Option<gpui::Pixels> {
+        Some(px(320.0))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

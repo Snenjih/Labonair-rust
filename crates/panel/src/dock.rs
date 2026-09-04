@@ -64,8 +64,6 @@ pub enum PanelIcon {
     SourceControl,
     /// Commit-graph panel.
     GitGraph,
-    /// SSH host manager.
-    Hosts,
     /// Command-snippets panel.
     Snippets,
     /// AI-chat panel.

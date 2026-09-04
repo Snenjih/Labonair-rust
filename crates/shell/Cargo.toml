@@ -20,6 +20,7 @@ labonair-ui-kit = { path = "../ui-kit" }
 labonair-gpui-ext = { path = "../gpui-ext" }
 labonair-notifications = { path = "../notifications" }
 labonair-command-palette = { path = "../command-palette" }
+labonair-panel = { path = "../panel" }
 labonair-workspace = { path = "../workspace" }
 labonair-settings-ui = { path = "../settings-ui" }
 labonair-panel-explorer = { path = "../panel-explorer" }

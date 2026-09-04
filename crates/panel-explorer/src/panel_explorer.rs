@@ -1700,6 +1700,57 @@ fn text_row(depth: usize, text: &str, color: Hsla) -> gpui::AnyElement {
         .into_any_element()
 }
 
+/// [`Panel`](labonair_panel::Panel) wiring (T17-001).
+///
+/// The explorer docks on the **left** at **260 px** — the reference
+/// `useLocalExplorerStore` opens the file tree in the left sidebar, and 260 px
+/// sits comfortably above the shell's 180 px `SIDEBAR_MIN` floor (also the
+/// [`min_size`](labonair_panel::Panel::min_size) here). A vertical file tree is
+/// only meaningful in a side dock, so the bottom dock is rejected. Dock
+/// move/persistence is T17-002; until then [`set_position`] is a no-op and
+/// [`position`] reports the compile-time default.
+impl labonair_panel::Panel for ExplorerView {
+    fn persistent_name() -> &'static str {
+        "explorer"
+    }
+
+    fn title(&self, _cx: &App) -> SharedString {
+        "Explorer".into()
+    }
+
+    fn icon(&self) -> labonair_panel::PanelIcon {
+        labonair_panel::PanelIcon::Explorer
+    }
+
+    fn position(&self, _cx: &App) -> labonair_panel::DockPosition {
+        labonair_panel::DockPosition::Left
+    }
+
+    fn position_is_valid(&self, position: labonair_panel::DockPosition) -> bool {
+        matches!(
+            position,
+            labonair_panel::DockPosition::Left | labonair_panel::DockPosition::Right
+        )
+    }
+
+    fn set_position(
+        &mut self,
+        _position: labonair_panel::DockPosition,
+        _window: &mut Window,
+        _cx: &mut Context<Self>,
+    ) {
+        // T17-002 owns the dock model; nothing to persist here yet.
+    }
+
+    fn default_size(&self, _cx: &App) -> gpui::Pixels {
+        gpui::px(260.0)
+    }
+
+    fn min_size(&self) -> Option<gpui::Pixels> {
+        Some(gpui::px(180.0))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

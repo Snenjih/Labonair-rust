@@ -1,7 +1,7 @@
 # T17-001: `Panel`-Trait & `PanelRegistry` verdrahten
 
 ## Status
-📋 Geplant
+✅ Done
 
 ## Phase
 16 — Root-Objekt & Registries

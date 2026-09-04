@@ -4,6 +4,68 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
+## Last Session: 2026-09-04 (T17-001 — `Panel` trait & `PanelRegistry` wired · **Phase 16 started**)
+
+First code task of Phase 16. Replaces the `enum SidebarPanel` + `render_panel_body`
+`match` cascade in `labonair-shell` with a registry-driven panel model.
+
+### What Was Done (T17-001)
+- **`crates/panel/src/dock.rs`** — dropped the now-unused `PanelIcon::Hosts`
+  variant (host manager is not a panel; `docs/architecture.md §8.1`). The
+  `Panel` trait / `PanelHandle` erasure / `PanelRegistry` from the T16-005
+  skeleton were already object-safe and complete; no trait change needed.
+- **`impl labonair_panel::Panel`** added to all five panel views, each with a
+  doc comment justifying `default_position` / `default_size` from today's
+  behaviour + `reference-src`:
+  - `ExplorerView` → `"explorer"`, Left, 260px, min 180px
+  - `GitPanelView` (`panel-scm`) → `"source-control"`, Left
+  - `GitGraphView` (`panel-git-graph`) → `"git-graph"`, Bottom, 320px
+  - `SnippetsView` → `"snippets"`, Left
+  - `AiChatView` → `"ai"`, Right, 380px
+  Each panel crate gained a `labonair-panel` path dep (leaf crate: only
+  `gpui` / `gpui-ext`, no cycle). `labonair-hosts-ui` has **no** `impl Panel`.
+- **`crates/workspace/src/workspace.rs`** — `panel_registry: PanelRegistry`
+  field + `panel_registry()` / `panel_registry_mut()` accessors (Zed hangs
+  docks off the workspace; same pattern).
+- **`crates/shell/src/app_shell.rs`** — deleted `enum SidebarPanel`, its
+  `label`/`slug`/`from_slug`, `render_panel_body`, `render_tabs_panel`,
+  `render_hosts_panel` (the compact Hosts-in-sidebar list is gone entirely).
+  New `register_builtin_panels(...)` is the **only** place naming concrete
+  panel types — it registers a constructor that clones the shell's already-built
+  panel entity. `render_sidebar` now resolves the active panel purely through
+  `workspace.panel_registry()` (no `match`). Persisted `sidebarActivePanel` /
+  `sidebarRightActivePanel` are `persistent_name`s now; `resolve_persisted_panel`
+  migrates the removed `hosts` / `tabs` values (and any unknown) onto the
+  side's fallback and only accepts names the registry knows.
+- **`crates/shell/src/sidebar_slot.rs`** — `SidebarSlot` stores the panel's
+  `persistent_name` as a `SharedString` instead of the enum; `toggle` takes
+  `impl Into<SharedString>`. Ported tests updated for the `SharedString` type.
+- **`scripts/check_crate_deps.py`** — allow-list updated: `labonair-shell` +
+  each `labonair-panel-*` may now depend on `labonair-panel` (annotated
+  `T17-001`). `scripts/check-crate-deps.sh` green (20 crates, 87 edges, acyclic).
+
+### Coordinator-forced deviations (recorded)
+- Concurrent-session edits left unstaged / not part of this commit:
+  `docs/adr/0001-crate-decomposition.md` (workflow-rework amendment),
+  `bericht-workflow-rework.md`, `zed-refrence/`.
+- `cargo test --workspace` is disk-banned on this VPS. Ran `cargo fmt --check` ✓,
+  `cargo check --workspace --all-targets` ✓,
+  `cargo clippy --workspace --all-targets -- -D warnings` ✓,
+  `scripts/check-crate-deps.sh` ✓, `cargo test -p labonair-panel -p labonair-shell`
+  ✓ (27 tests). Per-crate tests for the five panel crates + workspace were run
+  separately.
+- A previous in-progress session left the tree with compile errors
+  (`SharedString` `From<&'static str>` lifetime + `as_deref` type mismatch in
+  `sidebar_slot.rs` tests + `select_panel_on_side`); fixed here. See
+  `memory/bugs_and_fixes.md`.
+
+### State
+- Branch `master`. **T17-001 done.** Next: **T17-002** (`Dock` model L/R/B) —
+  replaces the shell's ad-hoc per-side `SidebarSlot` state with a real `Dock`
+  hung off the `Workspace`, and wires `PanelEvent` zoom/close + the bottom dock
+  (so `git-graph` finally opens at its default position).
+- No blockers.
+
 ## Last Session: 2026-09-03 (T16-010 — build hygiene, crate-graph lint, perf baseline · **Phase 15 COMPLETE**)
 
 Tenth and final code task of Phase 15. No crate source touched — this task adds

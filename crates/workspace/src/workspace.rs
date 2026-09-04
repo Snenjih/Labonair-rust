@@ -332,6 +332,12 @@ pub struct Workspace {
     previews: HashMap<u64, Entity<PreviewView>>,
     /// The shared commit-graph view, lazily created for the `GitGraph` tab.
     git_graph: Option<Entity<GitGraphView>>,
+    /// Panel-type registry (T17-001) — populated once by
+    /// `labonair_shell::register_builtin_panels`. The shell's dock rendering
+    /// and status-bar toggles read it instead of a hard-coded `enum`. T17-002
+    /// replaces the shell's ad-hoc per-side slot state with a real `Dock` that
+    /// will also hang off the `Workspace`.
+    panel_registry: labonair_panel::PanelRegistry,
     /// SFTP session id per `Sftp` tab id — kept alongside the view so the
     /// session can be torn down from `retire_tab` (which has no `cx`).
     sftp_sessions: HashMap<u64, String>,
@@ -533,6 +539,7 @@ impl Workspace {
             sftp_views: HashMap::new(),
             previews: HashMap::new(),
             git_graph: None,
+            panel_registry: labonair_panel::PanelRegistry::new(),
             sftp_sessions: HashMap::new(),
             remote_edits: HashMap::new(),
             pending_sftp: Vec::new(),
@@ -1779,6 +1786,19 @@ impl Workspace {
     /// the shell's CWD feed operate on the same view.
     pub fn set_git_graph(&mut self, view: Entity<GitGraphView>) {
         self.git_graph = Some(view);
+    }
+
+    /// The app's [`PanelRegistry`](labonair_panel::PanelRegistry). Populated
+    /// once by `labonair_shell::register_builtin_panels` right after the
+    /// `Workspace` is constructed; read by the shell's dock rendering and
+    /// status-bar toggles so adding a panel never touches a `match`.
+    pub fn panel_registry(&self) -> &labonair_panel::PanelRegistry {
+        &self.panel_registry
+    }
+
+    /// Mutable access, for the one-time builtin-panel registration in the shell.
+    pub fn panel_registry_mut(&mut self) -> &mut labonair_panel::PanelRegistry {
+        &mut self.panel_registry
     }
 
     pub fn open_git_graph_tab(&mut self, cx: &mut Context<Self>) {

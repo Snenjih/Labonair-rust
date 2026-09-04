@@ -48,6 +48,7 @@ use labonair_command_palette::{
     CommandId, CommandPalette, Page as PalettePage, PaletteChoice, PaletteData, PaletteEvent,
 };
 use labonair_notifications::{self as notifications, NotificationCenter};
+use labonair_panel::DockPosition;
 use labonair_panel_ai::{AiChatEvent, AiChatStore, AiChatView};
 use labonair_panel_explorer::{BookmarkEvent, BookmarksView, ExplorerView};
 use labonair_panel_git_graph::GitGraphView;
@@ -70,54 +71,75 @@ const HANDLE: f32 = 6.0;
 /// Minimum interval between window-geometry writes.
 const SAVE_THROTTLE: Duration = Duration::from_millis(1000);
 
-/// A dockable sidebar panel. Later phases register their panel by adding a
-/// variant here + an arm in [`AppShell::render_panel_body`]; the switcher rail
-/// and toggle logic then pick it up automatically.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SidebarPanel {
-    Explorer,
-    Snippets,
-    SourceControl,
-    Tabs,
-    Hosts,
-    Ai,
+/// Register the five built-in panels on the workspace's
+/// [`PanelRegistry`](labonair_panel::PanelRegistry).
+///
+/// This is the **only** place in the app that names concrete panel types.
+/// Adding a panel is exactly: a new `labonair-panel-*` crate + an `impl
+/// labonair_panel::Panel` for its view + one `reg(&…)` line below (T17-001
+/// acceptance criterion — a sixth panel would be a single new array entry).
+///
+/// The registry constructors hand back a clone of the shell's already-built
+/// panel entity rather than lazily spawning a fresh view: the shell keeps
+/// direct handles anyway (commands, event subscriptions, cwd feeds), so a
+/// second instance would only drift. Cloning an `Entity<T>` is a refcount bump.
+fn register_builtin_panels(
+    workspace: &Entity<Workspace>,
+    explorer: &Entity<ExplorerView>,
+    git_panel: &Entity<GitPanelView>,
+    git_graph: &Entity<GitGraphView>,
+    snippets: &Entity<SnippetsView>,
+    ai_chat: &Entity<AiChatView>,
+    cx: &mut App,
+) {
+    use labonair_panel::{AnyPanelHandle, Panel, PanelRegistration};
+
+    fn reg<T: Panel + 'static>(view: &Entity<T>, cx: &App) -> PanelRegistration {
+        let handle = view.clone();
+        PanelRegistration {
+            persistent_name: T::persistent_name(),
+            default_position: view.read(cx).position(cx),
+            icon: view.read(cx).icon(),
+            build: Arc::new(move |_window, _cx| Arc::new(handle.clone()) as AnyPanelHandle),
+        }
+    }
+
+    let registrations = [
+        reg(explorer, cx),
+        reg(git_panel, cx),
+        reg(git_graph, cx),
+        reg(snippets, cx),
+        reg(ai_chat, cx),
+    ];
+    workspace.update(cx, |w, _cx| {
+        let registry = w.panel_registry_mut();
+        for registration in registrations {
+            registry.register(registration);
+        }
+    });
 }
 
-impl SidebarPanel {
-    fn label(self) -> &'static str {
-        match self {
-            SidebarPanel::Explorer => "Explorer",
-            SidebarPanel::Snippets => "Snippets",
-            SidebarPanel::SourceControl => "Source Control",
-            SidebarPanel::Tabs => "Tabs",
-            SidebarPanel::Hosts => "Hosts",
-            SidebarPanel::Ai => "AI",
-        }
-    }
-
-    /// The persisted-preference token (`sidebarActivePanel` etc.).
-    fn slug(self) -> &'static str {
-        match self {
-            SidebarPanel::Explorer => "explorer",
-            SidebarPanel::Snippets => "snippets",
-            SidebarPanel::SourceControl => "source-control",
-            SidebarPanel::Tabs => "tabs",
-            SidebarPanel::Hosts => "hosts",
-            SidebarPanel::Ai => "ai",
-        }
-    }
-
-    fn from_slug(s: &str) -> Option<Self> {
-        Some(match s {
-            "explorer" => SidebarPanel::Explorer,
-            "snippets" => SidebarPanel::Snippets,
-            "source-control" => SidebarPanel::SourceControl,
-            "tabs" => SidebarPanel::Tabs,
-            "hosts" => SidebarPanel::Hosts,
-            "ai" => SidebarPanel::Ai,
-            _ => return None,
-        })
-    }
+/// Persisted `sidebarActivePanel` / `sidebarRightActivePanel` values are panel
+/// [`persistent_name`](labonair_panel::Panel::persistent_name)s. Migrate the
+/// two removed panels (`hosts` — host access moved to the command palette /
+/// Settings; `tabs` — the tab strip is a titlebar concern) and any unknown
+/// value onto `fallback`, and only accept a name the registry actually knows.
+fn resolve_persisted_panel(
+    workspace: &Entity<Workspace>,
+    raw: &str,
+    fallback: &str,
+    cx: &App,
+) -> SharedString {
+    let candidate = match raw {
+        "hosts" | "tabs" | "" => fallback,
+        other => other,
+    };
+    let name = if workspace.read(cx).panel_registry().get(candidate).is_some() {
+        candidate
+    } else {
+        fallback
+    };
+    SharedString::from(name.to_owned())
 }
 
 /// Value carried while dragging a sidebar slot's edge handle — the side tells
@@ -453,6 +475,12 @@ impl AppShell {
             }
         });
 
+        // The registry must be populated before the persisted slot state is
+        // resolved against it (T17-001).
+        register_builtin_panels(
+            &workspace, &explorer, &git_panel, &git_graph, &snippets, &ai_chat, cx,
+        );
+
         let (left_slot, right_slot) = {
             use crate::sidebar_slot::SidebarSlot;
             let p = prefs.read(cx).get();
@@ -461,14 +489,12 @@ impl AppShell {
                 SidebarSlot::new(
                     p.sidebar_open,
                     clamp(p.sidebar_width),
-                    SidebarPanel::from_slug(&p.sidebar_active_panel)
-                        .unwrap_or(SidebarPanel::Explorer),
+                    resolve_persisted_panel(&workspace, &p.sidebar_active_panel, "explorer", cx),
                 ),
                 SidebarSlot::new(
                     p.sidebar_right_open,
                     clamp(p.sidebar_right_width),
-                    SidebarPanel::from_slug(&p.sidebar_right_active_panel)
-                        .unwrap_or(SidebarPanel::Ai),
+                    resolve_persisted_panel(&workspace, &p.sidebar_right_active_panel, "ai", cx),
                 ),
             )
         };
@@ -583,46 +609,55 @@ impl AppShell {
         cx.notify();
     }
 
-    /// The dock a panel opens into: its registered bar-item side, else the
-    /// primary edge.
-    fn side_for_panel(&self, panel: SidebarPanel, cx: &App) -> BarSide {
-        match panel {
-            SidebarPanel::Ai => BarSide::Right,
-            _ => Self::item_for_panel(panel)
-                .map(|id| self.placements.panel_dock_side(id))
-                .unwrap_or_else(|| self.primary_side(cx)),
+    /// The dock a panel opens into: its registered bar-item side if it has one,
+    /// else the panel's registry `default_position`, else the primary edge.
+    fn side_for_panel(&self, name: &str, cx: &App) -> BarSide {
+        if let Some(id) = Self::item_for_panel(name) {
+            return self.placements.panel_dock_side(id);
+        }
+        match self
+            .workspace
+            .read(cx)
+            .panel_registry()
+            .get(name)
+            .map(|r| r.default_position)
+        {
+            Some(DockPosition::Right) => BarSide::Right,
+            Some(DockPosition::Left) => BarSide::Left,
+            // No bottom dock until T17-002 — fall back to the primary edge.
+            Some(DockPosition::Bottom) | None => self.primary_side(cx),
         }
     }
 
-    fn select_panel(&mut self, panel: SidebarPanel, cx: &mut Context<Self>) {
-        let side = self.side_for_panel(panel, cx);
-        self.select_panel_on_side(panel, side, cx);
+    fn select_panel(&mut self, name: &str, cx: &mut Context<Self>) {
+        let side = self.side_for_panel(name, cx);
+        self.select_panel_on_side(name, side, cx);
     }
 
     /// "show me X" — never toggles the slot closed (palette / menu intent).
-    fn open_panel(&mut self, panel: SidebarPanel, cx: &mut Context<Self>) {
-        let side = self.side_for_panel(panel, cx);
+    fn open_panel(&mut self, name: &str, cx: &mut Context<Self>) {
+        let side = self.side_for_panel(name, cx);
         let s = self.slot_mut(side);
-        s.panel = panel;
+        s.panel = SharedString::from(name.to_owned());
         s.open = true;
         self.persist_sidebar(cx);
         cx.notify();
     }
 
     /// Move a panel to the other dock, updating its persisted bar-item side.
-    fn move_panel(&mut self, panel: SidebarPanel, to: BarSide, cx: &mut Context<Self>) {
+    fn move_panel(&mut self, name: &str, to: BarSide, cx: &mut Context<Self>) {
         let from = if to == BarSide::Left {
             BarSide::Right
         } else {
             BarSide::Left
         };
-        if self.slot(from).panel == panel && self.slot(from).open {
+        if self.slot(from).panel.as_ref() == name && self.slot(from).open {
             self.slot_mut(from).open = false;
         }
         let s = self.slot_mut(to);
-        s.panel = panel;
+        s.panel = SharedString::from(name.to_owned());
         s.open = true;
-        if let Some(id) = Self::item_for_panel(panel) {
+        if let Some(id) = Self::item_for_panel(name) {
             self.move_bar_item(id, None, Some(to), None, cx);
         }
         self.persist_sidebar(cx);
@@ -650,12 +685,12 @@ impl AppShell {
             }
         }
         self.last_sidebar_save = Some(now);
-        let (l, r) = (self.left_slot, self.right_slot);
+        let (l, r) = (self.left_slot.clone(), self.right_slot.clone());
         self.prefs.update(cx, |s, cx| {
             s.set_value("sidebarOpen", serde_json::Value::Bool(l.open), cx);
             s.set_value(
                 "sidebarActivePanel",
-                serde_json::Value::String(l.panel.slug().into()),
+                serde_json::Value::String(l.panel.to_string()),
                 cx,
             );
             s.set_value(
@@ -666,7 +701,7 @@ impl AppShell {
             s.set_value("sidebarRightOpen", serde_json::Value::Bool(r.open), cx);
             s.set_value(
                 "sidebarRightActivePanel",
-                serde_json::Value::String(r.panel.slug().into()),
+                serde_json::Value::String(r.panel.to_string()),
                 cx,
             );
             s.set_value(
@@ -819,7 +854,7 @@ impl AppShell {
         _: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.select_panel(SidebarPanel::Ai, cx);
+        self.select_panel("ai", cx);
     }
 
     /// "Ask AI about Selection" — capture the active editor/terminal selection
@@ -835,7 +870,7 @@ impl AppShell {
         };
         self.ai_chat
             .update(cx, |v, cx| v.attach_selection(label, text, cx));
-        self.open_panel(SidebarPanel::Ai, cx);
+        self.open_panel("ai", cx);
     }
 
     fn act_new_ai_session(
@@ -845,7 +880,7 @@ impl AppShell {
         cx: &mut Context<Self>,
     ) {
         self.ai_chat.update(cx, |v, cx| v.new_session(cx));
-        self.open_panel(SidebarPanel::Ai, cx);
+        self.open_panel("ai", cx);
     }
 
     fn act_clear_chat(&mut self, _: &menu::ClearChat, _: &mut Window, cx: &mut Context<Self>) {
@@ -1137,7 +1172,7 @@ impl AppShell {
                 PaletteEvent::SwitchAiSession(id) => {
                     self.ai_chat
                         .update(cx, |v, cx| v.switch_to_session(&id, cx));
-                    self.open_panel(SidebarPanel::Ai, cx);
+                    self.open_panel("ai", cx);
                 }
                 PaletteEvent::SwitchBranch(name) => {
                     self.git_panel.update(cx, |g, cx| g.checkout(name, cx));
@@ -1180,7 +1215,7 @@ impl AppShell {
                 BookmarkEvent::OpenLocal(path) => {
                     self.explorer
                         .update(cx, |e, cx| e.set_root_str(Some(path), cx));
-                    self.select_panel(SidebarPanel::Explorer, cx);
+                    self.select_panel("explorer", cx);
                 }
                 BookmarkEvent::OpenRemote { host_id, .. } => {
                     self.workspace
@@ -1269,11 +1304,11 @@ impl AppShell {
             CommandId::ClearTerminal => self
                 .workspace
                 .update(cx, |w, cx| w.clear_active_terminal(cx)),
-            CommandId::ToggleAiPanel => self.select_panel(SidebarPanel::Ai, cx),
-            CommandId::OpenSnippetsPanel => self.open_panel(SidebarPanel::Snippets, cx),
+            CommandId::ToggleAiPanel => self.select_panel("ai", cx),
+            CommandId::OpenSnippetsPanel => self.open_panel("snippets", cx),
             CommandId::OpenPathBookmarks => self.bookmarks.update(cx, |b, cx| b.toggle(window, cx)),
             CommandId::OpenGitGraph => self.workspace.update(cx, |w, cx| w.open_git_graph_tab(cx)),
-            CommandId::FocusSourceControl => self.open_panel(SidebarPanel::SourceControl, cx),
+            CommandId::FocusSourceControl => self.open_panel("source-control", cx),
             CommandId::ToggleZenMode => self.toggle_zen_mode(cx),
             CommandId::ToggleZenModeHeader => self.toggle_zen_pref("zenModeShowHeader", cx),
             CommandId::ToggleZenModeStatusbar => self.toggle_zen_pref("zenModeShowStatusbar", cx),
@@ -1720,30 +1755,32 @@ impl AppShell {
         cx.notify();
     }
 
-    fn panel_for_item(id: BarItemId) -> Option<SidebarPanel> {
+    /// The status-bar toggle item for a panel, if it has one. Keyed by
+    /// [`persistent_name`](labonair_panel::Panel::persistent_name). The AI panel
+    /// has a dedicated toggle (`AiMini`/`AiPanel`) handled separately; the
+    /// removed `tabs` panel no longer maps to anything.
+    fn panel_for_item(id: BarItemId) -> Option<&'static str> {
         match id {
-            BarItemId::ExplorerPanel => Some(SidebarPanel::Explorer),
-            BarItemId::SnippetsPanel => Some(SidebarPanel::Snippets),
-            BarItemId::SourceControlPanel => Some(SidebarPanel::SourceControl),
-            BarItemId::TabsPanel => Some(SidebarPanel::Tabs),
+            BarItemId::ExplorerPanel => Some("explorer"),
+            BarItemId::SnippetsPanel => Some("snippets"),
+            BarItemId::SourceControlPanel => Some("source-control"),
             _ => None,
         }
     }
 
-    fn item_for_panel(panel: SidebarPanel) -> Option<BarItemId> {
-        Some(match panel {
-            SidebarPanel::Explorer => BarItemId::ExplorerPanel,
-            SidebarPanel::Snippets => BarItemId::SnippetsPanel,
-            SidebarPanel::SourceControl => BarItemId::SourceControlPanel,
-            SidebarPanel::Tabs => BarItemId::TabsPanel,
+    fn item_for_panel(name: &str) -> Option<BarItemId> {
+        Some(match name {
+            "explorer" => BarItemId::ExplorerPanel,
+            "snippets" => BarItemId::SnippetsPanel,
+            "source-control" => BarItemId::SourceControlPanel,
             _ => return None,
         })
     }
 
     /// Toggle a dock panel in the given slot, via the pure `sidebar_slot`
     /// logic (port of `useBarPanelSync` / `sidebarSlotLogic`).
-    fn select_panel_on_side(&mut self, panel: SidebarPanel, side: BarSide, cx: &mut Context<Self>) {
-        self.slot_mut(side).toggle(panel);
+    fn select_panel_on_side(&mut self, name: &str, side: BarSide, cx: &mut Context<Self>) {
+        self.slot_mut(side).toggle(name.to_owned());
         self.persist_sidebar(cx);
         cx.notify();
     }
@@ -1862,16 +1899,10 @@ impl AppShell {
             BarItemId::ExplorerPanel | BarItemId::SnippetsPanel | BarItemId::SourceControlPanel => {
                 Some(self.render_panel_toggle(id, compact, cx))
             }
-            // The Tabs sidebar-panel toggle only shows when the tab strip has
-            // been moved out of the titlebar (reference: `renderBarItem`
-            // returns null unless `tabsLocation === "sidebar"`).
-            BarItemId::TabsPanel => {
-                if self.prefs.read(cx).get().tabs_location == "sidebar" {
-                    Some(self.render_panel_toggle(id, compact, cx))
-                } else {
-                    None
-                }
-            }
+            // The Tabs sidebar panel was removed in T17-001 — the tab strip is
+            // a titlebar concern (T18-001). The bar-item id lingers only until
+            // the T17-003 `StatusItemRegistry` replaces this `match`.
+            BarItemId::TabsPanel => None,
             BarItemId::CwdBreadcrumb => Some(self.render_cwd_breadcrumb(compact, cx)),
             BarItemId::CursorPosition => {
                 let (line, col) = self.workspace.read(cx).active_editor_cursor(cx)?;
@@ -2121,10 +2152,10 @@ impl AppShell {
         compact: bool,
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
-        let panel = Self::panel_for_item(id).unwrap();
+        let name = Self::panel_for_item(id).unwrap();
         let side = self.placements.panel_dock_side(id);
         let slot = self.slot(side);
-        let active = slot.open && slot.panel == panel;
+        let active = slot.open && slot.panel.as_ref() == name;
         let icon = id.icon().unwrap_or(IconName::Folder);
         let theme = self.theme.read(cx);
         let (fg, muted, accent, border) = (
@@ -2147,7 +2178,7 @@ impl AppShell {
             })
             .child(icon.svg(if active { fg } else { muted }))
             .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
-                this.select_panel_on_side(panel, side, cx);
+                this.select_panel_on_side(name, side, cx);
             }))
             .into_any_element()
     }
@@ -2158,7 +2189,7 @@ impl AppShell {
         compact: bool,
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
-        let active = self.right_slot.open && self.right_slot.panel == SidebarPanel::Ai;
+        let active = self.right_slot.open && self.right_slot.panel.as_ref() == "ai";
         let theme = self.theme.read(cx);
         let (fg, muted, accent, border) = (
             theme.foreground(),
@@ -2180,7 +2211,7 @@ impl AppShell {
             })
             .child(icon.svg(if active { fg } else { muted }))
             .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
-                this.select_panel_on_side(SidebarPanel::Ai, BarSide::Right, cx);
+                this.select_panel_on_side("ai", BarSide::Right, cx);
             }))
             .into_any_element()
     }
@@ -2612,7 +2643,12 @@ impl AppShell {
         Some(context_menu(pos, self.theme.read(cx), dismiss, items))
     }
 
-    fn render_sidebar(&mut self, side: BarSide, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render_sidebar(
+        &mut self,
+        side: BarSide,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
         let (sidebar_bg, sidebar_fg, sidebar_border, accent, muted) = {
             let theme = self.theme.read(cx);
             (
@@ -2623,12 +2659,33 @@ impl AppShell {
                 theme.muted_foreground(),
             )
         };
-        let slot = *self.slot(side);
+        let slot = self.slot(side).clone();
         let on_right = side == BarSide::Right;
         let opp = if on_right {
             BarSide::Left
         } else {
             BarSide::Right
+        };
+
+        // The active panel is resolved entirely through the workspace's
+        // `PanelRegistry` — there is no `match` on a panel enum left in the
+        // shell (T17-001). The registry constructor hands back the shell's
+        // shared panel entity.
+        let build = self
+            .workspace
+            .read(cx)
+            .panel_registry()
+            .get(slot.panel.as_ref())
+            .map(|r| r.build.clone());
+        let (title, body): (SharedString, gpui::AnyElement) = match build {
+            Some(build) => {
+                let handle = build(window, cx);
+                (
+                    handle.title(cx).to_string().to_uppercase().into(),
+                    handle.to_any().into_any_element(),
+                )
+            }
+            None => (slot.panel.clone(), div().flex_1().into_any_element()),
         };
 
         let panel = div()
@@ -2648,23 +2705,21 @@ impl AppShell {
                     .py_2()
                     .text_xs()
                     .text_color(muted)
-                    .child(SharedString::from(slot.panel.label().to_uppercase()))
+                    .child(title)
                     .child(
                         div()
-                            .id(SharedString::from(format!(
-                                "sidebar-move-{}",
-                                slot.panel.slug()
-                            )))
+                            .id(SharedString::from(format!("sidebar-move-{}", slot.panel)))
                             .cursor_pointer()
                             .text_color(muted)
                             .hover(|s| s.text_color(sidebar_fg))
                             .child(if on_right { "\u{2190}" } else { "\u{2192}" })
                             .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
-                                this.move_panel(this.slot(side).panel, opp, cx);
+                                let name = this.slot(side).panel.clone();
+                                this.move_panel(&name, opp, cx);
                             })),
                     ),
             )
-            .child(self.render_panel_body(slot.panel, cx));
+            .child(body);
 
         let handle = div()
             .id(SharedString::from(format!(
@@ -2687,142 +2742,6 @@ impl AppShell {
         } else {
             row.child(panel).child(handle)
         }
-    }
-
-    /// Placeholder body for each sidebar panel. Later phases replace the arm
-    /// for their panel with the real view.
-    fn render_panel_body(&self, panel: SidebarPanel, cx: &mut Context<Self>) -> gpui::AnyElement {
-        if panel == SidebarPanel::Explorer {
-            return self.explorer.clone().into_any_element();
-        }
-        if panel == SidebarPanel::SourceControl {
-            return self.git_panel.clone().into_any_element();
-        }
-        if panel == SidebarPanel::Snippets {
-            return self.snippets.clone().into_any_element();
-        }
-        if panel == SidebarPanel::Ai {
-            return self.ai_chat.clone().into_any_element();
-        }
-        if panel == SidebarPanel::Tabs {
-            return self.render_tabs_panel(cx);
-        }
-        if panel == SidebarPanel::Hosts {
-            return self.render_hosts_panel(cx);
-        }
-        let muted = self.theme.read(cx).muted_foreground();
-        div()
-            .flex_1()
-            .flex()
-            .items_center()
-            .justify_center()
-            .px_3()
-            .text_center()
-            .text_xs()
-            .text_color(muted)
-            .child(SharedString::from(format!(
-                "{} \u{2014} coming in a later phase",
-                panel.label()
-            )))
-            .into_any_element()
-    }
-
-    /// Tabs-in-sidebar panel (port of `SidebarTabList`, reduced) — a flat
-    /// clickable list of the open tabs.
-    fn render_tabs_panel(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
-        let (fg, muted, accent, border) = {
-            let t = self.theme.read(cx);
-            (t.foreground(), t.muted_foreground(), t.accent(), t.border())
-        };
-        let store = self.workspace.read(cx).tab_store().read(cx);
-        let active = store.active_id();
-        let rows: Vec<_> = store
-            .tabs()
-            .iter()
-            .map(|tab| {
-                let id = tab.id;
-                let is_active = id == active;
-                div()
-                    .id(SharedString::from(format!("sb-tab-{id}")))
-                    .flex()
-                    .items_center()
-                    .gap_2()
-                    .px_3()
-                    .py_1()
-                    .text_xs()
-                    .text_color(if is_active { fg } else { muted })
-                    .when(is_active, |d| d.bg(accent.opacity(0.15)))
-                    .hover(|s| s.bg(border))
-                    .child(tab.kind.indicator().svg(muted).size(px(12.0)))
-                    .child(SharedString::from(tab.label()))
-                    .on_click(cx.listener(move |this, _: &ClickEvent, w, cx| {
-                        this.workspace.update(cx, |ws, cx| ws.reveal_tab(id, w, cx));
-                    }))
-            })
-            .collect();
-        div()
-            .id("sb-tabs-list")
-            .flex_1()
-            .flex()
-            .flex_col()
-            .py_1()
-            .overflow_y_scroll()
-            .children(rows)
-            .into_any_element()
-    }
-
-    /// Hosts-in-sidebar panel — a compact list of known hosts, click to
-    /// connect (SSH).
-    fn render_hosts_panel(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
-        let (fg, muted, border) = {
-            let t = self.theme.read(cx);
-            (t.foreground(), t.muted_foreground(), t.border())
-        };
-        let hosts = self.workspace.read(cx).known_hosts(cx);
-        if hosts.is_empty() {
-            return div()
-                .flex_1()
-                .flex()
-                .items_center()
-                .justify_center()
-                .px_3()
-                .text_xs()
-                .text_color(muted)
-                .child("No hosts — add one in the Host Manager")
-                .into_any_element();
-        }
-        let rows: Vec<_> = hosts
-            .into_iter()
-            .map(|(hid, name)| {
-                let hid2 = hid.clone();
-                div()
-                    .id(SharedString::from(format!("sb-host-{hid}")))
-                    .flex()
-                    .items_center()
-                    .gap_2()
-                    .px_3()
-                    .py_1()
-                    .text_xs()
-                    .text_color(fg)
-                    .hover(|s| s.bg(border))
-                    .child(IconName::Server.svg(muted).size(px(12.0)))
-                    .child(SharedString::from(name))
-                    .on_click(cx.listener(move |this, _: &ClickEvent, w, cx| {
-                        let hid = hid2.clone();
-                        this.workspace
-                            .update(cx, |ws, cx| ws.open_ssh_tab(hid, w, cx));
-                    }))
-            })
-            .collect();
-        div()
-            .id("sb-hosts-list")
-            .flex_1()
-            .flex()
-            .flex_col()
-            .py_1()
-            .overflow_y_scroll()
-            .children(rows)
-            .into_any_element()
     }
 
     fn render_statusbar(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -2895,14 +2814,14 @@ impl Render for AppShell {
         let show_header = self.prefs.read(cx).get().zen_mode_show_header;
         let show_statusbar = self.prefs.read(cx).get().zen_mode_show_statusbar;
         let header = show_header.then(|| self.render_header(cx).into_any_element());
-        let left_sidebar = self
-            .left_slot
-            .open
-            .then(|| self.render_sidebar(BarSide::Left, cx).into_any_element());
-        let right_sidebar = self
-            .right_slot
-            .open
-            .then(|| self.render_sidebar(BarSide::Right, cx).into_any_element());
+        let left_sidebar = self.left_slot.open.then(|| {
+            self.render_sidebar(BarSide::Left, window, cx)
+                .into_any_element()
+        });
+        let right_sidebar = self.right_slot.open.then(|| {
+            self.render_sidebar(BarSide::Right, window, cx)
+                .into_any_element()
+        });
         let statusbar = show_statusbar.then(|| self.render_statusbar(cx).into_any_element());
         let workspace = self.workspace.clone();
         let can_split = self.workspace.read(cx).active_is_terminal(cx);

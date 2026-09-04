@@ -1,12 +1,20 @@
 //! Pure decision logic for a dock sidebar slot — a Rust port of the reference
 //! `reference-src/src/modules/statusbar/lib/sidebarSlotLogic.ts` (+ its test
-//! file). No GPUI, no IO; unit-tested below.
+//! file). No GPUI rendering, no IO; unit-tested below.
 //!
 //! The app shell has two independent slots (left + right); each holds a
 //! [`SidebarSlot`] and drives its toggle button / resize handle through these
 //! functions.
+//!
+//! T17-001: the slot no longer stores a hard-coded `SidebarPanel` enum — it
+//! stores the panel's [`persistent_name`](labonair_panel::Panel::persistent_name)
+//! as a [`SharedString`], resolved against the `Workspace`'s `PanelRegistry`.
+//! T17-002 replaces this ad-hoc per-side state with a real `Dock` model.
 
-use crate::app_shell::SidebarPanel;
+use gpui::SharedString;
+
+/// The panel name a slot falls back to when nothing else resolves.
+pub const DEFAULT_PANEL: &str = "explorer";
 
 /// Below this fraction of the window width a slot counts as "collapsed" — not
 /// just `<= 0` — because a resize observer can briefly report a tiny nonzero
@@ -31,10 +39,10 @@ pub enum ToggleAction {
     Switch,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ToggleResult {
     /// `None` when the action is [`ToggleAction::Collapse`].
-    pub next_panel: Option<SidebarPanel>,
+    pub next_panel: Option<SharedString>,
     pub action: ToggleAction,
 }
 
@@ -43,14 +51,14 @@ pub struct ToggleResult {
 /// switches to it, expanding the slot if it was collapsed. Port of
 /// `resolveToggle`.
 pub fn resolve_toggle(
-    current_panel: SidebarPanel,
-    requested_panel: SidebarPanel,
+    current_panel: &str,
+    requested_panel: &str,
     current_size_pct: f32,
 ) -> ToggleResult {
     if current_panel == requested_panel {
         if is_collapsed(current_size_pct) {
             return ToggleResult {
-                next_panel: Some(requested_panel),
+                next_panel: Some(requested_panel.to_owned().into()),
                 action: ToggleAction::Expand,
             };
         }
@@ -60,7 +68,7 @@ pub fn resolve_toggle(
         };
     }
     ToggleResult {
-        next_panel: Some(requested_panel),
+        next_panel: Some(requested_panel.to_owned().into()),
         action: if is_collapsed(current_size_pct) {
             ToggleAction::Expand
         } else {
@@ -74,40 +82,43 @@ pub fn resolve_toggle(
 /// Port of `resolveResize`.
 pub fn resolve_resize(
     size_pct: f32,
-    current_panel: Option<SidebarPanel>,
-    last_active_panel: Option<SidebarPanel>,
-) -> Option<SidebarPanel> {
+    current_panel: Option<&str>,
+    last_active_panel: Option<&str>,
+) -> Option<SharedString> {
     if is_collapsed(size_pct) {
         return None;
     }
     Some(
         current_panel
             .or(last_active_panel)
-            .unwrap_or(SidebarPanel::Explorer),
+            .unwrap_or(DEFAULT_PANEL)
+            .to_owned()
+            .into(),
     )
 }
 
 /// One dock slot's live state (left or right edge). The two slots are fully
 /// independent — both can be open at once, showing different panels.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct SidebarSlot {
     pub open: bool,
     /// Current width in px.
     pub width: f32,
-    /// The panel this slot shows (kept even while collapsed, so re-expanding
+    /// The [`persistent_name`](labonair_panel::Panel::persistent_name) of the
+    /// panel this slot shows (kept even while collapsed, so re-expanding
     /// restores it).
-    pub panel: SidebarPanel,
+    pub panel: SharedString,
     /// Width to restore to on `expand()` — tracked here rather than relying on
     /// a fragile pre-collapse memory.
     pub last_open_width: f32,
 }
 
 impl SidebarSlot {
-    pub fn new(open: bool, width: f32, panel: SidebarPanel) -> Self {
+    pub fn new(open: bool, width: f32, panel: impl Into<SharedString>) -> Self {
         Self {
             open,
             width,
-            panel,
+            panel: panel.into(),
             last_open_width: width,
         }
     }
@@ -115,9 +126,10 @@ impl SidebarSlot {
     /// Apply a toggle for `panel`. The `open` flag stands in for "not
     /// collapsed" (the % nuance in [`resolve_toggle`] only matters for a
     /// handle dragged to zero, which the resize path handles separately).
-    pub fn toggle(&mut self, panel: SidebarPanel) {
+    pub fn toggle(&mut self, panel: impl Into<SharedString>) {
+        let panel = panel.into();
         let pct = if self.open { 50.0 } else { 0.0 };
-        match resolve_toggle(self.panel, panel, pct).action {
+        match resolve_toggle(self.panel.as_ref(), panel.as_ref(), pct).action {
             ToggleAction::Collapse => self.open = false,
             ToggleAction::Expand | ToggleAction::Switch => {
                 self.panel = panel;
@@ -130,7 +142,9 @@ impl SidebarSlot {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use SidebarPanel::{Explorer, SourceControl};
+
+    const EXPLORER: &str = "explorer";
+    const SCM: &str = "source-control";
 
     // ── ported from sidebarSlotLogic.test.ts ──────────────────────────────
 
@@ -144,61 +158,55 @@ mod tests {
 
     #[test]
     fn toggle_same_panel_open_collapses() {
-        let r = resolve_toggle(Explorer, Explorer, 25.0);
+        let r = resolve_toggle(EXPLORER, EXPLORER, 25.0);
         assert_eq!(r.action, ToggleAction::Collapse);
         assert_eq!(r.next_panel, None);
     }
 
     #[test]
     fn toggle_same_panel_collapsed_reexpands() {
-        let r = resolve_toggle(Explorer, Explorer, 0.0);
+        let r = resolve_toggle(EXPLORER, EXPLORER, 0.0);
         assert_eq!(r.action, ToggleAction::Expand);
-        assert_eq!(r.next_panel, Some(Explorer));
+        assert_eq!(r.next_panel, Some(EXPLORER.into()));
     }
 
     #[test]
     fn toggle_other_panel_open_switches() {
-        let r = resolve_toggle(Explorer, SourceControl, 25.0);
+        let r = resolve_toggle(EXPLORER, SCM, 25.0);
         assert_eq!(r.action, ToggleAction::Switch);
-        assert_eq!(r.next_panel, Some(SourceControl));
+        assert_eq!(r.next_panel, Some(SCM.into()));
     }
 
     #[test]
     fn toggle_other_panel_collapsed_expands() {
-        let r = resolve_toggle(Explorer, SourceControl, 0.5);
+        let r = resolve_toggle(EXPLORER, SCM, 0.5);
         assert_eq!(r.action, ToggleAction::Expand);
-        assert_eq!(r.next_panel, Some(SourceControl));
+        assert_eq!(r.next_panel, Some(SCM.into()));
     }
 
     #[test]
     fn resize_below_threshold_clears_the_panel() {
-        assert_eq!(
-            resolve_resize(0.5, Some(Explorer), Some(SourceControl)),
-            None
-        );
+        assert_eq!(resolve_resize(0.5, Some(EXPLORER), Some(SCM)), None);
     }
 
     #[test]
     fn resize_open_keeps_current_then_last_then_explorer() {
         assert_eq!(
-            resolve_resize(25.0, Some(SourceControl), Some(Explorer)),
-            Some(SourceControl)
+            resolve_resize(25.0, Some(SCM), Some(EXPLORER)),
+            Some(SCM.into())
         );
-        assert_eq!(
-            resolve_resize(25.0, None, Some(SourceControl)),
-            Some(SourceControl)
-        );
-        assert_eq!(resolve_resize(25.0, None, None), Some(Explorer));
+        assert_eq!(resolve_resize(25.0, None, Some(SCM)), Some(SCM.into()));
+        assert_eq!(resolve_resize(25.0, None, None), Some(EXPLORER.into()));
     }
 
     #[test]
     fn slot_toggle_round_trips() {
-        let mut s = SidebarSlot::new(true, 250.0, Explorer);
-        s.toggle(Explorer); // same panel, open → collapse
+        let mut s = SidebarSlot::new(true, 250.0, EXPLORER);
+        s.toggle(EXPLORER); // same panel, open → collapse
         assert!(!s.open);
-        s.toggle(Explorer); // same panel, collapsed → expand
-        assert!(s.open && s.panel == Explorer);
-        s.toggle(SourceControl); // other panel → switch
-        assert!(s.open && s.panel == SourceControl);
+        s.toggle(EXPLORER); // same panel, collapsed → expand
+        assert!(s.open && s.panel.as_ref() == EXPLORER);
+        s.toggle(SCM); // other panel → switch
+        assert!(s.open && s.panel.as_ref() == SCM);
     }
 }

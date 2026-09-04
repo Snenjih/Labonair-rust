@@ -57,39 +57,42 @@ ALLOWED = {
         "labonair-terminal", "labonair-editor", "labonair-backend",
         "labonair-ai",
     },
-    # rule 3: the only crate that knows every concrete panel type.
+    # rule 3: the only crate that knows every concrete panel type — it also
+    # touches the `labonair-panel` contracts crate to register them (T17-001).
     "labonair-shell": {
         "labonair-theme", "labonair-ui-kit", "labonair-gpui-ext",
         "labonair-notifications", "labonair-command-palette",
-        "labonair-workspace", "labonair-settings-ui",
+        "labonair-workspace", "labonair-settings-ui", "labonair-panel",
         "labonair-panel-explorer", "labonair-panel-scm",
         "labonair-panel-git-graph", "labonair-panel-snippets",
         "labonair-panel-ai", "labonair-terminal", "labonair-backend",
     },
 
-    # Panels — rule 2 (+ §8.4: explorer/snippets/ai may pull workspace) ---
+    # Panels — rule 2 (+ §8.4: explorer/snippets/ai may pull workspace).
+    # Each panel crate depends on `labonair-panel` to `impl Panel` (T17-001);
+    # the contracts crate is a leaf (only gpui / gpui-ext), so no cycle.
     "labonair-panel-explorer": {
-        "labonair-theme", "labonair-ui-kit", "labonair-notifications",
-        "labonair-backend", "labonair-workspace",
+        "labonair-theme", "labonair-ui-kit", "labonair-panel",
+        "labonair-notifications", "labonair-backend", "labonair-workspace",
     },
     "labonair-panel-scm": {
-        "labonair-theme", "labonair-ui-kit", "labonair-notifications",
-        "labonair-backend",
+        "labonair-theme", "labonair-ui-kit", "labonair-panel",
+        "labonair-notifications", "labonair-backend",
     },
     "labonair-panel-git-graph": {
-        "labonair-theme", "labonair-ui-kit", "labonair-notifications",
-        "labonair-backend",
+        "labonair-theme", "labonair-ui-kit", "labonair-panel",
+        "labonair-notifications", "labonair-backend",
     },
     "labonair-panel-snippets": {
-        "labonair-theme", "labonair-ui-kit", "labonair-notifications",
-        "labonair-backend", "labonair-workspace",
+        "labonair-theme", "labonair-ui-kit", "labonair-panel",
+        "labonair-notifications", "labonair-backend", "labonair-workspace",
     },
     # [deviation] panel-ai also pulls command-palette (slash-command model)
     # and editor (composer buffer) — accepted, still no panel-* / shell edge.
     "labonair-panel-ai": {
-        "labonair-theme", "labonair-ui-kit", "labonair-command-palette",
-        "labonair-backend", "labonair-editor", "labonair-ai",
-        "labonair-workspace",
+        "labonair-theme", "labonair-ui-kit", "labonair-panel",
+        "labonair-command-palette", "labonair-backend", "labonair-editor",
+        "labonair-ai", "labonair-workspace",
     },
 
     # Host access — rule 9: not a panel crate; no workspace / shell / panel*.

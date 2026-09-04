@@ -3257,6 +3257,55 @@ fn short_path(path: &str) -> String {
     }
 }
 
+/// [`Panel`](labonair_panel::Panel) wiring (T17-001).
+///
+/// Source Control docks on the **left** at **300 px** — the reference opens the
+/// staging/diff panel in the left sidebar next to the file tree; 300 px gives
+/// the two-column status list + inline diff room without crowding. It is a
+/// vertical list, so only side docks are valid. Dock move/persistence is
+/// T17-002; [`set_position`] is a no-op until then.
+impl labonair_panel::Panel for GitPanelView {
+    fn persistent_name() -> &'static str {
+        "source-control"
+    }
+
+    fn title(&self, _cx: &App) -> SharedString {
+        "Source Control".into()
+    }
+
+    fn icon(&self) -> labonair_panel::PanelIcon {
+        labonair_panel::PanelIcon::SourceControl
+    }
+
+    fn position(&self, _cx: &App) -> labonair_panel::DockPosition {
+        labonair_panel::DockPosition::Left
+    }
+
+    fn position_is_valid(&self, position: labonair_panel::DockPosition) -> bool {
+        matches!(
+            position,
+            labonair_panel::DockPosition::Left | labonair_panel::DockPosition::Right
+        )
+    }
+
+    fn set_position(
+        &mut self,
+        _position: labonair_panel::DockPosition,
+        _window: &mut Window,
+        _cx: &mut Context<Self>,
+    ) {
+        // T17-002 owns the dock model; nothing to persist here yet.
+    }
+
+    fn default_size(&self, _cx: &App) -> Pixels {
+        px(300.0)
+    }
+
+    fn min_size(&self) -> Option<Pixels> {
+        Some(px(200.0))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
