@@ -37,16 +37,22 @@ ALLOWED = {
 
     # Settings track ------------------------------------------------------
     # rule 7: settings-ui depends on settings + ui-kit (+ hosts-ui later,
-    # T19-010). settings-content / settings crates land in Phase 18.
+    # T19-010).
     # [deviation] workspace / command-palette / ai edges are pre-Phase-18
-    # couplings kept until the settings track exists.
+    # couplings kept until the settings track fully replaces them.
     # labonair-panel: T18-007's Personalization pane reads/writes the
     # StatusItemRegistry / PanelRegistry contracts (StatusSide, DockPosition,
     # …) directly, same as `labonair-workspace` already does.
+    # T19-004: the generated field grid + navigation is built directly off
+    # `labonair-settings-content::SettingsContent`/`areas::AREAS` and the
+    # layered `labonair-settings::SettingsStore` global — the old
+    # `PreferencesStore`/`GlobalPreferences` bridge stays for modules not yet
+    # migrated onto the `Settings` trait (see `store.rs`'s doc comment).
     "labonair-settings-ui": {
         "labonair-theme", "labonair-ui-kit", "labonair-gpui-ext",
         "labonair-notifications", "labonair-command-palette",
         "labonair-workspace", "labonair-panel", "labonair-backend", "labonair-ai",
+        "labonair-settings", "labonair-settings-content",
     },
 
     # Workspace track --------------------------------------------------

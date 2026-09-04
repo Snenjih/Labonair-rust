@@ -4,6 +4,157 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
+## Last Session: 2026-09-04 (T19-004 — generated settings UI: `SettingField` registry + disclosure/scroll-spy/sub-page/custom-top-level navigation)
+
+**T19-004 done — the P0-3 core Phase-18 task.** Replaced the old
+hand-maintained `crates/settings-ui/src/fields.rs` (`FIELDS: &[FieldDef]`,
+131 entries) + `sections.rs` (`SECTION_GROUPS`) with a UI generated from
+`labonair_settings_content::SettingsContent` (T19-001) via the layered
+`labonair_settings::SettingsStore` (T19-002/003), per
+`docs/settings-guidelines.md`. New files:
+
+- `crates/settings-ui/src/schema.rs` — `AnyField { json_path, control:
+  FieldControl, meta: SettingsFieldMetadata, get: fn(&SettingsContent) ->
+  Option<Value>, set: fn(&mut SettingsContent, Value) -> bool }`, `Copy`
+  (every member is). `FieldControl` is the renderer registry: `Switch | Int |
+  Float | Select(&[(token,label)]) | FontFamily | Text | Json` (the last is
+  the rule-3 "anything else" raw-JSON fallback, used for every non-scalar
+  field — `Vec`, `BTreeMap`, nested structs — so literally every
+  `SettingsContent` leaf type has *some* renderer, satisfying reachability
+  mechanically). One `field!` macro generates `get`/`set` for every entry via
+  `serde_json::to_value`/`from_value` on the field's own real type — a new
+  `bool` setting is one macro line, no widget code, and can never drift from
+  the struct the way the old string-keyed table could. `all_fields()` — ~130
+  macro-line entries covering all 12 `SettingsContent` areas (general,
+  appearance, terminal, editor, file_manager, connections, workspace, ai,
+  mcp, personalization, hosts, keymap).
+- `crates/settings-ui/src/pages.rs` — `SettingsPage { area: &'static AreaMeta,
+  body: PageBody, sub_pages: Vec<SubPage> }`, `PageBody::{Generated(Vec<
+  SettingsPageItem>), Custom}`. `pages()` builds one page per `AREAS` entry
+  (T19-001); curated `(section, &[local_key])` `Group` tables (ported almost
+  verbatim from the old `SECTION_GROUPS`) for General/Appearance/Terminal/
+  Editor/FileManager/Connections/Workspace; Terminal and Editor each get a
+  `SubPage` (`terminal/advanced`, `editor/display`) splitting off their
+  bigger groups (task Notizen: at least Terminal/Editor/AI need one). AI
+  (`AreaKind::Custom`) folds its own `AI_GROUPS` field grid into its Custom
+  body via the shared `render_field_groups` helper, then a `SubPageLink` row
+  to a `providers` Custom sub-page (existing `render_providers`/
+  `render_agents_section`/`render_directives_section`/`render_ai_editor`,
+  relocated unchanged). Personalization similarly folds `PERSONALIZATION_
+  GROUPS` (7 status-bar-button bools) above its existing bespoke layout
+  editor. `leftover_fields(area, fields)` computes the trailing "Other"
+  section for anything not in a curated group (and not exempted — see
+  below), so a field can never silently vanish just because `pages.rs`
+  forgot to place it. `DEDICATED_PANE_EXEMPTIONS: &[&str]` — a small,
+  individually-commented allowlist of `json_path`s covered by pre-existing
+  dedicated pane code that has real side effects a generic write wouldn't
+  (MCP's 5 fields — `render_agent_bridge` also calls the live backend
+  `mcp_set_port`/etc, not just a `SettingsContent` write), Hosts' 7 fields
+  (explicitly deferred to T19-010 per this task's own Notizen — Hosts is a
+  placeholder `render_hosts_placeholder` body for now), Personalization's 2
+  `BTreeMap` fields (owned by the drag/drop layout editor), and
+  `keymap.baseKeymap` (rendered directly by `render_shortcuts` as a
+  "reset to preset" control). Three `pages::tests` prove every field is
+  either placed, leftover-covered, or exempted — never silently unreachable
+  — and that exemptions never *also* double-count in the leftover fallback.
+- `crates/settings-ui/src/view.rs`/`panes/generic.rs` — `SettingsView` gained
+  `active_area: usize` + `active_subpage: Option<usize>` (replacing the old
+  flat `active_cat`), `all_fields: Vec<AnyField>` + `pages: Vec<SettingsPage>`
+  (built once in `new()`), `collapsed_sections: HashSet<(area_idx, subpage_
+  slug, section_label)>` (disclosure state, default all-open per rule 1),
+  `content_scroll: ScrollHandle`. Real scroll-spy (not a fake click-only
+  jump list): each generated page's rows are flat `ScrollHandle`-tracked
+  children, `render_jump_bar` uses `ScrollHandle::top_item()` to find which
+  section is topmost (highlighted) and `scroll_to_item(row_ix)` on click —
+  confirmed real GPUI 0.2.2 API (`gpui-0.2.2/src/elements/div.rs`'s `impl
+  ScrollHandle`, already used elsewhere in this repo at
+  `crates/panel-ai/src/panel_ai.rs`). `render_field(&AnyField, …)` dispatches
+  on `FieldControl` (reused the existing Switch/stepper/dropdown/text-box
+  widgets verbatim — same visual language, just rewired to `AnyField::get`/
+  `set` instead of the old `Preferences`-JSON-key path) and additionally
+  renders an origin badge (`SettingsView::field_origin` → `SettingsStore::
+  source_of`) + a "reset to default" link when non-default
+  (`SettingsView::reset_field` — writes the field's `SettingsContent::
+  defaults()` value back into the User layer; documented simplification
+  since `SettingsStore` has no per-field unset, only whole-layer replace).
+  `navigate_to_slug("terminal/advanced")` resolves `AREAS[].slug` + optional
+  `SubPage::slug` for deep links (`SettingsTarget` global is now `Option<
+  &'static str>` slug, not the deleted `SettingsTab` enum — the one external
+  call site, `crates/shell/src/commands.rs`'s `OpenAiSettings` command,
+  updated to `open_settings_window(Some("ai"), cx)`).
+- **The `PreferencesStore`/`GlobalPreferences` bridge stays** (by design —
+  `labonair-settings`'s own doc comment already called this out as
+  intentional, not transitional) since terminal/editor/workspace/command-
+  palette still read `GlobalPreferences`, not `SettingsStore` directly, and
+  migrating every one of those call sites is explicitly out of this task's
+  scope. Made it bidirectional in `store.rs`: `PreferencesStore::set_value`
+  (the *old* per-key writer, still used unchanged by the Themes/Shortcuts/
+  AI/Personalization panes) now also calls `mirror_into_settings_store`,
+  writing the same value into `SettingsStore`'s `User` layer if a matching
+  `AnyField` exists — keeps both trees consistent regardless of which path a
+  given pane writes through. `SettingsView::set_field_value` (the *new*
+  generated-grid writer) writes `SettingsStore` then calls `PreferencesStore
+  ::reload_from_disk`, which derives `Preferences` from `Preferences::from(
+  store.merged())` (the T19-001 `content_bridge` — already existed,
+  `labonair-backend`) rather than re-reading the legacy flat JSON keys
+  (those are never written by the new grid at all) — preserving exactly 3
+  fields (`keybinds`, `bar_item_placements`, `bar_layout_migrated`) from the
+  live in-memory value instead of the bridge's hardcoded defaults, since
+  those 3 have no `SettingsContent` counterpart and would otherwise be
+  silently clobbered on every unrelated generated-field write. `SettingsView
+  ::new` also does `cx.observe_global::<SettingsStore>(|_, cx| cx.notify())`
+  so an out-of-window write (e.g. project `.labonair/settings.json` editing,
+  T19-003) repaints origin badges live, not just this window's own writes.
+- `scripts/check_crate_deps.py` — added `labonair-settings`/`labonair-
+  settings-content` to `labonair-settings-ui`'s allowed deps (was anticipated
+  in a comment there since Phase-15). `bash scripts/check-crate-deps.sh`
+  still green, acyclic.
+- Deleted as genuinely orphaned by this change (not just "old"):
+  `render_appearance` + its `bg_tile` helper (`panes/themes.rs`/`view.rs`) —
+  `appearance` is `AreaKind::Generated` per `AREAS`, so its fields (incl.
+  `background*`) now render through the generic grid; the old bespoke
+  color-scheme-pill/background-gallery widgets had no equivalent slot in the
+  new model and are a documented, Non-Goals-sanctioned visual simplification
+  (the *settings* are unchanged and fully functional, just via a generic
+  Text/Int/Select row instead of a custom picker). Also removed `apply.rs`'s
+  `trim_ext` (only caller was the deleted background-file list).
+
+**Deliberately out of scope / deferred** (per the task's own Notizen or
+genuine architectural limits hit while implementing):
+- Full migration of terminal/editor/workspace/command-palette off
+  `GlobalPreferences` onto `Settings::get(cx)` directly — the bridge above
+  keeps them working unchanged; that migration is a separate, much larger
+  future task (referenced in `labonair-settings`'s own doc comment).
+- A live `SettingsStore`-integrated GPUI test for `set_field_value` (write →
+  `SettingsStore` → `pick` round-trip through the real global) — skipped
+  because `labonair-settings`'s only public store constructor is `init(cx)`,
+  which always targets the real `~/.config/labonair` path (no public
+  test-mode constructor exists in that crate to point at an isolated temp
+  dir from outside it). Covered instead by three separate, narrower test
+  layers: `schema::tests::get_set_round_trips_on_the_default_tree` (pure
+  `SettingsContent`-level, no GPUI global needed) + `labonair-settings`'s own
+  `store::tests::*` (proves the layered-merge/persist mechanics generically,
+  already 23 tests) + `pages::tests::*` (proves every field reaches some
+  page). A future task adding a `labonair_settings::init_for_tests(cx, path)`
+  hook would close this gap cleanly.
+- Old per-field conditional visibility (`field_visible` — e.g. hide
+  `sessionScrollbackLines` unless `sessionRestore` is on) was not
+  reimplemented; every generated field is always shown now (a UX
+  regression, not a correctness one — not required by any T19-004 AC).
+- Not verified with `cargo run` — headless VPS, no GUI window (same
+  standing caveat as several prior settings/titlebar tasks).
+
+All gates green: `cargo fmt --check`, `cargo check --workspace
+--all-targets`, `cargo clippy --workspace --all-targets -- -D warnings`,
+`cargo test --workspace` (0 failures across all 23 workspace crates;
+`labonair-settings-ui` alone: 24 tests, all new/rewritten ones green;
+`labonair-settings-content`: 14; `labonair-settings`: 23 unchanged),
+`scripts/check-crate-deps.sh` (still acyclic, 96 edges, two new ones added
+and pre-anticipated).
+
+**State:** branch `master`. Next task: **T19-005** (raw `settings.json`
+editable, comment-preserving — depends on T19-002 + this task, both done).
+
 ## Last Session: 2026-09-04 (T19-003 — project/folder settings layer, `.labonair/settings.json`)
 
 **T19-003 done.** Builds directly on T19-002's `SettingsStore`

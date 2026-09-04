@@ -24,6 +24,11 @@ labonair-workspace = { path = "../workspace" }
 labonair-panel = { path = "../panel" }
 labonair-backend = { path = "../backend" }
 labonair-ai = { path = "../ai" }
+# T19-004: the UI is generated from the typed `SettingsContent` tree via the
+# layered `SettingsStore` global (T19-002/003) instead of the old
+# hand-maintained `FIELDS` table.
+labonair-settings = { path = "../settings" }
+labonair-settings-content = { path = "../settings-content" }
 
 [dev-dependencies]
 gpui = { workspace = true, features = ["test-support"] }

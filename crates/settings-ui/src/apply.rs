@@ -232,12 +232,6 @@ pub(crate) fn slugify(name: &str) -> String {
     }
 }
 
-pub(crate) fn trim_ext(name: &str) -> String {
-    name.rsplit_once('.')
-        .map(|(s, _)| s.to_string())
-        .unwrap_or_else(|| name.to_string())
-}
-
 pub(crate) fn char_of(ks: &gpui::Keystroke) -> Option<String> {
     ks.key_char
         .clone()

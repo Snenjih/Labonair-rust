@@ -21,7 +21,6 @@ use tokio::runtime::Handle as TokioHandle;
 use labonair_backend::App as Backend;
 use labonair_command_palette::KeybindMap;
 
-use crate::fields::SettingsTab;
 use crate::store::PreferencesStore;
 use crate::view::SettingsView;
 
@@ -72,10 +71,13 @@ pub(crate) struct SettingsWindowRef {
 
 impl Global for SettingsWindowRef {}
 
-/// The section a pending deep-link wants to show. `SettingsView` observes this
-/// global so an already-open window jumps to the requested tab.
+/// The section a pending deep-link wants to show — an
+/// `labonair_settings_content::areas::AreaMeta::slug`, optionally followed by
+/// `/<sub-page slug>` (rule 7). `SettingsView` observes this global so an
+/// already-open window jumps to the requested slug
+/// (`SettingsView::navigate_to_slug`).
 #[derive(Clone, Copy, Default)]
-pub(crate) struct SettingsTarget(pub(crate) Option<SettingsTab>);
+pub(crate) struct SettingsTarget(pub(crate) Option<&'static str>);
 
 impl Global for SettingsTarget {}
 
@@ -113,8 +115,8 @@ fn settings_bounds(cx: &mut App) -> Bounds<gpui::Pixels> {
 /// (T16-009). The window destroys on close and is cheaply rebuilt on the next
 /// open (GPUI 0.2.2 has no per-window hide); shared state lives in the
 /// [`PreferencesStore`] / theme / background entities, so nothing is lost.
-pub fn open_settings_window(tab: Option<SettingsTab>, cx: &mut App) {
-    cx.set_global(SettingsTarget(tab));
+pub fn open_settings_window(slug: Option<&'static str>, cx: &mut App) {
+    cx.set_global(SettingsTarget(slug));
 
     let existing = cx.try_global::<SettingsWindowRef>().and_then(|w| w.handle);
     if let Some(handle) = existing {
@@ -163,9 +165,9 @@ pub fn open_settings_window(tab: Option<SettingsTab>, cx: &mut App) {
                 );
                 v.windowed = true;
                 v.open = true;
-                if let Some(SettingsTarget(Some(tab))) = cx.try_global::<SettingsTarget>().copied()
+                if let Some(SettingsTarget(Some(slug))) = cx.try_global::<SettingsTarget>().copied()
                 {
-                    v.active_cat = tab.category_index();
+                    v.navigate_to_slug(slug);
                 }
                 v.refresh_themes();
                 v.refresh_mcp_status(cx);

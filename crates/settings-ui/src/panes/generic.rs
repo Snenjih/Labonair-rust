@@ -1,30 +1,31 @@
-//! Generic field renderer: dropdown layer, `render_field`, the `render_body` dispatch, category grouping, and the MCP "AI Agent Bridge" pane.
+//! Generic field renderer (T19-004): dropdown layer, `render_field`
+//! (dispatches on `FieldControl` — the renderer registry), the generated-page
+//! renderer (disclosure sections + scroll-spy jump bar + trailing "Other"
+//! fallback), the top-level `render_body` dispatch (search / Generated /
+//! Custom), and the MCP "AI Agent Bridge" pane.
 //!
-//! Part of `SettingsView` — see `crate::view`. Mechanical T16-007 split, no
-//! logic change.
+//! Part of `SettingsView` — see `crate::view`.
 
 use crate::view::*;
 
 impl SettingsView {
-    /// The floating options list for an open `Select` (T16-010). Rendered as a
-    /// `deferred` + `anchored` layer so it is not clipped by the scroll area,
-    /// with a transparent full-window backdrop that dismisses it.
+    /// The floating options list for an open `Select`/`FontFamily` dropdown
+    /// (T16-010). Rendered as a `deferred` + `anchored` layer so it is not
+    /// clipped by the scroll area, with a transparent full-window backdrop
+    /// that dismisses it. `menu.key` is a field's `json_path`.
     pub(crate) fn render_dropdown(
         &self,
         c: &Palette,
         cx: &mut Context<Self>,
     ) -> Option<gpui::AnyElement> {
         let menu = self.dropdown.as_ref()?;
-        let key = menu.key;
+        let json_path = menu.key;
         let sentinel = menu.default_sentinel.clone();
         let stored = self
-            .prefs
-            .read(cx)
-            .value(key)
+            .field_by_path(json_path)
+            .and_then(|f| self.field_value(f, cx))
             .and_then(|v| v.as_str().map(str::to_string))
             .unwrap_or_default();
-        // The row highlighted as "current": the stored value, or the sentinel
-        // when the stored value is empty.
         let cur: SharedString = if stored.is_empty() {
             sentinel.clone().unwrap_or_default()
         } else {
@@ -44,12 +45,12 @@ impl SettingsView {
                 .bg(c.card)
                 .border_1()
                 .border_color(c.border)
-                .children(menu.options.iter().enumerate().map(|(i, opt)| {
-                    let opt = opt.clone();
-                    let selected = opt == cur;
-                    let is_sentinel = sentinel.as_ref() == Some(&opt);
+                .children(menu.options.iter().enumerate().map(|(i, (token, label))| {
+                    let token = token.clone();
+                    let selected = token.as_ref() == cur.as_ref();
+                    let is_sentinel = sentinel.as_ref() == Some(&token);
                     div()
-                        .id(SharedString::from(format!("opt-{key}-{i}")))
+                        .id(SharedString::from(format!("opt-{json_path}-{i}")))
                         .px_2()
                         .py(px(4.0))
                         .rounded_sm()
@@ -57,15 +58,15 @@ impl SettingsView {
                         .text_color(if selected { c.fg } else { c.muted })
                         .when(selected, |d| d.bg(c.accent))
                         .when(!selected, |d| d.hover(|s| s.bg(c.border)))
-                        .child(opt.clone())
+                        .child(label.clone())
                         .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
                             this.dropdown = None;
                             let v = if is_sentinel {
                                 String::new()
                             } else {
-                                opt.to_string()
+                                token.to_string()
                             };
-                            this.set_pref(key, Value::String(v), cx);
+                            this.set_field_value(json_path, Value::String(v), cx);
                         }))
                 })),
         );
@@ -87,23 +88,24 @@ impl SettingsView {
         )
     }
 
+    /// Render one generated field row: label/description + origin badge +
+    /// reset (rule 5) + a control chosen by `FieldControl` (rule 3's
+    /// renderer registry — `bool → Switch`, numeric → stepper, `enum`/closed
+    /// `String` → dropdown, `String` → text input, anything else → the raw
+    /// JSON fallback).
     pub(crate) fn render_field(
         &self,
-        def: &FieldDef,
+        field: &AnyField,
         c: &Palette,
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
-        let key = def.key;
-        let control = match def.kind {
-            FieldKind::Switch => {
-                let on = self
-                    .prefs
-                    .read(cx)
-                    .value(key)
-                    .and_then(|v| v.as_bool())
-                    .unwrap_or(false);
+        let json_path = field.json_path;
+        let value = self.field_value(field, cx);
+        let control = match field.control {
+            FieldControl::Switch => {
+                let on = value.as_ref().and_then(|v| v.as_bool()).unwrap_or(false);
                 div()
-                    .id(SharedString::from(format!("sw-{key}")))
+                    .id(SharedString::from(format!("sw-{json_path}")))
                     .w(px(38.0))
                     .h(px(20.0))
                     .rounded_full()
@@ -119,17 +121,14 @@ impl SettingsView {
                             .when(on, |d| d.ml(px(16.0))),
                     )
                     .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
-                        this.toggle_bool(key, cx);
+                        if let Some(f) = this.field_by_path(json_path).copied() {
+                            this.toggle_bool(&f, cx);
+                        }
                     }))
                     .into_any_element()
             }
-            FieldKind::Int { min, max, step } => {
-                let cur = self
-                    .prefs
-                    .read(cx)
-                    .value(key)
-                    .and_then(|v| v.as_i64())
-                    .unwrap_or(min);
+            FieldControl::Int { min, max, step } => {
+                let cur = value.as_ref().and_then(|v| v.as_i64()).unwrap_or(min);
                 let frac = if max > min {
                     (cur - min) as f32 / (max - min) as f32
                 } else {
@@ -144,9 +143,14 @@ impl SettingsView {
                             .flex()
                             .items_center()
                             .gap_1()
-                            .child(step_btn("dec", key, "\u{2212}", c, cx, move |this, cx| {
-                                this.bump_int(key, min, max, -step, cx)
-                            }))
+                            .child(step_btn(
+                                "dec",
+                                json_path,
+                                "\u{2212}",
+                                c,
+                                cx,
+                                move |this, cx| this.bump_int(json_path, min, max, -step, cx),
+                            ))
                             .child(
                                 div()
                                     .min_w(px(52.0))
@@ -154,62 +158,20 @@ impl SettingsView {
                                     .text_color(c.fg)
                                     .child(SharedString::from(cur.to_string())),
                             )
-                            .child(step_btn("inc", key, "+", c, cx, move |this, cx| {
-                                this.bump_int(key, min, max, step, cx)
+                            .child(step_btn("inc", json_path, "+", c, cx, move |this, cx| {
+                                this.bump_int(json_path, min, max, step, cx)
                             })),
                     )
                     .child(slider_track(frac, c))
                     .into_any_element()
             }
-            FieldKind::Select(options) => {
-                let cur = self
-                    .prefs
-                    .read(cx)
-                    .value(key)
-                    .and_then(|v| v.as_str().map(str::to_string))
-                    .unwrap_or_default();
-                let is_open = self.dropdown.as_ref().is_some_and(|d| d.key == key);
-                div()
-                    .id(SharedString::from(format!("sel-{key}")))
-                    .min_w(px(160.0))
-                    .flex()
-                    .items_center()
-                    .justify_between()
-                    .gap_2()
-                    .px_2()
-                    .py(px(4.0))
-                    .rounded_sm()
-                    .border_1()
-                    .border_color(if is_open { c.accent } else { c.border })
-                    .bg(c.bg)
-                    .text_color(c.fg)
-                    .text_size(px(11.5))
-                    .child(SharedString::from(cur))
-                    .child(div().text_color(c.muted).child("\u{25BE}"))
-                    .on_click(cx.listener(move |this, ev: &ClickEvent, _w, cx| {
-                        if this.dropdown.as_ref().is_some_and(|d| d.key == key) {
-                            this.dropdown = None;
-                        } else {
-                            this.dropdown = Some(SelectMenu {
-                                key,
-                                options: options.iter().map(|s| SharedString::from(*s)).collect(),
-                                at: ev.position(),
-                                default_sentinel: None,
-                            });
-                        }
-                        cx.notify();
-                    }))
-                    .into_any_element()
-            }
-            FieldKind::Float {
+            FieldControl::Float {
                 min_centi,
                 max_centi,
                 step_centi,
             } => {
-                let cur = self
-                    .prefs
-                    .read(cx)
-                    .value(key)
+                let cur = value
+                    .as_ref()
                     .and_then(|v| v.as_f64())
                     .unwrap_or(min_centi as f64 / 100.0);
                 let frac = if max_centi > min_centi {
@@ -226,9 +188,22 @@ impl SettingsView {
                             .flex()
                             .items_center()
                             .gap_1()
-                            .child(step_btn("dec", key, "\u{2212}", c, cx, move |this, cx| {
-                                this.bump_float(key, min_centi, max_centi, -step_centi, cx)
-                            }))
+                            .child(step_btn(
+                                "dec",
+                                json_path,
+                                "\u{2212}",
+                                c,
+                                cx,
+                                move |this, cx| {
+                                    this.bump_float(
+                                        json_path,
+                                        min_centi,
+                                        max_centi,
+                                        -step_centi,
+                                        cx,
+                                    )
+                                },
+                            ))
                             .child(
                                 div()
                                     .min_w(px(52.0))
@@ -236,21 +211,66 @@ impl SettingsView {
                                     .text_color(c.fg)
                                     .child(SharedString::from(format!("{cur:.2}"))),
                             )
-                            .child(step_btn("inc", key, "+", c, cx, move |this, cx| {
-                                this.bump_float(key, min_centi, max_centi, step_centi, cx)
+                            .child(step_btn("inc", json_path, "+", c, cx, move |this, cx| {
+                                this.bump_float(json_path, min_centi, max_centi, step_centi, cx)
                             })),
                     )
                     .child(slider_track(frac, c))
                     .into_any_element()
             }
-            FieldKind::FontFamily => {
-                let cur = self
-                    .prefs
-                    .read(cx)
-                    .value(key)
+            FieldControl::Select(opts) => {
+                let cur = value
+                    .as_ref()
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_string();
+                let label = opts
+                    .iter()
+                    .find(|(tok, _)| *tok == cur)
+                    .map(|(_, l)| *l)
+                    .unwrap_or(&cur);
+                let is_open = self.dropdown.as_ref().is_some_and(|d| d.key == json_path);
+                div()
+                    .id(SharedString::from(format!("sel-{json_path}")))
+                    .min_w(px(160.0))
+                    .flex()
+                    .items_center()
+                    .justify_between()
+                    .gap_2()
+                    .px_2()
+                    .py(px(4.0))
+                    .rounded_sm()
+                    .border_1()
+                    .border_color(if is_open { c.accent } else { c.border })
+                    .bg(c.bg)
+                    .text_color(c.fg)
+                    .text_size(px(11.5))
+                    .child(SharedString::from(label.to_string()))
+                    .child(div().text_color(c.muted).child("\u{25BE}"))
+                    .on_click(cx.listener(move |this, ev: &ClickEvent, _w, cx| {
+                        if this.dropdown.as_ref().is_some_and(|d| d.key == json_path) {
+                            this.dropdown = None;
+                        } else {
+                            this.dropdown = Some(SelectMenu {
+                                key: json_path,
+                                options: opts
+                                    .iter()
+                                    .map(|(t, l)| (SharedString::from(*t), SharedString::from(*l)))
+                                    .collect(),
+                                at: ev.position(),
+                                default_sentinel: None,
+                            });
+                        }
+                        cx.notify();
+                    }))
+                    .into_any_element()
+            }
+            FieldControl::FontFamily => {
+                let cur = value
+                    .as_ref()
                     .and_then(|v| v.as_str().map(str::to_string))
                     .unwrap_or_default();
-                let is_open = self.dropdown.as_ref().is_some_and(|d| d.key == key);
+                let is_open = self.dropdown.as_ref().is_some_and(|d| d.key == json_path);
                 let label = if cur.is_empty() {
                     "(default)".to_string()
                 } else {
@@ -258,7 +278,7 @@ impl SettingsView {
                 };
                 let fonts = self.system_fonts.clone();
                 div()
-                    .id(SharedString::from(format!("font-{key}")))
+                    .id(SharedString::from(format!("font-{json_path}")))
                     .min_w(px(200.0))
                     .flex()
                     .items_center()
@@ -275,14 +295,14 @@ impl SettingsView {
                     .child(SharedString::from(label))
                     .child(div().text_color(c.muted).child("\u{25BE}"))
                     .on_click(cx.listener(move |this, ev: &ClickEvent, _w, cx| {
-                        if this.dropdown.as_ref().is_some_and(|d| d.key == key) {
+                        if this.dropdown.as_ref().is_some_and(|d| d.key == json_path) {
                             this.dropdown = None;
                         } else {
                             let sentinel = SharedString::from("(default)");
-                            let mut options = vec![sentinel.clone()];
-                            options.extend(fonts.iter().cloned());
+                            let mut options = vec![(sentinel.clone(), sentinel.clone())];
+                            options.extend(fonts.iter().map(|f| (f.clone(), f.clone())));
                             this.dropdown = Some(SelectMenu {
-                                key,
+                                key: json_path,
                                 options,
                                 at: ev.position(),
                                 default_sentinel: Some(sentinel),
@@ -292,42 +312,12 @@ impl SettingsView {
                     }))
                     .into_any_element()
             }
-            FieldKind::Text => {
-                let editing = self
-                    .editing
-                    .as_ref()
-                    .filter(|e| e.key == key)
-                    .map(|e| e.buffer.clone());
-                let value = editing.clone().unwrap_or_else(|| {
-                    self.prefs
-                        .read(cx)
-                        .value(key)
-                        .and_then(|v| v.as_str().map(str::to_string))
-                        .unwrap_or_default()
-                });
-                let active = editing.is_some();
-                let empty = value.is_empty();
-                div()
-                    .id(SharedString::from(format!("txt-{key}")))
-                    .w(px(200.0))
-                    .px_2()
-                    .py(px(3.0))
-                    .rounded_sm()
-                    .border_1()
-                    .border_color(if active { c.accent } else { c.border })
-                    .bg(c.bg)
-                    .text_color(if empty { c.muted } else { c.fg })
-                    .child(SharedString::from(if empty {
-                        "(default)".to_string()
-                    } else {
-                        value
-                    }))
-                    .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
-                        this.begin_edit(key, false, cx);
-                    }))
-                    .into_any_element()
-            }
+            FieldControl::Text => self.render_text_control(json_path, false, value, c, cx),
+            FieldControl::Json => self.render_text_control(json_path, true, value, c, cx),
         };
+
+        let origin = self.field_origin(field, cx);
+        let non_default = origin != OriginBadge::Default;
 
         div()
             .flex()
@@ -344,15 +334,96 @@ impl SettingsView {
                     .gap_0p5()
                     .flex_1()
                     .min_w_0()
-                    .child(div().text_color(c.fg).child(SharedString::from(def.title)))
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap_1p5()
+                            .child(
+                                div()
+                                    .text_color(c.fg)
+                                    .child(SharedString::from(field.meta.title)),
+                            )
+                            .child(
+                                div()
+                                    .px_1()
+                                    .rounded_sm()
+                                    .text_size(px(9.0))
+                                    .text_color(c.muted)
+                                    .border_1()
+                                    .border_color(c.border)
+                                    .child(origin.label()),
+                            )
+                            .when(non_default, |d| {
+                                d.child(
+                                    div()
+                                        .id(SharedString::from(format!("reset-{json_path}")))
+                                        .text_size(px(10.0))
+                                        .text_color(c.muted)
+                                        .hover(|s| s.text_color(c.fg))
+                                        .child("\u{21BA} reset")
+                                        .on_click(cx.listener(
+                                            move |this, _: &ClickEvent, _w, cx| {
+                                                this.reset_field(json_path, cx);
+                                            },
+                                        )),
+                                )
+                            }),
+                    )
                     .child(
                         div()
                             .text_size(px(11.0))
                             .text_color(c.muted)
-                            .child(SharedString::from(def.desc)),
+                            .child(SharedString::from(field.meta.description)),
                     ),
             )
             .child(control)
+            .into_any_element()
+    }
+
+    /// `Text`/`Json` share the same click-to-edit text-box widget; `Json`
+    /// round-trips through `serde_json::from_str` instead of storing the raw
+    /// string (the settings-guidelines rule 3 fallback: "a raw JSON snippet
+    /// editor" for any type without a dedicated widget).
+    fn render_text_control(
+        &self,
+        json_path: &'static str,
+        json_mode: bool,
+        value: Option<Value>,
+        c: &Palette,
+        cx: &mut Context<Self>,
+    ) -> gpui::AnyElement {
+        let editing = self
+            .editing
+            .as_ref()
+            .filter(|e| e.key == json_path)
+            .map(|e| e.buffer.clone());
+        let display_value = editing.clone().unwrap_or_else(|| match value {
+            Some(Value::String(s)) => s,
+            Some(v) if json_mode => v.to_string(),
+            _ => String::new(),
+        });
+        let active = editing.is_some();
+        let empty = display_value.is_empty();
+        div()
+            .id(SharedString::from(format!("txt-{json_path}")))
+            .w(px(if json_mode { 260.0 } else { 200.0 }))
+            .px_2()
+            .py(px(3.0))
+            .rounded_sm()
+            .border_1()
+            .border_color(if active { c.accent } else { c.border })
+            .bg(c.bg)
+            .text_color(if empty { c.muted } else { c.fg })
+            .text_size(px(11.0))
+            .child(SharedString::from(if empty {
+                "(default)".to_string()
+            } else {
+                display_value
+            }))
+            .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                this.begin_edit(json_path, false, cx);
+            }))
             .into_any_element()
     }
 
@@ -548,159 +619,311 @@ impl SettingsView {
         col.into_any_element()
     }
 
+    // ── T19-004: top-level render dispatch ──────────────────────────────
+
     pub(crate) fn render_body(&mut self, c: &Palette, cx: &mut Context<Self>) -> gpui::AnyElement {
         let query = self.search.trim().to_lowercase();
-        if CATEGORIES[self.active_cat] == KEYBOARD && query.is_empty() {
-            return self.render_shortcuts(&query, c, cx);
-        }
         if !query.is_empty() {
-            // Global search: results grouped by their top-level section, a port
-            // of the reference `SearchResults` layout.
-            let mut root = div().flex().flex_col();
-            let mut any = false;
-            for &cat in CATEGORIES {
-                let matches: Vec<&FieldDef> = FIELDS
-                    .iter()
-                    .filter(|f| {
-                        f.category == cat
-                            && (f.title.to_lowercase().contains(&query)
-                                || f.desc.to_lowercase().contains(&query)
-                                || f.key.to_lowercase().contains(&query))
-                    })
-                    .collect();
-                if matches.is_empty() {
-                    continue;
-                }
-                any = true;
-                root = root.child(section_label(cat, c)).children(
-                    matches
-                        .into_iter()
-                        .map(|f| self.render_field(f, c, cx))
-                        .collect::<Vec<_>>(),
-                );
-            }
-            if !any {
-                return div()
-                    .p_4()
-                    .text_color(c.muted)
-                    .child("No matching settings.")
-                    .into_any_element();
-            }
-            return root.into_any_element();
+            return self.render_global_search(&query, c, cx);
         }
 
-        let cat = CATEGORIES[self.active_cat];
-        match cat {
-            "General" => return self.render_general(c, cx),
-            "Themes" => return self.render_themes(c, cx),
-            _ if cat == CAT_APPEARANCE => return self.render_appearance(c, cx),
-            _ if cat == CAT_PERSONALIZATION => return self.render_personalization(c, cx),
-            "Connections" => {
-                return div()
-                    .flex()
-                    .flex_col()
-                    .child(self.render_grouped(cat, c, cx))
-                    .child(section_label(AGENT_BRIDGE, c))
-                    .child(self.render_agent_bridge(c, cx))
-                    .into_any_element();
-            }
-            "AI" => {
-                return div()
-                    .flex()
-                    .flex_col()
-                    .child(self.render_grouped(cat, c, cx))
-                    .child(section_label("Providers", c))
-                    .child(self.render_providers(c, cx))
-                    .child(section_label("Agents", c))
-                    .child(self.render_agents_section(c, cx))
-                    .child(section_label("Directives", c))
-                    .child(self.render_directives_section(c, cx))
-                    .children(self.render_ai_editor(c, cx))
-                    .into_any_element();
-            }
-            _ => {}
-        }
-        self.render_grouped(cat, c, cx)
-    }
-
-    /// `sessionRestore`). An unknown key is always visible.
-    pub(crate) fn field_visible(&self, key: &str, cx: &App) -> bool {
-        let p = self.prefs.read(cx).get();
-        match key {
-            "sessionScrollbackLines" | "scrollbackMaxSizeMb" | "scrollbackRetentionDays" => {
-                p.session_restore
-            }
-            "terminalCursorBlinkInterval" => p.terminal_cursor_blink,
-            "terminalComposerHistoryPopup" | "terminalComposerArgumentCompletion" => {
-                p.terminal_composer_enabled
-            }
-            "terminalBlocksAutoCollapseOnAltScreen" => p.terminal_blocks_enabled,
-            "editorAutoSaveDelay" => p.editor_auto_save != "off",
-            "sshAutoReconnectDelay" | "sshAutoReconnectMaxAttempts" => p.ssh_auto_reconnect,
-            "explorerIdleSessionTimeoutMin"
-            | "explorerMaxIdleSessions"
-            | "explorerMaxCachedRemoteScopes" => p.explorer_auto_reconnect,
-            "autocompleteProvider" | "autocompleteModelId" => p.autocomplete_enabled,
-            "bookmarksActionNewTerminal"
-            | "bookmarksActionCurrentTerminal"
-            | "bookmarksActionCurrentSftp"
-            | "bookmarksActionNewSftp"
-            | "bookmarksPrimaryClickBehavior"
-            | "bookmarksShowBadge" => p.bookmarks_enabled,
-            "commandPaletteHistorySize" => p.command_palette_show_recent,
-            _ => true,
+        let area = &AREAS[self.active_area];
+        match self.active_body_kind() {
+            PageBodyKind::Generated => self.render_generated_body(c, cx),
+            PageBodyKind::Custom => self.render_custom_body(area.key, c, cx),
         }
     }
 
-    /// Render a category's fields, split into the reference sub-sections
-    /// (`SECTION_GROUPS`); any field not listed in a group falls through to a
-    /// trailing "Other" block so nothing is ever silently dropped.
-    pub(crate) fn render_grouped(
-        &self,
-        cat: &str,
+    /// Cheap tag mirroring `active_body()`'s variant, without holding a
+    /// borrow of `self.pages` across the `render_generated_body`/
+    /// `render_custom_body` call (both need `&mut self`).
+    fn active_body_kind(&self) -> PageBodyKind {
+        match self.active_body() {
+            PageBody::Generated(_) => PageBodyKind::Generated,
+            PageBody::Custom => PageBodyKind::Custom,
+        }
+    }
+
+    fn render_global_search(
+        &mut self,
+        query: &str,
         c: &Palette,
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
-        let groups = SECTION_GROUPS
-            .iter()
-            .find(|(g, _)| *g == cat)
-            .map(|(_, g)| *g)
-            .unwrap_or(&[]);
-        let mut placed: Vec<&str> = Vec::new();
         let mut root = div().flex().flex_col();
-        for (label, keys) in groups {
-            placed.extend(keys.iter().copied());
-            let defs: Vec<&FieldDef> = keys
+        let mut any = false;
+        for area in AREAS {
+            let matches: Vec<usize> = self
+                .all_fields
                 .iter()
-                .filter_map(|k| FIELDS.iter().find(|f| f.key == *k && f.category == cat))
-                .filter(|f| self.field_visible(f.key, cx))
+                .enumerate()
+                .filter(|(_, f)| {
+                    f.area() == area.target_module
+                        && (f.meta.title.to_lowercase().contains(query)
+                            || f.meta.description.to_lowercase().contains(query)
+                            || f.local_key().to_lowercase().contains(query))
+                })
+                .map(|(i, _)| i)
                 .collect();
-            if defs.is_empty() {
+            if matches.is_empty() {
                 continue;
             }
-            root = root.child(section_label(label, c)).children(
-                defs.into_iter()
-                    .map(|f| self.render_field(f, c, cx))
-                    .collect::<Vec<_>>(),
-            );
-        }
-        let leftover: Vec<&FieldDef> = FIELDS
-            .iter()
-            .filter(|f| {
-                f.category == cat && !placed.contains(&f.key) && self.field_visible(f.key, cx)
-            })
-            .collect();
-        if !leftover.is_empty() {
-            if !groups.is_empty() {
-                root = root.child(section_label("Other", c));
+            any = true;
+            root = root.child(section_label(area.title, c));
+            for i in matches {
+                let field = self.all_fields[i];
+                root = root.child(self.render_field(&field, c, cx));
             }
-            root = root.children(
-                leftover
-                    .into_iter()
-                    .map(|f| self.render_field(f, c, cx))
-                    .collect::<Vec<_>>(),
-            );
+        }
+        if !any {
+            return div()
+                .p_4()
+                .text_color(c.muted)
+                .child("No matching settings.")
+                .into_any_element();
         }
         root.into_any_element()
+    }
+
+    /// Render the active `PageBody::Generated` page/sub-page: collapsible
+    /// disclosure sections + a scroll-spy jump bar + a trailing "Other"
+    /// fallback for any field not placed by a curated group.
+    fn render_generated_body(&mut self, c: &Palette, cx: &mut Context<Self>) -> gpui::AnyElement {
+        // `self.pages[..].area` is the same `&'static AreaMeta` `AREAS[..]`
+        // would give — reading it through `pages` (rather than `AREAS`
+        // directly) keeps `SettingsPage::area` a real, exercised field.
+        let area = *self.pages[self.active_area].area;
+        let items: Vec<SettingsPageItemOwned> = match self.active_body() {
+            PageBody::Generated(items) => items.iter().map(SettingsPageItemOwned::from).collect(),
+            PageBody::Custom => return div().into_any_element(),
+        };
+        let leading = if area.key == "general" && self.active_subpage.is_none() {
+            Some(self.render_about_hero(c, cx))
+        } else {
+            None
+        };
+
+        let mut rows: Vec<gpui::AnyElement> = Vec::new();
+        let mut jump: Vec<(usize, &'static str)> = Vec::new();
+        let mut current_section: Option<&'static str> = None;
+
+        for item in &items {
+            match item {
+                SettingsPageItemOwned::SectionHeader(label) => {
+                    current_section = Some(label);
+                    jump.push((rows.len(), label));
+                    rows.push(self.render_section_header(label, c, cx));
+                }
+                SettingsPageItemOwned::Item(key) => {
+                    if current_section.is_some_and(|s| self.section_collapsed(s)) {
+                        continue;
+                    }
+                    if let Some(field) = self
+                        .all_fields
+                        .iter()
+                        .find(|f| f.area() == area.target_module && f.local_key() == *key)
+                        .copied()
+                    {
+                        rows.push(self.render_field(&field, c, cx));
+                    }
+                }
+            }
+        }
+
+        let leftover: Vec<AnyField> = leftover_fields(area.target_module, &self.all_fields)
+            .into_iter()
+            .copied()
+            .collect();
+        if !leftover.is_empty() {
+            let label: &'static str = "Other";
+            current_section = Some(label);
+            jump.push((rows.len(), label));
+            rows.push(self.render_section_header(label, c, cx));
+            for field in &leftover {
+                if current_section.is_some_and(|s| self.section_collapsed(s)) {
+                    continue;
+                }
+                rows.push(self.render_field(field, c, cx));
+            }
+        }
+
+        let jump_bar = self.render_jump_bar(&jump, c, cx);
+
+        div()
+            .flex()
+            .flex_col()
+            .children(leading)
+            .children(jump_bar)
+            .child(div().flex().flex_col().children(rows))
+            .into_any_element()
+    }
+
+    fn render_section_header(
+        &self,
+        label: &'static str,
+        c: &Palette,
+        cx: &mut Context<Self>,
+    ) -> gpui::AnyElement {
+        let collapsed = self.section_collapsed(label);
+        div()
+            .id(SharedString::from(format!("section-{label}")))
+            .flex()
+            .items_center()
+            .gap_1()
+            .pt_3()
+            .pb_1()
+            .text_size(px(11.0))
+            .font_weight(gpui::FontWeight::SEMIBOLD)
+            .text_color(c.muted)
+            .hover(|s| s.text_color(c.fg))
+            .child(if collapsed { "\u{25B8}" } else { "\u{25BE}" })
+            .child(label)
+            .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                this.toggle_section(label, cx);
+            }))
+            .into_any_element()
+    }
+
+    /// A horizontal jump bar: click scrolls to the section's row, the
+    /// section whose row is currently topmost is highlighted (rule 1's
+    /// scroll-spy, via `ScrollHandle::top_item`/`scroll_to_item`).
+    fn render_jump_bar(
+        &self,
+        jump: &[(usize, &'static str)],
+        c: &Palette,
+        cx: &mut Context<Self>,
+    ) -> Option<gpui::AnyElement> {
+        if jump.len() < 2 {
+            return None;
+        }
+        let top = self.content_scroll.top_item();
+        let active = jump.iter().rev().find(|(i, _)| *i <= top).map(|(_, l)| *l);
+        let scroll = self.content_scroll.clone();
+        Some(
+            div()
+                .flex()
+                .flex_wrap()
+                .gap_1()
+                .pb_2()
+                .mb_1()
+                .border_b_1()
+                .border_color(c.border)
+                .children(jump.iter().map(|(row, label)| {
+                    let is_active = active == Some(*label);
+                    let row = *row;
+                    let scroll = scroll.clone();
+                    div()
+                        .id(SharedString::from(format!("jump-{label}")))
+                        .px_2()
+                        .py(px(2.0))
+                        .rounded_sm()
+                        .text_size(px(10.0))
+                        .text_color(if is_active { c.fg } else { c.muted })
+                        .when(is_active, |d| d.bg(c.border))
+                        .hover(|s| s.text_color(c.fg))
+                        .child(*label)
+                        .on_click(cx.listener(move |_this, _: &ClickEvent, _w, _cx| {
+                            scroll.scroll_to_item(row);
+                        }))
+                }))
+                .into_any_element(),
+        )
+    }
+
+    /// Dispatch a Custom top-level category's body (rule 4) — the one
+    /// registration point a new custom category needs: an `AREAS` entry
+    /// (data) + one match arm here (render_fn). `AI`/`Personalization` also
+    /// fold in their own generic field grid (`AI_GROUPS`/
+    /// `PERSONALIZATION_GROUPS`) before their bespoke sections, exactly as
+    /// rule 4 allows ("may still read/write fields under `target_module`").
+    fn render_custom_body(
+        &mut self,
+        area_key: &'static str,
+        c: &Palette,
+        cx: &mut Context<Self>,
+    ) -> gpui::AnyElement {
+        match (area_key, self.active_subpage) {
+            ("themes", _) => self.render_themes(c, cx),
+            ("shortcuts", _) => {
+                let query = String::new();
+                self.render_shortcuts(&query, c, cx)
+            }
+            ("mcp", _) => self.render_agent_bridge(c, cx),
+            ("hosts", _) => self.render_hosts_placeholder(c),
+            ("personalization", _) => self.render_personalization(c, cx),
+            ("ai", None) => self.render_ai_overview(c, cx),
+            ("ai", Some(_)) => self.render_ai_providers_subpage(c, cx),
+            _ => div().into_any_element(),
+        }
+    }
+
+    /// Render one group list (`SectionHeader`+`Item` rows only, honoring
+    /// disclosure collapse state) — the core loop `render_generated_body`
+    /// uses for `AreaKind::Generated` pages, reused directly by the Custom
+    /// panes that fold their own field grid into a bespoke body before their
+    /// non-field sections (`AI_GROUPS`, `PERSONALIZATION_GROUPS` — rule 4:
+    /// "may still read/write fields under `target_module`").
+    pub(crate) fn render_field_groups(
+        &mut self,
+        groups: &[(&'static str, &'static [&'static str])],
+        area_target_module: &'static str,
+        c: &Palette,
+        cx: &mut Context<Self>,
+    ) -> gpui::AnyElement {
+        let mut rows = Vec::new();
+        for (label, keys) in groups {
+            rows.push(self.render_section_header(label, c, cx));
+            if self.section_collapsed(label) {
+                continue;
+            }
+            for key in *keys {
+                if let Some(field) = self
+                    .all_fields
+                    .iter()
+                    .find(|f| f.area() == area_target_module && f.local_key() == *key)
+                    .copied()
+                {
+                    rows.push(self.render_field(&field, c, cx));
+                }
+            }
+        }
+        div().flex().flex_col().children(rows).into_any_element()
+    }
+
+    /// Placeholder body for the Hosts custom category (`AREAS` slot only —
+    /// T19-010 fills the real Host Manager UI in here; every `hosts.*`
+    /// `SettingsContent` field is a documented `DEDICATED_PANE_EXEMPTIONS`
+    /// entry until then, per this task's own Notizen).
+    fn render_hosts_placeholder(&self, c: &Palette) -> gpui::AnyElement {
+        div()
+            .p_4()
+            .text_size(px(11.5))
+            .text_color(c.muted)
+            .child("Host settings move here in T19-010 — manage saved hosts from the Hosts panel for now.")
+            .into_any_element()
+    }
+}
+
+/// Which variant `SettingsPage::body`/`SubPage::body` is, without holding a
+/// borrow across a `&mut self` call.
+enum PageBodyKind {
+    Generated,
+    Custom,
+}
+
+/// An owned mirror of `SettingsPageItem` (`&'static str`s only — cheap to
+/// clone out of `self.pages` so the borrow doesn't outlive the loop that
+/// needs `&mut self` for each field's render call).
+enum SettingsPageItemOwned {
+    SectionHeader(&'static str),
+    Item(&'static str),
+}
+
+impl From<&SettingsPageItem> for SettingsPageItemOwned {
+    fn from(item: &SettingsPageItem) -> Self {
+        match item {
+            SettingsPageItem::SectionHeader(s) => SettingsPageItemOwned::SectionHeader(s),
+            SettingsPageItem::Item(s) => SettingsPageItemOwned::Item(s),
+        }
     }
 }

@@ -633,4 +633,60 @@ impl SettingsView {
             )
             .into_any_element()
     }
+
+    // ── T19-004: AI is a Custom top-level category (`AREAS`) — its main
+    // page folds the generic `AI_GROUPS` field grid in before a
+    // `SubPageLink` to the bespoke provider/agent/directive sections (the
+    // task's Notizen require AI to have at least one sub-page).
+
+    pub(crate) fn render_ai_overview(
+        &mut self,
+        c: &Palette,
+        cx: &mut Context<Self>,
+    ) -> gpui::AnyElement {
+        let grid = self.render_field_groups(AI_GROUPS, "ai", c, cx);
+        div()
+            .flex()
+            .flex_col()
+            .child(grid)
+            .child(
+                div()
+                    .id("ai-goto-providers")
+                    .mt_2()
+                    .px_2()
+                    .py(px(6.0))
+                    .flex()
+                    .items_center()
+                    .justify_between()
+                    .rounded_sm()
+                    .border_1()
+                    .border_color(c.border)
+                    .text_color(c.fg)
+                    .hover(|s| s.bg(c.border))
+                    .child("Providers, Agents & Directives")
+                    .child(div().text_color(c.muted).child("\u{203A}"))
+                    .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
+                        this.go_to_subpage(0, cx);
+                    })),
+            )
+            .into_any_element()
+    }
+
+    pub(crate) fn render_ai_providers_subpage(
+        &mut self,
+        c: &Palette,
+        cx: &mut Context<Self>,
+    ) -> gpui::AnyElement {
+        div()
+            .flex()
+            .flex_col()
+            .child(section_label("Providers", c))
+            .child(self.render_providers(c, cx))
+            .child(section_label("Agents", c))
+            .child(self.render_agents_section(c, cx))
+            .child(section_label("Directives", c))
+            .child(self.render_directives_section(c, cx))
+            .children(self.render_ai_editor(c, cx))
+            .into_any_element()
+    }
 }

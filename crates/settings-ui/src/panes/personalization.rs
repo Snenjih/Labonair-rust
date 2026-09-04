@@ -132,9 +132,16 @@ impl SettingsView {
         c: &Palette,
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
+        // T19-004: the 7 legacy per-button status-bar toggles are plain
+        // `bool` `SettingsContent` fields (`PERSONALIZATION_GROUPS`) — fold
+        // the generic grid in above the bespoke layout editor/visibility
+        // grid, which own the two `BTreeMap` fields directly (rule 4).
+        let generic_grid =
+            self.render_field_groups(PERSONALIZATION_GROUPS, "personalization", c, cx);
         div()
             .flex()
             .flex_col()
+            .child(generic_grid)
             .child(section_label("Statusbar Layout", c))
             .child(div().text_size(px(11.0)).text_color(c.muted).pb_2().child(
                 "Move status bar items between the left and right cluster, or hide them. \

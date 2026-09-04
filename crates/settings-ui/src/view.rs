@@ -1,16 +1,16 @@
 //! The `SettingsView` entity: its state struct, construction, lifecycle,
-//! keyboard handling, the generic dropdown/edit plumbing, `Render`, and the
-//! small render helpers + `Palette`. The large per-pane render code lives in the
-//! sibling `panes/*` modules (each a separate `impl SettingsView` block). Split
-//! out of the old `crates/ui/src/settings.rs` monolith in T16-007 (mechanical
-//! move — no logic change).
+//! keyboard handling, the AREAS-driven navigation (T19-004: disclosure
+//! sections + scroll-spy + sub-pages + custom top-level chrome, replacing the
+//! old flat `CATEGORIES` sidebar), and the small render helpers + `Palette`.
+//! The large per-pane render code lives in the sibling `panes/*` modules
+//! (each a separate `impl SettingsView` block).
 
 pub use gpui::prelude::FluentBuilder;
 pub use gpui::{
     anchored, deferred, div, px, App, AppContext, ClickEvent, ClipboardItem, Context, Entity,
     FocusHandle, Focusable, InteractiveElement, IntoElement, KeyDownEvent, ParentElement,
-    PathPromptOptions, Pixels, Point, Render, SharedString, StatefulInteractiveElement, Styled,
-    Window,
+    PathPromptOptions, Pixels, Point, Render, ScrollHandle, SharedString,
+    StatefulInteractiveElement, Styled, Window,
 };
 pub use serde_json::Value;
 pub use std::fs;
@@ -26,19 +26,25 @@ pub use labonair_backend::modules::settings::mcp::{mcp_prefs_load, mcp_prefs_sav
 pub use labonair_backend::modules::settings::preferences::ThemePref;
 pub use labonair_backend::App as Backend;
 pub use labonair_command_palette::{
-    effective_binding, shortcut, shortcut_slug, shortcuts, KeybindMap, PalettePrefs, ShortcutId,
+    effective_binding, shortcut, shortcut_slug, shortcuts, KeybindMap, ShortcutId,
 };
 pub use labonair_notifications::{notification_center, Notification};
+pub use labonair_settings::SettingsStore;
+pub use labonair_settings_content::areas::AREAS;
 pub use labonair_theme::{ThemeFile, ThemePreference, ThemeStore};
 pub use labonair_workspace::background::BackgroundStore;
 
 pub(crate) use crate::apply::*;
-pub(crate) use crate::fields::*;
-pub(crate) use crate::sections::*;
+pub(crate) use crate::pages::*;
+pub(crate) use crate::schema::*;
 pub(crate) use crate::store::*;
 pub(crate) use crate::window::*;
 
+use std::collections::HashSet;
+
 pub(crate) struct EditState {
+    /// The field's `json_path` (e.g. `"terminal.terminalFontSize"`), or a
+    /// non-field synthetic key (`"provkey:<id>"` for AI provider API keys).
     pub(crate) key: String,
     pub(crate) buffer: String,
     pub(crate) numeric: bool,
@@ -111,14 +117,47 @@ pub(crate) fn mock_community_themes() -> Vec<RemoteTheme> {
     ]
 }
 
+/// Which layer supplies a field's effective value, for the origin badge
+/// (`docs/settings-guidelines.md` rule 5). A thin display-only mirror of
+/// `labonair_settings::SettingsLayer` — kept separate so this crate never has
+/// to match on `SettingsLayer::Project(WorktreeId)`/`Language(String)`'s
+/// payloads just to render three words.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum OriginBadge {
+    Default,
+    User,
+    Project,
+}
+
+impl OriginBadge {
+    pub(crate) fn label(self) -> &'static str {
+        match self {
+            OriginBadge::Default => "Default",
+            OriginBadge::User => "User",
+            OriginBadge::Project => "Project",
+        }
+    }
+}
+
 pub struct SettingsView {
     pub(crate) prefs: Entity<PreferencesStore>,
     pub(crate) theme: Entity<ThemeStore>,
+    /// Kept alive (and observed, in `new()`) so a live background change
+    /// still repaints the settings window; the old bespoke background
+    /// gallery picker (`render_appearance`) was dropped in T19-004 in favor
+    /// of the generic field grid for `appearance.background*` — nothing
+    /// reads this field directly any more, but the entity must stay held
+    /// for its `cx.observe` subscription's lifetime.
+    #[allow(dead_code)]
     pub(crate) background: Entity<BackgroundStore>,
     pub(crate) backend: Backend,
     pub(crate) tokio: TokioHandle,
     pub(crate) open: bool,
-    pub(crate) active_cat: usize,
+    /// Index into `AREAS` / `self.pages` — the active top-level category.
+    pub(crate) active_area: usize,
+    /// Index into `self.pages[active_area].sub_pages`, when a `SubPageLink`
+    /// has been followed (rule 1).
+    pub(crate) active_subpage: Option<usize>,
     pub(crate) search: String,
     pub(crate) editing: Option<EditState>,
     pub(crate) mcp: McpPrefs,
@@ -146,8 +185,8 @@ pub struct SettingsView {
     /// `true` when this view is the root of its own OS window (T16-009); `false`
     /// for the legacy in-`AppShell` modal path (kept for tests only).
     pub(crate) windowed: bool,
-    /// An open `Select` dropdown (key + anchor position + options), drawn as a
-    /// deferred floating layer so it escapes the scroll clip.
+    /// An open `Select` dropdown (json_path + anchor position + options),
+    /// drawn as a deferred floating layer so it escapes the scroll clip.
     pub(crate) dropdown: Option<SelectMenu>,
     /// AI provider instances + their keychain-backed API keys (T16-012).
     pub(crate) instances: labonair_ai::InstanceStore,
@@ -167,11 +206,25 @@ pub struct SettingsView {
     /// Personalization pane's statusbar-layout editor + panel-toggle
     /// visibility switches.
     pub(crate) workspace: Entity<labonair_workspace::Workspace>,
+    // ── T19-004: generated settings UI ──────────────────────────────────
+    /// Every generated field (`crate::schema::all_fields()`), computed once.
+    pub(crate) all_fields: Vec<AnyField>,
+    /// Every top-level page (`crate::pages::pages()`), in `AREAS` order.
+    pub(crate) pages: Vec<SettingsPage>,
+    /// Collapsed disclosure sections: `(area index, sub-page slug or "" for
+    /// the main page, section label)`. Absent = open (rule 1: "Default: alle
+    /// offen").
+    pub(crate) collapsed_sections: HashSet<(usize, &'static str, &'static str)>,
+    /// Scroll position of the active generated page's content, tracked so
+    /// the jump bar can scroll-to-section and highlight the section that is
+    /// currently topmost (rule 1's scroll-spy).
+    pub(crate) content_scroll: ScrollHandle,
 }
 
 pub(crate) struct SelectMenu {
     pub(crate) key: &'static str,
-    pub(crate) options: Vec<SharedString>,
+    /// `(serialized token to store, human label to show)`.
+    pub(crate) options: Vec<(SharedString, SharedString)>,
     pub(crate) at: Point<Pixels>,
     /// The `"(default)"` font entry — selecting it clears the pref to `""`.
     pub(crate) default_sentinel: Option<SharedString>,
@@ -204,11 +257,19 @@ impl SettingsView {
             cx.notify()
         })
         .detach();
-        // Deep-link: jump to the requested tab when another part of the app
-        // asks for a specific settings section while this window is open.
+        // The layered `SettingsStore` (T19-002/003) notifies on every write —
+        // including ones this window did not make itself (e.g. a project
+        // `.labonair/settings.json` edit) — so origin badges / values stay
+        // live without a bespoke observer list.
+        if cx.has_global::<SettingsStore>() {
+            cx.observe_global::<SettingsStore>(|_, cx| cx.notify())
+                .detach();
+        }
+        // Deep-link: jump to the requested area/section slug when another
+        // part of the app asks for one while this window is open.
         cx.observe_global::<SettingsTarget>(|this, cx| {
-            if let Some(SettingsTarget(Some(tab))) = cx.try_global::<SettingsTarget>().copied() {
-                this.active_cat = tab.category_index();
+            if let Some(SettingsTarget(Some(slug))) = cx.try_global::<SettingsTarget>().copied() {
+                this.navigate_to_slug(slug);
                 this.search.clear();
                 cx.notify();
             }
@@ -221,7 +282,8 @@ impl SettingsView {
             backend,
             tokio,
             open: false,
-            active_cat: 0,
+            active_area: 0,
+            active_subpage: None,
             search: String::new(),
             editing: None,
             mcp: mcp_prefs_load(),
@@ -249,6 +311,10 @@ impl SettingsView {
             ai_editor_focus: cx.focus_handle(),
             focus: cx.focus_handle(),
             workspace,
+            all_fields: all_fields(),
+            pages: pages(),
+            collapsed_sections: HashSet::new(),
+            content_scroll: ScrollHandle::new(),
         }
     }
 
@@ -333,7 +399,153 @@ impl SettingsView {
         self.notify(cx, Notification::error(title, body));
     }
 
-    // ── generic field mutation ────────────────────────────────────────────
+    // ── navigation (T19-004) ────────────────────────────────────────────
+
+    /// Resolve a deep-link slug (`"terminal"`, `"terminal/advanced"`) to an
+    /// area + optional sub-page and navigate there (rule 7).
+    pub(crate) fn navigate_to_slug(&mut self, slug: &str) {
+        let (area_slug, sub_slug) = match slug.split_once('/') {
+            Some((a, s)) => (a, Some(s)),
+            None => (slug, None),
+        };
+        let Some(area_idx) = AREAS.iter().position(|a| a.slug == area_slug) else {
+            return;
+        };
+        self.active_area = area_idx;
+        self.active_subpage = sub_slug.and_then(|s| {
+            self.pages[area_idx]
+                .sub_pages
+                .iter()
+                .position(|sp| sp.slug == s)
+        });
+    }
+
+    /// The active page's own body (main page, or the followed sub-page).
+    pub(crate) fn active_body(&self) -> &PageBody {
+        match self.active_subpage {
+            Some(i) => &self.pages[self.active_area].sub_pages[i].body,
+            None => &self.pages[self.active_area].body,
+        }
+    }
+
+    /// The sub-page slug to key `collapsed_sections`/scroll state by (`""`
+    /// for the main page — never a real slug, since every `AreaMeta::slug`
+    /// / `SubPage::slug` is non-empty).
+    pub(crate) fn active_subpage_slug(&self) -> &'static str {
+        match self.active_subpage {
+            Some(i) => self.pages[self.active_area].sub_pages[i].slug,
+            None => "",
+        }
+    }
+
+    pub(crate) fn go_to_area(&mut self, i: usize, cx: &mut Context<Self>) {
+        self.active_area = i;
+        self.active_subpage = None;
+        self.search.clear();
+        cx.notify();
+    }
+
+    pub(crate) fn go_to_subpage(&mut self, i: usize, cx: &mut Context<Self>) {
+        self.active_subpage = Some(i);
+        cx.notify();
+    }
+
+    pub(crate) fn go_back_to_main_page(&mut self, cx: &mut Context<Self>) {
+        self.active_subpage = None;
+        cx.notify();
+    }
+
+    pub(crate) fn toggle_section(&mut self, label: &'static str, cx: &mut Context<Self>) {
+        let key = (self.active_area, self.active_subpage_slug(), label);
+        if !self.collapsed_sections.remove(&key) {
+            self.collapsed_sections.insert(key);
+        }
+        cx.notify();
+    }
+
+    pub(crate) fn section_collapsed(&self, label: &'static str) -> bool {
+        self.collapsed_sections
+            .contains(&(self.active_area, self.active_subpage_slug(), label))
+    }
+
+    // ── generic field read/write (T19-004) ──────────────────────────────
+
+    pub(crate) fn field_by_path(&self, json_path: &str) -> Option<&AnyField> {
+        self.all_fields.iter().find(|f| f.json_path == json_path)
+    }
+
+    /// The field's effective (merged) value, `None` if the layered store
+    /// isn't published yet (headless/tests without `labonair_settings::init`).
+    pub(crate) fn field_value(&self, field: &AnyField, cx: &App) -> Option<Value> {
+        let store = cx.try_global::<SettingsStore>()?;
+        (field.get)(store.merged())
+    }
+
+    /// Which layer supplies `field`'s effective value (rule 5).
+    pub(crate) fn field_origin(&self, field: &AnyField, cx: &App) -> OriginBadge {
+        match cx.try_global::<SettingsStore>() {
+            None => OriginBadge::Default,
+            Some(store) => match store.source_of(field.json_path) {
+                labonair_settings::SettingsLayer::Default => OriginBadge::Default,
+                labonair_settings::SettingsLayer::Project(_) => OriginBadge::Project,
+                _ => OriginBadge::User,
+            },
+        }
+    }
+
+    /// Write a generated field's value through the layered `SettingsStore`
+    /// (persists the `User` layer), then refresh the `PreferencesStore` /
+    /// `GlobalPreferences` bridge so not-yet-migrated consumers see it too
+    /// (the task's warning).
+    pub(crate) fn set_field_value(
+        &mut self,
+        json_path: &'static str,
+        value: Value,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(field) = self.field_by_path(json_path) else {
+            return;
+        };
+        let set = field.set;
+        if !cx.has_global::<SettingsStore>() {
+            return;
+        }
+        let accepted = cx
+            .global_mut::<SettingsStore>()
+            .update_user(move |c| {
+                (set)(c, value.clone());
+            })
+            .is_ok();
+        if !accepted {
+            return;
+        }
+        self.prefs.update(cx, |p, cx| p.reload_from_disk(cx));
+        self.sync_theme_from_prefs(cx);
+        cx.notify();
+    }
+
+    /// "Reset to default" (rule 5) — writes the field's `SettingsContent::
+    /// defaults()` value back into the `User` layer. This is a pragmatic
+    /// simplification of "clear the User-layer override": `SettingsStore`
+    /// has no per-field unset, only whole-layer replacement, so a reset
+    /// leaves the field explicitly set to its default rather than truly
+    /// absent — visually and functionally identical (the field shows its
+    /// default value and the origin badge would only differ from `Default`
+    /// if a lower-priority… there is none below `Default`, so this is exact
+    /// for the common case of no active project override).
+    pub(crate) fn reset_field(&mut self, json_path: &'static str, cx: &mut Context<Self>) {
+        let Some(field) = self.field_by_path(json_path) else {
+            return;
+        };
+        let Some(default_value) =
+            (field.get)(&labonair_settings_content::SettingsContent::defaults())
+        else {
+            return;
+        };
+        self.set_field_value(json_path, default_value, cx);
+    }
+
+    // ── legacy generic field mutation (PreferencesStore) ────────────────
 
     pub(crate) fn set_pref(&mut self, key: &str, value: Value, cx: &mut Context<Self>) {
         let key_owned = key.to_string();
@@ -407,61 +619,60 @@ impl SettingsView {
         apply_prefs_to_theme(&p, &theme, cx);
     }
 
-    pub(crate) fn toggle_bool(&mut self, key: &str, cx: &mut Context<Self>) {
+    pub(crate) fn toggle_bool(&mut self, field: &AnyField, cx: &mut Context<Self>) {
         let cur = self
-            .prefs
-            .read(cx)
-            .value(key)
+            .field_value(field, cx)
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
-        self.set_pref(key, Value::Bool(!cur), cx);
+        self.set_field_value(field.json_path, Value::Bool(!cur), cx);
     }
 
     pub(crate) fn bump_int(
         &mut self,
-        key: &str,
+        json_path: &'static str,
         min: i64,
         max: i64,
         delta: i64,
         cx: &mut Context<Self>,
     ) {
+        let Some(field) = self.field_by_path(json_path) else {
+            return;
+        };
         let cur = self
-            .prefs
-            .read(cx)
-            .value(key)
+            .field_value(field, cx)
             .and_then(|v| v.as_i64())
             .unwrap_or(min);
         let next = (cur + delta).clamp(min, max);
-        self.set_pref(key, Value::from(next), cx);
+        self.set_field_value(json_path, Value::from(next), cx);
     }
 
     /// Float stepper: `min/max/delta` are in hundredths.
     pub(crate) fn bump_float(
         &mut self,
-        key: &str,
+        json_path: &'static str,
         min_centi: i64,
         max_centi: i64,
         delta_centi: i64,
         cx: &mut Context<Self>,
     ) {
+        let Some(field) = self.field_by_path(json_path) else {
+            return;
+        };
         let cur_centi = self
-            .prefs
-            .read(cx)
-            .value(key)
+            .field_value(field, cx)
             .and_then(|v| v.as_f64())
             .map(|f| (f * 100.0).round() as i64)
             .unwrap_or(min_centi);
         let next = (cur_centi + delta_centi).clamp(min_centi, max_centi);
         let n = serde_json::Number::from_f64(next as f64 / 100.0)
             .unwrap_or_else(|| serde_json::Number::from(0));
-        self.set_pref(key, Value::Number(n), cx);
+        self.set_field_value(json_path, Value::Number(n), cx);
     }
 
     pub(crate) fn begin_edit(&mut self, key: &str, numeric: bool, cx: &mut Context<Self>) {
         let buffer = self
-            .prefs
-            .read(cx)
-            .value(key)
+            .field_by_path(key)
+            .and_then(|f| self.field_value(f, cx))
             .map(|v| match v {
                 Value::String(s) => s,
                 other => other.to_string(),
@@ -497,6 +708,10 @@ impl SettingsView {
             cx.notify();
             return;
         }
+        let Some(field) = self.field_by_path(&edit.key) else {
+            return;
+        };
+        let json_path = field.json_path;
         let value = if edit.numeric {
             match edit.buffer.trim().parse::<i64>() {
                 Ok(n) => Value::from(n),
@@ -508,7 +723,7 @@ impl SettingsView {
         } else {
             Value::String(edit.buffer.trim().to_string())
         };
-        self.set_pref(&edit.key, value, cx);
+        self.set_field_value(json_path, value, cx);
     }
 
     // ── key handling ──────────────────────────────────────────────────────
@@ -574,16 +789,8 @@ impl SettingsView {
         cx.stop_propagation();
     }
 
-    /// The General pane: an About hero followed by the grouped rows.
-    pub(crate) fn render_general(&self, c: &Palette, cx: &mut Context<Self>) -> gpui::AnyElement {
-        div()
-            .flex()
-            .flex_col()
-            .child(self.render_about_hero(c, cx))
-            .child(self.render_grouped("General", c, cx))
-            .into_any_element()
-    }
-
+    /// The General page's own leading content: an About hero, above the
+    /// generated field grid.
     pub(crate) fn render_about_hero(
         &self,
         c: &Palette,
@@ -687,7 +894,7 @@ impl Render for SettingsView {
             card: t.card(),
             accent: t.accent(),
         };
-        let active_cat = self.active_cat;
+        let active_area = self.active_area;
         let searching = !self.search.trim().is_empty();
 
         let search_box = div()
@@ -710,6 +917,11 @@ impl Render for SettingsView {
                 self.search.clone()
             }));
 
+        // Left: fixed-order top-level categories (rule 1), sourced from
+        // `AREAS` — a Custom category (Themes, Hosts, Shortcuts, AI, MCP,
+        // Personalization) is a normal entry here, exactly like a Generated
+        // one (rule 4: "a custom pane may be registered as a top-level
+        // category exactly like a field-based one").
         let sidebar = div()
             .w(px(208.0))
             .flex_shrink_0()
@@ -720,10 +932,10 @@ impl Render for SettingsView {
             .border_r_1()
             .border_color(c.border)
             .child(search_box)
-            .children(CATEGORIES.iter().enumerate().map(|(i, name)| {
-                let is_active = i == active_cat && !searching;
+            .children(AREAS.iter().enumerate().map(|(i, area)| {
+                let is_active = i == active_area && !searching;
                 div()
-                    .id(SharedString::from(*name))
+                    .id(SharedString::from(area.key))
                     .px_2()
                     .py(px(5.0))
                     .rounded_sm()
@@ -731,54 +943,16 @@ impl Render for SettingsView {
                     .text_color(if is_active { c.fg } else { c.muted })
                     .when(is_active, |d| d.bg(c.accent))
                     .when(!is_active, |d| d.hover(|s| s.bg(c.border)))
-                    .child(SharedString::from(*name))
+                    .child(SharedString::from(area.title))
                     .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
-                        this.active_cat = i;
-                        this.search.clear();
-                        cx.notify();
+                        this.go_to_area(i, cx);
                     }))
             }));
 
         let body = self.render_body(&c, cx);
         let windowed = self.windowed;
 
-        let header = div()
-            .h(px(44.0))
-            .flex_shrink_0()
-            .flex()
-            .items_center()
-            .justify_between()
-            .px_3()
-            .border_b_1()
-            .border_color(c.border)
-            .child(
-                div()
-                    .id("settings-open-json")
-                    .text_size(px(11.0))
-                    .text_color(c.muted)
-                    .hover(|s| s.text_color(c.fg))
-                    .child("Open settings.json")
-                    .on_click(cx.listener(|_, _: &ClickEvent, _w, cx| {
-                        cx.reveal_path(&config_dir().join("labonair-settings.json"));
-                    })),
-            )
-            .child(
-                div()
-                    .text_color(c.fg)
-                    .font_weight(gpui::FontWeight::SEMIBOLD)
-                    .text_size(px(12.5))
-                    .child("Settings"),
-            )
-            .child(
-                div()
-                    .id("settings-close")
-                    .text_color(c.muted)
-                    .hover(|s| s.text_color(c.fg))
-                    .child("\u{2715}")
-                    .on_click(cx.listener(|this, _: &ClickEvent, window, cx| {
-                        this.request_close(window, cx)
-                    })),
-            );
+        let header = self.render_header(&c, cx);
 
         let content = div().flex_1().min_h_0().flex().child(sidebar).child(
             div()
@@ -790,6 +964,7 @@ impl Render for SettingsView {
                 .items_center()
                 .p_4()
                 .overflow_y_scroll()
+                .track_scroll(&self.content_scroll)
                 .child(
                     div()
                         .w_full()
@@ -840,6 +1015,80 @@ impl Render for SettingsView {
     }
 }
 
+impl SettingsView {
+    /// Header: "Open settings.json" + breadcrumb (category, or "category >
+    /// sub-page" with a back arrow when a `SubPageLink` was followed, rule
+    /// 1) + close.
+    pub(crate) fn render_header(&self, c: &Palette, cx: &mut Context<Self>) -> gpui::AnyElement {
+        let area = &AREAS[self.active_area];
+        let title: gpui::AnyElement = match self.active_subpage {
+            Some(i) => {
+                let sub_title = self.pages[self.active_area].sub_pages[i].title;
+                div()
+                    .flex()
+                    .items_center()
+                    .gap_1()
+                    .child(
+                        div()
+                            .id("settings-back")
+                            .text_color(c.muted)
+                            .hover(|s| s.text_color(c.fg))
+                            .child("\u{2190}")
+                            .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
+                                this.go_back_to_main_page(cx);
+                            })),
+                    )
+                    .child(SharedString::from(format!(
+                        "{} \u{203A} {}",
+                        area.title, sub_title
+                    )))
+                    .into_any_element()
+            }
+            None => div()
+                .child(SharedString::from(area.title))
+                .into_any_element(),
+        };
+        div()
+            .h(px(44.0))
+            .flex_shrink_0()
+            .flex()
+            .items_center()
+            .justify_between()
+            .px_3()
+            .border_b_1()
+            .border_color(c.border)
+            .child(
+                div()
+                    .id("settings-open-json")
+                    .text_size(px(11.0))
+                    .text_color(c.muted)
+                    .hover(|s| s.text_color(c.fg))
+                    .child("Open settings.json")
+                    .on_click(cx.listener(|_, _: &ClickEvent, _w, cx| {
+                        cx.reveal_path(&config_dir().join("labonair-settings.json"));
+                    })),
+            )
+            .child(
+                div()
+                    .text_color(c.fg)
+                    .font_weight(gpui::FontWeight::SEMIBOLD)
+                    .text_size(px(12.5))
+                    .child(title),
+            )
+            .child(
+                div()
+                    .id("settings-close")
+                    .text_color(c.muted)
+                    .hover(|s| s.text_color(c.fg))
+                    .child("\u{2715}")
+                    .on_click(cx.listener(|this, _: &ClickEvent, window, cx| {
+                        this.request_close(window, cx)
+                    })),
+            )
+            .into_any_element()
+    }
+}
+
 #[derive(Clone, Copy)]
 pub(crate) struct Palette {
     pub(crate) bg: gpui::Hsla,
@@ -877,32 +1126,6 @@ pub(crate) fn section_label(text: &'static str, c: &Palette) -> impl IntoElement
         .font_weight(gpui::FontWeight::SEMIBOLD)
         .text_color(c.muted)
         .child(text)
-}
-
-pub(crate) fn bg_tile(
-    id: &str,
-    label: &str,
-    selected: bool,
-    c: &Palette,
-    cx: &mut Context<SettingsView>,
-    f: impl Fn(&mut SettingsView, &mut Context<SettingsView>) + 'static,
-) -> impl IntoElement {
-    div()
-        .id(SharedString::from(id.to_string()))
-        .w(px(96.0))
-        .h(px(60.0))
-        .flex()
-        .items_end()
-        .p_1()
-        .rounded_md()
-        .border_1()
-        .border_color(if selected { c.accent } else { c.border })
-        .bg(c.bg)
-        .text_color(if selected { c.fg } else { c.muted })
-        .text_size(px(10.0))
-        .overflow_hidden()
-        .child(SharedString::from(label.to_string()))
-        .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| f(this, cx)))
 }
 
 pub(crate) fn step_btn(

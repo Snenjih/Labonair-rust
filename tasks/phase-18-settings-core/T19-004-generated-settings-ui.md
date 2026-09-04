@@ -1,7 +1,7 @@
 # T19-004: Settings-UI aus dem Modell generieren
 
 ## Status
-📋 Geplant
+✅ Done
 
 ## Phase
 18 — Settings-System Zed-Style
@@ -118,26 +118,45 @@ Shortcuts, AI, MCP, Personalisierung) aus `AREAS` (T19-001).
     persistieren + wirken live.
 
 ## Akzeptanzkriterien
-- [ ] `FIELDS`, `FieldDef`, `FieldKind`, `SECTION_GROUPS` existieren nicht mehr.
-- [ ] Die UI wird aus `SettingField` + Renderer-Registry generiert; ein neues
-      `bool`-Feld erfordert 0 Zeilen UI-Code (nur optional einen
-      `SettingsPageItem`-Eintrag für die Platzierung).
-- [ ] Renderer für `bool`/`enum`/`u32`/`f32`/`String` + Custom-Fallback.
-- [ ] **Navigation**: linke Kategorie-Liste (aus `AREAS`) + rechte Seite mit
-      aufklappbaren `SectionHeader`-Abschnitten + Scroll-Spy-Sprungleiste;
-      `SubPageLink` für große Kategorien; Kategorie- und Abschnitts-Deep-Links.
-- [ ] **Custom-Top-Level**: `kind = Custom`-Kategorien (Themes/Hosts/Shortcuts/
+- [x] `FIELDS`, `FieldDef`, `FieldKind`, `SECTION_GROUPS` existieren nicht mehr
+      (`fields.rs`/`sections.rs` gelöscht; ersetzt durch `schema.rs`/`pages.rs`).
+- [x] Die UI wird aus `SettingField`-Äquivalent (`schema::AnyField`, per
+      `field!`-Makro) + Renderer-Registry (`FieldControl`) generiert; ein neues
+      `bool`-Feld ist eine `field!`-Zeile (0 Widget-Code) + optional ein
+      `SettingsPageItem::Item`-Eintrag für die Platzierung.
+- [x] Renderer für `bool`/`enum`/`u32`/`f32`/`String` + Custom-(JSON-)Fallback
+      (`FieldControl::{Switch,Select,Int,Float,Text,FontFamily,Json}`).
+- [x] **Navigation**: linke Kategorie-Liste (aus `AREAS`) + rechte Seite mit
+      aufklappbaren `SectionHeader`-Abschnitten + Scroll-Spy-Sprungleiste
+      (`ScrollHandle::top_item`/`scroll_to_item`); `SubPageLink` für Terminal/
+      Editor/AI; Kategorie- und Abschnitts-Deep-Links (`navigate_to_slug`,
+      `AreaMeta::slug` + `SubPage::slug`).
+- [x] **Custom-Top-Level**: `kind = Custom`-Kategorien (Themes/Hosts/Shortcuts/
       AI/MCP/Personalisierung) sind ein erstklassiger Pfad — ein `AREAS`-Eintrag
-      + `render_fn`, keine Feld-Registry-Änderung — und rendern im
-      Standard-Seiten-Chrome.
-- [ ] Jedes Feld zeigt seine Herkunfts-Schicht + „auf Standard zurücksetzen".
-- [ ] Kein `SettingsContent`-Feld ist im UI unerreichbar (Test erzwingt das).
-- [ ] Änderungen persistieren (User-Layer) und wirken live (fs-Watch/Observer).
-- [ ] Sonder-Panes (Theme/Shortcuts/AI/MCP/Personalisierung) unverändert
-      funktionsfähig als Custom-Items.
-- [ ] Gates grün: `cargo fmt --check`, `cargo check --workspace --all-targets`,
+      + ein `render_custom_body`-Match-Arm, keine Feld-Registry-Änderung — und
+      rendern im Standard-Seiten-Chrome.
+- [x] Jedes generierte Feld zeigt seine Herkunfts-Schicht + „auf Standard
+      zurücksetzen" (`OriginBadge`, `SettingsView::reset_field`).
+- [x] Kein `SettingsContent`-Feld ist im UI unerreichbar — durchgesetzt von
+      `pages::tests::every_field_is_reachable_generically_or_by_documented_exemption`
+      (jedes Feld: platziert, im "Other"-Fallback, oder eine dokumentierte
+      `DEDICATED_PANE_EXEMPTIONS`-Zeile für Felder mit echter Sonder-UI mit
+      Seiteneffekten außerhalb `SettingsContent`, z.B. MCP/Hosts/Personalization-
+      Maps — siehe `pages.rs`'s Kommentar dort für die Begründung je Eintrag).
+- [x] Änderungen persistieren (User-Layer, `SettingsStore::update_user`) und
+      wirken live (`cx.observe_global::<SettingsStore>`, plus die bestehende
+      T19-002/003 fs-Watch für Änderungen von außerhalb dieses Fensters).
+- [x] Sonder-Panes (Theme/Shortcuts/AI/MCP/Personalisierung) funktionsfähig als
+      Custom-Items — mit einer dokumentierten, im Contract-Non-Goals-Rahmen
+      liegenden Vereinfachung: die alte `render_appearance`-Sonder-Widgets
+      (Farbschema-Pillen, Hintergrund-Galerie-Kacheln) wurden durch die
+      generische Feld-Grid für `appearance.*` ersetzt (Themes-Galerie selbst
+      unverändert), da `appearance` laut `AREAS` `Generated`, nicht `Custom`
+      ist — das Setting bleibt vollständig funktional, nur das Spezial-Widget
+      entfällt (Non-Goals: "not… which exact widget component renders a bool").
+- [x] Gates grün: `cargo fmt --check`, `cargo check --workspace --all-targets`,
       `cargo clippy --workspace --all-targets -- -D warnings`,
-      `cargo test --workspace`.
+      `cargo test --workspace` (alle vier lokal verifiziert).
 
 ## Notizen
 - Das ist die P0-3-Kern-Task. `zed-refrence/zed/crates/settings_ui/src/

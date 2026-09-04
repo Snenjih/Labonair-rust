@@ -11,66 +11,36 @@ mod cases {
     use labonair_command_palette::{
         effective_binding, resolve_conflict, Conflict, KeybindMap, ShortcutId,
     };
+    use labonair_settings_content::areas::AREAS;
 
     use crate::apply::*;
-    use crate::fields::*;
+    use crate::schema::{all_fields, FieldControl};
     use crate::store::PreferencesStore;
 
+    /// T19-004: every generated field's `json_path` area segment must be one
+    /// of `AREAS`' `target_module`s — `schema.rs` has its own, more thorough
+    /// version of this check; this one additionally proves `AREAS` and the
+    /// field registry agree from the crate's public surface.
     #[test]
-    fn every_field_key_exists_on_the_model() {
-        let json = serde_json::to_value(Preferences::default()).unwrap();
-        let obj = json.as_object().unwrap();
-        for f in FIELDS {
-            assert!(
-                obj.contains_key(f.key),
-                "unknown preference key `{}`",
-                f.key
-            );
-        }
-    }
-
-    #[test]
-    fn every_field_category_is_registered() {
-        for f in FIELDS {
-            assert!(
-                CATEGORIES.contains(&f.category),
-                "field `{}` has unregistered category `{}`",
-                f.key,
-                f.category
-            );
-        }
-    }
-
-    #[test]
-    fn select_options_are_valid_serialized_tokens() {
-        for f in FIELDS {
-            if let FieldKind::Select(opts) = f.kind {
-                let mut base = serde_json::to_value(Preferences::default())
-                    .unwrap()
-                    .as_object()
-                    .unwrap()
-                    .clone();
-                for opt in opts {
-                    base.insert(f.key.to_string(), Value::String((*opt).to_string()));
-                    let parsed: Result<Preferences, _> =
-                        serde_json::from_value(Value::Object(base.clone()));
-                    assert!(parsed.is_ok(), "`{}` rejects option `{}`", f.key, opt);
-                }
-            }
+    fn every_field_area_matches_an_areas_target_module() {
+        let modules: std::collections::HashSet<&str> =
+            AREAS.iter().map(|a| a.target_module).collect();
+        for f in all_fields() {
+            assert!(modules.contains(f.area()), "unknown area `{}`", f.area());
         }
     }
 
     #[test]
     fn editor_theme_options_are_known_slugs() {
-        let opts = FIELDS
-            .iter()
-            .find(|f| f.key == "editorTheme")
-            .map(|f| match f.kind {
-                FieldKind::Select(o) => o,
-                _ => panic!("editorTheme should be a Select"),
+        let opts = all_fields()
+            .into_iter()
+            .find(|f| f.json_path == "editor.editorTheme")
+            .map(|f| match f.control {
+                FieldControl::Select(o) => o,
+                _ => panic!("editor.editorTheme should be a Select"),
             })
             .unwrap();
-        for slug in opts {
+        for (slug, _label) in opts {
             assert!(
                 labonair_theme::EditorThemeId::from_slug(slug).is_some(),
                 "unknown editor theme slug `{slug}`"
@@ -143,12 +113,6 @@ mod cases {
         assert_eq!(slugify("Tokyo Night!!"), "tokyo-night");
         assert_eq!(slugify("  "), "theme");
         assert_eq!(slugify("Ayu_Mirage"), "ayu-mirage");
-    }
-
-    #[test]
-    fn trim_ext_strips_extension() {
-        assert_eq!(trim_ext("wall.png"), "wall");
-        assert_eq!(trim_ext("no-ext"), "no-ext");
     }
 
     #[test]
@@ -249,8 +213,8 @@ mod cases {
     }
 
     #[test]
-    fn keyboard_category_is_registered() {
-        assert!(CATEGORIES.contains(&KEYBOARD));
+    fn shortcuts_category_is_registered() {
+        assert!(AREAS.iter().any(|a| a.key == "shortcuts"));
     }
 
     #[gpui::test]

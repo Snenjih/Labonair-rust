@@ -116,7 +116,19 @@ impl SettingsView {
         let recording = self.recording;
         let conflict_id = self.kb_conflict.as_ref().map(|k| k.id);
 
-        let mut root = div().flex().flex_col().child(
+        // T19-004: the one `keymap` `SettingsContent` field — which preset a
+        // reset seeds from — is rendered directly here rather than through
+        // the generic grid (`pages::DEDICATED_PANE_EXEMPTIONS`).
+        let mut root = div().flex().flex_col();
+        if let Some(base_keymap) = self
+            .all_fields
+            .iter()
+            .find(|f| f.json_path == "keymap.baseKeymap")
+            .copied()
+        {
+            root = root.child(self.render_field(&base_keymap, c, cx));
+        }
+        let mut root = root.child(
             div()
                 .flex()
                 .items_center()

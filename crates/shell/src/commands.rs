@@ -26,7 +26,7 @@ use std::rc::Rc;
 
 use gpui::{Context, Div, InteractiveElement, Window};
 use labonair_command_palette::{CommandContext, CommandId, Page as PalettePage};
-use labonair_settings_ui::{open_settings_window, SettingsTab};
+use labonair_settings_ui::open_settings_window;
 
 use crate::app_shell::AppShell;
 use crate::menu;
@@ -408,7 +408,7 @@ pub(crate) fn register_builtin_commands() -> CommandRegistry {
         open_settings_window(None, cx);
     });
     r.register(CommandId::OpenAiSettings, always, |_s, _window, cx| {
-        open_settings_window(Some(SettingsTab::Ai), cx);
+        open_settings_window(Some("ai"), cx);
     });
     r.register(CommandId::OpenProjectSettings, always, |s, window, cx| {
         s.workspace

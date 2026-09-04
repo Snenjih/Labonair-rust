@@ -75,6 +75,75 @@ impl PreferencesStore {
         cx.set_global(GlobalPreferences(self.prefs.clone()));
     }
 
+    /// Refresh [`Self::prefs`] (and republish [`GlobalPreferences`] if it
+    /// changed) after a write made through the new, T19-004 generated field
+    /// grid — which persists into `labonair_settings::SettingsStore`
+    /// (`SettingsContent`), not this store's own `Preferences` model. Every
+    /// not-yet-`Settings`-trait-migrated consumer (terminal, editor,
+    /// workspace) still reads `GlobalPreferences`, so this is the bridge the
+    /// task's warning requires: "the `GlobalPreferences` bridge must be kept
+    /// current after every write."
+    ///
+    /// In production (`self.dir.is_none()`) this derives `Preferences` from
+    /// the live `SettingsStore` global via `labonair_backend`'s
+    /// `impl From<&SettingsContent> for Preferences` bridge — the same
+    /// conversion `labonair-settings`'s own doc comment describes. Three
+    /// fields have no `SettingsContent` counterpart at all (`keybinds`,
+    /// `bar_item_placements`, `bar_layout_migrated` — see that `impl`'s doc
+    /// comment) and are preserved from the current in-memory value instead of
+    /// being clobbered back to their historical defaults: they are kept live
+    /// by `set_pref`'s own synchronous writes (shortcuts capture, the legacy
+    /// bar-item editor), which this method must not undo.
+    ///
+    /// In test mode (`with_dir`) there is no shared `SettingsStore` global to
+    /// read, so this simply re-reads the isolated test directory's file —
+    /// same behaviour as before T19-004.
+    pub fn reload_from_disk(&mut self, cx: &mut Context<Self>) {
+        let fresh = match &self.dir {
+            Some(dir) => preferences_load_from(dir),
+            None => match cx.try_global::<labonair_settings::SettingsStore>() {
+                Some(store) => {
+                    let mut bridged = Preferences::from(store.merged());
+                    bridged.keybinds = self.prefs.keybinds.clone();
+                    bridged.bar_item_placements = self.prefs.bar_item_placements.clone();
+                    bridged.bar_layout_migrated = self.prefs.bar_layout_migrated;
+                    bridged
+                }
+                None => preferences_load(),
+            },
+        };
+        if fresh != self.prefs {
+            self.prefs = fresh;
+            cx.set_global(GlobalPreferences(self.prefs.clone()));
+            cx.notify();
+        }
+    }
+
+    /// Mirror a `set_value` write into the new `SettingsStore`
+    /// (`SettingsContent`) too, if `key` has a matching generated field
+    /// (`crate::schema::AnyField`) — keeps both trees consistent regardless
+    /// of which one a particular pane happens to write through (T19-004's
+    /// bidirectional half of the bridge; `reload_from_disk` is the other
+    /// half). A key with no matching field (e.g. `"keybinds"`, `"provkey:…"`)
+    /// is a no-op here — those have no `SettingsContent` counterpart.
+    pub(crate) fn mirror_into_settings_store(&self, key: &str, value: &Value, cx: &mut App) {
+        if self.dir.is_some() || !cx.has_global::<labonair_settings::SettingsStore>() {
+            return; // test isolation, or the global settings track isn't up yet.
+        }
+        let Some(field) = crate::schema::all_fields()
+            .into_iter()
+            .find(|f| f.local_key() == key)
+        else {
+            return; // no SettingsContent counterpart (e.g. "keybinds", "provkey:…").
+        };
+        let value = value.clone();
+        let _ = cx
+            .global_mut::<labonair_settings::SettingsStore>()
+            .update_user(move |c| {
+                (field.set)(c, value.clone());
+            });
+    }
+
     /// The current JSON value for one camelCase key.
     pub fn value(&self, key: &str) -> Option<Value> {
         serde_json::to_value(&self.prefs).ok()?.get(key).cloned()
@@ -85,13 +154,14 @@ impl PreferencesStore {
         let Ok(Value::Object(mut map)) = serde_json::to_value(&self.prefs) else {
             return;
         };
-        map.insert(key.to_string(), value);
+        map.insert(key.to_string(), value.clone());
         match serde_json::from_value::<Preferences>(Value::Object(map)) {
             Ok(next) if next != self.prefs => {
                 self.prefs = next;
                 if let Err(e) = self.persist() {
                     tracing::warn!("failed to persist preferences: {e}");
                 }
+                self.mirror_into_settings_store(key, &value, cx);
                 cx.set_global(GlobalPreferences(self.prefs.clone()));
                 cx.notify();
             }
