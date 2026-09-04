@@ -29,6 +29,10 @@ labonair-ai = { path = "../ai" }
 # hand-maintained `FIELDS` table.
 labonair-settings = { path = "../settings" }
 labonair-settings-content = { path = "../settings-content" }
+# T19-008: surgical `keymap.json` edits (rebind/unbind a shortcut) reuse the
+# same comment-preserving tree-sitter-json editor T19-005 built for
+# `settings.json`.
+labonair-settings-json = { path = "../settings-json" }
 
 [dev-dependencies]
 gpui = { workspace = true, features = ["test-support"] }

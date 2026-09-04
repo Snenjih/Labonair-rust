@@ -162,6 +162,57 @@ fn keep_alive_and_poll_project(
     .detach();
 }
 
+/// Generic debounced file watch: same `notify_debouncer_mini` + dirty-flag +
+/// `cx.spawn` poll pattern as [`spawn`]/[`spawn_project`] above, but calling
+/// an arbitrary `on_change` callback instead of hardcoding a `SettingsStore`
+/// reload. Used by `labonair-shell`'s `keymap.json` live-reload (T19-008) so
+/// it doesn't have to re-implement the debounce plumbing.
+pub fn watch_file(cx: &App, path: PathBuf, on_change: impl Fn(&mut App) + 'static) {
+    let Some(dir) = path.parent().map(|p| p.to_path_buf()) else {
+        return;
+    };
+    let Some(file_name) = path.file_name().map(|n| n.to_os_string()) else {
+        return;
+    };
+
+    let dirty = Arc::new(AtomicBool::new(false));
+    let dirty_cb = dirty.clone();
+    let watched_name = file_name.clone();
+
+    let debouncer = new_debouncer(
+        POLL_INTERVAL,
+        move |res: Result<Vec<DebouncedEvent>, notify::Error>| {
+            if let Ok(events) = res {
+                if events
+                    .iter()
+                    .any(|e| e.path.file_name() == Some(watched_name.as_os_str()))
+                {
+                    dirty_cb.store(true, Ordering::SeqCst);
+                }
+            }
+        },
+    );
+    let Ok(mut debouncer) = debouncer else {
+        tracing::warn!("labonair-settings: failed to start the fs-watch debouncer for {path:?}");
+        return;
+    };
+    if let Err(e) = debouncer.watcher().watch(&dir, RecursiveMode::NonRecursive) {
+        tracing::warn!(error = %e, dir = %dir.display(), "labonair-settings: failed to watch dir");
+        return;
+    }
+
+    cx.spawn(async move |cx| {
+        let _debouncer = debouncer;
+        loop {
+            cx.background_executor().timer(POLL_INTERVAL).await;
+            if dirty.swap(false, Ordering::SeqCst) && cx.update(|cx| on_change(cx)).is_err() {
+                break; // app shutting down
+            }
+        }
+    })
+    .detach();
+}
+
 #[cfg(test)]
 mod tests {
     //! The GPUI-side poll loop is exercised end-to-end by

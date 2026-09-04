@@ -12,6 +12,7 @@
 //! (`store.rs`'s `reload_from_disk`).
 
 mod apply;
+mod keymap_edit;
 mod pages;
 mod panes;
 mod schema;

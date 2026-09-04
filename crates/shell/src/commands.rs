@@ -158,6 +158,7 @@ pub(crate) fn attach_action_handlers(
     on!(menu::ClearChat => CommandId::ClearChat);
     on!(menu::AiSettings => CommandId::OpenAiSettings);
     on!(menu::OpenSettings => CommandId::OpenSettings);
+    on!(menu::OpenKeymapJson => CommandId::OpenKeymapJson);
     on!(menu::CheckForUpdates => CommandId::CheckForUpdates);
     on!(menu::CommandPalette => CommandId::OpenCommandPalette);
     on!(menu::OpenPathBookmarks => CommandId::OpenPathBookmarks);
@@ -417,6 +418,10 @@ pub(crate) fn register_builtin_commands() -> CommandRegistry {
     r.register(CommandId::OpenSettingsJson, always, |s, window, cx| {
         s.workspace
             .update(cx, |w, cx| w.open_or_create_user_settings_json(window, cx));
+    });
+    r.register(CommandId::OpenKeymapJson, always, |s, window, cx| {
+        s.workspace
+            .update(cx, |w, cx| w.open_or_create_user_keymap_json(window, cx));
     });
     r.register(CommandId::CheckForUpdates, always, |s, _window, cx| {
         s.panels.updater.update(cx, |u, cx| u.run_check(true, cx));

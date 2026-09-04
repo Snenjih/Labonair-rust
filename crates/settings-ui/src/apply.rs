@@ -12,7 +12,7 @@ use serde_json::Value;
 
 use labonair_backend::modules::fs::paths::config_dir;
 use labonair_backend::modules::settings::preferences::Preferences;
-use labonair_command_palette::{resolve_conflict, shortcut_slug, Conflict, KeybindMap, ShortcutId};
+use labonair_command_palette::{resolve_conflict, Conflict, KeybindMap, ShortcutId};
 use labonair_theme::{ThemeFile, ThemeStore};
 
 use crate::store::PreferencesStore;
@@ -22,8 +22,8 @@ use crate::view::ThemeEntry;
 
 /// Result of capturing a keystroke for a shortcut.
 pub(crate) enum KbCapture {
-    /// The keystroke is free — here is the new override map to persist.
-    Set(KeybindMap),
+    /// The keystroke is free to bind.
+    Set,
     /// The keystroke is already used by another shortcut — needs a decision.
     Conflict(ShortcutId),
     /// The keystroke is an OS/menu-reserved accelerator — refused.
@@ -31,31 +31,16 @@ pub(crate) enum KbCapture {
 }
 
 /// Pure port of `useKeybindsStore.setKeybind` + conflict detection: decide
-/// what capturing `binding` for `id` means, given the current `map`.
+/// what capturing `binding` for `id` means, given the current effective-
+/// binding display `map` (T19-008: the actual persistence target is now
+/// `keymap.json` via `crate::keymap_edit`, not this map — `map` here is only
+/// used to detect a conflict against the other shortcuts' current bindings).
 pub(crate) fn capture_keybind(map: &KeybindMap, id: ShortcutId, binding: &str) -> KbCapture {
     match resolve_conflict(binding, Some(id), map) {
         Some(Conflict::Reserved(label)) => KbCapture::Reserved(label),
         Some(Conflict::Shortcut(other)) => KbCapture::Conflict(other),
-        None => {
-            let mut m = map.clone();
-            m.insert(shortcut_slug(id).to_string(), binding.to_string());
-            KbCapture::Set(m)
-        }
+        None => KbCapture::Set,
     }
-}
-
-/// Resolve a capture conflict by giving `binding` to `id` and unbinding the
-/// previous owner — no silent double-binding.
-pub(crate) fn overwrite_keybind(
-    map: &KeybindMap,
-    id: ShortcutId,
-    other: ShortcutId,
-    binding: &str,
-) -> KeybindMap {
-    let mut m = map.clone();
-    m.insert(shortcut_slug(other).to_string(), String::new());
-    m.insert(shortcut_slug(id).to_string(), binding.to_string());
-    m
 }
 
 /// Build the [`FontOverrides`] snapshot from the typography-relevant

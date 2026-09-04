@@ -30,6 +30,10 @@ labonair-panel-snippets = { path = "../panel-snippets" }
 labonair-panel-ai = { path = "../panel-ai" }
 labonair-terminal = { path = "../terminal" }
 labonair-backend = { path = "../backend" }
+# T19-008: the shell owns the concrete `menu::` GPUI Actions, so it is the
+# only crate that can actually turn a merged `keymap.json` into real
+# `gpui::KeyBinding`s / live fs-watch.
+labonair-settings = { path = "../settings" }
 
 [dev-dependencies]
 gpui = { workspace = true, features = ["test-support"] }

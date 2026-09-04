@@ -237,8 +237,8 @@ impl StatusItem for PanelTogglesStatusItem {
             (t.foreground(), t.muted_foreground(), t.accent(), t.border())
         };
         let keybind_overrides = cx
-            .try_global::<labonair_workspace::prefs::GlobalPreferences>()
-            .map(|g| g.0.keybinds.clone())
+            .try_global::<labonair_command_palette::KeybindDisplay>()
+            .map(|g| g.0.clone())
             .unwrap_or_default();
         let panels: Vec<(SharedString, IconName, bool)> = {
             let ws = self.workspace.read(cx);

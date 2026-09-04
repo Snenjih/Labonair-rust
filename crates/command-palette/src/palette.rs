@@ -79,7 +79,10 @@ pub trait PalettePrefs {
     /// Current value of the boolean preference `key` flips (`Toggle: …` rows).
     fn toggle_state(&self, key: &str) -> bool;
     /// User keybind overrides, for rendering `effective_binding` hints.
-    fn keybind_overrides(&self) -> KeybindMap;
+    /// Takes `cx` (T19-008): the host now derives this from the
+    /// `keymap.json`-backed `KeybindDisplay` GPUI global rather than a
+    /// `Preferences` field.
+    fn keybind_overrides(&self, cx: &App) -> KeybindMap;
 }
 
 /// The workspace surface the palette view reads.
@@ -198,6 +201,122 @@ pub enum CommandId {
     SelectTab9,
     DebugCyclePanelDock,
     DebugToggleDockZoom,
+    /// Open `keymap.json` as an editor tab (T19-008) — mirrors
+    /// `OpenSettingsJson`/`OpenProjectSettings`.
+    OpenKeymapJson,
+}
+
+/// `(CommandId, "<namespace>::<Name>")` — the action-name vocabulary
+/// `keymap.json` bindings reference (T19-008). One entry per [`CommandId`]
+/// variant; [`CommandId::action_name`] / [`CommandId::from_action_name`] are
+/// built from this single table so the two directions can't drift.
+#[rustfmt::skip]
+const ACTION_NAMES: &[(CommandId, &str)] = &[
+    (CommandId::NewTerminalTab, "tab::NewTerminal"),
+    (CommandId::NewEditorTab, "tab::NewEditor"),
+    (CommandId::NewPreviewTab, "tab::NewPreview"),
+    (CommandId::NewSshTab, "tab::NewSsh"),
+    (CommandId::NewSftpTab, "tab::NewSftp"),
+    (CommandId::DuplicateTab, "tab::Duplicate"),
+    (CommandId::CloseOtherTabs, "tab::CloseOthers"),
+    (CommandId::CloseTab, "tab::Close"),
+    (CommandId::NextTab, "tab::Next"),
+    (CommandId::PrevTab, "tab::Prev"),
+    (CommandId::SwitchTab, "tab::Switch"),
+    (CommandId::SelectTab1, "tab::Select1"),
+    (CommandId::SelectTab2, "tab::Select2"),
+    (CommandId::SelectTab3, "tab::Select3"),
+    (CommandId::SelectTab4, "tab::Select4"),
+    (CommandId::SelectTab5, "tab::Select5"),
+    (CommandId::SelectTab6, "tab::Select6"),
+    (CommandId::SelectTab7, "tab::Select7"),
+    (CommandId::SelectTab8, "tab::Select8"),
+    (CommandId::SelectTab9, "tab::Select9"),
+    (CommandId::Save, "tab::Save"),
+    (CommandId::SplitRight, "pane::SplitRight"),
+    (CommandId::SplitDown, "pane::SplitDown"),
+    (CommandId::ClosePane, "pane::Close"),
+    (CommandId::FocusNextPane, "pane::FocusNext"),
+    (CommandId::ClearTerminal, "terminal::Clear"),
+    (CommandId::Find, "search::Toggle"),
+    (CommandId::ToggleSidebar, "sidebar::Toggle"),
+    (CommandId::ToggleFullScreen, "view::ToggleFullScreen"),
+    (CommandId::ZoomIn, "view::ZoomIn"),
+    (CommandId::ZoomOut, "view::ZoomOut"),
+    (CommandId::ZoomReset, "view::ZoomReset"),
+    (CommandId::AdjustFontSize, "view::AdjustFontSize"),
+    (CommandId::ChangeAppTheme, "view::ChangeAppTheme"),
+    (CommandId::ChangeColorMode, "view::ChangeColorMode"),
+    (CommandId::ChangeEditorTheme, "view::ChangeEditorTheme"),
+    (CommandId::ToggleZenMode, "view::ToggleZenMode"),
+    (CommandId::ToggleZenModeHeader, "view::ToggleZenModeHeader"),
+    (CommandId::ToggleZenModeStatusbar, "view::ToggleZenModeStatusbar"),
+    (CommandId::ShowStatusBarItem, "view::ShowStatusBarItem"),
+    (CommandId::ToggleEditorWordWrap, "editor::ToggleWordWrap"),
+    (CommandId::ToggleLineNumbers, "editor::ToggleLineNumbers"),
+    (CommandId::ToggleFormatOnSave, "editor::ToggleFormatOnSave"),
+    (CommandId::FormatDocument, "editor::FormatDocument"),
+    (CommandId::GoToSymbol, "editor::GoToSymbol"),
+    (CommandId::ToggleVimMode, "editor::ToggleVimMode"),
+    (CommandId::ToggleCursorBlink, "terminal::ToggleCursorBlink"),
+    (CommandId::TogglePaneHeader, "terminal::TogglePaneHeader"),
+    (CommandId::TogglePaneFooter, "terminal::TogglePaneFooter"),
+    (CommandId::ToggleAiPanel, "ai::TogglePanel"),
+    (CommandId::AskSelection, "ai::AskSelection"),
+    (CommandId::NewAiSession, "ai::NewSession"),
+    (CommandId::SwitchAiSession, "ai::SwitchSession"),
+    (CommandId::ClearChat, "ai::ClearChat"),
+    (CommandId::RunSnippet, "snippets::Run"),
+    (CommandId::OpenSnippetsPanel, "snippets::OpenPanel"),
+    (CommandId::OpenGitGraph, "git::OpenGraph"),
+    (CommandId::FocusSourceControl, "git::FocusSourceControl"),
+    (CommandId::GitSwitchBranch, "git::SwitchBranch"),
+    (CommandId::OpenHostManager, "connections::OpenHostManager"),
+    (CommandId::NewSshConnection, "connections::NewSshConnection"),
+    (CommandId::NewQuickSsh, "connections::NewQuickSsh"),
+    (CommandId::ConnectSsh, "connections::Connect"),
+    (CommandId::OpenSftp, "connections::OpenSftp"),
+    (CommandId::OpenPathBookmarks, "bookmarks::Open"),
+    (CommandId::OpenCommandPalette, "command_palette::Toggle"),
+    (CommandId::OpenShortcuts, "settings::OpenShortcuts"),
+    (CommandId::OpenSettings, "settings::Open"),
+    (CommandId::OpenAiSettings, "settings::OpenAi"),
+    (CommandId::OpenProjectSettings, "settings::OpenProjectJson"),
+    (CommandId::OpenSettingsJson, "settings::OpenUserJson"),
+    (CommandId::OpenKeymapJson, "zed::OpenKeymap"),
+    (CommandId::CheckForUpdates, "app::CheckForUpdates"),
+    (CommandId::DebugCyclePanelDock, "debug::CyclePanelDock"),
+    (CommandId::DebugToggleDockZoom, "debug::ToggleDockZoom"),
+];
+
+impl CommandId {
+    /// The `<namespace>::<Name>` string a `keymap.json` binding names this
+    /// command by. Every variant has exactly one entry in [`ACTION_NAMES`]
+    /// (enforced by `tests::every_command_id_has_a_unique_action_name`).
+    pub fn action_name(self) -> &'static str {
+        ACTION_NAMES
+            .iter()
+            .find(|(id, _)| *id == self)
+            .map(|(_, name)| *name)
+            .unwrap_or_else(|| panic!("CommandId::{self:?} has no ACTION_NAMES entry"))
+    }
+
+    /// Reverse of [`Self::action_name`] — resolves a `keymap.json` action
+    /// string back to the [`CommandId`] it dispatches, or `None` if the
+    /// action name is unknown.
+    pub fn from_action_name(name: &str) -> Option<Self> {
+        ACTION_NAMES
+            .iter()
+            .find(|(_, n)| *n == name)
+            .map(|(id, _)| *id)
+    }
+}
+
+/// Every valid `keymap.json` action name — the "known actions" set
+/// `labonair_settings::keymap::validate_keymap` needs, without that pure
+/// crate having to depend on this one (T19-008).
+pub fn known_action_names() -> std::collections::BTreeSet<&'static str> {
+    ACTION_NAMES.iter().map(|(_, name)| *name).collect()
 }
 
 /// The camelCase preference key a `Toggle: …` command flips, if any.
@@ -862,7 +981,7 @@ where
 
     fn rows(&self, cx: &App) -> Vec<PaletteRow> {
         let mode = self.search_mode(cx);
-        let overrides = self.prefs.read(cx).keybind_overrides();
+        let overrides = self.prefs.read(cx).keybind_overrides(cx);
         match self.page() {
             Page::Root => {
                 let ctx = self.active_context(cx);
@@ -1265,7 +1384,7 @@ where
         let mut rows = Vec::new();
         if page == Page::Root && self.query.is_empty() && show_recent && !self.recent.is_empty() {
             let ctx = self.active_context(cx);
-            let overrides = self.prefs.read(cx).keybind_overrides();
+            let overrides = self.prefs.read(cx).keybind_overrides(cx);
             let avail: std::collections::HashSet<CommandId> =
                 available(ctx).into_iter().map(|c| c.id).collect();
             for id in self.recent.iter().copied().filter(|id| avail.contains(id)) {
@@ -1608,6 +1727,61 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Every `CommandId` variant, hand-listed (no `strum` dep in this crate,
+    /// per T19-008's scope) so `action_name`/`from_action_name` round-trip
+    /// coverage doesn't silently skip a variant added later without also
+    /// updating this list.
+    #[rustfmt::skip]
+    const ALL_COMMAND_IDS: &[CommandId] = &[
+        CommandId::NewTerminalTab, CommandId::NewEditorTab, CommandId::DuplicateTab,
+        CommandId::CloseOtherTabs, CommandId::SplitRight, CommandId::SplitDown,
+        CommandId::ClosePane, CommandId::CloseTab, CommandId::NextTab, CommandId::PrevTab,
+        CommandId::SwitchTab, CommandId::Find, CommandId::ToggleSidebar,
+        CommandId::ToggleFullScreen, CommandId::ZoomIn, CommandId::ZoomOut,
+        CommandId::ZoomReset, CommandId::ToggleAiPanel, CommandId::AskSelection,
+        CommandId::NewAiSession, CommandId::OpenSnippetsPanel, CommandId::OpenGitGraph,
+        CommandId::FocusSourceControl, CommandId::OpenHostManager, CommandId::ClearTerminal,
+        CommandId::OpenShortcuts, CommandId::OpenSettings, CommandId::OpenProjectSettings,
+        CommandId::OpenSettingsJson, CommandId::CheckForUpdates, CommandId::FormatDocument,
+        CommandId::OpenPathBookmarks, CommandId::ToggleZenModeHeader,
+        CommandId::ToggleZenModeStatusbar, CommandId::ToggleZenMode, CommandId::AdjustFontSize,
+        CommandId::ConnectSsh, CommandId::OpenSftp, CommandId::ChangeAppTheme,
+        CommandId::ChangeColorMode, CommandId::ChangeEditorTheme, CommandId::SwitchAiSession,
+        CommandId::RunSnippet, CommandId::GitSwitchBranch, CommandId::GoToSymbol,
+        CommandId::ShowStatusBarItem, CommandId::OpenAiSettings, CommandId::ToggleEditorWordWrap,
+        CommandId::ToggleLineNumbers, CommandId::ToggleFormatOnSave, CommandId::ToggleCursorBlink,
+        CommandId::TogglePaneHeader, CommandId::TogglePaneFooter, CommandId::ToggleVimMode,
+        CommandId::OpenCommandPalette, CommandId::NewPreviewTab, CommandId::Save,
+        CommandId::NewSshTab, CommandId::NewSftpTab, CommandId::NewSshConnection,
+        CommandId::NewQuickSsh, CommandId::ClearChat, CommandId::FocusNextPane,
+        CommandId::SelectTab1, CommandId::SelectTab2, CommandId::SelectTab3,
+        CommandId::SelectTab4, CommandId::SelectTab5, CommandId::SelectTab6,
+        CommandId::SelectTab7, CommandId::SelectTab8, CommandId::SelectTab9,
+        CommandId::DebugCyclePanelDock, CommandId::DebugToggleDockZoom,
+        CommandId::OpenKeymapJson,
+    ];
+
+    #[test]
+    fn every_command_id_has_a_unique_action_name() {
+        assert_eq!(
+            ALL_COMMAND_IDS.len(),
+            ACTION_NAMES.len(),
+            "ALL_COMMAND_IDS and ACTION_NAMES have drifted apart"
+        );
+        for id in ALL_COMMAND_IDS {
+            assert_eq!(
+                CommandId::from_action_name(id.action_name()),
+                Some(*id),
+                "{id:?} action_name round-trip failed"
+            );
+        }
+        let mut names: Vec<&str> = ACTION_NAMES.iter().map(|(_, n)| *n).collect();
+        names.sort_unstable();
+        let mut deduped = names.clone();
+        deduped.dedup();
+        assert_eq!(names.len(), deduped.len(), "duplicate action name");
+    }
 
     #[test]
     fn registry_lists_all_domains() {

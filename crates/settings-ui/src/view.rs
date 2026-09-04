@@ -681,12 +681,9 @@ impl SettingsView {
             };
             self.theme.update(cx, |t, cx| t.set_preference(pref, cx));
         }
-        // Rebind the keymap so a changed shortcut takes effect immediately
-        // (and the native menu accelerators re-derive) (T13-004).
-        if key == "keybinds" {
-            let kb = self.prefs.read(cx).get().keybinds.clone();
-            crate::window::apply_keybinds(cx, &kb);
-        }
+        // Keyboard shortcuts are no longer part of this generic `set_pref`
+        // path (T19-008) — the Shortcuts pane writes `keymap.json` directly
+        // (`crate::panes::shortcuts`) and re-applies via `apply_keymap_hook`.
         // The `Preferences` store already republishes `GlobalPreferences` on
         // every change (see `PreferencesStore::set_value`); terminal / editor /
         // workspace all `observe_global` / re-read it, so most keys propagate

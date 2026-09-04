@@ -4,6 +4,123 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
+## Last Session: 2026-09-04 (T19-008 — keymap.json with contexts + chords)
+
+**T19-008 done.** The flat, hardcoded `ShortcutId` enum + `preferences.keybinds`
+`BTreeMap<slug,String>` override blob is replaced by an editable, layered
+`keymap.json` with **contexts** (`"context": "Editor"`) and **chords**
+(`"cmd-k cmd-s"`), following the Zed `keymap_file.rs` blueprint referenced in
+the task. `ShortcutId`/`SHORTCUTS` (in `crates/command-palette/src/keybind.rs`)
+survive only as a display/label source and as the origin of the generated
+default-keymap assets — they no longer resolve any actual key binding.
+
+- **`crates/settings/src/keymap.rs`** (new) — pure parse/merge/validate model,
+  deliberately decoupled from `CommandId`/`labonair-command-palette` per the
+  crate-graph rules (`scripts/check_crate_deps.py`): `KeymapFile`/`KeymapBlock`
+  (`context: Option<String>`, ordered `bindings: Vec<(String, Option<String>)>`
+  — `None` value = `"key": null` unbind), `parse_keymap_jsonc` (JSONC via
+  `jsonc-parser`, already a `labonair-settings` dep), `KeybindSource`
+  (`Default`/`BaseKeymap`/`User`), `merge_keymaps(&[(KeybindSource,
+  &KeymapFile)]) -> Vec<EffectiveBinding>` (later layers override earlier ones
+  keyed by normalized `(context, keystrokes)`; `null` removes a prior entry),
+  `validate_keymap(file, known_actions: &BTreeSet<&str>, text)` (unknown
+  action → `Error` with a best-effort line number via
+  `labonair_settings_json::line_col_at`; same chord in the *same* context
+  twice → `Warning`; same chord in *different* contexts → no warning, per the
+  task's own acceptance criterion). 10 unit tests: chord parsing round-trip
+  via `gpui::Keystroke::parse` on each whitespace-split token, context
+  predicate eval via `gpui::KeyBindingContextPredicate::parse(...).eval(...)`
+  (both a matching and non-matching `KeyContext`), Default→User merge +
+  `null`-unbind, unknown-action error line, context-non-conflict vs.
+  same-context conflict, and a reload-proxy test (parse+merge twice with two
+  text snapshots, assert the effective set changes).
+- **`crates/settings/assets/keymaps/default-{macos,linux}.json`** (new) —
+  generated from the pre-T19-008 `ShortcutId`/`SHORTCUTS` table crossed with
+  the new `CommandId::action_name()` strings (see below); most bindings sit
+  under a `"context": null` block (always active, preserving today's
+  behavior of zero context-filtering), a handful get a real context where
+  `commands.rs`'s registered `CommandContext` for that command matches one of
+  the 20 existing `.key_context("...")` string literals (e.g. `"Editor"`,
+  `"Terminal"`). Includes one literal chord demo:
+  `"cmd-k cmd-s"`/`"ctrl-k ctrl-s"` → `"zed::OpenKeymap"` (new
+  `CommandId::OpenKeymapJson` command, opens `keymap.json` as an editor tab
+  the same way `OpenSettingsJson`/`OpenProjectSettings` already do).
+- **`crates/command-palette/src/palette.rs`** — `CommandId::action_name()` /
+  `::from_action_name()` (all ~70 variants, `<namespace>::<Name>` strings,
+  e.g. `tab::NewTerminal`, `command_palette::Toggle`), `known_action_names()`
+  helper, new `CommandId::OpenKeymapJson` variant. `keybind.rs` gained a
+  `KeybindDisplay` GPUI global so the palette/status-bar can render the
+  *merged* effective binding for a command instead of going through the old
+  `ShortcutId`-keyed `effective_binding`/`KeybindMap` machinery.
+- **`crates/shell/src/keymap_loader.rs`** (new) — `include_str!`s the
+  platform default asset, reads user `keymap.json` (sibling of
+  `labonair_settings::user_settings_path()`; missing file = empty, not an
+  error), validates against `known_action_names()`, merges
+  `[(Default, &default), (User, &user)]`, keeps the **last known-good**
+  parsed user keymap on a broken file (falls back + logs via `tracing`,
+  never crashes — "kaputte Datei → Banner + letzte gute Keymap"), and drives
+  a debounced fs-watch on `keymap.json` (same `notify`/`notify-debouncer-mini`
+  pattern as `crates/settings/src/watch.rs`) that re-parses/re-merges/
+  re-applies on change.
+- **`crates/shell/src/menu.rs`** — old `apply_keybinds(cx, &KeybindMap)` +
+  `bindings()` (keyed off `ShortcutId` via a `rebind!` macro, always
+  `context: None`) replaced by `apply_keymap(cx, &[EffectiveBinding])` +
+  `action_for(name: &str) -> Option<Box<dyn Action>>` (one arm per action
+  name → concrete `menu::` GPUI `Action` struct) + `bindings_from_keymap`
+  (pre-validates every keystroke token via `Keystroke::parse` and any context
+  string via `KeyBindingContextPredicate::parse` *before* calling the
+  panicking `KeyBinding::new`, so unvalidated user JSON can never actually
+  panic it — CLAUDE.md rule 6, no `unwrap()` on predictable errors). The
+  handful of genuinely OS-reserved, non-rebindable accelerators (Cmd+,` /
+  Cmd+Shift+N / Cmd+Q / Cmd+M / Cmd+H / Ctrl+Cmd+F / Cmd+S) stay hardcoded
+  exactly as before, outside keymap.json, per `RESERVED_ACCELERATORS`'s old
+  intent. `bootstrap.rs` now calls `keymap_loader::load_effective()` +
+  `menu::apply_keymap` at startup and wires the fs-watch spawn;
+  `settings-ui/src/window.rs`'s `KeybindApplyHook` signature updated to
+  `fn(&mut App)` (re-triggers a full reload+reapply after a pane-driven
+  rebind, instead of threading a `KeybindMap` through).
+- **`crates/settings-ui/src/keymap_edit.rs`** (new) — surgical `keymap.json`
+  writer built on `labonair-settings-json`'s tree-sitter editor
+  (`append_top_level_array_value_in_json_text` /
+  `replace_top_level_array_value_in_json_text`): rebind (append to an
+  existing matching-context block or create a new one), unbind (`null`),
+  overwrite-on-conflict, reset-one/reset-all (removes the user block/entry).
+  4 pure unit tests.
+- **`crates/settings-ui/src/panes/shortcuts.rs`** rebuilt — lists every
+  command with its effective binding (from `keymap_loader`'s merged set),
+  source badge (Default/User), and context; Edit/Reset/Reset-all/"Open
+  keymap.json" wired to `keymap_edit.rs` + `CommandId::OpenKeymapJson`.
+  **Deliberately reduced scope** (documented in code comments, not a gate
+  blocker per the task's own priority order): the recording UI still commits
+  a single keystroke at a time (chords are fully supported by the
+  parse/merge/bind model — `"cmd-k cmd-s"` binds and dispatches correctly
+  today — just not yet produced by this UI), and both conflict detection in
+  the pane and the command-palette's binding display are context-agnostic
+  (first-match) rather than fully focus-context-filtered.
+- **`crates/backend/src/modules/settings/preferences.rs`** +
+  **`content_bridge.rs`** — the legacy `Preferences.keybinds:
+  BTreeMap<String,String>` field and its content-bridge passthrough are
+  removed entirely (the acceptance criterion "`apply_keybinds` +
+  `preferences.keybinds`-Blob sind entfernt" — migration path noted as
+  T19-009 per the task, but there was nothing left to migrate since no
+  `SettingsContent` field ever existed for it; the blob is just gone).
+- **Gates**: `cargo fmt --check`, `cargo check --workspace --all-targets`,
+  `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test
+  --workspace` all green (re-verified independently after the implementing
+  fork reported green) — 0 test failures across the whole workspace.
+  `scripts/check-crate-deps.sh` also green (no new `labonair-*` crate was
+  created; keymap logic lives inside the existing `labonair-settings` /
+  `labonair-shell` / `labonair-settings-ui` crates, so no new graph edges).
+- **Current state**: branch `master`, commit will follow this handshake
+  update (see commit message `feat(settings): T19-008 keymap file with
+  contexts`). **Next**: T19-009 (Settings-Migrator).
+- **Blockers/notes for next session**: none blocking. Two intentional
+  follow-up polish items live in `shortcuts.rs`/palette comments (chord
+  *recording* UI, focus-context-filtered conflict/display) — pick up
+  whenever a Shortcuts-pane polish task comes up; they don't affect
+  correctness of the underlying keymap.json model, which already fully
+  supports chords + contexts end-to-end.
+
 ## Last Session: 2026-09-04 (T19-007 — global settings search)
 
 **T19-007 done.** The per-category substring filter (`panes/generic.rs`'s old

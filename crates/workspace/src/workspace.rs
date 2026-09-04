@@ -947,6 +947,20 @@ impl Workspace {
         self.open_file(path.to_string_lossy().into_owned(), false, window, cx);
     }
 
+    /// Command: "Open Keymap (JSON)" (T19-008) — create (if missing)
+    /// `~/.config/labonair/keymap.json` and open it as an editor tab, same
+    /// pattern as [`Self::open_or_create_user_settings_json`].
+    pub fn open_or_create_user_keymap_json(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let path = match labonair_settings::ensure_user_keymap_file() {
+            Ok(path) => path,
+            Err(err) => {
+                labonair_notifications::notify_err::<()>("Keymap", Err(err), cx);
+                return;
+            }
+        };
+        self.open_file(path.to_string_lossy().into_owned(), false, window, cx);
+    }
+
     /// The file path of the active editor tab, if the active tab is an editor
     /// with a saved file — feeds the breadcrumb's "file mode" + the
     /// `cursorPosition` bar item.

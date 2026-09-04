@@ -53,6 +53,9 @@ ALLOWED = {
         "labonair-notifications", "labonair-command-palette",
         "labonair-workspace", "labonair-panel", "labonair-backend", "labonair-ai",
         "labonair-settings", "labonair-settings-content",
+        # T19-008: surgical `keymap.json` edits reuse T19-005's tree-sitter
+        # JSON editor.
+        "labonair-settings-json",
     },
 
     # Workspace track --------------------------------------------------
@@ -77,6 +80,10 @@ ALLOWED = {
     },
     # rule 3: the only crate that knows every concrete panel type — it also
     # touches the `labonair-panel` contracts crate to register them (T17-001).
+    # T19-008: shell also depends on `labonair-settings` directly — it owns
+    # the concrete `menu::` GPUI Actions, so it's the only crate that can
+    # turn a merged `keymap.json` into real `gpui::KeyBinding`s / watch the
+    # file live.
     "labonair-shell": {
         "labonair-theme", "labonair-ui-kit", "labonair-gpui-ext",
         "labonair-notifications", "labonair-command-palette",
@@ -84,6 +91,7 @@ ALLOWED = {
         "labonair-panel-explorer", "labonair-panel-scm",
         "labonair-panel-git-graph", "labonair-panel-snippets",
         "labonair-panel-ai", "labonair-terminal", "labonair-backend",
+        "labonair-settings",
     },
 
     # Panels — rule 2 (+ §8.4: explorer/snippets/ai may pull workspace).

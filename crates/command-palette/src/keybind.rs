@@ -231,6 +231,16 @@ pub fn shortcut_from_slug(slug: &str) -> Option<ShortcutId> {
 /// install running entirely on defaults.
 pub type KeybindMap = std::collections::BTreeMap<String, String>;
 
+/// GPUI global publishing the current effective-binding display map, derived
+/// from the merged `keymap.json` (T19-008). Populated by
+/// `labonair-shell::keymap_loader` on every (re)load; read by
+/// `PalettePrefs::keybind_overrides` and any other display site that used to
+/// read the old `Preferences.keybinds` blob directly (now removed).
+#[derive(Debug, Clone, Default)]
+pub struct KeybindDisplay(pub KeybindMap);
+
+impl gpui::Global for KeybindDisplay {}
+
 /// The keystroke a shortcut currently resolves to, honouring user
 /// overrides. `None` = the shortcut is disabled (overridden to empty).
 pub fn effective_binding(id: ShortcutId, overrides: &KeybindMap) -> Option<String> {

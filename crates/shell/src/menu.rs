@@ -21,10 +21,14 @@
 //! manager, zoom) have no handler and therefore render disabled, per the task
 //! note; their phase wires a handler in and they light up.
 
-use gpui::{actions, App, KeyBinding, Keystroke, Menu, MenuItem, OsAction};
+use gpui::{
+    actions, Action, App, DummyKeyboardMapper, KeyBinding, KeyBindingContextPredicate, Keystroke,
+    Menu, MenuItem, OsAction,
+};
+use std::rc::Rc;
 
-use labonair_command_palette::{effective_binding, KeybindMap, ShortcutId};
 use labonair_notifications::{notification_center, Notification};
+use labonair_settings::keymap::EffectiveBinding;
 
 /// `AskAboutSelection` is defined in `labonair-workspace` (so `views::terminal`
 /// can dispatch it without a dependency cycle, T16-006); re-exported here so the
@@ -89,6 +93,7 @@ actions!(
         Minimize,
         ZoomWindow,
         OpenShortcuts,
+        OpenKeymapJson,
         OpenPathBookmarks,
         CommandPalette,
         NextTab,
@@ -145,33 +150,22 @@ fn toast(cx: &mut App, title: &'static str, body: &'static str) {
     });
 }
 
-/// Rebind all key bindings from the user's shortcut-override map. Called by
-/// `AppShell` at startup and whenever the `keybinds` preference changes, so a
-/// rebound shortcut takes effect with no restart. GPUI derives the native
+/// Rebind all key bindings from the merged `keymap.json` effective bindings
+/// (T19-008 — replaces the old `KeybindMap`-based `apply_keybinds`). Called by
+/// `crate::keymap_loader` at startup and on every live-reload, so an edited
+/// `keymap.json` takes effect with no restart. GPUI derives the native
 /// menu-item accelerator hints from the same keymap, so the menu stays in
 /// sync automatically.
-pub fn apply_keybinds(cx: &mut App, kb: &KeybindMap) {
+pub fn apply_keymap(cx: &mut App, effective: &[EffectiveBinding]) {
     cx.clear_key_bindings();
-    cx.bind_keys(bindings(kb));
+    cx.bind_keys(fixed_bindings());
+    cx.bind_keys(bindings_from_keymap(effective));
 }
 
-/// Key bindings that mirror the reference accelerators. They drive both the
-/// menu-item shortcut hint and the actual dispatch. The rebindable subset is
-/// resolved through the user's `overrides` map ([`effective_binding`]); the
-/// fixed / OS-reserved accelerators are never customizable.
-fn bindings(overrides: &KeybindMap) -> Vec<KeyBinding> {
-    macro_rules! rebind {
-        ($out:ident, $id:expr, $action:expr) => {{
-            if let Some(b) = effective_binding($id, overrides) {
-                if Keystroke::parse(&b).is_ok() {
-                    $out.push(KeyBinding::new(b.as_str(), $action, None));
-                }
-            }
-        }};
-    }
-
-    let mut v = vec![
-        // Fixed / OS-reserved — not user-customizable.
+/// Fixed / OS-reserved accelerators — never customizable, so they never go
+/// through `keymap.json` at all (mirrors the pre-T19-008 hardcoded list).
+fn fixed_bindings() -> Vec<KeyBinding> {
+    vec![
         KeyBinding::new("cmd-s", Save, None),
         KeyBinding::new("cmd-shift-n", NewSshConnection, None),
         KeyBinding::new("ctrl-cmd-f", ToggleFullScreen, None),
@@ -179,53 +173,114 @@ fn bindings(overrides: &KeybindMap) -> Vec<KeyBinding> {
         KeyBinding::new("cmd-m", Minimize, None),
         KeyBinding::new("cmd-q", Quit, None),
         KeyBinding::new("cmd-h", HideApp, None),
-    ];
+    ]
+}
 
-    rebind!(v, ShortcutId::CommandPalette, CommandPalette);
-    rebind!(v, ShortcutId::ShortcutsOpen, OpenShortcuts);
-    rebind!(v, ShortcutId::BookmarksOpen, OpenPathBookmarks);
-    rebind!(v, ShortcutId::TabNew, NewTerminalTab);
-    rebind!(v, ShortcutId::TabNewPreview, NewPreviewTab);
-    rebind!(v, ShortcutId::TabNewEditor, NewEditorTab);
-    rebind!(v, ShortcutId::TabClose, CloseTab);
-    rebind!(v, ShortcutId::TabNext, NextTab);
-    rebind!(v, ShortcutId::TabPrev, PrevTab);
-    rebind!(v, ShortcutId::PaneSplitRight, SplitPaneRight);
-    rebind!(v, ShortcutId::PaneSplitDown, SplitPaneDown);
-    rebind!(v, ShortcutId::PaneClose, ClosePane);
-    rebind!(v, ShortcutId::PaneFocusNext, FocusNextPane);
-    rebind!(v, ShortcutId::TabSelect1, SelectTab1);
-    rebind!(v, ShortcutId::TabSelect2, SelectTab2);
-    rebind!(v, ShortcutId::TabSelect3, SelectTab3);
-    rebind!(v, ShortcutId::TabSelect4, SelectTab4);
-    rebind!(v, ShortcutId::TabSelect5, SelectTab5);
-    rebind!(v, ShortcutId::TabSelect6, SelectTab6);
-    rebind!(v, ShortcutId::TabSelect7, SelectTab7);
-    rebind!(v, ShortcutId::TabSelect8, SelectTab8);
-    rebind!(v, ShortcutId::TabSelect9, SelectTab9);
-    rebind!(v, ShortcutId::ViewZenMode, ToggleZenMode);
-    rebind!(v, ShortcutId::SearchFocus, Find);
-    rebind!(v, ShortcutId::AiToggle, ToggleAiPanel);
-    rebind!(v, ShortcutId::AiAskSelection, AskAboutSelection);
-    rebind!(v, ShortcutId::SidebarToggle, ToggleSidebar);
-    rebind!(v, ShortcutId::ViewZoomIn, ZoomIn);
-    rebind!(v, ShortcutId::ViewZoomOut, ZoomOut);
-    rebind!(v, ShortcutId::ViewZoomReset, ResetZoom);
+/// Resolve a `keymap.json` action name (`CommandId::action_name()`) to the
+/// concrete `menu::` GPUI `Action` it dispatches, for the subset of commands
+/// that have a key-bindable menu action today. `None` for an action name with
+/// no concrete `Action` type (e.g. a palette-only sub-page navigator) — the
+/// caller skips + logs those instead of failing the whole keymap.
+fn action_for(name: &str) -> Option<Box<dyn Action>> {
+    Some(match name {
+        "command_palette::Toggle" => Box::new(CommandPalette),
+        "settings::OpenShortcuts" => Box::new(OpenShortcuts),
+        "zed::OpenKeymap" => Box::new(OpenKeymapJson),
+        "tab::NewTerminal" => Box::new(NewTerminalTab),
+        "tab::NewPreview" => Box::new(NewPreviewTab),
+        "tab::NewEditor" => Box::new(NewEditorTab),
+        "tab::NewSsh" => Box::new(NewSshTab),
+        "tab::NewSftp" => Box::new(NewSftpTab),
+        "tab::Close" => Box::new(CloseTab),
+        "tab::Next" => Box::new(NextTab),
+        "tab::Prev" => Box::new(PrevTab),
+        "tab::Select1" => Box::new(SelectTab1),
+        "tab::Select2" => Box::new(SelectTab2),
+        "tab::Select3" => Box::new(SelectTab3),
+        "tab::Select4" => Box::new(SelectTab4),
+        "tab::Select5" => Box::new(SelectTab5),
+        "tab::Select6" => Box::new(SelectTab6),
+        "tab::Select7" => Box::new(SelectTab7),
+        "tab::Select8" => Box::new(SelectTab8),
+        "tab::Select9" => Box::new(SelectTab9),
+        "pane::SplitRight" => Box::new(SplitPaneRight),
+        "pane::SplitDown" => Box::new(SplitPaneDown),
+        "pane::Close" => Box::new(ClosePane),
+        "pane::FocusNext" => Box::new(FocusNextPane),
+        "search::Toggle" => Box::new(Find),
+        "sidebar::Toggle" => Box::new(ToggleSidebar),
+        "view::ToggleZenMode" => Box::new(ToggleZenMode),
+        "view::ZoomIn" => Box::new(ZoomIn),
+        "view::ZoomOut" => Box::new(ZoomOut),
+        "view::ZoomReset" => Box::new(ResetZoom),
+        "view::ToggleFullScreen" => Box::new(ToggleFullScreen),
+        "ai::TogglePanel" => Box::new(ToggleAiPanel),
+        "ai::AskSelection" => Box::new(AskAboutSelection),
+        "ai::NewSession" => Box::new(NewAiSession),
+        "ai::ClearChat" => Box::new(ClearChat),
+        "bookmarks::Open" => Box::new(OpenPathBookmarks),
+        "connections::OpenHostManager" => Box::new(OpenHostManager),
+        "connections::NewSshConnection" => Box::new(NewSshConnection),
+        "connections::NewQuickSsh" => Box::new(NewQuickSsh),
+        "settings::Open" => Box::new(OpenSettings),
+        "settings::OpenAi" => Box::new(AiSettings),
+        "app::CheckForUpdates" => Box::new(CheckForUpdates),
+        "debug::CyclePanelDock" => Box::new(DebugCyclePanelDock),
+        "debug::ToggleDockZoom" => Box::new(DebugToggleDockZoom),
+        _ => return None,
+    })
+}
 
-    // Temporary T17-002 debug affordances (no menu entry): cycle the active
-    // panel of the primary dock through left → right → bottom, and toggle the
-    // primary dock's zoom. Removed once T18-003 / T18-007 add the real UI.
-    v.push(KeyBinding::new(
-        "cmd-alt-shift-m",
-        DebugCyclePanelDock,
-        None,
-    ));
-    v.push(KeyBinding::new(
-        "cmd-alt-shift-z",
-        DebugToggleDockZoom,
-        None,
-    ));
-    v
+/// Turn the merged effective keymap into real `gpui::KeyBinding`s. Every
+/// keystroke token and context predicate is pre-validated with the same
+/// fallible parsers GPUI itself uses internally, so the panicking
+/// `KeyBinding::new` is only ever called on data already proven to parse —
+/// an entry that fails validation (bad keystroke, bad context, unknown
+/// action) is skipped with a `tracing::warn!` instead of crashing the app.
+fn bindings_from_keymap(effective: &[EffectiveBinding]) -> Vec<KeyBinding> {
+    let mut out = Vec::with_capacity(effective.len());
+    for binding in effective {
+        let Some(action) = action_for(&binding.action) else {
+            continue; // no concrete Action for this command — not key-bindable yet.
+        };
+        if binding
+            .keystrokes
+            .split_whitespace()
+            .any(|token| Keystroke::parse(token).is_err())
+        {
+            tracing::warn!(
+                keystrokes = %binding.keystrokes,
+                "keymap.json: unparseable keystroke, skipping binding"
+            );
+            continue;
+        }
+        let context_predicate = match &binding.context {
+            None => None,
+            Some(ctx) => match KeyBindingContextPredicate::parse(ctx) {
+                Ok(pred) => Some(Rc::new(pred)),
+                Err(_) => {
+                    tracing::warn!(context = %ctx, "keymap.json: unparseable context, skipping binding");
+                    continue;
+                }
+            },
+        };
+        match KeyBinding::load(
+            binding.keystrokes.as_str(),
+            action,
+            context_predicate,
+            false,
+            None,
+            &DummyKeyboardMapper,
+        ) {
+            Ok(kb) => out.push(kb),
+            Err(e) => tracing::warn!(
+                keystrokes = %binding.keystrokes,
+                error = ?e,
+                "keymap.json: failed to load binding, skipping"
+            ),
+        }
+    }
+    out
 }
 
 /// The full menu bar, structure/order/labels 1:1 with the reference
@@ -347,21 +402,38 @@ fn dock_menu() -> Vec<MenuItem> {
 mod tests {
     use super::*;
 
-    /// Every accelerator string parses (`KeyBinding::new` panics otherwise).
+    /// Every default-keymap binding either resolves to a concrete `Action`
+    /// and loads, or is a deliberate no-op (no menu action yet) — either way
+    /// `bindings_from_keymap` must never panic.
     #[test]
-    fn bindings_parse() {
-        // 7 fixed + 30 rebindable defaults + 2 temporary T17-002 dock debug.
-        assert_eq!(bindings(&KeybindMap::new()).len(), 39);
+    fn default_keymap_bindings_load() {
+        let default = labonair_settings::keymap::parse_keymap_jsonc(
+            labonair_settings::keymap::default_asset(),
+        )
+        .unwrap();
+        let effective = labonair_settings::keymap::merge_keymaps(&[(
+            labonair_settings::keymap::KeybindSource::Default,
+            &default,
+        )]);
+        let loaded = bindings_from_keymap(&effective);
+        // Every action referenced in the shipped default asset has a concrete
+        // `menu::` Action in `action_for` (this test would fail loudly via
+        // count mismatch if a new default binding's action were forgotten
+        // there).
+        assert_eq!(loaded.len(), effective.len());
     }
 
     #[test]
-    fn rebound_shortcut_replaces_its_binding() {
-        let mut kb = KeybindMap::new();
-        kb.insert("tab.new".into(), "cmd-shift-t".into());
-        kb.insert("pane.close".into(), String::new()); // disabled
-        let n = bindings(&kb).len();
-        // TabNew still present (moved), PaneClose dropped → one fewer.
-        assert_eq!(n, 38);
+    fn unresolvable_action_is_skipped_not_panicking() {
+        let file = labonair_settings::keymap::parse_keymap_jsonc(
+            r#"[{ "bindings": { "cmd-shift-y": "bogus::DoesNotExist" } }]"#,
+        )
+        .unwrap();
+        let effective = labonair_settings::keymap::merge_keymaps(&[(
+            labonair_settings::keymap::KeybindSource::User,
+            &file,
+        )]);
+        assert!(bindings_from_keymap(&effective).is_empty());
     }
 
     #[test]

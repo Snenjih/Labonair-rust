@@ -104,7 +104,6 @@ impl PreferencesStore {
             None => match cx.try_global::<labonair_settings::SettingsStore>() {
                 Some(store) => {
                     let mut bridged = Preferences::from(store.merged());
-                    bridged.keybinds = self.prefs.keybinds.clone();
                     bridged.bar_item_placements = self.prefs.bar_item_placements.clone();
                     bridged.bar_layout_migrated = self.prefs.bar_layout_migrated;
                     bridged
@@ -244,7 +243,9 @@ impl PalettePrefs for PreferencesStore {
         }
     }
 
-    fn keybind_overrides(&self) -> KeybindMap {
-        self.prefs.keybinds.clone()
+    fn keybind_overrides(&self, cx: &App) -> KeybindMap {
+        cx.try_global::<labonair_command_palette::KeybindDisplay>()
+            .map(|d| d.0.clone())
+            .unwrap_or_default()
     }
 }

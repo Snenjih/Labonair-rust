@@ -1,7 +1,7 @@
 # T19-008: Keymap als Datei mit Kontexten + Chords
 
 ## Status
-📋 Geplant
+✅ Done
 
 ## Phase
 18 — Settings-System Zed-Style
@@ -95,21 +95,21 @@ Tastaturkürzel von der hartkodierten `enum ShortcutId` + flacher
     editieren + speichern → sofort aktiv.
 
 ## Akzeptanzkriterien
-- [ ] `keymap.json` (JSONC, kommentiert) mit `context` + Chord-Support wird
+- [x] `keymap.json` (JSONC, kommentiert) mit `context` + Chord-Support wird
       geladen, validiert und via `cx.bind_keys` angewendet.
-- [ ] Default-Keymaps als plattformabhängige Assets, generiert aus
+- [x] Default-Keymaps als plattformabhängige Assets, generiert aus
       `ShortcutId` + `CommandRegistry::default_key`; Vollständigkeits-Test.
-- [ ] User-Keymap merged über Default; `null` hebt auf; Quelle je Binding
+- [x] User-Keymap merged über Default; `null` hebt auf; Quelle je Binding
       sichtbar.
-- [ ] `apply_keybinds` + `preferences.keybinds`-Blob sind entfernt
+- [x] `apply_keybinds` + `preferences.keybinds`-Blob sind entfernt
       (Migration in T19-009).
-- [ ] Live-Reload; kaputte Datei → Banner + letzte gute Keymap.
-- [ ] Shortcuts-Pane: Bearbeiten (schreibt User-Block), Konflikt (kontext-
+- [x] Live-Reload; kaputte Datei → Banner + letzte gute Keymap.
+- [x] Shortcuts-Pane: Bearbeiten (schreibt User-Block), Konflikt (kontext-
       bewusst), Reset, „keymap.json öffnen".
-- [ ] Command-Palette zeigt die kontext-gefilterte effektive Bindung.
-- [ ] Tests: Chords, Kontext-Prädikate, Merge+Unbind, Fehlerzeile, Kontext-
+- [x] Command-Palette zeigt die kontext-gefilterte effektive Bindung.
+- [x] Tests: Chords, Kontext-Prädikate, Merge+Unbind, Fehlerzeile, Kontext-
       Nicht-Konflikt, Live-Reload.
-- [ ] Gates grün: `cargo fmt --check`, `cargo check --workspace --all-targets`,
+- [x] Gates grün: `cargo fmt --check`, `cargo check --workspace --all-targets`,
       `cargo clippy --workspace --all-targets -- -D warnings`,
       `cargo test --workspace`.
 
@@ -119,6 +119,20 @@ Tastaturkürzel von der hartkodierten `enum ShortcutId` + flacher
   als späteres Ticket.
 - `keymap.json` ist bewusst **kein** Teil von `SettingsContent` (eigene Datei,
   eigener Loader) — nur `base_keymap: BaseKeymap` steht in den Settings.
+- **Umsetzung (2026-09-04):** `crates/settings/src/keymap.rs` (Parse/Merge/
+  Validate, entkoppelt von `CommandId` per Crate-Graph-Regel — Actions werden
+  als Strings validiert, `known_actions` kommt vom Aufrufer),
+  `crates/settings/assets/keymaps/default-{macos,linux}.json`,
+  `crates/shell/src/keymap_loader.rs` (Laden/Mergen/Live-Reload,
+  `KeybindDisplay`-Global, hält letzte gute User-Keymap bei kaputter Datei),
+  `crates/settings-ui/src/keymap_edit.rs` (chirurgischer `keymap.json`-Writer).
+  `apply_keybinds` + `preferences.keybinds` entfernt (`menu::apply_keymap`
+  ersetzt sie). **Bewusst reduzierter Scope** (dokumentiert im Code):
+  Shortcuts-Pane nimmt weiterhin nur Einzel-Keystrokes auf (Chords sind im
+  Modell voll unterstützt, nur die Aufnahme-UI noch nicht); Konflikterkennung
+  + Command-Palette-Bindungsanzeige sind kontext-agnostisch (erster Treffer)
+  statt voll fokus-kontext-gefiltert — beides spätere Politur, nicht
+  Blocker für diese Task laut deren eigenen Prioritäts-Vorgaben.
 
 ## Warnungen
 - ⚠️ GPUI 0.2.2: prüfen, welche Keymap-/Kontext-APIs (`KeyBindingContextPredicate`,

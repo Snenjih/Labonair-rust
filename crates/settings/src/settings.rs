@@ -18,6 +18,7 @@
 extern crate self as labonair_settings;
 
 mod concrete;
+pub mod keymap;
 pub mod project;
 mod registry;
 pub mod schema;
@@ -29,6 +30,7 @@ pub use concrete::{
     AiSettings, EditorSettings, PersonalizationSettings, TerminalSettings, ThemeSettings,
     WorkspaceSettings,
 };
+pub use keymap::{ensure_user_keymap_file, user_keymap_path};
 pub use project::{ensure_project_settings_file, PROJECT_SETTINGS_WHITELIST};
 pub use registry::{register_all, RegisteredSetting};
 pub use schema::{description_for_path, json_schema, SettingsValidationError};
@@ -37,6 +39,7 @@ pub use store::{
     ensure_user_settings_file, settings_schema_path, user_settings_path, SettingsLayer,
     SettingsStore, WorktreeId,
 };
+pub use watch::watch_file;
 
 // Re-exported so `#[derive(RegisterSetting)]`'s generated code can address
 // `gpui`/`inventory` through this crate's own path, whatever the consuming

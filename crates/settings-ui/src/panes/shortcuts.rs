@@ -1,20 +1,31 @@
 //! Shortcuts pane: keybind capture / conflict resolution and `render_shortcuts`.
 //!
-//! Part of `SettingsView` — see `crate::view`. Mechanical T16-007 split, no
-//! logic change.
+//! Part of `SettingsView` — see `crate::view`. T19-008: the backing store
+//! moved from the legacy `Preferences.keybinds` blob to the merged
+//! `keymap.json` (`crate::keymap_edit`'s surgical writer + the
+//! `KeybindDisplay` GPUI global `labonair-shell` republishes on every
+//! load/reload); the capture/conflict UI logic itself is unchanged.
 
 use crate::view::*;
 
 impl SettingsView {
     // ── keyboard shortcuts ────────────────────────────────────────────────
 
+    /// The current effective-binding display map (T19-008): absent = runs on
+    /// the shipped default, `Some(keystrokes)` = user override, `Some("")` =
+    /// explicitly unbound. Published by `labonair-shell::keymap_loader`.
     pub(crate) fn keybinds(&self, cx: &App) -> KeybindMap {
-        self.prefs.read(cx).get().keybinds.clone()
+        cx.try_global::<labonair_command_palette::KeybindDisplay>()
+            .map(|d| d.0.clone())
+            .unwrap_or_default()
     }
 
-    pub(crate) fn write_keybinds(&mut self, map: KeybindMap, cx: &mut Context<Self>) {
-        let value = serde_json::to_value(map).unwrap_or(Value::Null);
-        self.set_pref("keybinds", value, cx);
+    /// After a `keymap.json` write, ask the shell to reload + re-apply the
+    /// live bindings (updates `KeybindDisplay` too) — same
+    /// `KeybindApplyHook` indirection `crate::window` already uses.
+    fn refresh_keymap(&mut self, cx: &mut Context<Self>) {
+        crate::window::apply_keybinds(cx);
+        cx.notify();
     }
 
     /// Translate a captured keystroke into a persisted override (or a
@@ -27,9 +38,13 @@ impl SettingsView {
     ) {
         let map = self.keybinds(cx);
         match capture_keybind(&map, id, &binding) {
-            KbCapture::Set(next) => {
+            KbCapture::Set => {
                 self.kb_conflict = None;
-                self.write_keybinds(next, cx);
+                if let Err(e) = crate::keymap_edit::rebind(id, &binding) {
+                    self.notify_error(cx, "Keymap", e);
+                    return;
+                }
+                self.refresh_keymap(cx);
             }
             KbCapture::Conflict(other) => {
                 self.kb_conflict = Some(KbConflict { id, binding, other });
@@ -50,22 +65,33 @@ impl SettingsView {
         let Some(kc) = self.kb_conflict.take() else {
             return;
         };
-        let map = self.keybinds(cx);
-        let next = overwrite_keybind(&map, kc.id, kc.other, &kc.binding);
-        self.write_keybinds(next, cx);
+        if let Err(e) = crate::keymap_edit::rebind_with_overwrite(kc.id, kc.other, &kc.binding) {
+            self.notify_error(cx, "Keymap", e);
+            return;
+        }
+        self.refresh_keymap(cx);
     }
 
     pub(crate) fn reset_keybind(&mut self, id: ShortcutId, cx: &mut Context<Self>) {
-        let mut map = self.keybinds(cx);
-        if map.remove(shortcut_slug(id)).is_some() {
-            self.write_keybinds(map, cx);
+        let map = self.keybinds(cx);
+        if !map.contains_key(shortcut_slug(id)) {
+            return; // already on the default — nothing to reset.
         }
+        if let Err(e) = crate::keymap_edit::unbind(id) {
+            self.notify_error(cx, "Keymap", e);
+            return;
+        }
+        self.refresh_keymap(cx);
     }
 
     pub(crate) fn reset_all_keybinds(&mut self, cx: &mut Context<Self>) {
         self.kb_conflict = None;
         self.recording = None;
-        self.write_keybinds(KeybindMap::new(), cx);
+        if let Err(e) = crate::keymap_edit::reset_all() {
+            self.notify_error(cx, "Keymap", e);
+            return;
+        }
+        self.refresh_keymap(cx);
     }
 
     /// Handle a key press while a shortcut row is recording.
@@ -112,7 +138,7 @@ impl SettingsView {
         c: &Palette,
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
-        let overrides = self.prefs.read(cx).get().keybinds.clone();
+        let overrides = self.keybinds(cx);
         let recording = self.recording;
         let conflict_id = self.kb_conflict.as_ref().map(|k| k.id);
 
@@ -147,17 +173,39 @@ impl SettingsView {
                 )
                 .child(
                     div()
-                        .id("kb-reset-all")
-                        .px_2()
-                        .py(px(3.0))
-                        .rounded_sm()
-                        .border_1()
-                        .border_color(c.border)
-                        .text_color(c.fg)
-                        .hover(|s| s.bg(c.border))
-                        .child("Reset all")
-                        .on_click(
-                            cx.listener(|this, _: &ClickEvent, _w, cx| this.reset_all_keybinds(cx)),
+                        .flex()
+                        .gap_1()
+                        .child(
+                            div()
+                                .id("kb-open-keymap-json")
+                                .px_2()
+                                .py(px(3.0))
+                                .rounded_sm()
+                                .border_1()
+                                .border_color(c.border)
+                                .text_color(c.fg)
+                                .hover(|s| s.bg(c.border))
+                                .child("Open keymap.json")
+                                .on_click(cx.listener(|this, _: &ClickEvent, window, cx| {
+                                    this.workspace.update(cx, |w, cx| {
+                                        w.open_or_create_user_keymap_json(window, cx)
+                                    });
+                                })),
+                        )
+                        .child(
+                            div()
+                                .id("kb-reset-all")
+                                .px_2()
+                                .py(px(3.0))
+                                .rounded_sm()
+                                .border_1()
+                                .border_color(c.border)
+                                .text_color(c.fg)
+                                .hover(|s| s.bg(c.border))
+                                .child("Reset all")
+                                .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
+                                    this.reset_all_keybinds(cx)
+                                })),
                         ),
                 ),
         );

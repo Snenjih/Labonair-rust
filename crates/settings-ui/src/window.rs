@@ -19,30 +19,31 @@ use gpui_component::Root;
 use tokio::runtime::Handle as TokioHandle;
 
 use labonair_backend::App as Backend;
-use labonair_command_palette::KeybindMap;
 
 use crate::store::PreferencesStore;
 use crate::view::SettingsView;
 
-/// Callback the shell installs so a keybind change in the Shortcuts pane can be
-/// pushed into the live GPUI key bindings + native menu. Those live in
-/// `labonair-shell` / `crates/ui` (concrete `actions!`), a crate this one must
-/// not depend on — so the shell hands us a function pointer at startup, exactly
-/// like [`set_settings_deps`].
-struct KeybindApplyHook(fn(&mut App, &KeybindMap));
+/// Callback the shell installs so a `keymap.json` edit in the Shortcuts pane
+/// can be pushed into the live GPUI key bindings + native menu. The actual
+/// keymap loading/merging/binding logic lives in `labonair-shell`'s
+/// `keymap_loader` (concrete `menu::` `actions!`, a crate this one must not
+/// depend on) — so the shell hands us a plain reload function pointer at
+/// startup, exactly like [`set_settings_deps`]. Argless (T19-008): the shell
+/// re-reads `keymap.json` from disk itself rather than being handed data.
+struct KeybindApplyHook(fn(&mut App));
 
 impl Global for KeybindApplyHook {}
 
-/// Publish the keybind-apply hook. Call once from `AppShell::new`.
-pub fn set_keybind_apply_hook(f: fn(&mut App, &KeybindMap), cx: &mut App) {
+/// Publish the keymap-reload hook. Call once from `AppShell::new`.
+pub fn set_keybind_apply_hook(f: fn(&mut App), cx: &mut App) {
     cx.set_global(KeybindApplyHook(f));
 }
 
-/// Re-apply the given keybind overrides to the live bindings, if the shell
-/// installed a hook (no-op in tests / headless).
-pub(crate) fn apply_keybinds(cx: &mut App, kb: &KeybindMap) {
+/// Ask the shell to reload `keymap.json` and re-apply the live key bindings,
+/// if it installed a hook (no-op in tests / headless).
+pub(crate) fn apply_keybinds(cx: &mut App) {
     if let Some(f) = cx.try_global::<KeybindApplyHook>().map(|h| h.0) {
-        f(cx, kb);
+        f(cx);
     }
 }
 

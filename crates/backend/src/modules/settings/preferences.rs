@@ -332,12 +332,8 @@ pub struct Preferences {
     pub mcp_max_command_timeout_secs: u32,
     pub mcp_auto_revoke_minutes: u32,
     pub mcp_notify_on_activity: bool,
-
-    // ── Keyboard Shortcuts ───────────────────────────────────────────────
-    /// User keybind overrides: shortcut slug (`"tab.new"`, …) → keystroke
-    /// string. An empty string disables the shortcut; an absent key means
-    /// "use the built-in default". An empty map = all defaults (first run).
-    pub keybinds: std::collections::BTreeMap<String, String>,
+    // Keyboard shortcuts moved off this blob in T19-008 — they now live in
+    // their own `keymap.json` (`labonair_settings::keymap`), not here.
 }
 
 impl Default for Preferences {
@@ -526,8 +522,6 @@ impl Default for Preferences {
             mcp_max_command_timeout_secs: 300,
             mcp_auto_revoke_minutes: 0,
             mcp_notify_on_activity: false,
-
-            keybinds: std::collections::BTreeMap::new(),
         }
     }
 }
@@ -732,26 +726,6 @@ mod tests {
         assert!(!e.expandtab);
         assert_eq!(e.tabstop, 2);
         assert_eq!(e.shiftwidth, 2);
-    }
-
-    #[test]
-    fn keybinds_default_empty_and_roundtrip() {
-        let dir = tmp();
-        let mut p = Preferences::default();
-        assert!(p.keybinds.is_empty(), "fresh install runs on defaults");
-        p.keybinds.insert("tab.new".into(), "cmd-shift-t".into());
-        p.keybinds.insert("pane.close".into(), String::new());
-        save_to(&dir, &p).unwrap();
-        let back = load_from(&dir);
-        assert_eq!(
-            back.keybinds.get("tab.new").map(String::as_str),
-            Some("cmd-shift-t")
-        );
-        assert_eq!(
-            back.keybinds.get("pane.close").map(String::as_str),
-            Some("")
-        );
-        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]

@@ -1,0 +1,55 @@
+// Labonair's built-in default keymap (macOS). Generated from the pre-T19-008
+// `ShortcutId` table (crates/command-palette/src/keybind.rs) crossed with
+// `CommandId::action_name()`. `crates/shell/src/menu.rs` still hardcodes a
+// handful of OS-reserved accelerators (Cmd+, / Cmd+Shift+N / Cmd+Q / Cmd+M /
+// Cmd+H / Ctrl+Cmd+F / Cmd+S) that are intentionally absent here — they are
+// never user-customizable, so they never go through keymap.json.
+[
+  {
+    "context": null,
+    "bindings": {
+      "cmd-p": "command_palette::Toggle",
+      "cmd-shift-/": "settings::OpenShortcuts",
+      "cmd-t": "tab::NewTerminal",
+      "cmd-shift-p": "tab::NewPreview",
+      "cmd-e": "tab::NewEditor",
+      "cmd-w": "tab::Close",
+      "ctrl-tab": "tab::Next",
+      "ctrl-shift-tab": "tab::Prev",
+      "cmd-1": "tab::Select1",
+      "cmd-2": "tab::Select2",
+      "cmd-3": "tab::Select3",
+      "cmd-4": "tab::Select4",
+      "cmd-5": "tab::Select5",
+      "cmd-6": "tab::Select6",
+      "cmd-7": "tab::Select7",
+      "cmd-8": "tab::Select8",
+      "cmd-9": "tab::Select9",
+      "cmd-]": "pane::FocusNext",
+      "cmd-f": "search::Toggle",
+      "cmd-i": "ai::TogglePanel",
+      "cmd-l": "ai::AskSelection",
+      "cmd-b": "sidebar::Toggle",
+      "cmd-shift-z": "view::ToggleZenMode",
+      "cmd-=": "view::ZoomIn",
+      "cmd--": "view::ZoomOut",
+      "cmd-0": "view::ZoomReset",
+      "cmd-shift-o": "bookmarks::Open",
+      "cmd-alt-shift-m": "debug::CyclePanelDock",
+      "cmd-alt-shift-z": "debug::ToggleDockZoom",
+      // Chord demo (T19-008 acceptance criterion): a two-keystroke binding
+      // to prove chords work end-to-end.
+      "cmd-k cmd-s": "zed::OpenKeymap"
+    }
+  },
+  {
+    // Mirrors `crates/shell/src/commands.rs`'s `CTX_TERMINAL` — pane
+    // split/close are only offered while the active tab is a terminal.
+    "context": "Terminal",
+    "bindings": {
+      "cmd-d": "pane::SplitRight",
+      "cmd-shift-d": "pane::SplitDown",
+      "cmd-shift-w": "pane::Close"
+    }
+  }
+]

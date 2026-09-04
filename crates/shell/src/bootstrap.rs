@@ -263,8 +263,14 @@ pub(crate) fn bootstrap(
         let p = prefs.read(cx).get().clone();
         prefs.update(cx, |s, cx| s.publish_global(cx));
         labonair_settings_ui::apply_prefs_to_theme(&p, &theme, cx);
-        crate::menu::apply_keybinds(cx, &p.keybinds);
     }
+    // `keymap.json` (T19-008): load + merge + bind, publish the display
+    // global, then live-watch the file so an edit takes effect with no
+    // restart. Must run after the theme/prefs wiring above so a startup
+    // banner (if the shipped default asset somehow fails to parse) has a
+    // notification center to post into.
+    crate::keymap_loader::reload_and_apply(cx);
+    crate::keymap_loader::watch(cx);
     set_settings_deps(
         prefs.clone(),
         backend.clone(),
@@ -272,7 +278,7 @@ pub(crate) fn bootstrap(
         workspace.clone(),
         cx,
     );
-    labonair_settings_ui::set_keybind_apply_hook(crate::menu::apply_keybinds, cx);
+    labonair_settings_ui::set_keybind_apply_hook(crate::keymap_loader::reload_and_apply, cx);
 
     // Auto-updater (T15-005). Kicks a quiet background check at startup when the
     // `checkForUpdates` preference is on (6 h backoff inside the store).

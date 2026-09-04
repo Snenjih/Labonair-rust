@@ -10,11 +10,12 @@
 //! necessarily match — e.g. `CursorStyle::default()` is `Block`, but
 //! `Preferences`' historical default is `Bar`).
 //!
-//! `bar_item_placements` / `bar_layout_migrated` / `keybinds` have no
-//! `SettingsContent` counterpart (the legacy bar-item blob is superseded by
-//! `personalization.status_bar_item_placements`, see `migrations.rs`;
-//! keybindings live in their own `keymap.json`, T19-008) — those three
-//! fields fall back to `Preferences::default()`'s values.
+//! `bar_item_placements` / `bar_layout_migrated` have no `SettingsContent`
+//! counterpart (the legacy bar-item blob is superseded by
+//! `personalization.status_bar_item_placements`, see `migrations.rs`) — those
+//! two fields fall back to `Preferences::default()`'s values. Keybindings
+//! used to be a third such field (`keybinds`); T19-008 moved them into their
+//! own `keymap.json` and removed the field entirely.
 
 use labonair_settings_content::{
     ai, appearance, general, hosts, terminal, workspace, MergeFrom, SettingsContent,
@@ -280,8 +281,6 @@ impl From<&SettingsContent> for Preferences {
             mcp_max_command_timeout_secs: mcp.max_command_timeout_secs.unwrap_or_default(),
             mcp_auto_revoke_minutes: mcp.auto_revoke_minutes.unwrap_or_default(),
             mcp_notify_on_activity: mcp.notify_on_activity.unwrap_or_default(),
-
-            keybinds: legacy.keybinds,
         }
     }
 }

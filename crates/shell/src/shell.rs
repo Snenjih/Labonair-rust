@@ -20,6 +20,7 @@ pub mod assets;
 pub mod bootstrap;
 pub mod commands;
 pub mod cwd_breadcrumb;
+pub mod keymap_loader;
 pub mod menu;
 pub mod modals;
 pub mod status_items;
@@ -29,7 +30,7 @@ pub mod window_state;
 
 pub use app_shell::AppShell;
 pub use assets::Assets;
-pub use menu::{apply_keybinds, init as init_menus};
+pub use menu::{apply_keymap, init as init_menus};
 pub use titlebar::Titlebar;
 pub use updater::{UpdaterStatus, UpdaterView};
 

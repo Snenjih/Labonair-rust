@@ -21,11 +21,12 @@ mod palette;
 pub use fuzzy::{match_score, SearchMode};
 pub use keybind::{
     effective_binding, effective_keys, find_conflict, keystroke_tokens, resolve_conflict, shortcut,
-    shortcut_from_slug, shortcut_keys, shortcut_slug, shortcuts, Conflict, KeybindMap, Shortcut,
-    ShortcutGroup, ShortcutId, RESERVED_ACCELERATORS,
+    shortcut_from_slug, shortcut_keys, shortcut_slug, shortcuts, Conflict, KeybindDisplay,
+    KeybindMap, Shortcut, ShortcutGroup, ShortcutId, RESERVED_ACCELERATORS,
 };
 pub use palette::{
-    available, command, command_for_shortcut, commands, context_of, search, search_mode,
-    toggle_pref_key, Command, CommandContext, CommandId, CommandPalette, Page, PaletteChoice,
-    PaletteData, PaletteEvent, PalettePrefs, PaletteTabKind, PaletteTabRow, PaletteWorkspace,
+    available, command, command_for_shortcut, commands, context_of, known_action_names, search,
+    search_mode, toggle_pref_key, Command, CommandContext, CommandId, CommandPalette, Page,
+    PaletteChoice, PaletteData, PaletteEvent, PalettePrefs, PaletteTabKind, PaletteTabRow,
+    PaletteWorkspace,
 };
