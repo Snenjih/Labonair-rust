@@ -1,10 +1,19 @@
 # ADR 0001 — Decompose the `ui` monolith into ~22 crates
 
-* **Status:** Accepted
+* **Status:** Accepted (amended 2026-09-03 — see below)
 * **Date:** 2026-09-03
 * **Deciders:** project owner (Snenjih)
 * **Related:** `docs/architecture.md`, `bericht-architektur-rework-roadmap.md`,
   `vergleichsbericht-zed-vs-rust.md`, roadmap phases 15–21 (T16-001 … T22-001)
+
+> **Amendment (workflow rework, themes 1–3):** `labonair-panel-hosts` is
+> removed from the ~22-crate target — the SSH host manager is neither a tab nor
+> a dock panel. Its view code lives in **`labonair-hosts-ui`** (a plain view
+> crate, no `impl Panel`), consumed by `labonair-settings-ui`. Connecting runs
+> through the command palette; managing runs through **Settings › Hosts**.
+> Details + the two other themes (optional tabs, settings design contract):
+> `docs/architecture.md §8` and `bericht-workflow-rework.md`. The decomposition
+> rationale below is unchanged.
 
 ## Context
 
