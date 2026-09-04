@@ -32,6 +32,7 @@ pub mod dock;
 pub mod drag;
 pub mod live_bridge;
 pub mod markdown;
+pub mod modal_layer;
 pub mod pane;
 pub mod pane_group;
 pub mod prefs;
@@ -39,6 +40,7 @@ pub mod session;
 pub mod status_bar;
 pub mod syntax_theme;
 pub mod tabs;
+pub mod toast_layer;
 pub mod transfers;
 pub mod views;
 

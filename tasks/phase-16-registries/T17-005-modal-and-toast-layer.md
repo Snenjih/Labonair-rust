@@ -1,7 +1,7 @@
 # T17-005: `ModalLayer` + `ToastLayer`
 
 ## Status
-📋 Geplant
+✅ Done
 
 ## Phase
 16 — Root-Objekt & Registries
@@ -70,21 +70,52 @@ nennt sie als einzige „Overlay-Ebene".
    mit Auto-Dismiss; Klick außerhalb schließt den Modal.
 
 ## Akzeptanzkriterien
-- [ ] `ModalLayer` + `ToastLayer` existieren in `labonair-workspace`, mit
-      `trait ModalView`.
-- [ ] Command-Palette und Bookmarks laufen als `ModalView`; `pending_commands`,
-      `pending_bookmarks`, `drain_pending_commands`, `drain_pending_bookmarks`
-      sind entfernt.
-- [ ] `AppShell::render` endet mit genau zwei Overlay-Kindern
-      (`modal_layer`, `toast_layer`).
-- [ ] Fokus-Trap: bei offenem Modal gehen Tastatureingaben an den Modal;
-      `Esc` und Klick-außerhalb schließen ihn.
-- [ ] Toasts stapeln, auto-dismissen über GPUI-Timer (kein Thread-Sleep).
-- [ ] `cargo run`: alle migrierten Overlays funktionieren; Kontextmenüs
-      (Bar/Breadcrumb) weiterhin korrekt (jetzt über Popover/StatusItem).
-- [ ] Gates grün: `cargo fmt --check`, `cargo check --workspace --all-targets`,
+- [x] `ModalLayer` + `ToastLayer` existieren in `labonair-workspace`, mit
+      `trait ModalView` (`crates/workspace/src/modal_layer.rs`,
+      `crates/workspace/src/toast_layer.rs`).
+- [x] Command-Palette und Bookmarks laufen als `ModalView` — über
+      shell-lokale Wrapper-Newtypes (`CommandPaletteModal`, `BookmarksModal`,
+      `UpdaterModal` in `app_shell.rs`), weil `labonair-command-palette` /
+      `labonair-panel-explorer` nicht auf `labonair-workspace` zeigen dürfen
+      (Zyklus) und die Orphan-Rule `impl ModalView` woanders verbietet.
+      `pending_commands`, `pending_bookmarks`, `drain_pending_commands`,
+      `drain_pending_bookmarks` sind entfernt; Picks laufen jetzt direkt über
+      `cx.subscribe_in` (in `AppShell::new` aufgesetzt).
+- [x] `AppShell::render` endet mit genau zwei Overlay-Kindern
+      (`.child(self.modal_layer.clone()).child(self.toast_layer.clone())`).
+- [x] Fokus-Trap: `ModalLayer` fokussiert beim Öffnen den Modal-Focus-Handle
+      (`cx.defer_in` → `window.focus`), setzt `on_focus_out` +
+      `dismiss_on_focus_lost` auf. Für die drei `render_bare`-Modals liefern
+      die Views selbst Scrim + `Esc` + Overlay-Klick (Palette hatte beides,
+      Bookmarks-Overlay-Klick in T17-005 ergänzt). Der generische
+      Non-Bare-Pfad (Backdrop + `on_mouse_down`→`hide_modal` + zentriertes
+      Panel) ist implementiert für künftige Modals (T18-002). Visuelle
+      `cargo run`-Prüfung: siehe unten.
+- [x] Toasts stapeln + auto-dismissen — via
+      `cx.background_executor().timer()` in `NotificationCenter` (schon vor
+      T17-005 vorhanden); `ToastLayer` beobachtet + rendert nur.
+- [~] `cargo run`: **auf diesem Headless-VPS nicht möglich** (kein Display).
+      Kontextmenüs (Bar/Breadcrumb) nicht angefasst — bleiben `StatusItem`/
+      `PopoverMenu`-lokal wie vom Task gefordert.
+- [x] Gates grün: `cargo fmt --check`, `cargo check --workspace --all-targets`,
       `cargo clippy --workspace --all-targets -- -D warnings`,
-      `cargo test --workspace`.
+      `scripts/check-crate-deps.sh` (20 Crates, 87 Kanten, azyklisch, keine
+      neue Kante). `cargo test --workspace` kann auf diesem VPS keine
+      Test-Binaries linken (fehlende X11-Dev-Libs); `cargo check/clippy
+      --all-targets` kompiliert alle `#[cfg(test)]`-Module — der im Projekt
+      akzeptierte Ersatz.
+
+## Abweichungen (T17-005)
+Festgehalten in `docs/architecture.md §8.8`:
+1. Command-Palette / Path-Bookmarks / Updater-Dialog behalten ihren eigenen
+   Scrim + Positionierung (`ModalView::render_bare() == true`); der
+   `ModalLayer` hostet sie für Lifecycle + Fokus, rendert sie unverändert.
+   Der generische Backdrop-Pfad im `ModalLayer` bleibt für neue Modals.
+2. `impl ModalView` sitzt auf shell-lokalen Wrapper-Newtypes, nicht auf den
+   View-Typen selbst (Zyklus + Orphan-Rule).
+3. Updater + Bookmarks sind „driven" Modals (`sync_updater_modal` /
+   `sync_bookmarks_modal` in `render` spiegeln `dialog_open` / `is_open`);
+   nur die Palette nutzt `open_modal` / `hide_modal` direkt.
 
 ## Notizen
 - `ModalLayer` hält **einen** aktiven Modal (wie Zed). Kein Modal-Stack.

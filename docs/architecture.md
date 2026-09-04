@@ -528,6 +528,55 @@ lands here).
   pre-T17-004 `session.json` files still deserialise with **no
   `SNAPSHOT_VERSION` bump** (the new format is a superset).
 
+### 8.8 `ModalLayer` / `ToastLayer` — T17-005
+
+`labonair-workspace` gained `modal_layer.rs` (`trait ModalView: ManagedView`,
+`struct ModalLayer` — one active, focus-trapping modal; `toggle_modal` /
+`open_modal` / `hide_modal`; `on_focus_out` + `dismiss_on_focus_lost`) and
+`toast_layer.rs` (`ToastLayer<Th: UiTheme>` — observes
+`labonair_notifications::NotificationCenter` and renders `render_overlay`; the
+stacking + `background_executor().timer()` auto-dismiss already lived in the
+center). `AppShell::render` now ends with **exactly two** overlay children:
+`.child(modal_layer).child(toast_layer)`. `pending_commands` /
+`pending_bookmarks` / `drain_pending_commands` / `drain_pending_bookmarks` are
+gone — palette + bookmark picks are serviced immediately from a
+`cx.subscribe_in` set up in `AppShell::new` (which has the `&mut Window`).
+
+Deviations from the literal task text, all accepted:
+
+* **The three existing overlays keep their own scrim + centering.** The
+  command palette, path-bookmarks popover and updater dialog each already
+  paint a full-screen scrim, position their own card and handle their own
+  `Esc` / overlay-click, so they set `ModalView::render_bare() == true`: the
+  layer hosts them for lifecycle + focus identity only and renders them
+  as-is. `ModalLayer::render` still implements the generic non-bare path
+  (`modal_scrim()` backdrop with `occlude()` + `on_mouse_down` → `hide_modal`,
+  a centered `occlude()`d panel with `track_focus`) for future modals — the
+  `Cmd+F` search overlay (T18-002) is the first planned consumer. Stripping
+  the palette's position-preference-aware scrim was judged higher-risk than
+  keeping it, given no runtime verification is possible on this headless VPS.
+* **`impl ModalView` lives on shell-local wrapper newtypes, not the views.**
+  `labonair-command-palette` / `labonair-panel-explorer` cannot depend on
+  `labonair-workspace` (cycle), and the orphan rule bars
+  `impl ModalView for CommandPalette` anywhere else, so
+  `crates/shell/src/app_shell.rs` defines `CommandPaletteModal`,
+  `BookmarksModal`, `UpdaterModal` — thin `Render`+`Focusable`+
+  `EventEmitter<DismissEvent>` wrappers that delegate to the inner entity.
+  `CommandPalette` / `BookmarksView` gained `impl EventEmitter<DismissEvent>`
+  and emit it from `close()` so the wrapper (and hence the layer) drops on a
+  self-close.
+* **Bookmarks + updater are driven modals; the palette is explicit.** The
+  updater dialog (`dialog_open` flipped by the async check) and the bookmarks
+  popover (its status-bar button flips `open` directly) are mirrored into the
+  layer by `sync_updater_modal` / `sync_bookmarks_modal`, called from
+  `render`. The palette, only ever opened from action handlers, uses
+  `ModalLayer::open_modal` / `hide_modal` directly.
+* No new crate-graph edges (shell already reaches workspace + notifications;
+  workspace already reaches notifications + ui-kit).
+
+Bar / breadcrumb context menus were **not** forced into the modal layer (per
+the task): they remain `PopoverMenu`/`StatusItem`-local, pending T20-001.
+
 ---
 
 ## 9. Ist-Graph after Phase 15 (T16-010)

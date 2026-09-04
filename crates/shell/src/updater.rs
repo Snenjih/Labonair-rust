@@ -85,6 +85,18 @@ impl UpdaterView {
         cx.notify();
     }
 
+    /// Whether the "update available / downloading / ready" dialog should be
+    /// on screen. The shell mirrors this into its `ModalLayer` (T17-005).
+    pub fn dialog_visible(&self) -> bool {
+        self.dialog_open
+            && matches!(
+                self.status,
+                UpdaterStatus::Available(_)
+                    | UpdaterStatus::Downloading { .. }
+                    | UpdaterStatus::Ready
+            )
+    }
+
     /// Check for updates. `manual` (menu / settings) bypasses the 6 h backoff
     /// and always reports the outcome; the automatic startup check stays quiet
     /// unless an update is found.

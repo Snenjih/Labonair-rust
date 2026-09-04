@@ -15,8 +15,8 @@
 
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, px, App, ClickEvent, Context, Entity, EventEmitter, FocusHandle, Focusable, Hsla,
-    InteractiveElement, IntoElement, KeyDownEvent, ParentElement, Render, SharedString,
+    div, px, App, ClickEvent, Context, DismissEvent, Entity, EventEmitter, FocusHandle, Focusable,
+    Hsla, InteractiveElement, IntoElement, KeyDownEvent, ParentElement, Render, SharedString,
     StatefulInteractiveElement, Styled, Window,
 };
 
@@ -547,6 +547,16 @@ where
 {
 }
 
+/// Emitted so a hosting [`ModalLayer`](labonair_workspace::modal_layer::ModalLayer)
+/// can drop the palette when it closes itself (Esc / overlay click / a pick).
+impl<P, W, Th> EventEmitter<DismissEvent> for CommandPalette<P, W, Th>
+where
+    P: 'static,
+    W: 'static,
+    Th: 'static,
+{
+}
+
 impl<P, W, Th> CommandPalette<P, W, Th>
 where
     P: PalettePrefs + 'static,
@@ -614,11 +624,15 @@ where
     }
 
     pub fn close(&mut self, cx: &mut Context<Self>) {
+        let was_open = self.open;
         self.open = false;
         self.query.clear();
         self.pages = vec![Page::Root];
         self.selected = 0;
         cx.emit(PaletteEvent::PreviewAppTheme(None));
+        if was_open {
+            cx.emit(DismissEvent);
+        }
         cx.notify();
     }
 

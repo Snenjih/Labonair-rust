@@ -9,9 +9,9 @@
 
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, px, App, ClickEvent, Context, Entity, EventEmitter, FocusHandle, Focusable,
-    InteractiveElement, IntoElement, KeyDownEvent, ParentElement, Render, SharedString,
-    StatefulInteractiveElement, Styled, Window,
+    div, px, App, ClickEvent, Context, DismissEvent, Entity, EventEmitter, FocusHandle, Focusable,
+    InteractiveElement, IntoElement, KeyDownEvent, MouseButton, MouseDownEvent, ParentElement,
+    Render, SharedString, StatefulInteractiveElement, Styled, Window,
 };
 use labonair_backend::modules::bookmarks as model;
 use labonair_backend::modules::bookmarks::{BookmarkContext, PathBookmark};
@@ -39,6 +39,10 @@ pub struct BookmarksView {
 }
 
 impl EventEmitter<BookmarkEvent> for BookmarksView {}
+
+/// Emitted so a hosting [`ModalLayer`](labonair_workspace::modal_layer::ModalLayer)
+/// can drop the popover when it closes itself (Esc / overlay click / a pick).
+impl EventEmitter<DismissEvent> for BookmarksView {}
 
 impl BookmarksView {
     pub fn new(
@@ -77,7 +81,11 @@ impl BookmarksView {
     }
 
     pub fn close(&mut self, cx: &mut Context<Self>) {
+        let was_open = self.open;
         self.open = false;
+        if was_open {
+            cx.emit(DismissEvent);
+        }
         cx.notify();
     }
 
@@ -275,8 +283,13 @@ impl Render for BookmarksView {
             .track_focus(&self.focus)
             .key_context("BookmarksPopover")
             .on_key_down(cx.listener(Self::on_key))
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(|this, _: &MouseDownEvent, _w, cx| this.close(cx)),
+            )
             .child(
                 div()
+                    .occlude()
                     .w(px(420.0))
                     .max_h(px(440.0))
                     .flex()

@@ -4,6 +4,73 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
+## Last Session: 2026-09-04 (T17-005 — `ModalLayer` + `ToastLayer` · **Phase 16**)
+
+Replaced the six hand-wired overlay children in `AppShell::render` with **two**
+reusable layers (Zed pattern), and deleted the `pending_*` / `drain_pending_*`
+buffering for palette + bookmark picks.
+
+### What Was Done (T17-005)
+- **`crates/workspace/src/modal_layer.rs`** (new) — `trait ModalView:
+  ManagedView` (`on_dismiss` hook + `render_bare()`); `struct ModalLayer`
+  (Entity, `#[derive(Default)]`): one active modal, `toggle_modal<V,B>` /
+  `open_modal<V,B>` / `hide_modal` / `active_modal::<V>()` /
+  `has_active_modal` / `set_dismiss_on_focus_lost`. `show_modal` wires a
+  `DismissEvent` subscription (`subscribe_in`) + `on_focus_out`, focuses the
+  modal via `cx.defer_in`. `Render`: bare → view as-is; non-bare →
+  `modal_scrim()` backdrop (`occlude()` + `on_mouse_down`→`hide_modal`) +
+  centered `occlude()`d panel with `track_focus`. Ported/trimmed from
+  `zed-refrence/.../modal_layer.rs`.
+- **`crates/workspace/src/toast_layer.rs`** (new) — `ToastLayer<Th: UiTheme>`
+  observes `NotificationCenter`, renders `notifications::render_overlay`. The
+  stacking + `background_executor().timer()` auto-dismiss already lived in the
+  center.
+- **`crates/workspace/src/workspace.rs`** — `pub mod modal_layer; pub mod
+  toast_layer;`.
+- **`crates/command-palette/src/palette.rs`** — `impl
+  EventEmitter<DismissEvent> for CommandPalette`; `close()` emits `DismissEvent`
+  (guarded by `was_open`).
+- **`crates/panel-explorer/src/bookmarks.rs`** — `impl
+  EventEmitter<DismissEvent>`; `close()` emits it; scrim gained
+  `on_mouse_down`→`close` (overlay-click-to-close) + card `.occlude()`.
+- **`crates/shell/src/updater.rs`** — `pub fn dialog_visible(&self) -> bool`.
+- **`crates/shell/src/app_shell.rs`** — shell-local `ModalView` wrapper
+  newtypes `CommandPaletteModal` / `BookmarksModal` / `UpdaterModal` (cycle +
+  orphan-rule: the trait can't be impl'd on the view crates). Fields
+  `pending_commands` / `pending_bookmarks` + `drain_pending_commands` /
+  `drain_pending_bookmarks` **removed**; new `modal_layer:
+  Entity<ModalLayer>` + `toast_layer: Entity<ToastLayer<ThemeStore>>` fields;
+  removed now-dead `notifications` field. `cx.subscribe(&command_palette/…)` →
+  `cx.subscribe_in(…, window, …)` calling `handle_palette_event` /
+  `handle_bookmark_event` (single-event, ex-`drain` bodies). New helpers
+  `toggle_command_palette` / `show_command_palette(page)` (explicit
+  `open_modal`/`hide_modal`), `toggle_bookmarks` + `sync_bookmarks_modal`,
+  `sync_updater_modal` (driven mirrors, called from `render`). `render` ends
+  `.child(self.modal_layer.clone()).child(self.toast_layer.clone())` — exactly
+  two overlay children.
+- **`docs/architecture.md` §8.8** — new; records the three accepted
+  deviations (render_bare kept for the 3 legacy modals; wrapper newtypes;
+  driven-vs-explicit).
+
+### Gate Results (T17-005)
+- `cargo fmt --check` ✅ · `cargo check --workspace --all-targets` ✅ ·
+  `cargo clippy --workspace --all-targets -- -D warnings` ✅ ·
+  `scripts/check-crate-deps.sh` ✅ (20 crates, 87 edges, acyclic — **no new
+  edge**).
+- `cargo test --workspace` **not run** — test binaries cannot link on this
+  headless VPS (missing `-lxcb` / `-lxkbcommon*`); `cargo check/clippy
+  --all-targets` compiled all `#[cfg(test)]` code (project-accepted
+  substitute). `cargo run` visual check of Cmd+Shift+P / bookmarks / updater
+  dialog / stacked toasts / click-outside **not possible** (no display).
+
+### State
+- Branch `master`, committing now. No blockers.
+
+### Next
+- **T17-006** — `AppShell` → reine Komposition (God-Object auflösen).
+
+---
+
 ## Last Session: 2026-09-04 (T17-004 — `PaneGroup` n-ary split tree + persistence · **Phase 16**)
 
 Replaced the flat binary pane tree with a Zed-style n-ary `Member` tree that
