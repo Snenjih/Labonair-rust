@@ -2940,6 +2940,8 @@ impl GitPanelView {
 
 impl Render for GitPanelView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let _span =
+            tracing::trace_span!(target: "labonair::perf", "render", view = "scm_panel").entered();
         let c = self.colors(cx);
 
         let mut root = div()

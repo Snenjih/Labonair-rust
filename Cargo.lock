@@ -4303,6 +4303,7 @@ dependencies = [
  "labonair-workspace",
  "serde_json",
  "tokio",
+ "tracing",
  "uuid",
 ]
 
@@ -4333,6 +4334,7 @@ dependencies = [
  "labonair-theme",
  "labonair-ui-kit",
  "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -4346,6 +4348,7 @@ dependencies = [
  "labonair-theme",
  "labonair-ui-kit",
  "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -4361,6 +4364,7 @@ dependencies = [
  "labonair-workspace",
  "serde_json",
  "tokio",
+ "tracing",
  "uuid",
 ]
 
@@ -4492,6 +4496,7 @@ dependencies = [
  "palette",
  "serde",
  "serde_json",
+ "tracing",
 ]
 
 [[package]]

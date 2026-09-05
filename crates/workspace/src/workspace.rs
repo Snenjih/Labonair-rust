@@ -4866,42 +4866,61 @@ impl Workspace {
 
 impl Render for Workspace {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let _span =
+            tracing::trace_span!(target: "labonair::perf", "render", view = "workspace").entered();
         // T19-003: keep `labonair-settings`'s active project root in sync
         // with the active pane's cwd (cheap no-op unless it actually
         // changed — see the method doc).
         self.sync_project_settings_root(cx);
         // Drain host-manager connect requests here — `connect_host` needs a
         // `&mut Window` and `cx.subscribe` does not provide one.
-        for host_id in std::mem::take(&mut self.pending_connect) {
-            let _ = self.connect_host(host_id, window, cx);
-        }
-        for op in std::mem::take(&mut self.pending_mcp) {
-            match op {
-                McpTabOp::Open {
-                    request_id,
-                    host_id,
-                } => self.mcp_open_tab(request_id, host_id, window, cx),
-                McpTabOp::Close {
-                    request_id,
-                    session_id,
-                } => self.mcp_close_tab(request_id, session_id, window, cx),
+        if !self.pending_connect.is_empty() {
+            for host_id in std::mem::take(&mut self.pending_connect) {
+                let _ = self.connect_host(host_id, window, cx);
             }
         }
-        for host_id in std::mem::take(&mut self.pending_sftp) {
-            self.open_sftp(host_id, window, cx);
+        if !self.pending_mcp.is_empty() {
+            for op in std::mem::take(&mut self.pending_mcp) {
+                match op {
+                    McpTabOp::Open {
+                        request_id,
+                        host_id,
+                    } => self.mcp_open_tab(request_id, host_id, window, cx),
+                    McpTabOp::Close {
+                        request_id,
+                        session_id,
+                    } => self.mcp_close_tab(request_id, session_id, window, cx),
+                }
+            }
         }
-        for tab_id in std::mem::take(&mut self.pending_tab_close) {
-            self.request_close(tab_id, window, cx);
+        if !self.pending_sftp.is_empty() {
+            for host_id in std::mem::take(&mut self.pending_sftp) {
+                self.open_sftp(host_id, window, cx);
+            }
         }
-        for open in std::mem::take(&mut self.pending_open) {
-            match open {
-                PendingOpen::Local(path) => self.open_file(path, false, window, cx),
-                PendingOpen::RemoteEdit {
-                    session_id,
-                    remote_path,
-                    host_id,
-                    temp_path,
-                } => self.open_remote_edit(session_id, remote_path, host_id, temp_path, window, cx),
+        if !self.pending_tab_close.is_empty() {
+            for tab_id in std::mem::take(&mut self.pending_tab_close) {
+                self.request_close(tab_id, window, cx);
+            }
+        }
+        if !self.pending_open.is_empty() {
+            for open in std::mem::take(&mut self.pending_open) {
+                match open {
+                    PendingOpen::Local(path) => self.open_file(path, false, window, cx),
+                    PendingOpen::RemoteEdit {
+                        session_id,
+                        remote_path,
+                        host_id,
+                        temp_path,
+                    } => self.open_remote_edit(
+                        session_id,
+                        remote_path,
+                        host_id,
+                        temp_path,
+                        window,
+                        cx,
+                    ),
+                }
             }
         }
         let want_prompt = self.ssh_prompt.is_some();

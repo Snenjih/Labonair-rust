@@ -189,6 +189,8 @@ impl Focusable for AppShell {
 
 impl Render for AppShell {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let _span =
+            tracing::trace_span!(target: "labonair::perf", "render", view = "shell").entered();
         self.maybe_persist_geometry(window);
         // Mirror the async-driven updater dialog + the status-bar-toggled
         // bookmarks popover into the modal layer (both flip flags outside a

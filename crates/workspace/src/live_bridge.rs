@@ -16,7 +16,7 @@ use std::sync::{Arc, Mutex};
 use labonair_ai::LiveBridge;
 
 /// Read-only view of the live UI, refreshed by `AppShell` each render.
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct LiveSnapshot {
     pub cwd: Option<String>,
     pub workspace_root: Option<String>,
@@ -48,11 +48,18 @@ impl WorkspaceLiveBridge {
         Self::default()
     }
 
-    /// Replace the snapshot (called by `AppShell` each render).
-    pub fn set_snapshot(&self, s: LiveSnapshot) {
+    /// Replace the event-driven snapshot only when its contents changed.
+    /// Returns whether the bridge state changed. This makes duplicate
+    /// workspace/explorer observer notifications measurable in tests and keeps
+    /// an otherwise-idle observer cascade from publishing needless state.
+    pub fn set_snapshot(&self, s: LiveSnapshot) -> bool {
         if let Ok(mut g) = self.snapshot.lock() {
-            *g = s;
+            if *g != s {
+                *g = s;
+                return true;
+            }
         }
+        false
     }
 
     /// Take every queued command (called by `AppShell` in its update cycle).
@@ -123,18 +130,33 @@ mod tests {
         let b = WorkspaceLiveBridge::new();
         assert_eq!(b.cwd(), None);
         assert!(b.terminal_context(10).is_none());
-        b.set_snapshot(LiveSnapshot {
+        assert!(b.set_snapshot(LiveSnapshot {
             cwd: Some("/tmp/x".into()),
             workspace_root: Some("/tmp".into()),
             terminal_lines: vec!["a".into(), "b".into(), "c".into()],
             ssh_tab_id: Some("s1".into()),
             has_terminal: true,
-        });
+        }));
         assert_eq!(b.cwd().as_deref(), Some("/tmp/x"));
         assert_eq!(b.workspace_root().as_deref(), Some("/tmp"));
         assert_eq!(b.active_ssh_tab_id().as_deref(), Some("s1"));
         assert_eq!(b.terminal_context(2).as_deref(), Some("b\nc"));
         assert_eq!(b.terminal_context(50).as_deref(), Some("a\nb\nc"));
+    }
+
+    #[test]
+    fn identical_snapshot_is_an_idle_noop() {
+        let b = WorkspaceLiveBridge::new();
+        let snapshot = LiveSnapshot {
+            cwd: Some("/tmp/project".into()),
+            workspace_root: Some("/tmp/project".into()),
+            terminal_lines: vec!["prompt".into()],
+            ssh_tab_id: None,
+            has_terminal: true,
+        };
+
+        assert!(b.set_snapshot(snapshot.clone()));
+        assert!(!b.set_snapshot(snapshot));
     }
 
     #[test]

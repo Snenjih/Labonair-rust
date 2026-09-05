@@ -980,6 +980,9 @@ struct Colors {
 
 impl Render for ExplorerView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let _span =
+            tracing::trace_span!(target: "labonair::perf", "render", view = "explorer_panel")
+                .entered();
         let c = {
             let t = self.theme.read(cx);
             Colors {

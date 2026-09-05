@@ -186,6 +186,7 @@ impl SettingsStore {
     /// reached through `cx.global_mut::<SettingsStore>()`, which already
     /// queues the `NotifyGlobalObservers` effect on access.
     fn recompute(&mut self) {
+        let _span = tracing::trace_span!(target: "labonair::perf", "settings_recompute").entered();
         let mut merged = SettingsContent::default();
         for content in self.raw.values() {
             merged.merge_from(content);

@@ -10,6 +10,7 @@ path = "src/panel_scm.rs"
 [dependencies]
 gpui = { workspace = true }
 tokio = { workspace = true }
+tracing = { workspace = true }
 labonair-theme = { path = "../theme" }
 labonair-ui-kit = { path = "../ui-kit" }
 labonair-panel = { path = "../panel" }

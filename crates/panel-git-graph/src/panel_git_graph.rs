@@ -1611,6 +1611,9 @@ impl GitGraphView {
 
 impl Render for GitGraphView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let _span =
+            tracing::trace_span!(target: "labonair::perf", "render", view = "git_graph_panel")
+                .entered();
         let c = self.colors(cx);
         div()
             .track_focus(&self.focus)

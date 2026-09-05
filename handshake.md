@@ -4,6 +4,33 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
+## Current Session: 2026-09-05 (T21-001 — render-path profiling & frame hygiene, in progress)
+
+**T21-001 is in progress.** The code-side render hygiene and opt-in profiling
+surface are implemented, but the task must remain open until its graphical
+profiling evidence is captured on macOS.
+
+- `labonair::perf` trace spans now cover shell/titlebar/workspace/status-bar,
+  Explorer/SCM/Git Graph/Snippets/AI panels, settings recomputation, active
+  theme recomputation, and live-snapshot recomputation. Enable with
+  `RUST_LOG=labonair::perf=trace cargo run`.
+- Workspace skips empty deferred-operation queues; `WorkspaceLiveBridge`
+  publishes a snapshot only if it actually changed. The new regression test
+  `identical_snapshot_is_an_idle_noop` passes.
+- `docs/perf-baseline.md` documents expected render ownership and the exact
+  host-side trace/heap capture procedure. No made-up frame or allocation data
+  was recorded on this headless runner.
+- Verification: `cargo fmt --check`, `cargo check --workspace --all-targets`,
+  `cargo clippy --workspace --all-targets -- -D warnings`, and
+  `cargo test -p labonair-workspace` (93 passed) are green. Full
+  `cargo test --workspace` is blocked by the pre-existing
+  `labonair-ai::client::tests::end_to_end_streams_openai_sse_over_http` test:
+  this sandbox rejects its local socket bind with `Operation not permitted`.
+- **Next:** finish T21-001 by taking 10-second idle plus tab-switch and
+  terminal-typing traces/heap samples on a graphical macOS host, add the
+  measured values, rerun the full test suite where loopback binding is allowed,
+  then mark the task done. T21-002 follows after that.
+
 ## Last Session: 2026-09-05 (T20-007 — `theme_settings` metric layer)
 
 **T20-007 done.** UI density, font scales, corner-radius scale and

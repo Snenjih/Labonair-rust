@@ -62,3 +62,39 @@ on CI hardware with a real disk budget. The gate actually run here was:
 `labonair-terminal` still pulls `gpui` + `labonair-theme` (it renders the ANSI
 cell grid). An engine/renderer split would let `cargo check` on the pure engine
 skip GPUI entirely — candidate for a later phase, not scoped to Phase 15.
+
+## Render-path baseline — T21-001 (2026-09-05)
+
+The render path is instrumented through the opt-in `labonair::perf` tracing
+target. Enable it with:
+
+```sh
+RUST_LOG=labonair::perf=trace cargo run
+```
+
+Every core render emits a `render` span with its `view` field (`shell`,
+`titlebar`, `workspace`, `status_bar`, and the Explorer, SCM, Git Graph,
+Snippets, and AI panels). The same target also covers `settings_recompute`,
+`active_theme_recompute`, and `live_snapshot_recompute`. This is deliberately
+opt-in: normal runs do not enable the tracing subscriber for this target.
+
+| Scenario | Core render expectation | Timing / allocation capture |
+|---|---|---|
+| Idle, unfocused terminal, 10 s | 0 spans after initial paint | Trace capture required on a graphical macOS host |
+| Tab switch | Workspace and its changed tab child; shell at most two paints | Capture trace span durations + `heaptrack`/`dhat` on the host |
+| Terminal typing | Terminal child only; no shell render | Capture trace span durations + allocation sample |
+| Panel toggle / split resize | Workspace and affected dock/panel only | Capture trace span durations |
+| Settings field change | Settings recompute, active theme only if relevant, affected view | Capture trace span durations |
+
+This CI/container runner has no display server, so it cannot launch GPUI or
+produce credible GPU frame-time / heap-profiler measurements. The source-level
+audit confirms that `build_palette_data` and frame-side live-bridge refreshes
+remain absent; live snapshots are observer-driven and duplicate snapshots are
+now explicit no-ops (`identical_snapshot_is_an_idle_noop`). The remaining
+deferred Workspace queues are skipped without `mem::take` when empty.
+
+The required graphical sign-off is therefore still open: run the commands
+above on macOS, attach the trace plus `dhat` or `heaptrack` samples for tab
+switch and terminal typing, then replace the capture placeholders with measured
+milliseconds and peak bytes. Terminal cursor blink / active PTY output must be
+disabled for the idle run.

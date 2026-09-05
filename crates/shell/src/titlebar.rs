@@ -166,6 +166,8 @@ impl Titlebar {
 
 impl Render for Titlebar {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let _span =
+            tracing::trace_span!(target: "labonair::perf", "render", view = "titlebar").entered();
         if !self.prefs.read(cx).get().zen_mode_show_header {
             // `zen_mode_show_header == false`: no custom titlebar — the OS
             // frame / traffic lights take over. On macOS the window still uses

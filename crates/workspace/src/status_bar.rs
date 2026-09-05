@@ -259,6 +259,8 @@ impl StatusBar {
 
 impl Render for StatusBar {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let _span =
+            tracing::trace_span!(target: "labonair::perf", "render", view = "status_bar").entered();
         self.ensure_built(window, cx);
 
         let (status_bar_bg, muted, border) = {

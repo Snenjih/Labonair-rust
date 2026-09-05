@@ -3166,6 +3166,8 @@ impl Focusable for AiChatView {
 
 impl Render for AiChatView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let _span =
+            tracing::trace_span!(target: "labonair::perf", "render", view = "ai_panel").entered();
         self.ensure_composer(window, cx);
         self.ensure_model_search(window, cx);
         let c = self.colors(cx);

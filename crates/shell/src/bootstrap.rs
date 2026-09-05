@@ -62,6 +62,7 @@ pub(crate) fn refresh_live_snapshot(
     bridge: &WorkspaceLiveBridge,
     cx: &App,
 ) {
+    let _span = tracing::trace_span!(target: "labonair::perf", "live_snapshot_recompute").entered();
     let ws = workspace.read(cx);
     bridge.set_snapshot(LiveSnapshot {
         cwd: ws.active_cwd(cx),

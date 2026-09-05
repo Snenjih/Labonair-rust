@@ -2216,6 +2216,9 @@ fn label(c: &Colors, text: &'static str) -> gpui::AnyElement {
 
 impl Render for SnippetsView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let _span =
+            tracing::trace_span!(target: "labonair::perf", "render", view = "snippets_panel")
+                .entered();
         let c = self.colors(cx);
         let p = Palette::from_theme(self.theme.read(cx));
 

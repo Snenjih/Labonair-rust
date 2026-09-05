@@ -201,6 +201,8 @@ impl ThemeStore {
     /// Recompute [`Self::active`] from the currently-resolved [`Theme`] and the
     /// live [`ThemeMetrics`]. Cheap; call after any colour or metric change.
     fn rebuild_active(&mut self) {
+        let _span =
+            tracing::trace_span!(target: "labonair::perf", "active_theme_recompute").entered();
         self.active = ActiveTheme::new(self.theme().clone(), self.metrics.clone());
     }
 
