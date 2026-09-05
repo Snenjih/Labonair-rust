@@ -43,7 +43,10 @@ use labonair_backend::App as Backend;
 use tokio::runtime::Handle as TokioHandle;
 
 use crate::theme::ThemeStore;
-use labonair_ui_kit::{context_menu, IconName, MenuItem, Palette};
+use labonair_ui_kit::{
+    button, context_menu, keybinding_hint, ButtonSize, ButtonVariant, IconName, ListItem, MenuItem,
+    Palette,
+};
 
 // ── geometry ───────────────────────────────────────────────────────────────
 
@@ -422,6 +425,9 @@ struct Colors {
     success: Hsla,
     error: Hsla,
     info: Hsla,
+    /// The full token snapshot the ui-kit primitives (`button`, `ListItem`, …)
+    /// are styled from (T20-003).
+    palette: Palette,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -785,6 +791,7 @@ impl GitGraphView {
             success: t.status_success(),
             error: t.status_error(),
             info: t.status_info(),
+            palette: Palette::from_theme(t),
         }
     }
 
@@ -853,18 +860,22 @@ impl GitGraphView {
                         )
                     })
                     .child(
-                        div()
-                            .id("git-graph-refresh")
-                            .px(px(4.0))
-                            .text_size(px(11.0))
-                            .text_color(c.muted)
-                            .hover(|s| s.text_color(c.fg))
-                            .child(SharedString::from(if self.loading {
-                                "\u{2026}"
-                            } else {
-                                "\u{21bb}"
-                            }))
-                            .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| this.reload(cx))),
+                        button(
+                            "git-graph-refresh",
+                            c.palette,
+                            ButtonVariant::Ghost,
+                            ButtonSize::IconXs,
+                        )
+                        .child(if self.loading {
+                            div()
+                                .text_size(px(11.0))
+                                .text_color(c.muted)
+                                .child(SharedString::from("\u{2026}"))
+                                .into_any_element()
+                        } else {
+                            IconName::Refresh.svg(c.muted).into_any_element()
+                        })
+                        .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| this.reload(cx))),
                     ),
             )
     }
@@ -910,23 +921,24 @@ impl GitGraphView {
 
         if self.has_more {
             col = col.child(
-                div()
-                    .id("git-graph-load-more")
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .h(px(30.0))
-                    .border_t_1()
-                    .border_color(c.border)
-                    .text_size(px(11.0))
-                    .text_color(c.muted)
-                    .hover(|s| s.text_color(c.fg))
-                    .child(SharedString::from(if self.loading {
-                        "Loading\u{2026}"
-                    } else {
-                        "Load more commits"
-                    }))
-                    .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| this.load_more(cx))),
+                button(
+                    "git-graph-load-more",
+                    c.palette,
+                    ButtonVariant::Link,
+                    ButtonSize::Sm,
+                )
+                .w_full()
+                .justify_center()
+                .h(px(30.0))
+                .border_t_1()
+                .border_color(c.border)
+                .text_color(c.muted)
+                .child(SharedString::from(if self.loading {
+                    "Loading\u{2026}"
+                } else {
+                    "Load more commits"
+                }))
+                .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| this.load_more(cx))),
             );
         }
 
@@ -1079,45 +1091,47 @@ impl GitGraphView {
                 );
             }
             Some(files) => {
-                for f in files {
-                    file_list =
-                        file_list.child(
+                for (i, f) in files.iter().enumerate() {
+                    let trailing = div()
+                        .flex()
+                        .flex_shrink_0()
+                        .gap(px(4.0))
+                        .font(mono.clone())
+                        .text_size(px(9.5))
+                        .when(f.added > 0, |d| {
+                            d.child(
+                                div()
+                                    .text_color(c.success)
+                                    .child(SharedString::from(format!("+{}", f.added))),
+                            )
+                        })
+                        .when(f.removed > 0, |d| {
+                            d.child(
+                                div()
+                                    .text_color(c.error)
+                                    .child(SharedString::from(format!("-{}", f.removed))),
+                            )
+                        });
+
+                    // Not interactive (no `on_click`) — `.extra` neutralises
+                    // the `ListItem` default hover/pointer chrome, matching
+                    // `transfers.rs`'s informational-row convention.
+                    file_list = file_list.child(
+                        ListItem::new(
+                            ("git-graph-detail-file", i),
+                            c.fg.opacity(0.8),
+                            c.muted,
+                            c.accent.opacity(0.12),
+                        )
+                        .child(
                             div()
-                                .flex()
-                                .items_center()
-                                .justify_between()
-                                .gap(px(6.0))
-                                .px(px(8.0))
-                                .py(px(3.0))
-                                .text_size(px(11.0))
-                                .child(
-                                    div()
-                                        .min_w_0()
-                                        .truncate()
-                                        .text_color(c.fg.opacity(0.8))
-                                        .child(SharedString::from(f.path.clone())),
-                                )
-                                .child(
-                                    div()
-                                        .flex()
-                                        .flex_shrink_0()
-                                        .gap(px(4.0))
-                                        .font(mono.clone())
-                                        .text_size(px(9.5))
-                                        .when(f.added > 0, |d| {
-                                            d.child(
-                                                div().text_color(c.success).child(
-                                                    SharedString::from(format!("+{}", f.added)),
-                                                ),
-                                            )
-                                        })
-                                        .when(f.removed > 0, |d| {
-                                            d.child(div().text_color(c.error).child(
-                                                SharedString::from(format!("-{}", f.removed)),
-                                            ))
-                                        }),
-                                ),
-                        );
+                                .min_w_0()
+                                .truncate()
+                                .child(SharedString::from(f.path.clone())),
+                        )
+                        .trailing(trailing)
+                        .extra(|row| row.cursor_default()),
+                    );
                 }
             }
         }
@@ -1144,22 +1158,18 @@ impl GitGraphView {
                 }),
             ))
             .child(
-                div()
-                    .id("git-graph-toggle-diff")
-                    .px(px(6.0))
-                    .py(px(3.0))
-                    .rounded(px(4.0))
-                    .border_1()
-                    .border_color(c.border)
-                    .text_size(px(11.0))
-                    .text_color(c.fg)
-                    .hover(|s| s.bg(c.fg.opacity(0.05)))
-                    .child(SharedString::from(if self.show_diff {
-                        "Hide diff"
-                    } else {
-                        "View diff"
-                    }))
-                    .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| this.toggle_diff(cx))),
+                button(
+                    "git-graph-toggle-diff",
+                    c.palette,
+                    ButtonVariant::Outline,
+                    ButtonSize::Xs,
+                )
+                .child(SharedString::from(if self.show_diff {
+                    "Hide diff"
+                } else {
+                    "View diff"
+                }))
+                .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| this.toggle_diff(cx))),
             )
             .child(nav_btn(
                 "git-graph-next",
@@ -1236,18 +1246,21 @@ impl GitGraphView {
                     .h(px(24.0))
                     .px(px(8.0))
                     .child(
-                        div()
-                            .id("git-graph-detail-close")
-                            .text_size(px(12.0))
-                            .text_color(c.muted)
-                            .hover(|s| s.text_color(c.fg))
-                            .child(SharedString::from("\u{2715}"))
-                            .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
+                        button(
+                            "git-graph-detail-close",
+                            c.palette,
+                            ButtonVariant::Ghost,
+                            ButtonSize::IconXs,
+                        )
+                        .child(IconName::X.svg(c.muted))
+                        .on_click(cx.listener(
+                            |this, _: &ClickEvent, _w, cx| {
                                 this.selected = None;
                                 this.detail_numstat = None;
                                 this.detail_diff = None;
                                 cx.notify();
-                            })),
+                            },
+                        )),
                     ),
             )
             .child(header)
@@ -1546,9 +1559,11 @@ impl GitGraphView {
                         )
                         .child(
                             div()
-                                .text_size(px(10.0))
-                                .text_color(c.muted)
-                                .child("Enter to create \u{00b7} Esc to cancel"),
+                                .flex()
+                                .items_center()
+                                .gap(px(10.0))
+                                .child(keybinding_hint("Create", ["Enter"], c.palette))
+                                .child(keybinding_hint("Cancel", ["Esc"], c.palette)),
                         ),
                 )
                 .into_any_element(),
@@ -1628,21 +1643,13 @@ fn nav_btn(
     c: Colors,
     on_click: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
 ) -> Stateful<Div> {
-    let mut d = div()
-        .id(id)
-        .px(px(6.0))
-        .py(px(3.0))
-        .text_size(px(11.0))
-        .text_color(if enabled {
-            c.muted
-        } else {
-            c.muted.opacity(0.4)
+    button(id, c.palette, ButtonVariant::Ghost, ButtonSize::Xs)
+        .child(SharedString::from(label))
+        .when(!enabled, |d| {
+            d.opacity(labonair_ui_kit::DISABLED_OPACITY)
+                .cursor_default()
         })
-        .child(SharedString::from(label));
-    if enabled {
-        d = d.hover(|s| s.text_color(c.fg)).on_click(on_click);
-    }
-    d
+        .when(enabled, |d| d.on_click(on_click))
 }
 
 fn center_message(title: &str, body: &str, c: Colors) -> Div {
