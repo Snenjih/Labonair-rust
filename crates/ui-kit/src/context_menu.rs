@@ -310,6 +310,15 @@ fn menu_card(c: Palette, items: Vec<MenuItem>) -> gpui::Div {
         .children(items.into_iter().map(move |it| render_item(it, c, 0)))
 }
 
+/// The bare menu card on its own — no full-screen backdrop, no anchoring, no
+/// dismiss wiring. Used by the component gallery (T20-004) to show a context
+/// menu as a permanently-open example; not for normal call sites, which want
+/// [`context_menu`] / [`popover_menu`].
+#[cfg(any(debug_assertions, feature = "gallery"))]
+pub fn menu_card_preview(c: Palette, items: Vec<MenuItem>) -> gpui::Div {
+    menu_card(c, items)
+}
+
 /// Build a full-screen context-menu overlay anchored at `anchor` (window
 /// coordinates). `dismiss` fires on a click anywhere outside the menu card.
 pub fn context_menu(

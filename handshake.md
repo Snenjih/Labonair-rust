@@ -4,7 +4,56 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
-## Last Session: 2026-09-05 (T20-003 — View-Migration Wave 2: Hosts, Snippets, AI, SFTP, Git-Graph, Settings-UI)
+## Last Session: 2026-09-05 (T20-004 — Component Gallery / debug window)
+
+**T20-004 done.** New debug-only component gallery: a hand-maintained page
+(not a `Component`-trait registry) showing every `labonair-ui-kit` primitive
+across variants/sizes/states, in its own window, with a live
+System/Light/Dark switch.
+
+- **`crates/ui-kit/src/gallery.rs`** (`#[cfg(any(debug_assertions, feature =
+  "gallery"))]`) — `struct Gallery: Render` + `open_gallery_window(cx)`
+  (`cx.open_window` + `gpui_component::Root`, dedupes via a `GalleryWindowRef`
+  global, same shape as `settings-ui`'s `open_settings_window`). Sections:
+  Button (6 variants × 4 sizes + icon sizes + disabled), ToggleButton (icon +
+  labelled variant/size grid + disabled), Checkbox (4 states + a stateful
+  one), ListItem (plain/icon/selected+trailing-kbd/disabled), Disclosure
+  (interactive open/close), SegmentedControl (stateful + outline/solid ×
+  Xs/Sm/Md), NumberField (mid/at-min/at-max/float-no-track/disabled), Select
+  (`select_trigger` closed+open — the `select_popover` overlay needs a live
+  anchor, exercised in Settings), Banner (all 5 severities), Kbd
+  (single/multi chord + hint), ContextMenu (permanently-open via new
+  `menu_card_preview`), Divider + Indicator. Header documents that hover/press
+  states are only live in the window (GPUI can't force `:hover`).
+- **`crates/ui-kit/src/context_menu.rs`** — added
+  `menu_card_preview(c, items)` (`#[cfg(any(debug_assertions, feature =
+  "gallery"))]`), a thin pub wrapper over the private `menu_card` so the
+  gallery can render a menu inline with no backdrop/anchor.
+- **`labonair-ui-kit` `gallery` feature** (`[]`); forwarded
+  `labonair-shell` → `labonair-app` (`gallery = ["…/gallery"]`) so
+  `cargo check --features gallery` exercises the release path. No new
+  crate-graph edge (`scripts/check-crate-deps.sh` still green).
+- **`crates/command-palette/src/palette.rs`** — `CommandId::OpenComponentGallery`
+  + `ACTION_NAMES` row `"debug::OpenComponentGallery"` + `ALL_COMMAND_IDS`
+  test entry; `COMMANDS` row `Debug: Open Component Gallery` gated
+  `#[cfg(debug_assertions)]` (section "Application").
+- **`crates/shell/src/commands.rs`** — `#[cfg(debug_assertions)]`
+  `r.register(CommandId::OpenComponentGallery, …)` → `open_gallery_window`.
+  No menu.rs change (palette-row only, like the other `Debug:` ids that have
+  no menu entry).
+- **`docs/architecture.md` §8.17** — access + release-exclusion + the
+  honest hover-state caveat.
+- Gates: `fmt --check`, `check --workspace --all-targets`,
+  `clippy --workspace --all-targets -D warnings`, `test --workspace`
+  (0 failures), `check --features gallery`, `check --release` (+`--features
+  gallery`), `check-crate-deps.sh` — all green.
+- **Screenshots gap** (task instr. 7 / one acceptance box): no PR workflow
+  and no headless GPUI screenshot path — same accepted gap as T20-002/003.
+- **Next task: T20-005** (`ThemeRegistry` + JSON theme families,
+  `tasks/phase-19-ui-kit/`). When it lands, extend the gallery's theme
+  switch to list every registered family (already noted in the header text).
+
+## Previous Session: 2026-09-05 (T20-003 — View-Migration Wave 2: Hosts, Snippets, AI, SFTP, Git-Graph, Settings-UI)
 
 **T20-003 done**, 16 commits, gates green throughout (final: `3c4bcc1`).
 Migrated the rest of the app's hand-rolled buttons/lists/menus/fields onto

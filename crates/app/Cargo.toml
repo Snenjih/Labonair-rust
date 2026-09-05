@@ -7,6 +7,13 @@ edition = "2021"
 name = "labonair"
 path = "src/main.rs"
 
+[features]
+# Force-compile the ui-kit component gallery in release builds too (it is
+# always present in debug builds). Forwarded through `labonair-shell` so no
+# new crate-graph edge is added. `cargo check --features gallery` exercises
+# this path (T20-004).
+gallery = ["labonair-shell/gallery"]
+
 [dependencies]
 gpui = { workspace = true }
 gpui-component = { workspace = true }

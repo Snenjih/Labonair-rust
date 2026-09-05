@@ -7,6 +7,12 @@ edition = "2021"
 name = "labonair_shell"
 path = "src/shell.rs"
 
+[features]
+# Forwards to the ui-kit component gallery (T20-004). The gallery is always
+# compiled in debug builds; this only matters for release-build `cargo check
+# --features gallery`.
+gallery = ["labonair-ui-kit/gallery"]
+
 [dependencies]
 gpui = { workspace = true }
 gpui-component = { workspace = true }

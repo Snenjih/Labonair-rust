@@ -51,6 +51,8 @@ mod checkbox;
 mod context_menu;
 mod disclosure;
 mod divider;
+#[cfg(any(debug_assertions, feature = "gallery"))]
+mod gallery;
 mod icon;
 mod indicator;
 mod kbd;
@@ -73,6 +75,8 @@ pub use checkbox::{checkbox, Checkbox};
 pub use context_menu::{context_menu, popover_menu, MenuClick, MenuItem};
 pub use disclosure::disclosure;
 pub use divider::{divider, Axis};
+#[cfg(any(debug_assertions, feature = "gallery"))]
+pub use gallery::{open_gallery_window, Gallery};
 pub use icon::{file_icon, folder_icon, IconName};
 pub use indicator::{indicator, IndicatorSize};
 pub use kbd::{kbd, kbd_row, keybinding_hint};

@@ -7,6 +7,13 @@ edition = "2021"
 name = "labonair_ui_kit"
 path = "src/ui_kit.rs"
 
+[features]
+# Force the component gallery (`gallery.rs` + `open_gallery_window`) to compile
+# even in a release build. It is always compiled in debug builds regardless;
+# this flag only exists so `cargo check --features gallery` exercises it and so
+# a release build could ship it if ever wanted (T20-004).
+gallery = []
+
 [dependencies]
 gpui = { workspace = true }
 gpui-component = { workspace = true }

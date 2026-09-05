@@ -431,6 +431,18 @@ pub(crate) fn register_builtin_commands() -> CommandRegistry {
         s.panels.updater.update(cx, |u, cx| u.run_check(true, cx));
     });
 
+    // T20-004: debug-only — open the ui-kit component gallery in its own
+    // window. The palette row (`Debug: Open Component Gallery`) and the
+    // `gallery.rs` view are both compiled out of release builds too.
+    #[cfg(debug_assertions)]
+    r.register(
+        CommandId::OpenComponentGallery,
+        always,
+        |_s, _window, cx| {
+            labonair_ui_kit::open_gallery_window(cx);
+        },
+    );
+
     // Not registered on purpose (no behaviour of their own, unchanged from
     // pre-T17-007 no-op action dispatches): `ZoomIn` / `ZoomOut` / `ZoomReset`
     // / `OpenShortcuts` / `FormatDocument`, and every sub-page navigator id

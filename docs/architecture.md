@@ -1024,6 +1024,31 @@ use only where the behaviour is the hard part and the colours are incidental:
   during implementation once the inventory showed no second call site;
   `toggle_base(..).child(..)` covers the labelled case.
 
+### 8.17 Component gallery — T20-004
+
+`crates/ui-kit/src/gallery.rs` is a hand-maintained page (`struct Gallery:
+Render`) that renders every primitive across its variants / sizes / states
+plus a few realistic compositions, with a live **System / Light / Dark**
+switch at the top that flips the shared `ThemeStore` preference so every
+sample re-renders. It is the fastest way to answer "does this still look like
+the reference?" after a T20-002/003 migration.
+
+* **Access:** `cargo run` (debug), then command palette →
+  *Debug: Open Component Gallery* (`CommandId::OpenComponentGallery`). It opens
+  its **own** small window (`open_gallery_window`), not a workspace tab, so it
+  never disturbs the working layout.
+* **Not in release builds.** The module, its `pub use`, the palette row and the
+  shell-side command registration are all `#[cfg(debug_assertions)]` /
+  `#[cfg(any(debug_assertions, feature = "gallery"))]`. The `gallery` cargo
+  feature (on `labonair-ui-kit`, forwarded by `labonair-shell` →
+  `labonair-app`) force-compiles it for `cargo check --features gallery`; it
+  adds no crate-graph edge.
+* **Honest about state.** GPUI cannot force an element into its `:hover` /
+  `:active` look, so those are only visible by mousing over the real window —
+  the gallery says so at the top. `disabled` / `selected` / `pressed` /
+  `checked` / severity tints / `NumberField` clamping / `Disclosure` chevron
+  are all real.
+
 ---
 
 ---

@@ -1,7 +1,7 @@
 # T20-004: Component-Gallery (Debug-Fenster)
 
 ## Status
-📋 Geplant
+✅ Done
 
 ## Phase
 19 — UI-Kit & Theme-System
@@ -54,18 +54,27 @@ visuelle Referenz und Regressions-Sichtfläche gegen `reference-src`.
    im PR.
 
 ## Akzeptanzkriterien
-- [ ] `Gallery`-View zeigt jedes `ui-kit`-Primitive in Varianten × Größen ×
-      Zuständen + realistische Kompositionen.
-- [ ] Über einen Debug-Command erreichbar (eigenes Fenster oder Tab).
-- [ ] Live-Theme-Umschalter (mind. Light/Dark; alle Familien nach T20-005).
-- [ ] Nicht in Release-Builds einkompiliert (`cfg`/Feature).
-- [ ] `docs/architecture.md` dokumentiert den Zugang.
-- [ ] PR enthält Screenshots Gallery vs. `reference-src` für mind. Button,
-      ListItem, ContextMenu, Banner, NumberField.
-- [ ] Gates grün: `cargo fmt --check`, `cargo check --workspace --all-targets`,
+- [x] `Gallery`-View zeigt jedes `ui-kit`-Primitive in Varianten × Größen ×
+      Zuständen + realistische Kompositionen. (Button/Toggle/Checkbox/ListItem/
+      Disclosure/SegmentedControl/NumberField/Select/Banner/Kbd/ContextMenu/
+      Divider/Indicator. `Badge`/`Switch`/`Tooltip` are gpui-component
+      re-exports that style from their own `cx.theme()` global — deliberately
+      not rendered, same reason they aren't wrapped.)
+- [x] Über einen Debug-Command erreichbar (eigenes Fenster): command palette →
+      *Debug: Open Component Gallery* → `open_gallery_window`.
+- [x] Live-Theme-Umschalter (System/Light/Dark; Familien folgen mit T20-005).
+- [x] Nicht in Release-Builds einkompiliert — `#[cfg(debug_assertions)]` /
+      `#[cfg(any(debug_assertions, feature = "gallery"))]` on the module, the
+      `pub use`, the palette row and the shell command registration. Verified
+      with `cargo check --release` (compiles out) and
+      `cargo check --release --features gallery` (compiles in).
+- [x] `docs/architecture.md` §8.17 dokumentiert den Zugang.
+- [~] PR-Screenshots — no PR workflow in play (direct commits to `master`) and
+      no headless GPUI screenshot path; same accepted gap as T20-002/003.
+- [x] Gates grün: `cargo fmt --check`, `cargo check --workspace --all-targets`,
       `cargo clippy --workspace --all-targets -- -D warnings`,
-      `cargo test --workspace` (auch mit aktiviertem `gallery`-Feature einmal
-      `cargo check --features gallery`).
+      `cargo test --workspace` (0 failures), plus `cargo check --features
+      gallery` and `scripts/check-crate-deps.sh`.
 
 ## Notizen
 - Bewusst reduziert ggü. Zeds `component`-Trait-Registry — eine handgepflegte

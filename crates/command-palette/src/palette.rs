@@ -204,6 +204,9 @@ pub enum CommandId {
     /// Open `keymap.json` as an editor tab (T19-008) — mirrors
     /// `OpenSettingsJson`/`OpenProjectSettings`.
     OpenKeymapJson,
+    /// Open the ui-kit component gallery in its own window (T20-004). Only
+    /// registered / shown in debug builds; a no-op in release.
+    OpenComponentGallery,
 }
 
 /// `(CommandId, "<namespace>::<Name>")` — the action-name vocabulary
@@ -287,6 +290,7 @@ const ACTION_NAMES: &[(CommandId, &str)] = &[
     (CommandId::CheckForUpdates, "app::CheckForUpdates"),
     (CommandId::DebugCyclePanelDock, "debug::CyclePanelDock"),
     (CommandId::DebugToggleDockZoom, "debug::ToggleDockZoom"),
+    (CommandId::OpenComponentGallery, "debug::OpenComponentGallery"),
 ];
 
 impl CommandId {
@@ -470,6 +474,10 @@ static COMMANDS: &[Command] = &[
     Command { id: CommandId::OpenSettingsJson,title: "Open Settings (JSON)", section: "Application", contexts: &[],       shortcut: None,                icon: I::SquarePen,  sub_page: None },
     Command { id: CommandId::OpenAiSettings,     title: "Manage AI Keys & Models", section: "Application",    contexts: &[],                            shortcut: None,                icon: I::Sparkles,   sub_page: None },
     Command { id: CommandId::CheckForUpdates,    title: "Check for Updates\u{2026}", section: "Application",   contexts: &[],                            shortcut: None,                icon: I::Download,   sub_page: None },
+    // Debug-only: opens the ui-kit component gallery (T20-004). Absent from
+    // release builds entirely, matching the shell-side command registration.
+    #[cfg(debug_assertions)]
+    Command { id: CommandId::OpenComponentGallery, title: "Debug: Open Component Gallery", section: "Application", contexts: &[],                       shortcut: None,                icon: I::Palette,    sub_page: None },
 ];
 
 /// The whole registry, unfiltered.
@@ -1724,7 +1732,7 @@ mod tests {
         CommandId::SelectTab4, CommandId::SelectTab5, CommandId::SelectTab6,
         CommandId::SelectTab7, CommandId::SelectTab8, CommandId::SelectTab9,
         CommandId::DebugCyclePanelDock, CommandId::DebugToggleDockZoom,
-        CommandId::OpenKeymapJson,
+        CommandId::OpenKeymapJson, CommandId::OpenComponentGallery,
     ];
 
     #[test]
