@@ -286,7 +286,7 @@ impl Render for BookmarksView {
                             .child("Path Bookmarks")
                             .when(can_add, |d| {
                                 d.child(
-                                    button(
+                                    labonair_ui_kit::button_no_hover(
                                         "bookmark-add-current",
                                         c,
                                         ButtonVariant::Ghost,

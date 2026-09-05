@@ -434,7 +434,7 @@ impl StatusItem for NotificationsStatusItem {
                     .text_color(fg2)
                     .child("Notifications")
                     .child(
-                        labonair_ui_kit::button(
+                        labonair_ui_kit::button_no_hover(
                             "bar-notif-clear",
                             c,
                             labonair_ui_kit::ButtonVariant::Ghost,

@@ -391,7 +391,7 @@ pub fn notify_err<T>(
 use gpui::{
     div, px, InteractiveElement, IntoElement, ParentElement, StatefulInteractiveElement, Styled,
 };
-use labonair_ui_kit::{button, ButtonSize, ButtonVariant, Palette};
+use labonair_ui_kit::{ButtonSize, ButtonVariant, Palette};
 
 /// Builds the stacked toast overlay for the app shell. Returns `None` when
 /// there is nothing to show. The overlay container only occupies its own
@@ -493,7 +493,7 @@ pub fn render_overlay<Th: UiTheme + 'static>(
             )
             .children(action_label.map(|label| {
                 div().flex().justify_end().child(
-                    button(
+                    labonair_ui_kit::button_no_hover(
                         ("toast-action", id),
                         c,
                         ButtonVariant::Default,

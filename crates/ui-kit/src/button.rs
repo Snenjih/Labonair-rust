@@ -5,7 +5,7 @@
 //! `radius.xl4`), transparent border, `disabled:opacity-50`. Replaces the
 //! ad-hoc `btn` / `tool_btn` / `step_btn` helpers scattered across the views.
 
-use gpui::{div, px, Div, InteractiveElement, Stateful, Styled};
+use gpui::{div, px, Div, InteractiveElement, Stateful, StyleRefinement, Styled};
 
 use crate::palette::Palette;
 
@@ -71,8 +71,21 @@ impl ButtonSize {
 
 /// Builds the base, pre-styled button element. Callers add `.child(..)` for the
 /// label/icon and `.on_click(..)` for the handler, mirroring the existing
-/// `btn`-helper call sites.
+/// `btn`-helper call sites. Comes with the per-variant hover style baked in; use
+/// [`button_no_hover`] when the call site sets its own `.hover(..)`.
 pub fn button(
+    id: impl Into<gpui::ElementId>,
+    c: Palette,
+    variant: ButtonVariant,
+    size: ButtonSize,
+) -> Stateful<Div> {
+    button_no_hover(id, c, variant, size).hover(variant_hover(variant, c))
+}
+
+/// Same geometry and variant paint as [`button`] but without the baked-in hover
+/// style, for the toolbar call sites that apply their own `.hover(..)` (calling
+/// `.hover()` twice panics with "hover style already set" in debug builds).
+pub fn button_no_hover(
     id: impl Into<gpui::ElementId>,
     c: Palette,
     variant: ButtonVariant,
@@ -106,25 +119,26 @@ pub fn button(
 
 fn apply_variant(el: Stateful<Div>, variant: ButtonVariant, c: Palette) -> Stateful<Div> {
     match variant {
-        ButtonVariant::Default => el
-            .bg(c.primary)
-            .text_color(c.primary_fg)
-            .hover(move |s| s.bg(c.primary.opacity(0.8))),
-        ButtonVariant::Outline => el
-            .border_color(c.border)
-            .bg(c.bg)
-            .text_color(c.fg)
-            .hover(move |s| s.bg(c.muted_bg)),
-        ButtonVariant::Secondary => el
-            .bg(c.secondary)
-            .text_color(c.secondary_fg)
-            .hover(move |s| s.bg(c.secondary.opacity(0.8))),
-        ButtonVariant::Ghost => el.text_color(c.fg).hover(move |s| s.bg(c.muted_bg)),
-        ButtonVariant::Destructive => el
-            .bg(c.destructive.opacity(0.1))
-            .text_color(c.destructive)
-            .hover(move |s| s.bg(c.destructive.opacity(0.2))),
-        ButtonVariant::Link => el.text_color(c.primary).hover(|s| s.underline()),
+        ButtonVariant::Default => el.bg(c.primary).text_color(c.primary_fg),
+        ButtonVariant::Outline => el.border_color(c.border).bg(c.bg).text_color(c.fg),
+        ButtonVariant::Secondary => el.bg(c.secondary).text_color(c.secondary_fg),
+        ButtonVariant::Ghost => el.text_color(c.fg),
+        ButtonVariant::Destructive => el.bg(c.destructive.opacity(0.1)).text_color(c.destructive),
+        ButtonVariant::Link => el.text_color(c.primary),
+    }
+}
+
+/// The per-variant hover style baked into [`button`] — see `button.tsx` cva.
+fn variant_hover(
+    variant: ButtonVariant,
+    c: Palette,
+) -> impl Fn(StyleRefinement) -> StyleRefinement {
+    move |s| match variant {
+        ButtonVariant::Default => s.bg(c.primary.opacity(0.8)),
+        ButtonVariant::Outline | ButtonVariant::Ghost => s.bg(c.muted_bg),
+        ButtonVariant::Secondary => s.bg(c.secondary.opacity(0.8)),
+        ButtonVariant::Destructive => s.bg(c.destructive.opacity(0.2)),
+        ButtonVariant::Link => s.underline(),
     }
 }
 

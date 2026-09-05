@@ -1523,7 +1523,7 @@ impl GitPanelView {
         cx: &mut Context<Self>,
         on_click: impl Fn(&mut Self, &mut Window, &mut Context<Self>) + 'static,
     ) -> impl IntoElement {
-        button(id, c.palette, ButtonVariant::Ghost, ButtonSize::Xs)
+        labonair_ui_kit::button_no_hover(id, c.palette, ButtonVariant::Ghost, ButtonSize::Xs)
             .text_color(c.muted)
             .hover(|s| s.bg(c.border).text_color(c.fg))
             .child(label.into())
@@ -1591,7 +1591,7 @@ impl GitPanelView {
                 let can_discard = matches!(section, Section::Unstaged | Section::Conflicts);
                 let discard_btn = can_discard.then(|| {
                     let dp = path.clone();
-                    button(
+                    labonair_ui_kit::button_no_hover(
                         SharedString::from(format!("discard-{key}-{path}")),
                         c.palette,
                         ButtonVariant::Ghost,
@@ -1678,7 +1678,7 @@ impl GitPanelView {
             Section::Staged => ("\u{2212}", format!("unstage-{path}")),
             _ => ("+", format!("stage-{path}")),
         };
-        button(
+        labonair_ui_kit::button_no_hover(
             SharedString::from(id),
             c.palette,
             ButtonVariant::Ghost,
@@ -1729,7 +1729,7 @@ impl GitPanelView {
                     .items_center()
                     .gap(px(8.0))
                     .child(
-                        button(
+                        labonair_ui_kit::button_no_hover(
                             "git-diff-layout",
                             c.palette,
                             ButtonVariant::Ghost,
@@ -1750,7 +1750,7 @@ impl GitPanelView {
                         )),
                     )
                     .child(
-                        button(
+                        labonair_ui_kit::button_no_hover(
                             "git-diff-close",
                             c.palette,
                             ButtonVariant::Ghost,
@@ -1799,7 +1799,7 @@ impl GitPanelView {
                                 .child(SharedString::from(hunk.header.clone()))
                                 .when(!whole, |d| {
                                     d.child(
-                                        button(
+                                        labonair_ui_kit::button_no_hover(
                                             SharedString::from(format!("hunk-{i}")),
                                             c.palette,
                                             ButtonVariant::Ghost,
@@ -1867,7 +1867,7 @@ impl GitPanelView {
             .px(px(8.0))
             .text_size(px(11.0))
             .child(
-                button(
+                labonair_ui_kit::button_no_hover(
                     "git-branch-toggle",
                     c.palette,
                     ButtonVariant::Ghost,
@@ -2081,16 +2081,21 @@ impl GitPanelView {
         for (id, label, color) in actions {
             let cb = on_action.clone();
             row = row.child(
-                button(id, c.palette, ButtonVariant::Outline, ButtonSize::Xs)
-                    .h(px(18.0))
-                    .border_color(color)
-                    .text_color(color)
-                    .hover(|s| s.bg(color.opacity(0.15)))
-                    .child(SharedString::from(label))
-                    .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
-                        cx.stop_propagation();
-                        cb(this, id, cx);
-                    })),
+                labonair_ui_kit::button_no_hover(
+                    id,
+                    c.palette,
+                    ButtonVariant::Outline,
+                    ButtonSize::Xs,
+                )
+                .h(px(18.0))
+                .border_color(color)
+                .text_color(color)
+                .hover(|s| s.bg(color.opacity(0.15)))
+                .child(SharedString::from(label))
+                .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                    cx.stop_propagation();
+                    cb(this, id, cx);
+                })),
             );
         }
         row.into_any_element()
@@ -2386,7 +2391,7 @@ impl GitPanelView {
         let mut trailing = h_stack().gap(px(4.0));
         if !b.is_remote {
             trailing = trailing.child(
-                button(
+                labonair_ui_kit::button_no_hover(
                     SharedString::from(format!("git-branch-rn-{}", name)),
                     c.palette,
                     ButtonVariant::Ghost,
@@ -2406,7 +2411,7 @@ impl GitPanelView {
             );
             if !is_current {
                 trailing = trailing.child(
-                    button(
+                    labonair_ui_kit::button_no_hover(
                         SharedString::from(format!("git-branch-del-{}", name)),
                         c.palette,
                         ButtonVariant::Ghost,
@@ -2527,7 +2532,7 @@ impl GitPanelView {
                     })),
                 )
                 .child(
-                    button(
+                    labonair_ui_kit::button_no_hover(
                         "git-tags-new",
                         c.palette,
                         ButtonVariant::Ghost,
@@ -2652,7 +2657,7 @@ impl GitPanelView {
             let trailing = h_stack()
                 .gap(px(2.0))
                 .child(
-                    button(
+                    labonair_ui_kit::button_no_hover(
                         SharedString::from(format!("git-tag-push-{tag}")),
                         c.palette,
                         ButtonVariant::Ghost,
@@ -2668,7 +2673,7 @@ impl GitPanelView {
                     )),
                 )
                 .child(
-                    button(
+                    labonair_ui_kit::button_no_hover(
                         SharedString::from(format!("git-tag-del-{tag}")),
                         c.palette,
                         ButtonVariant::Ghost,
@@ -2735,7 +2740,7 @@ impl GitPanelView {
                     })),
                 )
                 .child(
-                    button(
+                    labonair_ui_kit::button_no_hover(
                         "git-stash-new",
                         c.palette,
                         ButtonVariant::Ghost,
@@ -2822,7 +2827,7 @@ impl GitPanelView {
             let trailing = h_stack()
                 .gap(px(4.0))
                 .child(
-                    button(
+                    labonair_ui_kit::button_no_hover(
                         SharedString::from(format!("git-stash-apply-{}", e.index)),
                         c.palette,
                         ButtonVariant::Ghost,
@@ -2838,7 +2843,7 @@ impl GitPanelView {
                     )),
                 )
                 .child(
-                    button(
+                    labonair_ui_kit::button_no_hover(
                         SharedString::from(format!("git-stash-pop-{}", e.index)),
                         c.palette,
                         ButtonVariant::Ghost,
@@ -2854,7 +2859,7 @@ impl GitPanelView {
                     )),
                 )
                 .child(
-                    button(
+                    labonair_ui_kit::button_no_hover(
                         SharedString::from(format!("git-stash-drop-{}", e.index)),
                         c.palette,
                         ButtonVariant::Ghost,

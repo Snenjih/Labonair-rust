@@ -284,21 +284,31 @@ impl Render for PreviewView {
                             .child(address),
                     )
                     .child(
-                        button("preview-reload", c, ButtonVariant::Ghost, ButtonSize::Xs)
-                            .text_color(muted)
-                            .hover(|s| s.text_color(fg))
-                            .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.reload(cx)))
-                            .child("Reload"),
+                        labonair_ui_kit::button_no_hover(
+                            "preview-reload",
+                            c,
+                            ButtonVariant::Ghost,
+                            ButtonSize::Xs,
+                        )
+                        .text_color(muted)
+                        .hover(|s| s.text_color(fg))
+                        .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.reload(cx)))
+                        .child("Reload"),
                     )
                     .when(!self.url.is_empty(), |d| {
                         d.child(
-                            button("preview-external", c, ButtonVariant::Ghost, ButtonSize::Xs)
-                                .text_color(muted)
-                                .hover(|s| s.text_color(fg))
-                                .on_click(
-                                    cx.listener(|this, _: &ClickEvent, _, _| this.open_external()),
-                                )
-                                .child("Open externally"),
+                            labonair_ui_kit::button_no_hover(
+                                "preview-external",
+                                c,
+                                ButtonVariant::Ghost,
+                                ButtonSize::Xs,
+                            )
+                            .text_color(muted)
+                            .hover(|s| s.text_color(fg))
+                            .on_click(
+                                cx.listener(|this, _: &ClickEvent, _, _| this.open_external()),
+                            )
+                            .child("Open externally"),
                         )
                     }),
             )

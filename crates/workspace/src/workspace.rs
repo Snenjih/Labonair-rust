@@ -124,8 +124,8 @@ use labonair_hosts_ui::ssh_connection::{
 use labonair_hosts_ui::{ActiveTunnelRow, HostManagerEvent, HostManagerView, HostStatus};
 use labonair_panel_git_graph::GitGraphView;
 use labonair_ui_kit::{
-    button, context_menu, h_stack, indicator, ButtonSize, ButtonVariant, IconName, IndicatorSize,
-    MenuItem, Palette,
+    context_menu, h_stack, indicator, ButtonSize, ButtonVariant, IconName, IndicatorSize, MenuItem,
+    Palette,
 };
 
 /// Interval for draining backend SSH events into the workspace.
@@ -198,7 +198,7 @@ fn loading_btn(
     } else {
         ButtonVariant::Outline
     };
-    let base = button(id, c, variant, ButtonSize::Xs).child(label);
+    let base = labonair_ui_kit::button_no_hover(id, c, variant, ButtonSize::Xs).child(label);
     if primary {
         base.bg(tint)
             .text_color(fg)
@@ -3865,20 +3865,24 @@ impl Workspace {
                     .children(tabs.iter().map(|t| self.render_tab(t, cx))),
             )
             .child(
-                button("tab-new", c, ButtonVariant::Ghost, ButtonSize::IconXs)
-                    .flex_shrink_0()
-                    .text_color(muted)
-                    .hover(|s| s.bg(border).text_color(fg))
-                    .child("+")
-                    .on_mouse_down(
-                        MouseButton::Left,
-                        cx.listener(|this, ev: &MouseDownEvent, _window, cx| {
-                            this.new_tab_menu =
-                                Some(ev.position - point(px(0.0), px(TITLEBAR_OFFSET)));
-                            this.context_menu = None;
-                            cx.notify();
-                        }),
-                    ),
+                labonair_ui_kit::button_no_hover(
+                    "tab-new",
+                    c,
+                    ButtonVariant::Ghost,
+                    ButtonSize::IconXs,
+                )
+                .flex_shrink_0()
+                .text_color(muted)
+                .hover(|s| s.bg(border).text_color(fg))
+                .child("+")
+                .on_mouse_down(
+                    MouseButton::Left,
+                    cx.listener(|this, ev: &MouseDownEvent, _window, cx| {
+                        this.new_tab_menu = Some(ev.position - point(px(0.0), px(TITLEBAR_OFFSET)));
+                        this.context_menu = None;
+                        cx.notify();
+                    }),
+                ),
             )
     }
 
@@ -4345,17 +4349,24 @@ impl Workspace {
                             .gap_2()
                             .justify_end()
                             .child(
-                                button("confirm-cancel", c, ButtonVariant::Ghost, ButtonSize::Sm)
-                                    .text_color(muted)
-                                    .hover(|s| s.bg(border).text_color(fg))
-                                    .child("Cancel")
-                                    .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
+                                labonair_ui_kit::button_no_hover(
+                                    "confirm-cancel",
+                                    c,
+                                    ButtonVariant::Ghost,
+                                    ButtonSize::Sm,
+                                )
+                                .text_color(muted)
+                                .hover(|s| s.bg(border).text_color(fg))
+                                .child("Cancel")
+                                .on_click(cx.listener(
+                                    |this, _: &ClickEvent, _w, cx| {
                                         this.confirm_close = None;
                                         cx.notify();
-                                    })),
+                                    },
+                                )),
                             )
                             .child(
-                                button(
+                                labonair_ui_kit::button_no_hover(
                                     "confirm-discard",
                                     c,
                                     ButtonVariant::Default,
