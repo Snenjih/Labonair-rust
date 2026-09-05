@@ -700,8 +700,8 @@ use crate::markdown::{parse_markdown, Inline, MdBlock};
 use crate::syntax_theme::EditorPalette;
 use crate::theme::ThemeStore;
 use labonair_ui_kit::{
-    divider, field_input, toggle_base, Axis, IconName, InputEvent, InputState, Palette, ToggleSize,
-    ToggleVariant,
+    divider, field_input, toggle_base, Axis, IconName, InputEvent, InputState, ListItem, Palette,
+    ToggleSize, ToggleVariant,
 };
 
 /// A composer attachment shown as a chip and embedded into the outgoing message.
@@ -1554,30 +1554,34 @@ impl AiChatView {
             .children(self.agents.iter().map(|a| {
                 let id = a.id.clone();
                 let on = a.id == active;
-                div()
-                    .id(SharedString::from(format!("agent-{}", a.id)))
-                    .flex()
-                    .flex_col()
-                    .px_2()
-                    .py_1()
-                    .rounded_sm()
-                    .when(on, |d| d.bg(c.accent.opacity(0.15)))
-                    .hover(|s| s.bg(c.border))
-                    .child(
-                        div()
-                            .text_size(px(11.0))
-                            .text_color(c.fg)
-                            .child(SharedString::from(a.name.clone())),
-                    )
-                    .child(
-                        div()
-                            .text_size(px(9.0))
-                            .text_color(c.muted)
-                            .child(SharedString::from(a.description.clone())),
-                    )
-                    .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
-                        this.set_agent(id.clone(), cx)
-                    }))
+                // T20-003: shared `ListItem` shell. `selected_fill` doubles as
+                // the hover tint (the codebase-wide `ListItem` convention —
+                // see hosts-ui/panel-snippets) rather than the pre-migration
+                // row's separate hover-vs-selected colours.
+                ListItem::new(
+                    SharedString::from(format!("agent-{}", a.id)),
+                    c.fg,
+                    c.muted,
+                    c.accent.opacity(0.15),
+                )
+                .selected(on)
+                .child(
+                    div()
+                        .text_size(px(11.0))
+                        .text_color(c.fg)
+                        .child(SharedString::from(a.name.clone())),
+                )
+                .child(
+                    div()
+                        .text_size(px(9.0))
+                        .text_color(c.muted)
+                        .child(SharedString::from(a.description.clone())),
+                )
+                .on_click(
+                    cx.listener(move |this, _: &ClickEvent, _w, cx| this.set_agent(id.clone(), cx)),
+                )
+                .extra(|row| row.flex_col().items_start().px_2().py_1())
+                .into_any_element()
             }))
     }
 
@@ -1898,18 +1902,13 @@ impl AiChatView {
                 let id = s.id.clone();
                 let id2 = s.id.clone();
                 let is_active = Some(s.id.as_str()) == active;
-                div()
-                    .id(SharedString::from(s.id.clone()))
-                    .flex()
-                    .items_center()
-                    .gap_1()
-                    .px_1p5()
-                    .py_1()
-                    .rounded_sm()
-                    .text_size(px(11.0))
-                    .text_color(if is_active { c.fg } else { c.muted })
-                    .when(is_active, |d| d.bg(c.border))
-                    .hover(|s| s.bg(c.border))
+                // T20-003: shared `ListItem` shell. The row itself has no
+                // click handler (the title and the delete glyph each carry
+                // their own), so `.cursor_default()` keeps the pre-migration
+                // arrow cursor over the row padding instead of `ListItem`'s
+                // default pointer cursor.
+                ListItem::new(SharedString::from(s.id.clone()), c.fg, c.muted, c.border)
+                    .selected(is_active)
                     .child(
                         div()
                             .id(SharedString::from(format!("sess-title-{}", s.id)))
@@ -1917,6 +1916,7 @@ impl AiChatView {
                             .min_w_0()
                             .overflow_hidden()
                             .whitespace_nowrap()
+                            .text_color(if is_active { c.fg } else { c.muted })
                             .child(SharedString::from(s.title.clone()))
                             .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
                                 this.store.update(cx, |st, cx| st.switch_session(&id, cx));
@@ -1924,7 +1924,7 @@ impl AiChatView {
                                 cx.notify();
                             })),
                     )
-                    .child(
+                    .trailing(
                         div()
                             .id(SharedString::from(format!("sess-del-{}", s.id)))
                             .text_color(c.muted)
@@ -1935,6 +1935,8 @@ impl AiChatView {
                                 cx.notify();
                             })),
                     )
+                    .extra(|row| row.gap_1().text_size(px(11.0)).cursor_default())
+                    .into_any_element()
             }))
     }
 
