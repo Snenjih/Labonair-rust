@@ -700,8 +700,8 @@ use crate::markdown::{parse_markdown, Inline, MdBlock};
 use crate::syntax_theme::EditorPalette;
 use crate::theme::ThemeStore;
 use labonair_ui_kit::{
-    divider, field_input, toggle_base, Axis, IconName, InputEvent, InputState, ListItem, Palette,
-    ToggleSize, ToggleVariant,
+    divider, field_input, segmented_control, toggle_base, Axis, IconName, InputEvent, InputState,
+    ListItem, Palette, SegmentSize, ToggleSize, ToggleVariant,
 };
 
 /// A composer attachment shown as a chip and embedded into the outgoing message.
@@ -1652,6 +1652,7 @@ impl AiChatView {
     }
 
     fn render_model_menu(&self, c: &ChatColors, cx: &mut Context<Self>) -> impl IntoElement {
+        let p = Palette::from_theme(self.theme.read(cx));
         let cur = self
             .store
             .read(cx)
@@ -1663,27 +1664,9 @@ impl AiChatView {
         // Providers that actually have a catalog entry.
         let providers: Vec<ProviderId> = ProviderId::ALL
             .into_iter()
-            .filter(|p| MODELS.iter().any(|m| m.provider == *p))
+            .filter(|prov| MODELS.iter().any(|m| m.provider == *prov))
             .collect();
         let models = self.visible_models();
-
-        let tab_btn = |tab: ModelTab| {
-            let on = self.model_tab == tab;
-            div()
-                .id(SharedString::from(format!("mtab-{}", tab.label())))
-                .px_2()
-                .py_0p5()
-                .rounded_sm()
-                .text_size(px(10.0))
-                .text_color(if on { c.fg } else { c.muted })
-                .when(on, |d| d.bg(c.accent.opacity(0.15)))
-                .hover(|s| s.bg(c.border))
-                .child(tab.label())
-                .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
-                    this.model_tab = tab;
-                    cx.notify();
-                }))
-        };
 
         div()
             .id("ai-model-menu")
@@ -1721,12 +1704,21 @@ impl AiChatView {
                             ),
                     )
                     .child(
-                        div()
-                            .flex()
-                            .gap_1()
-                            .child(tab_btn(ModelTab::All))
-                            .child(tab_btn(ModelTab::Favorites))
-                            .child(tab_btn(ModelTab::Recent)),
+                        // T20-003: shared `SegmentedControl` for the
+                        // All/Favorites/Recent tab strip.
+                        segmented_control("ai-model-tabs", p, self.model_tab.label())
+                            .segment(ModelTab::All.label(), ModelTab::All.label())
+                            .segment(ModelTab::Favorites.label(), ModelTab::Favorites.label())
+                            .segment(ModelTab::Recent.label(), ModelTab::Recent.label())
+                            .size(SegmentSize::Xs)
+                            .on_select(cx.listener(|this, key: &SharedString, _w, cx| {
+                                this.model_tab = match key.as_ref() {
+                                    "Favorites" => ModelTab::Favorites,
+                                    "Recent" => ModelTab::Recent,
+                                    _ => ModelTab::All,
+                                };
+                                cx.notify();
+                            })),
                     ),
             )
             .child(
@@ -1747,43 +1739,35 @@ impl AiChatView {
                             .overflow_y_scroll()
                             .p_1()
                             .child(
-                                div()
-                                    .id("mp-all")
-                                    .px_1p5()
-                                    .py_1()
-                                    .rounded_sm()
-                                    .text_size(px(10.0))
-                                    .text_color(if self.model_provider.is_none() {
-                                        c.fg
-                                    } else {
-                                        c.muted
-                                    })
-                                    .when(self.model_provider.is_none(), |d| {
-                                        d.bg(c.accent.opacity(0.15))
-                                    })
-                                    .hover(|s| s.bg(c.border))
+                                // T20-003: shared `ListItem` shell (see the
+                                // agent-menu note above for the
+                                // hover==selected-fill convention).
+                                ListItem::new("mp-all", c.fg, c.muted, c.accent.opacity(0.15))
+                                    .selected(self.model_provider.is_none())
                                     .child("All providers")
                                     .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
                                         this.model_provider = None;
                                         cx.notify();
-                                    })),
-                            )
-                            .children(providers.into_iter().map(|p| {
-                                let on = self.model_provider == Some(p);
-                                div()
-                                    .id(SharedString::from(format!("mp-{}", p.as_str())))
-                                    .px_1p5()
-                                    .py_1()
-                                    .rounded_sm()
-                                    .text_size(px(10.0))
-                                    .text_color(if on { c.fg } else { c.muted })
-                                    .when(on, |d| d.bg(c.accent.opacity(0.15)))
-                                    .hover(|s| s.bg(c.border))
-                                    .child(SharedString::from(p.label()))
-                                    .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
-                                        this.model_provider = Some(p);
-                                        cx.notify();
                                     }))
+                                    .extra(|row| row.text_size(px(10.0)).px_1p5().py_1())
+                                    .into_any_element(),
+                            )
+                            .children(providers.into_iter().map(|prov| {
+                                let on = self.model_provider == Some(prov);
+                                ListItem::new(
+                                    SharedString::from(format!("mp-{}", prov.as_str())),
+                                    c.fg,
+                                    c.muted,
+                                    c.accent.opacity(0.15),
+                                )
+                                .selected(on)
+                                .child(SharedString::from(prov.label()))
+                                .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                                    this.model_provider = Some(prov);
+                                    cx.notify();
+                                }))
+                                .extra(|row| row.text_size(px(10.0)).px_1p5().py_1())
+                                .into_any_element()
                             })),
                     )
                     // Model list.
@@ -1825,54 +1809,66 @@ impl AiChatView {
                                         format!("{ctx} \u{00b7} {tags}")
                                     }
                                 };
-                                div()
-                                    .flex()
-                                    .items_center()
-                                    .gap_1()
-                                    .px_2()
-                                    .py_1()
-                                    .rounded_sm()
-                                    .when(on, |d| d.bg(c.accent.opacity(0.12)))
-                                    .hover(|s| s.bg(c.border))
-                                    .child(
-                                        div()
-                                            .id(SharedString::from(format!("mfav-{}", m.id)))
-                                            .text_size(px(11.0))
-                                            .text_color(if fav { c.accent } else { c.muted })
-                                            .child(if fav { "\u{2605}" } else { "\u{2606}" })
-                                            .on_click(cx.listener(
-                                                move |this, _: &ClickEvent, _w, cx| {
-                                                    this.toggle_model_favorite(id, cx)
-                                                },
-                                            )),
-                                    )
-                                    .child(
-                                        div()
-                                            .id(SharedString::from(format!("model-{}", m.id)))
-                                            .flex_1()
-                                            .min_w_0()
-                                            .flex()
-                                            .flex_col()
-                                            .child(
-                                                div()
-                                                    .text_size(px(11.0))
-                                                    .text_color(c.fg)
-                                                    .child(SharedString::from(m.label)),
-                                            )
-                                            .child(
-                                                div()
-                                                    .text_size(px(9.0))
-                                                    .text_color(c.muted)
-                                                    .overflow_hidden()
-                                                    .whitespace_nowrap()
-                                                    .child(SharedString::from(caps)),
-                                            )
-                                            .on_click(cx.listener(
-                                                move |this, _: &ClickEvent, _w, cx| {
-                                                    this.select_model(id, cx)
-                                                },
-                                            )),
-                                    )
+                                // T20-003: shared `ListItem` shell — the
+                                // favourite-star toggle and the name/caps
+                                // block keep their own independent click
+                                // handlers as separate children (star toggles
+                                // the favourite, the rest selects the model),
+                                // exactly as before; `ListItem` only supplies
+                                // the row chrome (selected tint, hover) around
+                                // them. No dedicated star `IconName` exists in
+                                // the ui-kit icon set, so this keeps the
+                                // reference's ★/☆ glyph rather than inventing
+                                // one — `icon_toggle_button` needs an
+                                // `IconName`.
+                                ListItem::new(
+                                    SharedString::from(format!("model-row-{}", m.id)),
+                                    c.fg,
+                                    c.muted,
+                                    c.accent.opacity(0.12),
+                                )
+                                .selected(on)
+                                .child(
+                                    div()
+                                        .id(SharedString::from(format!("mfav-{}", m.id)))
+                                        .text_size(px(11.0))
+                                        .text_color(if fav { c.accent } else { c.muted })
+                                        .child(if fav { "\u{2605}" } else { "\u{2606}" })
+                                        .on_click(cx.listener(
+                                            move |this, _: &ClickEvent, _w, cx| {
+                                                this.toggle_model_favorite(id, cx)
+                                            },
+                                        )),
+                                )
+                                .child(
+                                    div()
+                                        .id(SharedString::from(format!("model-{}", m.id)))
+                                        .flex_1()
+                                        .min_w_0()
+                                        .flex()
+                                        .flex_col()
+                                        .child(
+                                            div()
+                                                .text_size(px(11.0))
+                                                .text_color(c.fg)
+                                                .child(SharedString::from(m.label)),
+                                        )
+                                        .child(
+                                            div()
+                                                .text_size(px(9.0))
+                                                .text_color(c.muted)
+                                                .overflow_hidden()
+                                                .whitespace_nowrap()
+                                                .child(SharedString::from(caps)),
+                                        )
+                                        .on_click(cx.listener(
+                                            move |this, _: &ClickEvent, _w, cx| {
+                                                this.select_model(id, cx)
+                                            },
+                                        )),
+                                )
+                                .extra(|row| row.cursor_default())
+                                .into_any_element()
                             })),
                     ),
             )
