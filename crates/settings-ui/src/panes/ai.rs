@@ -344,6 +344,10 @@ impl SettingsView {
                         None => "Set API key\u{2026}".to_string(),
                     };
                     let active = editing_key.is_some();
+                    // T20-003: a click-to-edit text field (matches
+                    // `render_text_control` in `panes/generic.rs`) — no
+                    // `button()`/`ListItem` fits a text-input trigger,
+                    // documented exception.
                     d.child(
                         div()
                             .id(SharedString::from(format!("prov-key-{id}")))

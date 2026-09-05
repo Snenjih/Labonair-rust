@@ -228,6 +228,9 @@ impl SettingsView {
                 .items_center()
                 .gap_1()
                 .child(
+                    // The recording pill needs a dynamic accent-border
+                    // "recording" state `button()`'s variants don't express;
+                    // documented exception.
                     div()
                         .id(SharedString::from(format!("kb-rec-{slug}")))
                         .px_2()

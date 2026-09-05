@@ -308,6 +308,10 @@ impl SettingsView {
         });
         let active = editing.is_some();
         let empty = display_value.is_empty();
+        // T20-003: a click-to-edit text field driven by `self.editing`'s
+        // keydown-buffer state machine — no `button()`/`ListItem` fits a
+        // text-input trigger, documented exception (same shape as
+        // `panes/ai.rs`'s provider-key box).
         div()
             .id(SharedString::from(format!("txt-{json_path}")))
             .w(px(if json_mode { 260.0 } else { 200.0 }))
@@ -674,6 +678,9 @@ impl SettingsView {
                     let is_active = active == Some(*label);
                     let row = *row;
                     let scroll = scroll.clone();
+                    // T20-003: a variable-length scroll-spy chip cloud — not
+                    // a fixed-choice `SegmentedControl` nor a full-width
+                    // `ListItem` row, documented exception.
                     div()
                         .id(SharedString::from(format!("jump-{label}")))
                         .px_2()
