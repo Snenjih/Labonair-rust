@@ -64,6 +64,8 @@ pub struct ListItem {
     children: Vec<AnyElement>,
     #[allow(clippy::type_complexity)]
     on_click: Option<Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>>,
+    #[allow(clippy::type_complexity)]
+    extra: Option<Box<dyn FnOnce(Stateful<Div>) -> Stateful<Div>>>,
 }
 
 impl ListItem {
@@ -79,6 +81,7 @@ impl ListItem {
             selected_fill,
             children: Vec::new(),
             on_click: None,
+            extra: None,
         }
     }
 
@@ -108,6 +111,17 @@ impl ListItem {
         handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
     ) -> Self {
         self.on_click = Some(Rc::new(handler));
+        self
+    }
+
+    /// Escape hatch for behaviour the builder doesn't have a named method for
+    /// (drag sources/targets, right-click menus, a one-off background
+    /// override) — applied last, after every other style/handler, so it can
+    /// override anything above. Keeps call sites like the explorer tree row
+    /// (drag-and-drop, drop-target highlight) on the shared row chrome
+    /// instead of hand-rolling their own `div()`.
+    pub fn extra(mut self, f: impl FnOnce(Stateful<Div>) -> Stateful<Div> + 'static) -> Self {
+        self.extra = Some(Box::new(f));
         self
     }
 }
@@ -154,6 +168,9 @@ impl IntoElement for ListItem {
         if let Some(trailing) = self.trailing {
             row = row.child(div().ml_auto().child(trailing));
         }
+        if let Some(extra) = self.extra {
+            row = extra(row);
+        }
         row
     }
 }
@@ -167,6 +184,14 @@ mod tests {
     fn header_and_separator_build() {
         let _ = list_header("Section", black());
         let _ = list_separator(black());
+    }
+
+    #[test]
+    fn extra_hook_runs_after_the_builder() {
+        let _ = ListItem::new("row", black(), black(), black())
+            .child("Label")
+            .extra(|row| row.opacity(0.5))
+            .into_element();
     }
 
     #[test]

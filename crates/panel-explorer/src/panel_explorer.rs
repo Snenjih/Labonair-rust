@@ -56,7 +56,6 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use gpui::prelude::FluentBuilder;
 use gpui::{
     div, px, App, AppContext, ClickEvent, ClipboardItem, Context, Entity, ExternalPaths,
     FocusHandle, Focusable, Hsla, InteractiveElement, IntoElement, KeyDownEvent, MouseButton,
@@ -72,8 +71,8 @@ use crate::theme::ThemeStore;
 use crate::workspace::Workspace;
 use labonair_notifications::{notification_center, Notification};
 use labonair_ui_kit::{
-    context_menu, file_icon, folder_icon, IconName, InputEvent, InputState, MenuClick, MenuItem,
-    Palette,
+    button, context_menu, file_icon, folder_icon, icon_toggle_button, ButtonSize, ButtonVariant,
+    IconName, InputEvent, InputState, ListItem, MenuClick, MenuItem, Palette,
 };
 
 /// A menu action expressed against the view + window (wrapped into a
@@ -976,6 +975,7 @@ struct Colors {
     border: Hsla,
     card: Hsla,
     err: Hsla,
+    palette: Palette,
 }
 
 impl Render for ExplorerView {
@@ -989,6 +989,7 @@ impl Render for ExplorerView {
                 border: t.border(),
                 card: t.card(),
                 err: t.status_error(),
+                palette: Palette::from_theme(t),
             }
         };
 
@@ -1029,45 +1030,67 @@ impl Render for ExplorerView {
                     .text_color(c.muted)
                     .child(SharedString::from(root_name)),
             )
-            .child(self.icon_btn(
-                "new-file",
-                IconName::Plus,
-                c,
-                cx,
-                move |this, window, cx| this.begin_create(root_file.clone(), false, window, cx),
-            ))
-            .child(self.icon_btn(
-                "new-dir",
-                IconName::FolderOpen,
-                c,
-                cx,
-                move |this, window, cx| this.begin_create(root_dir.clone(), true, window, cx),
-            ))
-            .child(self.icon_btn(
-                "refresh",
-                IconName::Refresh,
-                c,
-                cx,
-                move |this, _window, cx| this.load_dir(root_refresh.clone(), true, cx),
-            ))
-            .child(self.icon_btn(
-                "toggle-hidden",
-                if self.model.show_hidden {
-                    IconName::Eye
-                } else {
-                    IconName::EyeOff
-                },
-                c,
-                cx,
-                move |this, _window, cx| this.toggle_show_hidden(cx),
-            ))
-            .child(self.icon_btn(
-                "collapse",
-                IconName::Minus,
-                c,
-                cx,
-                move |this, _window, cx| this.collapse_all(cx),
-            ));
+            .child(
+                button(
+                    "new-file",
+                    c.palette,
+                    ButtonVariant::Ghost,
+                    ButtonSize::IconXs,
+                )
+                .child(IconName::Plus.svg(c.muted))
+                .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
+                    this.begin_create(root_file.clone(), false, window, cx)
+                })),
+            )
+            .child(
+                button(
+                    "new-dir",
+                    c.palette,
+                    ButtonVariant::Ghost,
+                    ButtonSize::IconXs,
+                )
+                .child(IconName::FolderOpen.svg(c.muted))
+                .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
+                    this.begin_create(root_dir.clone(), true, window, cx)
+                })),
+            )
+            .child(
+                button(
+                    "refresh",
+                    c.palette,
+                    ButtonVariant::Ghost,
+                    ButtonSize::IconXs,
+                )
+                .child(IconName::Refresh.svg(c.muted))
+                .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
+                    this.load_dir(root_refresh.clone(), true, cx)
+                })),
+            )
+            .child(
+                icon_toggle_button(
+                    "toggle-hidden",
+                    c.palette,
+                    if self.model.show_hidden {
+                        IconName::Eye
+                    } else {
+                        IconName::EyeOff
+                    },
+                    self.model.show_hidden,
+                )
+                .on_click(
+                    cx.listener(|this, _: &ClickEvent, _window, cx| this.toggle_show_hidden(cx)),
+                ),
+            )
+            .child(
+                button(
+                    "collapse",
+                    c.palette,
+                    ButtonVariant::Ghost,
+                    ButtonSize::IconXs,
+                )
+                .child(IconName::Minus.svg(c.muted))
+                .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| this.collapse_all(cx))),
+            );
 
         let root_drop = root.clone();
         let root_ext = root.clone();
@@ -1125,31 +1148,6 @@ impl Render for ExplorerView {
 }
 
 impl ExplorerView {
-    fn icon_btn(
-        &self,
-        id: &'static str,
-        icon: IconName,
-        c: Colors,
-        cx: &mut Context<Self>,
-        handler: impl Fn(&mut Self, &mut Window, &mut Context<Self>) + 'static,
-    ) -> impl IntoElement {
-        div()
-            .id(id)
-            .h(px(20.0))
-            .px_1()
-            .flex()
-            .items_center()
-            .justify_center()
-            .rounded_sm()
-            .text_xs()
-            .text_color(c.muted)
-            .hover(|s| s.bg(c.border))
-            .child(icon.svg(c.muted))
-            .on_click(
-                cx.listener(move |this, _: &ClickEvent, window, cx| handler(this, window, cx)),
-            )
-    }
-
     /// Explorer-level keyboard: copy / cut / paste buffer + clear.
     fn on_key(&mut self, ev: &KeyDownEvent, _window: &mut Window, cx: &mut Context<Self>) {
         let ks = &ev.keystroke;
@@ -1229,12 +1227,7 @@ impl ExplorerView {
                         .child(SharedString::from(text)),
                 )
                 .child(
-                    div()
-                        .id("clip-paste")
-                        .px_1()
-                        .rounded_sm()
-                        .text_color(c.accent)
-                        .hover(|s| s.bg(c.border))
+                    button("clip-paste", c.palette, ButtonVariant::Link, ButtonSize::Xs)
                         .child("Paste")
                         .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
                             if let Some(dir) = this.paste_dir() {
@@ -1243,14 +1236,14 @@ impl ExplorerView {
                         })),
                 )
                 .child(
-                    div()
-                        .id("clip-clear")
-                        .px_1()
-                        .rounded_sm()
-                        .text_color(c.muted)
-                        .hover(|s| s.bg(c.border))
-                        .child("Clear")
-                        .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| this.clip_clear(cx))),
+                    button(
+                        "clip-clear",
+                        c.palette,
+                        ButtonVariant::Ghost,
+                        ButtonSize::Xs,
+                    )
+                    .child("Clear")
+                    .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| this.clip_clear(cx))),
                 )
                 .into_any_element(),
         )
@@ -1301,13 +1294,9 @@ impl ExplorerView {
             Row::Error { depth, message } => text_row(depth, &message, c.err),
             Row::LoadMore { parent, depth } => {
                 let id: SharedString = format!("more:{}", parent.display()).into();
-                div()
-                    .id(id)
+                button(id, c.palette, ButtonVariant::Link, ButtonSize::Xs)
                     .pl(px(8.0 + (depth as f32 + 1.0) * INDENT))
-                    .py(px(2.0))
-                    .text_xs()
-                    .text_color(c.accent)
-                    .hover(|s| s.underline())
+                    .justify_start()
                     .child("Load more\u{2026}")
                     .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
                         this.load_dir(parent.clone(), true, cx);
@@ -1346,23 +1335,49 @@ impl ExplorerView {
                 } else {
                     entry.name.clone().into()
                 };
-                let mut row = div()
-                    .id(id)
-                    .flex()
-                    .flex_row()
-                    .items_center()
-                    .gap_1()
-                    .pl(px(8.0 + depth as f32 * INDENT))
-                    .pr_2()
-                    .py(px(2.0))
-                    .text_sm()
-                    .when(is_drop_target, |d| d.bg(c.accent))
-                    .when(is_selected && !is_drop_target, |d| d.bg(c.border))
-                    .when(!is_selected && !is_drop_target, |d| {
-                        d.hover(|s| s.bg(c.card))
-                    })
-                    .when(entry.is_ignored, |d| d.text_color(c.muted))
-                    .when(is_cut, |d| d.opacity(0.5).text_color(c.err))
+                let text_color = if is_cut {
+                    c.err
+                } else if entry.is_ignored {
+                    c.muted
+                } else {
+                    c.fg
+                };
+
+                let on_click = cx.listener(move |this, ev: &ClickEvent, window, cx| {
+                    let additive = ev.modifiers().secondary() || ev.modifiers().shift;
+                    this.select(click_path.clone(), additive, cx);
+                    if additive {
+                        return;
+                    }
+                    if is_dir {
+                        this.toggle_expanded(click_path.clone(), cx);
+                    } else {
+                        this.open_file(&click_path, ev.click_count() < 2, window, cx);
+                    }
+                });
+                let on_right_click = cx.listener(move |this, ev: &MouseDownEvent, _window, cx| {
+                    this.context_menu = Some((menu_path.clone(), ev.position));
+                    cx.notify();
+                });
+                let on_drag_move =
+                    cx.listener(move |this, _: &gpui::DragMoveEvent<DraggedPaths>, _w, cx| {
+                        if this.drop_target.as_deref() != Some(over_path.as_path()) {
+                            this.drop_target = Some(over_path.clone());
+                            cx.notify();
+                        }
+                    });
+                let on_drop_move = cx.listener(move |this, d: &DraggedPaths, _w, cx| {
+                    this.drop_move(d.paths.clone(), drop_path.clone(), cx);
+                });
+                let on_drop_external = cx.listener({
+                    let drop_path = path.clone();
+                    move |this, d: &ExternalPaths, _w, cx| {
+                        this.drop_external(d.paths().to_vec(), drop_path.clone(), cx);
+                    }
+                });
+
+                let item = ListItem::new(id, text_color, c.muted, c.border)
+                    .selected(is_selected && !is_drop_target)
                     .child(
                         div()
                             .w(px(10.0))
@@ -1373,52 +1388,31 @@ impl ExplorerView {
                     )
                     .child(div().child(glyph.svg(c.muted)))
                     .child(div().flex_1().child(SharedString::from(entry.name.clone())))
-                    .on_click(cx.listener(move |this, ev: &ClickEvent, window, cx| {
-                        let additive = ev.modifiers().secondary() || ev.modifiers().shift;
-                        this.select(click_path.clone(), additive, cx);
-                        if additive {
-                            return;
+                    .extra(move |mut row: gpui::Stateful<gpui::Div>| {
+                        row = row.pl(px(8.0 + depth as f32 * INDENT)).pr_2().text_sm();
+                        if is_drop_target {
+                            row = row.bg(c.accent);
                         }
+                        if is_cut {
+                            row = row.opacity(0.5);
+                        }
+                        row = row
+                            .on_click(on_click)
+                            .on_mouse_down(MouseButton::Right, on_right_click)
+                            .on_drag(DraggedPaths { paths: drag_paths }, move |_, _, _, cx| {
+                                cx.new(|_| DragPreview {
+                                    label: drag_label.clone(),
+                                })
+                            });
                         if is_dir {
-                            this.toggle_expanded(click_path.clone(), cx);
-                        } else {
-                            this.open_file(&click_path, ev.click_count() < 2, window, cx);
+                            row = row
+                                .on_drag_move(on_drag_move)
+                                .on_drop(on_drop_move)
+                                .on_drop(on_drop_external);
                         }
-                    }))
-                    .on_mouse_down(
-                        MouseButton::Right,
-                        cx.listener(move |this, ev: &MouseDownEvent, _window, cx| {
-                            this.context_menu = Some((menu_path.clone(), ev.position));
-                            cx.notify();
-                        }),
-                    )
-                    .on_drag(DraggedPaths { paths: drag_paths }, move |_, _, _, cx| {
-                        cx.new(|_| DragPreview {
-                            label: drag_label.clone(),
-                        })
+                        row
                     });
-
-                if is_dir {
-                    row = row
-                        .on_drag_move(cx.listener(
-                            move |this, _: &gpui::DragMoveEvent<DraggedPaths>, _w, cx| {
-                                if this.drop_target.as_deref() != Some(over_path.as_path()) {
-                                    this.drop_target = Some(over_path.clone());
-                                    cx.notify();
-                                }
-                            },
-                        ))
-                        .on_drop(cx.listener(move |this, d: &DraggedPaths, _w, cx| {
-                            this.drop_move(d.paths.clone(), drop_path.clone(), cx);
-                        }))
-                        .on_drop(cx.listener({
-                            let drop_path = path.clone();
-                            move |this, d: &ExternalPaths, _w, cx| {
-                                this.drop_external(d.paths().to_vec(), drop_path.clone(), cx);
-                            }
-                        }));
-                }
-                row.into_any_element()
+                item.into_any_element()
             }
         }
     }
@@ -1663,33 +1657,33 @@ impl ExplorerView {
                             .justify_end()
                             .gap_2()
                             .child(
-                                div()
-                                    .id("del-cancel")
-                                    .px_2()
-                                    .py_1()
-                                    .text_sm()
-                                    .rounded_sm()
-                                    .hover(|s| s.bg(c.border))
-                                    .child("Cancel")
-                                    .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
+                                button(
+                                    "del-cancel",
+                                    c.palette,
+                                    ButtonVariant::Outline,
+                                    ButtonSize::Sm,
+                                )
+                                .child("Cancel")
+                                .on_click(cx.listener(
+                                    |this, _: &ClickEvent, _window, cx| {
                                         this.confirm_delete = None;
                                         cx.notify();
-                                    })),
+                                    },
+                                )),
                             )
                             .child(
-                                div()
-                                    .id("del-ok")
-                                    .px_2()
-                                    .py_1()
-                                    .text_sm()
-                                    .rounded_sm()
-                                    .bg(c.err)
-                                    .text_color(c.card)
-                                    .hover(|s| s.opacity(0.9))
-                                    .child("Delete")
-                                    .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
+                                button(
+                                    "del-ok",
+                                    c.palette,
+                                    ButtonVariant::Destructive,
+                                    ButtonSize::Sm,
+                                )
+                                .child("Delete")
+                                .on_click(cx.listener(
+                                    |this, _: &ClickEvent, _window, cx| {
                                         this.confirm_delete_now(cx);
-                                    })),
+                                    },
+                                )),
                             ),
                     ),
             )

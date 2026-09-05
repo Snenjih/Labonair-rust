@@ -1,7 +1,7 @@
 # T20-002: View-Migration Welle 1 (Terminal, Editor, Explorer, SCM)
 
 ## Status
-📋 Geplant
+🔄 In Progress
 
 ## Phase
 19 — UI-Kit & Theme-System
