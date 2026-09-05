@@ -262,10 +262,6 @@ impl TreeModel {
         reload
     }
 
-    fn collapse_all(&mut self) {
-        self.expanded.clear();
-    }
-
     /// Directories currently loaded or loading — the watch set.
     fn watch_targets(&self) -> Vec<PathBuf> {
         self.nodes
@@ -334,6 +330,11 @@ pub struct ExplorerView {
     /// Real text field backing the inline create/rename row (T16-002 canary).
     /// Lazily created on `begin_create` / `begin_rename` (needs a `Window`).
     edit_field: Option<Entity<InputState>>,
+    /// The reference exposes a compact, collapsible file-name filter directly
+    /// below the Explorer toolbar. Keep the native input entity alive while
+    /// it is visible so it retains focus, selection and IME state.
+    search_open: bool,
+    search_field: Option<Entity<InputState>>,
     context_menu: Option<(PathBuf, Point<Pixels>)>,
     confirm_delete: Option<PathBuf>,
     focus: FocusHandle,
@@ -371,6 +372,8 @@ impl ExplorerView {
             drop_target: None,
             edit_buffer: String::new(),
             edit_field: None,
+            search_open: false,
+            search_field: None,
             context_menu: None,
             confirm_delete: None,
             focus: cx.focus_handle(),
@@ -468,9 +471,29 @@ impl ExplorerView {
         cx.notify();
     }
 
-    fn collapse_all(&mut self, cx: &mut Context<Self>) {
-        self.model.collapse_all();
+    fn toggle_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.search_open = !self.search_open;
+        if self.search_open {
+            let field = self.search_field.get_or_insert_with(|| {
+                let field =
+                    cx.new(|cx| InputState::new(window, cx).placeholder("Search files\u{2026}"));
+                cx.subscribe(&field, |_, _, ev: &InputEvent, cx| {
+                    if matches!(ev, InputEvent::Change) {
+                        cx.notify();
+                    }
+                })
+                .detach();
+                field
+            });
+            field.update(cx, |state, cx| state.focus(window, cx));
+        }
         cx.notify();
+    }
+
+    fn clear_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(field) = &self.search_field {
+            field.update(cx, |state, cx| state.set_value("", window, cx));
+        }
     }
 
     fn select(&mut self, path: PathBuf, additive: bool, cx: &mut Context<Self>) {
@@ -1017,6 +1040,10 @@ impl Render for ExplorerView {
         let root_file = root.clone();
         let root_dir = root.clone();
         let root_refresh = root.clone();
+        let root_icon = {
+            let theme = self.theme.read(cx);
+            icon_for_path(theme.icon_theme(), &root_name, true, false)
+        };
         let toolbar = div()
             .flex()
             .flex_row()
@@ -1029,9 +1056,31 @@ impl Render for ExplorerView {
             .child(
                 div()
                     .flex_1()
+                    .min_w_0()
+                    .flex()
+                    .items_center()
+                    .gap_1()
                     .text_xs()
-                    .text_color(c.muted)
-                    .child(SharedString::from(root_name)),
+                    .text_color(c.fg)
+                    .child(root_icon.svg(c.muted).size(px(15.0)))
+                    .child(
+                        div()
+                            .overflow_hidden()
+                            .whitespace_nowrap()
+                            .child(SharedString::from(root_name)),
+                    ),
+            )
+            .child(
+                button(
+                    "search",
+                    c.palette,
+                    ButtonVariant::Ghost,
+                    ButtonSize::IconXs,
+                )
+                .child(IconName::Search.svg(c.muted).size(px(13.0)))
+                .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
+                    this.toggle_search(window, cx)
+                })),
             )
             .child(
                 button(
@@ -1040,7 +1089,7 @@ impl Render for ExplorerView {
                     ButtonVariant::Ghost,
                     ButtonSize::IconXs,
                 )
-                .child(IconName::Plus.svg(c.muted))
+                .child(IconName::Plus.svg(c.muted).size(px(13.0)))
                 .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
                     this.begin_create(root_file.clone(), false, window, cx)
                 })),
@@ -1052,7 +1101,7 @@ impl Render for ExplorerView {
                     ButtonVariant::Ghost,
                     ButtonSize::IconXs,
                 )
-                .child(IconName::FolderOpen.svg(c.muted))
+                .child(IconName::Folder.svg(c.muted).size(px(13.0)))
                 .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
                     this.begin_create(root_dir.clone(), true, window, cx)
                 })),
@@ -1064,7 +1113,7 @@ impl Render for ExplorerView {
                     ButtonVariant::Ghost,
                     ButtonSize::IconXs,
                 )
-                .child(IconName::Refresh.svg(c.muted))
+                .child(IconName::Refresh.svg(c.muted).size(px(12.0)))
                 .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
                     this.load_dir(root_refresh.clone(), true, cx)
                 })),
@@ -1083,21 +1132,19 @@ impl Render for ExplorerView {
                 .on_click(
                     cx.listener(|this, _: &ClickEvent, _window, cx| this.toggle_show_hidden(cx)),
                 ),
-            )
-            .child(
-                button(
-                    "collapse",
-                    c.palette,
-                    ButtonVariant::Ghost,
-                    ButtonSize::IconXs,
-                )
-                .child(IconName::Minus.svg(c.muted))
-                .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| this.collapse_all(cx))),
             );
+
+        let search = self.render_search(c, cx);
 
         let root_drop = root.clone();
         let root_ext = root.clone();
         let root_over = root.clone();
+        let query = self.search_query(cx);
+        let rows = if query.is_empty() {
+            self.model.rows()
+        } else {
+            self.search_rows(&query)
+        };
         let list = div()
             .id("explorer-list")
             .flex_1()
@@ -1118,13 +1165,19 @@ impl Render for ExplorerView {
             .on_drop(cx.listener(move |this, d: &ExternalPaths, _w, cx| {
                 this.drop_external(d.paths().to_vec(), root_ext.clone(), cx);
             }))
-            .children(
-                self.model
-                    .rows()
-                    .into_iter()
+            .children(if rows.is_empty() && !query.is_empty() {
+                vec![div()
+                    .px_3()
+                    .py_2()
+                    .text_xs()
+                    .text_color(c.muted)
+                    .child("No matches")
+                    .into_any_element()]
+            } else {
+                rows.into_iter()
                     .map(|row| self.render_row(row, c, cx))
-                    .collect::<Vec<_>>(),
-            );
+                    .collect::<Vec<_>>()
+            });
 
         let mut container = div()
             .id("explorer")
@@ -1136,6 +1189,7 @@ impl Render for ExplorerView {
             .text_color(c.fg)
             .on_key_down(cx.listener(Self::on_key))
             .child(toolbar)
+            .children(search)
             .children(self.render_clip_banner(c, cx))
             .child(list);
 
@@ -1151,6 +1205,70 @@ impl Render for ExplorerView {
 }
 
 impl ExplorerView {
+    /// Reference-aligned compact search strip. The native tree is already
+    /// lazy-loaded, so filtering the loaded rows is instantaneous and does
+    /// not turn a toolbar gesture into filesystem I/O.
+    fn render_search(&self, c: Colors, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
+        if !self.search_open {
+            return None;
+        }
+        let field = self.search_field.as_ref()?.clone();
+        let has_query = !field.read(cx).value().trim().is_empty();
+        let clear = has_query.then(|| {
+            button(
+                "clear-search",
+                c.palette,
+                ButtonVariant::Ghost,
+                ButtonSize::IconXs,
+            )
+            .child(IconName::X.svg(c.muted).size(px(11.0)))
+            .on_click(cx.listener(|this, _: &ClickEvent, window, cx| this.clear_search(window, cx)))
+        });
+
+        Some(
+            div()
+                .relative()
+                .flex()
+                .flex_row()
+                .items_center()
+                .mx_2()
+                .my(px(6.0))
+                .h(px(28.0))
+                .rounded_sm()
+                .border_1()
+                .border_color(c.border)
+                .bg(c.card)
+                .child(IconName::Search.svg(c.muted).size(px(13.0)).ml(px(7.0)))
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .px_1()
+                        .child(labonair_ui_kit::field_input(&field)),
+                )
+                .children(clear)
+                .into_any_element(),
+        )
+    }
+
+    fn search_query(&self, cx: &App) -> String {
+        self.search_field
+            .as_ref()
+            .map(|field| field.read(cx).value().trim().to_lowercase())
+            .unwrap_or_default()
+    }
+
+    fn search_rows(&self, query: &str) -> Vec<Row> {
+        self.model
+            .rows()
+            .into_iter()
+            .filter(|row| match row {
+                Row::Entry { entry, .. } => entry.name.to_lowercase().contains(query),
+                _ => false,
+            })
+            .collect()
+    }
+
     /// Explorer-level keyboard: copy / cut / paste buffer + clear.
     fn on_key(&mut self, ev: &KeyDownEvent, _window: &mut Window, cx: &mut Context<Self>) {
         let ks = &ev.keystroke;

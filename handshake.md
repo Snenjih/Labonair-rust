@@ -6,6 +6,20 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 ## Current Session: 2026-09-05 (T21-001 — render-path profiling & frame hygiene, in progress)
 
+### Explorer sidebar visual alignment
+
+- `crates/panel-explorer/src/panel_explorer.rs` now mirrors the reference
+  Explorer header: folder glyph and stronger root label, search/new-file/
+  new-folder/refresh/hidden-files control order, and compact matching icon
+  sizes. The obsolete collapse control was removed.
+- Added the native, focusable 28 px "Search files…" strip with clear action
+  and a case-insensitive filter over the lazily loaded tree rows; this keeps
+  the existing filesystem loading model intact and provides the reference's
+  empty-results state.
+- Verification: `cargo fmt --check`, `cargo check -p labonair-panel-explorer`,
+  `cargo clippy -p labonair-panel-explorer --all-targets -- -D warnings`, and
+  `cargo test -p labonair-panel-explorer` (9 passed) are green.
+
 **T21-001 is in progress.** The code-side render hygiene and opt-in profiling
 surface are implemented, but the task must remain open until its graphical
 profiling evidence is captured on macOS.
