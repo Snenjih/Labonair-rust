@@ -29,7 +29,6 @@
 
 use std::collections::{HashMap, HashSet};
 
-use gpui::prelude::FluentBuilder;
 use gpui::{
     div, px, App, ClickEvent, Context, Entity, EventEmitter, FocusHandle, Focusable,
     InteractiveElement, IntoElement, KeyDownEvent, ParentElement, Render, SharedString,
@@ -42,6 +41,9 @@ use labonair_backend::modules::sftp::{TransferDirection, TransferJob, TransferSt
 use labonair_backend::App as Backend;
 
 use crate::theme::ThemeStore;
+use labonair_ui_kit::{
+    button, indicator, ButtonSize, ButtonVariant, IconName, IndicatorSize, ListItem, Palette,
+};
 
 // ── bus events ─────────────────────────────────────────────────────────────
 
@@ -542,6 +544,9 @@ struct Colors {
     warn: gpui::Hsla,
     ok: gpui::Hsla,
     info: gpui::Hsla,
+    /// The full token snapshot the ui-kit primitives (`button`, `ListItem`, …)
+    /// are styled from.
+    palette: Palette,
 }
 
 impl Render for TransfersView {
@@ -559,6 +564,7 @@ impl Render for TransfersView {
                 warn: t.status_warning(),
                 ok: t.status_success(),
                 info: t.status_info(),
+                palette: Palette::from_theme(t),
             }
         };
 
@@ -589,34 +595,22 @@ impl Render for TransfersView {
         }
 
         root.child(
-            div()
-                .id("transfers-pill")
-                .flex()
-                .flex_row()
-                .items_center()
-                .gap_1()
-                .px_2()
-                .py_1()
-                .rounded_full()
-                .border_1()
-                .border_color(c.border)
-                .bg(c.card)
-                .text_color(c.fg)
-                .text_xs()
-                .shadow_lg()
-                .child(
-                    labonair_ui_kit::IconName::ArrowDownUp
-                        .svg(c.fg)
-                        .size(px(12.0)),
-                )
-                .child(SharedString::from(format!(
-                    "{active} active \u{00b7} {} total",
-                    self.jobs.len()
-                )))
-                .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
-                    this.open = !this.open;
-                    cx.notify();
-                })),
+            button(
+                "transfers-pill",
+                c.palette,
+                ButtonVariant::Outline,
+                ButtonSize::Xs,
+            )
+            .shadow_lg()
+            .child(IconName::ArrowDownUp.svg(c.fg).size(px(12.0)))
+            .child(SharedString::from(format!(
+                "{active} active \u{00b7} {} total",
+                self.jobs.len()
+            )))
+            .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
+                this.open = !this.open;
+                cx.notify();
+            })),
         )
         .into_any_element()
     }
@@ -640,13 +634,14 @@ impl TransfersView {
                     .child("Transfers"),
             )
             .child(
-                div()
-                    .id("transfers-clear")
-                    .text_xs()
-                    .text_color(c.muted)
-                    .hover(|s| s.text_color(c.fg))
-                    .child("Clear completed")
-                    .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| this.clear_completed(cx))),
+                button(
+                    "transfers-clear",
+                    c.palette,
+                    ButtonVariant::Ghost,
+                    ButtonSize::Xs,
+                )
+                .child("Clear completed")
+                .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| this.clear_completed(cx))),
             );
 
         let mut list = div()
@@ -708,57 +703,75 @@ impl TransfersView {
             _ => None,
         };
 
-        let mut header_row =
-            div()
-                .flex()
-                .flex_row()
-                .items_center()
-                .gap_2()
-                .min_w_0()
-                .child(div().text_xs().child(arrow))
-                .child(
-                    div()
-                        .flex_1()
-                        .min_w_0()
-                        .text_sm()
-                        .child(SharedString::from(name)),
-                )
-                .child(div().px_1().rounded_sm().text_xs().text_color(tint).child(
-                    SharedString::from(if job.skipped_count > 0 {
-                        format!("{label} \u{00b7} {} skipped", job.skipped_count)
-                    } else {
-                        label.to_string()
-                    }),
-                ));
+        // T20-003: migrated to the shared `ListItem` primitive — the status
+        // dot is the shared `Indicator`, and the log-toggle/cancel actions
+        // are shared `button()`s collected into `ListItem::trailing`. The
+        // row itself has no click handler (only the trailing buttons do), so
+        // `ListItem`'s default hover/cursor-pointer chrome is turned off via
+        // its `.extra()` escape hatch to avoid implying the whole row is
+        // clickable.
+        let mut trailing = div().flex().flex_row().items_center().gap_1();
         if has_steps {
-            header_row = header_row.child(
-                div()
-                    .id(SharedString::from(format!("transfer-logtoggle-{}", id_log)))
-                    .text_xs()
-                    .text_color(c.muted)
-                    .hover(|s| s.text_color(c.fg))
-                    .child(if log_open { "\u{25B4}" } else { "\u{25BE}" })
-                    .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
-                        if !this.expanded_logs.remove(&id_log) {
-                            this.expanded_logs.insert(id_log.clone());
-                        }
-                        cx.notify();
-                    })),
+            trailing = trailing.child(
+                button(
+                    SharedString::from(format!("transfer-logtoggle-{}", id_log)),
+                    c.palette,
+                    ButtonVariant::Ghost,
+                    ButtonSize::IconXs,
+                )
+                .child(if log_open { "\u{25B4}" } else { "\u{25BE}" })
+                .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                    if !this.expanded_logs.remove(&id_log) {
+                        this.expanded_logs.insert(id_log.clone());
+                    }
+                    cx.notify();
+                })),
             );
         }
         if active {
-            header_row = header_row.child(
-                div()
-                    .id(SharedString::from(format!("transfer-cancel-{}", id_cancel)))
-                    .text_xs()
-                    .text_color(c.muted)
-                    .hover(|s| s.text_color(c.err))
-                    .child("\u{2715}")
-                    .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
-                        this.cancel(id_cancel.clone(), cx)
-                    })),
+            trailing = trailing.child(
+                button(
+                    SharedString::from(format!("transfer-cancel-{}", id_cancel)),
+                    c.palette,
+                    ButtonVariant::Ghost,
+                    ButtonSize::IconXs,
+                )
+                .child("\u{2715}")
+                .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                    this.cancel(id_cancel.clone(), cx)
+                })),
             );
         }
+
+        let header_row = ListItem::new(
+            SharedString::from(format!("transfer-header-{id}")),
+            c.fg,
+            c.muted,
+            c.border,
+        )
+        .child(indicator(IndicatorSize::Sm, tint))
+        .child(div().text_xs().child(arrow))
+        .child(
+            div()
+                .flex_1()
+                .min_w_0()
+                .text_sm()
+                .child(SharedString::from(name)),
+        )
+        .child(
+            div()
+                .px_1()
+                .rounded_sm()
+                .text_xs()
+                .text_color(tint)
+                .child(SharedString::from(if job.skipped_count > 0 {
+                    format!("{label} \u{00b7} {} skipped", job.skipped_count)
+                } else {
+                    label.to_string()
+                })),
+        )
+        .trailing(trailing)
+        .extra(|row| row.cursor_default());
 
         let bar = div().h(px(3.0)).w_full().rounded_full().bg(c.border).child(
             div()
@@ -1068,22 +1081,21 @@ impl TransfersView {
     }
 }
 
+/// Thin wrapper over the shared `button()` primitive — mirrors
+/// `panel-snippets`'s `btn()` (T20-003). `primary` maps to `Default`, every
+/// other modal action to `Outline`.
 fn btn(
     id: &'static str,
     label: &'static str,
     c: Colors,
     primary: bool,
 ) -> gpui::Stateful<gpui::Div> {
-    div()
-        .id(id)
-        .px_2()
-        .py_1()
-        .rounded_sm()
-        .text_xs()
-        .when(primary, |d| d.bg(c.accent).text_color(c.bg))
-        .when(!primary, |d| d.bg(c.border).text_color(c.fg))
-        .hover(|s| s.opacity(0.85))
-        .child(label)
+    let variant = if primary {
+        ButtonVariant::Default
+    } else {
+        ButtonVariant::Outline
+    };
+    button(id, c.palette, variant, ButtonSize::Xs).child(label)
 }
 
 // ── tests ──────────────────────────────────────────────────────────────────
