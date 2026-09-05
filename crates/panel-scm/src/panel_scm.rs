@@ -40,7 +40,10 @@ use tokio::runtime::Handle as TokioHandle;
 
 use crate::theme::ThemeStore;
 use labonair_notifications::notify_err;
-use labonair_ui_kit::{context_menu, IconName, MenuItem, Palette};
+use labonair_ui_kit::{
+    button, checkbox, context_menu, disclosure, h_stack, ButtonSize, ButtonVariant, IconName,
+    ListItem, MenuItem, Palette,
+};
 
 /// A source-control file-menu action, wrapped into a click handler by
 /// `render_file_menu`.
@@ -376,6 +379,7 @@ struct Colors {
     warning: gpui::Hsla,
     info: gpui::Hsla,
     modified: gpui::Hsla,
+    palette: Palette,
 }
 
 pub struct GitPanelView {
@@ -1497,6 +1501,7 @@ impl GitPanelView {
             warning: t.status_warning(),
             info: t.status_info(),
             modified: t.status_modified(),
+            palette: Palette::from_theme(t),
         }
     }
 
@@ -1518,14 +1523,7 @@ impl GitPanelView {
         cx: &mut Context<Self>,
         on_click: impl Fn(&mut Self, &mut Window, &mut Context<Self>) + 'static,
     ) -> impl IntoElement {
-        div()
-            .id(id)
-            .flex()
-            .items_center()
-            .h(px(22.0))
-            .px(px(6.0))
-            .rounded_sm()
-            .text_size(px(11.0))
+        button(id, c.palette, ButtonVariant::Ghost, ButtonSize::Xs)
             .text_color(c.muted)
             .hover(|s| s.bg(c.border).text_color(c.fg))
             .child(label.into())
@@ -1554,32 +1552,23 @@ impl GitPanelView {
             .justify_between()
             .h(px(22.0))
             .px(px(8.0))
-            .text_size(px(10.0))
-            .text_color(c.muted)
             .child(
-                div()
-                    .id(SharedString::from(format!("git-sec-{title}")))
-                    .flex()
-                    .items_center()
-                    .gap(px(4.0))
-                    .child(SharedString::from(if collapsed {
-                        "\u{25B8}"
+                disclosure(
+                    SharedString::from(format!("git-sec-{title}")),
+                    SharedString::from(format!("{} ({})", title.to_uppercase(), files.len())),
+                    collapsed,
+                    c.muted,
+                    c.fg,
+                )
+                .text_size(px(10.0))
+                .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                    if this.collapsed.contains(&key) {
+                        this.collapsed.remove(&key);
                     } else {
-                        "\u{25BE}"
-                    }))
-                    .child(SharedString::from(format!(
-                        "{} ({})",
-                        title.to_uppercase(),
-                        files.len()
-                    )))
-                    .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
-                        if this.collapsed.contains(&key) {
-                            this.collapsed.remove(&key);
-                        } else {
-                            this.collapsed.insert(key);
-                        }
-                        cx.notify();
-                    })),
+                        this.collapsed.insert(key);
+                    }
+                    cx.notify();
+                })),
             );
 
         let mut list = div().flex().flex_col();
@@ -1599,63 +1588,73 @@ impl GitPanelView {
                     untracked,
                 };
                 let action_path = path.clone();
-                let row = div()
-                    .id(SharedString::from(format!("git-file-{}-{}", key, path)))
-                    .flex()
-                    .items_center()
-                    .gap(px(6.0))
-                    .h(px(22.0))
-                    .px(px(8.0))
-                    .text_size(px(12.0))
-                    .text_color(c.fg)
-                    .when(selected, |d| d.bg(c.accent))
-                    .hover(|s| s.bg(c.border))
-                    .child(
-                        div()
-                            .w(px(12.0))
-                            .flex_shrink_0()
-                            .text_color(lc)
-                            .text_size(px(11.0))
-                            .child(SharedString::from(letter.to_string())),
+                let can_discard = matches!(section, Section::Unstaged | Section::Conflicts);
+                let discard_btn = can_discard.then(|| {
+                    let dp = path.clone();
+                    button(
+                        SharedString::from(format!("discard-{key}-{path}")),
+                        c.palette,
+                        ButtonVariant::Ghost,
+                        ButtonSize::IconXs,
                     )
-                    .child(
-                        div()
-                            .flex_1()
-                            .overflow_hidden()
-                            .whitespace_nowrap()
-                            .child(SharedString::from(short_path(&path))),
-                    )
-                    .when(
-                        matches!(section, Section::Unstaged | Section::Conflicts),
-                        |d| {
-                            let dp = path.clone();
-                            d.child(
-                                div()
-                                    .id(SharedString::from(format!("discard-{key}-{path}")))
-                                    .flex_shrink_0()
-                                    .w(px(16.0))
-                                    .text_color(c.muted)
-                                    .text_size(px(12.0))
-                                    .hover(|s| s.text_color(c.error))
-                                    .child(SharedString::from("\u{21BA}"))
-                                    .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
-                                        cx.stop_propagation();
-                                        this.discard_file(dp.clone(), cx);
-                                    })),
-                            )
+                    .text_color(c.muted)
+                    .hover(|s| s.text_color(c.error))
+                    .child(SharedString::from("\u{21BA}"))
+                    .on_click(cx.listener(
+                        move |this, _: &ClickEvent, _w, cx| {
+                            cx.stop_propagation();
+                            this.discard_file(dp.clone(), cx);
                         },
-                    )
-                    .child(self.row_action(section, action_path, c, cx))
-                    .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
-                        this.select_file(sel.clone(), cx);
-                    }))
-                    .on_mouse_down(MouseButton::Right, {
-                        let mp = path.clone();
-                        cx.listener(move |this, ev: &MouseDownEvent, _w, cx| {
-                            this.file_menu = Some((mp.clone(), section, ev.position));
-                            cx.notify();
-                        })
-                    });
+                    ))
+                });
+                let trailing = h_stack()
+                    .gap(px(2.0))
+                    .children(discard_btn)
+                    .child(self.row_action(section, action_path, c, cx));
+
+                let on_click = cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                    this.select_file(sel.clone(), cx);
+                });
+                let on_right_click = {
+                    let mp = path.clone();
+                    cx.listener(move |this, ev: &MouseDownEvent, _w, cx| {
+                        this.file_menu = Some((mp.clone(), section, ev.position));
+                        cx.notify();
+                    })
+                };
+
+                let row = ListItem::new(
+                    SharedString::from(format!("git-file-{}-{}", key, path)),
+                    c.fg,
+                    c.muted,
+                    c.border,
+                )
+                .child(
+                    div()
+                        .w(px(12.0))
+                        .flex_shrink_0()
+                        .text_color(lc)
+                        .text_size(px(11.0))
+                        .child(SharedString::from(letter.to_string())),
+                )
+                .child(
+                    div()
+                        .flex_1()
+                        .overflow_hidden()
+                        .whitespace_nowrap()
+                        .child(SharedString::from(short_path(&path))),
+                )
+                .trailing(trailing)
+                .extra(move |mut row| {
+                    row = row.h(px(22.0)).text_size(px(12.0));
+                    if selected {
+                        row = row.bg(c.accent);
+                    } else {
+                        row = row.hover(|s| s.bg(c.border));
+                    }
+                    row.on_click(on_click)
+                        .on_mouse_down(MouseButton::Right, on_right_click)
+                });
                 list = list.child(row);
             }
         }
@@ -1679,23 +1678,24 @@ impl GitPanelView {
             Section::Staged => ("\u{2212}", format!("unstage-{path}")),
             _ => ("+", format!("stage-{path}")),
         };
-        div()
-            .id(SharedString::from(id))
-            .flex_shrink_0()
-            .w(px(16.0))
-            .text_color(c.muted)
-            .text_size(px(13.0))
-            .hover(|s| s.text_color(c.fg))
-            .child(SharedString::from(glyph))
-            .on_click(cx.listener(move |this, ev: &ClickEvent, _w, cx| {
-                cx.stop_propagation();
-                let _ = ev;
-                match section {
-                    Section::Staged => this.unstage_file(path.clone(), cx),
-                    _ => this.stage_file(path.clone(), cx),
-                }
-            }))
-            .into_any_element()
+        button(
+            SharedString::from(id),
+            c.palette,
+            ButtonVariant::Ghost,
+            ButtonSize::IconXs,
+        )
+        .text_color(c.muted)
+        .hover(|s| s.text_color(c.fg))
+        .child(SharedString::from(glyph))
+        .on_click(cx.listener(move |this, ev: &ClickEvent, _w, cx| {
+            cx.stop_propagation();
+            let _ = ev;
+            match section {
+                Section::Staged => this.unstage_file(path.clone(), cx),
+                _ => this.stage_file(path.clone(), cx),
+            }
+        }))
+        .into_any_element()
     }
 
     fn render_diff(&self, c: Colors, cx: &mut Context<Self>) -> gpui::AnyElement {
@@ -1979,19 +1979,15 @@ impl GitPanelView {
                 )
             })
             .child(
-                div()
-                    .id("git-commit-btn")
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .h(px(26.0))
-                    .rounded_sm()
-                    .bg(c.accent)
-                    .text_size(px(12.0))
-                    .text_color(c.fg)
-                    .hover(|s| s.opacity(0.85))
-                    .child(SharedString::from("Commit"))
-                    .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| this.do_commit(cx))),
+                button(
+                    "git-commit-btn",
+                    c.palette,
+                    ButtonVariant::Default,
+                    ButtonSize::Sm,
+                )
+                .w_full()
+                .child(SharedString::from("Commit"))
+                .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| this.do_commit(cx))),
             )
             .into_any_element()
     }
@@ -2059,14 +2055,8 @@ impl GitPanelView {
         for (id, label, color) in actions {
             let cb = on_action.clone();
             row = row.child(
-                div()
-                    .id(id)
-                    .px(px(6.0))
+                button(id, c.palette, ButtonVariant::Outline, ButtonSize::Xs)
                     .h(px(18.0))
-                    .flex()
-                    .items_center()
-                    .rounded_sm()
-                    .border_1()
                     .border_color(color)
                     .text_color(color)
                     .hover(|s| s.bg(color.opacity(0.15)))
@@ -2221,26 +2211,28 @@ impl GitPanelView {
             let expanded = filtering || !self.remotes_collapsed;
             body = body.child(
                 div()
-                    .id("git-remotes-hdr")
-                    .flex()
-                    .items_center()
-                    .gap(px(4.0))
                     .h(px(22.0))
                     .px(px(8.0))
+                    .flex()
+                    .items_center()
                     .border_t_1()
                     .border_color(c.border)
-                    .text_size(px(10.0))
-                    .text_color(c.muted)
-                    .child(SharedString::from(if expanded {
-                        "\u{25BE}"
-                    } else {
-                        "\u{25B8}"
-                    }))
-                    .child(SharedString::from(format!("REMOTE ({})", remotes.len())))
-                    .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
-                        this.remotes_collapsed = !this.remotes_collapsed;
-                        cx.notify();
-                    })),
+                    .child(
+                        disclosure(
+                            "git-remotes-hdr",
+                            SharedString::from(format!("REMOTE ({})", remotes.len())),
+                            !expanded,
+                            c.muted,
+                            c.fg,
+                        )
+                        .text_size(px(10.0))
+                        .on_click(cx.listener(
+                            |this, _: &ClickEvent, _w, cx| {
+                                this.remotes_collapsed = !this.remotes_collapsed;
+                                cx.notify();
+                            },
+                        )),
+                    ),
             );
             if expanded {
                 for b in &remotes {
@@ -2281,19 +2273,9 @@ impl GitPanelView {
                 cx,
             ))
             .child(
-                div()
-                    .id("git-nb-checkout")
-                    .flex()
-                    .items_center()
-                    .gap(px(6.0))
-                    .text_size(px(10.0))
-                    .text_color(c.muted)
-                    .child(SharedString::from(if self.new_branch_checkout {
-                        "[x] Checkout after create"
-                    } else {
-                        "[ ] Checkout after create"
-                    }))
-                    .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
+                checkbox("git-nb-checkout", c.palette, self.new_branch_checkout)
+                    .label("Checkout after create")
+                    .on_click(cx.listener(|this, _: &bool, _w, cx| {
                         this.new_branch_checkout = !this.new_branch_checkout;
                         cx.notify();
                     })),
@@ -2375,114 +2357,119 @@ impl GitPanelView {
         let rn_name = name.clone();
         let del_name = name.clone();
 
-        let mut row =
-            div()
-                .id(SharedString::from(format!("git-branch-{}", name)))
-                .flex()
-                .items_center()
-                .gap(px(6.0))
-                .px(px(8.0))
-                .py(px(3.0))
-                .text_size(px(12.0))
-                .text_color(c.fg)
-                .when(is_current, |d| d.bg(c.accent))
-                .hover(|s| s.bg(c.border))
-                .child(
-                    div()
-                        .w(px(10.0))
-                        .flex_shrink_0()
-                        .text_color(c.success)
-                        .text_size(px(10.0))
-                        .child(SharedString::from(if is_current { "\u{2713}" } else { "" })),
-                )
-                .child(
-                    div()
-                        .flex_1()
-                        .overflow_hidden()
-                        .flex()
-                        .flex_col()
-                        .child(
-                            div()
-                                .flex()
-                                .items_center()
-                                .gap(px(4.0))
-                                .whitespace_nowrap()
-                                .child(SharedString::from(name.clone()))
-                                .when(b.ahead > 0, |d| {
-                                    d.child(
-                                        div().text_size(px(9.0)).text_color(c.success).child(
-                                            SharedString::from(format!("\u{2191}{}", b.ahead)),
-                                        ),
-                                    )
-                                })
-                                .when(b.behind > 0, |d| {
-                                    d.child(
-                                        div().text_size(px(9.0)).text_color(c.error).child(
-                                            SharedString::from(format!("\u{2193}{}", b.behind)),
-                                        ),
-                                    )
-                                }),
-                        )
-                        .when(!meta.is_empty(), |d| {
-                            d.child(
-                                div()
-                                    .text_size(px(10.0))
-                                    .text_color(c.muted)
-                                    .overflow_hidden()
-                                    .whitespace_nowrap()
-                                    .child(SharedString::from(meta.clone())),
-                            )
-                        }),
-                )
-                .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
-                    if !is_current {
-                        this.checkout_branch(co_name.clone(), cx);
-                    }
-                }));
-
+        let mut trailing = h_stack().gap(px(4.0));
         if !b.is_remote {
-            row = row.child(
-                div()
-                    .id(SharedString::from(format!("git-branch-rn-{}", name)))
-                    .flex_shrink_0()
-                    .w(px(16.0))
-                    .text_color(c.muted)
-                    .text_size(px(11.0))
-                    .hover(|s| s.text_color(c.fg))
-                    .child(
-                        labonair_ui_kit::IconName::Pencil
-                            .svg(c.muted)
-                            .size(px(11.0)),
-                    )
-                    .on_click(cx.listener(move |this, _: &ClickEvent, w, cx| {
-                        cx.stop_propagation();
-                        this.rename_target = Some(rn_name.clone());
-                        this.rename_buf = rn_name.clone();
-                        this.active_field = Some(Field::Rename);
-                        w.focus(&this.focus);
-                        cx.notify();
-                    })),
+            trailing = trailing.child(
+                button(
+                    SharedString::from(format!("git-branch-rn-{}", name)),
+                    c.palette,
+                    ButtonVariant::Ghost,
+                    ButtonSize::IconXs,
+                )
+                .text_color(c.muted)
+                .hover(|s| s.text_color(c.fg))
+                .child(IconName::Pencil.svg(c.muted).size(px(11.0)))
+                .on_click(cx.listener(move |this, _: &ClickEvent, w, cx| {
+                    cx.stop_propagation();
+                    this.rename_target = Some(rn_name.clone());
+                    this.rename_buf = rn_name.clone();
+                    this.active_field = Some(Field::Rename);
+                    w.focus(&this.focus);
+                    cx.notify();
+                })),
             );
             if !is_current {
-                row = row.child(
-                    div()
-                        .id(SharedString::from(format!("git-branch-del-{}", name)))
-                        .flex_shrink_0()
-                        .w(px(16.0))
-                        .text_color(c.muted)
-                        .text_size(px(12.0))
-                        .hover(|s| s.text_color(c.error))
-                        .child(SharedString::from("\u{2715}"))
-                        .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                trailing = trailing.child(
+                    button(
+                        SharedString::from(format!("git-branch-del-{}", name)),
+                        c.palette,
+                        ButtonVariant::Ghost,
+                        ButtonSize::IconXs,
+                    )
+                    .text_color(c.muted)
+                    .hover(|s| s.text_color(c.error))
+                    .child(SharedString::from("\u{2715}"))
+                    .on_click(cx.listener(
+                        move |this, _: &ClickEvent, _w, cx| {
                             cx.stop_propagation();
                             this.delete_confirm_branch = Some(del_name.clone());
                             cx.notify();
-                        })),
+                        },
+                    )),
                 );
             }
         }
 
-        row.into_any_element()
+        let on_click = cx.listener(move |this, _: &ClickEvent, _w, cx| {
+            if !is_current {
+                this.checkout_branch(co_name.clone(), cx);
+            }
+        });
+
+        ListItem::new(
+            SharedString::from(format!("git-branch-{}", name)),
+            c.fg,
+            c.muted,
+            c.border,
+        )
+        .child(
+            div()
+                .w(px(10.0))
+                .flex_shrink_0()
+                .text_color(c.success)
+                .text_size(px(10.0))
+                .child(SharedString::from(if is_current { "\u{2713}" } else { "" })),
+        )
+        .child(
+            div()
+                .flex_1()
+                .overflow_hidden()
+                .flex()
+                .flex_col()
+                .child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap(px(4.0))
+                        .whitespace_nowrap()
+                        .child(SharedString::from(name.clone()))
+                        .when(b.ahead > 0, |d| {
+                            d.child(
+                                div()
+                                    .text_size(px(9.0))
+                                    .text_color(c.success)
+                                    .child(SharedString::from(format!("\u{2191}{}", b.ahead))),
+                            )
+                        })
+                        .when(b.behind > 0, |d| {
+                            d.child(
+                                div()
+                                    .text_size(px(9.0))
+                                    .text_color(c.error)
+                                    .child(SharedString::from(format!("\u{2193}{}", b.behind))),
+                            )
+                        }),
+                )
+                .when(!meta.is_empty(), |d| {
+                    d.child(
+                        div()
+                            .text_size(px(10.0))
+                            .text_color(c.muted)
+                            .overflow_hidden()
+                            .whitespace_nowrap()
+                            .child(SharedString::from(meta.clone())),
+                    )
+                }),
+        )
+        .trailing(trailing)
+        .extra(move |mut row| {
+            row = row.px(px(8.0)).py(px(3.0)).text_size(px(12.0));
+            if is_current {
+                row = row.bg(c.accent);
+            }
+            row.on_click(on_click)
+        })
+        .into_any_element()
     }
 
     fn render_tag_section(&self, c: Colors, cx: &mut Context<Self>) -> gpui::AnyElement {
@@ -2496,42 +2483,40 @@ impl GitPanelView {
             div()
                 .flex()
                 .items_center()
-                .gap(px(4.0))
+                .justify_between()
                 .h(px(22.0))
                 .px(px(8.0))
-                .text_size(px(10.0))
-                .text_color(c.muted)
                 .child(
-                    div()
-                        .id("git-tags-hdr")
-                        .flex_1()
-                        .flex()
-                        .items_center()
-                        .gap(px(4.0))
-                        .child(SharedString::from(if self.tags_collapsed {
-                            "\u{25B8}"
-                        } else {
-                            "\u{25BE}"
-                        }))
-                        .child(SharedString::from(format!("TAGS ({})", tags.len())))
-                        .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
-                            this.tags_collapsed = !this.tags_collapsed;
-                            cx.notify();
-                        })),
+                    disclosure(
+                        "git-tags-hdr",
+                        SharedString::from(format!("TAGS ({})", tags.len())),
+                        self.tags_collapsed,
+                        c.muted,
+                        c.fg,
+                    )
+                    .text_size(px(10.0))
+                    .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
+                        this.tags_collapsed = !this.tags_collapsed;
+                        cx.notify();
+                    })),
                 )
                 .child(
-                    div()
-                        .id("git-tags-new")
-                        .text_size(px(12.0))
-                        .hover(|s| s.text_color(c.fg))
-                        .child(SharedString::from("+"))
-                        .on_click(cx.listener(|this, _: &ClickEvent, w, cx| {
-                            this.new_tag_open = true;
-                            this.tags_collapsed = false;
-                            this.active_field = Some(Field::TagName);
-                            w.focus(&this.focus);
-                            cx.notify();
-                        })),
+                    button(
+                        "git-tags-new",
+                        c.palette,
+                        ButtonVariant::Ghost,
+                        ButtonSize::IconXs,
+                    )
+                    .text_color(c.muted)
+                    .hover(|s| s.text_color(c.fg))
+                    .child(SharedString::from("+"))
+                    .on_click(cx.listener(|this, _: &ClickEvent, w, cx| {
+                        this.new_tag_open = true;
+                        this.tags_collapsed = false;
+                        this.active_field = Some(Field::TagName);
+                        w.focus(&this.focus);
+                        cx.notify();
+                    })),
                 ),
         );
 
@@ -2638,48 +2623,57 @@ impl GitPanelView {
         for tag in &tags {
             let push_tag = tag.clone();
             let del_tag = tag.clone();
+            let trailing = h_stack()
+                .gap(px(2.0))
+                .child(
+                    button(
+                        SharedString::from(format!("git-tag-push-{tag}")),
+                        c.palette,
+                        ButtonVariant::Ghost,
+                        ButtonSize::IconXs,
+                    )
+                    .text_color(c.muted)
+                    .hover(|s| s.text_color(c.fg))
+                    .child(SharedString::from("\u{2191}"))
+                    .on_click(cx.listener(
+                        move |this, _: &ClickEvent, _w, cx| {
+                            this.push_tag(push_tag.clone(), cx);
+                        },
+                    )),
+                )
+                .child(
+                    button(
+                        SharedString::from(format!("git-tag-del-{tag}")),
+                        c.palette,
+                        ButtonVariant::Ghost,
+                        ButtonSize::IconXs,
+                    )
+                    .text_color(c.muted)
+                    .hover(|s| s.text_color(c.error))
+                    .child(SharedString::from("\u{2715}"))
+                    .on_click(cx.listener(
+                        move |this, _: &ClickEvent, _w, cx| {
+                            this.delete_confirm_tag = Some(del_tag.clone());
+                            cx.notify();
+                        },
+                    )),
+                );
             wrap = wrap.child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap(px(6.0))
-                    .h(px(20.0))
-                    .px(px(8.0))
-                    .text_size(px(11.0))
-                    .text_color(c.fg)
-                    .hover(|s| s.bg(c.border))
-                    .child(
-                        div()
-                            .flex_1()
-                            .overflow_hidden()
-                            .whitespace_nowrap()
-                            .child(SharedString::from(tag.clone())),
-                    )
-                    .child(
-                        div()
-                            .id(SharedString::from(format!("git-tag-push-{tag}")))
-                            .w(px(16.0))
-                            .flex_shrink_0()
-                            .text_color(c.muted)
-                            .hover(|s| s.text_color(c.fg))
-                            .child(SharedString::from("\u{2191}"))
-                            .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
-                                this.push_tag(push_tag.clone(), cx);
-                            })),
-                    )
-                    .child(
-                        div()
-                            .id(SharedString::from(format!("git-tag-del-{tag}")))
-                            .w(px(16.0))
-                            .flex_shrink_0()
-                            .text_color(c.muted)
-                            .hover(|s| s.text_color(c.error))
-                            .child(SharedString::from("\u{2715}"))
-                            .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
-                                this.delete_confirm_tag = Some(del_tag.clone());
-                                cx.notify();
-                            })),
-                    ),
+                ListItem::new(
+                    SharedString::from(format!("git-tag-{tag}")),
+                    c.fg,
+                    c.muted,
+                    c.border,
+                )
+                .child(
+                    div()
+                        .flex_1()
+                        .overflow_hidden()
+                        .whitespace_nowrap()
+                        .child(SharedString::from(tag.clone())),
+                )
+                .trailing(trailing)
+                .extra(|row| row.h(px(20.0)).text_size(px(11.0))),
             );
         }
 
@@ -2697,42 +2691,40 @@ impl GitPanelView {
             div()
                 .flex()
                 .items_center()
-                .gap(px(4.0))
+                .justify_between()
                 .h(px(22.0))
                 .px(px(8.0))
-                .text_size(px(10.0))
-                .text_color(c.muted)
                 .child(
-                    div()
-                        .id("git-stash-hdr")
-                        .flex_1()
-                        .flex()
-                        .items_center()
-                        .gap(px(4.0))
-                        .child(SharedString::from(if self.stash_collapsed {
-                            "\u{25B8}"
-                        } else {
-                            "\u{25BE}"
-                        }))
-                        .child(SharedString::from(format!("STASHES ({})", entries.len())))
-                        .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
-                            this.stash_collapsed = !this.stash_collapsed;
-                            cx.notify();
-                        })),
+                    disclosure(
+                        "git-stash-hdr",
+                        SharedString::from(format!("STASHES ({})", entries.len())),
+                        self.stash_collapsed,
+                        c.muted,
+                        c.fg,
+                    )
+                    .text_size(px(10.0))
+                    .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
+                        this.stash_collapsed = !this.stash_collapsed;
+                        cx.notify();
+                    })),
                 )
                 .child(
-                    div()
-                        .id("git-stash-new")
-                        .text_size(px(12.0))
-                        .hover(|s| s.text_color(c.fg))
-                        .child(SharedString::from("+"))
-                        .on_click(cx.listener(|this, _: &ClickEvent, w, cx| {
-                            this.stash_form_open = true;
-                            this.stash_collapsed = false;
-                            this.active_field = Some(Field::StashMsg);
-                            w.focus(&this.focus);
-                            cx.notify();
-                        })),
+                    button(
+                        "git-stash-new",
+                        c.palette,
+                        ButtonVariant::Ghost,
+                        ButtonSize::IconXs,
+                    )
+                    .text_color(c.muted)
+                    .hover(|s| s.text_color(c.fg))
+                    .child(SharedString::from("+"))
+                    .on_click(cx.listener(|this, _: &ClickEvent, w, cx| {
+                        this.stash_form_open = true;
+                        this.stash_collapsed = false;
+                        this.active_field = Some(Field::StashMsg);
+                        w.focus(&this.focus);
+                        cx.notify();
+                    })),
                 ),
         );
 
@@ -2801,73 +2793,89 @@ impl GitPanelView {
             let pop_hash = e.hash.clone();
             let drop_idx = e.index;
             let drop_hash = e.hash.clone();
+            let trailing = h_stack()
+                .gap(px(4.0))
+                .child(
+                    button(
+                        SharedString::from(format!("git-stash-apply-{}", e.index)),
+                        c.palette,
+                        ButtonVariant::Ghost,
+                        ButtonSize::IconXs,
+                    )
+                    .text_color(c.muted)
+                    .hover(|s| s.text_color(c.fg))
+                    .child(SharedString::from("A"))
+                    .on_click(cx.listener(
+                        move |this, _: &ClickEvent, _w, cx| {
+                            this.stash_apply(apply_hash.clone(), false, cx);
+                        },
+                    )),
+                )
+                .child(
+                    button(
+                        SharedString::from(format!("git-stash-pop-{}", e.index)),
+                        c.palette,
+                        ButtonVariant::Ghost,
+                        ButtonSize::IconXs,
+                    )
+                    .text_color(c.muted)
+                    .hover(|s| s.text_color(c.fg))
+                    .child(SharedString::from("P"))
+                    .on_click(cx.listener(
+                        move |this, _: &ClickEvent, _w, cx| {
+                            this.stash_apply(pop_hash.clone(), true, cx);
+                        },
+                    )),
+                )
+                .child(
+                    button(
+                        SharedString::from(format!("git-stash-drop-{}", e.index)),
+                        c.palette,
+                        ButtonVariant::Ghost,
+                        ButtonSize::IconXs,
+                    )
+                    .text_color(c.muted)
+                    .hover(|s| s.text_color(c.error))
+                    .child(SharedString::from("\u{2715}"))
+                    .on_click(cx.listener(
+                        move |this, _: &ClickEvent, _w, cx| {
+                            this.drop_confirm_stash = Some((drop_idx, drop_hash.clone()));
+                            cx.notify();
+                        },
+                    )),
+                );
             wrap = wrap.child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap(px(6.0))
-                    .h(px(20.0))
-                    .px(px(8.0))
-                    .text_size(px(11.0))
-                    .text_color(c.fg)
-                    .hover(|s| s.bg(c.border))
-                    .child(
+                ListItem::new(
+                    SharedString::from(format!("git-stash-{}", e.index)),
+                    c.fg,
+                    c.muted,
+                    c.border,
+                )
+                .child(
+                    div()
+                        .flex_shrink_0()
+                        .text_size(px(9.0))
+                        .text_color(c.muted)
+                        .child(SharedString::from(e.index.to_string())),
+                )
+                .child(
+                    div()
+                        .flex_1()
+                        .overflow_hidden()
+                        .whitespace_nowrap()
+                        .child(SharedString::from(stash_display_message(&e.message))),
+                )
+                .when(!e.branch.is_empty(), |d| {
+                    d.child(
                         div()
                             .flex_shrink_0()
                             .text_size(px(9.0))
                             .text_color(c.muted)
-                            .child(SharedString::from(e.index.to_string())),
+                            .child(SharedString::from(e.branch.clone())),
                     )
-                    .child(
-                        div()
-                            .flex_1()
-                            .overflow_hidden()
-                            .whitespace_nowrap()
-                            .child(SharedString::from(stash_display_message(&e.message))),
-                    )
-                    .when(!e.branch.is_empty(), |d| {
-                        d.child(
-                            div()
-                                .flex_shrink_0()
-                                .text_size(px(9.0))
-                                .text_color(c.muted)
-                                .child(SharedString::from(e.branch.clone())),
-                        )
-                    })
-                    .child(
-                        div()
-                            .id(SharedString::from(format!("git-stash-apply-{}", e.index)))
-                            .flex_shrink_0()
-                            .text_color(c.muted)
-                            .hover(|s| s.text_color(c.fg))
-                            .child(SharedString::from("A"))
-                            .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
-                                this.stash_apply(apply_hash.clone(), false, cx);
-                            })),
-                    )
-                    .child(
-                        div()
-                            .id(SharedString::from(format!("git-stash-pop-{}", e.index)))
-                            .flex_shrink_0()
-                            .text_color(c.muted)
-                            .hover(|s| s.text_color(c.fg))
-                            .child(SharedString::from("P"))
-                            .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
-                                this.stash_apply(pop_hash.clone(), true, cx);
-                            })),
-                    )
-                    .child(
-                        div()
-                            .id(SharedString::from(format!("git-stash-drop-{}", e.index)))
-                            .flex_shrink_0()
-                            .text_color(c.muted)
-                            .hover(|s| s.text_color(c.error))
-                            .child(SharedString::from("\u{2715}"))
-                            .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
-                                this.drop_confirm_stash = Some((drop_idx, drop_hash.clone()));
-                                cx.notify();
-                            })),
-                    ),
+                })
+                .trailing(trailing)
+                .extra(|row| row.h(px(20.0)).text_size(px(11.0))),
             );
         }
 
