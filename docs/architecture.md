@@ -1098,6 +1098,55 @@ Rule 3 / settings-guidelines):**
 back to the built-in if its file vanished. `labonair-theme` gains no
 `notify` dependency.
 
+### 8.19 Icon themes — T20-006
+
+`crates/theme/src/icon_theme.rs` replaces the hard-coded
+`labonair-ui-kit::icon::file_icon` extension table with a swappable **JSON icon
+theme**: `IconThemeContent` (`{ name, author?, file_stems, file_suffixes,
+directory: {collapsed, expanded}, chevron: {collapsed, expanded}, default_file }`
+— maps from file name / extension to a *glyph id*, the kebab-case `IconName`
+SVG stem), `IconThemeRegistry` (`builtin()` from the embedded
+`assets/icon_themes/labonair.json` + `load_user_icon_themes(dir)`, `list()`,
+`get(id)`), and lookup helpers. `IconThemeContent::file_glyph` applies
+`file_stems` (whole name, case-folded) → **longest** dot-suffix (`archive.tar.gz`
+tries `tar.gz` before `gz`) → `default_file`.
+
+`labonair-ui-kit::icon` gains `glyph_icon(id) -> IconName` (unknown id →
+`IconName::File` + one-time `eprintln` warning, so a hand-written user theme
+can't crash a view), `icon_for_path(theme, name, is_dir, is_expanded)` and
+`chevron_icon(theme, is_expanded)`; `file_icon` / `folder_icon` stay as thin
+wrappers over a `LazyLock` built-in `IconThemeRegistry`. Explorer + SFTP rows
+now resolve their glyphs through `ThemeStore::icon_theme()`.
+
+`ThemeStore` holds `icon_registry` + `active_icon_theme` with
+`set_active_icon_theme(id)` / `reload_user_icon_themes(dir)` / `icon_theme()`;
+`appearance.icon_theme` (new `Preferences` / `AppearanceContent` field, default
+`"default"`) persists the choice, written by `labonair-settings-ui`
+(`apply.rs` + the Themes pane's new icon-theme picker with a live glyph
+preview + Import / Open-folder). `labonair-shell` adds a second
+`watch_dir(icon_themes_dir, …)` → `reload_icon_theme_registry` for live reload.
+
+**Deviations / notes (deviation process, Critical Rule 3):**
+
+* **No `JsonSchema` derive on `IconThemeContent`** — same reasoning as §8.18
+  (`labonair-theme` is the zero-workspace-dep leaf crate). `serde` only.
+* **Built-in icon theme is generated from Rust tables.**
+  `DEFAULT_FILE_STEMS` / `DEFAULT_FILE_SUFFIXES` in `icon_theme.rs` are the
+  1:1 transcription of the old `file_icon` match arms and the single source of
+  truth for `assets/icon_themes/labonair.json` (regen with
+  `REGEN_BUILTIN_ICON_THEME=1 cargo test -p labonair-theme builtin_icon`). A
+  ui-kit test asserts the built-in theme reproduces the legacy `file_icon`
+  glyph for every single-segment key.
+* **`.env*` narrowed from a prefix rule to explicit stems.** The old
+  `file_icon` matched every `.env*` by `starts_with(".env")`; the built-in
+  icon theme lists the common members (`​.env`, `.env.local`,
+  `.env.development`, …). A truly novel `.env.<x>` now falls back to
+  `default_file` — a user icon theme can add the stem.
+* **Two new multi-segment suffix keys with teeth** — `d.ts` → `file-code`
+  (vs `ts` → `braces`) exercises the longest-suffix rule with a genuinely
+  different glyph; `tar.gz` / `tar.bz2` / `tar.xz` / `tar.zst` map to the
+  same `archive` glyph as their tail (no behavior change).
+
 ---
 
 ## 9. Ist-Graph after Phase 15 (T16-010)

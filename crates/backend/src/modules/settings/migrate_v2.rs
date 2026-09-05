@@ -155,6 +155,7 @@ fn general_from(p: &Preferences) -> GeneralContent {
 fn appearance_from(p: &Preferences) -> AppearanceContent {
     AppearanceContent {
         app_theme: Some(p.app_theme.clone()),
+        icon_theme: Some(p.icon_theme.clone()),
         theme_variant_overrides: Some(p.theme_variant_overrides.clone()),
         app_font_size: Some(p.app_font_size),
         app_line_height: Some(p.app_line_height),
@@ -924,6 +925,7 @@ mod tests {
             "checkForUpdates",
             "sessionRestore",
             "appTheme",
+            "iconTheme",
             "themeVariantOverrides",
             "appFontSize",
             "appLineHeight",

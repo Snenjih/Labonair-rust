@@ -10,6 +10,7 @@
 
 mod color;
 pub mod fonts;
+pub mod icon_theme;
 mod import;
 mod prefs;
 pub mod registry;
@@ -19,6 +20,10 @@ mod tokens;
 pub use color::{oklch, oklch_a, parse_color, to_hex, to_rgb8, transparent};
 pub use fonts::{
     embedded_fonts, MONO_FONT_FALLBACKS, MONO_FONT_FAMILY, UI_FONT_FALLBACKS, UI_FONT_FAMILY,
+};
+pub use icon_theme::{
+    ChevronIcons, DirectoryIcons, IconThemeContent, IconThemeMeta, IconThemeNotFoundError,
+    IconThemeRegistry, BUILTIN_ICON_THEME_ID, BUILTIN_ICON_THEME_NAME,
 };
 pub use import::{ThemeFile, ThemeFileVariant, COLOR_TOKENS};
 pub use prefs::{EditorThemeId, ThemePreference};

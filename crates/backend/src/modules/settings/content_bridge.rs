@@ -87,6 +87,7 @@ impl From<&SettingsContent> for Preferences {
             session_restore: g.session_restore.unwrap_or_default(),
 
             app_theme: a.app_theme.unwrap_or_default(),
+            icon_theme: a.icon_theme.unwrap_or_default(),
             theme_variant_overrides: a.theme_variant_overrides.unwrap_or_default(),
             app_font_size: a.app_font_size.unwrap_or_default(),
             app_line_height: a.app_line_height.unwrap_or_default(),

@@ -4,7 +4,68 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
-## Last Session: 2026-09-05 (T20-005 — ThemeRegistry + JSON theme families)
+## Last Session: 2026-09-05 (T20-006 — Icon themes, JSON, switchable)
+
+**T20-006 done.** The hard-coded `file_icon` extension table is now a
+swappable **JSON icon theme** (embedded built-in + user `*.json`), runtime-
+switchable with fs-watch live-reload, mirroring the T20-005 theme registry.
+
+- **`crates/theme/src/icon_theme.rs`** (new, ~640 lines incl. 6 tests):
+  `IconThemeContent { name, author?, file_stems, file_suffixes,
+  directory:{collapsed,expanded}, chevron:{collapsed,expanded}, default_file }`
+  (`serde` only — **no `JsonSchema`**, same zero-dep-leaf reasoning as
+  T20-005). `file_glyph(name)` = `file_stems` (whole name, case-folded) →
+  **longest** dot-suffix (`archive.tar.gz` → `tar.gz` before `gz`) →
+  `default_file`. `IconThemeRegistry`: `builtin()` (embedded
+  `assets/icon_themes/labonair.json`), `load_user_icon_themes(dir)` (skip
+  broken → `Vec<String>` warnings), `list() -> Vec<IconThemeMeta>`,
+  `get(id)` / `contains(id)`, `builtin_theme()`. Ids: file stem; `"default"`
+  = built-in. `DEFAULT_FILE_STEMS` / `DEFAULT_FILE_SUFFIXES` are the 1:1
+  transcription of the old `file_icon` arms + the single source for the
+  embedded asset (regen: `REGEN_BUILTIN_ICON_THEME=1 cargo test -p
+  labonair-theme builtin_icon`).
+- **`crates/ui-kit/src/icon.rs`** — `icon_enum!` gains `IconName::from_glyph_id`.
+  New `glyph_icon(id)` (unknown → `IconName::File` + one-time `eprintln`),
+  `icon_for_path(theme, name, is_dir, is_expanded)`, `chevron_icon(theme,
+  is_expanded)`. `file_icon` / `folder_icon` kept as thin wrappers over a
+  `LazyLock<IconThemeRegistry>` built-in. Old hard-coded `file_icon` body
+  moved to `#[cfg(test)] legacy_file_icon` for the equality test
+  (`builtin_icon_theme_matches_legacy_file_icon`: every single-segment key).
+- **`ThemeStore`** gained `icon_registry` + `active_icon_theme` +
+  `icon_registry()`, `list_icon_themes()`, `active_icon_theme_id()`,
+  `icon_theme() -> &IconThemeContent`, `set_active_icon_theme(id) -> Result`,
+  `reload_user_icon_themes(dir) -> Vec<String>`. 1 new gpui test
+  (activate + unknown-id + live-reload-fallback).
+- **`appearance.icon_theme`** — new `Preferences` (`iconTheme`, default
+  `"default"`) + `AppearanceContent` field; wired through `content_bridge.rs`,
+  `migrate_v2.rs` (+ its accounting test + `default.json`).
+- **`labonair-settings-ui`** — `apply.rs`: `apply_prefs_to_theme` also
+  reloads the icon registry + `set_active_icon_theme(p.icon_theme)`; new
+  `reload_icon_theme_registry`, `user_icon_themes_dir`, `icon_theme_choices`.
+  Themes pane: `render_icon_theme_picker` (SegmentedControl over installed
+  icon themes + a live 6-glyph preview row resolved through the *selected*
+  theme + Import / Open-folder), `set_icon_theme` / `import_icon_theme[_from]`.
+  `refresh_themes` also refreshes icon themes. `SettingsView` gained
+  `icon_theme_files` + `active_icon_theme_id`.
+- **`crates/shell/src/bootstrap.rs`** — second `watch_dir(user_icon_themes_dir(),
+  …)` → `reload_icon_theme_registry`.
+- **Call sites** — `panel-explorer` tree row + `workspace/views/sftp.rs` row
+  resolve glyphs (file, folder, **and** chevron for explorer) through
+  `ThemeStore::icon_theme()` / `icon_for_path`. Tab-title / command-palette
+  don't call `file_icon` directly — nothing to migrate there.
+- **Deviations (documented `docs/architecture.md §8.19`, task file):** no
+  `JsonSchema` derive; `.env*` prefix rule narrowed to explicit `.env*`
+  stems; `d.ts` + `tar.gz`-family multi-segment suffix keys added.
+- **Gates:** `fmt --check`, `check --workspace --all-targets`, `clippy
+  --workspace --all-targets -D warnings`, `test --workspace` (898 passed,
+  0 failed), `scripts/check-crate-deps.sh` (24 crates, acyclic) — all green.
+  `labonair-theme` gains **no** new dependency.
+- **Not `cargo run`-verified** (headless) — user visual check of live icon-
+  theme switching / broken-file-ignored is open (same accepted gap as
+  T20-002..005).
+- **Next task: T20-007** (`theme_settings` layer; `tasks/phase-19-ui-kit/`).
+
+## Previous Session: 2026-09-05 (T20-005 — ThemeRegistry + JSON theme families)
 
 **T20-005 done.** The T02-003 "one built-in light/dark + optionally one
 imported custom theme" model is now a **registry of theme families**, each

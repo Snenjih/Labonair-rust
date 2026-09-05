@@ -25,6 +25,75 @@ impl SettingsView {
         self.theme_files = scan_themes(&themes_dir());
         self.theme
             .update(cx, |t, cx| t.reload_user_themes(&themes_dir(), cx));
+        // Icon themes (T20-006) share the same refresh point.
+        self.icon_theme_files = icon_theme_choices();
+        self.theme.update(cx, |t, cx| {
+            t.reload_user_icon_themes(&icon_themes_dir(), cx)
+        });
+    }
+
+    // ── appearance: icon themes (T20-006) ────────────────────────────────
+
+    /// Activate an icon theme by id (`"default"` = built-in glyph set) and
+    /// persist the choice.
+    pub(crate) fn set_icon_theme(&mut self, id: &str, cx: &mut Context<Self>) {
+        match self
+            .theme
+            .update(cx, |t, cx| t.set_active_icon_theme(id, cx))
+        {
+            Ok(()) => {
+                self.active_icon_theme_id = id.to_string();
+                self.set_pref("iconTheme", Value::String(id.to_string()), cx);
+            }
+            Err(e) => self.notify_error(cx, "Failed to activate icon theme", e),
+        }
+        cx.notify();
+    }
+
+    /// File picker → copy the chosen `.json` into the icon-themes dir → activate.
+    pub(crate) fn import_icon_theme(&mut self, cx: &mut Context<Self>) {
+        let receiver = cx.prompt_for_paths(PathPromptOptions {
+            files: true,
+            directories: false,
+            multiple: false,
+            prompt: Some("Import icon theme".into()),
+        });
+        cx.spawn(async move |this, cx| {
+            let Ok(Ok(Some(paths))) = receiver.await else {
+                return;
+            };
+            let Some(src) = paths.into_iter().next() else {
+                return;
+            };
+            let _ = this.update(cx, |this, cx| this.import_icon_theme_from(src, cx));
+        })
+        .detach();
+    }
+
+    pub(crate) fn import_icon_theme_from(&mut self, src: PathBuf, cx: &mut Context<Self>) {
+        let raw = match fs::read_to_string(&src) {
+            Ok(r) => r,
+            Err(e) => return self.notify_error(cx, "Failed to read icon theme", e.to_string()),
+        };
+        if let Err(e) = labonair_theme::IconThemeContent::from_json(&raw) {
+            return self.notify_error(cx, "Invalid icon theme file", e);
+        }
+        let stem = src
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .filter(|s| !s.is_empty())
+            .unwrap_or("imported-icon-theme")
+            .to_string();
+        if let Err(e) = save_theme_file_in(&icon_themes_dir(), &stem, &raw) {
+            return self.notify_error(cx, "Failed to save icon theme", e);
+        }
+        self.refresh_themes(cx);
+        self.set_icon_theme(&stem, cx);
+        self.notify(
+            cx,
+            Notification::success("Icon theme imported", "The icon theme is now active."),
+        );
+        cx.notify();
     }
 
     /// Load the scanned system font list once (async, off the main thread) for
@@ -524,11 +593,109 @@ impl SettingsView {
                 div()
                     .flex()
                     .flex_col()
+                    .child(self.render_icon_theme_picker(c, cx))
                     .children(self.render_variant_picker(c, cx))
                     .child(div().flex().flex_wrap().gap_3().py_2().children(cards))
                     .into_any_element()
             })
             .children(self.render_new_theme_prompt(c, cx))
+            .into_any_element()
+    }
+
+    /// Icon-theme picker: a segmented control over the installed icon themes,
+    /// a preview row of representative glyphs resolved through the *selected*
+    /// theme, and Import / Open-folder actions (T20-006).
+    pub(crate) fn render_icon_theme_picker(
+        &self,
+        c: &Palette,
+        cx: &mut Context<Self>,
+    ) -> gpui::AnyElement {
+        let active = self.active_icon_theme_id.clone();
+        let choices: Vec<(String, String)> = if self.icon_theme_files.is_empty() {
+            vec![("default".to_string(), "Labonair".to_string())]
+        } else {
+            self.icon_theme_files.clone()
+        };
+
+        // Preview glyphs for the currently-selected icon theme.
+        let store = self.theme.read(cx);
+        let preview_theme = store
+            .icon_registry()
+            .get(&active)
+            .unwrap_or_else(|_| store.icon_registry().builtin_theme());
+        let samples = [
+            ("main.rs", false, false),
+            ("app.tsx", false, false),
+            ("data.json", false, false),
+            ("README.md", false, false),
+            ("styles.css", false, false),
+            ("", true, false),
+        ];
+        let preview: Vec<gpui::AnyElement> = samples
+            .iter()
+            .map(|(name, is_dir, exp)| {
+                icon_for_path(preview_theme, name, *is_dir, *exp)
+                    .svg(c.muted)
+                    .into_any_element()
+            })
+            .collect();
+
+        div()
+            .flex()
+            .flex_col()
+            .gap_2()
+            .py_2()
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap_2()
+                    .child(
+                        div()
+                            .text_size(px(11.0))
+                            .text_color(c.muted)
+                            .child("Icon theme"),
+                    )
+                    .child(
+                        segmented_control("icon-theme", *c, active.clone())
+                            .segments(choices)
+                            .on_select(cx.listener(|this, key: &SharedString, _w, cx| {
+                                this.set_icon_theme(key.as_ref(), cx);
+                            })),
+                    ),
+            )
+            .child(div().flex().items_center().gap_2().children(preview))
+            .child(
+                div()
+                    .flex()
+                    .gap_2()
+                    .child(
+                        button(
+                            "icon-theme-import",
+                            *c,
+                            ButtonVariant::Outline,
+                            ButtonSize::Xs,
+                        )
+                        .child("Import icon theme\u{2026}")
+                        .on_click(
+                            cx.listener(|this, _: &ClickEvent, _w, cx| this.import_icon_theme(cx)),
+                        ),
+                    )
+                    .child(
+                        button(
+                            "icon-theme-folder",
+                            *c,
+                            ButtonVariant::Outline,
+                            ButtonSize::Xs,
+                        )
+                        .child("Open icon themes folder")
+                        .on_click(cx.listener(
+                            |_, _: &ClickEvent, _w, cx| {
+                                cx.reveal_path(&icon_themes_dir());
+                            },
+                        )),
+                    ),
+            )
             .into_any_element()
     }
 

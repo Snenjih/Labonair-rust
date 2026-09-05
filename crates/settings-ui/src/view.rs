@@ -32,7 +32,7 @@ pub use labonair_settings::SettingsStore;
 pub use labonair_settings_content::areas::AREAS;
 pub use labonair_theme::{ThemePreference, ThemeStore};
 pub use labonair_ui_kit::{
-    banner, button, disclosure, h_stack, list_header, list_separator, number_field,
+    banner, button, disclosure, h_stack, icon_for_path, list_header, list_separator, number_field,
     segmented_control, select_popover, select_trigger, v_stack, ButtonSize, ButtonVariant,
     IconName, ListItem, Palette, SelectOption, Severity, Switch,
 };
@@ -171,6 +171,11 @@ pub struct SettingsView {
     pub(crate) theme_files: Vec<ThemeEntry>,
     /// Which listed theme is active (`None` = built-in light/dark, no override).
     pub(crate) active_theme_id: Option<String>,
+    /// Installed icon themes as `(id, display name)` — `"default"` first
+    /// (T20-006). Refreshed with `theme_files` when the window opens.
+    pub(crate) icon_theme_files: Vec<(String, String)>,
+    /// Active icon-theme id (`"default"` = built-in glyph set).
+    pub(crate) active_icon_theme_id: String,
     /// Themes pane: `false` = Installed tab, `true` = Community tab.
     pub(crate) themes_community_tab: bool,
     /// Community/marketplace theme index (mock fallback on fetch failure).
@@ -326,6 +331,8 @@ impl SettingsView {
             mcp_token: None,
             theme_files: Vec::new(),
             active_theme_id: None,
+            icon_theme_files: Vec::new(),
+            active_icon_theme_id: "default".to_string(),
             themes_community_tab: false,
             community_themes: Vec::new(),
             community_error: None,
@@ -383,6 +390,14 @@ impl SettingsView {
             if !stored.is_empty() && stored != "default" {
                 self.active_theme_id = Some(stored);
             }
+        }
+        {
+            let stored = self.prefs.read(cx).get().icon_theme.clone();
+            self.active_icon_theme_id = if stored.is_empty() {
+                "default".to_string()
+            } else {
+                stored
+            };
         }
         self.load_system_fonts(cx);
         self.refresh_agents_directives();

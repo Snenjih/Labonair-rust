@@ -71,8 +71,8 @@ use crate::theme::ThemeStore;
 use crate::workspace::Workspace;
 use labonair_notifications::{notification_center, Notification};
 use labonair_ui_kit::{
-    button, context_menu, file_icon, folder_icon, icon_toggle_button, ButtonSize, ButtonVariant,
-    IconName, InputEvent, InputState, ListItem, MenuClick, MenuItem, Palette,
+    button, chevron_icon, context_menu, icon_for_path, icon_toggle_button, ButtonSize,
+    ButtonVariant, IconName, InputEvent, InputState, ListItem, MenuClick, MenuItem, Palette,
 };
 
 /// A menu action expressed against the view + window (wrapped into a
@@ -1309,19 +1309,13 @@ impl ExplorerView {
                 let is_drop_target =
                     entry.is_dir && self.drop_target.as_deref() == Some(path.as_path());
                 let is_expanded = entry.is_dir && self.model.expanded.contains(&path);
-                let chevron = if entry.is_dir {
-                    Some(if is_expanded {
-                        IconName::ChevronDown
-                    } else {
-                        IconName::ChevronRight
-                    })
-                } else {
-                    None
-                };
-                let glyph = if entry.is_dir {
-                    folder_icon(is_expanded)
-                } else {
-                    file_icon(&entry.name)
+                // Icons come from the user's active icon theme (T20-006).
+                let (glyph, chevron) = {
+                    let store = self.theme.read(cx);
+                    let it = store.icon_theme();
+                    let glyph = icon_for_path(it, &entry.name, entry.is_dir, is_expanded);
+                    let chevron = entry.is_dir.then(|| chevron_icon(it, is_expanded));
+                    (glyph, chevron)
                 };
                 let id: SharedString = format!("row:{}", path.display()).into();
                 let click_path = path.clone();
@@ -1913,6 +1907,7 @@ mod tests {
 
     #[test]
     fn file_icon_maps_known_extensions() {
+        use labonair_ui_kit::file_icon;
         assert_eq!(file_icon("main.rs"), IconName::FileCode);
         assert_eq!(file_icon("data.json"), IconName::FileJson);
         assert_eq!(file_icon("weird.unknownext"), IconName::File);

@@ -15,7 +15,7 @@ use labonair_backend::modules::settings::preferences::Preferences;
 use labonair_command_palette::{resolve_conflict, Conflict, KeybindMap, ShortcutId};
 #[cfg(test)]
 use labonair_theme::ThemeFile;
-use labonair_theme::{ThemeRegistry, ThemeStore};
+use labonair_theme::{IconThemeRegistry, ThemeRegistry, ThemeStore};
 
 use crate::store::PreferencesStore;
 use crate::view::ThemeEntry;
@@ -89,6 +89,25 @@ pub fn apply_prefs_to_theme(p: &Preferences, theme: &Entity<ThemeStore>, cx: &mu
         });
     }
     apply_stored_theme_variant(&p.theme_variant_overrides, theme, cx);
+
+    // Icon theme (T20-006): rescan the user icon-themes directory, then
+    // activate the persisted id (`""` / `"default"` → built-in glyph set).
+    theme.update(cx, |t, cx| {
+        t.reload_user_icon_themes(&icon_themes_dir(), cx);
+    });
+    let icon_id = if p.icon_theme.is_empty() {
+        "default"
+    } else {
+        p.icon_theme.as_str()
+    };
+    if theme
+        .update(cx, |t, cx| t.set_active_icon_theme(icon_id, cx))
+        .is_err()
+    {
+        theme.update(cx, |t, cx| {
+            let _ = t.set_active_icon_theme("default", cx);
+        });
+    }
 }
 
 /// Rescan the user themes directory into the live [`ThemeStore`] registry and
@@ -110,6 +129,33 @@ pub fn reload_theme_registry(
 /// The user themes directory (`<config_dir>/labonair/themes`).
 pub fn user_themes_dir() -> PathBuf {
     themes_dir()
+}
+
+/// The user icon-themes directory (`<config_dir>/labonair/icon_themes`).
+pub fn user_icon_themes_dir() -> PathBuf {
+    icon_themes_dir()
+}
+
+pub(crate) fn icon_themes_dir() -> PathBuf {
+    config_dir().join("icon_themes")
+}
+
+/// Rescan the user icon-themes directory into the live [`ThemeStore`] registry
+/// and re-resolve the active icon theme. Called on startup by
+/// [`apply_prefs_to_theme`] and by `labonair-shell`'s fs-watch on the folder
+/// (T20-006 live-reload).
+pub fn reload_icon_theme_registry(theme: &Entity<ThemeStore>, cx: &mut App) {
+    theme.update(cx, |t, cx| {
+        t.reload_user_icon_themes(&icon_themes_dir(), cx);
+    });
+}
+
+/// `(id, display name)` for every installed icon theme (built-in `"default"`
+/// first).
+pub fn icon_theme_choices() -> Vec<(String, String)> {
+    let mut reg = IconThemeRegistry::builtin();
+    reg.load_user_icon_themes(&icon_themes_dir());
+    reg.list().into_iter().map(|m| (m.id, m.name)).collect()
 }
 
 /// Re-apply the persisted `themeVariantOverrides[family][mode]` selection to the

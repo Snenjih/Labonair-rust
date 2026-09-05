@@ -106,6 +106,8 @@ pub struct Preferences {
     // ── Appearance & Layout ──────────────────────────────────────────────
     /// Active JSON theme id (`"default"` = built-in light/dark).
     pub app_theme: String,
+    /// Active icon theme id (`"default"` = built-in "Labonair" glyph set).
+    pub icon_theme: String,
     /// Per-theme light/dark variant overrides (`{ id: { light?, dark? } }`).
     pub theme_variant_overrides: BTreeMap<String, Value>,
     pub app_font_size: u32,
@@ -352,6 +354,7 @@ impl Default for Preferences {
             session_restore: false,
 
             app_theme: "default".to_string(),
+            icon_theme: "default".to_string(),
             theme_variant_overrides: BTreeMap::new(),
             app_font_size: 13,
             app_line_height: 1.5,

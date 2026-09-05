@@ -14,7 +14,8 @@ use std::path::Path;
 
 use crate::registry::Appearance;
 use crate::{
-    Animation, MonoFontWeight, RadiusScale, Shadows, Theme, ThemeFile, ThemeMeta, ThemeRegistry,
+    Animation, IconThemeContent, IconThemeMeta, IconThemeRegistry, MonoFontWeight, RadiusScale,
+    Shadows, Theme, ThemeFile, ThemeMeta, ThemeRegistry,
 };
 use gpui::{
     font, App, AppContext, Context, Entity, Font, FontFallbacks, FontFeatures, FontWeight, Global,
@@ -129,6 +130,12 @@ pub struct ThemeStore {
     active_family: Option<String>,
     /// Per-mode variant override for `active_family` (e.g. Catppuccin "Mocha").
     registry_variant: Option<String>,
+    /// The icon-theme registry (T20-006): the embedded built-in plus whatever
+    /// valid `*.json` files the user icon-themes directory holds.
+    icon_registry: IconThemeRegistry,
+    /// Active icon-theme id (`"default"` = the built-in "Labonair" set). Resolved
+    /// through [`IconThemeRegistry::get`] on every access by [`Self::icon_theme`].
+    active_icon_theme: String,
 }
 
 impl ThemeStore {
@@ -149,7 +156,70 @@ impl ThemeStore {
             registry: ThemeRegistry::builtin(),
             active_family: None,
             registry_variant: None,
+            icon_registry: IconThemeRegistry::builtin(),
+            active_icon_theme: crate::BUILTIN_ICON_THEME_ID.to_string(),
         }
+    }
+
+    // --- Icon-theme registry (T20-006) -------------------------------------
+
+    /// The icon-theme registry.
+    pub fn icon_registry(&self) -> &IconThemeRegistry {
+        &self.icon_registry
+    }
+
+    /// Every selectable icon theme (built-in first).
+    pub fn list_icon_themes(&self) -> Vec<IconThemeMeta> {
+        self.icon_registry.list()
+    }
+
+    /// The active icon-theme id (`"default"` for the built-in set). Persisted to
+    /// `appearance.icon_theme`.
+    pub fn active_icon_theme_id(&self) -> &str {
+        &self.active_icon_theme
+    }
+
+    /// The resolved active icon theme — falls back to the built-in set if the
+    /// stored id no longer names a registered theme.
+    pub fn icon_theme(&self) -> &IconThemeContent {
+        self.icon_registry
+            .get(&self.active_icon_theme)
+            .unwrap_or_else(|_| self.icon_registry.builtin_theme())
+    }
+
+    /// Activate an icon theme by id (`""` / `"default"` = built-in). The caller
+    /// persists the id to `appearance.icon_theme`.
+    pub fn set_active_icon_theme(
+        &mut self,
+        id: impl Into<String>,
+        cx: &mut Context<Self>,
+    ) -> Result<(), String> {
+        let id = id.into();
+        let id = if id.is_empty() {
+            crate::BUILTIN_ICON_THEME_ID.to_string()
+        } else {
+            id
+        };
+        if !self.icon_registry.contains(&id) {
+            return Err(format!("icon theme not found: {id}"));
+        }
+        if self.active_icon_theme != id {
+            self.active_icon_theme = id;
+            cx.notify();
+        }
+        Ok(())
+    }
+
+    /// Rescan the user icon-themes directory and rebuild the registry. If the
+    /// active theme vanished, fall back to the built-in set. Returns non-fatal
+    /// load warnings.
+    pub fn reload_user_icon_themes(&mut self, dir: &Path, cx: &mut Context<Self>) -> Vec<String> {
+        let warnings = self.icon_registry.load_user_icon_themes(dir);
+        if !self.icon_registry.contains(&self.active_icon_theme) {
+            self.active_icon_theme = crate::BUILTIN_ICON_THEME_ID.to_string();
+        }
+        cx.notify();
+        warnings
     }
 
     // --- Theme registry (T20-005) --------------------------------------------
@@ -1171,6 +1241,48 @@ mod tests {
                 s.reload_user_themes(&dir, cx);
                 assert_eq!(s.active_theme_id(), "default");
                 assert_eq!(s.primary(), Theme::dark().core.primary);
+            });
+        });
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[gpui::test]
+    fn icon_theme_activates_and_live_reloads(cx: &mut TestAppContext) {
+        let dir = std::env::temp_dir().join(format!("labonair-store-icons-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("mono.json");
+        std::fs::write(
+            &path,
+            r#"{ "name": "Mono", "file_suffixes": { "rs": "binary" },
+                "directory": { "collapsed": "folder", "expanded": "folder-open" },
+                "chevron": { "collapsed": "chevron-right", "expanded": "chevron-down" },
+                "default_file": "file" }"#,
+        )
+        .unwrap();
+
+        cx.update(|cx| {
+            let store = cx.new(|_| ThemeStore::new(WindowAppearance::Dark));
+            store.update(cx, |s, cx| {
+                // Built-in by default.
+                assert_eq!(s.active_icon_theme_id(), "default");
+                assert_eq!(s.icon_theme().file_glyph("main.rs"), "file-code");
+
+                s.reload_user_icon_themes(&dir, cx);
+                assert!(s.list_icon_themes().iter().any(|m| m.id == "mono"));
+                s.set_active_icon_theme("mono", cx).unwrap();
+                assert_eq!(s.icon_theme().file_glyph("main.rs"), "binary");
+
+                // Unknown id → error, active unchanged.
+                assert!(s.set_active_icon_theme("bogus", cx).is_err());
+                assert_eq!(s.active_icon_theme_id(), "mono");
+
+                // Delete the file, reload → falls back to the built-in set.
+                std::fs::remove_file(&path).unwrap();
+                s.reload_user_icon_themes(&dir, cx);
+                assert_eq!(s.active_icon_theme_id(), "default");
+                assert_eq!(s.icon_theme().file_glyph("main.rs"), "file-code");
             });
         });
 

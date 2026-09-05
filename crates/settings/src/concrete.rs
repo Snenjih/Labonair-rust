@@ -48,6 +48,10 @@ impl ThemeSettings {
         self.0.app_theme.as_deref().unwrap_or("default")
     }
 
+    pub fn icon_theme(&self) -> &str {
+        self.0.icon_theme.as_deref().unwrap_or("default")
+    }
+
     pub fn reduce_motion(&self) -> bool {
         self.0.reduce_motion.unwrap_or(false)
     }

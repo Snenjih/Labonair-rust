@@ -26,6 +26,8 @@
   "appearance": {
     // "default" = the built-in light/dark JSON theme.
     "appTheme": "default",
+    // "default" = the built-in "Labonair" file/folder glyph set.
+    "iconTheme": "default",
     "themeVariantOverrides": {},
     "appFontSize": 13,
     "appLineHeight": 1.5,

@@ -12,6 +12,8 @@ use serde_json::Value;
 pub struct AppearanceContent {
     /// Active JSON theme id (`"default"` = built-in light/dark).
     pub app_theme: Option<String>,
+    /// Active icon theme id (`"default"` = built-in "Labonair" glyph set).
+    pub icon_theme: Option<String>,
     /// Per-theme light/dark variant overrides (`{ id: { light?, dark? } }`).
     pub theme_variant_overrides: Option<BTreeMap<String, Value>>,
     pub app_font_size: Option<u32>,
@@ -45,6 +47,7 @@ impl AppearanceContent {
     pub fn defaults() -> Self {
         Self {
             app_theme: Some("default".to_string()),
+            icon_theme: Some("default".to_string()),
             theme_variant_overrides: Some(BTreeMap::new()),
             app_font_size: Some(13),
             app_line_height: Some(1.5),

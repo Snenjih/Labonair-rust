@@ -77,7 +77,7 @@ pub use disclosure::disclosure;
 pub use divider::{divider, Axis};
 #[cfg(any(debug_assertions, feature = "gallery"))]
 pub use gallery::{open_gallery_window, Gallery};
-pub use icon::{file_icon, folder_icon, IconName};
+pub use icon::{chevron_icon, file_icon, folder_icon, glyph_icon, icon_for_path, IconName};
 pub use indicator::{indicator, IndicatorSize};
 pub use kbd::{kbd, kbd_row, keybinding_hint};
 pub use list::{list_header, list_separator, ListItem};
@@ -103,10 +103,10 @@ pub use gpui_component::{badge::Badge, switch::Switch, tooltip::Tooltip};
 /// ```
 pub mod prelude {
     pub use crate::{
-        banner, button, checkbox, context_menu, disclosure, divider, file_icon, folder_icon,
-        h_stack, icon_toggle_button, indicator, kbd, kbd_row, keybinding_hint, list_header,
-        list_separator, number_field, popover, popover_menu, segmented_control, select_popover,
-        select_trigger, selected_label, toggle_base, v_stack,
+        banner, button, checkbox, chevron_icon, context_menu, disclosure, divider, file_icon,
+        folder_icon, glyph_icon, h_stack, icon_for_path, icon_toggle_button, indicator, kbd,
+        kbd_row, keybinding_hint, list_header, list_separator, number_field, popover, popover_menu,
+        segmented_control, select_popover, select_trigger, selected_label, toggle_base, v_stack,
     };
     pub use crate::{
         Axis, Badge, Banner, ButtonSize, ButtonVariant, Checkbox, IconName, IndicatorSize,

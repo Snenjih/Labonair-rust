@@ -274,6 +274,17 @@ pub(crate) fn bootstrap(
             labonair_settings_ui::reload_theme_registry(&prefs_w, &theme_w, cx);
         });
     }
+    // T20-006: same live-reload for the user icon-themes folder.
+    {
+        let theme_w = theme.clone();
+        labonair_settings::watch_dir(
+            cx,
+            labonair_settings_ui::user_icon_themes_dir(),
+            move |cx| {
+                labonair_settings_ui::reload_icon_theme_registry(&theme_w, cx);
+            },
+        );
+    }
     // `keymap.json` (T19-008): load + merge + bind, publish the display
     // global, then live-watch the file so an edit takes effect with no
     // restart. Must run after the theme/prefs wiring above so a startup
