@@ -57,8 +57,8 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use gpui::{
-    div, px, App, AppContext, ClickEvent, ClipboardItem, Context, Entity, ExternalPaths,
-    FocusHandle, Focusable, Hsla, InteractiveElement, IntoElement, KeyDownEvent, MouseButton,
+    div, px, uniform_list, App, AppContext, ClickEvent, ClipboardItem, Context, Entity,
+    ExternalPaths, FocusHandle, Focusable, Hsla, InteractiveElement, IntoElement, KeyDownEvent,
     MouseDownEvent, ParentElement, Pixels, Point, Render, SharedString, StatefulInteractiveElement,
     Styled, Task, Window,
 };
@@ -71,8 +71,8 @@ use crate::theme::ThemeStore;
 use crate::workspace::Workspace;
 use labonair_notifications::{notification_center, Notification};
 use labonair_ui_kit::{
-    button, chevron_icon, context_menu, icon_for_path, icon_toggle_button, ButtonSize,
-    ButtonVariant, IconName, InputEvent, InputState, ListItem, MenuClick, MenuItem, Palette,
+    button, chevron_icon, context_menu, icon_for_path, icon_toggle_button, tree_row, ButtonSize,
+    ButtonVariant, IconName, InputEvent, InputState, MenuClick, MenuItem, Palette, TreeRowState,
 };
 
 /// A menu action expressed against the view + window (wrapped into a
@@ -279,6 +279,36 @@ impl TreeModel {
         out
     }
 
+    /// Every entry in every *loaded* directory, regardless of `expanded` — the
+    /// traversal search filters over so a match can be found in a
+    /// collapsed-but-loaded subtree, not only in the rows currently on screen
+    /// (Zed-parity §8.6 / §14 "search can find entries that were not previously
+    /// expanded"). Still bounded by lazy loading: directories never opened are
+    /// not walked (that would need filesystem I/O on the render path).
+    fn all_loaded_rows(&self) -> Vec<Row> {
+        let mut out = Vec::new();
+        if let Some(root) = self.root.clone() {
+            self.walk_all(&root, 0, &mut out);
+        }
+        out
+    }
+
+    fn walk_all(&self, parent: &Path, depth: usize, out: &mut Vec<Row>) {
+        if let Some(NodeState::Loaded { entries, .. }) = self.nodes.get(parent) {
+            for entry in entries {
+                let path = parent.join(&entry.name);
+                out.push(Row::Entry {
+                    path: path.clone(),
+                    depth,
+                    entry: entry.clone(),
+                });
+                if entry.is_dir {
+                    self.walk_all(&path, depth + 1, out);
+                }
+            }
+        }
+    }
+
     fn walk(&self, parent: &Path, depth: usize, out: &mut Vec<Row>) {
         if let Some(pc) = &self.pending_create {
             if pc.parent == parent {
@@ -317,6 +347,92 @@ impl TreeModel {
             }
         }
     }
+}
+
+/// Presentation-ready, cheap-to-clone snapshot of one visible tree line
+/// (Zed-parity §12.4). Produced by [`flatten_rows`] with **no** filesystem
+/// access; the `uniform_list` render closure turns a `&[ExplorerRowData]`
+/// viewport window into elements. Visual state (`selected` / `cut` /
+/// `drop_target`) is resolved here once, not re-derived per row during render.
+#[derive(Clone, PartialEq, Debug)]
+pub(crate) enum ExplorerRowData {
+    Entry {
+        path: PathBuf,
+        name: String,
+        depth: usize,
+        is_dir: bool,
+        is_ignored: bool,
+        expanded: bool,
+        selected: bool,
+        cut: bool,
+        drop_target: bool,
+        drag_paths: Vec<PathBuf>,
+        drag_label: String,
+    },
+    PendingCreate {
+        depth: usize,
+    },
+    Rename {
+        depth: usize,
+    },
+    Loading {
+        depth: usize,
+    },
+    Error {
+        depth: usize,
+        message: String,
+    },
+    LoadMore {
+        parent: PathBuf,
+        depth: usize,
+    },
+}
+
+/// Turn a flattened [`Row`] list into presentation data. Pure — unit-tested
+/// below; no `self`, no GPUI, no IO.
+pub(crate) fn flatten_rows(
+    rows: Vec<Row>,
+    expanded: &HashSet<PathBuf>,
+    selection: &[PathBuf],
+    cut: &[PathBuf],
+    drop_target: Option<&Path>,
+) -> Vec<ExplorerRowData> {
+    let multi = selection.len() > 1;
+    rows.into_iter()
+        .map(|row| match row {
+            Row::Entry { path, depth, entry } => {
+                let selected = selection.iter().any(|p| p == &path);
+                let drag_paths = if selected && multi {
+                    selection.to_vec()
+                } else {
+                    vec![path.clone()]
+                };
+                let drag_label = if drag_paths.len() > 1 {
+                    format!("{} items", drag_paths.len())
+                } else {
+                    entry.name.clone()
+                };
+                ExplorerRowData::Entry {
+                    expanded: entry.is_dir && expanded.contains(&path),
+                    selected,
+                    cut: cut.iter().any(|p| p == &path),
+                    drop_target: entry.is_dir && drop_target == Some(path.as_path()),
+                    name: entry.name,
+                    is_dir: entry.is_dir,
+                    is_ignored: entry.is_ignored,
+                    depth,
+                    drag_paths,
+                    drag_label,
+                    path,
+                }
+            }
+            Row::PendingCreate { depth } => ExplorerRowData::PendingCreate { depth },
+            Row::Rename { depth } => ExplorerRowData::Rename { depth },
+            Row::Loading { depth } => ExplorerRowData::Loading { depth },
+            Row::Error { depth, message } => ExplorerRowData::Error { depth, message },
+            Row::LoadMore { parent, depth } => ExplorerRowData::LoadMore { parent, depth },
+        })
+        .collect()
 }
 
 pub struct ExplorerView {
@@ -538,10 +654,6 @@ impl ExplorerView {
     fn clip_clear(&mut self, cx: &mut Context<Self>) {
         self.clipboard = None;
         cx.notify();
-    }
-
-    fn is_cut(&self, path: &Path) -> bool {
-        matches!(&self.clipboard, Some(c) if c.op == ClipOp::Cut && c.paths.iter().any(|p| p == path))
     }
 
     fn paste_into(&mut self, dir: PathBuf, cx: &mut Context<Self>) {
@@ -1145,10 +1257,50 @@ impl Render for ExplorerView {
         } else {
             self.search_rows(&query)
         };
+        let cut_paths: Vec<PathBuf> = self
+            .clipboard
+            .as_ref()
+            .filter(|c| c.op == ClipOp::Cut)
+            .map(|c| c.paths.clone())
+            .unwrap_or_default();
+        let data = flatten_rows(
+            rows,
+            &self.model.expanded,
+            &self.selection,
+            &cut_paths,
+            self.drop_target.as_deref(),
+        );
+        let empty_search = data.is_empty() && !query.is_empty();
+        let view = cx.entity();
+        let edit_field = self.edit_field.clone();
+
+        let list_body: gpui::AnyElement = if empty_search {
+            div()
+                .px_3()
+                .py_2()
+                .text_xs()
+                .text_color(c.muted)
+                .child("No matches")
+                .into_any_element()
+        } else {
+            // Virtualised (§13 Phase 2.3): only the visible `[start..end]`
+            // window is turned into elements. The closure gets only
+            // `&mut Window, &mut App` — handlers go through `view.update(..)`.
+            uniform_list("explorer-rows", data.len(), move |range, _win, cx| {
+                range
+                    .map(|i| explorer_row_element(&data[i], c, &view, &edit_field, cx))
+                    .collect::<Vec<_>>()
+            })
+            .flex_1()
+            .into_any_element()
+        };
+
         let list = div()
             .id("explorer-list")
             .flex_1()
-            .overflow_y_scroll()
+            .flex()
+            .flex_col()
+            .min_h_0()
             .py_1()
             .on_drag_move(cx.listener(
                 move |this, _: &gpui::DragMoveEvent<DraggedPaths>, _w, cx| {
@@ -1165,19 +1317,7 @@ impl Render for ExplorerView {
             .on_drop(cx.listener(move |this, d: &ExternalPaths, _w, cx| {
                 this.drop_external(d.paths().to_vec(), root_ext.clone(), cx);
             }))
-            .children(if rows.is_empty() && !query.is_empty() {
-                vec![div()
-                    .px_3()
-                    .py_2()
-                    .text_xs()
-                    .text_color(c.muted)
-                    .child("No matches")
-                    .into_any_element()]
-            } else {
-                rows.into_iter()
-                    .map(|row| self.render_row(row, c, cx))
-                    .collect::<Vec<_>>()
-            });
+            .child(list_body);
 
         let mut container = div()
             .id("explorer")
@@ -1260,7 +1400,7 @@ impl ExplorerView {
 
     fn search_rows(&self, query: &str) -> Vec<Row> {
         self.model
-            .rows()
+            .all_loaded_rows()
             .into_iter()
             .filter(|row| match row {
                 Row::Entry { entry, .. } => entry.name.to_lowercase().contains(query),
@@ -1368,168 +1508,6 @@ impl ExplorerView {
                 )
                 .into_any_element(),
         )
-    }
-
-    fn on_edit_key(&mut self, ev: &KeyDownEvent, _window: &mut Window, cx: &mut Context<Self>) {
-        if ev.keystroke.key == "escape" {
-            self.cancel_edit(cx);
-            cx.stop_propagation();
-        }
-    }
-
-    fn render_inline_input(
-        &self,
-        depth: usize,
-        c: Colors,
-        cx: &mut Context<Self>,
-    ) -> impl IntoElement {
-        let mut row = div()
-            .flex()
-            .flex_row()
-            .items_center()
-            .pl(px(8.0 + depth as f32 * INDENT))
-            .pr_2()
-            .py(px(1.0))
-            .on_key_down(cx.listener(Self::on_edit_key));
-        if let Some(field) = &self.edit_field {
-            row = row.child(
-                div()
-                    .flex_1()
-                    .text_sm()
-                    .rounded_sm()
-                    .border_1()
-                    .border_color(c.accent)
-                    .child(labonair_ui_kit::field_input(field)),
-            );
-        }
-        row
-    }
-
-    fn render_row(&self, row: Row, c: Colors, cx: &mut Context<Self>) -> gpui::AnyElement {
-        match row {
-            Row::PendingCreate { depth } => self
-                .render_inline_input(depth + 1, c, cx)
-                .into_any_element(),
-            Row::Rename { depth } => self.render_inline_input(depth, c, cx).into_any_element(),
-            Row::Loading { depth } => text_row(depth, "Loading\u{2026}", c.muted),
-            Row::Error { depth, message } => text_row(depth, &message, c.err),
-            Row::LoadMore { parent, depth } => {
-                let id: SharedString = format!("more:{}", parent.display()).into();
-                button(id, c.palette, ButtonVariant::Link, ButtonSize::Xs)
-                    .pl(px(8.0 + (depth as f32 + 1.0) * INDENT))
-                    .justify_start()
-                    .child("Load more\u{2026}")
-                    .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
-                        this.load_dir(parent.clone(), true, cx);
-                    }))
-                    .into_any_element()
-            }
-            Row::Entry { path, depth, entry } => {
-                let is_selected = self.is_selected(&path);
-                let is_cut = self.is_cut(&path);
-                let is_drop_target =
-                    entry.is_dir && self.drop_target.as_deref() == Some(path.as_path());
-                let is_expanded = entry.is_dir && self.model.expanded.contains(&path);
-                // Icons come from the user's active icon theme (T20-006).
-                let (glyph, chevron) = {
-                    let store = self.theme.read(cx);
-                    let it = store.icon_theme();
-                    let glyph = icon_for_path(it, &entry.name, entry.is_dir, is_expanded);
-                    let chevron = entry.is_dir.then(|| chevron_icon(it, is_expanded));
-                    (glyph, chevron)
-                };
-                let id: SharedString = format!("row:{}", path.display()).into();
-                let click_path = path.clone();
-                let menu_path = path.clone();
-                let over_path = path.clone();
-                let drop_path = path.clone();
-                let is_dir = entry.is_dir;
-                let drag_paths = self.action_paths(&path);
-                let drag_label: SharedString = if drag_paths.len() > 1 {
-                    format!("{} items", drag_paths.len()).into()
-                } else {
-                    entry.name.clone().into()
-                };
-                let text_color = if is_cut {
-                    c.err
-                } else if entry.is_ignored {
-                    c.muted
-                } else {
-                    c.fg
-                };
-
-                let on_click = cx.listener(move |this, ev: &ClickEvent, window, cx| {
-                    let additive = ev.modifiers().secondary() || ev.modifiers().shift;
-                    this.select(click_path.clone(), additive, cx);
-                    if additive {
-                        return;
-                    }
-                    if is_dir {
-                        this.toggle_expanded(click_path.clone(), cx);
-                    } else {
-                        this.open_file(&click_path, ev.click_count() < 2, window, cx);
-                    }
-                });
-                let on_right_click = cx.listener(move |this, ev: &MouseDownEvent, _window, cx| {
-                    this.context_menu = Some((menu_path.clone(), ev.position));
-                    cx.notify();
-                });
-                let on_drag_move =
-                    cx.listener(move |this, _: &gpui::DragMoveEvent<DraggedPaths>, _w, cx| {
-                        if this.drop_target.as_deref() != Some(over_path.as_path()) {
-                            this.drop_target = Some(over_path.clone());
-                            cx.notify();
-                        }
-                    });
-                let on_drop_move = cx.listener(move |this, d: &DraggedPaths, _w, cx| {
-                    this.drop_move(d.paths.clone(), drop_path.clone(), cx);
-                });
-                let on_drop_external = cx.listener({
-                    let drop_path = path.clone();
-                    move |this, d: &ExternalPaths, _w, cx| {
-                        this.drop_external(d.paths().to_vec(), drop_path.clone(), cx);
-                    }
-                });
-
-                let item = ListItem::new(id, text_color, c.muted, c.border)
-                    .selected(is_selected && !is_drop_target)
-                    .child(
-                        div()
-                            .w(px(10.0))
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .children(chevron.map(|ch| ch.svg(c.muted).size(px(12.0)))),
-                    )
-                    .child(div().child(glyph.svg(c.muted)))
-                    .child(div().flex_1().child(SharedString::from(entry.name.clone())))
-                    .extra(move |mut row: gpui::Stateful<gpui::Div>| {
-                        row = row.pl(px(8.0 + depth as f32 * INDENT)).pr_2().text_sm();
-                        if is_drop_target {
-                            row = row.bg(c.accent);
-                        }
-                        if is_cut {
-                            row = row.opacity(0.5);
-                        }
-                        row = row
-                            .on_click(on_click)
-                            .on_mouse_down(MouseButton::Right, on_right_click)
-                            .on_drag(DraggedPaths { paths: drag_paths }, move |_, _, _, cx| {
-                                cx.new(|_| DragPreview {
-                                    label: drag_label.clone(),
-                                })
-                            });
-                        if is_dir {
-                            row = row
-                                .on_drag_move(on_drag_move)
-                                .on_drop(on_drop_move)
-                                .on_drop(on_drop_external);
-                        }
-                        row
-                    });
-                item.into_any_element()
-            }
-        }
     }
 
     fn render_context_menu(
@@ -1805,14 +1783,205 @@ impl ExplorerView {
     }
 }
 
-fn text_row(depth: usize, text: &str, color: Hsla) -> gpui::AnyElement {
+fn text_row(depth: usize, row_h: Pixels, text: &str, color: Hsla) -> gpui::AnyElement {
     div()
+        .flex()
+        .items_center()
+        .h(row_h)
         .pl(px(8.0 + depth as f32 * INDENT))
-        .py(px(2.0))
+        .pr_2()
         .text_xs()
         .text_color(color)
         .child(SharedString::from(text.to_string()))
         .into_any_element()
+}
+
+/// The inline create/rename text-field row. Rendered inside the `uniform_list`
+/// closure, so it wires Escape through `view.update(..)` rather than a
+/// `cx.listener` (which needs `&mut Context`).
+fn inline_input_row(
+    depth: usize,
+    row_h: Pixels,
+    accent: Hsla,
+    view: &Entity<ExplorerView>,
+    field: &Option<Entity<InputState>>,
+) -> gpui::AnyElement {
+    let v = view.clone();
+    let mut row = div()
+        .flex()
+        .flex_row()
+        .items_center()
+        .h(row_h)
+        .pl(px(8.0 + depth as f32 * INDENT))
+        .pr_2()
+        .on_key_down(move |ev: &KeyDownEvent, _w, cx| {
+            if ev.keystroke.key == "escape" {
+                v.update(cx, |this, cx| this.cancel_edit(cx));
+                cx.stop_propagation();
+            }
+        });
+    if let Some(field) = field {
+        row = row.child(
+            div()
+                .flex_1()
+                .text_sm()
+                .rounded_sm()
+                .border_1()
+                .border_color(accent)
+                .child(labonair_ui_kit::field_input(field)),
+        );
+    }
+    row.into_any_element()
+}
+
+/// Turn one [`ExplorerRowData`] into an element. Free function so it can run
+/// inside the `uniform_list` render closure (which only has `&mut Window,
+/// &mut App`); every handler goes through `view.update(..)`.
+fn explorer_row_element(
+    data: &ExplorerRowData,
+    c: Colors,
+    view: &Entity<ExplorerView>,
+    edit_field: &Option<Entity<InputState>>,
+    cx: &mut App,
+) -> gpui::AnyElement {
+    let row_h = c.palette.density_tokens().tree_row_height();
+    match data {
+        ExplorerRowData::PendingCreate { depth } => {
+            inline_input_row(depth + 1, row_h, c.accent, view, edit_field)
+        }
+        ExplorerRowData::Rename { depth } => {
+            inline_input_row(*depth, row_h, c.accent, view, edit_field)
+        }
+        ExplorerRowData::Loading { depth } => text_row(*depth, row_h, "Loading\u{2026}", c.muted),
+        ExplorerRowData::Error { depth, message } => text_row(*depth, row_h, message, c.err),
+        ExplorerRowData::LoadMore { parent, depth } => {
+            let id: SharedString = format!("more:{}", parent.display()).into();
+            let v = view.clone();
+            let p = parent.clone();
+            button(id, c.palette, ButtonVariant::Link, ButtonSize::Xs)
+                .h(row_h)
+                .pl(px(8.0 + (*depth as f32 + 1.0) * INDENT))
+                .justify_start()
+                .child("Load more\u{2026}")
+                .on_click(move |_: &ClickEvent, _w, cx| {
+                    v.update(cx, |this, cx| this.load_dir(p.clone(), true, cx));
+                })
+                .into_any_element()
+        }
+        ExplorerRowData::Entry {
+            path,
+            name,
+            depth,
+            is_dir,
+            is_ignored,
+            expanded,
+            selected,
+            cut,
+            drop_target,
+            drag_paths,
+            drag_label,
+        } => {
+            let (glyph, chevron) = {
+                let store = view.read(cx).theme.read(cx);
+                let it = store.icon_theme();
+                (
+                    icon_for_path(it, name, *is_dir, *expanded),
+                    is_dir.then(|| chevron_icon(it, *expanded)),
+                )
+            };
+
+            let id: SharedString = format!("row:{}", path.display()).into();
+            let is_dir = *is_dir;
+            let (cut, drop_target) = (*cut, *drop_target);
+
+            let on_click = {
+                let v = view.clone();
+                let p = path.clone();
+                move |ev: &ClickEvent, window: &mut Window, cx: &mut App| {
+                    let additive = ev.modifiers().secondary() || ev.modifiers().shift;
+                    let peek = ev.click_count() < 2;
+                    v.update(cx, |this, cx| {
+                        this.select(p.clone(), additive, cx);
+                        if additive {
+                            return;
+                        }
+                        if is_dir {
+                            this.toggle_expanded(p.clone(), cx);
+                        } else {
+                            this.open_file(&p, peek, window, cx);
+                        }
+                    });
+                }
+            };
+            let on_right = {
+                let v = view.clone();
+                let p = path.clone();
+                move |ev: &MouseDownEvent, _w: &mut Window, cx: &mut App| {
+                    v.update(cx, |this, cx| {
+                        this.context_menu = Some((p.clone(), ev.position));
+                        cx.notify();
+                    });
+                }
+            };
+
+            let drag_paths = drag_paths.clone();
+            let drag_label: SharedString = drag_label.clone().into();
+            let over_v = view.clone();
+            let over_p = path.clone();
+            let drop_v = view.clone();
+            let drop_p = path.clone();
+            let ext_v = view.clone();
+            let ext_p = path.clone();
+
+            let mut tr = tree_row(id, c.palette, SharedString::from(name.clone()))
+                .depth(*depth)
+                .indent_step(INDENT)
+                .chevron(chevron)
+                .icon(glyph)
+                .tooltip(SharedString::from(path.to_string_lossy().to_string()))
+                .state(TreeRowState {
+                    selected: *selected && !drop_target,
+                    cut,
+                    drop_target,
+                    ..Default::default()
+                })
+                .on_click(on_click)
+                .on_secondary_down(on_right);
+            if *is_ignored && !cut {
+                tr = tr.label_tint(c.muted);
+            }
+            tr.extra(move |mut row| {
+                row = row.on_drag(DraggedPaths { paths: drag_paths }, move |_, _, _, cx| {
+                    cx.new(|_| DragPreview {
+                        label: drag_label.clone(),
+                    })
+                });
+                if is_dir {
+                    row = row
+                        .on_drag_move(move |_: &gpui::DragMoveEvent<DraggedPaths>, _w, cx| {
+                            over_v.update(cx, |this, cx| {
+                                if this.drop_target.as_deref() != Some(over_p.as_path()) {
+                                    this.drop_target = Some(over_p.clone());
+                                    cx.notify();
+                                }
+                            });
+                        })
+                        .on_drop(move |d: &DraggedPaths, _w, cx| {
+                            drop_v.update(cx, |this, cx| {
+                                this.drop_move(d.paths.clone(), drop_p.clone(), cx)
+                            });
+                        })
+                        .on_drop(move |d: &ExternalPaths, _w, cx| {
+                            ext_v.update(cx, |this, cx| {
+                                this.drop_external(d.paths().to_vec(), ext_p.clone(), cx)
+                            });
+                        });
+                }
+                row
+            })
+            .into_any_element()
+        }
+    }
 }
 
 /// [`Panel`](labonair_panel::Panel) wiring (T17-001).
@@ -2032,5 +2201,100 @@ mod tests {
         assert_eq!(file_icon("main.rs"), IconName::FileCode);
         assert_eq!(file_icon("data.json"), IconName::FileJson);
         assert_eq!(file_icon("weird.unknownext"), IconName::File);
+    }
+
+    #[test]
+    fn flatten_preserves_depth_expansion_loading_and_selection_across_ranges() {
+        let mut m = TreeModel::default();
+        m.set_root(Some(PathBuf::from("/r")));
+        m.set_node(
+            PathBuf::from("/r"),
+            loaded(&[("dir", true), ("a.txt", false), ("b.txt", false)]),
+        );
+        m.toggle_expanded(PathBuf::from("/r/dir"));
+        m.set_node(PathBuf::from("/r/dir"), NodeState::Loading);
+
+        let rows = m.rows(); // dir(0), Loading(1), a.txt(0), b.txt(0)
+        let selection = vec![PathBuf::from("/r/a.txt")];
+        let data = flatten_rows(rows, &m.expanded, &selection, &[], None);
+        assert_eq!(data.len(), 4);
+
+        match &data[0] {
+            ExplorerRowData::Entry {
+                path,
+                depth,
+                is_dir,
+                expanded,
+                ..
+            } => {
+                assert_eq!(path, &PathBuf::from("/r/dir"));
+                assert_eq!(*depth, 0);
+                assert!(*is_dir && *expanded);
+            }
+            other => panic!("expected dir entry, got {other:?}"),
+        }
+        assert!(matches!(&data[1], ExplorerRowData::Loading { depth: 1 }));
+
+        // Selection state survives regardless of which viewport window the
+        // virtual list asks for.
+        let window = &data[2..4];
+        match &window[0] {
+            ExplorerRowData::Entry { path, selected, .. } => {
+                assert_eq!(path, &PathBuf::from("/r/a.txt"));
+                assert!(*selected, "selected entry keeps its flag in a sub-range");
+            }
+            other => panic!("expected a.txt entry, got {other:?}"),
+        }
+        assert!(matches!(
+            &window[1],
+            ExplorerRowData::Entry {
+                selected: false,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn flatten_marks_cut_and_drop_target() {
+        let mut m = TreeModel::default();
+        m.set_root(Some(PathBuf::from("/r")));
+        m.set_node(
+            PathBuf::from("/r"),
+            loaded(&[("d", true), ("x.txt", false)]),
+        );
+        let cut = vec![PathBuf::from("/r/x.txt")];
+        let data = flatten_rows(m.rows(), &m.expanded, &[], &cut, Some(Path::new("/r/d")));
+        // dir "d" is the drop target; file "x.txt" is cut.
+        assert!(matches!(
+            &data[0],
+            ExplorerRowData::Entry {
+                drop_target: true,
+                is_dir: true,
+                ..
+            }
+        ));
+        assert!(matches!(&data[1], ExplorerRowData::Entry { cut: true, .. }));
+    }
+
+    #[test]
+    fn search_traverses_collapsed_but_loaded_subtrees() {
+        let mut m = TreeModel::default();
+        m.set_root(Some(PathBuf::from("/r")));
+        m.set_node(PathBuf::from("/r"), loaded(&[("sub", true)]));
+        m.set_node(PathBuf::from("/r/sub"), loaded(&[("needle.rs", false)]));
+        // `sub` was never expanded.
+        assert!(!m.expanded.contains(Path::new("/r/sub")));
+
+        // The viewport source (`rows`) does not descend into the collapsed dir…
+        assert!(!m
+            .rows()
+            .iter()
+            .any(|r| matches!(r, Row::Entry { entry, .. } if entry.name == "needle.rs")));
+        // …but the search source (`all_loaded_rows`) does — so search is not
+        // limited to the rows currently on screen.
+        assert!(m
+            .all_loaded_rows()
+            .iter()
+            .any(|r| matches!(r, Row::Entry { entry, .. } if entry.name == "needle.rs")));
     }
 }

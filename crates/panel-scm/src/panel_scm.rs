@@ -30,9 +30,9 @@ use std::time::Duration;
 
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, px, App, ClickEvent, Context, Entity, FocusHandle, Focusable, InteractiveElement,
-    IntoElement, KeyDownEvent, MouseButton, MouseDownEvent, ParentElement, Pixels, Point, Render,
-    SharedString, StatefulInteractiveElement, Styled, Window,
+    div, px, uniform_list, App, ClickEvent, Context, Entity, FocusHandle, Focusable,
+    InteractiveElement, IntoElement, KeyDownEvent, MouseDownEvent, ParentElement, Pixels, Point,
+    Render, SharedString, StatefulInteractiveElement, Styled, Window,
 };
 use labonair_backend::modules::git::{self, Branch, FileStatus, GitStatus, WorkspaceGitState};
 use labonair_backend::App as Backend;
@@ -41,8 +41,8 @@ use tokio::runtime::Handle as TokioHandle;
 use crate::theme::ThemeStore;
 use labonair_notifications::notify_err;
 use labonair_ui_kit::{
-    button, checkbox, context_menu, disclosure, h_stack, ButtonSize, ButtonVariant, IconName,
-    ListItem, MenuItem, Palette,
+    button, checkbox, context_menu, disclosure, git_change_row, h_stack, ButtonSize, ButtonVariant,
+    IconName, ListItem, MenuItem, Palette, StageState,
 };
 
 /// A source-control file-menu action, wrapped into a click handler by
@@ -335,12 +335,249 @@ fn bucketize(status: &GitStatus) -> Buckets {
 
 // ─── View ────────────────────────────────────────────────────────────────────
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Section {
     Conflicts,
     Staged,
     Unstaged,
     Untracked,
+}
+
+/// One line of the flattened Source-Control presentation list (Zed-parity
+/// §12.5). Built by [`flatten_git`] independently of the nested section render
+/// loops, then virtualised. `Directory` / `Loading` / `Error` variants from the
+/// spec are deferred to Phase 4 (tree/flat grouping + Project Diff); this phase
+/// keeps the existing flat status buckets.
+#[derive(Clone, PartialEq, Debug)]
+pub(crate) enum GitListEntry {
+    SectionHeader {
+        section: Section,
+        title: &'static str,
+        count: usize,
+        /// Aggregate staging state of the section's files.
+        stage: StageState,
+        collapsed: bool,
+    },
+    File {
+        section: Section,
+        path: String,
+        letter: char,
+        staged: bool,
+        untracked: bool,
+        selected: bool,
+    },
+    EmptyState,
+}
+
+/// Fold a set of per-file staged flags into an aggregate tri-state.
+pub(crate) fn aggregate_stage(staged_flags: &[bool]) -> StageState {
+    if staged_flags.is_empty() || staged_flags.iter().all(|s| !s) {
+        StageState::Unstaged
+    } else if staged_flags.iter().all(|s| *s) {
+        StageState::Staged
+    } else {
+        StageState::PartiallyStaged
+    }
+}
+
+/// Flatten the status buckets into one presentation list. Pure — no `self`, no
+/// GPUI, no IO; unit-tested below.
+pub(crate) fn flatten_git(
+    sections: &[(Section, &'static str, &[FileStatus])],
+    collapsed: &std::collections::HashSet<u8>,
+    selected: Option<&str>,
+) -> Vec<GitListEntry> {
+    let mut out = Vec::new();
+    for (section, title, files) in sections {
+        if files.is_empty() {
+            continue;
+        }
+        let staged = matches!(section, Section::Staged);
+        let untracked = matches!(section, Section::Untracked);
+        let key = *section as u8;
+        let is_collapsed = collapsed.contains(&key);
+        let flags: Vec<bool> = files.iter().map(|_| staged).collect();
+        out.push(GitListEntry::SectionHeader {
+            section: *section,
+            title,
+            count: files.len(),
+            stage: aggregate_stage(&flags),
+            collapsed: is_collapsed,
+        });
+        if !is_collapsed {
+            for f in *files {
+                out.push(GitListEntry::File {
+                    section: *section,
+                    path: f.path.clone(),
+                    letter: status_letter(f, untracked),
+                    staged,
+                    untracked,
+                    selected: selected == Some(f.path.as_str()),
+                });
+            }
+        }
+    }
+    if out.is_empty() {
+        out.push(GitListEntry::EmptyState);
+    }
+    out
+}
+
+/// Tint for a status letter (independent of the staging checkbox).
+fn status_color(letter: char, c: Colors) -> gpui::Hsla {
+    match letter {
+        'A' | '?' => c.success,
+        'D' => c.error,
+        'M' | 'R' | 'C' => c.modified,
+        'U' => c.warning,
+        _ => c.muted,
+    }
+}
+
+/// Render one [`GitListEntry`] into an element. Free function so it can run
+/// inside the `uniform_list` render closure (only `&mut Window, &mut App`);
+/// every handler goes through `view.update(..)`.
+fn git_list_element(
+    entry: &GitListEntry,
+    c: Colors,
+    row_h: Pixels,
+    view: &Entity<GitPanelView>,
+) -> gpui::AnyElement {
+    match entry {
+        GitListEntry::EmptyState => div()
+            .flex()
+            .items_center()
+            .h(row_h)
+            .px(px(12.0))
+            .text_size(px(11.0))
+            .text_color(c.muted)
+            .child(SharedString::from("No changes"))
+            .into_any_element(),
+        GitListEntry::SectionHeader {
+            section,
+            title,
+            count,
+            stage,
+            collapsed,
+        } => {
+            let key = *section as u8;
+            let v = view.clone();
+            let label = match stage {
+                StageState::PartiallyStaged => {
+                    format!("{} ({}) \u{2022}", title.to_uppercase(), count)
+                }
+                _ => format!("{} ({})", title.to_uppercase(), count),
+            };
+            div()
+                .flex()
+                .items_center()
+                .justify_between()
+                .h(row_h)
+                .px(px(8.0))
+                .child(
+                    disclosure(
+                        SharedString::from(format!("git-sec-{title}")),
+                        SharedString::from(label),
+                        *collapsed,
+                        c.muted,
+                        c.fg,
+                    )
+                    .text_size(px(10.0))
+                    .on_click(move |_: &ClickEvent, _w, cx| {
+                        v.update(cx, |this, cx| {
+                            if this.collapsed.contains(&key) {
+                                this.collapsed.remove(&key);
+                            } else {
+                                this.collapsed.insert(key);
+                            }
+                            cx.notify();
+                        });
+                    }),
+                )
+                .into_any_element()
+        }
+        GitListEntry::File {
+            section,
+            path,
+            letter,
+            staged,
+            untracked,
+            selected,
+        } => {
+            let section = *section;
+            let letter = *letter;
+            let lc = status_color(letter, c);
+            let stage = if *staged {
+                StageState::Staged
+            } else {
+                StageState::Unstaged
+            };
+            let id = format!("git-file-{}-{}", section as u8, path);
+            let can_discard = matches!(section, Section::Unstaged | Section::Conflicts);
+
+            let actions = can_discard.then(|| {
+                let v = view.clone();
+                let p = path.clone();
+                labonair_ui_kit::button_no_hover(
+                    SharedString::from(format!("discard-{id}")),
+                    c.palette,
+                    ButtonVariant::Ghost,
+                    ButtonSize::IconXs,
+                )
+                .text_color(c.muted)
+                .hover(|s| s.text_color(c.error))
+                .child(IconName::Refresh.svg(c.muted).size(px(11.0)))
+                .on_click(move |_: &ClickEvent, _w, cx| {
+                    cx.stop_propagation();
+                    v.update(cx, |this, cx| this.discard_file(p.clone(), cx));
+                })
+            });
+
+            let sel = Selected {
+                path: path.clone(),
+                staged: *staged,
+                untracked: *untracked,
+            };
+            let click_v = view.clone();
+            let menu_v = view.clone();
+            let menu_p = path.clone();
+            let toggle_v = view.clone();
+            let toggle_p = path.clone();
+
+            let mut row = git_change_row(
+                SharedString::from(id),
+                c.palette,
+                stage,
+                SharedString::from(short_path(path)),
+            )
+            .status(letter.to_string(), lc)
+            .selected(*selected)
+            .tooltip(SharedString::from(path.clone()))
+            .on_toggle_stage(move |want_staged: &bool, _w, cx| {
+                let want_staged = *want_staged;
+                toggle_v.update(cx, |this, cx| {
+                    if want_staged {
+                        this.stage_file(toggle_p.clone(), cx);
+                    } else {
+                        this.unstage_file(toggle_p.clone(), cx);
+                    }
+                });
+            })
+            .on_click(move |_: &ClickEvent, _w, cx| {
+                click_v.update(cx, |this, cx| this.select_file(sel.clone(), cx));
+            })
+            .on_secondary_down(move |ev: &MouseDownEvent, _w, cx| {
+                menu_v.update(cx, |this, cx| {
+                    this.file_menu = Some((menu_p.clone(), section, ev.position));
+                    cx.notify();
+                });
+            });
+            if let Some(a) = actions {
+                row = row.actions(a);
+            }
+            row.into_any_element()
+        }
+    }
 }
 
 /// Which hand-rolled text field currently receives key events (only one is
@@ -1505,16 +1742,6 @@ impl GitPanelView {
         }
     }
 
-    fn status_color(&self, letter: char, c: Colors) -> gpui::Hsla {
-        match letter {
-            'A' | '?' => c.success,
-            'D' => c.error,
-            'M' | 'R' | 'C' => c.modified,
-            'U' => c.warning,
-            _ => c.muted,
-        }
-    }
-
     fn tool_btn(
         &self,
         id: &'static str,
@@ -1528,173 +1755,6 @@ impl GitPanelView {
             .hover(|s| s.bg(c.border).text_color(c.fg))
             .child(label.into())
             .on_click(cx.listener(move |this, _: &ClickEvent, w, cx| on_click(this, w, cx)))
-    }
-
-    fn render_section(
-        &self,
-        section: Section,
-        title: &'static str,
-        files: &[FileStatus],
-        c: Colors,
-        cx: &mut Context<Self>,
-    ) -> gpui::AnyElement {
-        if files.is_empty() {
-            return div().into_any_element();
-        }
-        let key = section as u8;
-        let collapsed = self.collapsed.contains(&key);
-        let untracked = matches!(section, Section::Untracked);
-        let staged = matches!(section, Section::Staged);
-
-        let header = div()
-            .flex()
-            .items_center()
-            .justify_between()
-            .h(px(22.0))
-            .px(px(8.0))
-            .child(
-                disclosure(
-                    SharedString::from(format!("git-sec-{title}")),
-                    SharedString::from(format!("{} ({})", title.to_uppercase(), files.len())),
-                    collapsed,
-                    c.muted,
-                    c.fg,
-                )
-                .text_size(px(10.0))
-                .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
-                    if this.collapsed.contains(&key) {
-                        this.collapsed.remove(&key);
-                    } else {
-                        this.collapsed.insert(key);
-                    }
-                    cx.notify();
-                })),
-            );
-
-        let mut list = div().flex().flex_col();
-        if !collapsed {
-            for f in files {
-                let letter = status_letter(f, untracked);
-                let lc = self.status_color(letter, c);
-                let path = f.path.clone();
-                let selected = self
-                    .selected
-                    .as_ref()
-                    .map(|s| s.path == path)
-                    .unwrap_or(false);
-                let sel = Selected {
-                    path: path.clone(),
-                    staged,
-                    untracked,
-                };
-                let action_path = path.clone();
-                let can_discard = matches!(section, Section::Unstaged | Section::Conflicts);
-                let discard_btn = can_discard.then(|| {
-                    let dp = path.clone();
-                    labonair_ui_kit::button_no_hover(
-                        SharedString::from(format!("discard-{key}-{path}")),
-                        c.palette,
-                        ButtonVariant::Ghost,
-                        ButtonSize::IconXs,
-                    )
-                    .text_color(c.muted)
-                    .hover(|s| s.text_color(c.error))
-                    .child(SharedString::from("\u{21BA}"))
-                    .on_click(cx.listener(
-                        move |this, _: &ClickEvent, _w, cx| {
-                            cx.stop_propagation();
-                            this.discard_file(dp.clone(), cx);
-                        },
-                    ))
-                });
-                let trailing = h_stack()
-                    .gap(px(2.0))
-                    .children(discard_btn)
-                    .child(self.row_action(section, action_path, c, cx));
-
-                let on_click = cx.listener(move |this, _: &ClickEvent, _w, cx| {
-                    this.select_file(sel.clone(), cx);
-                });
-                let on_right_click = {
-                    let mp = path.clone();
-                    cx.listener(move |this, ev: &MouseDownEvent, _w, cx| {
-                        this.file_menu = Some((mp.clone(), section, ev.position));
-                        cx.notify();
-                    })
-                };
-
-                let row = ListItem::new(
-                    SharedString::from(format!("git-file-{}-{}", key, path)),
-                    c.fg,
-                    c.muted,
-                    c.border,
-                )
-                .child(
-                    div()
-                        .w(px(12.0))
-                        .flex_shrink_0()
-                        .text_color(lc)
-                        .text_size(px(11.0))
-                        .child(SharedString::from(letter.to_string())),
-                )
-                .child(
-                    div()
-                        .flex_1()
-                        .overflow_hidden()
-                        .whitespace_nowrap()
-                        .child(SharedString::from(short_path(&path))),
-                )
-                .trailing(trailing)
-                .hover_style(move |s| s.bg(c.border))
-                .extra(move |mut row| {
-                    row = row.h(px(22.0)).text_size(px(12.0));
-                    if selected {
-                        row = row.bg(c.accent);
-                    }
-                    row.on_click(on_click)
-                        .on_mouse_down(MouseButton::Right, on_right_click)
-                });
-                list = list.child(row);
-            }
-        }
-
-        div()
-            .flex()
-            .flex_col()
-            .child(header)
-            .child(list)
-            .into_any_element()
-    }
-
-    fn row_action(
-        &self,
-        section: Section,
-        path: String,
-        c: Colors,
-        cx: &mut Context<Self>,
-    ) -> gpui::AnyElement {
-        let (glyph, id): (&str, String) = match section {
-            Section::Staged => ("\u{2212}", format!("unstage-{path}")),
-            _ => ("+", format!("stage-{path}")),
-        };
-        labonair_ui_kit::button_no_hover(
-            SharedString::from(id),
-            c.palette,
-            ButtonVariant::Ghost,
-            ButtonSize::IconXs,
-        )
-        .text_color(c.muted)
-        .hover(|s| s.text_color(c.fg))
-        .child(SharedString::from(glyph))
-        .on_click(cx.listener(move |this, ev: &ClickEvent, _w, cx| {
-            cx.stop_propagation();
-            let _ = ev;
-            match section {
-                Section::Staged => this.unstage_file(path.clone(), cx),
-                _ => this.stage_file(path.clone(), cx),
-            }
-        }))
-        .into_any_element()
     }
 
     fn render_diff(&self, c: Colors, cx: &mut Context<Self>) -> gpui::AnyElement {
@@ -2967,10 +3027,6 @@ impl Render for GitPanelView {
                 untracked: vec![],
             });
 
-        let total_changes = buckets.conflicted.len()
-            + buckets.staged.len()
-            + buckets.unstaged.len()
-            + buckets.untracked.len();
         let has_unstaged = !buckets.unstaged.is_empty() || !buckets.untracked.is_empty();
 
         // Action bar.
@@ -3027,42 +3083,29 @@ impl Render for GitPanelView {
         root = root.child(self.render_stash_panel(c, cx));
         root = root.child(self.render_diff(c, cx));
 
-        let mut list = div()
-            .id("git-file-list")
-            .flex()
-            .flex_col()
-            .flex_1()
-            .min_h_0()
-            .overflow_y_scroll()
-            .py(px(2.0));
-
-        if total_changes == 0 {
-            list = list.child(
-                div()
-                    .p(px(12.0))
-                    .text_size(px(11.0))
-                    .text_color(c.muted)
-                    .child(SharedString::from("No changes")),
-            );
-        } else {
-            list = list
-                .child(self.render_section(
-                    Section::Conflicts,
-                    "Conflicts",
-                    &buckets.conflicted,
-                    c,
-                    cx,
-                ))
-                .child(self.render_section(Section::Staged, "Staged", &buckets.staged, c, cx))
-                .child(self.render_section(Section::Unstaged, "Changes", &buckets.unstaged, c, cx))
-                .child(self.render_section(
-                    Section::Untracked,
-                    "Untracked",
-                    &buckets.untracked,
-                    c,
-                    cx,
-                ));
-        }
+        // Flattened, virtualised change list (§13 Phase 2.4 / §12.5). The
+        // section render loops are replaced by one `Vec<GitListEntry>`; only
+        // the visible window is turned into elements.
+        let sections: [(Section, &'static str, &[FileStatus]); 4] = [
+            (Section::Conflicts, "Conflicts", &buckets.conflicted),
+            (Section::Staged, "Staged", &buckets.staged),
+            (Section::Unstaged, "Changes", &buckets.unstaged),
+            (Section::Untracked, "Untracked", &buckets.untracked),
+        ];
+        let entries = flatten_git(
+            &sections,
+            &self.collapsed,
+            self.selected.as_ref().map(|s| s.path.as_str()),
+        );
+        let row_h = c.palette.density_tokens().tree_row_height();
+        let view = cx.entity();
+        let list = uniform_list("git-file-list", entries.len(), move |range, _win, _cx| {
+            range
+                .map(|i| git_list_element(&entries[i], c, row_h, &view))
+                .collect::<Vec<_>>()
+        })
+        .flex_1()
+        .py(px(2.0));
 
         root.child(list)
             .child(self.render_branch_picker(c, cx))
@@ -3652,5 +3695,95 @@ mod tests {
         assert_eq!(short_path("a.txt"), "a.txt");
         assert_eq!(short_path("src/a.txt"), "src/a.txt");
         assert_eq!(short_path("a/b/c/d.txt"), "\u{2026}/c/d.txt");
+    }
+
+    fn fstat(path: &str) -> FileStatus {
+        FileStatus {
+            path: path.into(),
+            original_path: None,
+            index_status: 'M',
+            worktree_status: '.',
+            submodule: None,
+            conflicted: false,
+        }
+    }
+
+    #[test]
+    fn aggregate_stage_is_tri_state() {
+        assert_eq!(aggregate_stage(&[]), StageState::Unstaged);
+        assert_eq!(aggregate_stage(&[false, false]), StageState::Unstaged);
+        assert_eq!(aggregate_stage(&[true, true]), StageState::Staged);
+        assert_eq!(aggregate_stage(&[true, false]), StageState::PartiallyStaged);
+    }
+
+    #[test]
+    fn flatten_git_preserves_headers_files_and_aggregate_staging() {
+        let staged = vec![fstat("src/a.rs"), fstat("src/b.rs")];
+        let unstaged = vec![fstat("c.rs")];
+        let empty: Vec<FileStatus> = vec![];
+        let sections: [(Section, &'static str, &[FileStatus]); 4] = [
+            (Section::Conflicts, "Conflicts", &empty),
+            (Section::Staged, "Staged", &staged),
+            (Section::Unstaged, "Changes", &unstaged),
+            (Section::Untracked, "Untracked", &empty),
+        ];
+        let mut collapsed = std::collections::HashSet::new();
+        let list = flatten_git(&sections, &collapsed, Some("c.rs"));
+
+        // header(Staged) + 2 files + header(Changes) + 1 file
+        assert_eq!(list.len(), 5);
+        match &list[0] {
+            GitListEntry::SectionHeader {
+                section,
+                count,
+                stage,
+                ..
+            } => {
+                assert_eq!(*section, Section::Staged);
+                assert_eq!(*count, 2);
+                assert_eq!(*stage, StageState::Staged);
+            }
+            other => panic!("expected staged header, got {other:?}"),
+        }
+        assert!(matches!(&list[1], GitListEntry::File { staged: true, .. }));
+        match &list[3] {
+            GitListEntry::SectionHeader { section, stage, .. } => {
+                assert_eq!(*section, Section::Unstaged);
+                assert_eq!(*stage, StageState::Unstaged);
+            }
+            other => panic!("expected changes header, got {other:?}"),
+        }
+        assert!(matches!(
+            &list[4],
+            GitListEntry::File {
+                staged: false,
+                selected: true,
+                ..
+            }
+        ));
+
+        // Collapsing the Staged section drops its file rows but keeps its
+        // header (and its aggregate staging state).
+        collapsed.insert(Section::Staged as u8);
+        let collapsed_list = flatten_git(&sections, &collapsed, None);
+        assert_eq!(collapsed_list.len(), 3); // staged header + changes header + 1 file
+        assert!(matches!(
+            &collapsed_list[0],
+            GitListEntry::SectionHeader {
+                section: Section::Staged,
+                collapsed: true,
+                stage: StageState::Staged,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn flatten_git_emits_empty_state_when_clean() {
+        let empty: Vec<FileStatus> = vec![];
+        let sections: [(Section, &'static str, &[FileStatus]); 1] =
+            [(Section::Unstaged, "Changes", &empty)];
+        let list = flatten_git(&sections, &std::collections::HashSet::new(), None);
+        assert_eq!(list, vec![GitListEntry::EmptyState]);
     }
 }

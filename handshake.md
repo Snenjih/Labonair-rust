@@ -4,7 +4,47 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
-## Current Session: 2026-09-05 (T21-001 — render-path profiling & frame hygiene, in progress)
+## Current Session: 2026-09-05 (Zed-parity redesign Phase 2 — dense rows + virtualization)
+
+### Phase 2 done (`docs/ui-comparison-zed-sidebar-status-bar.md` §13 Phase 2)
+
+- **New ui-kit primitives** (`crates/ui-kit/src/`): `density.rs` (`Density` —
+  semantic tokens: tree row 24 / section header 22 / control 22 / row gap 4 /
+  status-bar pad 4 / panel header 28 / dock resize target 6, all ×density;
+  hairline + focus-indicator fixed at 1–2px), `tree_row.rs` (`TreeRow` /
+  `TreeRowState` — flat full-width, no radius, independent selected/marked/
+  focused/active_file/cut/drag_source/drop_target channels, ≤2px right-edge
+  indicator, path tooltip, `.extra()` drag/drop escape hatch), `git_change_row.rs`
+  (`GitChangeRow` / `StageState` tri-state checkbox independent of the semantic
+  status tint, hover-revealed actions via `group_hover`). `ListItem` untouched.
+- **Explorer virtualized**: pure `flatten_rows(rows, expanded, selection, cut,
+  drop_target) -> Vec<ExplorerRowData>` (§12.4, no FS access), rendered through
+  `uniform_list` + free `explorer_row_element`; every handler goes via
+  `view.update(..)`. All behaviour preserved (multi-select, kbd nav, preview/
+  open, internal+external DnD, cut/copy/paste, create/rename/delete/duplicate/
+  bookmark, hidden filter, context menus, confirm flows, local+remote roots,
+  lazy load, Loading/Error/LoadMore/PendingCreate/Rename pseudo-rows now all at
+  the uniform 24px row height). Search now walks `TreeModel::all_loaded_rows()`
+  (every loaded dir, not just expanded/on-screen); still bounded by lazy load.
+- **SCM virtualized**: pure `flatten_git(sections, collapsed, selected) ->
+  Vec<GitListEntry>` (`SectionHeader` / `File` / `EmptyState`; `aggregate_stage`
+  tri-state) + `uniform_list` + free `git_list_element` rendering `File` rows as
+  `GitChangeRow`. `render_section` / `row_action` removed; backend
+  stage/unstage/discard/select wrapped, not rewritten. Inline diff, branches,
+  stashes, tags, commit form all unchanged.
+- Tests: ui-kit density/tree_row/git_change_row build tests; explorer flatten
+  (depth/expansion/loading/selection across ranges, cut+drop-target, search
+  spans collapsed subtrees); scm `aggregate_stage` + `flatten_git`
+  (headers/files/aggregate staging, collapse, empty state).
+- Gates green: `fmt --check`, `clippy --workspace --all-targets -D warnings`,
+  `test -p labonair-ui-kit -p labonair-panel-explorer -p labonair-panel-scm
+  -p labonair-theme` (39 / 12 / 19 / 63).
+- **Deferred (Phase 3/4/5):** sticky ancestors, indent guides, auto-reveal,
+  auto-fold, Changes/History tabs, tree/flat Git grouping (`Directory` entry),
+  Project Diff, a11y/perf audit. `GitListEntry::{Directory,Loading,Error}` from
+  §12.5 not added (would be dead code this phase).
+
+## Previous Session: 2026-09-05 (T21-001 — render-path profiling & frame hygiene, in progress)
 
 ### Visual parity audit vs reference-src + hover-fill fix (committed)
 

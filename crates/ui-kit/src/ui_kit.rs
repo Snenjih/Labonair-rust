@@ -49,10 +49,12 @@ mod banner;
 mod button;
 mod checkbox;
 mod context_menu;
+mod density;
 mod disclosure;
 mod divider;
 #[cfg(any(debug_assertions, feature = "gallery"))]
 mod gallery;
+mod git_change_row;
 mod icon;
 mod indicator;
 mod kbd;
@@ -68,15 +70,18 @@ mod test_support;
 mod text_field;
 pub mod theme;
 mod toggle;
+mod tree_row;
 
 pub use banner::{banner, Banner, Severity};
 pub use button::{button, button_no_hover, ButtonSize, ButtonVariant, DISABLED_OPACITY};
 pub use checkbox::{checkbox, Checkbox};
 pub use context_menu::{context_menu, popover_menu, MenuClick, MenuItem};
+pub use density::Density;
 pub use disclosure::disclosure;
 pub use divider::{divider, Axis};
 #[cfg(any(debug_assertions, feature = "gallery"))]
 pub use gallery::{open_gallery_window, Gallery};
+pub use git_change_row::{git_change_row, GitChangeRow, StageState};
 pub use icon::{chevron_icon, file_icon, folder_icon, glyph_icon, icon_for_path, IconName};
 pub use indicator::{indicator, IndicatorSize};
 pub use kbd::{kbd, kbd_row, keybinding_hint};
@@ -90,6 +95,7 @@ pub use stack::{h_stack, v_stack};
 pub use text_field::{field_input, text_field, InputEvent, InputState};
 pub use theme::{ActiveThemeExt, UiTheme};
 pub use toggle::{icon_toggle_button, toggle_base, ToggleSize, ToggleVariant};
+pub use tree_row::{tree_row, TreeRow, TreeRowState, TREE_INDENT_STEP};
 
 // gpui-component primitives re-exported where their behaviour (not their
 // styling) is what we want. Kept here so call sites import from
@@ -105,14 +111,15 @@ pub mod prelude {
     pub use crate::ActiveThemeExt;
     pub use crate::{
         banner, button, checkbox, chevron_icon, context_menu, disclosure, divider, file_icon,
-        folder_icon, glyph_icon, h_stack, icon_for_path, icon_toggle_button, indicator, kbd,
-        kbd_row, keybinding_hint, list_header, list_separator, number_field, popover, popover_menu,
-        segmented_control, select_popover, select_trigger, selected_label, toggle_base, v_stack,
+        folder_icon, git_change_row, glyph_icon, h_stack, icon_for_path, icon_toggle_button,
+        indicator, kbd, kbd_row, keybinding_hint, list_header, list_separator, number_field,
+        popover, popover_menu, segmented_control, select_popover, select_trigger, selected_label,
+        toggle_base, tree_row, v_stack,
     };
     pub use crate::{
-        Axis, Badge, Banner, ButtonSize, ButtonVariant, Checkbox, IconName, IndicatorSize,
-        ListItem, MenuClick, MenuItem, NumberField, Palette, SegmentSize, SegmentVariant,
-        SegmentedControl, SelectOption, Severity, Switch, ToggleSize, ToggleVariant, Tooltip,
-        UiTheme, DISABLED_OPACITY,
+        Axis, Badge, Banner, ButtonSize, ButtonVariant, Checkbox, Density, GitChangeRow, IconName,
+        IndicatorSize, ListItem, MenuClick, MenuItem, NumberField, Palette, SegmentSize,
+        SegmentVariant, SegmentedControl, SelectOption, Severity, StageState, Switch, ToggleSize,
+        ToggleVariant, Tooltip, TreeRow, TreeRowState, UiTheme, DISABLED_OPACITY,
     };
 }
