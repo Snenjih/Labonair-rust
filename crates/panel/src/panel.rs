@@ -17,12 +17,14 @@
 //! status bar.
 
 mod dock;
+mod project_diff;
 mod status;
 
 pub use dock::{
     AnyPanelHandle, DockPosition, Panel, PanelConstructor, PanelEvent, PanelHandle, PanelIcon,
     PanelRegistration, PanelRegistry,
 };
+pub use project_diff::{ProjectDiffFile, ProjectDiffMode, ProjectDiffRequest};
 pub use status::{
     AnyStatusItemHandle, StatusItem, StatusItemConstructor, StatusItemHandle, StatusItemHide,
     StatusItemRegistration, StatusItemRegistry, StatusPlacement, StatusSide,

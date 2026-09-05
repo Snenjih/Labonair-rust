@@ -485,6 +485,7 @@ const FILE_MANAGER_GROUPS: &[Group] = &[
             "explorerGitDecorations",
         ],
     ),
+    ("Source Control", &["scmFileTree"]),
     (
         "Columns",
         &[

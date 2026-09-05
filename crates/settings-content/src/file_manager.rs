@@ -22,6 +22,9 @@ pub struct FileManagerContent {
     pub explorer_fold_single_child_dirs: Option<bool>,
     /// Show Git status decorations (tint + letter) on Explorer rows.
     pub explorer_git_decorations: Option<bool>,
+    /// Source-Control panel change list: `true` = directory tree, `false` =
+    /// flat status buckets (Zed-parity Phase 4).
+    pub scm_file_tree: Option<bool>,
     pub sftp_column_size: Option<bool>,
     pub sftp_column_modified: Option<bool>,
     pub sftp_column_permissions: Option<bool>,
@@ -48,6 +51,7 @@ impl FileManagerContent {
             explorer_auto_reveal_active_file: Some(false),
             explorer_fold_single_child_dirs: Some(false),
             explorer_git_decorations: Some(true),
+            scm_file_tree: Some(false),
             sftp_column_size: Some(true),
             sftp_column_modified: Some(true),
             sftp_column_permissions: Some(true),

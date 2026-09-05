@@ -30,19 +30,30 @@ use std::time::Duration;
 
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, px, uniform_list, App, ClickEvent, Context, Entity, FocusHandle, Focusable,
-    InteractiveElement, IntoElement, KeyDownEvent, MouseDownEvent, ParentElement, Pixels, Point,
-    Render, SharedString, StatefulInteractiveElement, Styled, Window,
+    div, px, uniform_list, App, AppContext, ClickEvent, Context, Entity, EventEmitter, FocusHandle,
+    Focusable, InteractiveElement, IntoElement, KeyDownEvent, MouseDownEvent, ParentElement,
+    Pixels, Point, Render, SharedString, StatefulInteractiveElement, Styled, Window,
 };
-use labonair_backend::modules::git::{self, Branch, FileStatus, GitStatus, WorkspaceGitState};
+use labonair_backend::modules::git::{
+    self, Branch, CommitInfo, FileStatus, GitStatus, WorkspaceGitState,
+};
 use labonair_backend::App as Backend;
+use labonair_panel::{ProjectDiffFile, ProjectDiffMode, ProjectDiffRequest};
 use tokio::runtime::Handle as TokioHandle;
 
 use crate::theme::ThemeStore;
 use labonair_notifications::notify_err;
 use labonair_ui_kit::{
-    button, checkbox, context_menu, disclosure, git_change_row, h_stack, ButtonSize, ButtonVariant,
-    IconName, ListItem, MenuItem, Palette, StageState,
+    button, checkbox, context_menu, disclosure, field_input, git_change_row, h_stack,
+    segmented_control, ButtonSize, ButtonVariant, IconName, InputEvent, InputState, ListItem,
+    MenuItem, Palette, SegmentSize, SegmentVariant, StageState,
+};
+
+// Unified-diff parsing moved to `labonair-editor` in the Zed-parity Phase 4
+// redesign so the panel and the workspace Project Diff item share one
+// implementation. Re-exported for the (pre-existing) public API surface.
+pub use labonair_editor::unified::{
+    build_hunk_patch, is_whole_file_single_hunk, parse_diff_hunks, DiffHunk, FileDiff,
 };
 
 /// A source-control file-menu action, wrapped into a click handler by
@@ -55,144 +66,13 @@ type GitFileAct = Box<dyn Fn(&mut GitPanelView, &mut Context<GitPanelView>)>;
 const POLL_INTERVAL: Duration = Duration::from_millis(2000);
 const REMOTE_POLL_MULTIPLIER: u32 = 3;
 
-// ─── Hunk parsing (port of source-control/lib/diffHunks.ts) ───────────────────
-
-/// One `@@ … @@` block of a unified diff, body lines kept verbatim.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DiffHunk {
-    /// The raw `@@ -a,b +c,d @@ …` line including trailing context.
-    pub header: String,
-    pub old_start: u32,
-    pub old_lines: u32,
-    pub new_start: u32,
-    pub new_lines: u32,
-    /// Raw body lines (` `/`+`/`-`/`\ No newline…`), unmodified, in order.
-    pub lines: Vec<String>,
-}
-
-/// Per-file view of a (possibly multi-file) unified diff.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FileDiff {
-    /// b-side path (post-rename for renames).
-    pub path: String,
-    /// Lines from `diff --git …` up to (excluding) the first hunk header.
-    pub header_lines: Vec<String>,
-    pub hunks: Vec<DiffHunk>,
-    pub is_new_file: bool,
-    pub is_deleted_file: bool,
-}
-
-fn parse_file_header_path(line: &str) -> Option<String> {
-    // ^diff --git a/.+ b/(.+)$
-    let rest = line.strip_prefix("diff --git a/")?;
-    let idx = rest.find(" b/")?;
-    Some(rest[idx + 3..].to_string())
-}
-
-fn parse_hunk_header(line: &str) -> Option<(u32, u32, u32, u32)> {
-    // ^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@
-    let rest = line.strip_prefix("@@ -")?;
-    let end = rest.find(" @@")?;
-    let spec = &rest[..end];
-    let mut sides = spec.split(" +");
-    let old = sides.next()?;
-    let new = sides.next()?;
-    let parse_pair = |s: &str| -> Option<(u32, u32)> {
-        match s.split_once(',') {
-            Some((a, b)) => Some((a.parse().ok()?, b.parse().ok()?)),
-            None => Some((s.parse().ok()?, 1)),
-        }
-    };
-    let (os, ol) = parse_pair(old)?;
-    let (ns, nl) = parse_pair(new)?;
-    Some((os, ol, ns, nl))
-}
-
-/// Parses a unified diff into per-file hunk structures. Returns `[]` for a
-/// backend-truncated diff (a cut-off final hunk could corrupt the index).
-pub fn parse_diff_hunks(diff: &str) -> Vec<FileDiff> {
-    if diff.is_empty() || diff.contains("[diff truncated") || diff.contains("[diff too large]") {
-        return Vec::new();
-    }
-
-    let all: Vec<&str> = diff.split('\n').collect();
-    // Split into chunks at each "diff --git a/… b/…" line.
-    let mut starts: Vec<usize> = Vec::new();
-    for (i, l) in all.iter().enumerate() {
-        if l.starts_with("diff --git a/") && l.contains(" b/") {
-            starts.push(i);
-        }
-    }
-    let mut files = Vec::new();
-    for (si, &start) in starts.iter().enumerate() {
-        let end = starts.get(si + 1).copied().unwrap_or(all.len());
-        let mut lines: Vec<String> = all[start..end].iter().map(|s| s.to_string()).collect();
-        // Drop the single trailing "" produced by the terminating "\n".
-        if lines.last().map(|s| s.is_empty()).unwrap_or(false) {
-            lines.pop();
-        }
-        let Some(path) = lines.first().and_then(|l| parse_file_header_path(l)) else {
-            continue;
-        };
-        let first_hunk = lines.iter().position(|l| parse_hunk_header(l).is_some());
-        let header_lines: Vec<String> = match first_hunk {
-            Some(idx) => lines[..idx].to_vec(),
-            None => lines.clone(),
-        };
-        let is_new_file = header_lines.iter().any(|l| l.starts_with("new file mode"));
-        let is_deleted_file = header_lines
-            .iter()
-            .any(|l| l.starts_with("deleted file mode"));
-
-        let mut hunks = Vec::new();
-        if let Some(mut i) = first_hunk {
-            while i < lines.len() {
-                let Some((os, ol, ns, nl)) = parse_hunk_header(&lines[i]) else {
-                    break;
-                };
-                let header = lines[i].clone();
-                let body_start = i + 1;
-                let mut body_end = body_start;
-                while body_end < lines.len() && parse_hunk_header(&lines[body_end]).is_none() {
-                    body_end += 1;
-                }
-                hunks.push(DiffHunk {
-                    header,
-                    old_start: os,
-                    old_lines: ol,
-                    new_start: ns,
-                    new_lines: nl,
-                    lines: lines[body_start..body_end].to_vec(),
-                });
-                i = body_end;
-            }
-        }
-        files.push(FileDiff {
-            path,
-            header_lines,
-            hunks,
-            is_new_file,
-            is_deleted_file,
-        });
-    }
-    files
-}
-
-/// Builds a standalone one-hunk unified-diff patch for `git apply --cached`.
-pub fn build_hunk_patch(file: &FileDiff, hunk: &DiffHunk) -> String {
-    let mut parts: Vec<&str> = file.header_lines.iter().map(|s| s.as_str()).collect();
-    parts.push(hunk.header.as_str());
-    for l in &hunk.lines {
-        parts.push(l.as_str());
-    }
-    format!("{}\n", parts.join("\n"))
-}
-
-/// A brand-new / fully-deleted file collapses to one whole-file hunk — the
-/// plain `git add` / `git restore --staged` path is far more robust than
-/// applying a synthetic patch, so callers prefer it when this is true.
-pub fn is_whole_file_single_hunk(file: &FileDiff) -> bool {
-    (file.is_new_file || file.is_deleted_file) && file.hunks.len() == 1
+/// Current `scmFileTree` setting (`false` when settings are not yet loaded, e.g.
+/// in headless tests).
+fn scm_file_tree_setting(cx: &App) -> bool {
+    use labonair_settings::Settings as _;
+    labonair_settings::ScmSettings::try_get(cx)
+        .map(|s| s.file_tree())
+        .unwrap_or(false)
 }
 
 // ─── Branch / stash helpers (port of BranchDropdown / StashPanel) ─────────────
@@ -343,11 +223,128 @@ enum Section {
     Untracked,
 }
 
+/// Top-level panel information mode (Zed-parity Phase 4, §9.5 "Panel
+/// navigation"). Two *real* modes — a commit log is not a decoration.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub(crate) enum PanelMode {
+    #[default]
+    Changes,
+    History,
+}
+
+/// What a commit click will actually do, derived from repository + staging
+/// state (Zed-parity Phase 4, §12.5). Drives the adaptive commit-button label.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum CommitMode {
+    /// Commit exactly what is staged.
+    CommitStaged,
+    /// Nothing is staged but tracked files are dirty — `git commit -a`.
+    CommitTracked,
+    /// Replace the last commit (`--amend`).
+    Amend,
+}
+
+impl CommitMode {
+    pub(crate) fn label(self) -> &'static str {
+        match self {
+            CommitMode::CommitStaged => "Commit",
+            CommitMode::CommitTracked => "Commit Tracked",
+            CommitMode::Amend => "Amend",
+        }
+    }
+}
+
+/// A repository-wide async operation currently in flight. Carries enough
+/// identity to show progress / disable the affected action without freezing
+/// the whole panel (Zed-parity Phase 4, §12.5 / Critical Rule 5).
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub(crate) enum RepoOperation {
+    #[default]
+    Idle,
+    Fetching,
+    Pulling,
+    Pushing,
+    /// Staging / discarding / branch / stash / tag mutation.
+    Mutating,
+}
+
+impl RepoOperation {
+    fn is_busy(self) -> bool {
+        !matches!(self, RepoOperation::Idle)
+    }
+}
+
+/// Why the commit action is unavailable — surfaced in the button tooltip and
+/// accessibility description (Zed-parity Phase 4, §12.5).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum DisabledReason {
+    NoMessage,
+    NoChanges,
+    Conflict,
+    OperationInProgress,
+}
+
+impl DisabledReason {
+    pub(crate) fn describe(self) -> &'static str {
+        match self {
+            DisabledReason::NoMessage => "Enter a commit message",
+            DisabledReason::NoChanges => "Nothing to commit",
+            DisabledReason::Conflict => "Resolve merge conflicts before committing",
+            DisabledReason::OperationInProgress => "A Git operation is in progress",
+        }
+    }
+}
+
+/// Pure derivation of the commit mode. `amend` is the explicit user toggle;
+/// otherwise a non-empty stage commits the index, and a clean index with dirty
+/// tracked files commits those.
+pub(crate) fn derive_commit_mode(
+    amend: bool,
+    staged_count: usize,
+    tracked_dirty: bool,
+) -> CommitMode {
+    if amend {
+        CommitMode::Amend
+    } else if staged_count > 0 {
+        CommitMode::CommitStaged
+    } else if tracked_dirty {
+        CommitMode::CommitTracked
+    } else {
+        CommitMode::CommitStaged
+    }
+}
+
+/// Pure derivation of the disabled reason (`None` → the commit action is
+/// enabled). Order matters: an in-flight op and unresolved conflicts block
+/// regardless of message/stage state.
+pub(crate) fn derive_disabled_reason(
+    message_empty: bool,
+    staged_count: usize,
+    tracked_dirty: bool,
+    has_conflicts: bool,
+    op: RepoOperation,
+    amend: bool,
+) -> Option<DisabledReason> {
+    if op.is_busy() {
+        return Some(DisabledReason::OperationInProgress);
+    }
+    if has_conflicts {
+        return Some(DisabledReason::Conflict);
+    }
+    if message_empty {
+        return Some(DisabledReason::NoMessage);
+    }
+    // Amend can re-commit with nothing new staged; every other mode needs
+    // something to commit.
+    if !amend && staged_count == 0 && !tracked_dirty {
+        return Some(DisabledReason::NoChanges);
+    }
+    None
+}
+
 /// One line of the flattened Source-Control presentation list (Zed-parity
-/// §12.5). Built by [`flatten_git`] independently of the nested section render
-/// loops, then virtualised. `Directory` / `Loading` / `Error` variants from the
-/// spec are deferred to Phase 4 (tree/flat grouping + Project Diff); this phase
-/// keeps the existing flat status buckets.
+/// §12.5). Built by [`flatten_git`] (flat) or [`flatten_git_tree`] (tree)
+/// independently of the nested section render loops, then virtualised.
 #[derive(Clone, PartialEq, Debug)]
 pub(crate) enum GitListEntry {
     SectionHeader {
@@ -358,9 +355,23 @@ pub(crate) enum GitListEntry {
         stage: StageState,
         collapsed: bool,
     },
+    /// A directory grouping node (tree presentation only). `paths` are the
+    /// descendant file paths it aggregates for section/folder-level staging.
+    Directory {
+        section: Section,
+        /// Repo-relative directory path, no trailing slash.
+        path: String,
+        /// Last segment, for display.
+        name: String,
+        depth: usize,
+        stage: StageState,
+        collapsed: bool,
+        paths: Vec<String>,
+    },
     File {
         section: Section,
         path: String,
+        depth: usize,
         letter: char,
         staged: bool,
         untracked: bool,
@@ -380,8 +391,12 @@ pub(crate) fn aggregate_stage(staged_flags: &[bool]) -> StageState {
     }
 }
 
-/// Flatten the status buckets into one presentation list. Pure — no `self`, no
-/// GPUI, no IO; unit-tested below.
+/// The four status sections, as `(Section, title, files)` tuples. Shared by
+/// both flatteners so the file set is identical between tree and flat views.
+pub(crate) type Sections<'a> = [(Section, &'static str, &'a [FileStatus]); 4];
+
+/// Flatten the status buckets into one flat presentation list. Pure — no
+/// `self`, no GPUI, no IO; unit-tested below.
 pub(crate) fn flatten_git(
     sections: &[(Section, &'static str, &[FileStatus])],
     collapsed: &std::collections::HashSet<u8>,
@@ -409,6 +424,7 @@ pub(crate) fn flatten_git(
                 out.push(GitListEntry::File {
                     section: *section,
                     path: f.path.clone(),
+                    depth: 0,
                     letter: status_letter(f, untracked),
                     staged,
                     untracked,
@@ -419,6 +435,121 @@ pub(crate) fn flatten_git(
     }
     if out.is_empty() {
         out.push(GitListEntry::EmptyState);
+    }
+    out
+}
+
+/// Flatten the same status buckets into a directory *tree* presentation. Same
+/// file set as [`flatten_git`] — directories are grouping nodes only. Pure.
+pub(crate) fn flatten_git_tree(
+    sections: &[(Section, &'static str, &[FileStatus])],
+    collapsed: &std::collections::HashSet<u8>,
+    dir_collapsed: &std::collections::HashSet<String>,
+    selected: Option<&str>,
+) -> Vec<GitListEntry> {
+    let mut out = Vec::new();
+    for (section, title, files) in sections {
+        if files.is_empty() {
+            continue;
+        }
+        let staged = matches!(section, Section::Staged);
+        let untracked = matches!(section, Section::Untracked);
+        let key = *section as u8;
+        let flags: Vec<bool> = files.iter().map(|_| staged).collect();
+        let sec_collapsed = collapsed.contains(&key);
+        out.push(GitListEntry::SectionHeader {
+            section: *section,
+            title,
+            count: files.len(),
+            stage: aggregate_stage(&flags),
+            collapsed: sec_collapsed,
+        });
+        if sec_collapsed {
+            continue;
+        }
+
+        // Emit directory nodes + files in path order. A directory node appears
+        // once, the first time its prefix is seen; its subtree is skipped when
+        // it (or an ancestor) is collapsed.
+        let mut sorted: Vec<&FileStatus> = files.iter().collect();
+        sorted.sort_by(|a, b| a.path.cmp(&b.path));
+        let mut emitted_dirs: std::collections::HashSet<String> = std::collections::HashSet::new();
+        for f in sorted {
+            let segs: Vec<&str> = f.path.split('/').collect();
+            let mut prefix = String::new();
+            let mut hidden = false;
+            for (i, seg) in segs.iter().enumerate() {
+                let is_file = i + 1 == segs.len();
+                if is_file {
+                    if hidden {
+                        break;
+                    }
+                    out.push(GitListEntry::File {
+                        section: *section,
+                        path: f.path.clone(),
+                        depth: i,
+                        letter: status_letter(f, untracked),
+                        staged,
+                        untracked,
+                        selected: selected == Some(f.path.as_str()),
+                    });
+                    break;
+                }
+                if !prefix.is_empty() {
+                    prefix.push('/');
+                }
+                prefix.push_str(seg);
+                if hidden {
+                    continue;
+                }
+                if emitted_dirs.insert(prefix.clone()) {
+                    let dir_paths: Vec<String> = files
+                        .iter()
+                        .filter(|x| x.path.starts_with(&format!("{prefix}/")) || x.path == prefix)
+                        .map(|x| x.path.clone())
+                        .collect();
+                    let dir_flags: Vec<bool> = dir_paths.iter().map(|_| staged).collect();
+                    let dcoll = dir_collapsed.contains(&prefix);
+                    out.push(GitListEntry::Directory {
+                        section: *section,
+                        path: prefix.clone(),
+                        name: (*seg).to_string(),
+                        depth: i,
+                        stage: aggregate_stage(&dir_flags),
+                        collapsed: dcoll,
+                        paths: dir_paths,
+                    });
+                    if dcoll {
+                        hidden = true;
+                    }
+                } else if dir_collapsed.contains(&prefix) {
+                    hidden = true;
+                }
+            }
+        }
+    }
+    if out.is_empty() {
+        out.push(GitListEntry::EmptyState);
+    }
+    out
+}
+
+/// Every file path across all sections, in section order — the ordered change
+/// list handed to the Project Diff item.
+pub(crate) fn all_change_files(
+    sections: &[(Section, &'static str, &[FileStatus])],
+) -> Vec<ProjectDiffFile> {
+    let mut out = Vec::new();
+    for (section, _title, files) in sections {
+        let staged = matches!(section, Section::Staged);
+        let untracked = matches!(section, Section::Untracked);
+        for f in *files {
+            out.push(ProjectDiffFile {
+                path: f.path.clone(),
+                staged,
+                untracked,
+            });
+        }
     }
     out
 }
@@ -460,20 +591,36 @@ fn git_list_element(
             stage,
             collapsed,
         } => {
-            let key = *section as u8;
+            let section = *section;
+            let key = section as u8;
             let v = view.clone();
-            let label = match stage {
-                StageState::PartiallyStaged => {
-                    format!("{} ({}) \u{2022}", title.to_uppercase(), count)
-                }
-                _ => format!("{} ({})", title.to_uppercase(), count),
-            };
+            let toggle_v = view.clone();
+            let label = format!("{} ({})", title.to_uppercase(), count);
+            // Section-level tri-state staging checkbox (Zed-parity Phase 4,
+            // §9.5 "Change rows"). Reuses the file row's staging control.
+            let box_row = git_change_row(
+                SharedString::from(format!("git-sec-cb-{title}")),
+                c.palette,
+                *stage,
+                SharedString::default(),
+            )
+            .on_toggle_stage(move |want_staged: &bool, _w, cx| {
+                let want_staged = *want_staged;
+                toggle_v.update(cx, |this, cx| this.stage_section(section, want_staged, cx));
+            });
             div()
                 .flex()
                 .items_center()
-                .justify_between()
+                .gap(px(2.0))
                 .h(row_h)
                 .px(px(8.0))
+                .child(
+                    div()
+                        .flex_none()
+                        .w(px(24.0))
+                        .overflow_hidden()
+                        .child(box_row),
+                )
                 .child(
                     disclosure(
                         SharedString::from(format!("git-sec-{title}")),
@@ -496,9 +643,61 @@ fn git_list_element(
                 )
                 .into_any_element()
         }
+        GitListEntry::Directory {
+            section,
+            path,
+            name,
+            depth,
+            stage,
+            collapsed,
+            paths,
+        } => {
+            let section = *section;
+            let dir_path = path.clone();
+            let toggle_v = view.clone();
+            let toggle_paths = paths.clone();
+            let coll_v = view.clone();
+            git_change_row(
+                SharedString::from(format!("git-dir-{}-{path}", section as u8)),
+                c.palette,
+                *stage,
+                SharedString::from(format!("{name}/")),
+            )
+            .depth(*depth)
+            .icon(if *collapsed {
+                IconName::Folder
+            } else {
+                IconName::FolderOpen
+            })
+            .tooltip(SharedString::from(path.clone()))
+            .on_toggle_stage(move |want_staged: &bool, _w, cx| {
+                let want_staged = *want_staged;
+                let paths = toggle_paths.clone();
+                toggle_v.update(cx, |this, cx| {
+                    if want_staged {
+                        this.stage_paths(paths.clone(), cx);
+                    } else {
+                        this.unstage_paths(paths.clone(), cx);
+                    }
+                });
+            })
+            .on_click(move |_: &ClickEvent, _w, cx| {
+                let dir_path = dir_path.clone();
+                coll_v.update(cx, |this, cx| {
+                    if this.dir_collapsed.contains(&dir_path) {
+                        this.dir_collapsed.remove(&dir_path);
+                    } else {
+                        this.dir_collapsed.insert(dir_path.clone());
+                    }
+                    cx.notify();
+                });
+            })
+            .into_any_element()
+        }
         GitListEntry::File {
             section,
             path,
+            depth,
             letter,
             staged,
             untracked,
@@ -550,8 +749,10 @@ fn git_list_element(
                 stage,
                 SharedString::from(short_path(path)),
             )
+            .depth(*depth)
             .status(letter.to_string(), lc)
             .selected(*selected)
+            .secondary(SharedString::from(dir_prefix(path)))
             .tooltip(SharedString::from(path.clone()))
             .on_toggle_stage(move |want_staged: &bool, _w, cx| {
                 let want_staged = *want_staged;
@@ -594,13 +795,39 @@ enum Field {
     Rename,
 }
 
-/// The currently previewed file.
+/// The currently selected file (highlighted in the list; focused in the
+/// workspace Project Diff item).
 #[derive(Clone, PartialEq, Eq)]
 struct Selected {
     path: String,
     /// `true` → diff index↔HEAD; `false` → diff worktree↔index.
     staged: bool,
     untracked: bool,
+}
+
+/// Events the panel emits for the shell to translate into workspace actions —
+/// keeps `labonair-workspace` free of a dependency on this crate (§12.6).
+#[derive(Clone, Debug)]
+pub enum ScmEvent {
+    /// Open / focus the single workspace Project Diff item.
+    OpenProjectDiff(ProjectDiffRequest),
+}
+
+/// Which transient header/footer popover menu is open, and where.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum PanelMenu {
+    ViewOptions,
+    Overflow,
+    Repo,
+}
+
+/// A pending destructive action awaiting an explicit in-panel confirmation
+/// (Zed-parity Phase 4, §9.5 — destructive actions are never a primary button).
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum PendingConfirm {
+    DiscardAll,
+    Clean,
+    ForcePush,
 }
 
 #[derive(Clone, Copy)]
@@ -624,7 +851,6 @@ pub struct GitPanelView {
     tokio: TokioHandle,
     theme: Entity<ThemeStore>,
     focus: FocusHandle,
-    commit_focus: FocusHandle,
 
     /// Directory the panel points at (the active terminal cwd).
     root: Option<String>,
@@ -641,21 +867,40 @@ pub struct GitPanelView {
     last_target: Option<(Option<String>, Option<String>)>,
     refreshing: bool,
     op_in_progress: bool,
+    /// Identity of the repo-wide op in flight (progress / disable derivation).
+    repo_op: RepoOperation,
+
+    /// Panel information mode — `Changes` list vs `History` commit log.
+    mode: PanelMode,
+    /// Tree vs flat presentation of the change list.
+    file_tree: bool,
 
     collapsed: std::collections::HashSet<u8>,
+    /// Collapsed directory nodes (tree presentation), keyed by dir path.
+    dir_collapsed: std::collections::HashSet<String>,
 
     selected: Option<Selected>,
-    diff_text: Option<String>,
-    diff_error: Option<String>,
-    /// Diff preview layout — `true` = side-by-side, `false` = unified.
-    diff_split: bool,
     /// Open source-control file right-click menu: `(path, section, cursor)`.
     file_menu: Option<(String, Section, Point<Pixels>)>,
+    /// Open header/footer popover menu: `(which, anchor)`.
+    panel_menu: Option<(PanelMenu, Point<Pixels>)>,
+    /// A destructive action awaiting confirmation.
+    pending_confirm: Option<PendingConfirm>,
 
-    commit_msg: String,
+    // ── commit composer (editor-backed, Zed-parity Phase 4) ──
+    /// Real text input; created lazily in `render` (needs a `Window`).
+    commit_input: Option<Entity<InputState>>,
+    /// Seed text before the input exists (tests / first paint).
+    commit_seed: String,
     commit_error: Option<String>,
-    /// Second-click confirmation latch for force-push.
-    force_push_armed: bool,
+    /// `--amend` toggle.
+    amend: bool,
+    /// Expanded (taller) composer.
+    commit_expanded: bool,
+
+    // ── history mode ──
+    history: Vec<CommitInfo>,
+    history_loading: bool,
 
     // ── branch picker (port of BranchDropdown) ──
     branch_picker_open: bool,
@@ -702,6 +947,8 @@ impl Focusable for GitPanelView {
     }
 }
 
+impl EventEmitter<ScmEvent> for GitPanelView {}
+
 impl GitPanelView {
     pub fn new(
         backend: Backend,
@@ -710,6 +957,16 @@ impl GitPanelView {
         cx: &mut Context<Self>,
     ) -> Self {
         cx.observe(&theme, |_, _, cx| cx.notify()).detach();
+
+        // Pick up external edits to `scmFileTree`.
+        if cx.has_global::<labonair_settings::SettingsStore>() {
+            cx.observe_global::<labonair_settings::SettingsStore>(|this, cx| {
+                this.file_tree = scm_file_tree_setting(cx);
+                cx.notify();
+            })
+            .detach();
+        }
+        let file_tree = scm_file_tree_setting(cx);
 
         // Poll loop — stops when the view is dropped.
         cx.spawn(async move |this, cx| loop {
@@ -728,7 +985,6 @@ impl GitPanelView {
             tokio,
             theme,
             focus: cx.focus_handle(),
-            commit_focus: cx.focus_handle(),
             root: None,
             session_id: None,
             repo_root: None,
@@ -739,15 +995,22 @@ impl GitPanelView {
             last_target: None,
             refreshing: false,
             op_in_progress: false,
+            repo_op: RepoOperation::Idle,
+            mode: PanelMode::Changes,
+            file_tree,
             collapsed: std::collections::HashSet::new(),
+            dir_collapsed: std::collections::HashSet::new(),
             selected: None,
-            diff_split: false,
-            diff_text: None,
-            diff_error: None,
             file_menu: None,
-            commit_msg: String::new(),
+            panel_menu: None,
+            pending_confirm: None,
+            commit_input: None,
+            commit_seed: String::new(),
             commit_error: None,
-            force_push_armed: false,
+            amend: false,
+            commit_expanded: false,
+            history: Vec::new(),
+            history_loading: false,
             branch_picker_open: false,
             branch_filter: String::new(),
             checkout_error: None,
@@ -768,7 +1031,7 @@ impl GitPanelView {
             new_tag_from: String::new(),
             tag_error: None,
             delete_confirm_tag: None,
-            stash_collapsed: false,
+            stash_collapsed: true,
             stash_form_open: false,
             stash_msg: String::new(),
             drop_confirm_stash: None,
@@ -812,10 +1075,10 @@ impl GitPanelView {
         if self.last_target.as_ref() != Some(&target) {
             self.last_target = Some(target.clone());
             self.target_gen += 1;
-            // Target changed — clear stale preview.
+            // Target changed — clear stale selection + history.
             self.selected = None;
-            self.diff_text = None;
-            self.diff_error = None;
+            self.history.clear();
+            self.dir_collapsed.clear();
         }
         let Some(root) = self.root.clone() else {
             self.is_repo = false;
@@ -870,9 +1133,11 @@ impl GitPanelView {
                         this.poll_error = None;
                         if root_changed {
                             this.selected = None;
-                            this.diff_text = None;
+                            this.history.clear();
                         }
-                        this.reload_diff(cx);
+                        if this.mode == PanelMode::History {
+                            this.load_history(cx);
+                        }
                     }
                     Ok(None) => {
                         this.is_repo = false;
@@ -896,46 +1161,82 @@ impl GitPanelView {
         self.refresh(cx);
     }
 
-    // ── diff preview ───────────────────────────────────────────────────────
+    // ── Project Diff (workspace item) ─────────────────────────────────────
+
+    /// The ordered change list for the current status, as Project-Diff files.
+    fn change_files(&self) -> Vec<ProjectDiffFile> {
+        let Some(state) = &self.state else {
+            return Vec::new();
+        };
+        let b = bucketize(&state.status);
+        let sections: Sections<'_> = [
+            (Section::Conflicts, "Conflicts", &b.conflicted),
+            (Section::Staged, "Staged", &b.staged),
+            (Section::Unstaged, "Changes", &b.unstaged),
+            (Section::Untracked, "Untracked", &b.untracked),
+        ];
+        all_change_files(&sections)
+    }
+
+    /// Emit a [`ScmEvent::OpenProjectDiff`] for the current change set, focusing
+    /// `selected` if given. The shell forwards it to
+    /// `Workspace::open_project_diff` (idempotent — never a duplicate tab).
+    fn emit_project_diff(&mut self, selected: Option<String>, cx: &mut Context<Self>) {
+        let Some(repo_root) = self.repo_root.clone() else {
+            return;
+        };
+        let files = self.change_files();
+        if files.is_empty() {
+            return;
+        }
+        cx.emit(ScmEvent::OpenProjectDiff(ProjectDiffRequest {
+            repo_root,
+            session_id: self.session_id.clone(),
+            files,
+            selected,
+            mode: ProjectDiffMode::Unified,
+        }));
+    }
 
     fn select_file(&mut self, sel: Selected, cx: &mut Context<Self>) {
         if self.selected.as_ref() == Some(&sel) {
             self.selected = None;
-            self.diff_text = None;
-            self.diff_error = None;
         } else {
-            self.selected = Some(sel);
-            self.reload_diff(cx);
+            self.selected = Some(sel.clone());
+            self.emit_project_diff(Some(sel.path), cx);
         }
         cx.notify();
     }
 
-    /// Open `sel`'s diff in side-by-side layout (context menu "Open Diff
-    /// (Split)"). Always opens (never toggles closed).
-    fn open_diff_split(&mut self, sel: Selected, cx: &mut Context<Self>) {
-        self.diff_split = true;
-        if self.selected.as_ref() != Some(&sel) {
-            self.selected = Some(sel);
-            self.reload_diff(cx);
+    fn set_mode(&mut self, mode: PanelMode, cx: &mut Context<Self>) {
+        if self.mode == mode {
+            return;
+        }
+        self.mode = mode;
+        if mode == PanelMode::History && self.history.is_empty() {
+            self.load_history(cx);
         }
         cx.notify();
     }
 
-    fn reload_diff(&mut self, cx: &mut Context<Self>) {
-        let (Some(repo_root), Some(sel)) = (self.repo_root.clone(), self.selected.clone()) else {
+    fn load_history(&mut self, cx: &mut Context<Self>) {
+        let Some(repo_root) = self.repo_root.clone() else {
             return;
         };
+        if self.history_loading {
+            return;
+        }
+        self.history_loading = true;
         let session = self.session_id.clone();
         let backend = self.backend.clone();
         let generation = self.target_gen;
         let jh = self.tokio.spawn(async move {
-            git::git_get_diff(
+            git::git_get_log(
                 repo_root,
-                sel.path,
-                sel.staged,
-                Some(false),
-                Some(sel.untracked),
+                Some(100),
+                false,
                 session,
+                None,
                 &backend.ssh,
                 backend.clone(),
             )
@@ -944,17 +1245,14 @@ impl GitPanelView {
         cx.spawn(async move |this, cx| {
             let res = jh.await.unwrap_or_else(|e| Err(e.to_string()));
             let _ = this.update(cx, |this, cx| {
+                this.history_loading = false;
                 if this.target_gen != generation {
                     return;
                 }
                 match res {
-                    Ok(text) => {
-                        this.diff_text = Some(text);
-                        this.diff_error = None;
-                    }
+                    Ok(commits) => this.history = commits,
                     Err(e) => {
-                        this.diff_text = None;
-                        this.diff_error = Some(e);
+                        notify_err::<()>("Load history failed", Err(e), cx);
                     }
                 }
                 cx.notify();
@@ -965,27 +1263,106 @@ impl GitPanelView {
 
     // ── generic backend-op dispatch ────────────────────────────────────────
 
-    /// Runs `op` on the tokio runtime, toasts any error, then refreshes.
-    fn run_op<F>(&mut self, title: &'static str, op: F, cx: &mut Context<Self>)
-    where
+    /// Runs `op` on the tokio runtime, toasts any error, then refreshes. The
+    /// op is tagged with a [`RepoOperation`] identity so the affected control
+    /// can show progress / be disabled without freezing the whole panel.
+    fn run_op_kind<F>(
+        &mut self,
+        kind: RepoOperation,
+        title: &'static str,
+        op: F,
+        cx: &mut Context<Self>,
+    ) where
         F: std::future::Future<Output = Result<(), String>> + Send + 'static,
     {
         if self.op_in_progress {
             return;
         }
         self.op_in_progress = true;
+        self.repo_op = kind;
         cx.notify();
         let jh = self.tokio.spawn(op);
         cx.spawn(async move |this, cx| {
             let res = jh.await.unwrap_or_else(|e| Err(e.to_string()));
             let _ = this.update(cx, |this, cx| {
                 this.op_in_progress = false;
+                this.repo_op = RepoOperation::Idle;
                 notify_err(title, res, cx);
                 this.refresh_soon(cx);
                 cx.notify();
             });
         })
         .detach();
+    }
+
+    /// [`run_op_kind`] with the generic `Mutating` identity.
+    fn run_op<F>(&mut self, title: &'static str, op: F, cx: &mut Context<Self>)
+    where
+        F: std::future::Future<Output = Result<(), String>> + Send + 'static,
+    {
+        self.run_op_kind(RepoOperation::Mutating, title, op, cx);
+    }
+
+    /// Stage every path in `paths` in one sequential op (section / directory
+    /// aggregate checkbox).
+    fn stage_paths(&mut self, paths: Vec<String>, cx: &mut Context<Self>) {
+        let Some((root, sid, be)) = self.ctx() else {
+            return;
+        };
+        self.run_op(
+            "Stage failed",
+            async move {
+                for p in paths {
+                    git::git_stage_file(root.clone(), p, sid.clone(), &be.ssh, be.clone()).await?;
+                }
+                Ok(())
+            },
+            cx,
+        );
+    }
+
+    /// Unstage every path in `paths` in one sequential op.
+    fn unstage_paths(&mut self, paths: Vec<String>, cx: &mut Context<Self>) {
+        let Some((root, sid, be)) = self.ctx() else {
+            return;
+        };
+        self.run_op(
+            "Unstage failed",
+            async move {
+                for p in paths {
+                    git::git_unstage_file(root.clone(), p, sid.clone(), &be.ssh, be.clone())
+                        .await?;
+                }
+                Ok(())
+            },
+            cx,
+        );
+    }
+
+    /// Toggle a whole section's staging (header checkbox).
+    fn stage_section(&mut self, section: Section, want_staged: bool, cx: &mut Context<Self>) {
+        let Some(state) = &self.state else {
+            return;
+        };
+        let b = bucketize(&state.status);
+        let files: &[FileStatus] = match section {
+            Section::Conflicts => &b.conflicted,
+            Section::Staged => &b.staged,
+            Section::Unstaged => &b.unstaged,
+            Section::Untracked => &b.untracked,
+        };
+        let paths: Vec<String> = files.iter().map(|f| f.path.clone()).collect();
+        if paths.is_empty() {
+            return;
+        }
+        // The checkbox already reports the desired next state: `true` for the
+        // Unstaged / Untracked / Conflicts sections, `false` for the Staged
+        // section (whose box is "on").
+        if want_staged {
+            self.stage_paths(paths, cx);
+        } else {
+            self.unstage_paths(paths, cx);
+        }
     }
 
     fn ctx(&self) -> Option<(String, Option<String>, Backend)> {
@@ -1073,80 +1450,63 @@ impl GitPanelView {
         );
     }
 
-    /// Stage (or, if `reverse`, unstage) the hunk at `hunk_idx` of the loaded
-    /// diff. Falls back to whole-file stage/unstage for new/deleted files.
-    fn apply_hunk(&mut self, hunk_idx: usize, reverse: bool, cx: &mut Context<Self>) {
-        let Some((root, sid, be)) = self.ctx() else {
-            return;
-        };
-        let Some(diff) = self.diff_text.clone() else {
-            return;
-        };
-        let files = parse_diff_hunks(&diff);
-        let Some(file) = files.into_iter().next() else {
-            notify_err::<()>(
-                "Hunk staging unavailable",
-                Err("Diff could not be parsed for hunk staging.".to_string()),
-                cx,
-            );
-            return;
-        };
-        let path = file.path.clone();
-        if is_whole_file_single_hunk(&file) {
-            if reverse {
-                self.unstage_file(path, cx);
-            } else {
-                self.stage_file(path, cx);
-            }
-            return;
-        }
-        let Some(hunk) = file.hunks.get(hunk_idx) else {
-            return;
-        };
-        let patch = build_hunk_patch(&file, hunk);
-        let title = if reverse {
-            "Unstage hunk failed"
-        } else {
-            "Stage hunk failed"
-        };
-        self.run_op(
-            title,
-            async move {
-                if reverse {
-                    git::git_unstage_hunk(root, path, patch, sid, &be.ssh, be.clone()).await
-                } else {
-                    git::git_stage_hunk(root, path, patch, sid, &be.ssh, be.clone()).await
-                }
-            },
-            cx,
-        );
-    }
-
     // ── commit / sync ──────────────────────────────────────────────────────
 
-    fn do_commit(&mut self, cx: &mut Context<Self>) {
-        let staged_count = self
-            .state
-            .as_ref()
-            .map(|s| bucketize(&s.status).staged.len() + bucketize(&s.status).conflicted.len())
-            .unwrap_or(0);
-        let msg = match validate_commit_message(&self.commit_msg, staged_count) {
-            Ok(m) => m,
-            Err(e) => {
-                self.commit_error = Some(e);
-                cx.notify();
-                return;
-            }
+    /// Aggregate staging counts + whether tracked files are dirty. Drives the
+    /// adaptive commit mode / disabled reason.
+    fn commit_state(&self) -> (usize, bool, bool) {
+        let Some(s) = &self.state else {
+            return (0, false, false);
         };
+        let b = bucketize(&s.status);
+        let staged = b.staged.len();
+        let tracked_dirty = !b.unstaged.is_empty();
+        let has_conflicts = !b.conflicted.is_empty();
+        (staged, tracked_dirty, has_conflicts)
+    }
+
+    fn commit_mode(&self) -> CommitMode {
+        let (staged, tracked_dirty, _) = self.commit_state();
+        derive_commit_mode(self.amend, staged, tracked_dirty)
+    }
+
+    fn commit_disabled_reason(&self, message_empty: bool) -> Option<DisabledReason> {
+        let (staged, tracked_dirty, has_conflicts) = self.commit_state();
+        derive_disabled_reason(
+            message_empty,
+            staged,
+            tracked_dirty,
+            has_conflicts,
+            self.repo_op,
+            self.amend,
+        )
+    }
+
+    fn do_commit(&mut self, msg: String, window: &mut Window, cx: &mut Context<Self>) {
+        let msg = msg.trim().to_string();
+        if self.commit_disabled_reason(msg.is_empty()).is_some() {
+            return;
+        }
         let Some((root, sid, be)) = self.ctx() else {
             return;
         };
+        let mode = self.commit_mode();
+        let amend = matches!(mode, CommitMode::Amend);
+        // `CommitTracked` stages tracked-file changes first.
+        let stage_tracked = matches!(mode, CommitMode::CommitTracked);
         self.commit_error = None;
-        self.commit_msg.clear();
+        self.commit_seed.clear();
+        if let Some(input) = self.commit_input.clone() {
+            input.update(cx, |s, cx| s.set_value("", window, cx));
+        }
+        self.amend = false;
         self.run_op(
             "Commit failed",
             async move {
-                git::git_commit(root, msg, false, sid, &be.ssh, be.clone())
+                if stage_tracked {
+                    git::git_stage_all(root.clone(), sid.clone(), &be.ssh, be.clone()).await?;
+                }
+                git::git_commit(root, msg, amend, sid, &be.ssh, be.clone())
                     .await
                     .map(|_| ())
             },
@@ -1158,7 +1518,8 @@ impl GitPanelView {
         let Some((root, sid, be)) = self.ctx() else {
             return;
         };
-        self.run_op(
+        self.run_op_kind(
+            RepoOperation::Pulling,
             "Pull failed",
             async move {
                 git::git_pull(root, sid, &be.ssh, be.clone())
@@ -1180,7 +1541,8 @@ impl GitPanelView {
             .map(|s| s.current_branch.clone())
             .unwrap_or_default();
         if has_upstream {
-            self.run_op(
+            self.run_op_kind(
+                RepoOperation::Pushing,
                 "Push failed",
                 async move {
                     git::git_push(root, None, None, sid, &be.ssh, be.clone())
@@ -1191,7 +1553,8 @@ impl GitPanelView {
             );
         } else {
             // New branch — publish with --set-upstream to origin.
-            self.run_op(
+            self.run_op_kind(
+                RepoOperation::Pushing,
                 "Publish failed",
                 async move {
                     git::git_push_set_upstream(
@@ -1210,14 +1573,9 @@ impl GitPanelView {
         }
     }
 
+    /// Force-push. Only reached after an explicit in-panel confirmation
+    /// (`PendingConfirm::ForcePush`) — never a bare primary button.
     fn force_push(&mut self, cx: &mut Context<Self>) {
-        // Requires an explicit second click (`force_push_armed`).
-        if !self.force_push_armed {
-            self.force_push_armed = true;
-            cx.notify();
-            return;
-        }
-        self.force_push_armed = false;
         let Some((root, sid, be)) = self.ctx() else {
             return;
         };
@@ -1226,7 +1584,8 @@ impl GitPanelView {
             .as_ref()
             .map(|s| s.current_branch.clone())
             .unwrap_or_default();
-        self.run_op(
+        self.run_op_kind(
+            RepoOperation::Pushing,
             "Force push failed",
             async move {
                 git::git_push_force_with_lease(
@@ -1248,7 +1607,8 @@ impl GitPanelView {
         let Some((root, sid, be)) = self.ctx() else {
             return;
         };
-        self.run_op(
+        self.run_op_kind(
+            RepoOperation::Fetching,
             "Fetch failed",
             async move {
                 git::git_fetch(root, sid, &be.ssh, be.clone())
@@ -1687,39 +2047,47 @@ impl GitPanelView {
         cx.notify();
     }
 
-    // ── commit-message text input ──────────────────────────────────────────
+    // ── commit composer (editor-backed) ───────────────────────────────────
 
-    fn on_commit_key(&mut self, ev: &KeyDownEvent, _w: &mut Window, cx: &mut Context<Self>) {
-        let ks = &ev.keystroke;
-        match ks.key.as_str() {
-            "enter" => {
-                if ks.modifiers.platform || ks.modifiers.control {
-                    self.do_commit(cx);
-                } else {
-                    self.commit_msg.push('\n');
-                }
-                cx.notify();
-            }
-            "backspace" => {
-                self.commit_msg.pop();
-                cx.notify();
-            }
-            key => {
-                if ks.modifiers.platform || ks.modifiers.control || ks.modifiers.alt {
-                    return;
-                }
-                let ch = ks
-                    .key_char
-                    .clone()
-                    .filter(|s| !s.is_empty() && !s.chars().any(|c| c.is_control()))
-                    .or_else(|| (key.chars().count() == 1).then(|| key.to_string()));
-                if let Some(ch) = ch {
-                    self.commit_msg.push_str(&ch);
-                    cx.notify();
-                }
-            }
+    /// Create the `InputState` lazily (it needs a `Window`). Mirrors the AI
+    /// composer's pattern: an `InputEvent::PressEnter { secondary }` commits on
+    /// ⌘↵ / Ctrl↵.
+    fn ensure_commit_input(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.commit_input.is_some() {
+            return;
         }
-        cx.stop_propagation();
+        let seed = std::mem::take(&mut self.commit_seed);
+        let input = cx.new(|cx| {
+            let mut s = InputState::new(window, cx)
+                .multi_line(true)
+                .auto_grow(2, 8)
+                .placeholder("Message (\u{2318}\u{21A9} to commit)");
+            if !seed.is_empty() {
+                s.set_value(seed, window, cx);
+            }
+            s
+        });
+        let view = cx.entity();
+        window
+            .subscribe(&input, cx, move |input, ev: &InputEvent, window, cx| {
+                if let InputEvent::PressEnter { secondary } = ev {
+                    if !*secondary {
+                        return;
+                    }
+                    let v = input.read(cx).value().to_string();
+                    let trimmed = v.strip_suffix('\n').unwrap_or(&v).to_string();
+                    view.update(cx, |this, cx| this.do_commit(trimmed, window, cx));
+                }
+            })
+            .detach();
+        self.commit_input = Some(input);
+    }
+
+    fn commit_text(&self, cx: &App) -> String {
+        match &self.commit_input {
+            Some(i) => i.read(cx).value().to_string(),
+            None => self.commit_seed.clone(),
+        }
     }
 
     // ── rendering ──────────────────────────────────────────────────────────
@@ -1757,164 +2125,17 @@ impl GitPanelView {
             .on_click(cx.listener(move |this, _: &ClickEvent, w, cx| on_click(this, w, cx)))
     }
 
-    fn render_diff(&self, c: Colors, cx: &mut Context<Self>) -> gpui::AnyElement {
-        let Some(sel) = self.selected.clone() else {
-            return div().into_any_element();
-        };
-        let mut body = div()
-            .id("git-diff")
-            .flex()
-            .flex_col()
-            .max_h(px(280.0))
-            .overflow_y_scroll()
-            .border_b_1()
-            .border_color(c.border)
-            .font(self.theme.read(cx).buffer_font())
-            .text_size(px(11.0));
-
-        let header = div()
-            .flex()
-            .items_center()
-            .justify_between()
-            .h(px(22.0))
-            .px(px(8.0))
-            .bg(c.card)
-            .text_size(px(11.0))
-            .text_color(c.fg)
-            .child(SharedString::from(short_path(&sel.path)))
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap(px(8.0))
-                    .child(
-                        labonair_ui_kit::button_no_hover(
-                            "git-diff-layout",
-                            c.palette,
-                            ButtonVariant::Ghost,
-                            ButtonSize::Xs,
-                        )
-                        .text_color(c.muted)
-                        .hover(|s| s.text_color(c.fg))
-                        .child(SharedString::from(if self.diff_split {
-                            "Unified"
-                        } else {
-                            "Split"
-                        }))
-                        .on_click(cx.listener(
-                            |this, _: &ClickEvent, _w, cx| {
-                                this.diff_split = !this.diff_split;
-                                cx.notify();
-                            },
-                        )),
-                    )
-                    .child(
-                        labonair_ui_kit::button_no_hover(
-                            "git-diff-close",
-                            c.palette,
-                            ButtonVariant::Ghost,
-                            ButtonSize::IconXs,
-                        )
-                        .text_color(c.muted)
-                        .hover(|s| s.text_color(c.fg))
-                        .child(SharedString::from("\u{2715}"))
-                        .on_click(cx.listener(
-                            |this, _: &ClickEvent, _w, cx| {
-                                this.selected = None;
-                                this.diff_text = None;
-                                cx.notify();
-                            },
-                        )),
-                    ),
-            );
-
-        if let Some(err) = &self.diff_error {
-            body = body.child(
-                div()
-                    .p(px(8.0))
-                    .text_color(c.error)
-                    .child(SharedString::from(err.clone())),
-            );
-        } else if let Some(text) = &self.diff_text {
-            if sel.untracked || !text.contains("@@ ") {
-                // Untracked / no-hunk: show raw lines only.
-                for line in text.lines().take(400) {
-                    body = body.child(diff_line(line, c));
-                }
-            } else {
-                let files = parse_diff_hunks(text);
-                if let Some(file) = files.first() {
-                    let whole = is_whole_file_single_hunk(file);
-                    for (i, hunk) in file.hunks.iter().enumerate() {
-                        let reverse = sel.staged;
-                        body = body.child(
-                            div()
-                                .flex()
-                                .items_center()
-                                .justify_between()
-                                .px(px(8.0))
-                                .bg(c.info.opacity(0.10))
-                                .text_color(c.info)
-                                .child(SharedString::from(hunk.header.clone()))
-                                .when(!whole, |d| {
-                                    d.child(
-                                        labonair_ui_kit::button_no_hover(
-                                            SharedString::from(format!("hunk-{i}")),
-                                            c.palette,
-                                            ButtonVariant::Ghost,
-                                            ButtonSize::Xs,
-                                        )
-                                        .text_color(c.muted)
-                                        .hover(|s| s.text_color(c.fg))
-                                        .child(SharedString::from(if reverse {
-                                            "Unstage hunk"
-                                        } else {
-                                            "Stage hunk"
-                                        }))
-                                        .on_click(
-                                            cx.listener(move |this, _: &ClickEvent, _w, cx| {
-                                                this.apply_hunk(i, reverse, cx);
-                                            }),
-                                        ),
-                                    )
-                                }),
-                        );
-                        if self.diff_split {
-                            for row in split_hunk_rows(&hunk.lines, c) {
-                                body = body.child(row);
-                            }
-                        } else {
-                            for l in &hunk.lines {
-                                body = body.child(diff_line(l, c));
-                            }
-                        }
-                    }
-                }
-            }
-        } else {
-            body = body.child(
-                div()
-                    .p(px(8.0))
-                    .text_color(c.muted)
-                    .child(SharedString::from("Loading diff\u{2026}")),
-            );
-        }
-
-        div()
-            .flex()
-            .flex_col()
-            .child(header)
-            .child(body)
-            .into_any_element()
-    }
-
-    fn render_branch_bar(&self, c: Colors, cx: &mut Context<Self>) -> gpui::AnyElement {
+    /// Consolidated repository footer (Zed-parity Phase 4, §9.5): branch,
+    /// ahead/behind, and one compact repo menu (`⋯`) that holds Fetch / Pull /
+    /// Push and — clearly separated and de-emphasised — Force Push, plus
+    /// Stashes / Tags and any in-progress Continue / Abort.
+    fn render_footer(&self, c: Colors, cx: &mut Context<Self>) -> gpui::AnyElement {
         let Some(state) = &self.state else {
             return div().into_any_element();
         };
         let status = &state.status;
-        let has_upstream = self.current_branch_has_upstream();
-        let push_label = if has_upstream { "Push" } else { "Publish" };
+        let in_progress =
+            status.merge_in_progress || status.rebase_in_progress || status.cherry_pick_in_progress;
 
         let mut bar = div().flex().flex_col().border_t_1().border_color(c.border);
 
@@ -1965,26 +2186,33 @@ impl GitPanelView {
                     .child(SharedString::from(format!("\u{2191}{}", status.ahead))),
             );
         }
-        row = row
-            .child(self.tool_btn("git-fetch", "Fetch", c, cx, |this, _w, cx| this.fetch(cx)))
-            .child(self.tool_btn("git-pull", "Pull", c, cx, |this, _w, cx| this.pull(cx)))
-            .child(self.tool_btn("git-push", push_label, c, cx, |this, _w, cx| this.push(cx)))
-            .child(self.tool_btn(
-                "git-forcepush",
-                if self.force_push_armed {
-                    "Confirm force"
-                } else {
-                    "Force"
-                },
-                c,
-                cx,
-                |this, _w, cx| this.force_push(cx),
+        if self.repo_op.is_busy() {
+            row = row.child(div().text_size(px(10.0)).text_color(c.muted).child(
+                SharedString::from(match self.repo_op {
+                    RepoOperation::Fetching => "fetching\u{2026}",
+                    RepoOperation::Pulling => "pulling\u{2026}",
+                    RepoOperation::Pushing => "pushing\u{2026}",
+                    _ => "working\u{2026}",
+                }),
             ));
+        }
+        row = row.child(
+            labonair_ui_kit::button_no_hover(
+                "git-repo-menu",
+                c.palette,
+                ButtonVariant::Ghost,
+                ButtonSize::IconXs,
+            )
+            .text_color(c.muted)
+            .hover(|s| s.text_color(c.fg))
+            .child(SharedString::from("\u{22EF}"))
+            .on_click(cx.listener(|this, ev: &ClickEvent, _w, cx| {
+                this.panel_menu = Some((PanelMenu::Repo, ev.position()));
+                cx.notify();
+            })),
+        );
         bar = bar.child(row);
 
-        // In-progress banners (merge / rebase / cherry-pick).
-        let in_progress =
-            status.merge_in_progress || status.rebase_in_progress || status.cherry_pick_in_progress;
         if in_progress {
             let text = if status.merge_in_progress {
                 "Merge in progress \u{2014} resolve conflicts, then commit or Abort"
@@ -2018,8 +2246,56 @@ impl GitPanelView {
         bar.into_any_element()
     }
 
-    fn render_commit_form(&self, c: Colors, cx: &mut Context<Self>) -> gpui::AnyElement {
-        let placeholder = self.commit_msg.is_empty();
+    /// Editor-backed commit composer (Zed-parity Phase 4, §9.5). Compact by
+    /// default, `⤢` grows it; adaptive `Commit` / `Commit Tracked` / `Amend`
+    /// button with a tooltip explaining any disabled reason.
+    fn render_commit_composer(&self, c: Colors, cx: &mut Context<Self>) -> gpui::AnyElement {
+        let text = self.commit_text(cx);
+        let mode = self.commit_mode();
+        let disabled = self.commit_disabled_reason(text.trim().is_empty());
+        let disabled_desc = disabled.map(|d| d.describe());
+        let title_len = text.lines().next().map(|l| l.chars().count()).unwrap_or(0);
+        let over_title = title_len > 72;
+
+        let input_el: gpui::AnyElement = match &self.commit_input {
+            Some(input) => field_input(input).into_any_element(),
+            None => div()
+                .id("git-commit-input-seed")
+                .min_h(px(48.0))
+                .p(px(6.0))
+                .rounded_sm()
+                .border_1()
+                .border_color(c.border)
+                .bg(c.bg)
+                .text_size(px(12.0))
+                .text_color(c.muted)
+                .child(SharedString::from("Message (\u{2318}\u{21A9} to commit)"))
+                .into_any_element(),
+        };
+
+        let commit_label = SharedString::from(mode.label());
+        let mut commit_btn = button(
+            "git-commit-btn",
+            c.palette,
+            ButtonVariant::Default,
+            ButtonSize::Sm,
+        )
+        .flex_1()
+        .child(commit_label);
+        if let Some(desc) = disabled_desc {
+            // No `on_click` → inert; dimmed + tooltip explains why.
+            let desc = SharedString::from(desc);
+            commit_btn = commit_btn
+                .opacity(0.5)
+                .cursor_default()
+                .tooltip(move |w, cx| labonair_ui_kit::Tooltip::new(desc.clone()).build(w, cx));
+        } else {
+            commit_btn = commit_btn.on_click(cx.listener(|this, _: &ClickEvent, w, cx| {
+                let msg = this.commit_text(cx);
+                this.do_commit(msg, w, cx);
+            }));
+        }
+
         div()
             .flex()
             .flex_col()
@@ -2028,33 +2304,21 @@ impl GitPanelView {
             .border_t_1()
             .border_color(c.border)
             .child(
-                // T20-003: a click-to-focus multi-line hand-rolled text
-                // field (GPUI text input here is routed through
-                // `on_commit_key`, same shape as `text_field` below) — no
-                // `ui-kit` text-input primitive fits a multi-line commit
-                // message box, documented exception.
                 div()
-                    .id("git-commit-input")
-                    .track_focus(&self.commit_focus)
-                    .min_h(px(48.0))
-                    .p(px(6.0))
-                    .rounded_sm()
-                    .border_1()
-                    .border_color(c.border)
-                    .bg(c.bg)
-                    .text_size(px(12.0))
-                    .text_color(if placeholder { c.muted } else { c.fg })
-                    .whitespace_normal()
-                    .child(SharedString::from(if placeholder {
-                        "Message (\u{2318}Enter to commit)".to_string()
-                    } else {
-                        self.commit_msg.clone()
-                    }))
-                    .on_key_down(cx.listener(Self::on_commit_key))
-                    .on_click(cx.listener(|this, _: &ClickEvent, w, _cx| {
-                        w.focus(&this.commit_focus);
-                    })),
+                    .id("git-commit-box")
+                    .when(self.commit_expanded, |d| d.min_h(px(160.0)))
+                    .child(input_el),
             )
+            .when(over_title, |d| {
+                d.child(
+                    div()
+                        .text_size(px(10.0))
+                        .text_color(c.warning)
+                        .child(SharedString::from(format!(
+                            "Title is {title_len} chars (recommended \u{2264} 72)"
+                        ))),
+                )
+            })
             .when_some(self.commit_error.clone(), |d, err| {
                 d.child(
                     div()
@@ -2064,16 +2328,38 @@ impl GitPanelView {
                 )
             })
             .child(
-                button(
-                    "git-commit-btn",
-                    c.palette,
-                    ButtonVariant::Default,
-                    ButtonSize::Sm,
-                )
-                .w_full()
-                .child(SharedString::from("Commit"))
-                .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| this.do_commit(cx))),
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(4.0))
+                    .child(
+                        checkbox("git-amend", c.palette, self.amend)
+                            .label("Amend")
+                            .on_click(cx.listener(|this, _: &bool, _w, cx| {
+                                this.amend = !this.amend;
+                                cx.notify();
+                            })),
+                    )
+                    .child(div().flex_1())
+                    .child(
+                        labonair_ui_kit::button_no_hover(
+                            "git-commit-expand",
+                            c.palette,
+                            ButtonVariant::Ghost,
+                            ButtonSize::IconXs,
+                        )
+                        .text_color(c.muted)
+                        .hover(|s| s.text_color(c.fg))
+                        .child(SharedString::from("\u{2922}"))
+                        .on_click(cx.listener(
+                            |this, _: &ClickEvent, _w, cx| {
+                                this.commit_expanded = !this.commit_expanded;
+                                cx.notify();
+                            },
+                        )),
+                    ),
             )
+            .child(div().flex().child(commit_btn))
             .into_any_element()
     }
 
@@ -2995,13 +3281,355 @@ impl GitPanelView {
             )
             .into_any_element()
     }
+
+    /// Adaptive Changes header (Zed-parity Phase 4, §9.5): repo-level tri-state
+    /// checkbox, `View Diff` (+ file count), a view-options menu, an adaptive
+    /// Stage All / Unstage All action and an overflow menu for the rare /
+    /// destructive repo-wide operations.
+    fn render_changes_header(
+        &self,
+        buckets: &Buckets,
+        c: Colors,
+        cx: &mut Context<Self>,
+    ) -> gpui::AnyElement {
+        let total = buckets.conflicted.len()
+            + buckets.staged.len()
+            + buckets.unstaged.len()
+            + buckets.untracked.len();
+        let unstaged_total =
+            buckets.conflicted.len() + buckets.unstaged.len() + buckets.untracked.len();
+        let mut flags: Vec<bool> = vec![true; buckets.staged.len()];
+        flags.extend(std::iter::repeat_n(false, unstaged_total));
+        let repo_stage = aggregate_stage(&flags);
+        let has_unstaged = !buckets.unstaged.is_empty() || !buckets.untracked.is_empty();
+
+        let repo_v = cx.entity();
+        let repo_box = git_change_row(
+            "git-repo-cb",
+            c.palette,
+            repo_stage,
+            SharedString::default(),
+        )
+        .on_toggle_stage(move |want: &bool, _w, cx| {
+            let want = *want;
+            repo_v.update(cx, |this, cx| {
+                if want {
+                    this.stage_all(cx);
+                } else {
+                    this.unstage_all(cx);
+                }
+            });
+        });
+
+        div()
+            .flex()
+            .items_center()
+            .gap(px(2.0))
+            .h(px(28.0))
+            .px(px(6.0))
+            .border_b_1()
+            .border_color(c.border)
+            .child(
+                div()
+                    .flex_none()
+                    .w(px(24.0))
+                    .overflow_hidden()
+                    .child(repo_box),
+            )
+            .child(
+                self.tool_btn("git-view-diff", "View Diff", c, cx, |this, _w, cx| {
+                    this.emit_project_diff(None, cx)
+                }),
+            )
+            .child(
+                div()
+                    .text_size(px(10.0))
+                    .text_color(c.muted)
+                    .child(SharedString::from(format!("{total} files"))),
+            )
+            .child(div().flex_1())
+            .child(
+                labonair_ui_kit::button_no_hover(
+                    "git-view-options",
+                    c.palette,
+                    ButtonVariant::Ghost,
+                    ButtonSize::IconXs,
+                )
+                .text_color(c.muted)
+                .hover(|s| s.text_color(c.fg))
+                .child(SharedString::from("\u{22EE}"))
+                .on_click(cx.listener(|this, ev: &ClickEvent, _w, cx| {
+                    this.panel_menu = Some((PanelMenu::ViewOptions, ev.position()));
+                    cx.notify();
+                })),
+            )
+            .child(if has_unstaged {
+                self.tool_btn("git-stage-all", "Stage All", c, cx, |this, _w, cx| {
+                    this.stage_all(cx)
+                })
+                .into_any_element()
+            } else {
+                self.tool_btn("git-unstage-all", "Unstage All", c, cx, |this, _w, cx| {
+                    this.unstage_all(cx)
+                })
+                .into_any_element()
+            })
+            .child(
+                labonair_ui_kit::button_no_hover(
+                    "git-overflow",
+                    c.palette,
+                    ButtonVariant::Ghost,
+                    ButtonSize::IconXs,
+                )
+                .text_color(c.muted)
+                .hover(|s| s.text_color(c.fg))
+                .child(SharedString::from("\u{25BE}"))
+                .on_click(cx.listener(|this, ev: &ClickEvent, _w, cx| {
+                    this.panel_menu = Some((PanelMenu::Overflow, ev.position()));
+                    cx.notify();
+                })),
+            )
+            .into_any_element()
+    }
+
+    fn render_confirm(&self, c: Colors, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
+        let pending = self.pending_confirm?;
+        let (text, yes) = match pending {
+            PendingConfirm::DiscardAll => (
+                "Discard ALL changes in tracked files? This cannot be undone.".to_string(),
+                "Discard All",
+            ),
+            PendingConfirm::Clean => (
+                "Delete ALL untracked files? This cannot be undone.".to_string(),
+                "Clean",
+            ),
+            PendingConfirm::ForcePush => (
+                "Force-push with lease? This can overwrite the remote branch.".to_string(),
+                "Force Push",
+            ),
+        };
+        Some(self.confirm_bar(
+            text,
+            c,
+            vec![
+                ("confirm-yes", yes, c.error),
+                ("confirm-no", "Cancel", c.muted),
+            ],
+            cx,
+            move |this, id, cx| {
+                if id == "confirm-yes" {
+                    match pending {
+                        PendingConfirm::DiscardAll => this.discard_all(cx),
+                        PendingConfirm::Clean => this.clean_untracked(cx),
+                        PendingConfirm::ForcePush => this.force_push(cx),
+                    }
+                }
+                this.pending_confirm = None;
+                cx.notify();
+            },
+        ))
+    }
+
+    fn render_history(&self, c: Colors, _cx: &mut Context<Self>) -> gpui::AnyElement {
+        if self.history.is_empty() {
+            return div()
+                .flex_1()
+                .flex()
+                .items_center()
+                .justify_center()
+                .text_size(px(11.0))
+                .text_color(c.muted)
+                .child(SharedString::from(if self.history_loading {
+                    "Loading history\u{2026}"
+                } else {
+                    "No commits"
+                }))
+                .into_any_element();
+        }
+        let commits = self.history.clone();
+        let row_h = px(40.0);
+        uniform_list(
+            "git-history-list",
+            commits.len(),
+            move |range, _win, _cx| {
+                range
+                    .map(|i| {
+                        let cm = &commits[i];
+                        div()
+                            .flex()
+                            .flex_col()
+                            .h(row_h)
+                            .justify_center()
+                            .px(px(10.0))
+                            .border_b_1()
+                            .border_color(c.border.opacity(0.5))
+                            .child(
+                                div()
+                                    .flex()
+                                    .gap(px(6.0))
+                                    .overflow_hidden()
+                                    .whitespace_nowrap()
+                                    .text_size(px(12.0))
+                                    .child(
+                                        div()
+                                            .flex_none()
+                                            .text_color(c.info)
+                                            .child(SharedString::from(cm.short_hash.clone())),
+                                    )
+                                    .child(
+                                        div()
+                                            .flex_1()
+                                            .overflow_hidden()
+                                            .text_color(c.fg)
+                                            .child(SharedString::from(cm.subject.clone())),
+                                    ),
+                            )
+                            .child(
+                                div()
+                                    .text_size(px(10.0))
+                                    .text_color(c.muted)
+                                    .overflow_hidden()
+                                    .whitespace_nowrap()
+                                    .child(SharedString::from(format!(
+                                        "{}  \u{2022}  +{} \u{2212}{}",
+                                        cm.author_name, cm.insertions, cm.deletions
+                                    ))),
+                            )
+                            .into_any_element()
+                    })
+                    .collect::<Vec<_>>()
+            },
+        )
+        .flex_1()
+        .into_any_element()
+    }
+
+    fn render_panel_menu(&self, c: Colors, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
+        let (which, pos) = self.panel_menu?;
+        let view = cx.entity();
+        let close = {
+            let v = view.clone();
+            move |cx: &mut App| {
+                v.update(cx, |this, cx| {
+                    this.panel_menu = None;
+                    cx.notify();
+                });
+            }
+        };
+        let act = |f: GitFileAct| {
+            let v = view.clone();
+            move |_: &ClickEvent, _w: &mut Window, cx: &mut App| {
+                v.update(cx, |this, cx| {
+                    this.panel_menu = None;
+                    f(this, cx);
+                });
+            }
+        };
+
+        let items: Vec<MenuItem> = match which {
+            PanelMenu::ViewOptions => {
+                let tree = self.file_tree;
+                vec![
+                    MenuItem::new("vo-flat", "Flat view")
+                        .checked(!tree)
+                        .on_click(act(Box::new(|this, cx| {
+                            this.file_tree = false;
+                            cx.notify();
+                        }))),
+                    MenuItem::new("vo-tree", "Tree view")
+                        .checked(tree)
+                        .on_click(act(Box::new(|this, cx| {
+                            this.file_tree = true;
+                            cx.notify();
+                        }))),
+                    MenuItem::separator(),
+                    MenuItem::new("vo-collapse", "Collapse all").on_click(act(Box::new(
+                        |this, cx| {
+                            for s in [
+                                Section::Conflicts,
+                                Section::Staged,
+                                Section::Unstaged,
+                                Section::Untracked,
+                            ] {
+                                this.collapsed.insert(s as u8);
+                            }
+                            cx.notify();
+                        },
+                    ))),
+                    MenuItem::new("vo-expand", "Expand all").on_click(act(Box::new(|this, cx| {
+                        this.collapsed.clear();
+                        this.dir_collapsed.clear();
+                        cx.notify();
+                    }))),
+                ]
+            }
+            PanelMenu::Overflow => vec![
+                MenuItem::new("of-refresh", "Refresh")
+                    .icon(IconName::Refresh)
+                    .on_click(act(Box::new(|this, cx| this.refresh_soon(cx)))),
+                MenuItem::new("of-stash", "Stashes\u{2026}").on_click(act(Box::new(|this, cx| {
+                    this.stash_collapsed = false;
+                    cx.notify();
+                }))),
+                MenuItem::separator(),
+                MenuItem::new("of-discard", "Discard All Changes\u{2026}")
+                    .icon(IconName::Trash)
+                    .destructive()
+                    .on_click(act(Box::new(|this, cx| {
+                        this.pending_confirm = Some(PendingConfirm::DiscardAll);
+                        cx.notify();
+                    }))),
+                MenuItem::new("of-clean", "Clean Untracked Files\u{2026}")
+                    .icon(IconName::Trash)
+                    .destructive()
+                    .on_click(act(Box::new(|this, cx| {
+                        this.pending_confirm = Some(PendingConfirm::Clean);
+                        cx.notify();
+                    }))),
+            ],
+            PanelMenu::Repo => {
+                let has_upstream = self.current_branch_has_upstream();
+                vec![
+                    MenuItem::new("rp-fetch", "Fetch")
+                        .on_click(act(Box::new(|this, cx| this.fetch(cx)))),
+                    MenuItem::new("rp-pull", "Pull")
+                        .on_click(act(Box::new(|this, cx| this.pull(cx)))),
+                    MenuItem::new("rp-push", if has_upstream { "Push" } else { "Publish" })
+                        .on_click(act(Box::new(|this, cx| this.push(cx)))),
+                    MenuItem::separator(),
+                    MenuItem::new("rp-force", "Force Push\u{2026}")
+                        .destructive()
+                        .on_click(act(Box::new(|this, cx| {
+                            this.pending_confirm = Some(PendingConfirm::ForcePush);
+                            cx.notify();
+                        }))),
+                    MenuItem::separator(),
+                    MenuItem::new("rp-branches", "Branches & Tags\u{2026}").on_click(act(
+                        Box::new(|this, cx| {
+                            this.branch_picker_open = true;
+                            cx.notify();
+                        }),
+                    )),
+                    MenuItem::new("rp-stashes", "Stashes\u{2026}").on_click(act(Box::new(
+                        |this, cx| {
+                            this.stash_collapsed = false;
+                            cx.notify();
+                        },
+                    ))),
+                ]
+            }
+        };
+
+        Some(context_menu(pos, c.palette, move |_w, cx| close(cx), items))
+    }
 }
 
 impl Render for GitPanelView {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let _span =
             tracing::trace_span!(target: "labonair::perf", "render", view = "scm_panel").entered();
         let c = self.colors(cx);
+        self.ensure_commit_input(window, cx);
 
         let mut root = div()
             .track_focus(&self.focus)
@@ -3016,6 +3644,40 @@ impl Render for GitPanelView {
             return root.child(self.render_no_repo(c, cx));
         }
 
+        // Panel-owned tab bar: Changes | History (two real information modes).
+        let mode_key = match self.mode {
+            PanelMode::Changes => "changes",
+            PanelMode::History => "history",
+        };
+        root = root.child(
+            div()
+                .flex()
+                .items_center()
+                .h(px(28.0))
+                .px(px(6.0))
+                .border_b_1()
+                .border_color(c.border)
+                .child(
+                    segmented_control("git-tabs", c.palette, mode_key)
+                        .variant(SegmentVariant::Solid)
+                        .size(SegmentSize::Xs)
+                        .segment("changes", "Changes")
+                        .segment("history", "History")
+                        .on_select(cx.listener(|this, key: &SharedString, _w, cx| {
+                            let mode = if key.as_ref() == "history" {
+                                PanelMode::History
+                            } else {
+                                PanelMode::Changes
+                            };
+                            this.set_mode(mode, cx);
+                        })),
+                ),
+        );
+
+        if self.mode == PanelMode::History {
+            return root.child(self.render_history(c, cx));
+        }
+
         let buckets = self
             .state
             .as_ref()
@@ -3027,43 +3689,7 @@ impl Render for GitPanelView {
                 untracked: vec![],
             });
 
-        let has_unstaged = !buckets.unstaged.is_empty() || !buckets.untracked.is_empty();
-
-        // Action bar.
-        let action_bar = div()
-            .flex()
-            .items_center()
-            .gap(px(2.0))
-            .h(px(28.0))
-            .px(px(6.0))
-            .border_b_1()
-            .border_color(c.border)
-            .child(
-                self.tool_btn("git-refresh", "Refresh", c, cx, |this, _w, cx| {
-                    this.refresh_soon(cx)
-                }),
-            )
-            .child(if has_unstaged {
-                self.tool_btn("git-stage-all", "Stage all", c, cx, |this, _w, cx| {
-                    this.stage_all(cx)
-                })
-                .into_any_element()
-            } else {
-                self.tool_btn("git-unstage-all", "Unstage all", c, cx, |this, _w, cx| {
-                    this.unstage_all(cx)
-                })
-                .into_any_element()
-            })
-            .child(
-                self.tool_btn("git-discard-all", "Discard", c, cx, |this, _w, cx| {
-                    this.discard_all(cx)
-                }),
-            )
-            .child(self.tool_btn("git-clean", "Clean", c, cx, |this, _w, cx| {
-                this.clean_untracked(cx)
-            }));
-
-        root = root.child(action_bar);
+        root = root.child(self.render_changes_header(&buckets, c, cx));
 
         if let Some(err) = &self.poll_error {
             root = root.child(
@@ -3080,23 +3706,28 @@ impl Render for GitPanelView {
             );
         }
 
-        root = root.child(self.render_stash_panel(c, cx));
-        root = root.child(self.render_diff(c, cx));
+        if let Some(bar) = self.render_confirm(c, cx) {
+            root = root.child(bar);
+        }
 
-        // Flattened, virtualised change list (§13 Phase 2.4 / §12.5). The
-        // section render loops are replaced by one `Vec<GitListEntry>`; only
-        // the visible window is turned into elements.
-        let sections: [(Section, &'static str, &[FileStatus]); 4] = [
+        if !self.stash_collapsed {
+            root = root.child(self.render_stash_panel(c, cx));
+        }
+
+        // Flattened, virtualised change list (§12.5) — tree or flat over one
+        // change model.
+        let sections: Sections<'_> = [
             (Section::Conflicts, "Conflicts", &buckets.conflicted),
             (Section::Staged, "Staged", &buckets.staged),
             (Section::Unstaged, "Changes", &buckets.unstaged),
             (Section::Untracked, "Untracked", &buckets.untracked),
         ];
-        let entries = flatten_git(
-            &sections,
-            &self.collapsed,
-            self.selected.as_ref().map(|s| s.path.as_str()),
-        );
+        let sel = self.selected.as_ref().map(|s| s.path.as_str());
+        let entries = if self.file_tree {
+            flatten_git_tree(&sections, &self.collapsed, &self.dir_collapsed, sel)
+        } else {
+            flatten_git(&sections, &self.collapsed, sel)
+        };
         let row_h = c.palette.density_tokens().tree_row_height();
         let view = cx.entity();
         let list = uniform_list("git-file-list", entries.len(), move |range, _win, _cx| {
@@ -3109,9 +3740,10 @@ impl Render for GitPanelView {
 
         root.child(list)
             .child(self.render_branch_picker(c, cx))
-            .child(self.render_branch_bar(c, cx))
-            .child(self.render_commit_form(c, cx))
+            .child(self.render_footer(c, cx))
+            .child(self.render_commit_composer(c, cx))
             .children(self.render_file_menu(cx))
+            .children(self.render_panel_menu(c, cx))
     }
 }
 
@@ -3195,24 +3827,17 @@ impl GitPanelView {
                 move |this, cx| this.add_to_exclude(p.clone(), cx),
             ))),
         );
-        if !untracked {
+        {
             items.push(MenuItem::separator());
             let sel = Selected {
                 path: path.clone(),
                 staged,
                 untracked,
             };
-            let sel_split = sel.clone();
             items.push(
                 MenuItem::new("gitm-diff", "Open Diff").on_click(act(Box::new(move |this, cx| {
-                    this.diff_split = false;
                     this.select_file(sel.clone(), cx)
                 }))),
-            );
-            items.push(
-                MenuItem::new("gitm-diff-split", "Open Diff (Split)").on_click(act(Box::new(
-                    move |this, cx| this.open_diff_split(sel_split.clone(), cx),
-                ))),
             );
         }
 
@@ -3230,89 +3855,6 @@ impl GitPanelView {
             items,
         ))
     }
-}
-
-/// Render one hunk's body lines as side-by-side rows (old left, new right).
-/// Deletions align on the left, insertions on the right, context on both;
-/// unbalanced runs pad the shorter side with blanks.
-fn split_hunk_rows(lines: &[String], c: Colors) -> Vec<gpui::AnyElement> {
-    let cell = |text: &str, color: gpui::Hsla, tint: Option<gpui::Hsla>| {
-        let mut d = div()
-            .flex_1()
-            .min_w_0()
-            .px(px(8.0))
-            .whitespace_nowrap()
-            .overflow_hidden()
-            .text_color(color);
-        if let Some(t) = tint {
-            d = d.bg(t.opacity(0.10));
-        }
-        d.child(SharedString::from(if text.is_empty() {
-            " ".to_string()
-        } else {
-            text.to_string()
-        }))
-    };
-    let row = |left: gpui::AnyElement, right: gpui::AnyElement| {
-        div()
-            .flex()
-            .gap(px(1.0))
-            .child(left)
-            .child(right)
-            .into_any_element()
-    };
-    let mut out: Vec<gpui::AnyElement> = Vec::new();
-    let mut dels: Vec<&str> = Vec::new();
-    let mut adds: Vec<&str> = Vec::new();
-    let flush = |out: &mut Vec<gpui::AnyElement>, dels: &mut Vec<&str>, adds: &mut Vec<&str>| {
-        let n = dels.len().max(adds.len());
-        for i in 0..n {
-            let l = dels
-                .get(i)
-                .map(|s| cell(s, c.error, Some(c.error)).into_any_element())
-                .unwrap_or_else(|| cell("", c.fg, None).into_any_element());
-            let r = adds
-                .get(i)
-                .map(|s| cell(s, c.success, Some(c.success)).into_any_element())
-                .unwrap_or_else(|| cell("", c.fg, None).into_any_element());
-            out.push(row(l, r));
-        }
-        dels.clear();
-        adds.clear();
-    };
-    for line in lines {
-        match line.chars().next() {
-            Some('-') => dels.push(line.get(1..).unwrap_or("")),
-            Some('+') => adds.push(line.get(1..).unwrap_or("")),
-            _ => {
-                flush(&mut out, &mut dels, &mut adds);
-                let text = line.strip_prefix(' ').unwrap_or(line);
-                out.push(row(
-                    cell(text, c.fg, None).into_any_element(),
-                    cell(text, c.fg, None).into_any_element(),
-                ));
-            }
-        }
-    }
-    flush(&mut out, &mut dels, &mut adds);
-    out
-}
-
-fn diff_line(line: &str, c: Colors) -> impl IntoElement {
-    let color = match line.chars().next() {
-        Some('+') => c.success,
-        Some('-') => c.error,
-        _ => c.fg,
-    };
-    div()
-        .px(px(8.0))
-        .whitespace_nowrap()
-        .text_color(color)
-        .child(SharedString::from(if line.is_empty() {
-            " ".to_string()
-        } else {
-            line.to_string()
-        }))
 }
 
 fn section_label(text: &'static str, c: Colors) -> impl IntoElement {
@@ -3335,13 +3877,19 @@ fn picker_empty(text: &'static str, c: Colors) -> impl IntoElement {
         .child(SharedString::from(text))
 }
 
-/// Trims a repo-relative path to its last two segments for display.
+/// The file's base name — used as the primary label; the full path is kept in
+/// the row's `secondary` muted text and its tooltip so identity is never
+/// reduced to an ambiguous tail (Zed-parity Phase 4, §9.5 "Change rows").
 fn short_path(path: &str) -> String {
-    let segs: Vec<&str> = path.split('/').collect();
-    if segs.len() <= 2 {
-        path.to_string()
-    } else {
-        format!("\u{2026}/{}", segs[segs.len() - 2..].join("/"))
+    path.rsplit('/').next().unwrap_or(path).to_string()
+}
+
+/// The directory portion of a repo-relative path (`""` for a top-level file) —
+/// the muted secondary line that keeps the complete path visible in flat view.
+fn dir_prefix(path: &str) -> String {
+    match path.rsplit_once('/') {
+        Some((dir, _)) => dir.to_string(),
+        None => String::new(),
     }
 }
 
@@ -3397,177 +3945,6 @@ impl labonair_panel::Panel for GitPanelView {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    // Fixtures are joined explicitly (not via `\` line-continuation, which
-    // would strip the leading space that marks a diff context line).
-    fn two_hunk_diff() -> String {
-        [
-            "diff --git a/tracked.txt b/tracked.txt",
-            "index fe7fa38..e0b0b1c 100644",
-            "--- a/tracked.txt",
-            "+++ b/tracked.txt",
-            "@@ -1,5 +1,5 @@",
-            " a1",
-            "-a2",
-            "+a2_CHANGED",
-            " a3",
-            " a4",
-            " a5",
-            "@@ -11,5 +11,5 @@ a10",
-            " a11",
-            " a12",
-            " a13",
-            "-a14",
-            "+a14_CHANGED",
-            " a15",
-            "",
-        ]
-        .join("\n")
-    }
-
-    fn new_file_diff() -> String {
-        [
-            "diff --git a/newfile.txt b/newfile.txt",
-            "new file mode 100644",
-            "index 0000000..71ac1b5",
-            "--- /dev/null",
-            "+++ b/newfile.txt",
-            "@@ -0,0 +1,3 @@",
-            "+a",
-            "+b",
-            "+c",
-            "",
-        ]
-        .join("\n")
-    }
-
-    fn deleted_file_diff() -> String {
-        [
-            "diff --git a/newfile.txt b/newfile.txt",
-            "deleted file mode 100644",
-            "index 71ac1b5..0000000",
-            "--- a/newfile.txt",
-            "+++ /dev/null",
-            "@@ -1,3 +0,0 @@",
-            "-a",
-            "-b",
-            "-c",
-            "",
-        ]
-        .join("\n")
-    }
-
-    fn crlf_diff() -> String {
-        [
-            "diff --git a/crlf.txt b/crlf.txt",
-            "index 46b21fa..f146c25 100644",
-            "--- a/crlf.txt",
-            "+++ b/crlf.txt",
-            "@@ -1,3 +1,3 @@",
-            " x1\r",
-            "-x2\r",
-            "+X2_CHANGED\r",
-            " x3\r",
-            "",
-        ]
-        .join("\n")
-    }
-
-    #[test]
-    fn splits_two_hunks_with_line_numbers() {
-        let files = parse_diff_hunks(&two_hunk_diff());
-        assert_eq!(files.len(), 1);
-        let f = &files[0];
-        assert_eq!(f.path, "tracked.txt");
-        assert!(!f.is_new_file && !f.is_deleted_file);
-        assert_eq!(f.hunks.len(), 2);
-        assert_eq!(
-            (
-                f.hunks[0].old_start,
-                f.hunks[0].old_lines,
-                f.hunks[0].new_start,
-                f.hunks[0].new_lines
-            ),
-            (1, 5, 1, 5)
-        );
-        assert_eq!(f.hunks[1].header, "@@ -11,5 +11,5 @@ a10");
-    }
-
-    #[test]
-    fn detects_new_and_deleted_files() {
-        let n = &parse_diff_hunks(&new_file_diff())[0];
-        assert!(n.is_new_file && !n.is_deleted_file);
-        assert!(is_whole_file_single_hunk(n));
-        let d = &parse_diff_hunks(&deleted_file_diff())[0];
-        assert!(d.is_deleted_file && !d.is_new_file);
-        assert!(is_whole_file_single_hunk(d));
-    }
-
-    #[test]
-    fn multi_hunk_is_not_whole_file() {
-        assert!(!is_whole_file_single_hunk(
-            &parse_diff_hunks(&two_hunk_diff())[0]
-        ));
-    }
-
-    #[test]
-    fn preserves_crlf_content_bytes() {
-        let f = &parse_diff_hunks(&crlf_diff())[0];
-        assert!(f.hunks[0].lines.contains(&" x1\r".to_string()));
-        assert!(f.hunks[0].lines.contains(&"-x2\r".to_string()));
-        assert!(f.hunks[0].lines.contains(&"+X2_CHANGED\r".to_string()));
-    }
-
-    #[test]
-    fn truncated_and_empty_return_nothing() {
-        let truncated = format!(
-            "{}\n\n[diff truncated \u{2014} output exceeded 200 KB]",
-            two_hunk_diff()
-        );
-        assert!(parse_diff_hunks(&truncated).is_empty());
-        assert!(parse_diff_hunks("").is_empty());
-    }
-
-    #[test]
-    fn parses_multiple_files_independently() {
-        let combined = format!("{}\n{}", two_hunk_diff(), new_file_diff());
-        let files = parse_diff_hunks(&combined);
-        assert_eq!(files.len(), 2);
-        assert_eq!(files[0].path, "tracked.txt");
-        assert_eq!(files[1].path, "newfile.txt");
-        assert!(files[1].is_new_file);
-    }
-
-    #[test]
-    fn builds_standalone_hunk_patch() {
-        let f = &parse_diff_hunks(&two_hunk_diff())[0];
-        let patch = build_hunk_patch(f, &f.hunks[0]);
-        let expected = [
-            "diff --git a/tracked.txt b/tracked.txt",
-            "index fe7fa38..e0b0b1c 100644",
-            "--- a/tracked.txt",
-            "+++ b/tracked.txt",
-            "@@ -1,5 +1,5 @@",
-            " a1",
-            "-a2",
-            "+a2_CHANGED",
-            " a3",
-            " a4",
-            " a5",
-            "",
-        ]
-        .join("\n");
-        assert_eq!(patch, expected);
-    }
-
-    #[test]
-    fn hunk_patch_round_trips_crlf() {
-        let f = &parse_diff_hunks(&crlf_diff())[0];
-        let patch = build_hunk_patch(f, &f.hunks[0]);
-        assert!(patch.contains(" x1\r\n"));
-        assert!(patch.contains("-x2\r\n"));
-        assert!(patch.contains("+X2_CHANGED\r\n"));
-    }
 
     #[test]
     fn commit_message_validation() {
@@ -3691,10 +4068,13 @@ mod tests {
     }
 
     #[test]
-    fn short_path_trims_to_two_segments() {
+    fn short_path_is_basename_and_dir_prefix_is_the_rest() {
         assert_eq!(short_path("a.txt"), "a.txt");
-        assert_eq!(short_path("src/a.txt"), "src/a.txt");
-        assert_eq!(short_path("a/b/c/d.txt"), "\u{2026}/c/d.txt");
+        assert_eq!(short_path("src/a.txt"), "a.txt");
+        assert_eq!(short_path("a/b/c/d.txt"), "d.txt");
+        assert_eq!(dir_prefix("a.txt"), "");
+        assert_eq!(dir_prefix("src/a.txt"), "src");
+        assert_eq!(dir_prefix("a/b/c/d.txt"), "a/b/c");
     }
 
     fn fstat(path: &str) -> FileStatus {
@@ -3785,5 +4165,146 @@ mod tests {
             [(Section::Unstaged, "Changes", &empty)];
         let list = flatten_git(&sections, &std::collections::HashSet::new(), None);
         assert_eq!(list, vec![GitListEntry::EmptyState]);
+    }
+
+    fn file_paths(entries: &[GitListEntry]) -> Vec<String> {
+        entries
+            .iter()
+            .filter_map(|e| match e {
+                GitListEntry::File { path, .. } => Some(path.clone()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn tree_and_flat_flatteners_yield_the_same_file_set() {
+        let staged = vec![fstat("src/app/main.rs"), fstat("src/app/util.rs")];
+        let unstaged = vec![fstat("README.md"), fstat("src/lib.rs")];
+        let empty: Vec<FileStatus> = vec![];
+        let sections: [(Section, &'static str, &[FileStatus]); 4] = [
+            (Section::Conflicts, "Conflicts", &empty),
+            (Section::Staged, "Staged", &staged),
+            (Section::Unstaged, "Changes", &unstaged),
+            (Section::Untracked, "Untracked", &empty),
+        ];
+        let collapsed = std::collections::HashSet::new();
+        let dcoll = std::collections::HashSet::new();
+        let flat = flatten_git(&sections, &collapsed, None);
+        let tree = flatten_git_tree(&sections, &collapsed, &dcoll, None);
+        let mut a = file_paths(&flat);
+        let mut b = file_paths(&tree);
+        a.sort();
+        b.sort();
+        assert_eq!(a, b);
+
+        // The tree emits directory grouping nodes; the flat view never does.
+        assert!(flat
+            .iter()
+            .all(|e| !matches!(e, GitListEntry::Directory { .. })));
+        assert!(tree
+            .iter()
+            .any(|e| matches!(e, GitListEntry::Directory { path, .. } if path == "src/app")));
+    }
+
+    #[test]
+    fn tree_directory_node_reports_aggregate_tri_state_and_collapse_hides_children() {
+        // One staged + one unstaged file under the same directory → the
+        // directory node aggregates to PartiallyStaged.
+        let staged = vec![fstat("src/a.rs")];
+        let unstaged = vec![fstat("src/b.rs")];
+        let empty: Vec<FileStatus> = vec![];
+        let sections: [(Section, &'static str, &[FileStatus]); 4] = [
+            (Section::Conflicts, "Conflicts", &empty),
+            (Section::Staged, "Staged", &staged),
+            (Section::Unstaged, "Changes", &unstaged),
+            (Section::Untracked, "Untracked", &empty),
+        ];
+        let collapsed = std::collections::HashSet::new();
+        let mut dcoll = std::collections::HashSet::new();
+        let tree = flatten_git_tree(&sections, &collapsed, &dcoll, None);
+        // Each section has its own `src` directory node (per-section staging).
+        assert!(tree.iter().any(|e| matches!(
+            e,
+            GitListEntry::Directory { path, stage: StageState::Staged, .. } if path == "src"
+        )));
+        assert!(tree.iter().any(|e| matches!(
+            e,
+            GitListEntry::Directory { path, stage: StageState::Unstaged, .. } if path == "src"
+        )));
+
+        // Collapsing `src` hides every `src/*` file row (in every section) while
+        // keeping the directory nodes visible.
+        dcoll.insert("src".to_string());
+        let collapsed_tree = flatten_git_tree(&sections, &collapsed, &dcoll, None);
+        let files = file_paths(&collapsed_tree);
+        assert!(files.is_empty());
+        assert!(collapsed_tree.iter().any(|e| matches!(
+            e,
+            GitListEntry::Directory { path, collapsed: true, .. } if path == "src"
+        )));
+    }
+
+    #[test]
+    fn commit_mode_derivation_covers_every_case() {
+        // staged-only
+        assert_eq!(
+            derive_commit_mode(false, 3, false),
+            CommitMode::CommitStaged
+        );
+        // tracked-only (nothing staged, tracked files dirty)
+        assert_eq!(
+            derive_commit_mode(false, 0, true),
+            CommitMode::CommitTracked
+        );
+        // amend flag always wins
+        assert_eq!(derive_commit_mode(true, 3, true), CommitMode::Amend);
+        assert_eq!(derive_commit_mode(true, 0, false), CommitMode::Amend);
+        // clean repo, no amend → still labelled Commit (button is disabled
+        // separately via the disabled reason)
+        assert_eq!(
+            derive_commit_mode(false, 0, false),
+            CommitMode::CommitStaged
+        );
+    }
+
+    #[test]
+    fn disabled_reason_derivation_covers_every_case() {
+        use DisabledReason::*;
+        // in-flight op blocks everything
+        assert_eq!(
+            derive_disabled_reason(false, 3, false, false, RepoOperation::Pushing, false),
+            Some(OperationInProgress)
+        );
+        // conflicts block a commit
+        assert_eq!(
+            derive_disabled_reason(false, 3, false, true, RepoOperation::Idle, false),
+            Some(Conflict)
+        );
+        // empty message
+        assert_eq!(
+            derive_disabled_reason(true, 3, false, false, RepoOperation::Idle, false),
+            Some(NoMessage)
+        );
+        // empty repo — nothing staged, nothing tracked-dirty, not amending
+        assert_eq!(
+            derive_disabled_reason(false, 0, false, false, RepoOperation::Idle, false),
+            Some(NoChanges)
+        );
+        // staged-only, message present → enabled
+        assert_eq!(
+            derive_disabled_reason(false, 2, false, false, RepoOperation::Idle, false),
+            None
+        );
+        // tracked-only, message present → enabled
+        assert_eq!(
+            derive_disabled_reason(false, 0, true, false, RepoOperation::Idle, false),
+            None
+        );
+        // amend with nothing new staged → still enabled (re-commit message)
+        assert_eq!(
+            derive_disabled_reason(false, 0, false, false, RepoOperation::Idle, true),
+            None
+        );
     }
 }

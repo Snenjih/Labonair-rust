@@ -227,6 +227,26 @@ impl Settings for ExplorerSettings {
     }
 }
 
+/// `file_manager` area as read by the Source-Control panel (Zed-parity
+/// Phase 4): tree vs flat change-list presentation.
+#[derive(Clone, Debug, PartialEq, RegisterSetting)]
+pub struct ScmSettings(FileManagerContent);
+
+impl Settings for ScmSettings {
+    fn from_settings(content: &SettingsContent) -> Self {
+        let mut merged = FileManagerContent::defaults();
+        merged.merge_from(&content.file_manager);
+        Self(merged)
+    }
+}
+
+impl ScmSettings {
+    /// `true` → directory tree presentation; `false` → flat status buckets.
+    pub fn file_tree(&self) -> bool {
+        self.0.scm_file_tree.unwrap_or(false)
+    }
+}
+
 impl ExplorerSettings {
     pub fn content(&self) -> &FileManagerContent {
         &self.0

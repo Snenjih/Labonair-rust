@@ -324,6 +324,7 @@ fn file_manager_from(p: &Preferences) -> FileManagerContent {
         explorer_fold_single_child_dirs: FileManagerContent::defaults()
             .explorer_fold_single_child_dirs,
         explorer_git_decorations: FileManagerContent::defaults().explorer_git_decorations,
+        scm_file_tree: FileManagerContent::defaults().scm_file_tree,
         sftp_column_size: Some(p.sftp_column_size),
         sftp_column_modified: Some(p.sftp_column_modified),
         sftp_column_permissions: Some(p.sftp_column_permissions),

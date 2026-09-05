@@ -7,5 +7,6 @@
 pub mod diff;
 pub mod editor;
 pub mod preview;
+pub mod project_diff;
 pub mod sftp;
 pub mod terminal;

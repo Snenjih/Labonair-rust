@@ -878,6 +878,13 @@ pub fn all_fields() -> Vec<AnyField> {
             "Tint changed files and show their status letter in the tree."
         ),
         field!(
+            file_manager.scm_file_tree,
+            "scmFileTree",
+            Switch,
+            "Source Control: file tree",
+            "Show the change list as a directory tree instead of flat status groups."
+        ),
+        field!(
             file_manager.sftp_column_size,
             "sftpColumnSize",
             Switch,

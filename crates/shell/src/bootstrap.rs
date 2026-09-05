@@ -28,7 +28,7 @@ use labonair_command_palette::{CommandPalette, PaletteEvent};
 use labonair_panel_ai::{AiChatEvent, AiChatStore, AiChatView};
 use labonair_panel_explorer::{BookmarkEvent, BookmarksView, ExplorerView};
 use labonair_panel_git_graph::GitGraphView;
-use labonair_panel_scm::GitPanelView;
+use labonair_panel_scm::{GitPanelView, ScmEvent};
 use labonair_panel_snippets::SnippetsView;
 use labonair_settings_ui::{set_settings_deps, PreferencesStore};
 use labonair_workspace::agent_access::AgentAccessStore;
@@ -237,6 +237,20 @@ pub(crate) fn bootstrap(
 
     let git_panel =
         cx.new(|cx| GitPanelView::new(backend.clone(), tokio.clone(), theme.clone(), cx));
+    // Source Control → workspace Project Diff (Zed-parity Phase 4, §12.6). The
+    // panel emits a neutral `ProjectDiffRequest`; the workspace owns the single
+    // Project Diff item's lifecycle (idempotent open/focus).
+    cx.subscribe_in(
+        &git_panel,
+        window,
+        |this, _, event: &ScmEvent, _window, cx| {
+            let ScmEvent::OpenProjectDiff(req) = event;
+            let req = req.clone();
+            this.workspace
+                .update(cx, |w, cx| w.open_project_diff(req, cx));
+        },
+    )
+    .detach();
 
     let git_graph =
         cx.new(|cx| GitGraphView::new(backend.clone(), tokio.clone(), theme.clone(), cx));

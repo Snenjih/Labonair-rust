@@ -368,6 +368,10 @@ pub struct Workspace {
     previews: HashMap<u64, Entity<PreviewView>>,
     /// The shared commit-graph view, lazily created for the `GitGraph` tab.
     git_graph: Option<Entity<GitGraphView>>,
+    /// The single Project Diff item (Zed-parity Phase 4), lazily created for the
+    /// `GitDiff` tab. Source Control emits a `ProjectDiffRequest`; this view is
+    /// re-pointed rather than duplicated.
+    project_diff: Option<Entity<crate::views::project_diff::ProjectDiffView>>,
     /// Panel-type registry (T17-001) — populated once by
     /// `labonair_shell::register_builtin_panels`. The shell's dock rendering
     /// and status-bar toggles read it instead of a hard-coded `enum`. T17-002
@@ -562,6 +566,7 @@ impl Workspace {
             sftp_views: HashMap::new(),
             previews: HashMap::new(),
             git_graph: None,
+            project_diff: None,
             panel_registry: labonair_panel::PanelRegistry::new(),
             status_item_registry: labonair_panel::StatusItemRegistry::new(),
             dock_persist_hook: None,
@@ -2303,6 +2308,46 @@ impl Workspace {
             Some(id) => s.set_active(id, cx),
             None => {
                 s.open(TabKind::GitGraph, TabData::default(), cx);
+            }
+        });
+    }
+
+    /// Open — or, if it already exists, focus and re-point — the single
+    /// workspace Project Diff item (Zed-parity Phase 4, §12.6). Idempotent:
+    /// repeated requests never open a duplicate tab; a request carrying a new
+    /// `selected` just moves the selection inside the existing item.
+    pub fn open_project_diff(
+        &mut self,
+        req: labonair_panel::ProjectDiffRequest,
+        cx: &mut Context<Self>,
+    ) {
+        let view = match &self.project_diff {
+            Some(v) => v.clone(),
+            None => {
+                let theme = self.theme.clone();
+                let backend = self.backend.clone();
+                let tokio = self.tokio.clone();
+                let v = cx.new(|cx| {
+                    crate::views::project_diff::ProjectDiffView::new(theme, backend, tokio, cx)
+                });
+                cx.observe(&v, |_, _, cx| cx.notify()).detach();
+                self.project_diff = Some(v.clone());
+                v
+            }
+        };
+        view.update(cx, |v, cx| v.apply_request(req, cx));
+
+        let existing = self
+            .tabs
+            .read(cx)
+            .tabs()
+            .iter()
+            .find(|t| t.kind == TabKind::GitDiff)
+            .map(|t| t.id);
+        self.tabs.update(cx, |s, cx| match existing {
+            Some(id) => s.set_active(id, cx),
+            None => {
+                s.open(TabKind::GitDiff, TabData::default(), cx);
             }
         });
     }
@@ -4095,6 +4140,10 @@ impl Workspace {
             TabKind::GitGraph => match &self.git_graph {
                 Some(view) => view.clone().into_any_element(),
                 None => self.placeholder("Git Graph", cx).into_any_element(),
+            },
+            TabKind::GitDiff => match &self.project_diff {
+                Some(view) => view.clone().into_any_element(),
+                None => self.placeholder("Project Diff", cx).into_any_element(),
             },
             other => self
                 .placeholder(other.default_title(), cx)

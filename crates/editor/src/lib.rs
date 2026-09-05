@@ -15,6 +15,7 @@ pub mod language;
 pub mod search;
 pub mod symbols;
 pub mod syntax;
+pub mod unified;
 pub mod vim;
 
 pub use buffer::{Position, TextBuffer};
@@ -24,4 +25,7 @@ pub use language::Language;
 pub use search::{find_all, next_match, replace_all, Match, SearchQuery};
 pub use symbols::{document_symbols, DocumentSymbol, SymbolKind};
 pub use syntax::{HighlightKind, HighlightSpan, StyledRun, SyntaxHighlighter};
+pub use unified::{
+    build_hunk_patch, is_whole_file_single_hunk, parse_diff_hunks, DiffHunk, FileDiff,
+};
 pub use vim::{Vim, VimKey, VimMode, VimOptions, VimResponse};

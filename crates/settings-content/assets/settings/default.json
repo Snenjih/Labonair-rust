@@ -138,6 +138,7 @@
     "explorerAutoRevealActiveFile": false,
     "explorerFoldSingleChildDirs": false,
     "explorerGitDecorations": true,
+    "scmFileTree": false,
     "sftpColumnSize": true,
     "sftpColumnModified": true,
     "sftpColumnPermissions": true,

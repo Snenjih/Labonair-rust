@@ -4344,8 +4344,10 @@ version = "0.1.0"
 dependencies = [
  "gpui",
  "labonair-backend",
+ "labonair-editor",
  "labonair-notifications",
  "labonair-panel",
+ "labonair-settings",
  "labonair-theme",
  "labonair-ui-kit",
  "tokio",

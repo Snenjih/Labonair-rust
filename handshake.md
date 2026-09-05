@@ -4,7 +4,60 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
-## Current Session: 2026-09-05 (Zed-parity redesign Phase 3 — content-first Explorer)
+## Current Session: 2026-09-06 (Zed-parity redesign Phase 4 — Git information architecture)
+
+### Phase 4 done (`docs/ui-comparison-zed-sidebar-status-bar.md` §13 Phase 4)
+
+- **Panel navigation**: panel-owned `Changes | History` tab bar (`segmented_control`,
+  `PanelMode`). History = commit list via `git_get_log` (100), read-only (Git Graph
+  is untouched).
+- **Adaptive Changes header** (`render_changes_header`): repo-level tri-state
+  checkbox (`stage_all`/`unstage_all`), `View Diff` + `{n} files`, view-options
+  `⋮` menu (Flat/Tree, Collapse/Expand all), adaptive `Stage All`/`Unstage All`,
+  overflow `▾` menu (Refresh, Stashes…, Discard All…, Clean… — destructive items
+  `.destructive()` + routed through an in-panel confirm bar `PendingConfirm`).
+- **Change rows**: section- and repo-level tri-state checkboxes added on top of
+  the existing file-level ones (`stage_section`, `stage_paths`/`unstage_paths`
+  run one sequential op). `GitListEntry::Directory` added; new pure
+  `flatten_git_tree` (tree) alongside `flatten_git` (flat) over one model —
+  setting `scmFileTree` (default `false`), runtime toggle in the view menu.
+  Files keep a muted full-path `secondary`; `short_path` is now the basename +
+  `dir_prefix` helper.
+- **Diff flow**: inline 280px viewer removed. New neutral
+  `labonair_panel::ProjectDiffRequest` (`repo_root`, `session_id`,
+  `Vec<ProjectDiffFile>`, `selected`, `mode`). `GitPanelView` is
+  `EventEmitter<ScmEvent>`; `select_file` / `View Diff` emit
+  `ScmEvent::OpenProjectDiff`. Shell (`bootstrap.rs`) subscribes and calls
+  `Workspace::open_project_diff` which opens/focuses the single `TabKind::GitDiff`
+  tab backed by new `crates/workspace/src/views/project_diff.rs`
+  (`ProjectDiffView`: file rail + unified/split hunks + per-hunk stage/unstage
+  through the backend). Idempotent (same pattern as `open_git_graph_tab`).
+  Unified-diff parsing moved to `labonair_editor::unified` (shared by panel-scm
+  re-export + workspace).
+- **Repo footer + commit composer**: `render_branch_bar` → `render_footer`
+  (branch, ahead/behind, op-progress text, one `⋯` repo menu holding
+  Fetch/Pull/Push/Publish + separated `Force Push…` (destructive, confirmed) +
+  Branches & Tags… + Stashes…). Hand-rolled commit field → editor-backed
+  `InputState` composer (`ensure_commit_input`, ⌘↵ commits); adaptive button
+  label from `CommitMode` (`Commit`/`Commit Tracked`/`Amend`), `DisabledReason`
+  in tooltip, title-length (>72) warning without an error state, `Amend`
+  checkbox, `⤢` in-panel expand. `commit_focus` field removed.
+- **Derived-state enums** (§12.5): `CommitMode`, `RepoOperation`
+  (`Idle`/`Fetching`/`Pulling`/`Pushing`/`Mutating`), `DisabledReason` +
+  pure `derive_commit_mode` / `derive_disabled_reason`. `run_op_kind(kind, …)`
+  tags each async op; fetch/pull/push carry their identity.
+- **Settings**: `scmFileTree` (`FileManagerContent`, default `false`) + `ScmSettings`
+  concrete + schema/pages row + migrate_v2 + default.json.
+- **Tests**: commit-mode + disabled-reason matrices; tree↔flat same file set +
+  Directory tri-state + collapse; `resolve_selection` (Project Diff focus /
+  re-point). Editor `unified` module carries the moved hunk-parsing tests.
+- **Deferred / deviations**: History rows read-only (no per-commit diff);
+  commit "expand" is in-panel, not a separate modal editor window; view-options
+  menu covers tree/flat + collapse only (grouping/sorting not added — model is
+  flat status buckets, path-sorted); directory-collapse key is not
+  section-scoped (collapsing `src` hides `src/*` in every section).
+
+### Phase 3 done (`docs/ui-comparison-zed-sidebar-status-bar.md` §13 Phase 3)
 
 ### Phase 3 done (`docs/ui-comparison-zed-sidebar-status-bar.md` §13 Phase 3)
 
