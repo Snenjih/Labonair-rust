@@ -1,5 +1,5 @@
 //! T19-009: one-time, idempotent migration of the legacy split
-//! `preferences`/`editor`/`mcp` top-level keys in `labonair-settings.json`
+//! `preferences`/`editor`/`mcp` top-level keys in `config.json`
 //! into the flat, area-based `SettingsContent` layout (T19-001), the
 //! `preferences.keybinds` override blob into `keymap.json` (T19-008's file
 //! shape), and the SQLite-backed hosts (`backend::modules::hosts`) into
@@ -65,14 +65,13 @@ use labonair_settings_content::{
     workspace::{self, WorkspaceContent},
 };
 
-use super::editor::EditorPrefs;
 use super::mcp::McpPrefs;
 use super::preferences::{CursorStyle, Preferences, StartupTab, ThemePref};
+use super::{editor::EditorPrefs, CONFIG_FILE};
 use super::{read_settings_from, write_settings_to};
 use crate::modules::hosts::Host;
 use crate::modules::secrets::get_password;
 
-const SETTINGS_FILE: &str = "labonair-settings.json";
 const KEY_PREFERENCES: &str = "preferences";
 const KEY_PREFERENCES_LEGACY: &str = "preferences_legacy";
 const KEY_EDITOR: &str = "editor";
@@ -455,7 +454,7 @@ pub fn migrate_settings_v1_to_v2(dir: &Path) -> Result<SettingsV2Outcome, String
         });
     }
 
-    let path = dir.join(SETTINGS_FILE);
+    let path = dir.join(CONFIG_FILE);
     if path.exists() {
         let _ = std::fs::copy(&path, path.with_extension("json.bak"));
     }
@@ -593,7 +592,7 @@ pub fn migrate_settings_v1_to_v2(dir: &Path) -> Result<SettingsV2Outcome, String
     write_settings_to(dir, &settings)?;
 
     log::info!(
-        "migrated labonair-settings.json to schemaVersion 2 ({} keybind override(s))",
+        "migrated config.json to schemaVersion 2 ({} keybind override(s))",
         keybinds_migrated
     );
 
@@ -852,7 +851,7 @@ pub fn migrate_hosts_to_settings(
         return Ok(HostsV2Outcome::NothingToMigrate);
     }
 
-    let path = dir.join(SETTINGS_FILE);
+    let path = dir.join(CONFIG_FILE);
     if path.exists() {
         let _ = std::fs::copy(&path, path.with_extension("json.bak"));
     }
@@ -1107,7 +1106,7 @@ mod tests {
     fn full_migration_moves_every_field_and_counts_match() {
         let dir = tmp("full");
         std::fs::write(
-            dir.join(SETTINGS_FILE),
+            dir.join(CONFIG_FILE),
             serde_json::to_string_pretty(&full_legacy_settings()).unwrap(),
         )
         .unwrap();
@@ -1146,7 +1145,7 @@ mod tests {
             Value::from(8)
         );
 
-        assert!(dir.join("labonair-settings.json.bak").exists());
+        assert!(dir.join("config.json.bak").exists());
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -1154,7 +1153,7 @@ mod tests {
     fn keybind_overrides_migrate_including_unbind() {
         let dir = tmp("keybinds");
         std::fs::write(
-            dir.join(SETTINGS_FILE),
+            dir.join(CONFIG_FILE),
             serde_json::to_string_pretty(&full_legacy_settings()).unwrap(),
         )
         .unwrap();
@@ -1181,7 +1180,7 @@ mod tests {
         let mut legacy = full_legacy_settings();
         legacy["preferences"]["keybinds"] = serde_json::json!({});
         std::fs::write(
-            dir.join(SETTINGS_FILE),
+            dir.join(CONFIG_FILE),
             serde_json::to_string_pretty(&legacy).unwrap(),
         )
         .unwrap();
@@ -1196,7 +1195,7 @@ mod tests {
     fn second_call_is_a_no_op() {
         let dir = tmp("idempotent");
         std::fs::write(
-            dir.join(SETTINGS_FILE),
+            dir.join(CONFIG_FILE),
             serde_json::to_string_pretty(&full_legacy_settings()).unwrap(),
         )
         .unwrap();
@@ -1218,7 +1217,7 @@ mod tests {
         let dir = tmp("already-v2");
         let doc = serde_json::json!({ "schemaVersion": 2, "general": { "theme": "dark" } });
         std::fs::write(
-            dir.join(SETTINGS_FILE),
+            dir.join(CONFIG_FILE),
             serde_json::to_string_pretty(&doc).unwrap(),
         )
         .unwrap();
@@ -1226,7 +1225,7 @@ mod tests {
         let outcome = migrate_settings_v1_to_v2(&dir).unwrap();
         assert_eq!(outcome, SettingsV2Outcome::AlreadyMigrated);
         assert_eq!(read_settings_from(&dir), doc.as_object().unwrap().clone());
-        assert!(!dir.join("labonair-settings.json.bak").exists());
+        assert!(!dir.join("config.json.bak").exists());
 
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -1236,7 +1235,7 @@ mod tests {
         let dir = tmp("empty");
         let outcome = migrate_settings_v1_to_v2(&dir).unwrap();
         assert_eq!(outcome, SettingsV2Outcome::NothingToMigrate);
-        assert!(!dir.join(SETTINGS_FILE).exists());
+        assert!(!dir.join(CONFIG_FILE).exists());
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -1245,7 +1244,7 @@ mod tests {
         let dir = tmp("partial");
         let doc = serde_json::json!({ "preferences": serde_json::to_value(Preferences::default()).unwrap() });
         std::fs::write(
-            dir.join(SETTINGS_FILE),
+            dir.join(CONFIG_FILE),
             serde_json::to_string_pretty(&doc).unwrap(),
         )
         .unwrap();

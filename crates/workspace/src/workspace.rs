@@ -937,7 +937,7 @@ impl Workspace {
     }
 
     /// Command: "Open Settings (JSON)" (T19-005 Anweisung #4) — create (if
-    /// missing) `~/.config/labonair/labonair-settings.json` from the
+    /// missing) `~/.config/labonair/config.json` from the
     /// commented scaffold and open it as an editor tab. Unlike the project
     /// settings command above, this always succeeds (the user settings path
     /// doesn't depend on an active pane's cwd).
@@ -4695,8 +4695,7 @@ impl Workspace {
     }
 
     /// Render one edge dock (T17-002): a header (active panel title + a
-    /// per-panel switcher when the dock holds more than one + a "move to next
-    /// dock" affordance), the active panel's body, and a resize handle on the
+    /// "move to next dock" affordance), the active panel's body, and a resize handle on the
     /// inner edge. Left/right docks are vertical + width-resizable; the bottom
     /// dock is horizontal + height-resizable. A zoomed dock fills its axis and
     /// drops the handle. Ported off `AppShell` in T17-006.
@@ -4719,19 +4718,8 @@ impl Workspace {
         };
 
         let is_bottom = pos == DockPosition::Bottom;
-        let (size, zoomed, tabs, body, title) = {
+        let (size, zoomed, body, title) = {
             let dock = self.dock(pos);
-            let tabs: Vec<(SharedString, SharedString, bool)> = dock
-                .panels()
-                .iter()
-                .map(|p| {
-                    (
-                        SharedString::from(p.persistent_name()),
-                        p.title(cx),
-                        dock.active_name() == Some(p.persistent_name()),
-                    )
-                })
-                .collect();
             let body: Option<gpui::AnyElement> = dock
                 .active_panel()
                 .map(|handle| handle.to_any().into_any_element());
@@ -4739,17 +4727,9 @@ impl Workspace {
                 Some(handle) => handle.title(cx).to_string().to_uppercase().into(),
                 None => SharedString::from(""),
             };
-            (f32::from(dock.size()), dock.is_zoomed(), tabs, body, title)
+            (f32::from(dock.size()), dock.is_zoomed(), body, title)
         };
 
-        let multi = tabs.len() > 1;
-        // T20-003: the `dock-tab-*` strip below is a borderless, minimal
-        // accent-tint highlight — `SegmentedControl`'s two looks
-        // (bordered-pill `Outline` / bg-muted-track `Solid`) would visibly
-        // add a border or track background this dock header doesn't have.
-        // The `dock-move-*` trigger is a text glyph ("↑"/"⇄"), not an
-        // `IconName`, same constraint as `search_overlay`'s mini-buttons.
-        // Documented exception.
         let header = div()
             .flex()
             .items_center()
@@ -4759,33 +4739,7 @@ impl Workspace {
             .py_2()
             .text_xs()
             .text_color(muted)
-            .child(if multi {
-                div()
-                    .flex()
-                    .items_center()
-                    .gap_1()
-                    .children(tabs.into_iter().map(|(name, label, is_active)| {
-                        let n = name.clone();
-                        div()
-                            .id(SharedString::from(format!("dock-tab-{name}")))
-                            .px_1p5()
-                            .rounded_sm()
-                            .cursor_pointer()
-                            .when(is_active, |d| {
-                                d.bg(accent.opacity(0.2)).text_color(sidebar_fg)
-                            })
-                            .when(!is_active, |d| d.hover(|s| s.text_color(sidebar_fg)))
-                            .child(label)
-                            .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
-                                this.dock_mut(pos).activate_panel(&n);
-                                this.persist_docks(cx);
-                                cx.notify();
-                            }))
-                    }))
-                    .into_any_element()
-            } else {
-                div().child(title).into_any_element()
-            })
+            .child(div().child(title))
             .child(
                 div()
                     .id(SharedString::from(format!(

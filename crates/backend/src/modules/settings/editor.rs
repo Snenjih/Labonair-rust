@@ -1,6 +1,6 @@
 //! Persisted editor / Vim preferences (T06-003).
 //!
-//! Stored as an `editor` object inside the shared `labonair-settings.json`
+//! Stored as an `editor` object inside the shared `config.json`
 //! (same file the rest of the app uses). Phase 12's settings UI will write
 //! these; until then the editor view just reads them at construction and the
 //! `:set` ex-command mutates the in-memory copy for the session.
@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::modules::fs::paths::config_dir;
 
-const SETTINGS_FILE: &str = "labonair-settings.json";
+use super::CONFIG_FILE;
 const KEY: &str = "editor";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -54,7 +54,7 @@ pub fn editor_prefs_save(prefs: &EditorPrefs) -> Result<(), String> {
 }
 
 fn load_from(dir: &std::path::Path) -> EditorPrefs {
-    std::fs::read_to_string(dir.join(SETTINGS_FILE))
+    std::fs::read_to_string(dir.join(CONFIG_FILE))
         .ok()
         .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
         .and_then(|v| v.get(KEY).cloned())
@@ -63,7 +63,7 @@ fn load_from(dir: &std::path::Path) -> EditorPrefs {
 }
 
 fn save_to(dir: &std::path::Path, prefs: &EditorPrefs) -> Result<(), String> {
-    let path = dir.join(SETTINGS_FILE);
+    let path = dir.join(CONFIG_FILE);
     let mut map = std::fs::read_to_string(&path)
         .ok()
         .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
@@ -88,7 +88,7 @@ mod tests {
     fn roundtrip_merges_into_shared_file() {
         let dir = std::env::temp_dir().join(format!("labonair-ed-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(dir.join(SETTINGS_FILE), r#"{"other":1}"#).unwrap();
+        std::fs::write(dir.join(CONFIG_FILE), r#"{"other":1}"#).unwrap();
 
         let p = EditorPrefs {
             vim_mode: true,
@@ -101,7 +101,7 @@ mod tests {
         assert!(back.vim_mode);
         assert_eq!(back.tabstop, 2);
 
-        let raw = std::fs::read_to_string(dir.join(SETTINGS_FILE)).unwrap();
+        let raw = std::fs::read_to_string(dir.join(CONFIG_FILE)).unwrap();
         assert!(raw.contains("\"other\""));
         std::fs::remove_dir_all(&dir).ok();
     }

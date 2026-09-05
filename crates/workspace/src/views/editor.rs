@@ -80,7 +80,7 @@ pub struct EditorView {
     prefs: Preferences,
     /// Settings-schema hover text (T19-006 Anweisung #5) — `Some((mouse
     /// position, description))` while the mouse is over a key/value in a
-    /// `labonair-settings.json`/`.labonair/settings.json` tab and that key
+    /// `config.json`/`.labonair/settings.json` tab and that key
     /// path has a schema description. `None` everywhere else (including
     /// every non-settings file — [`Self::is_settings_json`] gates this on
     /// every mouse-move so a plain source file never pays the tree-sitter
@@ -134,7 +134,7 @@ impl EditorView {
     }
 
     /// Whether this tab's file is a settings.json the schema-hover helper
-    /// applies to: the user file (`~/.config/labonair/labonair-settings.json`)
+    /// applies to: the user file (`~/.config/labonair/config.json`)
     /// or a project file (`<root>/.labonair/settings.json`, T19-003).
     fn is_settings_json(&self) -> bool {
         let Some(path) = &self.doc.path else {

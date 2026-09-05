@@ -113,7 +113,7 @@ pub fn validate(
 /// description if it has one (schemars attaches it to the field's schema
 /// node), else the nearest ancestor's, else `None`. Used by the settings
 /// editor's schema-hover helper (T19-006 Anweisung #5) so hovering a key in
-/// `labonair-settings.json` shows the same text a Settings-UI row for that
+/// `config.json` shows the same text a Settings-UI row for that
 /// field would.
 pub fn description_for_path(json_path: &[&str]) -> Option<String> {
     let schema = json_schema();

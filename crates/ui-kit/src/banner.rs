@@ -15,7 +15,7 @@
 //!
 //! ```ignore
 //! banner(Severity::Error, c)
-//!     .child("labonair-settings.json has a syntax error")
+//!     .child("config.json has a syntax error")
 //!     .child(reload_button)
 //! ```
 

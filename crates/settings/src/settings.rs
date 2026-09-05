@@ -1,7 +1,7 @@
 //! `labonair-settings` — the layered [`SettingsStore`] (T19-002).
 //!
 //! Loads every settings layer (`assets/settings/default.json` < the user's
-//! `labonair-settings.json` < …), merges them in the fixed order normative in
+//! `config.json` < …), merges them in the fixed order normative in
 //! `docs/architecture.md`, watches the user file live, and hands out
 //! feature-local typed slices (`ThemeSettings::get(cx)`,
 //! `TerminalSettings::get(cx)`, …) through the [`Settings`] trait. The
@@ -53,7 +53,7 @@ pub use labonair_settings_macros::RegisterSetting;
 use gpui::App;
 
 /// Build the store from `assets/settings/default.json` + the user's
-/// `~/.config/labonair/labonair-settings.json`, publish it as the
+/// `~/.config/labonair/config.json`, publish it as the
 /// [`SettingsStore`] global, register every `#[derive(RegisterSetting)]`
 /// type, and start the live fs-watch. Call once, before the first render
 /// (`crates/app/src/main.rs`, right after `labonair_shell::init_fonts`).

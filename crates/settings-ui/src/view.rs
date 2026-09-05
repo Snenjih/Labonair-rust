@@ -1156,7 +1156,7 @@ impl Render for SettingsView {
                 // hardcode `gpui::red()`, bypassing the theme's status tokens
                 // (Critical Rule 3).
                 banner(Severity::Error, c).child(SharedString::from(format!(
-                    "labonair-settings.json has a syntax error ({err}) — fix it before \
+                    "config.json has a syntax error ({err}) — fix it before \
                      changing settings here.",
                 )))
             });
@@ -1321,9 +1321,9 @@ impl SettingsView {
                     ButtonVariant::Ghost,
                     ButtonSize::Xs,
                 )
-                .child("Open settings.json")
+                .child("Open config.json")
                 .on_click(cx.listener(|_, _: &ClickEvent, _w, cx| {
-                    cx.reveal_path(&config_dir().join("labonair-settings.json"));
+                    cx.reveal_path(&config_dir().join("config.json"));
                 })),
             )
             .child(

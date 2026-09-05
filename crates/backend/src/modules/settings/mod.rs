@@ -11,7 +11,9 @@ pub mod preferences;
 
 use crate::modules::fs::paths::config_dir;
 
-const SETTINGS_FILE: &str = "labonair-settings.json";
+/// The shared user configuration file used by every native settings writer.
+pub const CONFIG_FILE: &str = "config.json";
+const LEGACY_CONFIG_FILE: &str = "labonair-settings.json";
 const KEY_BAR_ITEM_PLACEMENTS: &str = "barItemPlacements";
 const KEY_STATUS_BAR_ITEM_PLACEMENTS: &str = "statusBarItemPlacements";
 const KEY_PANEL_TOGGLE_VISIBILITY: &str = "panelToggleVisibility";
@@ -33,7 +35,7 @@ pub struct StatusBarPlacementLock(pub Mutex<()>);
 pub struct PanelToggleVisibilityLock(pub Mutex<()>);
 
 fn read_settings_from(dir: &Path) -> Map<String, Value> {
-    std::fs::read_to_string(dir.join(SETTINGS_FILE))
+    std::fs::read_to_string(dir.join(CONFIG_FILE))
         .ok()
         .and_then(|s| serde_json::from_str::<Value>(&s).ok())
         .and_then(|v| v.as_object().cloned())
@@ -41,11 +43,29 @@ fn read_settings_from(dir: &Path) -> Map<String, Value> {
 }
 
 fn write_settings_to(dir: &Path, map: &Map<String, Value>) -> Result<(), String> {
-    let path = dir.join(SETTINGS_FILE);
+    let path = dir.join(CONFIG_FILE);
     let tmp = path.with_extension("json.tmp");
     let json = serde_json::to_string_pretty(map).map_err(|e| e.to_string())?;
     std::fs::write(&tmp, json).map_err(|e| e.to_string())?;
     std::fs::rename(&tmp, &path).map_err(|e| e.to_string())
+}
+
+/// Adopt the former user-settings filename once, without overwriting a
+/// `config.json` that already exists. This runs before any settings reader at
+/// startup, so users keep their existing configuration after the rename.
+pub fn migrate_config_file_name(dir: &Path) -> Result<(), String> {
+    let legacy = dir.join(LEGACY_CONFIG_FILE);
+    let current = dir.join(CONFIG_FILE);
+    if current.exists() || !legacy.exists() {
+        return Ok(());
+    }
+    std::fs::rename(&legacy, &current).map_err(|e| {
+        format!(
+            "failed to rename {} to {}: {e}",
+            legacy.display(),
+            current.display()
+        )
+    })
 }
 
 /// The persisted `barItemPlacements` blob (`{ itemId: { bar, side, hidden } }`),
@@ -244,6 +264,35 @@ pub fn set_panel_toggle_visibility_in(
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn adopts_legacy_filename_only_when_config_is_missing() {
+        let dir =
+            std::env::temp_dir().join(format!("labonair-config-filename-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let legacy = dir.join(LEGACY_CONFIG_FILE);
+        let current = dir.join(CONFIG_FILE);
+        std::fs::write(&legacy, r#"{"general":{"theme":"dark"}}"#).unwrap();
+
+        migrate_config_file_name(&dir).unwrap();
+        assert!(!legacy.exists());
+        assert_eq!(
+            std::fs::read_to_string(&current).unwrap(),
+            r#"{"general":{"theme":"dark"}}"#
+        );
+
+        std::fs::write(&legacy, r#"{"general":{"theme":"light"}}"#).unwrap();
+        migrate_config_file_name(&dir).unwrap();
+        assert!(legacy.exists());
+        assert_eq!(
+            std::fs::read_to_string(&current).unwrap(),
+            r#"{"general":{"theme":"dark"}}"#
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn bar_item_placement_round_trips_and_merges() {

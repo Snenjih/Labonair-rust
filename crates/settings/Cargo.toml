@@ -24,7 +24,7 @@ labonair-settings-macros = { path = "../settings-macros" }
 gpui = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-# Accepts the same JSONC-tolerant `labonair-settings.json` the shipped
+# Accepts the same JSONC-tolerant `config.json` the shipped
 # `default.json` uses (mirrors `labonair-settings-content::fallible`).
 jsonc-parser = { version = "0.23", features = ["serde"] }
 # Live fs-watch on the user settings file (same crates + debounce pattern as

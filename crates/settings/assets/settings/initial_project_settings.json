@@ -1,5 +1,5 @@
 // Labonair project settings. This file, if present, is merged on top of
-// your personal (`~/.config/labonair/labonair-settings.json`) settings for
+// your personal (`~/.config/labonair/config.json`) settings for
 // EVERYONE who opens this folder — it's meant to be committed alongside the
 // project.
 //

@@ -165,14 +165,14 @@ pub fn background_delete(filename: String) -> Result<(), String> {
 // keys the pure-Rust renderer needs — `backgroundFit` and `backgroundTarget` —
 // default to the reference's implicit behaviour (cover, whole window).
 //
-// Persisted into the same `config_dir()/labonair-settings.json` blob the rest
+// Persisted into the same `config_dir()/config.json` blob the rest
 // of the app reads (see `super::settings`), merged key-by-key so unrelated
 // settings survive.
 // ---------------------------------------------------------------------------
 
 use std::path::Path;
 
-const SETTINGS_FILE: &str = "labonair-settings.json";
+const SETTINGS_FILE: &str = crate::modules::settings::CONFIG_FILE;
 
 /// How the background image is scaled into its area.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]

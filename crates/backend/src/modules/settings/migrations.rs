@@ -36,11 +36,11 @@ use serde_json::{Map, Value};
 use std::path::Path;
 
 use super::{
-    read_settings_from, write_settings_to, KEY_BAR_ITEM_PLACEMENTS, KEY_STATUS_BAR_ITEM_PLACEMENTS,
+    read_settings_from, write_settings_to, CONFIG_FILE, KEY_BAR_ITEM_PLACEMENTS,
+    KEY_STATUS_BAR_ITEM_PLACEMENTS,
 };
 
 const KEY_BAR_ITEM_PLACEMENTS_LEGACY: &str = "barItemPlacements_legacy";
-const SETTINGS_FILE: &str = "labonair-settings.json";
 
 /// Old (camelCase) -> new (kebab-case, `StatusItem::id()`) item-id mapping.
 /// Anything not in this table (obsolete AI ids, panel-toggle/sidebar-panel
@@ -85,7 +85,7 @@ pub fn migrate_bar_item_placements(dir: &Path) -> Result<MigrationOutcome, Strin
         return Ok(MigrationOutcome::NothingToMigrate);
     };
 
-    let path = dir.join(SETTINGS_FILE);
+    let path = dir.join(CONFIG_FILE);
     if path.exists() {
         let _ = std::fs::copy(&path, path.with_extension("json.bak"));
     }
@@ -212,7 +212,7 @@ mod tests {
         assert!(!new_settings.contains_key(KEY_BAR_ITEM_PLACEMENTS));
         assert!(new_settings.contains_key("barItemPlacements_legacy"));
 
-        assert!(dir.join("labonair-settings.json.bak").exists());
+        assert!(dir.join("config.json.bak").exists());
 
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -286,8 +286,8 @@ mod tests {
 
         let outcome = migrate_bar_item_placements(&dir).unwrap();
         assert_eq!(outcome, MigrationOutcome::NothingToMigrate);
-        assert!(!dir.join(SETTINGS_FILE).exists());
-        assert!(!dir.join("labonair-settings.json.bak").exists());
+        assert!(!dir.join(CONFIG_FILE).exists());
+        assert!(!dir.join("config.json.bak").exists());
 
         let _ = std::fs::remove_dir_all(&dir);
     }

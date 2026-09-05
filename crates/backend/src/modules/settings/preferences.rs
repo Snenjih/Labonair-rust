@@ -5,7 +5,7 @@
 //! app kept ~130 loosely-typed keys in a `LazyStore`; here the fields the Rust
 //! app actually consumes are modelled as one concretely-typed struct, grouped
 //! into the same categories, persisted as a `preferences` object inside the
-//! shared `labonair-settings.json` (the same file `settings::editor` /
+//! shared `config.json` (the same file `settings::editor` /
 //! `settings::mcp` / the bar-item registry use).
 //!
 //! Persistence rules:
@@ -14,7 +14,7 @@
 //!   (`#[serde(default)]` per field) — a preferences file written by an older
 //!   build never fails to load;
 //! * a corrupt settings file (not valid JSON, or not a JSON object) is moved
-//!   aside to `labonair-settings.json.bak` and defaults are used, so a bad
+//!   aside to `config.json.bak` and defaults are used, so a bad
 //!   write can never brick the app.
 
 use std::collections::BTreeMap;
@@ -24,7 +24,7 @@ use serde_json::Value;
 
 use crate::modules::fs::paths::config_dir;
 
-const SETTINGS_FILE: &str = "labonair-settings.json";
+use super::CONFIG_FILE;
 const KEY: &str = "preferences";
 
 /// The app theme the user picked. `System` follows the OS appearance.
@@ -558,7 +558,7 @@ pub fn preferences_save(prefs: &Preferences) -> Result<(), String> {
 }
 
 /// Load preferences from an explicit config directory (testing / non-default
-/// profiles). `dir` is the directory that contains `labonair-settings.json`.
+/// profiles). `dir` is the directory that contains `config.json`.
 pub fn preferences_load_from(dir: &std::path::Path) -> Preferences {
     load_from(dir)
 }
@@ -569,7 +569,7 @@ pub fn preferences_save_to(dir: &std::path::Path, prefs: &Preferences) -> Result
 }
 
 fn load_from(dir: &std::path::Path) -> Preferences {
-    let path = dir.join(SETTINGS_FILE);
+    let path = dir.join(CONFIG_FILE);
     let Ok(raw) = std::fs::read_to_string(&path) else {
         return Preferences::default();
     };
@@ -589,7 +589,7 @@ fn load_from(dir: &std::path::Path) -> Preferences {
 }
 
 fn save_to(dir: &std::path::Path, prefs: &Preferences) -> Result<(), String> {
-    let path = dir.join(SETTINGS_FILE);
+    let path = dir.join(CONFIG_FILE);
     let mut map = std::fs::read_to_string(&path)
         .ok()
         .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
@@ -619,7 +619,7 @@ mod tests {
     #[test]
     fn roundtrip_merges_into_shared_file() {
         let dir = tmp();
-        std::fs::write(dir.join(SETTINGS_FILE), r#"{"editor":{"number":true}}"#).unwrap();
+        std::fs::write(dir.join(CONFIG_FILE), r#"{"editor":{"number":true}}"#).unwrap();
 
         let p = Preferences {
             theme: ThemePref::Dark,
@@ -634,7 +634,7 @@ mod tests {
         assert_eq!(back.terminal_font_size, 16);
         assert!(back.editor_word_wrap);
 
-        let raw = std::fs::read_to_string(dir.join(SETTINGS_FILE)).unwrap();
+        let raw = std::fs::read_to_string(dir.join(CONFIG_FILE)).unwrap();
         assert!(raw.contains("\"editor\""), "unrelated keys preserved");
         std::fs::remove_dir_all(&dir).ok();
     }
@@ -649,7 +649,7 @@ mod tests {
     fn partial_json_falls_back_field_by_field() {
         let dir = tmp();
         std::fs::write(
-            dir.join(SETTINGS_FILE),
+            dir.join(CONFIG_FILE),
             r#"{"preferences":{"terminalFontSize":20}}"#,
         )
         .unwrap();
@@ -666,11 +666,11 @@ mod tests {
     #[test]
     fn corrupt_file_is_backed_up_and_defaults_load() {
         let dir = tmp();
-        std::fs::write(dir.join(SETTINGS_FILE), "not json at all {{{").unwrap();
+        std::fs::write(dir.join(CONFIG_FILE), "not json at all {{{").unwrap();
         let back = load_from(&dir);
         assert_eq!(back, Preferences::default());
         assert!(
-            dir.join("labonair-settings.json.bak").exists(),
+            dir.join("config.json.bak").exists(),
             "corrupt file preserved as .bak"
         );
         std::fs::remove_dir_all(&dir).ok();
@@ -746,7 +746,7 @@ mod tests {
     fn legacy_host_manager_startup_tab_migrates_to_empty() {
         let dir = tmp();
         std::fs::write(
-            dir.join(SETTINGS_FILE),
+            dir.join(CONFIG_FILE),
             r#"{"preferences":{"defaultStartupTab":"host-manager"}}"#,
         )
         .unwrap();
@@ -759,7 +759,7 @@ mod tests {
         let dir = tmp();
         // A representative slice of `reference-src` DEFAULT_PREFERENCES keys.
         std::fs::write(
-            dir.join(SETTINGS_FILE),
+            dir.join(CONFIG_FILE),
             r#"{"preferences":{
                 "vimMode":true,
                 "defaultStartupTab":"terminal",

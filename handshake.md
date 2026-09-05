@@ -24,6 +24,16 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 surface are implemented, but the task must remain open until its graphical
 profiling evidence is captured on macOS.
 
+- **Configuration filename refactor (2026-09-05):** the shared user
+  configuration is now `~/.config/labonair/config.json`. Startup adopts an
+  existing `labonair-settings.json` only when `config.json` is absent, before
+  settings loading and schema migration. Every native reader/writer, raw JSON
+  command, watcher, user-visible diagnostic, and related test now uses the
+  new name. `cargo fmt --check`, `cargo check --workspace --all-targets`, and
+  `cargo clippy --workspace --all-targets -- -D warnings` pass. The focused
+  filename-adoption test passes. Full backend/settings test packages are
+  blocked here by pre-existing macOS Keychain/file-watcher sandbox failures.
+
 - `labonair::perf` trace spans now cover shell/titlebar/workspace/status-bar,
   Explorer/SCM/Git Graph/Snippets/AI panels, settings recomputation, active
   theme recomputation, and live-snapshot recomputation. Enable with

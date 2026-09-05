@@ -274,7 +274,7 @@ mod tests {
         let dir =
             std::env::temp_dir().join(format!("labonair-settings-watch-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
-        let path = dir.join("labonair-settings.json");
+        let path = dir.join("config.json");
         std::fs::write(&path, "{}").unwrap();
 
         let dirty = Arc::new(AtomicBool::new(false));

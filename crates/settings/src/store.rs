@@ -37,7 +37,7 @@ pub struct WorktreeId(pub u64);
 pub enum SettingsLayer {
     /// `SettingsContent::defaults()` (`assets/settings/default.json`).
     Default,
-    /// `~/.config/labonair/labonair-settings.json` (the shared settings
+    /// `~/.config/labonair/config.json` (the shared settings
     /// file's top-level `SettingsContent` keys — see `docs/architecture.md`
     /// §8.3 / `content_bridge.rs` for the still-open `editor`/`mcp` key
     /// collision with the legacy `Preferences` bridge, resolved in T19-009).
@@ -286,7 +286,7 @@ impl SettingsStore {
                 tracing::warn!(
                     path = %self.user_path.display(),
                     message = %message,
-                    "labonair-settings.json is not valid JSON/JSONC — keeping the last good settings",
+                    "config.json is not valid JSON/JSONC — keeping the last good settings",
                 );
                 self.user_json_error = Some(message);
                 self.schema_errors.clear();
@@ -347,7 +347,7 @@ impl SettingsStore {
     ) -> Result<(), String> {
         if let Some(err) = &self.user_json_error {
             return Err(format!(
-                "labonair-settings.json has a syntax error and can't be edited from the GUI \
+                "config.json has a syntax error and can't be edited from the GUI \
                  until it's fixed: {err}"
             ));
         }
@@ -636,17 +636,17 @@ fn default_user_path() -> PathBuf {
 
     let dir = base.join("labonair");
     let _ = std::fs::create_dir_all(&dir);
-    dir.join("labonair-settings.json")
+    dir.join("config.json")
 }
 
 /// The commented scaffold [`ensure_user_settings_file`] writes for a user
-/// who has no `labonair-settings.json` yet (T19-005's "Open Settings (JSON)"
+/// who has no `config.json` yet (T19-005's "Open Settings (JSON)"
 /// command). Every existing key in this file also has a Settings UI row —
 /// the two paths edit the same file.
 const INITIAL_USER_SETTINGS: &str = include_str!("../assets/settings/initial_user_settings.json");
 
 /// Where the `User` settings layer lives on disk (`~/.config/labonair/
-/// labonair-settings.json`, or the platform equivalent) — the single source
+/// config.json`, or the platform equivalent) — the single source
 /// of truth for this path; callers outside this crate (the "Open Settings
 /// (JSON)" command) should use this rather than re-deriving it.
 pub fn user_settings_path() -> PathBuf {
@@ -666,7 +666,7 @@ pub fn ensure_user_settings_file() -> Result<PathBuf, String> {
 
 /// Where [`write_schema_file`] (re)writes the generated JSON Schema
 /// (T19-006 Anweisung #4) — `~/.config/labonair/settings.schema.json`, next
-/// to `labonair-settings.json`. Exposed so external editors/tooling that
+/// to `config.json`. Exposed so external editors/tooling that
 /// want to point their own JSON-schema-aware editing at this file know
 /// where to look.
 pub fn settings_schema_path() -> PathBuf {
@@ -721,7 +721,7 @@ mod tests {
     fn tmp_path() -> PathBuf {
         let dir = std::env::temp_dir().join(format!("labonair-settings-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
-        dir.join("labonair-settings.json")
+        dir.join("config.json")
     }
 
     #[test]

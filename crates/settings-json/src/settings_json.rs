@@ -818,7 +818,7 @@ pub fn find_value_range(text: &str, key_path: &[&str]) -> Option<Range<usize>> {
 /// The dotted key path leading to the JSON value at `offset` (a byte offset
 /// into `text`), if `offset` falls inside some nested object's pair — used
 /// by the settings-editor's schema-hover helper (T19-006 Anweisung #5):
-/// hovering the mouse over a key/value in `labonair-settings.json` needs to
+/// hovering the mouse over a key/value in `config.json` needs to
 /// know which `SettingsContent` field is under the cursor. Returns `None`
 /// if `offset` isn't inside any pair (e.g. it's on punctuation/whitespace
 /// between top-level entries, or the text doesn't parse).

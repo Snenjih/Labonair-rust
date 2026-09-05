@@ -6,14 +6,14 @@
 //! into `McpState` at startup and on every settings change (matches the
 //! reference `useMcpTabBridge.ts` re-sync effect).
 //!
-//! Stored as an `mcp` object inside the shared `labonair-settings.json`, the
+//! Stored as an `mcp` object inside the shared `config.json`, the
 //! same file `settings::editor` and the bar-item placements use.
 
 use serde::{Deserialize, Serialize};
 
 use crate::modules::fs::paths::config_dir;
 
-const SETTINGS_FILE: &str = "labonair-settings.json";
+use super::CONFIG_FILE;
 const KEY: &str = "mcp";
 
 const DEFAULT_PORT: u16 = 47823;
@@ -60,7 +60,7 @@ pub fn mcp_prefs_save(prefs: &McpPrefs) -> Result<(), String> {
 }
 
 fn load_from(dir: &std::path::Path) -> McpPrefs {
-    std::fs::read_to_string(dir.join(SETTINGS_FILE))
+    std::fs::read_to_string(dir.join(CONFIG_FILE))
         .ok()
         .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
         .and_then(|v| v.get(KEY).cloned())
@@ -69,7 +69,7 @@ fn load_from(dir: &std::path::Path) -> McpPrefs {
 }
 
 fn save_to(dir: &std::path::Path, prefs: &McpPrefs) -> Result<(), String> {
-    let path = dir.join(SETTINGS_FILE);
+    let path = dir.join(CONFIG_FILE);
     let mut map = std::fs::read_to_string(&path)
         .ok()
         .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
@@ -94,7 +94,7 @@ mod tests {
     fn roundtrip_merges_into_shared_file() {
         let dir = std::env::temp_dir().join(format!("labonair-mcp-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(dir.join(SETTINGS_FILE), r#"{"editor":{"number":true}}"#).unwrap();
+        std::fs::write(dir.join(CONFIG_FILE), r#"{"editor":{"number":true}}"#).unwrap();
 
         let p = McpPrefs {
             bridge_enabled: true,
@@ -111,7 +111,7 @@ mod tests {
         assert_eq!(back.auto_revoke_minutes, 15);
         assert!(back.notify_on_activity);
 
-        let raw = std::fs::read_to_string(dir.join(SETTINGS_FILE)).unwrap();
+        let raw = std::fs::read_to_string(dir.join(CONFIG_FILE)).unwrap();
         assert!(raw.contains("\"editor\""), "unrelated keys preserved");
         std::fs::remove_dir_all(&dir).ok();
     }
@@ -126,7 +126,7 @@ mod tests {
     fn partial_json_falls_back_field_by_field() {
         let dir = std::env::temp_dir().join(format!("labonair-mcp-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(dir.join(SETTINGS_FILE), r#"{"mcp":{"bridgeEnabled":true}}"#).unwrap();
+        std::fs::write(dir.join(CONFIG_FILE), r#"{"mcp":{"bridgeEnabled":true}}"#).unwrap();
         let back = load_from(&dir);
         assert!(back.bridge_enabled);
         assert_eq!(back.bridge_port, DEFAULT_PORT, "missing field uses default");

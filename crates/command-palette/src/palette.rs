@@ -143,7 +143,7 @@ pub enum CommandId {
     /// Create (if missing) and open `<active pane's cwd>/.labonair/
     /// settings.json` — the per-project settings layer (T19-003).
     OpenProjectSettings,
-    /// Create (if missing) and open `~/.config/labonair/labonair-settings.json`
+    /// Create (if missing) and open `~/.config/labonair/config.json`
     /// as an editor tab — the raw JSON path, alongside the Settings UI
     /// (T19-005).
     OpenSettingsJson,

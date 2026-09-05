@@ -66,15 +66,19 @@ fn main() {
     // split into the flat `SettingsContent` area layout (+ `keymap.json` for
     // keybind overrides, + SQLite hosts into `hosts.entries`). Must run
     // before `labonair_settings::init(cx)` below, which reads the very same
-    // `labonair-settings.json` file and would otherwise silently see an
+    // `config.json` file and would otherwise silently see an
     // all-defaults tree for an old-format file.
     {
         use labonair_backend::modules::fs::paths::config_dir;
-        use labonair_backend::modules::settings::migrate_v2::{
-            migrate_hosts_to_settings, migrate_settings_v1_to_v2,
+        use labonair_backend::modules::settings::{
+            migrate_config_file_name,
+            migrate_v2::{migrate_hosts_to_settings, migrate_settings_v1_to_v2},
         };
 
         let settings_dir = config_dir();
+        if let Err(err) = migrate_config_file_name(&settings_dir) {
+            tracing::warn!("config filename migration failed: {err}");
+        }
         match migrate_settings_v1_to_v2(&settings_dir) {
             Ok(outcome) => tracing::info!("settings v1->v2 migration: {outcome:?}"),
             Err(err) => tracing::warn!("settings v1->v2 migration failed: {err}"),
