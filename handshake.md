@@ -6,6 +6,21 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 ## Current Session: 2026-09-05 (T21-001 — render-path profiling & frame hygiene, in progress)
 
+### Zed sidebar/status-bar source comparison
+
+- Added `docs/ui-comparison-zed-sidebar-status-bar.md`, a source-level comparison
+  of Labonair and the pinned Zed snapshot for dock chrome, status-bar panel
+  switching, Explorer/Project Panel, and Source Control/Git Panel.
+- The report includes exact source anchors, design diagnosis, a clean-room
+  module/trait/state map, phased implementation order, tests, and acceptance
+  criteria. It does not change product behavior.
+- Direct source copying is not proposed: the inspected Zed `workspace`,
+  `project_panel`, `git_ui`, and `ui` crates are GPL-3.0-or-later while
+  Labonair is Apache-2.0. The plan independently reimplements observable UI
+  patterns on Labonair's existing APIs.
+- **Next remains:** complete the graphical macOS evidence required by T21-001;
+  the UI redesign report is planning input and does not supersede roadmap order.
+
 ### Explorer sidebar visual alignment
 
 - `crates/panel-explorer/src/panel_explorer.rs` now mirrors the reference
