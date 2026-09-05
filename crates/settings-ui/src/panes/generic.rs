@@ -31,61 +31,40 @@ impl SettingsView {
         } else {
             SharedString::from(stored)
         };
-        let list = anchored().position(menu.at).snap_to_window().child(
-            div()
-                .id("dropdown-list")
-                .occlude()
-                .min_w(px(180.0))
-                .max_h(px(320.0))
-                .overflow_y_scroll()
-                .flex()
-                .flex_col()
-                .p_1()
-                .rounded_md()
-                .bg(c.card)
-                .border_1()
-                .border_color(c.border)
-                .children(menu.options.iter().enumerate().map(|(i, (token, label))| {
-                    let token = token.clone();
-                    let selected = token.as_ref() == cur.as_ref();
-                    let is_sentinel = sentinel.as_ref() == Some(&token);
-                    div()
-                        .id(SharedString::from(format!("opt-{json_path}-{i}")))
-                        .px_2()
-                        .py(px(4.0))
-                        .rounded_sm()
-                        .text_size(px(11.5))
-                        .text_color(if selected { c.fg } else { c.muted })
-                        .when(selected, |d| d.bg(c.accent))
-                        .when(!selected, |d| d.hover(|s| s.bg(c.border)))
-                        .child(label.clone())
-                        .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
-                            this.dropdown = None;
-                            let v = if is_sentinel {
-                                String::new()
-                            } else {
-                                token.to_string()
-                            };
-                            this.set_field_value(json_path, Value::String(v), cx);
-                        }))
-                })),
-        );
-        Some(
-            deferred(
-                div()
-                    .absolute()
-                    .inset_0()
-                    .child(div().id("dropdown-backdrop").absolute().inset_0().on_click(
-                        cx.listener(|this, _: &ClickEvent, _w, cx| {
-                            this.dropdown = None;
-                            cx.notify();
-                        }),
-                    ))
-                    .child(list),
-            )
-            .with_priority(200)
-            .into_any_element(),
-        )
+        // T20-001: the anchored option list is the shared `Select` primitive
+        // (`select_popover`) — same `deferred` + `anchored().snap_to_window()`
+        // layer, one implementation.
+        let options: Vec<SelectOption> = menu.options.clone();
+        let view = cx.entity();
+        Some(select_popover(
+            "settings-dropdown",
+            menu.at,
+            *c,
+            &options,
+            cur.as_ref(),
+            {
+                let v = view.clone();
+                move |_w, cx| {
+                    v.update(cx, |this, cx| {
+                        this.dropdown = None;
+                        cx.notify();
+                    })
+                }
+            },
+            move |token, _w, cx| {
+                let is_sentinel = sentinel.as_ref() == Some(token);
+                let token = token.clone();
+                view.update(cx, |this, cx| {
+                    this.dropdown = None;
+                    let v = if is_sentinel {
+                        String::new()
+                    } else {
+                        token.to_string()
+                    };
+                    this.set_field_value(json_path, Value::String(v), cx);
+                });
+            },
+        ))
     }
 
     /// Render one generated field row: label/description + origin badge +
@@ -127,43 +106,23 @@ impl SettingsView {
                     }))
                     .into_any_element()
             }
+            // T20-001: both numeric controls are the shared `NumberField`
+            // primitive now — it owns the stepper chrome, the filled track and
+            // the min/max/step clamping.
             FieldControl::Int { min, max, step } => {
                 let cur = value.as_ref().and_then(|v| v.as_i64()).unwrap_or(min);
-                let frac = if max > min {
-                    (cur - min) as f32 / (max - min) as f32
-                } else {
-                    0.0
-                };
-                div()
-                    .flex()
-                    .flex_col()
-                    .items_end()
-                    .child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .gap_1()
-                            .child(step_btn(
-                                "dec",
-                                json_path,
-                                "\u{2212}",
-                                c,
-                                cx,
-                                move |this, cx| this.bump_int(json_path, min, max, -step, cx),
-                            ))
-                            .child(
-                                div()
-                                    .min_w(px(52.0))
-                                    .text_center()
-                                    .text_color(c.fg)
-                                    .child(SharedString::from(cur.to_string())),
-                            )
-                            .child(step_btn("inc", json_path, "+", c, cx, move |this, cx| {
-                                this.bump_int(json_path, min, max, step, cx)
-                            })),
-                    )
-                    .child(slider_track(frac, c))
-                    .into_any_element()
+                number_field(
+                    SharedString::from(format!("int-{json_path}")),
+                    *c,
+                    cur as f64,
+                    min as f64,
+                    max as f64,
+                    step as f64,
+                )
+                .on_change(cx.listener(move |this, next: &f64, _w, cx| {
+                    this.set_field_value(json_path, Value::from(*next as i64), cx);
+                }))
+                .into_any_element()
             }
             FieldControl::Float {
                 min_centi,
@@ -174,49 +133,19 @@ impl SettingsView {
                     .as_ref()
                     .and_then(|v| v.as_f64())
                     .unwrap_or(min_centi as f64 / 100.0);
-                let frac = if max_centi > min_centi {
-                    ((cur * 100.0) as f32 - min_centi as f32) / (max_centi - min_centi) as f32
-                } else {
-                    0.0
-                };
-                div()
-                    .flex()
-                    .flex_col()
-                    .items_end()
-                    .child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .gap_1()
-                            .child(step_btn(
-                                "dec",
-                                json_path,
-                                "\u{2212}",
-                                c,
-                                cx,
-                                move |this, cx| {
-                                    this.bump_float(
-                                        json_path,
-                                        min_centi,
-                                        max_centi,
-                                        -step_centi,
-                                        cx,
-                                    )
-                                },
-                            ))
-                            .child(
-                                div()
-                                    .min_w(px(52.0))
-                                    .text_center()
-                                    .text_color(c.fg)
-                                    .child(SharedString::from(format!("{cur:.2}"))),
-                            )
-                            .child(step_btn("inc", json_path, "+", c, cx, move |this, cx| {
-                                this.bump_float(json_path, min_centi, max_centi, step_centi, cx)
-                            })),
-                    )
-                    .child(slider_track(frac, c))
-                    .into_any_element()
+                number_field(
+                    SharedString::from(format!("float-{json_path}")),
+                    *c,
+                    cur,
+                    min_centi as f64 / 100.0,
+                    max_centi as f64 / 100.0,
+                    step_centi as f64 / 100.0,
+                )
+                .decimals(2)
+                .on_change(cx.listener(move |this, next: &f64, _w, cx| {
+                    this.set_float_field(json_path, *next, cx);
+                }))
+                .into_any_element()
             }
             FieldControl::Select(opts) => {
                 let cur = value
@@ -230,40 +159,30 @@ impl SettingsView {
                     .map(|(_, l)| *l)
                     .unwrap_or(&cur);
                 let is_open = self.dropdown.as_ref().is_some_and(|d| d.key == json_path);
-                div()
-                    .id(SharedString::from(format!("sel-{json_path}")))
-                    .min_w(px(160.0))
-                    .flex()
-                    .items_center()
-                    .justify_between()
-                    .gap_2()
-                    .px_2()
-                    .py(px(4.0))
-                    .rounded_sm()
-                    .border_1()
-                    .border_color(if is_open { c.accent } else { c.border })
-                    .bg(c.bg)
-                    .text_color(c.fg)
-                    .text_size(px(11.5))
-                    .child(SharedString::from(label.to_string()))
-                    .child(div().text_color(c.muted).child("\u{25BE}"))
-                    .on_click(cx.listener(move |this, ev: &ClickEvent, _w, cx| {
-                        if this.dropdown.as_ref().is_some_and(|d| d.key == json_path) {
-                            this.dropdown = None;
-                        } else {
-                            this.dropdown = Some(SelectMenu {
-                                key: json_path,
-                                options: opts
-                                    .iter()
-                                    .map(|(t, l)| (SharedString::from(*t), SharedString::from(*l)))
-                                    .collect(),
-                                at: ev.position(),
-                                default_sentinel: None,
-                            });
-                        }
-                        cx.notify();
-                    }))
-                    .into_any_element()
+                // T20-001: shared `Select` trigger.
+                select_trigger(
+                    SharedString::from(format!("sel-{json_path}")),
+                    *c,
+                    SharedString::from(label.to_string()),
+                    is_open,
+                )
+                .on_click(cx.listener(move |this, ev: &ClickEvent, _w, cx| {
+                    if this.dropdown.as_ref().is_some_and(|d| d.key == json_path) {
+                        this.dropdown = None;
+                    } else {
+                        this.dropdown = Some(SelectMenu {
+                            key: json_path,
+                            options: opts
+                                .iter()
+                                .map(|(t, l)| (SharedString::from(*t), SharedString::from(*l)))
+                                .collect(),
+                            at: ev.position(),
+                            default_sentinel: None,
+                        });
+                    }
+                    cx.notify();
+                }))
+                .into_any_element()
             }
             FieldControl::FontFamily => {
                 let cur = value
@@ -277,40 +196,30 @@ impl SettingsView {
                     cur
                 };
                 let fonts = self.system_fonts.clone();
-                div()
-                    .id(SharedString::from(format!("font-{json_path}")))
-                    .min_w(px(200.0))
-                    .flex()
-                    .items_center()
-                    .justify_between()
-                    .gap_2()
-                    .px_2()
-                    .py(px(4.0))
-                    .rounded_sm()
-                    .border_1()
-                    .border_color(if is_open { c.accent } else { c.border })
-                    .bg(c.bg)
-                    .text_color(c.fg)
-                    .text_size(px(11.5))
-                    .child(SharedString::from(label))
-                    .child(div().text_color(c.muted).child("\u{25BE}"))
-                    .on_click(cx.listener(move |this, ev: &ClickEvent, _w, cx| {
-                        if this.dropdown.as_ref().is_some_and(|d| d.key == json_path) {
-                            this.dropdown = None;
-                        } else {
-                            let sentinel = SharedString::from("(default)");
-                            let mut options = vec![(sentinel.clone(), sentinel.clone())];
-                            options.extend(fonts.iter().map(|f| (f.clone(), f.clone())));
-                            this.dropdown = Some(SelectMenu {
-                                key: json_path,
-                                options,
-                                at: ev.position(),
-                                default_sentinel: Some(sentinel),
-                            });
-                        }
-                        cx.notify();
-                    }))
-                    .into_any_element()
+                select_trigger(
+                    SharedString::from(format!("font-{json_path}")),
+                    *c,
+                    SharedString::from(label),
+                    is_open,
+                )
+                .min_w(px(200.0))
+                .on_click(cx.listener(move |this, ev: &ClickEvent, _w, cx| {
+                    if this.dropdown.as_ref().is_some_and(|d| d.key == json_path) {
+                        this.dropdown = None;
+                    } else {
+                        let sentinel = SharedString::from("(default)");
+                        let mut options = vec![(sentinel.clone(), sentinel.clone())];
+                        options.extend(fonts.iter().map(|f| (f.clone(), f.clone())));
+                        this.dropdown = Some(SelectMenu {
+                            key: json_path,
+                            options,
+                            at: ev.position(),
+                            default_sentinel: Some(sentinel),
+                        });
+                    }
+                    cx.notify();
+                }))
+                .into_any_element()
             }
             FieldControl::Text => self.render_text_control(json_path, false, value, c, cx),
             FieldControl::Json => self.render_text_control(json_path, true, value, c, cx),
@@ -335,16 +244,12 @@ impl SettingsView {
             .border_color(c.border)
             .when(highlighted, |d| d.bg(c.accent.opacity(0.25)))
             .child(
-                div()
-                    .flex()
-                    .flex_col()
+                v_stack()
                     .gap_0p5()
                     .flex_1()
                     .min_w_0()
                     .child(
-                        div()
-                            .flex()
-                            .items_center()
+                        h_stack()
                             .gap_1p5()
                             .child(
                                 div()
@@ -732,12 +637,11 @@ impl SettingsView {
 
         let jump_bar = self.render_jump_bar(&jump, c, cx);
 
-        div()
-            .flex()
-            .flex_col()
+        // T20-001: shared `v_stack` layout helper.
+        v_stack()
             .children(leading)
             .children(jump_bar)
-            .child(div().flex().flex_col().children(rows))
+            .child(v_stack().children(rows))
             .into_any_element()
     }
 
@@ -747,24 +651,21 @@ impl SettingsView {
         c: &Palette,
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
-        let collapsed = self.section_collapsed(label);
-        div()
-            .id(SharedString::from(format!("section-{label}")))
-            .flex()
-            .items_center()
-            .gap_1()
-            .pt_3()
-            .pb_1()
-            .text_size(px(11.0))
-            .font_weight(gpui::FontWeight::SEMIBOLD)
-            .text_color(c.muted)
-            .hover(|s| s.text_color(c.fg))
-            .child(if collapsed { "\u{25B8}" } else { "\u{25BE}" })
-            .child(label)
-            .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
-                this.toggle_section(label, cx);
-            }))
-            .into_any_element()
+        // T20-001: the shared `Disclosure` primitive (real chevron icons
+        // instead of the `\u{25B8}`/`\u{25BE}` ASCII arrows this used to draw).
+        disclosure(
+            SharedString::from(format!("section-{label}")),
+            label,
+            self.section_collapsed(label),
+            c.muted,
+            c.fg,
+        )
+        .pt_3()
+        .pb_1()
+        .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+            this.toggle_section(label, cx);
+        }))
+        .into_any_element()
     }
 
     /// A horizontal jump bar: click scrolls to the section's row, the

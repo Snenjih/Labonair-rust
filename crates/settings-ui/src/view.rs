@@ -7,10 +7,9 @@
 
 pub use gpui::prelude::FluentBuilder;
 pub use gpui::{
-    anchored, deferred, div, px, App, AppContext, ClickEvent, ClipboardItem, Context, Entity,
-    FocusHandle, Focusable, InteractiveElement, IntoElement, KeyDownEvent, ParentElement,
-    PathPromptOptions, Pixels, Point, Render, ScrollHandle, SharedString,
-    StatefulInteractiveElement, Styled, Window,
+    div, px, App, AppContext, ClickEvent, ClipboardItem, Context, Entity, FocusHandle, Focusable,
+    InteractiveElement, IntoElement, KeyDownEvent, ParentElement, PathPromptOptions, Pixels, Point,
+    Render, ScrollHandle, SharedString, StatefulInteractiveElement, Styled, Window,
 };
 pub use serde_json::Value;
 pub use std::fs;
@@ -32,6 +31,10 @@ pub use labonair_notifications::{notification_center, Notification};
 pub use labonair_settings::SettingsStore;
 pub use labonair_settings_content::areas::AREAS;
 pub use labonair_theme::{ThemeFile, ThemePreference, ThemeStore};
+pub use labonair_ui_kit::{
+    banner, disclosure, h_stack, list_header, list_separator, number_field, segmented_control,
+    select_popover, select_trigger, v_stack, ListItem, Palette, SelectOption, Severity,
+};
 pub use labonair_workspace::background::BackgroundStore;
 
 pub(crate) use crate::apply::*;
@@ -745,45 +748,16 @@ impl SettingsView {
         self.set_field_value(field.json_path, Value::Bool(!cur), cx);
     }
 
-    pub(crate) fn bump_int(
+    /// Write an already-clamped `f64` (as produced by the shared
+    /// [`labonair_ui_kit::NumberField`]) as a JSON number. T20-001 moved the
+    /// clamping itself into the primitive, so this is only the store write.
+    pub(crate) fn set_float_field(
         &mut self,
         json_path: &'static str,
-        min: i64,
-        max: i64,
-        delta: i64,
+        value: f64,
         cx: &mut Context<Self>,
     ) {
-        let Some(field) = self.field_by_path(json_path) else {
-            return;
-        };
-        let cur = self
-            .field_value(field, cx)
-            .and_then(|v| v.as_i64())
-            .unwrap_or(min);
-        let next = (cur + delta).clamp(min, max);
-        self.set_field_value(json_path, Value::from(next), cx);
-    }
-
-    /// Float stepper: `min/max/delta` are in hundredths.
-    pub(crate) fn bump_float(
-        &mut self,
-        json_path: &'static str,
-        min_centi: i64,
-        max_centi: i64,
-        delta_centi: i64,
-        cx: &mut Context<Self>,
-    ) {
-        let Some(field) = self.field_by_path(json_path) else {
-            return;
-        };
-        let cur_centi = self
-            .field_value(field, cx)
-            .and_then(|v| v.as_f64())
-            .map(|f| (f * 100.0).round() as i64)
-            .unwrap_or(min_centi);
-        let next = (cur_centi + delta_centi).clamp(min_centi, max_centi);
-        let n = serde_json::Number::from_f64(next as f64 / 100.0)
-            .unwrap_or_else(|| serde_json::Number::from(0));
+        let n = serde_json::Number::from_f64(value).unwrap_or_else(|| serde_json::Number::from(0));
         self.set_field_value(json_path, Value::Number(n), cx);
     }
 
@@ -1039,45 +1013,47 @@ impl SettingsView {
                 )))
                 .into_any_element();
         }
+        // T20-001: one `ListHeader` per category + one `ListItem` per hit,
+        // from the shared list primitives.
         let rows = self.search_results.clone();
         let selected = self.search_selected;
         let mut col = div().flex().flex_col().gap_0p5();
         let mut last_area: Option<&'static str> = None;
         for (i, row) in rows.into_iter().enumerate() {
             if last_area != Some(row.area_title) {
-                col = col.child(section_label(row.area_title, c));
+                if last_area.is_some() {
+                    col = col.child(list_separator(c.border));
+                }
+                col = col.child(list_header(row.area_title, c.muted));
                 last_area = Some(row.area_title);
             }
-            let is_selected = i == selected;
             let target = row.target;
-            let mut item = div()
-                .id(SharedString::from(format!("search-hit-{i}")))
-                .px_2()
-                .py(px(4.0))
-                .rounded_sm()
-                .flex()
-                .flex_col()
-                .gap_0p5()
-                .when(is_selected, |d| d.bg(c.accent))
-                .when(!is_selected, |d| d.hover(|s| s.bg(c.border)))
-                .child(
-                    div()
-                        .text_size(px(12.0))
-                        .text_color(c.fg)
-                        .child(SharedString::from(row.title)),
+            let subtitle = (!row.subtitle.is_empty()).then(|| {
+                div()
+                    .text_size(px(10.0))
+                    .text_color(c.muted)
+                    .child(SharedString::from(row.subtitle))
+            });
+            col = col.child(
+                ListItem::new(
+                    SharedString::from(format!("search-hit-{i}")),
+                    c.fg,
+                    c.muted,
+                    c.accent,
                 )
+                .selected(i == selected)
                 .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
                     this.activate_search_hit(target, cx);
-                }));
-            if !row.subtitle.is_empty() {
-                item = item.child(
+                }))
+                .child(
                     div()
-                        .text_size(px(10.0))
-                        .text_color(c.muted)
-                        .child(SharedString::from(row.subtitle)),
-                );
-            }
-            col = col.child(item);
+                        .flex()
+                        .flex_col()
+                        .gap_0p5()
+                        .child(SharedString::from(row.title))
+                        .children(subtitle),
+                ),
+            );
         }
         col.into_any_element()
     }
@@ -1094,15 +1070,7 @@ impl Render for SettingsView {
         if !self.windowed && !self.open {
             return div().into_any_element();
         }
-        let t = self.theme.read(cx);
-        let c = Palette {
-            bg: t.background(),
-            fg: t.foreground(),
-            muted: t.muted_foreground(),
-            border: t.border(),
-            card: t.card(),
-            accent: t.accent(),
-        };
+        let c = Palette::from_theme(self.theme.read(cx));
         let active_area = self.active_area;
         let searching = !self.search.trim().is_empty();
         // T19-007: recompute every render so Up/Down/Enter and mouse clicks
@@ -1182,17 +1150,13 @@ impl Render for SettingsView {
             .try_global::<SettingsStore>()
             .and_then(|s| s.user_json_error())
             .map(|err| {
-                div()
-                    .flex_shrink_0()
-                    .px_3()
-                    .py(px(6.0))
-                    .bg(gpui::red().opacity(0.15))
-                    .text_color(gpui::red())
-                    .text_size(px(11.0))
-                    .child(SharedString::from(format!(
-                        "labonair-settings.json has a syntax error ({err}) — fix it before \
-                         changing settings here.",
-                    )))
+                // T20-001: the shared `Banner` primitive — this used to
+                // hardcode `gpui::red()`, bypassing the theme's status tokens
+                // (Critical Rule 3).
+                banner(Severity::Error, c).child(SharedString::from(format!(
+                    "labonair-settings.json has a syntax error ({err}) — fix it before \
+                     changing settings here.",
+                )))
             });
 
         // Schema-validation findings (T19-006): shown alongside (not instead
@@ -1223,23 +1187,14 @@ impl Render for SettingsView {
                     .iter()
                     .map(|w| SharedString::from(format!("warning: {w}"))),
             );
-            let is_error = !errors.is_empty();
+            let severity = if errors.is_empty() {
+                Severity::Warning
+            } else {
+                Severity::Error
+            };
             Some(
-                div()
-                    .flex_shrink_0()
-                    .flex()
-                    .flex_col()
-                    .gap_0p5()
-                    .px_3()
-                    .py(px(6.0))
-                    .when(is_error, |d| {
-                        d.bg(gpui::red().opacity(0.15)).text_color(gpui::red())
-                    })
-                    .when(!is_error, |d| {
-                        d.bg(gpui::yellow().opacity(0.15))
-                            .text_color(gpui::yellow())
-                    })
-                    .text_size(px(11.0))
+                banner(severity, c)
+                    .stacked(true)
                     .children(lines.into_iter().map(|line| div().child(line))),
             )
         });
@@ -1381,35 +1336,6 @@ impl SettingsView {
     }
 }
 
-#[derive(Clone, Copy)]
-pub(crate) struct Palette {
-    pub(crate) bg: gpui::Hsla,
-    pub(crate) fg: gpui::Hsla,
-    pub(crate) muted: gpui::Hsla,
-    pub(crate) border: gpui::Hsla,
-    pub(crate) card: gpui::Hsla,
-    pub(crate) accent: gpui::Hsla,
-}
-
-/// A read-only filled progress track shown under a bounded numeric stepper,
-/// giving it a slider appearance (`fraction` is clamped to `0.0..=1.0`).
-pub(crate) fn slider_track(fraction: f32, c: &Palette) -> impl IntoElement {
-    let pct = (fraction.clamp(0.0, 1.0) * 100.0).round();
-    div()
-        .mt(px(4.0))
-        .w(px(120.0))
-        .h(px(4.0))
-        .rounded_full()
-        .bg(c.border)
-        .child(
-            div()
-                .h_full()
-                .rounded_full()
-                .bg(c.accent)
-                .w(gpui::relative(pct / 100.0)),
-        )
-}
-
 pub(crate) fn section_label(text: &'static str, c: &Palette) -> impl IntoElement {
     div()
         .pt_3()
@@ -1418,29 +1344,6 @@ pub(crate) fn section_label(text: &'static str, c: &Palette) -> impl IntoElement
         .font_weight(gpui::FontWeight::SEMIBOLD)
         .text_color(c.muted)
         .child(text)
-}
-
-pub(crate) fn step_btn(
-    tag: &'static str,
-    key: &'static str,
-    glyph: &'static str,
-    c: &Palette,
-    cx: &mut Context<SettingsView>,
-    f: impl Fn(&mut SettingsView, &mut Context<SettingsView>) + 'static,
-) -> impl IntoElement {
-    div()
-        .id(SharedString::from(format!("{tag}-{key}")))
-        .size(px(20.0))
-        .flex()
-        .items_center()
-        .justify_center()
-        .rounded_sm()
-        .border_1()
-        .border_color(c.border)
-        .text_color(c.fg)
-        .hover(|s| s.bg(c.border))
-        .child(glyph)
-        .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| f(this, cx)))
 }
 
 pub(crate) fn bridge_switch_row(

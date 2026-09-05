@@ -6,9 +6,8 @@
 //! ad-hoc `btn` / `tool_btn` / `step_btn` helpers scattered across the views.
 
 use gpui::{div, px, Div, InteractiveElement, Stateful, Styled};
-use labonair_theme::CoreColors;
 
-use crate::theme::UiTheme;
+use crate::palette::Palette;
 
 /// `disabled:opacity-50` from the cva base.
 pub const DISABLED_OPACITY: f32 = 0.5;
@@ -75,12 +74,11 @@ impl ButtonSize {
 /// `btn`-helper call sites.
 pub fn button(
     id: impl Into<gpui::ElementId>,
-    theme: &impl UiTheme,
+    c: Palette,
     variant: ButtonVariant,
     size: ButtonSize,
 ) -> Stateful<Div> {
-    let core = theme.theme().core.clone();
-    let radius = theme.radius().xl4;
+    let radius = c.radius.xl4;
     let h = size.height();
 
     let mut el = div()
@@ -103,25 +101,25 @@ pub fn button(
         None => el.w(px(h)),
     };
 
-    apply_variant(el, variant, core)
+    apply_variant(el, variant, c)
 }
 
-fn apply_variant(el: Stateful<Div>, variant: ButtonVariant, c: CoreColors) -> Stateful<Div> {
+fn apply_variant(el: Stateful<Div>, variant: ButtonVariant, c: Palette) -> Stateful<Div> {
     match variant {
         ButtonVariant::Default => el
             .bg(c.primary)
-            .text_color(c.primary_foreground)
+            .text_color(c.primary_fg)
             .hover(move |s| s.bg(c.primary.opacity(0.8))),
         ButtonVariant::Outline => el
             .border_color(c.border)
-            .bg(c.background)
-            .text_color(c.foreground)
-            .hover(move |s| s.bg(c.muted)),
+            .bg(c.bg)
+            .text_color(c.fg)
+            .hover(move |s| s.bg(c.muted_bg)),
         ButtonVariant::Secondary => el
             .bg(c.secondary)
-            .text_color(c.secondary_foreground)
+            .text_color(c.secondary_fg)
             .hover(move |s| s.bg(c.secondary.opacity(0.8))),
-        ButtonVariant::Ghost => el.text_color(c.foreground).hover(move |s| s.bg(c.muted)),
+        ButtonVariant::Ghost => el.text_color(c.fg).hover(move |s| s.bg(c.muted_bg)),
         ButtonVariant::Destructive => el
             .bg(c.destructive.opacity(0.1))
             .text_color(c.destructive)
@@ -133,20 +131,11 @@ fn apply_variant(el: Stateful<Div>, variant: ButtonVariant, c: CoreColors) -> St
 #[cfg(test)]
 mod tests {
     use super::*;
-    use labonair_theme::Theme;
-
-    /// Bare [`UiTheme`] impl over a fixed [`Theme`] — the primitives only read
-    /// tokens, so no runtime store is needed in these unit tests.
-    struct TestTheme(Theme);
-    impl UiTheme for TestTheme {
-        fn theme(&self) -> &Theme {
-            &self.0
-        }
-    }
+    use crate::test_support::test_palette;
 
     #[test]
     fn builds_every_variant_and_size() {
-        let theme = TestTheme(Theme::dark());
+        let c = test_palette();
         for v in [
             ButtonVariant::Default,
             ButtonVariant::Outline,
@@ -166,14 +155,13 @@ mod tests {
                 ButtonSize::IconLg,
             ] {
                 // Smoke test: the builder must not panic for any combination.
-                let _ = button("btn", &theme, v, s);
+                let _ = button("btn", c, v, s);
             }
         }
     }
 
     #[test]
     fn pill_radius_matches_reference_radius_4xl() {
-        let theme = TestTheme(Theme::dark());
-        assert!((theme.radius().xl4 - 13.0).abs() < 1e-6);
+        assert!((test_palette().radius.xl4 - 13.0).abs() < 1e-6);
     }
 }

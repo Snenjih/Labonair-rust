@@ -43,7 +43,7 @@ use crate::drag::{quote_paths, DraggedPaths};
 use crate::prefs::GlobalPreferences;
 use crate::theme::ThemeStore;
 use labonair_settings::Settings as _;
-use labonair_ui_kit::{context_menu, IconName, MenuItem};
+use labonair_ui_kit::{context_menu, IconName, MenuItem, Palette};
 
 /// How often the view polls the session for new terminal output.
 const POLL_INTERVAL: Duration = Duration::from_millis(16);
@@ -682,7 +682,12 @@ impl TerminalView {
                 })
             }
         };
-        context_menu(pos, self.theme.read(cx), dismiss, items)
+        context_menu(
+            pos,
+            Palette::from_theme(self.theme.read(cx)),
+            dismiss,
+            items,
+        )
     }
 }
 

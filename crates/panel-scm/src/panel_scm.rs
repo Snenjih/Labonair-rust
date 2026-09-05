@@ -40,7 +40,7 @@ use tokio::runtime::Handle as TokioHandle;
 
 use crate::theme::ThemeStore;
 use labonair_notifications::notify_err;
-use labonair_ui_kit::{context_menu, IconName, MenuItem};
+use labonair_ui_kit::{context_menu, IconName, MenuItem, Palette};
 
 /// A source-control file-menu action, wrapped into a click handler by
 /// `render_file_menu`.
@@ -3140,7 +3140,12 @@ impl GitPanelView {
                 cx.notify();
             });
         };
-        Some(context_menu(pos, self.theme.read(cx), dismiss, items))
+        Some(context_menu(
+            pos,
+            Palette::from_theme(self.theme.read(cx)),
+            dismiss,
+            items,
+        ))
     }
 }
 

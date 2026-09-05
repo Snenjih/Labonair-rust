@@ -34,7 +34,9 @@ use tokio::runtime::Handle as TokioHandle;
 
 use crate::theme::ThemeStore;
 use labonair_notifications::{notification_center, Notification};
-use labonair_ui_kit::{context_menu, IconName, MenuItem};
+use labonair_ui_kit::{
+    checkbox, context_menu, indicator, IconName, IndicatorSize, MenuItem, Palette,
+};
 
 /// Connection status for a host, tracked live off the SSH event stream.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -1602,26 +1604,13 @@ impl Focusable for HostManagerView {
 
 // ── rendering ──────────────────────────────────────────────────────────────
 
-struct Palette {
-    bg: gpui::Hsla,
-    card: gpui::Hsla,
-    fg: gpui::Hsla,
-    muted: gpui::Hsla,
-    border: gpui::Hsla,
-    accent: gpui::Hsla,
-}
-
 impl HostManagerView {
+    /// T20-001: the per-render token snapshot is now the shared
+    /// [`labonair_ui_kit::Palette`] — the local struct this replaced held the
+    /// same six tokens and forced every ui-kit primitive to be handed a
+    /// `&ThemeStore` separately.
     fn palette(&self, cx: &App) -> Palette {
-        let t = self.theme.read(cx);
-        Palette {
-            bg: t.background(),
-            card: t.card(),
-            fg: t.foreground(),
-            muted: t.muted_foreground(),
-            border: t.border(),
-            accent: t.accent(),
-        }
+        Palette::from_theme(self.theme.read(cx))
     }
 
     /// Small host-manager action button — thin wrapper over the shared
@@ -1631,22 +1620,17 @@ impl HostManagerView {
         &self,
         id: &'static str,
         label: impl Into<SharedString>,
-        _p: &Palette,
+        p: &Palette,
         primary: bool,
-        cx: &App,
+        _cx: &App,
     ) -> gpui::Stateful<gpui::Div> {
         let variant = if primary {
             labonair_ui_kit::ButtonVariant::Default
         } else {
             labonair_ui_kit::ButtonVariant::Outline
         };
-        labonair_ui_kit::button(
-            id,
-            self.theme.read(cx),
-            variant,
-            labonair_ui_kit::ButtonSize::Xs,
-        )
-        .child(label.into())
+        labonair_ui_kit::button(id, *p, variant, labonair_ui_kit::ButtonSize::Xs)
+            .child(label.into())
     }
 
     // ── master/detail helpers (T16-014) ────────────────────────────────────
@@ -1721,7 +1705,8 @@ impl HostManagerView {
             Ping::Offline => (p.muted, "offline"),
             Ping::Checking => (p.border, "checking"),
         };
-        div().size(px(7.0)).rounded_full().bg(color)
+        // T20-001: shared `Indicator` primitive (7px == `IndicatorSize::Sm`).
+        indicator(IndicatorSize::Sm, color)
     }
 
     fn render_host_list_item(
@@ -2878,11 +2863,8 @@ impl HostManagerView {
                     .border_1()
                     .border_color(if checked { p.accent } else { p.border })
                     .cursor_pointer()
-                    .child(div().w(px(14.0)).child(if checked {
-                        IconName::SquareCheck.svg(p.accent).size(px(14.0))
-                    } else {
-                        IconName::Square.svg(p.muted).size(px(14.0))
-                    }))
+                    // T20-001: shared `Checkbox` primitive.
+                    .child(checkbox("", *p, checked).box_only())
                     .child(
                         div()
                             .flex_1()
@@ -3067,11 +3049,8 @@ impl HostManagerView {
                     .border_1()
                     .border_color(if checked { p.accent } else { p.border })
                     .cursor_pointer()
-                    .child(div().w(px(14.0)).child(if checked {
-                        IconName::SquareCheck.svg(p.accent).size(px(14.0))
-                    } else {
-                        IconName::Square.svg(p.muted).size(px(14.0))
-                    }))
+                    // T20-001: shared `Checkbox` primitive.
+                    .child(checkbox("", *p, checked).box_only())
                     .child(div().flex_1().min_w_0().text_sm().text_color(p.fg).child(
                         SharedString::from(format!(
                             "{}  \u{00b7}  {}@{}:{}",
@@ -3534,7 +3513,7 @@ impl HostManagerView {
         let v = view.clone();
         Some(context_menu(
             pos,
-            self.theme.read(cx),
+            self.palette(cx),
             move |_w, cx| close(&v, cx),
             items,
         ))
@@ -3577,7 +3556,7 @@ impl HostManagerView {
         let v = view.clone();
         Some(context_menu(
             pos,
-            self.theme.read(cx),
+            self.palette(cx),
             move |_w, cx| {
                 v.update(cx, |this, cx| {
                     this.group_menu = None;

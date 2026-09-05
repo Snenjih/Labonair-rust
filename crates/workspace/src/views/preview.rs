@@ -24,6 +24,8 @@ use gpui::{
     ObjectFit, SharedString, Window,
 };
 
+use labonair_ui_kit::{divider, Axis};
+
 use crate::markdown::{parse_markdown, Inline, MdBlock};
 use crate::theme::ThemeStore;
 
@@ -349,7 +351,8 @@ fn render_block(
             .text_color(muted)
             .child(SharedString::from(inline_string(spans)))
             .into_any_element(),
-        MdBlock::Rule => div().h(px(1.0)).w_full().bg(border).into_any_element(),
+        // T20-001: shared `Divider` primitive.
+        MdBlock::Rule => divider(Axis::Horizontal, border).into_any_element(),
         MdBlock::Bullets(items) => div()
             .flex()
             .flex_col()

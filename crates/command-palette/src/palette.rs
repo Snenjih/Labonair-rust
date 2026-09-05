@@ -21,7 +21,7 @@ use gpui::{
 };
 
 use labonair_theme::{EditorThemeId, ThemePreference};
-use labonair_ui_kit::{IconName, UiTheme};
+use labonair_ui_kit::{kbd, keybinding_hint, IconName, Palette, UiTheme};
 
 use crate::fuzzy::{match_score, SearchMode};
 use crate::keybind::{effective_keys, KeybindMap, ShortcutId};
@@ -1329,19 +1329,6 @@ where
     }
 }
 
-/// A single `<Kbd>` chip.
-fn kbd(label: impl Into<SharedString>, fg: Hsla, border: Hsla) -> impl IntoElement {
-    div()
-        .px(px(4.0))
-        .py(px(1.0))
-        .rounded(px(4.0))
-        .border_1()
-        .border_color(border)
-        .text_size(px(10.0))
-        .text_color(fg)
-        .child(label.into())
-}
-
 impl<P, W, Th> Render for CommandPalette<P, W, Th>
 where
     P: PalettePrefs + 'static,
@@ -1368,6 +1355,9 @@ where
             t.status_success(),
             t.primary(),
         );
+        // T20-001: the shared token snapshot, so the `Kbd` chips below are
+        // built from the same `Palette` every other primitive uses.
+        let c = Palette::from_theme(t);
         let mut card = t.card();
         card.a *= opacity;
         let sel_fill = t.selected_fill();
@@ -1513,7 +1503,7 @@ where
                 );
             }
             for k in &row.keys {
-                right = right.child(kbd(k.clone(), muted, border));
+                right = right.child(kbd(k.clone(), c));
             }
             if row.has_sub {
                 right = right.child(IconName::ChevronRight.svg(muted).size(px(12.0)));
@@ -1583,60 +1573,19 @@ where
         // ── footer ───────────────────────────────────────────────────────────
         let mut hints = div().flex().items_center().gap(px(12.0)).ml_auto();
         hints = hints
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap(px(4.0))
-                    .text_size(px(11.0))
-                    .text_color(muted)
-                    .child(kbd("\u{2191}\u{2193}", muted, border))
-                    .child("navigate"),
-            )
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap(px(4.0))
-                    .text_size(px(11.0))
-                    .text_color(muted)
-                    .child(kbd("\u{21b5}", muted, border))
-                    .child("select"),
-            );
+            .child(keybinding_hint("navigate", ["\u{2191}\u{2193}"], c))
+            .child(keybinding_hint("select", ["\u{21b5}"], c));
         if let Some(sec) = rows.get(selected).and_then(|r| r.secondary.as_ref()) {
-            hints = hints.child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap(px(4.0))
-                    .text_size(px(11.0))
-                    .text_color(muted)
-                    .child(kbd("\u{21e7}\u{21b5}", muted, border))
-                    .child(SharedString::from(sec.label)),
-            );
+            hints = hints.child(keybinding_hint(
+                SharedString::from(sec.label),
+                ["\u{21e7}\u{21b5}"],
+                c,
+            ));
         }
         if self.pages.len() > 1 {
-            hints = hints.child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap(px(4.0))
-                    .text_size(px(11.0))
-                    .text_color(muted)
-                    .child(kbd("\u{232b}", muted, border))
-                    .child("back"),
-            );
+            hints = hints.child(keybinding_hint("back", ["\u{232b}"], c));
         }
-        hints = hints.child(
-            div()
-                .flex()
-                .items_center()
-                .gap(px(4.0))
-                .text_size(px(11.0))
-                .text_color(muted)
-                .child(kbd("Esc", muted, border))
-                .child("close"),
-        );
+        hints = hints.child(keybinding_hint("close", ["Esc"], c));
         let footer = div()
             .flex()
             .items_center()

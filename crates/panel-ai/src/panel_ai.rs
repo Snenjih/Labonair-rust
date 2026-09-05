@@ -699,7 +699,10 @@ use crate::ai_composer::{
 use crate::markdown::{parse_markdown, Inline, MdBlock};
 use crate::syntax_theme::EditorPalette;
 use crate::theme::ThemeStore;
-use labonair_ui_kit::{field_input, IconName, InputEvent, InputState};
+use labonair_ui_kit::{
+    divider, field_input, toggle_base, Axis, IconName, InputEvent, InputState, Palette, ToggleSize,
+    ToggleVariant,
+};
 
 /// A composer attachment shown as a chip and embedded into the outgoing message.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -2326,7 +2329,8 @@ impl AiChatView {
                 .text_color(c.muted)
                 .child(inline_text(spans, c))
                 .into_any_element(),
-            MdBlock::Rule => div().h(px(1.0)).w_full().bg(c.border).into_any_element(),
+            // T20-001: shared `Divider` primitive.
+            MdBlock::Rule => divider(Axis::Horizontal, c.border).into_any_element(),
             MdBlock::Bullets(items) => div()
                 .flex()
                 .flex_col()
@@ -2874,6 +2878,10 @@ impl AiChatView {
     }
 
     fn render_composer(&self, c: &ChatColors, cx: &mut Context<Self>) -> impl IntoElement {
+        // T20-001: the shared token snapshot the ui-kit primitives take.
+        // `ChatColors` stays for the chat-specific semantic slots
+        // (`user_bubble`, `code_bg`, `link`).
+        let p = Palette::from_theme(self.theme.read(cx));
         let store = self.store.read(cx);
         let streaming = store.is_streaming();
         let queued: Vec<String> = store.queued_prompts().to_vec();
@@ -3057,29 +3065,32 @@ impl AiChatView {
                             .flex()
                             .items_center()
                             .gap_2()
+                            // T20-001: the shared `ToggleButton` chrome
+                            // (`toggle_base`) instead of a bespoke 9px pill —
+                            // same pressed/hover contract as the statusbar
+                            // panel toggles.
                             .child(
-                                div()
-                                    .id("ai-shell-toggle")
-                                    .flex()
-                                    .items_center()
-                                    .gap_1()
-                                    .px_1p5()
-                                    .py_0p5()
-                                    .rounded_sm()
-                                    .border_1()
-                                    .border_color(if self.shell_mode { c.accent } else { c.border })
-                                    .text_size(px(9.0))
-                                    .text_color(if self.shell_mode { c.fg } else { c.muted })
-                                    .child(
-                                        IconName::Terminal
-                                            .svg(if self.shell_mode { c.accent } else { c.muted })
-                                            .size(px(10.0)),
-                                    )
-                                    .child(if self.shell_mode { "Shell" } else { "AI" })
-                                    .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
+                                toggle_base(
+                                    "ai-shell-toggle",
+                                    p,
+                                    ToggleVariant::Outline,
+                                    ToggleSize::Xs,
+                                    self.shell_mode,
+                                    false,
+                                )
+                                .px_1p5()
+                                .child(
+                                    IconName::Terminal
+                                        .svg(if self.shell_mode { c.accent } else { c.muted })
+                                        .size(px(10.0)),
+                                )
+                                .child(if self.shell_mode { "Shell" } else { "AI" })
+                                .on_click(cx.listener(
+                                    |this, _: &ClickEvent, _w, cx| {
                                         this.shell_mode = !this.shell_mode;
                                         cx.notify();
-                                    })),
+                                    },
+                                )),
                             )
                             .child(div().text_size(px(9.0)).text_color(c.muted).child(
                                 if self.shell_mode {

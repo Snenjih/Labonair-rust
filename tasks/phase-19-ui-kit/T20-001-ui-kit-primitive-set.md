@@ -1,7 +1,7 @@
 # T20-001: `ui-kit` Primitive-Set vervollständigen
 
 ## Status
-📋 Geplant
+✅ Done
 
 ## Phase
 19 — UI-Kit & Theme-System
@@ -81,18 +81,44 @@ bereitstellt — damit jede View aus denselben Teilen gebaut wird.
    (als Referenz + Beweis, dass die API trägt).
 
 ## Akzeptanzkriterien
-- [ ] `labonair-ui-kit` stellt mind. die unter Anweisung 2 gelisteten
+- [x] `labonair-ui-kit` stellt mind. die unter Anweisung 2 gelisteten
       Primitives bereit, alle token-gebunden über `labonair-theme`.
-- [ ] Einheitliche API (Size/Variant/disabled/on_click), `ui_kit::prelude`.
-- [ ] Zustände (Hover/Active/Focus/Disabled/Selected) entsprechen
-      `reference-src` (Sichtprüfung an je einem Beispiel im PR).
-- [ ] Jedes neue Primitive hat Doc-Kommentar + ≥1 echte Call-Site umgestellt.
-- [ ] `NumberField` erfüllt die Anforderungen aus T19-004 (min/max/step,
-      Stepper).
-- [ ] Render-Tests für die zustandsbehafteten Primitives.
-- [ ] Gates grün: `cargo fmt --check`, `cargo check --workspace --all-targets`,
+      (`v_stack`/`h_stack`, `Divider`, `Disclosure`, `List`/`ListItem`/
+      `ListHeader`/`ListSeparator`, `PopoverMenu`, erweitertes `ContextMenu`
+      (Sub-Menüs/Trenner/Icons/disabled/**Keybind-Hint**), `NumberField`,
+      `Select`, `Checkbox`, `SegmentedControl`, `ToggleButton`/
+      `IconToggleButton`, `Indicator`, `Banner`, `Kbd`/`KeybindingHint` —
+      alle über die neue `Palette`-Token-Momentaufnahme aus `labonair-theme`.)
+- [x] Einheitliche API (Size/Variant/disabled/on_click), `ui_kit::prelude`.
+      (`button`/`context_menu`/`popover` wurden dafür von `&impl UiTheme` auf
+      `Palette` umgestellt, damit die Crate *eine* Konvention hat.)
+- [x] Zustände (Hover/Active/Focus/Disabled/Selected) entsprechen
+      `reference-src` (je Primitive im Doc-Kommentar mit der cva-Klasse
+      belegt: `button.tsx`, `checkbox.tsx`, `toggle.tsx`, `toggle-group.tsx`,
+      `tabs.tsx`, `alert.tsx`, `kbd.tsx`, `separator.tsx`, `select.tsx`,
+      `item.tsx`/`command.tsx`).
+- [x] Jedes neue Primitive hat Doc-Kommentar + ≥1 echte Call-Site umgestellt
+      (Liste in `docs/architecture.md` §8.16, Spalte „Call sites", ✓-Einträge).
+- [x] `NumberField` erfüllt die Anforderungen aus T19-004 (min/max/step,
+      Stepper) — `FieldControl::Int` **und** `Float` laufen darüber, die
+      privaten `step_btn`/`slider_track`/`bump_int`/`bump_float`-Helfer in
+      `settings-ui` sind entfallen.
+- [x] Render-Tests für die zustandsbehafteten Primitives (29 Tests in
+      `crates/ui-kit`: `NumberField` klemmt an min/max + rundet Float-Drift
+      weg, `SegmentedControl::selection` meldet die Auswahl, `selected_label`
+      löst das Select-Label auf, jedes Primitive baut in allen
+      Variant/Size/disabled/selected-Kombinationen).
+- [x] Gates grün: `cargo fmt --check`, `cargo check --workspace --all-targets`,
       `cargo clippy --workspace --all-targets -- -D warnings`,
-      `cargo test --workspace`.
+      `cargo test --workspace` (878 Tests).
+
+**Bewusst nicht gebaut** (Notizen-Regel „≥2 reale Call-Sites"):
+`Table` (weder Host-Liste noch Transfer-Queue ist ein Spalten-Grid — beides
+Card/Row-Layouts) und `Tab`/`TabBar` (die einzige echte Tab-Leiste ist
+`Workspace::render_tab_bar` mit Drag-Reorder/Close/Indicator/Kontextmenü; die
+übrigen „Tab"-Streifen sind segmentierte Umschalter und laufen über
+`SegmentedControl`). Begründung + Verweis auf T20-002 in
+`docs/architecture.md` §8.16.
 
 ## Notizen
 - Nicht spekulativ bauen: nur Primitives, für die es in der Inventur ≥2

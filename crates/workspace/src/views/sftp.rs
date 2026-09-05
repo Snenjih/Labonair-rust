@@ -41,7 +41,7 @@ use labonair_backend::modules::ssh::sftp as backend_sftp;
 use labonair_backend::App as Backend;
 
 use crate::theme::ThemeStore;
-use labonair_ui_kit::{context_menu, IconName, MenuClick, MenuItem};
+use labonair_ui_kit::{context_menu, divider, Axis, IconName, MenuClick, MenuItem, Palette};
 
 /// A menu action against the SFTP view (wrapped into a [`MenuClick`]).
 type SftpAct = Box<dyn Fn(&mut SftpView, &mut Context<SftpView>)>;
@@ -1057,7 +1057,7 @@ impl Render for SftpView {
             .bg(c.bg)
             .text_color(c.fg)
             .child(div().flex_1().min_w_0().h_full().child(local))
-            .child(div().w(px(1.0)).h_full().bg(c.border))
+            .child(divider(Axis::Vertical, c.border))
             .child(div().flex_1().min_w_0().h_full().child(remote));
 
         if self.menu.is_some() {
@@ -1617,7 +1617,12 @@ impl SftpView {
                 cx.notify()
             });
         };
-        context_menu(pos, self.theme.read(cx), dismiss, items)
+        context_menu(
+            pos,
+            Palette::from_theme(self.theme.read(cx)),
+            dismiss,
+            items,
+        )
     }
 
     fn render_perm_dialog(&self, c: Colors, cx: &mut Context<Self>) -> gpui::AnyElement {

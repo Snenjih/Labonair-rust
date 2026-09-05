@@ -17,7 +17,7 @@ use gpui::{
     MouseDownEvent, ParentElement, Pixels, Point, Styled, Window,
 };
 
-use crate::theme::UiTheme;
+use crate::palette::Palette;
 
 /// Build a dropdown card anchored at `anchor` (window coordinates — pass the
 /// trigger's bottom-left point so the card opens below the item), with a
@@ -27,12 +27,11 @@ use crate::theme::UiTheme;
 pub fn popover(
     anchor: Point<Pixels>,
     width: Pixels,
-    theme: &impl UiTheme,
+    c: Palette,
     dismiss: impl Fn(&mut Window, &mut App) + 'static,
     content: AnyElement,
 ) -> AnyElement {
-    let core = &theme.theme().core;
-    let (card_bg, border) = (core.popover, theme.border());
+    let (card_bg, border) = (c.popover, c.border);
 
     let card = anchored().position(anchor).snap_to_window().child(
         div()

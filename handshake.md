@@ -4,7 +4,126 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
-## Last Session: 2026-09-04 (T19-010 — Settings › Hosts, final task of Phase 18)
+## Last Session: 2026-09-05 (T20-001 — `ui-kit` primitive set, first task of Phase 19)
+
+**T20-001 done.** `labonair-ui-kit` grew from 5 files / ~880 lines (`button`,
+`context_menu`, `icon`, `text_field`, `popover`) into a real design-system
+crate: 21 modules / ~3040 lines, 29 unit tests, one shared token type
+(`Palette`), and a `prelude`.
+
+- **`Palette` — the one styling parameter** (`crates/ui-kit/src/palette.rs`).
+  A `Copy` snapshot of the `labonair-theme` tokens (21 `Hsla` + `RadiusScale`),
+  built once per render with `Palette::from_theme(theme)`. It exists because a
+  view's `render` cannot hold a `&ThemeStore` borrow across `cx.listener(..)`
+  — which is exactly why `settings-ui` (`view.rs`) and `hosts-ui` (`hosts.rs`)
+  each already carried a *private* `Palette` struct with the same six fields.
+  Both are deleted; both now use `labonair_ui_kit::Palette`.
+  **Deviation from the task's literal wording:** to actually satisfy the
+  "einheitliche API" criterion rather than document an exception, the three
+  pre-existing primitives (`button`, `context_menu`, `popover`) were switched
+  from `&impl UiTheme` to `Palette` too — 21 mechanical call sites across
+  `workspace`, `shell`, `hosts-ui`, `panel-*`. `UiTheme` itself gained the
+  missing accessors (`background`/`accent`/`accent_foreground`/`destructive`/
+  `primary_foreground`/`status_error`/`status_warning`/`status_info`), each a
+  1:1 mirror of `ThemeStore`'s inherent method of the same name.
+- **New primitives** (all token-bound, all with a doc comment naming the
+  `reference-src/src/components/ui/*.tsx` cva source *and* the Zed
+  counterpart): `stack.rs` (`v_stack`/`h_stack`), `number_field.rs`
+  (`NumberField` + pure `step_value`), `select.rs` (`select_trigger`/
+  `select_popover` + pure `selected_label`), `checkbox.rs`, `segmented.rs`
+  (`SegmentedControl`, `Outline`/`Solid` variants), `toggle.rs`
+  (`icon_toggle_button`/`toggle_base`), `indicator.rs`, `banner.rs`
+  (`Severity::{Note,Info,Success,Warning,Error}`), `kbd.rs` (`kbd`/`kbd_row`/
+  `keybinding_hint`), `palette.rs`, `test_support.rs`. The three files a
+  previous session had left on disk uncommitted (`divider.rs`,
+  `disclosure.rs`, `list.rs`) were reviewed, wired in, and finished:
+  `ListItem` gained `on_click` + `cursor_pointer`, unused imports dropped, and
+  their doc comments — which claimed migrations that did not exist yet — were
+  made true by actually doing those migrations.
+- **`ContextMenu` extended**: `MenuItem::keybind([..])` renders a right-aligned
+  `Kbd` chip row (radix `ContextMenuShortcut`); the card body was factored into
+  a shared `menu_card` so the new **`popover_menu`** (the `anchored().
+  snap_to_window()` + `deferred` sibling, i.e. radix `DropdownMenu`) reuses the
+  exact same item renderer. Sub-menus / separators / icons / disabled /
+  `checked` already existed.
+- **Migrated call sites** (Anweisung #7 — one genuine site per primitive, *not*
+  a flood migration; T20-002/003 do the rest). Full inventory table with the
+  ✓ markers is now `docs/architecture.md` §8.16:
+  * `settings-ui/panes/generic.rs` — `render_section_header` → `disclosure`
+    (real chevron icons, the `▸`/`▾` ASCII arrows are gone);
+    `FieldControl::Int` **and** `Float` → `number_field`;
+    `FieldControl::Select` + `FontFamily` → `select_trigger`;
+    `render_dropdown` → `select_popover`. The private `step_btn`,
+    `slider_track`, `bump_int`, `bump_float` helpers in `view.rs` are deleted,
+    replaced by one `set_float_field` store write (the clamping now lives in
+    the primitive).
+  * `settings-ui/view.rs` — the JSON syntax-error and schema-validation
+    banners → `banner(Severity::…)`. **These hardcoded `gpui::red()` /
+    `gpui::yellow()`** — a live Critical Rule 3 violation, now on
+    `theme.status.error`/`.warning`. `render_search_results` → `list_header` /
+    `ListItem` / `list_separator`.
+  * `settings-ui/panes/themes.rs` — Installed/Community tabs and the theme
+    variant picker → `segmented_control`.
+  * `hosts-ui/hosts.rs` — the SSH-config import list and the host export list
+    → `checkbox(..).box_only()`; the per-host reachability dot → `indicator`.
+  * `shell/status_items.rs` — the statusbar panel-toggle cluster →
+    `icon_toggle_button`.
+  * `shell/titlebar.rs` — the hand-rolled absolutely-positioned account
+    dropdown → `popover_menu` with real `MenuItem`s (`Settings…` carries its
+    live `⌘,` binding via `MenuItem::keybind`).
+  * `workspace/workspace.rs` — tab context-menu "Close" → `MenuItem::keybind`
+    resolved through the user's `keymap.json` overrides
+    (`KeybindDisplay` + `effective_keys(ShortcutId::TabClose)`); the
+    connection-log and unsaved-tab dots → `indicator`; `h_stack`.
+  * `command-palette/palette.rs` — the private `kbd` fn deleted; result-row
+    keys → `kbd`, all five footer hints → `keybinding_hint`.
+  * `panel-ai/panel_ai.rs` — `MdBlock::Rule` → `divider`; the AI/Shell composer
+    toggle → `toggle_base` (same pressed/hover contract as the statusbar
+    toggles instead of a bespoke 9px pill).
+  * `workspace/views/preview.rs` (`MdBlock::Rule`) and `views/sftp.rs` (pane
+    splitter) → `divider`.
+- **Deliberately not built** (task Notizen: "nur Primitives, für die es ≥2
+  reale Call-Sites gibt"): `Table` — neither the host list nor the transfer
+  queue is a column grid, both are card/row layouts; `Tab`/`TabBar` — the only
+  real tab *bar* is `Workspace::render_tab_bar` (drag-reorder, close buttons,
+  kind indicators, per-tab context menus), the other "tab" strips are
+  segmented controls; extracting a `TabBar` from one bespoke call site would be
+  speculative, so it folds into T20-002's workspace migration. `ToggleButton`
+  (labelled convenience) and `Indicator::outline` were written and then removed
+  again once no second call site appeared. All three decisions are recorded in
+  `docs/architecture.md` §8.16.
+- **`gpui-component` deliberately not wrapped** for these. 0.5.1 ships
+  `checkbox`, `divider`, `kbd`, `select`, `tab`, … but each styles itself from
+  *its own* `cx.theme()` global, which `crates/app/src/main.rs` never syncs to
+  `labonair-theme` (verified in the vendored source under `~/.cargo`) — a thin
+  wrapper would silently bypass our tokens. It stays in use only where the
+  behaviour is the hard part: `InputState`/`Input`, `Badge`, `Switch`,
+  `Tooltip`.
+- **Gates**: `cargo fmt --all --check` / `cargo check --workspace
+  --all-targets` / `cargo clippy --workspace --all-targets -- -D warnings` all
+  green; `cargo test --workspace` → **878 passed, 0 failed** (was 854 at
+  T19-010; `crates/ui-kit` alone now contributes 29). Run
+  `cargo metadata --format-version 1 --no-deps | python3
+  scripts/check_crate_deps.py` — passes
+  (24 crates, 103 internal edges, acyclic — no new crate edges: every migrated
+  crate already depended on `labonair-ui-kit`).
+
+**Current state**: branch `master`, committed on top of `d95b8f3`. Files
+touched: `crates/ui-kit/src/*` (11 new modules + `button.rs`,
+`context_menu.rs`, `popover.rs`, `theme.rs`, `ui_kit.rs`, plus the three
+previously-uncommitted files), `crates/settings-ui/src/{view.rs,panes/
+{generic.rs,themes.rs}}`, `crates/hosts-ui/src/hosts.rs`,
+`crates/shell/src/{titlebar.rs,status_items.rs}`,
+`crates/workspace/src/{workspace.rs,status_bar.rs,views/{sftp.rs,terminal.rs,
+preview.rs}}`, `crates/command-palette/src/palette.rs`,
+`crates/panel-{ai,explorer,git-graph,scm,snippets}/src/*.rs`,
+`docs/architecture.md` (new §8.16), the task file. The unrelated
+`zed-refrence/zed` submodule-pointer change was left unstaged on purpose.
+
+**Next**: `T20-002` — View-Migration Welle 1
+(`tasks/phase-19-ui-kit/T20-002-view-migration-wave-1.md`). No blockers.
+
+## Previous Session: 2026-09-04 (T19-010 — Settings › Hosts, final task of Phase 18)
 
 **T19-010 done — Phase 18 (Settings-System Zed-Style, T19-000..T19-010) is
 now fully complete.** Host/credential management gets its permanent home: a

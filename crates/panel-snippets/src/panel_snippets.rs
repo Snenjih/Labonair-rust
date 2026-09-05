@@ -47,7 +47,7 @@ use tokio::runtime::Handle as TokioHandle;
 use crate::theme::ThemeStore;
 use crate::workspace::Workspace;
 use labonair_notifications::{notification_center, Notification};
-use labonair_ui_kit::{context_menu, IconName, MenuItem};
+use labonair_ui_kit::{context_menu, IconName, MenuItem, Palette};
 
 // ── Pure helpers: variable extraction / substitution ─────────────────────────
 
@@ -2424,7 +2424,12 @@ impl SnippetsView {
                 cx.notify()
             });
         };
-        Some(context_menu(pos, self.theme.read(cx), dismiss, items))
+        Some(context_menu(
+            pos,
+            Palette::from_theme(self.theme.read(cx)),
+            dismiss,
+            items,
+        ))
     }
 }
 

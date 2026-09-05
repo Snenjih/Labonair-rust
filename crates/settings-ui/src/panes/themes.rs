@@ -566,43 +566,26 @@ impl SettingsView {
         c: &Palette,
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
-        let tab = |id: &'static str, label: &str, on: bool, community: bool| {
-            div()
-                .id(id)
-                .px_3()
-                .py_1()
-                .rounded_sm()
-                .text_size(px(11.5))
-                .border_1()
-                .border_color(if on { c.accent } else { c.border })
-                .text_color(if on { c.fg } else { c.muted })
-                .hover(|s| s.bg(c.border))
-                .child(SharedString::from(label.to_string()))
-                .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
-                    this.themes_community_tab = community;
-                    if community && this.community_themes.is_empty() {
-                        this.fetch_community_themes(cx);
-                    }
-                    cx.notify();
-                }))
-        };
-        div()
-            .flex()
-            .gap_2()
-            .py_1()
-            .child(tab(
-                "theme-tab-installed",
-                "Installed",
-                !self.themes_community_tab,
-                false,
-            ))
-            .child(tab(
-                "theme-tab-community",
-                "Community",
-                self.themes_community_tab,
-                true,
-            ))
-            .into_any_element()
+        // T20-001: shared `SegmentedControl`.
+        segmented_control(
+            "theme-tabs",
+            *c,
+            if self.themes_community_tab {
+                "community"
+            } else {
+                "installed"
+            },
+        )
+        .segments([("installed", "Installed"), ("community", "Community")])
+        .on_select(cx.listener(|this, key: &SharedString, _w, cx| {
+            let community = key.as_ref() == "community";
+            this.themes_community_tab = community;
+            if community && this.community_themes.is_empty() {
+                this.fetch_community_themes(cx);
+            }
+            cx.notify();
+        }))
+        .into_any_element()
     }
 
     pub(crate) fn render_community_themes(
@@ -800,24 +783,14 @@ impl SettingsView {
                         .text_color(c.muted)
                         .child("Variant"),
                 )
-                .children(choices.into_iter().map(|(key, label)| {
-                    let is_on = key == active;
-                    let key_click = key.clone();
-                    div()
-                        .id(SharedString::from(format!("theme-variant-{key}")))
-                        .px_2()
-                        .py(px(2.0))
-                        .rounded_sm()
-                        .border_1()
-                        .border_color(if is_on { c.accent } else { c.border })
-                        .text_size(px(11.0))
-                        .text_color(if is_on { c.fg } else { c.muted })
-                        .hover(|s| s.bg(c.border))
-                        .child(SharedString::from(label))
-                        .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
-                            this.set_theme_variant(Some(key_click.clone()), cx);
-                        }))
-                }))
+                // T20-001: shared `SegmentedControl`.
+                .child(
+                    segmented_control("theme-variant", *c, active)
+                        .segments(choices)
+                        .on_select(cx.listener(|this, key: &SharedString, _w, cx| {
+                            this.set_theme_variant(Some(key.to_string()), cx);
+                        })),
+                )
                 .into_any_element(),
         )
     }

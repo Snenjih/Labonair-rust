@@ -23,7 +23,7 @@ use labonair_panel::{
     AnyStatusItemHandle, PanelIcon, StatusItem, StatusItemRegistration, StatusSide,
 };
 use labonair_panel_explorer::BookmarksView;
-use labonair_ui_kit::IconName;
+use labonair_ui_kit::{icon_toggle_button, IconName, Palette};
 use labonair_workspace::agent_access::{AgentAccessEntry, AgentAccessStore};
 
 use crate::cwd_breadcrumb as bc;
@@ -210,7 +210,12 @@ impl PanelTogglesStatusItem {
         ));
 
         let dismiss = move |_w: &mut Window, cx: &mut App| close(cx);
-        Some(context_menu(pos, self.theme.read(cx), dismiss, items))
+        Some(context_menu(
+            pos,
+            Palette::from_theme(self.theme.read(cx)),
+            dismiss,
+            items,
+        ))
     }
 }
 
@@ -232,10 +237,7 @@ impl StatusItem for PanelTogglesStatusItem {
     }
 
     fn render_status(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
-        let (fg, muted, accent, border) = {
-            let t = self.theme.read(cx);
-            (t.foreground(), t.muted_foreground(), t.accent(), t.border())
-        };
+        let c = Palette::from_theme(self.theme.read(cx));
         let keybind_overrides = cx
             .try_global::<labonair_command_palette::KeybindDisplay>()
             .map(|g| g.0.clone())
@@ -274,32 +276,28 @@ impl StatusItem for PanelTogglesStatusItem {
                 } else {
                     SharedString::from(format!("{title} ({})", keys.join("")))
                 };
-                div()
-                    .id(SharedString::from(format!("bar-toggle-{name}")))
-                    .size(px(20.0))
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .rounded_md()
-                    .when(active, |d| d.bg(accent.opacity(0.2)).text_color(fg))
-                    .when(!active, |d| {
-                        d.text_color(muted).hover(|s| s.bg(border).text_color(fg))
-                    })
-                    .child(icon.svg(if active { fg } else { muted }))
-                    .tooltip(move |window, cx| {
-                        labonair_ui_kit::Tooltip::new(tooltip_text.clone()).build(window, cx)
-                    })
-                    .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
-                        let name = click_name.clone();
-                        this.workspace
-                            .update(cx, |w, cx| w.select_panel(name.as_ref(), cx));
-                    }))
-                    .on_mouse_down(
-                        MouseButton::Right,
-                        cx.listener(move |this, ev: &MouseDownEvent, _w, cx| {
-                            this.open_dock_menu(rmb_name.clone(), ev.position, cx);
-                        }),
-                    )
+                // T20-001: shared `IconToggleButton` primitive — the
+                // pressed/hover pair used to be hand-rolled here.
+                icon_toggle_button(
+                    SharedString::from(format!("bar-toggle-{name}")),
+                    c,
+                    icon,
+                    active,
+                )
+                .tooltip(move |window, cx| {
+                    labonair_ui_kit::Tooltip::new(tooltip_text.clone()).build(window, cx)
+                })
+                .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                    let name = click_name.clone();
+                    this.workspace
+                        .update(cx, |w, cx| w.select_panel(name.as_ref(), cx));
+                }))
+                .on_mouse_down(
+                    MouseButton::Right,
+                    cx.listener(move |this, ev: &MouseDownEvent, _w, cx| {
+                        this.open_dock_menu(rmb_name.clone(), ev.position, cx);
+                    }),
+                )
             }))
             .children(dock_menu)
             .into_any_element()
@@ -497,7 +495,7 @@ impl StatusItem for NotificationsStatusItem {
             .child(labonair_ui_kit::popover(
                 anchor,
                 px(300.0),
-                self.theme.read(cx),
+                Palette::from_theme(self.theme.read(cx)),
                 dismiss,
                 content,
             ))
@@ -831,7 +829,12 @@ impl CwdStatusItem {
         }
 
         let dismiss = move |_w: &mut Window, cx: &mut App| close(cx);
-        Some(context_menu(pos, self.theme.read(cx), dismiss, items))
+        Some(context_menu(
+            pos,
+            Palette::from_theme(self.theme.read(cx)),
+            dismiss,
+            items,
+        ))
     }
 
     fn render_subdir_menu(&mut self, cx: &mut Context<Self>) -> Option<AnyElement> {
@@ -875,7 +878,12 @@ impl CwdStatusItem {
         };
 
         let dismiss = move |_w: &mut Window, cx: &mut App| close(cx);
-        Some(context_menu(pos, self.theme.read(cx), dismiss, items))
+        Some(context_menu(
+            pos,
+            Palette::from_theme(self.theme.read(cx)),
+            dismiss,
+            items,
+        ))
     }
 }
 
@@ -1379,7 +1387,7 @@ impl AgentAccessStatusItem {
             .child(labonair_ui_kit::popover(
                 anchor,
                 px(300.0),
-                self.theme.read(cx),
+                Palette::from_theme(self.theme.read(cx)),
                 dismiss,
                 content,
             ))

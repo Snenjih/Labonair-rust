@@ -30,13 +30,14 @@
 use std::rc::Rc;
 
 use gpui::{
-    div, prelude::FluentBuilder, px, AnyElement, App, ClickEvent, Hsla, InteractiveElement,
-    IntoElement, MouseButton, MouseDownEvent, ParentElement, Pixels, Point, SharedString,
-    StatefulInteractiveElement, Styled, Window,
+    anchored, deferred, div, prelude::FluentBuilder, px, AnyElement, App, ClickEvent,
+    InteractiveElement, IntoElement, MouseButton, MouseDownEvent, ParentElement, Pixels, Point,
+    SharedString, StatefulInteractiveElement, Styled, Window,
 };
 
 use super::IconName;
-use crate::theme::UiTheme;
+use crate::kbd::kbd_row;
+use crate::palette::Palette;
 
 type Handler = Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>;
 
@@ -59,6 +60,9 @@ enum Kind {
         destructive: bool,
         disabled: bool,
         checked: bool,
+        /// Right-aligned keybinding hint (`["\u{2318}", "K"]`), rendered as
+        /// [`crate::kbd`] chips — radix `ContextMenuShortcut`.
+        keybind: Vec<SharedString>,
         handler: Option<Handler>,
     },
     Separator,
@@ -82,6 +86,7 @@ impl MenuItem {
                 destructive: false,
                 disabled: false,
                 checked: false,
+                keybind: Vec::new(),
                 handler: None,
             },
         }
@@ -142,6 +147,15 @@ impl MenuItem {
         self
     }
 
+    /// Right-aligned keybinding hint — one chip per key
+    /// (`["\u{2318}", "\u{21E7}", "P"]`). Ignored on non-action items.
+    pub fn keybind<S: Into<SharedString>>(mut self, keys: impl IntoIterator<Item = S>) -> Self {
+        if let Kind::Action { keybind, .. } = &mut self.kind {
+            *keybind = keys.into_iter().map(Into::into).collect();
+        }
+        self
+    }
+
     /// Show a leading check mark (radio / checkbox item).
     pub fn checked(mut self, checked: bool) -> Self {
         if let Kind::Action { checked: c, .. } = &mut self.kind {
@@ -163,31 +177,7 @@ impl MenuItem {
     }
 }
 
-#[derive(Clone, Copy)]
-struct Colors {
-    card: Hsla,
-    fg: Hsla,
-    muted: Hsla,
-    border: Hsla,
-    accent: Hsla,
-    accent_fg: Hsla,
-    destructive: Hsla,
-}
-
-fn colors(theme: &impl UiTheme) -> Colors {
-    let core = &theme.theme().core;
-    Colors {
-        card: core.popover,
-        fg: core.popover_foreground,
-        muted: theme.muted_foreground(),
-        border: theme.border(),
-        accent: core.accent,
-        accent_fg: core.accent_foreground,
-        destructive: core.destructive,
-    }
-}
-
-fn render_item(item: MenuItem, c: Colors, depth: usize) -> AnyElement {
+fn render_item(item: MenuItem, c: Palette, depth: usize) -> AnyElement {
     match item.kind {
         Kind::Separator => div().my(px(4.0)).h(px(1.0)).bg(c.border).into_any_element(),
         Kind::Label(text) => div()
@@ -204,6 +194,7 @@ fn render_item(item: MenuItem, c: Colors, depth: usize) -> AnyElement {
             destructive,
             disabled,
             checked,
+            keybind,
             handler,
         } => {
             let text_color = if disabled {
@@ -211,7 +202,7 @@ fn render_item(item: MenuItem, c: Colors, depth: usize) -> AnyElement {
             } else if destructive {
                 c.destructive
             } else {
-                c.fg
+                c.popover_fg
             };
             let mut row = div()
                 .id(id)
@@ -230,7 +221,10 @@ fn render_item(item: MenuItem, c: Colors, depth: usize) -> AnyElement {
                 .when(!checked && icon.is_some(), |d| {
                     d.child(icon.unwrap().svg(text_color).size(px(14.0)))
                 })
-                .child(label);
+                .child(label)
+                .when(!keybind.is_empty(), |d| {
+                    d.child(div().ml_auto().child(kbd_row(keybind.clone(), c)))
+                });
             if disabled {
                 row = row.opacity(super::DISABLED_OPACITY);
             } else {
@@ -266,7 +260,7 @@ fn render_item(item: MenuItem, c: Colors, depth: usize) -> AnyElement {
                 .min_w(px(160.0))
                 .p(px(4.0))
                 .rounded_md()
-                .bg(c.card)
+                .bg(c.popover)
                 .border_1()
                 .border_color(c.border)
                 .shadow_lg()
@@ -283,9 +277,9 @@ fn render_item(item: MenuItem, c: Colors, depth: usize) -> AnyElement {
                 .py(px(6.0))
                 .rounded_sm()
                 .text_size(px(13.0))
-                .text_color(c.fg)
+                .text_color(c.popover_fg)
                 .hover(|s| s.bg(c.accent).text_color(c.accent_fg))
-                .when_some(icon, |d, ic| d.child(ic.svg(c.fg).size(px(14.0))))
+                .when_some(icon, |d, ic| d.child(ic.svg(c.popover_fg).size(px(14.0))))
                 .child(label)
                 .child(
                     div()
@@ -298,34 +292,36 @@ fn render_item(item: MenuItem, c: Colors, depth: usize) -> AnyElement {
     }
 }
 
-/// Build a full-screen context-menu overlay anchored at `anchor` (window
-/// coordinates). `dismiss` fires on a click anywhere outside the menu card.
-pub fn context_menu(
-    anchor: Point<Pixels>,
-    theme: &impl UiTheme,
-    dismiss: impl Fn(&mut Window, &mut App) + 'static,
-    items: Vec<MenuItem>,
-) -> AnyElement {
-    let c = colors(theme);
-    let dismiss = Rc::new(dismiss);
-    let d2 = dismiss.clone();
-
-    let card = div()
-        .absolute()
-        .left(anchor.x)
-        .top(anchor.y)
+/// The menu card itself — the `p-1 rounded-md bg-popover border shadow-md`
+/// panel shared by [`context_menu`] and [`popover_menu`].
+fn menu_card(c: Palette, items: Vec<MenuItem>) -> gpui::Div {
+    div()
         .flex()
         .flex_col()
         .min_w(px(160.0))
         .max_w(px(320.0))
         .p(px(4.0))
         .rounded_md()
-        .bg(c.card)
+        .bg(c.popover)
         .border_1()
         .border_color(c.border)
         .shadow_lg()
         .occlude()
-        .children(items.into_iter().map(move |it| render_item(it, c, 0)));
+        .children(items.into_iter().map(move |it| render_item(it, c, 0)))
+}
+
+/// Build a full-screen context-menu overlay anchored at `anchor` (window
+/// coordinates). `dismiss` fires on a click anywhere outside the menu card.
+pub fn context_menu(
+    anchor: Point<Pixels>,
+    c: Palette,
+    dismiss: impl Fn(&mut Window, &mut App) + 'static,
+    items: Vec<MenuItem>,
+) -> AnyElement {
+    let dismiss = Rc::new(dismiss);
+    let d2 = dismiss.clone();
+
+    let card = menu_card(c, items).absolute().left(anchor.x).top(anchor.y);
 
     div()
         .absolute()
@@ -342,20 +338,71 @@ pub fn context_menu(
         .into_any_element()
 }
 
+/// The same menu, opened from a *trigger* instead of a right-click: the card is
+/// `anchored().snap_to_window()` + `deferred(..)` so it cannot be clipped by an
+/// ancestor's `overflow_hidden` and flips itself back into the window near an
+/// edge. This is radix' `DropdownMenu`/`PopoverMenu` (reference
+/// `components/ui/dropdown-menu.tsx`) as opposed to `ContextMenu`; Zed splits
+/// the same two roles across `popover_menu.rs` and `context_menu.rs`.
+///
+/// Pass the trigger's bottom-left window point as `anchor` so the card opens
+/// below it.
+///
+/// ```ignore
+/// popover_menu(bounds.bottom_left(), c, dismiss, vec![
+///     MenuItem::new("settings", "Settings\u{2026}").on_click(..),
+///     MenuItem::separator(),
+///     MenuItem::new("profile", "Profile").on_click(..),
+/// ])
+/// ```
+pub fn popover_menu(
+    anchor: Point<Pixels>,
+    c: Palette,
+    dismiss: impl Fn(&mut Window, &mut App) + 'static,
+    items: Vec<MenuItem>,
+) -> AnyElement {
+    let card = anchored()
+        .position(anchor)
+        .snap_to_window()
+        .child(menu_card(c, items));
+
+    deferred(
+        div()
+            .absolute()
+            .inset_0()
+            .on_mouse_down(
+                MouseButton::Left,
+                move |_: &MouseDownEvent, w: &mut Window, cx: &mut App| dismiss(w, cx),
+            )
+            .child(card),
+    )
+    .with_priority(200)
+    .into_any_element()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn action(item: &MenuItem) -> (&SharedString, bool, bool, bool, bool) {
+    #[allow(clippy::type_complexity)]
+    fn action(item: &MenuItem) -> (&SharedString, bool, bool, bool, bool, &[SharedString]) {
         match &item.kind {
             Kind::Action {
                 label,
                 destructive,
                 disabled,
                 checked,
+                keybind,
                 handler,
                 ..
-            } => (label, *destructive, *disabled, *checked, handler.is_some()),
+            } => (
+                label,
+                *destructive,
+                *disabled,
+                *checked,
+                handler.is_some(),
+                keybind,
+            ),
             _ => panic!("not an action item"),
         }
     }
@@ -363,18 +410,21 @@ mod tests {
     #[test]
     fn builder_sets_item_flags() {
         let plain = MenuItem::new("id", "Plain");
-        let (label, destr, dis, chk, has_handler) = action(&plain);
+        let (label, destr, dis, chk, has_handler, keys) = action(&plain);
         assert_eq!(label.as_ref(), "Plain");
         assert!(!destr && !dis && !chk && !has_handler);
+        assert!(keys.is_empty());
 
         let styled = MenuItem::new("id", "Danger")
             .icon(IconName::Trash)
             .destructive()
             .disabled(true)
             .checked(true)
+            .keybind(["\u{2318}", "\u{232B}"])
             .on_click(|_, _, _| {});
-        let (_, destr, dis, chk, has_handler) = action(&styled);
+        let (_, destr, dis, chk, has_handler, keys) = action(&styled);
         assert!(destr && dis && chk && has_handler);
+        assert_eq!(keys.len(), 2);
 
         assert!(matches!(MenuItem::separator().kind, Kind::Separator));
         assert!(matches!(MenuItem::label("Sec").kind, Kind::Label(_)));

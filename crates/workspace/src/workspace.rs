@@ -123,7 +123,9 @@ use labonair_hosts_ui::ssh_connection::{
 };
 use labonair_hosts_ui::{ActiveTunnelRow, HostManagerEvent, HostManagerView, HostStatus};
 use labonair_panel_git_graph::GitGraphView;
-use labonair_ui_kit::{context_menu, IconName, MenuItem};
+use labonair_ui_kit::{
+    context_menu, h_stack, indicator, IconName, IndicatorSize, MenuItem, Palette,
+};
 
 /// Interval for draining backend SSH events into the workspace.
 const SSH_POLL_INTERVAL: Duration = Duration::from_millis(40);
@@ -3575,12 +3577,11 @@ impl Workspace {
             .flex_col()
             .gap_1()
             .w_full()
+            // T20-001: shared `h_stack` + `Indicator` primitives.
             .child(
-                div()
-                    .flex()
-                    .items_center()
+                h_stack()
                     .gap_2()
-                    .child(div().size(px(6.0)).rounded_full().bg(accent))
+                    .child(indicator(IndicatorSize::Xs, accent))
                     .child(div().text_xs().text_color(muted).child("Connection Log")),
             )
             .child(
@@ -3773,7 +3774,7 @@ impl Workspace {
                 },
             )
             .when(tab.kind == TabKind::Editor && tab.dirty, |d| {
-                d.child(div().size(px(6.0)).rounded_full().bg(fg).opacity(0.7))
+                d.child(indicator(IndicatorSize::Xs, fg.opacity(0.7)))
             })
             .when(closable, |d| d.child(close_btn))
             .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
@@ -3999,7 +4000,12 @@ impl Workspace {
                 })
             }
         };
-        context_menu(pos, self.theme.read(cx), dismiss, items)
+        context_menu(
+            pos,
+            Palette::from_theme(self.theme.read(cx)),
+            dismiss,
+            items,
+        )
     }
 
     fn render_content(&mut self, cx: &mut Context<Self>) -> gpui::AnyElement {
@@ -4503,15 +4509,30 @@ impl Workspace {
                 }));
             }
         }
-        items.push(MenuItem::new("close", "Close").on_click({
-            let v = view.clone();
-            move |_, w, cx| {
-                v.update(cx, |this, cx| {
-                    this.context_menu = None;
-                    this.request_close(id, w, cx)
-                })
-            }
-        }));
+        // T20-001: `MenuItem::keybind` renders the item's live binding as
+        // `Kbd` chips, resolved through the user's `keymap.json` overrides.
+        let close_keys = cx
+            .try_global::<labonair_command_palette::KeybindDisplay>()
+            .map(|g| {
+                labonair_command_palette::effective_keys(
+                    labonair_command_palette::ShortcutId::TabClose,
+                    &g.0,
+                )
+            })
+            .unwrap_or_default();
+        items.push(
+            MenuItem::new("close", "Close")
+                .keybind(close_keys)
+                .on_click({
+                    let v = view.clone();
+                    move |_, w, cx| {
+                        v.update(cx, |this, cx| {
+                            this.context_menu = None;
+                            this.request_close(id, w, cx)
+                        })
+                    }
+                }),
+        );
         if let Some((session_id, label, gkind, host_id, pty)) = grant_target {
             items.push(MenuItem::separator());
             items.push(
@@ -4553,7 +4574,12 @@ impl Workspace {
                 })
             }
         };
-        context_menu(pos, self.theme.read(cx), dismiss, items)
+        context_menu(
+            pos,
+            Palette::from_theme(self.theme.read(cx)),
+            dismiss,
+            items,
+        )
     }
 
     /// Resolve the MCP agent-access grant target for a tab, when it's an SSH or

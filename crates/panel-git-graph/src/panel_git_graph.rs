@@ -43,7 +43,7 @@ use labonair_backend::App as Backend;
 use tokio::runtime::Handle as TokioHandle;
 
 use crate::theme::ThemeStore;
-use labonair_ui_kit::{context_menu, IconName, MenuItem};
+use labonair_ui_kit::{context_menu, IconName, MenuItem, Palette};
 
 // ── geometry ───────────────────────────────────────────────────────────────
 
@@ -1484,7 +1484,12 @@ impl GitGraphView {
                 })
             }
         };
-        Some(context_menu(pos, self.theme.read(cx), dismiss, items))
+        Some(context_menu(
+            pos,
+            Palette::from_theme(self.theme.read(cx)),
+            dismiss,
+            items,
+        ))
     }
 
     fn render_branch_prompt(&self, c: Colors, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {

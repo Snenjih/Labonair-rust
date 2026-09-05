@@ -24,7 +24,7 @@ use gpui::{
     MouseDownEvent, ParentElement, Pixels, Point, Render, SharedString, Styled, Window,
 };
 use labonair_panel::{AnyStatusItemHandle, StatusItemConstructor, StatusSide};
-use labonair_ui_kit::{context_menu, MenuItem};
+use labonair_ui_kit::{context_menu, MenuItem, Palette};
 
 use crate::status_placements::StatusBarLayoutTick;
 use crate::theme::ThemeStore;
@@ -178,7 +178,12 @@ impl StatusBar {
         }
 
         let dismiss = move |_w: &mut Window, cx: &mut gpui::App| close(cx);
-        Some(context_menu(pos, self.theme.read(cx), dismiss, items))
+        Some(context_menu(
+            pos,
+            Palette::from_theme(self.theme.read(cx)),
+            dismiss,
+            items,
+        ))
     }
 
     /// Views for `side` (resolved through the registry's overrides — T18-005),

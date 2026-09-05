@@ -24,15 +24,14 @@
 //! `zen_mode_show_header` still gates the whole thing — when off, the titlebar
 //! renders nothing and the OS window frame / traffic lights take over.
 
-use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, px, App, ClickEvent, Context, Entity, FocusHandle, Focusable, InteractiveElement,
+    div, point, px, App, ClickEvent, Context, Entity, FocusHandle, Focusable, InteractiveElement,
     IntoElement, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, Render,
-    SharedString, StatefulInteractiveElement, Styled, Window, WindowControlArea,
+    StatefulInteractiveElement, Styled, Window, WindowControlArea,
 };
 use labonair_notifications::{notification_center, Notification};
 use labonair_settings_ui::{open_settings_window, PreferencesStore};
-use labonair_ui_kit::IconName;
+use labonair_ui_kit::{popover_menu, IconName, MenuItem, Palette};
 
 use crate::theme::ThemeStore;
 use crate::workspace::Workspace;
@@ -83,26 +82,58 @@ impl Titlebar {
     /// future account / profile surface hangs off this entry. The separator +
     /// this doc-comment mark where further entries slot in.
     fn render_account_menu(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
-        let theme = self.theme.read(cx);
-        let (fg, muted, border, card) = (
-            theme.foreground(),
-            theme.muted_foreground(),
-            theme.border(),
-            theme.card(),
-        );
+        let c = Palette::from_theme(self.theme.read(cx));
         let open = self.menu_open;
+        let view = cx.entity();
 
-        let item = |label: &str, key: SharedString| {
-            div()
-                .id(key)
-                .px_2()
-                .py_1()
-                .text_xs()
-                .rounded_sm()
-                .text_color(fg)
-                .hover(|s| s.bg(border))
-                .child(SharedString::from(label.to_string()))
-        };
+        // T20-001: the dropdown is the shared `popover_menu` primitive (the
+        // anchored sibling of `context_menu`) instead of a hand-rolled
+        // absolutely-positioned card with its own hover styling.
+        let menu = open.then(|| {
+            let close = {
+                let v = view.clone();
+                move |cx: &mut App| {
+                    v.update(cx, |this, cx| {
+                        this.menu_open = false;
+                        cx.notify();
+                    })
+                }
+            };
+            let items = vec![
+                MenuItem::new("acc-settings", "Settings\u{2026}")
+                    .icon(IconName::Palette)
+                    .keybind(["\u{2318}", ","])
+                    .on_click({
+                        let close = close.clone();
+                        move |_, _w, cx| {
+                            close(cx);
+                            open_settings_window(None, cx);
+                        }
+                    }),
+                MenuItem::separator(),
+                // Placeholder — future account / profile features hang off
+                // this entry. Add further items below the separator.
+                MenuItem::new("acc-profile", "Profile")
+                    .icon(IconName::Shield)
+                    .on_click({
+                        let close = close.clone();
+                        move |_, _w, cx| {
+                            close(cx);
+                            notification_center(cx).update(cx, |c, cx| {
+                                c.push(
+                                    Notification::info(
+                                        "Profile",
+                                        "Account & profile features are coming soon.",
+                                    ),
+                                    cx,
+                                );
+                            });
+                        }
+                    }),
+            ];
+            let dismiss = move |_w: &mut Window, cx: &mut App| close(cx);
+            (items, dismiss)
+        });
 
         div()
             .relative()
@@ -115,54 +146,17 @@ impl Titlebar {
                     .items_center()
                     .justify_center()
                     .rounded_md()
-                    .text_color(muted)
-                    .hover(|s| s.bg(border).text_color(fg))
-                    .child(IconName::Ellipsis.svg(muted))
+                    .text_color(c.muted)
+                    .hover(move |s| s.bg(c.border).text_color(c.fg))
+                    .child(IconName::Ellipsis.svg(c.muted))
                     .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
                         this.menu_open = !this.menu_open;
                         cx.notify();
                     })),
             )
-            .when(open, |d| {
-                d.child(
-                    div()
-                        .absolute()
-                        .top(px(30.0))
-                        .right(px(0.0))
-                        .w(px(208.0))
-                        .flex()
-                        .flex_col()
-                        .gap_0p5()
-                        .p_1()
-                        .rounded_md()
-                        .bg(card)
-                        .border_1()
-                        .border_color(border)
-                        .child(item("Settings\u{2026}", "acc-settings".into()).on_click(
-                            cx.listener(|this, _: &ClickEvent, _window, cx| {
-                                this.menu_open = false;
-                                open_settings_window(None, cx);
-                            }),
-                        ))
-                        .child(div().my_1().h(px(1.0)).bg(border))
-                        // Placeholder — future account / profile features hang
-                        // off this entry. Add further items below the divider.
-                        .child(item("Profile", "acc-profile".into()).on_click(cx.listener(
-                            |this, _: &ClickEvent, _window, cx| {
-                                this.menu_open = false;
-                                notification_center(cx).update(cx, |c, cx| {
-                                    c.push(
-                                        Notification::info(
-                                            "Profile",
-                                            "Account & profile features are coming soon.",
-                                        ),
-                                        cx,
-                                    );
-                                });
-                            },
-                        ))),
-                )
-            })
+            .children(menu.map(|(items, dismiss)| {
+                popover_menu(point(px(0.0), px(HEADER_H)), c, dismiss, items)
+            }))
     }
 }
 

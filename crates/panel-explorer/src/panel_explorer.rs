@@ -73,6 +73,7 @@ use crate::workspace::Workspace;
 use labonair_notifications::{notification_center, Notification};
 use labonair_ui_kit::{
     context_menu, file_icon, folder_icon, IconName, InputEvent, InputState, MenuClick, MenuItem,
+    Palette,
 };
 
 /// A menu action expressed against the view + window (wrapped into a
@@ -1611,7 +1612,12 @@ impl ExplorerView {
                 cx.notify()
             });
         };
-        context_menu(pos, self.theme.read(cx), dismiss, items)
+        context_menu(
+            pos,
+            Palette::from_theme(self.theme.read(cx)),
+            dismiss,
+            items,
+        )
     }
 
     fn render_delete_confirm(

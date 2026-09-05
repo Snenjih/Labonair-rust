@@ -969,6 +969,63 @@ a reuse of `labonair-backend::modules::hosts::db::Host` — that SQLite row
 stays the authoritative runtime store; reconciling the two is `T19-010`'s
 concern, not this task's.
 
+### 8.16 UI-Kit primitive set — T20-001
+
+**Inventur.** Grepping the panel / workspace / settings crates for repeated
+hand-rolled `div()` shapes turned up nine recurring patterns. Each one is now a
+`labonair-ui-kit` primitive; the "call sites" column lists what the inventory
+found (✓ = migrated in T20-001 as the proof-of-API call site, the rest follow
+in T20-002/T20-003).
+
+| Hand-rolled pattern found | Primitive | Call sites found in the inventory |
+|---|---|---|
+| `div().h(px(1.0)).bg(border)` / `.w(px(1.0))` 1px rules | `divider(Axis, Hsla)` | `panel-ai` `MdBlock::Rule` ✓, `views/preview.rs` `MdBlock::Rule` ✓, `views/sftp.rs` splitter ✓, `shell/titlebar.rs`, `views/diff.rs`, `status_bar.rs` |
+| "section heading with a `▸`/`▾` arrow that collapses its group" | `disclosure(..)` | `settings-ui/panes/generic.rs::render_section_header` ✓, `panel-explorer` tree rows |
+| "muted group heading + rows of icon/label/trailing" | `list_header` / `ListItem` / `list_separator` | `settings-ui/view.rs::render_search_results` ✓, `command-palette` result rows, `hosts-ui` host list, `settings-ui` dropdown options |
+| "button opens an absolutely-positioned card of actions" | `popover_menu(..)` (anchored sibling of `context_menu`) | `shell/titlebar.rs::render_account_menu` ✓, statusbar dock menus (already on `context_menu`) |
+| "`−` / value / `+` stepper over a bounded number" | `number_field(..)` (+ pure `step_value`) | `settings-ui` `FieldControl::Int` ✓ and `FieldControl::Float` ✓ (the private `step_btn` + `slider_track` helpers are gone) |
+| "trigger showing the current option + an anchored option list" | `select_trigger` / `select_popover` (+ pure `selected_label`) | `settings-ui` `FieldControl::Select` ✓, `FieldControl::FontFamily` ✓, `render_dropdown` ✓ |
+| "`SquareCheck`/`Square` icon pair in a selectable row" | `checkbox(..)` | `hosts-ui` SSH-config import list ✓, `hosts-ui` host export list ✓ |
+| "row of bordered pills, one of them active" | `segmented_control(..)` | `settings-ui` themes Installed/Community ✓, `settings-ui` theme variant picker ✓, `panel-ai` ModelPicker All/Favorites/Recent |
+| "icon button with a sticky pressed fill" | `icon_toggle_button` / `toggle_base` | `shell/status_items.rs` panel toggles ✓, `panel-ai` AI/Shell composer toggle ✓, `panel-snippets` run-log tabs |
+| "small coloured status dot" | `indicator(IndicatorSize, Hsla)` | `hosts-ui` host reachability ✓, `workspace` connection-log dot ✓, `workspace` unsaved-tab dot ✓, statusbar badges |
+| "full-width tinted info/warn/error strip" | `banner(Severity, Palette)` | `settings-ui` JSON syntax-error banner ✓, `settings-ui` schema-validation banner ✓, `views/editor.rs` conflict banner, `panel-explorer` clipboard strip |
+| "bordered key chip, sometimes with a label" | `kbd` / `kbd_row` / `keybinding_hint`, plus `MenuItem::keybind` | `command-palette` result keys ✓ + footer hints ✓, `workspace` tab context menu ✓, `shell/titlebar.rs` account menu ✓, `settings-ui` Shortcuts pane |
+| `div().flex().flex_col()` / `.flex_row().items_center()` | `v_stack()` / `h_stack()` | ~400 occurrences workspace-wide; ✓ in `settings-ui/panes/generic.rs` and `workspace.rs` |
+
+**`Palette` — the one styling parameter.** Every primitive is styled from
+`labonair_ui_kit::Palette`, a `Copy` snapshot of the `labonair-theme` tokens
+built once per render with `Palette::from_theme(theme)`. It exists because a
+view's `render` cannot hold a `&ThemeStore` borrow across `cx.listener(..)`,
+which is why `settings-ui` and `hosts-ui` each already had a private `Palette`
+struct with the same six fields — both are now the shared one. `divider` and
+`indicator` still take a bare `Hsla`, since a whole palette for a one-colour
+line would be noise. `button`, `context_menu` and `popover` were switched from
+`&impl UiTheme` to `Palette` so the whole crate has a single convention.
+
+**`gpui-component` is not wrapped for these.** 0.5.1 ships `checkbox`,
+`divider`, `kbd`, `select`, `tab`, … but every one of them styles itself from
+*its own* `cx.theme()` global, which the app never syncs to `labonair-theme` —
+wrapping them would silently bypass our tokens (Critical Rule 3). It stays in
+use only where the behaviour is the hard part and the colours are incidental:
+`InputState`/`Input` (caret, selection, IME, undo), `Badge`, `Switch`,
+`Tooltip`.
+
+**Deliberately not built (no ≥2 real call sites — T20-001 Notizen).**
+* `Table` — the host list and the transfer queue are both card/row layouts with
+  per-row actions, not column-aligned grids. No call site wanted a table.
+* `Tab` / `TabBar` — the only real tab *bar* is `Workspace::render_tab_bar`
+  (drag-reorder, close buttons, kind indicators, per-tab context menus); the
+  other "tab" strips (settings themes, ModelPicker) are segmented controls and
+  are covered by `SegmentedControl`. Extracting a `TabBar` from one bespoke
+  call site would be speculative — it is folded into T20-002's workspace
+  migration instead.
+* `ToggleButton` (labelled convenience) and `Indicator::outline` — dropped
+  during implementation once the inventory showed no second call site;
+  `toggle_base(..).child(..)` covers the labelled case.
+
+---
+
 ---
 
 ## 9. Ist-Graph after Phase 15 (T16-010)

@@ -55,9 +55,49 @@ pub trait UiTheme {
         self.theme().core.primary
     }
 
+    /// `--primary-foreground`.
+    fn primary_foreground(&self) -> Hsla {
+        self.theme().core.primary_foreground
+    }
+
+    /// `--background`.
+    fn background(&self) -> Hsla {
+        self.theme().core.background
+    }
+
+    /// `--accent`.
+    fn accent(&self) -> Hsla {
+        self.theme().core.accent
+    }
+
+    /// `--accent-foreground`.
+    fn accent_foreground(&self) -> Hsla {
+        self.theme().core.accent_foreground
+    }
+
+    /// `--destructive`.
+    fn destructive(&self) -> Hsla {
+        self.theme().core.destructive
+    }
+
     /// `--success` status color (severity: success).
     fn status_success(&self) -> Hsla {
         self.theme().status.success
+    }
+
+    /// `--destructive` / status `error` color (severity: error).
+    fn status_error(&self) -> Hsla {
+        self.theme().status.error
+    }
+
+    /// `--warning` status color (severity: warning).
+    fn status_warning(&self) -> Hsla {
+        self.theme().status.warning
+    }
+
+    /// `--info` status color (severity: info).
+    fn status_info(&self) -> Hsla {
+        self.theme().status.info
     }
 
     /// Canonical selected/active fill for list selection (Explorer rows,
