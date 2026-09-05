@@ -373,7 +373,7 @@ impl SettingsView {
                 .child(SharedString::from(format!("Active model: {active_ref}"))),
         );
         root = root.children(cards.collect::<Vec<_>>());
-        root = root.child(section_label("Add provider", c)).child(
+        root = root.child(list_header("Add provider", c.muted)).child(
             div().flex().flex_wrap().gap_1().children(
                 labonair_ai::ProviderId::ALL
                     .into_iter()
@@ -680,11 +680,11 @@ impl SettingsView {
         div()
             .flex()
             .flex_col()
-            .child(section_label("Providers", c))
+            .child(list_header("Providers", c.muted))
             .child(self.render_providers(c, cx))
-            .child(section_label("Agents", c))
+            .child(list_header("Agents", c.muted))
             .child(self.render_agents_section(c, cx))
-            .child(section_label("Directives", c))
+            .child(list_header("Directives", c.muted))
             .child(self.render_directives_section(c, cx))
             .children(self.render_ai_editor(c, cx))
             .into_any_element()

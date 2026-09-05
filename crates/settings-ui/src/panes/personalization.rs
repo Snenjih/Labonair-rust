@@ -142,13 +142,13 @@ impl SettingsView {
             .flex()
             .flex_col()
             .child(generic_grid)
-            .child(section_label("Statusbar Layout", c))
+            .child(list_header("Statusbar Layout", c.muted))
             .child(div().text_size(px(11.0)).text_color(c.muted).pb_2().child(
                 "Move status bar items between the left and right cluster, or hide them. \
                          The panel-toggle cluster is fixed to the left and isn't listed here.",
             ))
             .child(self.render_statusbar_layout_editor(c, cx))
-            .child(section_label("Panel Visibility", c))
+            .child(list_header("Panel Visibility", c.muted))
             .child(div().text_size(px(11.0)).text_color(c.muted).pb_2().child(
                 "Panels hidden here stay reachable from the command palette — this only \
                          controls whether they get a toggle button in the status bar.",

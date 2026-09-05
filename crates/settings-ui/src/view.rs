@@ -32,8 +32,9 @@ pub use labonair_settings::SettingsStore;
 pub use labonair_settings_content::areas::AREAS;
 pub use labonair_theme::{ThemeFile, ThemePreference, ThemeStore};
 pub use labonair_ui_kit::{
-    banner, disclosure, h_stack, list_header, list_separator, number_field, segmented_control,
-    select_popover, select_trigger, v_stack, ListItem, Palette, SelectOption, Severity,
+    banner, button, disclosure, h_stack, list_header, list_separator, number_field,
+    segmented_control, select_popover, select_trigger, v_stack, ButtonSize, ButtonVariant,
+    IconName, ListItem, Palette, SelectOption, Severity, Switch,
 };
 pub use labonair_workspace::background::BackgroundStore;
 
@@ -915,17 +916,9 @@ impl SettingsView {
         c: &Palette,
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
+        // T20-003: shared `button()` primitive (`Outline`/`Xs`).
         let link = |id: &'static str, label: &'static str, url: &'static str| {
-            div()
-                .id(id)
-                .px_2()
-                .py(px(3.0))
-                .rounded_sm()
-                .border_1()
-                .border_color(c.border)
-                .text_size(px(11.5))
-                .text_color(c.fg)
-                .hover(|s| s.bg(c.border))
+            button(id, *c, ButtonVariant::Outline, ButtonSize::Xs)
                 .child(label)
                 .on_click(cx.listener(move |_, _: &ClickEvent, _w, cx| {
                     cx.open_url(url);
@@ -1102,6 +1095,7 @@ impl Render for SettingsView {
         // Personalization) is a normal entry here, exactly like a Generated
         // one (rule 4: "a custom pane may be registered as a top-level
         // category exactly like a field-based one").
+        // T20-003: shared `ListItem` for the category rows.
         let sidebar_body: gpui::AnyElement = if searching {
             self.render_search_results(&c, cx)
         } else {
@@ -1111,19 +1105,12 @@ impl Render for SettingsView {
                 .gap_0p5()
                 .children(AREAS.iter().enumerate().map(|(i, area)| {
                     let is_active = i == active_area;
-                    div()
-                        .id(SharedString::from(area.key))
-                        .px_2()
-                        .py(px(5.0))
-                        .rounded_sm()
-                        .text_size(px(12.0))
-                        .text_color(if is_active { c.fg } else { c.muted })
-                        .when(is_active, |d| d.bg(c.accent))
-                        .when(!is_active, |d| d.hover(|s| s.bg(c.border)))
-                        .child(SharedString::from(area.title))
+                    ListItem::new(SharedString::from(area.key), c.fg, c.muted, c.accent)
+                        .selected(is_active)
                         .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
                             this.go_to_area(i, cx);
                         }))
+                        .child(SharedString::from(area.title))
                 }))
                 .into_any_element()
         };
@@ -1276,14 +1263,21 @@ impl SettingsView {
                     .items_center()
                     .gap_1()
                     .child(
-                        div()
-                            .id("settings-back")
-                            .text_color(c.muted)
-                            .hover(|s| s.text_color(c.fg))
-                            .child("\u{2190}")
-                            .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
+                        // T20-003: `button()` (`Ghost`/`IconXs`) — no matching
+                        // chevron-left glyph in `IconName` yet, so the plain
+                        // arrow stays a text child (documented exception).
+                        button(
+                            "settings-back",
+                            *c,
+                            ButtonVariant::Ghost,
+                            ButtonSize::IconXs,
+                        )
+                        .child("\u{2190}")
+                        .on_click(cx.listener(
+                            |this, _: &ClickEvent, _w, cx| {
                                 this.go_back_to_main_page(cx);
-                            })),
+                            },
+                        )),
                     )
                     .child(SharedString::from(format!(
                         "{} \u{203A} {}",
@@ -1305,15 +1299,17 @@ impl SettingsView {
             .border_b_1()
             .border_color(c.border)
             .child(
-                div()
-                    .id("settings-open-json")
-                    .text_size(px(11.0))
-                    .text_color(c.muted)
-                    .hover(|s| s.text_color(c.fg))
-                    .child("Open settings.json")
-                    .on_click(cx.listener(|_, _: &ClickEvent, _w, cx| {
-                        cx.reveal_path(&config_dir().join("labonair-settings.json"));
-                    })),
+                // T20-003: `button()` (`Ghost`/`Xs`) — the "Öffnen"-style action.
+                button(
+                    "settings-open-json",
+                    *c,
+                    ButtonVariant::Ghost,
+                    ButtonSize::Xs,
+                )
+                .child("Open settings.json")
+                .on_click(cx.listener(|_, _: &ClickEvent, _w, cx| {
+                    cx.reveal_path(&config_dir().join("labonair-settings.json"));
+                })),
             )
             .child(
                 div()
@@ -1323,28 +1319,26 @@ impl SettingsView {
                     .child(title),
             )
             .child(
-                div()
-                    .id("settings-close")
-                    .text_color(c.muted)
-                    .hover(|s| s.text_color(c.fg))
-                    .child("\u{2715}")
-                    .on_click(cx.listener(|this, _: &ClickEvent, window, cx| {
-                        this.request_close(window, cx)
-                    })),
+                button(
+                    "settings-close",
+                    *c,
+                    ButtonVariant::Ghost,
+                    ButtonSize::IconXs,
+                )
+                .child(IconName::X.svg(c.muted))
+                .on_click(
+                    cx.listener(|this, _: &ClickEvent, window, cx| this.request_close(window, cx)),
+                ),
             )
             .into_any_element()
     }
 }
 
-pub(crate) fn section_label(text: &'static str, c: &Palette) -> impl IntoElement {
-    div()
-        .pt_3()
-        .pb_1()
-        .text_size(px(11.0))
-        .font_weight(gpui::FontWeight::SEMIBOLD)
-        .text_color(c.muted)
-        .child(text)
-}
+// T20-003: no `SectionHeader` primitive exists in `labonair-ui-kit` yet
+// (documented gap) — `list_header` is the closest existing primitive for a
+// small muted heading above a group of rows, so custom-pane section titles
+// (`panes/ai.rs`, `panes/personalization.rs`) call `list_header` directly
+// instead of this crate's own helper, which is now unused.
 
 pub(crate) fn bridge_switch_row(
     title: &'static str,
@@ -1373,23 +1367,12 @@ pub(crate) fn bridge_switch_row(
                 .child(div().text_size(px(11.0)).text_color(c.muted).child(desc)),
         )
         .child(
-            div()
-                .id(SharedString::from(format!("mcp-sw-{title}")))
-                .w(px(38.0))
-                .h(px(20.0))
-                .rounded_full()
-                .flex()
-                .items_center()
-                .px(px(2.0))
-                .bg(if on { c.accent } else { c.border })
-                .child(
-                    div()
-                        .size(px(16.0))
-                        .rounded_full()
-                        .bg(c.bg)
-                        .when(on, |d| d.ml(px(16.0))),
-                )
-                .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| f(this, cx))),
+            // T20-003: the shared `gpui-component` `Switch` (re-exported by
+            // `labonair-ui-kit` — its own colours are the sanctioned
+            // exception, see `ui_kit.rs`'s module doc).
+            Switch::new(SharedString::from(format!("mcp-sw-{title}")))
+                .checked(on)
+                .on_click(cx.listener(move |this, _: &bool, _w, cx| f(this, cx))),
         )
 }
 
@@ -1404,7 +1387,6 @@ pub(crate) fn bridge_int_row(
     cx: &mut Context<SettingsView>,
     f: impl Fn(&mut SettingsView, i64, &mut Context<SettingsView>) + Clone + 'static,
 ) -> impl IntoElement {
-    let f_dec = f.clone();
     div()
         .flex()
         .items_center()
@@ -1415,50 +1397,17 @@ pub(crate) fn bridge_int_row(
         .border_color(c.border)
         .child(div().text_color(c.fg).flex_1().min_w_0().child(title))
         .child(
-            div()
-                .flex()
-                .items_center()
-                .gap_1()
-                .child(
-                    div()
-                        .id(SharedString::from(format!("mcp-dec-{title}")))
-                        .size(px(20.0))
-                        .flex()
-                        .items_center()
-                        .justify_center()
-                        .rounded_sm()
-                        .border_1()
-                        .border_color(c.border)
-                        .text_color(c.fg)
-                        .hover(|s| s.bg(c.border))
-                        .child("\u{2212}")
-                        .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
-                            f_dec(this, (value - step).clamp(min, max), cx)
-                        })),
-                )
-                .child(
-                    div()
-                        .min_w(px(52.0))
-                        .text_center()
-                        .text_color(c.fg)
-                        .child(SharedString::from(value.to_string())),
-                )
-                .child(
-                    div()
-                        .id(SharedString::from(format!("mcp-inc-{title}")))
-                        .size(px(20.0))
-                        .flex()
-                        .items_center()
-                        .justify_center()
-                        .rounded_sm()
-                        .border_1()
-                        .border_color(c.border)
-                        .text_color(c.fg)
-                        .hover(|s| s.bg(c.border))
-                        .child("+")
-                        .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
-                            f(this, (value + step).clamp(min, max), cx)
-                        })),
-                ),
+            // T20-003: the shared `NumberField` stepper primitive, no track
+            // (this is a bounded integer knob, not a slider-shaped setting).
+            number_field(
+                SharedString::from(format!("mcp-{title}")),
+                *c,
+                value as f64,
+                min as f64,
+                max as f64,
+                step as f64,
+            )
+            .track(false)
+            .on_change(cx.listener(move |this, next: &f64, _w, cx| f(this, *next as i64, cx))),
         )
 }
