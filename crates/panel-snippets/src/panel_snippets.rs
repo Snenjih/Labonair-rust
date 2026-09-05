@@ -47,7 +47,10 @@ use tokio::runtime::Handle as TokioHandle;
 use crate::theme::ThemeStore;
 use crate::workspace::Workspace;
 use labonair_notifications::{notification_center, Notification};
-use labonair_ui_kit::{context_menu, IconName, MenuItem, Palette};
+use labonair_ui_kit::{
+    button, context_menu, disclosure, icon_toggle_button, list_header, segmented_control,
+    ButtonSize, ButtonVariant, IconName, ListItem, MenuItem, Palette,
+};
 
 // ── Pure helpers: variable extraction / substitution ─────────────────────────
 
@@ -399,7 +402,6 @@ struct Colors {
     card: gpui::Hsla,
     accent: gpui::Hsla,
     error: gpui::Hsla,
-    warning: gpui::Hsla,
 }
 
 /// Backend → view snippet-run events, forwarded off the broadcast bus.
@@ -1132,10 +1134,18 @@ impl SnippetsView {
             card: t.card(),
             accent: t.accent(),
             error: t.status_error(),
-            warning: t.status_warning(),
         }
     }
 
+    /// T20-003 documented exception: every field this renders (name,
+    /// description, command, working dir, search, group name, the
+    /// var-prompt value) is driven by the single view-level `on_key_down`
+    /// router (`on_key`, keyed by `Field`), not a per-field `InputState`
+    /// entity. Swapping to `labonair_ui_kit::text_field`/`field_input` would
+    /// mean rearchitecting the whole multi-field form and prompt/host-picker
+    /// flows — out of scope for a surgical, behavior-preserving migration of
+    /// this view, and the same call the hosts-ui migration made for its own
+    /// `labelled_field`/`tunnel_field`.
     fn text_field(
         &self,
         id: &'static str,
@@ -1175,29 +1185,24 @@ impl SnippetsView {
             }))
     }
 
+    /// Thin wrapper over the shared [`labonair_ui_kit::button`] builder
+    /// (`Xs` size; `Default` variant for primary actions, `Outline`
+    /// otherwise) — replaces the hand-rolled action-button `div()`.
     fn btn(
         &self,
         id: SharedString,
         label: impl Into<SharedString>,
-        c: &Colors,
         primary: bool,
         cx: &mut Context<Self>,
         on_click: impl Fn(&mut Self, &mut Window, &mut Context<Self>) + 'static,
     ) -> gpui::AnyElement {
-        div()
-            .id(id)
-            .px(px(8.0))
-            .h(px(22.0))
-            .flex()
-            .items_center()
-            .justify_center()
-            .rounded_sm()
-            .border_1()
-            .border_color(if primary { c.accent } else { c.border })
-            .when(primary, |d| d.bg(c.accent))
-            .text_size(px(11.0))
-            .text_color(c.fg)
-            .hover(|s| s.opacity(0.85))
+        let p = Palette::from_theme(self.theme.read(cx));
+        let variant = if primary {
+            ButtonVariant::Default
+        } else {
+            ButtonVariant::Outline
+        };
+        button(id, p, variant, ButtonSize::Xs)
             .child(label.into())
             .on_click(cx.listener(move |this, _: &ClickEvent, w, cx| {
                 cx.stop_propagation();
@@ -1229,6 +1234,7 @@ impl SnippetsView {
     }
 
     fn render_list(&mut self, c: &Colors, cx: &mut Context<Self>) -> gpui::AnyElement {
+        let p = Palette::from_theme(self.theme.read(cx));
         let filtered = self.filtered();
         let mut groups = self.groups.clone();
         groups.sort_by(|a, b| a.sort_order.cmp(&b.sort_order).then(a.name.cmp(&b.name)));
@@ -1262,7 +1268,6 @@ impl SnippetsView {
                     .child(self.btn(
                         "snip-empty-new".into(),
                         "New snippet",
-                        c,
                         true,
                         cx,
                         |this, _w, cx| {
@@ -1293,39 +1298,37 @@ impl SnippetsView {
                     .items_center()
                     .gap(px(4.0))
                     .child(
-                        div()
-                            .id(SharedString::from(format!("snip-grp-{gid}")))
-                            .flex_1()
-                            .flex()
-                            .items_center()
-                            .gap(px(4.0))
-                            .text_size(px(9.0))
-                            .text_color(c.muted)
-                            .child(SharedString::from(if collapsed {
-                                "\u{25B6}"
-                            } else {
-                                "\u{25BC}"
-                            }))
-                            .child(SharedString::from(g.name.to_uppercase()))
-                            .child(SharedString::from(format!("({})", items.len())))
-                            .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                        disclosure(
+                            SharedString::from(format!("snip-grp-{gid}")),
+                            g.name.to_uppercase(),
+                            collapsed,
+                            c.muted,
+                            c.fg,
+                        )
+                        .flex_1()
+                        .child(SharedString::from(format!("({})", items.len())))
+                        .on_click(cx.listener(
+                            move |this, _: &ClickEvent, _w, cx| {
                                 if !this.collapsed_groups.remove(&gid_toggle) {
                                     this.collapsed_groups.insert(gid_toggle.clone());
                                 }
                                 cx.notify();
-                            })),
+                            },
+                        )),
                     )
                     .child(
-                        div()
-                            .id(SharedString::from(format!("snip-grp-del-{gid}")))
-                            .px(px(3.0))
-                            .text_size(px(10.0))
-                            .text_color(c.muted)
-                            .hover(|s| s.text_color(c.error))
-                            .child("\u{2715}")
-                            .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                        button(
+                            SharedString::from(format!("snip-grp-del-{gid}")),
+                            p,
+                            ButtonVariant::Destructive,
+                            ButtonSize::IconXs,
+                        )
+                        .child(IconName::X.svg(p.destructive).size(px(10.0)))
+                        .on_click(cx.listener(
+                            move |this, _: &ClickEvent, _w, cx| {
                                 this.delete_group(gid_del.clone(), cx);
-                            })),
+                            },
+                        )),
                     ),
             );
             if !collapsed {
@@ -1343,12 +1346,7 @@ impl SnippetsView {
             .collect();
         if !ungrouped.is_empty() {
             if !groups.is_empty() {
-                list = list.child(
-                    div()
-                        .text_size(px(9.0))
-                        .text_color(c.muted)
-                        .child(SharedString::from("OTHER")),
-                );
+                list = list.child(list_header("OTHER", c.muted));
             }
             for s in &ungrouped {
                 list = list.child(self.render_row(s, c, cx));
@@ -1370,7 +1368,6 @@ impl SnippetsView {
                 list = list.child(self.btn(
                     "snip-add-group".into(),
                     "+ Add group",
-                    c,
                     false,
                     cx,
                     |this, w, cx| {
@@ -1412,6 +1409,8 @@ impl SnippetsView {
             .unwrap_or_else(|| s.command.lines().next().unwrap_or("").to_string());
         let mode = ExecMode::from_str(&s.default_exec_mode);
 
+        let p = Palette::from_theme(self.theme.read(cx));
+
         let s_run = s.clone();
         let s_run_silent = s.clone();
         let s_edit = s.clone();
@@ -1420,24 +1419,21 @@ impl SnippetsView {
         let s_up = s.id.clone();
         let s_down = s.id.clone();
         let s_menu_id = s.id.clone();
+        let (border, card) = (c.border, c.card);
 
-        div()
+        // Right-click listener is built up front (needs `cx`) so it can move
+        // into the `'static` `.extra()` closure below, mirroring the
+        // hosts-ui `render_host_list_item` / panel-explorer tree-row pattern.
+        let on_right_click = cx.listener(move |this, ev: &MouseDownEvent, _w, cx| {
+            this.menu = Some((s_menu_id.clone(), ev.position));
+            cx.notify();
+        });
+
+        let body = div()
+            .w_full()
             .flex()
             .flex_col()
             .gap(px(4.0))
-            .p(px(6.0))
-            .rounded_md()
-            .border_1()
-            .border_color(c.border)
-            .bg(c.card)
-            .id(SharedString::from(format!("snip-row-{}", s.id)))
-            .on_mouse_down(
-                MouseButton::Right,
-                cx.listener(move |this, ev: &MouseDownEvent, _w, cx| {
-                    this.menu = Some((s_menu_id.clone(), ev.position));
-                    cx.notify();
-                }),
-            )
             .child(
                 div()
                     .flex()
@@ -1475,7 +1471,6 @@ impl SnippetsView {
                     .child(self.btn(
                         SharedString::from(format!("snip-run-{}", s.id)),
                         format!("\u{25B6} RUN ({})", mode.label()),
-                        c,
                         true,
                         cx,
                         move |this, w, cx| this.run(s_run.clone(), None, w, cx),
@@ -1483,7 +1478,6 @@ impl SnippetsView {
                     .child(self.btn(
                         SharedString::from(format!("snip-run-silent-{}", s.id)),
                         "log",
-                        c,
                         false,
                         cx,
                         move |this, w, cx| {
@@ -1492,71 +1486,105 @@ impl SnippetsView {
                     ))
                     .child(div().flex_1())
                     .child(
-                        div()
-                            .id(SharedString::from(format!("snip-up-{}", s.id)))
-                            .px(px(3.0))
-                            .text_size(px(10.0))
-                            .text_color(c.muted)
-                            .hover(|st| st.text_color(c.fg))
-                            .child("\u{25B2}")
-                            .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                        button(
+                            SharedString::from(format!("snip-up-{}", s.id)),
+                            p,
+                            ButtonVariant::Ghost,
+                            ButtonSize::IconXs,
+                        )
+                        .child("\u{25B2}")
+                        .on_click(cx.listener(
+                            move |this, _: &ClickEvent, _w, cx| {
                                 this.move_snippet(&s_up, -1, cx);
-                            })),
+                            },
+                        )),
                     )
                     .child(
-                        div()
-                            .id(SharedString::from(format!("snip-down-{}", s.id)))
-                            .px(px(3.0))
-                            .text_size(px(10.0))
-                            .text_color(c.muted)
-                            .hover(|st| st.text_color(c.fg))
-                            .child("\u{25BC}")
-                            .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                        button(
+                            SharedString::from(format!("snip-down-{}", s.id)),
+                            p,
+                            ButtonVariant::Ghost,
+                            ButtonSize::IconXs,
+                        )
+                        .child("\u{25BC}")
+                        .on_click(cx.listener(
+                            move |this, _: &ClickEvent, _w, cx| {
                                 this.move_snippet(&s_down, 1, cx);
-                            })),
+                            },
+                        )),
                     )
                     .child(
-                        div()
-                            .id(SharedString::from(format!("snip-edit-{}", s.id)))
-                            .px(px(3.0))
-                            .text_size(px(10.0))
-                            .text_color(c.muted)
-                            .hover(|st| st.text_color(c.fg))
-                            .child(IconName::Pencil.svg(c.muted).size(px(11.0)))
-                            .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                        button(
+                            SharedString::from(format!("snip-edit-{}", s.id)),
+                            p,
+                            ButtonVariant::Ghost,
+                            ButtonSize::IconXs,
+                        )
+                        .child(IconName::Pencil.svg(p.muted).size(px(11.0)))
+                        .on_click(cx.listener(
+                            move |this, _: &ClickEvent, _w, cx| {
                                 this.form = Some(FormState::from_snippet(&s_edit));
                                 cx.notify();
-                            })),
+                            },
+                        )),
                     )
                     .child(
-                        div()
-                            .id(SharedString::from(format!("snip-dup-{}", s.id)))
-                            .px(px(3.0))
-                            .text_size(px(10.0))
-                            .text_color(c.muted)
-                            .hover(|st| st.text_color(c.fg))
-                            .child(IconName::Copy.svg(c.muted).size(px(11.0)))
-                            .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                        button(
+                            SharedString::from(format!("snip-dup-{}", s.id)),
+                            p,
+                            ButtonVariant::Ghost,
+                            ButtonSize::IconXs,
+                        )
+                        .child(IconName::Copy.svg(p.muted).size(px(11.0)))
+                        .on_click(cx.listener(
+                            move |this, _: &ClickEvent, _w, cx| {
                                 this.duplicate_snippet(&s_dup, cx);
-                            })),
+                            },
+                        )),
                     )
                     .child(
-                        div()
-                            .id(SharedString::from(format!("snip-del-{}", s.id)))
-                            .px(px(3.0))
-                            .text_size(px(10.0))
-                            .text_color(c.muted)
-                            .hover(|st| st.text_color(c.error))
-                            .child(IconName::Trash.svg(c.muted).size(px(11.0)))
-                            .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                        button(
+                            SharedString::from(format!("snip-del-{}", s.id)),
+                            p,
+                            ButtonVariant::Destructive,
+                            ButtonSize::IconXs,
+                        )
+                        .child(IconName::Trash.svg(p.destructive).size(px(11.0)))
+                        .on_click(cx.listener(
+                            move |this, _: &ClickEvent, _w, cx| {
                                 this.delete_snippet(s_del_id.clone(), cx);
-                            })),
+                            },
+                        )),
                     ),
-            )
-            .into_any_element()
+            );
+
+        // `selected_fill` == the row's own resting background so `ListItem`'s
+        // built-in hover tint is a no-op — this card never had a row-level
+        // hover affordance, only its individual buttons did.
+        ListItem::new(
+            SharedString::from(format!("snip-row-{}", s.id)),
+            c.fg,
+            c.muted,
+            card,
+        )
+        .child(body)
+        .extra(move |row| {
+            row.flex_col()
+                .items_start()
+                .cursor_default()
+                .gap(px(4.0))
+                .p(px(6.0))
+                .rounded_md()
+                .border_1()
+                .border_color(border)
+                .bg(card)
+                .on_mouse_down(MouseButton::Right, on_right_click)
+        })
+        .into_any_element()
     }
 
     fn render_form(&mut self, c: &Colors, cx: &mut Context<Self>) -> gpui::AnyElement {
+        let p = Palette::from_theme(self.theme.read(cx));
         let Some(form) = self.form.clone() else {
             return div().into_any_element();
         };
@@ -1632,22 +1660,19 @@ impl SnippetsView {
 
         // Target toggle.
         body = body.child(label(c, "Target")).child(
-            div()
-                .flex()
-                .gap(px(4.0))
-                .child(self.toggle_chip(
-                    "snip-f-tgt-local",
-                    "Local",
-                    !form.target_ssh,
-                    c,
-                    cx,
-                    |f| f.target_ssh = false,
-                ))
-                .child(
-                    self.toggle_chip("snip-f-tgt-ssh", "SSH", form.target_ssh, c, cx, |f| {
-                        f.target_ssh = true
-                    }),
-                ),
+            segmented_control(
+                "snip-f-target",
+                p,
+                if form.target_ssh { "ssh" } else { "local" },
+            )
+            .segment("local", "Local")
+            .segment("ssh", "SSH")
+            .on_select(cx.listener(|this, key: &SharedString, _w, cx| {
+                if let Some(f) = this.form.as_mut() {
+                    f.target_ssh = key.as_ref() == "ssh";
+                }
+                cx.notify();
+            })),
         );
 
         if form.target_ssh {
@@ -1688,20 +1713,19 @@ impl SnippetsView {
         }
 
         // Exec mode.
-        body = body
-            .child(label(c, "Default Mode"))
-            .child(div().flex().gap(px(4.0)).children(
-                [ExecMode::Terminal, ExecMode::Silent, ExecMode::Inject].map(|m| {
-                    self.toggle_chip(
-                        SharedString::from(format!("snip-f-mode-{}", m.as_str())),
-                        m.label(),
-                        form.mode == m,
-                        c,
-                        cx,
-                        move |f| f.mode = m,
-                    )
-                }),
-            ));
+        body = body.child(label(c, "Default Mode")).child(
+            segmented_control("snip-f-mode", p, form.mode.as_str())
+                .segments(
+                    [ExecMode::Terminal, ExecMode::Silent, ExecMode::Inject]
+                        .map(|m| (m.as_str(), m.label())),
+                )
+                .on_select(cx.listener(|this, key: &SharedString, _w, cx| {
+                    if let Some(f) = this.form.as_mut() {
+                        f.mode = ExecMode::from_str(key.as_ref());
+                    }
+                    cx.notify();
+                })),
+        );
 
         if !form.target_ssh {
             body = body.child(label(c, "Working Dir")).child(self.text_field(
@@ -1725,7 +1749,6 @@ impl SnippetsView {
             .child(self.btn(
                 "snip-f-cancel".into(),
                 "Cancel",
-                c,
                 false,
                 cx,
                 |this, _w, cx| {
@@ -1737,7 +1760,6 @@ impl SnippetsView {
             .child(self.btn(
                 "snip-f-save".into(),
                 if is_new { "Create" } else { "Save" },
-                c,
                 true,
                 cx,
                 |this, _w, cx| this.save_form(cx),
@@ -1753,6 +1775,16 @@ impl SnippetsView {
             .into_any_element()
     }
 
+    /// T20-003 documented exception: this chip renders the "Group" picker
+    /// (and, inline in `render_form`, the target-host picker) — an
+    /// arbitrary-length, wrapping row of selectable pills. `ui-kit`'s
+    /// [`labonair_ui_kit::SegmentedControl`] is the closest primitive but its
+    /// track never wraps, so a user with more groups/hosts than fit one line
+    /// would silently lose access to the overflow ones — a real behavior
+    /// regression this task disallows. `Target`/`Default Mode` below (fixed
+    /// 2-3 segments, always fits) moved to `segmented_control`; this stays
+    /// hand-rolled, mirroring the same call the hosts-ui migration made for
+    /// its own `render_group_chips`.
     fn group_chip(
         &self,
         id: impl Into<gpui::ElementId>,
@@ -1778,38 +1810,6 @@ impl SnippetsView {
             .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
                 if let Some(f) = this.form.as_mut() {
                     f.group_id = group_id.clone();
-                }
-                cx.notify();
-            }))
-            .into_any_element()
-    }
-
-    fn toggle_chip(
-        &self,
-        id: impl Into<gpui::ElementId>,
-        text: &'static str,
-        selected: bool,
-        c: &Colors,
-        cx: &mut Context<Self>,
-        apply: impl Fn(&mut FormState) + 'static,
-    ) -> gpui::AnyElement {
-        div()
-            .id(id)
-            .flex_1()
-            .h(px(22.0))
-            .flex()
-            .items_center()
-            .justify_center()
-            .rounded_sm()
-            .border_1()
-            .border_color(if selected { c.accent } else { c.border })
-            .when(selected, |d| d.bg(c.accent))
-            .text_size(px(10.0))
-            .text_color(c.fg)
-            .child(text)
-            .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
-                if let Some(f) = this.form.as_mut() {
-                    apply(f);
                 }
                 cx.notify();
             }))
@@ -1898,28 +1898,23 @@ impl SnippetsView {
             let hid = h.id.clone();
             let is_sel = selected == h.id;
             rows = rows.child(
-                div()
-                    .id(SharedString::from(format!("snip-hp-{}", h.id)))
-                    .px(px(6.0))
-                    .h(px(22.0))
-                    .flex()
-                    .items_center()
-                    .rounded_sm()
-                    .border_1()
-                    .border_color(if is_sel { c.accent } else { c.border })
-                    .when(is_sel, |d| d.bg(c.accent))
-                    .text_size(px(11.0))
-                    .text_color(c.fg)
-                    .child(SharedString::from(format!(
-                        "{} ({})",
-                        h.name, h.host_address
-                    )))
-                    .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
-                        if let Some(hp) = this.host_picker.as_mut() {
-                            hp.selected = hid.clone();
-                        }
-                        cx.notify();
-                    })),
+                ListItem::new(
+                    SharedString::from(format!("snip-hp-{}", h.id)),
+                    c.fg,
+                    c.muted,
+                    c.accent,
+                )
+                .selected(is_sel)
+                .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                    if let Some(hp) = this.host_picker.as_mut() {
+                        hp.selected = hid.clone();
+                    }
+                    cx.notify();
+                }))
+                .child(SharedString::from(format!(
+                    "{} ({})",
+                    h.name, h.host_address
+                ))),
             );
         }
         Some(self.modal(
@@ -2009,7 +2004,6 @@ impl SnippetsView {
                             .child(self.btn(
                                 "snip-modal-cancel".into(),
                                 "Cancel",
-                                c,
                                 false,
                                 cx,
                                 on_cancel,
@@ -2017,7 +2011,6 @@ impl SnippetsView {
                             .child(self.btn(
                                 "snip-modal-ok".into(),
                                 confirm_label,
-                                c,
                                 true,
                                 cx,
                                 on_confirm,
@@ -2031,6 +2024,7 @@ impl SnippetsView {
         if !self.log_open {
             return div().into_any_element();
         }
+        let p = Palette::from_theme(self.theme.read(cx));
         let selected = self
             .selected_run
             .as_ref()
@@ -2058,28 +2052,25 @@ impl SnippetsView {
                 RunStatus::Error => "\u{25B2}",
             };
             tabs = tabs.child(
-                div()
-                    .id(SharedString::from(format!("snip-log-tab-{}", l.run_id)))
-                    .flex()
-                    .gap(px(3.0))
-                    .px(px(4.0))
-                    .py(px(2.0))
-                    .rounded_sm()
-                    .when(active, |d| d.bg(c.accent))
-                    .text_size(px(10.0))
-                    .text_color(c.fg)
-                    .child(SharedString::from(glyph))
-                    .child(
-                        div()
-                            .flex_1()
-                            .overflow_hidden()
-                            .whitespace_nowrap()
-                            .child(SharedString::from(l.snippet_name.clone())),
-                    )
-                    .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
-                        this.selected_run = Some(rid.clone());
-                        cx.notify();
-                    })),
+                ListItem::new(
+                    SharedString::from(format!("snip-log-tab-{}", l.run_id)),
+                    c.fg,
+                    c.muted,
+                    c.accent,
+                )
+                .selected(active)
+                .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                    this.selected_run = Some(rid.clone());
+                    cx.notify();
+                }))
+                .child(SharedString::from(glyph))
+                .child(
+                    div()
+                        .flex_1()
+                        .overflow_hidden()
+                        .whitespace_nowrap()
+                        .child(SharedString::from(l.snippet_name.clone())),
+                ),
             );
         }
 
@@ -2158,46 +2149,41 @@ impl SnippetsView {
                             .flex()
                             .gap(px(4.0))
                             .when_some(run_id_for_cancel, |d, rid| {
-                                d.child(
-                                    div()
-                                        .id("snip-log-cancel")
-                                        .px(px(4.0))
-                                        .text_size(px(10.0))
-                                        .text_color(c.warning)
-                                        .child("Cancel")
-                                        .on_click(cx.listener(
-                                            move |this, _: &ClickEvent, _w, cx| {
-                                                this.cancel_run(rid.clone(), cx);
-                                            },
-                                        )),
-                                )
+                                d.child(self.btn(
+                                    "snip-log-cancel".into(),
+                                    "Cancel",
+                                    false,
+                                    cx,
+                                    move |this, _w, cx| {
+                                        this.cancel_run(rid.clone(), cx);
+                                    },
+                                ))
                             })
+                            .child(self.btn(
+                                "snip-log-clear".into(),
+                                "Clear",
+                                false,
+                                cx,
+                                |this, _w, cx| {
+                                    this.run_logs.clear();
+                                    this.selected_run = None;
+                                    cx.notify();
+                                },
+                            ))
                             .child(
-                                div()
-                                    .id("snip-log-clear")
-                                    .px(px(4.0))
-                                    .text_size(px(10.0))
-                                    .text_color(c.muted)
-                                    .hover(|s| s.text_color(c.fg))
-                                    .child("Clear")
-                                    .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
-                                        this.run_logs.clear();
-                                        this.selected_run = None;
-                                        cx.notify();
-                                    })),
-                            )
-                            .child(
-                                div()
-                                    .id("snip-log-close")
-                                    .px(px(4.0))
-                                    .text_size(px(10.0))
-                                    .text_color(c.muted)
-                                    .hover(|s| s.text_color(c.fg))
-                                    .child("\u{2715}")
-                                    .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
+                                button(
+                                    "snip-log-close",
+                                    p,
+                                    ButtonVariant::Ghost,
+                                    ButtonSize::IconXs,
+                                )
+                                .child(IconName::X.svg(p.muted).size(px(10.0)))
+                                .on_click(cx.listener(
+                                    |this, _: &ClickEvent, _w, cx| {
                                         this.log_open = false;
                                         cx.notify();
-                                    })),
+                                    },
+                                )),
                             ),
                     ),
             )
@@ -2231,6 +2217,7 @@ fn label(c: &Colors, text: &'static str) -> gpui::AnyElement {
 impl Render for SnippetsView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let c = self.colors(cx);
+        let p = Palette::from_theme(self.theme.read(cx));
 
         let header = div()
             .flex()
@@ -2248,16 +2235,7 @@ impl Render for SnippetsView {
                     .child("Snippets"),
             )
             .child(
-                div()
-                    .id("snip-search-toggle")
-                    .px(px(4.0))
-                    .text_size(px(11.0))
-                    .text_color(if self.search_open { c.fg } else { c.muted })
-                    .child(
-                        IconName::Search
-                            .svg(if self.search_open { c.fg } else { c.muted })
-                            .size(px(12.0)),
-                    )
+                icon_toggle_button("snip-search-toggle", p, IconName::Search, self.search_open)
                     .on_click(cx.listener(|this, _: &ClickEvent, w, cx| {
                         this.search_open = !this.search_open;
                         if this.search_open {
@@ -2271,25 +2249,16 @@ impl Render for SnippetsView {
                     })),
             )
             .child(
-                div()
-                    .id("snip-log-toggle")
-                    .px(px(4.0))
-                    .text_size(px(11.0))
-                    .text_color(if self.log_open { c.fg } else { c.muted })
-                    .child("\u{2261}")
-                    .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
+                icon_toggle_button("snip-log-toggle", p, IconName::Menu, self.log_open).on_click(
+                    cx.listener(|this, _: &ClickEvent, _w, cx| {
                         this.log_open = !this.log_open;
                         cx.notify();
-                    })),
+                    }),
+                ),
             )
             .child(
-                div()
-                    .id("snip-new")
-                    .px(px(4.0))
-                    .text_size(px(12.0))
-                    .text_color(c.muted)
-                    .hover(|s| s.text_color(c.fg))
-                    .child("+")
+                button("snip-new", p, ButtonVariant::Ghost, ButtonSize::IconXs)
+                    .child(IconName::Plus.svg(p.muted))
                     .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
                         this.form = Some(FormState::empty());
                         cx.notify();
