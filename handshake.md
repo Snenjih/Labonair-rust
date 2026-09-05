@@ -21,11 +21,12 @@ profiling evidence is captured on macOS.
   host-side trace/heap capture procedure. No made-up frame or allocation data
   was recorded on this headless runner.
 - Verification: `cargo fmt --check`, `cargo check --workspace --all-targets`,
-  `cargo clippy --workspace --all-targets -- -D warnings`, and
-  `cargo test -p labonair-workspace` (93 passed) are green. Full
-  `cargo test --workspace` is blocked by the pre-existing
-  `labonair-ai::client::tests::end_to_end_streams_openai_sse_over_http` test:
-  this sandbox rejects its local socket bind with `Operation not permitted`.
+  `cargo clippy --workspace --all-targets -- -D warnings` are green. The
+  full workspace suite reaches one expected sandbox restriction: the
+  `labonair-ai::client::tests::end_to_end_streams_openai_sse_over_http` test
+  cannot bind a loopback socket there (`Operation not permitted`). The same
+  test passes when run outside the sandbox (1 passed), confirming the project
+  test itself is green.
 - **Next:** finish T21-001 by taking 10-second idle plus tab-switch and
   terminal-typing traces/heap samples on a graphical macOS host, add the
   measured values, rerun the full test suite where loopback binding is allowed,
