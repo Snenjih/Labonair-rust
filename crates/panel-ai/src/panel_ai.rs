@@ -2793,6 +2793,20 @@ impl AiChatView {
             .into_any_element()
     }
 
+    /// The `/`-slash and `@`-file autocomplete popover.
+    ///
+    /// T20-003 documented exception: this stays an in-flow `div` (a normal
+    /// child pushed above the composer input in `render_composer`'s flex
+    /// column), NOT `labonair_ui_kit::popover_menu`. `popover_menu` is an
+    /// `anchored().snap_to_window()` + `deferred(..)` overlay that needs a
+    /// window-space anchor point (the trigger's bounds), which this popover
+    /// has never tracked — it has always been positioned by ordinary layout
+    /// flow, one flex child above the composer `div`. Wiring up bounds
+    /// tracking just to swap the container would touch the exact
+    /// focus/keystroke-routing path the task's warning calls out (Enter-to-
+    /// complete via `try_complete_from_popup`, the `InputEvent::Change`
+    /// subscription in `ensure_composer`) for no behavioural gain. Only the
+    /// row rendering below is migrated, to the shared `ListItem`.
     fn render_composer_popup(
         &self,
         c: &ChatColors,
@@ -2807,28 +2821,24 @@ impl AiChatView {
                 }
                 cmds.into_iter()
                     .map(|cmd| {
-                        div()
-                            .id(SharedString::from(format!("slash-{}", cmd.name)))
-                            .flex()
-                            .items_center()
-                            .gap_2()
-                            .px_2()
-                            .py_1()
-                            .rounded_sm()
-                            .text_size(px(11.0))
-                            .text_color(c.fg)
-                            .hover(|s| s.bg(c.border))
-                            .child(
-                                div()
-                                    .font_family("mono")
-                                    .text_color(c.accent)
-                                    .child(cmd.invocation),
-                            )
-                            .child(div().text_color(c.muted).child(cmd.label))
-                            .on_click(cx.listener(move |this, _: &ClickEvent, w, cx| {
-                                this.run_slash(cmd.name, w, cx)
-                            }))
-                            .into_any_element()
+                        ListItem::new(
+                            SharedString::from(format!("slash-{}", cmd.name)),
+                            c.fg,
+                            c.muted,
+                            c.border,
+                        )
+                        .child(
+                            div()
+                                .font_family("mono")
+                                .text_color(c.accent)
+                                .child(cmd.invocation),
+                        )
+                        .child(div().text_color(c.muted).child(cmd.label))
+                        .on_click(cx.listener(move |this, _: &ClickEvent, w, cx| {
+                            this.run_slash(cmd.name, w, cx)
+                        }))
+                        .extra(|row| row.text_size(px(11.0)))
+                        .into_any_element()
                     })
                     .collect()
             }
@@ -2841,23 +2851,19 @@ impl AiChatView {
                     .into_iter()
                     .map(|path| {
                         let p = path.clone();
-                        div()
-                            .id(SharedString::from(format!("atfile-{path}")))
-                            .flex()
-                            .items_center()
-                            .gap_2()
-                            .px_2()
-                            .py_1()
-                            .rounded_sm()
-                            .text_size(px(11.0))
-                            .text_color(c.fg)
-                            .hover(|s| s.bg(c.border))
-                            .child(IconName::File.svg(c.muted).size(px(12.0)))
-                            .child(SharedString::from(path))
-                            .on_click(cx.listener(move |this, _: &ClickEvent, w, cx| {
-                                this.insert_file_mention(p.clone(), w, cx)
-                            }))
-                            .into_any_element()
+                        ListItem::new(
+                            SharedString::from(format!("atfile-{path}")),
+                            c.fg,
+                            c.muted,
+                            c.border,
+                        )
+                        .icon(IconName::File)
+                        .child(SharedString::from(path))
+                        .on_click(cx.listener(move |this, _: &ClickEvent, w, cx| {
+                            this.insert_file_mention(p.clone(), w, cx)
+                        }))
+                        .extra(|row| row.text_size(px(11.0)))
+                        .into_any_element()
                     })
                     .collect()
             }
@@ -3001,39 +3007,46 @@ impl AiChatView {
                         .flex_col()
                         .gap_0p5()
                         .children(queued.iter().enumerate().map(|(i, q)| {
-                            div()
-                                .flex()
-                                .items_center()
-                                .gap_1()
-                                .px_1p5()
-                                .py_0p5()
-                                .rounded_sm()
-                                .bg(c.card)
-                                .border_1()
-                                .border_color(c.border)
-                                .text_size(px(10.0))
-                                .text_color(c.muted)
-                                .child(IconName::CornerDownRight.svg(c.muted).size(px(11.0)))
-                                .child(
-                                    div()
-                                        .flex_1()
-                                        .min_w_0()
-                                        .overflow_hidden()
-                                        .whitespace_nowrap()
-                                        .child(SharedString::from(truncate(q, 60))),
-                                )
-                                .child(
-                                    div()
-                                        .id(SharedString::from(format!("queue-x-{i}")))
-                                        .hover(|s| s.text_color(c.error))
-                                        .child(IconName::X.svg(c.muted).size(px(11.0)))
-                                        .on_click(cx.listener(
-                                            move |this, _: &ClickEvent, _w, cx| {
-                                                this.store
-                                                    .update(cx, |s, cx| s.dequeue_prompt(i, cx));
-                                            },
-                                        )),
-                                )
+                            // T20-003: `selected_fill` == the row's own
+                            // resting background (`c.card`), matching the
+                            // panel-snippets convention, so `ListItem`'s
+                            // built-in hover tint is a no-op — this row never
+                            // had a hover affordance, only the trailing "x".
+                            ListItem::new(
+                                SharedString::from(format!("queue-row-{i}")),
+                                c.muted,
+                                c.muted,
+                                c.card,
+                            )
+                            .icon(IconName::CornerDownRight)
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .min_w_0()
+                                    .overflow_hidden()
+                                    .whitespace_nowrap()
+                                    .child(SharedString::from(truncate(q, 60))),
+                            )
+                            .trailing(
+                                div()
+                                    .id(SharedString::from(format!("queue-x-{i}")))
+                                    .hover(|s| s.text_color(c.error))
+                                    .child(IconName::X.svg(c.muted).size(px(11.0)))
+                                    .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                                        this.store.update(cx, |s, cx| s.dequeue_prompt(i, cx));
+                                    })),
+                            )
+                            .extra({
+                                let (card, border) = (c.card, c.border);
+                                move |row| {
+                                    row.cursor_default()
+                                        .bg(card)
+                                        .border_1()
+                                        .border_color(border)
+                                        .text_size(px(10.0))
+                                }
+                            })
+                            .into_any_element()
                         })),
                 )
             })
