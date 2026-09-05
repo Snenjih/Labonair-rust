@@ -10,7 +10,12 @@
 //! [`active_theme`] / [`theme_store`]. Components must never hold their own
 //! theme state.
 
-use crate::{Animation, MonoFontWeight, RadiusScale, Shadows, Theme, ThemeFile};
+use std::path::Path;
+
+use crate::registry::Appearance;
+use crate::{
+    Animation, MonoFontWeight, RadiusScale, Shadows, Theme, ThemeFile, ThemeMeta, ThemeRegistry,
+};
 use gpui::{
     font, App, AppContext, Context, Entity, Font, FontFallbacks, FontFeatures, FontWeight, Global,
     Hsla, WindowAppearance,
@@ -114,6 +119,16 @@ pub struct ThemeStore {
     editor_theme: EditorThemeId,
     /// Runtime typography overrides from settings (T13-003).
     font_overrides: FontOverrides,
+    /// The theme family/variant registry (T20-005): the embedded built-in plus
+    /// whatever valid `*.json` files the user themes directory holds.
+    registry: ThemeRegistry,
+    /// The active registry family name (`None` = the built-in light/dark). When
+    /// set it is resolved through [`ThemeRegistry::resolve_family_variant`] into
+    /// `custom` on every mode / appearance / registry change — the same slot the
+    /// legacy [`Self::import_theme_file`] path uses.
+    active_family: Option<String>,
+    /// Per-mode variant override for `active_family` (e.g. Catppuccin "Mocha").
+    registry_variant: Option<String>,
 }
 
 impl ThemeStore {
@@ -131,7 +146,109 @@ impl ThemeStore {
             custom_variant: None,
             editor_theme: EditorThemeId::default(),
             font_overrides: FontOverrides::default(),
+            registry: ThemeRegistry::builtin(),
+            active_family: None,
+            registry_variant: None,
         }
+    }
+
+    // --- Theme registry (T20-005) --------------------------------------------
+
+    /// The theme family/variant registry.
+    pub fn registry(&self) -> &ThemeRegistry {
+        &self.registry
+    }
+
+    /// Every selectable theme variant (built-in family first).
+    pub fn list_themes(&self) -> Vec<ThemeMeta> {
+        self.registry.list()
+    }
+
+    /// The active registry theme id (`"Family/Variant"`), or `"default"` for the
+    /// built-in light/dark themes. This is what persists to `appearance.app_theme`.
+    pub fn active_theme_id(&self) -> String {
+        match (&self.active_family, &self.registry_variant) {
+            (Some(fam), Some(var)) => format!("{fam}/{var}"),
+            (Some(fam), None) => fam.clone(),
+            (None, _) => "default".to_string(),
+        }
+    }
+
+    fn appearance(&self) -> Appearance {
+        match self.mode() {
+            ThemeMode::Dark => Appearance::Dark,
+            ThemeMode::Light => Appearance::Light,
+        }
+    }
+
+    /// Activate a registry theme by id (`"Family/Variant"`, a bare family name,
+    /// or a flat variant name). `"default"` / `""` reverts to the built-in
+    /// light/dark themes. Clears any legacy imported [`ThemeFile`]. The caller
+    /// is responsible for persisting the id to `appearance.app_theme`.
+    pub fn set_active_theme(
+        &mut self,
+        id: impl Into<String>,
+        cx: &mut Context<Self>,
+    ) -> Result<(), String> {
+        let id = id.into();
+        if id.is_empty() || id == "default" {
+            self.active_family = None;
+            self.registry_variant = None;
+            self.custom_file = None;
+            self.custom_variant = None;
+            self.custom_base = None;
+            self.rebuild_custom();
+            cx.notify();
+            return Ok(());
+        }
+        let family = self
+            .registry
+            .family_of(&id)
+            .ok_or_else(|| format!("theme not found: {id}"))?;
+        // A flat "Family/Variant" id also seeds the variant override.
+        let variant = id
+            .split_once('/')
+            .map(|(_, v)| v.to_string())
+            .filter(|v| !v.is_empty());
+        self.active_family = Some(family);
+        self.registry_variant = variant;
+        self.custom_file = None;
+        self.custom_variant = None;
+        self.reresolve_custom();
+        cx.notify();
+        Ok(())
+    }
+
+    /// Select a named variant of the active registry family (per-mode override).
+    pub fn set_registry_variant(&mut self, name: Option<String>, cx: &mut Context<Self>) {
+        if self.active_family.is_none() || self.registry_variant == name {
+            return;
+        }
+        self.registry_variant = name;
+        self.reresolve_custom();
+        cx.notify();
+    }
+
+    /// The active registry family's variant override, if any.
+    pub fn registry_variant(&self) -> Option<&str> {
+        self.registry_variant.as_deref()
+    }
+
+    /// Rescan the user themes directory and rebuild the registry. If the active
+    /// family survived the rescan it is re-resolved live; if it vanished the
+    /// store falls back to the built-in themes. Returns non-fatal load warnings.
+    pub fn reload_user_themes(&mut self, dir: &Path, cx: &mut Context<Self>) -> Vec<String> {
+        let warnings = self.registry.load_user_themes(dir);
+        if let Some(fam) = self.active_family.clone() {
+            if !self.registry.contains(&fam) {
+                self.active_family = None;
+                self.registry_variant = None;
+                self.custom_base = None;
+            }
+        }
+        self.reresolve_custom();
+        cx.notify();
+        warnings
     }
 
     /// The active runtime typography overrides.
@@ -179,6 +296,20 @@ impl ThemeStore {
                 Theme::from_theme_file_variant(&file, dark, self.custom_variant.as_deref())
             {
                 self.custom_base = Some(theme);
+            }
+        } else if let Some(fam) = self.active_family.clone() {
+            let appearance = self.appearance();
+            match self.registry.resolve_family_variant(
+                &fam,
+                appearance,
+                self.registry_variant.as_deref(),
+            ) {
+                Ok((theme, _warnings)) => self.custom_base = Some(theme),
+                Err(_) => {
+                    self.active_family = None;
+                    self.registry_variant = None;
+                    self.custom_base = None;
+                }
             }
         }
         self.rebuild_custom();
@@ -262,6 +393,8 @@ impl ThemeStore {
         self.custom_base = theme;
         self.custom_file = None;
         self.custom_variant = None;
+        self.active_family = None;
+        self.registry_variant = None;
         self.rebuild_custom();
         cx.notify();
     }
@@ -292,6 +425,8 @@ impl ThemeStore {
         self.custom_base = Some(theme);
         self.custom_file = Some(file);
         self.custom_variant = variant_key;
+        self.active_family = None;
+        self.registry_variant = None;
         self.rebuild_custom();
         cx.notify();
         Ok(warnings)
@@ -324,6 +459,22 @@ impl ThemeStore {
         cx.notify();
     }
 
+    /// Live-preview a registry theme by id (`"family/Variant"`, a family
+    /// name/id, or a flat variant name); `""` / `"default"` previews the
+    /// built-in default for the resolved mode. No persistence — command-palette
+    /// hover. Silently ignores an unknown id.
+    pub fn preview_registry_theme(&mut self, id: &str, cx: &mut Context<Self>) {
+        if id.is_empty() || id == "default" {
+            self.preview_theme_file(None, None, cx);
+            return;
+        }
+        if let Ok((mut theme, _)) = self.registry.resolve(id, self.appearance()) {
+            self.font_overrides.apply(&mut theme);
+            self.preview = Some(theme);
+            cx.notify();
+        }
+    }
+
     /// Drop any live preview, reverting to the persisted active theme.
     pub fn cancel_preview(&mut self, cx: &mut Context<Self>) {
         if self.preview.take().is_some() {
@@ -350,13 +501,15 @@ impl ThemeStore {
     /// Clears the active custom theme, reverting to the built-in light/dark
     /// theme for the resolved mode.
     pub fn clear_custom_theme(&mut self, cx: &mut Context<Self>) {
-        if self.custom.is_none() && self.custom_file.is_none() {
+        if self.custom.is_none() && self.custom_file.is_none() && self.active_family.is_none() {
             return;
         }
         self.custom = None;
         self.custom_base = None;
         self.custom_file = None;
         self.custom_variant = None;
+        self.active_family = None;
+        self.registry_variant = None;
         cx.notify();
     }
 
@@ -932,6 +1085,96 @@ mod tests {
                 assert_eq!(before, after);
             });
         });
+    }
+
+    #[gpui::test]
+    fn set_active_theme_resolves_through_the_registry_and_follows_mode(cx: &mut TestAppContext) {
+        // A user family with a light and a dark variant that only override
+        // `primary`. Selecting it must apply that token and follow the mode.
+        let dir =
+            std::env::temp_dir().join(format!("labonair-store-themes-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("neon.json"),
+            r##"{ "name": "Neon", "themes": [
+                { "name": "Neon Dark",  "appearance": "dark",  "colors": { "primary": "#39ff14" } },
+                { "name": "Neon Light", "appearance": "light", "colors": { "primary": "#0a7d00" } } ] }"##,
+        )
+        .unwrap();
+
+        cx.update(|cx| {
+            let store = cx.new(|_| ThemeStore::new(WindowAppearance::Dark));
+            store.update(cx, |s, cx| {
+                s.reload_user_themes(&dir, cx);
+                assert!(s.list_themes().iter().any(|m| m.family == "Neon"));
+
+                // id = "<file stem>/<variant name>"
+                s.set_active_theme("neon/Neon Dark", cx).unwrap();
+                assert_eq!(s.active_theme_id(), "neon/Neon Dark");
+                assert_eq!(crate::to_rgb8(s.primary()), [0x39, 0xff, 0x14]);
+                // Untouched token still the dark default.
+                assert_eq!(s.background(), Theme::dark().core.background);
+
+                // Switching the resolved mode re-resolves to the light variant.
+                s.set_preference(ThemePreference::Light, cx);
+                assert_eq!(crate::to_rgb8(s.primary()), [0x0a, 0x7d, 0x00]);
+
+                // Unknown id → error, active theme unchanged.
+                assert!(s.set_active_theme("Bogus/Nope", cx).is_err());
+                assert_eq!(crate::to_rgb8(s.primary()), [0x0a, 0x7d, 0x00]);
+
+                // Back to built-in.
+                s.set_active_theme("default", cx).unwrap();
+                assert_eq!(s.active_theme_id(), "default");
+                assert_eq!(s.primary(), Theme::light().core.primary);
+            });
+        });
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[gpui::test]
+    fn reload_user_themes_live_swaps_and_drops_a_vanished_family(cx: &mut TestAppContext) {
+        let dir = std::env::temp_dir().join(format!("labonair-store-live-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("live.json");
+        std::fs::write(
+            &path,
+            r##"{ "name": "Live", "themes": [
+                { "name": "Live Dark",  "appearance": "dark",  "colors": { "primary": "#111111" } },
+                { "name": "Live Light", "appearance": "light", "colors": {} } ] }"##,
+        )
+        .unwrap();
+
+        cx.update(|cx| {
+            let store = cx.new(|_| ThemeStore::new(WindowAppearance::Dark));
+            store.update(cx, |s, cx| {
+                s.reload_user_themes(&dir, cx);
+                s.set_active_theme("Live/Live Dark", cx).unwrap();
+                assert_eq!(crate::to_rgb8(s.primary()), [0x11, 0x11, 0x11]);
+
+                // Edit the file on disk, reload → live colour change.
+                std::fs::write(
+                    &path,
+                    r##"{ "name": "Live", "themes": [
+                        { "name": "Live Dark",  "appearance": "dark",  "colors": { "primary": "#222222" } },
+                        { "name": "Live Light", "appearance": "light", "colors": {} } ] }"##,
+                )
+                .unwrap();
+                s.reload_user_themes(&dir, cx);
+                assert_eq!(crate::to_rgb8(s.primary()), [0x22, 0x22, 0x22]);
+
+                // Delete it, reload → falls back to the built-in theme.
+                std::fs::remove_file(&path).unwrap();
+                s.reload_user_themes(&dir, cx);
+                assert_eq!(s.active_theme_id(), "default");
+                assert_eq!(s.primary(), Theme::dark().core.primary);
+            });
+        });
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[gpui::test]

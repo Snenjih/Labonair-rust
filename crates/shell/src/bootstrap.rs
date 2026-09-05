@@ -264,6 +264,16 @@ pub(crate) fn bootstrap(
         prefs.update(cx, |s, cx| s.publish_global(cx));
         labonair_settings_ui::apply_prefs_to_theme(&p, &theme, cx);
     }
+    // T20-005: live-reload the theme registry when the user themes folder
+    // changes on disk — a dropped/edited/removed `*.json` re-resolves the
+    // active theme with no restart.
+    {
+        let prefs_w = prefs.clone();
+        let theme_w = theme.clone();
+        labonair_settings::watch_dir(cx, labonair_settings_ui::user_themes_dir(), move |cx| {
+            labonair_settings_ui::reload_theme_registry(&prefs_w, &theme_w, cx);
+        });
+    }
     // `keymap.json` (T19-008): load + merge + bind, publish the display
     // global, then live-watch the file so an edit takes effect with no
     // restart. Must run after the theme/prefs wiring above so a startup

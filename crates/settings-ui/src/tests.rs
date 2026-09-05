@@ -122,12 +122,14 @@ mod cases {
         // A file literally named default.json must never shadow the built-in.
         std::fs::write(dir.join("default.json"), SAMPLE_THEME).unwrap();
 
+        // T20-005: the built-in "default" first, then one entry per user
+        // registry variant, id = "<file stem>/<variant name>".
         let list = scan_themes(&dir);
         assert_eq!(list[0].id, "default");
         assert!(list[0].builtin);
         let ids: Vec<&str> = list.iter().map(|t| t.id.as_str()).collect();
-        assert_eq!(ids, vec!["default", "good"]);
-        assert_eq!(list[1].name, "Sample");
+        assert_eq!(ids, vec!["default", "good/dark", "good/light"]);
+        assert_eq!(list[1].name, "Sample \u{2014} dark");
         assert!(!list[1].builtin);
 
         std::fs::remove_dir_all(&dir).ok();

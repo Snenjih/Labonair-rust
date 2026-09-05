@@ -30,7 +30,7 @@ pub use labonair_command_palette::{
 pub use labonair_notifications::{notification_center, Notification};
 pub use labonair_settings::SettingsStore;
 pub use labonair_settings_content::areas::AREAS;
-pub use labonair_theme::{ThemeFile, ThemePreference, ThemeStore};
+pub use labonair_theme::{ThemePreference, ThemeStore};
 pub use labonair_ui_kit::{
     banner, button, disclosure, h_stack, list_header, list_separator, number_field,
     segmented_control, select_popover, select_trigger, v_stack, ButtonSize, ButtonVariant,
@@ -377,7 +377,7 @@ impl SettingsView {
         self.pending_scroll = None;
         window.focus(&self.focus);
         self.refresh_mcp_status(cx);
-        self.refresh_themes();
+        self.refresh_themes(cx);
         if self.active_theme_id.is_none() {
             let stored = self.prefs.read(cx).get().app_theme.clone();
             if !stored.is_empty() && stored != "default" {

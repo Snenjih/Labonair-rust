@@ -1049,7 +1049,54 @@ the reference?" after a T20-002/003 migration.
   `checked` / severity tints / `NumberField` clamping / `Disclosure` chevron
   are all real.
 
----
+### 8.18 `ThemeRegistry` + JSON theme families — T20-005
+
+`crates/theme/src/registry.rs` adds a **registry** on top of the T02-003
+single-custom-theme model: `ThemeFamilyContent` (`{ name, author?, themes:
+[{ name, appearance, colors }] }`, a flat token→color map that inherits the
+built-in default of the same `appearance` for any token it omits),
+`ThemeRegistry` (`builtin()` from the embedded `assets/themes/labonair.json`
++ `load_user_themes(dir)`, `list() -> Vec<ThemeMeta>`, `get(id)` /
+`resolve(id, appearance)` → `Result<Theme, ThemeNotFoundError>`,
+`resolve_family_variant` for the per-mode override), and `ThemeMeta`
+(`family_id` = source file stem / `"default"`, `family`, `variant_name`,
+`appearance`, `builtin`).
+
+`ThemeStore` holds the registry + `active_family` + `registry_variant`. It
+resolves the active family through `resolve_family_variant` into the same
+`custom` slot the legacy `import_theme_file` path uses, so
+preference/appearance switching and font overrides keep working unchanged.
+`set_active_theme(id)` / `set_registry_variant` / `reload_user_themes(dir)`
+are the new entry points; `preview_registry_theme` is the palette-hover path.
+
+**Deviations from the task's literal wording (deviation process, Critical
+Rule 3 / settings-guidelines):**
+
+* **No `JsonSchema` derive on `ThemeFamilyContent`.** `labonair-theme` is the
+  zero-workspace-dep leaf crate (`scripts/check_crate_deps.py`
+  `"labonair-theme": set()`); pulling `schemars` into it for a derive the
+  acceptance criteria don't require was judged not worth the leaf-crate
+  weight. A JSON-Schema for theme files can be added under T19-006's
+  schema-generation umbrella if a need appears.
+* **`set_active_theme` does not itself write `appearance.app_theme`.**
+  `labonair-theme` cannot depend on `labonair-settings` (`SettingsStore`).
+  Persistence stays where it already lived: `labonair-settings-ui`
+  (`apply.rs` / the Themes pane) writes `appTheme` and then calls
+  `ThemeStore::set_active_theme`. This is the same split the pre-T20-005 code
+  used for the imported-theme id.
+* **Built-in family JSON is full-color, generated.** `assets/themes/
+  labonair.json` carries every `COLOR_TOKENS` hex for both variants,
+  regenerated from `tokens.rs` with `REGEN_BUILTIN_THEME=1 cargo test -p
+  labonair-theme builtin_json` — so "built-in JSON == hardcoded theme" is a
+  real equality test (±1/255 per channel, matching the existing
+  export-round-trip tolerance), not a tautology over an empty map.
+
+**Live-reload** is driven from `labonair-shell` (it already depends on
+`labonair-settings`): `settings::watch_dir(themes_dir, …)` (new sibling of
+`watch_file`, filters on the `.json` extension) → `reload_theme_registry`
+→ `ThemeStore::reload_user_themes` re-resolves the active family or falls
+back to the built-in if its file vanished. `labonair-theme` gains no
+`notify` dependency.
 
 ---
 

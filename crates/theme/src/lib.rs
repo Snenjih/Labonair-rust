@@ -12,6 +12,7 @@ mod color;
 pub mod fonts;
 mod import;
 mod prefs;
+pub mod registry;
 pub mod store;
 mod tokens;
 
@@ -21,6 +22,10 @@ pub use fonts::{
 };
 pub use import::{ThemeFile, ThemeFileVariant, COLOR_TOKENS};
 pub use prefs::{EditorThemeId, ThemePreference};
+pub use registry::{
+    Appearance, ThemeFamilyContent, ThemeMeta, ThemeNotFoundError, ThemeRegistry,
+    ThemeVariantContent, BUILTIN_FAMILY,
+};
 pub use store::{
     active_theme, init as init_theme, init_fonts, menu_metrics, modal_scrim, theme_store,
     FontOverrides, GlobalTheme, ThemeMode, ThemeStore, SCROLLBAR_SIZE,

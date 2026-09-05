@@ -180,7 +180,7 @@ pub fn open_settings_window(slug: Option<&'static str>, cx: &mut App) {
                 {
                     v.navigate_to_slug(slug);
                 }
-                v.refresh_themes();
+                v.refresh_themes(cx);
                 v.refresh_mcp_status(cx);
                 v.load_system_fonts(cx);
                 window.focus(&v.focus);

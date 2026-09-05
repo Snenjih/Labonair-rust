@@ -4,7 +4,75 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
-## Last Session: 2026-09-05 (T20-004 — Component Gallery / debug window)
+## Last Session: 2026-09-05 (T20-005 — ThemeRegistry + JSON theme families)
+
+**T20-005 done.** The T02-003 "one built-in light/dark + optionally one
+imported custom theme" model is now a **registry of theme families**, each
+with named light/dark variants, from embedded + user JSON, runtime-switchable
+with fs-watch live-reload.
+
+- **`crates/theme/src/registry.rs`** (new, ~440 lines incl. 7 tests):
+  `ThemeFamilyContent { name, author?, themes: [ThemeVariantContent { name,
+  appearance: "light"|"dark", colors: BTreeMap<token,String> }] }` —
+  `from_json` accepts the new array shape **and** the legacy `ThemeFile`
+  (`variants` map) via `impl From<&ThemeFile>`, so existing user files still
+  load. `ThemeRegistry`: `builtin()` (embedded `assets/themes/labonair.json`),
+  `load_user_themes(dir)` (skip broken → `Vec<String>` warnings, never empty),
+  `list() -> Vec<ThemeMeta { family_id, family, variant_name, appearance,
+  builtin }>`, `get(id)` / `resolve(id, appearance)` →
+  `Result<Theme, ThemeNotFoundError>`, `resolve_family_variant(family,
+  appearance, Option<variant>)` for the per-mode override, `family_of(id)`.
+  Ids: `"<file stem>/<variant name>"`; `"default"` = built-in family id
+  (`BUILTIN_FAMILY_ID`, kept as the historical `appTheme` sentinel). Omitted
+  tokens inherit the same-appearance built-in default via the existing
+  `import::set_token` (made `pub(crate)`).
+- **`assets/themes/labonair.json`** — full-color both variants, generated from
+  `tokens.rs` via `ThemeFamilyContent::from_themes`; regen with
+  `REGEN_BUILTIN_THEME=1 cargo test -p labonair-theme builtin_json`. Equality
+  test asserts ±1/255 per channel vs `Theme::light()/dark()`.
+- **`ThemeStore`** gained `registry`, `active_family`, `registry_variant`
+  fields + `registry()`, `list_themes()`, `active_theme_id()`,
+  `set_active_theme(id) -> Result`, `set_registry_variant(Option<name>)`,
+  `registry_variant()`, `reload_user_themes(dir) -> Vec<String>`,
+  `preview_registry_theme(id)`. `reresolve_custom()` now also resolves
+  `active_family` through the registry into the same `custom`/`custom_base`
+  slot the legacy import path uses (so mode-follow + font-overrides keep
+  working). Legacy `set_custom_theme` / `import_theme_file_variant` /
+  `clear_custom_theme` now clear `active_family` so the two paths don't fight.
+  2 new gpui tests (registry activate+mode-follow+fallback; live swap + vanished
+  family → built-in).
+- **`labonair-settings` `watch_dir(cx, dir, cb)`** — new sibling of
+  `watch_file`, filters events on the `.json` extension, `create_dir_all`s the
+  dir. Exported from `settings.rs`.
+- **`labonair-settings-ui`** — `apply.rs`: `apply_prefs_to_theme` now reloads
+  the registry from `themes_dir()` + `set_active_theme(p.app_theme)` +
+  `apply_stored_theme_variant` (override keyed by **family id** now, was theme
+  id); new public `reload_theme_registry` + `user_themes_dir`. `theme_choices`
+  / `scan_themes` → one `ThemeEntry` per non-builtin registry variant
+  (`id = "<stem>/<variant>"`, `name = "<family> — <variant>"`), `"default"`
+  first. `preview_app_theme` → `ThemeStore::preview_registry_theme`.
+  `panes/themes.rs`: `refresh_themes(cx)` (was no-arg) also reloads the store
+  registry; `activate_theme`/`delete_theme`/`import_theme_from`/
+  `apply_stored_variant`/`set_theme_variant`/`render_variant_picker` rewired
+  onto `set_active_theme` / `set_registry_variant` / `registry().family_of` /
+  `registry().family_variants`. `read_theme_file_in` + its `ThemeFile` import
+  are now `#[cfg(test)]` (only the test module still uses them).
+- **`crates/shell/src/bootstrap.rs`** — after `apply_prefs_to_theme`, a
+  `labonair_settings::watch_dir(user_themes_dir(), …)` → `reload_theme_registry`
+  so a dropped/edited/removed `*.json` re-resolves the active theme with no
+  restart. `labonair-theme` gains **no** `notify` dep.
+- **Deviations (documented `docs/architecture.md §8.18`, task file):** no
+  `JsonSchema` derive on `ThemeFamilyContent` (zero-dep leaf crate);
+  `set_active_theme` does not write `appearance.app_theme` itself (persistence
+  stays in settings-ui — `labonair-theme` ↛ `labonair-settings`).
+- **Gates:** `fmt --check`, `check --workspace --all-targets`, `clippy
+  --workspace --all-targets -D warnings`, `test --workspace` (0 failures),
+  `scripts/check-crate-deps.sh` (24 crates, acyclic) — all green.
+- **Not `cargo run`-verified** (headless) — user visual check of live theme
+  switching / System-appearance variant pick / broken-file-ignored is open.
+- **Next task: T20-006** (Icon-Themes — JSON, switchable; `tasks/phase-19-ui-kit/`).
+
+## Previous Session: 2026-09-05 (T20-004 — Component Gallery / debug window)
 
 **T20-004 done.** New debug-only component gallery: a hand-maintained page
 (not a `Component`-trait registry) showing every `labonair-ui-kit` primitive

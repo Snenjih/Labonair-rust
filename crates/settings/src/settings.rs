@@ -39,7 +39,7 @@ pub use store::{
     ensure_user_settings_file, settings_schema_path, user_settings_path, SettingsLayer,
     SettingsStore, WorktreeId,
 };
-pub use watch::watch_file;
+pub use watch::{watch_dir, watch_file};
 
 // Re-exported so `#[derive(RegisterSetting)]`'s generated code can address
 // `gpui`/`inventory` through this crate's own path, whatever the consuming

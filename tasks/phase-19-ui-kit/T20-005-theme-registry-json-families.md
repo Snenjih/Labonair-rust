@@ -1,7 +1,7 @@
 # T20-005: `ThemeRegistry` + JSON-Theme-Familien
 
 ## Status
-📋 Geplant
+✅ Done
 
 ## Phase
 19 — UI-Kit & Theme-System
@@ -77,21 +77,41 @@ geladen (eingebettete + User-Ordner), zur Laufzeit umschaltbar, mit Live-Reload.
    eine kaputte Theme-Datei wird ignoriert (Warnung), App läuft weiter.
 
 ## Akzeptanzkriterien
-- [ ] JSON-Theme-Format (`ThemeFamilyContent`) + eingebettete Built-in-Datei;
-      Test „Built-in-JSON == bisheriges hartkodiertes Theme".
-- [ ] `ThemeRegistry` lädt eingebettete + User-Themes, listet Metadaten,
-      liefert `Theme` per ID, überspringt kaputte Dateien mit Warnung.
-- [ ] `ThemeStore` nutzt die Registry; `set_active_theme` persistiert nach
-      `appearance.app_theme`; Preference/System-Appearance wählt die Variante.
-- [ ] Nicht gesetzte Tokens erben den Default derselben Appearance.
-- [ ] Live-Reload des User-Themes-Ordners.
-- [ ] Settings-Theme-Pane: alle Themes wählbar mit Swatches, Import,
-      Ordner öffnen, Light/Dark-Override.
-- [ ] Tests decken Round-Trip, Built-in-Gleichheit, Erben, Fallback,
-      User-Load, Live-Reload.
-- [ ] Gates grün: `cargo fmt --check`, `cargo check --workspace --all-targets`,
+- [x] JSON-Theme-Format (`ThemeFamilyContent`) + eingebettete Built-in-Datei
+      (`crates/theme/assets/themes/labonair.json`, full-color, regenerierbar
+      via `REGEN_BUILTIN_THEME=1`); Test „Built-in-JSON == hartkodiertes Theme"
+      (`registry::tests::builtin_json_round_trips_to_the_hardcoded_theme`).
+- [x] `ThemeRegistry` lädt eingebettete + User-Themes, listet `ThemeMeta`,
+      liefert `Theme` per ID (`get`/`resolve`/`ThemeNotFoundError`), überspringt
+      kaputte Dateien mit Warnung.
+- [x] `ThemeStore` nutzt die Registry (`set_active_theme`/`registry()`/
+      `reload_user_themes`); Preference/System-Appearance wählt die Variante.
+      **Deviation:** die `appearance.app_theme`-Persistenz bleibt in
+      `labonair-settings-ui` (`labonair-theme` darf nicht auf `SettingsStore`
+      zeigen) — dokumentiert in `docs/architecture.md §8.18`.
+- [x] Nicht gesetzte Tokens erben den Default derselben Appearance
+      (`missing_tokens_inherit_the_same_appearance_default`).
+- [x] Live-Reload des User-Themes-Ordners (`labonair_settings::watch_dir` in
+      `labonair-shell` → `reload_theme_registry` → `ThemeStore::reload_user_themes`;
+      `store::tests::reload_user_themes_live_swaps_and_drops_a_vanished_family`).
+- [x] Settings-Theme-Pane: alle Registry-Varianten als Swatch-Karten wählbar,
+      Import / Export / „Open themes folder", Light/Dark-Variant-Override
+      (`render_variant_picker` jetzt registry-basiert).
+- [x] Tests decken Round-Trip, Built-in-Gleichheit, Erben, Fallback,
+      User-Load, Live-Reload (7 `registry::tests` + 2 neue `store::tests`).
+- [x] Gates grün: `cargo fmt --check`, `cargo check --workspace --all-targets`,
       `cargo clippy --workspace --all-targets -- -D warnings`,
-      `cargo test --workspace`.
+      `cargo test --workspace`, `scripts/check-crate-deps.sh`.
+
+## Umsetzungshinweise (T20-005)
+- **`JsonSchema` derive weggelassen** — `labonair-theme` bleibt der
+  Null-Workspace-Dep-Leaf-Crate; `schemars` dafür einzuziehen war nicht
+  gerechtfertigt (keine Akzeptanzkriterien-Anforderung). Siehe §8.18.
+- Legacy-`ThemeFile` (`variants`-Map) wird von `ThemeFamilyContent::from_json`
+  weiter akzeptiert → bestehende User-Theme-Dateien laden unverändert.
+- Theme-IDs: `"<Datei-Stamm>/<Variantenname>"` bzw. `"default"` (Built-in).
+- **Nicht mit `cargo run` verifiziert** (headless) — visuelle Prüfung durch
+  den Nutzer offen.
 
 ## Notizen
 - Critical Rule 3 bleibt: die **Built-in**-Werte kommen weiter 1:1 aus

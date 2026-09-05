@@ -278,7 +278,7 @@ fn norm(key: &str) -> String {
 }
 
 /// Apply one color token to `theme`. Returns `false` for an unknown key.
-fn set_token(theme: &mut Theme, key: &str, c: gpui::Hsla) -> bool {
+pub(crate) fn set_token(theme: &mut Theme, key: &str, c: gpui::Hsla) -> bool {
     match norm(key).as_str() {
         "background" => theme.core.background = c,
         "foreground" => theme.core.foreground = c,
@@ -369,7 +369,7 @@ fn set_token(theme: &mut Theme, key: &str, c: gpui::Hsla) -> bool {
 
 /// Read one color token back out — inverse of [`set_token`], used by export.
 /// Only the canonical keys in [`COLOR_TOKENS`] are passed here.
-fn get_token(theme: &Theme, key: &str) -> gpui::Hsla {
+pub(crate) fn get_token(theme: &Theme, key: &str) -> gpui::Hsla {
     match key {
         "background" => theme.core.background,
         "foreground" => theme.core.foreground,

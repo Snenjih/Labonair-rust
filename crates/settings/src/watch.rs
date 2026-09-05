@@ -213,6 +213,51 @@ pub fn watch_file(cx: &App, path: PathBuf, on_change: impl Fn(&mut App) + 'stati
     .detach();
 }
 
+/// As [`watch_file`], but watches a whole directory: `on_change` fires whenever
+/// any `*.json` file in `dir` is created / modified / removed. Used by
+/// `labonair-shell`'s theme registry live-reload (T20-005 — the user themes
+/// folder is a directory of theme files, not a single file). Creates `dir` if
+/// it doesn't exist so a first drop of a theme file is still caught.
+pub fn watch_dir(cx: &App, dir: PathBuf, on_change: impl Fn(&mut App) + 'static) {
+    let _ = std::fs::create_dir_all(&dir);
+
+    let dirty = Arc::new(AtomicBool::new(false));
+    let dirty_cb = dirty.clone();
+
+    let debouncer = new_debouncer(
+        POLL_INTERVAL,
+        move |res: Result<Vec<DebouncedEvent>, notify::Error>| {
+            if let Ok(events) = res {
+                if events
+                    .iter()
+                    .any(|e| e.path.extension().and_then(|x| x.to_str()) == Some("json"))
+                {
+                    dirty_cb.store(true, Ordering::SeqCst);
+                }
+            }
+        },
+    );
+    let Ok(mut debouncer) = debouncer else {
+        tracing::warn!("labonair-settings: failed to start the fs-watch debouncer for {dir:?}");
+        return;
+    };
+    if let Err(e) = debouncer.watcher().watch(&dir, RecursiveMode::NonRecursive) {
+        tracing::warn!(error = %e, dir = %dir.display(), "labonair-settings: failed to watch dir");
+        return;
+    }
+
+    cx.spawn(async move |cx| {
+        let _debouncer = debouncer;
+        loop {
+            cx.background_executor().timer(POLL_INTERVAL).await;
+            if dirty.swap(false, Ordering::SeqCst) && cx.update(|cx| on_change(cx)).is_err() {
+                break;
+            }
+        }
+    })
+    .detach();
+}
+
 #[cfg(test)]
 mod tests {
     //! The GPUI-side poll loop is exercised end-to-end by

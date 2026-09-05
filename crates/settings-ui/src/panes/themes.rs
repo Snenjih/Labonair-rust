@@ -18,10 +18,13 @@ impl SettingsView {
     // ── appearance: themes ────────────────────────────────────────────────
 
     /// Rescans the user themes directory (`config_dir()/themes/*.json`) and
-    /// rebuilds [`Self::theme_files`]. The built-in "Labonair" default is
-    /// always first.
-    pub(crate) fn refresh_themes(&mut self) {
+    /// rebuilds both [`Self::theme_files`] (the picker list) and the live
+    /// [`labonair_theme::ThemeRegistry`] inside the shared `ThemeStore`. The
+    /// built-in "Labonair" default is always first.
+    pub(crate) fn refresh_themes(&mut self, cx: &mut Context<Self>) {
         self.theme_files = scan_themes(&themes_dir());
+        self.theme
+            .update(cx, |t, cx| t.reload_user_themes(&themes_dir(), cx));
     }
 
     /// Load the scanned system font list once (async, off the main thread) for
@@ -45,36 +48,19 @@ impl SettingsView {
         .detach();
     }
 
-    /// Activates a listed theme. `"default"` clears any custom override and
-    /// reverts to the built-in light/dark themes.
+    /// Activates a listed theme by registry id (`"default"` reverts to the
+    /// built-in light/dark themes; otherwise `"<file stem>/<variant>"` or a
+    /// bare family id).
     pub(crate) fn activate_theme(&mut self, id: &str, cx: &mut Context<Self>) {
-        if id == "default" {
-            self.theme.update(cx, |t, cx| t.clear_custom_theme(cx));
-            self.active_theme_id = None;
-            self.set_pref("appTheme", Value::String("default".into()), cx);
-            cx.notify();
-            return;
-        }
-        let file = match read_theme_file_in(&themes_dir(), id) {
-            Ok(f) => f,
+        match self.theme.update(cx, |t, cx| t.set_active_theme(id, cx)) {
+            Ok(()) => {
+                self.active_theme_id = (id != "default").then(|| id.to_string());
+                self.set_pref("appTheme", Value::String(id.to_string()), cx);
+            }
             Err(e) => {
-                self.notify_error(cx, "Failed to load theme", e);
+                self.notify_error(cx, "Failed to activate theme", e);
                 return;
             }
-        };
-        let result = self.theme.update(cx, |t, cx| t.import_theme_file(file, cx));
-        match result {
-            Ok(warnings) => {
-                self.active_theme_id = Some(id.to_string());
-                self.set_pref("appTheme", Value::String(id.to_string()), cx);
-                if !warnings.is_empty() {
-                    self.notify(
-                        cx,
-                        Notification::warning("Theme applied with warnings", warnings.join("; ")),
-                    );
-                }
-            }
-            Err(e) => self.notify_error(cx, "Invalid theme", e),
         }
         self.apply_stored_variant(id, cx);
         cx.notify();
@@ -88,35 +74,45 @@ impl SettingsView {
         }
     }
 
-    /// Re-apply the persisted `themeVariantOverrides[id][mode]` selection (if
-    /// any) to the freshly-activated imported theme.
+    /// The registry family id of the active (or given) theme id.
+    fn family_of(&self, id: &str, cx: &Context<Self>) -> Option<String> {
+        self.theme.read(cx).registry().family_of(id)
+    }
+
+    /// Re-apply the persisted `themeVariantOverrides[family][mode]` selection
+    /// (if any) to the freshly-activated registry family.
     pub(crate) fn apply_stored_variant(&mut self, id: &str, cx: &mut Context<Self>) {
         let mode = self.resolved_mode_str(cx);
+        let Some(family) = self.family_of(id, cx) else {
+            return;
+        };
         let key = self
             .prefs
             .read(cx)
             .get()
             .theme_variant_overrides
-            .get(id)
+            .get(&family)
             .and_then(|v| v.get(mode))
             .and_then(|v| v.as_str())
             .map(|s| s.to_string());
-        if key.is_some() {
-            self.theme.update(cx, |t, cx| t.set_custom_variant(key, cx));
-        }
+        self.theme
+            .update(cx, |t, cx| t.set_registry_variant(key, cx));
     }
 
     /// Persist and apply a named theme-variant selection for the active
-    /// imported theme (Catppuccin frappe / macchiato / mocha, …).
+    /// registry family (Catppuccin frappe / macchiato / mocha, …).
     pub(crate) fn set_theme_variant(&mut self, key: Option<String>, cx: &mut Context<Self>) {
         let Some(id) = self.active_theme_id.clone() else {
+            return;
+        };
+        let Some(family) = self.family_of(&id, cx) else {
             return;
         };
         let mode = self.resolved_mode_str(cx);
         let mut overrides = self.prefs.read(cx).get().theme_variant_overrides.clone();
         {
             let entry = overrides
-                .entry(id)
+                .entry(family)
                 .or_insert_with(|| Value::Object(Default::default()));
             if let Some(obj) = entry.as_object_mut() {
                 match &key {
@@ -134,7 +130,8 @@ impl SettingsView {
             serde_json::to_value(&overrides).unwrap_or(Value::Null),
             cx,
         );
-        self.theme.update(cx, |t, cx| t.set_custom_variant(key, cx));
+        self.theme
+            .update(cx, |t, cx| t.set_registry_variant(key, cx));
         cx.notify();
     }
 
@@ -164,31 +161,32 @@ impl SettingsView {
             Ok(r) => r,
             Err(e) => return self.notify_error(cx, "Failed to read theme", e.to_string()),
         };
-        let file = match ThemeFile::from_json(&raw).and_then(|f| f.validate().map(|_| f)) {
-            Ok(f) => f,
-            Err(e) => return self.notify_error(cx, "Invalid theme file", e),
-        };
-        let id = src
+        // Accept both the new family format and the legacy `variants` map.
+        if let Err(e) = labonair_theme::ThemeFamilyContent::from_json(&raw) {
+            return self.notify_error(cx, "Invalid theme file", e);
+        }
+        let stem = src
             .file_stem()
             .and_then(|s| s.to_str())
             .filter(|s| !s.is_empty())
             .unwrap_or("imported-theme")
             .to_string();
-        if let Err(e) = save_theme_file_in(&themes_dir(), &id, &raw) {
+        if let Err(e) = save_theme_file_in(&themes_dir(), &stem, &raw) {
             return self.notify_error(cx, "Failed to save theme", e);
         }
-        match self.theme.update(cx, |t, cx| t.import_theme_file(file, cx)) {
-            Ok(_) => {
-                self.set_pref("appTheme", Value::String(id.clone()), cx);
-                self.active_theme_id = Some(id);
-                self.notify(
-                    cx,
-                    Notification::success("Theme imported", "The theme is now active."),
-                );
-            }
-            Err(e) => self.notify_error(cx, "Invalid theme", e),
-        }
-        self.refresh_themes();
+        self.refresh_themes(cx);
+        // Activate the imported family's first variant (its full registry id).
+        let id = self
+            .theme_files
+            .iter()
+            .find(|t| t.id.split('/').next() == Some(stem.as_str()))
+            .map(|t| t.id.clone())
+            .unwrap_or(stem);
+        self.activate_theme(&id, cx);
+        self.notify(
+            cx,
+            Notification::success("Theme imported", "The theme is now active."),
+        );
         cx.notify();
     }
 
@@ -226,21 +224,31 @@ impl SettingsView {
         .detach();
     }
 
-    /// Deletes a user theme file. Built-in themes are protected.
+    /// Deletes a user theme file. Built-in themes are protected. `id` may be a
+    /// bare family id or a `"<stem>/<variant>"` id — the file stem is the part
+    /// before the first `/`.
     pub(crate) fn delete_theme(&mut self, id: &str, cx: &mut Context<Self>) {
-        if id == "default" {
+        let stem = id.split('/').next().unwrap_or(id);
+        if stem == "default" {
             return;
         }
-        if let Err(e) = delete_theme_in(&themes_dir(), id) {
+        if let Err(e) = delete_theme_in(&themes_dir(), stem) {
             self.notify_error(cx, "Failed to delete theme", e);
             return;
         }
-        if self.active_theme_id.as_deref() == Some(id) {
-            self.theme.update(cx, |t, cx| t.clear_custom_theme(cx));
+        let dropped_active = self
+            .active_theme_id
+            .as_deref()
+            .and_then(|a| a.split('/').next())
+            == Some(stem);
+        if dropped_active {
+            self.theme.update(cx, |t, cx| {
+                let _ = t.set_active_theme("default", cx);
+            });
             self.active_theme_id = None;
             self.set_pref("appTheme", Value::String("default".into()), cx);
         }
-        self.refresh_themes();
+        self.refresh_themes(cx);
         cx.notify();
     }
 
@@ -296,7 +304,7 @@ impl SettingsView {
                 this.installing_themes.remove(&remote.id);
                 match res {
                     Ok(_) => {
-                        this.refresh_themes();
+                        this.refresh_themes(cx);
                         this.notify(
                             cx,
                             Notification::success("Theme installed", remote.name.clone()),
@@ -325,7 +333,7 @@ impl SettingsView {
             let _ = this.update(cx, |this, cx| {
                 match res {
                     Ok((meta, _path)) => {
-                        this.refresh_themes();
+                        this.refresh_themes(cx);
                         this.activate_theme(&meta.id, cx);
                         this.notify(
                             cx,
@@ -556,8 +564,13 @@ impl SettingsView {
         c: &Palette,
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
-        let installed: std::collections::HashSet<&str> =
-            self.theme_files.iter().map(|t| t.id.as_str()).collect();
+        // `theme_files` ids are `"<stem>/<variant>"`; a community entry's id is
+        // the bare stem — compare on the stem.
+        let installed: std::collections::HashSet<&str> = self
+            .theme_files
+            .iter()
+            .map(|t| t.id.split('/').next().unwrap_or(t.id.as_str()))
+            .collect();
         let cards: Vec<_> =
             self.community_themes
                 .iter()
@@ -713,21 +726,32 @@ impl SettingsView {
         )
     }
 
-    /// A segmented control over the named variants of the active imported theme
-    /// (only rendered when it exposes more than one variant for the current
-    /// appearance — e.g. Catppuccin frappe / macchiato / mocha).
+    /// A segmented control over the named variants of the active registry
+    /// family for the current appearance (only rendered when the family exposes
+    /// more than one — e.g. Catppuccin frappe / macchiato / mocha).
     pub(crate) fn render_variant_picker(
         &self,
         c: &Palette,
         cx: &mut Context<Self>,
     ) -> Option<gpui::AnyElement> {
+        let id = self.active_theme_id.clone()?;
         let t = self.theme.read(cx);
-        let dark = matches!(t.mode(), labonair_theme::ThemeMode::Dark);
-        let choices = t.custom_theme_file()?.variant_choices(dark);
+        let want = match t.mode() {
+            labonair_theme::ThemeMode::Dark => labonair_theme::Appearance::Dark,
+            labonair_theme::ThemeMode::Light => labonair_theme::Appearance::Light,
+        };
+        let family = t.registry().family_of(&id)?;
+        let choices: Vec<(String, String)> = t
+            .registry()
+            .family_variants(&family)
+            .into_iter()
+            .filter(|(_, ap)| *ap == want)
+            .map(|(name, _)| (name.clone(), name))
+            .collect();
         if choices.len() < 2 {
             return None;
         }
-        let current = t.custom_variant_key().map(|s| s.to_string());
+        let current = t.registry_variant().map(|s| s.to_string());
         let active = current
             .clone()
             .unwrap_or_else(|| choices.first().map(|(k, _)| k.clone()).unwrap_or_default());

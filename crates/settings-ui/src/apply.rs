@@ -13,7 +13,9 @@ use serde_json::Value;
 use labonair_backend::modules::fs::paths::config_dir;
 use labonair_backend::modules::settings::preferences::Preferences;
 use labonair_command_palette::{resolve_conflict, Conflict, KeybindMap, ShortcutId};
-use labonair_theme::{ThemeFile, ThemeStore};
+#[cfg(test)]
+use labonair_theme::ThemeFile;
+use labonair_theme::{ThemeRegistry, ThemeStore};
 
 use crate::store::PreferencesStore;
 use crate::view::ThemeEntry;
@@ -57,29 +59,83 @@ pub(crate) fn font_overrides_from(p: &Preferences) -> labonair_theme::FontOverri
     }
 }
 
-/// Push the font + editor-syntax-theme preferences into the [`ThemeStore`].
-/// Used at startup (`AppShell`) and on every settings change.
+/// Push the font + editor-syntax-theme preferences into the [`ThemeStore`], and
+/// (re)load + activate the persisted registry theme (T20-005). Used at startup
+/// (`AppShell`) and on every settings change.
 pub fn apply_prefs_to_theme(p: &Preferences, theme: &Entity<ThemeStore>, cx: &mut App) {
     let overrides = font_overrides_from(p);
     theme.update(cx, |t, cx| t.set_font_overrides(overrides, cx));
     if let Some(id) = labonair_theme::EditorThemeId::from_slug(&p.editor_theme) {
         theme.update(cx, |t, cx| t.set_editor_theme(id, cx));
     }
-    // Restore the active JSON app theme (+ persisted variant) on startup.
-    if !p.app_theme.is_empty() && p.app_theme != "default" {
-        if let Ok(file) = read_theme_file_in(&themes_dir(), &p.app_theme) {
-            let dark = matches!(theme.read(cx).mode(), labonair_theme::ThemeMode::Dark);
-            let key = p
-                .theme_variant_overrides
-                .get(&p.app_theme)
-                .and_then(|v| v.get(if dark { "dark" } else { "light" }))
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string());
-            let _ = theme.update(cx, |t, cx| t.import_theme_file_variant(file, key, cx));
-        }
+
+    // Rescan the user themes directory into the registry, then activate the
+    // persisted id (`""` / `"default"` → built-in light/dark).
+    theme.update(cx, |t, cx| {
+        t.reload_user_themes(&themes_dir(), cx);
+    });
+    let id = if p.app_theme.is_empty() {
+        "default"
     } else {
-        theme.update(cx, |t, cx| t.clear_custom_theme(cx));
+        p.app_theme.as_str()
+    };
+    if theme
+        .update(cx, |t, cx| t.set_active_theme(id, cx))
+        .is_err()
+    {
+        // Stale id (e.g. a deleted theme) — fall back to the built-in.
+        theme.update(cx, |t, cx| {
+            let _ = t.set_active_theme("default", cx);
+        });
     }
+    apply_stored_theme_variant(&p.theme_variant_overrides, theme, cx);
+}
+
+/// Rescan the user themes directory into the live [`ThemeStore`] registry and
+/// re-resolve the active theme (+ its persisted variant). Called on startup by
+/// [`apply_prefs_to_theme`] and by `labonair-shell`'s fs-watch on the themes
+/// folder (T20-005 live-reload).
+pub fn reload_theme_registry(
+    prefs: &Entity<PreferencesStore>,
+    theme: &Entity<ThemeStore>,
+    cx: &mut App,
+) {
+    theme.update(cx, |t, cx| {
+        t.reload_user_themes(&themes_dir(), cx);
+    });
+    let overrides = prefs.read(cx).get().theme_variant_overrides.clone();
+    apply_stored_theme_variant(&overrides, theme, cx);
+}
+
+/// The user themes directory (`<config_dir>/labonair/themes`).
+pub fn user_themes_dir() -> PathBuf {
+    themes_dir()
+}
+
+/// Re-apply the persisted `themeVariantOverrides[family][mode]` selection to the
+/// active registry family for the currently-resolved appearance.
+pub(crate) fn apply_stored_theme_variant(
+    overrides: &std::collections::BTreeMap<String, serde_json::Value>,
+    theme: &Entity<ThemeStore>,
+    cx: &mut App,
+) {
+    let (family, appearance) = {
+        let t = theme.read(cx);
+        let Some(family) = t.registry().family_of(&t.active_theme_id()) else {
+            return;
+        };
+        let appearance = match t.mode() {
+            labonair_theme::ThemeMode::Dark => "dark",
+            labonair_theme::ThemeMode::Light => "light",
+        };
+        (family, appearance)
+    };
+    let key = overrides
+        .get(&family)
+        .and_then(|v| v.get(appearance))
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+    theme.update(cx, |t, cx| t.set_registry_variant(key, cx));
 }
 
 pub(crate) fn themes_dir() -> PathBuf {
@@ -103,34 +159,10 @@ pub fn preview_app_theme(
     theme: &Entity<ThemeStore>,
     cx: &mut App,
 ) {
+    let _ = prefs;
     match id {
-        None | Some("default") => theme.update(cx, |t, cx| {
-            if id.is_none() {
-                t.cancel_preview(cx);
-            } else {
-                t.preview_theme_file(None, None, cx);
-            }
-        }),
-        Some(id) => {
-            let Ok(file) = read_theme_file_in(&themes_dir(), id) else {
-                return;
-            };
-            let mode = match theme.read(cx).mode() {
-                labonair_theme::ThemeMode::Dark => "dark",
-                labonair_theme::ThemeMode::Light => "light",
-            };
-            let key = prefs
-                .read(cx)
-                .get()
-                .theme_variant_overrides
-                .get(id)
-                .and_then(|v| v.get(mode))
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string());
-            theme.update(cx, |t, cx| {
-                t.preview_theme_file(Some(&file), key.as_deref(), cx)
-            });
-        }
+        None => theme.update(cx, |t, cx| t.cancel_preview(cx)),
+        Some(id) => theme.update(cx, |t, cx| t.preview_registry_theme(id, cx)),
     }
 }
 
@@ -149,39 +181,29 @@ pub fn activate_app_theme(
     apply_prefs_to_theme(&p, theme, cx);
 }
 
-/// Scans `dir` for valid user theme files. The built-in "Labonair" default is
-/// always the first entry; user themes follow, sorted by display name.
+/// The selectable theme list (T20-005): the built-in "Labonair" entry (id
+/// `"default"`, follows the system light/dark preference) first, then one entry
+/// per user registry variant — `id = "<file stem>/<variant name>"`,
+/// `name = "<family> — <variant>"`.
 pub(crate) fn scan_themes(dir: &Path) -> Vec<ThemeEntry> {
+    let mut reg = ThemeRegistry::builtin();
+    reg.load_user_themes(dir);
     let mut entries = vec![ThemeEntry {
         id: "default".to_string(),
         name: "Labonair".to_string(),
         builtin: true,
     }];
-    if let Ok(rd) = fs::read_dir(dir) {
-        let mut users: Vec<ThemeEntry> = rd
-            .flatten()
-            .filter(|e| e.path().extension().and_then(|x| x.to_str()) == Some("json"))
-            .filter_map(|e| {
-                let path = e.path();
-                let id = path.file_stem()?.to_str()?.to_string();
-                if id == "default" {
-                    return None;
-                }
-                let file = ThemeFile::from_json(&fs::read_to_string(&path).ok()?).ok()?;
-                file.validate().ok()?;
-                Some(ThemeEntry {
-                    id,
-                    name: file.name,
-                    builtin: false,
-                })
-            })
-            .collect();
-        users.sort_by_key(|a| a.name.to_lowercase());
-        entries.extend(users);
+    for meta in reg.list().into_iter().filter(|m| !m.builtin) {
+        entries.push(ThemeEntry {
+            id: meta.id(),
+            name: format!("{} \u{2014} {}", meta.family, meta.variant_name),
+            builtin: false,
+        });
     }
     entries
 }
 
+#[cfg(test)]
 pub(crate) fn read_theme_file_in(dir: &Path, id: &str) -> Result<ThemeFile, String> {
     let raw = fs::read_to_string(dir.join(format!("{id}.json"))).map_err(|e| e.to_string())?;
     ThemeFile::from_json(&raw)

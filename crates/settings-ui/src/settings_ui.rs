@@ -24,7 +24,10 @@ mod window;
 #[cfg(test)]
 mod tests;
 
-pub use apply::{activate_app_theme, apply_prefs_to_theme, preview_app_theme, theme_choices};
+pub use apply::{
+    activate_app_theme, apply_prefs_to_theme, preview_app_theme, reload_theme_registry,
+    theme_choices, user_themes_dir,
+};
 pub use store::{GlobalPreferences, PreferencesStore};
 pub use view::SettingsView;
 pub use window::{open_settings_window, set_keybind_apply_hook, set_settings_deps};
