@@ -139,6 +139,10 @@ impl Titlebar {
             .relative()
             .flex_shrink_0()
             .child(
+                // T20-003: an icon-only 26px trigger — doesn't fit
+                // `icon_toggle_button`'s fixed 20/32/36px `ToggleSize` scale
+                // (the titlebar's single-button layout contract, doc-comment
+                // above, fixes this at 26px), documented exception.
                 div()
                     .id("account-menu")
                     .size(px(26.0))

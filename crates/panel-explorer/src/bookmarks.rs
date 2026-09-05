@@ -15,6 +15,7 @@ use gpui::{
 };
 use labonair_backend::modules::bookmarks as model;
 use labonair_backend::modules::bookmarks::{BookmarkContext, PathBookmark};
+use labonair_ui_kit::{button, list_header, ButtonSize, ButtonVariant, ListItem, Palette};
 
 use crate::theme::ThemeStore;
 use crate::workspace::Workspace;
@@ -183,6 +184,7 @@ impl Render for BookmarksView {
         let (fg, muted, border, card) =
             (t.foreground(), t.muted_foreground(), t.border(), t.card());
         let sel_fill = t.selected_fill();
+        let c = Palette::from_theme(t);
 
         let hosts = self.workspace.read(cx).known_hosts(cx);
         let host_ids: Vec<String> = hosts.iter().map(|(id, _)| id.clone()).collect();
@@ -206,40 +208,23 @@ impl Render for BookmarksView {
             if section.bookmarks.is_empty() {
                 continue;
             }
-            list = list.child(
-                div()
-                    .px(px(12.0))
-                    .pt(px(6.0))
-                    .pb(px(2.0))
-                    .text_size(px(9.0))
-                    .text_color(muted)
-                    .child(SharedString::from(section.title.to_uppercase())),
-            );
+            list = list.child(list_header(section.title.to_uppercase(), muted));
             for bm in &section.bookmarks {
                 let orphaned = model::is_bookmark_orphaned(bm, &host_ids);
                 let label = bm.label.clone().unwrap_or_else(|| bm.path.clone());
                 let bm_pick = bm.clone();
                 let id_remove = bm.id.clone();
                 let row_id = SharedString::from(format!("bookmark-row-{}", bm.id));
-                let label_id = SharedString::from(format!("bookmark-label-{}", bm.id));
                 let remove_id = SharedString::from(format!("bookmark-remove-{}", bm.id));
+                let remove_btn = button(remove_id, c, ButtonVariant::Ghost, ButtonSize::IconXs)
+                    .child("\u{00d7}")
+                    .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                        this.remove(id_remove.clone(), cx)
+                    }));
                 list = list.child(
-                    div()
-                        .id(row_id)
-                        .flex()
-                        .items_center()
-                        .justify_between()
-                        .gap(px(8.0))
-                        .mx(px(4.0))
-                        .px(px(crate::theme::menu_metrics::ITEM_PAD_X))
-                        .h(px(26.0))
-                        .rounded_sm()
-                        .text_size(px(12.0))
-                        .text_color(fg)
-                        .hover(|s| s.bg(sel_fill))
+                    ListItem::new(row_id, fg, muted, sel_fill)
                         .child(
                             div()
-                                .id(label_id)
                                 .flex_1()
                                 .min_w_0()
                                 .flex()
@@ -252,23 +237,12 @@ impl Render for BookmarksView {
                                             .text_color(muted)
                                             .child("host removed"),
                                     )
-                                })
-                                .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
-                                    this.pick(bm_pick.clone(), cx)
-                                })),
+                                }),
                         )
-                        .child(
-                            div()
-                                .id(remove_id)
-                                .px(px(4.0))
-                                .text_size(px(12.0))
-                                .text_color(muted)
-                                .hover(|s| s.text_color(fg))
-                                .child("\u{00d7}")
-                                .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
-                                    this.remove(id_remove.clone(), cx)
-                                })),
-                        ),
+                        .trailing(remove_btn)
+                        .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                            this.pick(bm_pick.clone(), cx)
+                        })),
                 );
             }
         }
@@ -312,15 +286,18 @@ impl Render for BookmarksView {
                             .child("Path Bookmarks")
                             .when(can_add, |d| {
                                 d.child(
-                                    div()
-                                        .id("bookmark-add-current")
-                                        .text_size(px(11.0))
-                                        .text_color(muted)
-                                        .hover(|s| s.text_color(fg))
-                                        .child("+ Add current folder")
-                                        .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
-                                            this.add_current(cx)
-                                        })),
+                                    button(
+                                        "bookmark-add-current",
+                                        c,
+                                        ButtonVariant::Ghost,
+                                        ButtonSize::Xs,
+                                    )
+                                    .text_color(muted)
+                                    .hover(|s| s.text_color(fg))
+                                    .child("+ Add current folder")
+                                    .on_click(cx.listener(
+                                        |this, _: &ClickEvent, _w, cx| this.add_current(cx),
+                                    )),
                                 )
                             }),
                     )

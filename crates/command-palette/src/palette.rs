@@ -1440,6 +1440,13 @@ where
             }
             let is_sel = i == selected;
             let actionable = !matches!(row.key, RowKey::Noop);
+            // T20-003: not a `ListItem` — non-actionable (`Noop`) rows must
+            // render with no hover/cursor-pointer at full opacity, but
+            // `ListItem` always adds hover+pointer unless `.disabled()`
+            // (which also drops opacity to 0.5). The border-left selection
+            // indicator, icon-chip background square, and selection-
+            // dependent horizontal padding are also outside `ListItem`'s
+            // shape. Documented exception.
             let mut r = div()
                 .id(("palette-row", i))
                 .flex()
@@ -1541,6 +1548,11 @@ where
                     );
                 }
                 let is_current = idx == last;
+                // T20-003: a breadcrumb pill that is a plain bg-fill on the
+                // current page and only hoverable/clickable on prior pages —
+                // no `ui-kit` primitive is a plain, non-square, conditionally
+                // interactive pill; documented exception (same shape as
+                // `hosts.rs`'s `render_group_chips`).
                 crumbs = crumbs.child(
                     div()
                         .id(("crumb", idx))
@@ -1595,6 +1607,10 @@ where
             .border_t_1()
             .border_color(border)
             .child(
+                // T20-003: a subtle bordered footer mode-indicator chip —
+                // `button()`'s pill (`rounded.xl4`) and fixed size scale
+                // would visibly change this small rectangular badge's shape;
+                // documented exception.
                 div()
                     .id("palette-search-mode")
                     .px(px(6.0))

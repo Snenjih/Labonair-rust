@@ -2066,20 +2066,23 @@ impl HostManagerView {
                             )),
                     )
                     .child(
-                        div()
-                            .id(SharedString::from(format!("tun-del-{i}")))
-                            .text_xs()
-                            .text_color(p.muted)
-                            .cursor_pointer()
-                            .child("Remove tunnel")
-                            .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                        labonair_ui_kit::button(
+                            SharedString::from(format!("tun-del-{i}")),
+                            *p,
+                            labonair_ui_kit::ButtonVariant::Outline,
+                            labonair_ui_kit::ButtonSize::Xs,
+                        )
+                        .child("Remove tunnel")
+                        .on_click(cx.listener(
+                            move |this, _: &ClickEvent, _w, cx| {
                                 if let Some(f) = this.form.as_mut() {
                                     if i < f.tunnels.len() {
                                         f.tunnels.remove(i);
                                     }
                                 }
                                 cx.notify();
-                            })),
+                            },
+                        )),
                     )
             })
             .collect::<Vec<_>>();
@@ -2869,6 +2872,7 @@ impl HostManagerView {
                 let alias = e.alias.clone();
                 let checked = state.selected.contains(&alias);
                 let exists = existing_names.contains(e.alias.as_str());
+                let (p_accent, p_border) = (p.accent, p.border);
                 let meta = format!(
                     "{}:{}{}{}{}",
                     e.host_address,
@@ -2887,48 +2891,50 @@ impl HostManagerView {
                         .map(|j| format!("  \u{00b7}  via {j}"))
                         .unwrap_or_default(),
                 );
-                div()
-                    .id(SharedString::from(format!("imp-{alias}")))
-                    .flex()
-                    .items_center()
-                    .gap_2()
-                    .px_2()
-                    .py_1()
-                    .rounded_md()
-                    .border_1()
-                    .border_color(if checked { p.accent } else { p.border })
-                    .cursor_pointer()
-                    // T20-001: shared `Checkbox` primitive.
-                    .child(checkbox("", *p, checked).box_only())
-                    .child(
-                        div()
-                            .flex_1()
-                            .min_w_0()
-                            .flex()
-                            .flex_col()
-                            .child(div().text_sm().text_color(p.fg).child(SharedString::from(
-                                if exists {
-                                    format!("{alias}  (already exists)")
-                                } else {
-                                    alias.clone()
-                                },
-                            )))
-                            .child(
-                                div()
-                                    .text_xs()
-                                    .text_color(p.muted)
-                                    .child(SharedString::from(meta)),
-                            ),
-                    )
-                    .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
-                        if let Some(s) = this.import.as_mut() {
-                            if !s.selected.remove(&alias) {
-                                s.selected.insert(alias.clone());
-                            }
+                ListItem::new(
+                    SharedString::from(format!("imp-{alias}")),
+                    p.fg,
+                    p.muted,
+                    p.border,
+                )
+                // T20-001: shared `Checkbox` primitive.
+                .child(checkbox("", *p, checked).box_only())
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .flex()
+                        .flex_col()
+                        .child(div().text_sm().text_color(p.fg).child(SharedString::from(
+                            if exists {
+                                format!("{alias}  (already exists)")
+                            } else {
+                                alias.clone()
+                            },
+                        )))
+                        .child(
+                            div()
+                                .text_xs()
+                                .text_color(p.muted)
+                                .child(SharedString::from(meta)),
+                        ),
+                )
+                .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                    if let Some(s) = this.import.as_mut() {
+                        if !s.selected.remove(&alias) {
+                            s.selected.insert(alias.clone());
                         }
-                        cx.notify();
-                    }))
-                    .into_any_element()
+                    }
+                    cx.notify();
+                }))
+                .extra(move |row| {
+                    row.rounded_md().border_1().border_color(if checked {
+                        p_accent
+                    } else {
+                        p_border
+                    })
+                })
+                .into_any_element()
             })
             .collect();
 
@@ -3073,34 +3079,37 @@ impl HostManagerView {
             .map(|h| {
                 let id = h.id.clone();
                 let checked = state.selected.contains(&id);
-                div()
-                    .id(SharedString::from(format!("exp-{id}")))
-                    .flex()
-                    .items_center()
-                    .gap_2()
-                    .px_2()
-                    .py_1()
-                    .rounded_md()
-                    .border_1()
-                    .border_color(if checked { p.accent } else { p.border })
-                    .cursor_pointer()
-                    // T20-001: shared `Checkbox` primitive.
-                    .child(checkbox("", *p, checked).box_only())
-                    .child(div().flex_1().min_w_0().text_sm().text_color(p.fg).child(
-                        SharedString::from(format!(
-                            "{}  \u{00b7}  {}@{}:{}",
-                            h.name, h.username, h.host_address, h.port
-                        )),
-                    ))
-                    .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
-                        if let Some(s) = this.export.as_mut() {
-                            if !s.selected.remove(&id) {
-                                s.selected.insert(id.clone());
-                            }
+                let (p_accent, p_border) = (p.accent, p.border);
+                ListItem::new(
+                    SharedString::from(format!("exp-{id}")),
+                    p.fg,
+                    p.muted,
+                    p.border,
+                )
+                // T20-001: shared `Checkbox` primitive.
+                .child(checkbox("", *p, checked).box_only())
+                .child(div().flex_1().min_w_0().text_sm().text_color(p.fg).child(
+                    SharedString::from(format!(
+                        "{}  \u{00b7}  {}@{}:{}",
+                        h.name, h.username, h.host_address, h.port
+                    )),
+                ))
+                .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                    if let Some(s) = this.export.as_mut() {
+                        if !s.selected.remove(&id) {
+                            s.selected.insert(id.clone());
                         }
-                        cx.notify();
-                    }))
-                    .into_any_element()
+                    }
+                    cx.notify();
+                }))
+                .extra(move |row| {
+                    row.rounded_md().border_1().border_color(if checked {
+                        p_accent
+                    } else {
+                        p_border
+                    })
+                })
+                .into_any_element()
             })
             .collect();
 
@@ -3177,6 +3186,7 @@ impl Render for HostManagerView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let p = self.palette(cx);
         let accent = p.accent;
+        let p_card = p.card;
         let visible = self.visible_hosts();
         let quick = self.quick_connect_target();
 
@@ -3212,18 +3222,7 @@ impl Render for HostManagerView {
             );
 
         let quick_card = quick.clone().map(|(user, host, port)| {
-            div()
-                .id("quick-connect")
-                .flex()
-                .items_center()
-                .justify_between()
-                .px_2()
-                .py_1()
-                .rounded_md()
-                .border_1()
-                .border_color(accent)
-                .bg(p.card)
-                .cursor_pointer()
+            ListItem::new("quick-connect", p.fg, p.muted, p.border)
                 .child(
                     div()
                         .text_xs()
@@ -3232,10 +3231,11 @@ impl Render for HostManagerView {
                             "Quick Connect  {user}@{host}:{port}"
                         ))),
                 )
-                .child(IconName::Zap.svg(accent).size(px(12.0)))
+                .trailing(IconName::Zap.svg(accent).size(px(12.0)))
                 .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
                     this.quick_connect(user.clone(), host.clone(), port, cx)
                 }))
+                .extra(move |row| row.rounded_md().border_1().border_color(accent).bg(p_card))
         });
 
         // ── left pane: actions toolbar ───────────────────────────────────

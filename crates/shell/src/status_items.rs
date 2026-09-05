@@ -31,27 +31,18 @@ use crate::theme::ThemeStore;
 use crate::updater::{UpdaterStatus, UpdaterView};
 use crate::workspace::Workspace;
 
-/// A small icon-only status-bar button with the reference toggle styling.
-#[allow(clippy::too_many_arguments)]
+/// A small icon-only status-bar button, built on the shared
+/// [`icon_toggle_button`] (T20-003) — these actions aren't sticky-pressed
+/// toggles, so `pressed` is always `false`, but the chrome (20px, hover
+/// bg/fg swap) is otherwise identical to the panel-toggle cluster above.
 fn simple_bar_button<T: 'static>(
     key: &'static str,
     icon: IconName,
-    fg: gpui::Hsla,
-    muted: gpui::Hsla,
-    border: gpui::Hsla,
+    c: Palette,
     cx: &mut Context<T>,
     on_click: impl Fn(&mut T, &mut Window, &mut Context<T>) + 'static,
 ) -> AnyElement {
-    div()
-        .id(key)
-        .size(px(20.0))
-        .flex()
-        .items_center()
-        .justify_center()
-        .rounded_md()
-        .text_color(muted)
-        .hover(|s| s.bg(border).text_color(fg))
-        .child(icon.svg(muted))
+    icon_toggle_button(key, c, icon, false)
         .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
             on_click(this, window, cx);
         }))
@@ -368,20 +359,12 @@ impl StatusItem for NotificationsStatusItem {
             let t = self.theme.read(cx);
             (t.foreground(), t.muted_foreground(), t.accent(), t.border())
         };
+        let c = Palette::from_theme(self.theme.read(cx));
 
-        let bell = div()
-            .id("bar-notifications")
+        let bell = icon_toggle_button("bar-notifications", c, IconName::Bell, self.open.is_some())
             .track_focus(&self.focus)
             .key_context("StatusPopover")
             .relative()
-            .size(px(20.0))
-            .flex()
-            .items_center()
-            .justify_center()
-            .rounded_md()
-            .text_color(muted)
-            .hover(|s| s.bg(border).text_color(fg))
-            .child(IconName::Bell.svg(muted))
             .when(count > 0, |d| {
                 d.child(
                     div()
@@ -451,17 +434,22 @@ impl StatusItem for NotificationsStatusItem {
                     .text_color(fg2)
                     .child("Notifications")
                     .child(
-                        div()
-                            .id("bar-notif-clear")
-                            .text_xs()
-                            .text_color(muted2)
-                            .hover(|s| s.text_color(fg2))
-                            .child("Clear all")
-                            .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
+                        labonair_ui_kit::button(
+                            "bar-notif-clear",
+                            c,
+                            labonair_ui_kit::ButtonVariant::Ghost,
+                            labonair_ui_kit::ButtonSize::Xs,
+                        )
+                        .text_color(muted2)
+                        .hover(|s| s.text_color(fg2))
+                        .child("Clear all")
+                        .on_click(cx.listener(
+                            |this, _: &ClickEvent, _w, cx| {
                                 this.center.update(cx, |n, cx| n.clear_all(cx));
                                 this.open = None;
                                 cx.notify();
-                            })),
+                            },
+                        )),
                     ),
             )
             .children(snapshots.into_iter().take(6).map(|s| {
@@ -592,9 +580,9 @@ impl CwdStatusItem {
         let cwd = self.workspace.read(cx).active_cwd(cx);
         let file_path = self.workspace.read(cx).active_file_path(cx);
         let home = Self::home_dir();
-        let (fg, muted, border) = {
+        let (fg, muted) = {
             let theme = self.theme.read(cx);
-            (theme.foreground(), theme.muted_foreground(), theme.border())
+            (theme.foreground(), theme.muted_foreground())
         };
         let text_px = 11.0_f32;
 
@@ -650,18 +638,18 @@ impl CwdStatusItem {
                 if i == 1 {
                     row = row
                         .child(
-                            div()
-                                .id("crumb-collapse")
-                                .px(px(6.0))
-                                .text_size(px(text_px))
-                                .text_color(muted)
-                                .rounded_sm()
-                                .hover(|s| s.bg(border).text_color(fg))
-                                .child(IconName::Ellipsis.svg(muted))
-                                .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
+                            icon_toggle_button(
+                                "crumb-collapse",
+                                Palette::from_theme(self.theme.read(cx)),
+                                IconName::Ellipsis,
+                                false,
+                            )
+                            .on_click(cx.listener(
+                                |this, _: &ClickEvent, _w, cx| {
                                     this.expanded = true;
                                     cx.notify();
-                                })),
+                                },
+                            )),
                         )
                         .child(div().text_color(muted).text_size(px(text_px)).child("/"));
                 }
@@ -711,6 +699,12 @@ impl CwdStatusItem {
         let show_chevron = is_current && current_is_dropdown;
         let seg_click = seg.clone();
         let seg_menu = seg.clone();
+        // T20-003: a `rounded_full` breadcrumb-segment pill with an optional
+        // leading home icon and trailing chevron, plus a right-click menu on
+        // the same element — no `ui-kit` primitive matches this shape
+        // (`ListItem` is a full-width row, `button`/`icon_toggle_button` are
+        // square), documented exception (same shape as `hosts.rs`'s
+        // `render_group_chips`).
         div()
             .id(SharedString::from(format!("crumb-{}", seg.full_path)))
             .flex()
@@ -1186,16 +1180,11 @@ impl StatusItem for TransfersStatusItem {
         if self.transfers.read(cx).active_count() == 0 {
             return div().into_any_element();
         }
-        let (fg, muted, border) = {
-            let t = self.theme.read(cx);
-            (t.foreground(), t.muted_foreground(), t.border())
-        };
+        let c = Palette::from_theme(self.theme.read(cx));
         simple_bar_button(
             "bar-transfers",
             IconName::ArrowDownUp,
-            fg,
-            muted,
-            border,
+            c,
             cx,
             |this, _window, cx| {
                 this.workspace.update(cx, |w, cx| w.reveal_transfers(cx));
@@ -1469,16 +1458,11 @@ impl StatusItem for JumpHostsStatusItem {
     }
 
     fn render_status(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
-        let (fg, muted, border) = {
-            let t = self.theme.read(cx);
-            (t.foreground(), t.muted_foreground(), t.border())
-        };
+        let c = Palette::from_theme(self.theme.read(cx));
         simple_bar_button(
             "bar-jump-hosts",
             IconName::Server,
-            fg,
-            muted,
-            border,
+            c,
             cx,
             |this, _window, cx| {
                 this.workspace.update(cx, |w, cx| w.open_host_settings(cx));
@@ -1528,16 +1512,11 @@ impl StatusItem for BookmarksStatusItem {
     }
 
     fn render_status(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
-        let (fg, muted, border) = {
-            let t = self.theme.read(cx);
-            (t.foreground(), t.muted_foreground(), t.border())
-        };
+        let c = Palette::from_theme(self.theme.read(cx));
         simple_bar_button(
             "bar-bookmarks",
             IconName::Bookmark,
-            fg,
-            muted,
-            border,
+            c,
             cx,
             |this, window, cx| {
                 this.bookmarks.update(cx, |b, cx| b.toggle(window, cx));

@@ -1436,13 +1436,10 @@ impl AiChatView {
                     .items_center()
                     .gap_2()
                     .child(
-                        div()
-                            .id("ai-session-toggle")
+                        button("ai-session-toggle", p, ButtonVariant::Ghost, ButtonSize::Xs)
                             .flex_1()
                             .min_w_0()
-                            .flex()
-                            .items_center()
-                            .gap_1()
+                            .justify_start()
                             .text_xs()
                             .text_color(c.fg)
                             .child(
@@ -2357,6 +2354,11 @@ impl AiChatView {
         }
     }
 
+    // T20-003: this fenced code-block's inline "Run"/"Copy" links only have
+    // `ChatColors` (a plain-color struct, not `ui_kit::Palette`) in scope —
+    // `button()` needs a full `Palette`, and threading one through would mean
+    // widening `ChatColors` and every construction site across the message
+    // renderer. Left as hand-rolled text triggers, documented exception.
     fn render_code_block(
         &self,
         lang: Option<&str>,
@@ -2974,6 +2976,10 @@ impl AiChatView {
                             .child(a.glyph().svg(c.muted).size(px(12.0)))
                             .child(SharedString::from(truncate(&a.label, 28)))
                             .child(
+                                // T20-003: a bare icon glyph inside a compact
+                                // 20px-tall chip — `button()`'s smallest
+                                // square (`IconXs`, 24px) would visibly
+                                // outgrow the chip; documented exception.
                                 div()
                                     .id(SharedString::from(format!("att-{i}")))
                                     .hover(|s| s.text_color(c.error))

@@ -155,6 +155,11 @@ impl Render for SearchOverlay {
             format!("{cur}/{total}")
         };
 
+        // T20-003: a text-glyph mini-button ("Aa"/"↑"/"↓"/"✕") — `ui-kit`'s
+        // `icon_toggle_button`/`button` primitives only accept an `IconName`
+        // from the closed Lucide set, not an arbitrary glyph string, so
+        // swapping in a real primitive would mean adding new icon assets for
+        // a one-off search-bar affordance; documented exception.
         let icon_btn = |id: &'static str, glyph: &str, on: bool| {
             div()
                 .id(id)

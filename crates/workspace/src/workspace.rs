@@ -124,7 +124,8 @@ use labonair_hosts_ui::ssh_connection::{
 use labonair_hosts_ui::{ActiveTunnelRow, HostManagerEvent, HostManagerView, HostStatus};
 use labonair_panel_git_graph::GitGraphView;
 use labonair_ui_kit::{
-    context_menu, h_stack, indicator, IconName, IndicatorSize, MenuItem, Palette,
+    button, context_menu, h_stack, indicator, ButtonSize, ButtonVariant, IconName, IndicatorSize,
+    MenuItem, Palette,
 };
 
 /// Interval for draining backend SSH events into the workspace.
@@ -178,28 +179,26 @@ fn ssh_tab_title(host_label: &str, jump_label: Option<&str>) -> String {
     }
 }
 
-/// Small action button for the SSH loading screen (pill radius, matching the
-/// reference button treatment). Callers add `.on_click(..)`.
+/// Small action button for the SSH loading screen — the shared `button()`
+/// primitive (T20-003), with its per-call tint/border/fg re-applied after so
+/// the accent-vs-muted colors (which vary per call site, unlike `button()`'s
+/// fixed variant palette roles) stay exactly as before. Callers add
+/// `.on_click(..)`.
 fn loading_btn(
     id: &'static str,
     label: &'static str,
+    c: Palette,
     tint: gpui::Hsla,
     border: gpui::Hsla,
     primary: bool,
     fg: gpui::Hsla,
 ) -> gpui::Stateful<gpui::Div> {
-    let base = div()
-        .id(id)
-        .flex()
-        .items_center()
-        .justify_center()
-        .px_3()
-        .py_1()
-        .rounded(px(13.0))
-        .border_1()
-        .text_xs()
-        .cursor_pointer()
-        .child(label);
+    let variant = if primary {
+        ButtonVariant::Default
+    } else {
+        ButtonVariant::Outline
+    };
+    let base = button(id, c, variant, ButtonSize::Xs).child(label);
     if primary {
         base.bg(tint)
             .text_color(fg)
@@ -3310,6 +3309,7 @@ impl Workspace {
             theme.accent(),
             theme.muted_foreground(),
         );
+        let c = Palette::from_theme(theme);
         let destructive = core.destructive;
         let ssh_id = entry.session_id.clone();
         let is_sftp = matches!(entry.kind, ConnectionKind::Sftp);
@@ -3447,47 +3447,45 @@ impl Workspace {
         let mut actions = div().flex().gap_2().justify_end().pt_1();
         match entry.state {
             ConnectionState::Error => {
-                actions = actions
-                    .child(
-                        loading_btn("ssh-l-close", "Close", muted, border, false, fg).on_click(
-                            cx.listener(move |this, _: &ClickEvent, _w, _cx| {
-                                if let Some(id) = tab_id {
-                                    this.pending_tab_close.push(id);
-                                }
-                            }),
-                        ),
-                    )
-                    .child(
-                        loading_btn("ssh-l-edit", "Edit Host", muted, border, false, fg).on_click(
-                            cx.listener(move |this, _: &ClickEvent, _w, cx| {
-                                this.open_host_settings(cx)
-                            }),
-                        ),
-                    )
-                    .child(
-                        loading_btn("ssh-l-retry", "Retry", accent, border, true, fg).on_click(
-                            cx.listener(move |this, _: &ClickEvent, _w, cx| {
-                                this.ssh_prompt = None;
-                                if is_sftp {
-                                    this.ssh_connection
-                                        .update(cx, |s, cx| s.resume(&ssh_id, cx));
-                                    if let Some(tid) = tab_id {
-                                        if let Some(view) = this.sftp_views.get(&tid).cloned() {
-                                            view.update(cx, |v, cx| v.reconnect(cx));
-                                        }
+                actions =
+                    actions
+                        .child(
+                            loading_btn("ssh-l-close", "Close", c, muted, border, false, fg)
+                                .on_click(cx.listener(move |this, _: &ClickEvent, _w, _cx| {
+                                    if let Some(id) = tab_id {
+                                        this.pending_tab_close.push(id);
                                     }
-                                } else {
-                                    this.retry_ssh(&ssh_id, None, None, cx);
-                                }
-                            }),
-                        ),
-                    );
+                                })),
+                        )
+                        .child(
+                            loading_btn("ssh-l-edit", "Edit Host", c, muted, border, false, fg)
+                                .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                                    this.open_host_settings(cx)
+                                })),
+                        )
+                        .child(
+                            loading_btn("ssh-l-retry", "Retry", c, accent, border, true, fg)
+                                .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                                    this.ssh_prompt = None;
+                                    if is_sftp {
+                                        this.ssh_connection
+                                            .update(cx, |s, cx| s.resume(&ssh_id, cx));
+                                        if let Some(tid) = tab_id {
+                                            if let Some(view) = this.sftp_views.get(&tid).cloned() {
+                                                view.update(cx, |v, cx| v.reconnect(cx));
+                                            }
+                                        }
+                                    } else {
+                                        this.retry_ssh(&ssh_id, None, None, cx);
+                                    }
+                                })),
+                        );
                 let _ = host_id;
             }
             ConnectionState::WaitingTrust => {
                 actions = actions
                     .child(
-                        loading_btn("ssh-l-abort", "Abort", muted, border, false, fg).on_click(
+                        loading_btn("ssh-l-abort", "Abort", c, muted, border, false, fg).on_click(
                             cx.listener(|this, _: &ClickEvent, _w, cx| this.cancel_prompt(cx)),
                         ),
                     )
@@ -3499,6 +3497,7 @@ impl Workspace {
                             } else {
                                 "Trust & Connect"
                             },
+                            c,
                             accent,
                             border,
                             true,
@@ -3512,19 +3511,21 @@ impl Workspace {
             _ if is_prompt => {
                 actions = actions
                     .child(
-                        loading_btn("ssh-l-cancel", "Cancel", muted, border, false, fg).on_click(
-                            cx.listener(|this, _: &ClickEvent, _w, cx| this.cancel_prompt(cx)),
-                        ),
+                        loading_btn("ssh-l-cancel", "Cancel", c, muted, border, false, fg)
+                            .on_click(
+                                cx.listener(|this, _: &ClickEvent, _w, cx| this.cancel_prompt(cx)),
+                            ),
                     )
                     .child(
-                        loading_btn("ssh-l-submit", "Submit", accent, border, true, fg).on_click(
-                            cx.listener(|this, _: &ClickEvent, _w, cx| this.submit_prompt(cx)),
-                        ),
+                        loading_btn("ssh-l-submit", "Submit", c, accent, border, true, fg)
+                            .on_click(
+                                cx.listener(|this, _: &ClickEvent, _w, cx| this.submit_prompt(cx)),
+                            ),
                     );
             }
             _ => {
                 actions = actions.child(
-                    loading_btn("ssh-l-cancel2", "Cancel", muted, border, false, fg).on_click(
+                    loading_btn("ssh-l-cancel2", "Cancel", c, muted, border, false, fg).on_click(
                         cx.listener(move |this, _: &ClickEvent, _w, cx| {
                             this.ssh_connection
                                 .update(cx, |s, cx| s.set_error(&ssh_id, "Cancelled by user.", cx));
@@ -3721,6 +3722,13 @@ impl Workspace {
             dur_base
         };
 
+        // T20-003: the tab row (this `close_btn` and the tab `div()` below)
+        // is the app's central, highest-traffic UI element — drag-and-drop
+        // source, inline-rename text field, active/dirty/peek states, and a
+        // right-click menu all live on the same node. No `ui-kit` primitive
+        // (`ListItem`'s hover/selected model, `button()`'s fixed padding
+        // scale) reproduces this exact shape without a visible regression in
+        // the single most-seen control in the app; documented exception.
         let close_btn = div()
             .id(("tab-close", id))
             .px_1()
@@ -3824,6 +3832,7 @@ impl Workspace {
     pub fn render_tab_bar(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = self.theme.read(cx);
         let (muted, fg, border) = (theme.muted_foreground(), theme.foreground(), theme.border());
+        let c = Palette::from_theme(theme);
         let tabs = self.tabs.read(cx).tabs().to_vec();
 
         div()
@@ -3854,14 +3863,8 @@ impl Workspace {
                     .children(tabs.iter().map(|t| self.render_tab(t, cx))),
             )
             .child(
-                div()
-                    .id("tab-new")
+                button("tab-new", c, ButtonVariant::Ghost, ButtonSize::IconXs)
                     .flex_shrink_0()
-                    .size(px(24.0))
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .rounded_md()
                     .text_color(muted)
                     .hover(|s| s.bg(border).text_color(fg))
                     .child("+")
@@ -4305,6 +4308,7 @@ impl Workspace {
             theme.accent(),
             theme.muted_foreground(),
         );
+        let c = Palette::from_theme(theme);
         let label = self
             .tabs
             .read(cx)
@@ -4339,11 +4343,7 @@ impl Workspace {
                             .gap_2()
                             .justify_end()
                             .child(
-                                div()
-                                    .id("confirm-cancel")
-                                    .px_3()
-                                    .py_1()
-                                    .rounded_md()
+                                button("confirm-cancel", c, ButtonVariant::Ghost, ButtonSize::Sm)
                                     .text_color(muted)
                                     .hover(|s| s.bg(border).text_color(fg))
                                     .child("Cancel")
@@ -4353,20 +4353,21 @@ impl Workspace {
                                     })),
                             )
                             .child(
-                                div()
-                                    .id("confirm-discard")
-                                    .px_3()
-                                    .py_1()
-                                    .rounded_md()
-                                    .bg(accent)
-                                    .text_color(fg)
-                                    .hover(|s| s.opacity(0.85))
-                                    .child("Discard")
-                                    .on_click(cx.listener(
-                                        move |this, _: &ClickEvent, window, cx| {
-                                            this.do_close(id, window, cx);
-                                        },
-                                    )),
+                                button(
+                                    "confirm-discard",
+                                    c,
+                                    ButtonVariant::Default,
+                                    ButtonSize::Sm,
+                                )
+                                .bg(accent)
+                                .text_color(fg)
+                                .hover(|s| s.opacity(0.85))
+                                .child("Discard")
+                                .on_click(cx.listener(
+                                    move |this, _: &ClickEvent, window, cx| {
+                                        this.do_close(id, window, cx);
+                                    },
+                                )),
                             ),
                     ),
             )
@@ -4729,6 +4730,13 @@ impl Workspace {
         };
 
         let multi = tabs.len() > 1;
+        // T20-003: the `dock-tab-*` strip below is a borderless, minimal
+        // accent-tint highlight — `SegmentedControl`'s two looks
+        // (bordered-pill `Outline` / bg-muted-track `Solid`) would visibly
+        // add a border or track background this dock header doesn't have.
+        // The `dock-move-*` trigger is a text glyph ("↑"/"⇄"), not an
+        // `IconName`, same constraint as `search_overlay`'s mini-buttons.
+        // Documented exception.
         let header = div()
             .flex()
             .items_center()

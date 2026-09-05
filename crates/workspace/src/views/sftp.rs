@@ -1199,6 +1199,10 @@ impl SftpView {
             .into_any_element()
     }
 
+    // T20-003: a click-to-edit path field (view + a `KeyDownEvent`-driven
+    // edit box on click) — same shape as `panel-scm`'s `text_field` and the
+    // settings-ui click-to-edit triggers; no `ui-kit` text-input primitive
+    // fits this focus-toggling pattern, documented exception.
     fn render_path_bar(
         &self,
         side: Side,

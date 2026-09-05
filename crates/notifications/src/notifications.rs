@@ -391,6 +391,7 @@ pub fn notify_err<T>(
 use gpui::{
     div, px, InteractiveElement, IntoElement, ParentElement, StatefulInteractiveElement, Styled,
 };
+use labonair_ui_kit::{button, ButtonSize, ButtonVariant, Palette};
 
 /// Builds the stacked toast overlay for the app shell. Returns `None` when
 /// there is nothing to show. The overlay container only occupies its own
@@ -413,6 +414,7 @@ pub fn render_overlay<Th: UiTheme + 'static>(
         theme.muted_foreground(),
         theme.border(),
     );
+    let c = Palette::from_theme(theme);
 
     let toasts = snapshots.into_iter().map(|t| {
         let accent = t.severity.color(theme);
@@ -469,6 +471,10 @@ pub fn render_overlay<Th: UiTheme + 'static>(
                             .child(div().text_color(muted).child(t.body.clone())),
                     )
                     .child(
+                        // T20-003: a 16px icon-only close glyph — smaller
+                        // than any `ButtonSize::Icon*` scale (24/36/32/40px);
+                        // bumping it up would visibly enlarge the toast's
+                        // close affordance, documented exception.
                         div()
                             .id(("toast-close", id))
                             .flex_shrink_0()
@@ -487,18 +493,19 @@ pub fn render_overlay<Th: UiTheme + 'static>(
             )
             .children(action_label.map(|label| {
                 div().flex().justify_end().child(
-                    div()
-                        .id(("toast-action", id))
-                        .px_2()
-                        .py_0p5()
-                        .rounded_md()
-                        .bg(accent)
-                        .text_color(card)
-                        .hover(|s| s.opacity(0.9))
-                        .child(label)
-                        .on_click(move |_, window, cx| {
-                            center_action.update(cx, |c, cx| c.trigger_action(id, window, cx));
-                        }),
+                    button(
+                        ("toast-action", id),
+                        c,
+                        ButtonVariant::Default,
+                        ButtonSize::Xs,
+                    )
+                    .bg(accent)
+                    .text_color(card)
+                    .hover(|s| s.opacity(0.9))
+                    .child(label)
+                    .on_click(move |_, window, cx| {
+                        center_action.update(cx, |c, cx| c.trigger_action(id, window, cx));
+                    }),
                 )
             }))
             .into_any_element()

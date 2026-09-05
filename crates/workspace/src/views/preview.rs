@@ -24,7 +24,7 @@ use gpui::{
     ObjectFit, SharedString, Window,
 };
 
-use labonair_ui_kit::{divider, Axis};
+use labonair_ui_kit::{button, divider, Axis, ButtonSize, ButtonVariant, Palette};
 
 use crate::markdown::{parse_markdown, Inline, MdBlock};
 use crate::theme::ThemeStore;
@@ -185,7 +185,7 @@ impl Render for PreviewView {
         let muted = theme.muted_foreground();
         let border = theme.border();
         let accent = theme.accent();
-        let card = theme.card();
+        let c = Palette::from_theme(theme);
 
         let address = if self.url.is_empty() {
             SharedString::from("No address")
@@ -238,18 +238,14 @@ impl Render for PreviewView {
                 .p_6()
                 .child(div().text_color(muted).child(why.clone()))
                 .child(
-                    div()
-                        .id("preview-open-external")
-                        .px_3()
-                        .py_1p5()
-                        .rounded_md()
-                        .border_1()
-                        .border_color(border)
-                        .bg(card)
-                        .text_color(fg)
-                        .hover(|s| s.bg(accent))
-                        .on_click(cx.listener(|this, _: &ClickEvent, _, _| this.open_external()))
-                        .child("Open in system browser"),
+                    button(
+                        "preview-open-external",
+                        c,
+                        ButtonVariant::Outline,
+                        ButtonSize::Sm,
+                    )
+                    .on_click(cx.listener(|this, _: &ClickEvent, _, _| this.open_external()))
+                    .child("Open in system browser"),
                 )
                 .into_any_element(),
             Content::Error(msg) => div()
@@ -288,10 +284,7 @@ impl Render for PreviewView {
                             .child(address),
                     )
                     .child(
-                        div()
-                            .id("preview-reload")
-                            .px_2()
-                            .text_size(px(11.0))
+                        button("preview-reload", c, ButtonVariant::Ghost, ButtonSize::Xs)
                             .text_color(muted)
                             .hover(|s| s.text_color(fg))
                             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.reload(cx)))
@@ -299,10 +292,7 @@ impl Render for PreviewView {
                     )
                     .when(!self.url.is_empty(), |d| {
                         d.child(
-                            div()
-                                .id("preview-external")
-                                .px_2()
-                                .text_size(px(11.0))
+                            button("preview-external", c, ButtonVariant::Ghost, ButtonSize::Xs)
                                 .text_color(muted)
                                 .hover(|s| s.text_color(fg))
                                 .on_click(

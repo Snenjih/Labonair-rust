@@ -1729,31 +1729,43 @@ impl GitPanelView {
                     .items_center()
                     .gap(px(8.0))
                     .child(
-                        div()
-                            .id("git-diff-layout")
-                            .text_color(c.muted)
-                            .hover(|s| s.text_color(c.fg))
-                            .child(SharedString::from(if self.diff_split {
-                                "Unified"
-                            } else {
-                                "Split"
-                            }))
-                            .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
+                        button(
+                            "git-diff-layout",
+                            c.palette,
+                            ButtonVariant::Ghost,
+                            ButtonSize::Xs,
+                        )
+                        .text_color(c.muted)
+                        .hover(|s| s.text_color(c.fg))
+                        .child(SharedString::from(if self.diff_split {
+                            "Unified"
+                        } else {
+                            "Split"
+                        }))
+                        .on_click(cx.listener(
+                            |this, _: &ClickEvent, _w, cx| {
                                 this.diff_split = !this.diff_split;
                                 cx.notify();
-                            })),
+                            },
+                        )),
                     )
                     .child(
-                        div()
-                            .id("git-diff-close")
-                            .text_color(c.muted)
-                            .hover(|s| s.text_color(c.fg))
-                            .child(SharedString::from("\u{2715}"))
-                            .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
+                        button(
+                            "git-diff-close",
+                            c.palette,
+                            ButtonVariant::Ghost,
+                            ButtonSize::IconXs,
+                        )
+                        .text_color(c.muted)
+                        .hover(|s| s.text_color(c.fg))
+                        .child(SharedString::from("\u{2715}"))
+                        .on_click(cx.listener(
+                            |this, _: &ClickEvent, _w, cx| {
                                 this.selected = None;
                                 this.diff_text = None;
                                 cx.notify();
-                            })),
+                            },
+                        )),
                     ),
             );
 
@@ -1787,20 +1799,24 @@ impl GitPanelView {
                                 .child(SharedString::from(hunk.header.clone()))
                                 .when(!whole, |d| {
                                     d.child(
-                                        div()
-                                            .id(SharedString::from(format!("hunk-{i}")))
-                                            .text_color(c.muted)
-                                            .hover(|s| s.text_color(c.fg))
-                                            .child(SharedString::from(if reverse {
-                                                "Unstage hunk"
-                                            } else {
-                                                "Stage hunk"
-                                            }))
-                                            .on_click(cx.listener(
-                                                move |this, _: &ClickEvent, _w, cx| {
-                                                    this.apply_hunk(i, reverse, cx);
-                                                },
-                                            )),
+                                        button(
+                                            SharedString::from(format!("hunk-{i}")),
+                                            c.palette,
+                                            ButtonVariant::Ghost,
+                                            ButtonSize::Xs,
+                                        )
+                                        .text_color(c.muted)
+                                        .hover(|s| s.text_color(c.fg))
+                                        .child(SharedString::from(if reverse {
+                                            "Unstage hunk"
+                                        } else {
+                                            "Stage hunk"
+                                        }))
+                                        .on_click(
+                                            cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                                                this.apply_hunk(i, reverse, cx);
+                                            }),
+                                        ),
                                     )
                                 }),
                         );
@@ -1851,25 +1867,30 @@ impl GitPanelView {
             .px(px(8.0))
             .text_size(px(11.0))
             .child(
-                div()
-                    .id("git-branch-toggle")
-                    .flex_1()
-                    .overflow_hidden()
-                    .whitespace_nowrap()
-                    .text_color(c.fg)
-                    .hover(|s| s.text_color(c.accent))
-                    .child(SharedString::from(format!(
-                        "\u{2325} {} \u{25BE}",
-                        if state.current_branch.is_empty() {
-                            "\u{2014}"
-                        } else {
-                            &state.current_branch
-                        }
-                    )))
-                    .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
-                        this.branch_picker_open = !this.branch_picker_open;
-                        cx.notify();
-                    })),
+                button(
+                    "git-branch-toggle",
+                    c.palette,
+                    ButtonVariant::Ghost,
+                    ButtonSize::Xs,
+                )
+                .flex_1()
+                .justify_start()
+                .overflow_hidden()
+                .whitespace_nowrap()
+                .text_color(c.fg)
+                .hover(|s| s.text_color(c.accent))
+                .child(SharedString::from(format!(
+                    "\u{2325} {} \u{25BE}",
+                    if state.current_branch.is_empty() {
+                        "\u{2014}"
+                    } else {
+                        &state.current_branch
+                    }
+                )))
+                .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
+                    this.branch_picker_open = !this.branch_picker_open;
+                    cx.notify();
+                })),
             );
         if status.behind > 0 {
             row = row.child(
@@ -1948,6 +1969,11 @@ impl GitPanelView {
             .border_t_1()
             .border_color(c.border)
             .child(
+                // T20-003: a click-to-focus multi-line hand-rolled text
+                // field (GPUI text input here is routed through
+                // `on_commit_key`, same shape as `text_field` below) — no
+                // `ui-kit` text-input primitive fits a multi-line commit
+                // message box, documented exception.
                 div()
                     .id("git-commit-input")
                     .track_focus(&self.commit_focus)
