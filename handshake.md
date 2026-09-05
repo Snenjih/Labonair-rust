@@ -6,6 +6,29 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 ## Current Session: 2026-09-05 (T21-001 — render-path profiling & frame hygiene, in progress)
 
+### Visual parity audit vs reference-src + hover-fill fix (committed)
+
+- Performed a full visual-design comparison of `reference-src/src/styles/globals.css`
+  and the component chrome against the GPUI port. Findings: the **token layer is a
+  genuine 1:1 port** (all oklch colors incl. ANSI-24, radii 3–13px + window 12,
+  animation durations/easings, font sizes 13/14/13). Component-layer gaps cluster
+  into four themes: (1) **border opacity** — the reference uses `border-border/40..60`
+  everywhere; the port renders full-strength `border` (titlebar, statusbar, explorer
+  header, SCM bar); (2) **shadows dead code** — `Theme.shadows` tokens are never applied;
+  popovers use GPUI's hardcoded `shadow_lg()`; (3) **text metrics** — buttons lack
+  `font-medium`, tabs 12 vs 14px, explorer rows 14 vs 13px; (4) **explorer deltas** —
+  indent base 8 vs 6, hover/selected fill `border` vs reference `accent`, content-height
+  header vs fixed 32px. Also: no `Badge` primitive ported; `indicator.tsx` does not
+  exist in the reference (dots are inline `size-1.5`).
+- Fixed one slice of gap (4) in-flight: `ListItem` gained `hover_style(f)`
+  (custom hover fill without the GPUI "hover style already set" panic); host list
+  row (accent-border hover) and SCM file rows (border hover / accent selected) migrated
+  onto it. Committed `864fae0`.
+- Gates: `fmt --check`, `check -p ui-kit/hosts-ui/panel-scm`, `clippy --all-targets
+  -D warnings`, `test` (19+16+34 passed) all green.
+- **Not acted on:** the remaining parity gaps are real but are not formal roadmap tasks.
+  Awaiting a decision whether to log/fix them as work or continue the roadmap.
+
 ### Zed sidebar/status-bar source comparison
 
 - Added `docs/ui-comparison-zed-sidebar-status-bar.md`, a source-level comparison
