@@ -26,6 +26,7 @@ use tokio::runtime::Handle as TokioHandle;
 
 use crate::theme::ThemeStore;
 use labonair_notifications::{notification_center, Notification};
+use labonair_ui_kit::{button, ButtonSize, ButtonVariant, Palette};
 
 const RESTART_DELAY: Duration = Duration::from_millis(700);
 
@@ -482,6 +483,9 @@ impl Render for UpdaterView {
 }
 
 impl UpdaterView {
+    /// Thin wrapper over the shared [`labonair_ui_kit::button`] builder
+    /// (`Xs` size; `Default` variant for primary actions, `Outline`
+    /// otherwise) — replaces the hand-rolled action-button `div()`.
     #[allow(clippy::type_complexity)]
     fn btn(
         &self,
@@ -491,33 +495,15 @@ impl UpdaterView {
         cx: &mut Context<Self>,
         on_click: impl Fn(&mut Self, &mut Context<Self>) + 'static,
     ) -> gpui::AnyElement {
-        let t = self.theme.read(cx);
-        let (fg, muted, accent, border, on_primary) = (
-            t.foreground(),
-            t.muted_foreground(),
-            t.primary(),
-            t.border(),
-            t.background(),
-        );
-        let mut el = div()
-            .id(id)
-            .h(px(28.0))
-            .px_3()
-            .flex()
-            .items_center()
-            .rounded_md()
-            .text_xs()
-            .cursor_pointer()
-            .child(label);
-        el = if primary {
-            el.bg(accent).text_color(on_primary)
+        let p = Palette::from_theme(self.theme.read(cx));
+        let variant = if primary {
+            ButtonVariant::Default
         } else {
-            el.text_color(muted)
-                .hover(|s| s.text_color(fg))
-                .border_1()
-                .border_color(border)
+            ButtonVariant::Outline
         };
-        el.on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| on_click(this, cx)))
+        button(id, p, variant, ButtonSize::Xs)
+            .child(label)
+            .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| on_click(this, cx)))
             .into_any_element()
     }
 }
