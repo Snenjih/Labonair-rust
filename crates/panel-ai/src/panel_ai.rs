@@ -1400,6 +1400,7 @@ impl AiChatView {
     // ── rendering ─────────────────────────────────────────────────────────
 
     fn render_header(&self, c: &ChatColors, cx: &mut Context<Self>) -> impl IntoElement {
+        let p = Palette::from_theme(self.theme.read(cx));
         let store = self.store.read(cx);
         let active_id = store.active_id().map(str::to_string);
         let title = store
@@ -1457,20 +1458,12 @@ impl AiChatView {
                                 cx.notify();
                             })),
                     )
+                    // T20-003: shared `Button` primitive for the header's
+                    // dropdown-trigger pills.
                     .child(
-                        div()
-                            .id("ai-agent-pick")
-                            .flex()
-                            .items_center()
-                            .gap_1()
-                            .px_1p5()
-                            .py_0p5()
-                            .rounded_sm()
-                            .border_1()
-                            .border_color(c.border)
+                        button("ai-agent-pick", p, ButtonVariant::Outline, ButtonSize::Xs)
                             .text_color(c.muted)
                             .text_size(px(10.0))
-                            .hover(|s| s.border_color(c.accent).text_color(c.fg))
                             .child(IconName::Sparkles.svg(c.muted).size(px(11.0)))
                             .child(SharedString::from(self.active_agent_name()))
                             .child("\u{25be}")
@@ -1482,19 +1475,9 @@ impl AiChatView {
                             })),
                     )
                     .child(
-                        div()
-                            .id("ai-model-pick")
-                            .flex()
-                            .items_center()
-                            .gap_1()
-                            .px_1p5()
-                            .py_0p5()
-                            .rounded_sm()
-                            .border_1()
-                            .border_color(c.border)
+                        button("ai-model-pick", p, ButtonVariant::Outline, ButtonSize::Xs)
                             .text_color(c.muted)
                             .text_size(px(10.0))
-                            .hover(|s| s.border_color(c.accent).text_color(c.fg))
                             .child(SharedString::from(model_label))
                             .child("\u{25be}")
                             .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
@@ -1505,23 +1488,22 @@ impl AiChatView {
                             })),
                     )
                     .child(
-                        div()
-                            .id("ai-new-session")
-                            .size(px(20.0))
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .rounded_sm()
-                            .text_color(c.muted)
-                            .hover(|s| s.bg(c.border).text_color(c.fg))
-                            .child("+")
-                            .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
+                        button(
+                            "ai-new-session",
+                            p,
+                            ButtonVariant::Ghost,
+                            ButtonSize::IconXs,
+                        )
+                        .child("+")
+                        .on_click(cx.listener(
+                            |this, _: &ClickEvent, _w, cx| {
                                 this.store.update(cx, |s, cx| {
                                     s.new_session(cx);
                                 });
                                 this.session_menu = false;
                                 cx.notify();
-                            })),
+                            },
+                        )),
                     ),
             )
             .when_some(status, |d, label| {
