@@ -700,8 +700,9 @@ use crate::markdown::{parse_markdown, Inline, MdBlock};
 use crate::syntax_theme::EditorPalette;
 use crate::theme::ThemeStore;
 use labonair_ui_kit::{
-    divider, field_input, segmented_control, toggle_base, Axis, IconName, InputEvent, InputState,
-    ListItem, Palette, SegmentSize, ToggleSize, ToggleVariant,
+    button, disclosure, divider, field_input, segmented_control, toggle_base, Axis, ButtonSize,
+    ButtonVariant, IconName, InputEvent, InputState, ListItem, Palette, SegmentSize, ToggleSize,
+    ToggleVariant, DISABLED_OPACITY,
 };
 
 /// A composer attachment shown as a chip and embedded into the outgoing message.
@@ -2081,24 +2082,24 @@ impl AiChatView {
                 .bg(c.card)
                 .p_1p5()
                 .child(
-                    div()
-                        .id(SharedString::from(format!("reason-{}", m.id)))
-                        .flex()
-                        .items_center()
-                        .gap_1()
-                        .text_size(px(10.0))
-                        .text_color(c.muted)
-                        .child(if expanded {
-                            "\u{25be} Thinking"
-                        } else {
-                            "\u{25b8} Thinking"
-                        })
-                        .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                    // T20-003: shared `Disclosure` chevron+label row instead
+                    // of the hand-rolled ASCII-arrow toggle.
+                    disclosure(
+                        SharedString::from(format!("reason-{}", m.id)),
+                        "Thinking",
+                        !expanded,
+                        c.muted,
+                        c.fg,
+                    )
+                    .text_size(px(10.0))
+                    .on_click(cx.listener(
+                        move |this, _: &ClickEvent, _w, cx| {
                             if !this.expanded_reasoning.remove(&id) {
                                 this.expanded_reasoning.insert(id.clone());
                             }
                             cx.notify();
-                        })),
+                        },
+                    )),
                 )
                 .when(expanded, |d| {
                     d.child(
@@ -2157,6 +2158,7 @@ impl AiChatView {
         c: &ChatColors,
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
+        let p = Palette::from_theme(self.theme.read(cx));
         let pending = matches!(
             tc.status,
             ToolCallStatus::AwaitingApproval | ToolCallStatus::Streaming
@@ -2257,41 +2259,41 @@ impl AiChatView {
             })
             .when(tc.status == ToolCallStatus::AwaitingApproval, |d| {
                 d.child(
+                    // T20-003: shared `Button` primitive.
                     div()
                         .flex()
                         .gap_2()
                         .child(
-                            div()
-                                .id(SharedString::from(format!("approve-{}", tc.id)))
-                                .px_2()
-                                .py_0p5()
-                                .rounded_sm()
-                                .bg(c.accent)
-                                .text_color(c.bg)
-                                .text_size(px(10.0))
-                                .child("Approve")
-                                .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                            button(
+                                SharedString::from(format!("approve-{}", tc.id)),
+                                p,
+                                ButtonVariant::Default,
+                                ButtonSize::Xs,
+                            )
+                            .child("Approve")
+                            .on_click(cx.listener(
+                                move |this, _: &ClickEvent, _w, cx| {
                                     this.store
                                         .update(cx, |s, cx| s.resolve_tool_call(&id_ok, true, cx));
                                     cx.notify();
-                                })),
+                                },
+                            )),
                         )
                         .child(
-                            div()
-                                .id(SharedString::from(format!("reject-{}", tc.id)))
-                                .px_2()
-                                .py_0p5()
-                                .rounded_sm()
-                                .border_1()
-                                .border_color(c.border)
-                                .text_color(c.muted)
-                                .text_size(px(10.0))
-                                .child("Reject")
-                                .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                            button(
+                                SharedString::from(format!("reject-{}", tc.id)),
+                                p,
+                                ButtonVariant::Outline,
+                                ButtonSize::Xs,
+                            )
+                            .child("Reject")
+                            .on_click(cx.listener(
+                                move |this, _: &ClickEvent, _w, cx| {
                                     this.store
                                         .update(cx, |s, cx| s.resolve_tool_call(&id_no, false, cx));
                                     cx.notify();
-                                })),
+                                },
+                            )),
                         ),
                 )
             })
@@ -2504,6 +2506,7 @@ impl AiChatView {
     /// Plan-mode strip above the composer — shows the flag + pending count and
     /// an "Exit" toggle (reference `PlanModeStrip`).
     fn render_plan_strip(&self, c: &ChatColors, cx: &mut Context<Self>) -> impl IntoElement {
+        let p = Palette::from_theme(self.theme.read(cx));
         let pending = self.store.read(cx).plan_queue().len();
         let label = if pending == 0 {
             "Plan mode — edits will be queued for review".to_string()
@@ -2532,12 +2535,8 @@ impl AiChatView {
                     .child(SharedString::from(label)),
             )
             .child(
-                div()
-                    .id("ai-plan-exit")
-                    .px_1()
-                    .rounded_sm()
-                    .text_color(c.muted)
-                    .hover(|s| s.text_color(c.fg))
+                // T20-003: shared `Button` primitive.
+                button("ai-plan-exit", p, ButtonVariant::Ghost, ButtonSize::Xs)
                     .child("Exit")
                     .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
                         this.store.update(cx, |s, cx| {
@@ -2555,6 +2554,7 @@ impl AiChatView {
         c: &ChatColors,
         cx: &mut Context<Self>,
     ) -> Option<gpui::AnyElement> {
+        let p = Palette::from_theme(self.theme.read(cx));
         let queue = self.store.read(cx).plan_queue().to_vec();
         if queue.is_empty() {
             return None;
@@ -2596,41 +2596,40 @@ impl AiChatView {
                                 )),
                         )
                         .child(
+                            // T20-003: shared `Button` primitive.
                             div()
                                 .flex()
                                 .items_center()
                                 .gap_1p5()
                                 .child(
-                                    div()
-                                        .id("ai-plan-discard")
-                                        .px_2()
-                                        .py_0p5()
-                                        .rounded_sm()
-                                        .border_1()
-                                        .border_color(c.border)
-                                        .text_size(px(10.0))
-                                        .text_color(c.muted)
-                                        .hover(|s| s.text_color(c.error).border_color(c.error))
-                                        .child("Discard all")
-                                        .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
+                                    button(
+                                        "ai-plan-discard",
+                                        p,
+                                        ButtonVariant::Outline,
+                                        ButtonSize::Xs,
+                                    )
+                                    .child("Discard all")
+                                    .on_click(cx.listener(
+                                        |this, _: &ClickEvent, _w, cx| {
                                             this.store.update(cx, |s, cx| s.plan_discard_all(cx));
                                             cx.notify();
-                                        })),
+                                        },
+                                    )),
                                 )
                                 .child(
-                                    div()
-                                        .id("ai-plan-apply")
-                                        .px_2()
-                                        .py_0p5()
-                                        .rounded_sm()
-                                        .bg(c.accent)
-                                        .text_color(c.bg)
-                                        .text_size(px(10.0))
-                                        .child(SharedString::from(format!("Apply {count}")))
-                                        .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
+                                    button(
+                                        "ai-plan-apply",
+                                        p,
+                                        ButtonVariant::Default,
+                                        ButtonSize::Xs,
+                                    )
+                                    .child(SharedString::from(format!("Apply {count}")))
+                                    .on_click(cx.listener(
+                                        |this, _: &ClickEvent, _w, cx| {
                                             this.store.update(cx, |s, cx| s.plan_apply_all(cx));
                                             cx.notify();
-                                        })),
+                                        },
+                                    )),
                                 ),
                         ),
                 )
@@ -2650,12 +2649,20 @@ impl AiChatView {
         )
     }
 
+    /// T20-003: the header row's expand/collapse click stays a hand-rolled
+    /// `div` (not the shared `Disclosure` primitive) — `Disclosure` is a
+    /// fixed chevron+single-line-label shape, while this header is a
+    /// composite three-line block (filename+badge, path, diff stats)
+    /// alongside a separately-clickable reject button, which `Disclosure`
+    /// has no builder surface for. Only the reject action below is migrated,
+    /// to the shared `Button`.
     fn render_plan_row(
         &self,
         e: &PlanEdit,
         c: &ChatColors,
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
+        let p = Palette::from_theme(self.theme.read(cx));
         let is_dir = e.kind == "create_directory";
         let expanded = self.expanded_plan.contains(&e.id);
         let (added, removed) = plan_diff_stats(&e.original, &e.proposed);
@@ -2763,16 +2770,19 @@ impl AiChatView {
                             }),
                     )
                     .child(
-                        div()
-                            .id(SharedString::from(format!("plan-reject-{}", e.id)))
-                            .text_color(c.muted)
-                            .text_size(px(11.0))
-                            .hover(|s| s.text_color(c.error))
-                            .child(IconName::X.svg(c.muted).size(px(11.0)))
-                            .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                        button(
+                            SharedString::from(format!("plan-reject-{}", e.id)),
+                            p,
+                            ButtonVariant::Ghost,
+                            ButtonSize::IconXs,
+                        )
+                        .child(IconName::X.svg(c.muted).size(px(11.0)))
+                        .on_click(cx.listener(
+                            move |this, _: &ClickEvent, _w, cx| {
                                 this.store.update(cx, |s, cx| s.plan_reject(&id_reject, cx));
                                 cx.notify();
-                            })),
+                            },
+                        )),
                     ),
             )
             .when(expanded && !is_dir, |d| {
@@ -3126,29 +3136,16 @@ impl AiChatView {
                                     .child("voice (soon)"),
                             ),
                     )
+                    // T20-003: shared `Button` primitive.
                     .child(if streaming {
-                        div()
-                            .id("ai-stop")
-                            .px_2p5()
-                            .py_1()
-                            .rounded_sm()
-                            .border_1()
-                            .border_color(c.border)
-                            .text_color(c.fg)
-                            .text_size(px(10.0))
+                        button("ai-stop", p, ButtonVariant::Outline, ButtonSize::Xs)
                             .child("Stop")
                             .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| this.stop(cx)))
                             .into_any_element()
                     } else {
                         let enabled = self.can_send(cx);
-                        div()
-                            .id("ai-send")
-                            .px_2p5()
-                            .py_1()
-                            .rounded_sm()
-                            .bg(if enabled { c.accent } else { c.border })
-                            .text_color(if enabled { c.bg } else { c.muted })
-                            .text_size(px(10.0))
+                        button("ai-send", p, ButtonVariant::Default, ButtonSize::Xs)
+                            .when(!enabled, |d| d.opacity(DISABLED_OPACITY))
                             .child(if self.shell_mode { "Run" } else { "Send" })
                             .when(enabled, |d| {
                                 d.on_click(
