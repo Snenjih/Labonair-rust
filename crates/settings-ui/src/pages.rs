@@ -476,6 +476,16 @@ const FILE_MANAGER_GROUPS: &[Group] = &[
         ],
     ),
     (
+        "Explorer tree",
+        &[
+            "explorerIndentGuides",
+            "explorerStickyAncestors",
+            "explorerAutoRevealActiveFile",
+            "explorerFoldSingleChildDirs",
+            "explorerGitDecorations",
+        ],
+    ),
+    (
         "Columns",
         &[
             "sftpColumnSize",

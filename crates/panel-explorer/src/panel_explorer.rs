@@ -59,9 +59,11 @@ use std::time::Duration;
 use gpui::{
     div, px, uniform_list, App, AppContext, ClickEvent, ClipboardItem, Context, Entity,
     ExternalPaths, FocusHandle, Focusable, Hsla, InteractiveElement, IntoElement, KeyDownEvent,
-    MouseDownEvent, ParentElement, Pixels, Point, Render, SharedString, StatefulInteractiveElement,
-    Styled, Task, Window,
+    MouseButton, MouseDownEvent, ParentElement, Pixels, Point, Render, ScrollStrategy,
+    SharedString, StatefulInteractiveElement, Styled, Task, UniformListScrollHandle, Window,
 };
+
+use labonair_settings::{ExplorerSettings, Settings as _};
 use notify::{RecommendedWatcher, RecursiveMode};
 use notify_debouncer_mini::{new_debouncer, Debouncer};
 
@@ -71,8 +73,8 @@ use crate::theme::ThemeStore;
 use crate::workspace::Workspace;
 use labonair_notifications::{notification_center, Notification};
 use labonair_ui_kit::{
-    button, chevron_icon, context_menu, icon_for_path, icon_toggle_button, tree_row, ButtonSize,
-    ButtonVariant, IconName, InputEvent, InputState, MenuClick, MenuItem, Palette, TreeRowState,
+    button, chevron_icon, context_menu, icon_for_path, tree_row, ButtonSize, ButtonVariant,
+    IconName, InputEvent, InputState, MenuClick, MenuItem, Palette, TreeRowState,
 };
 
 /// A menu action expressed against the view + window (wrapped into a
@@ -83,6 +85,10 @@ const PAGE_LIMIT: usize = tree::DEFAULT_LOCAL_PAGE_LIMIT;
 const INDENT: f32 = 12.0;
 const WATCH_DEBOUNCE: Duration = Duration::from_millis(300);
 const DRAIN_INTERVAL: Duration = Duration::from_millis(400);
+/// Bounds for the Phase 3.2 project-wide search walk — deep enough for a
+/// normal project, capped so a pathological tree can't stall the walk.
+const SEARCH_MAX_DEPTH: usize = 8;
+const SEARCH_MAX_VISITS: usize = 4000;
 
 /// `DraggedPaths` / `shell_quote` / `quote_paths` moved to
 /// `labonair_workspace::drag` in T16-006 (so `views::terminal` can accept
@@ -354,6 +360,17 @@ impl TreeModel {
 /// access; the `uniform_list` render closure turns a `&[ExplorerRowData]`
 /// viewport window into elements. Visual state (`selected` / `cut` /
 /// `drop_target`) is resolved here once, not re-derived per row during render.
+/// Diagnostic severity channel for an Explorer row (Zed-parity Phase 3.7).
+/// A typed hook only — no in-repo diagnostic source feeds it yet, so the
+/// provider is always empty. TODO: wire an LSP / build diagnostics source.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum DiagnosticSeverity {
+    Error,
+    Warning,
+    Info,
+    Hint,
+}
+
 #[derive(Clone, PartialEq, Debug)]
 pub(crate) enum ExplorerRowData {
     Entry {
@@ -368,6 +385,13 @@ pub(crate) enum ExplorerRowData {
         drop_target: bool,
         drag_paths: Vec<PathBuf>,
         drag_label: String,
+        /// The file open in the active editor (Phase 3.5 auto-reveal channel).
+        active_file: bool,
+        /// Merged Git status letter (Phase 3.7), `None` for clean / untracked-
+        /// ignored paths and for remote roots.
+        git: Option<char>,
+        /// Merged diagnostic severity (Phase 3.7) — always `None` today.
+        diag: Option<DiagnosticSeverity>,
     },
     PendingCreate {
         depth: usize,
@@ -423,6 +447,9 @@ pub(crate) fn flatten_rows(
                     depth,
                     drag_paths,
                     drag_label,
+                    active_file: false,
+                    git: None,
+                    diag: None,
                     path,
                 }
             }
@@ -433,6 +460,256 @@ pub(crate) fn flatten_rows(
             Row::LoadMore { parent, depth } => ExplorerRowData::LoadMore { parent, depth },
         })
         .collect()
+}
+
+/// Depth of any flattened row (pseudo-rows included).
+fn row_depth(r: &ExplorerRowData) -> usize {
+    match r {
+        ExplorerRowData::Entry { depth, .. }
+        | ExplorerRowData::PendingCreate { depth }
+        | ExplorerRowData::Rename { depth }
+        | ExplorerRowData::Loading { depth }
+        | ExplorerRowData::Error { depth, .. }
+        | ExplorerRowData::LoadMore { depth, .. } => *depth,
+    }
+}
+
+/// Merge optional Git / diagnostic decorations and the active-file marker into
+/// a flattened row list at the presentation boundary (Zed-parity §11 / §12.4).
+/// Pure — decorations never change row geometry.
+pub(crate) fn decorate_rows(
+    rows: &mut [ExplorerRowData],
+    active_file: Option<&Path>,
+    git: &HashMap<PathBuf, char>,
+    diag: &HashMap<PathBuf, DiagnosticSeverity>,
+) {
+    for row in rows.iter_mut() {
+        if let ExplorerRowData::Entry {
+            path,
+            active_file: af,
+            git: g,
+            diag: d,
+            ..
+        } = row
+        {
+            *af = active_file == Some(path.as_path());
+            *g = git.get(path).copied();
+            *d = diag.get(path).copied();
+        }
+    }
+}
+
+/// Collapse single-child directory *chains* (`a/b/c` where every link has
+/// exactly one child and that child is a directory) into one compressed row
+/// whose label is the joined path (Zed-parity Phase 3.6). Pure: the input is
+/// consumed and a new list returned, so it is trivially reversible (re-run
+/// [`flatten_rows`] without this pass). The surviving row keeps the *real*
+/// deepest path, so selection, drag/drop and context menus are unaffected.
+pub(crate) fn fold_chains(mut rows: Vec<Row>) -> Vec<Row> {
+    let mut i = 0;
+    while i < rows.len() {
+        let Row::Entry {
+            depth: d,
+            entry: parent_entry,
+            ..
+        } = &rows[i]
+        else {
+            i += 1;
+            continue;
+        };
+        if !parent_entry.is_dir {
+            i += 1;
+            continue;
+        }
+        let d = *d;
+        let parent_name = parent_entry.name.clone();
+        // The parent's descendant run: rows after i until depth drops back.
+        let run_end = rows[i + 1..]
+            .iter()
+            .position(|r| row_depth_model(r) <= d)
+            .map(|p| i + 1 + p)
+            .unwrap_or(rows.len());
+        let direct: Vec<usize> = (i + 1..run_end)
+            .filter(|&k| row_depth_model(&rows[k]) == d + 1)
+            .collect();
+        let [only] = direct[..] else {
+            i += 1;
+            continue;
+        };
+        let Row::Entry {
+            entry: child_entry, ..
+        } = &rows[only]
+        else {
+            i += 1;
+            continue;
+        };
+        if !child_entry.is_dir {
+            i += 1;
+            continue;
+        }
+        // Fold: drop the parent row, pull the child (and its subtree) up one
+        // level, and prefix the parent's name onto the child's label.
+        if let Row::Entry { entry, .. } = &mut rows[only] {
+            entry.name = format!("{parent_name}/{}", entry.name);
+        }
+        for row in rows[only..run_end].iter_mut() {
+            decrement_depth(row);
+        }
+        rows.remove(i);
+        // Re-examine the same index — the folded row may chain further.
+    }
+    rows
+}
+
+fn row_depth_model(r: &Row) -> usize {
+    match r {
+        Row::Entry { depth, .. }
+        | Row::PendingCreate { depth }
+        | Row::Rename { depth }
+        | Row::Loading { depth }
+        | Row::Error { depth, .. }
+        | Row::LoadMore { depth, .. } => *depth,
+    }
+}
+
+fn decrement_depth(r: &mut Row) {
+    let d = match r {
+        Row::Entry { depth, .. }
+        | Row::PendingCreate { depth }
+        | Row::Rename { depth }
+        | Row::Loading { depth }
+        | Row::Error { depth, .. }
+        | Row::LoadMore { depth, .. } => depth,
+    };
+    *d = d.saturating_sub(1);
+}
+
+/// The ancestor directory rows of the row at `first_visible`, in
+/// shallow→deep order (Zed-parity Phase 3.3). Computed independently over the
+/// flattened model; the caller pins these above the virtual list.
+pub(crate) fn sticky_ancestor_indices(
+    rows: &[ExplorerRowData],
+    first_visible: usize,
+) -> Vec<usize> {
+    if first_visible == 0 || first_visible >= rows.len() {
+        return Vec::new();
+    }
+    let target_depth = row_depth(&rows[first_visible]);
+    let mut stack: Vec<usize> = Vec::new();
+    for (k, row) in rows.iter().enumerate().take(first_visible) {
+        let dk = row_depth(row);
+        while stack
+            .last()
+            .is_some_and(|&last| row_depth(&rows[last]) >= dk)
+        {
+            stack.pop();
+        }
+        if matches!(
+            row,
+            ExplorerRowData::Entry {
+                is_dir: true,
+                expanded: true,
+                ..
+            }
+        ) {
+            stack.push(k);
+        }
+    }
+    while stack
+        .last()
+        .is_some_and(|&last| row_depth(&rows[last]) >= target_depth)
+    {
+        stack.pop();
+    }
+    stack
+}
+
+/// Index of the row whose path is `active` (Zed-parity Phase 3.5 reveal
+/// policy). `None` — and therefore a no-op reveal — when the file is not
+/// currently in the flattened tree.
+pub(crate) fn reveal_target_index(rows: &[ExplorerRowData], active: &Path) -> Option<usize> {
+    rows.iter()
+        .position(|r| matches!(r, ExplorerRowData::Entry { path, .. } if path == active))
+}
+
+/// Bounded, blocking filesystem walk for project-wide Explorer search
+/// (Zed-parity Phase 3.2). Runs off the GPUI thread (`background_executor`).
+/// Capped at `max_depth` levels and `max_visits` directory reads so an
+/// enormous tree can't stall the walk; returns `(path, name, depth)` for
+/// every entry whose name contains `query` (already lowercased by the caller).
+pub(crate) fn bounded_fs_search(
+    root: &Path,
+    query: &str,
+    show_hidden: bool,
+    max_depth: usize,
+    max_visits: usize,
+) -> Vec<(PathBuf, String, usize, bool)> {
+    let mut out = Vec::new();
+    let mut visits = 0usize;
+    let mut stack: Vec<(PathBuf, usize)> = vec![(root.to_path_buf(), 0)];
+    while let Some((dir, depth)) = stack.pop() {
+        if depth > max_depth || visits >= max_visits {
+            continue;
+        }
+        visits += 1;
+        let Ok(page) = tree::read_dir_page(&dir.to_string_lossy(), 0, PAGE_LIMIT, show_hidden)
+        else {
+            continue;
+        };
+        for e in page.entries {
+            let path = dir.join(&e.name);
+            let is_dir = matches!(e.kind, tree::EntryKind::Dir);
+            if e.name.to_lowercase().contains(query) {
+                out.push((path.clone(), e.name.clone(), depth, is_dir));
+            }
+            if is_dir {
+                stack.push((path, depth + 1));
+            }
+        }
+    }
+    out
+}
+
+/// Parse `git status --porcelain` (v1) into a `relative-path → status char`
+/// map (Zed-parity Phase 3.7). Worktree status wins over index status; a `?`
+/// (untracked) is kept as-is. Pure — unit-tested.
+pub(crate) fn parse_git_porcelain(out: &str) -> HashMap<PathBuf, char> {
+    let mut map = HashMap::new();
+    for line in out.lines() {
+        if line.len() < 4 {
+            continue;
+        }
+        let (xy, rest) = line.split_at(2);
+        let x = xy.chars().next().unwrap_or(' ');
+        let y = xy.chars().nth(1).unwrap_or(' ');
+        let path_part = rest.trim_start();
+        // Renames: "R  old -> new" — decorate the new path.
+        let path_str = path_part.rsplit(" -> ").next().unwrap_or(path_part);
+        let path_str = path_str.trim_matches('"');
+        if path_str.is_empty() {
+            continue;
+        }
+        let ch = if x == '?' && y == '?' {
+            '?'
+        } else if y != ' ' {
+            y
+        } else {
+            x
+        };
+        map.insert(PathBuf::from(path_str), ch);
+    }
+    map
+}
+
+/// The label tint for a Git status char.
+fn git_tint(ch: char, c: &Colors) -> Hsla {
+    match ch {
+        'M' | 'T' => c.palette.warning,
+        'A' | '?' => c.palette.success,
+        'D' | 'U' => c.err,
+        'R' | 'C' => c.accent,
+        _ => c.muted,
+    }
 }
 
 pub struct ExplorerView {
@@ -452,8 +729,28 @@ pub struct ExplorerView {
     search_open: bool,
     search_field: Option<Entity<InputState>>,
     context_menu: Option<(PathBuf, Point<Pixels>)>,
+    /// The compact root row's `…` overflow menu anchor (Phase 3.1).
+    overflow_menu: Option<Point<Pixels>>,
     confirm_delete: Option<PathBuf>,
     focus: FocusHandle,
+    /// Virtual-list scroll handle — drives sticky-ancestor computation and
+    /// active-file reveal (Phase 3.3 / 3.5).
+    scroll: UniformListScrollHandle,
+    /// The file open in the active editor (Phase 3.5 auto-reveal).
+    active_file: Option<PathBuf>,
+    /// A pending "scroll the tree to this path" request, serviced in `render`.
+    pending_reveal: Option<PathBuf>,
+    /// `absolute path → git status char` (Phase 3.7), local roots only.
+    git_status: HashMap<PathBuf, char>,
+    /// Typed diagnostic hook — no source feeds it yet (Phase 3.7 TODO).
+    diagnostics: HashMap<PathBuf, DiagnosticSeverity>,
+    /// Extra project-wide search hits from the bounded async FS walk
+    /// (Phase 3.2), beyond what the lazily-loaded model already holds.
+    search_hits: Vec<(PathBuf, String, usize, bool)>,
+    /// Bumped per walk so a slow response for a stale query is discarded.
+    search_gen: u64,
+    /// A bounded FS walk is in flight — drives the in-panel progress hint.
+    search_walking: bool,
     /// Parent directories flagged dirty by the watcher, drained on a timer.
     dirty: Arc<Mutex<HashSet<PathBuf>>>,
     watched: HashSet<PathBuf>,
@@ -468,6 +765,9 @@ impl ExplorerView {
         cx: &mut Context<Self>,
     ) -> Self {
         cx.observe(&theme, |_, _, cx| cx.notify()).detach();
+        // Phase 3.5: follow the workspace's active editor for auto-reveal.
+        cx.observe(&workspace, |this, _, cx| this.on_workspace_changed(cx))
+            .detach();
 
         let drain = cx.spawn(async move |view, cx| loop {
             cx.background_executor().timer(DRAIN_INTERVAL).await;
@@ -491,8 +791,17 @@ impl ExplorerView {
             search_open: false,
             search_field: None,
             context_menu: None,
+            overflow_menu: None,
             confirm_delete: None,
             focus: cx.focus_handle(),
+            scroll: UniformListScrollHandle::new(),
+            active_file: None,
+            pending_reveal: None,
+            git_status: HashMap::new(),
+            diagnostics: HashMap::new(),
+            search_hits: Vec::new(),
+            search_gen: 0,
+            search_walking: false,
             dirty: Arc::new(Mutex::new(HashSet::new())),
             watched: HashSet::new(),
             debouncer: None,
@@ -510,13 +819,171 @@ impl ExplorerView {
         self.clipboard = None;
         self.drop_target = None;
         self.context_menu = None;
+        self.overflow_menu = None;
         self.confirm_delete = None;
         self.edit_buffer.clear();
+        self.git_status.clear();
+        self.search_hits.clear();
         if let Some(root) = self.model.root.clone() {
             self.load_dir(root, false, cx);
         }
         self.sync_watchers();
+        self.poll_git(cx);
+        self.reveal_active_file(cx);
         cx.notify();
+    }
+
+    // ── Zed-parity Phase 3 ──────────────────────────────────────────────────
+
+    /// Resolved Explorer settings, falling back to the shipped defaults when
+    /// the settings store isn't up yet (headless tests).
+    fn settings(cx: &App) -> ExplorerSettings {
+        ExplorerSettings::try_get(cx)
+            .cloned()
+            .unwrap_or_else(|| ExplorerSettings::from_settings(&Default::default()))
+    }
+
+    /// The workspace's active editor changed — re-evaluate auto-reveal.
+    fn on_workspace_changed(&mut self, cx: &mut Context<Self>) {
+        self.reveal_active_file(cx);
+    }
+
+    /// Phase 3.5: when auto-reveal is on, expand the active file's ancestor
+    /// directories, mark it, and queue a scroll. No-op when the setting is
+    /// off or the file is not under the current root.
+    fn reveal_active_file(&mut self, cx: &mut Context<Self>) {
+        if !Self::settings(cx).auto_reveal_active_file() {
+            if self.active_file.take().is_some() {
+                cx.notify();
+            }
+            return;
+        }
+        let Some(root) = self.model.root.clone() else {
+            return;
+        };
+        let path = self
+            .workspace
+            .read(cx)
+            .active_file_path(cx)
+            .map(PathBuf::from);
+        let Some(path) = path.filter(|p| p.starts_with(&root)) else {
+            if self.active_file.take().is_some() {
+                cx.notify();
+            }
+            return;
+        };
+        if self.active_file.as_deref() == Some(path.as_path()) {
+            return;
+        }
+        // Expand + lazily load every ancestor directory between root and file.
+        if let Ok(rel) = path.strip_prefix(&root) {
+            let mut cur = root.clone();
+            for comp in rel.components() {
+                let next = cur.join(comp.as_os_str());
+                if next != path {
+                    self.model.expanded.insert(next.clone());
+                    self.load_dir(next.clone(), false, cx);
+                }
+                cur = next;
+            }
+        }
+        self.active_file = Some(path.clone());
+        self.pending_reveal = Some(path);
+        cx.notify();
+    }
+
+    /// Phase 3.7: refresh Git status decorations for a local root via
+    /// `git status --porcelain`, off the GPUI thread. Remote roots degrade
+    /// gracefully — no decorations, same row geometry.
+    fn poll_git(&mut self, cx: &mut Context<Self>) {
+        if !Self::settings(cx).git_decorations() {
+            self.git_status.clear();
+            return;
+        }
+        let Some(root) = self.model.root.clone() else {
+            return;
+        };
+        if !root.is_absolute() {
+            return;
+        }
+        let root_c = root.clone();
+        cx.spawn(async move |view, cx| {
+            let out = cx
+                .background_executor()
+                .spawn(async move {
+                    std::process::Command::new("git")
+                        .arg("-C")
+                        .arg(&root_c)
+                        .args(["status", "--porcelain"])
+                        .output()
+                        .ok()
+                        .filter(|o| o.status.success())
+                        .map(|o| String::from_utf8_lossy(&o.stdout).into_owned())
+                })
+                .await;
+            let _ = view.update(cx, |this, cx| {
+                let Some(root) = this.model.root.clone() else {
+                    return;
+                };
+                let mut map = HashMap::new();
+                if let Some(text) = out {
+                    for (rel, ch) in parse_git_porcelain(&text) {
+                        map.insert(root.join(rel), ch);
+                    }
+                }
+                if map != this.git_status {
+                    this.git_status = map;
+                    cx.notify();
+                }
+            });
+        })
+        .detach();
+    }
+
+    /// Phase 3.2: kick off a bounded, off-thread FS walk for the current
+    /// query so search reaches directories lazy loading never opened.
+    fn spawn_search_walk(&mut self, cx: &mut Context<Self>) {
+        let query = self.search_query(cx);
+        self.search_gen += 1;
+        let gen = self.search_gen;
+        if query.is_empty() {
+            self.search_hits.clear();
+            self.search_walking = false;
+            cx.notify();
+            return;
+        }
+        let Some(root) = self.model.root.clone() else {
+            return;
+        };
+        if !root.is_absolute() {
+            return;
+        }
+        let show_hidden = self.model.show_hidden;
+        self.search_walking = true;
+        cx.notify();
+        cx.spawn(async move |view, cx| {
+            let hits = cx
+                .background_executor()
+                .spawn(async move {
+                    bounded_fs_search(
+                        &root,
+                        &query,
+                        show_hidden,
+                        SEARCH_MAX_DEPTH,
+                        SEARCH_MAX_VISITS,
+                    )
+                })
+                .await;
+            let _ = view.update(cx, |this, cx| {
+                if this.search_gen != gen {
+                    return;
+                }
+                this.search_hits = hits;
+                this.search_walking = false;
+                cx.notify();
+            });
+        })
+        .detach();
     }
 
     pub fn set_root_str(&mut self, root: Option<String>, cx: &mut Context<Self>) {
@@ -593,8 +1060,9 @@ impl ExplorerView {
             let field = self.search_field.get_or_insert_with(|| {
                 let field =
                     cx.new(|cx| InputState::new(window, cx).placeholder("Search files\u{2026}"));
-                cx.subscribe(&field, |_, _, ev: &InputEvent, cx| {
+                cx.subscribe(&field, |this, _, ev: &InputEvent, cx| {
                     if matches!(ev, InputEvent::Change) {
+                        this.spawn_search_walk(cx);
                         cx.notify();
                     }
                 })
@@ -602,6 +1070,10 @@ impl ExplorerView {
                 field
             });
             field.update(cx, |state, cx| state.focus(window, cx));
+        } else {
+            // Closing search drops the transient overlay + its extra hits.
+            self.search_hits.clear();
+            self.search_walking = false;
         }
         cx.notify();
     }
@@ -610,6 +1082,9 @@ impl ExplorerView {
         if let Some(field) = &self.search_field {
             field.update(cx, |state, cx| state.set_value("", window, cx));
         }
+        self.search_hits.clear();
+        self.search_walking = false;
+        cx.notify();
     }
 
     fn select(&mut self, path: PathBuf, additive: bool, cx: &mut Context<Self>) {
@@ -1088,10 +1563,16 @@ impl ExplorerView {
             }
             set.drain().collect()
         };
+        let mut changed = false;
         for dir in dirs {
             if self.model.nodes.contains_key(&dir) {
                 self.load_dir(dir, true, cx);
+                changed = true;
             }
+        }
+        // A filesystem change under the root may also change Git status.
+        if changed {
+            self.poll_git(cx);
         }
     }
 }
@@ -1149,13 +1630,14 @@ impl Render for ExplorerView {
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_else(|| root.to_string_lossy().to_string());
 
-        let root_file = root.clone();
-        let root_dir = root.clone();
-        let root_refresh = root.clone();
         let root_icon = {
             let theme = self.theme.read(cx);
             icon_for_path(theme.icon_theme(), &root_name, true, false)
         };
+        // Phase 3.1: the five permanent toolbar icons collapse to a compact
+        // root row — the root identity, one discoverable search affordance,
+        // and one overflow button. New File / New Folder / Refresh / hidden-
+        // files move into the `…` menu (and stay in the tree context menu).
         let toolbar = div()
             .flex()
             .flex_row()
@@ -1196,53 +1678,18 @@ impl Render for ExplorerView {
             )
             .child(
                 button(
-                    "new-file",
+                    "explorer-overflow",
                     c.palette,
                     ButtonVariant::Ghost,
                     ButtonSize::IconXs,
                 )
-                .child(IconName::Plus.svg(c.muted).size(px(13.0)))
-                .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
-                    this.begin_create(root_file.clone(), false, window, cx)
-                })),
-            )
-            .child(
-                button(
-                    "new-dir",
-                    c.palette,
-                    ButtonVariant::Ghost,
-                    ButtonSize::IconXs,
-                )
-                .child(IconName::Folder.svg(c.muted).size(px(13.0)))
-                .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
-                    this.begin_create(root_dir.clone(), true, window, cx)
-                })),
-            )
-            .child(
-                button(
-                    "refresh",
-                    c.palette,
-                    ButtonVariant::Ghost,
-                    ButtonSize::IconXs,
-                )
-                .child(IconName::Refresh.svg(c.muted).size(px(12.0)))
-                .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
-                    this.load_dir(root_refresh.clone(), true, cx)
-                })),
-            )
-            .child(
-                icon_toggle_button(
-                    "toggle-hidden",
-                    c.palette,
-                    if self.model.show_hidden {
-                        IconName::Eye
-                    } else {
-                        IconName::EyeOff
-                    },
-                    self.model.show_hidden,
-                )
-                .on_click(
-                    cx.listener(|this, _: &ClickEvent, _window, cx| this.toggle_show_hidden(cx)),
+                .child(IconName::Ellipsis.svg(c.muted).size(px(13.0)))
+                .on_mouse_down(
+                    MouseButton::Left,
+                    cx.listener(move |this, ev: &MouseDownEvent, _window, cx| {
+                        this.overflow_menu = Some(ev.position);
+                        cx.notify();
+                    }),
                 ),
             );
 
@@ -1251,30 +1698,72 @@ impl Render for ExplorerView {
         let root_drop = root.clone();
         let root_ext = root.clone();
         let root_over = root.clone();
+        let settings = Self::settings(cx);
         let query = self.search_query(cx);
-        let rows = if query.is_empty() {
-            self.model.rows()
-        } else {
+        let searching = !query.is_empty();
+        let mut rows = if searching {
             self.search_rows(&query)
+        } else {
+            self.model.rows()
         };
+        // Phase 3.6: fold single-child directory chains (setting; off unless
+        // enabled — preserves the current look). Skipped during search so a
+        // match's real depth stays visible.
+        if settings.fold_single_child_dirs() && !searching {
+            rows = fold_chains(rows);
+        }
         let cut_paths: Vec<PathBuf> = self
             .clipboard
             .as_ref()
             .filter(|c| c.op == ClipOp::Cut)
             .map(|c| c.paths.clone())
             .unwrap_or_default();
-        let data = flatten_rows(
+        let mut data = flatten_rows(
             rows,
             &self.model.expanded,
             &self.selection,
             &cut_paths,
             self.drop_target.as_deref(),
         );
-        let empty_search = data.is_empty() && !query.is_empty();
+        // Phase 3.7: merge Git / diagnostic decorations + the active-file
+        // marker at the presentation boundary (never changes row geometry).
+        decorate_rows(
+            &mut data,
+            self.active_file.as_deref(),
+            &self.git_status,
+            &self.diagnostics,
+        );
+        let empty_search = data.is_empty() && searching;
         let view = cx.entity();
         let edit_field = self.edit_field.clone();
 
-        let list_body: gpui::AnyElement = if empty_search {
+        // Phase 3.5: service a queued active-file reveal now that `data` is
+        // final — expand happened in `reveal_active_file`, this just scrolls.
+        if let Some(target) = self.pending_reveal.take() {
+            if let Some(ix) = reveal_target_index(&data, &target) {
+                self.scroll.scroll_to_item(ix, ScrollStrategy::Center);
+            }
+        }
+
+        // Phase 3.3: ancestor rows for the current scroll position, pinned
+        // above the virtual list. Independent computation over `data`.
+        let indent_guides = settings.indent_guides();
+        let sticky: Vec<gpui::AnyElement> = if settings.sticky_ancestors() && !empty_search {
+            let row_h: f32 = c.palette.density_tokens().tree_row_height().into();
+            let first_visible = if row_h > 0.0 {
+                (f32::from(-self.scroll.0.borrow().base_handle.offset().y) / row_h).floor() as usize
+            } else {
+                0
+            };
+            sticky_ancestor_indices(&data, first_visible.min(data.len().saturating_sub(1)))
+                .into_iter()
+                .map(|ix| explorer_row_element(&data[ix], c, indent_guides, &view, &edit_field, cx))
+                .collect()
+        } else {
+            Vec::new()
+        };
+
+        let list_body: gpui::AnyElement = if empty_search && !self.search_walking {
             div()
                 .px_3()
                 .py_2()
@@ -1288,12 +1777,37 @@ impl Render for ExplorerView {
             // `&mut Window, &mut App` — handlers go through `view.update(..)`.
             uniform_list("explorer-rows", data.len(), move |range, _win, cx| {
                 range
-                    .map(|i| explorer_row_element(&data[i], c, &view, &edit_field, cx))
+                    .map(|i| {
+                        explorer_row_element(&data[i], c, indent_guides, &view, &edit_field, cx)
+                    })
                     .collect::<Vec<_>>()
             })
+            .track_scroll(self.scroll.clone())
             .flex_1()
             .into_any_element()
         };
+
+        // Phase 3.2: transient in-panel progress hint while the bounded FS
+        // walk runs (walk is off-thread — see `spawn_search_walk`).
+        let walk_hint = self.search_walking.then(|| {
+            div()
+                .px_3()
+                .py_1()
+                .text_xs()
+                .text_color(c.muted)
+                .child("Searching project\u{2026}")
+        });
+
+        // Phase 3.3: sticky ancestor strip with a subtle bottom boundary.
+        let sticky_strip = (!sticky.is_empty()).then(|| {
+            div()
+                .flex()
+                .flex_col()
+                .bg(c.palette.bg)
+                .border_b_1()
+                .border_color(c.border)
+                .children(sticky)
+        });
 
         let list = div()
             .id("explorer-list")
@@ -1302,6 +1816,8 @@ impl Render for ExplorerView {
             .flex_col()
             .min_h_0()
             .py_1()
+            .children(sticky_strip)
+            .children(walk_hint)
             .on_drag_move(cx.listener(
                 move |this, _: &gpui::DragMoveEvent<DraggedPaths>, _w, cx| {
                     // Empty space / non-folder rows → drop into the root.
@@ -1335,6 +1851,9 @@ impl Render for ExplorerView {
 
         if let Some((target, pos)) = self.context_menu.clone() {
             container = container.child(self.render_context_menu(target, pos, c, cx));
+        }
+        if let Some(pos) = self.overflow_menu {
+            container = container.child(self.render_overflow_menu(pos, root.clone(), cx));
         }
         if let Some(target) = self.confirm_delete.clone() {
             container = container.child(self.render_delete_confirm(target, c, cx));
@@ -1398,19 +1917,120 @@ impl ExplorerView {
             .unwrap_or_default()
     }
 
+    /// Search results: matches from every lazily-loaded directory, plus the
+    /// bounded async FS-walk hits for subtrees lazy loading never opened
+    /// (Zed-parity §14 "search can find entries that were not previously
+    /// expanded"). Merge is de-duplicated by path.
     fn search_rows(&self, query: &str) -> Vec<Row> {
-        self.model
-            .all_loaded_rows()
-            .into_iter()
-            .filter(|row| match row {
-                Row::Entry { entry, .. } => entry.name.to_lowercase().contains(query),
-                _ => false,
-            })
-            .collect()
+        let mut seen: HashSet<PathBuf> = HashSet::new();
+        let mut out: Vec<Row> = Vec::new();
+        for row in self.model.all_loaded_rows() {
+            if let Row::Entry { path, entry, depth } = row {
+                if entry.name.to_lowercase().contains(query) {
+                    seen.insert(path.clone());
+                    out.push(Row::Entry { path, depth, entry });
+                }
+            }
+        }
+        for (path, name, depth, is_dir) in &self.search_hits {
+            if seen.insert(path.clone()) {
+                out.push(Row::Entry {
+                    path: path.clone(),
+                    depth: *depth,
+                    entry: Entry {
+                        name: name.clone(),
+                        is_dir: *is_dir,
+                        is_ignored: false,
+                    },
+                });
+            }
+        }
+        out
     }
 
-    /// Explorer-level keyboard: copy / cut / paste buffer + clear.
-    fn on_key(&mut self, ev: &KeyDownEvent, _window: &mut Window, cx: &mut Context<Self>) {
+    /// Phase 3.1: the `…` overflow menu — the actions dropped from the
+    /// permanent toolbar. Tree-option toggles live in Settings (typed fields,
+    /// generated UI) per the settings design contract.
+    fn render_overflow_menu(
+        &self,
+        pos: Point<Pixels>,
+        root: PathBuf,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let view = cx.entity();
+        let win = move |v: &Entity<Self>, f: ExpAct| -> MenuClick {
+            let v = v.clone();
+            Box::new(move |_ev: &ClickEvent, w: &mut Window, cx: &mut App| {
+                v.update(cx, |this, cx| {
+                    this.overflow_menu = None;
+                    f(this, w, cx);
+                });
+            })
+        };
+        let r1 = root.clone();
+        let r2 = root.clone();
+        let r3 = root.clone();
+        let items: Vec<MenuItem> = vec![
+            MenuItem::new("of-new-file", "New File")
+                .icon(IconName::File)
+                .on_click(win(
+                    &view,
+                    Box::new(move |this, w, cx| this.begin_create(r1.clone(), false, w, cx)),
+                )),
+            MenuItem::new("of-new-dir", "New Folder")
+                .icon(IconName::Folder)
+                .on_click(win(
+                    &view,
+                    Box::new(move |this, w, cx| this.begin_create(r2.clone(), true, w, cx)),
+                )),
+            MenuItem::new("of-refresh", "Refresh")
+                .icon(IconName::Refresh)
+                .on_click(win(
+                    &view,
+                    Box::new(move |this, _w, cx| this.load_dir(r3.clone(), true, cx)),
+                )),
+            MenuItem::separator(),
+            MenuItem::new(
+                "of-hidden",
+                if self.model.show_hidden {
+                    "Hide Hidden Files"
+                } else {
+                    "Show Hidden Files"
+                },
+            )
+            .icon(if self.model.show_hidden {
+                IconName::EyeOff
+            } else {
+                IconName::Eye
+            })
+            .on_click(win(
+                &view,
+                Box::new(move |this, _w, cx| this.toggle_show_hidden(cx)),
+            )),
+        ];
+        let v = view.clone();
+        let dismiss = move |_w: &mut Window, cx: &mut App| {
+            v.update(cx, |this, cx| {
+                this.overflow_menu = None;
+                cx.notify()
+            });
+        };
+        context_menu(
+            pos,
+            Palette::from_theme(self.theme.read(cx)),
+            dismiss,
+            items,
+        )
+    }
+
+    /// Explorer-level keyboard: preview / open (Phase 3.8), copy / cut / paste
+    /// buffer + clear.
+    ///
+    /// Preview vs permanent open is an explicit contract: single-click and
+    /// `Space` open a **preview** (transient / peek tab, reused for the next
+    /// preview); double-click and `Enter` open a **permanent** tab. Directories
+    /// toggle on either key.
+    fn on_key(&mut self, ev: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
         let ks = &ev.keystroke;
         if ks.key == "escape" {
             if self.clipboard.is_some() {
@@ -1419,6 +2039,19 @@ impl ExplorerView {
                 self.selection.clear();
                 cx.notify();
             }
+            return;
+        }
+        if (ks.key == "space" || ks.key == "enter") && !ks.modifiers.secondary() {
+            let Some(primary) = self.selection.last().cloned() else {
+                return;
+            };
+            if self.path_is_dir(&primary) {
+                self.toggle_expanded(primary, cx);
+            } else {
+                let peek = ks.key == "space";
+                self.open_file(&primary, peek, window, cx);
+            }
+            cx.stop_propagation();
             return;
         }
         if !ks.modifiers.secondary() {
@@ -1442,6 +2075,23 @@ impl ExplorerView {
             }
             _ => {}
         }
+    }
+
+    /// Whether `path` is a directory *according to the loaded model* — avoids
+    /// a filesystem stat on the keypress path.
+    fn path_is_dir(&self, path: &Path) -> bool {
+        if self.model.expanded.contains(path) || self.model.nodes.contains_key(path) {
+            return true;
+        }
+        path.parent()
+            .and_then(|parent| match self.model.nodes.get(parent) {
+                Some(NodeState::Loaded { entries, .. }) => entries
+                    .iter()
+                    .find(|e| Some(e.name.as_str()) == path.file_name().and_then(|n| n.to_str()))
+                    .map(|e| e.is_dir),
+                _ => None,
+            })
+            .unwrap_or(false)
     }
 
     /// Where a keyboard/banner paste lands: the selected directory (or the
@@ -1840,6 +2490,7 @@ fn inline_input_row(
 fn explorer_row_element(
     data: &ExplorerRowData,
     c: Colors,
+    indent_guides: bool,
     view: &Entity<ExplorerView>,
     edit_field: &Option<Entity<InputState>>,
     cx: &mut App,
@@ -1880,6 +2531,9 @@ fn explorer_row_element(
             drop_target,
             drag_paths,
             drag_label,
+            active_file,
+            git,
+            diag: _diag,
         } => {
             let (glyph, chevron) = {
                 let store = view.read(cx).theme.read(cx);
@@ -1936,18 +2590,32 @@ fn explorer_row_element(
             let mut tr = tree_row(id, c.palette, SharedString::from(name.clone()))
                 .depth(*depth)
                 .indent_step(INDENT)
+                .indent_guides(indent_guides)
                 .chevron(chevron)
                 .icon(glyph)
                 .tooltip(SharedString::from(path.to_string_lossy().to_string()))
                 .state(TreeRowState {
                     selected: *selected && !drop_target,
+                    active_file: *active_file,
                     cut,
                     drop_target,
                     ..Default::default()
                 })
                 .on_click(on_click)
                 .on_secondary_down(on_right);
-            if *is_ignored && !cut {
+            // Phase 3.7: Git status wins the label-tint channel + a trailing
+            // status letter; otherwise ignored files stay muted.
+            if let Some(ch) = git {
+                if !cut {
+                    tr = tr.label_tint(git_tint(*ch, &c));
+                }
+                tr = tr.trailing(
+                    div()
+                        .text_xs()
+                        .text_color(git_tint(*ch, &c))
+                        .child(SharedString::from(ch.to_string())),
+                );
+            } else if *is_ignored && !cut {
                 tr = tr.label_tint(c.muted);
             }
             tr.extra(move |mut row| {
@@ -2296,5 +2964,164 @@ mod tests {
             .all_loaded_rows()
             .iter()
             .any(|r| matches!(r, Row::Entry { entry, .. } if entry.name == "needle.rs")));
+    }
+
+    // ── Zed-parity Phase 3 ─────────────────────────────────────────────────
+
+    /// Build the deep nested fixture `a/b/c/{c.txt,d.txt}` (all expanded).
+    fn nested_model() -> TreeModel {
+        let mut m = TreeModel::default();
+        m.set_root(Some(PathBuf::from("/r")));
+        m.set_node(PathBuf::from("/r"), loaded(&[("a", true)]));
+        m.toggle_expanded(PathBuf::from("/r/a"));
+        m.set_node(PathBuf::from("/r/a"), loaded(&[("b", true)]));
+        m.toggle_expanded(PathBuf::from("/r/a/b"));
+        m.set_node(
+            PathBuf::from("/r/a/b"),
+            loaded(&[("c.txt", false), ("d.txt", false)]),
+        );
+        m
+    }
+
+    #[test]
+    fn sticky_ancestors_are_the_open_dir_chain_for_a_viewport_row() {
+        let m = nested_model();
+        let data = flatten_rows(m.rows(), &m.expanded, &[], &[], None);
+        // rows: a(0), b(1), c.txt(2), d.txt(2)
+        assert_eq!(data.len(), 4);
+
+        // Scrolled so d.txt (index 3) is the first visible row.
+        let anc = sticky_ancestor_indices(&data, 3);
+        assert_eq!(anc, vec![0, 1], "a and b are pinned above d.txt");
+
+        // A top-level row has no ancestors.
+        assert!(sticky_ancestor_indices(&data, 0).is_empty());
+        // b (index 1) only has a as an ancestor.
+        assert_eq!(sticky_ancestor_indices(&data, 1), vec![0]);
+    }
+
+    #[test]
+    fn fold_single_child_chains_compresses_and_is_reversible() {
+        let mut m = TreeModel::default();
+        m.set_root(Some(PathBuf::from("/r")));
+        m.set_node(PathBuf::from("/r"), loaded(&[("a", true)]));
+        m.toggle_expanded(PathBuf::from("/r/a"));
+        m.set_node(PathBuf::from("/r/a"), loaded(&[("b", true)]));
+        m.toggle_expanded(PathBuf::from("/r/a/b"));
+        m.set_node(PathBuf::from("/r/a/b"), loaded(&[("c", true)]));
+        m.toggle_expanded(PathBuf::from("/r/a/b/c"));
+        m.set_node(PathBuf::from("/r/a/b/c"), loaded(&[("f.txt", false)]));
+
+        let folded = fold_chains(m.rows());
+        assert_eq!(folded.len(), 2);
+        match &folded[0] {
+            Row::Entry { path, depth, entry } => {
+                assert_eq!(entry.name, "a/b/c");
+                assert_eq!(*depth, 0);
+                assert_eq!(path, &PathBuf::from("/r/a/b/c"), "real deepest path kept");
+                assert!(entry.is_dir);
+            }
+            _ => panic!("expected compressed dir row"),
+        }
+        match &folded[1] {
+            Row::Entry { entry, depth, .. } => {
+                assert_eq!(entry.name, "f.txt");
+                assert_eq!(*depth, 1);
+            }
+            _ => panic!("expected file row"),
+        }
+
+        // Pure: the model still flattens to the un-folded 4-row list.
+        assert_eq!(m.rows().len(), 4);
+    }
+
+    #[test]
+    fn fold_chains_leaves_multi_child_dirs_untouched() {
+        let mut m = TreeModel::default();
+        m.set_root(Some(PathBuf::from("/r")));
+        m.set_node(PathBuf::from("/r"), loaded(&[("a", true)]));
+        m.toggle_expanded(PathBuf::from("/r/a"));
+        m.set_node(PathBuf::from("/r/a"), loaded(&[("b", true), ("c", true)]));
+        let folded = fold_chains(m.rows());
+        assert_eq!(folded.len(), 3, "a has two children — no folding");
+    }
+
+    #[test]
+    fn reveal_policy_finds_the_entry_or_no_ops() {
+        let m = nested_model();
+        let data = flatten_rows(m.rows(), &m.expanded, &[], &[], None);
+        assert_eq!(
+            reveal_target_index(&data, Path::new("/r/a/b/c.txt")),
+            Some(2)
+        );
+        // Not in the tree → no-op reveal.
+        assert_eq!(reveal_target_index(&data, Path::new("/r/a/z.txt")), None);
+    }
+
+    #[test]
+    fn decorate_rows_merges_git_and_active_file_without_touching_geometry() {
+        let m = nested_model();
+        let mut data = flatten_rows(m.rows(), &m.expanded, &[], &[], None);
+        let mut git = HashMap::new();
+        git.insert(PathBuf::from("/r/a/b/c.txt"), 'M');
+        let diag = HashMap::new();
+        decorate_rows(&mut data, Some(Path::new("/r/a/b/d.txt")), &git, &diag);
+        match &data[2] {
+            ExplorerRowData::Entry {
+                git, active_file, ..
+            } => {
+                assert_eq!(*git, Some('M'));
+                assert!(!active_file);
+            }
+            other => panic!("expected c.txt entry, got {other:?}"),
+        }
+        match &data[3] {
+            ExplorerRowData::Entry {
+                git, active_file, ..
+            } => {
+                assert_eq!(*git, None);
+                assert!(active_file);
+            }
+            other => panic!("expected d.txt entry, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_git_porcelain_maps_worktree_and_index_and_rename() {
+        let out = " M src/main.rs\n?? new.txt\nA  staged.rs\nR  old.rs -> renamed.rs\n D gone.rs\n";
+        let map = parse_git_porcelain(out);
+        assert_eq!(map.get(Path::new("src/main.rs")), Some(&'M'));
+        assert_eq!(map.get(Path::new("new.txt")), Some(&'?'));
+        assert_eq!(map.get(Path::new("staged.rs")), Some(&'A'));
+        assert_eq!(map.get(Path::new("renamed.rs")), Some(&'R'));
+        assert_eq!(map.get(Path::new("gone.rs")), Some(&'D'));
+    }
+
+    #[test]
+    fn bounded_fs_search_reaches_unloaded_subtrees_and_respects_the_depth_cap() {
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("labonair-exp-search-{nonce}"));
+        std::fs::create_dir_all(root.join("a/b/c")).unwrap();
+        std::fs::write(root.join("a/b/c/needle.rs"), "x").unwrap();
+        std::fs::write(root.join("top_needle.txt"), "x").unwrap();
+
+        let hits = bounded_fs_search(&root, "needle", false, 8, 1000);
+        let names: Vec<&str> = hits.iter().map(|(_, n, _, _)| n.as_str()).collect();
+        assert!(
+            names.contains(&"needle.rs"),
+            "deep unloaded file found: {names:?}"
+        );
+        assert!(names.contains(&"top_needle.txt"));
+        let deep = hits.iter().find(|(_, n, _, _)| n == "needle.rs").unwrap();
+        assert_eq!(deep.2, 3, "reported at its real depth");
+
+        // Depth-capped walk cannot reach the depth-3 file.
+        let shallow = bounded_fs_search(&root, "needle", false, 1, 1000);
+        assert!(shallow.iter().all(|(_, n, _, _)| n != "needle.rs"));
+
+        std::fs::remove_dir_all(&root).ok();
     }
 }

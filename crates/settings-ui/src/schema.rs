@@ -843,6 +843,41 @@ pub fn all_fields() -> Vec<AnyField> {
             "Show dotfiles in the sidebar explorer."
         ),
         field!(
+            file_manager.explorer_indent_guides,
+            "explorerIndentGuides",
+            Switch,
+            "Explorer: indent guides",
+            "Draw thin vertical guides at each tree depth."
+        ),
+        field!(
+            file_manager.explorer_sticky_ancestors,
+            "explorerStickyAncestors",
+            Switch,
+            "Explorer: sticky ancestors",
+            "Pin the scrolled-past ancestor folders above the tree."
+        ),
+        field!(
+            file_manager.explorer_auto_reveal_active_file,
+            "explorerAutoRevealActiveFile",
+            Switch,
+            "Explorer: reveal active file",
+            "Scroll the tree to the file open in the active editor."
+        ),
+        field!(
+            file_manager.explorer_fold_single_child_dirs,
+            "explorerFoldSingleChildDirs",
+            Switch,
+            "Explorer: fold single-child folders",
+            "Collapse a chain of folders with one child into one row."
+        ),
+        field!(
+            file_manager.explorer_git_decorations,
+            "explorerGitDecorations",
+            Switch,
+            "Explorer: Git decorations",
+            "Tint changed files and show their status letter in the tree."
+        ),
+        field!(
             file_manager.sftp_column_size,
             "sftpColumnSize",
             Switch,

@@ -315,6 +315,15 @@ fn file_manager_from(p: &Preferences) -> FileManagerContent {
         sftp_show_hidden_files: Some(p.sftp_show_hidden_files),
         sftp_show_up_folder: Some(p.sftp_show_up_folder),
         explorer_show_hidden_by_default: Some(p.explorer_show_hidden_by_default),
+        // Zed-parity Phase 3 tree options — no v1 `Preferences` equivalent, so
+        // a migrated file just inherits the shipped defaults.
+        explorer_indent_guides: FileManagerContent::defaults().explorer_indent_guides,
+        explorer_sticky_ancestors: FileManagerContent::defaults().explorer_sticky_ancestors,
+        explorer_auto_reveal_active_file: FileManagerContent::defaults()
+            .explorer_auto_reveal_active_file,
+        explorer_fold_single_child_dirs: FileManagerContent::defaults()
+            .explorer_fold_single_child_dirs,
+        explorer_git_decorations: FileManagerContent::defaults().explorer_git_decorations,
         sftp_column_size: Some(p.sftp_column_size),
         sftp_column_modified: Some(p.sftp_column_modified),
         sftp_column_permissions: Some(p.sftp_column_permissions),

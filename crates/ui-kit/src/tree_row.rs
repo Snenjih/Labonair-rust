@@ -66,6 +66,7 @@ pub struct TreeRow {
     label_tint: Option<Hsla>,
     trailing: Option<AnyElement>,
     state: TreeRowState,
+    indent_guides: bool,
     on_click: Option<ClickFn>,
     on_secondary_down: Option<MouseFn>,
     #[allow(clippy::type_complexity)]
@@ -93,6 +94,7 @@ pub fn tree_row(id: impl Into<ElementId>, c: Palette, label: impl Into<SharedStr
         label_tint: None,
         trailing: None,
         state: TreeRowState::default(),
+        indent_guides: false,
         on_click: None,
         on_secondary_down: None,
         extra: None,
@@ -148,6 +150,13 @@ impl TreeRow {
     /// The full visual-state bundle.
     pub fn state(mut self, state: TreeRowState) -> Self {
         self.state = state;
+        self
+    }
+
+    /// Draw thin 1px vertical guides for each ancestor depth level. Overlay
+    /// geometry — does not change the row height (§10.3 / Phase 3.4).
+    pub fn indent_guides(mut self, on: bool) -> Self {
+        self.indent_guides = on;
         self
     }
 
@@ -232,6 +241,23 @@ impl IntoElement for TreeRow {
             row = row.opacity(0.5);
         } else if st.drag_source {
             row = row.opacity(0.7);
+        }
+
+        // Indent guides — one 1px column per ancestor depth, as an absolute
+        // overlay so the row height is untouched (§10.3).
+        if self.indent_guides && self.depth > 0 {
+            for level in 0..self.depth {
+                let x = TREE_BASE_INSET + level as f32 * self.indent_step + self.indent_step / 2.0;
+                row = row.child(
+                    div()
+                        .absolute()
+                        .top_0()
+                        .bottom_0()
+                        .left(px(x))
+                        .w(px(1.0))
+                        .bg(c.border),
+                );
+            }
         }
 
         // Disclosure slot — always present so labels line up whether or not the
@@ -339,6 +365,7 @@ mod tests {
                 .label_tint(c.warning)
                 .trailing("2")
                 .state(st)
+                .indent_guides(true)
                 .on_click(|_, _, _| {})
                 .on_secondary_down(|_, _, _| {})
                 .extra(|row| row.opacity(0.9))

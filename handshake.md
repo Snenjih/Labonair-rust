@@ -4,7 +4,59 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
-## Current Session: 2026-09-05 (Zed-parity redesign Phase 2 — dense rows + virtualization)
+## Current Session: 2026-09-05 (Zed-parity redesign Phase 3 — content-first Explorer)
+
+### Phase 3 done (`docs/ui-comparison-zed-sidebar-status-bar.md` §13 Phase 3)
+
+- **Toolbar → compact root row** (`panel_explorer.rs` render): the 5 permanent
+  icons collapse to `root identity + Search + one `…` overflow`. Overflow menu =
+  New File / New Folder / Refresh / Show-Hide Hidden Files (all still in the
+  tree context menu too). Search reachable via its toggle/shortcut.
+- **Project-wide search** (`bounded_fs_search`, `spawn_search_walk`): typing a
+  query kicks a bounded (`depth ≤ 8`, `≤ 4000` dir reads) blocking FS walk on
+  `background_executor`; hits stream into `search_hits` and merge (dedup by
+  path) with the loaded-row matches in `search_rows`. Transient "Searching
+  project…" hint; overlay + hits cleared when search closes.
+- **Sticky ancestors** (`sticky_ancestor_indices`, pure): open-dir chain for the
+  first visible row (derived from the `UniformListScrollHandle` offset ÷ row
+  height), pinned above the list with a bottom hairline. Setting
+  `explorerStickyAncestors` (default **on**).
+- **Indent guides**: `TreeRow::indent_guides(bool)` draws 1px vertical guides
+  per depth as an absolute overlay (no row-height change). Setting
+  `explorerIndentGuides` (default **on**).
+- **Active-file auto-reveal** (`reveal_active_file`, `reveal_target_index`):
+  `cx.observe(&workspace)` → when `explorerAutoRevealActiveFile` (default
+  **off**) is set, expand+load the file's ancestors, mark it (`active_file`
+  channel), queue a `scroll_to_item(Center)` serviced in `render`.
+- **Single-child folding** (`fold_chains`, pure, reversible): compresses
+  `a/b/c` chains into one row labelled `a/b/c` keeping the real deepest path.
+  Setting `explorerFoldSingleChildDirs` (default **off**). Skipped during
+  search.
+- **Git decorations** (`parse_git_porcelain`, `poll_git`): local roots poll
+  `git status --porcelain` off-thread on root change + watcher drain; merged
+  into `ExplorerRowData` at `decorate_rows` as a label tint + trailing status
+  letter (no row-height change). Remote roots degrade gracefully (no
+  decorations, same geometry). Setting `explorerGitDecorations` (default
+  **on**). **Diagnostics**: typed `DiagnosticSeverity` hook + empty provider +
+  TODO — no in-repo diagnostic source yet.
+- **Preview vs permanent open**: explicit — single-click / `Space` = preview
+  (peek tab), double-click / `Enter` = permanent. Directories toggle on either.
+- **Settings**: 5 new `FileManagerContent` fields + `default.json` + `schema.rs`
+  rows + `pages.rs` "Explorer tree" group + new concrete `ExplorerSettings`
+  (`crates/settings/src/concrete.rs`, registered). Density-neutral defaults
+  preserve the current look except guides/sticky which default on for parity.
+- Tests: `sticky_ancestor_indices`, `fold_chains` (compress + multi-child
+  no-op + purity), `reveal_target_index`, `decorate_rows`,
+  `parse_git_porcelain`, `bounded_fs_search` (deep unloaded hit + depth cap);
+  `ExplorerSettings` registration. Gates green: `fmt --check`,
+  `clippy --workspace --all-targets -D warnings`, `check --workspace`,
+  `test -p labonair-panel-explorer -p labonair-ui-kit -p labonair-settings
+  -p labonair-settings-content -p labonair-settings-ui -p labonair-backend`.
+- **Deferred**: diagnostics source (hook only); a shared git-status provider
+  across Explorer + SCM (Explorer runs its own local `git` poll for now); the
+  recursive search walk is bounded (see caps above), not exhaustive.
+
+## Previous Session: 2026-09-05 (Zed-parity redesign Phase 2 — dense rows + virtualization)
 
 ### Phase 2 done (`docs/ui-comparison-zed-sidebar-status-bar.md` §13 Phase 2)
 

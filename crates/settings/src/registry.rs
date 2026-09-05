@@ -29,8 +29,8 @@ pub fn register_all(cx: &mut App) {
 mod tests {
     use super::*;
     use crate::concrete::{
-        AiSettings, EditorSettings, PersonalizationSettings, TerminalSettings, ThemeSettings,
-        WorkspaceSettings,
+        AiSettings, EditorSettings, ExplorerSettings, PersonalizationSettings, TerminalSettings,
+        ThemeSettings, WorkspaceSettings,
     };
     use crate::settings_trait::Settings;
     use crate::store;
@@ -55,6 +55,7 @@ mod tests {
             let _ = AiSettings::get(cx);
             let _ = WorkspaceSettings::get(cx);
             let _ = PersonalizationSettings::get(cx);
+            assert!(ExplorerSettings::get(cx).sticky_ancestors());
         });
     }
 }

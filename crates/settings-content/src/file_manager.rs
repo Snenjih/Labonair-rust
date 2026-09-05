@@ -10,6 +10,18 @@ pub struct FileManagerContent {
     pub sftp_show_hidden_files: Option<bool>,
     pub sftp_show_up_folder: Option<bool>,
     pub explorer_show_hidden_by_default: Option<bool>,
+    /// Draw thin vertical indent guides at each Explorer tree depth.
+    pub explorer_indent_guides: Option<bool>,
+    /// Pin the current scroll position's ancestor directory rows above the
+    /// Explorer list.
+    pub explorer_sticky_ancestors: Option<bool>,
+    /// Scroll the Explorer to (and mark) the file open in the active editor.
+    pub explorer_auto_reveal_active_file: Option<bool>,
+    /// Collapse single-child directory chains (`a/b/c`) into one compressed
+    /// Explorer row.
+    pub explorer_fold_single_child_dirs: Option<bool>,
+    /// Show Git status decorations (tint + letter) on Explorer rows.
+    pub explorer_git_decorations: Option<bool>,
     pub sftp_column_size: Option<bool>,
     pub sftp_column_modified: Option<bool>,
     pub sftp_column_permissions: Option<bool>,
@@ -31,6 +43,11 @@ impl FileManagerContent {
             sftp_show_hidden_files: Some(false),
             sftp_show_up_folder: Some(true),
             explorer_show_hidden_by_default: Some(false),
+            explorer_indent_guides: Some(true),
+            explorer_sticky_ancestors: Some(true),
+            explorer_auto_reveal_active_file: Some(false),
+            explorer_fold_single_child_dirs: Some(false),
+            explorer_git_decorations: Some(true),
             sftp_column_size: Some(true),
             sftp_column_modified: Some(true),
             sftp_column_permissions: Some(true),

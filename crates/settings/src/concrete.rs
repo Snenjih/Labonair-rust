@@ -16,8 +16,8 @@
 
 use labonair_settings_content::{
     ai::AiContent, appearance::AppearanceContent, editor::EditorContent,
-    personalization::PersonalizationContent, terminal::TerminalContent,
-    workspace::WorkspaceContent, MergeFrom, SettingsContent,
+    file_manager::FileManagerContent, personalization::PersonalizationContent,
+    terminal::TerminalContent, workspace::WorkspaceContent, MergeFrom, SettingsContent,
 };
 
 use crate::settings_trait::Settings;
@@ -210,6 +210,50 @@ impl Settings for PersonalizationSettings {
 impl PersonalizationSettings {
     pub fn content(&self) -> &PersonalizationContent {
         &self.0
+    }
+}
+
+/// `file_manager` area, read by the sidebar Explorer (Zed-parity Phase 3):
+/// indent guides, sticky ancestors, active-file reveal, single-child folding,
+/// Git decorations, and the historical hidden-files default.
+#[derive(Clone, Debug, PartialEq, RegisterSetting)]
+pub struct ExplorerSettings(FileManagerContent);
+
+impl Settings for ExplorerSettings {
+    fn from_settings(content: &SettingsContent) -> Self {
+        let mut merged = FileManagerContent::defaults();
+        merged.merge_from(&content.file_manager);
+        Self(merged)
+    }
+}
+
+impl ExplorerSettings {
+    pub fn content(&self) -> &FileManagerContent {
+        &self.0
+    }
+
+    pub fn show_hidden_by_default(&self) -> bool {
+        self.0.explorer_show_hidden_by_default.unwrap_or(false)
+    }
+
+    pub fn indent_guides(&self) -> bool {
+        self.0.explorer_indent_guides.unwrap_or(true)
+    }
+
+    pub fn sticky_ancestors(&self) -> bool {
+        self.0.explorer_sticky_ancestors.unwrap_or(true)
+    }
+
+    pub fn auto_reveal_active_file(&self) -> bool {
+        self.0.explorer_auto_reveal_active_file.unwrap_or(false)
+    }
+
+    pub fn fold_single_child_dirs(&self) -> bool {
+        self.0.explorer_fold_single_child_dirs.unwrap_or(false)
+    }
+
+    pub fn git_decorations(&self) -> bool {
+        self.0.explorer_git_decorations.unwrap_or(true)
     }
 }
 
