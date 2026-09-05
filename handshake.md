@@ -4,7 +4,57 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
-## Last Session: 2026-09-05 (T20-001 — `ui-kit` primitive set, first task of Phase 19)
+## Last Session: 2026-09-05 (T20-002 — View-Migration Wave 1: Explorer, SCM, Editor, Terminal)
+
+**T20-002 done**, 3 commits (`bf059cf` Explorer, `e96198d` SCM, `f23c611`
+Editor/Terminal), gates green after each. Migrated the four views named in
+the task from hand-rolled `div()` chrome to `labonair-ui-kit` primitives —
+no behavior change, `cargo test --workspace` green throughout.
+
+- **`ui_kit::ListItem` gained a generic `.extra(f: FnOnce(Stateful<Div>) ->
+  Stateful<Div>)` escape hatch** (`crates/ui-kit/src/list.rs`) — applied last,
+  after every other builder step, so a row can still carry drag-source/
+  drop-target/right-click-menu behavior (or a one-off background override)
+  that `ListItem` has no named method for, without the call site falling
+  back to a bespoke `div()`. This is what let the explorer file-tree row and
+  the SCM file/branch/tag/stash rows move onto `ListItem` while keeping their
+  existing DnD (explorer) and selected/hover color split (SCM: accent when
+  selected vs. border on hover — two different colors, which `ListItem`'s
+  single `selected_fill` doesn't natively support).
+- **`crates/panel-explorer/src/panel_explorer.rs`**: 5 toolbar icon buttons +
+  the show-hidden toggle → `button`/`icon_toggle_button`; clip-banner
+  Paste/Clear + delete-confirm Cancel/Delete + the "Load more…" link →
+  `button`; the tree row (chevron+icon+name, drag source, drop target,
+  right-click menu, selected/cut states) → `ListItem` + `.extra()`. The
+  right-click menu was already on `ui_kit::context_menu` from an earlier
+  pass.
+- **`crates/panel-scm/src/panel_scm.rs`**: `tool_btn`/`row_action` now
+  delegate to `ui_kit::button` internally (so the ~14 call sites across the
+  action bar, branch bar, and commit/tag/stash forms picked up the shared
+  chrome without a per-site edit); 3 collapsible section headers (Staged/
+  Changes/Untracked via `render_section`, Remote branches, Tags, Stashes) →
+  `disclosure`; the "Checkout after create" toggle → `checkbox`; the file/
+  branch/tag/stash rows → `ListItem` + `.extra()` (trailing action buttons
+  as an `h_stack`). **Deliberately left alone**: the panel's `text_field`/
+  `on_field_key` hand-rolled keystroke-routing fields (branch/tag/stash/
+  commit-message input) — this predates `ui_kit::InputState` and migrating
+  it is a behavioral rework (focus model, key routing), not a primitive
+  swap; flagged as a follow-up, not silently dropped.
+- **`crates/workspace/src/views/editor.rs`**: the external-file-change
+  conflict banner (the exact call site `banner.rs`'s own doc comment names
+  as a T20-002 target) → `banner(Severity::Warning)` + `button` — this also
+  fixed a live Critical-Rule-3 gap (the banner was computing its own warning
+  tint via `theme.status_warning()` inline rather than going through the
+  shared severity→token mapping). The gutter/cursor/selection text-render
+  core was correctly out of scope and untouched.
+- **`crates/workspace/src/views/terminal.rs`**: no changes — its right-click
+  menu was already migrated to `ui_kit::context_menu` in an earlier pass, and
+  no other hand-rolled button/list/menu/field markup exists in the view's
+  chrome (the "shell exited" strip is a passive one-line status note, not a
+  button/list/menu, so it was left as a plain `div()`).
+- **Next task: T20-003** (View-Migration Wave 2, `tasks/phase-19-ui-kit/`).
+
+## Previous Session: 2026-09-05 (T20-001 — `ui-kit` primitive set, first task of Phase 19)
 
 **T20-001 done.** `labonair-ui-kit` grew from 5 files / ~880 lines (`button`,
 `context_menu`, `icon`, `text_field`, `popover`) into a real design-system

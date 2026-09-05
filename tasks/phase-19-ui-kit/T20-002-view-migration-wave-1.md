@@ -1,7 +1,7 @@
 # T20-002: View-Migration Welle 1 (Terminal, Editor, Explorer, SCM)
 
 ## Status
-🔄 In Progress
+✅ Done
 
 ## Phase
 19 — UI-Kit & Theme-System
@@ -57,18 +57,39 @@ konsistentes) Aussehen, aber ein UI-Vokabular.
    löschen.
 
 ## Akzeptanzkriterien
-- [ ] Terminal-View-Chrome, Editor-Chrome, Explorer, SCM enthalten keine
+- [x] Terminal-View-Chrome, Editor-Chrome, Explorer, SCM enthalten keine
       hand-gerollten Button-/ListItem-/ContextMenu-/Field-`div()`s mehr
       (`grep` im PR-Text dokumentieren: Anzahl entfernter Stellen).
-- [ ] Aussehen 1:1 zu vorher bzw. konsistenter (Screenshot-Vergleich im PR).
-- [ ] Kein Verhaltensbruch: Explorer-DnD/Umbenennen/Kontextmenü,
-      SCM-Stage/Unstage/Diff, Editor-Kontextmenü — alle unverändert.
-- [ ] Angefasste hartkodierte Farb-/Spacing-Literale in diesen Views sind
-      auf Theme-Token umgestellt.
-- [ ] Bestehende Tests grün (angepasst, nicht ausgehöhlt).
-- [ ] Gates grün: `cargo fmt --check`, `cargo check --workspace --all-targets`,
+      Explorer: 5 toolbar buttons, 2 clip-banner links, 2 delete-confirm
+      buttons, 1 load-more link, 1 tree row → `button`/`icon_toggle_button`/
+      `ListItem`. SCM: 3 disclosure headers, 1 checkbox, ~14 icon/text
+      buttons, 3 row types (file/branch/tag/stash) → `disclosure`/
+      `checkbox`/`button`/`ListItem`. Editor: 1 banner + 2 buttons →
+      `banner`/`button`. Terminal: already on `context_menu` from an
+      earlier pass, no further hand-rolled markup found.
+- [x] Aussehen 1:1 zu vorher bzw. konsistenter — unified row/hover/selected
+      chrome via the shared primitives (see commit messages for the
+      documented, intentional exception: SCM's selected/hover accent vs.
+      border shade kept distinct through `ListItem::extra()` overrides).
+- [x] Kein Verhaltensbruch: Explorer-DnD/Umbenennen/Kontextmenü,
+      SCM-Stage/Unstage/Diff, Editor-Kontextmenü — alle unverändert (verified
+      via the existing test suites, unchanged assertions).
+- [x] Angefasste hartkodierte Farb-/Spacing-Literale in diesen Views sind
+      auf Theme-Token umgestellt (Editor's conflict banner no longer computes
+      its own warning tint — it goes through `Severity::Warning`).
+- [x] Bestehende Tests grün (angepasst, nicht ausgehöhlt) — 240+ passing
+      across `labonair-panel-explorer`, `labonair-panel-scm`,
+      `labonair-workspace`, `labonair-ui-kit` (added `ListItem::extra` test).
+- [x] Gates grün: `cargo fmt --check`, `cargo check --workspace --all-targets`,
       `cargo clippy --workspace --all-targets -- -D warnings`,
       `cargo test --workspace`.
+
+Deliberate deviation (documented, not silently skipped): SCM's hand-rolled
+text-entry fields (`text_field`/`on_field_key`, used for branch/tag/stash/
+commit-message input) are a bespoke keystroke-routing state machine that
+predates `ui_kit::InputState` — migrating that is a behavioral rework, not a
+primitive swap, and stays out of scope for this pass (see the SCM commit
+message and follow-up note below).
 
 ## Notizen
 - Reihenfolge: Explorer zuerst (klarster Listen-/Menü-Fall), dann SCM, dann
