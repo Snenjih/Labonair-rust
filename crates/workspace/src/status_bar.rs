@@ -20,8 +20,9 @@
 //! window persisted a change).
 
 use gpui::{
-    div, px, AnyElement, AnyView, Context, Entity, InteractiveElement, IntoElement, MouseButton,
-    MouseDownEvent, ParentElement, Pixels, Point, Render, SharedString, Styled, Window,
+    div, px, AnyElement, AnyView, Context, Entity, FocusHandle, InteractiveElement, IntoElement,
+    KeyDownEvent, MouseButton, MouseDownEvent, ParentElement, Pixels, Point, Render, SharedString,
+    Styled, Window,
 };
 use labonair_panel::{AnyStatusItemHandle, StatusItemConstructor, StatusSide};
 use labonair_ui_kit::{context_menu, MenuItem, Palette};
@@ -55,6 +56,11 @@ pub struct StatusBar {
     built: bool,
     /// The open right-click placement menu, if any: `(item id, anchor)`.
     menu: Option<(&'static str, Point<Pixels>)>,
+    /// Focus for the toolbar/tab-group keyboard contract (Zed-parity redesign
+    /// Phase 5.1 — the piece Phase 1 explicitly deferred). Once focus is inside
+    /// the bar, Left/Right Arrow walk the tab stops of the panel-button groups
+    /// and the movable status items.
+    focus: FocusHandle,
 }
 
 impl StatusBar {
@@ -79,6 +85,32 @@ impl StatusBar {
             items: Vec::new(),
             built: false,
             menu: None,
+            focus: cx.focus_handle(),
+        }
+    }
+
+    /// Left/Right Arrow move focus across the bar's tab stops while focus is
+    /// inside it; Escape hands focus back to the workspace. This is the
+    /// clean-room equivalent of Zed's status-bar toolbar/tab-group arrow loop
+    /// (§6.4). GPUI 0.2.2 has no ARIA-role API, so the semantics are carried by
+    /// `key_context` + tab stops + per-button tooltips-with-shortcut.
+    // TODO(a11y): replace with a real toolbar/button role + accessible-name API
+    // once GPUI exposes one.
+    fn on_key_down(&mut self, ev: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
+        match ev.keystroke.key.as_str() {
+            "right" => {
+                window.focus_next();
+                cx.stop_propagation();
+            }
+            "left" => {
+                window.focus_prev();
+                cx.stop_propagation();
+            }
+            "escape" => {
+                window.blur();
+                cx.stop_propagation();
+            }
+            _ => {}
         }
     }
 
@@ -278,6 +310,9 @@ impl Render for StatusBar {
         let right = self.cluster(StatusSide::Right, cx);
 
         div()
+            .track_focus(&self.focus)
+            .key_context("StatusBar")
+            .on_key_down(cx.listener(Self::on_key_down))
             .flex()
             .items_center()
             .justify_between()

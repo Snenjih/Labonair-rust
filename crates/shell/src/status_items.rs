@@ -43,6 +43,9 @@ fn simple_bar_button<T: 'static>(
     on_click: impl Fn(&mut T, &mut Window, &mut Context<T>) + 'static,
 ) -> AnyElement {
     icon_toggle_button(key, c, icon, false)
+        // Part of the status-bar toolbar tab-group (Zed-parity Phase 5.1):
+        // reachable by Tab and by the bar's Left/Right arrow loop.
+        .tab_index(0)
         .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
             on_click(this, window, cx);
         }))

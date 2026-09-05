@@ -718,26 +718,7 @@ mod tests {
         assert!((TAB_IN_FROM_SCALE - 0.86).abs() < 1e-6);
     }
 
-    /// WCAG 2.x relative luminance of an opaque color.
-    fn luminance(c: Hsla) -> f64 {
-        let lin = |v: f64| {
-            if v <= 0.03928 {
-                v / 12.92
-            } else {
-                ((v + 0.055) / 1.055).powf(2.4)
-            }
-        };
-        let [r, g, b] = to_rgb8(c);
-        0.2126 * lin(r as f64 / 255.0)
-            + 0.7152 * lin(g as f64 / 255.0)
-            + 0.0722 * lin(b as f64 / 255.0)
-    }
-
-    fn contrast(a: Hsla, b: Hsla) -> f64 {
-        let (l1, l2) = (luminance(a), luminance(b));
-        let (hi, lo) = if l1 > l2 { (l1, l2) } else { (l2, l1) };
-        (hi + 0.05) / (lo + 0.05)
-    }
+    use crate::contrast::contrast_ratio as contrast;
 
     #[test]
     fn body_text_meets_wcag_aa_contrast() {

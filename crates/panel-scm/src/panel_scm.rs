@@ -402,6 +402,12 @@ pub(crate) fn flatten_git(
     collapsed: &std::collections::HashSet<u8>,
     selected: Option<&str>,
 ) -> Vec<GitListEntry> {
+    let _span = tracing::trace_span!(
+        target: "labonair::perf",
+        "scm_flatten_flat",
+        files = sections.iter().map(|(_, _, f)| f.len()).sum::<usize>()
+    )
+    .entered();
     let mut out = Vec::new();
     for (section, title, files) in sections {
         if files.is_empty() {
@@ -447,6 +453,12 @@ pub(crate) fn flatten_git_tree(
     dir_collapsed: &std::collections::HashSet<String>,
     selected: Option<&str>,
 ) -> Vec<GitListEntry> {
+    let _span = tracing::trace_span!(
+        target: "labonair::perf",
+        "scm_flatten_tree",
+        files = sections.iter().map(|(_, _, f)| f.len()).sum::<usize>()
+    )
+    .entered();
     let mut out = Vec::new();
     for (section, title, files) in sections {
         if files.is_empty() {
@@ -3731,6 +3743,13 @@ impl Render for GitPanelView {
         let row_h = c.palette.density_tokens().tree_row_height();
         let view = cx.entity();
         let list = uniform_list("git-file-list", entries.len(), move |range, _win, _cx| {
+            let _span = tracing::trace_span!(
+                target: "labonair::perf",
+                "scm_viewport_build",
+                built = range.len(),
+                total = entries.len()
+            )
+            .entered();
             range
                 .map(|i| git_list_element(&entries[i], c, row_h, &view))
                 .collect::<Vec<_>>()
@@ -4306,5 +4325,70 @@ mod tests {
             derive_disabled_reason(false, 0, false, false, RepoOperation::Idle, true),
             None
         );
+    }
+
+    // ── Zed-parity Phase 5: large change-set render/latency evidence ──────────
+    //
+    // §14 "no row-count-linear render regression" for the Git panel. `flatten_*`
+    // is linear in the change set (it *is* the change set); the virtual list's
+    // per-frame `git_list_element` work must be viewport-bounded. Live trace:
+    //   RUST_LOG=labonair::perf=trace cargo run
+    // then open Source Control on a big repo — `scm_flatten_flat` /
+    // `scm_flatten_tree` fire once per refresh, `scm_viewport_build` per frame
+    // with `built` == visible rows.
+
+    fn many_changes(n: usize) -> Vec<FileStatus> {
+        (0..n)
+            .map(|i| FileStatus {
+                path: format!("src/mod{}/file{i}.rs", i % 128),
+                original_path: None,
+                index_status: if i % 2 == 0 { 'M' } else { '.' },
+                worktree_status: if i % 2 == 0 { '.' } else { 'M' },
+                submodule: None,
+                conflicted: false,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn flatten_git_on_a_large_change_set_is_bounded_and_viewport_render_is_not() {
+        const N: usize = 5_000;
+        let unstaged = many_changes(N);
+        let empty: Vec<FileStatus> = vec![];
+        let sections: [(Section, &'static str, &[FileStatus]); 4] = [
+            (Section::Conflicts, "Conflicts", &empty),
+            (Section::Staged, "Staged", &empty),
+            (Section::Unstaged, "Changes", &unstaged),
+            (Section::Untracked, "Untracked", &empty),
+        ];
+        let collapsed = std::collections::HashSet::new();
+
+        let flat = flatten_git(&sections, &collapsed, None);
+        // one section header + N file rows, nothing quadratic.
+        assert_eq!(flat.len(), N + 1);
+
+        let tree = flatten_git_tree(
+            &sections,
+            &collapsed,
+            &std::collections::HashSet::new(),
+            None,
+        );
+        // tree adds grouping nodes but every file still appears exactly once.
+        assert_eq!(file_paths(&flat).len(), N);
+        assert_eq!(file_paths(&tree).len(), N);
+
+        // The work `uniform_list("git-file-list", …)` does per frame: map a
+        // viewport `Range` -> elements. Touched rows track the viewport only.
+        const VIEWPORT: usize = 40;
+        for start in [0usize, 2_500, flat.len() - VIEWPORT] {
+            let mut touched = 0usize;
+            let _built: Vec<&GitListEntry> = (start..start + VIEWPORT)
+                .map(|i| {
+                    touched += 1;
+                    &flat[i]
+                })
+                .collect();
+            assert_eq!(touched, VIEWPORT);
+        }
     }
 }

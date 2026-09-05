@@ -372,4 +372,34 @@ mod tests {
                 .into_element();
         }
     }
+
+    /// Zed-parity Phase 5.5: the row must build at compact / default /
+    /// comfortable density and at a deep indent without overflowing — the row
+    /// is `w_full` and ellipsises its label, so a narrow dock cannot force a
+    /// horizontal overflow. This is a build (not pixel) assertion.
+    #[test]
+    fn builds_at_every_density_and_deep_indent() {
+        for density in [0.85_f32, 1.0, 1.15] {
+            let mut c = test_palette();
+            c.density = density;
+            let d = Density::from_palette(&c);
+            assert!(d.tree_row_height() > gpui::px(0.0));
+            assert_eq!(
+                d.focus_indicator(),
+                gpui::px(2.0),
+                "focus indicator stays 2px"
+            );
+            for depth in [0usize, 1, 8, 20] {
+                let _ = tree_row("r", c, "a-very-long-file-name-that-must-ellipsise.rs")
+                    .depth(depth)
+                    .icon(IconName::FileCode)
+                    .indent_guides(true)
+                    .state(TreeRowState {
+                        focused: true,
+                        ..Default::default()
+                    })
+                    .into_element();
+            }
+        }
+    }
 }

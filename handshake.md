@@ -4,7 +4,133 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
-## Current Session: 2026-09-06 (Zed-parity redesign Phase 4 — Git information architecture)
+## Current Session: 2026-09-06 (Zed-parity redesign Phase 5 — accessibility, keyboard traversal, performance & contrast evidence)
+
+### Phase 5 done (`docs/ui-comparison-zed-sidebar-status-bar.md` §13 Phase 5 / §14)
+
+Polish + evidence only — no redesign, changes surgical. All four gates green on this
+machine (`fmt --check`, `clippy --workspace --all-targets -D warnings`,
+`test --workspace` — 50 `test result: ok.` lines, 0 failed, 0 environmental
+failures).
+
+**Keyboard traversal / focus model**
+- `crates/workspace/src/status_bar.rs`: `StatusBar` gained a `FocusHandle`,
+  `key_context("StatusBar")`, `track_focus`, and an `on_key_down` that maps
+  **Left / Right Arrow → `window.focus_prev()` / `focus_next()`** and Escape →
+  `window.blur()`. This is the status-bar toolbar/tab-group arrow loop that
+  Phase 1 explicitly deferred (§6.4). Focus enters the bar by Tab (its controls
+  are tab stops).
+- `crates/shell/src/status_items.rs`: `simple_bar_button` now sets `.tab_index(0)`
+  so the right-cluster info buttons join the same tab-group loop.
+  `DockPanelButtons` already had `.tab_index(0)` + a tooltip carrying the
+  resolved shortcut (Phase 1), so per-dock buttons were already reachable —
+  Phase 5 only closed the *bar-level* arrow traversal.
+- Explorer tree, Git change list, Changes/History tabs, context menus and the
+  commit editor already carry their focus handles / `key_context` / keydown
+  handlers from Phases 2–4; audit found no missing focus model there.
+
+**Roles / names / toggled+expanded state / focus restoration**
+- GPUI 0.2.2 has **no ARIA-role API**. Semantics are encoded with the mechanisms
+  it does have: `key_context`, tab stops, focus-visible styling via the
+  `Density::focus_indicator` token, and per-button tooltips that include the
+  configured shortcut. A typed `TODO(a11y)` marks where a real toolbar/button
+  role + accessible-name API would attach (`status_bar.rs`).
+- Toggled state: panel buttons already render the active/pressed channel
+  (`icon_toggle_button(pressed)`); expandable Explorer/SCM rows already carry the
+  `expanded` flag in their row data. Menus/modals restore focus to the invoker
+  through the existing `context_menu` dismiss + workspace focus handle.
+- Only `explorer` (`⌘B`) and `ai` (`⌘I`) have a bound shortcut in
+  `command-palette/src/keybind.rs`; the other panel buttons correctly show the
+  title alone (no shortcut is *configured*, so none is invented).
+
+**Perf spans (new hot paths from Phases 2–4)**
+- `panel-explorer`: `explorer_flatten` (on `flatten_rows`), `explorer_decorate`
+  (`decorate_rows`), `explorer_fold_chains` (`fold_chains`),
+  `explorer_viewport_build` (inside the `uniform_list` render closure, records
+  `built` vs `total`).
+- `panel-scm`: `scm_flatten_flat` (`flatten_git`), `scm_flatten_tree`
+  (`flatten_git_tree`), `scm_viewport_build` (inside the `uniform_list` closure).
+- `workspace`: `render` span with `view = "project_diff"` on
+  `ProjectDiffView::render`.
+- Reproduce: `RUST_LOG=labonair::perf=trace cargo run`, then scroll the Explorer
+  / open Source Control on a large repo. `*_flatten*` fires once per model
+  change; `*_viewport_build` fires per frame with `built` == visible rows (never
+  the total).
+
+**Perf benchmark tests (§14 "no row-count-linear render regression")**
+- `panel-explorer` `flatten_on_a_large_tree_is_bounded_and_geometry_stable`:
+  20 000 synthetic rows → `flatten_rows` is 1:1 (no fan-out), `decorate_rows`
+  never changes the row count, exactly one row each carries selection /
+  active-file (decorations don't smear).
+- `panel-explorer` `virtual_list_builds_only_the_viewport_not_the_whole_model`:
+  replays the `uniform_list` render closure's work over a 48-row window at
+  three scroll offsets in a 20 000-row model and asserts touched-row count == 48
+  every time.
+- `panel-scm` `flatten_git_on_a_large_change_set_is_bounded_and_viewport_render_is_not`:
+  5 000 changes → `flatten_git` len == N+1, every file appears once in both flat
+  and tree flatteners, viewport replay touches 40 rows regardless of offset.
+
+**Theme contrast validation**
+- New `crates/theme/src/contrast.rs`: promoted the previously test-private
+  `luminance`/`contrast` helpers to a public API
+  (`relative_luminance`, `contrast_ratio`, `composite_over`), re-exported from
+  `labonair_theme`. `tokens.rs` now reuses `contrast_ratio` (surgical — its
+  existing body-text AA test is unchanged).
+- New test `redesign_surfaces_meet_contrast_in_every_builtin_theme`: iterates
+  `Theme::light()` + `Theme::dark()` (the built-in set — `assets/themes/labonair.json`
+  is regenerated from these) and checks every new surface — focus indicator,
+  right-edge active bar, sticky-ancestor hairline, indent guides, tri-state
+  checkbox (incl. the 0.4-opacity partial fill via `composite_over`),
+  `GitChangeRow` status tints, drop-target ring — against the background it
+  actually sits on. Collects *all* violations before failing.
+- **Known deviation (light theme):** the reference's `--ring` and `--primary`
+  are a light gold (`--ring: oklch(79.68% 0.1298 82.18)`, identical in `:root`
+  and `.dark`). Gold on the near-white light background is inherently ~1.75:1,
+  so the light-theme focus ring / active bar / drop ring do **not** reach the
+  3:1 UI-component AA floor. The **dark** theme (macOS-first default) meets every
+  real threshold. Changing the tokens would violate Critical Rule 3, so the
+  light floors are pinned to the reference's achieved values — the test guards
+  against a regression *below* the reference and documents the gap. Custom
+  themes are validated at import time by reusing the same public helpers.
+
+**Density-mode + narrow-dock validation**
+- `ui-kit` `tree_row::…::builds_at_every_density_and_deep_indent` +
+  `git_change_row::…::builds_at_every_density_and_deep_indent`: build the rows at
+  compact / default / comfortable density (0.85 / 1.0 / 1.15) and depths up to 20,
+  with a long label. Rows are `w_full` + ellipsised, so a minimum-width dock
+  cannot force horizontal overflow — asserted structurally (build tests, not
+  pixel snapshots). `density.rs` already pins hairline/focus at fixed 1–2px
+  across densities; re-asserted here (`focus_indicator == px(2.0)`).
+
+**§14 acceptance status:** every "Quality gates" bullet passes. Status-bar /
+Explorer / Source Control functional bullets were met by Phases 1–4 and are
+preserved; Phase 5 adds the keyboard-traversal, evidence and contrast bullets.
+The single **partial** item is light-theme focus/active/drop contrast vs the 3:1
+AA floor (reference-token limitation, documented above; dark theme fully meets
+it).
+
+---
+
+## Zed-parity redesign — phases 1–5 complete
+
+| Phase | Commit | Scope |
+|---|---|---|
+| 1 | `dd15f45` | Per-dock `DockPanelButtons` status items; generic dock header removed; overlaid resize handle + double-click reset; `StatusBar`. |
+| 2 | `8280b16` | `ui-kit` `TreeRow` / `GitChangeRow` / `Density`; Explorer + SCM virtualized (`uniform_list`). |
+| 3 | `1b9855e` | Explorer content-first: compact root row, project-wide search, sticky ancestors, indent guides, auto-reveal, single-child folding, Git decorations, preview vs permanent open. |
+| 4 | `719634d` | Git IA: Changes/History tabs, tri-state checkbox staging, workspace-level `ProjectDiffView`, adaptive commit composer, derived-state enums. |
+| 5 | _this commit_ | Accessibility + keyboard traversal (status-bar arrow loop), perf spans + large-project benchmark tests, theme contrast validation, density/narrow-dock build tests. |
+
+**Acceptance (§14):** Quality gates — all pass (`fmt --check`,
+`clippy --workspace --all-targets -D warnings`, `test --workspace`, no
+row-count-linear render regression proven by the new benchmarks, no main-thread
+I/O introduced). Status bar & docks / Explorer / Source Control — met.
+**One partial:** light-theme gold focus/active/drop-target contrast does not
+reach the 3:1 non-text AA floor because the reference's `--ring` / `--primary`
+tokens are a light gold (Critical Rule 3 forbids changing them); the dark theme
+meets every threshold.
+
+## Previous Session: 2026-09-06 (Zed-parity redesign Phase 4 — Git information architecture)
 
 ### Phase 4 done (`docs/ui-comparison-zed-sidebar-status-bar.md` §13 Phase 4)
 

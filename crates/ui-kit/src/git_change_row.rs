@@ -311,4 +311,29 @@ mod tests {
             }
         }
     }
+
+    /// Zed-parity Phase 5.5: builds at compact / default / comfortable density
+    /// and deep indent. The row is `w_full` with an ellipsised identity, so a
+    /// minimum-width Git dock cannot force horizontal overflow.
+    #[test]
+    fn builds_at_every_density_and_deep_indent() {
+        for density in [0.85_f32, 1.0, 1.15] {
+            let mut c = test_palette();
+            c.density = density;
+            for depth in [0usize, 3, 12] {
+                for stage in [
+                    StageState::Unstaged,
+                    StageState::Staged,
+                    StageState::PartiallyStaged,
+                ] {
+                    let _ = git_change_row("g", c, stage, "deeply/nested/module/file-name.rs")
+                        .depth(depth)
+                        .status("M", c.warning)
+                        .secondary("deeply/nested/module")
+                        .on_toggle_stage(|_, _, _| {})
+                        .into_element();
+                }
+            }
+        }
+    }
 }

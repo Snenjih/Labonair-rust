@@ -274,6 +274,13 @@ impl Focusable for ProjectDiffView {
 
 impl Render for ProjectDiffView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let _span = tracing::trace_span!(
+            target: "labonair::perf",
+            "render",
+            view = "project_diff",
+            files = self.files.len()
+        )
+        .entered();
         let c = self.colors(cx);
         let font = self.theme.read(cx).buffer_font();
         let is_split = matches!(self.mode, ProjectDiffMode::Split);

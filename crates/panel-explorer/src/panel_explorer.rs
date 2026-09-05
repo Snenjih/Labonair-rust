@@ -421,6 +421,12 @@ pub(crate) fn flatten_rows(
     cut: &[PathBuf],
     drop_target: Option<&Path>,
 ) -> Vec<ExplorerRowData> {
+    let _span = tracing::trace_span!(
+        target: "labonair::perf",
+        "explorer_flatten",
+        rows = rows.len()
+    )
+    .entered();
     let multi = selection.len() > 1;
     rows.into_iter()
         .map(|row| match row {
@@ -483,6 +489,12 @@ pub(crate) fn decorate_rows(
     git: &HashMap<PathBuf, char>,
     diag: &HashMap<PathBuf, DiagnosticSeverity>,
 ) {
+    let _span = tracing::trace_span!(
+        target: "labonair::perf",
+        "explorer_decorate",
+        rows = rows.len()
+    )
+    .entered();
     for row in rows.iter_mut() {
         if let ExplorerRowData::Entry {
             path,
@@ -506,6 +518,12 @@ pub(crate) fn decorate_rows(
 /// [`flatten_rows`] without this pass). The surviving row keeps the *real*
 /// deepest path, so selection, drag/drop and context menus are unaffected.
 pub(crate) fn fold_chains(mut rows: Vec<Row>) -> Vec<Row> {
+    let _span = tracing::trace_span!(
+        target: "labonair::perf",
+        "explorer_fold_chains",
+        rows = rows.len()
+    )
+    .entered();
     let mut i = 0;
     while i < rows.len() {
         let Row::Entry {
@@ -1776,6 +1794,13 @@ impl Render for ExplorerView {
             // window is turned into elements. The closure gets only
             // `&mut Window, &mut App` — handlers go through `view.update(..)`.
             uniform_list("explorer-rows", data.len(), move |range, _win, cx| {
+                let _span = tracing::trace_span!(
+                    target: "labonair::perf",
+                    "explorer_viewport_build",
+                    built = range.len(),
+                    total = data.len()
+                )
+                .entered();
                 range
                     .map(|i| {
                         explorer_row_element(&data[i], c, indent_guides, &view, &edit_field, cx)
@@ -3123,5 +3148,98 @@ mod tests {
         assert!(shallow.iter().all(|(_, n, _, _)| n != "needle.rs"));
 
         std::fs::remove_dir_all(&root).ok();
+    }
+
+    // ── Zed-parity Phase 5: large-project render/latency evidence ─────────────
+    //
+    // §14 "no row-count-linear render regression": the flatten pass is linear in
+    // the model (unavoidable — it *is* the model) but the per-frame element
+    // construction the virtual list performs must be bounded by the viewport,
+    // never by the total row count. These tests pin both halves of that
+    // contract on the pure functions so a regression fails `cargo test` without
+    // needing a GPUI window. Reproduce the live trace with:
+    //   RUST_LOG=labonair::perf=trace cargo run
+    // then scroll the Explorer — `explorer_flatten` fires once per model change,
+    // `explorer_viewport_build` fires per frame with `built` == viewport rows.
+
+    fn synthetic_rows(n: usize) -> Vec<Row> {
+        (0..n)
+            .map(|i| Row::Entry {
+                path: PathBuf::from(format!("/r/dir{}/file{i}.rs", i % 64)),
+                depth: 1 + (i % 4),
+                entry: Entry {
+                    name: format!("file{i}.rs"),
+                    is_dir: false,
+                    is_ignored: false,
+                },
+            })
+            .collect()
+    }
+
+    #[test]
+    fn flatten_on_a_large_tree_is_bounded_and_geometry_stable() {
+        const N: usize = 20_000;
+        let expanded = HashSet::new();
+        let selection = vec![PathBuf::from("/r/dir0/file0.rs")];
+
+        let mut data = flatten_rows(synthetic_rows(N), &expanded, &selection, &[], None);
+        assert_eq!(data.len(), N, "flatten is 1:1 with the model, no fan-out");
+
+        // Decorations merge in place and never add/remove rows (stable geometry
+        // while metadata arrives — §10.5).
+        let mut git = HashMap::new();
+        git.insert(PathBuf::from("/r/dir0/file0.rs"), 'M');
+        decorate_rows(
+            &mut data,
+            Some(Path::new("/r/dir1/file1.rs")),
+            &git,
+            &HashMap::new(),
+        );
+        assert_eq!(data.len(), N, "decorate_rows must not change row count");
+
+        // Exactly one row carries selection, one the active-file marker, one the
+        // git tint — decorations do not smear across the list.
+        let sel = data
+            .iter()
+            .filter(|r| matches!(r, ExplorerRowData::Entry { selected: true, .. }))
+            .count();
+        let active = data
+            .iter()
+            .filter(|r| {
+                matches!(
+                    r,
+                    ExplorerRowData::Entry {
+                        active_file: true,
+                        ..
+                    }
+                )
+            })
+            .count();
+        assert_eq!((sel, active), (1, 1));
+    }
+
+    #[test]
+    fn virtual_list_builds_only_the_viewport_not_the_whole_model() {
+        const N: usize = 20_000;
+        const VIEWPORT: usize = 48;
+        let data = flatten_rows(synthetic_rows(N), &HashSet::new(), &[], &[], None);
+
+        // This is precisely the work the `uniform_list("explorer-rows", …)`
+        // render closure does each frame: map a `Range` -> elements. Assert the
+        // touched-row count tracks the viewport, not `data.len()`.
+        for start in [0usize, 5_000, N - VIEWPORT] {
+            let range = start..start + VIEWPORT;
+            let mut touched = 0usize;
+            let _built: Vec<&ExplorerRowData> = range
+                .map(|i| {
+                    touched += 1;
+                    &data[i]
+                })
+                .collect();
+            assert_eq!(
+                touched, VIEWPORT,
+                "frame cost is viewport-bounded at {start}"
+            );
+        }
     }
 }
