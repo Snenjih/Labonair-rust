@@ -175,33 +175,25 @@ impl SettingsView {
                     div()
                         .flex()
                         .gap_1()
+                        // T20-003: shared `button()` primitive (`Outline`/`Xs`).
                         .child(
-                            div()
-                                .id("kb-open-keymap-json")
-                                .px_2()
-                                .py(px(3.0))
-                                .rounded_sm()
-                                .border_1()
-                                .border_color(c.border)
-                                .text_color(c.fg)
-                                .hover(|s| s.bg(c.border))
-                                .child("Open keymap.json")
-                                .on_click(cx.listener(|this, _: &ClickEvent, window, cx| {
+                            button(
+                                "kb-open-keymap-json",
+                                *c,
+                                ButtonVariant::Outline,
+                                ButtonSize::Xs,
+                            )
+                            .child("Open keymap.json")
+                            .on_click(cx.listener(
+                                |this, _: &ClickEvent, window, cx| {
                                     this.workspace.update(cx, |w, cx| {
                                         w.open_or_create_user_keymap_json(window, cx)
                                     });
-                                })),
+                                },
+                            )),
                         )
                         .child(
-                            div()
-                                .id("kb-reset-all")
-                                .px_2()
-                                .py(px(3.0))
-                                .rounded_sm()
-                                .border_1()
-                                .border_color(c.border)
-                                .text_color(c.fg)
-                                .hover(|s| s.bg(c.border))
+                            button("kb-reset-all", *c, ButtonVariant::Outline, ButtonSize::Xs)
                                 .child("Reset all")
                                 .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
                                     this.reset_all_keybinds(cx)
@@ -227,65 +219,61 @@ impl SettingsView {
                 effective_binding(id, &overrides).unwrap_or_else(|| "Disabled".to_string())
             };
 
-            let row = div()
+            // T20-003: the binding row is a shared `ListItem` — the
+            // record-pill and the "Reset" action keep their own `on_click`
+            // handlers (via `.trailing()`) rather than the row's own, so
+            // clicking the label doesn't start recording.
+            let trailing = div()
                 .flex()
                 .items_center()
-                .justify_between()
-                .gap_4()
-                .py_2()
-                .border_b_1()
-                .border_color(c.border)
+                .gap_1()
                 .child(
                     div()
-                        .flex_1()
-                        .min_w_0()
+                        .id(SharedString::from(format!("kb-rec-{slug}")))
+                        .px_2()
+                        .py(px(3.0))
+                        .min_w(px(120.0))
+                        .text_center()
+                        .rounded_sm()
+                        .border_1()
+                        .border_color(if is_rec { c.accent } else { c.border })
+                        .bg(c.bg)
                         .text_color(c.fg)
-                        .child(SharedString::from(s.label)),
+                        .hover(|st| st.bg(c.border))
+                        .child(SharedString::from(display))
+                        .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
+                            this.recording = Some(id);
+                            this.kb_conflict = None;
+                            window.focus(&this.focus);
+                            cx.notify();
+                        })),
                 )
-                .child(
-                    div()
-                        .flex()
-                        .items_center()
-                        .gap_1()
-                        .child(
-                            div()
-                                .id(SharedString::from(format!("kb-rec-{slug}")))
-                                .px_2()
-                                .py(px(3.0))
-                                .min_w(px(120.0))
-                                .text_center()
-                                .rounded_sm()
-                                .border_1()
-                                .border_color(if is_rec { c.accent } else { c.border })
-                                .bg(c.bg)
-                                .text_color(c.fg)
-                                .hover(|st| st.bg(c.border))
-                                .child(SharedString::from(display))
-                                .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
-                                    this.recording = Some(id);
-                                    this.kb_conflict = None;
-                                    window.focus(&this.focus);
-                                    cx.notify();
-                                })),
+                .when(overridden, |d| {
+                    d.child(
+                        button(
+                            SharedString::from(format!("kb-reset-{slug}")),
+                            *c,
+                            ButtonVariant::Ghost,
+                            ButtonSize::Xs,
                         )
-                        .when(overridden, |d| {
-                            d.child(
-                                div()
-                                    .id(SharedString::from(format!("kb-reset-{slug}")))
-                                    .px_2()
-                                    .py(px(3.0))
-                                    .rounded_sm()
-                                    .border_1()
-                                    .border_color(c.border)
-                                    .text_color(c.muted)
-                                    .hover(|st| st.text_color(c.fg))
-                                    .child("Reset")
-                                    .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
-                                        this.reset_keybind(id, cx);
-                                    })),
-                            )
-                        }),
-                );
+                        .child("Reset")
+                        .on_click(cx.listener(
+                            move |this, _: &ClickEvent, _w, cx| {
+                                this.reset_keybind(id, cx);
+                            },
+                        )),
+                    )
+                });
+            let border = c.border;
+            let row = ListItem::new(
+                SharedString::from(format!("kb-row-{slug}")),
+                c.fg,
+                c.muted,
+                c.accent,
+            )
+            .child(SharedString::from(s.label))
+            .trailing(trailing)
+            .extra(move |row| row.border_b_1().border_color(border));
             root = root.child(row);
 
             if conflict_id == Some(id) {
@@ -295,60 +283,41 @@ impl SettingsView {
                     kc.binding,
                     shortcut(kc.other).label
                 );
+                // T20-003: the shared `Banner` (`Warning`) — message + the
+                // two resolution actions as `button()`s.
                 root = root.child(
-                    div()
-                        .flex()
-                        .items_center()
-                        .justify_between()
-                        .gap_2()
-                        .px_2()
-                        .py_2()
-                        .rounded_sm()
-                        .bg(c.bg)
-                        .border_1()
-                        .border_color(c.accent)
-                        .child(
-                            div()
-                                .flex_1()
-                                .min_w_0()
-                                .text_size(px(11.0))
-                                .text_color(c.fg)
-                                .child(SharedString::from(msg)),
-                        )
+                    banner(Severity::Warning, *c)
+                        .child(div().flex_1().min_w_0().child(SharedString::from(msg)))
                         .child(
                             div()
                                 .flex()
                                 .gap_1()
                                 .child(
-                                    div()
-                                        .id("kb-conflict-overwrite")
-                                        .px_2()
-                                        .py(px(2.0))
-                                        .rounded_sm()
-                                        .border_1()
-                                        .border_color(c.border)
-                                        .text_color(c.fg)
-                                        .hover(|st| st.bg(c.border))
-                                        .child("Overwrite")
-                                        .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
-                                            this.resolve_kb_conflict(cx)
-                                        })),
+                                    button(
+                                        "kb-conflict-overwrite",
+                                        *c,
+                                        ButtonVariant::Outline,
+                                        ButtonSize::Xs,
+                                    )
+                                    .child("Overwrite")
+                                    .on_click(cx.listener(
+                                        |this, _: &ClickEvent, _w, cx| this.resolve_kb_conflict(cx),
+                                    )),
                                 )
                                 .child(
-                                    div()
-                                        .id("kb-conflict-cancel")
-                                        .px_2()
-                                        .py(px(2.0))
-                                        .rounded_sm()
-                                        .border_1()
-                                        .border_color(c.border)
-                                        .text_color(c.muted)
-                                        .hover(|st| st.text_color(c.fg))
-                                        .child("Cancel")
-                                        .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
+                                    button(
+                                        "kb-conflict-cancel",
+                                        *c,
+                                        ButtonVariant::Ghost,
+                                        ButtonSize::Xs,
+                                    )
+                                    .child("Cancel")
+                                    .on_click(cx.listener(
+                                        |this, _: &ClickEvent, _w, cx| {
                                             this.kb_conflict = None;
                                             cx.notify();
-                                        })),
+                                        },
+                                    )),
                                 ),
                         ),
                 );
