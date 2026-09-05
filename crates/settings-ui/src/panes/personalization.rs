@@ -140,7 +140,8 @@ impl SettingsView {
             .child(list_header("Statusbar Layout", c.muted))
             .child(div().text_size(px(11.0)).text_color(c.muted).pb_2().child(
                 "Move status bar items between the left and right cluster, or hide them. \
-                         The panel-toggle cluster is fixed to the left and isn't listed here.",
+                         The per-dock panel buttons sit next to the dock they control and \
+                         aren't listed here.",
             ))
             .child(self.render_statusbar_layout_editor(c, cx))
             .child(list_header("Panel Visibility", c.muted))
@@ -162,7 +163,12 @@ impl SettingsView {
             let registry = ws.status_item_registry();
             registry
                 .iter()
-                .filter(|reg| reg.id != "panel-toggles")
+                .filter(|reg| {
+                    !matches!(
+                        reg.id,
+                        "dock-buttons-left" | "dock-buttons-right" | "dock-buttons-bottom"
+                    )
+                })
                 .map(|reg| PlacedItem {
                     id: reg.id,
                     side: registry.resolve_side(reg.id),

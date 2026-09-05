@@ -255,6 +255,19 @@ impl Dock {
             .map(|p| p.position_is_valid(to, cx))
             .unwrap_or(false)
     }
+
+    /// Docks the panel `name` (which lives in this dock) may be moved to:
+    /// every position except this dock's own and any the panel's
+    /// [`position_is_valid`](labonair_panel::PanelHandle::position_is_valid)
+    /// rejects. Drives the status-bar button's context menu so it can never
+    /// present a move that [`crate::Workspace::move_panel`] would refuse.
+    pub fn move_destinations(&self, name: &str, cx: &App) -> Vec<DockPosition> {
+        DockPosition::ALL
+            .into_iter()
+            .filter(|d| *d != self.position)
+            .filter(|d| self.panel_allows(name, *d, cx))
+            .collect()
+    }
 }
 
 /// Persisted layout of one dock. The equivalent of Zed's
@@ -378,6 +391,49 @@ mod tests {
         dock.remove_panel("b");
         assert_eq!(dock.active_name(), None);
         assert!(dock.is_empty());
+    }
+
+    #[test]
+    fn only_active_panel_of_open_dock_reads_as_toggled() {
+        // The status-bar button's "active" predicate: dock open AND this is its
+        // active panel. A closed dock keeps its active index but has no
+        // toggled button.
+        let mut dock = Dock::new(DockPosition::Left);
+        dock.add_panel(stub("explorer"));
+        dock.add_panel(stub("scm"));
+        dock.set_open(true);
+        dock.activate_panel("explorer");
+
+        let toggled = |d: &Dock, name: &str| d.is_open() && d.active_name() == Some(name);
+        assert!(toggled(&dock, "explorer"));
+        assert!(!toggled(&dock, "scm"));
+
+        dock.set_open(false);
+        assert!(!toggled(&dock, "explorer"));
+        assert_eq!(
+            dock.active_name(),
+            Some("explorer"),
+            "active index retained"
+        );
+    }
+
+    #[gpui::test]
+    fn move_destinations_excludes_current_and_invalid(cx: &mut gpui::TestAppContext) {
+        // `explorer` may only live left or right → from the left dock the only
+        // offered destination is Right (never Left = current, never Bottom =
+        // invalid).
+        let mut dock = Dock::new(DockPosition::Left);
+        dock.add_panel(Arc::new(StubPanel {
+            name: "explorer",
+            valid: &[DockPosition::Left, DockPosition::Right],
+        }));
+
+        cx.update(|cx| {
+            assert_eq!(
+                dock.move_destinations("explorer", cx),
+                vec![DockPosition::Right]
+            );
+        });
     }
 
     #[test]

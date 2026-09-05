@@ -9,8 +9,8 @@
 //! `default_side` and its `order`, and renders its own content. Left = panel
 //! controls, right = info dropdowns (`docs/architecture.md` §4).
 //!
-//! Personalization (T18-005): every item except the fixed-left panel-toggle
-//! cluster (`"panel-toggles"`, see [`StatusItem::hideable`] /
+//! Personalization (T18-005): every item except the structural per-dock panel-
+//! button groups (`not_moveable`, see [`StatusItem::hideable`] /
 //! `crate::status_placements`) gets a right-click menu — "Move left" / "Move
 //! right" / "Hide" — that calls [`Workspace::set_status_bar_placement`]. The
 //! side/hidden overrides live on the registry
@@ -33,10 +33,17 @@ use crate::Workspace;
 /// Status-bar row height — matches the shell's former `STATUS_H`.
 const STATUS_H: f32 = 32.0;
 
-/// Panel-toggles is fixed left, not moveable/hideable through this menu
-/// (T18-005 point 6) — individual panels are hidden via *its own* right-click
-/// menu (T18-003).
-const NOT_MOVEABLE: &str = "panel-toggles";
+/// The per-dock panel-button groups are structural, not ordinary movable
+/// status items. They own their placement (left group at the left edge, bottom
+/// and right groups at the right edge) and carry their own right-click menu for
+/// moving the panel between docks or hiding it, so this shared placement menu
+/// skips them.
+fn not_moveable(id: &str) -> bool {
+    matches!(
+        id,
+        "dock-buttons-left" | "dock-buttons-right" | "dock-buttons-bottom"
+    )
+}
 
 /// Renders the registered [`StatusItem`](labonair_panel::StatusItem)s, sorted
 /// by `order` within each side.
@@ -228,7 +235,7 @@ impl StatusBar {
             }
             prev_group = Some(group);
 
-            if id == NOT_MOVEABLE {
+            if not_moveable(id) {
                 out.push(view.into_any_element());
                 continue;
             }

@@ -4663,19 +4663,6 @@ impl Workspace {
         }
     }
 
-    /// Move `name` to dock `to`, persisting + notifying on a real move.
-    fn move_panel_persist(
-        &mut self,
-        name: &str,
-        to: labonair_panel::DockPosition,
-        cx: &mut Context<Self>,
-    ) {
-        if self.move_panel(name, to, cx) {
-            self.persist_docks(cx);
-            cx.notify();
-        }
-    }
-
     /// Apply one queued [`LiveCommand`] from the AI live-bridge to the active
     /// terminal (T17-006 — replaces `AppShell::sync_live_bridge`'s per-frame
     /// `drain_commands` loop). Queued commands only ever exist while a terminal
@@ -4694,11 +4681,31 @@ impl Workspace {
         cx.notify();
     }
 
-    /// Render one edge dock (T17-002): a header (active panel title + a
-    /// "move to next dock" affordance), the active panel's body, and a resize handle on the
-    /// inner edge. Left/right docks are vertical + width-resizable; the bottom
-    /// dock is horizontal + height-resizable. A zoomed dock fills its axis and
-    /// drops the handle. Ported off `AppShell` in T17-006.
+    /// Reset the dock at `pos` to its default size (bound double-click on the
+    /// resize handle — `docs/ui-comparison-zed-sidebar-status-bar.md` §7.4).
+    fn reset_dock_size(&mut self, pos: labonair_panel::DockPosition, cx: &mut Context<Self>) {
+        let floor = self.dock(pos).active_panel().and_then(|p| p.min_size(cx));
+        let default = crate::dock::default_size(pos);
+        let changed = {
+            let dock = self.dock_mut(pos);
+            let before = dock.size();
+            dock.set_size(default, floor);
+            (f32::from(dock.size()) - f32::from(before)).abs() > 0.5
+        };
+        if changed {
+            self.persist_docks(cx);
+            cx.notify();
+        }
+    }
+
+    /// Render one edge dock (T17-002): the active panel's body filling the dock,
+    /// a 1px structural border on the workspace-facing edge, and an *overlaid*
+    /// resize hit target straddling that border (no generic title/move header —
+    /// panel movement lives on the status-bar button's context menu). Left/right
+    /// docks are width-resizable; the bottom dock is height-resizable.
+    /// Double-clicking the handle restores the default size. A zoomed dock fills
+    /// its axis and drops the handle.
+    /// (`docs/ui-comparison-zed-sidebar-status-bar.md` §7.4.)
     fn render_dock(
         &mut self,
         pos: labonair_panel::DockPosition,
@@ -4706,115 +4713,82 @@ impl Workspace {
     ) -> impl IntoElement {
         use labonair_panel::DockPosition;
 
-        let (sidebar_bg, sidebar_fg, sidebar_border, accent, muted) = {
+        let (sidebar_bg, sidebar_fg, sidebar_border) = {
             let theme = self.theme.read(cx);
             (
                 theme.sidebar_bg(),
                 theme.sidebar_fg(),
                 theme.sidebar_border(),
-                theme.accent(),
-                theme.muted_foreground(),
             )
         };
 
         let is_bottom = pos == DockPosition::Bottom;
-        let (size, zoomed, body, title) = {
+        let (size, zoomed, body) = {
             let dock = self.dock(pos);
             let body: Option<gpui::AnyElement> = dock
                 .active_panel()
                 .map(|handle| handle.to_any().into_any_element());
-            let title: SharedString = match dock.active_panel() {
-                Some(handle) => handle.title(cx).to_string().to_uppercase().into(),
-                None => SharedString::from(""),
-            };
-            (f32::from(dock.size()), dock.is_zoomed(), body, title)
+            (f32::from(dock.size()), dock.is_zoomed(), body)
         };
 
-        let header = div()
-            .flex()
-            .items_center()
-            .justify_between()
-            .gap_2()
-            .px_3()
-            .py_2()
-            .text_xs()
-            .text_color(muted)
-            .child(div().child(title))
-            .child(
-                div()
-                    .id(SharedString::from(format!(
-                        "dock-move-{}",
-                        position_slug(pos)
-                    )))
-                    .cursor_pointer()
-                    .text_color(muted)
-                    .hover(|s| s.text_color(sidebar_fg))
-                    .child(if is_bottom { "\u{2191}" } else { "\u{21C4}" })
-                    .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
-                        if let Some(name) = this.dock(pos).active_name() {
-                            let name = name.to_owned();
-                            this.move_panel_persist(&name, pos.next(), cx);
-                        }
-                    })),
-            );
-
-        let panel = div()
-            .when(!zoomed && !is_bottom, |d| d.w(px(size)).flex_shrink_0())
-            .when(!zoomed && is_bottom, |d| d.h(px(size)).flex_shrink_0())
-            .when(zoomed, |d| d.flex_1())
-            .when(!is_bottom, |d| d.h_full())
-            .when(is_bottom, |d| d.w_full())
-            .flex()
-            .flex_col()
-            .min_h_0()
-            .bg(sidebar_bg)
-            .text_color(sidebar_fg)
-            .child(header)
-            .children(body);
-
+        // 6px transparent hit target, absolutely positioned so it does not
+        // consume layout width/height; it straddles the 1px structural border.
         let handle = (!zoomed).then(|| {
             div()
                 .id(SharedString::from(format!(
                     "dock-handle-{}",
                     position_slug(pos)
                 )))
-                .flex_shrink_0()
-                .flex()
+                .absolute()
                 .when(!is_bottom, |d| {
-                    d.w(RESIZE_HANDLE_SIZE)
-                        .h_full()
-                        .justify_center()
+                    d.top(px(0.0))
+                        .bottom(px(0.0))
+                        .w(RESIZE_HANDLE_SIZE)
                         .cursor_col_resize()
                 })
                 .when(is_bottom, |d| {
-                    d.h(RESIZE_HANDLE_SIZE)
-                        .w_full()
-                        .items_center()
+                    d.left(px(0.0))
+                        .right(px(0.0))
+                        .h(RESIZE_HANDLE_SIZE)
                         .cursor_row_resize()
                 })
-                .hover(|s| s.bg(accent.opacity(0.4)))
-                .child(
-                    div()
-                        .when(!is_bottom, |d| d.w(px(1.0)).h_full())
-                        .when(is_bottom, |d| d.h(px(1.0)).w_full())
-                        .bg(sidebar_border),
-                )
+                .when(pos == DockPosition::Left, |d| d.right(px(-3.0)))
+                .when(pos == DockPosition::Right, |d| d.left(px(-3.0)))
+                .when(is_bottom, |d| d.top(px(-3.0)))
                 .on_drag(DockResize(pos), |_, _, _, cx| cx.new(|_| DragGhost))
+                .on_mouse_down(
+                    MouseButton::Left,
+                    cx.listener(move |this, ev: &MouseDownEvent, _w, cx| {
+                        if ev.click_count >= 2 {
+                            this.reset_dock_size(pos, cx);
+                        }
+                        cx.stop_propagation();
+                    }),
+                )
         });
 
-        let container = div()
+        div()
+            .relative()
             .flex_shrink_0()
             .flex()
-            .when(!is_bottom, |d| d.h_full().flex_row())
-            .when(is_bottom, |d| d.w_full().flex_col())
-            .when(zoomed, |d| d.flex_1());
-
-        // Handle sits on the inner edge: right of a left dock, above a bottom
-        // dock, left of a right dock.
-        match pos {
-            DockPosition::Left => container.child(panel).children(handle),
-            DockPosition::Right | DockPosition::Bottom => container.children(handle).child(panel),
-        }
+            .flex_col()
+            .min_h_0()
+            .when(!zoomed && !is_bottom, |d| d.w(px(size)))
+            .when(!zoomed && is_bottom, |d| d.h(px(size)))
+            .when(zoomed, |d| d.flex_1())
+            .when(!is_bottom, |d| d.h_full())
+            .when(is_bottom, |d| d.w_full())
+            .bg(sidebar_bg)
+            .text_color(sidebar_fg)
+            .when(pos == DockPosition::Left, |d| {
+                d.border_r_1().border_color(sidebar_border)
+            })
+            .when(pos == DockPosition::Right, |d| {
+                d.border_l_1().border_color(sidebar_border)
+            })
+            .when(is_bottom, |d| d.border_t_1().border_color(sidebar_border))
+            .children(body)
+            .children(handle)
     }
 }
 

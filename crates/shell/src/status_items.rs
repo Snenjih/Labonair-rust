@@ -20,7 +20,7 @@ use gpui::{
     StatefulInteractiveElement, Styled, Window,
 };
 use labonair_panel::{
-    AnyStatusItemHandle, PanelIcon, StatusItem, StatusItemRegistration, StatusSide,
+    AnyStatusItemHandle, DockPosition, PanelIcon, StatusItem, StatusItemRegistration, StatusSide,
 };
 use labonair_panel_explorer::BookmarksView;
 use labonair_ui_kit::{icon_toggle_button, IconName, Palette};
@@ -60,13 +60,21 @@ fn panel_toggle_icon(icon: PanelIcon) -> IconName {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Panel toggles (aggregate) — one toggle per registered panel.
+// Per-dock panel buttons (Zed-parity redesign — `docs/ui-comparison-zed-
+// sidebar-status-bar.md` §6.4).
+//
+// One [`DockPanelButtons`] view per edge dock. Each renders **only** the panels
+// currently assigned to *its* dock, derives the active button from that dock's
+// open + active state, and keeps its buttons visually attached to the workspace
+// edge they control. This replaces the single left-anchored aggregate strip
+// (`PanelTogglesStatusItem`), so panel destination is communicated before the
+// click and moving a panel moves its button to the matching group.
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Panel title + rebindable shortcut, for the toggle's tooltip. Only
+/// Panel title + rebindable shortcut, for the button's tooltip. Only
 /// "explorer" (`SidebarToggle`) and "ai" (`AiToggle`) currently have a
 /// dedicated shortcut (`crates/command-palette/src/keybind.rs`); the others
-/// show the title alone, per the task's "keybind if set" wording.
+/// show the title alone.
 fn panel_toggle_shortcut(persistent_name: &str) -> Option<labonair_command_palette::ShortcutId> {
     use labonair_command_palette::ShortcutId;
     match persistent_name {
@@ -87,22 +95,33 @@ fn panel_toggle_title(persistent_name: &str) -> &'static str {
     }
 }
 
-pub struct PanelTogglesStatusItem {
+/// The status-item id for the button group of `pos`.
+fn dock_buttons_id(pos: DockPosition) -> &'static str {
+    match pos {
+        DockPosition::Left => "dock-buttons-left",
+        DockPosition::Right => "dock-buttons-right",
+        DockPosition::Bottom => "dock-buttons-bottom",
+    }
+}
+
+pub struct DockPanelButtons {
     workspace: Entity<Workspace>,
     theme: Entity<ThemeStore>,
-    /// `(panel name, anchor)` of an open dock/hide context menu, or `None`.
+    position: DockPosition,
+    /// `(panel name, anchor)` of an open move/hide context menu, or `None`.
     dock_menu: Option<(SharedString, Point<Pixels>)>,
-    /// Panels hidden from this toggle strip, mirrored from the persisted
-    /// `panelToggleVisibility` blob (T18-007). Reloaded whenever
-    /// `StatusBarLayoutTick` bumps — either this window's own write below, the
-    /// Personalization settings pane, or another window.
+    /// Panels hidden from the status bar, mirrored from the persisted
+    /// `panelToggleVisibility` blob. Reloaded whenever `StatusBarLayoutTick`
+    /// bumps — this window's own write, the Personalization settings pane, or
+    /// another window.
     hidden: std::collections::HashSet<SharedString>,
 }
 
-impl PanelTogglesStatusItem {
+impl DockPanelButtons {
     pub fn new(
         workspace: Entity<Workspace>,
         theme: Entity<ThemeStore>,
+        position: DockPosition,
         cx: &mut Context<Self>,
     ) -> Self {
         cx.observe(&workspace, |_, _, cx| cx.notify()).detach();
@@ -117,6 +136,7 @@ impl PanelTogglesStatusItem {
         let mut this = Self {
             workspace,
             theme,
+            position,
             dock_menu: None,
             hidden: Default::default(),
         };
@@ -124,7 +144,7 @@ impl PanelTogglesStatusItem {
         this
     }
 
-    /// Re-reads the persisted `panelToggleVisibility` blob (T18-007).
+    /// Re-reads the persisted `panelToggleVisibility` blob.
     fn reload_hidden(&mut self) {
         self.hidden = labonair_backend::modules::settings::panel_toggle_visibility_load()
             .into_iter()
@@ -138,12 +158,17 @@ impl PanelTogglesStatusItem {
         cx.notify();
     }
 
+    /// The right-click menu for one button: only the dock positions the panel
+    /// actually supports (so the menu can never present an unexecutable move),
+    /// plus "Hide from status bar".
     fn render_dock_menu(&mut self, cx: &mut Context<Self>) -> Option<AnyElement> {
-        use labonair_panel::DockPosition;
         use labonair_ui_kit::{context_menu, MenuItem};
 
         let (name, pos) = self.dock_menu.clone()?;
-        let current = self.workspace.read(cx).dock_for_panel(name.as_ref(), cx);
+        let dests = {
+            let ws = self.workspace.read(cx);
+            ws.dock(self.position).move_destinations(name.as_ref(), cx)
+        };
         let view = cx.entity();
         let close = {
             let v = view.clone();
@@ -162,10 +187,7 @@ impl PanelTogglesStatusItem {
         };
 
         let mut items: Vec<MenuItem> = Vec::new();
-        for d in DockPosition::ALL {
-            if d == current {
-                continue;
-            }
+        for d in dests {
             let move_name = name.clone();
             let ws = self.workspace.clone();
             let close = close.clone();
@@ -186,11 +208,13 @@ impl PanelTogglesStatusItem {
                 }),
             );
         }
-        items.push(MenuItem::separator());
+        if !items.is_empty() {
+            items.push(MenuItem::separator());
+        }
         let hide_name = name.clone();
         let ws_hide = self.workspace.clone();
         let close_hide = close.clone();
-        items.push(MenuItem::new("dock-hide", "Hide from toggle bar").on_click(
+        items.push(MenuItem::new("dock-hide", "Hide from status bar").on_click(
             move |_, _w, cx| {
                 let hide_name = hide_name.to_string();
                 ws_hide.update(cx, |w, cx| {
@@ -210,21 +234,41 @@ impl PanelTogglesStatusItem {
     }
 }
 
-impl Render for PanelTogglesStatusItem {
+impl Render for DockPanelButtons {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.render_status(window, cx)
     }
 }
 
-impl StatusItem for PanelTogglesStatusItem {
+impl StatusItem for DockPanelButtons {
     fn id(&self) -> &'static str {
-        "panel-toggles"
+        dock_buttons_id(self.position)
     }
     fn default_side(&self) -> StatusSide {
-        StatusSide::Left
+        // Left-dock group hugs the left status-bar edge; bottom + right groups
+        // sit at the right edge next to the boundary they control.
+        match self.position {
+            DockPosition::Left => StatusSide::Left,
+            DockPosition::Right | DockPosition::Bottom => StatusSide::Right,
+        }
     }
     fn order(&self) -> i32 {
-        0
+        // Negative so the groups precede every informational right-cluster item
+        // (which start at 10). Bottom before Right.
+        match self.position {
+            DockPosition::Left => -10,
+            DockPosition::Bottom => -20,
+            DockPosition::Right => -10,
+        }
+    }
+    fn group(&self) -> u32 {
+        // Own group per position → `StatusBar::cluster` draws a 1px divider on
+        // the group's workspace-facing edge (before it, in the right cluster).
+        match self.position {
+            DockPosition::Left => 0,
+            DockPosition::Bottom => 8,
+            DockPosition::Right => 9,
+        }
     }
 
     fn render_status(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
@@ -233,20 +277,36 @@ impl StatusItem for PanelTogglesStatusItem {
             .try_global::<labonair_command_palette::KeybindDisplay>()
             .map(|g| g.0.clone())
             .unwrap_or_default();
-        let panels: Vec<(SharedString, IconName, bool)> = {
+
+        let mut panels: Vec<(SharedString, IconName, bool)> = {
             let ws = self.workspace.read(cx);
-            ws.panel_registry()
+            let dock = ws.dock(self.position);
+            let (open, active_name) = (dock.is_open(), dock.active_name());
+            let icon_of = |name: &str| {
+                ws.panel_registry()
+                    .iter()
+                    .find(|r| r.persistent_name == name)
+                    .map(|r| r.icon)
+                    .unwrap_or(PanelIcon::Explorer)
+            };
+            dock.panels()
                 .iter()
-                .filter(|r| !self.hidden.contains(r.persistent_name))
-                .map(|r| {
+                .map(|p| p.persistent_name())
+                .filter(|name| !self.hidden.contains(*name))
+                .map(|name| {
                     (
-                        SharedString::from(r.persistent_name),
-                        panel_toggle_icon(r.icon),
-                        ws.panel_is_active(r.persistent_name),
+                        SharedString::from(name),
+                        panel_toggle_icon(icon_of(name)),
+                        open && active_name == Some(name),
                     )
                 })
                 .collect()
         };
+        // Right dock: reverse so the active edge stays visually nearest the
+        // right workspace boundary (`docs/ui-comparison` §6.2 point 5).
+        if self.position == DockPosition::Right {
+            panels.reverse();
+        }
 
         let dock_menu = self.render_dock_menu(cx);
 
@@ -267,14 +327,13 @@ impl StatusItem for PanelTogglesStatusItem {
                 } else {
                     SharedString::from(format!("{title} ({})", keys.join("")))
                 };
-                // T20-001: shared `IconToggleButton` primitive — the
-                // pressed/hover pair used to be hand-rolled here.
                 icon_toggle_button(
-                    SharedString::from(format!("bar-toggle-{name}")),
+                    SharedString::from(format!("dock-btn-{name}")),
                     c,
                     icon,
                     active,
                 )
+                .tab_index(0)
                 .tooltip(move |window, cx| {
                     labonair_ui_kit::Tooltip::new(tooltip_text.clone()).build(window, cx)
                 })
@@ -1534,7 +1593,9 @@ impl StatusItem for BookmarksStatusItem {
 /// the personalization page's row titles (T18-007).
 pub fn status_item_label(id: &str) -> &'static str {
     match id {
-        "panel-toggles" => "Panel Toggles",
+        "dock-buttons-left" => "Left Dock Buttons",
+        "dock-buttons-right" => "Right Dock Buttons",
+        "dock-buttons-bottom" => "Bottom Dock Buttons",
         "notifications" => "Notifications",
         "cwd" => "CWD Breadcrumb",
         "cursor-position" => "Cursor Position",
@@ -1576,8 +1637,13 @@ pub fn register_builtin_status_items(
         }
     }
 
-    let panel_toggles =
-        cx.new(|cx| PanelTogglesStatusItem::new(workspace.clone(), theme.clone(), cx));
+    let dock_btn_left = cx
+        .new(|cx| DockPanelButtons::new(workspace.clone(), theme.clone(), DockPosition::Left, cx));
+    let dock_btn_right = cx
+        .new(|cx| DockPanelButtons::new(workspace.clone(), theme.clone(), DockPosition::Right, cx));
+    let dock_btn_bottom = cx.new(|cx| {
+        DockPanelButtons::new(workspace.clone(), theme.clone(), DockPosition::Bottom, cx)
+    });
     let notifications_item =
         cx.new(|cx| NotificationsStatusItem::new(notifications.clone(), theme.clone(), cx));
     let cwd = cx.new(|cx| CwdStatusItem::new(workspace.clone(), theme.clone(), cx));
@@ -1600,7 +1666,9 @@ pub fn register_builtin_status_items(
     //   notifications(100) — group 2, always visible, pinned rightmost.
     // `StatusBar::cluster` draws a divider between groups, never within one.
     let registrations = [
-        reg(&panel_toggles, cx),
+        reg(&dock_btn_left, cx),
+        reg(&dock_btn_right, cx),
+        reg(&dock_btn_bottom, cx),
         reg(&notifications_item, cx),
         reg(&cwd, cx),
         reg(&cursor, cx),
