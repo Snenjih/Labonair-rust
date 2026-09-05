@@ -34,6 +34,7 @@ use labonair_editor::{
 use crate::syntax_theme::EditorPalette;
 use crate::theme::ThemeStore;
 use labonair_notifications::{notification_center, Notification};
+use labonair_ui_kit::{banner, button, ButtonSize, ButtonVariant, Palette, Severity};
 
 /// Editor → workspace notifications.
 #[derive(Clone, Copy, Debug)]
@@ -833,42 +834,18 @@ impl EditorView {
 
     fn render_conflict_banner(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = self.theme.read(cx);
-        let (warn, fg, border) = (theme.status_warning(), theme.foreground(), theme.border());
-        div()
-            .flex()
-            .items_center()
-            .gap_3()
-            .w_full()
-            .flex_shrink_0()
-            .px_3()
-            .py_1()
-            .bg(warn.opacity(0.15))
-            .border_b_1()
-            .border_color(border)
-            .text_xs()
-            .text_color(fg)
+        let c = Palette::from_theme(theme);
+        banner(Severity::Warning, c)
             .child("This file changed on disk since you started editing.")
             .child(
-                div()
-                    .id("conflict-reload")
-                    .px_2()
-                    .rounded_sm()
-                    .border_1()
-                    .border_color(border)
-                    .hover(|s| s.bg(border))
+                button("conflict-reload", c, ButtonVariant::Outline, ButtonSize::Xs)
                     .child("Reload (discard my changes)")
                     .on_click(
                         cx.listener(|this, _: &ClickEvent, _w, cx| this.reload_from_disk(cx)),
                     ),
             )
             .child(
-                div()
-                    .id("conflict-keep")
-                    .px_2()
-                    .rounded_sm()
-                    .border_1()
-                    .border_color(border)
-                    .hover(|s| s.bg(border))
+                button("conflict-keep", c, ButtonVariant::Outline, ButtonSize::Xs)
                     .child("Keep mine")
                     .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
                         this.doc.external_change = false;
