@@ -13,6 +13,7 @@
 use std::path::Path;
 
 use crate::registry::Appearance;
+use crate::theme_settings::{ActiveTheme, GlobalActiveTheme, ThemeMetrics};
 use crate::{
     Animation, IconThemeContent, IconThemeMeta, IconThemeRegistry, MonoFontWeight, RadiusScale,
     Shadows, Theme, ThemeFile, ThemeMeta, ThemeRegistry,
@@ -136,12 +137,21 @@ pub struct ThemeStore {
     /// Active icon-theme id (`"default"` = the built-in "Labonair" set). Resolved
     /// through [`IconThemeRegistry::get`] on every access by [`Self::icon_theme`].
     active_icon_theme: String,
+    /// The live metric layer (T20-007): font scales, UI density, corner-radius
+    /// scale, reduce-motion. Pushed in by the settings bridge via
+    /// [`Self::set_metrics`]; `ThemeMetrics::default()` reproduces pre-T20-007
+    /// rendering.
+    metrics: ThemeMetrics,
+    /// Cached colour+metric combination — rebuilt by [`Self::rebuild_active`] on
+    /// every colour or metric change, never per frame. Mirrored into
+    /// [`GlobalActiveTheme`] by the observer in [`init`].
+    active: ActiveTheme,
 }
 
 impl ThemeStore {
     /// Builds the store from the initial system appearance.
     pub fn new(appearance: WindowAppearance) -> Self {
-        Self {
+        let mut store = Self {
             preference: ThemePreference::default(),
             system_mode: ThemeMode::from_appearance(appearance),
             light: Theme::light(),
@@ -158,7 +168,40 @@ impl ThemeStore {
             registry_variant: None,
             icon_registry: IconThemeRegistry::builtin(),
             active_icon_theme: crate::BUILTIN_ICON_THEME_ID.to_string(),
+            metrics: ThemeMetrics::default(),
+            active: ActiveTheme::new(Theme::dark(), ThemeMetrics::default()),
+        };
+        store.rebuild_active();
+        store
+    }
+
+    // --- Metric layer / ActiveTheme (T20-007) ------------------------------
+
+    /// The live metric layer.
+    pub fn metrics(&self) -> &ThemeMetrics {
+        &self.metrics
+    }
+
+    /// The cached colour+metric [`ActiveTheme`] — what UI code renders from.
+    pub fn active_theme(&self) -> &ActiveTheme {
+        &self.active
+    }
+
+    /// Replace the metric layer (settings → live). Rebuilds [`Self::active`]
+    /// and re-renders only on a real change.
+    pub fn set_metrics(&mut self, metrics: ThemeMetrics, cx: &mut Context<Self>) {
+        if self.metrics == metrics {
+            return;
         }
+        self.metrics = metrics;
+        self.rebuild_active();
+        cx.notify();
+    }
+
+    /// Recompute [`Self::active`] from the currently-resolved [`Theme`] and the
+    /// live [`ThemeMetrics`]. Cheap; call after any colour or metric change.
+    fn rebuild_active(&mut self) {
+        self.active = ActiveTheme::new(self.theme().clone(), self.metrics.clone());
     }
 
     // --- Icon-theme registry (T20-006) -------------------------------------
@@ -391,6 +434,7 @@ impl ThemeStore {
             self.font_overrides.apply(&mut t);
             t
         });
+        self.rebuild_active();
     }
 
     /// The mode after applying the preference (System falls back to the
@@ -526,6 +570,7 @@ impl ThemeStore {
         };
         self.font_overrides.apply(&mut theme);
         self.preview = Some(theme);
+        self.rebuild_active();
         cx.notify();
     }
 
@@ -541,6 +586,7 @@ impl ThemeStore {
         if let Ok((mut theme, _)) = self.registry.resolve(id, self.appearance()) {
             self.font_overrides.apply(&mut theme);
             self.preview = Some(theme);
+            self.rebuild_active();
             cx.notify();
         }
     }
@@ -548,6 +594,7 @@ impl ThemeStore {
     /// Drop any live preview, reverting to the persisted active theme.
     pub fn cancel_preview(&mut self, cx: &mut Context<Self>) {
         if self.preview.take().is_some() {
+            self.rebuild_active();
             cx.notify();
         }
     }
@@ -580,6 +627,7 @@ impl ThemeStore {
         self.custom_variant = None;
         self.active_family = None;
         self.registry_variant = None;
+        self.rebuild_active();
         cx.notify();
     }
 
@@ -677,16 +725,20 @@ impl ThemeStore {
         self.theme().sidebar.foreground
     }
 
+    /// The active corner-radius scale — the theme's own [`RadiusScale`] after
+    /// the T20-007 `corner_radius_scale` metric (see [`Self::active_theme`]).
     pub fn radius(&self) -> RadiusScale {
-        self.theme().radius
+        self.active.radius()
     }
 
     pub fn shadows(&self) -> &Shadows {
         &self.theme().shadows
     }
 
+    /// Animation timings for the active theme — zero durations when the
+    /// `reduce_motion` metric is set (T20-007).
     pub fn animation(&self) -> &Animation {
-        &self.theme().animation
+        self.active.animation()
     }
 
     /// Canonical hover/focus fill for interactive rows, menu items and ghost
@@ -800,6 +852,18 @@ impl Global for GlobalTheme {}
 pub fn init(appearance: WindowAppearance, cx: &mut App) -> Entity<ThemeStore> {
     let store = cx.new(|_cx| ThemeStore::new(appearance));
     cx.set_global(GlobalTheme(store.clone()));
+
+    // T20-007: mirror the store's cached `ActiveTheme` into a global so
+    // `App`-level code can read colour+metric without the store entity. The
+    // observer only fires on `cx.notify()` — i.e. a real colour or metric
+    // change, never per frame.
+    cx.set_global(GlobalActiveTheme(store.read(cx).active_theme().clone()));
+    cx.observe(&store, |store, cx| {
+        let active = store.read(cx).active_theme().clone();
+        cx.set_global(GlobalActiveTheme(active));
+    })
+    .detach();
+
     store
 }
 
@@ -1287,6 +1351,59 @@ mod tests {
         });
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[gpui::test]
+    fn active_theme_recomputes_on_colour_and_on_metric_change(cx: &mut TestAppContext) {
+        use crate::theme_settings::{GlobalActiveTheme, ThemeMetrics, UiDensity};
+
+        let store = cx.update(|cx| init(WindowAppearance::Dark, cx));
+
+        // Baseline: dark colours, default metrics, global mirrors the store.
+        cx.update(|cx| {
+            assert!(store.read(cx).active_theme().theme().is_dark);
+            assert_eq!(store.read(cx).active_theme().density_scale(), 1.0);
+            assert_eq!(
+                cx.global::<GlobalActiveTheme>().0,
+                *store.read(cx).active_theme()
+            );
+        });
+
+        // Colour change → ActiveTheme (sync) + global (after effects flush).
+        cx.update(|cx| store.update(cx, |s, cx| s.set_preference(ThemePreference::Light, cx)));
+        cx.update(|cx| {
+            assert!(!store.read(cx).active_theme().theme().is_dark);
+            assert_eq!(
+                cx.global::<GlobalActiveTheme>().0,
+                *store.read(cx).active_theme()
+            );
+        });
+
+        // Metric change → ActiveTheme + global follow, colours untouched.
+        cx.update(|cx| {
+            store.update(cx, |s, cx| {
+                s.set_metrics(
+                    ThemeMetrics {
+                        density: UiDensity::Compact,
+                        corner_radius_scale: 2.0,
+                        reduce_motion: true,
+                        ..ThemeMetrics::default()
+                    },
+                    cx,
+                );
+            })
+        });
+        cx.update(|cx| {
+            let at = store.read(cx).active_theme();
+            assert!(!at.theme().is_dark, "metric change leaves colours alone");
+            assert!((at.density_scale() - 0.85).abs() < 1e-4);
+            assert!(
+                (at.radius().md - at.theme().radius.md * 2.0).abs() < 1e-4,
+                "corner_radius_scale applied"
+            );
+            assert_eq!(at.animation().dur_base, std::time::Duration::ZERO);
+            assert_eq!(cx.global::<GlobalActiveTheme>().0, *at);
+        });
     }
 
     #[gpui::test]

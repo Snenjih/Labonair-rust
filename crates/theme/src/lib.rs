@@ -15,6 +15,7 @@ mod import;
 mod prefs;
 pub mod registry;
 pub mod store;
+pub mod theme_settings;
 mod tokens;
 
 pub use color::{oklch, oklch_a, parse_color, to_hex, to_rgb8, transparent};
@@ -35,6 +36,7 @@ pub use store::{
     active_theme, init as init_theme, init_fonts, menu_metrics, modal_scrim, theme_store,
     FontOverrides, GlobalTheme, ThemeMode, ThemeStore, SCROLLBAR_SIZE,
 };
+pub use theme_settings::{ActiveTheme, GlobalActiveTheme, ThemeMetrics, UiDensity};
 pub use tokens::{
     Animation, AnsiColors, BorderVariants, CoreColors, CubicBezier, InteractionColors,
     MonoFontWeight, RadiusScale, ShadowLayer, Shadows, SidebarColors, StatusColors, SurfaceColors,

@@ -175,6 +175,9 @@ fn appearance_from(p: &Preferences) -> AppearanceContent {
         titlebars_icons_position: Some(p.titlebars_icons_position.clone()),
         zen_mode_show_header: Some(p.zen_mode_show_header),
         zen_mode_show_statusbar: Some(p.zen_mode_show_statusbar),
+        // T20-007 `theme_settings` fields have no legacy `Preferences` key —
+        // they resolve to their `AppearanceContent::defaults()` on read.
+        ..AppearanceContent::default()
     }
 }
 

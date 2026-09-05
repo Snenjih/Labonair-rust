@@ -88,7 +88,7 @@ pub use segmented::{segmented_control, SegmentSize, SegmentVariant, SegmentedCon
 pub use select::{select_popover, select_trigger, selected_label, SelectOption};
 pub use stack::{h_stack, v_stack};
 pub use text_field::{field_input, text_field, InputEvent, InputState};
-pub use theme::UiTheme;
+pub use theme::{ActiveThemeExt, UiTheme};
 pub use toggle::{icon_toggle_button, toggle_base, ToggleSize, ToggleVariant};
 
 // gpui-component primitives re-exported where their behaviour (not their
@@ -102,6 +102,7 @@ pub use gpui_component::{badge::Badge, switch::Switch, tooltip::Tooltip};
 /// use labonair_ui_kit::prelude::*;
 /// ```
 pub mod prelude {
+    pub use crate::ActiveThemeExt;
     pub use crate::{
         banner, button, checkbox, chevron_icon, context_menu, disclosure, divider, file_icon,
         folder_icon, glyph_icon, h_stack, icon_for_path, icon_toggle_button, indicator, kbd,

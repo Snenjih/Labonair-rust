@@ -21,7 +21,22 @@ pub struct AppearanceContent {
     /// UI font family (full CSS stack; empty = system default).
     pub app_font_family: Option<String>,
     pub reduce_motion: Option<bool>,
+    /// Legacy corner-radius base, in px (T20-007: superseded by
+    /// `corner_radius_scale`; kept so old settings files keep parsing and a
+    /// non-default value still migrates to a scale).
     pub app_corner_radius: Option<u32>,
+    /// Editor/terminal text font family (empty = the theme's own mono family).
+    pub buffer_font_family: Option<String>,
+    /// Editor/terminal text font size, px (T20-007 `theme_settings` layer).
+    pub buffer_font_size: Option<u32>,
+    /// Editor/terminal text line-height multiple.
+    pub buffer_line_height: Option<f32>,
+    /// UI density (`"compact"` | `"default"` | `"comfortable"`) — spacing/size
+    /// multiplier around the layout-contract base metrics (T20-007).
+    pub ui_density: Option<String>,
+    /// Corner-radius multiplier applied to the active theme's radius scale
+    /// (`1.0` = unchanged) (T20-007).
+    pub corner_radius_scale: Option<f32>,
     /// Background image filename (empty = none).
     pub background_image: Option<String>,
     pub background_opacity: Option<u32>,
@@ -54,6 +69,11 @@ impl AppearanceContent {
             app_font_family: Some("\"Inter Variable\", sans-serif".to_string()),
             reduce_motion: Some(false),
             app_corner_radius: Some(5),
+            buffer_font_family: Some(String::new()),
+            buffer_font_size: Some(13),
+            buffer_line_height: Some(1.5),
+            ui_density: Some("default".to_string()),
+            corner_radius_scale: Some(1.0),
             background_image: Some(String::new()),
             background_opacity: Some(30),
             background_blur: Some(0),

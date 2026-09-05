@@ -1147,6 +1147,56 @@ preview + Import / Open-folder). `labonair-shell` adds a second
   different glyph; `tar.gz` / `tar.bz2` / `tar.xz` / `tar.zst` map to the
   same `archive` glyph as their tail (no behavior change).
 
+### 8.20 `theme_settings` metric layer — T20-007
+
+`crates/theme/src/theme_settings.rs` adds the *metric* half of the active
+theme: `UiDensity` (`Compact` ×0.85 / `Default` ×1.0 / `Comfortable` ×1.15),
+`ThemeMetrics` (UI + buffer font family/size/line-height, density,
+`corner_radius_scale`, `reduce_motion`), and `ActiveTheme { colors, metrics }`
+— colour from the `ThemeRegistry`, metric from settings, recomputed only on a
+real change of either. `ThemeStore` owns the live `ThemeMetrics`
+(`set_metrics`) and a cached `ActiveTheme`; `init_theme` mirrors it into the
+`GlobalActiveTheme` global via a `cx.observe`, read app-wide through
+`labonair_ui_kit::ActiveThemeExt` (`cx.active_theme()`).
+
+Deviations from the task's letter:
+
+* **`ActiveTheme.colors` is `Theme` by value, not `Arc<Theme>`.** A `Theme` is
+  a few hundred bytes; keeping it inline drops the atomic traffic and keeps
+  `ActiveTheme: Send + 'static` trivially. It is rebuilt only on change, never
+  per frame (the `## Warnungen` concern), so the clone cost is irrelevant.
+* **`GlobalActiveTheme` is a mirror, not a second source.** `ThemeStore` is
+  the single owner; the global is refreshed by an observer. `cx.active_theme()`
+  is the read path for code that isn't holding the store entity.
+* **Metric settings live in the existing `appearance` area**, not a new
+  `theme` area, and the `Settings` struct keeps the name `ThemeSettings`
+  (`crates/settings/src/concrete.rs`). New leaves: `bufferFontFamily`,
+  `bufferFontSize`, `bufferLineHeight`, `uiDensity`, `cornerRadiusScale`.
+  `appFontSize` / `appFontFamily` / `appLineHeight` feed `ui_*`;
+  `appCornerRadius` (px) is the retained `_legacy` key — a non-default value
+  migrates to `cornerRadiusScale = px / 5` once, read-time, in
+  `ThemeSettings::from_settings` (no on-disk migrator; Phase 18 is closed).
+* **`uiDensity` renders as the generated `Select` dropdown**, not a bespoke
+  `SegmentedControl` — the generated-field renderer (T19-004) has no segmented
+  variant and a one-off widget for one field isn't worth it.
+* **ui-kit primitive migration scope.** `Palette` gained `density` +
+  `Palette::space(px)`; the nine primitives that take a `Palette`
+  (`button`, `checkbox`, `context_menu`, `banner`, `kbd`, `number_field`,
+  `segmented`, `select`, `toggle`) route every spacing/size `px(..)` literal
+  through `space()`, and `Palette::radius` is the `corner_radius_scale`d scale.
+  Kept as literals on purpose: `text_size`, icon glyph `.size(..)`, and 1px
+  hairlines (typographic / non-spacing). `list`, `disclosure`, `indicator`,
+  `divider` take bare colour params rather than a `Palette`, so they have no
+  density channel — threading one means a constructor-signature change across
+  ~30 call sites, deferred.
+* **`buffer_*` metrics are new, seeded at the editor defaults.** Full
+  editor-vs-terminal font-pref consolidation is deferred; the terminal keeps
+  its own `FontOverrides` path.
+* **`reduce_motion` zero-duration clamp.** `ActiveTheme::animation()` reports
+  `Duration::ZERO` when reduce-motion is on (matches the acceptance wording),
+  but the one `with_animation` call site (workspace tab-in) clamps to 10µs
+  because GPUI divides by the duration.
+
 ---
 
 ## 9. Ist-Graph after Phase 15 (T16-010)

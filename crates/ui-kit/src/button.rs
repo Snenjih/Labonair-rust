@@ -88,8 +88,8 @@ pub fn button(
         .flex_shrink_0()
         .items_center()
         .justify_center()
-        .gap(px(6.0))
-        .h(px(h))
+        .gap(c.space(6.0))
+        .h(c.space(h))
         .rounded(px(radius))
         .border_1()
         .border_color(gpui::transparent_black())
@@ -97,8 +97,8 @@ pub fn button(
         .cursor_pointer();
 
     el = match size.px() {
-        Some(p) => el.px(px(p)),
-        None => el.w(px(h)),
+        Some(p) => el.px(c.space(p)),
+        None => el.w(c.space(h)),
     };
 
     apply_variant(el, variant, c)

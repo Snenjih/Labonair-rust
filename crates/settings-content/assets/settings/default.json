@@ -33,7 +33,17 @@
     "appLineHeight": 1.5,
     "appFontFamily": "\"Inter Variable\", sans-serif",
     "reduceMotion": false,
+    // Legacy corner-radius base in px — superseded by "cornerRadiusScale".
     "appCornerRadius": 5,
+    // Editor/terminal text (T20-007 theme_settings layer). Empty family = the
+    // theme's own mono font.
+    "bufferFontFamily": "",
+    "bufferFontSize": 13,
+    "bufferLineHeight": 1.5,
+    // "compact" | "default" | "comfortable" — spacing/size density.
+    "uiDensity": "default",
+    // Multiplier on the active theme's corner-radius scale (1.0 = unchanged).
+    "cornerRadiusScale": 1.0,
     "backgroundImage": "",
     "backgroundOpacity": 30,
     "backgroundBlur": 0,

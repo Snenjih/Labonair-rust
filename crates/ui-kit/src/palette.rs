@@ -13,7 +13,7 @@
 //! token-bound (Critical Rule 3) without forcing the borrow gymnastics — a call
 //! site literally cannot pass a hardcoded colour without writing one itself.
 
-use gpui::Hsla;
+use gpui::{px, Hsla, Pixels};
 use labonair_theme::RadiusScale;
 
 use crate::theme::UiTheme;
@@ -70,8 +70,13 @@ pub struct Palette {
     pub info: Hsla,
     /// Status `success`.
     pub success: Hsla,
-    /// The active `--radius` family.
+    /// The active `--radius` family — already scaled by the T20-007
+    /// `corner_radius_scale` metric (via [`UiTheme::radius`]).
     pub radius: RadiusScale,
+    /// The T20-007 UI-density spacing multiplier (`0.85` / `1.0` / `1.15`).
+    /// Feed spacing/size literals through [`Palette::space`] rather than
+    /// multiplying by hand.
+    pub density: f32,
 }
 
 impl Palette {
@@ -104,7 +109,17 @@ impl Palette {
             info: status.info,
             success: status.success,
             radius: theme.radius(),
+            density: theme.metrics().density.spacing_scale(),
         }
+    }
+
+    /// A spacing/size literal (px) scaled by the active UI density (T20-007).
+    /// Primitives use this for every padding / gap / height / fixed layout
+    /// dimension instead of a bare `px(..)`. Hairlines (1px borders/dividers),
+    /// icon glyph sizes and `text_size` are *typographic*, not spacing, and
+    /// stay as literals (`docs/architecture.md` §8.20).
+    pub fn space(&self, value: f32) -> Pixels {
+        px(value * self.density)
     }
 }
 
@@ -128,6 +143,18 @@ mod tests {
         assert_eq!(c.border, theme.0.core.border);
         assert_eq!(c.warning, theme.0.status.warning);
         assert_eq!(c.radius.sm, theme.0.radius.sm);
+    }
+
+    #[test]
+    fn space_scales_with_density() {
+        use gpui::px;
+        let mut c = Palette::from_theme(&TestTheme(Theme::dark()));
+        assert_eq!(c.density, 1.0);
+        assert_eq!(c.space(40.0), px(40.0));
+        c.density = 0.85;
+        assert_eq!(c.space(40.0), px(34.0));
+        c.density = 1.15;
+        assert_eq!(c.space(40.0), px(46.0));
     }
 
     #[test]

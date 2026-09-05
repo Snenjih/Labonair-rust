@@ -13,9 +13,10 @@ use serde_json::Value;
 use labonair_backend::modules::fs::paths::config_dir;
 use labonair_backend::modules::settings::preferences::Preferences;
 use labonair_command_palette::{resolve_conflict, Conflict, KeybindMap, ShortcutId};
+use labonair_settings::{Settings as _, ThemeSettings};
 #[cfg(test)]
 use labonair_theme::ThemeFile;
-use labonair_theme::{IconThemeRegistry, ThemeRegistry, ThemeStore};
+use labonair_theme::{IconThemeRegistry, ThemeMetrics, ThemeRegistry, ThemeStore, UiDensity};
 
 use crate::store::PreferencesStore;
 use crate::view::ThemeEntry;
@@ -59,12 +60,40 @@ pub(crate) fn font_overrides_from(p: &Preferences) -> labonair_theme::FontOverri
     }
 }
 
+/// Build the T20-007 [`ThemeMetrics`] from the layered `ThemeSettings`
+/// (`appearance` area). Returns `None` if the `SettingsStore` global was never
+/// installed (a headless harness) — callers then leave the store's default
+/// metrics in place.
+pub fn theme_metrics_from_settings(cx: &App) -> Option<ThemeMetrics> {
+    let s = ThemeSettings::try_get(cx)?;
+    Some(ThemeMetrics {
+        ui_font_family: s.ui_font_family().to_string(),
+        ui_font_size: s.ui_font_size(),
+        ui_line_height: s.ui_line_height(),
+        buffer_font_family: s.buffer_font_family().to_string(),
+        buffer_font_size: s.buffer_font_size(),
+        buffer_line_height: s.buffer_line_height(),
+        density: UiDensity::from_str_or_default(s.ui_density()),
+        corner_radius_scale: s.corner_radius_scale(),
+        reduce_motion: s.reduce_motion(),
+    })
+}
+
+/// Push the current [`ThemeMetrics`] (T20-007) into the [`ThemeStore`]. Called
+/// on startup and from the `SettingsStore` observer in `labonair-shell`.
+pub fn apply_theme_metrics(theme: &Entity<ThemeStore>, cx: &mut App) {
+    if let Some(metrics) = theme_metrics_from_settings(cx) {
+        theme.update(cx, |t, cx| t.set_metrics(metrics, cx));
+    }
+}
+
 /// Push the font + editor-syntax-theme preferences into the [`ThemeStore`], and
 /// (re)load + activate the persisted registry theme (T20-005). Used at startup
 /// (`AppShell`) and on every settings change.
 pub fn apply_prefs_to_theme(p: &Preferences, theme: &Entity<ThemeStore>, cx: &mut App) {
     let overrides = font_overrides_from(p);
     theme.update(cx, |t, cx| t.set_font_overrides(overrides, cx));
+    apply_theme_metrics(theme, cx);
     if let Some(id) = labonair_theme::EditorThemeId::from_slug(&p.editor_theme) {
         theme.update(cx, |t, cx| t.set_editor_theme(id, cx));
     }

@@ -316,13 +316,23 @@ const GENERAL_GROUPS: &[Group] = &[
 const APPEARANCE_GROUPS: &[Group] = &[
     (
         "Typography",
-        &["appFontFamily", "appFontSize", "appLineHeight"],
+        &[
+            "appFontFamily",
+            "appFontSize",
+            "appLineHeight",
+            "bufferFontFamily",
+            "bufferFontSize",
+            "bufferLineHeight",
+        ],
+    ),
+    (
+        "Density & Motion",
+        &["uiDensity", "cornerRadiusScale", "reduceMotion"],
     ),
     (
         "Layout",
         &[
             "appCornerRadius",
-            "reduceMotion",
             "tabsLocation",
             "sidebarGroupByFolder",
             "sidebarGroupSingleTabs",

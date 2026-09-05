@@ -135,7 +135,7 @@ impl NumberField {
         let handler = self.on_change.clone();
         div()
             .id(SharedString::from(format!("{}-{tag}", self.id)))
-            .size(px(20.0))
+            .size(c.space(20.0))
             .flex()
             .flex_shrink_0()
             .items_center()
@@ -159,9 +159,9 @@ impl NumberField {
     fn filled_track(&self) -> Div {
         let c = self.c;
         div()
-            .mt(px(4.0))
-            .w(px(120.0))
-            .h(px(4.0))
+            .mt(c.space(4.0))
+            .w(c.space(120.0))
+            .h(c.space(4.0))
             .rounded_full()
             .bg(c.border)
             .child(
@@ -194,7 +194,7 @@ impl IntoElement for NumberField {
                     .child(self.step_button("dec", "\u{2212}", -1))
                     .child(
                         div()
-                            .min_w(px(52.0))
+                            .min_w(c.space(52.0))
                             .text_center()
                             .text_color(c.fg)
                             .child(label),

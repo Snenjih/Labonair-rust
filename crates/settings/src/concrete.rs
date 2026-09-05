@@ -35,6 +35,17 @@ impl Settings for ThemeSettings {
     fn from_settings(content: &SettingsContent) -> Self {
         let mut merged = AppearanceContent::defaults();
         merged.merge_from(&content.appearance);
+        // T20-007 read-time migration: a pre-T20-007 file that set the legacy
+        // `appCornerRadius` (px) but never `cornerRadiusScale` keeps its
+        // rounding — px ÷ 5 (the historical default base) becomes the scale.
+        // The legacy key itself is left in place.
+        if content.appearance.corner_radius_scale.is_none() {
+            if let Some(px) = content.appearance.app_corner_radius {
+                if px != 5 {
+                    merged.corner_radius_scale = Some(px as f32 / 5.0);
+                }
+            }
+        }
         Self(merged)
     }
 }
@@ -54,6 +65,49 @@ impl ThemeSettings {
 
     pub fn reduce_motion(&self) -> bool {
         self.0.reduce_motion.unwrap_or(false)
+    }
+
+    // ── T20-007 `theme_settings` layer ───────────────────────────────────
+
+    /// UI-chrome font family (empty = the theme's own family).
+    pub fn ui_font_family(&self) -> &str {
+        self.0.app_font_family.as_deref().unwrap_or("")
+    }
+
+    /// UI-chrome font size, px.
+    pub fn ui_font_size(&self) -> f32 {
+        self.0.app_font_size.unwrap_or(13) as f32
+    }
+
+    /// UI-chrome line-height multiple.
+    pub fn ui_line_height(&self) -> f32 {
+        self.0.app_line_height.unwrap_or(1.5)
+    }
+
+    /// Editor/terminal text font family (empty = the theme's own mono family).
+    pub fn buffer_font_family(&self) -> &str {
+        self.0.buffer_font_family.as_deref().unwrap_or("")
+    }
+
+    /// Editor/terminal text font size, px.
+    pub fn buffer_font_size(&self) -> f32 {
+        self.0.buffer_font_size.unwrap_or(13) as f32
+    }
+
+    /// Editor/terminal text line-height multiple.
+    pub fn buffer_line_height(&self) -> f32 {
+        self.0.buffer_line_height.unwrap_or(1.5)
+    }
+
+    /// UI density token (`"compact"` | `"default"` | `"comfortable"`).
+    pub fn ui_density(&self) -> &str {
+        self.0.ui_density.as_deref().unwrap_or("default")
+    }
+
+    /// Corner-radius multiplier (`1.0` = unchanged). The legacy `appCornerRadius`
+    /// fallback is resolved once in [`ThemeSettings::from_settings`].
+    pub fn corner_radius_scale(&self) -> f32 {
+        self.0.corner_radius_scale.unwrap_or(1.0)
     }
 }
 
@@ -171,6 +225,31 @@ mod tests {
         assert!(settings.reduce_motion());
         // Untouched leaf still resolves to its documented default.
         assert_eq!(settings.app_theme(), "default");
+    }
+
+    #[test]
+    fn theme_settings_metric_accessors_and_legacy_corner_radius_migration() {
+        // Fresh defaults: unit scale, default density, 13px fonts.
+        let base = ThemeSettings::from_settings(&SettingsContent::default());
+        assert_eq!(base.corner_radius_scale(), 1.0);
+        assert_eq!(base.ui_density(), "default");
+        assert_eq!(base.ui_font_size(), 13.0);
+        assert_eq!(base.buffer_font_size(), 13.0);
+
+        // Pre-T20-007 file: only the legacy px key set → migrates to a scale.
+        let mut legacy = SettingsContent::default();
+        legacy.appearance.app_corner_radius = Some(10);
+        let migrated = ThemeSettings::from_settings(&legacy);
+        assert_eq!(migrated.corner_radius_scale(), 2.0);
+
+        // An explicit new-style scale always wins over the legacy key.
+        let mut both = SettingsContent::default();
+        both.appearance.app_corner_radius = Some(10);
+        both.appearance.corner_radius_scale = Some(0.5);
+        assert_eq!(
+            ThemeSettings::from_settings(&both).corner_radius_scale(),
+            0.5
+        );
     }
 
     #[test]

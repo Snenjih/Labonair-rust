@@ -92,7 +92,7 @@ pub fn icon_toggle_button(
     let size = ToggleSize::default();
     let color = if pressed { c.fg } else { c.muted };
     base(id, c, ToggleVariant::default(), size, pressed, false)
-        .w(px(size.height()))
+        .w(c.space(size.height()))
         .justify_center()
         .child(icon.svg(color).size(px(size.icon())))
 }
@@ -126,9 +126,9 @@ fn base(
         .flex_row()
         .flex_shrink_0()
         .items_center()
-        .gap(px(4.0))
-        .h(px(size.height()))
-        .min_w(px(size.height()))
+        .gap(c.space(4.0))
+        .h(c.space(size.height()))
+        .min_w(c.space(size.height()))
         .rounded(px(c.radius.md))
         .text_size(px(size.text()))
         .text_color(if pressed { c.fg } else { c.muted })

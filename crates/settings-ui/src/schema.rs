@@ -261,8 +261,55 @@ pub fn all_fields() -> Vec<AnyField> {
             appearance.app_corner_radius,
             "appCornerRadius",
             Int { min: 0, max: 20, step: 1 },
-            "Corner radius",
-            "Rounding of panels and cards (px)."
+            "Corner radius (legacy)",
+            "Legacy corner-radius base in px — superseded by \u{201c}Corner radius scale\u{201d}."
+        ),
+        field!(
+            appearance.ui_density,
+            "uiDensity",
+            Select(&[
+                ("compact", "Compact"),
+                ("default", "Default"),
+                ("comfortable", "Comfortable"),
+            ]),
+            "UI density",
+            "Spacing and control sizes across the whole interface."
+        ),
+        field!(
+            appearance.corner_radius_scale,
+            "cornerRadiusScale",
+            Float {
+                min_centi: 50,
+                max_centi: 200,
+                step_centi: 5
+            },
+            "Corner radius scale",
+            "Multiplier applied to the active theme's rounded corners (1.0 = unchanged)."
+        ),
+        field!(
+            appearance.buffer_font_family,
+            "bufferFontFamily",
+            FontFamily,
+            "Editor & terminal font",
+            "Font used for editor and terminal text (empty = the theme's mono font)."
+        ),
+        field!(
+            appearance.buffer_font_size,
+            "bufferFontSize",
+            Int { min: 9, max: 24, step: 1 },
+            "Editor & terminal font size",
+            "Text size for editor and terminal content, in points."
+        ),
+        field!(
+            appearance.buffer_line_height,
+            "bufferLineHeight",
+            Float {
+                min_centi: 100,
+                max_centi: 200,
+                step_centi: 5
+            },
+            "Editor & terminal line height",
+            "Line-height multiplier for editor and terminal text."
         ),
         field!(
             appearance.background_image,

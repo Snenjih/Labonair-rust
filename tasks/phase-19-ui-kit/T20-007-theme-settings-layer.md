@@ -1,7 +1,7 @@
 # T20-007: `theme_settings`-Layer (Dichte, Font-Skalen, Radius)
 
 ## Status
-📋 Geplant
+✅ Done
 
 ## Phase
 19 — UI-Kit & Theme-System
@@ -73,23 +73,35 @@ Theme-Settings) kombiniert; die ganze App liest daraus.
    überall; „Bewegung reduzieren" → keine Transitions; alles live + persistent.
 
 ## Akzeptanzkriterien
-- [ ] `ThemeSettings` (registriertes `Settings`-Struct) bündelt Font-Skalen,
-      Dichte, Radius-Skala, `reduce_motion`.
-- [ ] `UiDensity` (3 Stufen) skaliert Spacing/Höhen konsistent; Titlebar/
-      Statusbar-Basis aus dem Layout-Vertrag bleibt Referenz.
-- [ ] `ActiveTheme` = Farbe (Registry) + Metrik (ThemeSettings); als Global,
-      neu berechnet bei beiden Änderungsarten.
-- [ ] `ui-kit`-Primitives lesen Spacing/Radius aus `ActiveTheme.metrics`
-      (keine hartkodierten Spacing-`px` mehr, Ausnahmen dokumentiert).
-- [ ] Alte `appearance.*`-Metrik-Keys migriert (Mapping in T19-009 bzw.
-      Nachtrag-Migrator), `_legacy` erhalten.
-- [ ] Settings-„Darstellung"-Sektion steuert alles live.
-- [ ] `reduce_motion` schaltet Transitions wirklich ab.
-- [ ] Tests decken Density-Skalierung, ActiveTheme-Recompute, reduce_motion,
-      Migration.
-- [ ] Gates grün: `cargo fmt --check`, `cargo check --workspace --all-targets`,
+- [x] `ThemeSettings` (registriertes `Settings`-Struct) bündelt Font-Skalen,
+      Dichte, Radius-Skala, `reduce_motion`. — `crates/settings/src/concrete.rs`
+      (`ui_font_*`/`buffer_*`/`ui_density`/`corner_radius_scale`/`reduce_motion`).
+- [x] `UiDensity` (3 Stufen) skaliert Spacing/Höhen konsistent; Titlebar/
+      Statusbar-Basis aus dem Layout-Vertrag bleibt Referenz. — `UiDensity`
+      ×0.85/×1.0/×1.15, `Palette::space()`; 40/32 in shell/workspace unskaliert.
+- [x] `ActiveTheme` = Farbe (Registry) + Metrik (ThemeSettings); als Global
+      (`GlobalActiveTheme`), neu berechnet bei beiden Änderungsarten —
+      `ThemeStore::rebuild_active` + `init_theme`-Observer; Test
+      `active_theme_recomputes_on_colour_and_on_metric_change`.
+- [x] `ui-kit`-Primitives lesen Spacing/Radius aus `ActiveTheme.metrics`
+      (keine hartkodierten Spacing-`px` mehr, Ausnahmen dokumentiert) —
+      9 Palette-Primitives auf `c.space()`; Ausnahmen in `docs/architecture.md`
+      §8.20 (`list`/`disclosure`/`indicator`/`divider`, Typografie-Literale).
+- [x] Alte `appearance.*`-Metrik-Keys migriert, `_legacy` erhalten —
+      `appCornerRadius` (px) bleibt, wird read-time zu `cornerRadiusScale`
+      (`ThemeSettings::from_settings`); Test in `concrete.rs`.
+- [x] Settings-„Darstellung"-Sektion steuert alles live — Appearance-Page
+      Gruppen „Typography" (+Buffer) / „Density & Motion"; generierte Widgets;
+      `SettingsStore`-Observer in `bootstrap.rs` → `apply_theme_metrics`.
+- [x] `reduce_motion` schaltet Transitions wirklich ab — `ActiveTheme::animation()`
+      Dauer 0; workspace tab-in clamped auf 10µs (GPUI `with_animation`).
+- [x] Tests decken Density-Skalierung, ActiveTheme-Recompute, reduce_motion,
+      Migration (theme + ui-kit + settings crates).
+- [x] Gates grün: `cargo fmt --check`, `cargo check --workspace --all-targets`,
       `cargo clippy --workspace --all-targets -- -D warnings`,
-      `cargo test --workspace`.
+      `cargo test --workspace` (906 passed / 0 failed), `check-crate-deps.sh`.
+- [ ] `cargo run`-Sichtprüfung (Dichte/Font/Radius/Bewegung live) — offen,
+      headless (gleiche akzeptierte Lücke wie T20-002..006).
 
 ## Notizen
 - Abschluss des Theme-Teils der P2-Empfehlung. Danach ist „Personalisierung"

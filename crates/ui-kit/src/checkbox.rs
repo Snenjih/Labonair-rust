@@ -74,7 +74,7 @@ impl Checkbox {
         let c = self.c;
         div()
             .flex_shrink_0()
-            .size(px(16.0))
+            .size(c.space(16.0))
             .flex()
             .items_center()
             .justify_center()

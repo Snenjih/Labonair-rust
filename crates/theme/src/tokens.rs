@@ -166,6 +166,24 @@ impl RadiusScale {
             window: 12.0,
         }
     }
+
+    /// Every rounded-corner value multiplied by `factor` (the T20-007
+    /// `corner_radius_scale` theme-setting). `window` is left untouched — it
+    /// is the fixed `--window-radius`, not part of the tunable scale.
+    pub fn scaled(self, factor: f32) -> Self {
+        let f = factor.max(0.0);
+        Self {
+            base: self.base * f,
+            sm: self.sm * f,
+            md: self.md * f,
+            lg: self.lg * f,
+            xl: self.xl * f,
+            xl2: self.xl2 * f,
+            xl3: self.xl3 * f,
+            xl4: self.xl4 * f,
+            window: self.window,
+        }
+    }
 }
 
 /// A single CSS box-shadow layer.

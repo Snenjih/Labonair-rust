@@ -3704,19 +3704,21 @@ impl Workspace {
         // transform, so we animate opacity only. Reduce-motion mirrors the
         // reference's `animation-duration: 0.01ms` clamp rather than dropping
         // the keyframe entirely.
-        let (ease, dur_base) = {
-            let a = self.theme.read(cx).animation();
-            (a.ease_premium, a.dur_base)
+        // T20-007: `reduce_motion` + timings now come from the metric-aware
+        // `ActiveTheme` — `ThemeStore::animation()` already reports zero
+        // durations when reduce-motion is on. GPUI's `with_animation` can
+        // divide by a zero duration, so we still clamp to a 10µs floor here
+        // (mirrors the reference `animation-duration: 0.01ms`).
+        let (ease, dur_base, reduce_motion) = {
+            let store = self.theme.read(cx);
+            let a = store.animation();
+            (
+                a.ease_premium,
+                a.dur_base,
+                store.active_theme().reduce_motion(),
+            )
         };
-        // T19-002: real `ThemeSettings::get(cx)` consumer (was
-        // `GlobalPreferences`) — `SettingsStore` merges default < user for
-        // `appearance.reduceMotion`. `try_get` (not `get`) so a headless test
-        // harness that never called `labonair_settings::init` still renders.
-        use labonair_settings::Settings as _;
-        let reduce_motion = labonair_settings::ThemeSettings::try_get(cx)
-            .map(|s| s.reduce_motion())
-            .unwrap_or(false);
-        let tab_in_dur = if reduce_motion {
+        let tab_in_dur = if reduce_motion || dur_base.is_zero() {
             Duration::from_micros(10)
         } else {
             dur_base

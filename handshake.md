@@ -4,7 +4,82 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
-## Last Session: 2026-09-05 (T20-006 — Icon themes, JSON, switchable)
+## Last Session: 2026-09-05 (T20-007 — `theme_settings` metric layer)
+
+**T20-007 done.** UI density, font scales, corner-radius scale and
+reduce-motion are now a coherent **metric layer** that scales the active
+`Theme` at runtime — Zed's `theme_settings` pattern. `ActiveTheme` = colour
+(from the `ThemeRegistry`) + metric (from settings), recomputed only on a real
+change of either.
+
+- **`crates/theme/src/theme_settings.rs`** (new, ~330 lines incl. 5 tests):
+  `UiDensity` (`Compact` ×0.85 / `Default` ×1.0 / `Comfortable` ×1.15,
+  `from_str_or_default`/`as_str`/`ALL`); `ThemeMetrics { ui_font_family,
+  ui_font_size, ui_line_height, buffer_font_family, buffer_font_size,
+  buffer_line_height, density, corner_radius_scale, reduce_motion }` (default =
+  historical `Typography` defaults, so a store with no `set_metrics` renders
+  as before) + `space(px)` / `scaled_radius(base)`; `ActiveTheme { colors:
+  Theme, metrics }` with cached `radius` (`corner_radius_scale`d) + `animation`
+  (durations → `Duration::ZERO` when `reduce_motion`); `GlobalActiveTheme`.
+- **`RadiusScale::scaled(factor)`** — new (tokens.rs); every corner value ×f,
+  `window` fixed.
+- **`ThemeStore`** gained `metrics` + cached `active` fields, `metrics()`,
+  `active_theme()`, `set_metrics()`, private `rebuild_active()` (called from
+  `rebuild_custom` + the 4 preview/clear paths + `new`). `radius()` /
+  `animation()` now return the metric-scaled values. `init_theme` installs a
+  `cx.observe(&store)` that mirrors `active` into `GlobalActiveTheme` (fires on
+  notify only — never per frame). New gpui test
+  `active_theme_recomputes_on_colour_and_on_metric_change` (note: `cx.observe`
+  effects flush at the end of a `cx.update` block, not between statements —
+  the test splits updates to see the global sync).
+- **`labonair-ui-kit`** — `theme.rs`: `UiTheme::metrics()` (default
+  `ThemeMetrics::default()`, overridden on `ThemeStore` → live); `ThemeStore`'s
+  `UiTheme::radius()` now returns `active_theme().radius()`. New
+  `ActiveThemeExt` (`cx.active_theme()` off `GlobalActiveTheme`), exported +
+  in prelude. `Palette` gained `density: f32` + `Palette::space(px) -> Pixels`;
+  `radius` is now the scaled scale. Nine Palette-primitives (`button`,
+  `checkbox`, `context_menu`, `banner`, `kbd`, `number_field`, `segmented`,
+  `select`, `toggle`) route every spacing/size `px(..)` through `space()`.
+  Kept literal: `text_size`, icon glyph `.size()`, 1px hairlines.
+  Exceptions (bare-colour param, no density channel; deferred): `list`,
+  `disclosure`, `indicator`, `divider`.
+- **`AppearanceContent`** — new `buffer_font_family` / `buffer_font_size` /
+  `buffer_line_height` / `ui_density` / `corner_radius_scale` (+ `default.json`,
+  `migrate_v2::appearance_from` `..Default::default()` — no legacy `Preferences`
+  key). `appCornerRadius` (px) retained as `_legacy`: a non-default value →
+  `cornerRadiusScale = px / 5` once, read-time, in `ThemeSettings::from_settings`.
+- **`ThemeSettings`** (`concrete.rs`) — new `ui_font_*`/`buffer_*`/`ui_density`/
+  `corner_radius_scale` accessors + the legacy-migration test.
+- **`labonair-settings-ui`** — `apply.rs`: `theme_metrics_from_settings(cx)` +
+  `apply_theme_metrics(theme, cx)`; `apply_prefs_to_theme` now also pushes
+  metrics. `schema.rs`: 5 new `field!` rows (`uiDensity` = `Select`,
+  `cornerRadiusScale`/`bufferLineHeight` = `Float`, `bufferFontSize` = `Int`,
+  `bufferFontFamily` = `FontFamily`). `pages.rs`: Appearance groups gain the
+  buffer-font rows + a new "Density & Motion" group.
+- **`crates/shell/src/bootstrap.rs`** — `cx.observe_global::<SettingsStore>` →
+  `apply_theme_metrics` (generated `appearance` fields bypass
+  `apply_prefs_to_theme`).
+- **`crates/workspace/src/workspace.rs`** — tab-in animation reads
+  `reduce_motion` + timings off `active_theme()`; clamps a zero `dur_base` to
+  10µs (GPUI `with_animation` divides by the duration).
+- **Deviations** (all in `docs/architecture.md` §8.20): `ActiveTheme.colors` is
+  `Theme` by value not `Arc`; `GlobalActiveTheme` is a mirror; metrics live in
+  the `appearance` area (no new `theme` area), `ThemeSettings` name kept;
+  `uiDensity` is a generated `Select` not a bespoke `SegmentedControl`;
+  primitive migration limited to `Palette`-taking primitives;
+  editor/terminal font-pref consolidation deferred (`buffer_*` seeded at editor
+  defaults, terminal keeps `FontOverrides`).
+- **Gates:** `fmt --check`, `check --workspace --all-targets`, `clippy
+  --workspace --all-targets -D warnings`, `test --workspace` (906 passed /
+  0 failed), `scripts/check-crate-deps.sh` (24 crates, acyclic) — all green.
+  `labonair-theme` gains **no** new dependency.
+- **Not `cargo run`-verified** (headless) — live density/font/radius/motion
+  visual check open (same accepted gap as T20-002..006).
+- **Next task: first task of Phase 20** (`tasks/phase-20-perf-signoff/`) —
+  T21-001 (render-path profiling & frame hygiene). Phase 19 (UI-Kit &
+  Theme-System) is now complete.
+
+## Previous Session: 2026-09-05 (T20-006 — Icon themes, JSON, switchable)
 
 **T20-006 done.** The hard-coded `file_icon` extension table is now a
 swappable **JSON icon theme** (embedded built-in + user `*.json`), runtime-

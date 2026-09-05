@@ -106,10 +106,10 @@ impl IntoElement for Banner {
             .flex_row()
             .flex_shrink_0()
             .items_start()
-            .gap(px(8.0))
+            .gap(c.space(8.0))
             .w_full()
-            .px(px(12.0))
-            .py(px(6.0))
+            .px(c.space(12.0))
+            .py(c.space(6.0))
             .text_size(px(11.0))
             .text_color(color)
             .when(sev == Severity::Note, |d| d.bg(c.card))
@@ -119,15 +119,17 @@ impl IntoElement for Banner {
                     .border_color(color.opacity(0.5))
             })
             .when_some(sev.icon(), |d, icon| {
-                d.child(div().pt(px(1.0)).child(icon.svg(color).size(px(13.0))))
+                d.child(div().pt(c.space(1.0)).child(icon.svg(color).size(px(13.0))))
             })
             .child(
                 div()
                     .flex()
                     .flex_1()
                     .min_w_0()
-                    .when(self.stacked, |d| d.flex_col().gap(px(2.0)))
-                    .when(!self.stacked, |d| d.flex_row().items_center().gap(px(8.0)))
+                    .when(self.stacked, |d| d.flex_col().gap(c.space(2.0)))
+                    .when(!self.stacked, |d| {
+                        d.flex_row().items_center().gap(c.space(8.0))
+                    })
                     .children(self.children),
             )
     }
