@@ -4,7 +4,50 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
-## Last Session: 2026-09-05 (T20-002 — View-Migration Wave 1: Explorer, SCM, Editor, Terminal)
+## Last Session: 2026-09-05 (T20-003 — View-Migration Wave 2: Hosts, Snippets, AI, SFTP, Git-Graph, Settings-UI)
+
+**T20-003 done**, 16 commits, gates green throughout (final: `3c4bcc1`).
+Migrated the rest of the app's hand-rolled buttons/lists/menus/fields onto
+`labonair-ui-kit` primitives, completing the app-wide UI-vocabulary goal
+Phase 19 set out for: `a4fda76` hosts-ui, `b620b4e` panel-snippets, five
+panel-ai commits (`3fbf8bd` session/agent menu rows, `7e1122e` composer
+popover rows, `85c2b0c` ModelPicker, `baeb812` plan-mode + tool-call
+actions, `d96095a` header trigger pills), `b031120` SFTP view, `489b366`
+transfer queue, `25a6ca1` git-graph chrome, four settings-ui commits
+(`e754773` sidebar/header, `a3a4f01` keymap editor, `4187a7f` custom panes,
+`4719c62` documented-exception annotations), `7b5513a` shell updater
+buttons, and `3c4bcc1` the final close-out audit.
+
+- **Close-out audit (`3c4bcc1`)** was a dedicated pass (per the task's step 6):
+  grepped every `.on_click(`-bearing file outside `labonair-ui-kit` for
+  anything still un-migrated after the per-view commits above. Migrated:
+  `panel-explorer/bookmarks.rs` (rows → `ListItem`), `shell/status_items.rs`
+  (`simple_bar_button` rebuilt on `icon_toggle_button`; bell/clear-all/
+  breadcrumb-collapse), `notifications/notifications.rs` (toast action
+  button), `workspace/views/preview.rs` (open/reload/external buttons),
+  `panel-scm/panel_scm.rs` (diff-header/stage-hunk/branch-toggle buttons),
+  `workspace/workspace.rs` (`loading_btn` on the SSH loading screen, tab-strip
+  "+", tab-close confirm dialog), `hosts-ui/hosts.rs` (import/export rows,
+  quick-connect card, remove-tunnel trigger), `panel-ai/panel_ai.rs`
+  (session-toggle trigger).
+- **Documented exceptions** (no ui-kit primitive fits without a visual/
+  behavioral regression — same bar as `4719c62`'s settings-ui exceptions):
+  titlebar's non-standard 26px account trigger, search-overlay's
+  arbitrary-glyph mini-buttons, command-palette's result row/breadcrumb
+  pill/mode chip, the workspace tab row itself, the dock-tab strip, SFTP's
+  click-to-edit path bar, SCM's commit-message box, and panel-ai's
+  code-block Run/Copy links (no `Palette` in scope at that call site).
+- All four gates (`fmt --check`, `check --workspace --all-targets`,
+  `clippy --workspace --all-targets -- -D warnings`, `test --workspace`)
+  pass after every commit; final full-workspace run green (92 unit tests +
+  doctests, 0 failures).
+- Task's instruction #7 ("Vorher/Nachher-Screenshots je View im PR") is not
+  applicable here — there is no PR workflow in play this session (direct
+  commits to `master`, per repo convention) and no way to capture GPUI
+  screenshots headlessly; same gap existed and was accepted for T20-002.
+- **Next task: T20-004** (Component-Gallery, `tasks/phase-19-ui-kit/`).
+
+## Previous Session: 2026-09-05 (T20-002 — View-Migration Wave 1: Explorer, SCM, Editor, Terminal)
 
 **T20-002 done**, 3 commits (`bf059cf` Explorer, `e96198d` SCM, `f23c611`
 Editor/Terminal), gates green after each. Migrated the four views named in

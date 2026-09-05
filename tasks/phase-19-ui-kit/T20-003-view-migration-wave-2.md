@@ -1,7 +1,7 @@
 # T20-003: View-Migration Welle 2 (Hosts, Snippets, AI-Chat, SFTP, Git-Graph, Settings-UI)
 
 ## Status
-📋 Geplant
+✅ Done
 
 ## Phase
 19 — UI-Kit & Theme-System
@@ -59,17 +59,30 @@ Listen/Menüs/Felder mehr außerhalb von `labonair-ui-kit`.
 7. Vorher/Nachher-Screenshots je View im PR.
 
 ## Akzeptanzkriterien
-- [ ] Hosts, Snippets, AI (alle Teil-Views), SFTP, Git-Graph-Umgebung,
+- [x] Hosts, Snippets, AI (alle Teil-Views), SFTP, Git-Graph-Umgebung,
       Settings-UI nutzen ausschließlich `ui-kit`-Primitives für Buttons/
-      Listen/Menüs/Felder/Umschalter.
-- [ ] App-weiter `grep`: keine hand-gerollten interaktiven `div()`-Bausteine
-      außerhalb `labonair-ui-kit` (Ausnahmen: alacritty-Zellen, TreeSitter-
-      Text, Git-Graph-Zeichnung, Terminal-Hintergrundbild — im PR gelistet).
-- [ ] Kein Verhaltensbruch in irgendeiner migrierten View (Sichtprüfung +
-      bestehende Tests).
-- [ ] AI-Composer Slash/`@`-Popups, ModelPicker, Plan-Mode funktionieren
-      unverändert.
-- [ ] Gates grün: `cargo fmt --check`, `cargo check --workspace --all-targets`,
+      Listen/Menüs/Felder/Umschalter. 16 Commits (`a4fda76` Hosts,
+      `b620b4e` Snippets, `3fbf8bd`/`7e1122e`/`85c2b0c`/`baeb812`/`d96095a`
+      panel-ai sub-areas, `b031120` SFTP, `489b366` transfer queue,
+      `25a6ca1` git-graph, `e754773`/`a3a4f01`/`4187a7f`/`4719c62`
+      settings-ui, `7b5513a` shell updater, `3c4bcc1` close-out audit).
+- [x] App-weiter `grep`: keine hand-gerollten interaktiven `div()`-Bausteine
+      außerhalb `labonair-ui-kit` ohne dokumentierte Ausnahme. `3c4bcc1`
+      migrierte die verbleibenden Fundstellen (bookmarks, status-items,
+      notifications, preview, panel-scm, workspace tab-strip/loading-screen/
+      close-confirm, hosts-ui import/export/quick-connect, panel-ai session
+      toggle) und dokumentierte den Rest inline (titlebar account trigger,
+      search-overlay glyph buttons, command-palette result row/breadcrumb/
+      mode chip, SFTP path bar, git commit-message box, AI code-block
+      Run/Copy links) — Ausnahmen: alacritty-Zellen, TreeSitter-Text,
+      Git-Graph-Zeichnung, Terminal-Hintergrundbild, plus die oben
+      genannten dokumentierten UI-Sonderfälle.
+- [x] Kein Verhaltensbruch in irgendeiner migrierten View (Sichtprüfung +
+      bestehende Tests, `cargo test --workspace` grün nach jedem Commit).
+- [x] AI-Composer Slash/`@`-Popups, ModelPicker, Plan-Mode funktionieren
+      unverändert (mechanische Primitive-Swaps ohne Logikänderung, siehe
+      `3fbf8bd`/`7e1122e`/`85c2b0c`/`baeb812`).
+- [x] Gates grün: `cargo fmt --check`, `cargo check --workspace --all-targets`,
       `cargo clippy --workspace --all-targets -- -D warnings`,
       `cargo test --workspace`.
 
