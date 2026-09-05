@@ -1645,12 +1645,11 @@ impl GitPanelView {
                         .child(SharedString::from(short_path(&path))),
                 )
                 .trailing(trailing)
+                .hover_style(move |s| s.bg(c.border))
                 .extra(move |mut row| {
                     row = row.h(px(22.0)).text_size(px(12.0));
                     if selected {
                         row = row.bg(c.accent);
-                    } else {
-                        row = row.hover(|s| s.bg(c.border));
                     }
                     row.on_click(on_click)
                         .on_mouse_down(MouseButton::Right, on_right_click)

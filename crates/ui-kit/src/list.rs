@@ -28,7 +28,7 @@ use std::rc::Rc;
 use gpui::{
     div, prelude::FluentBuilder, px, AnyElement, App, ClickEvent, Div, ElementId, Hsla,
     InteractiveElement, IntoElement, ParentElement, SharedString, Stateful,
-    StatefulInteractiveElement, Styled, Window,
+    StatefulInteractiveElement, StyleRefinement, Styled, Window,
 };
 
 use crate::divider::{divider, Axis};
@@ -65,6 +65,8 @@ pub struct ListItem {
     #[allow(clippy::type_complexity)]
     on_click: Option<Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>>,
     #[allow(clippy::type_complexity)]
+    hover: Option<Box<dyn Fn(StyleRefinement) -> StyleRefinement + 'static>>,
+    #[allow(clippy::type_complexity)]
     extra: Option<Box<dyn FnOnce(Stateful<Div>) -> Stateful<Div>>>,
 }
 
@@ -81,6 +83,7 @@ impl ListItem {
             selected_fill,
             children: Vec::new(),
             on_click: None,
+            hover: None,
             extra: None,
         }
     }
@@ -111,6 +114,15 @@ impl ListItem {
         handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
     ) -> Self {
         self.on_click = Some(Rc::new(handler));
+        self
+    }
+
+    /// Replace the default background-fill hover with a custom hover style.
+    /// Use this instead of calling `.hover(..)` inside [`extra`](Self::extra) —
+    /// GPUI panics with "hover style already set" if `.hover(..)` is applied
+    /// twice on the same element.
+    pub fn hover_style(mut self, f: impl Fn(StyleRefinement) -> StyleRefinement + 'static) -> Self {
+        self.hover = Some(Box::new(f));
         self
     }
 
@@ -157,7 +169,9 @@ impl IntoElement for ListItem {
             row = row.opacity(super::DISABLED_OPACITY);
         } else {
             row = row.cursor_pointer();
-            if !self.selected {
+            if let Some(hover) = self.hover {
+                row = row.hover(hover);
+            } else if !self.selected {
                 let hover_fill = self.selected_fill;
                 row = row.hover(move |s| s.bg(hover_fill));
             }

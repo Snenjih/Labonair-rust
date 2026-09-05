@@ -1717,7 +1717,8 @@ impl HostManagerView {
     /// `render_file_row` (T20-002). The bg/border chrome is fully
     /// re-applied in `.extra()` (rather than via `.selected()`) to keep the
     /// exact pre-migration look: a border-ring highlight with an
-    /// accent-border hover, not `ListItem`'s default bg-tint hover.
+    /// accent-border hover (via `.hover_style()`), not `ListItem`'s default
+    /// bg-tint hover.
     fn render_host_list_item(
         &self,
         host: &Host,
@@ -1803,13 +1804,13 @@ impl HostManagerView {
                 }),
         )
         .on_click(on_click)
+        .hover_style(move |s| s.border_color(accent))
         .extra(move |row| {
             row.py(px(8.0))
                 .rounded_md()
                 .bg(if selected { border } else { card })
                 .border_1()
                 .border_color(if selected { accent } else { border })
-                .hover(move |s| s.border_color(accent))
                 .on_mouse_down(MouseButton::Right, on_right_click)
                 .on_drag(DraggedHost { id: id.clone() }, |_, _, _, cx| {
                     cx.new(|_| HostDragGhost)
