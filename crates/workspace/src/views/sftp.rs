@@ -41,7 +41,10 @@ use labonair_backend::modules::ssh::sftp as backend_sftp;
 use labonair_backend::App as Backend;
 
 use crate::theme::ThemeStore;
-use labonair_ui_kit::{context_menu, divider, Axis, IconName, MenuClick, MenuItem, Palette};
+use labonair_ui_kit::{
+    banner, button, context_menu, divider, icon_toggle_button, Axis, ButtonSize, ButtonVariant,
+    IconName, ListItem, MenuClick, MenuItem, Palette, Severity,
+};
 
 /// A menu action against the SFTP view (wrapped into a [`MenuClick`]).
 type SftpAct = Box<dyn Fn(&mut SftpView, &mut Context<SftpView>)>;
@@ -1027,6 +1030,9 @@ struct Colors {
     card: gpui::Hsla,
     bg: gpui::Hsla,
     err: gpui::Hsla,
+    /// The full token snapshot the ui-kit primitives (`button`, `banner`, …)
+    /// are styled from.
+    palette: Palette,
 }
 
 impl Render for SftpView {
@@ -1041,6 +1047,7 @@ impl Render for SftpView {
                 card: t.card(),
                 bg: t.background(),
                 err: t.status_error(),
+                palette: Palette::from_theme(t),
             }
         };
 
@@ -1109,23 +1116,29 @@ impl SftpView {
             .child(self.tool_btn(
                 side,
                 "reload",
-                IconName::Refresh.svg(c.muted).size(px(13.0)),
+                IconName::Refresh.svg(c.muted),
                 c,
                 cx,
                 |this, side, cx| this.reload(side, cx),
             ))
-            .child(self.tool_btn(
-                side,
-                "hidden",
-                if pane.show_hidden {
-                    IconName::Eye.svg(c.muted).size(px(13.0))
-                } else {
-                    IconName::EyeOff.svg(c.muted).size(px(13.0))
-                },
-                c,
-                cx,
-                |this, side, cx| this.toggle_hidden(side, cx),
-            ))
+            .child(
+                icon_toggle_button(
+                    match side {
+                        Side::Local => "sftp-local-hidden",
+                        Side::Remote => "sftp-remote-hidden",
+                    },
+                    c.palette,
+                    if pane.show_hidden {
+                        IconName::Eye
+                    } else {
+                        IconName::EyeOff
+                    },
+                    pane.show_hidden,
+                )
+                .on_click(
+                    cx.listener(move |this, _: &ClickEvent, _w, cx| this.toggle_hidden(side, cx)),
+                ),
+            )
             .child(self.render_path_bar(side, pane, c, cx));
 
         // Body
@@ -1146,15 +1159,7 @@ impl SftpView {
             .size_full()
             .child(toolbar)
             .when_some(pane.error.clone(), |el, e| {
-                el.child(
-                    div()
-                        .px_2()
-                        .py(px(2.0))
-                        .text_xs()
-                        .bg(c.card)
-                        .text_color(c.err)
-                        .child(SharedString::from(e)),
-                )
+                el.child(banner(Severity::Error, c.palette).child(SharedString::from(e)))
             })
             .child(
                 div()
@@ -1259,17 +1264,7 @@ impl SftpView {
         cx: &mut Context<Self>,
         handler: impl Fn(&mut Self, Side, &mut Context<Self>) + 'static,
     ) -> impl IntoElement {
-        div()
-            .id(id)
-            .h(px(20.0))
-            .px_1()
-            .flex()
-            .items_center()
-            .justify_center()
-            .rounded_sm()
-            .text_xs()
-            .text_color(c.muted)
-            .hover(|s| s.bg(c.border))
+        button(id, c.palette, ButtonVariant::Ghost, ButtonSize::IconXs)
             .child(glyph)
             .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| handler(this, side, cx)))
     }
@@ -1335,17 +1330,44 @@ impl SftpView {
             format_bytes(entry.size)
         };
 
-        div()
-            .id(id)
-            .flex()
-            .flex_row()
-            .items_center()
-            .gap_2()
-            .px_2()
-            .py(px(2.0))
-            .text_sm()
-            .when(selected, |d| d.bg(c.border))
-            .when(!selected, |d| d.hover(|s| s.bg(c.card)))
+        // Click/right-click/drag are built up front (need `cx`) so they can
+        // move into the `'static` `.extra()` closure below, mirroring the
+        // panel-explorer tree-row / hosts-ui `render_host_list_item` pattern.
+        let on_click = cx.listener(move |this, ev: &ClickEvent, _w, cx| {
+            this.activate(side, &e_click, ev.click_count() >= 2, cx);
+        });
+        let on_right_click = cx.listener(move |this, ev: &MouseDownEvent, _w, cx| {
+            this.pane(side).selected = Some(e_menu.path.clone());
+            this.menu = Some(Menu {
+                side,
+                path: e_menu.path.clone(),
+                is_dir: e_menu.is_dir,
+                pos: ev.position,
+                confirming_delete: false,
+            });
+            cx.notify();
+        });
+
+        // `ListItem` doesn't implement `FluentBuilder`, so the optional
+        // trailing columns are built as `Option`s and spliced in via
+        // `.children(..)` (its `ParentElement` impl) instead of `.when(..)`.
+        let perm_child = (!perm_col.is_empty()).then(|| {
+            div()
+                .text_xs()
+                .font_family("monospace")
+                .text_color(c.muted)
+                .child(SharedString::from(perm_col))
+        });
+        let size_child = (!size_col.is_empty()).then(|| {
+            div()
+                .w(px(64.0))
+                .text_xs()
+                .text_color(c.muted)
+                .child(SharedString::from(size_col))
+        });
+
+        ListItem::new(id, c.fg, c.muted, c.border)
+            .selected(selected)
             .child(div().child(glyph.svg(c.muted)))
             .child(
                 div()
@@ -1353,48 +1375,19 @@ impl SftpView {
                     .min_w_0()
                     .child(SharedString::from(entry.name.clone())),
             )
-            .when(!perm_col.is_empty(), |d| {
-                d.child(
-                    div()
-                        .text_xs()
-                        .font_family("monospace")
-                        .text_color(c.muted)
-                        .child(SharedString::from(perm_col)),
-                )
+            .children(perm_child)
+            .children(size_child)
+            .extra(move |row| {
+                row.on_click(on_click)
+                    .on_mouse_down(MouseButton::Right, on_right_click)
+                    .on_drag(
+                        SftpDrag {
+                            from: side,
+                            paths: vec![drag_path],
+                        },
+                        |_, _, _, cx| cx.new(|_| DragGhost),
+                    )
             })
-            .when(!size_col.is_empty(), |d| {
-                d.child(
-                    div()
-                        .w(px(64.0))
-                        .text_xs()
-                        .text_color(c.muted)
-                        .child(SharedString::from(size_col)),
-                )
-            })
-            .on_click(cx.listener(move |this, ev: &ClickEvent, _w, cx| {
-                this.activate(side, &e_click, ev.click_count() >= 2, cx);
-            }))
-            .on_mouse_down(
-                MouseButton::Right,
-                cx.listener(move |this, ev: &MouseDownEvent, _w, cx| {
-                    this.pane(side).selected = Some(e_menu.path.clone());
-                    this.menu = Some(Menu {
-                        side,
-                        path: e_menu.path.clone(),
-                        is_dir: e_menu.is_dir,
-                        pos: ev.position,
-                        confirming_delete: false,
-                    });
-                    cx.notify();
-                }),
-            )
-            .on_drag(
-                SftpDrag {
-                    from: side,
-                    paths: vec![drag_path],
-                },
-                |_, _, _, cx| cx.new(|_| DragGhost),
-            )
             .into_any_element()
     }
 
@@ -1441,22 +1434,18 @@ impl SftpView {
             .gap_2()
             .p_4()
             .child(
-                div()
-                    .text_sm()
-                    .text_color(c.err)
+                banner(Severity::Error, c.palette)
                     .child(SharedString::from(format!("SFTP connection failed: {msg}"))),
             )
             .child(
-                div()
-                    .id("sftp-retry")
-                    .px_2()
-                    .py_1()
-                    .rounded_sm()
-                    .text_xs()
-                    .text_color(c.accent)
-                    .hover(|s| s.bg(c.border))
-                    .child("Retry")
-                    .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| this.connect(cx))),
+                button(
+                    "sftp-retry",
+                    c.palette,
+                    ButtonVariant::Outline,
+                    ButtonSize::Xs,
+                )
+                .child("Retry")
+                .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| this.connect(cx))),
             )
             .into_any_element()
     }
@@ -1851,16 +1840,12 @@ fn dialog_btn(
     c: Colors,
     primary: bool,
 ) -> gpui::Stateful<gpui::Div> {
-    div()
-        .id(id)
-        .px_2()
-        .py_1()
-        .rounded_sm()
-        .text_xs()
-        .when(primary, |d| d.bg(c.accent).text_color(c.bg))
-        .when(!primary, |d| d.bg(c.border).text_color(c.fg))
-        .hover(|s| s.opacity(0.85))
-        .child(label)
+    let variant = if primary {
+        ButtonVariant::Default
+    } else {
+        ButtonVariant::Outline
+    };
+    button(id, c.palette, variant, ButtonSize::Xs).child(label)
 }
 
 // ── tests ──────────────────────────────────────────────────────────────────
