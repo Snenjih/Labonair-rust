@@ -431,43 +431,37 @@ impl SettingsView {
                                     .flex()
                                     .gap_1()
                                     .child(
-                                        div()
-                                            .id(SharedString::from(format!("theme-use-{}", t.id)))
-                                            .px_2()
-                                            .py(px(2.0))
-                                            .rounded_sm()
-                                            .border_1()
-                                            .border_color(c.border)
-                                            .text_size(px(11.0))
-                                            .text_color(c.fg)
-                                            .hover(|s| s.bg(c.border))
-                                            .child(if is_active { "Active" } else { "Activate" })
-                                            .on_click(cx.listener(
-                                                move |this, _: &ClickEvent, _w, cx| {
-                                                    this.activate_theme(&id, cx);
-                                                },
-                                            )),
+                                        button(
+                                            SharedString::from(format!("theme-use-{}", t.id)),
+                                            *c,
+                                            if is_active {
+                                                ButtonVariant::Secondary
+                                            } else {
+                                                ButtonVariant::Outline
+                                            },
+                                            ButtonSize::Xs,
+                                        )
+                                        .child(if is_active { "Active" } else { "Activate" })
+                                        .on_click(
+                                            cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                                                this.activate_theme(&id, cx);
+                                            }),
+                                        ),
                                     )
                                     .when(!builtin, |d| {
                                         d.child(
-                                            div()
-                                                .id(SharedString::from(format!(
-                                                    "theme-del-{id_del}"
-                                                )))
-                                                .px_2()
-                                                .py(px(2.0))
-                                                .rounded_sm()
-                                                .border_1()
-                                                .border_color(c.border)
-                                                .text_size(px(11.0))
-                                                .text_color(c.muted)
-                                                .hover(|s| s.text_color(c.fg))
-                                                .child("Delete")
-                                                .on_click(cx.listener(
-                                                    move |this, _: &ClickEvent, _w, cx| {
-                                                        this.delete_theme(&id_del, cx);
-                                                    },
-                                                )),
+                                            button(
+                                                SharedString::from(format!("theme-del-{id_del}")),
+                                                *c,
+                                                ButtonVariant::Ghost,
+                                                ButtonSize::Xs,
+                                            )
+                                            .child("Delete")
+                                            .on_click(
+                                                cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                                                    this.delete_theme(&id_del, cx);
+                                                }),
+                                            ),
                                         )
                                     }),
                             ),
@@ -483,61 +477,30 @@ impl SettingsView {
                     .flex()
                     .gap_2()
                     .py_2()
+                    // T20-003: shared `button()` primitive (`Outline`/`Xs`).
                     .child(
-                        div()
-                            .id("theme-import")
-                            .px_2()
-                            .py(px(3.0))
-                            .rounded_sm()
-                            .border_1()
-                            .border_color(c.border)
-                            .text_color(c.fg)
-                            .hover(|s| s.bg(c.border))
+                        button("theme-import", *c, ButtonVariant::Outline, ButtonSize::Xs)
                             .child("Import theme\u{2026}")
                             .on_click(
                                 cx.listener(|this, _: &ClickEvent, _w, cx| this.import_theme(cx)),
                             ),
                     )
                     .child(
-                        div()
-                            .id("theme-export")
-                            .px_2()
-                            .py(px(3.0))
-                            .rounded_sm()
-                            .border_1()
-                            .border_color(c.border)
-                            .text_color(c.fg)
-                            .hover(|s| s.bg(c.border))
+                        button("theme-export", *c, ButtonVariant::Outline, ButtonSize::Xs)
                             .child("Export active theme\u{2026}")
                             .on_click(
                                 cx.listener(|this, _: &ClickEvent, _w, cx| this.export_theme(cx)),
                             ),
                     )
                     .child(
-                        div()
-                            .id("theme-folder")
-                            .px_2()
-                            .py(px(3.0))
-                            .rounded_sm()
-                            .border_1()
-                            .border_color(c.border)
-                            .text_color(c.fg)
-                            .hover(|s| s.bg(c.border))
+                        button("theme-folder", *c, ButtonVariant::Outline, ButtonSize::Xs)
                             .child("Open themes folder")
                             .on_click(cx.listener(|_, _: &ClickEvent, _w, cx| {
                                 cx.reveal_path(&themes_dir());
                             })),
                     )
                     .child(
-                        div()
-                            .id("theme-new")
-                            .px_2()
-                            .py(px(3.0))
-                            .rounded_sm()
-                            .border_1()
-                            .border_color(c.accent)
-                            .text_color(c.fg)
-                            .hover(|s| s.bg(c.border))
+                        button("theme-new", *c, ButtonVariant::Outline, ButtonSize::Xs)
                             .child("New Theme\u{2026}")
                             .on_click(cx.listener(|this, _: &ClickEvent, w, cx| {
                                 this.new_theme_prompt = Some(String::new());
@@ -625,40 +588,37 @@ impl SettingsView {
                                 format!("{} \u{2014} {}", r.author, r.description)
                             }),
                         ))
+                        // T20-003: shared `button()` primitive (`Xs`).
                         .child(if is_installed {
-                            div()
-                                .id(SharedString::from(format!("comm-un-{id_un}")))
-                                .px_2()
-                                .py(px(2.0))
-                                .rounded_sm()
-                                .border_1()
-                                .border_color(c.border)
-                                .text_size(px(11.0))
-                                .text_color(c.muted)
-                                .hover(|s| s.text_color(c.fg))
-                                .child("Uninstall")
-                                .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                            button(
+                                SharedString::from(format!("comm-un-{id_un}")),
+                                *c,
+                                ButtonVariant::Ghost,
+                                ButtonSize::Xs,
+                            )
+                            .child("Uninstall")
+                            .on_click(cx.listener(
+                                move |this, _: &ClickEvent, _w, cx| {
                                     this.delete_theme(&id_un, cx);
-                                }))
+                                },
+                            ))
                         } else {
-                            div()
-                                .id(SharedString::from(format!("comm-in-{}", r.id)))
-                                .px_2()
-                                .py(px(2.0))
-                                .rounded_sm()
-                                .border_1()
-                                .border_color(c.accent)
-                                .text_size(px(11.0))
-                                .text_color(c.fg)
-                                .hover(|s| s.bg(c.border))
-                                .child(if is_installing {
-                                    "Installing\u{2026}"
-                                } else {
-                                    "Install"
-                                })
-                                .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                            button(
+                                SharedString::from(format!("comm-in-{}", r.id)),
+                                *c,
+                                ButtonVariant::Outline,
+                                ButtonSize::Xs,
+                            )
+                            .child(if is_installing {
+                                "Installing\u{2026}"
+                            } else {
+                                "Install"
+                            })
+                            .on_click(cx.listener(
+                                move |this, _: &ClickEvent, _w, cx| {
                                     this.install_community_theme(remote.clone(), cx);
-                                }))
+                                },
+                            ))
                         })
                 })
                 .collect();

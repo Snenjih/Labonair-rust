@@ -322,20 +322,18 @@ impl SettingsView {
                             )),
                         ))
                         .child(
-                            div()
-                                .id(SharedString::from(format!("prov-del-{id}")))
-                                .px_2()
-                                .py(px(1.0))
-                                .rounded_sm()
-                                .border_1()
-                                .border_color(c.border)
-                                .text_size(px(10.5))
-                                .text_color(c.muted)
-                                .hover(|s| s.text_color(c.fg))
-                                .child("Remove")
-                                .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                            button(
+                                SharedString::from(format!("prov-del-{id}")),
+                                *c,
+                                ButtonVariant::Ghost,
+                                ButtonSize::Xs,
+                            )
+                            .child("Remove")
+                            .on_click(cx.listener(
+                                move |this, _: &ClickEvent, _w, cx| {
                                     this.remove_provider(id_key.clone(), cx)
-                                })),
+                                },
+                            )),
                         ),
                 )
                 .when(needs_key, |d| {
@@ -373,29 +371,26 @@ impl SettingsView {
                 .child(SharedString::from(format!("Active model: {active_ref}"))),
         );
         root = root.children(cards.collect::<Vec<_>>());
-        root = root.child(list_header("Add provider", c.muted)).child(
-            div().flex().flex_wrap().gap_1().children(
-                labonair_ai::ProviderId::ALL
-                    .into_iter()
-                    .map(|p| {
-                        div()
-                            .id(SharedString::from(format!("add-prov-{}", p.as_str())))
-                            .px_2()
-                            .py(px(2.0))
-                            .rounded_sm()
-                            .border_1()
-                            .border_color(c.border)
-                            .text_size(px(10.5))
-                            .text_color(c.fg)
-                            .hover(|s| s.bg(c.border))
+        root =
+            root.child(list_header("Add provider", c.muted)).child(
+                div().flex().flex_wrap().gap_1().children(
+                    labonair_ai::ProviderId::ALL
+                        .into_iter()
+                        .map(|p| {
+                            button(
+                                SharedString::from(format!("add-prov-{}", p.as_str())),
+                                *c,
+                                ButtonVariant::Outline,
+                                ButtonSize::Xs,
+                            )
                             .child(SharedString::from(p.label()))
-                            .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
-                                this.add_provider(p, cx)
-                            }))
-                    })
-                    .collect::<Vec<_>>(),
-            ),
-        );
+                            .on_click(cx.listener(
+                                move |this, _: &ClickEvent, _w, cx| this.add_provider(p, cx),
+                            ))
+                        })
+                        .collect::<Vec<_>>(),
+                ),
+            );
         root.into_any_element()
     }
 
@@ -414,116 +409,102 @@ impl SettingsView {
                 let id_del = a.id.clone();
                 let on = a.id == active;
                 let builtin = a.built_in;
-                div()
+                let border = if on { c.accent } else { c.border };
+                let trailing = div()
                     .flex()
                     .items_center()
-                    .gap_2()
-                    .px_2()
-                    .py_1()
-                    .rounded_sm()
-                    .border_1()
-                    .border_color(if on { c.accent } else { c.border })
+                    .gap_1()
                     .child(
-                        div()
-                            .flex_1()
-                            .min_w_0()
-                            .flex()
-                            .flex_col()
-                            .child(
-                                div()
-                                    .text_size(px(11.5))
-                                    .text_color(c.fg)
-                                    .child(SharedString::from(a.name.clone())),
-                            )
-                            .child(
-                                div()
-                                    .text_size(px(10.0))
-                                    .text_color(c.muted)
-                                    .child(SharedString::from(a.description.clone())),
-                            ),
-                    )
-                    .child(
-                        div()
-                            .id(SharedString::from(format!("agent-active-{}", a.id)))
-                            .px_2()
-                            .py(px(2.0))
-                            .rounded_sm()
-                            .border_1()
-                            .border_color(c.border)
-                            .text_size(px(10.5))
-                            .text_color(if on { c.fg } else { c.muted })
-                            .hover(|s| s.bg(c.border))
-                            .child(if on { "Active" } else { "Set active" })
-                            .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                        button(
+                            SharedString::from(format!("agent-active-{}", a.id)),
+                            *c,
+                            if on {
+                                ButtonVariant::Secondary
+                            } else {
+                                ButtonVariant::Outline
+                            },
+                            ButtonSize::Xs,
+                        )
+                        .child(if on { "Active" } else { "Set active" })
+                        .on_click(cx.listener(
+                            move |this, _: &ClickEvent, _w, cx| {
                                 this.set_active_agent(id.clone(), cx)
-                            })),
+                            },
+                        )),
                     )
                     .when(!builtin, |d| {
                         let id_edit = id_del.clone();
                         d.child(
+                            button(
+                                SharedString::from(format!("agent-edit-{id_del}")),
+                                *c,
+                                ButtonVariant::Ghost,
+                                ButtonSize::Xs,
+                            )
+                            .child("Edit")
+                            .on_click(cx.listener(
+                                move |this, _: &ClickEvent, w, cx| this.edit_agent(&id_edit, w, cx),
+                            )),
+                        )
+                        .child(
+                            button(
+                                SharedString::from(format!("agent-del-{id_del}")),
+                                *c,
+                                ButtonVariant::Ghost,
+                                ButtonSize::Xs,
+                            )
+                            .child("Delete")
+                            .on_click(cx.listener(
+                                move |this, _: &ClickEvent, _w, cx| this.delete_agent(&id_del, cx),
+                            )),
+                        )
+                    });
+                // T20-003: shared `ListItem` — the row's own bordered chip
+                // look is re-applied via `.extra()` (no `on_click` on the
+                // row itself, since the row has no single primary action).
+                ListItem::new(
+                    SharedString::from(format!("agent-row-{}", a.id)),
+                    c.fg,
+                    c.muted,
+                    c.accent,
+                )
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .flex()
+                        .flex_col()
+                        .child(
                             div()
-                                .id(SharedString::from(format!("agent-edit-{id_del}")))
-                                .px_2()
-                                .py(px(2.0))
-                                .rounded_sm()
-                                .border_1()
-                                .border_color(c.border)
-                                .text_size(px(10.5))
-                                .text_color(c.muted)
-                                .hover(|s| s.text_color(c.fg))
-                                .child("Edit")
-                                .on_click(cx.listener(move |this, _: &ClickEvent, w, cx| {
-                                    this.edit_agent(&id_edit, w, cx)
-                                })),
+                                .text_size(px(11.5))
+                                .text_color(c.fg)
+                                .child(SharedString::from(a.name.clone())),
                         )
                         .child(
                             div()
-                                .id(SharedString::from(format!("agent-del-{id_del}")))
-                                .px_2()
-                                .py(px(2.0))
-                                .rounded_sm()
-                                .border_1()
-                                .border_color(c.border)
-                                .text_size(px(10.5))
+                                .text_size(px(10.0))
                                 .text_color(c.muted)
-                                .hover(|s| s.text_color(c.fg))
-                                .child("Delete")
-                                .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
-                                    this.delete_agent(&id_del, cx)
-                                })),
-                        )
-                    })
+                                .child(SharedString::from(a.description.clone())),
+                        ),
+                )
+                .trailing(trailing)
+                .extra(move |row| row.border_1().border_color(border))
             }))
             .child(
                 div()
                     .flex()
                     .gap_2()
                     .py_1()
+                    // T20-003: shared `button()` primitive (`Xs`).
                     .child(
-                        div()
-                            .id("agent-new")
-                            .px_2()
-                            .py(px(3.0))
-                            .rounded_sm()
-                            .border_1()
-                            .border_color(c.accent)
-                            .text_color(c.fg)
-                            .hover(|s| s.bg(c.border))
+                        button("agent-new", *c, ButtonVariant::Outline, ButtonSize::Xs)
                             .child("New Agent")
                             .on_click(
                                 cx.listener(|this, _: &ClickEvent, _w, cx| this.new_agent(cx)),
                             ),
                     )
                     .child(
-                        div()
-                            .id("agent-folder")
-                            .px_2()
-                            .py(px(3.0))
-                            .rounded_sm()
-                            .border_1()
-                            .border_color(c.border)
-                            .text_color(c.muted)
-                            .hover(|s| s.text_color(c.fg))
+                        button("agent-folder", *c, ButtonVariant::Ghost, ButtonSize::Xs)
                             .child("Open config folder")
                             .on_click(cx.listener(|_, _: &ClickEvent, _w, cx| {
                                 cx.reveal_path(&config_dir());
@@ -550,78 +531,68 @@ impl SettingsView {
             .gap_1()
             .children(self.directives.iter().map(|d| {
                 let id_del = d.id.clone();
-                div()
+                let id_edit = id_del.clone();
+                let border = c.border;
+                // T20-003: shared `ListItem` + `button()` trailing actions.
+                let trailing = div()
                     .flex()
                     .items_center()
-                    .gap_2()
-                    .px_2()
-                    .py_1()
-                    .rounded_sm()
-                    .border_1()
-                    .border_color(c.border)
+                    .gap_1()
                     .child(
-                        div()
-                            .flex_1()
-                            .min_w_0()
-                            .flex()
-                            .flex_col()
-                            .child(
-                                div().text_size(px(11.5)).text_color(c.fg).child(
-                                    SharedString::from(format!("#{} — {}", d.handle, d.name)),
-                                ),
-                            )
-                            .child(
-                                div()
-                                    .text_size(px(10.0))
-                                    .text_color(c.muted)
-                                    .child(SharedString::from(d.description.clone())),
-                            ),
+                        button(
+                            SharedString::from(format!("dir-edit-{id_edit}")),
+                            *c,
+                            ButtonVariant::Ghost,
+                            ButtonSize::Xs,
+                        )
+                        .child("Edit")
+                        .on_click(cx.listener(
+                            move |this, _: &ClickEvent, w, cx| this.edit_directive(&id_edit, w, cx),
+                        )),
                     )
-                    .child({
-                        let id_edit = id_del.clone();
-                        div()
-                            .id(SharedString::from(format!("dir-edit-{id_edit}")))
-                            .px_2()
-                            .py(px(2.0))
-                            .rounded_sm()
-                            .border_1()
-                            .border_color(c.border)
-                            .text_size(px(10.5))
-                            .text_color(c.muted)
-                            .hover(|s| s.text_color(c.fg))
-                            .child("Edit")
-                            .on_click(cx.listener(move |this, _: &ClickEvent, w, cx| {
-                                this.edit_directive(&id_edit, w, cx)
-                            }))
-                    })
                     .child(
-                        div()
-                            .id(SharedString::from(format!("dir-del-{id_del}")))
-                            .px_2()
-                            .py(px(2.0))
-                            .rounded_sm()
-                            .border_1()
-                            .border_color(c.border)
-                            .text_size(px(10.5))
-                            .text_color(c.muted)
-                            .hover(|s| s.text_color(c.fg))
-                            .child("Delete")
-                            .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
-                                this.delete_directive(&id_del, cx)
-                            })),
-                    )
+                        button(
+                            SharedString::from(format!("dir-del-{id_del}")),
+                            *c,
+                            ButtonVariant::Ghost,
+                            ButtonSize::Xs,
+                        )
+                        .child("Delete")
+                        .on_click(cx.listener(
+                            move |this, _: &ClickEvent, _w, cx| this.delete_directive(&id_del, cx),
+                        )),
+                    );
+                ListItem::new(
+                    SharedString::from(format!("dir-row-{}", d.id)),
+                    c.fg,
+                    c.muted,
+                    c.accent,
+                )
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .flex()
+                        .flex_col()
+                        .child(
+                            div()
+                                .text_size(px(11.5))
+                                .text_color(c.fg)
+                                .child(SharedString::from(format!("#{} — {}", d.handle, d.name))),
+                        )
+                        .child(
+                            div()
+                                .text_size(px(10.0))
+                                .text_color(c.muted)
+                                .child(SharedString::from(d.description.clone())),
+                        ),
+                )
+                .trailing(trailing)
+                .extra(move |row| row.border_1().border_color(border))
             }))
             .child(
-                div()
-                    .id("dir-new")
+                button("dir-new", *c, ButtonVariant::Outline, ButtonSize::Xs)
                     .mt_1()
-                    .px_2()
-                    .py(px(3.0))
-                    .rounded_sm()
-                    .border_1()
-                    .border_color(c.accent)
-                    .text_color(c.fg)
-                    .hover(|s| s.bg(c.border))
                     .child("New Directive")
                     .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| this.new_directive(cx))),
             )
@@ -650,24 +621,16 @@ impl SettingsView {
             .flex_col()
             .child(grid)
             .child(
-                div()
-                    .id("ai-goto-providers")
-                    .mt_2()
-                    .px_2()
-                    .py(px(6.0))
-                    .flex()
-                    .items_center()
-                    .justify_between()
-                    .rounded_sm()
-                    .border_1()
-                    .border_color(c.border)
-                    .text_color(c.fg)
-                    .hover(|s| s.bg(c.border))
+                // T20-003: shared `ListItem`, trailing chevron kept as a
+                // plain glyph (no matching chevron-right-for-navigation
+                // treatment beyond `IconName::ChevronRight`, used directly).
+                ListItem::new("ai-goto-providers", c.fg, c.muted, c.border)
                     .child("Providers, Agents & Directives")
-                    .child(div().text_color(c.muted).child("\u{203A}"))
+                    .trailing(IconName::ChevronRight.svg(c.muted).size(px(12.0)))
                     .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
                         this.go_to_subpage(0, cx);
-                    })),
+                    }))
+                    .extra(|row| row.mt_2()),
             )
             .into_any_element()
     }

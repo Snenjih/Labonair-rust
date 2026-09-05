@@ -76,36 +76,33 @@ impl SettingsView {
                     .child("Import hosts from ~/.ssh/config, or export the current host list as a config fragment."),
             )
             .child(
+                // T20-003: shared `button()` primitive (`Outline`/`Xs`).
                 div()
                     .flex()
                     .gap_2()
                     .child(
-                        div()
-                            .id("hosts-ssh-config-import")
-                            .px_2()
-                            .py(px(3.0))
-                            .rounded_sm()
-                            .border_1()
-                            .border_color(c.border)
-                            .text_color(c.fg)
-                            .child("Import from ~/.ssh/config\u{2026}")
-                            .on_click(cx.listener(move |_this, _: &ClickEvent, _w, cx| {
-                                import_manager.update(cx, |hm, cx| hm.open_import_dialog(cx));
-                            })),
+                        button(
+                            "hosts-ssh-config-import",
+                            *c,
+                            ButtonVariant::Outline,
+                            ButtonSize::Xs,
+                        )
+                        .child("Import from ~/.ssh/config\u{2026}")
+                        .on_click(cx.listener(move |_this, _: &ClickEvent, _w, cx| {
+                            import_manager.update(cx, |hm, cx| hm.open_import_dialog(cx));
+                        })),
                     )
                     .child(
-                        div()
-                            .id("hosts-ssh-config-export")
-                            .px_2()
-                            .py(px(3.0))
-                            .rounded_sm()
-                            .border_1()
-                            .border_color(c.border)
-                            .text_color(c.fg)
-                            .child("Export to ~/.ssh/config\u{2026}")
-                            .on_click(cx.listener(move |_this, _: &ClickEvent, _w, cx| {
-                                export_manager.update(cx, |hm, cx| hm.open_export_dialog(cx));
-                            })),
+                        button(
+                            "hosts-ssh-config-export",
+                            *c,
+                            ButtonVariant::Outline,
+                            ButtonSize::Xs,
+                        )
+                        .child("Export to ~/.ssh/config\u{2026}")
+                        .on_click(cx.listener(move |_this, _: &ClickEvent, _w, cx| {
+                            export_manager.update(cx, |hm, cx| hm.open_export_dialog(cx));
+                        })),
                     ),
             )
             .child(

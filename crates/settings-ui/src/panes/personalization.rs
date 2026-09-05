@@ -81,7 +81,8 @@ struct PlacedItem {
     hidden: bool,
 }
 
-/// A small text-glyph action button on a statusbar-layout chip ("←" / "→").
+/// A small text-glyph action button on a statusbar-layout chip ("←" / "→") —
+/// the shared `button()` primitive (`Ghost`/`IconXs`).
 fn statusbar_glyph_btn(
     item_id: &'static str,
     glyph_id: &'static str,
@@ -90,21 +91,18 @@ fn statusbar_glyph_btn(
     cx: &mut Context<SettingsView>,
     f: impl Fn(&mut SettingsView, &mut Context<SettingsView>) + 'static,
 ) -> impl IntoElement {
-    div()
-        .id(SharedString::from(format!("pers-{item_id}-{glyph_id}")))
-        .size(px(18.0))
-        .flex()
-        .items_center()
-        .justify_center()
-        .rounded_sm()
-        .text_size(px(11.0))
-        .text_color(c.muted)
-        .hover(|s| s.bg(c.border).text_color(c.fg))
-        .child(glyph)
-        .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| f(this, cx)))
+    button(
+        SharedString::from(format!("pers-{item_id}-{glyph_id}")),
+        *c,
+        ButtonVariant::Ghost,
+        ButtonSize::IconXs,
+    )
+    .child(glyph)
+    .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| f(this, cx)))
 }
 
-/// A small icon action button on a statusbar-layout chip (hide / show).
+/// A small icon action button on a statusbar-layout chip (hide / show) — the
+/// shared `button()` primitive (`Ghost`/`IconXs`).
 fn statusbar_icon_btn(
     item_id: &'static str,
     glyph_id: &'static str,
@@ -113,17 +111,14 @@ fn statusbar_icon_btn(
     cx: &mut Context<SettingsView>,
     f: impl Fn(&mut SettingsView, &mut Context<SettingsView>) + 'static,
 ) -> impl IntoElement {
-    div()
-        .id(SharedString::from(format!("pers-{item_id}-{glyph_id}")))
-        .size(px(18.0))
-        .flex()
-        .items_center()
-        .justify_center()
-        .rounded_sm()
-        .text_color(c.muted)
-        .hover(|s| s.bg(c.border).text_color(c.fg))
-        .child(icon.svg(c.muted))
-        .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| f(this, cx)))
+    button(
+        SharedString::from(format!("pers-{item_id}-{glyph_id}")),
+        *c,
+        ButtonVariant::Ghost,
+        ButtonSize::IconXs,
+    )
+    .child(icon.svg(c.muted))
+    .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| f(this, cx)))
 }
 
 impl SettingsView {
@@ -202,23 +197,19 @@ impl SettingsView {
             .pb_3()
             .child(columns)
             .child(
-                div()
-                    .id("personalization-reset")
-                    .w(px(120.0))
-                    .mt_1()
-                    .px_2()
-                    .py(px(3.0))
-                    .rounded_sm()
-                    .border_1()
-                    .border_color(c.border)
-                    .text_size(px(11.0))
-                    .text_color(c.fg)
-                    .hover(|s| s.bg(c.border))
-                    .child("Reset to default")
-                    .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
-                        this.workspace
-                            .update(cx, |w, cx| w.reset_status_bar_placements(cx));
-                    })),
+                // T20-003: shared `button()` primitive (`Outline`/`Xs`).
+                button(
+                    "personalization-reset",
+                    *c,
+                    ButtonVariant::Outline,
+                    ButtonSize::Xs,
+                )
+                .mt_1()
+                .child("Reset to default")
+                .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
+                    this.workspace
+                        .update(cx, |w, cx| w.reset_status_bar_placements(cx));
+                })),
             )
             .into_any_element()
     }
@@ -394,23 +385,10 @@ impl SettingsView {
                             .child(div().text_color(c.fg).child(panel_title(name))),
                     )
                     .child(
-                        div()
-                            .id(SharedString::from(format!("pers-panel-{name}")))
-                            .w(px(38.0))
-                            .h(px(20.0))
-                            .rounded_full()
-                            .flex()
-                            .items_center()
-                            .px(px(2.0))
-                            .bg(if visible { c.accent } else { c.border })
-                            .child(
-                                div()
-                                    .size(px(16.0))
-                                    .rounded_full()
-                                    .bg(c.bg)
-                                    .when(visible, |d| d.ml(px(16.0))),
-                            )
-                            .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                        // T20-003: the shared `gpui-component` `Switch`.
+                        Switch::new(SharedString::from(format!("pers-panel-{name}")))
+                            .checked(visible)
+                            .on_click(cx.listener(move |this, _: &bool, _w, cx| {
                                 this.workspace.update(cx, |w, cx| {
                                     w.set_panel_toggle_visible(name.to_string(), !visible, cx);
                                 });

@@ -83,23 +83,12 @@ impl SettingsView {
         let control = match field.control {
             FieldControl::Switch => {
                 let on = value.as_ref().and_then(|v| v.as_bool()).unwrap_or(false);
-                div()
-                    .id(SharedString::from(format!("sw-{json_path}")))
-                    .w(px(38.0))
-                    .h(px(20.0))
-                    .rounded_full()
-                    .flex()
-                    .items_center()
-                    .px(px(2.0))
-                    .bg(if on { c.accent } else { c.border })
-                    .child(
-                        div()
-                            .size(px(16.0))
-                            .rounded_full()
-                            .bg(c.bg)
-                            .when(on, |d| d.ml(px(16.0))),
-                    )
-                    .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                // T20-003: the shared `gpui-component` `Switch` (re-exported
+                // by `labonair-ui-kit` — its own colours are the sanctioned
+                // exception, see `ui_kit.rs`'s module doc).
+                Switch::new(SharedString::from(format!("sw-{json_path}")))
+                    .checked(on)
+                    .on_click(cx.listener(move |this, _: &bool, _w, cx| {
                         if let Some(f) = this.field_by_path(json_path).copied() {
                             this.toggle_bool(&f, cx);
                         }
@@ -268,17 +257,19 @@ impl SettingsView {
                             )
                             .when(non_default, |d| {
                                 d.child(
-                                    div()
-                                        .id(SharedString::from(format!("reset-{json_path}")))
-                                        .text_size(px(10.0))
-                                        .text_color(c.muted)
-                                        .hover(|s| s.text_color(c.fg))
-                                        .child("\u{21BA} reset")
-                                        .on_click(cx.listener(
-                                            move |this, _: &ClickEvent, _w, cx| {
-                                                this.reset_field(json_path, cx);
-                                            },
-                                        )),
+                                    // T20-003: shared `button()` (`Link`/`Xs`).
+                                    button(
+                                        SharedString::from(format!("reset-{json_path}")),
+                                        *c,
+                                        ButtonVariant::Link,
+                                        ButtonSize::Xs,
+                                    )
+                                    .child("\u{21BA} reset")
+                                    .on_click(cx.listener(
+                                        move |this, _: &ClickEvent, _w, cx| {
+                                            this.reset_field(json_path, cx);
+                                        },
+                                    )),
                                 )
                             }),
                     )
@@ -453,14 +444,7 @@ impl SettingsView {
 
         col = col.child(
             div().flex().items_center().gap_2().py_2().child(
-                div()
-                    .id("mcp-regen")
-                    .px_2()
-                    .py(px(3.0))
-                    .rounded_sm()
-                    .border_1()
-                    .border_color(c.border)
-                    .text_color(c.fg)
+                button("mcp-regen", *c, ButtonVariant::Outline, ButtonSize::Xs)
                     .child("Regenerate token")
                     .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
                         let app = this.backend.clone();
@@ -506,14 +490,8 @@ impl SettingsView {
                             .child(SharedString::from(cmd)),
                     )
                     .child(
-                        div()
-                            .id("mcp-copy")
-                            .px_2()
-                            .py(px(3.0))
-                            .rounded_sm()
-                            .border_1()
-                            .border_color(c.border)
-                            .text_color(c.fg)
+                        button("mcp-copy", *c, ButtonVariant::Outline, ButtonSize::Xs)
+                            .child(IconName::Copy.svg(c.fg))
                             .child("Copy")
                             .on_click(cx.listener(move |_this, _: &ClickEvent, _w, cx| {
                                 cx.write_to_clipboard(ClipboardItem::new_string(copy.clone()));
