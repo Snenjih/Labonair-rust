@@ -35,7 +35,7 @@ use tokio::runtime::Handle as TokioHandle;
 use crate::theme::ThemeStore;
 use labonair_notifications::{notification_center, Notification};
 use labonair_ui_kit::{
-    checkbox, context_menu, indicator, IconName, IndicatorSize, MenuItem, Palette,
+    checkbox, context_menu, indicator, IconName, IndicatorSize, ListItem, MenuItem, Palette,
 };
 
 /// Connection status for a host, tracked live off the SSH event stream.
@@ -1709,6 +1709,15 @@ impl HostManagerView {
         indicator(IndicatorSize::Sm, color)
     }
 
+    /// T20-003: migrated to the shared [`ListItem`] primitive — icon/label/
+    /// subtitle/trailing use its `.child()`/`.trailing()` builder methods, and
+    /// the click/right-click/drag-and-drop wiring (none of which `ListItem`
+    /// has a named builder for) goes through its `.extra()` escape hatch,
+    /// matching the tree-row pattern in `panel-explorer`'s
+    /// `render_file_row` (T20-002). The bg/border chrome is fully
+    /// re-applied in `.extra()` (rather than via `.selected()`) to keep the
+    /// exact pre-migration look: a border-ring highlight with an
+    /// accent-border hover, not `ListItem`'s default bg-tint hover.
     fn render_host_list_item(
         &self,
         host: &Host,
@@ -1719,88 +1728,104 @@ impl HostManagerView {
             self.form.as_ref().and_then(|f| f.editing_id.as_deref()) == Some(host.id.as_str());
         let status = self.status_of(&host.id);
         let id = host.id.clone();
-        let (id_click, id_drop) = (id.clone(), id.clone());
+        let (id_click, id_right, id_drop) = (id.clone(), id.clone(), id.clone());
         let subtitle = format!("{}@{}:{}", host.username, host.host_address, host.port);
         let icon = host_icon(host.icon.as_deref());
         let accent = p.accent;
+        let card = p.card;
+        let border = p.border;
 
-        div()
-            .id(SharedString::from(format!("host-item-{id}")))
-            .flex()
-            .items_center()
-            .gap_2()
-            .px_2()
-            .py_2()
-            .rounded_md()
-            .bg(if selected { p.border } else { p.card })
-            .border_1()
-            .border_color(if selected { p.accent } else { p.border })
-            .cursor_pointer()
-            .hover(|s| s.border_color(p.accent))
-            .child(icon.svg(p.muted).size(px(14.0)))
-            .child(
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .flex()
-                    .flex_col()
-                    .child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .gap_1()
-                            .when(host.pin_to_top, |d| {
-                                d.child(IconName::Bookmark.svg(p.accent).size(px(9.0)))
-                            })
-                            .child(
-                                div()
-                                    .text_sm()
-                                    .text_color(p.fg)
-                                    .child(SharedString::from(host.name.clone())),
-                            ),
-                    )
-                    .child(
-                        div()
-                            .text_xs()
-                            .text_color(p.muted)
-                            .child(SharedString::from(subtitle)),
-                    ),
-            )
-            .child(self.ping_dot(&host.id, p))
-            .when(status != HostStatus::Disconnected, |d| {
-                d.child(
+        let on_click = cx.listener(move |this, _: &ClickEvent, w, cx| {
+            if let Some(h) = this.hosts.iter().find(|h| h.id == id_click).cloned() {
+                this.select_host(&h, w, cx);
+            }
+        });
+        let on_right_click = cx.listener(move |this, ev: &MouseDownEvent, _w, cx| {
+            this.host_menu = Some((id_right.clone(), ev.position));
+            cx.notify();
+        });
+        let on_drop = cx.listener(move |this, dragged: &DraggedHost, _w, cx| {
+            this.reorder_hosts(&dragged.id, &id_drop, cx);
+        });
+
+        ListItem::new(
+            SharedString::from(format!("host-item-{id}")),
+            p.fg,
+            p.muted,
+            border,
+        )
+        .child(div().child(icon.svg(p.muted).size(px(14.0))))
+        .child(
+            div()
+                .flex_1()
+                .min_w_0()
+                .flex()
+                .flex_col()
+                .child(
                     div()
-                        .text_size(px(9.0))
-                        .text_color(if status == HostStatus::Failed {
-                            p.fg
-                        } else {
-                            p.accent
+                        .flex()
+                        .items_center()
+                        .gap_1()
+                        .when(host.pin_to_top, |d| {
+                            d.child(IconName::Bookmark.svg(p.accent).size(px(9.0)))
                         })
-                        .child(status.label()),
+                        .child(
+                            div()
+                                .text_sm()
+                                .text_color(p.fg)
+                                .child(SharedString::from(host.name.clone())),
+                        ),
                 )
-            })
-            .on_click(cx.listener(move |this, _: &ClickEvent, w, cx| {
-                if let Some(h) = this.hosts.iter().find(|h| h.id == id_click).cloned() {
-                    this.select_host(&h, w, cx);
-                }
-            }))
-            .on_mouse_down(MouseButton::Right, {
-                let id = id.clone();
-                cx.listener(move |this, ev: &MouseDownEvent, _w, cx| {
-                    this.host_menu = Some((id.clone(), ev.position));
-                    cx.notify();
+                .child(
+                    div()
+                        .text_xs()
+                        .text_color(p.muted)
+                        .child(SharedString::from(subtitle)),
+                ),
+        )
+        .trailing(
+            div()
+                .flex()
+                .items_center()
+                .gap_2()
+                .child(self.ping_dot(&host.id, p))
+                .when(status != HostStatus::Disconnected, |d| {
+                    d.child(
+                        div()
+                            .text_size(px(9.0))
+                            .text_color(if status == HostStatus::Failed {
+                                p.fg
+                            } else {
+                                p.accent
+                            })
+                            .child(status.label()),
+                    )
+                }),
+        )
+        .on_click(on_click)
+        .extra(move |row| {
+            row.py(px(8.0))
+                .rounded_md()
+                .bg(if selected { border } else { card })
+                .border_1()
+                .border_color(if selected { accent } else { border })
+                .hover(move |s| s.border_color(accent))
+                .on_mouse_down(MouseButton::Right, on_right_click)
+                .on_drag(DraggedHost { id: id.clone() }, |_, _, _, cx| {
+                    cx.new(|_| HostDragGhost)
                 })
-            })
-            .on_drag(DraggedHost { id: id.clone() }, |_, _, _, cx| {
-                cx.new(|_| HostDragGhost)
-            })
-            .drag_over::<DraggedHost>(move |style, _, _, _| style.border_color(accent))
-            .on_drop(cx.listener(move |this, dragged: &DraggedHost, _w, cx| {
-                this.reorder_hosts(&dragged.id, &id_drop, cx);
-            }))
-            .into_any_element()
+                .drag_over::<DraggedHost>(move |style, _, _, _| style.border_color(accent))
+                .on_drop(on_drop)
+        })
+        .into_any_element()
     }
 
+    /// T20-003 documented exception: `ui-kit` has no "toggle pill with an
+    /// inline delete glyph" primitive. `toggle_base`/`icon_toggle_button`
+    /// come closest but use `radius.md` and a bg-tint hover, which would
+    /// visibly change this row's pill shape (`rounded(13px)`) and its
+    /// border-color hover — a behavior change the task disallows. Left
+    /// hand-rolled per the task's own allowance for documented exceptions.
     fn render_group_chips(&self, p: &Palette, cx: &mut Context<Self>) -> gpui::AnyElement {
         let (c_accent, c_border, c_card, c_fg, c_muted) =
             (p.accent, p.border, p.card, p.fg, p.muted);
@@ -1905,6 +1930,16 @@ impl HostManagerView {
         row.into_any_element()
     }
 
+    /// T20-003 documented exception: this and `tunnel_field` render the
+    /// host-form's fields via a single view-level `on_key_down` router
+    /// (`on_form_key`) keyed by `HostField`, not per-field `InputState`
+    /// entities. Swapping to `labonair_ui_kit`'s real `text_field`/
+    /// `field_input` (an `Entity<InputState>` per field, created in `new`
+    /// with a `Window`) would mean rearchitecting the whole multi-field form
+    /// — out of scope for a surgical, behavior-preserving migration of this
+    /// one view. Left hand-rolled; a dedicated follow-up task (mirroring the
+    /// AI composer's own separate `InputState` migration) is the right home
+    /// for it.
     fn labelled_field(
         &self,
         label: &'static str,
