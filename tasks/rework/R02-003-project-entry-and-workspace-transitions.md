@@ -125,7 +125,9 @@ PID-scoped screenshot attempt was rejected by macOS Screen Capture with
 accepted as visual evidence, so the visual acceptance criterion remains open.
 The helper now also rejects any supplied PID whose executable is not the exact
 native Rust binary and reports the Screen Recording permission failure
-separately.
+separately. To complete the check, enable Screen Recording for the terminal or
+runner under **System Settings → Privacy & Security → Screen Recording**, then
+rerun `scripts/screenshot.sh` against the exact Rust PID.
 
 ## Removal condition
 

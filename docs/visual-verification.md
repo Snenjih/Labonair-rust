@@ -42,7 +42,12 @@ rendered visual evidence.
 If macOS Screen Recording or Accessibility permission prevents interaction or
 capture, record that limitation explicitly and leave the visual acceptance
 criterion open. Do not accept a screenshot produced without exact process
-ownership, and do not infer visual success from a successful build.
+ownership, and do not infer visual success from a successful build. On macOS,
+grant Screen Recording access under **System Settings → Privacy & Security →
+Screen Recording** to the terminal or runner that executes
+`scripts/screenshot.sh`, then rerun the exact-bundle launch and capture
+sequence. Accessibility permission is separately required for keyboard/mouse
+interaction checks.
 
 ## Repository helpers
 
