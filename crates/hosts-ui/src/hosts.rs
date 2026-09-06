@@ -25,11 +25,12 @@ use gpui::{
     Styled, Task, Window,
 };
 use labonair_backend::modules::credentials::{self, Credential};
-use labonair_backend::modules::hosts::{self, Group, Host, ReorderItem};
+use labonair_backend::modules::hosts;
 use labonair_backend::modules::snippets;
 use labonair_backend::modules::ssh::client::{ssh_test_connection, TestConnectionResult};
 use labonair_backend::modules::ssh::config_parser::{self, ImportConflict, SshConfigEntry};
 use labonair_backend::App as Backend;
+use labonair_hosts::{Group, Host, ReorderItem};
 use tokio::runtime::Handle as TokioHandle;
 
 use crate::theme::ThemeStore;

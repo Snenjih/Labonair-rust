@@ -4190,6 +4190,7 @@ dependencies = [
  "ignore",
  "labonair-errors",
  "labonair-filesystem",
+ "labonair-hosts",
  "labonair-secrets",
  "labonair-settings-content",
  "libc",
@@ -4290,11 +4291,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "labonair-hosts"
+version = "0.1.0"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "labonair-hosts-ui"
 version = "0.1.0"
 dependencies = [
  "gpui",
  "labonair-backend",
+ "labonair-hosts",
  "labonair-notifications",
  "labonair-settings",
  "labonair-settings-content",
@@ -4378,6 +4387,7 @@ version = "0.1.0"
 dependencies = [
  "gpui",
  "labonair-backend",
+ "labonair-hosts",
  "labonair-notifications",
  "labonair-panel",
  "labonair-theme",

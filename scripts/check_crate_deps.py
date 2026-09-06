@@ -36,6 +36,9 @@ ALLOWED = {
     # Cross-cutting structured error contract. It contains no workspace
     # dependencies and is shared by capability services during migration.
     "labonair-errors": set(),
+    # Host domain contract. Persistence and transports remain transitional
+    # backend adapters until the host store is extracted.
+    "labonair-hosts": set(),
     "labonair-notifications": {
         "labonair-theme", "labonair-ui-kit", "labonair-gpui-ext",
     },
@@ -133,7 +136,8 @@ ALLOWED = {
     },
     "labonair-panel-snippets": {
         "labonair-theme", "labonair-ui-kit", "labonair-panel",
-        "labonair-notifications", "labonair-backend", "labonair-workspace",
+        "labonair-notifications", "labonair-backend", "labonair-hosts",
+        "labonair-workspace",
     },
     # [deviation] panel-ai also pulls command-palette (slash-command model)
     # and editor (composer buffer) — accepted, still no panel-* / shell edge.
@@ -150,7 +154,8 @@ ALLOWED = {
     # typed model — a pure data/store edge, not workspace/shell/panel*.
     "labonair-hosts-ui": {
         "labonair-theme", "labonair-ui-kit", "labonair-notifications",
-        "labonair-backend", "labonair-settings", "labonair-settings-content",
+        "labonair-backend", "labonair-hosts", "labonair-settings",
+        "labonair-settings-content",
     },
 
     # Engines — rule 4: no UI dep.
@@ -166,7 +171,7 @@ ALLOWED = {
     # back on labonair-backend).
     "labonair-backend": {
         "labonair-settings-content", "labonair-filesystem", "labonair-secrets",
-        "labonair-errors",
+        "labonair-errors", "labonair-hosts",
     },
     "labonair-ai": {"labonair-backend", "labonair-filesystem"},
 

@@ -37,6 +37,8 @@ Reduce `labonair-backend` from a broad public application state container to nar
   only compatibility wrappers while its capability callers migrate.
 - The structured error catalog is now extracted as `labonair-errors`; the
   backend keeps only a re-export for old internal paths.
+- Saved-host domain models are now extracted as `labonair-hosts`; the backend
+  still owns the transitional SQLite store and App-bound operations.
 - Stable IDs, typed domain events, and the remaining service boundaries are
   still open in this task.
 

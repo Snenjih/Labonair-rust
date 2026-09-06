@@ -78,7 +78,7 @@ Dependencies point downward. A feature may depend on a foundation contract, but 
 | Editor | Buffers, syntax, editing behavior, editor commands. |
 | SSH | SSH transport, authentication, tunnels, jump-host execution. |
 | SFTP | Remote filesystem browsing and SFTP operations. |
-| Hosts | Saved host definitions, recent hosts, import/export, host management UI. |
+| Hosts | Saved host definitions, recent hosts, import/export, host management UI. The domain contract lives in `labonair-hosts`; persistence and transport adapters remain capability-owned. |
 | Transfers | Transfer queue, progress, cancellation, retry, history UI. |
 | Git | Git service and source-control UI. |
 | Explorer | Local file navigation UI. |

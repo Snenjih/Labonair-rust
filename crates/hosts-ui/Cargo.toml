@@ -17,6 +17,7 @@ labonair-theme = { path = "../theme" }
 labonair-ui-kit = { path = "../ui-kit" }
 labonair-notifications = { path = "../notifications" }
 labonair-backend = { path = "../backend" }
+labonair-hosts = { path = "../hosts" }
 # T19-010: `apply_host_change` projects the SQLite-backed host list into
 # `SettingsContent.hosts.entries` (the settings track's typed data model +
 # layered store) — not a UI/workspace edge, per dependency-rule 9.

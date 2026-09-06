@@ -35,13 +35,14 @@ use gpui::{
     IntoElement, KeyDownEvent, MouseButton, MouseDownEvent, ParentElement, Render, SharedString,
     StatefulInteractiveElement, Styled, Window,
 };
-use labonair_backend::modules::hosts::{self, Host};
+use labonair_backend::modules::hosts;
 use labonair_backend::modules::snippets::db as sdb;
 use labonair_backend::modules::snippets::exec::{
     snippet_run_cancel, snippet_run_local, snippet_run_ssh,
 };
 use labonair_backend::modules::snippets::{CommandSnippet, SnippetGroup, SnippetReorderItem};
 use labonair_backend::App as Backend;
+use labonair_hosts::Host;
 use tokio::runtime::Handle as TokioHandle;
 
 use crate::theme::ThemeStore;

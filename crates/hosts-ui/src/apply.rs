@@ -1,5 +1,5 @@
 //! T19-010's single write path from the SQLite-backed
-//! [`labonair_backend::modules::hosts::Host`] list into the
+//! [`labonair_hosts::Host`] list into the
 //! `SettingsContent.hosts.entries` (`labonair-settings-content`) projection.
 //!
 //! `HostManagerView`'s host add/edit/duplicate/delete/reorder flows are all
@@ -23,8 +23,8 @@
 //! fire-and-forget `hosts_create` call.
 
 use gpui::App;
-use labonair_backend::modules::hosts::Host;
 use labonair_backend::App as Backend;
+use labonair_hosts::Host;
 use labonair_settings::SettingsStore;
 use labonair_settings_content::hosts::{HostAuthMethod, HostEntry, HostTunnel};
 

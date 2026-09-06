@@ -1,5 +1,18 @@
 # Bugs, fixes, and non-obvious constraints
 
+## 2026-09-06 — Host domain models must be separated before host persistence
+
+**Finding:** `backend::modules::hosts` combined serializable host models,
+SQLite persistence, secret access, and App/MCP behavior. Moving the whole
+module would have created another capability-owned crate with the same global
+coupling.
+
+**Resolution:** Extracted only `Host`, `Group`, and `ReorderItem` into the
+UI-/backend-free `labonair-hosts` contract crate. `HostsDb` and App-bound
+operations remain explicitly transitional in `labonair-backend` until a
+narrow host store/service API and typed MCP-revocation callback are defined.
+Feature crates now import the domain models directly.
+
 ## 2026-09-06 — Structured errors extracted as a shared contract
 
 **Finding:** `LabonairError` was implemented in `backend`, so any future
