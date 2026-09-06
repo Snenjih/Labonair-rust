@@ -10,7 +10,8 @@ contracts when composing Explorer and Git, so the duplicate shell resolver
 and its tests are gone. The architecture inventory and R02-002 progress log
 were updated accordingly.
 
-The current branch is `master` with these changes uncommitted. Focused
+The current branch is `master`; the boundary implementation is committed in
+`37dcb76`. Focused
 workspace tests, `cargo check --workspace --all-targets`,
 `cargo clippy --workspace --all-targets -- -D warnings`, queue/dependency
 checks, and `git diff --check` pass. The full workspace test run has only the
