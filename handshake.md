@@ -13,9 +13,8 @@ the next active task is `R01-001-backend-boundaries-and-contracts`: extract
 platform services from `backend` while introducing typed contracts. No product
 feature implementation was changed in this pass.
 
-State: branch `master`, latest commits are `docs: establish modular product
-architecture v2` and `chore: align dependency gate with architecture v2`, two
-commits ahead of `origin/master`. Working tree is clean. No blockers.
+State: branch `master`, latest commit is `docs: add active architecture
+rework tasks`, ahead of `origin/master`. Working tree is clean. No blockers.
 
 Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now pure Rust/GPUI).
 
