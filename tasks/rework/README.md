@@ -16,10 +16,12 @@ The active sequence is:
 8. `R01-009-inline-error-notification-adoption.md` — Done
 9. `R02-001-global-menu-and-theme-entrypoints.md` — Done
 10. `R02-002-shell-composition-and-standalone-workspaces.md` — In Progress
+11. `R02-003-project-entry-and-workspace-transitions.md` — Planned
 
 Phase 3 is complete. R02-001 is the first bounded Phase 2 shell task and also
 connects the already-established theme registry to its intended palette
-surface. R02-002 is the next task; later command-palette/keymap migrations
-remain blocked on their own task contracts.
+surface. R02-002 is the active task; R02-003 is queued for the explicit
+project-entry contract. Later command-palette/keymap migrations remain
+blocked on their own task contracts.
 
 Only the earliest task whose dependencies are complete may be started.

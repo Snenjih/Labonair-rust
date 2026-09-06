@@ -23,6 +23,10 @@ The normative documentation now also includes `docs/repository-layout.md` and
 `AGENTS.md`. They define canonical placement and the contract-first workflow
 for future feature additions, migrations, and removals.
 
+`R02-003-project-entry-and-workspace-transitions.md` is now queued as the next
+bounded task after `R02-002`; it defines explicit project entry and removal of
+cwd-based project inference.
+
 ## Current Session: 2026-09-06 (Global menu and theme entrypoints complete)
 
 `R02-001` is complete. The titlebar global menu now contains Settings,

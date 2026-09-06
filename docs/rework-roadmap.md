@@ -56,6 +56,10 @@ The next bounded implementation is
 [`R02-002-shell-composition-and-standalone-workspaces.md`](../tasks/rework/R02-002-shell-composition-and-standalone-workspaces.md):
 it narrows one remaining shell/workspace behavior slice and verifies empty,
 project, and standalone workspace transitions.
+The following bounded task is
+[`R02-003-project-entry-and-workspace-transitions.md`](../tasks/rework/R02-003-project-entry-and-workspace-transitions.md):
+it connects explicit project entry to the shared workspace model and removes
+cwd-based project inference.
 
 **Exit:** all permanent UI has one documented location and layout behavior is consistent.
 
