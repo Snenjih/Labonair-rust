@@ -17,7 +17,9 @@ with the implementation changes committed in `2076549`. Focused Workspace, comma
 registry, and shell tests pass; the full workspace gates have the same two
 sandbox-only failures whose isolated reruns pass outside the sandbox. The
 native Rust bundle smoke and prior PID-scoped visual check remain valid; the
-legacy Tauri app is never used as evidence. Next: add the remaining project
+latest exact Rust bundle smoke also passes. A new PID-scoped screenshot was
+denied by macOS Screen Capture and is not accepted as evidence. The legacy
+Tauri app is never used as evidence. Next: add the remaining project
 transition/removal audit and visual coverage before closing R02-003.
 
 ## Current Session: 2026-09-06 (Workspace state boundary in progress)

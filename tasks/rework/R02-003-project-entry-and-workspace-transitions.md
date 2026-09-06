@@ -101,6 +101,12 @@ File menu and command palette; it changes identity only and preserves the
 existing tabs, panes, and shell layout. Focused workspace, command-registry,
 and shell tests pass.
 
+The current release bundle (build 265) passes the exact-path five-second
+native launch smoke test and is resolved only as the Rust executable. A
+PID-scoped screenshot attempt was rejected by macOS Screen Capture with
+`could not create image from window`; no screenshot from that attempt is
+accepted as visual evidence, so the visual acceptance criterion remains open.
+
 ## Removal condition
 
 The task is complete only when project opening uses the typed workspace
