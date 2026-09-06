@@ -13,9 +13,9 @@ the Phase 0 migration matrix and then the first technical boundary work:
 extracting platform services from `backend` while introducing typed contracts.
 No product feature implementation was changed in this pass.
 
-State: branch `master`, latest commit `docs: establish modular product
-architecture v2`, one commit ahead of `origin/master`. Working tree is clean.
-No blockers.
+State: branch `master`, latest commits are `docs: establish modular product
+architecture v2` and `chore: align dependency gate with architecture v2`, two
+commits ahead of `origin/master`. Working tree is clean. No blockers.
 
 Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now pure Rust/GPUI).
 
