@@ -4,6 +4,74 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
+## Current Session: 2026-09-06 (App icon port from reference-src)
+
+Ad-hoc request (not a ROADMAP task), committed on its own so it does not
+entangle the parallel settings-ui work in the tree. **Not built this session**
+(user asked to hold off on `cargo` runs while other work is in flight) — gates
+still to run: `fmt --check`, `clippy -p labonair -D warnings`, `check -p labonair`.
+
+Done — the reference Tauri app icon is now the port's app icon:
+- **Vendored** `reference-src/src-tauri/icons/` → `crates/app/assets/app-icon/`
+  (`icon.icns`, `icon.ico`, `32x32.png`, `128x128.png`, `128x128@2x.png`,
+  `256x256@2x.png`). The 1024² master was dropped (nothing references it; the
+  `.icns` is the packaging master).
+- **macOS Dock / cmd-tab shim** `crates/app/src/dock_icon.rs`: `set_dock_icon()`
+  loads `256x256@2x.png` via `NSData::with_bytes` → `NSImage::initWithData`
+  (`mtm.alloc::<NSImage>()`) → `NSApplication::setApplicationIconImage`. Called
+  first thing in the `Application::run` closure in `main.rs`. No-op on non-macOS.
+  Needed because GPUI 0.2.2 has no runtime app-icon API and the project runs
+  un-bundled.
+- **New macOS deps on `crates/app`** (`[target.'cfg(target_os = "macos")']`):
+  `objc2 = "0.6"`, `objc2-app-kit = "0.3"` (features `NSApplication`,
+  `NSResponder`, `NSImage`), `objc2-foundation = "0.3"` (feature `NSData`) —
+  all already in the lock tree via `gpui`/`muda`, only the feature set is
+  re-declared.
+- **`[package.metadata.bundle]`** in `crates/app/Cargo.toml` (cargo-bundle),
+  mirroring the reference `tauri.conf.json` `bundle` block: identifier
+  `com.labonair.app`, category `public.app-category.developer-tools`, the six
+  vendored icons, `minimum_system_version = "10.15"`. A `cargo bundle` build
+  picks up `icon.icns` for Finder / Dock / the standard About panel.
+
+Not done / next: run the three gates above once the tree is free; consider a
+`cargo bundle` smoke on macOS. In-app raster logo surfaces from the reference
+(`app-icon.png` in the settings General section, terminal block empty state,
+AI mini-window) were left alone — those screens have no 1:1 equivalent in the
+port yet and adding them would be speculative UI.
+
+## Current Session: 2026-09-06 (Settings UI-optimization pass — sidebar sub-nav, chrome trim)
+
+Ad-hoc UI pass (not a ROADMAP task) on `crates/settings-ui/`. All four gates green
+on this machine (`fmt --check`, `clippy --workspace --all-targets -D warnings`,
+`test -p labonair-settings-ui` 37 ok / `-p labonair-ui-kit` 41 ok, `check --workspace`).
+
+Done:
+- **Two-level sidebar** (`view.rs`): each top-level `AREAS` row now has a
+  disclosure chevron; expanding lists the page's section labels as sub-level
+  scroll anchors. Row click = navigate + expand (`go_to_area`), chevron =
+  `toggle_area_expanded`, sub-entry = `go_to_section` → `scroll_to_section`
+  consumed in `render_generated_body`. New state: `expanded_areas`,
+  `scroll_to_section`; new helper `section_labels_for_area`.
+- **Static section headers** (`panes/generic.rs::render_section_header`): plain
+  muted+semibold label with hairline, no disclosure/collapse. `render_jump_bar`
+  (the image-#4 chip row) deleted; `toggle_section` removed.
+- **Reset control**: icon-only `IconName::Refresh`, `Ghost`/`IconXs`, `c.muted`
+  (was `Link`/"↺ reset", accent-coloured).
+- **Header** (`render_header`): no in-window close button, left-padded clear of
+  the traffic lights, "Edit in config.json" moved to the right edge.
+- **Sidebar surface**: new `Palette` fields `sidebar` / `sidebar_fg` /
+  `sidebar_border` (`ui-kit/src/palette.rs`) from `Theme::sidebar.*`; rail now
+  painted on `--sidebar`, distinct from the `--card` content area.
+- **Schema warnings suppressed**: only hard type/enum errors banner now;
+  `TODO(notification-system)` in `view.rs` for routing unknown-/legacy-key
+  warnings through the notification center (next focus after settings).
+- Deviation from `docs/settings-guidelines.md` rule 1 recorded in
+  `docs/architecture.md` §8.3 ("Deviation (UI-optimization pass, post-T21)").
+
+Not done / next: per-field visual match to Zed (image #6) is only partial
+(reset unified; spacing untouched); notification-system work for the suppressed
+warnings. Changes uncommitted.
+
 ## Current Session: 2026-09-06 (Zed-parity redesign Phase 5 — accessibility, keyboard traversal, performance & contrast evidence)
 
 ### Phase 5 done (`docs/ui-comparison-zed-sidebar-status-bar.md` §13 Phase 5 / §14)

@@ -340,7 +340,7 @@ pub struct Preferences {
 
 impl Default for Preferences {
     fn default() -> Self {
-        let mono = "\"JetBrains Mono\", SFMono-Regular, Menlo, monospace".to_string();
+        let mono = "\"Lilex\", SFMono-Regular, Menlo, monospace".to_string();
         Self {
             theme: ThemePref::System,
             restore_window_state: true,
@@ -356,9 +356,9 @@ impl Default for Preferences {
             app_theme: "default".to_string(),
             icon_theme: "default".to_string(),
             theme_variant_overrides: BTreeMap::new(),
-            app_font_size: 13,
+            app_font_size: 16,
             app_line_height: 1.5,
-            app_font_family: "\"Inter Variable\", sans-serif".to_string(),
+            app_font_family: "\"IBM Plex Sans\", sans-serif".to_string(),
             reduce_motion: false,
             app_corner_radius: 5,
             background_image: String::new(),
@@ -402,7 +402,7 @@ impl Default for Preferences {
             new_tab_inherits_cwd: true,
             confirm_close_terminal_tab: false,
             terminal_font_family: mono.clone(),
-            terminal_font_size: 14,
+            terminal_font_size: 15,
             terminal_font_weight: "normal".to_string(),
             terminal_letter_spacing: 0.0,
             terminal_line_height: 1.05,
@@ -430,8 +430,8 @@ impl Default for Preferences {
             terminal_opacity: 100,
 
             editor_font_family: mono.clone(),
-            editor_font_size: 13,
-            editor_line_height: 1.55,
+            editor_font_size: 15,
+            editor_line_height: 1.618,
             editor_tab_size: 2,
             editor_word_wrap: false,
             editor_line_numbers: true,
@@ -837,8 +837,8 @@ mod tests {
         assert_eq!(p.mcp_bridge_port, 50000);
         assert!(!p.status_bar_show_ai_controls);
 
-        // Fields not present in the blob keep their (reference-correct) defaults.
-        assert_eq!(p.editor_font_size, 13);
+        // Fields not present in the blob keep their defaults.
+        assert_eq!(p.editor_font_size, 15);
         assert_eq!(p.terminal_scrollback, 5_000);
         std::fs::remove_dir_all(&dir).ok();
     }

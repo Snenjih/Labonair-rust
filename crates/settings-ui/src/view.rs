@@ -32,7 +32,7 @@ pub use labonair_settings::SettingsStore;
 pub use labonair_settings_content::areas::AREAS;
 pub use labonair_theme::{ThemePreference, ThemeStore};
 pub use labonair_ui_kit::{
-    banner, button, disclosure, h_stack, icon_for_path, list_header, list_separator, number_field,
+    banner, button, h_stack, icon_for_path, list_header, list_separator, number_field,
     segmented_control, select_popover, select_trigger, v_stack, ButtonSize, ButtonVariant,
     IconName, ListItem, Palette, SelectOption, Severity, Switch,
 };
@@ -229,7 +229,21 @@ pub struct SettingsView {
     /// Collapsed disclosure sections: `(area index, sub-page slug or "" for
     /// the main page, section label)`. Absent = open (rule 1: "Default: alle
     /// offen").
+    ///
+    /// Deviation from `docs/settings-guidelines.md` rule 1 (recorded in
+    /// `docs/architecture.md` §8.3): section headers are no longer
+    /// user-collapsible — the section list now lives in the sidebar as
+    /// scroll anchors. This set is kept only so the search jump
+    /// (`activate_search_hit`) can still "un-collapse" defensively; nothing
+    /// inserts into it any more.
     pub(crate) collapsed_sections: HashSet<(usize, &'static str, &'static str)>,
+    /// Top-level sidebar rows whose sub-section list is expanded
+    /// (`docs/architecture.md` §8.3 deviation). The active area is expanded
+    /// on navigation.
+    pub(crate) expanded_areas: HashSet<usize>,
+    /// A section label the sidebar asked to scroll the content area to,
+    /// consumed by `render_generated_body` once the section rows are built.
+    pub(crate) scroll_to_section: Option<&'static str>,
     /// Scroll position of the active generated page's content, tracked so
     /// the jump bar can scroll-to-section and highlight the section that is
     /// currently topmost (rule 1's scroll-spy).
@@ -358,6 +372,10 @@ impl SettingsView {
             all_fields,
             pages,
             collapsed_sections: HashSet::new(),
+            // Every sidebar category starts collapsed; `open()` re-clears this
+            // so it holds on every reopen too.
+            expanded_areas: HashSet::new(),
+            scroll_to_section: None,
             content_scroll: ScrollHandle::new(),
             search_index,
             search_results: Vec::new(),
@@ -377,6 +395,8 @@ impl SettingsView {
         self.editing = None;
         self.recording = None;
         self.kb_conflict = None;
+        // Sidebar categories always start collapsed on (re)open.
+        self.expanded_areas.clear();
         self.search.clear();
         self.search_results.clear();
         self.search_selected = 0;
@@ -494,8 +514,71 @@ impl SettingsView {
     pub(crate) fn go_to_area(&mut self, i: usize, cx: &mut Context<Self>) {
         self.active_area = i;
         self.active_subpage = None;
+        self.expanded_areas.insert(i);
         self.search.clear();
         cx.notify();
+    }
+
+    /// Toggle a sidebar row's sub-section list without navigating
+    /// (`docs/architecture.md` §8.3).
+    pub(crate) fn toggle_area_expanded(&mut self, i: usize, cx: &mut Context<Self>) {
+        if !self.expanded_areas.remove(&i) {
+            self.expanded_areas.insert(i);
+        }
+        cx.notify();
+    }
+
+    /// Navigate to `area` (if needed) and scroll its content to `label`'s
+    /// section (`docs/architecture.md` §8.3 — sub-level sidebar entries are
+    /// scroll anchors, not pages).
+    pub(crate) fn go_to_section(
+        &mut self,
+        area: usize,
+        label: &'static str,
+        cx: &mut Context<Self>,
+    ) {
+        self.active_area = area;
+        self.active_subpage = None;
+        self.expanded_areas.insert(area);
+        self.search.clear();
+        self.scroll_to_section = Some(label);
+        cx.notify();
+    }
+
+    /// Section labels shown under a top-level sidebar row: the curated
+    /// section headers of the area's generated main page, plus a trailing
+    /// "Other" when leftover fields exist. Custom panes contribute their
+    /// folded-in field-group labels (AI, Personalization) or nothing.
+    pub(crate) fn section_labels_for_area(&self, area_idx: usize) -> Vec<&'static str> {
+        let mut out: Vec<&'static str> = Vec::new();
+        if let Some(page) = self.pages.get(area_idx) {
+            if let PageBody::Generated(items) = &page.body {
+                for item in items {
+                    if let SettingsPageItem::SectionHeader(label) = item {
+                        out.push(label);
+                    }
+                }
+            }
+        }
+        let area = &AREAS[area_idx];
+        let custom_groups: &[(&'static str, &'static [&'static str])] = match area.key {
+            "ai" => crate::pages::AI_GROUPS,
+            "personalization" => crate::pages::PERSONALIZATION_GROUPS,
+            _ => &[],
+        };
+        for (label, _) in custom_groups {
+            if !out.contains(label) {
+                out.push(label);
+            }
+        }
+        if matches!(
+            self.pages.get(area_idx).map(|p| &p.body),
+            Some(PageBody::Generated(_))
+        ) && !crate::pages::leftover_fields(area.target_module, &self.all_fields).is_empty()
+        {
+            out.push("Other");
+        }
+        out
     }
 
     pub(crate) fn go_to_subpage(&mut self, i: usize, cx: &mut Context<Self>) {
@@ -552,6 +635,7 @@ impl SettingsView {
                     };
                 self.active_area = area_index;
                 self.active_subpage = subpage_index;
+                self.expanded_areas.insert(area_index);
                 if let Some(label) = section {
                     let subpage_slug = self.active_subpage_slug();
                     self.collapsed_sections
@@ -593,14 +677,6 @@ impl SettingsView {
             });
         })
         .detach();
-    }
-
-    pub(crate) fn toggle_section(&mut self, label: &'static str, cx: &mut Context<Self>) {
-        let key = (self.active_area, self.active_subpage_slug(), label);
-        if !self.collapsed_sections.remove(&key) {
-            self.collapsed_sections.insert(key);
-        }
-        cx.notify();
     }
 
     pub(crate) fn section_collapsed(&self, label: &'static str) -> bool {
@@ -931,71 +1007,143 @@ impl SettingsView {
         c: &Palette,
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
-        // T20-003: shared `button()` primitive (`Outline`/`Xs`).
-        let link = |id: &'static str, label: &'static str, url: &'static str| {
-            button(id, *c, ButtonVariant::Outline, ButtonSize::Xs)
-                .child(label)
+        // A single raised info card: identity + "Check for updates" on the
+        // left, a stacked list of icon links on the right.
+        let os = match std::env::consts::OS {
+            "macos" => "macOS",
+            "linux" => "Linux",
+            "windows" => "Windows",
+            other => other,
+        };
+
+        // One right-hand link: icon + (title / subtitle), the whole row
+        // clickable.
+        let link = |id: &'static str,
+                    icon: IconName,
+                    title: &'static str,
+                    subtitle: &'static str,
+                    url: &'static str| {
+            div()
+                .id(id)
+                .flex()
+                .flex_row()
+                .items_center()
+                .gap_3()
+                .cursor_pointer()
+                .child(icon.svg(c.muted).size(px(18.0)))
+                .child(
+                    v_stack()
+                        .child(div().text_size(px(13.0)).text_color(c.fg).child(title))
+                        .child(
+                            div()
+                                .text_size(px(11.0))
+                                .text_color(c.muted)
+                                .child(subtitle),
+                        ),
+                )
                 .on_click(cx.listener(move |_, _: &ClickEvent, _w, cx| {
                     cx.open_url(url);
                 }))
         };
+
         div()
-            .flex()
-            .flex_col()
-            .items_center()
-            .gap_1()
-            .py_4()
-            .border_b_1()
+            .rounded_lg()
+            .border_1()
             .border_color(c.border)
+            .bg(c.card)
+            .p(px(24.0))
+            .mb_4()
             .child(
-                div()
-                    .size(px(56.0))
-                    .rounded_lg()
-                    .bg(c.accent)
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .text_color(c.bg)
-                    .font_weight(gpui::FontWeight::BOLD)
-                    .child("L"),
-            )
-            .child(
-                div()
-                    .text_color(c.fg)
-                    .font_weight(gpui::FontWeight::SEMIBOLD)
-                    .child("Labonair"),
-            )
-            .child(
-                div()
-                    .text_size(px(11.0))
-                    .text_color(c.muted)
-                    .child(SharedString::from(format!(
-                        "Version {}  \u{2022}  {} {}",
-                        env!("CARGO_PKG_VERSION"),
-                        std::env::consts::OS,
-                        std::env::consts::ARCH,
-                    ))),
-            )
-            .child(
-                div()
-                    .mt_1()
-                    .flex()
-                    .gap_2()
-                    .child(link(
-                        "about-report",
-                        "Report a problem",
-                        "https://github.com/Snenjih/Labonair-rust/issues/new",
-                    ))
-                    .child(link(
-                        "about-github",
-                        "GitHub",
-                        "https://github.com/Snenjih/Labonair-rust",
-                    ))
-                    .child(link(
-                        "about-website",
-                        "Website",
-                        "https://github.com/Snenjih/Labonair-rust",
-                    )),
+                h_stack()
+                    .items_start()
+                    .justify_between()
+                    .gap_6()
+                    .child(
+                        v_stack()
+                            .gap_3()
+                            .child(
+                                h_stack()
+                                    .gap_3()
+                                    .child(
+                                        div()
+                                            .size(px(52.0))
+                                            .rounded_lg()
+                                            .bg(c.bg)
+                                            .border_1()
+                                            .border_color(c.border)
+                                            .flex()
+                                            .items_center()
+                                            .justify_center()
+                                            .text_color(c.fg)
+                                            .text_size(px(24.0))
+                                            .font_weight(gpui::FontWeight::BOLD)
+                                            .child("L"),
+                                    )
+                                    .child(
+                                        v_stack()
+                                            .gap_0p5()
+                                            .child(
+                                                div()
+                                                    .text_size(px(22.0))
+                                                    .font_weight(gpui::FontWeight::BOLD)
+                                                    .text_color(c.fg)
+                                                    .child("Labonair"),
+                                            )
+                                            .child(
+                                                div()
+                                                    .text_size(px(12.0))
+                                                    .text_color(c.muted)
+                                                    .child(SharedString::from(format!(
+                                                        "{}  \u{2022}  {}  \u{2022}  v{}",
+                                                        os,
+                                                        std::env::consts::ARCH,
+                                                        env!("CARGO_PKG_VERSION"),
+                                                    ))),
+                                            ),
+                                    ),
+                            )
+                            .child(
+                                button(
+                                    "about-check-updates",
+                                    *c,
+                                    ButtonVariant::Default,
+                                    ButtonSize::Sm,
+                                )
+                                .child("Check for updates")
+                                .on_click(cx.listener(
+                                    |_, _: &ClickEvent, _w, cx| {
+                                        cx.open_url(
+                                            "https://github.com/Snenjih/Labonair-rust/releases",
+                                        );
+                                    },
+                                )),
+                            ),
+                    )
+                    .child(
+                        v_stack()
+                            .gap_3()
+                            .child(link(
+                                "about-report",
+                                IconName::Warning,
+                                "Report a problem",
+                                "Generate a pre-filled GitHub issue",
+                                "https://github.com/Snenjih/Labonair-rust/issues/new",
+                            ))
+                            .child(link(
+                                "about-github",
+                                IconName::GitBranch,
+                                "GitHub",
+                                "Source code",
+                                "https://github.com/Snenjih/Labonair-rust",
+                            ))
+                            .child(link(
+                                "about-website",
+                                IconName::Globe,
+                                "Website",
+                                "labonair.app",
+                                "https://github.com/Snenjih/Labonair-rust",
+                            )),
+                    ),
             )
             .into_any_element()
     }
@@ -1110,7 +1258,12 @@ impl Render for SettingsView {
         // Personalization) is a normal entry here, exactly like a Generated
         // one (rule 4: "a custom pane may be registered as a top-level
         // category exactly like a field-based one").
-        // T20-003: shared `ListItem` for the category rows.
+        //
+        // `docs/architecture.md` §8.3 deviation: each top-level row carries a
+        // disclosure chevron that reveals the page's section labels as
+        // sub-level scroll anchors (not pages). Row click navigates + expands;
+        // chevron click only toggles; sub-label click scrolls the content to
+        // that section.
         let sidebar_body: gpui::AnyElement = if searching {
             self.render_search_results(&c, cx)
         } else {
@@ -1120,12 +1273,66 @@ impl Render for SettingsView {
                 .gap_0p5()
                 .children(AREAS.iter().enumerate().map(|(i, area)| {
                     let is_active = i == active_area;
-                    ListItem::new(SharedString::from(area.key), c.fg, c.muted, c.accent)
-                        .selected(is_active)
+                    let expanded = self.expanded_areas.contains(&i);
+                    let sections = self.section_labels_for_area(i);
+                    let has_sections = !sections.is_empty();
+                    let chevron = if expanded {
+                        IconName::ChevronDown
+                    } else {
+                        IconName::ChevronRight
+                    };
+                    let toggle: gpui::AnyElement = if has_sections {
+                        button(
+                            SharedString::from(format!("area-tw-{}", area.key)),
+                            c,
+                            ButtonVariant::Ghost,
+                            ButtonSize::IconXs,
+                        )
+                        .child(chevron.svg(c.sidebar_fg).size(px(12.0)))
                         .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
-                            this.go_to_area(i, cx);
+                            this.toggle_area_expanded(i, cx);
                         }))
-                        .child(SharedString::from(area.title))
+                        .into_any_element()
+                    } else {
+                        div().w(px(20.0)).flex_shrink_0().into_any_element()
+                    };
+                    let row = h_stack().items_center().gap_0p5().child(toggle).child(
+                        div().flex_1().min_w_0().child(
+                            ListItem::new(
+                                SharedString::from(area.key),
+                                c.sidebar_fg,
+                                c.muted,
+                                c.accent,
+                            )
+                            .selected(is_active)
+                            .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                                this.go_to_area(i, cx);
+                            }))
+                            .child(SharedString::from(area.title)),
+                        ),
+                    );
+                    let sub = (expanded && has_sections).then(|| {
+                        v_stack()
+                            .gap_0p5()
+                            .pb_1()
+                            .children(sections.into_iter().map(|label| {
+                                div()
+                                    .id(SharedString::from(format!("sec-{i}-{label}")))
+                                    .pl(px(30.0))
+                                    .pr_2()
+                                    .py(px(3.0))
+                                    .rounded_sm()
+                                    .text_size(px(11.5))
+                                    .text_color(c.muted)
+                                    .cursor_pointer()
+                                    .hover(|s| s.text_color(c.sidebar_fg))
+                                    .child(SharedString::from(label))
+                                    .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                                        this.go_to_section(i, label, cx);
+                                    }))
+                            }))
+                    });
+                    v_stack().child(row).children(sub)
                 }))
                 .into_any_element()
         };
@@ -1139,8 +1346,11 @@ impl Render for SettingsView {
             .gap_0p5()
             .p_2()
             .overflow_y_scroll()
+            // `docs/settings-guidelines.md`: the nav rail sits on its own
+            // `--sidebar` surface, distinct from the `--card` content area.
+            .bg(c.sidebar)
             .border_r_1()
-            .border_color(c.border)
+            .border_color(c.sidebar_border)
             .child(search_box)
             .child(sidebar_body);
 
@@ -1161,41 +1371,30 @@ impl Render for SettingsView {
                 )))
             });
 
-        // Schema-validation findings (T19-006): shown alongside (not instead
-        // of) the syntax-error banner above — a file can be valid JSON but
-        // still have a field with the wrong type/enum value, which is what
-        // this banner reports (one line per finding, worst first: type/enum
-        // errors before unknown-key warnings).
+        // Schema-validation findings (T19-006): only hard type/enum *errors*
+        // still surface as a banner here — a file can be valid JSON but have
+        // a field set to the wrong type, which blocks editing and must be
+        // shown. Unknown-/legacy-key *warnings* (`hostsMigrated`,
+        // `schemaVersion`, …) are deliberately no longer rendered: they are
+        // informational, not blocking, and cluttered the top of every page.
+        // TODO(notification-system): route `schema_warnings()` /
+        // `project_schema_warnings()` through the app notification center as
+        // dismissible notices instead of a settings banner.
         let schema_banner = cx.try_global::<SettingsStore>().and_then(|s| {
             let errors: Vec<_> = s
                 .schema_errors()
                 .iter()
                 .chain(s.project_schema_errors())
                 .collect();
-            let warnings: Vec<_> = s
-                .schema_warnings()
-                .iter()
-                .chain(s.project_schema_warnings())
-                .collect();
-            if errors.is_empty() && warnings.is_empty() {
+            if errors.is_empty() {
                 return None;
             }
-            let mut lines: Vec<SharedString> = errors
+            let lines: Vec<SharedString> = errors
                 .iter()
                 .map(|e| SharedString::from(e.to_string()))
                 .collect();
-            lines.extend(
-                warnings
-                    .iter()
-                    .map(|w| SharedString::from(format!("warning: {w}"))),
-            );
-            let severity = if errors.is_empty() {
-                Severity::Warning
-            } else {
-                Severity::Error
-            };
             Some(
-                banner(severity, c)
+                banner(Severity::Error, c)
                     .stacked(true)
                     .children(lines.into_iter().map(|line| div().child(line))),
             )
@@ -1265,85 +1464,65 @@ impl Render for SettingsView {
 }
 
 impl SettingsView {
-    /// Header: "Open settings.json" + breadcrumb (category, or "category >
-    /// sub-page" with a back arrow when a `SubPageLink` was followed, rule
-    /// 1) + close.
+    /// Header: a thin chrome strip, not a toolbar. Left edge is padded clear
+    /// of the OS traffic lights; it carries only the sub-page back-arrow +
+    /// breadcrumb (when a `SubPageLink` was followed). The single action —
+    /// "Edit in config.json" — sits at the right edge. No in-window close
+    /// button: the traffic lights close the window
+    /// (`docs/architecture.md` §8.3).
     pub(crate) fn render_header(&self, c: &Palette, cx: &mut Context<Self>) -> gpui::AnyElement {
         let area = &AREAS[self.active_area];
-        let title: gpui::AnyElement = match self.active_subpage {
-            Some(i) => {
-                let sub_title = self.pages[self.active_area].sub_pages[i].title;
-                div()
-                    .flex()
-                    .items_center()
-                    .gap_1()
-                    .child(
-                        // T20-003: `button()` (`Ghost`/`IconXs`) — no matching
-                        // chevron-left glyph in `IconName` yet, so the plain
-                        // arrow stays a text child (documented exception).
-                        button(
-                            "settings-back",
-                            *c,
-                            ButtonVariant::Ghost,
-                            ButtonSize::IconXs,
-                        )
-                        .child("\u{2190}")
-                        .on_click(cx.listener(
-                            |this, _: &ClickEvent, _w, cx| {
-                                this.go_back_to_main_page(cx);
-                            },
-                        )),
+        let crumb: Option<gpui::AnyElement> = self.active_subpage.map(|i| {
+            let sub_title = self.pages[self.active_area].sub_pages[i].title;
+            div()
+                .flex()
+                .items_center()
+                .gap_1()
+                .text_color(c.fg)
+                .font_weight(gpui::FontWeight::SEMIBOLD)
+                .text_size(px(12.5))
+                .child(
+                    button(
+                        "settings-back",
+                        *c,
+                        ButtonVariant::Ghost,
+                        ButtonSize::IconXs,
                     )
-                    .child(SharedString::from(format!(
-                        "{} \u{203A} {}",
-                        area.title, sub_title
-                    )))
-                    .into_any_element()
-            }
-            None => div()
-                .child(SharedString::from(area.title))
-                .into_any_element(),
-        };
+                    .child("\u{2190}")
+                    .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
+                        this.go_back_to_main_page(cx);
+                    })),
+                )
+                .child(SharedString::from(format!(
+                    "{} \u{203A} {}",
+                    area.title, sub_title
+                )))
+                .into_any_element()
+        });
         div()
             .h(px(44.0))
             .flex_shrink_0()
             .flex()
             .items_center()
             .justify_between()
-            .px_3()
+            // Clear the macOS traffic lights (positioned at x = 19).
+            .pl(px(84.0))
+            .pr_3()
             .border_b_1()
             .border_color(c.border)
+            .child(div().flex_1().min_w_0().children(crumb))
             .child(
-                // T20-003: `button()` (`Ghost`/`Xs`) — the "Öffnen"-style action.
+                // T20-003: `button()` (`Ghost`/`Xs`) — the one header action.
                 button(
                     "settings-open-json",
                     *c,
                     ButtonVariant::Ghost,
                     ButtonSize::Xs,
                 )
-                .child("Open config.json")
+                .child("Edit in config.json")
                 .on_click(cx.listener(|_, _: &ClickEvent, _w, cx| {
                     cx.reveal_path(&config_dir().join("config.json"));
                 })),
-            )
-            .child(
-                div()
-                    .text_color(c.fg)
-                    .font_weight(gpui::FontWeight::SEMIBOLD)
-                    .text_size(px(12.5))
-                    .child(title),
-            )
-            .child(
-                button(
-                    "settings-close",
-                    *c,
-                    ButtonVariant::Ghost,
-                    ButtonSize::IconXs,
-                )
-                .child(IconName::X.svg(c.muted))
-                .on_click(
-                    cx.listener(|this, _: &ClickEvent, window, cx| this.request_close(window, cx)),
-                ),
             )
             .into_any_element()
     }

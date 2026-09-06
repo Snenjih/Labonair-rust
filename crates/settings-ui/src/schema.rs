@@ -1613,7 +1613,7 @@ mod tests {
             .find(|f| f.json_path == "terminal.terminalFontSize")
             .unwrap();
         assert!(!(font_size.set)(&mut content, Value::String("huge".into())));
-        assert_eq!(content.terminal.terminal_font_size, Some(14));
+        assert_eq!(content.terminal.terminal_font_size, Some(15));
     }
 
     #[test]

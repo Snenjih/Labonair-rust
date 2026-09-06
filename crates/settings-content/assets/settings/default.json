@@ -29,17 +29,17 @@
     // "default" = the built-in "Labonair" file/folder glyph set.
     "iconTheme": "default",
     "themeVariantOverrides": {},
-    "appFontSize": 13,
+    "appFontSize": 16,
     "appLineHeight": 1.5,
-    "appFontFamily": "\"Inter Variable\", sans-serif",
+    "appFontFamily": "\"IBM Plex Sans\", sans-serif",
     "reduceMotion": false,
     // Legacy corner-radius base in px — superseded by "cornerRadiusScale".
     "appCornerRadius": 5,
     // Editor/terminal text (T20-007 theme_settings layer). Empty family = the
     // theme's own mono font.
     "bufferFontFamily": "",
-    "bufferFontSize": 13,
-    "bufferLineHeight": 1.5,
+    "bufferFontSize": 15,
+    "bufferLineHeight": 1.618,
     // "compact" | "default" | "comfortable" — spacing/size density.
     "uiDensity": "default",
     // Multiplier on the active theme's corner-radius scale (1.0 = unchanged).
@@ -66,8 +66,8 @@
     "terminalDefaultPath": "",
     "newTabInheritsCwd": true,
     "confirmCloseTerminalTab": false,
-    "terminalFontFamily": "\"JetBrains Mono\", SFMono-Regular, Menlo, monospace",
-    "terminalFontSize": 14,
+    "terminalFontFamily": "\"Lilex\", SFMono-Regular, Menlo, monospace",
+    "terminalFontSize": 15,
     "terminalFontWeight": "normal",
     "terminalLetterSpacing": 0.0,
     "terminalLineHeight": 1.05,
@@ -99,9 +99,9 @@
   },
 
   "editor": {
-    "editorFontFamily": "\"JetBrains Mono\", SFMono-Regular, Menlo, monospace",
-    "editorFontSize": 13,
-    "editorLineHeight": 1.55,
+    "editorFontFamily": "\"Lilex\", SFMono-Regular, Menlo, monospace",
+    "editorFontSize": 15,
+    "editorLineHeight": 1.618,
     "editorTabSize": 2,
     "editorWordWrap": false,
     "editorLineNumbers": true,

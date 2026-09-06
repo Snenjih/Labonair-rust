@@ -174,7 +174,7 @@ mod tests {
     #[test]
     fn merge_from_layers_user_over_default_over_project() {
         let mut layered = SettingsContent::defaults();
-        assert_eq!(layered.terminal.terminal_font_size, Some(14));
+        assert_eq!(layered.terminal.terminal_font_size, Some(15));
 
         let mut user = SettingsContent::default();
         user.terminal.terminal_font_size = Some(18);

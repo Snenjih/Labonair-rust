@@ -45,11 +45,11 @@ pub struct EditorContent {
 
 impl EditorContent {
     pub fn defaults() -> Self {
-        let mono = "\"JetBrains Mono\", SFMono-Regular, Menlo, monospace".to_string();
+        let mono = "\"Lilex\", SFMono-Regular, Menlo, monospace".to_string();
         Self {
             editor_font_family: Some(mono),
-            editor_font_size: Some(13),
-            editor_line_height: Some(1.55),
+            editor_font_size: Some(15),
+            editor_line_height: Some(1.618),
             editor_tab_size: Some(2),
             editor_word_wrap: Some(false),
             editor_line_numbers: Some(true),

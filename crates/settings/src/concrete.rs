@@ -76,7 +76,7 @@ impl ThemeSettings {
 
     /// UI-chrome font size, px.
     pub fn ui_font_size(&self) -> f32 {
-        self.0.app_font_size.unwrap_or(13) as f32
+        self.0.app_font_size.unwrap_or(16) as f32
     }
 
     /// UI-chrome line-height multiple.
@@ -91,12 +91,12 @@ impl ThemeSettings {
 
     /// Editor/terminal text font size, px.
     pub fn buffer_font_size(&self) -> f32 {
-        self.0.buffer_font_size.unwrap_or(13) as f32
+        self.0.buffer_font_size.unwrap_or(15) as f32
     }
 
     /// Editor/terminal text line-height multiple.
     pub fn buffer_line_height(&self) -> f32 {
-        self.0.buffer_line_height.unwrap_or(1.5)
+        self.0.buffer_line_height.unwrap_or(1.618)
     }
 
     /// UI density token (`"compact"` | `"default"` | `"comfortable"`).
@@ -293,12 +293,12 @@ mod tests {
 
     #[test]
     fn theme_settings_metric_accessors_and_legacy_corner_radius_migration() {
-        // Fresh defaults: unit scale, default density, 13px fonts.
+        // Fresh defaults: unit scale, default density, Zed-style 16/15px fonts.
         let base = ThemeSettings::from_settings(&SettingsContent::default());
         assert_eq!(base.corner_radius_scale(), 1.0);
         assert_eq!(base.ui_density(), "default");
-        assert_eq!(base.ui_font_size(), 13.0);
-        assert_eq!(base.buffer_font_size(), 13.0);
+        assert_eq!(base.ui_font_size(), 16.0);
+        assert_eq!(base.buffer_font_size(), 15.0);
 
         // Pre-T20-007 file: only the legacy px key set → migrates to a scale.
         let mut legacy = SettingsContent::default();

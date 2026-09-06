@@ -751,7 +751,7 @@ mod tests {
     #[test]
     fn recompute_merges_default_user_project_in_order() {
         let mut store = SettingsStore::new(tmp_path());
-        assert_eq!(store.merged().terminal.terminal_font_size, Some(14));
+        assert_eq!(store.merged().terminal.terminal_font_size, Some(15));
 
         let mut user = SettingsContent::default();
         user.terminal.terminal_font_size = Some(18);
@@ -803,7 +803,7 @@ mod tests {
         store.reload_user_layer();
         assert_eq!(store.parse_errors().len(), 1);
         assert_eq!(store.parse_errors()[0].area, "terminal");
-        assert_eq!(store.merged().terminal.terminal_font_size, Some(14)); // default
+        assert_eq!(store.merged().terminal.terminal_font_size, Some(15)); // default
         assert_eq!(store.merged().general.startup_terminal_count, Some(2));
     }
 
@@ -968,7 +968,7 @@ mod tests {
     fn register_setting_computes_and_recomputes_on_change() {
         let mut store = SettingsStore::new(tmp_path());
         store.register_setting::<FakeFontSize>();
-        assert_eq!(store.get::<FakeFontSize>(), &FakeFontSize(14));
+        assert_eq!(store.get::<FakeFontSize>(), &FakeFontSize(15));
 
         let mut user = SettingsContent::default();
         user.terminal.terminal_font_size = Some(21);

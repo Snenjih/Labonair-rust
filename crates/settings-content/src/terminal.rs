@@ -69,14 +69,14 @@ pub struct TerminalContent {
 
 impl TerminalContent {
     pub fn defaults() -> Self {
-        let mono = "\"JetBrains Mono\", SFMono-Regular, Menlo, monospace".to_string();
+        let mono = "\"Lilex\", SFMono-Regular, Menlo, monospace".to_string();
         Self {
             terminal_shell: Some(String::new()),
             terminal_default_path: Some(String::new()),
             new_tab_inherits_cwd: Some(true),
             confirm_close_terminal_tab: Some(false),
             terminal_font_family: Some(mono),
-            terminal_font_size: Some(14),
+            terminal_font_size: Some(15),
             terminal_font_weight: Some("normal".to_string()),
             terminal_letter_spacing: Some(0.0),
             terminal_line_height: Some(1.05),

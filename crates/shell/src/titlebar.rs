@@ -37,10 +37,11 @@ use crate::theme::ThemeStore;
 use crate::workspace::Workspace;
 
 const HEADER_H: f32 = 40.0;
-/// Left inset reserved for the macOS traffic-light buttons. Linux has no
-/// traffic lights, so the tab strip starts flush there.
+/// Left inset reserved for the macOS traffic-light buttons, plus extra
+/// breathing room so the first tab doesn't crowd the traffic lights. Linux
+/// has no traffic lights, so the tab strip starts flush there.
 #[cfg(target_os = "macos")]
-const TRAFFIC_LIGHT_INSET: f32 = 78.0;
+const TRAFFIC_LIGHT_INSET: f32 = 100.0;
 #[cfg(not(target_os = "macos"))]
 const TRAFFIC_LIGHT_INSET: f32 = 8.0;
 

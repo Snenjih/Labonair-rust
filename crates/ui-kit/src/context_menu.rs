@@ -334,21 +334,35 @@ pub fn context_menu(
     let dismiss = Rc::new(dismiss);
     let d2 = dismiss.clone();
 
-    let card = menu_card(c, items).absolute().left(anchor.x).top(anchor.y);
+    // `anchored().snap_to_window()` positions the card in *window* coordinates
+    // (the right-click `MouseDownEvent::position` is already window-space) and
+    // flips it back inside the viewport near an edge; `deferred(..)` lifts the
+    // whole overlay above every sibling so an ancestor's `overflow_hidden`
+    // cannot clip it and it always paints on top. Previously this was a plain
+    // `absolute().inset_0()` child of whatever view opened it, which made the
+    // menu mispositioned (anchor is window-space, parent is not the window),
+    // clipped by scrollable panels, and sometimes hidden behind later siblings.
+    let card = anchored()
+        .position(anchor)
+        .snap_to_window()
+        .child(menu_card(c, items));
 
-    div()
-        .absolute()
-        .inset_0()
-        .on_mouse_down(
-            MouseButton::Left,
-            move |_: &MouseDownEvent, w: &mut Window, cx: &mut App| dismiss(w, cx),
-        )
-        .on_mouse_down(
-            MouseButton::Right,
-            move |_: &MouseDownEvent, w: &mut Window, cx: &mut App| d2(w, cx),
-        )
-        .child(card)
-        .into_any_element()
+    deferred(
+        div()
+            .absolute()
+            .inset_0()
+            .on_mouse_down(
+                MouseButton::Left,
+                move |_: &MouseDownEvent, w: &mut Window, cx: &mut App| dismiss(w, cx),
+            )
+            .on_mouse_down(
+                MouseButton::Right,
+                move |_: &MouseDownEvent, w: &mut Window, cx: &mut App| d2(w, cx),
+            )
+            .child(card),
+    )
+    .with_priority(200)
+    .into_any_element()
 }
 
 /// The same menu, opened from a *trigger* instead of a right-click: the card is

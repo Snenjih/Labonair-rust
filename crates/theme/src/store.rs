@@ -771,7 +771,7 @@ impl ThemeStore {
         self.foreground().opacity(0.34)
     }
 
-    /// GPUI [`Font`] for UI text (Inter Variable + system fallbacks).
+    /// GPUI [`Font`] for UI text (IBM Plex Sans + system fallbacks).
     pub fn ui_font(&self) -> Font {
         let t = &self.theme().typography;
         Font {
@@ -780,7 +780,7 @@ impl ThemeStore {
         }
     }
 
-    /// GPUI [`Font`] for the code editor buffer (JetBrains Mono, ligatures per theme).
+    /// GPUI [`Font`] for the code editor buffer (Lilex, ligatures per theme).
     pub fn buffer_font(&self) -> Font {
         let t = &self.theme().typography;
         self.mono_font(&t.buffer_font_family, MonoFontWeight::Normal)
@@ -833,8 +833,8 @@ impl ThemeStore {
 }
 
 /// Registers the bundled font assets ([`crate::embedded_fonts`]) with
-/// GPUI's text system so the UI / terminal / editor render with Inter Variable
-/// and JetBrains Mono regardless of what is installed on the system. Call once
+/// GPUI's text system so the UI / terminal / editor render with IBM Plex Sans
+/// and Lilex regardless of what is installed on the system. Call once
 /// at startup, before opening the window.
 pub fn init_fonts(cx: &App) {
     if let Err(err) = cx.text_system().add_fonts(crate::embedded_fonts()) {
@@ -1108,7 +1108,7 @@ mod tests {
                 .contains(&"Menlo".to_string()));
 
             assert_eq!(s.buffer_font().family.as_ref(), crate::MONO_FONT_FAMILY);
-            assert_eq!(s.terminal_font_size(), 14.0);
+            assert_eq!(s.terminal_font_size(), 15.0);
             assert_eq!(s.terminal_line_height(), 1.05);
         });
     }

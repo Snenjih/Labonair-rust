@@ -1,8 +1,9 @@
 //! Generic field renderer (T19-004): dropdown layer, `render_field`
 //! (dispatches on `FieldControl` — the renderer registry), the generated-page
-//! renderer (disclosure sections + scroll-spy jump bar + trailing "Other"
-//! fallback), the top-level `render_body` dispatch (search / Generated /
-//! Custom), and the MCP "AI Agent Bridge" pane.
+//! renderer (static section headers + trailing "Other" fallback; section
+//! navigation lives in the sidebar per `docs/architecture.md` §8.3), the
+//! top-level `render_body` dispatch (search / Generated / Custom), and the
+//! MCP "AI Agent Bridge" pane.
 //!
 //! Part of `SettingsView` — see `crate::view`.
 
@@ -220,18 +221,25 @@ impl SettingsView {
         // can find it among a page's other fields.
         let highlighted = self.highlight == Some(json_path);
 
+        // Each setting is its own card (rounded, hairline border, raised
+        // `--card` fill) with the row list spacing them apart — see the
+        // Settings visual spec.
         div()
             .id(SharedString::from(format!("field-row-{json_path}")))
             .flex()
             .items_center()
             .justify_between()
             .gap_4()
-            .py_2()
-            .px(px(4.0))
-            .rounded_sm()
-            .border_b_1()
+            .px_4()
+            .py_3()
+            .rounded_md()
+            .border_1()
             .border_color(c.border)
-            .when(highlighted, |d| d.bg(c.accent.opacity(0.25)))
+            .bg(if highlighted {
+                c.accent.opacity(0.25)
+            } else {
+                c.card
+            })
             .child(
                 v_stack()
                     .gap_0p5()
@@ -257,14 +265,16 @@ impl SettingsView {
                             )
                             .when(non_default, |d| {
                                 d.child(
-                                    // T20-003: shared `button()` (`Link`/`Xs`).
+                                    // Icon-only, muted (no accent/"yellow", no
+                                    // "reset" text) — a quiet affordance beside
+                                    // the origin badge.
                                     button(
                                         SharedString::from(format!("reset-{json_path}")),
                                         *c,
-                                        ButtonVariant::Link,
-                                        ButtonSize::Xs,
+                                        ButtonVariant::Ghost,
+                                        ButtonSize::IconXs,
                                     )
-                                    .child("\u{21BA} reset")
+                                    .child(IconName::Refresh.svg(c.muted).size(px(12.0)))
                                     .on_click(cx.listener(
                                         move |this, _: &ClickEvent, _w, cx| {
                                             this.reset_field(json_path, cx);
@@ -558,8 +568,9 @@ impl SettingsView {
         };
 
         let mut rows: Vec<gpui::AnyElement> = Vec::new();
-        let mut jump: Vec<(usize, &'static str)> = Vec::new();
-        let mut current_section: Option<&'static str> = None;
+        // Row index of each section header, so a sidebar sub-entry click
+        // (`scroll_to_section`, §8.3) or a search jump can scroll to it.
+        let mut section_rows: Vec<(usize, &'static str)> = Vec::new();
         // T19-007: a search jump asks to land on a specific field's row
         // (`pending_scroll`) — recorded here so it can be scrolled to once
         // all rows are built.
@@ -569,14 +580,10 @@ impl SettingsView {
         for item in &items {
             match item {
                 SettingsPageItemOwned::SectionHeader(label) => {
-                    current_section = Some(label);
-                    jump.push((rows.len(), label));
+                    section_rows.push((rows.len(), label));
                     rows.push(self.render_section_header(label, c, cx));
                 }
                 SettingsPageItemOwned::Item(key) => {
-                    if current_section.is_some_and(|s| self.section_collapsed(s)) {
-                        continue;
-                    }
                     if let Some(field) = self
                         .all_fields
                         .iter()
@@ -598,13 +605,9 @@ impl SettingsView {
             .collect();
         if !leftover.is_empty() {
             let label: &'static str = "Other";
-            current_section = Some(label);
-            jump.push((rows.len(), label));
+            section_rows.push((rows.len(), label));
             rows.push(self.render_section_header(label, c, cx));
             for field in &leftover {
-                if current_section.is_some_and(|s| self.section_collapsed(s)) {
-                    continue;
-                }
                 if pending_scroll == Some(field.json_path) {
                     scroll_to_row = Some(rows.len());
                 }
@@ -612,92 +615,47 @@ impl SettingsView {
             }
         }
 
+        if let Some(target) = self.scroll_to_section.take() {
+            if let Some((row, _)) = section_rows.iter().find(|(_, l)| *l == target) {
+                scroll_to_row = Some(*row);
+            }
+        }
         if let Some(row) = scroll_to_row {
             self.content_scroll.scroll_to_item(row);
             self.pending_scroll = None;
         }
 
-        let jump_bar = self.render_jump_bar(&jump, c, cx);
-
         // T20-001: shared `v_stack` layout helper.
         v_stack()
             .children(leading)
-            .children(jump_bar)
-            .child(v_stack().children(rows))
+            .child(v_stack().gap_2().children(rows))
             .into_any_element()
     }
 
+    /// A static section heading (`docs/architecture.md` §8.3 deviation from
+    /// `settings-guidelines.md` rule 1: no longer a user-collapsible
+    /// disclosure — the section list moved to the sidebar as scroll
+    /// anchors). Muted, semibold, hairline underneath — like image #3's
+    /// "Typography".
     fn render_section_header(
         &self,
         label: &'static str,
         c: &Palette,
-        cx: &mut Context<Self>,
+        _cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
-        // T20-001: the shared `Disclosure` primitive (real chevron icons
-        // instead of the `\u{25B8}`/`\u{25BE}` ASCII arrows this used to draw).
-        disclosure(
-            SharedString::from(format!("section-{label}")),
-            label,
-            self.section_collapsed(label),
-            c.muted,
-            c.fg,
-        )
-        .pt_3()
-        .pb_1()
-        .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
-            this.toggle_section(label, cx);
-        }))
-        .into_any_element()
+        div()
+            .pt_4()
+            .pb_1()
+            .text_size(px(11.0))
+            .font_weight(gpui::FontWeight::SEMIBOLD)
+            .text_color(c.muted)
+            .child(SharedString::from(label))
+            .into_any_element()
     }
 
-    /// A horizontal jump bar: click scrolls to the section's row, the
-    /// section whose row is currently topmost is highlighted (rule 1's
-    /// scroll-spy, via `ScrollHandle::top_item`/`scroll_to_item`).
-    fn render_jump_bar(
-        &self,
-        jump: &[(usize, &'static str)],
-        c: &Palette,
-        cx: &mut Context<Self>,
-    ) -> Option<gpui::AnyElement> {
-        if jump.len() < 2 {
-            return None;
-        }
-        let top = self.content_scroll.top_item();
-        let active = jump.iter().rev().find(|(i, _)| *i <= top).map(|(_, l)| *l);
-        let scroll = self.content_scroll.clone();
-        Some(
-            div()
-                .flex()
-                .flex_wrap()
-                .gap_1()
-                .pb_2()
-                .mb_1()
-                .border_b_1()
-                .border_color(c.border)
-                .children(jump.iter().map(|(row, label)| {
-                    let is_active = active == Some(*label);
-                    let row = *row;
-                    let scroll = scroll.clone();
-                    // T20-003: a variable-length scroll-spy chip cloud — not
-                    // a fixed-choice `SegmentedControl` nor a full-width
-                    // `ListItem` row, documented exception.
-                    div()
-                        .id(SharedString::from(format!("jump-{label}")))
-                        .px_2()
-                        .py(px(2.0))
-                        .rounded_sm()
-                        .text_size(px(10.0))
-                        .text_color(if is_active { c.fg } else { c.muted })
-                        .when(is_active, |d| d.bg(c.border))
-                        .hover(|s| s.text_color(c.fg))
-                        .child(*label)
-                        .on_click(cx.listener(move |_this, _: &ClickEvent, _w, _cx| {
-                            scroll.scroll_to_item(row);
-                        }))
-                }))
-                .into_any_element(),
-        )
-    }
+    // The scroll-spy jump bar that used to sit at the top of every generated
+    // page (image #4's chip row) was removed here per `docs/architecture.md`
+    // §8.3 — section navigation is now the sidebar's expandable sub-entries.
 
     /// Dispatch a Custom top-level category's body (rule 4) — the one
     /// registration point a new custom category needs: an `AREAS` entry
@@ -767,7 +725,12 @@ impl SettingsView {
             self.content_scroll.scroll_to_item(row);
             self.pending_scroll = None;
         }
-        div().flex().flex_col().children(rows).into_any_element()
+        div()
+            .flex()
+            .flex_col()
+            .gap_2()
+            .children(rows)
+            .into_any_element()
     }
 }
 

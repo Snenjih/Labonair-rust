@@ -432,6 +432,41 @@ Tasks: T19-000 (contract doc + `CLAUDE.md` rule), T19-001 (`hosts` +
 custom top-level category path), T19-010 (Hosts as the first new custom
 top-level category).
 
+#### Deviation (UI-optimization pass, post-T21): sidebar sub-navigation
+
+`docs/settings-guidelines.md` rule 1 as written puts *only* top-level
+categories in the left rail and makes the right-hand page's section headers
+**user-collapsible disclosures** with a scroll-spy jump bar. The
+UI-optimization pass replaces that with:
+
+* **Left rail is two levels.** Each top-level category row carries a
+  disclosure chevron; expanding it lists that category's section labels as
+  **sub-level entries**. Clicking a sub-level entry navigates to the
+  category (if needed) and scrolls the content area to that section. Sub-level
+  entries are scroll anchors, **not** pages/sub-pages — the content shown is
+  still wholly determined by the top-level category.
+* **Section headers are static.** The right-hand page still renders the same
+  curated section headers (e.g. "Typography"), but they are plain labels with
+  a hairline — no disclosure chevron, no collapse. The scroll-spy jump-bar
+  chip row (`render_jump_bar`) is removed entirely.
+* **Header chrome trimmed.** The settings window header is no longer a
+  toolbar: no in-window close button (the OS traffic lights close it), left
+  edge padded clear of the traffic lights, and the single "Edit in
+  config.json" action moved to the right edge.
+* **Sidebar surface.** The rail is painted on the `--sidebar` token, distinct
+  from the `--card` content area.
+* **Schema warnings suppressed.** Unknown-/legacy-key schema *warnings* are no
+  longer shown as a top-of-page banner (only hard type/enum errors are).
+  `TODO(notification-system)` in `crates/settings-ui/src/view.rs` marks where
+  they should re-surface as dismissible notifications.
+
+Rationale: the flat rail + in-page disclosures did not scale visually once
+categories grew several sections deep, and the jump-bar chip row read as
+stray buttons at the top of every page. Rules 2–9 of the contract are
+unaffected (typed fields, generated UI, custom-pane chrome, origin+reset,
+global search, deep links). Scope: `crates/settings-ui/*`,
+`crates/ui-kit/src/palette.rs` (new `sidebar*` tokens).
+
 ### 8.4 Bookmarks live in `labonair-panel-explorer` (no `panel-bookmarks` crate)
 
 T16-008 default taken: the path-bookmarks overlay (`ui/bookmarks.rs` →

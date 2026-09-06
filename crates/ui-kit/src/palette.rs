@@ -48,6 +48,12 @@ pub struct Palette {
     pub popover: Hsla,
     /// `--popover-foreground`.
     pub popover_fg: Hsla,
+    /// `--sidebar` (navigation rails: settings sidebar, dock panels).
+    pub sidebar: Hsla,
+    /// `--sidebar-foreground`.
+    pub sidebar_fg: Hsla,
+    /// `--sidebar-border`.
+    pub sidebar_border: Hsla,
     /// `--accent` (hover/selected fill).
     pub accent: Hsla,
     /// `--accent-foreground`.
@@ -97,6 +103,9 @@ impl Palette {
             card_fg: core.card_foreground,
             popover: core.popover,
             popover_fg: core.popover_foreground,
+            sidebar: theme.theme().sidebar.background,
+            sidebar_fg: theme.theme().sidebar.foreground,
+            sidebar_border: theme.theme().sidebar.border,
             accent: core.accent,
             accent_fg: core.accent_foreground,
             primary: core.primary,
