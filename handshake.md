@@ -1,6 +1,6 @@
 # Handshake — Session State (Labonair-rust Port)
 
-## Current Session: 2026-09-06 (Host and persistence boundaries)
+## Current Session: 2026-09-06 (Host and capability boundaries)
 
 The host model boundary is now standalone in `crates/hosts`
 (`labonair-hosts`). `Host`, `Group`, and `ReorderItem` no longer belong to the
@@ -20,10 +20,11 @@ inventory, architecture contract, and `R01-001` progress. Verification passed:
 labonair-panel-snippets`, and `scripts/check-crate-deps.sh`.
 
 State: branch `master`, latest host persistence commit is `4859e35`; the
-credentials extraction is currently uncommitted. `R01-001` remains
-`🔄 In Progress`; next is extracting snippet persistence/execution from the
-shared database surface and continuing the typed service/event migration. No
-source blocker.
+credentials capability is committed as `734c393`. The full
+`cargo test --workspace` suite, Clippy, workspace check, formatting, and the
+dependency verifier pass. `R01-001` remains `🔄 In Progress`; next is
+extracting snippet persistence/execution from the shared database surface and
+continuing the typed service/event migration. No source blocker.
 
 ## Current Session: 2026-09-06 (First modular platform boundary)
 
