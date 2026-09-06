@@ -33,8 +33,10 @@ The secret boundary passed focused tests (plain round-trip and encryption
 migration), backend tests (213), Clippy, formatting, workspace check, and the
 dependency verifier. `R01-001-backend-boundaries-and-contracts` remains
 `🔄 In Progress`; the next boundary is persistence/host ownership and the
-typed capability contracts that remove the remaining `App` coupling. Current
-uncommitted changes are the next commit; no source blockers.
+typed capability contracts that remove the remaining `App` coupling. The
+filesystem/watcher and secrets changes are committed in `16ad9c0` and
+`f626496`; the error contract is committed in `e4e0d73`. Working tree is
+clean; no source blockers.
 
 Verification passed: `cargo fmt --check`, `cargo check --workspace
 --all-targets`, `cargo clippy --workspace --all-targets -- -D warnings`,
