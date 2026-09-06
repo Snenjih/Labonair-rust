@@ -121,7 +121,7 @@ ALLOWED = {
         "labonair-git",
         "labonair-ai", "labonair-settings", "labonair-settings-json",
         "labonair-filesystem",
-        "labonair-ssh",
+        "labonair-ssh", "labonair-sftp",
     },
     # rule 3: the only crate that knows every concrete panel type — it also
     # touches the `labonair-panel` contracts crate to register them (T17-001).
@@ -137,6 +137,7 @@ ALLOWED = {
         "labonair-panel-git-graph", "labonair-panel-snippets",
         "labonair-panel-ai", "labonair-terminal", "labonair-backend",
         "labonair-settings", "labonair-filesystem", "labonair-ssh",
+        "labonair-sftp",
     },
 
     # Panels — rule 2 (+ §8.4: explorer/snippets/ai may pull workspace).
@@ -180,7 +181,8 @@ ALLOWED = {
     "labonair-hosts-ui": {
         "labonair-theme", "labonair-ui-kit", "labonair-notifications",
         "labonair-backend", "labonair-hosts", "labonair-settings",
-        "labonair-settings-content",
+        "labonair-settings-content", "labonair-ssh",
+        "labonair-errors",
     },
 
     # Engines — rule 4: no UI dep.

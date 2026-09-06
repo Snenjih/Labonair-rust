@@ -1,5 +1,23 @@
 # Bugs, fixes, and non-obvious constraints
 
+## 2026-09-06 — Full AI test suite needs local listener permission
+
+**Finding:** The first sandboxed `cargo test --workspace` run failed only in
+the pre-existing AI end-to-end streaming test because its local HTTP fixture
+could not bind a listener and returned `Operation not permitted`.
+
+**Resolution:** Reran the unchanged workspace test suite with the approved
+local socket permission. All workspace tests passed; this is an environment
+constraint, not a product or SSH/SFTP failure.
+
+## 2026-09-06 — SFTP view must close SSH when subsystem setup fails
+
+**Finding:** The first injected SFTP connection path could leave the newly
+authenticated SSH session registered if opening the SFTP subsystem failed.
+
+**Resolution:** The view now disconnects the SSH session on SFTP-open failure,
+while normal tab retirement closes the SFTP handle before disconnecting SSH.
+
 ## 2026-09-06 — SFTP must not own host authentication
 
 **Finding:** The first draft of the SFTP service accepted `host_id`, password,

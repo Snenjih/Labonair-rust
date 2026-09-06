@@ -27,10 +27,11 @@ use gpui::{
 use labonair_backend::modules::credentials::{self, Credential};
 use labonair_backend::modules::hosts;
 use labonair_backend::modules::snippets;
-use labonair_backend::modules::ssh::client::{ssh_test_connection, TestConnectionResult};
-use labonair_backend::modules::ssh::config_parser::{self, ImportConflict, SshConfigEntry};
 use labonair_backend::App as Backend;
 use labonair_hosts::{store as host_store, Group, Host, ReorderItem};
+use labonair_ssh::{
+    ImportConflict, SshConfigEntry, SshConfigService, SshConnectionTester, SshTestResult,
+};
 use tokio::runtime::Handle as TokioHandle;
 
 use crate::theme::ThemeStore;
@@ -70,7 +71,7 @@ pub enum HostManagerEvent {
 }
 
 /// One running port-forward, as shown in the host manager's active-tunnel panel.
-/// Built by the workspace from `labonair_backend::modules::ssh::tunnels`.
+/// Built by the workspace from the SSH tunnel capability snapshot.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ActiveTunnelRow {
     pub host_label: String,
@@ -541,6 +542,8 @@ impl SaveState {
 
 pub struct HostManagerView {
     app: Backend,
+    ssh_tester: std::sync::Arc<dyn SshConnectionTester>,
+    ssh_config: std::sync::Arc<dyn SshConfigService>,
     tokio: TokioHandle,
     theme: Entity<ThemeStore>,
     hosts: Vec<Host>,
@@ -596,6 +599,8 @@ impl EventEmitter<HostManagerEvent> for HostManagerView {}
 impl HostManagerView {
     pub fn new(
         app: Backend,
+        ssh_tester: std::sync::Arc<dyn SshConnectionTester>,
+        ssh_config: std::sync::Arc<dyn SshConfigService>,
         tokio: TokioHandle,
         theme: Entity<ThemeStore>,
         cx: &mut Context<Self>,
@@ -611,6 +616,8 @@ impl HostManagerView {
         });
         let this = Self {
             app,
+            ssh_tester,
+            ssh_config,
             tokio,
             theme,
             hosts: Vec::new(),
@@ -1116,29 +1123,19 @@ impl HostManagerView {
             return;
         };
         self.test_result = Some("Testing\u{2026}".to_string());
-        let app = self.app.clone();
-        let jh = self.tokio.spawn(async move {
-            ssh_test_connection(
-                id,
-                None,
-                None,
-                &app.trust,
-                &app.db,
-                &app.secrets,
-                app.clone(),
-                Some(15),
-            )
-            .await
-        });
+        let tester = self.ssh_tester.clone();
+        let jh = self
+            .tokio
+            .spawn(async move { tester.test(id, None, None, Some(15)).await });
         cx.spawn(async move |this, cx| {
             let res = jh.await;
             let _ = this.update(cx, |this, cx| {
                 let msg = match res {
-                    Ok(Ok(TestConnectionResult::Success)) => "Connection OK \u{2713}".to_string(),
-                    Ok(Ok(TestConnectionResult::UnknownHostKey { fingerprint })) => {
+                    Ok(Ok(SshTestResult::Success)) => "Connection OK \u{2713}".to_string(),
+                    Ok(Ok(SshTestResult::UnknownHostKey { fingerprint })) => {
                         format!("Unknown host key ({fingerprint}) — connect once to trust it")
                     }
-                    Ok(Ok(TestConnectionResult::HostKeyChanged { fingerprint })) => {
+                    Ok(Ok(SshTestResult::HostKeyChanged { fingerprint })) => {
                         format!("Host key CHANGED ({fingerprint}) — verify before connecting")
                     }
                     Ok(Err(e)) => format!("Failed: {e}"),
@@ -1320,9 +1317,8 @@ impl HostManagerView {
             conflict: ImportConflict::Skip,
             error: None,
         });
-        let jh = self
-            .tokio
-            .spawn(async move { config_parser::parse_ssh_config_cmd().await });
+        let config = self.ssh_config.clone();
+        let jh = self.tokio.spawn(async move { config.parse().await });
         cx.spawn(async move |this, cx| {
             let res = jh.await;
             let _ = this.update(cx, |this, cx| {
@@ -1360,10 +1356,10 @@ impl HostManagerView {
             return;
         }
         let count = entries.len();
-        let app = self.app.clone();
-        let jh = self.tokio.spawn(async move {
-            config_parser::import_ssh_config_entries(entries, conflict, &app.db).await
-        });
+        let config = self.ssh_config.clone();
+        let jh = self
+            .tokio
+            .spawn(async move { config.import(entries, conflict).await });
         cx.spawn(async move |this, cx| {
             let res = jh.await;
             let _ = this.update(cx, |this, cx| {
@@ -1423,11 +1419,12 @@ impl HostManagerView {
         if ids.is_empty() {
             return;
         }
-        let app = self.app.clone();
+        let config = self.ssh_config.clone();
         let tokio = self.tokio.clone();
+        let export_config = config.clone();
         let jh = self
             .tokio
-            .spawn(async move { config_parser::export_ssh_config(ids, &app.db).await });
+            .spawn(async move { export_config.export(ids).await });
         cx.spawn(async move |this, cx| {
             let res = jh.await;
             let block = match res {
@@ -1465,7 +1462,7 @@ impl HostManagerView {
                 return;
             }
             let write = tokio
-                .spawn(async move { config_parser::write_ssh_config_export(block, true).await })
+                .spawn(async move { config.write_export(block, true).await })
                 .await;
             let _ = this.update(cx, |this, cx| {
                 match write {
@@ -3430,10 +3427,10 @@ impl Render for HostManagerView {
 impl HostManagerView {
     /// Copy a single host's SSH-config block to the clipboard.
     fn export_host(&mut self, id: String, cx: &mut Context<Self>) {
-        let app = self.app.clone();
+        let config = self.ssh_config.clone();
         let jh = self
             .tokio
-            .spawn(async move { config_parser::export_ssh_config(vec![id], &app.db).await });
+            .spawn(async move { config.export(vec![id]).await });
         cx.spawn(async move |this, cx| {
             if let Ok(Ok(block)) = jh.await {
                 let _ = this.update(cx, |_this, cx| {
@@ -3709,14 +3706,61 @@ mod tests {
     use crate::theme::ThemeStore;
     use gpui::{AppContext, TestAppContext, WindowAppearance};
 
+    struct TestSshServices;
+
+    impl SshConnectionTester for TestSshServices {
+        fn test<'a>(
+            &'a self,
+            _host_id: String,
+            _passphrase: Option<String>,
+            _password_override: Option<String>,
+            _connect_timeout_secs: Option<u64>,
+        ) -> labonair_ssh::BoxFuture<'a, Result<SshTestResult, labonair_errors::LabonairError>>
+        {
+            Box::pin(async { Ok(SshTestResult::Success) })
+        }
+    }
+
+    impl SshConfigService for TestSshServices {
+        fn parse<'a>(&'a self) -> labonair_ssh::BoxFuture<'a, Result<Vec<SshConfigEntry>, String>> {
+            Box::pin(async { Ok(Vec::new()) })
+        }
+
+        fn import<'a>(
+            &'a self,
+            _entries: Vec<SshConfigEntry>,
+            _conflict: ImportConflict,
+        ) -> labonair_ssh::BoxFuture<'a, Result<Vec<String>, String>> {
+            Box::pin(async { Ok(Vec::new()) })
+        }
+
+        fn export<'a>(
+            &'a self,
+            _host_ids: Vec<String>,
+        ) -> labonair_ssh::BoxFuture<'a, Result<String, String>> {
+            Box::pin(async { Ok(String::new()) })
+        }
+
+        fn write_export<'a>(
+            &'a self,
+            _block: String,
+            _append: bool,
+        ) -> labonair_ssh::BoxFuture<'a, Result<String, String>> {
+            Box::pin(async { Ok(String::new()) })
+        }
+    }
+
     fn make(cx: &mut TestAppContext) -> (tokio::runtime::Runtime, Entity<HostManagerView>) {
         let rt = tokio::runtime::Runtime::new().unwrap();
         let handle = rt.handle().clone();
         let dir = std::env::temp_dir().join(format!("labonair-hm-{}", uuid::Uuid::new_v4()));
         let backend = labonair_backend::App::new(&dir).unwrap();
+        let ssh_service = std::sync::Arc::new(TestSshServices);
         let view = cx.update(|cx| {
             let theme = cx.new(|_| ThemeStore::new(WindowAppearance::Dark));
-            cx.new(|cx| HostManagerView::new(backend, handle, theme, cx))
+            cx.new(|cx| {
+                HostManagerView::new(backend, ssh_service.clone(), ssh_service, handle, theme, cx)
+            })
         });
         (rt, view)
     }

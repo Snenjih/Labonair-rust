@@ -10,7 +10,7 @@ This document records the current repository shape during the module migration. 
 | Current crate | Current role | Target owner | Migration note |
 |---|---|---|---|
 | `app` | Binary/bootstrap | application composition | Keep small; remove feature logic. |
-| `backend` | Mixed filesystem, PTY, SSH, SFTP, Git, hosts, settings, updater, MCP, persistence | split across platform services and feature modules | Highest-priority god-object boundary; SSH/SFTP contracts and first adapters now exist. |
+| `backend` | Mixed filesystem, PTY, SSH, SFTP, Git, hosts, settings, updater, MCP, persistence | split across platform services and feature modules | Highest-priority god-object boundary; SSH/SFTP contracts and adapters now isolate transport consumers. |
 | `ai` | AI providers, sessions, tools | AI module | Keep backend-facing core; rebuild UI later. |
 | `command-palette` | Palette UI, static commands, some keymap behavior | command-palette module + keymap module | Split registry/core from GPUI view. |
 | `editor` | Editor engine | editor module | Separate core from workspace view. |
@@ -45,7 +45,7 @@ This document records the current repository shape during the module migration. 
 
 The current Cargo metadata shows several transitional edges that conflict with the new rules:
 
-- `workspace` depends directly on AI, backend, command palette, hosts UI, notifications, settings, SFTP-related views, and feature views.
+- `workspace` depends directly on AI, backend, command palette, hosts UI, notifications, settings, SFTP capability contracts, and feature views.
 - `settings-ui` depends on backend, workspace, hosts UI, command palette, notifications, and panel contracts.
 - `panel-explorer` still depends on workspace for drag/preview shims, but its
   obsolete backend dependency has been removed; those remaining UI contracts
@@ -81,7 +81,7 @@ families. These are not target dependencies; each has a removal condition:
 | Transitional edge family | Temporary reason | Removal condition |
 |---|---|---|
 | `settings-ui → backend`, `settings-ui → hosts-ui`, `settings-ui → workspace`, `settings-ui → command-palette`, `settings-ui → notifications`, `settings-ui → ai` | The existing settings window still composes legacy management and integration views. | Settings owns only value fields; management surfaces register independently and the window consumes contracts only. |
-| `workspace → backend`, `workspace → ai`, `workspace → settings` | Workspace still hosts SSH/SFTP/session bridges and legacy global settings consumers. | SSH, SFTP, transfers, and settings providers are injected capabilities; workspace keeps orchestration only. |
+| `workspace → backend`, `workspace → ai`, `workspace → settings` | Workspace still hosts transfer compatibility, session bridges, and legacy global settings consumers. SSH/SFTP transport access is now injected. | Transfers and settings providers are injected capabilities; workspace keeps orchestration only. |
 | `hosts-ui → backend`, `hosts-ui → settings`, `hosts-ui → settings-content` | Host CRUD, credential writes, and the legacy Settings projection are still being migrated. | Host management uses `labonair-hosts`, credentials, secrets, and SSH contracts directly; no Settings projection remains. |
 | `panel-explorer → workspace`, `panel-explorer → settings` | Explorer still reuses workspace drag/preview contracts and a legacy settings read. | Drag/drop and preview contracts move to foundation/owning modules and explorer receives a settings capability. |
 | `panel-scm → editor`, `panel-scm → settings` | SCM reuses unified diff helpers and one legacy presentation preference. | Diff contracts are shared by the Git module and the preference is provided through a narrow settings contract. |

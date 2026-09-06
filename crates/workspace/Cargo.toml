@@ -31,6 +31,7 @@ labonair-git = { path = "../git" }
 labonair-backend = { path = "../backend" }
 labonair-filesystem = { path = "../filesystem" }
 labonair-ssh = { path = "../ssh" }
+labonair-sftp = { path = "../sftp" }
 labonair-ai = { path = "../ai" }
 labonair-settings = { path = "../settings" }
 labonair-settings-json = { version = "0.1.0", path = "../settings-json" }

@@ -1,22 +1,21 @@
 # Handshake — Session State (Labonair-rust Port)
 
-## Current Session: 2026-09-06 (SSH/SFTP contract foundation)
+## Current Session: 2026-09-06 (SSH/SFTP capability boundary complete)
 
-`R01-002` is in progress. Added the UI-free `labonair-ssh` and
-`labonair-sftp` contract crates, typed opaque session identifiers, focused SSH
-connection/PTY/config/tunnel contract values, SFTP session/browser contracts,
-and backend adapters. The workspace SSH connect, trust, disconnect, and PTY
-write/resize paths now receive injected SSH capabilities from
-`crates/shell/src/bootstrap.rs`. SFTP view migration is intentionally still
-open: the audit showed that SFTP must operate on an already-authenticated
-opaque session rather than receiving host/database/secrets concerns.
+`R01-002` is complete. Added the UI-free `labonair-ssh` and `labonair-sftp`
+contract crates, focused SSH connection/PTY/config/tunnel/remote-command
+contracts, an authenticated SFTP session handle, and backend adapters. The
+workspace SSH connect, trust, disconnect, PTY, tunnel, remote-edit, and SFTP
+browser paths now receive injected capabilities from
+`crates/shell/src/bootstrap.rs`. Hosts UI connection testing and SSH config
+import/export use the same injected SSH contracts. The transfer queue remains
+the explicitly tracked compatibility boundary for `R01-003`.
 
-The current branch is `master` with uncommitted changes. Focused checks pass:
-`cargo fmt --check`, `cargo check` for the affected crates,
-`cargo clippy` for the affected crates, focused backend/contract tests, and
-`scripts/check-crate-deps.sh`. Next: finish the SSH lifecycle/event contract,
-then inject the SFTP session/browser services into `SftpView` and workspace.
-No external blocker.
+The current branch is `master`. Full verification passes: `cargo fmt --check`,
+`cargo check --workspace --all-targets`, `cargo clippy --workspace
+--all-targets -- -D warnings`, `cargo test --workspace`, and
+`scripts/check-crate-deps.sh`. Next: `R01-003` — extract the typed transfer
+registry and statusbar owner. No source blocker.
 
 ## Current Session: 2026-09-06 (Settings ownership reset)
 

@@ -21,7 +21,11 @@ use labonair_backend::modules::mcp::{
 use labonair_backend::modules::settings::mcp::mcp_prefs_load;
 use labonair_backend::App as Backend;
 use labonair_notifications::NotificationCenter;
-use labonair_ssh::{SshConnectionService, SshPtyService};
+use labonair_sftp::{SftpBrowserService, SftpSessionService};
+use labonair_ssh::{
+    SshConfigService, SshConnectionService, SshConnectionTester, SshPtyService,
+    SshRemoteCommandService, SshRemoteFileService, SshTunnelService,
+};
 use labonair_terminal::TerminalRegistry;
 use tokio::runtime::Handle as TokioHandle;
 
@@ -207,6 +211,22 @@ pub(crate) fn bootstrap(
         Arc::new(labonair_backend::modules::ssh::contract::BackendSshService::new(backend.clone()));
     let ssh_pty_service: Arc<dyn SshPtyService> =
         Arc::new(labonair_backend::modules::ssh::contract::BackendSshService::new(backend.clone()));
+    let ssh_remote_service: Arc<dyn SshRemoteCommandService> =
+        Arc::new(labonair_backend::modules::ssh::contract::BackendSshService::new(backend.clone()));
+    let ssh_remote_file_service: Arc<dyn SshRemoteFileService> =
+        Arc::new(labonair_backend::modules::ssh::contract::BackendSshService::new(backend.clone()));
+    let ssh_tunnel_service: Arc<dyn SshTunnelService> =
+        Arc::new(labonair_backend::modules::ssh::contract::BackendSshService::new(backend.clone()));
+    let ssh_tester: Arc<dyn SshConnectionTester> =
+        Arc::new(labonair_backend::modules::ssh::contract::BackendSshService::new(backend.clone()));
+    let ssh_config: Arc<dyn SshConfigService> =
+        Arc::new(labonair_backend::modules::ssh::contract::BackendSshService::new(backend.clone()));
+    let sftp_session_service: Arc<dyn SftpSessionService> = Arc::new(
+        labonair_backend::modules::sftp::contract::BackendSftpService::new(backend.clone()),
+    );
+    let sftp_browser_service: Arc<dyn SftpBrowserService> = Arc::new(
+        labonair_backend::modules::sftp::contract::BackendSftpService::new(backend.clone()),
+    );
     let workspace = cx.new(|cx| {
         Workspace::new(
             registry,
@@ -215,6 +235,13 @@ pub(crate) fn bootstrap(
             backend.clone(),
             ssh_service.clone(),
             ssh_pty_service.clone(),
+            ssh_remote_service.clone(),
+            ssh_remote_file_service.clone(),
+            ssh_tunnel_service.clone(),
+            ssh_tester,
+            ssh_config,
+            sftp_session_service.clone(),
+            sftp_browser_service.clone(),
             tokio.clone(),
             agent_access.clone(),
             session_snapshot,

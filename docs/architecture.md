@@ -86,6 +86,14 @@ Dependencies point downward. A feature may depend on a foundation contract, but 
 | Snippets | Snippet storage in `labonair-snippets`, execution, and UI. |
 | AI | Providers, sessions, context, tools, and future UI. |
 
+The first transport split is intentionally contract-first:
+`labonair-ssh` owns UI-free SSH session, PTY, trust, remote-command, tunnel,
+tester, and SSH-config contracts. `labonair-sftp` owns the authenticated SFTP
+session handle and remote-browser contracts. `labonair-backend` implements
+both through adapters; workspace and feature views consume injected traits.
+Transfers remain a separate capability and are not part of the SFTP browser
+contract.
+
 The current repository does not yet match this map. The migration is tracked in [`rework-roadmap.md`](rework-roadmap.md); this map is the target, not a claim about the current tree.
 
 ## 5. Composition root

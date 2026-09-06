@@ -92,6 +92,50 @@ pub trait SshPtyService: Send + Sync {
     ) -> BoxFuture<'a, Result<(), String>>;
 }
 
+/// Typed boundary for remote commands that are not SFTP protocol operations.
+/// `chown`, size calculation, search, and checksums stay separate from the
+/// SFTP browser contract even though they are surfaced by remote-file UI.
+pub trait SshRemoteCommandService: Send + Sync {
+    fn chown<'a>(
+        &'a self,
+        session_id: SshSessionId,
+        path: String,
+        owner: String,
+        group: String,
+    ) -> BoxFuture<'a, Result<(), String>>;
+
+    fn calculate_size<'a>(
+        &'a self,
+        session_id: SshSessionId,
+        path: String,
+    ) -> BoxFuture<'a, Result<String, String>>;
+}
+
+/// Transitional remote-file lifecycle contract used by the editor bridge.
+/// The implementation owns the temporary-file mechanics; the workspace only
+/// receives paths and coordinates editor tabs. This keeps backend transport
+/// modules out of the workspace until streaming file I/O is introduced.
+pub trait SshRemoteFileService: Send + Sync {
+    fn prepare_remote_edit<'a>(
+        &'a self,
+        session_id: SshSessionId,
+        remote_path: String,
+        max_bytes: Option<u64>,
+    ) -> BoxFuture<'a, Result<String, String>>;
+
+    fn save_remote_edit<'a>(
+        &'a self,
+        session_id: SshSessionId,
+        remote_path: String,
+        local_temp_path: String,
+    ) -> BoxFuture<'a, Result<(), String>>;
+
+    fn cleanup_remote_edit_temp<'a>(
+        &'a self,
+        local_temp_path: String,
+    ) -> BoxFuture<'a, Result<(), String>>;
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SshTestResult {
     Success,
@@ -107,6 +151,12 @@ pub trait SshConnectionTester: Send + Sync {
         password_override: Option<String>,
         connect_timeout_secs: Option<u64>,
     ) -> BoxFuture<'a, Result<SshTestResult, LabonairError>>;
+}
+
+pub trait SshTunnelService: Send + Sync {
+    fn start<'a>(&'a self, host_id: String) -> BoxFuture<'a, Result<(), String>>;
+    fn stop<'a>(&'a self, host_id: String) -> BoxFuture<'a, Result<(), String>>;
+    fn active(&self) -> Vec<ActiveTunnel>;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -159,12 +209,6 @@ pub struct ActiveTunnel {
     pub local_port: u16,
     pub remote_host: String,
     pub remote_port: u16,
-}
-
-pub trait SshTunnelService: Send + Sync {
-    fn start<'a>(&'a self, host_id: String) -> BoxFuture<'a, Result<(), String>>;
-    fn stop<'a>(&'a self, host_id: String) -> BoxFuture<'a, Result<(), String>>;
-    fn active(&self) -> Vec<ActiveTunnel>;
 }
 
 #[cfg(test)]

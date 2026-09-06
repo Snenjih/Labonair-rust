@@ -82,18 +82,13 @@ use labonair_backend::modules::scrollback::{
     scrollback_cleanup, scrollback_delete, scrollback_load, scrollback_save,
 };
 use labonair_backend::modules::sftp::commands::enqueue_transfer;
-use labonair_backend::modules::sftp::connection::sftp_disconnect as sftp_tab_disconnect;
-use labonair_backend::modules::ssh::sftp::{
-    cleanup_remote_edit_temp, prepare_remote_edit, save_remote_edit,
-};
-use labonair_backend::modules::ssh::tunnels::{
-    active_tunnels, ssh_start_tunnels, ssh_stop_tunnels,
-};
 use labonair_backend::{App as Backend, AppEvent};
 use labonair_git::GitService;
+use labonair_sftp::{SftpBrowserService, SftpSessionService};
 use labonair_ssh::{
-    SshConnectRequest, SshConnectionService, SshEventSink, SshPtyService, SshSessionEvent,
-    SshSessionId,
+    SshConfigService, SshConnectRequest, SshConnectionService, SshConnectionTester, SshEventSink,
+    SshPtyService, SshRemoteCommandService, SshRemoteFileService, SshSessionEvent, SshSessionId,
+    SshTunnelService,
 };
 use labonair_terminal::{
     RemoteFeed, RemoteResizer, RemoteWriter, SessionHandle, SessionId, SessionOptions,
@@ -421,6 +416,11 @@ pub struct Workspace {
     backend: Backend,
     ssh: Arc<dyn SshConnectionService>,
     ssh_pty: Arc<dyn SshPtyService>,
+    ssh_remote: Arc<dyn SshRemoteCommandService>,
+    ssh_remote_file: Arc<dyn SshRemoteFileService>,
+    ssh_tunnels: Arc<dyn SshTunnelService>,
+    sftp_session: Arc<dyn SftpSessionService>,
+    sftp_browser: Arc<dyn SftpBrowserService>,
     git: Arc<dyn GitService>,
     tokio: TokioHandle,
     host_manager: Entity<HostManagerView>,
@@ -480,6 +480,13 @@ impl Workspace {
         backend: Backend,
         ssh: Arc<dyn SshConnectionService>,
         ssh_pty: Arc<dyn SshPtyService>,
+        ssh_remote: Arc<dyn SshRemoteCommandService>,
+        ssh_remote_file: Arc<dyn SshRemoteFileService>,
+        ssh_tunnels: Arc<dyn SshTunnelService>,
+        ssh_tester: Arc<dyn SshConnectionTester>,
+        ssh_config: Arc<dyn SshConfigService>,
+        sftp_session: Arc<dyn SftpSessionService>,
+        sftp_browser: Arc<dyn SftpBrowserService>,
         tokio: TokioHandle,
         agent_access: Entity<AgentAccessStore>,
         restore: Option<SessionSnapshot>,
@@ -504,8 +511,16 @@ impl Workspace {
             }
         });
 
-        let host_manager =
-            cx.new(|cx| HostManagerView::new(backend.clone(), tokio.clone(), theme.clone(), cx));
+        let host_manager = cx.new(|cx| {
+            HostManagerView::new(
+                backend.clone(),
+                ssh_tester,
+                ssh_config,
+                tokio.clone(),
+                theme.clone(),
+                cx,
+            )
+        });
         cx.observe(&host_manager, |_, _, cx| cx.notify()).detach();
         cx.subscribe(
             &host_manager,
@@ -598,6 +613,11 @@ impl Workspace {
             backend,
             ssh,
             ssh_pty,
+            ssh_remote,
+            ssh_remote_file,
+            ssh_tunnels,
+            sftp_session,
+            sftp_browser,
             tokio,
             host_manager,
             ssh_tabs: HashMap::new(),
@@ -1488,16 +1508,16 @@ impl Workspace {
                 let saved = re.dirty && !dirty;
                 re.dirty = dirty;
                 if saved {
-                    let app = this.backend.clone();
+                    let service = this.ssh_remote_file.clone();
                     let (sid, rpath, tpath) = (
                         re.session_id.clone(),
                         re.remote_path.clone(),
                         re.temp_path.clone(),
                     );
                     let jh = this.tokio.spawn(async move {
-                        save_remote_edit(sid, rpath, tpath, &app.ssh, app.clone())
+                        service
+                            .save_remote_edit(SshSessionId::new(sid), rpath, tpath)
                             .await
-                            .map_err(|e| e.to_string())
                     });
                     cx.spawn(async move |_this, _cx| {
                         if let Ok(Err(e)) = jh.await {
@@ -2416,18 +2436,30 @@ impl Workspace {
         self.previews.remove(&tab.id);
 
         // SFTP browser tab: drop the view and close its SFTP/SSH session.
+        let sftp_handle = self
+            .sftp_views
+            .get(&tab.id)
+            .and_then(|view| view.read(cx).sftp_handle());
         self.sftp_views.remove(&tab.id);
         if let Some(session_id) = self.sftp_sessions.remove(&tab.id) {
             self.ssh_connection
                 .update(cx, |s, cx| s.remove(&session_id, cx));
-            let _ = sftp_tab_disconnect(session_id, &self.backend.ssh);
+            let sftp = self.sftp_session.clone();
+            let ssh = self.ssh.clone();
+            self.tokio.spawn(async move {
+                if let Some(handle) = sftp_handle {
+                    let _ = sftp.close(handle).await;
+                }
+                let _ = ssh.disconnect(SshSessionId::new(session_id)).await;
+            });
         }
 
         // Editor tab backed by a remote-edit temp copy: clean the temp file.
         if let Some(re) = self.remote_edits.remove(&tab.id) {
             let temp = re.temp_path;
+            let service = self.ssh_remote_file.clone();
             self.tokio.spawn(async move {
-                let _ = cleanup_remote_edit_temp(temp).await;
+                let _ = service.cleanup_remote_edit_temp(temp).await;
             });
         }
 
@@ -2444,6 +2476,7 @@ impl Workspace {
                     .update(cx, |s, cx| s.remove(&t.ssh_id, cx));
                 let app = self.backend.clone();
                 let ssh = self.ssh.clone();
+                let tunnels = self.ssh_tunnels.clone();
                 let ssh_id = t.ssh_id.clone();
                 let host_id = t.host_id.clone();
                 let tab_key = t.tab_id.to_string();
@@ -2462,7 +2495,7 @@ impl Workspace {
                     )
                     .await;
                     let _ = ssh.disconnect(SshSessionId::new(ssh_id)).await;
-                    let _ = ssh_stop_tunnels(host_id, &app.tunnels).await;
+                    let _ = tunnels.stop(host_id).await;
                 });
                 if let Some(p) = &self.ssh_prompt {
                     if p.ssh_id() == t.ssh_id {
@@ -2520,7 +2553,10 @@ impl Workspace {
         });
         let view = cx.new(|cx| {
             SftpView::new(
-                self.backend.clone(),
+                self.ssh.clone(),
+                self.ssh_remote.clone(),
+                self.sftp_session.clone(),
+                self.sftp_browser.clone(),
                 self.tokio.clone(),
                 self.theme.clone(),
                 session_id.clone(),
@@ -2566,13 +2602,13 @@ impl Workspace {
                 remote_path,
                 host_id,
             } => {
-                let app = self.backend.clone();
+                let service = self.ssh_remote_file.clone();
                 let (sid, rpath, hid) = (session_id.clone(), remote_path.clone(), host_id.clone());
                 let (jh_sid, jh_rpath) = (sid.clone(), rpath.clone());
                 let jh = self.tokio.spawn(async move {
-                    prepare_remote_edit(jh_sid, jh_rpath, None, &app.ssh, app.clone())
+                    service
+                        .prepare_remote_edit(SshSessionId::new(jh_sid), jh_rpath, None)
                         .await
-                        .map_err(|e| e.to_string())
                 });
                 cx.spawn(async move |this, cx| {
                     let res = jh.await.unwrap_or_else(|e| Err(e.to_string()));
@@ -2989,20 +3025,9 @@ impl Workspace {
     /// background SSH connection (ref-counted per host by the backend). Mirrors
     /// the reference app's `ssh_start_tunnels` call on `session_established`.
     fn start_tunnels(&self, host_id: &str, cx: &mut Context<Self>) {
-        let app = self.backend.clone();
+        let tunnels = self.ssh_tunnels.clone();
         let hid = host_id.to_string();
-        let jh = self.tokio.spawn(async move {
-            ssh_start_tunnels(
-                hid,
-                &app.tunnels,
-                &app.db,
-                &app.secrets,
-                &app.trust,
-                app.clone(),
-                Some(20),
-            )
-            .await
-        });
+        let jh = self.tokio.spawn(async move { tunnels.start(hid).await });
         cx.spawn(async move |this, cx| {
             if let Ok(Err(e)) = jh.await {
                 tracing::warn!(%e, "failed to start SSH tunnels");
@@ -3014,7 +3039,7 @@ impl Workspace {
 
     /// Push the current set of running forwards into the host manager panel.
     fn refresh_active_tunnels(&self, cx: &mut Context<Self>) {
-        let raw = active_tunnels(&self.backend.tunnels);
+        let raw = self.ssh_tunnels.active();
         let hm = self.host_manager.read(cx);
         let rows: Vec<ActiveTunnelRow> = raw
             .into_iter()

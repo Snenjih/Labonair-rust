@@ -10,11 +10,8 @@
 //! [`crate::transfers`] (T08-002); this module only *triggers* transfers
 //! (drag between panes + context-menu upload/download) via `SftpEvent`.
 //!
-//! All backend work is in-process through
-//! [`labonair_backend::modules::ssh::sftp`] (`sftp_read_dir`, `sftp_rename`,
-//! `sftp_delete`, `sftp_mkdir`, `sftp_create_file`, `sftp_chmod`,
-//! `sftp_chown`, `sftp_calculate_size`, `prepare_remote_edit`) and
-//! [`labonair_filesystem`] for the local pane — no Tauri IPC.
+//! Remote work is injected through the focused SSH/SFTP capability contracts.
+//! This view does not know about russh handles, backend state, or host storage.
 //!
 //! Deviations from the reference:
 //! * Rows render into a plain `overflow_y_scroll` column, not
@@ -35,10 +32,12 @@ use gpui::{
 };
 use tokio::runtime::Handle as TokioHandle;
 
-use labonair_backend::modules::sftp::connection::sftp_connect;
-use labonair_backend::modules::ssh::sftp as backend_sftp;
-use labonair_backend::App as Backend;
 use labonair_filesystem::{mutate, tree};
+use labonair_sftp::{RemoteEntry, SftpBrowserService, SftpSessionHandle, SftpSessionService};
+use labonair_ssh::{
+    SshConnectRequest, SshConnectionService, SshEventSink, SshRemoteCommandService,
+    SshSessionEvent, SshSessionId,
+};
 
 use crate::theme::ThemeStore;
 use labonair_ui_kit::{
@@ -165,7 +164,7 @@ pub struct Entry {
 }
 
 impl Entry {
-    fn from_remote(n: backend_sftp::FileNode) -> Self {
+    fn from_remote(n: RemoteEntry) -> Self {
         Self {
             name: n.name,
             path: n.path,
@@ -319,8 +318,19 @@ pub struct SftpDrag {
     pub paths: Vec<String>,
 }
 
+struct QuietSshEventSink;
+
+impl SshEventSink for QuietSshEventSink {
+    fn send(&self, _event: SshSessionEvent) -> Result<(), String> {
+        Ok(())
+    }
+}
+
 pub struct SftpView {
-    backend: Backend,
+    ssh: std::sync::Arc<dyn SshConnectionService>,
+    ssh_remote: std::sync::Arc<dyn SshRemoteCommandService>,
+    sftp_session: std::sync::Arc<dyn SftpSessionService>,
+    sftp_browser: std::sync::Arc<dyn SftpBrowserService>,
     tokio: TokioHandle,
     theme: Entity<ThemeStore>,
     /// The SSH/SFTP session id (shared registry key).
@@ -328,6 +338,7 @@ pub struct SftpView {
     host_id: String,
     host_label: SharedString,
     conn: Conn,
+    sftp_handle: Option<SftpSessionHandle>,
     local: Pane,
     remote: Pane,
     menu: Option<Menu>,
@@ -347,8 +358,12 @@ impl Focusable for SftpView {
 }
 
 impl SftpView {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
-        backend: Backend,
+        ssh: std::sync::Arc<dyn SshConnectionService>,
+        ssh_remote: std::sync::Arc<dyn SshRemoteCommandService>,
+        sftp_session: std::sync::Arc<dyn SftpSessionService>,
+        sftp_browser: std::sync::Arc<dyn SftpBrowserService>,
         tokio: TokioHandle,
         theme: Entity<ThemeStore>,
         session_id: String,
@@ -360,13 +375,17 @@ impl SftpView {
             .map(|p| p.to_string_lossy().to_string())
             .unwrap_or_else(|| "/".to_string());
         let mut this = Self {
-            backend,
+            ssh,
+            ssh_remote,
+            sftp_session,
+            sftp_browser,
             tokio,
             theme,
             session_id,
             host_id,
             host_label: host_label.into(),
             conn: Conn::Connecting,
+            sftp_handle: None,
             local: Pane::new(home),
             remote: Pane::new("/".to_string()),
             menu: None,
@@ -385,6 +404,10 @@ impl SftpView {
         &self.session_id
     }
 
+    pub fn sftp_handle(&self) -> Option<SftpSessionHandle> {
+        self.sftp_handle.clone()
+    }
+
     fn pane(&mut self, side: Side) -> &mut Pane {
         match side {
             Side::Local => &mut self.local,
@@ -401,29 +424,40 @@ impl SftpView {
 
     fn connect(&mut self, cx: &mut Context<Self>) {
         self.conn = Conn::Connecting;
-        let app = self.backend.clone();
+        let ssh = self.ssh.clone();
+        let sftp = self.sftp_session.clone();
         let (sid, hid) = (self.session_id.clone(), self.host_id.clone());
         let jh = self.tokio.spawn(async move {
-            sftp_connect(
-                sid,
-                hid,
-                None,
-                None,
-                &app.ssh,
-                &app.trust,
-                &app.db,
-                &app.secrets,
-                app.clone(),
+            ssh.connect(
+                SshConnectRequest {
+                    session_id: SshSessionId::new(sid.clone()),
+                    host_id: hid,
+                    passphrase: None,
+                    password: None,
+                    initial_cols: None,
+                    initial_rows: None,
+                    blocks: false,
+                    connect_timeout_secs: None,
+                },
+                std::sync::Arc::new(QuietSshEventSink),
             )
             .await
-            .map_err(|e| e.to_string())
+            .map_err(|e| e.to_string())?;
+            match sftp.open(SshSessionId::new(sid.clone())).await {
+                Ok(handle) => Ok(handle),
+                Err(error) => {
+                    let _ = ssh.disconnect(SshSessionId::new(sid)).await;
+                    Err(error.to_string())
+                }
+            }
         });
         cx.spawn(async move |this, cx| {
             let res = jh.await.unwrap_or_else(|e| Err(e.to_string()));
             let _ = this.update(cx, |this, cx| {
                 let sid = this.session_id.clone();
                 match res {
-                    Ok(()) => {
+                    Ok(handle) => {
+                        this.sftp_handle = Some(handle);
                         this.conn = Conn::Ready;
                         this.load_remote(cx);
                         cx.emit(SftpEvent::ConnResult {
@@ -503,10 +537,14 @@ impl SftpView {
         let generation = self.remote.generation;
         self.remote.loading = true;
         self.remote.error = None;
-        let app = self.backend.clone();
-        let (sid, path) = (self.session_id.clone(), self.remote.path.clone());
+        let Some(handle) = self.sftp_handle.clone() else {
+            return;
+        };
+        let browser = self.sftp_browser.clone();
+        let path = self.remote.path.clone();
         let jh = self.tokio.spawn(async move {
-            backend_sftp::sftp_read_dir(sid, path, &app.ssh, app.clone())
+            browser
+                .read_dir(handle, path)
                 .await
                 .map_err(|e| e.to_string())
         });
@@ -643,14 +681,17 @@ impl SftpView {
         };
         self.pane(side).edit = None;
 
-        let app = self.backend.clone();
-        let sid = self.session_id.clone();
+        let Some(handle) = self.sftp_handle.clone() else {
+            return;
+        };
+        let browser = self.sftp_browser.clone();
         match (side, kind) {
             (Side::Remote, EditKind::Rename) => {
                 let Some(old) = orig else { return };
                 let new = join_path(&parent_path(&old), &name);
                 let jh = self.tokio.spawn(async move {
-                    backend_sftp::sftp_rename(sid, old, new, &app.ssh, app.clone())
+                    browser
+                        .rename(handle, old, new)
                         .await
                         .map_err(|e| e.to_string())
                 });
@@ -659,7 +700,8 @@ impl SftpView {
             (Side::Remote, EditKind::NewFile) => {
                 let path = join_path(&dir, &name);
                 let jh = self.tokio.spawn(async move {
-                    backend_sftp::sftp_create_file(sid, path, &app.ssh, app.clone())
+                    browser
+                        .create_file(handle, path)
                         .await
                         .map_err(|e| e.to_string())
                 });
@@ -668,7 +710,8 @@ impl SftpView {
             (Side::Remote, EditKind::NewDir) => {
                 let path = join_path(&dir, &name);
                 let jh = self.tokio.spawn(async move {
-                    backend_sftp::sftp_mkdir(sid, path, Some(false), &app.ssh, app.clone())
+                    browser
+                        .mkdir(handle, path, false)
                         .await
                         .map_err(|e| e.to_string())
                 });
@@ -729,12 +772,15 @@ impl SftpView {
 
     fn delete(&mut self, side: Side, path: String, cx: &mut Context<Self>) {
         self.menu = None;
-        let app = self.backend.clone();
-        let sid = self.session_id.clone();
+        let Some(handle) = self.sftp_handle.clone() else {
+            return;
+        };
+        let browser = self.sftp_browser.clone();
         match side {
             Side::Remote => {
                 let jh = self.tokio.spawn(async move {
-                    backend_sftp::sftp_delete(sid, vec![path], &app.ssh, app.clone())
+                    browser
+                        .delete(handle, vec![path])
                         .await
                         .map_err(|e| e.to_string())
                 });
@@ -793,15 +839,22 @@ impl SftpView {
         }
         self.perm = None;
         let mode = octal.unwrap();
-        let app = self.backend.clone();
+        let Some(handle) = self.sftp_handle.clone() else {
+            return;
+        };
+        let browser = self.sftp_browser.clone();
+        let ssh_remote = self.ssh_remote.clone();
         let sid = self.session_id.clone();
         let do_chown = !owner.is_empty() || !group.is_empty();
         let jh = self.tokio.spawn(async move {
-            backend_sftp::sftp_chmod(sid.clone(), path.clone(), mode, &app.ssh, app.clone())
+            let sid_clone = sid.clone();
+            browser
+                .chmod(handle, path.clone(), mode)
                 .await
                 .map_err(|e| e.to_string())?;
             if do_chown {
-                backend_sftp::sftp_chown(sid, path, owner, group, &app.ssh, app.clone())
+                ssh_remote
+                    .chown(SshSessionId::new(sid_clone), path, owner, group)
                     .await
                     .map_err(|e| e.to_string())?;
             }
@@ -835,10 +888,15 @@ impl SftpView {
         let Some(d) = self.props.as_mut() else { return };
         d.calculating = true;
         let path = d.entry.path.clone();
-        let app = self.backend.clone();
+        let Some(handle) = self.sftp_handle.clone() else {
+            return;
+        };
+        let ssh_remote = self.ssh_remote.clone();
         let sid = self.session_id.clone();
         let jh = self.tokio.spawn(async move {
-            backend_sftp::sftp_calculate_size(sid, path, &app.ssh, app.clone())
+            let _ = handle;
+            ssh_remote
+                .calculate_size(SshSessionId::new(sid), path)
                 .await
                 .map_err(|e| e.to_string())
         });
