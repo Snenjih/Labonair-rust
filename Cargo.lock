@@ -4191,6 +4191,7 @@ dependencies = [
  "labonair-credentials",
  "labonair-errors",
  "labonair-filesystem",
+ "labonair-git",
  "labonair-hosts",
  "labonair-persistence",
  "labonair-secrets",
@@ -4301,6 +4302,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "labonair-git"
+version = "0.1.0"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "labonair-gpui-ext"
 version = "0.1.0"
 dependencies = [
@@ -4381,7 +4389,7 @@ name = "labonair-panel-git-graph"
 version = "0.1.0"
 dependencies = [
  "gpui",
- "labonair-backend",
+ "labonair-git",
  "labonair-notifications",
  "labonair-panel",
  "labonair-theme",

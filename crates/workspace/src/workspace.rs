@@ -2263,7 +2263,9 @@ impl Workspace {
         if self.git_graph.is_none() {
             let view = cx.new(|cx| {
                 GitGraphView::new(
-                    self.backend.clone(),
+                    Arc::new(labonair_backend::modules::git::BackendGitGraphService::new(
+                        self.backend.clone(),
+                    )),
                     self.tokio.clone(),
                     self.theme.clone(),
                     cx,

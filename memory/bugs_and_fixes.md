@@ -30,6 +30,18 @@ and implements `Clone`. The panel receives that narrow handle directly, while
 the shell injects the concrete SSH executor separately. The dependency
 allow-list now rejects a backend edge for the snippets panel.
 
+## 2026-09-06 — Git graph UI should depend on a graph-specific contract
+
+**Finding:** `panel-git-graph` used the broad backend facade for repository
+detection, log loading, commit details, and branch actions. That made a pure
+graph view know about both local and SSH transport state.
+
+**Resolution:** Added the UI-free `labonair-git` crate with `CommitInfo`,
+`GitFuture`, and `GitGraphService`. `BackendGitGraphService` adapts the
+existing backend Git executor, while the graph view receives an
+`Arc<dyn GitGraphService>` from composition. The panel no longer depends on
+`labonair-backend`; its existing UI and generation-guard behavior is unchanged.
+
 ## 2026-09-06 — Local snippet execution belongs in the snippets capability
 
 **Finding:** Local snippet execution was implemented in

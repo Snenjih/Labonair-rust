@@ -15,10 +15,10 @@
 //! `<canvas>`; the row list is virtualised with [`uniform_list`] so tens of
 //! thousands of commits stay cheap (only visible rows build elements).
 //!
-//! All git access goes through `labonair_backend::modules::git` (a `git` CLI
-//! wrapper). Every call is dispatched onto the tokio runtime and folded back
-//! on the GPUI thread; a generation guard (`gen`, bumped on every
-//! root/session/reload change) drops stale responses.
+//! Git access is provided through the injected `GitGraphService` contract.
+//! Every call is dispatched onto the tokio runtime and folded back on the GPUI
+//! thread; a generation guard (`gen`, bumped on every root/session/reload
+//! change) drops stale responses.
 //!
 //! Crate root (T16-008): this file is the `labonair-panel-git-graph` lib root.
 //! The `theme` shim keeps the pre-split `crate::theme::…` paths resolving
@@ -38,8 +38,7 @@ use gpui::{
     MouseDownEvent, ParentElement, Pixels, Point, Render, SharedString, Stateful,
     StatefulInteractiveElement, Styled, Window,
 };
-use labonair_backend::modules::git::{self, CommitInfo};
-use labonair_backend::App as Backend;
+use labonair_git::{CommitInfo, GitGraphService};
 use tokio::runtime::Handle as TokioHandle;
 
 use crate::theme::ThemeStore;
@@ -441,7 +440,7 @@ enum GraphState {
 }
 
 pub struct GitGraphView {
-    backend: Backend,
+    git: Arc<dyn GitGraphService>,
     tokio: TokioHandle,
     theme: Entity<ThemeStore>,
     focus: FocusHandle,
@@ -483,7 +482,7 @@ pub struct GitGraphView {
 
 impl GitGraphView {
     pub fn new(
-        backend: Backend,
+        git: Arc<dyn GitGraphService>,
         tokio: TokioHandle,
         theme: Entity<ThemeStore>,
         cx: &mut Context<Self>,
@@ -507,7 +506,7 @@ impl GitGraphView {
         .detach();
 
         Self {
-            backend,
+            git,
             tokio,
             theme,
             focus: cx.focus_handle(),
@@ -605,7 +604,7 @@ impl GitGraphView {
         }
         let generation = self.gen;
         let session = self.session_id.clone();
-        let backend = self.backend.clone();
+        let git = self.git.clone();
         let skip = Some(if append {
             self.total_loaded as usize
         } else {
@@ -616,37 +615,18 @@ impl GitGraphView {
         let fetch = limit + 1;
 
         let jh = self.tokio.spawn(async move {
-            let is_repo =
-                git::git_is_repo(root.clone(), session.clone(), &backend.ssh, backend.clone())
-                    .await?;
+            let is_repo = git.is_repo(root.clone(), session.clone()).await?;
             if !is_repo {
                 return Ok::<_, String>(None);
             }
-            let repo_root = git::git_get_repo_root(
-                root.clone(),
-                session.clone(),
-                &backend.ssh,
-                backend.clone(),
-            )
-            .await?;
-            let head = git::git_get_current_branch(
-                repo_root.clone(),
-                session.clone(),
-                &backend.ssh,
-                backend.clone(),
-            )
-            .await
-            .ok();
-            let page = git::git_get_log(
-                repo_root.clone(),
-                Some(fetch),
-                true,
-                session.clone(),
-                skip,
-                &backend.ssh,
-                backend.clone(),
-            )
-            .await?;
+            let repo_root = git.repo_root(root.clone(), session.clone()).await?;
+            let head = git
+                .current_branch(repo_root.clone(), session.clone())
+                .await
+                .ok();
+            let page = git
+                .log(repo_root.clone(), Some(fetch), true, session.clone(), skip)
+                .await?;
             Ok(Some((repo_root, head, page)))
         });
 
@@ -727,12 +707,12 @@ impl GitGraphView {
         };
         let hash = commit.info.hash.clone();
         let session = self.session_id.clone();
-        let backend = self.backend.clone();
+        let git = self.git.clone();
         let generation = self.gen;
 
-        let jh = self.tokio.spawn(async move {
-            git::git_get_commit_numstat(repo, hash, session, &backend.ssh, backend.clone()).await
-        });
+        let jh = self
+            .tokio
+            .spawn(async move { git.commit_numstat(repo, hash, session).await });
         cx.spawn(async move |this, cx| {
             let res = jh.await.unwrap_or_else(|e| Err(e.to_string()));
             let _ = this.update(cx, |this, cx| {
@@ -760,12 +740,12 @@ impl GitGraphView {
         };
         let hash = commit.info.hash.clone();
         let session = self.session_id.clone();
-        let backend = self.backend.clone();
+        let git = self.git.clone();
         let generation = self.gen;
 
-        let jh = self.tokio.spawn(async move {
-            git::git_get_commit_diff(repo, hash, session, &backend.ssh, backend.clone()).await
-        });
+        let jh = self
+            .tokio
+            .spawn(async move { git.commit_diff(repo, hash, session).await });
         cx.spawn(async move |this, cx| {
             let res = jh.await.unwrap_or_else(|e| Err(e.to_string()));
             let _ = this.update(cx, |this, cx| {
@@ -1314,7 +1294,7 @@ impl GitGraphView {
         op: impl FnOnce(
                 String,
                 Option<String>,
-                Backend,
+                Arc<dyn GitGraphService>,
             ) -> std::pin::Pin<
                 Box<dyn std::future::Future<Output = Result<(), String>> + Send>,
             > + Send
@@ -1325,10 +1305,10 @@ impl GitGraphView {
             return;
         };
         let session = self.session_id.clone();
-        let backend = self.backend.clone();
+        let git = self.git.clone();
         let jh = self
             .tokio
-            .spawn(async move { op(repo, session, backend).await });
+            .spawn(async move { op(repo, session, git).await });
         cx.spawn(async move |this, cx| {
             let res = jh.await.unwrap_or_else(|e| Err(e.to_string()));
             let _ = this.update(cx, |this, cx| {
@@ -1352,11 +1332,8 @@ impl GitGraphView {
         };
         self.run_git_op(
             "Checkout failed",
-            move |repo, session, backend| {
-                Box::pin(async move {
-                    git::git_checkout_branch(repo, hash, session, &backend.ssh, backend.clone())
-                        .await
-                })
+            move |repo, session, git| {
+                Box::pin(async move { git.checkout(repo, hash, session).await })
             },
             cx,
         );
@@ -1368,10 +1345,8 @@ impl GitGraphView {
         };
         self.run_git_op(
             "Cherry-pick failed",
-            move |repo, session, backend| {
-                Box::pin(async move {
-                    git::git_cherry_pick(repo, hash, session, &backend.ssh, backend.clone()).await
-                })
+            move |repo, session, git| {
+                Box::pin(async move { git.cherry_pick(repo, hash, session).await })
             },
             cx,
         );
@@ -1387,18 +1362,10 @@ impl GitGraphView {
         }
         self.run_git_op(
             "Create branch failed",
-            move |repo, session, backend| {
+            move |repo, session, git| {
                 Box::pin(async move {
-                    git::git_create_branch(
-                        repo,
-                        name,
-                        Some(hash),
-                        true,
-                        session,
-                        &backend.ssh,
-                        backend.clone(),
-                    )
-                    .await
+                    git.create_branch(repo, name, Some(hash), true, session)
+                        .await
                 })
             },
             cx,

@@ -58,6 +58,7 @@ Dependencies point downward. A feature may depend on a foundation contract, but 
 | `labonair-process` | Process and PTY launching contracts. |
 | `labonair-secrets` | Keychain and secret references. |
 | `labonair-persistence` | Cloneable shared SQLite connection and schema lifecycle; feature modules own stores and queries. |
+| `labonair-git` | UI-free Git value types and narrow graph-service contracts; implementations are injected adapters. |
 
 ### Cross-cutting modules
 

@@ -236,8 +236,16 @@ pub(crate) fn bootstrap(
     )
     .detach();
 
-    let git_graph =
-        cx.new(|cx| GitGraphView::new(backend.clone(), tokio.clone(), theme.clone(), cx));
+    let git_graph = cx.new(|cx| {
+        GitGraphView::new(
+            Arc::new(labonair_backend::modules::git::BackendGitGraphService::new(
+                backend.clone(),
+            )),
+            tokio.clone(),
+            theme.clone(),
+            cx,
+        )
+    });
     // The workspace renders the Git Graph as a `TabKind::GitGraph` tab — share
     // this single entity so the app-shell keeps feeding it the active CWD.
     workspace.update(cx, |w, _cx| w.set_git_graph(git_graph.clone()));

@@ -1,6 +1,6 @@
 # Handshake — Session State (Labonair-rust Port)
 
-## Current Session: 2026-09-06 (Snippet module isolation)
+## Current Session: 2026-09-06 (Git graph capability boundary)
 
 The snippet execution boundary is now typed end to end. `labonair-snippets`
 owns the shared `SnippetRunEvent` contract and asynchronous
@@ -14,13 +14,18 @@ backend facade entirely: `labonair-persistence::Database` is a cloneable
 shared infrastructure handle, and the shell injects it alongside the SSH
 executor. CRUD and host reads therefore use capability-owned stores directly.
 
+The Git graph is now isolated in the same way. `labonair-git` owns the
+UI-free `CommitInfo` value and `GitGraphService` contract; the backend exposes
+`BackendGitGraphService` as an injected adapter. `panel-git-graph` no longer
+depends on `labonair-backend`.
+
 Verification passed: `cargo fmt --all`, `cargo check --workspace
 --all-targets`, `cargo clippy --workspace --all-targets -- -D warnings`,
 `cargo test --workspace`, `cargo fmt --check`, `git diff --check`, and
 `scripts/check-crate-deps.sh`.
 
-State: branch `master`, the SSH capability commit is `cdecbe0`; the current
-panel/database isolation changes are uncommitted. `R01-001` remains
+State: branch `master`, latest committed snippet isolation is `8e9d4ca`; the
+current Git graph contract changes are uncommitted. `R01-001` remains
 `🔄 In Progress`; next is to continue replacing broad backend state with typed
 capability contracts. No source blocker.
 

@@ -47,6 +47,9 @@ ALLOWED = {
     # Shared SQLite lifecycle only. Feature stores own their queries and
     # domain models; this crate must remain UI- and backend-free.
     "labonair-persistence": set(),
+    # UI-free Git value types and capability contracts. Implementations stay
+    # in backend adapters and are injected by the composition root.
+    "labonair-git": set(),
     # Credential capability: metadata, secret references, and key material.
     "labonair-credentials": {
         "labonair-persistence", "labonair-secrets",
@@ -147,7 +150,7 @@ ALLOWED = {
     },
     "labonair-panel-git-graph": {
         "labonair-theme", "labonair-ui-kit", "labonair-panel",
-        "labonair-notifications", "labonair-backend",
+        "labonair-notifications", "labonair-git",
     },
     "labonair-panel-snippets": {
         "labonair-theme", "labonair-ui-kit", "labonair-panel",
@@ -187,7 +190,7 @@ ALLOWED = {
     "labonair-backend": {
         "labonair-settings-content", "labonair-filesystem", "labonair-secrets",
         "labonair-errors", "labonair-hosts", "labonair-persistence",
-        "labonair-credentials", "labonair-snippets",
+        "labonair-credentials", "labonair-snippets", "labonair-git",
         "labonair-persistence",
     },
     "labonair-ai": {"labonair-backend", "labonair-filesystem"},

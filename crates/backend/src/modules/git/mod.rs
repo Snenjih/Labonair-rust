@@ -1,3 +1,4 @@
+mod adapter;
 mod executor;
 
 use crate::modules::sftp::net_error::is_network_error;
@@ -5,6 +6,9 @@ use crate::modules::ssh::shell::shell_quote;
 use crate::modules::ssh::SshState;
 use executor::{resolve_executor, GitExecutor, GIT_NOT_INSTALLED};
 use serde::{Deserialize, Serialize};
+
+pub use adapter::BackendGitGraphService;
+pub use labonair_git::CommitInfo;
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -91,22 +95,6 @@ pub struct Branch {
     pub author: Option<String>,
     pub committed_relative: Option<String>,
     pub subject: Option<String>,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct CommitInfo {
-    pub hash: String,
-    pub short_hash: String,
-    pub parent_hashes: Vec<String>,
-    pub author_name: String,
-    pub author_email: String,
-    pub timestamp: i64,
-    pub subject: String,
-    pub refs: Vec<String>, // branch names, tags
-    pub files_changed: u32,
-    pub insertions: u32,
-    pub deletions: u32,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
