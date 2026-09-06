@@ -1,5 +1,10 @@
 # Handshake — Session State (Labonair-rust Port)
 
+Entries below the current session header are historical continuity records.
+They may mention API names that were valid at the time of the recorded
+change; the current API and task state are defined by the latest header and
+the normative documents under `docs/`.
+
 ## Current Session: 2026-09-07 (Native visual helper hardened)
 
 `R02-003` remains active. The native visual helper now validates every

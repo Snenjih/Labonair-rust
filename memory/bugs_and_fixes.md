@@ -1,5 +1,9 @@
 # Bugs, fixes, and non-obvious constraints
 
+Older entries preserve the state of the code when each issue was recorded.
+When an API was later renamed or removed, the current implementation and
+normative documentation take precedence over the historical symbol name.
+
 ## 2026-09-06 — Keep project-settings loading out of render
 
 **Finding:** `Workspace::render` synchronized the project-settings layer. Even
@@ -185,7 +189,8 @@ first implementation attempted to resolve the method through
 
 **Resolution:** Call `prompt_for_paths` directly through `Context`'s `Deref`
 to `App`, then handle the asynchronous result in the shell composition root.
-The selected directory is applied through `Workspace::set_project_context`.
+The selected directory is applied through
+`Workspace::apply_transition(WorkspaceTransition::OpenProject { root })`.
 
 **Important behavior:** Project settings must be keyed by explicit workspace
 identity. The active terminal's cwd is only terminal metadata and must never
