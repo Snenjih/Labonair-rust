@@ -406,3 +406,13 @@ worker payloads such as `"status": "running"` even though compilation passed.
 **Fix:** Restored the wire-format attribute in `crates/transfers/src/lib.rs`
 and added a decoder regression test. The focused transfer tests and full
 workspace gates now pass.
+# 2026-09-06 — Capability extraction must move persistence with the UI state
+
+Moving `BackgroundStore` out of `labonair-workspace` while leaving
+`backend::modules::backgrounds` in place would have preserved a split owner:
+GPUI state in one feature crate and persistence in the broad backend facade.
+The resolution was to move both the GPUI store and the background persistence
+module into `labonair-background`, replacing the backend path with the
+filesystem platform service. `settings-ui` now has no workspace dependency;
+the remaining workspace-to-background edge is only app composition and is
+explicitly tracked for a later synchronization/standalone-surface task.

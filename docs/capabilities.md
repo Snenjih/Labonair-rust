@@ -21,6 +21,7 @@ coordination or reusable-service responsibility instead.
 |---|---|---|---|---|---|---|
 | Application composition | `application` | `labonair-shell` | `labonair-shell` | `labonair-backend` adapters during migration | App startup | Transitional composition root |
 | Workspace orchestration | `workspace` | `labonair-workspace` | `labonair-workspace` | session/layout persistence | Workspace surface | Active, still broad |
+| Backgrounds | `backgrounds` | `labonair-background` | `labonair-background` | local image storage and decoded cache | Appearance/background surface | Capability extracted from workspace; Settings UI no longer holds its entity |
 | Terminal | `terminal` | `labonair-terminal` | `labonair-terminal` and workspace integration | PTY/process adapter | Terminal tab or standalone terminal | Active, extraction ongoing |
 | Editor | `editor` | `labonair-editor` | `labonair-editor` and workspace integration | filesystem adapter | Editor tab or standalone editor | Active, extraction ongoing |
 | Filesystem | `filesystem` | `labonair-filesystem` | Consuming feature UI | local filesystem and watcher | Explorer/editor consumers | Extracted |

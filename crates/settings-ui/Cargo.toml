@@ -20,7 +20,6 @@ labonair-ui-kit = { path = "../ui-kit" }
 labonair-gpui-ext = { path = "../gpui-ext" }
 labonair-notifications = { path = "../notifications" }
 labonair-command-palette = { path = "../command-palette" }
-labonair-workspace = { path = "../workspace" }
 labonair-filesystem = { path = "../filesystem" }
 # T19-004: the UI is generated from the typed `SettingsContent` tree via the
 # layered `SettingsStore` global (T19-002/003) instead of the old

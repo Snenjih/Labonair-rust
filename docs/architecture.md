@@ -60,6 +60,7 @@ Dependencies point downward. A feature may depend on a foundation contract, but 
 | `labonair-gpui-ext` | GPUI helpers and small shared primitives. |
 | `labonair-ui-kit` | Buttons, inputs, lists, dropdowns, dialogs, icons, badges, disclosure, tabs, and other reusable components. |
 | `labonair-filesystem` | Local filesystem abstractions and watchers. |
+| `labonair-background` | Background-image storage, import/delete operations, decoded image cache, and GPUI background layers. |
 | `labonair-errors` | Structured, UI-free domain error contract and recovery metadata. |
 | `labonair-secrets` | Keychain and secret references. |
 | `labonair-persistence` | Cloneable shared SQLite connection and schema lifecycle; feature modules own stores and queries. |
@@ -80,6 +81,7 @@ boundary.
 | Notifications | `labonair-notifications-core` | `notifications` | Notification registry/state and its GPUI statusbar presentation. |
 | Themes | `labonair-theme` | none yet | Built-in color and icon-theme registries, preview, and selection. |
 | Workspace | `labonair-workspace` | none; panel crates are separate capabilities | Workspace identity, tabs, panes, focus, layout, and session orchestration. |
+| Backgrounds | `labonair-background` | none yet | Background-image persistence and rendering; settings values are consumed through the settings store, but Settings UI does not own the capability. |
 
 ### Product modules
 

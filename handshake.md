@@ -1,5 +1,23 @@
 # Handshake — Session State (Labonair-rust Port)
 
+## Current Session: 2026-09-06 (Background capability boundary)
+
+`R01-006` is complete. Background image storage, import/delete operations,
+decoded image caching, and GPUI rendering now live in the dedicated
+`labonair-background` crate. The old backend background module and the
+workspace-owned implementation were removed; Workspace and shell consume the
+capability only for composition. `settings-ui` no longer depends on
+`labonair-workspace` or holds a `BackgroundStore` entity. The capability matrix,
+architecture inventory, dependency verifier, and rework task were updated.
+
+Verification passes: `cargo fmt --all -- --check`, `cargo check --workspace
+--all-targets`, `cargo clippy --workspace --all-targets -- -D warnings`,
+`cargo test --workspace --no-fail-fast` (with local listener/file-watcher
+permissions), `git diff --check`, and `scripts/check-crate-deps.py`. The
+current branch is `master`; the change is committed locally. Next: define
+the follow-up for Background ↔ Settings synchronization and the standalone
+background surface. No source blocker.
+
 ## Current Session: 2026-09-06 (Settings ownership and reduction)
 
 `R01-005` is complete. Settings now serializes and renders only typed,

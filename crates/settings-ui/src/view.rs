@@ -23,7 +23,6 @@ pub use labonair_ui_kit::{
     button, h_stack, list_header, list_separator, number_field, select_popover, select_trigger,
     v_stack, ButtonSize, ButtonVariant, IconName, ListItem, Palette, SelectOption, Switch,
 };
-pub use labonair_workspace::background::BackgroundStore;
 
 pub(crate) use crate::apply::*;
 pub(crate) use crate::pages::*;
@@ -73,14 +72,6 @@ impl OriginBadge {
 
 pub struct SettingsView {
     pub(crate) theme: Entity<ThemeStore>,
-    /// Kept alive (and observed, in `new()`) so a live background change
-    /// still repaints the settings window; the old bespoke background
-    /// gallery picker (`render_appearance`) was dropped in T19-004 in favor
-    /// of the generic field grid for `appearance.background*` — nothing
-    /// reads this field directly any more, but the entity must stay held
-    /// for its `cx.observe` subscription's lifetime.
-    #[allow(dead_code)]
-    pub(crate) background: Entity<BackgroundStore>,
     pub(crate) font_service: std::sync::Arc<dyn SystemFontService>,
     pub(crate) tokio: TokioHandle,
     pub(crate) open: bool,
@@ -157,13 +148,11 @@ impl SettingsView {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         theme: Entity<ThemeStore>,
-        background: Entity<BackgroundStore>,
         services: SettingsServices,
         tokio: TokioHandle,
         cx: &mut Context<Self>,
     ) -> Self {
         cx.observe(&theme, |_, _, cx| cx.notify()).detach();
-        cx.observe(&background, |_, _, cx| cx.notify()).detach();
         // The layered `SettingsStore` (T19-002/003) notifies on every write —
         // including ones this window did not make itself (e.g. a project
         // `.labonair/settings.json` edit) — so origin badges / values stay
@@ -190,7 +179,6 @@ impl SettingsView {
         let search_index = SearchIndex::build(&all_fields);
         Self {
             theme,
-            background,
             font_service: services.fonts,
             tokio,
             open: false,

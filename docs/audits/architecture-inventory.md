@@ -44,6 +44,7 @@ in the normative documents linked from `docs/README.md`.
 | `theme` | Runtime theme, fonts, and built-in color/icon registries | themes module | Keep one Themes owner; finish palette picker and transactional preview without remote downloads. |
 | `ui-kit` | Shared UI primitives | foundation | Enforce as the only source of shared controls. |
 | `workspace` | Workspace, tabs, panes, docks, views, and compatibility bridges | workspace plus tool modules | Transfer lifecycle/UI moved to `labonair-transfers` / `labonair-transfers-ui`; Workspace only submits requests and refreshes SFTP panes. |
+| `background` | Background image storage and GPUI layer | backgrounds module | `BackgroundStore`, image import/delete, persistence, and rendering now live in `labonair-background`; no longer workspace-owned. |
 | `transfers` | Typed transfer values, lifecycle registry, and service/event contracts | transfers module | New UI-free owner; backend worker adapter remains transitional. |
 | `transfers-ui` | Statusbar-anchored transfer queue and resolution dialogs | transfers module | New canonical transfer presentation; uses only typed transfer contracts and shared UI primitives. |
 
@@ -53,9 +54,8 @@ The current Cargo metadata shows several transitional edges that conflict with t
 
 - `workspace` depends directly on AI, backend, command palette, hosts UI, notifications, settings, SFTP capability contracts, and feature views; transfer lifecycle state is no longer one of those responsibilities.
 - `settings-ui` depends on settings values, theme/UI primitives, notifications,
-  command-palette fuzzy matching, filesystem paths, and a temporary workspace
-  background-store shim; it no longer depends on backend, Hosts UI, or panel
-  contracts.
+  command-palette fuzzy matching, and filesystem paths; it no longer depends on
+  a workspace-owned background store, backend, Hosts UI, or panel contracts.
 - `panel-explorer` still depends on workspace for drag/preview shims, but its
   obsolete backend dependency has been removed; those remaining UI contracts
   are a later extraction boundary.
@@ -96,7 +96,7 @@ families. These are not target dependencies; each has a removal condition:
 
 | Transitional edge family | Temporary reason | Removal condition |
 |---|---|---|
-| `settings-ui → workspace` | The settings window still uses the workspace-owned background store while that presentation capability is extracted. | Move `BackgroundStore` to a dedicated background/theme capability and inject it through a narrow contract. |
+| `workspace → background` | Workspace and the app shell render the background layer while the capability is being separated from workspace ownership. | Move background settings synchronization and any remaining background actions behind the dedicated background capability contract. |
 | `workspace → backend`, `workspace → ai`, `workspace → settings` | Workspace still hosts session bridges and legacy global settings consumers. SSH/SFTP and transfer access are now injected. | Settings providers and remaining session adapters are injected capabilities; workspace keeps orchestration only. |
 | `panel-explorer → workspace`, `panel-explorer → settings` | Explorer still reuses workspace drag/preview contracts and a legacy settings read. | Drag/drop and preview contracts move to foundation/owning modules and explorer receives a settings capability. |
 | `panel-scm → editor`, `panel-scm → settings` | SCM reuses unified diff helpers and one legacy presentation preference. | Diff contracts are shared by the Git module and the preference is provided through a narrow settings contract. |

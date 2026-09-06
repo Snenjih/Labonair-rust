@@ -5,7 +5,7 @@
 //! painted behind the app and/or the terminal.
 //!
 //! [`BackgroundStore`] is a GPUI entity that owns the persisted
-//! [`BackgroundSettings`] (via `labonair_backend::modules::backgrounds`) plus a
+//! [`BackgroundSettings`] plus a
 //! single decoded, downscaled and pre-blurred [`gpui::Image`]. The image is
 //! rebuilt only when the selected file or the blur radius changes — never per
 //! frame (see the task's performance warning) — and GPUI's own asset cache
@@ -13,9 +13,11 @@
 //!
 //! Rendering mirrors the reference implementation: the image sits in an
 //! absolutely-positioned, non-interactive overlay at a halved opacity so the UI
-//! and terminal text stay readable at any slider value. The settings UI is
-//! wired up later in T13-002 (Appearance) — this module is the data + render
-//! layer only.
+//! and terminal text stay readable at any slider value. Settings value fields
+//! are edited by the Settings capability; this module owns image storage,
+//! decoding, and rendering.
+
+mod storage;
 
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
@@ -27,11 +29,11 @@ use gpui::{
 };
 use image::ImageEncoder;
 
-use labonair_backend::modules::backgrounds::{
+pub use storage::{
     background_delete, background_import, background_settings_load, background_settings_save,
     backgrounds_dir, backgrounds_list, BackgroundInfo, BackgroundSettings,
 };
-pub use labonair_backend::modules::backgrounds::{BackgroundFit, BackgroundTarget};
+pub use storage::{background_read_data_url, BackgroundFit, BackgroundTarget};
 
 /// Longest edge (px) an imported image is kept at; larger images are
 /// downscaled once at load time so a 6000px wallpaper doesn't cost a huge GPU

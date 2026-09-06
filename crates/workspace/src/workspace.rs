@@ -25,7 +25,6 @@
 
 pub mod agent_access;
 pub mod backend_event_bridge;
-pub mod background;
 pub mod bell;
 pub mod dock;
 pub mod drag;
@@ -94,7 +93,6 @@ use labonair_terminal::{
 use labonair_transfers::{TransferDirection, TransferRequest, TransferService};
 use tokio::runtime::Handle as TokioHandle;
 
-use crate::background::BackgroundStore;
 use crate::dock::{position_slug, RESIZE_HANDLE_SIZE};
 use crate::live_bridge::LiveCommand;
 use crate::pane::{CloseOutcome, Member, PaneId, SplitAxis, SplitDirection, WorkspaceLayout};
@@ -108,6 +106,7 @@ use crate::views::editor::{EditorEvent, EditorView};
 use crate::views::preview::PreviewView;
 use crate::views::sftp::{SftpEvent, SftpView};
 use crate::views::terminal::TerminalView;
+use labonair_background::BackgroundStore;
 use labonair_hosts_ui::ssh_connection::{
     ConnStage, ConnectionKind, ConnectionState, ConnectionStatusStore, StageStatus,
 };

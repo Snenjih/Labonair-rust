@@ -111,15 +111,8 @@ pub fn open_settings_window(slug: Option<&'static str>, cx: &mut App) {
         },
         move |window, cx| {
             let theme = labonair_theme::theme_store(cx);
-            let background = labonair_workspace::background::background_store(cx);
             let view = cx.new(|cx| {
-                let mut v = SettingsView::new(
-                    theme,
-                    background,
-                    deps.services.clone(),
-                    deps.tokio.clone(),
-                    cx,
-                );
+                let mut v = SettingsView::new(theme, deps.services.clone(), deps.tokio.clone(), cx);
                 v.windowed = true;
                 v.open = true;
                 if let Some(SettingsTarget(Some(slug))) = cx.try_global::<SettingsTarget>().copied()

@@ -45,7 +45,6 @@ use labonair_workspace::modal_layer::ModalLayer;
 use labonair_workspace::status_bar::StatusBar;
 
 use crate::app_shell::{AppShell, ShellPanels};
-use crate::background::BackgroundStore;
 use crate::settings_services::settings_services;
 use crate::status_items::register_builtin_status_items;
 use crate::theme::ThemeStore;
@@ -53,6 +52,7 @@ use crate::titlebar::Titlebar;
 use crate::updater::UpdaterView;
 use crate::window_state;
 use crate::workspace::Workspace;
+use labonair_background::BackgroundStore;
 
 /// How often the AI live-bridge command queue is drained on the main thread.
 /// The queue is only ever fed by AI agent tool calls (seconds apart), so this

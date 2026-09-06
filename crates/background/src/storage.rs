@@ -1,7 +1,9 @@
 use base64::Engine;
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
+
+use labonair_filesystem::paths::config_dir;
 
 const ALLOWED_EXTENSIONS: &[&str] = &["jpg", "jpeg", "png", "gif", "webp", "avif", "bmp"];
 
@@ -13,7 +15,7 @@ pub struct BackgroundInfo {
 }
 
 pub fn backgrounds_dir() -> Result<PathBuf, String> {
-    let dir = crate::modules::fs::paths::config_dir().join("backgrounds");
+    let dir = config_dir().join("backgrounds");
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     Ok(dir)
 }
@@ -170,9 +172,7 @@ pub fn background_delete(filename: String) -> Result<(), String> {
 // settings survive.
 // ---------------------------------------------------------------------------
 
-use std::path::Path;
-
-const SETTINGS_FILE: &str = crate::modules::settings::CONFIG_FILE;
+const SETTINGS_FILE: &str = "config.json";
 
 /// How the background image is scaled into its area.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -326,12 +326,12 @@ fn save_to(dir: &Path, settings: &BackgroundSettings) -> Result<(), String> {
 
 /// Loads the persisted background preferences (defaults if none saved yet).
 pub fn background_settings_load() -> BackgroundSettings {
-    load_from(&crate::modules::fs::paths::config_dir())
+    load_from(&config_dir())
 }
 
 /// Persists the background preferences, merging into the shared settings file.
 pub fn background_settings_save(settings: &BackgroundSettings) -> Result<(), String> {
-    save_to(&crate::modules::fs::paths::config_dir(), settings)
+    save_to(&config_dir(), settings)
 }
 
 #[cfg(test)]

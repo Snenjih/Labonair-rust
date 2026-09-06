@@ -4226,6 +4226,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "labonair-background"
+version = "0.1.0"
+dependencies = [
+ "base64",
+ "gpui",
+ "image",
+ "labonair-filesystem",
+ "labonair-theme",
+ "serde",
+ "serde_json",
+ "uuid",
+]
+
+[[package]]
 name = "labonair-command-palette"
 version = "0.1.0"
 dependencies = [
@@ -4531,7 +4545,6 @@ dependencies = [
  "labonair-settings-content",
  "labonair-theme",
  "labonair-ui-kit",
- "labonair-workspace",
  "serde",
  "serde_json",
  "tokio",
@@ -4556,6 +4569,7 @@ dependencies = [
  "gpui",
  "gpui-component",
  "labonair-backend",
+ "labonair-background",
  "labonair-command-palette",
  "labonair-command-palette-core",
  "labonair-filesystem",
@@ -4670,6 +4684,7 @@ dependencies = [
  "image",
  "labonair-ai",
  "labonair-backend",
+ "labonair-background",
  "labonair-command-palette",
  "labonair-editor",
  "labonair-filesystem",

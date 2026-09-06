@@ -27,6 +27,9 @@ ALLOWED = {
     "labonair-ui-kit": {"labonair-theme", "labonair-gpui-ext"},
     # extended theme crate — a leaf token crate, no workspace deps.
     "labonair-theme": set(),
+    # Background capability owns image persistence and GPUI rendering. It
+    # consumes only the filesystem platform service.
+    "labonair-background": {"labonair-filesystem", "labonair-theme"},
     # Platform service — no GPUI or feature-crate deps. Feature crates may
     # consume it directly; the backend edge is transitional during migration.
     "labonair-filesystem": set(),
@@ -91,7 +94,6 @@ ALLOWED = {
     "labonair-settings-ui": {
         "labonair-theme", "labonair-ui-kit", "labonair-gpui-ext",
         "labonair-notifications", "labonair-command-palette",
-        "labonair-workspace",
         "labonair-settings", "labonair-settings-content", "labonair-filesystem",
     },
 
@@ -117,6 +119,7 @@ ALLOWED = {
         "labonair-ai", "labonair-settings", "labonair-settings-json",
         "labonair-filesystem",
         "labonair-ssh", "labonair-sftp", "labonair-transfers",
+        "labonair-background",
     },
     # rule 3: the only crate that knows every concrete panel type — it also
     # touches the `labonair-panel` contracts crate to register them (T17-001).
@@ -135,6 +138,7 @@ ALLOWED = {
         "labonair-panel-ai", "labonair-terminal", "labonair-backend",
         "labonair-settings", "labonair-filesystem", "labonair-ssh",
         "labonair-sftp", "labonair-transfers", "labonair-transfers-ui",
+        "labonair-background",
     },
 
     # Transfer presentation — owns the statusbar dropdown, while lifecycle
@@ -231,6 +235,7 @@ ALLOWED = {
 # UI crates the engines (backend/ai/editor) must not reach, even transitively.
 UI_CRATES = {
     "labonair-gpui-ext", "labonair-ui-kit", "labonair-theme",
+    "labonair-background",
     "labonair-notifications", "labonair-command-palette",
     "labonair-workspace", "labonair-shell", "labonair-settings-ui",
     "labonair-hosts-ui", "labonair-panel", "labonair-panel-explorer",

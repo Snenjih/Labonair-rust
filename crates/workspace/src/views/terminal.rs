@@ -38,9 +38,9 @@ use labonair_terminal::{
     TermDimensions, TerminalColors, TerminalEvent, WheelAction, WheelInput,
 };
 
-use crate::background::{BackgroundStore, LayerScope};
 use crate::drag::{quote_paths, DraggedPaths};
 use crate::theme::ThemeStore;
+use labonair_background::{BackgroundStore, LayerScope};
 use labonair_settings::Settings as _;
 use labonair_ui_kit::{context_menu, IconName, MenuItem, Palette};
 

@@ -40,9 +40,9 @@ pub use updater::{UpdaterStatus, UpdaterView};
 // through the single `labonair_shell::` import root. These simply forward to
 // the crate that actually owns each hook (theme store, background store,
 // notification center), so no bootstrap logic changed with the crate split.
+pub use labonair_background::init as init_background;
 pub use labonair_notifications::init as init_notifications;
 pub use labonair_theme::{init_fonts, init_theme};
-pub use labonair_workspace::background::init as init_background;
 
 // --- Internal re-export shims --------------------------------------------------
 // `app_shell.rs` / `updater.rs` were moved verbatim from `crates/ui` (their
@@ -50,7 +50,7 @@ pub use labonair_workspace::background::init as init_background;
 // `crates/ui`'s own shims; the same shims live here now so the moved files
 // stay byte-for-byte identical.
 pub(crate) mod background {
-    pub use labonair_workspace::background::*;
+    pub use labonair_background::*;
 }
 pub(crate) mod pane {
     pub use labonair_workspace::pane::*;
