@@ -41,7 +41,7 @@ thiserror = "1"
 log = "0.4"
 
 # Crypto / hashing
-aes-gcm = "0.10"
+aes-gcm = "0.11"
 rand = { version = "0.8", features = ["getrandom"] }
 md5 = "0.7"
 openssl = { version = "0.10", features = ["vendored"] }
