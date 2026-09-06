@@ -14,7 +14,7 @@
 //! [`labonair_backend::modules::ssh::sftp`] (`sftp_read_dir`, `sftp_rename`,
 //! `sftp_delete`, `sftp_mkdir`, `sftp_create_file`, `sftp_chmod`,
 //! `sftp_chown`, `sftp_calculate_size`, `prepare_remote_edit`) and
-//! [`labonair_backend::modules::fs`] for the local pane — no Tauri IPC.
+//! [`labonair_filesystem`] for the local pane — no Tauri IPC.
 //!
 //! Deviations from the reference:
 //! * Rows render into a plain `overflow_y_scroll` column, not
@@ -35,10 +35,10 @@ use gpui::{
 };
 use tokio::runtime::Handle as TokioHandle;
 
-use labonair_backend::modules::fs::{mutate, tree};
 use labonair_backend::modules::sftp::connection::sftp_connect;
 use labonair_backend::modules::ssh::sftp as backend_sftp;
 use labonair_backend::App as Backend;
+use labonair_filesystem::{mutate, tree};
 
 use crate::theme::ThemeStore;
 use labonair_ui_kit::{

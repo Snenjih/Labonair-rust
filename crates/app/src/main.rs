@@ -71,13 +71,13 @@ fn main() {
     // `config.json` file and would otherwise silently see an
     // all-defaults tree for an old-format file.
     {
-        use labonair_backend::modules::fs::paths::config_dir;
         use labonair_backend::modules::settings::{
             migrate_config_file_name,
             migrate_v2::{
                 migrate_hosts_to_settings, migrate_settings_v1_to_v2, sparsify_v2_settings,
             },
         };
+        use labonair_filesystem::paths::config_dir;
 
         let settings_dir = config_dir();
         if let Err(err) = migrate_config_file_name(&settings_dir) {

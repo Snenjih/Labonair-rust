@@ -73,7 +73,7 @@ pub struct NativeHost;
 
 impl ToolHost for NativeHost {
     fn read_file(&self, path: &str) -> Result<FileRead, String> {
-        use labonair_backend::modules::fs::file::{load_editor_file_sync, EditorLoad};
+        use labonair_filesystem::file::{load_editor_file_sync, EditorLoad};
         match load_editor_file_sync(path, Some(AI_READ_CAP as u64 * 4))? {
             EditorLoad::Text { content, .. } => {
                 let size = content.len() as u64;
@@ -85,15 +85,15 @@ impl ToolHost for NativeHost {
     }
 
     fn write_file(&self, path: &str, content: &str) -> Result<(), String> {
-        labonair_backend::modules::fs::file::save_editor_file_sync(path, content).map(|_| ())
+        labonair_filesystem::file::save_editor_file_sync(path, content).map(|_| ())
     }
 
     fn create_dir(&self, path: &str) -> Result<(), String> {
-        labonair_backend::modules::fs::mutate::create_dir_sync(path)
+        labonair_filesystem::mutate::create_dir_sync(path)
     }
 
     fn list_dir(&self, path: &str) -> Result<Vec<DirEntry>, String> {
-        use labonair_backend::modules::fs::tree::{list_dir_entries_sync, EntryKind};
+        use labonair_filesystem::tree::{list_dir_entries_sync, EntryKind};
         Ok(list_dir_entries_sync(path, false)?
             .into_iter()
             .map(|e| DirEntry {
@@ -121,7 +121,7 @@ impl ToolHost for NativeHost {
         } else {
             Some(globs.to_vec())
         };
-        let r = labonair_backend::modules::fs::grep::fs_grep(
+        let r = labonair_filesystem::grep::fs_grep(
             pattern.to_string(),
             root.to_string(),
             g,
@@ -148,7 +148,7 @@ impl ToolHost for NativeHost {
         root: &str,
         max_results: usize,
     ) -> Result<(Vec<String>, bool), String> {
-        let r = labonair_backend::modules::fs::grep::fs_glob(
+        let r = labonair_filesystem::grep::fs_glob(
             pattern.to_string(),
             root.to_string(),
             Some(max_results),

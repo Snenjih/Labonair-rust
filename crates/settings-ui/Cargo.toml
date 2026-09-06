@@ -23,6 +23,7 @@ labonair-command-palette = { path = "../command-palette" }
 labonair-workspace = { path = "../workspace" }
 labonair-panel = { path = "../panel" }
 labonair-backend = { path = "../backend" }
+labonair-filesystem = { path = "../filesystem" }
 # T19-010: Settings › Hosts embeds `HostManagerView` verbatim.
 labonair-hosts-ui = { path = "../hosts-ui" }
 # T19-004: the UI is generated from the typed `SettingsContent` tree via the

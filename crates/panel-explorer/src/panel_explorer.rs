@@ -12,7 +12,7 @@
 //! wraps it with the GPUI rendering, async filesystem calls and the watcher.
 //!
 //! The filesystem work runs in-process through
-//! [`labonair_backend::modules::fs`] (`tree::read_dir_page` +
+//! [`labonair_filesystem`] (`tree::read_dir_page` +
 //! `mutate::{create_file_sync, create_dir_sync, rename_sync, delete_sync}`) on
 //! `cx.background_executor()` — no Tauri IPC.
 //!
@@ -60,7 +60,7 @@ use labonair_settings::{ExplorerSettings, Settings as _};
 use notify::{RecommendedWatcher, RecursiveMode};
 use notify_debouncer_mini::{new_debouncer, Debouncer};
 
-use labonair_backend::modules::fs::{mutate, tree};
+use labonair_filesystem::{mutate, tree};
 
 use crate::theme::ThemeStore;
 use crate::workspace::Workspace;

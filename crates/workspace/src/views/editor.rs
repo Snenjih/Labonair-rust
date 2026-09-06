@@ -3,7 +3,7 @@
 //! Renders and drives a [`labonair_editor::Document`]: viewport-based line
 //! rendering with a line-number gutter, caret + selection, keyboard editing,
 //! undo/redo, `Cmd-S` save (atomic write via
-//! [`labonair_backend::modules::fs::file::save_editor_file_sync`]), a find /
+//! [`labonair_filesystem::file::save_editor_file_sync`]), a find /
 //! replace bar (`Cmd-F`), and external-change detection with a reload banner.
 //!
 //! The view owns no file IO on the main thread — reads and writes run on
@@ -20,7 +20,7 @@ use gpui::{
     MouseButton, MouseDownEvent, MouseMoveEvent, ParentElement, Pixels, Point, Render,
     ScrollWheelEvent, SharedString, StatefulInteractiveElement, Styled, StyledText, Window,
 };
-use labonair_backend::modules::fs::file::{
+use labonair_filesystem::file::{
     file_mtime_sync, load_editor_file_sync, save_editor_file_sync, EditorLoad,
 };
 use labonair_settings::{EditorSettings, Settings as _, SettingsStore};

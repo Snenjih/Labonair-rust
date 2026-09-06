@@ -21,6 +21,7 @@ members = [
     "crates/shell",
     "crates/terminal",
     "crates/editor",
+    "crates/filesystem",
     "crates/backend",
     "crates/ai",
     "crates/theme",

@@ -16,7 +16,6 @@ pub use std::fs;
 pub use std::path::PathBuf;
 pub use tokio::runtime::Handle as TokioHandle;
 
-pub use labonair_backend::modules::fs::paths::config_dir;
 pub use labonair_backend::modules::mcp::{
     mcp_get_status, mcp_regenerate_token, mcp_set_auto_revoke_minutes, mcp_set_enabled,
     mcp_set_max_command_timeout_secs, mcp_set_port,
@@ -26,6 +25,7 @@ pub use labonair_backend::App as Backend;
 pub use labonair_command_palette::{
     effective_binding, shortcut, shortcut_slug, shortcuts, KeybindMap, ShortcutId,
 };
+pub use labonair_filesystem::paths::config_dir;
 pub use labonair_notifications::{notification_center, Notification};
 pub use labonair_settings::{Settings as _, SettingsStore, ThemeSettings};
 pub use labonair_settings_content::areas::AREAS;

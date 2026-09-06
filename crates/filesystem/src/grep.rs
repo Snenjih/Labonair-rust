@@ -1,4 +1,3 @@
-use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
@@ -8,18 +7,6 @@ use grep_searcher::sinks::UTF8;
 use grep_searcher::{BinaryDetection, SearcherBuilder};
 use ignore::{WalkBuilder, WalkState};
 use serde::Serialize;
-
-fn expand_home(path: &str) -> Result<PathBuf, String> {
-    if path == "~" {
-        dirs::home_dir().ok_or("could not determine home directory".to_string())
-    } else if let Some(stripped) = path.strip_prefix("~/") {
-        let mut home = dirs::home_dir().ok_or("could not determine home directory".to_string())?;
-        home.push(stripped);
-        Ok(home)
-    } else {
-        Ok(PathBuf::from(path))
-    }
-}
 
 const FILE_SIZE_CAP: u64 = 5 * 1024 * 1024;
 const DEFAULT_MAX_RESULTS: usize = 200;
@@ -63,7 +50,7 @@ pub fn fs_grep(
     if pattern.is_empty() {
         return Err("empty pattern".into());
     }
-    let root_path = expand_home(&root)?;
+    let root_path = super::paths::expand_home(&root)?;
     if !root_path.is_dir() {
         return Err(format!("not a directory: {root}"));
     }
@@ -191,7 +178,7 @@ pub fn fs_glob(
     if pattern.is_empty() {
         return Err("empty pattern".into());
     }
-    let root_path = expand_home(&root)?;
+    let root_path = super::paths::expand_home(&root)?;
     if !root_path.is_dir() {
         return Err(format!("not a directory: {root}"));
     }

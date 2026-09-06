@@ -21,6 +21,7 @@ labonair-shell = { path = "../shell" }
 labonair-terminal = { path = "../terminal" }
 labonair-editor = { path = "../editor" }
 labonair-backend = { path = "../backend" }
+labonair-filesystem = { path = "../filesystem" }
 labonair-ai = { path = "../ai" }
 labonair-theme = { path = "../theme" }
 labonair-settings = { path = "../settings" }

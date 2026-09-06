@@ -700,7 +700,7 @@ mod recent {
     use super::CommandId;
 
     fn path() -> std::path::PathBuf {
-        labonair_backend::modules::fs::paths::config_dir().join("command-palette-recent.json")
+        labonair_filesystem::paths::config_dir().join("command-palette-recent.json")
     }
 
     pub fn load() -> Vec<CommandId> {

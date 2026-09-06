@@ -1,24 +1,10 @@
-use std::path::PathBuf;
-
-fn expand_home(path: &str) -> Result<PathBuf, String> {
-    if path == "~" {
-        dirs::home_dir().ok_or("could not determine home directory".to_string())
-    } else if let Some(stripped) = path.strip_prefix("~/") {
-        let mut home = dirs::home_dir().ok_or("could not determine home directory".to_string())?;
-        home.push(stripped);
-        Ok(home)
-    } else {
-        Ok(PathBuf::from(path))
-    }
-}
-
 // --- Blocking, in-process variants for the sidebar file explorer (T05-001). ---
 // Same semantics as the async commands below, minus the `spawn_blocking`
 // wrapper; the GPUI explorer runs these on `cx.background_executor().spawn`.
 
 /// Creates a new empty file. Fails if the file already exists.
 pub fn create_file_sync(path: &str) -> Result<(), String> {
-    let p = expand_home(path)?;
+    let p = super::paths::expand_home(path)?;
     if p.exists() {
         return Err(format!("already exists: {}", p.display()));
     }
@@ -27,7 +13,7 @@ pub fn create_file_sync(path: &str) -> Result<(), String> {
 
 /// Creates a new directory (and parents as needed). Fails if it already exists.
 pub fn create_dir_sync(path: &str) -> Result<(), String> {
-    let p = expand_home(path)?;
+    let p = super::paths::expand_home(path)?;
     if p.exists() {
         return Err(format!("already exists: {}", p.display()));
     }
@@ -36,8 +22,8 @@ pub fn create_dir_sync(path: &str) -> Result<(), String> {
 
 /// Renames (or moves) a path. Refuses to overwrite an existing target.
 pub fn rename_sync(from: &str, to: &str) -> Result<(), String> {
-    let from_p = expand_home(from)?;
-    let to_p = expand_home(to)?;
+    let from_p = super::paths::expand_home(from)?;
+    let to_p = super::paths::expand_home(to)?;
     if !from_p.exists() {
         return Err(format!("not found: {}", from_p.display()));
     }
@@ -54,8 +40,8 @@ pub fn rename_sync(from: &str, to: &str) -> Result<(), String> {
 ///
 /// Port of the reference `useFileTree.movePath` (drag-and-drop move) — T05-002.
 pub fn move_into_sync(src: &str, dest_dir: &str) -> Result<String, String> {
-    let src_p = expand_home(src)?;
-    let dest_p = expand_home(dest_dir)?;
+    let src_p = super::paths::expand_home(src)?;
+    let dest_p = super::paths::expand_home(dest_dir)?;
     if !src_p.exists() {
         return Err(format!("not found: {}", src_p.display()));
     }
@@ -85,7 +71,7 @@ pub fn move_into_sync(src: &str, dest_dir: &str) -> Result<String, String> {
 /// Blocking core of [`fs_copy_into`] — used directly by the GPUI explorer's
 /// paste action (T05-002).
 pub fn copy_into_sync(src_paths: &[String], dest_dir: &str) -> Result<Vec<String>, String> {
-    let dest = expand_home(dest_dir)?;
+    let dest = super::paths::expand_home(dest_dir)?;
     if !dest.is_dir() {
         return Err(format!(
             "destination is not a directory: {}",
@@ -94,7 +80,7 @@ pub fn copy_into_sync(src_paths: &[String], dest_dir: &str) -> Result<Vec<String
     }
     let mut results = Vec::new();
     for src_str in src_paths {
-        let src = expand_home(src_str)?;
+        let src = super::paths::expand_home(src_str)?;
         if !src.exists() {
             return Err(format!("source not found: {}", src.display()));
         }
@@ -116,7 +102,7 @@ pub fn copy_into_sync(src_paths: &[String], dest_dir: &str) -> Result<Vec<String
 
 /// Deletes a file or directory (recursively for dirs).
 pub fn delete_sync(path: &str) -> Result<(), String> {
-    let p = expand_home(path)?;
+    let p = super::paths::expand_home(path)?;
     let meta = std::fs::symlink_metadata(&p).map_err(|e| e.to_string())?;
     let result = if meta.is_dir() {
         std::fs::remove_dir_all(&p)
@@ -129,7 +115,7 @@ pub fn delete_sync(path: &str) -> Result<(), String> {
 /// Creates a new empty file. Fails if the file already exists.
 pub async fn fs_create_file(path: String) -> Result<(), String> {
     tokio::task::spawn_blocking(move || {
-        let p = expand_home(&path)?;
+        let p = super::paths::expand_home(&path)?;
         if p.exists() {
             return Err(format!("already exists: {}", p.display()));
         }
@@ -159,7 +145,7 @@ pub async fn fs_create_temp_file(prefix: String) -> Result<String, String> {
 /// where typing "a/b/c" creates the full chain.
 pub async fn fs_create_dir(path: String) -> Result<(), String> {
     tokio::task::spawn_blocking(move || {
-        let p = expand_home(&path)?;
+        let p = super::paths::expand_home(&path)?;
         if p.exists() {
             return Err(format!("already exists: {}", p.display()));
         }
@@ -175,8 +161,8 @@ pub async fn fs_create_dir(path: String) -> Result<(), String> {
 /// Renames (or moves) a path. Refuses to overwrite an existing target.
 pub async fn fs_rename(from: String, to: String) -> Result<(), String> {
     tokio::task::spawn_blocking(move || {
-        let from_p = expand_home(&from)?;
-        let to_p = expand_home(&to)?;
+        let from_p = super::paths::expand_home(&from)?;
+        let to_p = super::paths::expand_home(&to)?;
         if !from_p.exists() {
             return Err(format!("not found: {}", from_p.display()));
         }
@@ -248,7 +234,7 @@ fn copy_dir_recursive(src: &std::path::Path, dest: &std::path::Path) -> Result<(
 /// responsible for confirming destructive operations with the user.
 pub async fn fs_delete(path: String) -> Result<(), String> {
     tokio::task::spawn_blocking(move || {
-        let p = expand_home(&path)?;
+        let p = super::paths::expand_home(&path)?;
         let meta = std::fs::symlink_metadata(&p).map_err(|e| {
             log::debug!("fs_delete stat({}) failed: {e}", p.display());
             e.to_string()
@@ -272,6 +258,7 @@ pub async fn fs_delete(path: String) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::PathBuf;
 
     fn scratch_dir(tag: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!(

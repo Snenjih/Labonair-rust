@@ -12,6 +12,7 @@ edition = "2021"
 # `labonair-backend`); documented as a deviation from the target crate graph's
 # "`labonair-backend` -> leaf" line in `docs/architecture.md` §8.15.
 labonair-settings-content = { path = "../settings-content" }
+labonair-filesystem = { path = "../filesystem" }
 
 # SSH / SFTP — versions taken 1:1 from reference-src/src-tauri/Cargo.toml
 russh = { version = "0.62.2", default-features = false, features = ["ring", "flate2", "rsa"] }

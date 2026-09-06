@@ -1,23 +1,10 @@
 use std::io::Write;
-use std::path::PathBuf;
 use std::time::UNIX_EPOCH;
 
 use serde::Serialize;
 
 const MAX_READ_BYTES: u64 = 10 * 1024 * 1024; // 10 MB
 const BINARY_SNIFF_BYTES: usize = 8 * 1024;
-
-fn expand_home(path: &str) -> Result<PathBuf, String> {
-    if path == "~" {
-        dirs::home_dir().ok_or("could not determine home directory".to_string())
-    } else if let Some(stripped) = path.strip_prefix("~/") {
-        let mut home = dirs::home_dir().ok_or("could not determine home directory".to_string())?;
-        home.push(stripped);
-        Ok(home)
-    } else {
-        Ok(PathBuf::from(path))
-    }
-}
 
 #[derive(Serialize)]
 #[serde(tag = "kind", rename_all = "lowercase")]
@@ -57,7 +44,7 @@ pub struct FileStat {
 /// actual target, not just the literal path the model asked for.
 pub async fn fs_realpath(path: String) -> Result<String, String> {
     tokio::task::spawn_blocking(move || {
-        let p = expand_home(&path)?;
+        let p = super::paths::expand_home(&path)?;
         std::fs::canonicalize(&p)
             .map(|c| c.to_string_lossy().to_string())
             .map_err(|e| e.to_string())
@@ -69,7 +56,7 @@ pub async fn fs_realpath(path: String) -> Result<String, String> {
 pub async fn fs_read_file(path: String, max_bytes: Option<u64>) -> Result<ReadResult, String> {
     let limit = max_bytes.unwrap_or(MAX_READ_BYTES);
     tokio::task::spawn_blocking(move || {
-        let p = expand_home(&path)?;
+        let p = super::paths::expand_home(&path)?;
         let meta = std::fs::metadata(&p).map_err(|e| {
             log::debug!("fs_read_file stat({}) failed: {e}", p.display());
             e.to_string()
@@ -110,7 +97,7 @@ pub async fn fs_read_file(path: String, max_bytes: Option<u64>) -> Result<ReadRe
 /// Prevents partial writes from leaving a half-saved file on crash/power loss.
 pub async fn fs_write_file(path: String, content: String) -> Result<(), String> {
     tokio::task::spawn_blocking(move || {
-        let target = expand_home(&path)?;
+        let target = super::paths::expand_home(&path)?;
         let parent = target
             .parent()
             .ok_or_else(|| "path has no parent".to_string())?;
@@ -152,7 +139,7 @@ pub async fn fs_write_file(path: String, content: String) -> Result<(), String> 
 
 pub async fn fs_stat(path: String) -> Result<FileStat, String> {
     tokio::task::spawn_blocking(move || {
-        let p = expand_home(&path)?;
+        let p = super::paths::expand_home(&path)?;
         let meta = std::fs::metadata(&p).map_err(|e| e.to_string())?;
         let kind = if meta.is_dir() {
             StatKind::Dir
@@ -203,7 +190,7 @@ fn mtime_ms(meta: &std::fs::Metadata) -> u64 {
 /// Read a file as editor text. `max_bytes` defaults to [`MAX_READ_BYTES`].
 pub fn load_editor_file_sync(path: &str, max_bytes: Option<u64>) -> Result<EditorLoad, String> {
     let limit = max_bytes.unwrap_or(MAX_READ_BYTES);
-    let p = expand_home(path)?;
+    let p = super::paths::expand_home(path)?;
     let meta = std::fs::metadata(&p).map_err(|e| e.to_string())?;
     let size = meta.len();
     if size > limit {
@@ -223,7 +210,7 @@ pub fn load_editor_file_sync(path: &str, max_bytes: Option<u64>) -> Result<Edito
 
 /// Atomic write (stage sibling temp, rename over target). Returns the new mtime.
 pub fn save_editor_file_sync(path: &str, content: &str) -> Result<u64, String> {
-    let target = expand_home(path)?;
+    let target = super::paths::expand_home(path)?;
     let parent = target
         .parent()
         .ok_or_else(|| "path has no parent".to_string())?;
@@ -249,7 +236,7 @@ pub fn save_editor_file_sync(path: &str, content: &str) -> Result<u64, String> {
 
 /// The mtime (ms) of a file, or an error if it can't be stat'd (e.g. deleted).
 pub fn file_mtime_sync(path: &str) -> Result<u64, String> {
-    let p = expand_home(path)?;
+    let p = super::paths::expand_home(path)?;
     let meta = std::fs::metadata(&p).map_err(|e| e.to_string())?;
     Ok(mtime_ms(&meta))
 }

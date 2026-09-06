@@ -17,7 +17,7 @@ ALLOWED = {
     "labonair": {
         "labonair-shell", "labonair-terminal", "labonair-editor",
         "labonair-backend", "labonair-ai", "labonair-theme",
-        "labonair-settings",
+        "labonair-settings", "labonair-filesystem",
     },
 
     # Foundation ------------------------------------------------------------
@@ -27,12 +27,16 @@ ALLOWED = {
     "labonair-ui-kit": {"labonair-theme", "labonair-gpui-ext"},
     # extended theme crate — a leaf token crate, no workspace deps.
     "labonair-theme": set(),
+    # Platform service — no GPUI or feature-crate deps. Feature crates may
+    # consume it directly; the backend edge is transitional during migration.
+    "labonair-filesystem": set(),
     "labonair-notifications": {
         "labonair-theme", "labonair-ui-kit", "labonair-gpui-ext",
     },
     "labonair-command-palette": {
         "labonair-theme", "labonair-ui-kit", "labonair-gpui-ext",
         "labonair-backend",
+        "labonair-filesystem",
         # transitional: palette settings reads move behind a provider contract
         "labonair-settings",
     },
@@ -54,7 +58,7 @@ ALLOWED = {
         "labonair-theme", "labonair-ui-kit", "labonair-gpui-ext",
         "labonair-notifications", "labonair-command-palette",
         "labonair-workspace", "labonair-panel", "labonair-backend", "labonair-ai",
-        "labonair-settings", "labonair-settings-content",
+        "labonair-settings", "labonair-settings-content", "labonair-filesystem",
         # T19-008: surgical `keymap.json` edits reuse T19-005's tree-sitter
         # JSON editor.
         "labonair-settings-json",
@@ -83,6 +87,7 @@ ALLOWED = {
         "labonair-panel", "labonair-panel-git-graph", "labonair-hosts-ui",
         "labonair-terminal", "labonair-editor", "labonair-backend",
         "labonair-ai", "labonair-settings", "labonair-settings-json",
+        "labonair-filesystem",
     },
     # rule 3: the only crate that knows every concrete panel type — it also
     # touches the `labonair-panel` contracts crate to register them (T17-001).
@@ -97,7 +102,7 @@ ALLOWED = {
         "labonair-panel-explorer", "labonair-panel-scm",
         "labonair-panel-git-graph", "labonair-panel-snippets",
         "labonair-panel-ai", "labonair-terminal", "labonair-backend",
-        "labonair-settings",
+        "labonair-settings", "labonair-filesystem",
     },
 
     # Panels — rule 2 (+ §8.4: explorer/snippets/ai may pull workspace).
@@ -108,6 +113,7 @@ ALLOWED = {
         "labonair-notifications", "labonair-backend", "labonair-workspace",
         # transitional: settings reads move behind a feature settings contract
         "labonair-settings",
+        "labonair-filesystem",
     },
     "labonair-panel-scm": {
         "labonair-theme", "labonair-ui-kit", "labonair-panel",
@@ -152,8 +158,8 @@ ALLOWED = {
     # `impl From<&SettingsContent> for Preferences` bridge — a pure,
     # non-UI leaf crate (no cycle: labonair-settings-content never depends
     # back on labonair-backend).
-    "labonair-backend": {"labonair-settings-content"},
-    "labonair-ai": {"labonair-backend"},
+    "labonair-backend": {"labonair-settings-content", "labonair-filesystem"},
+    "labonair-ai": {"labonair-backend", "labonair-filesystem"},
 
     # Settings track (T19-001) — pure data model, no GPUI/UI/backend deps.
     "labonair-settings-content": {"labonair-settings-macros"},

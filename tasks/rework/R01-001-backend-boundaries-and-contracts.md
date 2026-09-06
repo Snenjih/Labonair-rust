@@ -2,7 +2,7 @@
 
 ## Status
 
-📋 Planned
+🔄 In Progress
 
 ## Scope
 
@@ -25,6 +25,16 @@ Reduce `labonair-backend` from a broad public application state container to nar
 - preserve the existing app event transport only as a compatibility seam during migration;
 - remove at least one documented transitional dependency edge;
 - update `docs/audits/architecture-inventory.md` and the dependency allow-list.
+
+## Progress
+
+- The first platform boundary is extracted as `labonair-filesystem`.
+- Pure file access, directory traversal, mutation, path resolution, and search
+  no longer live in `labonair-backend`.
+- The legacy watcher remains in `labonair-backend` until its direct `App`/event
+  bus dependency is replaced by a typed callback or domain-event contract.
+- Stable IDs, typed domain events, and the remaining service boundaries are
+  still open in this task.
 
 ## Constraints
 

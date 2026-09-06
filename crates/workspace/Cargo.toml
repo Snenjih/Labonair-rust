@@ -28,6 +28,7 @@ labonair-hosts-ui = { path = "../hosts-ui" }
 labonair-terminal = { path = "../terminal" }
 labonair-editor = { path = "../editor" }
 labonair-backend = { path = "../backend" }
+labonair-filesystem = { path = "../filesystem" }
 labonair-ai = { path = "../ai" }
 labonair-settings = { path = "../settings" }
 labonair-settings-json = { version = "0.1.0", path = "../settings-json" }

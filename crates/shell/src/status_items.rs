@@ -606,9 +606,7 @@ impl CwdStatusItem {
             let d = dir.clone();
             let result = cx
                 .background_executor()
-                .spawn(async move {
-                    labonair_backend::modules::fs::tree::read_dir_page(&d, 0, 200, false)
-                })
+                .spawn(async move { labonair_filesystem::tree::read_dir_page(&d, 0, 200, false) })
                 .await;
             let _ = view.update(cx, |this, cx| {
                 let Some((cur, _, entries)) = this.subdir_menu.as_mut() else {
@@ -621,12 +619,7 @@ impl CwdStatusItem {
                     .map(|page| {
                         page.entries
                             .into_iter()
-                            .filter(|e| {
-                                matches!(
-                                    e.kind,
-                                    labonair_backend::modules::fs::tree::EntryKind::Dir
-                                )
-                            })
+                            .filter(|e| matches!(e.kind, labonair_filesystem::tree::EntryKind::Dir))
                             .map(|e| e.name)
                             .collect()
                     })

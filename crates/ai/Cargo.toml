@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 labonair-backend = { path = "../backend" }
+labonair-filesystem = { path = "../filesystem" }
 tokio = { workspace = true }
 reqwest = { workspace = true }
 serde = { workspace = true }

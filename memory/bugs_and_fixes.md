@@ -1,5 +1,17 @@
 # Bugs, fixes, and non-obvious constraints
 
+## 2026-09-06 — First platform boundary extracted from backend
+
+**Finding:** Local file access, traversal, mutation, path resolution, and
+search were implemented under `labonair-backend`, making feature crates reach
+through the backend facade for a shared platform capability.
+
+**Resolution:** Created `labonair-filesystem` as a UI-free workspace crate,
+moved the pure filesystem services and tests there, centralized home-path
+expansion, and kept only the application-event watcher in the backend as an
+explicit transitional seam. Feature crates now consume the filesystem crate
+directly; the dependency verifier tracks the new platform edge.
+
 ## 2026-09-06 — Workspace AI integration test needs loopback permission
 
 **Finding:** The first sandboxed `cargo test --workspace` run failed only at

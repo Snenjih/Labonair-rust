@@ -1,7 +1,4 @@
-pub mod file;
-pub mod grep;
-pub mod mutate;
-pub mod paths;
-pub mod search;
-pub mod tree;
+// Transitional re-exports keep older backend-owned call sites compiling while
+// feature crates migrate to the standalone filesystem contract.
+pub use labonair_filesystem::{file, grep, mutate, paths, search, tree};
 pub mod watcher;

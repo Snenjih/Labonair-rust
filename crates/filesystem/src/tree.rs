@@ -5,18 +5,6 @@ use std::time::UNIX_EPOCH;
 use ignore::WalkBuilder;
 use serde::Serialize;
 
-fn expand_home(path: &str) -> Result<PathBuf, String> {
-    if path == "~" {
-        dirs::home_dir().ok_or("could not determine home directory".to_string())
-    } else if let Some(stripped) = path.strip_prefix("~/") {
-        let mut home = dirs::home_dir().ok_or("could not determine home directory".to_string())?;
-        home.push(stripped);
-        Ok(home)
-    } else {
-        Ok(PathBuf::from(path))
-    }
-}
-
 #[derive(Serialize, Clone, Copy, Debug, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum EntryKind {
@@ -46,7 +34,7 @@ pub struct DirReadPage {
 /// `is_ignored` flags. Shared by `fs_read_dir` and `fs_read_dir_page` so the
 /// listing/sort/ignore logic only lives in one place.
 pub fn list_dir_entries_sync(path: &str, show_hidden: bool) -> Result<Vec<DirEntry>, String> {
-    let root = expand_home(path)?;
+    let root = super::paths::expand_home(path)?;
     let read = std::fs::read_dir(&root).map_err(|e| {
         log::debug!("fs_read_dir({}) failed: {e}", root.display());
         e.to_string()
@@ -209,7 +197,7 @@ pub async fn fs_read_dir_page(
 /// Returns the absolute expanded path for a given input (expands `~`).
 /// Used by the frontend to normalise the local base path before storing it.
 pub async fn fs_resolve_path(path: String) -> Result<String, String> {
-    expand_home(&path).map(|p| p.to_string_lossy().to_string())
+    super::paths::expand_home(&path).map(|p| p.to_string_lossy().to_string())
 }
 
 /// Lists immediate subdirectories of `path`. Kept for the CwdBreadcrumb.

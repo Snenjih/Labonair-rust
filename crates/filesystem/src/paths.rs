@@ -1,5 +1,17 @@
 use std::path::PathBuf;
 
+pub(crate) fn expand_home(path: &str) -> Result<PathBuf, String> {
+    if path == "~" {
+        dirs::home_dir().ok_or("could not determine home directory".to_string())
+    } else if let Some(stripped) = path.strip_prefix("~/") {
+        let mut home = dirs::home_dir().ok_or("could not determine home directory".to_string())?;
+        home.push(stripped);
+        Ok(home)
+    } else {
+        Ok(PathBuf::from(path))
+    }
+}
+
 pub fn config_dir() -> PathBuf {
     #[cfg(not(target_os = "windows"))]
     let base = dirs::home_dir()

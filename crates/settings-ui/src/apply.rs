@@ -9,8 +9,8 @@ use std::path::{Path, PathBuf};
 
 use gpui::{App, Entity};
 
-use labonair_backend::modules::fs::paths::config_dir;
 use labonair_command_palette::{resolve_conflict, Conflict, KeybindMap, ShortcutId};
+use labonair_filesystem::paths::config_dir;
 use labonair_settings::content::general::ThemePref;
 use labonair_settings::{
     EditorSettings, GeneralSettings, Settings as _, SettingsStore, TerminalSettings, ThemeSettings,

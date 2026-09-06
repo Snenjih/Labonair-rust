@@ -165,7 +165,7 @@ pub(crate) fn bootstrap(
     // build (`register_builtin_status_items` below reloads placements right
     // after registering every item).
     match labonair_backend::modules::settings::migrations::migrate_bar_item_placements(
-        &labonair_backend::modules::fs::paths::config_dir(),
+        &labonair_filesystem::paths::config_dir(),
     ) {
         Ok(outcome) => tracing::info!("bar item placement migration: {outcome:?}"),
         Err(err) => tracing::warn!("bar item placement migration failed: {err}"),

@@ -4142,6 +4142,7 @@ dependencies = [
  "labonair-ai",
  "labonair-backend",
  "labonair-editor",
+ "labonair-filesystem",
  "labonair-settings",
  "labonair-shell",
  "labonair-terminal",
@@ -4164,6 +4165,7 @@ dependencies = [
  "futures-util",
  "keyring",
  "labonair-backend",
+ "labonair-filesystem",
  "reqwest",
  "serde",
  "serde_json",
@@ -4187,6 +4189,7 @@ dependencies = [
  "grep-regex",
  "grep-searcher",
  "ignore",
+ "labonair-filesystem",
  "labonair-settings-content",
  "libc",
  "log",
@@ -4221,6 +4224,7 @@ version = "0.1.0"
 dependencies = [
  "gpui",
  "labonair-backend",
+ "labonair-filesystem",
  "labonair-gpui-ext",
  "labonair-settings",
  "labonair-theme",
@@ -4248,6 +4252,21 @@ dependencies = [
  "tree-sitter-toml-ng",
  "tree-sitter-typescript",
  "tree-sitter-yaml",
+]
+
+[[package]]
+name = "labonair-filesystem"
+version = "0.1.0"
+dependencies = [
+ "dirs 6.0.0",
+ "globset",
+ "grep-regex",
+ "grep-searcher",
+ "ignore",
+ "log",
+ "serde",
+ "serde_json",
+ "tokio",
 ]
 
 [[package]]
@@ -4298,6 +4317,7 @@ version = "0.1.0"
 dependencies = [
  "gpui",
  "labonair-backend",
+ "labonair-filesystem",
  "labonair-notifications",
  "labonair-panel",
  "labonair-settings",
@@ -4417,6 +4437,7 @@ dependencies = [
  "gpui-component",
  "labonair-backend",
  "labonair-command-palette",
+ "labonair-filesystem",
  "labonair-gpui-ext",
  "labonair-hosts-ui",
  "labonair-notifications",
@@ -4443,6 +4464,7 @@ dependencies = [
  "gpui-component",
  "labonair-backend",
  "labonair-command-palette",
+ "labonair-filesystem",
  "labonair-gpui-ext",
  "labonair-notifications",
  "labonair-panel",
@@ -4508,6 +4530,7 @@ dependencies = [
  "labonair-backend",
  "labonair-command-palette",
  "labonair-editor",
+ "labonair-filesystem",
  "labonair-gpui-ext",
  "labonair-hosts-ui",
  "labonair-notifications",

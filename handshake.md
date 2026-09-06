@@ -1,5 +1,24 @@
 # Handshake — Session State (Labonair-rust Port)
 
+## Current Session: 2026-09-06 (First modular platform boundary)
+
+The first code migration from the architecture reset is complete: local file
+access, traversal, mutation, path resolution, and search now live in the new
+UI-free `crates/filesystem` (`labonair-filesystem`) crate. Explorer, editor,
+workspace local SFTP, shell status items, settings UI, command palette, app
+bootstrap, and AI file tools consume that crate directly. The backend keeps
+only the legacy filesystem watcher temporarily because it still emits through
+`AppEvent`; extracting that requires the typed event/callback contract from
+`R01-001`.
+
+Verification passed: `cargo fmt --check`, `cargo check --workspace
+--all-targets`, `cargo clippy --workspace --all-targets -- -D warnings`,
+`cargo test --workspace` (with approved loopback permission), and
+`scripts/check-crate-deps.sh`. The task `R01-001-backend-boundaries-and-contracts`
+is still `🔄 In Progress`; stable IDs/events and the remaining backend
+boundaries are next. Branch `master` is ahead of `origin/master`; changes are
+ready to commit. No blockers.
+
 ## Current Session: 2026-09-06 (Architecture and documentation reset — Phase 0)
 
 User-requested overhaul is active. The normative documentation now defines
