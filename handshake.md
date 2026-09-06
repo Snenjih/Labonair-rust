@@ -1,6 +1,6 @@
 # Handshake — Session State (Labonair-rust Port)
 
-## Current Session: 2026-09-06 (Snippet execution capability boundary)
+## Current Session: 2026-09-06 (Snippet module isolation)
 
 The snippet execution boundary is now typed end to end. `labonair-snippets`
 owns the shared `SnippetRunEvent` contract and asynchronous
@@ -9,15 +9,18 @@ russh/session adapter. `SnippetsView` receives that capability during shell
 composition and no longer imports backend execution functions or subscribes to
 raw snippet events. Local and SSH silent runs now use the same typed UI event
 path, while cancellation remains independent of the UI through shared
-`SnippetRunState` ownership.
+`SnippetRunState` ownership. The snippets panel is now isolated from the
+backend facade entirely: `labonair-persistence::Database` is a cloneable
+shared infrastructure handle, and the shell injects it alongside the SSH
+executor. CRUD and host reads therefore use capability-owned stores directly.
 
 Verification passed: `cargo fmt --all`, `cargo check --workspace
 --all-targets`, `cargo clippy --workspace --all-targets -- -D warnings`,
 `cargo test --workspace`, `cargo fmt --check`, `git diff --check`, and
 `scripts/check-crate-deps.sh`.
 
-State: branch `master`, latest commit is `67fbbe8`
-(`refactor(snippets): inject SSH execution capability`). `R01-001` remains
+State: branch `master`, the SSH capability commit is `cdecbe0`; the current
+panel/database isolation changes are uncommitted. `R01-001` remains
 `🔄 In Progress`; next is to continue replacing broad backend state with typed
 capability contracts. No source blocker.
 

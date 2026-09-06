@@ -504,7 +504,7 @@ Include ~/.ssh/config.d/*
             );",
         )
         .unwrap();
-        HostsDb(std::sync::Mutex::new(conn))
+        HostsDb(std::sync::Arc::new(std::sync::Mutex::new(conn)))
     }
 
     /// (name, host_address, port, auth_method, private_key_path, jump_host_id)

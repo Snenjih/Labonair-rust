@@ -29,7 +29,7 @@ This document records the current repository shape during the module migration. 
 | `panel-explorer` | Explorer panel | explorer module | Remove workspace dependency through contracts. |
 | `panel-git-graph` | Git graph panel | git module | Keep UI-specific graph surface. |
 | `panel-scm` | Source-control panel | git module | Separate Git service contract from UI. |
-| `panel-snippets` | Snippet panel and execution UI | snippets module | Separate persistence/execution from view. |
+| `panel-snippets` | Snippet panel and execution UI | snippets module | Receives `Database` and execution contracts; has no backend-facade dependency. |
 | `settings` | Layered settings store | settings module | Keep as core after removing misplaced categories. |
 | `settings-content` | Typed settings data | settings module | Keep only actual configuration values. |
 | `settings-json` | JSON editing | settings module | Keep as persistence adapter. |
@@ -59,6 +59,7 @@ The current Cargo metadata shows several transitional edges that conflict with t
   exposes a compatibility database re-export; snippet models, persistence,
   run events, and execution contracts now belong to `labonair-snippets`.
 - `backend` still exposes the shared database under the compatibility name `HostsDb`; connection/schema lifecycle now belongs to `labonair-persistence`.
+- `panel-snippets` no longer depends on `labonair-backend`; its database and SSH execution capabilities are injected from the composition root.
 - `shell/src/commands.rs`, `shell/src/status_items.rs`, and workspace views still contain feature-specific behavior that belongs to owning modules.
 - The former toast path has been removed; the statusbar is now the only
   notification presentation surface. The GPUI adapter remains until actions

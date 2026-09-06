@@ -320,7 +320,7 @@ mod tests {
         let data_dir =
             std::env::temp_dir().join(format!("labonair-snippets-{}", uuid::Uuid::new_v4()));
         let connection = initialize_database(data_dir.clone()).expect("database initializes");
-        let database = Database(Mutex::new(connection));
+        let database = Database(std::sync::Arc::new(Mutex::new(connection)));
         let snippet = snippets_create(
             &database,
             "Deploy".to_string(),

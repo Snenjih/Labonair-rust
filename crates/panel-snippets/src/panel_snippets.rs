@@ -11,7 +11,7 @@
 //! * [`SnippetsView`] is the GPUI sidebar panel — grouped list + search, the
 //!   create/edit form, the variable-prompt and host-picker modals and the log
 //!   drawer. CRUD/groups/reorder persist through
-//!   `labonair_backend::modules::snippets::db`; execution is delegated to
+//!   `labonair_snippets::store`; execution is delegated to
 //!   [`crate::workspace::Workspace`] (terminal / inject) or
 //!   the standalone `labonair_snippets::exec` runner (silent).
 
@@ -35,8 +35,8 @@ use gpui::{
     IntoElement, KeyDownEvent, MouseButton, MouseDownEvent, ParentElement, Render, SharedString,
     StatefulInteractiveElement, Styled, Window,
 };
-use labonair_backend::App as Backend;
 use labonair_hosts::{store as host_store, Host};
+use labonair_persistence::Database;
 use labonair_snippets::{
     exec::{
         run_local, LocalRunRegistry, OutputStream, SnippetRunEvent, SnippetRunEventSink,
@@ -421,7 +421,7 @@ enum RunEvent {
 }
 
 pub struct SnippetsView {
-    backend: Backend,
+    database: Database,
     tokio: TokioHandle,
     theme: Entity<ThemeStore>,
     workspace: Entity<Workspace>,
@@ -465,7 +465,7 @@ impl Focusable for SnippetsView {
 
 impl SnippetsView {
     pub fn new(
-        backend: Backend,
+        database: Database,
         tokio: TokioHandle,
         theme: Entity<ThemeStore>,
         workspace: Entity<Workspace>,
@@ -500,7 +500,7 @@ impl SnippetsView {
         });
 
         let this = Self {
-            backend,
+            database,
             tokio,
             theme,
             workspace,
@@ -533,17 +533,19 @@ impl SnippetsView {
 
     // ── data ──────────────────────────────────────────────────────────────
 
-    /// Reload snippets / groups / hosts from the backend.
+    /// Reload snippets, groups, and hosts from their capability stores.
     pub fn reload(&self, cx: &mut Context<Self>) {
-        let app = self.backend.clone();
+        let database = self.database.clone();
         let jh = self.tokio.spawn(async move {
-            let snippets = snippet_store::snippets_get_all(&app.db)
+            let snippets = snippet_store::snippets_get_all(&database)
                 .await
                 .unwrap_or_default();
-            let groups = snippet_store::snippet_groups_get_all(&app.db)
+            let groups = snippet_store::snippet_groups_get_all(&database)
                 .await
                 .unwrap_or_default();
-            let hosts = host_store::hosts_get_all(&app.db).await.unwrap_or_default();
+            let hosts = host_store::hosts_get_all(&database)
+                .await
+                .unwrap_or_default();
             (snippets, groups, hosts)
         });
         cx.spawn(async move |this, cx| {
@@ -605,7 +607,7 @@ impl SnippetsView {
         if form.name.trim().is_empty() || form.command.trim().is_empty() {
             return;
         }
-        let app = self.backend.clone();
+        let database = self.database.clone();
         let opt = |s: String| (!s.trim().is_empty()).then(|| s.trim().to_string());
         let name = form.name.trim().to_string();
         let description = opt(form.description.clone());
@@ -625,7 +627,7 @@ impl SnippetsView {
         let jh = self.tokio.spawn(async move {
             match id {
                 None => snippet_store::snippets_create(
-                    &app.db,
+                    &database,
                     name,
                     command,
                     target,
@@ -640,7 +642,7 @@ impl SnippetsView {
                 .await
                 .map(|_| ()),
                 Some(id) => snippet_store::snippets_update(
-                    &app.db,
+                    &database,
                     id,
                     Some(name),
                     Some(command),
@@ -669,10 +671,10 @@ impl SnippetsView {
     }
 
     fn delete_snippet(&mut self, id: String, cx: &mut Context<Self>) {
-        let app = self.backend.clone();
+        let database = self.database.clone();
         let jh = self
             .tokio
-            .spawn(async move { snippet_store::snippets_delete(&app.db, id).await });
+            .spawn(async move { snippet_store::snippets_delete(&database, id).await });
         cx.spawn(async move |this, cx| {
             let _ = jh.await;
             let _ = this.update(cx, |this, cx| {
@@ -684,7 +686,7 @@ impl SnippetsView {
     }
 
     fn duplicate_snippet(&mut self, s: &CommandSnippet, cx: &mut Context<Self>) {
-        let app = self.backend.clone();
+        let database = self.database.clone();
         let (name, command, target) = (
             format!("{} (copy)", s.name),
             s.command.clone(),
@@ -701,7 +703,7 @@ impl SnippetsView {
         );
         let jh = self.tokio.spawn(async move {
             snippet_store::snippets_create(
-                &app.db, name, command, target, desc, host, mode, wd, group, tags, order,
+                &database, name, command, target, desc, host, mode, wd, group, tags, order,
             )
             .await
         });
@@ -743,10 +745,10 @@ impl SnippetsView {
                 sort_order: i as i64,
             })
             .collect();
-        let app = self.backend.clone();
+        let database = self.database.clone();
         let jh = self
             .tokio
-            .spawn(async move { snippet_store::snippets_reorder(&app.db, items).await });
+            .spawn(async move { snippet_store::snippets_reorder(&database, items).await });
         cx.spawn(async move |this, cx| {
             let _ = jh.await;
             let _ = this.update(cx, |this, cx| this.reload(cx));
@@ -759,9 +761,9 @@ impl SnippetsView {
         if name.is_empty() {
             return;
         }
-        let app = self.backend.clone();
+        let database = self.database.clone();
         let jh = self.tokio.spawn(async move {
-            snippet_store::snippet_groups_create(&app.db, name, None, None).await
+            snippet_store::snippet_groups_create(&database, name, None, None).await
         });
         cx.spawn(async move |this, cx| {
             let _ = jh.await;
@@ -775,10 +777,10 @@ impl SnippetsView {
     }
 
     fn delete_group(&mut self, id: String, cx: &mut Context<Self>) {
-        let app = self.backend.clone();
+        let database = self.database.clone();
         let jh = self
             .tokio
-            .spawn(async move { snippet_store::snippet_groups_delete(&app.db, id).await });
+            .spawn(async move { snippet_store::snippet_groups_delete(&database, id).await });
         cx.spawn(async move |this, cx| {
             let _ = jh.await;
             let _ = this.update(cx, |this, cx| this.reload(cx));

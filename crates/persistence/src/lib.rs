@@ -7,7 +7,8 @@
 use std::path::PathBuf;
 
 /// The process-local SQLite connection shared by capability stores.
-pub struct Database(pub std::sync::Mutex<rusqlite::Connection>);
+#[derive(Clone)]
+pub struct Database(pub std::sync::Arc<std::sync::Mutex<rusqlite::Connection>>);
 
 /// Open the application database, create its shared schema, and apply
 /// idempotent migrations.

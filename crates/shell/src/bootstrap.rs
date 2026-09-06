@@ -321,7 +321,7 @@ pub(crate) fn bootstrap(
             ),
         );
         SnippetsView::new(
-            backend.clone(),
+            backend.db.clone(),
             tokio.clone(),
             theme.clone(),
             workspace.clone(),

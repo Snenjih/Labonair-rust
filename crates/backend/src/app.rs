@@ -65,7 +65,7 @@ impl App {
     pub fn new(data_dir: &Path) -> Result<App, String> {
         std::fs::create_dir_all(data_dir).map_err(|e| e.to_string())?;
         let conn = hosts::db::initialize_db(data_dir.to_path_buf())?;
-        let db = HostsDb(std::sync::Mutex::new(conn));
+        let db = HostsDb(std::sync::Arc::new(std::sync::Mutex::new(conn)));
 
         let (tx, rx) = tokio::sync::mpsc::channel::<WorkerMessage>(100);
         let conflicts: ConflictMap = Arc::new(tokio::sync::Mutex::new(HashMap::new()));

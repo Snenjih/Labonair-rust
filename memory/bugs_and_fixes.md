@@ -19,6 +19,17 @@ adapter and cancellation calls, so `AppInner::snippet_run` is an `Arc` rather
 than an inline state value. This keeps cancellation independent from the UI
 and avoids copying the in-flight channel registry.
 
+## 2026-09-06 — Capability panels need cloneable infrastructure handles
+
+**Finding:** `panel-snippets` had already stopped using backend execution
+functions, but its Cargo dependency and every CRUD operation still pulled in
+the whole `Backend` facade solely to reach the shared SQLite connection.
+
+**Resolution:** `labonair-persistence::Database` now owns an `Arc<Mutex<_>>`
+and implements `Clone`. The panel receives that narrow handle directly, while
+the shell injects the concrete SSH executor separately. The dependency
+allow-list now rejects a backend edge for the snippets panel.
+
 ## 2026-09-06 — Local snippet execution belongs in the snippets capability
 
 **Finding:** Local snippet execution was implemented in

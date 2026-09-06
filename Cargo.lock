@@ -4411,10 +4411,10 @@ name = "labonair-panel-snippets"
 version = "0.1.0"
 dependencies = [
  "gpui",
- "labonair-backend",
  "labonair-hosts",
  "labonair-notifications",
  "labonair-panel",
+ "labonair-persistence",
  "labonair-snippets",
  "labonair-theme",
  "labonair-ui-kit",

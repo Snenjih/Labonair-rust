@@ -59,6 +59,9 @@ Reduce `labonair-backend` from a broad public application state container to nar
 - The statusbar notification dropdown now shows the unread badge, all retained
   records in a scrollable list, and expandable details. Notification records
   are not auto-dismissed.
+- `panel-snippets` no longer depends on `labonair-backend`; its store receives
+  cloneable `labonair-persistence::Database` infrastructure and its SSH runner
+  receives the `SshCommandExecutor` capability from the composition root.
 - Stable IDs, typed domain events, and the remaining service boundaries are
   still open in this task.
 
