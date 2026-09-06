@@ -4208,7 +4208,7 @@ dependencies = [
  "serde_json",
  "socket2 0.5.10",
  "tar",
- "thiserror 1.0.69",
+ "thiserror 2.0.20",
  "tokio",
  "tokio-util",
  "uuid",
