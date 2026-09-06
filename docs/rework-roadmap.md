@@ -3,12 +3,12 @@
 **Status:** Current implementation plan
 **Version:** 3
 
-The foundation migration is currently through `R01-008`: capability-owned
+The foundation migration is currently through `R01-009`: capability-owned
 registries and surfaces are established for transfers, command metadata,
-settings values, backgrounds, hosts, and notifications. The next bounded task
-is `R01-009-inline-error-notification-adoption`, which completes the Phase 3
-exit condition by moving remaining user-facing error text into the retained
-statusbar notification registry.
+settings values, backgrounds, hosts, and notifications. Phase 3 is complete:
+remaining operation failures are retained in the statusbar notification
+registry, while actionable task dialogs remain local to the task that requires
+the user's decision.
 
 This roadmap replaces the historical task order. Existing completed work remains valuable, but old tasks do not override the contracts in `docs/`.
 
@@ -49,14 +49,16 @@ registered without editing unrelated feature internals or a shell-wide table.
 
 ## Phase 3 — Notifications and transfers
 
-- replace the toast implementation with the notification center/dropdown;
+- replace the former toast implementation with the notification center/dropdown;
 - migrate inline user-facing errors;
 - make transfers a first-class statusbar module;
 - preserve actions, details, deduplication, and scrollable history.
 
-**Exit:** every user-facing message is retained in the notification registry
-and shown through the statusbar dropdown; no product code uses a toast or
-feature-local user-facing error surface.
+**Exit:** every operation message is retained in the notification registry and
+shown through the statusbar dropdown; no product code uses a toast or duplicate
+feature-local error surface. Explicitly actionable dialogs and field
+validation affordances may retain the details and controls required to finish
+the current task.
 
 ## Phase 4 — Command palette and keymap
 

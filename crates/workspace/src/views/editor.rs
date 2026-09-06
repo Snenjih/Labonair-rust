@@ -1306,7 +1306,13 @@ fn printable(ks: &gpui::Keystroke) -> Option<String> {
 fn notify(cx: &mut App, title: &str, body: &str) {
     let (title, body) = (title.to_string(), body.to_string());
     notification_center(cx).update(cx, |center, cx| {
-        center.push(Notification::error(title, body), cx);
+        center.push(
+            Notification::error(title.clone(), "The editor operation failed.")
+                .source("editor")
+                .details(body.clone())
+                .dedupe_key(format!("editor:{title}:{body}")),
+            cx,
+        );
     });
 }
 

@@ -25,7 +25,7 @@ in the normative documents linked from `docs/README.md`.
 | `credentials` | Credential domain, secret-backed metadata, and SSH keypair generation | credentials module | Extracted from `backend`; backend keeps App-signature adapters while callers migrate. |
 | `snippets` | Snippet domain, SQLite store, and local/SSH execution contracts | snippets module | Shared run events and the SSH executor contract are standalone; backend owns only the russh adapter. |
 | `gpui-ext` | Shared GPUI helpers | foundation | Keep dependency-free from features. |
-| `hosts-ui` | Host management UI and host-related dependencies | hosts module | Consumes host, credential, snippet, database, and secret contracts directly; notification coupling remains to be migrated. |
+| `hosts-ui` | Host management UI and host-related dependencies | hosts module | Consumes host, credential, snippet, database, and secret contracts directly; operation failures publish through Notifications. |
 | `notifications-core` | UI-free notification registry and lifecycle | notifications module | New owner of retention, ordering, deduplication, read state, and structured metadata. |
 | `notifications` | GPUI notification adapter and statusbar dropdown | notifications module | Owns the statusbar notification item; shell only registers it. |
 | `panel` | Panel/status contracts | workspace foundation | Keep contracts-only. |
@@ -89,6 +89,27 @@ The current Cargo metadata shows several transitional edges that conflict with t
 - The former toast path has been removed; the statusbar is now the only
   notification presentation surface. The GPUI adapter remains until actions
   are migrated from callbacks to stable command IDs.
+
+### Notification surface audit
+
+The Phase 3 audit is complete. Operation failures in Explorer, SFTP, Preview,
+Git Graph, SCM, Hosts, SSH connection setup, editor operations, and Project
+Diff publish to the central notification registry with a neutral summary and
+expandable details. Repeated watcher/retry failures use source-scoped
+deduplication keys. No active view duplicates those failures as a raw inline
+banner, row, or form message.
+
+The following surfaces are intentional exceptions because they are task
+controls rather than passive error reporting:
+
+| Surface | Why it remains | Boundary |
+|---|---|---|
+| Transfer conflict/file-error dialog | The user must choose overwrite, rename, skip, or abort before the worker can continue. | `labonair-transfers-ui` modal; the queue row exposes status only. |
+| SFTP permission field validation | The invalid value must be corrected in the active form before submission. | `PermDialog` field validation. |
+| Editor external-change prompt | The user must choose reload or keep the local buffer. | Editor conflict prompt. |
+
+These controls may show the details needed to make the decision, but they must
+not also emit a duplicate passive notification for the same interaction.
 
 The dependency verifier allows only explicit transitional edges while these
 boundaries are extracted. They are deliberately visible in the allow-list and

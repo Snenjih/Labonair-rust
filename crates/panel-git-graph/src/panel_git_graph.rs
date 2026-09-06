@@ -670,6 +670,23 @@ impl GitGraphView {
                         this.state = if is_no_repo_error(&e) {
                             GraphState::NoRepo
                         } else {
+                            let root = this.root.clone().unwrap_or_default();
+                            let session = this.session_id.clone().unwrap_or_default();
+                            labonair_notifications::notification_center(cx).update(
+                                cx,
+                                |center, cx| {
+                                    center.push(
+                                        labonair_notifications::Notification::error(
+                                            "Git history load failed",
+                                            "Could not load the repository history.",
+                                        )
+                                        .source("git-graph")
+                                        .details(e.clone())
+                                        .dedupe_key(format!("git-graph:load:{root}:{session}")),
+                                        cx,
+                                    );
+                                },
+                            );
                             GraphState::Error(e)
                         };
                     }
@@ -719,7 +736,27 @@ impl GitGraphView {
                 if this.gen != generation || this.selected != Some(idx) {
                     return;
                 }
-                this.detail_numstat = Some(res.map(|s| parse_numstat(&s)).unwrap_or_default());
+                match res {
+                    Ok(text) => this.detail_numstat = Some(parse_numstat(&text)),
+                    Err(error) => {
+                        labonair_notifications::notification_center(cx).update(cx, |center, cx| {
+                            center.push(
+                                labonair_notifications::Notification::error(
+                                    "Commit statistics failed",
+                                    "Could not load the selected commit statistics.",
+                                )
+                                .source("git-graph")
+                                .details(error.clone())
+                                .dedupe_key(format!(
+                                    "git-graph:numstat:{}",
+                                    this.commit_hash(idx).unwrap_or_default()
+                                )),
+                                cx,
+                            );
+                        });
+                        this.detail_numstat = Some(Vec::new());
+                    }
+                }
                 cx.notify();
             });
         })
@@ -752,7 +789,28 @@ impl GitGraphView {
                 if this.gen != generation || this.selected != Some(idx) {
                     return;
                 }
-                this.detail_diff = Some(res);
+                match res {
+                    Ok(text) => this.detail_diff = Some(Ok(text)),
+                    Err(error) => {
+                        labonair_notifications::notification_center(cx).update(cx, |center, cx| {
+                            center.push(
+                                labonair_notifications::Notification::error(
+                                    "Commit diff failed",
+                                    "Could not load the selected commit diff.",
+                                )
+                                .source("git-graph")
+                                .details(error.clone())
+                                .dedupe_key(format!(
+                                    "git-graph:diff:{}",
+                                    this.commit_hash(idx).unwrap_or_default()
+                                )),
+                                cx,
+                            );
+                        });
+                        this.detail_diff = None;
+                        this.show_diff = false;
+                    }
+                }
                 cx.notify();
             });
         })
@@ -1192,15 +1250,7 @@ impl GitGraphView {
                             .child(SharedString::from("Loading diff\u{2026}")),
                     );
                 }
-                Some(Err(e)) => {
-                    diff_box = diff_box.child(
-                        div()
-                            .px(px(8.0))
-                            .py(px(4.0))
-                            .text_color(c.error)
-                            .child(SharedString::from(e.clone())),
-                    );
-                }
+                Some(Err(_)) => {}
                 Some(Ok(text)) => {
                     for line in text.lines().take(800) {
                         diff_box = diff_box.child(diff_line(line, c));
@@ -1264,7 +1314,9 @@ impl GitGraphView {
                 "The selected folder is not a Git repository.",
                 c,
             ),
-            GraphState::Error(e) => center_message("Failed to load git log", e, c),
+            // The detailed failure is retained in Notifications. Keep the
+            // graph surface neutral so the same error is not rendered twice.
+            GraphState::Error(_) => center_message("Git history unavailable", "", c),
             GraphState::Loading | GraphState::Loaded => {
                 if self.commits.is_empty() {
                     center_message("No commits found", "", c)
@@ -1316,7 +1368,16 @@ impl GitGraphView {
                     Ok(()) => this.reload(cx),
                     Err(e) => {
                         labonair_notifications::notification_center(cx).update(cx, |n, cx| {
-                            n.push(labonair_notifications::Notification::error(label, e), cx);
+                            n.push(
+                                labonair_notifications::Notification::error(
+                                    label,
+                                    "The Git operation could not be completed.",
+                                )
+                                .source("git-graph")
+                                .details(e.clone())
+                                .dedupe_key(format!("git-graph:op:{label}:{e}")),
+                                cx,
+                            );
                         })
                     }
                 }

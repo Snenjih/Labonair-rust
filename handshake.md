@@ -1,5 +1,28 @@
 # Handshake — Session State (Labonair-rust Port)
 
+## Current Session: 2026-09-06 (Notification adoption complete)
+
+`R01-009` is complete. Operation failures from Explorer, SFTP, Preview, Git
+Graph, SCM, Hosts, SSH connection setup, editor operations, and Project Diff
+now publish structured notifications with neutral summaries, expandable
+details, source IDs, and deduplication keys. Feature-local raw error rows and
+banners were removed. Transfer conflict/file-error dialogs, SFTP permission
+validation, and the editor external-change prompt remain only as documented
+task controls. The transfer queue row exposes status without duplicating the
+dialog error.
+
+The capability matrix, architecture inventory, roadmap, task queue, and
+notification contract now record the Phase 3 exit condition and its explicit
+exceptions. The current branch is `master`; this change is committed locally.
+The next task is not started: choose the next bounded shell/workspace or
+command-palette/keymap task and record its removal condition before coding.
+
+Verification passes: `cargo fmt --all -- --check`, `cargo check --workspace
+--all-targets`, `cargo clippy --workspace --all-targets -- -D warnings`,
+`cargo test --workspace --no-fail-fast` with the two OS-restricted tests
+validated outside the sandbox, `git diff --check`, and
+`scripts/check-crate-deps.py`. No source blocker.
+
 ## Current Session: 2026-09-06 (Notifications statusbar ownership)
 
 `R01-008` is complete. The retained notification registry and its statusbar

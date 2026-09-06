@@ -33,6 +33,7 @@ use gpui::{
 use tokio::runtime::Handle as TokioHandle;
 
 use labonair_filesystem::{mutate, tree};
+use labonair_notifications::{notification_center, Notification};
 use labonair_sftp::{RemoteEntry, SftpBrowserService, SftpSessionHandle, SftpSessionService};
 use labonair_ssh::{
     SshConnectRequest, SshConnectionService, SshEventSink, SshRemoteCommandService,
@@ -42,8 +43,8 @@ use labonair_transfers::TransferDirection;
 
 use crate::theme::ThemeStore;
 use labonair_ui_kit::{
-    banner, button, context_menu, divider, icon_for_path, icon_toggle_button, svg_path, Axis,
-    ButtonSize, ButtonVariant, IconName, ListItem, MenuClick, MenuItem, Palette, Severity,
+    button, context_menu, divider, icon_for_path, icon_toggle_button, svg_path, Axis, ButtonSize,
+    ButtonVariant, IconName, ListItem, MenuClick, MenuItem, Palette,
 };
 
 /// A menu action against the SFTP view (wrapped into a [`MenuClick`]).
@@ -206,7 +207,6 @@ struct Pane {
     entries: Vec<Entry>,
     show_hidden: bool,
     loading: bool,
-    error: Option<String>,
     selected: Option<String>,
     /// Bumped on every load; a stale async response compares and bails.
     generation: u64,
@@ -224,7 +224,6 @@ impl Pane {
             entries: Vec::new(),
             show_hidden: false,
             loading: false,
-            error: None,
             selected: None,
             generation: 0,
             edit: None,
@@ -409,6 +408,24 @@ impl SftpView {
         self.sftp_handle.clone()
     }
 
+    fn notify_error(
+        &self,
+        title: &'static str,
+        details: String,
+        dedupe_key: impl Into<String>,
+        cx: &mut Context<Self>,
+    ) {
+        notification_center(cx).update(cx, |center, cx| {
+            center.push(
+                Notification::error(title, "The SFTP operation could not be completed.")
+                    .source("sftp")
+                    .details(details)
+                    .dedupe_key(dedupe_key.into()),
+                cx,
+            );
+        });
+    }
+
     fn pane(&mut self, side: Side) -> &mut Pane {
         match side {
             Side::Local => &mut self.local,
@@ -468,6 +485,12 @@ impl SftpView {
                     }
                     Err(e) => {
                         this.conn = Conn::Error(e.clone());
+                        this.notify_error(
+                            "SFTP connection failed",
+                            e.clone(),
+                            format!("sftp:connect:{}", this.session_id),
+                            cx,
+                        );
                         cx.emit(SftpEvent::ConnResult {
                             session_id: sid,
                             error: Some(e),
@@ -486,7 +509,6 @@ impl SftpView {
         self.local.generation += 1;
         let generation = self.local.generation;
         self.local.loading = true;
-        self.local.error = None;
         let path = self.local.path.clone();
         let show_hidden = self.local.show_hidden;
         cx.spawn(async move |this, cx| {
@@ -520,7 +542,12 @@ impl SftpView {
                     }
                     Err(e) => {
                         this.local.entries.clear();
-                        this.local.error = Some(e);
+                        this.notify_error(
+                            "Local directory load failed",
+                            e,
+                            format!("sftp:local-load:{}", this.local.path),
+                            cx,
+                        );
                     }
                 }
                 let _ = show_hidden;
@@ -537,7 +564,6 @@ impl SftpView {
         self.remote.generation += 1;
         let generation = self.remote.generation;
         self.remote.loading = true;
-        self.remote.error = None;
         let Some(handle) = self.sftp_handle.clone() else {
             return;
         };
@@ -565,7 +591,12 @@ impl SftpView {
                     }
                     Err(e) => {
                         this.remote.entries.clear();
-                        this.remote.error = Some(e);
+                        this.notify_error(
+                            "Remote directory load failed",
+                            e,
+                            format!("sftp:remote-load:{}:{}", this.session_id, this.remote.path),
+                            cx,
+                        );
                     }
                 }
                 cx.notify();
@@ -676,7 +707,12 @@ impl SftpView {
             )
         };
         let Some(name) = sanitize_entry_name(&raw) else {
-            self.pane(side).error = Some("Invalid name".to_string());
+            self.notify_error(
+                "Invalid SFTP name",
+                "Names cannot be empty, '.', '..', or contain path separators.".to_string(),
+                format!("sftp:invalid-name:{side:?}"),
+                cx,
+            );
             cx.notify();
             return;
         };
@@ -743,7 +779,12 @@ impl SftpView {
                         .await;
                     let _ = this.update(cx, |this, cx| {
                         if let Err(e) = res {
-                            this.local.error = Some(e);
+                            this.notify_error(
+                                "Local file operation failed",
+                                e,
+                                format!("sftp:local-operation:{}", this.local.path),
+                                cx,
+                            );
                         }
                         this.load_local(cx);
                     });
@@ -763,7 +804,12 @@ impl SftpView {
             let res = jh.await.unwrap_or_else(|e| Err(e.to_string()));
             let _ = this.update(cx, |this, cx| {
                 if let Err(e) = res {
-                    this.pane(side).error = Some(e);
+                    this.notify_error(
+                        "Remote file operation failed",
+                        e,
+                        format!("sftp:remote-operation:{side:?}"),
+                        cx,
+                    );
                 }
                 this.reload(side, cx);
             });
@@ -795,7 +841,12 @@ impl SftpView {
                         .await;
                     let _ = this.update(cx, |this, cx| {
                         if let Err(e) = res {
-                            this.local.error = Some(e);
+                            this.notify_error(
+                                "Local delete failed",
+                                e,
+                                format!("sftp:local-delete:{}", this.local.path),
+                                cx,
+                            );
                         }
                         this.load_local(cx);
                     });
@@ -865,7 +916,12 @@ impl SftpView {
             let res = jh.await.unwrap_or_else(|e| Err(e.to_string()));
             let _ = this.update(cx, |this, cx| {
                 if let Err(e) = res {
-                    this.remote.error = Some(e);
+                    this.notify_error(
+                        "Permission update failed",
+                        e,
+                        format!("sftp:permissions:{}", this.session_id),
+                        cx,
+                    );
                 }
                 this.load_remote(cx);
             });
@@ -904,11 +960,29 @@ impl SftpView {
         cx.spawn(async move |this, cx| {
             let res = jh.await.unwrap_or_else(|e| Err(e.to_string()));
             let _ = this.update(cx, |this, cx| {
-                if let Some(d) = this.props.as_mut() {
-                    d.calculating = false;
-                    match res {
-                        Ok(s) => d.calculated_size = Some(s),
-                        Err(e) => d.calculated_size = Some(format!("error: {e}")),
+                match res {
+                    Ok(s) => {
+                        if let Some(d) = this.props.as_mut() {
+                            d.calculating = false;
+                            d.calculated_size = Some(s);
+                        }
+                    }
+                    Err(e) => {
+                        let path = this
+                            .props
+                            .as_ref()
+                            .map(|dialog| dialog.entry.path.clone())
+                            .unwrap_or_default();
+                        this.notify_error(
+                            "Remote size calculation failed",
+                            e,
+                            format!("sftp:size:{path}"),
+                            cx,
+                        );
+                        if let Some(d) = this.props.as_mut() {
+                            d.calculating = false;
+                            d.calculated_size = None;
+                        }
                     }
                 }
                 cx.notify();
@@ -1217,9 +1291,6 @@ impl SftpView {
             .flex_col()
             .size_full()
             .child(toolbar)
-            .when_some(pane.error.clone(), |el, e| {
-                el.child(banner(Severity::Error, c.palette).child(SharedString::from(e)))
-            })
             .child(
                 div()
                     .id(match side {
@@ -1490,7 +1561,7 @@ impl SftpView {
             )
     }
 
-    fn render_conn_error(&self, msg: &str, c: Colors, cx: &mut Context<Self>) -> gpui::AnyElement {
+    fn render_conn_error(&self, _msg: &str, c: Colors, cx: &mut Context<Self>) -> gpui::AnyElement {
         div()
             .flex()
             .flex_col()
@@ -1499,8 +1570,9 @@ impl SftpView {
             .gap_2()
             .p_4()
             .child(
-                banner(Severity::Error, c.palette)
-                    .child(SharedString::from(format!("SFTP connection failed: {msg}"))),
+                div()
+                    .text_color(c.muted)
+                    .child("SFTP connection unavailable"),
             )
             .child(
                 button(

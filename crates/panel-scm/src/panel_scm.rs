@@ -40,7 +40,7 @@ use tokio::runtime::Handle as TokioHandle;
 
 use crate::git_change_row::{git_change_row, StageState};
 use crate::theme::ThemeStore;
-use labonair_notifications::notify_err;
+use labonair_notifications::{notification_center, notify_err, Notification};
 use labonair_ui_kit::{
     button, checkbox, context_menu, disclosure, field_input, h_stack, segmented_control,
     ButtonSize, ButtonVariant, IconName, InputEvent, InputState, ListItem, MenuItem, Palette,
@@ -1144,6 +1144,22 @@ impl GitPanelView {
                         this.poll_error = None;
                     }
                     Err(e) => {
+                        notification_center(cx).update(cx, |center, cx| {
+                            center.push(
+                                Notification::error(
+                                    "Git status refresh failed",
+                                    "Could not refresh the repository status.",
+                                )
+                                .source("source-control")
+                                .details(e.clone())
+                                .dedupe_key(format!(
+                                    "source-control:refresh:{}:{}",
+                                    this.repo_root.clone().unwrap_or_default(),
+                                    this.session_id.clone().unwrap_or_default()
+                                )),
+                                cx,
+                            );
+                        });
                         this.poll_error = Some(e);
                     }
                 }
@@ -1712,7 +1728,21 @@ impl GitPanelView {
                     this.active_field = None;
                     this.refresh_soon(cx);
                 }
-                Err(e) => this.new_branch_error = Some(e),
+                Err(e) => {
+                    this.new_branch_error = None;
+                    notification_center(cx).update(cx, |center, cx| {
+                        center.push(
+                            Notification::error(
+                                "Create branch failed",
+                                "Could not create the branch.",
+                            )
+                            .source("source-control")
+                            .details(e.clone())
+                            .dedupe_key(format!("source-control:create-branch:{e}")),
+                            cx,
+                        );
+                    });
+                }
             },
             cx,
         );
@@ -1800,7 +1830,18 @@ impl GitPanelView {
                     this.active_field = None;
                     this.refresh_soon(cx);
                 }
-                Err(e) => this.tag_error = Some(e),
+                Err(e) => {
+                    this.tag_error = None;
+                    notification_center(cx).update(cx, |center, cx| {
+                        center.push(
+                            Notification::error("Create tag failed", "Could not create the tag.")
+                                .source("source-control")
+                                .details(e.clone())
+                                .dedupe_key(format!("source-control:create-tag:{e}")),
+                            cx,
+                        );
+                    });
+                }
             },
             cx,
         );
@@ -2267,14 +2308,6 @@ impl GitPanelView {
                         ))),
                 )
             })
-            .when_some(self.commit_error.clone(), |d, err| {
-                d.child(
-                    div()
-                        .text_size(px(10.0))
-                        .text_color(c.error)
-                        .child(SharedString::from(err)),
-                )
-            })
             .child(
                 div()
                     .flex()
@@ -2455,18 +2488,6 @@ impl GitPanelView {
                 )),
         );
 
-        if let Some(err) = &self.checkout_error {
-            body = body.child(
-                div()
-                    .px(px(8.0))
-                    .py(px(4.0))
-                    .bg(c.error.opacity(0.10))
-                    .text_size(px(10.0))
-                    .text_color(c.error)
-                    .child(SharedString::from(err.clone())),
-            );
-        }
-
         if self.new_branch_open {
             body = body.child(self.render_new_branch_form(c, cx));
         }
@@ -2604,14 +2625,6 @@ impl GitPanelView {
                         cx.notify();
                     })),
             )
-            .when_some(self.new_branch_error.clone(), |d, err| {
-                d.child(
-                    div()
-                        .text_size(px(10.0))
-                        .text_color(c.error)
-                        .child(SharedString::from(err)),
-                )
-            })
             .child(
                 div()
                     .flex()
@@ -2846,18 +2859,6 @@ impl GitPanelView {
 
         if self.tags_collapsed {
             return wrap.into_any_element();
-        }
-
-        if let Some(err) = &self.tag_error {
-            wrap = wrap.child(
-                div()
-                    .px(px(8.0))
-                    .py(px(3.0))
-                    .bg(c.error.opacity(0.10))
-                    .text_size(px(10.0))
-                    .text_color(c.error)
-                    .child(SharedString::from(err.clone())),
-            );
         }
 
         if self.new_tag_open {
@@ -3218,10 +3219,7 @@ impl GitPanelView {
             .text_center()
             .text_size(px(11.0))
             .text_color(c.muted)
-            .child(SharedString::from(match &self.poll_error {
-                Some(e) => e.clone(),
-                None => "No Git repository at the current folder".to_string(),
-            }))
+            .child("No Git repository at the current folder")
             .child(
                 self.tool_btn("git-retry", "Refresh", c, cx, |this, _w, cx| {
                     this.refresh_soon(cx)
@@ -3638,21 +3636,6 @@ impl Render for GitPanelView {
             });
 
         root = root.child(self.render_changes_header(&buckets, c, cx));
-
-        if let Some(err) = &self.poll_error {
-            root = root.child(
-                div()
-                    .mx(px(8.0))
-                    .my(px(4.0))
-                    .px(px(6.0))
-                    .py(px(2.0))
-                    .rounded_sm()
-                    .bg(c.error.opacity(0.10))
-                    .text_size(px(10.0))
-                    .text_color(c.error)
-                    .child(SharedString::from(err.clone())),
-            );
-        }
 
         if let Some(bar) = self.render_confirm(c, cx) {
             root = root.child(bar);

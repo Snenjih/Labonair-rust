@@ -17,7 +17,7 @@ use labonair_editor::unified::{
     build_hunk_patch, is_whole_file_single_hunk, parse_diff_hunks, DiffHunk,
 };
 use labonair_git::GitService;
-use labonair_notifications::notify_err;
+use labonair_notifications::{notification_center, notify_err, Notification};
 use labonair_panel::{ProjectDiffFile, ProjectDiffMode, ProjectDiffRequest};
 use tokio::runtime::Handle as TokioHandle;
 
@@ -61,7 +61,6 @@ pub struct ProjectDiffView {
     /// Loaded `git diff` text for `selected`, plus a generation guard so a slow
     /// response for a previous selection cannot overwrite a newer one.
     diff_text: Option<String>,
-    diff_error: Option<String>,
     gen: u64,
     op_in_progress: bool,
 }
@@ -85,7 +84,6 @@ impl ProjectDiffView {
             selected: None,
             mode: ProjectDiffMode::Unified,
             diff_text: None,
-            diff_error: None,
             gen: 0,
             op_in_progress: false,
         }
@@ -136,7 +134,6 @@ impl ProjectDiffView {
             return;
         };
         self.diff_text = None;
-        self.diff_error = None;
         self.gen += 1;
         let generation = self.gen;
         let session = self.session_id.clone();
@@ -161,11 +158,22 @@ impl ProjectDiffView {
                 match res {
                     Ok(text) => {
                         this.diff_text = Some(text);
-                        this.diff_error = None;
                     }
                     Err(e) => {
                         this.diff_text = None;
-                        this.diff_error = Some(e);
+                        let path = this.selected.clone().unwrap_or_default();
+                        notification_center(cx).update(cx, |center, cx| {
+                            center.push(
+                                Notification::error(
+                                    "Diff load failed",
+                                    "Could not load the selected file diff.",
+                                )
+                                .source("project-diff")
+                                .details(e.clone())
+                                .dedupe_key(format!("project-diff:load:{path}")),
+                                cx,
+                            );
+                        });
                     }
                 }
                 cx.notify();
@@ -362,14 +370,7 @@ impl Render for ProjectDiffView {
             .font(font)
             .text_size(px(12.0));
 
-        if let Some(err) = &self.diff_error {
-            body = body.child(
-                div()
-                    .p(px(10.0))
-                    .text_color(c.error)
-                    .child(SharedString::from(err.clone())),
-            );
-        } else if let Some(text) = &self.diff_text {
+        if let Some(text) = &self.diff_text {
             let untracked = self.current_file().map(|f| f.untracked).unwrap_or(false);
             if untracked || !text.contains("@@ ") {
                 for line in text.lines().take(2000) {

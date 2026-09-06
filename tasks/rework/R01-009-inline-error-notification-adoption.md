@@ -2,7 +2,7 @@
 
 ## Status
 
-`⬜ Todo`
+`✅ Done`
 
 ## Owner
 
@@ -35,16 +35,16 @@ local error banners, rows, or form messages.
 
 ## Acceptance criteria
 
-- [ ] No active product view renders a user-facing error banner, error row, or
+- [x] No active product view renders a user-facing error banner, error row, or
   inline error message for an operation that is already represented by a
   notification.
-- [ ] Notification records retain a meaningful title and expandable details
+- [x] Notification records retain a meaningful title and expandable details
   for migrated failures.
-- [ ] Repeated watcher/retry failures are deduplicated by source and operation.
-- [ ] Internal retry state and actionable task dialogs remain functional.
-- [ ] Inventory, capability matrix, and roadmap reflect the completed Phase 3
+- [x] Repeated watcher/retry failures are deduplicated by source and operation.
+- [x] Internal retry state and actionable task dialogs remain functional.
+- [x] Inventory, capability matrix, and roadmap reflect the completed Phase 3
   exit condition.
-- [ ] Full workspace verification gates pass.
+- [x] Full workspace verification gates pass.
 
 ## Removal condition
 
@@ -54,4 +54,12 @@ dialog or field-validation affordance.
 
 ## Outcome
 
-Pending.
+Explorer, SFTP, Preview, Git Graph, SCM, Hosts, SSH connection, editor, and
+project-diff operation failures now publish structured notifications with
+neutral summaries, expandable details, source IDs, and deduplication keys.
+Feature-local raw error rows and banners were removed. Internal error state is
+retained only where it drives retry/control flow. Transfer conflict and file
+error dialogs remain as explicitly documented task controls; the transfer list
+itself now shows only a stable status label. Settings field validation and the
+editor external-change reload prompt remain the documented validation/action
+affordances rather than duplicate operation-error surfaces.

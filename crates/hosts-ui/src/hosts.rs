@@ -592,8 +592,6 @@ pub struct HostManagerView {
     /// Bumped on every field edit; the debounced autosave task no-ops if it
     /// changed while the task was sleeping.
     edit_gen: u64,
-    /// Result line of the last Test Connection, shown in the form header.
-    test_result: Option<String>,
     _ping_task: Task<()>,
     focus_handle: FocusHandle,
 }
@@ -659,7 +657,6 @@ impl HostManagerView {
             save_state: SaveState::Idle,
             icon_picker_open: false,
             edit_gen: 0,
-            test_result: None,
             _ping_task: ping_task,
             focus_handle: cx.focus_handle(),
         };
@@ -740,32 +737,39 @@ impl HostManagerView {
         let jh = self.tokio.spawn(async move {
             let hosts = host_store::hosts_get_all(&database)
                 .await
-                .unwrap_or_default();
+                .map_err(|error| error.to_string())?;
             let groups = host_store::groups_get_all(&database)
                 .await
-                .unwrap_or_default();
+                .map_err(|error| error.to_string())?;
             let creds = labonair_credentials::credentials_get_all(&database)
                 .await
-                .unwrap_or_default();
+                .map_err(|error| error.to_string())?;
             let snippets = snippet_store::snippets_get_all(&database)
                 .await
-                .unwrap_or_default()
+                .map_err(|error| error.to_string())?
                 .into_iter()
                 .map(|s| (s.id, s.name))
                 .collect::<Vec<_>>();
-            (hosts, groups, creds, snippets)
+            Ok::<_, String>((hosts, groups, creds, snippets))
         });
         cx.spawn(async move |this, cx| {
-            if let Ok((h, g, c, s)) = jh.await {
-                let _ = this.update(cx, |this, cx| {
+            let result = jh.await;
+            let _ = this.update(cx, |this, cx| match result {
+                Ok(Ok((h, g, c, s))) => {
                     this.hosts = h;
                     this.groups = g;
                     this.credentials = c;
                     this.snippets = s;
                     this.refresh_ping(cx);
                     cx.notify();
-                });
-            }
+                }
+                Ok(Err(error)) => {
+                    this.notify_error("Load hosts failed", error, "hosts:reload", cx);
+                }
+                Err(error) => {
+                    this.notify_error("Load hosts failed", error.to_string(), "hosts:reload", cx);
+                }
+            });
         })
         .detach();
     }
@@ -815,6 +819,24 @@ impl HostManagerView {
         let n = Notification::info(title.to_string(), body);
         notification_center(cx).update(cx, |c, cx| {
             c.push(n, cx);
+        });
+    }
+
+    fn notify_error(
+        &self,
+        title: &'static str,
+        details: String,
+        dedupe_key: impl Into<String>,
+        cx: &mut Context<Self>,
+    ) {
+        notification_center(cx).update(cx, |center, cx| {
+            center.push(
+                Notification::error(title, "The host operation could not be completed.")
+                    .source("hosts")
+                    .details(details)
+                    .dedupe_key(dedupe_key.into()),
+                cx,
+            );
         });
     }
 
@@ -979,8 +1001,17 @@ impl HostManagerView {
             }
         });
         cx.spawn(async move |this, cx| {
-            let ok = jh.await.is_ok();
+            let result = jh.await;
+            let ok = matches!(&result, Ok(Ok(())));
             let _ = this.update(cx, |this, cx| {
+                let error = match result {
+                    Ok(Ok(())) => None,
+                    Ok(Err(error)) => Some(error.to_string()),
+                    Err(error) => Some(error.to_string()),
+                };
+                if let Some(error) = error {
+                    this.notify_error("Save host failed", error, "hosts:save", cx);
+                }
                 if keep_form {
                     this.save_state = if ok {
                         SaveState::Saved
@@ -1007,20 +1038,30 @@ impl HostManagerView {
         let jh = self.tokio.spawn(async move {
             let hosts = host_store::hosts_get_all(&database)
                 .await
-                .unwrap_or_default();
+                .map_err(|error| error.to_string())?;
             let groups = host_store::groups_get_all(&database)
                 .await
-                .unwrap_or_default();
-            (hosts, groups)
+                .map_err(|error| error.to_string())?;
+            Ok::<_, String>((hosts, groups))
         });
         cx.spawn(async move |this, cx| {
-            if let Ok((h, g)) = jh.await {
-                let _ = this.update(cx, |this, cx| {
+            let result = jh.await;
+            let _ = this.update(cx, |this, cx| match result {
+                Ok(Ok((h, g))) => {
                     this.hosts = h;
                     this.groups = g;
                     cx.notify();
-                });
-            }
+                }
+                Ok(Err(error)) => {
+                    this.notify_error("Reload hosts failed", error, "hosts:reload-list", cx);
+                }
+                Err(error) => this.notify_error(
+                    "Reload hosts failed",
+                    error.to_string(),
+                    "hosts:reload-list",
+                    cx,
+                ),
+            });
         })
         .detach();
     }
@@ -1032,8 +1073,25 @@ impl HostManagerView {
             .tokio
             .spawn(async move { host_store::hosts_duplicate(&database, &secrets, id).await });
         cx.spawn(async move |this, cx| {
-            let _ = jh.await;
-            let _ = this.update(cx, |this, cx| this.reload(cx));
+            let result = jh.await;
+            let _ = this.update(cx, |this, cx| {
+                match &result {
+                    Ok(Ok(_)) => {}
+                    Ok(Err(error)) => this.notify_error(
+                        "Duplicate host failed",
+                        error.to_string(),
+                        "hosts:duplicate",
+                        cx,
+                    ),
+                    Err(error) => this.notify_error(
+                        "Duplicate host failed",
+                        error.to_string(),
+                        "hosts:duplicate",
+                        cx,
+                    ),
+                }
+                this.reload(cx)
+            });
         })
         .detach();
     }
@@ -1049,8 +1107,25 @@ impl HostManagerView {
             .tokio
             .spawn(async move { host_store::hosts_delete(&database, &secrets, id).await });
         cx.spawn(async move |this, cx| {
-            let _ = jh.await;
-            let _ = this.update(cx, |this, cx| this.reload(cx));
+            let result = jh.await;
+            let _ = this.update(cx, |this, cx| {
+                match &result {
+                    Ok(Ok(_)) => {}
+                    Ok(Err(error)) => this.notify_error(
+                        "Delete host failed",
+                        error.to_string(),
+                        "hosts:delete",
+                        cx,
+                    ),
+                    Err(error) => this.notify_error(
+                        "Delete host failed",
+                        error.to_string(),
+                        "hosts:delete",
+                        cx,
+                    ),
+                }
+                this.reload(cx)
+            });
         })
         .detach();
     }
@@ -1083,8 +1158,25 @@ impl HostManagerView {
             .tokio
             .spawn(async move { host_store::hosts_reorder(&database, items).await });
         cx.spawn(async move |this, cx| {
-            let _ = jh.await;
-            let _ = this.update(cx, |this, cx| this.reload_list_only(cx));
+            let result = jh.await;
+            let _ = this.update(cx, |this, cx| {
+                match &result {
+                    Ok(Ok(_)) => {}
+                    Ok(Err(error)) => this.notify_error(
+                        "Reorder hosts failed",
+                        error.to_string(),
+                        "hosts:reorder",
+                        cx,
+                    ),
+                    Err(error) => this.notify_error(
+                        "Reorder hosts failed",
+                        error.to_string(),
+                        "hosts:reorder",
+                        cx,
+                    ),
+                }
+                this.reload_list_only(cx)
+            });
         })
         .detach();
     }
@@ -1130,19 +1222,28 @@ impl HostManagerView {
             .await
         });
         cx.spawn(async move |this, cx| {
-            let _ = jh.await;
-            let _ = this.update(cx, |this, cx| this.reload_list_only(cx));
+            let result = jh.await;
+            let _ = this.update(cx, |this, cx| {
+                match &result {
+                    Ok(Ok(_)) => {}
+                    Ok(Err(error)) => {
+                        this.notify_error("Move host failed", error.to_string(), "hosts:move", cx)
+                    }
+                    Err(error) => {
+                        this.notify_error("Move host failed", error.to_string(), "hosts:move", cx)
+                    }
+                }
+                this.reload_list_only(cx)
+            });
         })
         .detach();
     }
 
-    /// Run `ssh_test_connection` for the open host and drop the outcome into
-    /// `test_result` (form-header line) + a notification.
+    /// Run `ssh_test_connection` and publish the outcome to Notifications.
     fn test_connection(&mut self, cx: &mut Context<Self>) {
         let Some(id) = self.form.as_ref().and_then(|f| f.editing_id.clone()) else {
             return;
         };
-        self.test_result = Some("Testing\u{2026}".to_string());
         let tester = self.ssh_tester.clone();
         let jh = self
             .tokio
@@ -1150,19 +1251,38 @@ impl HostManagerView {
         cx.spawn(async move |this, cx| {
             let res = jh.await;
             let _ = this.update(cx, |this, cx| {
-                let msg = match res {
-                    Ok(Ok(SshTestResult::Success)) => "Connection OK \u{2713}".to_string(),
+                match res {
+                    Ok(Ok(SshTestResult::Success)) => {
+                        this.notify("Test Connection", "Connection OK ✓".to_string(), cx);
+                    }
                     Ok(Ok(SshTestResult::UnknownHostKey { fingerprint })) => {
-                        format!("Unknown host key ({fingerprint}) — connect once to trust it")
+                        this.notify(
+                            "Test Connection",
+                            format!("Unknown host key ({fingerprint}) — connect once to trust it"),
+                            cx,
+                        );
                     }
                     Ok(Ok(SshTestResult::HostKeyChanged { fingerprint })) => {
-                        format!("Host key CHANGED ({fingerprint}) — verify before connecting")
+                        this.notify_error(
+                            "Host key changed",
+                            format!("Host key CHANGED ({fingerprint}) — verify before connecting"),
+                            "hosts:test-connection",
+                            cx,
+                        );
                     }
-                    Ok(Err(e)) => format!("Failed: {e}"),
-                    Err(e) => format!("Failed: {e}"),
-                };
-                this.notify("Test Connection", msg.clone(), cx);
-                this.test_result = Some(msg);
+                    Ok(Err(e)) => this.notify_error(
+                        "Connection test failed",
+                        e.to_string(),
+                        "hosts:test-connection",
+                        cx,
+                    ),
+                    Err(e) => this.notify_error(
+                        "Connection test failed",
+                        e.to_string(),
+                        "hosts:test-connection",
+                        cx,
+                    ),
+                }
                 cx.notify();
             });
         })
@@ -1210,13 +1330,29 @@ impl HostManagerView {
             .await
         });
         cx.spawn(async move |this, cx| {
-            if let Ok(Ok(h)) = jh.await {
-                let _ = this.update(cx, |this, cx| {
+            let result = jh.await;
+            let _ = this.update(cx, |this, cx| {
+                match &result {
+                    Ok(Ok(_)) => {}
+                    Ok(Err(error)) => this.notify_error(
+                        "Quick connect failed",
+                        error.to_string(),
+                        "hosts:quick-connect",
+                        cx,
+                    ),
+                    Err(error) => this.notify_error(
+                        "Quick connect failed",
+                        error.to_string(),
+                        "hosts:quick-connect",
+                        cx,
+                    ),
+                }
+                if let Ok(Ok(host)) = result {
                     this.search.clear();
                     this.reload(cx);
-                    cx.emit(HostManagerEvent::Connect(h.id));
-                });
-            }
+                    cx.emit(HostManagerEvent::Connect(host.id));
+                }
+            });
         })
         .detach();
     }
@@ -1231,8 +1367,25 @@ impl HostManagerView {
             .tokio
             .spawn(async move { host_store::groups_create(&database, name, None, None).await });
         cx.spawn(async move |this, cx| {
-            let _ = jh.await;
-            let _ = this.update(cx, |this, cx| this.reload(cx));
+            let result = jh.await;
+            let _ = this.update(cx, |this, cx| {
+                match &result {
+                    Ok(Ok(_)) => {}
+                    Ok(Err(error)) => this.notify_error(
+                        "Create group failed",
+                        error.to_string(),
+                        "hosts:create-group",
+                        cx,
+                    ),
+                    Err(error) => this.notify_error(
+                        "Create group failed",
+                        error.to_string(),
+                        "hosts:create-group",
+                        cx,
+                    ),
+                }
+                this.reload(cx)
+            });
         })
         .detach();
     }
@@ -1243,8 +1396,25 @@ impl HostManagerView {
             .tokio
             .spawn(async move { host_store::groups_delete(&database, id).await });
         cx.spawn(async move |this, cx| {
-            let _ = jh.await;
-            let _ = this.update(cx, |this, cx| this.reload(cx));
+            let result = jh.await;
+            let _ = this.update(cx, |this, cx| {
+                match &result {
+                    Ok(Ok(_)) => {}
+                    Ok(Err(error)) => this.notify_error(
+                        "Delete group failed",
+                        error.to_string(),
+                        "hosts:delete-group",
+                        cx,
+                    ),
+                    Err(error) => this.notify_error(
+                        "Delete group failed",
+                        error.to_string(),
+                        "hosts:delete-group",
+                        cx,
+                    ),
+                }
+                this.reload(cx)
+            });
         })
         .detach();
     }
@@ -1291,6 +1461,21 @@ impl HostManagerView {
         cx.spawn(async move |this, cx| {
             let out = jh.await;
             let _ = this.update(cx, |this, cx| {
+                match &out {
+                    Ok(Ok(_)) => {}
+                    Ok(Err(error)) => this.notify_error(
+                        "Create credential failed",
+                        error.clone(),
+                        "hosts:create-credential",
+                        cx,
+                    ),
+                    Err(error) => this.notify_error(
+                        "Create credential failed",
+                        error.to_string(),
+                        "hosts:create-credential",
+                        cx,
+                    ),
+                }
                 if let Ok(Ok(Some(pubkey))) = out {
                     this.notify(
                         "SSH key generated",
@@ -1313,8 +1498,25 @@ impl HostManagerView {
             labonair_credentials::credentials_delete(&database, &secrets, &data_dir, id).await
         });
         cx.spawn(async move |this, cx| {
-            let _ = jh.await;
-            let _ = this.update(cx, |this, cx| this.reload(cx));
+            let result = jh.await;
+            let _ = this.update(cx, |this, cx| {
+                match &result {
+                    Ok(Ok(_)) => {}
+                    Ok(Err(error)) => this.notify_error(
+                        "Delete credential failed",
+                        error.to_string(),
+                        "hosts:delete-credential",
+                        cx,
+                    ),
+                    Err(error) => this.notify_error(
+                        "Delete credential failed",
+                        error.to_string(),
+                        "hosts:delete-credential",
+                        cx,
+                    ),
+                }
+                this.reload(cx)
+            });
         })
         .detach();
     }
@@ -1347,6 +1549,19 @@ impl HostManagerView {
         cx.spawn(async move |this, cx| {
             let res = jh.await;
             let _ = this.update(cx, |this, cx| {
+                let failure = match &res {
+                    Ok(Ok(_)) => None,
+                    Ok(Err(error)) => Some(error.to_string()),
+                    Err(error) => Some(error.to_string()),
+                };
+                if let Some(details) = failure {
+                    this.notify_error(
+                        "SSH config read failed",
+                        details,
+                        "hosts:ssh-config:read",
+                        cx,
+                    );
+                }
                 if let Some(state) = this.import.as_mut() {
                     state.loading = false;
                     match res {
@@ -1354,8 +1569,12 @@ impl HostManagerView {
                             state.selected = entries.iter().map(|e| e.alias.clone()).collect();
                             state.entries = entries;
                         }
-                        Ok(Err(e)) => state.error = Some(e),
-                        Err(e) => state.error = Some(e.to_string()),
+                        Ok(Err(_)) => {
+                            state.error = Some("unavailable".to_string());
+                        }
+                        Err(_) => {
+                            state.error = Some("unavailable".to_string());
+                        }
                     }
                 }
                 cx.notify();
@@ -1455,9 +1674,16 @@ impl HostManagerView {
             let block = match res {
                 Ok(Ok(block)) => block,
                 Ok(Err(e)) => {
+                    let details = e.to_string();
                     let _ = this.update(cx, |this, cx| {
+                        this.notify_error(
+                            "SSH config export failed",
+                            details,
+                            "hosts:ssh-config:export",
+                            cx,
+                        );
                         if let Some(s) = this.export.as_mut() {
-                            s.error = Some(e);
+                            s.error = Some("unavailable".to_string());
                         }
                         cx.notify();
                     });
@@ -1465,8 +1691,14 @@ impl HostManagerView {
                 }
                 Err(e) => {
                     let _ = this.update(cx, |this, cx| {
+                        this.notify_error(
+                            "SSH config export failed",
+                            e.to_string(),
+                            "hosts:ssh-config:export",
+                            cx,
+                        );
                         if let Some(s) = this.export.as_mut() {
-                            s.error = Some(e.to_string());
+                            s.error = Some("unavailable".to_string());
                         }
                         cx.notify();
                     });
@@ -1500,13 +1732,25 @@ impl HostManagerView {
                         );
                     }
                     Ok(Err(e)) => {
+                        this.notify_error(
+                            "SSH config export failed",
+                            e.to_string(),
+                            "hosts:ssh-config:write",
+                            cx,
+                        );
                         if let Some(s) = this.export.as_mut() {
-                            s.error = Some(e);
+                            s.error = Some("unavailable".to_string());
                         }
                     }
                     Err(e) => {
+                        this.notify_error(
+                            "SSH config export failed",
+                            e.to_string(),
+                            "hosts:ssh-config:write",
+                            cx,
+                        );
                         if let Some(s) = this.export.as_mut() {
-                            s.error = Some(e.to_string());
+                            s.error = Some("unavailable".to_string());
                         }
                     }
                 }
@@ -1671,7 +1915,6 @@ impl HostManagerView {
             &self.hosts,
         ));
         self.save_state = SaveState::Idle;
-        self.test_result = None;
         w.focus(&self.form_focus);
         cx.notify();
     }
@@ -2202,18 +2445,20 @@ impl HostManagerView {
                     .text_color(p.muted)
                     .child(if is_new { "NEW HOST" } else { "HOST DETAILS" }),
             )
-            .when(self.save_state != SaveState::Idle, |d| {
-                d.child(
-                    div()
-                        .text_xs()
-                        .text_color(if self.save_state == SaveState::Error {
-                            p.fg
-                        } else {
-                            p.muted
-                        })
-                        .child(self.save_state.label()),
-                )
-            })
+            .when(
+                matches!(
+                    self.save_state,
+                    SaveState::Pending | SaveState::Saving | SaveState::Saved
+                ),
+                |d| {
+                    d.child(
+                        div()
+                            .text_xs()
+                            .text_color(p.muted)
+                            .child(self.save_state.label()),
+                    )
+                },
+            )
             .when(!is_new, |d| {
                 d.child(
                     self.btn("hd-connect", "Connect", p, true, cx)
@@ -2339,13 +2584,6 @@ impl HostManagerView {
                 ),
             )
         });
-        let test_line = self.test_result.clone().map(|t| {
-            div()
-                .text_xs()
-                .text_color(p.muted)
-                .child(SharedString::from(t))
-        });
-
         div()
             .track_focus(&self.form_focus)
             .key_context("HostForm")
@@ -2361,7 +2599,6 @@ impl HostManagerView {
             .child(header)
             .children(icon_row)
             .child(tab_bar)
-            .children(test_line)
             .child(body)
             .children(footer)
             .into_any_element()
@@ -2972,11 +3209,11 @@ impl HostManagerView {
                 .text_color(p.muted)
                 .child("Reading ~/.ssh/config\u{2026}")
                 .into_any_element()
-        } else if let Some(err) = &state.error {
+        } else if state.error.is_some() {
             div()
                 .text_sm()
-                .text_color(p.fg)
-                .child(SharedString::from(err.clone()))
+                .text_color(p.muted)
+                .child("No import entries available.")
                 .into_any_element()
         } else if list.is_empty() {
             div()
@@ -3166,14 +3403,6 @@ impl HostManagerView {
                             .max_h(px(360.0))
                             .children(rows),
                     )
-                    .when_some(state.error.clone(), |el, err| {
-                        el.child(
-                            div()
-                                .text_xs()
-                                .text_color(p.fg)
-                                .child(SharedString::from(err)),
-                        )
-                    })
                     .child(
                         div()
                             .flex()
@@ -3277,7 +3506,6 @@ impl Render for HostManagerView {
                     .on_click(cx.listener(|this, _: &ClickEvent, w, cx| {
                         this.form = Some(HostForm::blank());
                         this.save_state = SaveState::Idle;
-                        this.test_result = None;
                         w.focus(&this.form_focus);
                         cx.notify();
                     })),
@@ -3457,11 +3685,24 @@ impl HostManagerView {
             .tokio
             .spawn(async move { config.export(vec![id]).await });
         cx.spawn(async move |this, cx| {
-            if let Ok(Ok(block)) = jh.await {
-                let _ = this.update(cx, |_this, cx| {
+            let result = jh.await;
+            let _ = this.update(cx, |this, cx| match result {
+                Ok(Ok(block)) => {
                     cx.write_to_clipboard(ClipboardItem::new_string(block));
-                });
-            }
+                }
+                Ok(Err(error)) => this.notify_error(
+                    "Export host failed",
+                    error.to_string(),
+                    "hosts:export-host",
+                    cx,
+                ),
+                Err(error) => this.notify_error(
+                    "Export host failed",
+                    error.to_string(),
+                    "hosts:export-host",
+                    cx,
+                ),
+            });
         })
         .detach();
     }
@@ -3476,8 +3717,25 @@ impl HostManagerView {
             .tokio
             .spawn(async move { host_store::groups_update(&database, id, name).await });
         cx.spawn(async move |this, cx| {
-            let _ = jh.await;
-            let _ = this.update(cx, |this, cx| this.reload(cx));
+            let result = jh.await;
+            let _ = this.update(cx, |this, cx| {
+                match &result {
+                    Ok(Ok(_)) => {}
+                    Ok(Err(error)) => this.notify_error(
+                        "Rename group failed",
+                        error.to_string(),
+                        "hosts:rename-group",
+                        cx,
+                    ),
+                    Err(error) => this.notify_error(
+                        "Rename group failed",
+                        error.to_string(),
+                        "hosts:rename-group",
+                        cx,
+                    ),
+                }
+                this.reload(cx)
+            });
         })
         .detach();
     }

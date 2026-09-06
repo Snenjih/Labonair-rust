@@ -2987,6 +2987,18 @@ impl Workspace {
                     || low.contains("host key");
                 if !expected_prompt {
                     let _ = this.update(cx, |this, cx| {
+                        labonair_notifications::notification_center(cx).update(cx, |center, cx| {
+                            center.push(
+                                labonair_notifications::Notification::error(
+                                    "SSH connection failed",
+                                    "The SSH session could not be established.",
+                                )
+                                .source("ssh")
+                                .details(err.clone())
+                                .dedupe_key(format!("ssh:connect:{ssh_id}")),
+                                cx,
+                            );
+                        });
                         this.ssh_connection
                             .update(cx, |s, cx| s.set_error(&ssh_id, err.clone(), cx));
                         if let Some(host) = this
@@ -3150,6 +3162,23 @@ impl Workspace {
                             .map(|e| e.state == ConnectionState::Connected)
                             .unwrap_or(false);
                         if !was_connected {
+                            labonair_notifications::notification_center(cx).update(
+                                cx,
+                                |center, cx| {
+                                    center.push(
+                                        labonair_notifications::Notification::error(
+                                            "SSH connection lost",
+                                            "The session ended before the shell became ready.",
+                                        )
+                                        .source("ssh")
+                                        .details(
+                                            "The connection was lost before the remote shell was ready.",
+                                        )
+                                        .dedupe_key(format!("ssh:lost:{session_id}")),
+                                        cx,
+                                    );
+                                },
+                            );
                             s.set_error(
                                 &session_id,
                                 "Connection lost before the session was ready.",
@@ -3427,10 +3456,7 @@ impl Workspace {
         let (card_title, card_body): (String, String) = match &entry.state {
             ConnectionState::Error => (
                 "Connection failed".to_string(),
-                entry
-                    .error
-                    .clone()
-                    .unwrap_or_else(|| "The connection could not be established.".to_string()),
+                "See Notifications for connection details.".to_string(),
             ),
             ConnectionState::WaitingTrust => (
                 if entry.trust_mismatch {

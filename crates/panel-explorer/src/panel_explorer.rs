@@ -141,7 +141,7 @@ struct Entry {
 enum NodeState {
     Loading,
     Loaded { entries: Vec<Entry>, has_more: bool },
-    Error(String),
+    Error,
 }
 
 struct PendingCreate {
@@ -173,10 +173,6 @@ enum Row {
     },
     Loading {
         depth: usize,
-    },
-    Error {
-        depth: usize,
-        message: String,
     },
     LoadMore {
         parent: PathBuf,
@@ -317,10 +313,9 @@ impl TreeModel {
         match self.nodes.get(parent) {
             None => {}
             Some(NodeState::Loading) => out.push(Row::Loading { depth }),
-            Some(NodeState::Error(message)) => out.push(Row::Error {
-                depth,
-                message: message.clone(),
-            }),
+            // The failure is retained for retry/control flow and published to
+            // Notifications. It must not become a second inline error row.
+            Some(NodeState::Error) => {}
             Some(NodeState::Loaded { entries, has_more }) => {
                 for entry in entries {
                     let path = parent.join(&entry.name);
@@ -395,10 +390,6 @@ pub(crate) enum ExplorerRowData {
     Loading {
         depth: usize,
     },
-    Error {
-        depth: usize,
-        message: String,
-    },
     LoadMore {
         parent: PathBuf,
         depth: usize,
@@ -455,7 +446,6 @@ pub(crate) fn flatten_rows(
             Row::PendingCreate { depth } => ExplorerRowData::PendingCreate { depth },
             Row::Rename { depth } => ExplorerRowData::Rename { depth },
             Row::Loading { depth } => ExplorerRowData::Loading { depth },
-            Row::Error { depth, message } => ExplorerRowData::Error { depth, message },
             Row::LoadMore { parent, depth } => ExplorerRowData::LoadMore { parent, depth },
         })
         .collect()
@@ -468,7 +458,6 @@ fn row_depth(r: &ExplorerRowData) -> usize {
         | ExplorerRowData::PendingCreate { depth }
         | ExplorerRowData::Rename { depth }
         | ExplorerRowData::Loading { depth }
-        | ExplorerRowData::Error { depth, .. }
         | ExplorerRowData::LoadMore { depth, .. } => *depth,
     }
 }
@@ -578,7 +567,6 @@ fn row_depth_model(r: &Row) -> usize {
         | Row::PendingCreate { depth }
         | Row::Rename { depth }
         | Row::Loading { depth }
-        | Row::Error { depth, .. }
         | Row::LoadMore { depth, .. } => *depth,
     }
 }
@@ -589,7 +577,6 @@ fn decrement_depth(r: &mut Row) {
         | Row::PendingCreate { depth }
         | Row::Rename { depth }
         | Row::Loading { depth }
-        | Row::Error { depth, .. }
         | Row::LoadMore { depth, .. } => depth,
     };
     *d = d.saturating_sub(1);
@@ -1041,7 +1028,20 @@ impl ExplorerView {
                         );
                     }
                     Err(message) => {
-                        this.model.set_node(path.clone(), NodeState::Error(message));
+                        let path_label = path.display().to_string();
+                        notification_center(cx).update(cx, |center, cx| {
+                            center.push(
+                                Notification::error(
+                                    "Folder load failed",
+                                    "Could not read the directory.",
+                                )
+                                .source("explorer")
+                                .details(message.clone())
+                                .dedupe_key(format!("explorer:load:{path_label}")),
+                                cx,
+                            );
+                        });
+                        this.model.set_node(path.clone(), NodeState::Error);
                     }
                 }
                 this.sync_watchers();
@@ -1434,8 +1434,8 @@ impl ExplorerView {
     }
 
     /// Runs a blocking filesystem mutation off-thread, then reloads `reload`
-    /// (stale-guard: the reference re-fetches after every op) or toasts the
-    /// error (Critical Rule 6 — no `unwrap` on predictable errors).
+    /// (stale-guard: the reference re-fetches after every op) or publishes a
+    /// retained notification for the error.
     fn run_fs_op<F>(&mut self, reload: PathBuf, op: F, cx: &mut Context<Self>)
     where
         F: FnOnce() -> Result<(), String> + Send + 'static,
@@ -2489,7 +2489,6 @@ fn explorer_row_element(
             inline_input_row(*depth, row_h, c.accent, view, edit_field)
         }
         ExplorerRowData::Loading { depth } => text_row(*depth, row_h, "Loading\u{2026}", c.muted),
-        ExplorerRowData::Error { depth, message } => text_row(*depth, row_h, message, c.err),
         ExplorerRowData::LoadMore { parent, depth } => {
             let id: SharedString = format!("more:{}", parent.display()).into();
             let v = view.clone();
@@ -2792,11 +2791,20 @@ mod tests {
         m.set_root(Some(PathBuf::from("/r")));
         m.mark_loading(PathBuf::from("/r"));
         m.set_node(PathBuf::from("/r/a"), loaded(&[]));
-        m.set_node(PathBuf::from("/r/b"), NodeState::Error("nope".into()));
+        m.set_node(PathBuf::from("/r/b"), NodeState::Error);
         let t = m.watch_targets();
         assert!(t.contains(&PathBuf::from("/r")));
         assert!(t.contains(&PathBuf::from("/r/a")));
         assert!(!t.contains(&PathBuf::from("/r/b")));
+    }
+
+    #[test]
+    fn failed_directory_load_does_not_create_an_inline_error_row() {
+        let mut m = TreeModel::default();
+        m.set_root(Some(PathBuf::from("/r")));
+        m.set_node(PathBuf::from("/r"), NodeState::Error);
+
+        assert!(m.rows().is_empty());
     }
 
     #[test]

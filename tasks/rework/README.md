@@ -13,6 +13,10 @@ The active sequence is:
 5. `R01-006-background-capability-boundary.md` — Done
 6. `R01-007-hosts-ui-capability-boundary.md` — Done
 7. `R01-008-notification-surface-owner.md` — Done
-8. `R01-009-inline-error-notification-adoption.md` — Next
+8. `R01-009-inline-error-notification-adoption.md` — Done
+
+Phase 3 is complete. The next task must be selected from the remaining Phase
+2 shell/workspace contracts or the Phase 4 command-palette/keymap migration
+after its scope and removal condition are written down.
 
 Only the earliest task whose dependencies are complete may be started.

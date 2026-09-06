@@ -337,8 +337,14 @@ pub fn notify_err<T>(
         Ok(value) => Some(value),
         Err(message) => {
             let title = title.into();
+            let dedupe_key = format!("{}:{message}", title);
             notification_center(cx).update(cx, |center, cx| {
-                center.push_action_result(Notification::error(title, message), cx);
+                center.push_action_result(
+                    Notification::error(title, "Operation failed")
+                        .details(message)
+                        .dedupe_key(dedupe_key),
+                    cx,
+                );
             });
             None
         }

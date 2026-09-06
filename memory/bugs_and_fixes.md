@@ -448,3 +448,23 @@ UI-agnostic, so the notifications UI may depend on `labonair-panel`,
 back on Notifications. The existing callback-backed action adapter remains
 temporary until producers publish stable command IDs through the command
 registry.
+
+## 2026-09-06 — Operation errors must have one retained surface
+
+**Finding:** Several active views kept raw operation errors in banners, rows,
+or connection cards even after the statusbar notification registry became the
+canonical message surface. This caused duplicate messages and inconsistent
+error details.
+
+**Resolution:** Migrated Explorer, SFTP, Preview, Git Graph, SCM, Hosts, SSH
+connection setup, editor operations, and Project Diff to structured
+notifications with neutral summaries, expandable details, source IDs, and
+deduplication keys. Internal error values remain only for retry/control flow.
+The transfer conflict/file-error modal, SFTP permission validation, and editor
+external-change prompt are explicitly retained because they require an
+immediate user decision; passive list/card error text was removed.
+
+**Verification note:** The AI HTTP end-to-end test and Settings file-watcher
+test require OS listener/file-event permissions. They failed inside the
+sandbox with `Operation not permitted` / a missing rename event and passed
+when rerun individually with those permissions enabled.

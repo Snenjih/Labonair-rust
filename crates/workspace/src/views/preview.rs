@@ -24,6 +24,7 @@ use gpui::{
     ObjectFit, SharedString, Window,
 };
 
+use labonair_notifications::{notification_center, Notification};
 use labonair_ui_kit::{button, divider, Axis, ButtonSize, ButtonVariant, Palette};
 
 use crate::markdown::{parse_markdown, Inline, MdBlock};
@@ -95,14 +96,30 @@ impl PreviewView {
     /// Point the pane at a new address and re-resolve its content.
     pub fn set_url(&mut self, url: impl Into<String>, cx: &mut Context<Self>) {
         self.url = url.into();
-        self.content = resolve(&self.url);
+        self.resolve_content(cx);
         cx.notify();
     }
 
     /// Re-read the current address from disk.
     pub fn reload(&mut self, cx: &mut Context<Self>) {
-        self.content = resolve(&self.url);
+        self.resolve_content(cx);
         cx.notify();
+    }
+
+    fn resolve_content(&mut self, cx: &mut Context<Self>) {
+        self.content = resolve(&self.url);
+        if let Content::Error(message) = &self.content {
+            let url = self.url.clone();
+            notification_center(cx).update(cx, |center, cx| {
+                center.push(
+                    Notification::error("Preview unavailable", "Could not load the preview.")
+                        .source("preview")
+                        .details(message.clone())
+                        .dedupe_key(format!("preview:load:{url}")),
+                    cx,
+                );
+            });
+        }
     }
 
     fn open_external(&self) {
@@ -248,14 +265,14 @@ impl Render for PreviewView {
                     .child("Open in system browser"),
                 )
                 .into_any_element(),
-            Content::Error(msg) => div()
+            Content::Error(_) => div()
                 .flex_1()
                 .flex()
                 .items_center()
                 .justify_center()
                 .p_6()
-                .text_color(theme.status_error())
-                .child(msg.clone())
+                .text_color(muted)
+                .child("Preview unavailable")
                 .into_any_element(),
         };
 

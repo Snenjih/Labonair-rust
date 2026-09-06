@@ -557,11 +557,6 @@ impl TransfersView {
         let has_steps = !record.steps.is_empty();
         let log_open = self.expanded_logs.contains(&job.id);
         let active = is_active(&job.status);
-        let failed_msg = match &job.status {
-            TransferStatus::Failed(e) => Some(e.clone()),
-            _ => None,
-        };
-
         // T20-003: migrated to the shared `ListItem` primitive — the status
         // dot is the shared `Indicator`, and the log-toggle/cancel actions
         // are shared `button()`s collected into `ListItem::trailing`. The
@@ -676,16 +671,10 @@ impl TransfersView {
             .child(bar)
             .child(sub);
 
-        if let Some(msg) = failed_msg {
-            container = container.child(
-                div()
-                    .text_xs()
-                    .font_family("monospace")
-                    .text_color(c.err)
-                    .child(SharedString::from(msg)),
-            );
-        }
-
+        // Failure details stay in the actionable file-error modal, where the
+        // user can choose Skip, Skip all, or Abort. The list row intentionally
+        // exposes only the stable status label so it does not become a second
+        // feature-local error surface next to Notifications.
         if log_open && !record.steps.is_empty() {
             let mut log = div()
                 .id(SharedString::from(format!(
