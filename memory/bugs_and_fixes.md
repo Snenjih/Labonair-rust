@@ -48,6 +48,17 @@ optional Rust PID, filters CoreGraphics windows by that exact process PID, and
 exits with an error when no matching layer-0 window is present. Only a
 screenshot targeted at the Rust process is accepted as visual evidence.
 
+## 2026-09-06 — Keep the active rework queue authoritative
+
+**Finding:** `R01-001` was still marked in progress even though later R01
+tasks were marked done and `R02-002` was active. The queue README therefore
+disagreed with the earliest incomplete task.
+
+**Resolution:** Closed `R01-001` at its actual foundation scope, documented
+remaining backend adapters as later migrations, listed every rework task in
+order, and added `scripts/check_rework_queue.py` to enforce one active task
+and earliest-incomplete ordering.
+
 ## 2026-09-06 — Make repository placement and feature changes explicit
 
 **Finding:** The architecture rules described ownership and dependency

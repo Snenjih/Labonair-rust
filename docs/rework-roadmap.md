@@ -1,7 +1,7 @@
 # Labonair Architecture Rework Roadmap
 
 **Status:** Current implementation plan
-**Version:** 3
+**Version:** 4
 
 The foundation migration is currently through `R01-009`, with the first Phase
 2 global-menu slice in `R02-001` and the workspace state/event boundary in
@@ -84,6 +84,16 @@ the current task.
 - register commands from owning modules;
 - build the keymap file/editor and conflict handling.
 
+The implementation is split into two bounded tasks after the workspace
+identity work:
+
+- [`R03-001-command-palette-provider-registry.md`](../tasks/rework/R03-001-command-palette-provider-registry.md)
+  removes the remaining shell-owned command behavior and makes provider-owned
+  dynamic submenus the only palette source.
+- [`R03-002-keymap-runtime-and-editor.md`](../tasks/rework/R03-002-keymap-runtime-and-editor.md)
+  makes the keymap a runtime command-binding capability with contexts,
+  conflicts, persistence, and a dedicated editor surface.
+
 **Exit:** palette and keymap changes are localized to their registries and
 owning modules; adding a command does not require editing an unrelated central
 table.
@@ -98,6 +108,17 @@ table.
 
 **Exit:** themes, icon themes, and hosts are absent from Settings and fully accessible through their intended surfaces.
 
+The existing global-menu entrypoints are only navigation. Theme selection and
+host management still require bounded implementation tasks after the command
+and keymap contracts are stable; they must not grow new Settings categories.
+
+The bounded tasks are:
+
+- [`R04-001-static-theme-registries-and-preview.md`](../tasks/rework/R04-001-static-theme-registries-and-preview.md)
+  completes built-in color/icon registries, preview, and confirmation.
+- [`R04-002-host-management-and-connection-pickers.md`](../tasks/rework/R04-002-host-management-and-connection-pickers.md)
+  gives saved hosts one management surface and one SSH/SFTP picker flow.
+
 ## Phase 6 — Settings reduction
 
 - audit every field against real consumers;
@@ -107,6 +128,9 @@ table.
 
 **Exit:** Settings contains values only and categories have clear ownership.
 
+The executable migration is
+[`R05-001-settings-audit-and-value-normalization.md`](../tasks/rework/R05-001-settings-audit-and-value-normalization.md).
+
 ## Phase 7 — Feature module migration
 
 - migrate terminal, editor, SSH, SFTP, explorer, Git, snippets, and AI to their ownership boundaries;
@@ -115,12 +139,23 @@ table.
 
 **Exit:** the dependency graph and source layout match the architecture contract.
 
+The first backend-removal boundary is
+[`R06-001-backend-adapter-eradication.md`](../tasks/rework/R06-001-backend-adapter-eradication.md).
+Further terminal/editor/workspace extraction tasks are added only after that
+boundary has a concrete consumer and test seam.
+
 ## Phase 8 — Product refinement
 
 - improve terminal and remote workflows;
 - rebuild AI on the new contracts;
 - evaluate projects/workspace enhancements;
 - add extensions or downloads only after the core is stable.
+
+Remote theme downloads, marketplace behavior, and extension hosting remain
+deferred until a later product decision adds a concrete workflow and owner.
+
+The cross-module visual and workflow gate is
+[`R07-001-product-surface-acceptance.md`](../tasks/rework/R07-001-product-surface-acceptance.md).
 
 ## Change and removal gates
 

@@ -9,7 +9,7 @@ context model now distinguishes `WorkspaceIdentity::Standalone` from
 `Project { root }` and `WorkspaceState::Empty` from `Active`, with explicit
 tested transitions and an identity label on the empty surface.
 
-The current branch is `master` at `1a61698`; this partial migration is
+The current branch is `master` at `82ccf54`; this partial migration is
 committed locally.
 The explicit project-opening flow is now wired through GPUI's native folder
 picker, and project settings follow workspace identity rather than terminal
@@ -32,6 +32,13 @@ The normative documentation now also includes `docs/repository-layout.md` and
 `docs/feature-lifecycle.md`, linked from `docs/README.md`, `README.md`, and
 `AGENTS.md`. They define canonical placement and the contract-first workflow
 for future feature additions, migrations, and removals.
+
+The queue audit found and corrected a stale status: `R01-001` now accurately
+records its completed foundation scope, while remaining backend-adapter work
+stays explicitly tracked as transitional inventory. The active queue now has
+20 ordered tasks through the final product-surface acceptance gate, and
+`python3 scripts/check_rework_queue.py` verifies its ordering and single active
+task invariant.
 
 The stale native `Keyboard Shortcuts` menu path was also removed. Existing
 `settings::OpenShortcuts` keymap entries remain accepted only as a compatibility

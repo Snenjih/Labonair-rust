@@ -14,9 +14,10 @@ Both use the same tabs, panes, commands, notifications, and statusbar. The diffe
 The current implementation represents this contract in
 `labonair-workspace::context` as `WorkspaceIdentity` plus `WorkspaceState`.
 `Workspace` owns the state and exposes one snapshot for shell surfaces. It
-starts as `Standalone`; a future project-opening flow changes the identity
-explicitly through the workspace API rather than inferring a project from a
-terminal's current working directory.
+starts as `Standalone`; the explicit native project picker changes the
+identity through the workspace API rather than inferring a project from a
+terminal's current working directory. Session identity persistence and an
+explicit return-to-standalone action remain in `R02-003`.
 
 A workspace is an application context, not a requirement that every action be
 project-based. The context carries optional identity and shared navigation

@@ -9,3 +9,7 @@ the current task is `R02-002-shell-composition-and-standalone-workspaces.md`,
 with `R02-003-project-entry-and-workspace-transitions.md` queued after it.
 
 Do not start a historical task merely because it is marked `Todo` or `In Progress`.
+
+Run `python3 scripts/check_rework_queue.py` after changing the active queue.
+It verifies that the queue lists every rework task exactly once and that the
+earliest incomplete task is the only task marked in progress.

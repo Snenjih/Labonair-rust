@@ -1,7 +1,7 @@
 # Capability Matrix
 
 **Status:** Normative ownership map
-**Version:** 2
+**Version:** 3
 **Related:** [`architecture.md`](architecture.md), [`modules.md`](modules.md), [`registries.md`](registries.md)
 
 This matrix is the authoritative index for product capabilities. A capability
@@ -17,28 +17,44 @@ visible for dependency auditing. The one-capability/one-capability-crate rule
 applies to product rows; composition and foundation crates have one explicit
 coordination or reusable-service responsibility instead.
 
-| Capability | Owning module | Contract / domain crate | UI crate | Storage / integration | Canonical entry point | Current implementation state |
-|---|---|---|---|---|---|---|
-| Application composition | `application` | `labonair-shell` | `labonair-shell` | `labonair-backend` adapters during migration | App startup | Transitional composition root |
-| Workspace orchestration | `workspace` | `labonair-workspace` | `labonair-workspace` | session/layout persistence | Workspace surface | Typed Empty/Standalone/Project state and WorkspaceEvent boundary added; explicit project picker is wired; session identity persistence is queued in R02-003; feature-view extraction remains ongoing |
-| Backgrounds | `backgrounds` | `labonair-background` | `labonair-background` | local image storage and decoded cache | Appearance/background surface | Capability extracted from workspace; Settings UI no longer holds its entity |
-| Terminal | `terminal` | `labonair-terminal` | `labonair-terminal` and workspace integration | PTY/process adapter | Terminal tab or standalone terminal | Active, extraction ongoing |
-| Editor | `editor` | `labonair-editor` | `labonair-editor` and workspace integration | filesystem adapter | Editor tab or standalone editor | Active, extraction ongoing |
-| Filesystem | `filesystem` | `labonair-filesystem` | Consuming feature UI | local filesystem and watcher | Explorer/editor consumers | Extracted |
-| SSH | `ssh` | `labonair-ssh` | SSH connection surface | Backend adapter owns russh, auth, tunnels, jump hosts | Host action or standalone SSH | Contract and injected workspace/Hosts paths migrated; backend adapter remains transitional |
-| SFTP | `sftp` | `labonair-sftp` | SFTP browser | Backend adapter owns russh-sftp; session comes from SSH | Host action or standalone SFTP | Authenticated session/browser contract and view migration complete; transfer queue remains separate |
-| Hosts | `hosts` | `labonair-hosts` | `labonair-hosts-ui` | `labonair-persistence`, credentials, SSH adapters | Titlebar global menu → Hosts; picker in Command Palette | Domain/store extracted; UI consumes canonical stores through injected contracts and publishes operation failures through Notifications |
-| Credentials | `credentials` | `labonair-credentials` | Hosts UI consumer | `labonair-secrets`, keychain | Host management | Extracted |
-| Transfers | `transfers` | `labonair-transfers` | `labonair-transfers-ui` | SFTP/SSH worker adapter | Statusbar Transfers badge | Typed registry and statusbar UI extracted; legacy backend event adapter remains transitional |
-| Git / source control | `git` | `labonair-git` | `labonair-panel-scm`, `labonair-panel-git-graph`, Project Diff | backend Git executor adapter | Source Control panel / palette | Contracts extracted |
-| Explorer | `explorer` | Filesystem contracts | `labonair-panel-explorer` | `labonair-filesystem` | Explorer dock panel | Backend edge removed; workspace shim remains |
-| Snippets | `snippets` | `labonair-snippets` | `labonair-panel-snippets` | persistence and injected SSH executor | Snippets panel / palette | Contracts and panel isolated |
-| Settings | `settings` | `labonair-settings-content`, `labonair-settings` | `labonair-settings-ui` | JSON/settings persistence | Settings window | Value-only navigation; legacy capability sections are migration-only and diagnostics use Notifications |
-| Keymap | `keymap` | `labonair-keymap` | `labonair-command-palette` temporarily; dedicated UI only when a real boundary exists | keymap file and binding registry | Titlebar global menu → Keymap; quick access through palette | UI-free keymap crate extracted; editing and shell adapter migration ongoing |
-| Command Palette | `command-palette` | `labonair-command-palette-core` | `labonair-command-palette` | typed providers from feature modules | Titlebar global menu / global shortcut | UI-free registry crate introduced; global-menu navigation is typed; static entries and duplicate shell registry still being migrated |
-| Notifications | `notifications` | `labonair-notifications-core` | `labonair-notifications` | none; retained in registry | Statusbar notification dropdown | Registry and statusbar presentation are capability-owned; migrated operation errors use structured details/source/deduplication; no toast surface |
-| Themes (color and icon) | `themes` | `labonair-theme` | `labonair-theme` unless a real UI boundary requires a sibling crate | built-in definitions first | Titlebar global menu → Themes / Icon Themes → palette submenu | Separate app-theme and icon-theme palette pages; both support registry-backed selection and transient preview; download/extension workflow remains deferred |
-| AI | `ai` | `labonair-ai` | `labonair-ai` until a real UI boundary requires a sibling crate | provider/session persistence | AI panel / workspace context | Backend largely active; UI rework open |
+| Capability | Disposition | Owning module | Contract / domain crate | UI crate | Storage / integration | Canonical entry point | Current implementation state |
+|---|---|---|---|---|---|---|---|
+| Application composition | Keep / simplify | `application` | `labonair-shell` | `labonair-shell` | `labonair-backend` adapters during migration | App startup | Transitional composition root |
+| Workspace orchestration | Redesign | `workspace` | `labonair-workspace` | `labonair-workspace` | session/layout persistence | Workspace surface | Typed Empty/Standalone/Project state and WorkspaceEvent boundary added; explicit project picker is wired; session identity persistence is queued in R02-003; feature-view extraction remains ongoing |
+| Backgrounds | Keep / isolate | `backgrounds` | `labonair-background` | `labonair-background` | local image storage and decoded cache | Appearance/background surface | Capability extracted from workspace; Settings UI no longer holds its entity |
+| Terminal | Keep / isolate | `terminal` | `labonair-terminal` | `labonair-terminal` and workspace integration | PTY/process adapter | Terminal tab or standalone terminal | Active, extraction ongoing |
+| Editor | Keep / isolate | `editor` | `labonair-editor` | `labonair-editor` and workspace integration | filesystem adapter | Editor tab or standalone editor | Active, extraction ongoing |
+| Filesystem | Keep | `filesystem` | `labonair-filesystem` | Consuming feature UI | local filesystem and watcher | Explorer/editor consumers | Extracted |
+| SSH | Keep / redesign entry points | `ssh` | `labonair-ssh` | SSH connection surface | Backend adapter owns russh, auth, tunnels, jump hosts | Host action or standalone SSH | Contract and injected workspace/Hosts paths migrated; backend adapter remains transitional |
+| SFTP | Keep / isolate | `sftp` | `labonair-sftp` | SFTP browser | Backend adapter owns russh-sftp; session comes from SSH | Host action or standalone SFTP | Authenticated session/browser contract and view migration complete; transfer queue remains separate |
+| Hosts | Redesign | `hosts` | `labonair-hosts` | `labonair-hosts-ui` | `labonair-persistence`, credentials, SSH adapters | Titlebar global menu → Hosts; picker in Command Palette | Domain/store extracted; UI consumes canonical stores through injected contracts and publishes operation failures through Notifications |
+| Credentials | Keep / isolate | `credentials` | `labonair-credentials` | Hosts UI consumer | `labonair-secrets`, keychain | Host management | Extracted |
+| Transfers | Redesign | `transfers` | `labonair-transfers` | `labonair-transfers-ui` | SFTP/SSH worker adapter | Statusbar Transfers badge | Typed registry and statusbar UI extracted; legacy backend event adapter remains transitional |
+| Git / source control | Keep / isolate | `git` | `labonair-git` | `labonair-panel-scm`, `labonair-panel-git-graph`, Project Diff | backend Git executor adapter | Source Control panel / palette | Contracts extracted |
+| Explorer | Redesign | `explorer` | Filesystem contracts | `labonair-panel-explorer` | `labonair-filesystem` | Explorer dock panel | Backend edge removed; workspace shim remains |
+| Snippets | Keep / isolate | `snippets` | `labonair-snippets` | `labonair-panel-snippets` | persistence and injected SSH executor | Snippets panel / palette | Contracts and panel isolated |
+| Settings | Redesign / reduce | `settings` | `labonair-settings-content`, `labonair-settings` | `labonair-settings-ui` | JSON/settings persistence | Settings window | Value-only navigation; legacy capability sections are migration-only and diagnostics use Notifications |
+| Keymap | Redesign | `keymap` | `labonair-keymap` | dedicated keymap surface | keymap file and binding registry | Titlebar global menu → Keymap; quick access through palette | UI-free keymap crate extracted; editing and shell adapter migration ongoing |
+| Command Palette | Redesign | `command-palette` | `labonair-command-palette-core` | `labonair-command-palette` | typed providers from feature modules | Titlebar global menu / global shortcut | UI-free registry crate introduced; global-menu navigation is typed; static entries and duplicate shell registry still being migrated |
+| Notifications | Redesign | `notifications` | `labonair-notifications-core` | `labonair-notifications` | none; retained in registry | Statusbar notification dropdown | Registry and statusbar presentation are capability-owned; migrated operation errors use structured details/source/deduplication; no toast surface |
+| Themes (color and icon) | Redesign / static first | `themes` | `labonair-theme` | `labonair-theme` unless a real UI boundary requires a sibling crate | built-in definitions first | Titlebar global menu → Themes / Icon Themes → palette submenu | Separate app-theme and icon-theme palette pages; both support registry-backed selection and transient preview; download/extension workflow remains deferred |
+| AI | Defer UI / keep core | `ai` | `labonair-ai` | `labonair-ai` until a real UI boundary requires a sibling crate | provider/session persistence | AI panel / workspace context | Backend largely active; UI rework open |
+
+## Explicit product dispositions
+
+These items are deliberately not capability rows because they are surfaces,
+implementation strategies, or predecessor behaviors rather than independent
+product ownership boundaries:
+
+| Item | Decision | Consequence |
+|---|---|---|
+| Settings categories for Hosts, Themes, Icon Themes, and Shortcuts | Remove as management surfaces | Settings stores values only; each capability owns its management UI. |
+| Toast notifications | Remove | Passive messages are retained and displayed only by the notification registry and statusbar dropdown. |
+| Duplicate feature-local operation-error banners | Remove | Operation failures publish notifications; actionable dialogs and field validation remain only where a decision or correction is required. |
+| Jump-host primary menu/badge | Remove as a separate surface; keep the capability | Jump hosts remain part of SSH connection configuration and execution. |
+| Remote theme/icon-theme downloads | Defer | Only built-in, explicitly registered themes are supported until an extension workflow has a concrete owner and user flow. |
+| Static shell-wide command tables | Remove | Commands and submenus are contributed by owning modules through the command registry. |
+| Full Zed fork or greenfield rewrite | Reject for the current migration | Continue the standalone Rust implementation and use Zed only as a clean-room reference. |
 
 ## Rules for changing this matrix
 

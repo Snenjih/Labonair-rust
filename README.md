@@ -41,6 +41,7 @@ cargo run
 cargo fmt --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
+python3 scripts/check_rework_queue.py
 ```
 
 Platform priority is macOS first, with Linux later. The application contains no WebView, JavaScript frontend, or IPC layer.

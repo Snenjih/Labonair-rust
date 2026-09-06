@@ -83,6 +83,7 @@ cargo check --workspace --all-targets
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace --no-fail-fast
 cargo metadata --format-version 1 --no-deps | python3 scripts/check_crate_deps.py
+python3 scripts/check_rework_queue.py
 git diff --check
 ```
 
@@ -105,4 +106,3 @@ For a removed or replaced capability, inspect and resolve all of:
 Retain migration code only when it protects existing user data. Retain a
 compatibility adapter only with a named consumer and an explicit removal
 condition.
-

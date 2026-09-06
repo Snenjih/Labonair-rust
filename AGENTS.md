@@ -90,6 +90,8 @@ cargo test --workspace
 ```
 
 UI and layout changes also require a visual check. Dependency changes require the crate dependency verifier.
+Changes to the active architecture queue also require
+`python3 scripts/check_rework_queue.py`.
 
 ## Repository continuity
 

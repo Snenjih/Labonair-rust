@@ -1,0 +1,96 @@
+# R06-001 — Remove the broad backend facade
+
+## Status
+
+`⏳ Planned`
+
+## Owner
+
+- Module: application composition and the capability owners being migrated
+- Capability-matrix row: [`../../docs/capabilities.md`](../../docs/capabilities.md)
+- Composition entry point: `labonair-shell::bootstrap`
+
+## Dependencies
+
+- `R05-001-settings-audit-and-value-normalization`
+- `R04-002-host-management-and-connection-pickers`
+- `R03-001-command-palette-provider-registry`
+
+## Goal
+
+Replace `labonair-backend` as a broad public application state container with
+narrow injected platform adapters and capability-owned services. The
+composition root may construct adapters, but no feature may use a backend
+facade to reach unrelated state.
+
+## Scope
+
+- In scope: remaining backend modules, `App`, legacy event transport adapters,
+  persistence/secret/transport consumers, injection points, and dependency
+  allow-list cleanup.
+- Out of scope: changing the behavior of terminal, SSH, SFTP, Git, or AI
+  beyond what is required to move ownership and preserve their contracts.
+
+## Contracts and ownership
+
+- Each capability keeps its public domain contract in its canonical crate.
+- Platform services expose narrow traits or typed channels; external events
+  are translated once at the adapter boundary.
+- The shell/app crates construct concrete implementations and register them;
+  they do not expose a replacement god object.
+
+## Dependencies
+
+- Existing edges removed: feature/workspace/palette access to
+  `labonair-backend` internals and the backend's unrelated public re-exports.
+- New edges: application composition to concrete adapters; capability owners to
+  their own public service contracts.
+- Dependency verifier change: remove every transitional backend edge whose
+  removal condition is met; fail the verifier if a new facade edge appears.
+
+## Persistence and migration
+
+- Settings: none beyond the completed value migration.
+- Storage: keep schemas and secret references stable while moving query and
+  adapter ownership.
+- Compatibility: legacy event names or signatures may remain only at an
+  explicit boundary with a named final consumer and deletion task.
+
+## User-visible behavior
+
+- Canonical entry point: unchanged feature surfaces; this is an ownership
+  migration.
+- Notifications: adapter failures are translated into the owning capability's
+  structured notification request exactly once.
+- Inline errors/toasts: no new surface.
+
+## Implementation plan
+
+1. Inventory every backend export and consumer, grouping it by owning module →
+   verify the inventory and dependency graph agree.
+2. Move the final contracts/adapters and inject them from composition → verify
+   focused service tests and no private backend imports.
+3. Delete the broad `App` facade paths, legacy re-exports, and allow-list
+   exceptions → verify source search, metadata, and full test gates.
+
+## Acceptance criteria
+
+- [ ] No feature module depends on broad backend application state.
+- [ ] Every remaining backend function is either a narrow platform adapter or
+      has moved to its capability owner.
+- [ ] Cross-module communication uses typed contracts, events, or registries.
+- [ ] The application root contains construction and registration only.
+- [ ] Transitional edges and compatibility paths have been removed or have a
+      separately named owner/task.
+- [ ] Focused tests and all repository verification gates pass.
+
+## Removal condition
+
+This task is complete only when deleting the backend facade does not require
+feature-specific rewrites outside their public contracts and the dependency
+verifier has no broad-facade exception.
+
+## Notes and follow-ups
+
+The binary may retain a small platform-adapter package if a concrete platform
+boundary still exists; that package must not become a second capability owner.

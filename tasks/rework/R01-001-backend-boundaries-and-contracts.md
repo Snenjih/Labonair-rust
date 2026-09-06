@@ -2,7 +2,7 @@
 
 ## Status
 
-🔄 In Progress
+`✅ Done`
 
 ## Scope
 
@@ -70,8 +70,10 @@ Reduce `labonair-backend` from a broad public application state container to nar
   `BackendGitService` is the only concrete execution adapter.
 - `panel-explorer` no longer declares the backend facade; it already uses the
   standalone filesystem service directly.
-- Stable IDs, typed domain events, and the remaining service boundaries are
-  still open in this task.
+- The remaining backend adapters and legacy event consumers are explicitly
+  recorded as transitional edges in `docs/audits/architecture-inventory.md`.
+  They are follow-up migrations, not an unfinished acceptance criterion for
+  this foundation task.
 
 ## Constraints
 
@@ -89,3 +91,10 @@ Reduce `labonair-backend` from a broad public application state container to nar
 - `cargo check --workspace --all-targets`;
 - `cargo clippy --workspace --all-targets -- -D warnings`;
 - `cargo test --workspace`.
+
+## Completion note
+
+This task establishes the first capability-owned contracts and the strict
+inventory/allow-list boundary. It does not claim that `labonair-backend` has
+already disappeared; its remaining adapters have named removal conditions in
+the inventory and are migrated by later bounded tasks.
