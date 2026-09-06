@@ -1,5 +1,5 @@
 //! Shell-side glue that the [`CommandRegistry`](crate::commands) and the
-//! overlay layers reach through: the palette / bookmark event handlers, the
+//! overlay layers reach through: the palette event handler, the
 //! modal-layer mirrors, the shared `AppShell` helper methods that command
 //! closures call, and the last three genuine window actions.
 //!
@@ -13,13 +13,12 @@
 use gpui::{App, Context, Window};
 use labonair_command_palette::{Page as PalettePage, PaletteChoice, PaletteData, PaletteEvent};
 use labonair_panel::DockPosition;
-use labonair_panel_explorer::BookmarkEvent;
 
 use labonair_workspace::search_overlay::SearchOverlay;
 
 use crate::app_shell::AppShell;
 use crate::menu;
-use crate::modals::{BookmarksModal, CommandPaletteModal, UpdaterModal};
+use crate::modals::{CommandPaletteModal, UpdaterModal};
 
 impl AppShell {
     // ── Genuine window actions (kept on the shell root) ────────────────────
@@ -147,14 +146,6 @@ impl AppShell {
         });
     }
 
-    /// Toggle the path-bookmarks popover. Its `open` flag is mirrored into the
-    /// modal layer by [`Self::sync_bookmarks_modal`] on the next tick.
-    pub(crate) fn toggle_bookmarks(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.panels
-            .bookmarks
-            .update(cx, |b, cx| b.toggle(window, cx));
-    }
-
     /// `view.zenMode`: both bars visible → hide both, otherwise show both.
     pub(crate) fn toggle_zen_mode(&mut self, cx: &mut Context<Self>) {
         let p = self.prefs.read(cx).get();
@@ -201,28 +192,7 @@ impl AppShell {
         });
     }
 
-    /// Mirror the path-bookmarks popover's `open` flag into the modal layer.
-    pub(crate) fn sync_bookmarks_modal(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let want = self.panels.bookmarks.read(cx).is_open();
-        let have = self
-            .modal_layer
-            .read(cx)
-            .active_modal::<BookmarksModal>()
-            .is_some();
-        if want == have {
-            return;
-        }
-        let bookmarks = self.panels.bookmarks.clone();
-        self.modal_layer.update(cx, |layer, cx| {
-            if want {
-                layer.open_modal(window, cx, move |_, cx| BookmarksModal::new(bookmarks, cx));
-            } else {
-                layer.hide_modal(window, cx);
-            }
-        });
-    }
-
-    // ── Palette / bookmark event handlers ─────────────────────────────────
+    // ── Palette event handler ────────────────────────────────────────────
 
     /// Snapshot the panel-sourced dynamic choices the command palette renders
     /// on its sub-pages. Pref/theme scalars (`color_mode`, `editor_theme`,
@@ -439,28 +409,6 @@ impl AppShell {
                 });
                 let p = self.prefs.read(cx).get().clone();
                 labonair_settings_ui::apply_prefs_to_theme(&p, &self.theme, cx);
-            }
-        }
-    }
-
-    /// Service a single bookmark pick straight from the `BookmarkEvent`
-    /// subscription (T17-005 — no `pending_bookmarks` buffer / `drain`).
-    pub(crate) fn handle_bookmark_event(
-        &mut self,
-        event: BookmarkEvent,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        match event {
-            BookmarkEvent::OpenLocal(path) => {
-                self.panels
-                    .explorer
-                    .update(cx, |e, cx| e.set_root_str(Some(path), cx));
-                self.select_panel("explorer", cx);
-            }
-            BookmarkEvent::OpenRemote { host_id, .. } => {
-                self.workspace
-                    .update(cx, |w, cx| w.open_sftp_tab(host_id, window, cx));
             }
         }
     }

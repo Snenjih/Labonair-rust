@@ -149,8 +149,6 @@ pub enum CommandId {
     OpenSettingsJson,
     CheckForUpdates,
     FormatDocument,
-    /// Opens the path-bookmarks popover (T12-003).
-    OpenPathBookmarks,
     /// Zen-mode toggles (T13-005) — mirror `useSettingsCommands.ts`.
     ToggleZenModeHeader,
     ToggleZenModeStatusbar,
@@ -279,7 +277,6 @@ const ACTION_NAMES: &[(CommandId, &str)] = &[
     (CommandId::NewQuickSsh, "connections::NewQuickSsh"),
     (CommandId::ConnectSsh, "connections::Connect"),
     (CommandId::OpenSftp, "connections::OpenSftp"),
-    (CommandId::OpenPathBookmarks, "bookmarks::Open"),
     (CommandId::OpenCommandPalette, "command_palette::Toggle"),
     (CommandId::OpenShortcuts, "settings::OpenShortcuts"),
     (CommandId::OpenSettings, "settings::Open"),
@@ -451,7 +448,6 @@ static COMMANDS: &[Command] = &[
     Command { id: CommandId::SwitchAiSession,    title: "Switch AI Session\u{2026}",section: "AI",            contexts: &[],                            shortcut: None,                icon: I::Sparkles,   sub_page: Some(Page::AiSessions) },
     Command { id: CommandId::OpenSnippetsPanel,  title: "Open Snippets Panel",     section: "Snippets",       contexts: &[],                            shortcut: None,                icon: I::Command,    sub_page: None },
     Command { id: CommandId::RunSnippet,         title: "Run Snippet\u{2026}",     section: "Snippets",       contexts: &[],                            shortcut: None,                icon: I::Command,    sub_page: Some(Page::Snippets) },
-    Command { id: CommandId::OpenPathBookmarks,  title: "Open Path Bookmarks",     section: "Bookmarks",      contexts: &[],                            shortcut: Some(BookmarksOpen), icon: I::Bookmark,   sub_page: None },
     Command { id: CommandId::OpenGitGraph,       title: "Open Git Graph",          section: "Source Control", contexts: &[],                            shortcut: None,                icon: I::GitBranch,  sub_page: None },
     Command { id: CommandId::FocusSourceControl, title: "Focus Source Control",    section: "Source Control", contexts: &[],                            shortcut: None,                icon: I::GitBranch,  sub_page: None },
     Command { id: CommandId::GitSwitchBranch,    title: "Git: Switch Branch\u{2026}",section: "Source Control",contexts: &[],                          shortcut: None,                icon: I::GitBranch,  sub_page: Some(Page::GitBranches) },
@@ -1717,7 +1713,7 @@ mod tests {
         CommandId::FocusSourceControl, CommandId::OpenHostSettings, CommandId::ClearTerminal,
         CommandId::OpenShortcuts, CommandId::OpenSettings, CommandId::OpenProjectSettings,
         CommandId::OpenSettingsJson, CommandId::CheckForUpdates, CommandId::FormatDocument,
-        CommandId::OpenPathBookmarks, CommandId::ToggleZenModeHeader,
+        CommandId::ToggleZenModeHeader,
         CommandId::ToggleZenModeStatusbar, CommandId::ToggleZenMode, CommandId::AdjustFontSize,
         CommandId::ConnectSsh, CommandId::OpenSftp, CommandId::ChangeAppTheme,
         CommandId::ChangeColorMode, CommandId::ChangeEditorTheme, CommandId::SwitchAiSession,
@@ -1834,10 +1830,6 @@ mod tests {
         assert_eq!(
             command_for_shortcut(ShortcutId::PaneSplitRight),
             Some(CommandId::SplitRight),
-        );
-        assert_eq!(
-            command_for_shortcut(ShortcutId::BookmarksOpen),
-            Some(CommandId::OpenPathBookmarks),
         );
         assert_eq!(
             command_for_shortcut(ShortcutId::ViewZenMode),

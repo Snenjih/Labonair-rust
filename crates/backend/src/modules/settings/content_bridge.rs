@@ -242,18 +242,6 @@ impl From<&SettingsContent> for Preferences {
 
             git_status_poll_interval_ms: w.git_status_poll_interval_ms.unwrap_or_default(),
 
-            bookmarks_enabled: w.bookmarks_enabled.unwrap_or_default(),
-            bookmarks_action_new_terminal: w.bookmarks_action_new_terminal.unwrap_or_default(),
-            bookmarks_action_current_terminal: w
-                .bookmarks_action_current_terminal
-                .unwrap_or_default(),
-            bookmarks_action_current_sftp: w.bookmarks_action_current_sftp.unwrap_or_default(),
-            bookmarks_action_new_sftp: w.bookmarks_action_new_sftp.unwrap_or_default(),
-            bookmarks_primary_click_behavior: w
-                .bookmarks_primary_click_behavior
-                .unwrap_or_default(),
-            bookmarks_show_badge: w.bookmarks_show_badge.unwrap_or_default(),
-
             ai_enabled: ai.ai_enabled.unwrap_or_default(),
             ai_max_agent_steps: ai.ai_max_agent_steps.unwrap_or_default(),
             ai_terminal_context_lines: ai.ai_terminal_context_lines.unwrap_or_default(),

@@ -93,7 +93,7 @@ mod tests {
     fn overrides_from_blob_parses_known_keys() {
         let mut blob = Map::new();
         blob.insert("cwd".to_string(), json!({ "side": "left", "hidden": true }));
-        blob.insert("bookmarks".to_string(), json!({ "side": "right" }));
+        blob.insert("jump-hosts".to_string(), json!({ "side": "right" }));
         let overrides = overrides_from_blob(&blob);
 
         assert_eq!(
@@ -105,7 +105,7 @@ mod tests {
         );
         // Missing `hidden` defaults to visible.
         assert_eq!(
-            overrides.get("bookmarks"),
+            overrides.get("jump-hosts"),
             Some(&StatusPlacement {
                 side: StatusSide::Right,
                 hidden: false,

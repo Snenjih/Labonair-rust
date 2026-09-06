@@ -573,18 +573,6 @@ pub const PERSONALIZATION_GROUPS: &[Group] = &[(
 
 const WORKSPACE_GROUPS: &[Group] = &[
     (
-        "Bookmarks",
-        &[
-            "bookmarksEnabled",
-            "bookmarksActionNewTerminal",
-            "bookmarksActionCurrentTerminal",
-            "bookmarksActionCurrentSftp",
-            "bookmarksActionNewSftp",
-            "bookmarksPrimaryClickBehavior",
-            "bookmarksShowBadge",
-        ],
-    ),
-    (
         "Command Palette",
         &[
             "commandPaletteBlur",

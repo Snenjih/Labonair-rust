@@ -113,9 +113,9 @@ Today's monolith is `crates/ui/src/` (~40 files, ~48k lines; `settings.rs`
 | `labonair-settings` | `SettingsStore` (layer merge), `Settings` trait + registration, `keymap.json` loader, comment-preserving JSON surgical edit, schema generation. | new, extracted from the store logic in `ui/settings.rs` |
 | `labonair-settings-ui` | Settings window, pages, generated per-type field renderers. | `ui/settings.rs` (UI part: pages, `FIELDS`/`SECTION_GROUPS` stay unchanged initially) |
 | `labonair-panel` | Contracts only: `Panel` trait, `PanelRegistry`, `StatusItem` trait, `StatusItemRegistry` — signatures ported from Zed, initially unused. Breaks the Panel ↔ Workspace cycle. | new; trait extraction target of `ui/sidebar_slot.rs` and the `BarItemId` model in `ui/bar_items.rs` |
-| `labonair-workspace` | `Workspace`, `Pane`, `PaneGroup` (recursive split tree), `Dock` (L/R/B), `StatusBar` host, `ModalLayer`, `ToastLayer` host, layout/session persistence. | `ui/workspace.rs`, `ui/pane.rs`, `ui/tabs.rs`, `ui/sidebar_slot.rs`, `ui/session.rs`, `ui/window_state.rs` (persistence part), `ui/preview.rs`, `ui/sftp.rs`, `ui/terminal.rs` (view), `ui/editor.rs` (view), `ui/diff.rs` (view) — terminal/editor/sftp views stay here for now (§7 of the report); `ui/bookmarks.rs` moved on to `labonair-panel-explorer` in T16-008 (§8.4) |
+| `labonair-workspace` | `Workspace`, `Pane`, `PaneGroup` (recursive split tree), `Dock` (L/R/B), `StatusBar` host, `ModalLayer`, `ToastLayer` host, layout/session persistence. | `ui/workspace.rs`, `ui/pane.rs`, `ui/tabs.rs`, `ui/sidebar_slot.rs`, `ui/session.rs`, `ui/window_state.rs` (persistence part), `ui/preview.rs`, `ui/sftp.rs`, `ui/terminal.rs` (view), `ui/editor.rs` (view), `ui/diff.rs` (view) — terminal/editor/sftp views stay here for now (§7 of the report) |
 | `labonair-shell` | `AppShell`: composes titlebar + docks + workspace + statusbar + modal layer; the only crate that knows concrete panel types (registration). Thin, no feature code. | `ui/app_shell.rs`, `ui/lib.rs`, `ui/menu.rs`, `ui/bar_items.rs` (concrete items), `ui/cwd_breadcrumb.rs`, `ui/transfers.rs` (statusbar item + progress UI), `ui/updater.rs`, `ui/agent_access.rs` |
-| `labonair-panel-explorer` | File-explorer panel (also hosts the path-bookmarks overlay view — see §8.4). | `ui/explorer.rs`, `ui/bookmarks.rs` |
+| `labonair-panel-explorer` | File-explorer panel. | `ui/explorer.rs` |
 | `labonair-panel-scm` | Source-control (status / staging) panel. | `ui/git.rs` |
 | `labonair-panel-git-graph` | Commit-graph panel. | `ui/git_graph.rs` |
 | `labonair-hosts-ui` | Host connect list + host / credential editing UI. **Not a dock panel and not a tab** (see §8): the connect surface is rendered by the command palette (`Enter` = SSH, `Shift+Enter` = SFTP), the management surface is embedded in **Settings › Hosts** (a first-class top-level category). | `ui/hosts.rs`, `ui/ssh_connection.rs` |
@@ -285,7 +285,7 @@ These are stated so T16-010 can derive a mechanical check (e.g. `cargo-depgraph`
   * **Dock-button menu.** Right-clicking a panel toggle lists every dock the
     panel supports as a checkable row (current dock ticked → flip directly),
     then "Hide Button".
-* **Modal / Overlay layer** — `ModalLayer` (command palette, dialogs, bookmarks,
+* **Modal / Overlay layer** — `ModalLayer` (command palette, dialogs,
   updater modal, transient `Cmd+F` search) and `ToastLayer` (toasts). Nothing
   else renders overlays.
 
@@ -482,15 +482,16 @@ unaffected (typed fields, generated UI, custom-pane chrome, origin+reset,
 global search, deep links). Scope: `crates/settings-ui/*`,
 `crates/ui-kit/src/palette.rs` (new `sidebar*` tokens).
 
-### 8.4 Bookmarks live in `labonair-panel-explorer` (no `panel-bookmarks` crate)
+### 8.4 Bookmarks (removed)
 
-T16-008 default taken: the path-bookmarks overlay (`ui/bookmarks.rs` →
-`BookmarksView` / `BookmarkEvent`) moves into **`labonair-panel-explorer`** as a
-`bookmarks` submodule rather than its own crate — bookmarks are directory-near
-and the view already couples to `ExplorerView` (needs the local explorer root).
-It stays an `EventEmitter` overlay view: `AppShell` keeps `self.bookmarks:
-Entity<BookmarksView>` and renders it as an overlay (unchanged semantics); the
-crate boundary is the only thing that moved.
+The path-bookmarks feature (T12-003 — `BookmarksView` / `BookmarkEvent`, the
+`bookmarks` submodule of `labonair-panel-explorer`, the
+`labonair_backend::modules::bookmarks` model + `bookmarks.json` persistence, the
+statusbar item, the `bookmarks::Open` command / `Cmd+Shift+O` binding and the
+seven `bookmarks*` workspace settings) was **removed wholesale**. The rest of
+this document keeps the historical rationale for how it was built; no code path
+remains. Mentions of `handle_bookmark_event` / `sync_bookmarks_modal` /
+`BookmarksModal` below are historical.
 
 Directed edges added in T16-008 (all acyclic): `labonair-workspace` →
 `labonair-hosts-ui` and → `labonair-panel-git-graph` (it owns the tab-view
@@ -559,7 +560,8 @@ same-name carry-over:
 | `cwdBreadcrumb` | `cwd` | kept (renamed) |
 | `previewUrl` | `preview-url` | kept |
 | `cursorPosition` | `cursor-position` | kept |
-| `bookmarks`, `notifications`, `transfers`, `updater` | unchanged | kept |
+| `notifications`, `transfers`, `updater` | unchanged | kept |
+| `bookmarks` | — | dropped — path-bookmarks feature removed |
 | `ai`, `aiMini`, `aiPanel` | — | dropped — AI is a panel toggle now, not placeable |
 | `explorerPanel`, `snippetsPanel`, `sourceControlPanel`, `tabsPanel` | — | dropped — panel toggles are fixed-left, not placeable; Tabs is a sidebar panel now, not a status item |
 | any other/unrecognised id, or an entry with no `side` | — | dropped (falls back to the item's compiled-in `default_side`) |

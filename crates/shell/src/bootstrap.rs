@@ -26,7 +26,7 @@ use tokio::runtime::Handle as TokioHandle;
 
 use labonair_command_palette::{CommandPalette, PaletteEvent};
 use labonair_panel_ai::{AiChatEvent, AiChatStore, AiChatView};
-use labonair_panel_explorer::{BookmarkEvent, BookmarksView, ExplorerView};
+use labonair_panel_explorer::ExplorerView;
 use labonair_panel_git_graph::GitGraphView;
 use labonair_panel_scm::{GitPanelView, ScmEvent};
 use labonair_panel_snippets::SnippetsView;
@@ -388,17 +388,6 @@ pub(crate) fn bootstrap(
 
     let explorer = cx.new(|cx| ExplorerView::new(theme.clone(), workspace.clone(), cx));
 
-    let bookmarks =
-        cx.new(|cx| BookmarksView::new(theme.clone(), workspace.clone(), explorer.clone(), cx));
-    cx.subscribe_in(
-        &bookmarks,
-        window,
-        |this, _, event: &BookmarkEvent, window, cx| {
-            this.handle_bookmark_event(event.clone(), window, cx);
-        },
-    )
-    .detach();
-
     // Root tracks the active terminal's cwd (falls back to $HOME).
     {
         let initial = workspace
@@ -525,7 +514,6 @@ pub(crate) fn bootstrap(
         &notifications,
         &updater,
         &agent_access,
-        &bookmarks,
         cx,
     );
     let status_bar = cx.new(|cx| StatusBar::new(workspace.clone(), theme.clone(), cx));
@@ -543,8 +531,6 @@ pub(crate) fn bootstrap(
     // `Entity<GitGraphView>` (via `set_git_graph`) and the CWD-feed closure
     // above captured its own clone.
     let panels = ShellPanels {
-        explorer,
-        bookmarks,
         git_panel,
         snippets,
         ai_chat,

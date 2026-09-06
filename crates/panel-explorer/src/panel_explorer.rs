@@ -29,15 +29,8 @@
 //!   port.
 
 // Crate root (T16-008): this file is the `labonair-panel-explorer` lib root.
-// It also hosts the path-bookmarks overlay view (`bookmarks` module) — the
-// bookmarks feature is directory-near, so it lives here rather than in its own
-// crate (see `docs/architecture.md §2`). The `theme` / `workspace` / `preview`
-// shims keep the pre-split `crate::…` paths resolving against their new home
-// crates.
-
-pub mod bookmarks;
-
-pub use bookmarks::{BookmarkEvent, BookmarksView};
+// The `theme` / `workspace` / `preview` shims keep the pre-split `crate::…`
+// paths resolving against their new home crates.
 
 pub(crate) mod theme {
     pub use labonair_theme::store::*;
@@ -1471,31 +1464,7 @@ impl ExplorerView {
         cx.notify();
     }
 
-    /// Save `dir` as a local path bookmark (T12-003 context-menu entry).
-    fn bookmark_folder(&mut self, dir: PathBuf, cx: &mut Context<Self>) {
-        self.context_menu = None;
-        let path = dir.to_string_lossy().to_string();
-        let current = labonair_backend::modules::bookmarks::load();
-        match labonair_backend::modules::bookmarks::compute_add_bookmark(
-            &current, None, &path, None,
-        ) {
-            Some(next) => {
-                let result = labonair_backend::modules::bookmarks::save(&next);
-                notification_center(cx).update(cx, |c, cx| match result {
-                    Ok(()) => c.push(Notification::success("Bookmarked", path.clone()), cx),
-                    Err(message) => c.push(Notification::error("Bookmark failed", message), cx),
-                });
-            }
-            None => {
-                notification_center(cx).update(cx, |c, cx| {
-                    c.push(Notification::info("Already bookmarked", path.clone()), cx);
-                });
-            }
-        }
-        cx.notify();
-    }
-
-    /// The current local root directory, if any (feeds the bookmarks popover).
+    /// The current local root directory, if any.
     pub fn root(&self) -> Option<PathBuf> {
         self.model.root.clone()
     }
@@ -2337,15 +2306,6 @@ impl ExplorerView {
                 Box::new(move |this, _w, cx| this.paste_into(d.clone(), cx)),
             )));
         }
-        let d = dir_for_ops.clone();
-        items.push(
-            MenuItem::new("cm-bookmark", "Bookmark Path")
-                .icon(IconName::Bookmark)
-                .on_click(win(
-                    &view,
-                    Box::new(move |this, _w, cx| this.bookmark_folder(d.clone(), cx)),
-                )),
-        );
         items.push(MenuItem::separator());
         let t = target.clone();
         items.push(

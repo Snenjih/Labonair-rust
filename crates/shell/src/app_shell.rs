@@ -35,7 +35,6 @@ use labonair_notifications::NotificationCenter;
 use tokio::runtime::Handle as TokioHandle;
 
 use labonair_panel_ai::AiChatView;
-use labonair_panel_explorer::{BookmarksView, ExplorerView};
 use labonair_panel_scm::GitPanelView;
 use labonair_panel_snippets::SnippetsView;
 use labonair_settings_ui::PreferencesStore;
@@ -65,8 +64,6 @@ const SAVE_THROTTLE: Duration = Duration::from_millis(1000);
 /// `AppShell` stays a thin composition root and the action handlers in
 /// [`crate::actions`] have one field to reach through.
 pub(crate) struct ShellPanels {
-    pub(crate) explorer: Entity<ExplorerView>,
-    pub(crate) bookmarks: Entity<BookmarksView>,
     pub(crate) git_panel: Entity<GitPanelView>,
     pub(crate) snippets: Entity<SnippetsView>,
     pub(crate) ai_chat: Entity<AiChatView>,
@@ -192,11 +189,10 @@ impl Render for AppShell {
         let _span =
             tracing::trace_span!(target: "labonair::perf", "render", view = "shell").entered();
         self.maybe_persist_geometry(window);
-        // Mirror the async-driven updater dialog + the status-bar-toggled
-        // bookmarks popover into the modal layer (both flip flags outside a
-        // user action, so `render` is the one place with a `&mut Window`).
+        // Mirror the async-driven updater dialog into the modal layer (it flips
+        // its flag outside a user action, so `render` is the one place with a
+        // `&mut Window`).
         self.sync_updater_modal(window, cx);
-        self.sync_bookmarks_modal(window, cx);
 
         let (bg, ui_font, ui_font_size) = {
             let t = self.theme.read(cx);

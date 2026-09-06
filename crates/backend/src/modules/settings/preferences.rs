@@ -287,16 +287,6 @@ pub struct Preferences {
     // ── Source Control ───────────────────────────────────────────────────
     pub git_status_poll_interval_ms: u32,
 
-    // ── Bookmarks (T12-003) ──────────────────────────────────────────────
-    pub bookmarks_enabled: bool,
-    pub bookmarks_action_new_terminal: bool,
-    pub bookmarks_action_current_terminal: bool,
-    pub bookmarks_action_current_sftp: bool,
-    pub bookmarks_action_new_sftp: bool,
-    /// `"current"` | `"new"`.
-    pub bookmarks_primary_click_behavior: String,
-    pub bookmarks_show_badge: bool,
-
     // ── AI ───────────────────────────────────────────────────────────────
     pub ai_enabled: bool,
     pub ai_max_agent_steps: u32,
@@ -488,14 +478,6 @@ impl Default for Preferences {
             command_palette_close_on_overlay_click: true,
 
             git_status_poll_interval_ms: 5000,
-
-            bookmarks_enabled: true,
-            bookmarks_action_new_terminal: true,
-            bookmarks_action_current_terminal: true,
-            bookmarks_action_current_sftp: true,
-            bookmarks_action_new_sftp: true,
-            bookmarks_primary_click_behavior: "current".to_string(),
-            bookmarks_show_badge: true,
 
             ai_enabled: true,
             ai_max_agent_steps: 24,
@@ -789,8 +771,6 @@ mod tests {
                 "explorerRemotePollInterval":10,
                 "commandPaletteBlur":12,
                 "commandPalettePosition":"center",
-                "bookmarksEnabled":false,
-                "bookmarksPrimaryClickBehavior":"new",
                 "aiMaxAgentSteps":40,
                 "aiTemperature":0.3,
                 "defaultModelId":"claude-x",
@@ -828,8 +808,6 @@ mod tests {
         assert_eq!(p.explorer_remote_poll_interval, 10);
         assert_eq!(p.command_palette_blur, 12);
         assert_eq!(p.command_palette_position, "center");
-        assert!(!p.bookmarks_enabled);
-        assert_eq!(p.bookmarks_primary_click_behavior, "new");
         assert_eq!(p.ai_max_agent_steps, 40);
         assert!((p.ai_temperature - 0.3).abs() < f32::EPSILON);
         assert_eq!(p.default_model_id, "claude-x");

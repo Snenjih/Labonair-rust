@@ -23,7 +23,6 @@ use labonair_panel::{
     AnyStatusItemHandle, DockPosition, PanelIcon, StatusItem, StatusItemRegistration,
     StatusMenuEntry, StatusSide,
 };
-use labonair_panel_explorer::BookmarksView;
 use labonair_ui_kit::{icon_toggle_button, IconName, Palette};
 use labonair_workspace::agent_access::{AgentAccessEntry, AgentAccessStore};
 
@@ -418,7 +417,7 @@ impl StatusItem for NotificationsStatusItem {
         StatusSide::Right
     }
     // Rightmost of the right cluster — always visible, own group (T18-004
-    // default order: … → Bookmarks → Notifications).
+    // default order: … → Jump Hosts → Notifications).
     fn order(&self) -> i32 {
         100
     }
@@ -1452,60 +1451,6 @@ impl StatusItem for JumpHostsStatusItem {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Path bookmarks.
-// ─────────────────────────────────────────────────────────────────────────────
-
-pub struct BookmarksStatusItem {
-    bookmarks: Entity<BookmarksView>,
-    theme: Entity<ThemeStore>,
-}
-
-impl BookmarksStatusItem {
-    pub fn new(
-        bookmarks: Entity<BookmarksView>,
-        theme: Entity<ThemeStore>,
-        cx: &mut Context<Self>,
-    ) -> Self {
-        cx.observe(&theme, |_, _, cx| cx.notify()).detach();
-        Self { bookmarks, theme }
-    }
-}
-
-impl Render for BookmarksStatusItem {
-    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        self.render_status(window, cx)
-    }
-}
-
-impl StatusItem for BookmarksStatusItem {
-    fn id(&self) -> &'static str {
-        "bookmarks"
-    }
-    fn default_side(&self) -> StatusSide {
-        StatusSide::Right
-    }
-    fn order(&self) -> i32 {
-        60
-    }
-    fn group(&self) -> u32 {
-        1
-    }
-
-    fn render_status(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
-        let c = Palette::from_theme(self.theme.read(cx));
-        simple_bar_button(
-            "bar-bookmarks",
-            IconName::Bookmark,
-            c,
-            cx,
-            |this, window, cx| {
-                this.bookmarks.update(cx, |b, cx| b.toggle(window, cx));
-            },
-        )
-    }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
 // Registration — the single place that names concrete status-item types.
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -1525,7 +1470,6 @@ pub fn status_item_label(id: &str) -> &'static str {
         "transfers" => "Transfers",
         "agent-access" => "Agent Access",
         "jump-hosts" => "Jump Hosts",
-        "bookmarks" => "Bookmarks",
         _ => "Status Bar Item",
     }
 }
@@ -1544,7 +1488,6 @@ pub fn register_builtin_status_items(
     notifications: &Entity<labonair_notifications::NotificationCenter>,
     updater: &Entity<UpdaterView>,
     agent_access: &Entity<AgentAccessStore>,
-    bookmarks: &Entity<BookmarksView>,
     cx: &mut App,
 ) {
     fn reg<T: StatusItem + 'static>(view: &Entity<T>, cx: &App) -> StatusItemRegistration {
@@ -1576,13 +1519,11 @@ pub fn register_builtin_status_items(
         AgentAccessStatusItem::new(agent_access.clone(), workspace.clone(), theme.clone(), cx)
     });
     let jump_hosts = cx.new(|cx| JumpHostsStatusItem::new(workspace.clone(), theme.clone(), cx));
-    let bookmarks_item =
-        cx.new(|cx| BookmarksStatusItem::new(bookmarks.clone(), theme.clone(), cx));
 
     // Default right-cluster order (T18-004 point 1), each item's `order()`:
     //   cwd(10)/cursor(11)/preview(12)  — group 0, active-tab-derived text,
     //     widest first so it can collapse before anything else has to move.
-    //   transfers(20)/agent(30)/updater(40)/jump-hosts(50)/bookmarks(60) —
+    //   transfers(20)/agent(30)/updater(40)/jump-hosts(50) —
     //     group 1, the "action" items in the order the task file lists them.
     //   notifications(100) — group 2, always visible, pinned rightmost.
     // `StatusBar::cluster` draws a divider between groups, never within one.
@@ -1598,7 +1539,6 @@ pub fn register_builtin_status_items(
         reg(&transfers, cx),
         reg(&agent, cx),
         reg(&jump_hosts, cx),
-        reg(&bookmarks_item, cx),
     ];
     workspace.update(cx, |w, _| {
         let registry = w.status_item_registry_mut();

@@ -66,13 +66,6 @@ pub const PROJECT_SETTINGS_WHITELIST: &[(&str, &[&str])] = &[
             "commandPaletteAnimation",
             "commandPaletteHistorySize",
             "commandPaletteCloseOnOverlayClick",
-            "bookmarksEnabled",
-            "bookmarksActionNewTerminal",
-            "bookmarksActionCurrentTerminal",
-            "bookmarksActionCurrentSftp",
-            "bookmarksActionNewSftp",
-            "bookmarksPrimaryClickBehavior",
-            "bookmarksShowBadge",
         ],
     ),
     (

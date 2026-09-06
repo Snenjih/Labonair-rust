@@ -1880,8 +1880,8 @@ impl Workspace {
         labonair_command_palette::context_of(palette_tab_kind(active.kind), is_ssh)
     }
 
-    /// `(id, name)` for every known host — feeds the path-bookmarks popover's
-    /// section titles and orphan detection (T12-003).
+    /// `(id, name)` for every known host — feeds the command palette's host
+    /// choices.
     pub fn known_hosts(&self, cx: &App) -> Vec<(String, String)> {
         let hm = self.host_manager.read(cx);
         hm.host_ids()
@@ -1905,7 +1905,7 @@ impl Workspace {
         None
     }
 
-    /// Open (or re-focus) an SFTP browser tab for `host_id` — path-bookmarks jump.
+    /// Open (or re-focus) an SFTP browser tab for `host_id`.
     pub fn open_sftp_tab(&mut self, host_id: String, window: &mut Window, cx: &mut Context<Self>) {
         self.open_sftp(host_id, window, cx);
     }

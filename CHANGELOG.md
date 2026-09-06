@@ -6,6 +6,18 @@ versions follow [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Removed
+- **Path-bookmarks feature (T12-003) — removed wholesale.** Deleted the backend
+  model + `bookmarks.json` persistence (`labonair_backend::modules::bookmarks`),
+  the `BookmarksView` overlay + `BookmarkEvent` (`labonair-panel-explorer`), the
+  bookmarks statusbar item, the `bookmarks::Open` command / `Cmd+Shift+O`
+  (`Ctrl+Shift+O`) binding, the Explorer "Bookmark Path" context-menu entry, and
+  the seven `bookmarks*` workspace settings (schema, defaults, project
+  overrides, v1→v2 migration). The statusbar-item id migration now drops a
+  persisted `bookmarks` placement instead of carrying it over. An existing
+  `bookmarks.json` on disk is left untouched (inert). The `IconName::Bookmark`
+  glyph is kept — the hosts panel reuses it for the "pin to top" marker.
+
 ### Added
 - **Auto-updater — macOS (T15-005).**
   - `labonair_backend::updater` gained `fetch_manifest` / `download_update`

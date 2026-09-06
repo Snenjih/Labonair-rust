@@ -28,7 +28,6 @@ fn status_item_title(id: &str) -> &'static str {
         "transfers" => "Transfers",
         "agent-access" => "Agent Access",
         "jump-hosts" => "Jump Hosts",
-        "bookmarks" => "Bookmarks",
         _ => "Status Bar Item",
     }
 }
@@ -45,7 +44,6 @@ fn status_item_icon(id: &str) -> IconName {
         "transfers" => IconName::ArrowDownUp,
         "agent-access" => IconName::Shield,
         "jump-hosts" => IconName::Server,
-        "bookmarks" => IconName::Bookmark,
         _ => IconName::Square,
     }
 }

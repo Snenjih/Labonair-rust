@@ -34,7 +34,6 @@ pub enum ShortcutId {
     ViewZoomIn,
     ViewZoomOut,
     ViewZoomReset,
-    BookmarksOpen,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -44,7 +43,6 @@ pub enum ShortcutGroup {
     Search,
     Ai,
     View,
-    Bookmarks,
 }
 
 /// One shortcut entry: display tokens for the cheat sheet + the GPUI
@@ -93,7 +91,6 @@ static SHORTCUTS: &[Shortcut] = &[
     Shortcut { id: ViewZoomIn,      label: "Zoom in",                   keys: &["\u{2318}", "+"],                 group: View,      binding: "cmd-=" },
     Shortcut { id: ViewZoomOut,     label: "Zoom out",                  keys: &["\u{2318}", "\u{2212}"],          group: View,      binding: "cmd--" },
     Shortcut { id: ViewZoomReset,   label: "Reset zoom",                keys: &["\u{2318}", "0"],                 group: View,      binding: "cmd-0" },
-    Shortcut { id: BookmarksOpen,   label: "Open path bookmarks",       keys: &["\u{2318}", "\u{21e7}", "O"],     group: Bookmarks, binding: "cmd-shift-o" },
 ];
 
 /// All shortcuts, in cheat-sheet order.
@@ -213,7 +210,6 @@ pub fn shortcut_slug(id: ShortcutId) -> &'static str {
         ViewZoomIn => "view.zoomIn",
         ViewZoomOut => "view.zoomOut",
         ViewZoomReset => "view.zoomReset",
-        BookmarksOpen => "bookmarks.open",
     }
 }
 

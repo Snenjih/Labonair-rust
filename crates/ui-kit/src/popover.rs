@@ -23,7 +23,7 @@ use crate::palette::Palette;
 /// trigger's bottom-left point so the card opens below the item), with a
 /// transparent full-window backdrop that dismisses on outside click. The
 /// caller wires `Esc` itself (`on_key_down` + `track_focus`), matching the
-/// existing `BookmarksView`/`SearchOverlay` convention.
+/// existing `SearchOverlay` convention.
 pub fn popover(
     anchor: Point<Pixels>,
     width: Pixels,

@@ -200,14 +200,6 @@
     "commandPaletteHistorySize": 5,
     "commandPaletteCloseOnOverlayClick": true,
     "gitStatusPollIntervalMs": 5000,
-    "bookmarksEnabled": true,
-    "bookmarksActionNewTerminal": true,
-    "bookmarksActionCurrentTerminal": true,
-    "bookmarksActionCurrentSftp": true,
-    "bookmarksActionNewSftp": true,
-    // "current" | "new".
-    "bookmarksPrimaryClickBehavior": "current",
-    "bookmarksShowBadge": true,
     // Empty = not yet persisted (legacy sidebar_* fields below still apply).
     "dockLayout": "",
     "sidebarPosition": "left",

@@ -1,7 +1,10 @@
 # T12-003: Path-Bookmarks (Verzeichnis-Lesezeichen)
 
 ## Status
-✅ Done
+🗑️ Removed — the path-bookmarks feature was deleted wholesale (backend model +
+`bookmarks.json`, `BookmarksView` overlay, statusbar item, `bookmarks::Open`
+command / `Cmd+Shift+O`, and the seven `bookmarks*` workspace settings). The
+`IconName::Bookmark` glyph is kept (reused by the hosts "pin to top" marker).
 
 ## Phase
 11 — Snippets & Command-Palette

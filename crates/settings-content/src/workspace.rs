@@ -1,5 +1,4 @@
-//! `workspace` area — command palette, bookmarks, source control, dock /
-//! sidebar layout.
+//! `workspace` area — command palette, source control, dock / sidebar layout.
 
 use serde::{Deserialize, Serialize};
 
@@ -43,16 +42,6 @@ pub struct WorkspaceContent {
     // ── Source control ───────────────────────────────────────────────────
     pub git_status_poll_interval_ms: Option<u32>,
 
-    // ── Bookmarks ─────────────────────────────────────────────────────────
-    pub bookmarks_enabled: Option<bool>,
-    pub bookmarks_action_new_terminal: Option<bool>,
-    pub bookmarks_action_current_terminal: Option<bool>,
-    pub bookmarks_action_current_sftp: Option<bool>,
-    pub bookmarks_action_new_sftp: Option<bool>,
-    /// `"current"` | `"new"`.
-    pub bookmarks_primary_click_behavior: Option<String>,
-    pub bookmarks_show_badge: Option<bool>,
-
     // ── Dock / sidebar layout reference ─────────────────────────────────
     /// T17-002 dock layout: JSON array of `DockData` (open / size / zoom /
     /// active / panel order per edge dock). Empty string = not yet
@@ -80,14 +69,6 @@ impl WorkspaceContent {
             command_palette_close_on_overlay_click: Some(true),
 
             git_status_poll_interval_ms: Some(5000),
-
-            bookmarks_enabled: Some(true),
-            bookmarks_action_new_terminal: Some(true),
-            bookmarks_action_current_terminal: Some(true),
-            bookmarks_action_current_sftp: Some(true),
-            bookmarks_action_new_sftp: Some(true),
-            bookmarks_primary_click_behavior: Some("current".to_string()),
-            bookmarks_show_badge: Some(true),
 
             dock_layout: Some(String::new()),
             sidebar_position: Some("left".to_string()),

@@ -4,7 +4,33 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
-## Current Session: 2026-09-06 (Zed-parity icon system — full Lucide UI set + Zed icon-theme model)
+## Current Session: 2026-09-06 (Remove path-bookmarks feature)
+
+Ad-hoc request (not a ROADMAP task; user asked to remove the bookmarks system
+"vollständig" without breaking other systems). Done in one commit.
+
+**Removed:** `crates/backend/src/modules/bookmarks/` (model + `bookmarks.json`),
+`crates/panel-explorer/src/bookmarks.rs` (`BookmarksView` / `BookmarkEvent`),
+`BookmarksStatusItem`, `BookmarksModal`, `toggle_bookmarks` /
+`sync_bookmarks_modal` / `handle_bookmark_event`, `CommandId::OpenPathBookmarks`,
+`ShortcutId::BookmarksOpen` + `ShortcutGroup::Bookmarks`, the `bookmarks::Open`
+keymap entries, the Explorer "Bookmark Path" context-menu item, and the 7
+`bookmarks*` workspace settings (content struct, `Preferences`, schema, pages,
+project overrides, `default.json`, v1→v2 migration, content-bridge). Dropped the
+`("bookmarks","bookmarks")` entry from the statusbar-item id migration `ID_MAP`;
+affected migration/placement tests reworded to use `jump-hosts`.
+
+**Kept deliberately:** `IconName::Bookmark` + `bookmark.svg` (hosts "pin to top"
+marker), `Workspace::known_hosts()` (command-palette host choices — comment
+fixed), `Workspace::open_sftp_tab()` (other callers). Also removed the now-unused
+`ShellPanels.explorer` field. `bookmarks.json` on disk is left untouched.
+
+Gates green on this machine: `cargo fmt --check`, `cargo clippy --all-targets -D
+warnings`, `cargo test` (0 failed).
+
+---
+
+## Previous Session: 2026-09-06 (Zed-parity icon system — full Lucide UI set + Zed icon-theme model)
 
 Ad-hoc request (not a ROADMAP task; user: "einfach machen, keine Task erstellen").
 All four gates green on this machine: `cargo fmt --check`, `cargo check

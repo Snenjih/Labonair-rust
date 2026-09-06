@@ -11,9 +11,9 @@
 //! when it emits [`DismissEvent`] (Esc / overlay click / programmatic close)
 //! or — when `dismiss_on_focus_lost` is set — when focus leaves it.
 //!
-//! The three existing overlays (command palette, path bookmarks, updater
-//! dialog) still paint their own full-screen scrim + centered card and handle
-//! their own Esc / overlay click, so they set [`ModalView::render_bare`] to
+//! The two existing overlays (command palette, updater dialog) still paint
+//! their own full-screen scrim + centered card and handle their own Esc /
+//! overlay click, so they set [`ModalView::render_bare`] to
 //! `true`: the layer hosts them for lifecycle + focus and renders them as-is.
 //! New modals (e.g. the `Cmd+F` search overlay, T18-002) can rely on the
 //! default backdrop path this module provides.
@@ -29,7 +29,7 @@ use crate::theme::modal_scrim;
 /// A view that can be hosted by the [`ModalLayer`].
 pub trait ModalView: ManagedView {
     /// Called right before the layer drops this modal. Views that keep their
-    /// own `open` flag (palette, bookmarks) reset it here so the two states
+    /// own `open` flag (e.g. the palette) reset it here so the two states
     /// can never drift apart.
     fn on_dismiss(&mut self, _window: &mut Window, _cx: &mut Context<Self>) {}
 

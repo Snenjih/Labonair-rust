@@ -34,7 +34,6 @@
       "cmd-=": "view::ZoomIn",
       "cmd--": "view::ZoomOut",
       "cmd-0": "view::ZoomReset",
-      "cmd-shift-o": "bookmarks::Open",
       "cmd-alt-shift-m": "debug::CyclePanelDock",
       "cmd-alt-shift-z": "debug::ToggleDockZoom",
       // Chord demo (T19-008 acceptance criterion): a two-keystroke binding

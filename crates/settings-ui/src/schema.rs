@@ -1118,55 +1118,6 @@ pub fn all_fields() -> Vec<AnyField> {
             "How often to refresh git status (ms)."
         ),
         field!(
-            workspace.bookmarks_enabled,
-            "bookmarksEnabled",
-            Switch,
-            "Enable path bookmarks",
-            "Show the bookmarks bar-item and jump targets."
-        ),
-        field!(
-            workspace.bookmarks_action_new_terminal,
-            "bookmarksActionNewTerminal",
-            Switch,
-            "Open in new terminal",
-            "Offer 'open in a new terminal' for a bookmark."
-        ),
-        field!(
-            workspace.bookmarks_action_current_terminal,
-            "bookmarksActionCurrentTerminal",
-            Switch,
-            "Open in current terminal",
-            "Offer 'cd in the current terminal' for a bookmark."
-        ),
-        field!(
-            workspace.bookmarks_action_current_sftp,
-            "bookmarksActionCurrentSftp",
-            Switch,
-            "Open in current SFTP manager",
-            "Offer 'go to path in the current file manager'."
-        ),
-        field!(
-            workspace.bookmarks_action_new_sftp,
-            "bookmarksActionNewSftp",
-            Switch,
-            "Open in new SFTP tab",
-            "Offer 'open the path in a new file-manager tab'."
-        ),
-        field!(
-            workspace.bookmarks_primary_click_behavior,
-            "bookmarksPrimaryClickBehavior",
-            Select(&[("current", "Current"), ("new", "New")]),
-            "Primary click opens",
-            "What a plain click on a bookmark does."
-        ),
-        field!(
-            workspace.bookmarks_show_badge,
-            "bookmarksShowBadge",
-            Switch,
-            "Show bookmark count badge",
-            "Show the number of bookmarks on the bar-item."
-        ),
-        field!(
             workspace.dock_layout,
             "dockLayout",
             Json,

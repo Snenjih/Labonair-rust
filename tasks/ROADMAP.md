@@ -141,7 +141,7 @@ Nummerierung: `T{NN}-{OOO}` wobei NN die Phase (01–15) und OOO die Task-Nummer
 |---|---|---|
 | **T12-001** | Befehl-Snippets-System | T04-001, T07-001, T03-001 |
 | **T12-002** | Command-Palette & Shortcut-System | T04-001 |
-| **T12-003** | Path-Bookmarks (Verzeichnis-Lesezeichen, aus T15-006) | T12-002, T13-001 |
+| ~~**T12-003**~~ | ~~Path-Bookmarks (Verzeichnis-Lesezeichen)~~ — feature removed, see `T12-003-path-bookmarks.md` | T12-002, T13-001 |
 
 ### Phase 12 — Settings & Preferences ·`/tasks/phase-12-settings/`
 | Task | Titel | Abhängigkeit |

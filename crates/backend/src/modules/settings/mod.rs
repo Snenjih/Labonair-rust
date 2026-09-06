@@ -325,12 +325,12 @@ mod tests {
         assert_eq!(updater.get("hidden").unwrap(), &json!(true));
 
         // A second item does not disturb the first.
-        set_bar_item_placement_in(&dir, "bookmarks".into(), json!({ "side": "left" })).unwrap();
+        set_bar_item_placement_in(&dir, "jump-hosts".into(), json!({ "side": "left" })).unwrap();
         let loaded = bar_item_placements_load_from(&dir);
         assert!(loaded.contains_key("updater"));
         assert_eq!(
             loaded
-                .get("bookmarks")
+                .get("jump-hosts")
                 .unwrap()
                 .as_object()
                 .unwrap()
@@ -373,12 +373,12 @@ mod tests {
         assert_eq!(cwd.get("hidden").unwrap(), &json!(false));
 
         // A second item does not disturb the first.
-        set_status_bar_placement_in(&dir, "bookmarks".into(), json!({ "side": "right" })).unwrap();
+        set_status_bar_placement_in(&dir, "jump-hosts".into(), json!({ "side": "right" })).unwrap();
         let loaded = status_bar_item_placements_load_from(&dir);
         assert!(loaded.contains_key("cwd"));
         assert_eq!(
             loaded
-                .get("bookmarks")
+                .get("jump-hosts")
                 .unwrap()
                 .as_object()
                 .unwrap()

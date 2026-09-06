@@ -161,7 +161,6 @@ pub(crate) fn attach_action_handlers(
     on!(menu::OpenKeymapJson => CommandId::OpenKeymapJson);
     on!(menu::CheckForUpdates => CommandId::CheckForUpdates);
     on!(menu::CommandPalette => CommandId::OpenCommandPalette);
-    on!(menu::OpenPathBookmarks => CommandId::OpenPathBookmarks);
     on!(menu::DebugCyclePanelDock => CommandId::DebugCyclePanelDock);
     on!(menu::DebugToggleDockZoom => CommandId::DebugToggleDockZoom);
     on!(menu::SelectTab1 => CommandId::SelectTab1);
@@ -354,10 +353,7 @@ pub(crate) fn register_builtin_commands() -> CommandRegistry {
         s.open_panel("source-control", cx);
     });
 
-    // ── Bookmarks / palette ────────────────────────────────────────────
-    r.register(CommandId::OpenPathBookmarks, always, |s, window, cx| {
-        s.toggle_bookmarks(window, cx);
-    });
+    // ── Palette ────────────────────────────────────────────────────────
     r.register(CommandId::OpenCommandPalette, always, |s, window, cx| {
         s.toggle_command_palette(window, cx);
     });

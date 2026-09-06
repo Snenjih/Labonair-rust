@@ -18,7 +18,7 @@
 //! * `cwdBreadcrumb` -> `cwd`
 //! * `previewUrl` -> `preview-url`
 //! * `cursorPosition` -> `cursor-position`
-//! * `bookmarks`, `notifications`, `transfers`, `updater` -> unchanged
+//! * `notifications`, `transfers`, `updater` -> unchanged
 //! * `ai`, `aiMini`, `aiPanel` -> dropped (AI is a panel toggle now, not
 //!   placeable).
 //! * `explorerPanel`, `snippetsPanel`, `sourceControlPanel`, `tabsPanel`
@@ -51,7 +51,6 @@ const ID_MAP: &[(&str, &str)] = &[
     ("cwdBreadcrumb", "cwd"),
     ("previewUrl", "preview-url"),
     ("cursorPosition", "cursor-position"),
-    ("bookmarks", "bookmarks"),
     ("notifications", "notifications"),
     ("transfers", "transfers"),
     ("updater", "updater"),
@@ -170,7 +169,7 @@ mod tests {
             KEY_BAR_ITEM_PLACEMENTS.to_string(),
             json!({
                 "cwdBreadcrumb": { "itemId": "cwdBreadcrumb", "bar": "titlebar", "side": "right", "hidden": false },
-                "bookmarks": { "itemId": "bookmarks", "bar": "statusbar", "side": "left", "hidden": true },
+                "jumpHosts": { "itemId": "jumpHosts", "bar": "statusbar", "side": "left", "hidden": true },
                 "agentAccess": { "itemId": "agentAccess", "bar": "titlebar", "side": "right" },
                 "updater": { "itemId": "updater", "bar": "statusbar" },
             }),
@@ -198,7 +197,7 @@ mod tests {
             &json!({ "side": "right", "hidden": false })
         );
         assert_eq!(
-            new_blob.get("bookmarks").unwrap(),
+            new_blob.get("jump-hosts").unwrap(),
             &json!({ "side": "left", "hidden": true })
         );
         assert_eq!(
@@ -264,7 +263,7 @@ mod tests {
         let mut settings = Map::new();
         settings.insert(
             KEY_BAR_ITEM_PLACEMENTS.to_string(),
-            json!({ "bookmarks": { "bar": "statusbar", "side": "left", "hidden": false } }),
+            json!({ "jumpHosts": { "bar": "statusbar", "side": "left", "hidden": false } }),
         );
         write_settings_to(&dir, &settings).unwrap();
 
