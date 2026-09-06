@@ -99,7 +99,8 @@ root observers receive the correct scope at startup. `Return to Standalone`
 is registered as one typed workspace command and is available from the native
 File menu and command palette; it changes identity only and preserves the
 existing tabs, panes, and shell layout. Focused workspace, command-registry,
-and shell tests pass.
+and shell tests pass, including a shell-registry assertion that both lifecycle
+commands use their canonical typed action names and execution registrations.
 
 The current release bundle (build 265) passes the exact-path five-second
 native launch smoke test and is resolved only as the Rust executable. A

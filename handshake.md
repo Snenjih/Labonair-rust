@@ -12,7 +12,9 @@ R02-003 now persists `WorkspaceIdentity` in session snapshots, restores a
 project identity before recreating tabs, defaults legacy snapshots to
 Standalone, and registers the explicit `Return to Standalone` command in the
 native File menu and command palette. The transition changes identity only and
-preserves the existing tab/pane/shell layout. The current branch is `master`
+preserves the existing tab/pane/shell layout. A shell-registry test now
+asserts both lifecycle commands retain their canonical typed action names and
+run registrations. The current branch is `master`
 with the implementation changes committed in `2076549`. Focused Workspace, command
 registry, and shell tests pass; the full workspace gates have the same two
 sandbox-only failures whose isolated reruns pass outside the sandbox. The

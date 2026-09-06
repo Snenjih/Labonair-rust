@@ -1097,4 +1097,24 @@ mod tests {
         assert!(r.run_for(CommandId::SwitchTab).is_none());
         assert!(r.run_for(CommandId::OpenShortcuts).is_none());
     }
+
+    #[test]
+    fn project_lifecycle_commands_share_the_typed_registry_path() {
+        let r = register_builtin_commands();
+        let descriptors = r.iter().collect::<Vec<_>>();
+
+        let open = descriptors
+            .iter()
+            .find(|command| command.id == CommandId::OpenProject)
+            .expect("open-project command must be registered");
+        let standalone = descriptors
+            .iter()
+            .find(|command| command.id == CommandId::ReturnToStandalone)
+            .expect("return-to-standalone command must be registered");
+
+        assert_eq!(open.id.action_name(), "workspace::OpenProject");
+        assert_eq!(standalone.id.action_name(), "workspace::ReturnToStandalone");
+        assert!(r.run_for(CommandId::OpenProject).is_some());
+        assert!(r.run_for(CommandId::ReturnToStandalone).is_some());
+    }
 }

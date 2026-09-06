@@ -1,5 +1,15 @@
 # Bugs, fixes, and non-obvious constraints
 
+## 2026-09-06 — Command action names belong to the command ID
+
+**Finding:** The shell lifecycle-registry test initially called
+`action_name()` on `CommandDescriptor`, but canonical action-name conversion
+is implemented on `CommandId` in `labonair-command-palette-core`.
+
+**Resolution:** The test now resolves `descriptor.id.action_name()`, keeping
+the assertion on the same typed identity used by the registry and keymap
+compatibility layer.
+
 ## 2026-09-06 — Empty-state shortcut must use the registered palette binding
 
 **Finding:** The native Empty workspace surface displayed `⌘K` for Commands,
