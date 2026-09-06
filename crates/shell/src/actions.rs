@@ -256,7 +256,7 @@ impl AppShell {
             .read(cx)
             .recent_hosts(cx, 5)
             .into_iter()
-            .map(|(id, name)| PaletteChoice {
+            .map(|(id, name, _address)| PaletteChoice {
                 id,
                 title: name,
                 subtitle: None,

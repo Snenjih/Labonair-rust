@@ -673,8 +673,9 @@ impl HostManagerView {
     }
 
     /// Up to `n` hosts, most-recently-connected first (nulls last), then by
-    /// name — the `+` new-tab dropdown's SSH / SFTP recent-host lists.
-    pub fn recent_hosts(&self, n: usize) -> Vec<(String, String)> {
+    /// name — the `+` new-tab dropdown's SSH / SFTP recent-host lists. Each
+    /// entry is `(id, name, host_address)`.
+    pub fn recent_hosts(&self, n: usize) -> Vec<(String, String, String)> {
         let mut hosts: Vec<&Host> = self.hosts.iter().collect();
         hosts.sort_by(|a, b| {
             b.last_connected_at
@@ -684,7 +685,7 @@ impl HostManagerView {
         hosts
             .into_iter()
             .take(n)
-            .map(|h| (h.id.clone(), h.name.clone()))
+            .map(|h| (h.id.clone(), h.name.clone(), h.host_address.clone()))
             .collect()
     }
 

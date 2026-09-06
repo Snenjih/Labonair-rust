@@ -1908,7 +1908,7 @@ impl Workspace {
 
     /// Up to `n` known hosts, most-recently-connected first — feeds the `+`
     /// new-tab dropdown's SSH / SFTP submenus.
-    pub fn recent_hosts(&self, cx: &App, n: usize) -> Vec<(String, String)> {
+    pub fn recent_hosts(&self, cx: &App, n: usize) -> Vec<(String, String, String)> {
         self.host_manager.read(cx).recent_hosts(n)
     }
 
@@ -3886,30 +3886,34 @@ impl Workspace {
                     .children(tabs.iter().map(|t| self.render_tab(t, cx))),
             )
             .child(
-                labonair_ui_kit::button_no_hover(
-                    "tab-new",
-                    c,
-                    ButtonVariant::Ghost,
-                    ButtonSize::IconXs,
-                )
-                .flex_shrink_0()
-                .text_color(muted)
-                .hover(|s| s.bg(border).text_color(fg))
-                .child("+")
-                .on_mouse_down(
-                    MouseButton::Left,
-                    cx.listener(|this, ev: &MouseDownEvent, _window, cx| {
-                        this.new_tab_menu = Some(ev.position - point(px(0.0), px(TITLEBAR_OFFSET)));
-                        this.context_menu = None;
-                        cx.notify();
-                    }),
-                ),
+                div()
+                    .id("tab-new")
+                    .flex_shrink_0()
+                    .size(px(28.0))
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .rounded_md()
+                    .bg(c.muted_bg)
+                    .text_color(muted)
+                    .cursor_pointer()
+                    .hover(|s| s.bg(border).text_color(fg))
+                    .child(IconName::PlusBold.svg(muted).size(px(15.0)))
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(|this, ev: &MouseDownEvent, _window, cx| {
+                            this.new_tab_menu =
+                                Some(ev.position - point(px(0.0), px(TITLEBAR_OFFSET)));
+                            this.context_menu = None;
+                            cx.notify();
+                        }),
+                    ),
             )
     }
 
     /// The "+" new-tab dropdown (port of `NewTabDropdownItems`): Terminal /
-    /// Editor / Preview / Git Graph, then flattened "SSH · <host>" /
-    /// "SFTP · <host>" recent-host entries + "Open Host Manager".
+    /// Editor / Preview / Git Graph, then `SSH ▸` / `SFTP ▸` submenus listing
+    /// the recent hosts (name + address) with an "All hosts…" entry each.
     fn render_new_tab_menu(
         &mut self,
         pos: gpui::Point<gpui::Pixels>,
@@ -3917,9 +3921,58 @@ impl Workspace {
     ) -> impl IntoElement {
         let recent = self.recent_hosts(cx, 5);
         let view = cx.entity();
-        let mut items: Vec<MenuItem> = vec![
+
+        // Recent-host rows for one protocol submenu (`ssh == false` → SFTP),
+        // followed by a separator and the protocol's "All hosts…" entry.
+        let host_items = |ssh: bool| -> Vec<MenuItem> {
+            let proto = if ssh { "ssh" } else { "sftp" };
+            let mut sub: Vec<MenuItem> = Vec::new();
+            if recent.is_empty() {
+                sub.push(MenuItem::new(format!("nt-{proto}-empty"), "No hosts yet").disabled(true));
+            } else {
+                for (id, name, address) in &recent {
+                    let (id, address) = (id.clone(), address.clone());
+                    sub.push(
+                        MenuItem::new(SharedString::from(format!("nt-{proto}-{id}")), name.clone())
+                            .detail(address)
+                            .on_click({
+                                let v = view.clone();
+                                move |_, w, cx| {
+                                    let id = id.clone();
+                                    v.update(cx, |this, cx| {
+                                        this.new_tab_menu = None;
+                                        if ssh {
+                                            this.open_ssh_tab(id, w, cx)
+                                        } else {
+                                            this.open_sftp_tab(id, w, cx)
+                                        }
+                                    })
+                                }
+                            }),
+                    );
+                }
+            }
+            sub.push(MenuItem::separator());
+            sub.push(
+                MenuItem::new(format!("nt-{proto}-all"), "All hosts\u{2026}")
+                    .icon(IconName::Server)
+                    .on_click({
+                        let v = view.clone();
+                        move |_, _w, cx| {
+                            v.update(cx, |this, cx| {
+                                this.new_tab_menu = None;
+                                this.open_host_settings(cx)
+                            })
+                        }
+                    }),
+            );
+            sub
+        };
+
+        let items: Vec<MenuItem> = vec![
             MenuItem::new("nt-term", "Terminal")
                 .icon(IconName::Terminal)
+                .keybind(["\u{2318}", "T"])
                 .on_click({
                     let v = view.clone();
                     move |_, w, cx| {
@@ -3930,7 +3983,8 @@ impl Workspace {
                     }
                 }),
             MenuItem::new("nt-editor", "Editor")
-                .icon(IconName::File)
+                .icon(IconName::Pencil)
+                .keybind(["\u{2318}", "E"])
                 .on_click({
                     let v = view.clone();
                     move |_, w, cx| {
@@ -3942,6 +3996,7 @@ impl Workspace {
                 }),
             MenuItem::new("nt-preview", "Preview")
                 .icon(IconName::Globe)
+                .keybind(["\u{2318}", "\u{21E7}", "P"])
                 .on_click({
                     let v = view.clone();
                     move |_, w, cx| {
@@ -3962,64 +4017,10 @@ impl Workspace {
                         })
                     }
                 }),
+            MenuItem::separator(),
+            MenuItem::submenu("nt-ssh", "SSH", host_items(true)).icon(IconName::Server),
+            MenuItem::submenu("nt-sftp", "SFTP", host_items(false)).icon(IconName::Cloud),
         ];
-        if !recent.is_empty() {
-            items.push(MenuItem::separator());
-            items.push(MenuItem::label("SSH"));
-            for (id, name) in &recent {
-                let (id, name) = (id.clone(), name.clone());
-                items.push(
-                    MenuItem::new(
-                        SharedString::from(format!("nt-ssh-{id}")),
-                        format!("\u{00b7} {name}"),
-                    )
-                    .on_click({
-                        let v = view.clone();
-                        move |_, w, cx| {
-                            let id = id.clone();
-                            v.update(cx, |this, cx| {
-                                this.new_tab_menu = None;
-                                this.open_ssh_tab(id, w, cx)
-                            })
-                        }
-                    }),
-                );
-            }
-            items.push(MenuItem::label("SFTP"));
-            for (id, name) in &recent {
-                let (id, name) = (id.clone(), name.clone());
-                items.push(
-                    MenuItem::new(
-                        SharedString::from(format!("nt-sftp-{id}")),
-                        format!("\u{00b7} {name}"),
-                    )
-                    .on_click({
-                        let v = view.clone();
-                        move |_, w, cx| {
-                            let id = id.clone();
-                            v.update(cx, |this, cx| {
-                                this.new_tab_menu = None;
-                                this.open_sftp_tab(id, w, cx)
-                            })
-                        }
-                    }),
-                );
-            }
-        }
-        items.push(MenuItem::separator());
-        items.push(
-            MenuItem::new("nt-hosts", "All hosts\u{2026}")
-                .icon(IconName::Server)
-                .on_click({
-                    let v = view.clone();
-                    move |_, _w, cx| {
-                        v.update(cx, |this, cx| {
-                            this.new_tab_menu = None;
-                            this.open_host_settings(cx)
-                        })
-                    }
-                }),
-        );
 
         let dismiss = {
             let v = view.clone();

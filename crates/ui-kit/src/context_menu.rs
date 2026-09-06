@@ -57,6 +57,9 @@ enum Kind {
         id: SharedString,
         label: SharedString,
         icon: Option<IconName>,
+        /// Right-aligned muted secondary text (e.g. a host address next to a
+        /// host name). Mutually exclusive with `keybind` in practice.
+        detail: Option<SharedString>,
         destructive: bool,
         disabled: bool,
         checked: bool,
@@ -83,6 +86,7 @@ impl MenuItem {
                 id: id.into(),
                 label: label.into(),
                 icon: None,
+                detail: None,
                 destructive: false,
                 disabled: false,
                 checked: false,
@@ -127,6 +131,16 @@ impl MenuItem {
         match &mut self.kind {
             Kind::Action { icon: i, .. } | Kind::Submenu { icon: i, .. } => *i = Some(icon),
             _ => {}
+        }
+        self
+    }
+
+    /// Right-aligned muted secondary text (radix `ContextMenuShortcut` slot,
+    /// but plain text — used for a host address beside a host name). Ignored on
+    /// non-action items.
+    pub fn detail(mut self, text: impl Into<SharedString>) -> Self {
+        if let Kind::Action { detail, .. } = &mut self.kind {
+            *detail = Some(text.into());
         }
         self
     }
@@ -195,6 +209,7 @@ fn render_item(item: MenuItem, c: Palette, depth: usize) -> AnyElement {
             id,
             label,
             icon,
+            detail,
             destructive,
             disabled,
             checked,
@@ -226,6 +241,16 @@ fn render_item(item: MenuItem, c: Palette, depth: usize) -> AnyElement {
                     d.child(icon.unwrap().svg(text_color).size(px(14.0)))
                 })
                 .child(label)
+                .when_some(detail, |d, text| {
+                    d.child(
+                        div()
+                            .ml_auto()
+                            .pl(c.space(8.0))
+                            .text_size(px(12.0))
+                            .text_color(c.muted)
+                            .child(text),
+                    )
+                })
                 .when(!keybind.is_empty(), |d| {
                     d.child(div().ml_auto().child(kbd_row(keybind.clone(), c)))
                 });
