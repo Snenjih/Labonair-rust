@@ -48,9 +48,9 @@ Reduce `labonair-backend` from a broad public application state container to nar
 - Credential metadata, secret-backed operations, host references, and SSH
   keypair generation now use `labonair-credentials`; the backend retains only
   App-signature adapters while callers migrate.
-- Snippet models and SQLite persistence now use `labonair-snippets`; process
-  execution remains in the backend until local/SSH session contracts are
-  extracted.
+- Snippet models and SQLite persistence now use `labonair-snippets`; local
+  process execution and typed output/done events now live there as well. SSH
+  execution remains in the backend until the SSH session contract is exposed.
 - Notification lifecycle is now UI-free in `labonair-notifications-core`.
   The GPUI adapter delegates retention, deduplication, read state, details,
   and actions to that registry; the shell no longer mounts a toast overlay.

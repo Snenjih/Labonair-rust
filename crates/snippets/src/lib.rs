@@ -1,9 +1,10 @@
 //! Saved command snippets and snippet groups.
 //!
-//! Persistence and domain data live here. Execution remains a separate
-//! backend adapter until local/SSH process ownership is extracted into the
-//! snippet capability as well.
+//! Persistence, domain data, and local process execution live here. SSH
+//! execution remains a temporary backend adapter until the SSH session
+//! contract is exposed to this capability without importing backend state.
 
+pub mod exec;
 pub mod store;
 
 use serde::{Deserialize, Serialize};

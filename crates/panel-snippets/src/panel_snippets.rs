@@ -13,7 +13,7 @@
 //!   drawer. CRUD/groups/reorder persist through
 //!   `labonair_backend::modules::snippets::db`; execution is delegated to
 //!   [`crate::workspace::Workspace`] (terminal / inject) or
-//!   `modules::snippets::exec` (silent).
+//!   the standalone `labonair_snippets::exec` runner (silent).
 
 // Crate root (T16-008): this file is the `labonair-panel-snippets` lib root.
 // The `theme` / `workspace` shims keep the pre-split `crate::…` paths resolving
@@ -35,12 +35,13 @@ use gpui::{
     IntoElement, KeyDownEvent, MouseButton, MouseDownEvent, ParentElement, Render, SharedString,
     StatefulInteractiveElement, Styled, Window,
 };
-use labonair_backend::modules::snippets::exec::{
-    snippet_run_cancel, snippet_run_local, snippet_run_ssh,
-};
+use labonair_backend::modules::snippets::exec::{snippet_run_cancel, snippet_run_ssh};
 use labonair_backend::App as Backend;
 use labonair_hosts::{store as host_store, Host};
-use labonair_snippets::{store as snippet_store, CommandSnippet, SnippetGroup, SnippetReorderItem};
+use labonair_snippets::{
+    exec::{run_local, LocalRunEvent, LocalRunEventSink, LocalRunRegistry, OutputStream},
+    store as snippet_store, CommandSnippet, SnippetGroup, SnippetReorderItem,
+};
 use tokio::runtime::Handle as TokioHandle;
 
 use crate::theme::ThemeStore;
@@ -470,6 +471,8 @@ pub struct SnippetsView {
     menu: Option<(String, gpui::Point<gpui::Pixels>)>,
 
     run_events: std::sync::mpsc::Receiver<RunEvent>,
+    run_event_tx: std::sync::mpsc::Sender<RunEvent>,
+    local_runs: std::sync::Arc<LocalRunRegistry>,
     _poll: gpui::Task<()>,
 }
 
@@ -492,6 +495,7 @@ impl SnippetsView {
         // Forward snippet-run events off the broadcast bus into a plain channel.
         let (tx, rx) = std::sync::mpsc::channel::<RunEvent>();
         {
+            let bus_tx = tx.clone();
             let mut bus = backend.events.subscribe();
             tokio.spawn(async move {
                 use tokio::sync::broadcast::error::RecvError;
@@ -499,7 +503,7 @@ impl SnippetsView {
                     match bus.recv().await {
                         Ok(raw) => {
                             if let Some(ev) = parse_run_event(&raw.name, &raw.payload) {
-                                if tx.send(ev).is_err() {
+                                if bus_tx.send(ev).is_err() {
                                     break;
                                 }
                             }
@@ -557,6 +561,8 @@ impl SnippetsView {
             selected_run: None,
             menu: None,
             run_events: rx,
+            run_event_tx: tx,
+            local_runs: std::sync::Arc::new(LocalRunRegistry::new()),
             _poll: poll,
         };
         this.reload(cx);
@@ -985,16 +991,33 @@ impl SnippetsView {
             });
         } else {
             let working_dir = snippet.working_dir.clone().filter(|s| !s.is_empty());
-            let state_app = app.clone();
+            let local_runs = self.local_runs.clone();
+            let events = self.run_event_tx.clone();
             self.tokio.spawn(async move {
-                let _ = snippet_run_local(
-                    app.clone(),
-                    run_id,
-                    command,
-                    working_dir,
-                    &state_app.snippet_run,
-                )
-                .await;
+                let sink: LocalRunEventSink = std::sync::Arc::new(move |event| {
+                    let event = match event {
+                        LocalRunEvent::Output {
+                            run_id,
+                            data,
+                            stream,
+                        } => RunEvent::Output {
+                            run_id,
+                            data,
+                            is_err: stream == OutputStream::Stderr,
+                        },
+                        LocalRunEvent::Done {
+                            run_id,
+                            exit_code,
+                            cancelled,
+                        } => RunEvent::Done {
+                            run_id,
+                            exit_code,
+                            cancelled,
+                        },
+                    };
+                    let _ = events.send(event);
+                });
+                let _ = run_local(run_id, command, working_dir, &local_runs, sink).await;
             });
         }
         cx.notify();
@@ -1013,8 +1036,14 @@ impl SnippetsView {
     fn cancel_run(&mut self, run_id: String, cx: &mut Context<Self>) {
         let app = self.backend.clone();
         let rid = run_id.clone();
+        let local_runs = self.local_runs.clone();
         self.tokio.spawn(async move {
-            let _ = snippet_run_cancel(rid, &app.snippet_run).await;
+            match local_runs.cancel(&rid).await {
+                Ok(Some(_)) => {}
+                Ok(None) | Err(_) => {
+                    let _ = snippet_run_cancel(rid, &app.snippet_run).await;
+                }
+            }
         });
         let _ = cx;
     }

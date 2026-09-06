@@ -20,11 +20,11 @@ Verification passed: `cargo fmt --all`, `cargo check --workspace
 --all-targets`, `cargo clippy --workspace --all-targets -- -D warnings`,
 `cargo test --workspace`, and `scripts/check-crate-deps.sh`.
 
-State: branch `master`, latest committed snippet boundary is `d02e7ef`; this
-notification boundary is ready to commit. `R01-001-backend-boundaries-and-
-contracts` remains `🔄 In Progress`; next is extracting snippet process
-execution and then continuing typed service/event migration. No source
-blocker.
+State: branch `master`, latest committed notification boundary is `f15a33d`.
+The local snippet execution boundary is now in progress and remains to be
+committed after verification. `R01-001-backend-boundaries-and-contracts`
+remains `🔄 In Progress`; next is extracting the SSH session contract and
+continuing typed service/event migration. No source blocker.
 
 ## Current Session: 2026-09-06 (Host, credentials, and snippets boundaries)
 

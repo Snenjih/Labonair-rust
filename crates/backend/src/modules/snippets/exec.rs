@@ -1,12 +1,8 @@
 use std::collections::{HashMap, HashSet};
-use std::process::Stdio;
 use std::sync::{Arc, RwLock};
-use tokio::io::{AsyncBufReadExt, BufReader};
 
 /// Tracks in-flight snippet runs so `snippet_run_cancel` can reach back into
-/// them — local runs by PID (see the doc comment on `snippet_run_cancel` for
-/// why this signals by PID rather than locking a shared `Child` handle), SSH
-/// runs by the split-off write half of their exec channel (same
+/// them — SSH runs by the split-off write half of their exec channel (same
 /// `Arc<ChannelWriteHalf<..>>`, no-lock-needed shape as `ssh::PtyChannelState`,
 /// since all of its methods take `&self`). `cancelled` records which
 /// `run_id`s were cancelled so the owning task can report a distinct
@@ -16,7 +12,6 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 /// racing a process's own natural exit can't mislabel a successful run.
 #[derive(Default)]
 pub struct SnippetRunState {
-    local_pids: RwLock<HashMap<String, u32>>,
     ssh: RwLock<HashMap<String, Arc<russh::ChannelWriteHalf<russh::client::Msg>>>>,
     cancelled: RwLock<HashSet<String>>,
 }
@@ -27,32 +22,9 @@ pub struct SnippetRunState {
 /// notices the resulting exit/close and emits `snippet_run_done` with
 /// `cancelled: true` so the frontend can show a distinct "Cancelled" status.
 ///
-/// The local case signals the process directly by PID rather than going
-/// through `Child::kill()`/`start_kill()`, which needs `&mut Child` — and
-/// `snippet_run_local`'s owning task holds `wait()` open on that same child
-/// for as long as the process runs. Requiring a lock here would mean cancel
-/// can't act until the process exits on its own, which is exactly what
-/// cancel is trying to make happen (the identical deadlock class already
-/// documented and fixed in `shell/background.rs`'s `BackgroundProc::kill`).
+/// The standalone local runner owns its process registry and signals the
+/// process directly by PID. This adapter only selects the local or SSH path.
 pub async fn snippet_run_cancel(run_id: String, state: &SnippetRunState) -> Result<(), String> {
-    let local_pid = state.local_pids.read().unwrap().get(&run_id).copied();
-    if let Some(pid) = local_pid {
-        // SAFETY: `pid` came from `Child::id()` at spawn time; `kill(2)` with
-        // a stale/reused pid is a normal, safe (if rare) race — checked via
-        // the return value below rather than assumed away.
-        let killed = unsafe { libc::kill(pid as libc::pid_t, libc::SIGKILL) };
-        if killed == 0 {
-            // Signal actually reached a live process — genuinely our cancel,
-            // not a race against a natural exit that already happened.
-            state.cancelled.write().unwrap().insert(run_id);
-            return Ok(());
-        }
-        // ESRCH (no such process) means it already exited naturally before
-        // the signal was sent — let the real exit code stand, don't mark
-        // this a cancellation.
-        return Ok(());
-    }
-
     let ssh_write_half = state.ssh.read().unwrap().get(&run_id).cloned();
     if let Some(write_half) = ssh_write_half {
         // Same natural-completion race as the local path: only mark
@@ -65,98 +37,6 @@ pub async fn snippet_run_cancel(run_id: String, state: &SnippetRunState) -> Resu
     }
 
     Err("no running snippet with this run id".to_string())
-}
-
-/// Runs a command locally and streams stdout/stderr back as Tauri events.
-/// Emits `snippet_run_output` while running and `snippet_run_done` on exit.
-pub async fn snippet_run_local(
-    app: crate::App,
-    run_id: String,
-    command: String,
-    working_dir: Option<String>,
-    state: &SnippetRunState,
-) -> Result<(), String> {
-    let trimmed = command.trim().to_string();
-    if trimmed.is_empty() {
-        return Err("empty command".into());
-    }
-
-    let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string());
-
-    let mut cmd = tokio::process::Command::new(&shell);
-    cmd.args(["-c", &trimmed])
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-
-    if let Some(dir) = working_dir.as_deref().filter(|s| !s.is_empty()) {
-        cmd.current_dir(dir);
-    }
-
-    let mut child = cmd.spawn().map_err(|e| e.to_string())?;
-    let stdout = child.stdout.take().map(BufReader::new);
-    let stderr = child.stderr.take().map(BufReader::new);
-
-    // Registered by PID only (see `snippet_run_cancel`'s doc comment) — this
-    // task keeps sole, unshared ownership of `child` for its `wait()` below,
-    // so no lock is needed here at all, and none is available for cancel to
-    // contend with.
-    if let Some(pid) = child.id() {
-        state
-            .local_pids
-            .write()
-            .unwrap()
-            .insert(run_id.clone(), pid);
-    }
-
-    let app_out = app.clone();
-    let run_id_out = run_id.clone();
-    let out_task = if let Some(reader) = stdout {
-        let mut lines = reader.lines();
-        tokio::spawn(async move {
-            while let Ok(Some(line)) = lines.next_line().await {
-                let _ = app_out.emit(
-                    "snippet_run_output",
-                    serde_json::json!({ "runId": run_id_out, "data": line + "\n", "stream": "stdout" }),
-                );
-            }
-        })
-    } else {
-        tokio::spawn(async {})
-    };
-
-    let app_err = app.clone();
-    let run_id_err = run_id.clone();
-    let err_task = if let Some(reader) = stderr {
-        let mut lines = reader.lines();
-        tokio::spawn(async move {
-            while let Ok(Some(line)) = lines.next_line().await {
-                let _ = app_err.emit(
-                    "snippet_run_output",
-                    serde_json::json!({ "runId": run_id_err, "data": line + "\n", "stream": "stderr" }),
-                );
-            }
-        })
-    } else {
-        tokio::spawn(async {})
-    };
-
-    let _ = tokio::join!(out_task, err_task);
-
-    let exit_code = child
-        .wait()
-        .await
-        .map(|s| s.code().unwrap_or(-1))
-        .unwrap_or(-1);
-
-    state.local_pids.write().unwrap().remove(&run_id);
-    let cancelled = state.cancelled.write().unwrap().remove(&run_id);
-
-    let _ = app.emit(
-        "snippet_run_done",
-        serde_json::json!({ "runId": run_id, "exitCode": exit_code, "cancelled": cancelled }),
-    );
-
-    Ok(())
 }
 
 /// Runs a command on an existing SSH session and streams output as Tauri events.

@@ -20,7 +20,7 @@ This document records the current repository shape during the module migration. 
 | `hosts` | Saved-host and host-group domain contract plus host store | hosts module | Models and all host persistence, including secret-bearing writes, are standalone; only the MCP event adapter remains transitional in `backend`. |
 | `persistence` | Shared SQLite connection and schema lifecycle | foundation/platform service | Extracted from the host adapter; feature-specific queries still remain in `backend` and are next to migrate. |
 | `credentials` | Credential domain, secret-backed metadata, and SSH keypair generation | credentials module | Extracted from `backend`; backend keeps App-signature adapters while callers migrate. |
-| `snippets` | Snippet domain and SQLite store | snippets module | Extracted from `backend`; process execution remains a transitional backend adapter. |
+| `snippets` | Snippet domain, SQLite store, and local execution contract | snippets module | Local process execution is standalone; SSH execution remains a transitional backend adapter. |
 | `gpui-ext` | Shared GPUI helpers | foundation | Keep dependency-free from features. |
 | `hosts-ui` | Host management UI and host-related dependencies | hosts module | Remove settings and notification coupling. |
 | `notifications-core` | UI-free notification registry and lifecycle | notifications module | New owner of retention, ordering, deduplication, read state, and structured metadata. |
@@ -55,7 +55,9 @@ The current Cargo metadata shows several transitional edges that conflict with t
 - `backend` still owns the public secret API adapter even though storage now belongs to `labonair-secrets`; existing SSH/Hosts/MCP call sites still pass the backend app handle.
 - `backend` still re-exports the structured error contract for old internal paths, while the implementation now belongs to `labonair-errors`.
 - `backend` still exposes compatibility signatures for host and credential operations and owns the MCP event adapter; host and credential models/persistence now belong to their capability crates.
-- `backend` still owns snippet process execution and exposes a compatibility database re-export; snippet models and persistence now belong to `labonair-snippets`.
+- `backend` still owns only the transitional SSH snippet-execution adapter and
+  exposes a compatibility database re-export; snippet models, persistence, and
+  local process execution now belong to `labonair-snippets`.
 - `backend` still exposes the shared database under the compatibility name `HostsDb`; connection/schema lifecycle now belongs to `labonair-persistence`.
 - `shell/src/commands.rs`, `shell/src/status_items.rs`, and workspace views still contain feature-specific behavior that belongs to owning modules.
 - The former toast path has been removed; the statusbar is now the only

@@ -1,5 +1,23 @@
 # Bugs, fixes, and non-obvious constraints
 
+## 2026-09-06 — Local snippet execution belongs in the snippets capability
+
+**Finding:** Local snippet execution was implemented in
+`backend::modules::snippets::exec`, even though it only needed a shell,
+working directory, process cancellation, and output events. Passing the whole
+backend `App` into that code coupled a local feature to unrelated SSH, MCP,
+and persistence state.
+
+**Resolution:** Added `labonair_snippets::exec` with `LocalRunRegistry`,
+typed `LocalRunEvent` values, and a caller-provided event sink. The snippet
+panel now runs local silent snippets directly through that API and cancels
+them through its own registry. The backend retains only the SSH execution
+adapter until a narrow SSH session contract is available.
+
+**Compatibility note:** SSH output still uses the existing app event bus
+while its transport contract is extracted. Local output no longer crosses
+that stringly-typed bus.
+
 ## 2026-09-06 — Notification lifecycle must be UI-free
 
 **Finding:** `labonair-notifications` combined notification data, GPUI entity
