@@ -19,8 +19,9 @@ inventory, architecture contract, and `R01-001` progress. Verification passed:
 `cargo test -p labonair-hosts -p labonair-backend -p labonair-hosts-ui -p
 labonair-panel-snippets`, and `scripts/check-crate-deps.sh`.
 
-State: branch `master`, host store changes are uncommitted and ready for the
-next commit. `R01-001` remains `🔄 In Progress`; next is
+State: branch `master`, latest commits are `2b32ae4` (shared persistence
+lifecycle) and `595f5ed` (host store queries). `R01-001` remains
+`🔄 In Progress`; next is
 extracting host persistence behind a narrow store/service contract and
 replacing its direct `App`/MCP coupling with a typed capability callback. No
 source blocker.
