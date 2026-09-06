@@ -1,5 +1,25 @@
 # Handshake — Session State (Labonair-rust Port)
 
+## Current Session: 2026-09-06 (Workspace root ownership narrowed)
+
+`R02-002` remains in progress. The workspace module now owns the canonical
+project-versus-standalone root contracts through `Workspace::filesystem_root`
+and `Workspace::git_root`; their pure precedence rules and regression tests
+live in `workspace/context.rs`. The shell bootstrap only consumes those
+contracts when composing Explorer and Git, so the duplicate shell resolver
+and its tests are gone. The architecture inventory and R02-002 progress log
+were updated accordingly.
+
+The current branch is `master` with these changes uncommitted. Focused
+workspace tests, `cargo check --workspace --all-targets`,
+`cargo clippy --workspace --all-targets -- -D warnings`, queue/dependency
+checks, and `git diff --check` pass. The full workspace test run has only the
+two known sandbox restrictions; the AI local-SSE test and settings file-watcher
+test both pass when rerun outside the sandbox. The native Rust bundle visual
+check remains valid and separate from the legacy Tauri app. Next: finish the
+remaining R02-002 shell/standalone audit, then begin R02-003 for explicit
+project-entry and workspace-transition persistence.
+
 ## Current Session: 2026-09-06 (Workspace state boundary in progress)
 
 `R02-002` is in progress. The old `Workspace` → shell `open_hosts_hook` was

@@ -917,6 +917,33 @@ impl Workspace {
         )
     }
 
+    /// Return the filesystem root for workspace-owned file surfaces.
+    ///
+    /// The workspace owns the project/standalone precedence rule. Shell
+    /// composition roots should consume this contract instead of rebuilding
+    /// it for individual panels.
+    pub fn filesystem_root(&self, cx: &App) -> Option<String> {
+        context::resolve_filesystem_root(
+            self.context
+                .identity()
+                .project_root()
+                .map(std::path::Path::to_path_buf),
+            self.active_cwd(cx),
+            dirs::home_dir(),
+        )
+    }
+
+    /// Return the repository root for workspace-owned Git surfaces.
+    pub fn git_root(&self, cx: &App) -> Option<String> {
+        context::resolve_git_root(
+            self.context
+                .identity()
+                .project_root()
+                .map(std::path::Path::to_path_buf),
+            self.active_cwd(cx),
+        )
+    }
+
     /// Move this workspace into an explicitly project-scoped context.
     pub fn set_project_context(
         &mut self,

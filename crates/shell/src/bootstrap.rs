@@ -107,63 +107,6 @@ fn open_project_picker(workspace: Entity<Workspace>, cx: &mut Context<AppShell>)
     .detach();
 }
 
-/// Resolve the filesystem root for shell-owned project surfaces.
-///
-/// An explicit project identity is authoritative. Only a standalone
-/// workspace may fall back to the active terminal's cwd; a terminal changing
-/// directories must never move a project workspace to another root.
-fn preferred_workspace_root(workspace: &Entity<Workspace>, cx: &App) -> Option<String> {
-    let (project_root, active_cwd) = {
-        let workspace = workspace.read(cx);
-        (
-            workspace
-                .state(cx)
-                .identity()
-                .project_root()
-                .map(std::path::Path::to_path_buf),
-            workspace.active_cwd(cx),
-        )
-    };
-
-    resolve_workspace_root(project_root, active_cwd, dirs::home_dir())
-}
-
-/// Resolve the repository root for Git surfaces.
-///
-/// Git has no useful home-directory fallback, so a standalone workspace with
-/// no active terminal remains unscoped.
-fn preferred_git_root(workspace: &Entity<Workspace>, cx: &App) -> Option<String> {
-    let workspace = workspace.read(cx);
-    resolve_git_root(
-        workspace
-            .state(cx)
-            .identity()
-            .project_root()
-            .map(std::path::Path::to_path_buf),
-        workspace.active_cwd(cx),
-    )
-}
-
-fn resolve_workspace_root(
-    project_root: Option<std::path::PathBuf>,
-    active_cwd: Option<String>,
-    home: Option<std::path::PathBuf>,
-) -> Option<String> {
-    project_root
-        .map(|path| path.to_string_lossy().into_owned())
-        .or(active_cwd)
-        .or_else(|| home.map(|path| path.to_string_lossy().into_owned()))
-}
-
-fn resolve_git_root(
-    project_root: Option<std::path::PathBuf>,
-    active_cwd: Option<String>,
-) -> Option<String> {
-    project_root
-        .map(|path| path.to_string_lossy().into_owned())
-        .or(active_cwd)
-}
-
 /// Rebuild the AI live-bridge [`LiveSnapshot`] from the current workspace +
 /// explorer state. Called event-driven (T17-006) from `cx.observe` on the
 /// workspace + explorer, instead of every frame.
@@ -519,13 +462,13 @@ pub(crate) fn bootstrap(
     // Project identity is authoritative; standalone falls back to the active
     // terminal's cwd and then $HOME.
     {
-        let initial = preferred_workspace_root(&workspace, cx);
+        let initial = workspace.read(cx).filesystem_root(cx);
         explorer.update(cx, |e, cx| e.set_root_str(initial, cx));
     }
     cx.observe(&workspace, {
         let explorer = explorer.clone();
         move |_, workspace, cx| {
-            let root = preferred_workspace_root(&workspace, cx);
+            let root = workspace.read(cx).filesystem_root(cx);
             explorer.update(cx, |e, cx| e.set_root_str(root, cx));
         }
     })
@@ -534,14 +477,14 @@ pub(crate) fn bootstrap(
         let git_panel = git_panel.clone();
         let git_graph = git_graph.clone();
         move |_, workspace, cx| {
-            let root = preferred_git_root(&workspace, cx);
+            let root = workspace.read(cx).git_root(cx);
             git_panel.update(cx, |g, cx| g.set_root(root.clone(), cx));
             git_graph.update(cx, |g, cx| g.set_root(root, cx));
         }
     })
     .detach();
     {
-        let root = preferred_git_root(&workspace, cx);
+        let root = workspace.read(cx).git_root(cx);
         git_panel.update(cx, |g, cx| g.set_root(root.clone(), cx));
         git_graph.update(cx, |g, cx| g.set_root(root, cx));
     }
@@ -685,43 +628,4 @@ pub(crate) fn bootstrap(
         live_drain,
         cx,
     )
-}
-
-#[cfg(test)]
-mod workspace_root_tests {
-    use super::{resolve_git_root, resolve_workspace_root};
-    use std::path::PathBuf;
-
-    #[test]
-    fn explicit_project_root_wins_over_terminal_cwd() {
-        assert_eq!(
-            resolve_workspace_root(
-                Some(PathBuf::from("/project")),
-                Some("/project/src".into()),
-                Some(PathBuf::from("/Users/test")),
-            ),
-            Some("/project".into())
-        );
-        assert_eq!(
-            resolve_git_root(Some(PathBuf::from("/project")), Some("/project/src".into())),
-            Some("/project".into())
-        );
-    }
-
-    #[test]
-    fn standalone_root_uses_terminal_cwd_then_home() {
-        assert_eq!(
-            resolve_workspace_root(
-                None,
-                Some("/tmp/standalone".into()),
-                Some(PathBuf::from("/Users/test")),
-            ),
-            Some("/tmp/standalone".into())
-        );
-        assert_eq!(
-            resolve_workspace_root(None, None, Some(PathBuf::from("/Users/test"))),
-            Some("/Users/test".into())
-        );
-        assert_eq!(resolve_git_root(None, None), None);
-    }
 }

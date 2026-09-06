@@ -59,8 +59,11 @@ The current Cargo metadata shows several transitional edges that conflict with t
   use `WorkspaceEvent` and composition-root subscriptions. Project settings
   now follow explicit workspace identity rather than terminal cwd. Explorer
   and Git root synchronization also gives that explicit identity precedence;
-  only standalone workspaces fall back to terminal cwd. Remaining feature-view
-  dependencies are still transitional and are not hidden by this state model.
+  only standalone workspaces fall back to terminal cwd. Root precedence is
+  centralized in `Workspace::filesystem_root` / `Workspace::git_root`, with
+  pure resolver tests owned by `workspace/context.rs`; the shell only consumes
+  those contracts. Remaining feature-view dependencies are still transitional
+  and are not hidden by this state model.
 - `settings-ui` depends on settings values, theme/UI primitives, notifications,
   command-palette fuzzy matching, and filesystem paths; it no longer depends on
   a workspace-owned background store, backend, Hosts UI, or panel contracts.

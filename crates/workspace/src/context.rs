@@ -104,6 +104,36 @@ impl WorkspaceContext {
     }
 }
 
+/// Resolve the filesystem root used by workspace-owned file surfaces.
+///
+/// An explicit project identity is authoritative. Standalone workspaces may
+/// fall back to the active terminal directory and finally the user's home
+/// directory so one-off sessions still have a useful explorer root.
+pub fn resolve_filesystem_root(
+    project_root: Option<PathBuf>,
+    active_cwd: Option<String>,
+    home: Option<PathBuf>,
+) -> Option<String> {
+    project_root
+        .map(|path| path.to_string_lossy().into_owned())
+        .or(active_cwd)
+        .or_else(|| home.map(|path| path.to_string_lossy().into_owned()))
+}
+
+/// Resolve the repository root used by workspace-owned Git surfaces.
+///
+/// Git deliberately has no home-directory fallback: an unscoped standalone
+/// workspace must not accidentally treat the user's home directory as a
+/// repository.
+pub fn resolve_git_root(
+    project_root: Option<PathBuf>,
+    active_cwd: Option<String>,
+) -> Option<String> {
+    project_root
+        .map(|path| path.to_string_lossy().into_owned())
+        .or(active_cwd)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -136,5 +166,38 @@ mod tests {
 
         context.set_standalone();
         assert_eq!(context.identity(), &WorkspaceIdentity::Standalone);
+    }
+
+    #[test]
+    fn explicit_project_root_wins_over_terminal_cwd() {
+        assert_eq!(
+            resolve_filesystem_root(
+                Some(PathBuf::from("/project")),
+                Some("/project/src".into()),
+                Some(PathBuf::from("/Users/test")),
+            ),
+            Some("/project".into())
+        );
+        assert_eq!(
+            resolve_git_root(Some(PathBuf::from("/project")), Some("/project/src".into())),
+            Some("/project".into())
+        );
+    }
+
+    #[test]
+    fn standalone_root_uses_terminal_cwd_then_home() {
+        assert_eq!(
+            resolve_filesystem_root(
+                None,
+                Some("/tmp/standalone".into()),
+                Some(PathBuf::from("/Users/test")),
+            ),
+            Some("/tmp/standalone".into())
+        );
+        assert_eq!(
+            resolve_filesystem_root(None, None, Some(PathBuf::from("/Users/test"))),
+            Some("/Users/test".into())
+        );
+        assert_eq!(resolve_git_root(None, None), None);
     }
 }

@@ -98,5 +98,12 @@ The native Empty-state shortcut hint now matches the canonical keymap
 registry: Commands is shown as `⌘P`, not the stale `⌘K`. The corrected bundle
 was rebuilt and checked with a PID-scoped screenshot; project selection and
 transition visuals remain open.
+
+Workspace root precedence is now owned by `labonair-workspace`: its public
+`Workspace::filesystem_root` and `Workspace::git_root` contracts centralize
+the project-versus-standalone fallback rules, while pure resolver tests live
+beside `WorkspaceContext`. The shell now only consumes those contracts when
+composing Explorer and Git surfaces; the duplicate shell resolver and tests
+were removed.
 Session identity persistence and the final removal audit continue in
 `R02-003`.
