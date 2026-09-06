@@ -30,6 +30,8 @@ members = [
     "crates/credentials",
     "crates/snippets",
     "crates/git",
+    "crates/ssh",
+    "crates/sftp",
     "crates/backend",
     "crates/ai",
     "crates/theme",

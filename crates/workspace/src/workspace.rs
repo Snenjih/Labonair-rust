@@ -83,16 +83,18 @@ use labonair_backend::modules::scrollback::{
 };
 use labonair_backend::modules::sftp::commands::enqueue_transfer;
 use labonair_backend::modules::sftp::connection::sftp_disconnect as sftp_tab_disconnect;
-use labonair_backend::modules::ssh::client::{ssh_connect, ssh_disconnect, ssh_trust_host};
-use labonair_backend::modules::ssh::pty::SshPtyEvent;
 use labonair_backend::modules::ssh::sftp::{
     cleanup_remote_edit_temp, prepare_remote_edit, save_remote_edit,
 };
 use labonair_backend::modules::ssh::tunnels::{
     active_tunnels, ssh_start_tunnels, ssh_stop_tunnels,
 };
-use labonair_backend::{App as Backend, AppEvent, EventChannel};
+use labonair_backend::{App as Backend, AppEvent};
 use labonair_git::GitService;
+use labonair_ssh::{
+    SshConnectRequest, SshConnectionService, SshEventSink, SshPtyService, SshSessionEvent,
+    SshSessionId,
+};
 use labonair_terminal::{
     RemoteFeed, RemoteResizer, RemoteWriter, SessionHandle, SessionId, SessionOptions,
     TermDimensions, TerminalColors, TerminalRegistry,
@@ -148,6 +150,19 @@ struct SshTab {
     host_id: String,
     feed: RemoteFeed,
     tab_id: u64,
+}
+
+struct WorkspaceSshEventSink(RemoteFeed);
+
+impl SshEventSink for WorkspaceSshEventSink {
+    fn send(&self, event: SshSessionEvent) -> Result<(), String> {
+        match event {
+            SshSessionEvent::Output { data } => {
+                self.0.feed(data.as_bytes());
+                Ok(())
+            }
+        }
+    }
 }
 
 /// A tab-lifecycle request from the MCP bridge (`modules::mcp::server`), queued
@@ -404,6 +419,8 @@ pub struct Workspace {
 
     // ── SSH (T07-001) ──────────────────────────────────────────────────────
     backend: Backend,
+    ssh: Arc<dyn SshConnectionService>,
+    ssh_pty: Arc<dyn SshPtyService>,
     git: Arc<dyn GitService>,
     tokio: TokioHandle,
     host_manager: Entity<HostManagerView>,
@@ -461,6 +478,8 @@ impl Workspace {
         theme: Entity<ThemeStore>,
         background: Entity<BackgroundStore>,
         backend: Backend,
+        ssh: Arc<dyn SshConnectionService>,
+        ssh_pty: Arc<dyn SshPtyService>,
         tokio: TokioHandle,
         agent_access: Entity<AgentAccessStore>,
         restore: Option<SessionSnapshot>,
@@ -577,6 +596,8 @@ impl Workspace {
                 backend.clone(),
             )),
             backend,
+            ssh,
+            ssh_pty,
             tokio,
             host_manager,
             ssh_tabs: HashMap::new(),
@@ -2422,6 +2443,7 @@ impl Workspace {
                 self.ssh_connection
                     .update(cx, |s, cx| s.remove(&t.ssh_id, cx));
                 let app = self.backend.clone();
+                let ssh = self.ssh.clone();
                 let ssh_id = t.ssh_id.clone();
                 let host_id = t.host_id.clone();
                 let tab_key = t.tab_id.to_string();
@@ -2439,7 +2461,7 @@ impl Workspace {
                         &app.mcp,
                     )
                     .await;
-                    let _ = ssh_disconnect(ssh_id, &app.ssh).await;
+                    let _ = ssh.disconnect(SshSessionId::new(ssh_id)).await;
                     let _ = ssh_stop_tunnels(host_id, &app.tunnels).await;
                 });
                 if let Some(p) = &self.ssh_prompt {
@@ -2819,31 +2841,27 @@ impl Workspace {
         let dims = TermDimensions::new(80, 24);
 
         let writer: RemoteWriter = {
-            let (id, st, tk) = (ssh_id.clone(), self.backend.ssh.clone(), self.tokio.clone());
+            let (id, service, tk) = (ssh_id.clone(), self.ssh_pty.clone(), self.tokio.clone());
             Arc::new(move |bytes: Vec<u8>| {
-                let (id, st) = (id.clone(), st.clone());
+                let (id, service) = (id.clone(), service.clone());
                 tk.spawn(async move {
-                    let _ = labonair_backend::modules::ssh::pty::ssh_pty_write(
-                        id,
-                        String::from_utf8_lossy(&bytes).into_owned(),
-                        &st,
-                    )
-                    .await;
+                    let _ = service
+                        .write(
+                            SshSessionId::new(id),
+                            String::from_utf8_lossy(&bytes).into_owned(),
+                        )
+                        .await;
                 });
             })
         };
         let resizer: RemoteResizer = {
-            let (id, st, tk) = (ssh_id.clone(), self.backend.ssh.clone(), self.tokio.clone());
+            let (id, service, tk) = (ssh_id.clone(), self.ssh_pty.clone(), self.tokio.clone());
             Arc::new(move |cols: u16, rows: u16| {
-                let (id, st) = (id.clone(), st.clone());
+                let (id, service) = (id.clone(), service.clone());
                 tk.spawn(async move {
-                    let _ = labonair_backend::modules::ssh::pty::ssh_pty_resize(
-                        id,
-                        cols as u32,
-                        rows as u32,
-                        &st,
-                    )
-                    .await;
+                    let _ = service
+                        .resize(SshSessionId::new(id), cols as u32, rows as u32)
+                        .await;
                 });
             })
         };
@@ -2920,31 +2938,22 @@ impl Workspace {
         feed: RemoteFeed,
         cx: &mut Context<Self>,
     ) {
-        let app = self.backend.clone();
-        let ev_feed = feed.clone();
-        let on_event = EventChannel::new(move |ev: SshPtyEvent| {
-            match ev {
-                SshPtyEvent::Data { data } => ev_feed.feed(data.as_bytes()),
-            }
-            Ok(())
-        });
+        let ssh = self.ssh.clone();
+        let event_sink = Arc::new(WorkspaceSshEventSink(feed));
         let connect_id = ssh_id.clone();
         let jh = self.tokio.spawn(async move {
-            ssh_connect(
-                connect_id,
-                host_id,
-                passphrase,
-                password,
-                Some(80),
-                Some(24),
-                false,
-                on_event,
-                &app.ssh,
-                &app.trust,
-                &app.db,
-                &app.secrets,
-                app.clone(),
-                Some(20),
+            ssh.connect(
+                SshConnectRequest {
+                    session_id: SshSessionId::new(connect_id),
+                    host_id,
+                    passphrase,
+                    password,
+                    initial_cols: Some(80),
+                    initial_rows: Some(24),
+                    blocks: false,
+                    connect_timeout_secs: Some(20),
+                },
+                event_sink,
             )
             .await
             .map_err(|e| e.to_string())
@@ -3239,9 +3248,9 @@ impl Workspace {
             SshPrompt::Trust { ssh_id, .. } => {
                 self.ssh_connection
                     .update(cx, |s, cx| s.resume(&ssh_id, cx));
-                let app = self.backend.clone();
+                let ssh = self.ssh.clone();
                 self.tokio.spawn(async move {
-                    let _ = ssh_trust_host(ssh_id, true, &app.trust).await;
+                    let _ = ssh.trust_host(SshSessionId::new(ssh_id), true).await;
                 });
             }
             SshPrompt::Password { ssh_id, buffer, .. } => {
@@ -3260,9 +3269,9 @@ impl Workspace {
                 self.ssh_connection.update(cx, |s, cx| {
                     s.set_error(&ssh_id, "Host key was not trusted.", cx)
                 });
-                let app = self.backend.clone();
+                let ssh = self.ssh.clone();
                 self.tokio.spawn(async move {
-                    let _ = ssh_trust_host(ssh_id, false, &app.trust).await;
+                    let _ = ssh.trust_host(SshSessionId::new(ssh_id), false).await;
                 });
             }
             Some(SshPrompt::Password { ssh_id, .. } | SshPrompt::Passphrase { ssh_id, .. }) => {

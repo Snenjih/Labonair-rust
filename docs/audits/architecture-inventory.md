@@ -10,7 +10,7 @@ This document records the current repository shape during the module migration. 
 | Current crate | Current role | Target owner | Migration note |
 |---|---|---|---|
 | `app` | Binary/bootstrap | application composition | Keep small; remove feature logic. |
-| `backend` | Mixed filesystem, PTY, SSH, SFTP, Git, hosts, settings, updater, MCP, persistence | split across platform services and feature modules | Highest-priority god-object boundary. |
+| `backend` | Mixed filesystem, PTY, SSH, SFTP, Git, hosts, settings, updater, MCP, persistence | split across platform services and feature modules | Highest-priority god-object boundary; SSH/SFTP contracts and first adapters now exist. |
 | `ai` | AI providers, sessions, tools | AI module | Keep backend-facing core; rebuild UI later. |
 | `command-palette` | Palette UI, static commands, some keymap behavior | command-palette module + keymap module | Split registry/core from GPUI view. |
 | `editor` | Editor engine | editor module | Separate core from workspace view. |

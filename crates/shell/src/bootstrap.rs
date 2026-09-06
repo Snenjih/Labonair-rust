@@ -21,6 +21,7 @@ use labonair_backend::modules::mcp::{
 use labonair_backend::modules::settings::mcp::mcp_prefs_load;
 use labonair_backend::App as Backend;
 use labonair_notifications::NotificationCenter;
+use labonair_ssh::{SshConnectionService, SshPtyService};
 use labonair_terminal::TerminalRegistry;
 use tokio::runtime::Handle as TokioHandle;
 
@@ -202,12 +203,18 @@ pub(crate) fn bootstrap(
         .unwrap_or(false)
         .then(crate::session::load_snapshot)
         .flatten();
+    let ssh_service: Arc<dyn SshConnectionService> =
+        Arc::new(labonair_backend::modules::ssh::contract::BackendSshService::new(backend.clone()));
+    let ssh_pty_service: Arc<dyn SshPtyService> =
+        Arc::new(labonair_backend::modules::ssh::contract::BackendSshService::new(backend.clone()));
     let workspace = cx.new(|cx| {
         Workspace::new(
             registry,
             theme.clone(),
             background.clone(),
             backend.clone(),
+            ssh_service.clone(),
+            ssh_pty_service.clone(),
             tokio.clone(),
             agent_access.clone(),
             session_snapshot,

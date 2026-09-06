@@ -380,6 +380,52 @@ async fn sftp_connect_inner(
     Ok(())
 }
 
+/// Opens SFTP on an already authenticated SSH session.
+///
+/// This is the adapter boundary used by `labonair-sftp`: authentication,
+/// host lookup, secrets, and jump-host routing belong to `labonair-ssh`.
+/// The legacy `sftp_connect` path above remains temporarily for the sidebar
+/// compatibility path until the session coordinator is migrated.
+pub async fn sftp_open_session(
+    session_id: String,
+    state: &SshState,
+    app: crate::App,
+) -> Result<(), LabonairError> {
+    let session = {
+        let map = state
+            .0
+            .lock()
+            .map_err(|e| LabonairError::Internal(e.to_string()))?;
+        map.get(&session_id)
+            .cloned()
+            .ok_or_else(|| LabonairError::NotConnected(session_id.clone()))?
+    };
+    session
+        .sftp
+        .get_or_try_init(|| async {
+            let channel = session
+                .handle
+                .channel_open_session()
+                .await
+                .map_err(|e| e.to_string())?;
+            channel
+                .request_subsystem(true, "sftp")
+                .await
+                .map_err(|e| e.to_string())?;
+            let sftp = russh_sftp::client::SftpSession::new(channel.into_stream())
+                .await
+                .map_err(|e| e.to_string())?;
+            Ok::<_, String>(Arc::new(sftp))
+        })
+        .await
+        .map_err(LabonairError::classify)?;
+    let _ = app.emit(
+        "sftp_ready",
+        serde_json::json!({ "session_id": session_id }),
+    );
+    Ok(())
+}
+
 /// Removes the unified session from `SshState` and closes the connection. A
 /// dedicated SFTP tab's `session_id` is never shared with a terminal or
 /// lazy-explorer session today (see the russh migration's session-model

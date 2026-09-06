@@ -30,6 +30,11 @@ ALLOWED = {
     # Platform service — no GPUI or feature-crate deps. Feature crates may
     # consume it directly; the backend edge is transitional during migration.
     "labonair-filesystem": set(),
+    # UI-free SSH capability contracts; transport implementations remain in
+    # backend adapters.
+    "labonair-ssh": {"labonair-errors"},
+    # UI-free SFTP contracts may use opaque SSH session ids only.
+    "labonair-sftp": {"labonair-errors", "labonair-ssh"},
     # Platform service — secret storage and encryption, without GPUI or
     # feature-module dependencies.
     "labonair-secrets": {"labonair-filesystem"},
@@ -116,6 +121,7 @@ ALLOWED = {
         "labonair-git",
         "labonair-ai", "labonair-settings", "labonair-settings-json",
         "labonair-filesystem",
+        "labonair-ssh",
     },
     # rule 3: the only crate that knows every concrete panel type — it also
     # touches the `labonair-panel` contracts crate to register them (T17-001).
@@ -130,7 +136,7 @@ ALLOWED = {
         "labonair-panel-explorer", "labonair-panel-scm",
         "labonair-panel-git-graph", "labonair-panel-snippets",
         "labonair-panel-ai", "labonair-terminal", "labonair-backend",
-        "labonair-settings", "labonair-filesystem",
+        "labonair-settings", "labonair-filesystem", "labonair-ssh",
     },
 
     # Panels — rule 2 (+ §8.4: explorer/snippets/ai may pull workspace).
@@ -192,6 +198,7 @@ ALLOWED = {
         "labonair-settings-content", "labonair-filesystem", "labonair-secrets",
         "labonair-errors", "labonair-hosts", "labonair-persistence",
         "labonair-credentials", "labonair-snippets", "labonair-git",
+        "labonair-ssh", "labonair-sftp",
         "labonair-persistence",
     },
     "labonair-ai": {"labonair-backend", "labonair-filesystem"},

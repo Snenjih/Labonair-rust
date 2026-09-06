@@ -1,5 +1,6 @@
 pub mod client;
 pub mod config_parser;
+pub mod contract;
 pub mod exec;
 pub mod pty;
 pub mod sftp;

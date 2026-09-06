@@ -17,8 +17,8 @@ migration into an architectural claim.
 | Terminal | `terminal` | terminal/session contracts | `labonair-terminal` and workspace view | PTY/process adapter | Terminal tab or standalone terminal | Active, extraction ongoing |
 | Editor | `editor` | editor document contracts | `labonair-editor` and workspace view | filesystem adapter | Editor tab or standalone editor | Active, extraction ongoing |
 | Filesystem | `filesystem` | `labonair-filesystem` | Consuming feature UI | local filesystem and watcher | Explorer/editor consumers | Extracted |
-| SSH | `ssh` | Target: `labonair-ssh` | SSH connection surface | russh, auth, tunnels, jump hosts | Host action or standalone SSH | Backend-owned adapter |
-| SFTP | `sftp` | Target: `labonair-sftp` | SFTP browser | russh-sftp | Host action or standalone SFTP | Workspace/backend-owned |
+| SSH | `ssh` | `labonair-ssh` | SSH connection surface | Backend adapter owns russh, auth, tunnels, jump hosts | Host action or standalone SSH | Contracts created; workspace PTY/connect migration in progress |
+| SFTP | `sftp` | `labonair-sftp` | SFTP browser | Backend adapter owns russh-sftp; session comes from SSH | Host action or standalone SFTP | Session/browser contracts created; view migration follows |
 | Hosts | `hosts` | `labonair-hosts` | `labonair-hosts-ui` | `labonair-persistence`, credentials, SSH adapters | Command Palette → Hosts | Domain/store extracted; UI migration open |
 | Credentials | `credentials` | `labonair-credentials` | Hosts UI consumer | `labonair-secrets`, keychain | Host management | Extracted |
 | Transfers | `transfers` | Target: `labonair-transfers-core` | Target: `labonair-transfers-ui` | SFTP/SSH worker adapter | Statusbar Transfers badge | Workspace/backend-owned; extraction next |

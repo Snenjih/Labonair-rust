@@ -4196,7 +4196,9 @@ dependencies = [
  "labonair-persistence",
  "labonair-secrets",
  "labonair-settings-content",
+ "labonair-sftp",
  "labonair-snippets",
+ "labonair-ssh",
  "libc",
  "log",
  "md5 0.7.0",
@@ -4528,6 +4530,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "labonair-sftp"
+version = "0.1.0"
+dependencies = [
+ "labonair-errors",
+ "labonair-ssh",
+ "serde",
+]
+
+[[package]]
 name = "labonair-shell"
 version = "0.1.0"
 dependencies = [
@@ -4546,6 +4557,7 @@ dependencies = [
  "labonair-panel-snippets",
  "labonair-settings",
  "labonair-settings-ui",
+ "labonair-ssh",
  "labonair-terminal",
  "labonair-theme",
  "labonair-ui-kit",
@@ -4568,6 +4580,15 @@ dependencies = [
  "serde",
  "tokio",
  "uuid",
+]
+
+[[package]]
+name = "labonair-ssh"
+version = "0.1.0"
+dependencies = [
+ "labonair-errors",
+ "serde",
+ "tokio",
 ]
 
 [[package]]
@@ -4624,6 +4645,7 @@ dependencies = [
  "labonair-panel-git-graph",
  "labonair-settings",
  "labonair-settings-json",
+ "labonair-ssh",
  "labonair-terminal",
  "labonair-theme",
  "labonair-ui-kit",

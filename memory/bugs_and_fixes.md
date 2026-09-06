@@ -1,5 +1,27 @@
 # Bugs, fixes, and non-obvious constraints
 
+## 2026-09-06 — SFTP must not own host authentication
+
+**Finding:** The first draft of the SFTP service accepted `host_id`, password,
+database, and secret-resolution concerns. The SSH/SFTP audit showed that this
+would merely recreate the backend facade at a new crate boundary and would
+make the SFTP contract responsible for authentication.
+
+**Resolution:** Split the contract into `SftpSessionService` and
+`SftpBrowserService`. SSH creates the authenticated session; SFTP receives an
+opaque `SftpSessionHandle` and exposes only remote filesystem operations. The
+backend adapter temporarily maps that handle to the existing session registry
+while the remaining consumers migrate.
+
+## 2026-09-06 — GPUI checks require the local macOS compiler cache
+
+**Finding:** A sandboxed GPUI check failed while Metal shader compilation tried
+to write Clang modules below the user's local cache directory.
+
+**Resolution:** The affected GPUI checks were rerun with the approved local
+compiler-cache access. Pure SSH/SFTP/backend checks compile without that
+requirement.
+
 ## 2026-09-06 — Settings management categories must be removed as a UI boundary
 
 **Finding:** Removing `Themes`, `Hosts`, and `Shortcuts` from `AREAS` alone
