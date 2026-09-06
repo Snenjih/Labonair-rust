@@ -158,7 +158,7 @@ fn apply_edits(edits: &[(&str, Option<&str>)]) -> Result<(), String> {
 /// the surgical-write logic is unit-testable without ever touching the real
 /// per-user config path (`user_keymap_path()` always points at
 /// `~/.config/labonair/keymap.json` — there is no directory-override
-/// mechanism here the way `PreferencesStore::with_dir` has for prefs, so
+/// mechanism here the way `SettingsStore::new(path)` has for settings, so
 /// tests must not perform real I/O against it).
 fn compute_ops(edits: &[(&str, Option<&str>)], user: &KeymapFile) -> Vec<(String, Value)> {
     let mut ops: Vec<(String, Value)> = Vec::new();

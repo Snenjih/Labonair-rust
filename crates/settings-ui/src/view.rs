@@ -22,15 +22,14 @@ pub use labonair_backend::modules::mcp::{
     mcp_set_max_command_timeout_secs, mcp_set_port,
 };
 pub use labonair_backend::modules::settings::mcp::{mcp_prefs_load, mcp_prefs_save, McpPrefs};
-pub use labonair_backend::modules::settings::preferences::ThemePref;
 pub use labonair_backend::App as Backend;
 pub use labonair_command_palette::{
     effective_binding, shortcut, shortcut_slug, shortcuts, KeybindMap, ShortcutId,
 };
 pub use labonair_notifications::{notification_center, Notification};
-pub use labonair_settings::SettingsStore;
+pub use labonair_settings::{Settings as _, SettingsStore, ThemeSettings};
 pub use labonair_settings_content::areas::AREAS;
-pub use labonair_theme::{ThemePreference, ThemeStore};
+pub use labonair_theme::ThemeStore;
 pub use labonair_ui_kit::{
     banner, button, h_stack, icon_for_path, list_header, list_separator, number_field,
     segmented_control, select_popover, select_trigger, svg_path, v_stack, ButtonSize,
@@ -42,7 +41,6 @@ pub(crate) use crate::apply::*;
 pub(crate) use crate::pages::*;
 pub(crate) use crate::schema::*;
 pub(crate) use crate::search::{SearchIndex, SearchRow, SearchTarget};
-pub(crate) use crate::store::*;
 pub(crate) use crate::window::*;
 
 use std::collections::HashSet;
@@ -128,7 +126,6 @@ impl OriginBadge {
 }
 
 pub struct SettingsView {
-    pub(crate) prefs: Entity<PreferencesStore>,
     pub(crate) theme: Entity<ThemeStore>,
     /// Kept alive (and observed, in `new()`) so a live background change
     /// still repaints the settings window; the old bespoke background
@@ -261,7 +258,6 @@ pub(crate) struct KbConflict {
 impl SettingsView {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        prefs: Entity<PreferencesStore>,
         theme: Entity<ThemeStore>,
         background: Entity<BackgroundStore>,
         backend: Backend,
@@ -270,7 +266,6 @@ impl SettingsView {
         host_manager: Entity<labonair_hosts_ui::HostManagerView>,
         cx: &mut Context<Self>,
     ) -> Self {
-        cx.observe(&prefs, |_, _, cx| cx.notify()).detach();
         cx.observe(&theme, |_, _, cx| cx.notify()).detach();
         cx.observe(&background, |_, _, cx| cx.notify()).detach();
         cx.observe(&workspace, |_, _, cx| cx.notify()).detach();
@@ -304,7 +299,6 @@ impl SettingsView {
         let pages = pages();
         let search_index = SearchIndex::build(&all_fields, &pages);
         Self {
-            prefs,
             theme,
             background,
             backend,
@@ -372,13 +366,17 @@ impl SettingsView {
         self.refresh_mcp_status(cx);
         self.refresh_themes(cx);
         if self.active_theme_id.is_none() {
-            let stored = self.prefs.read(cx).get().app_theme.clone();
+            let stored = ThemeSettings::try_get(cx)
+                .map(|s| s.app_theme().to_string())
+                .unwrap_or_default();
             if !stored.is_empty() && stored != "default" {
                 self.active_theme_id = Some(stored);
             }
         }
         {
-            let stored = self.prefs.read(cx).get().icon_theme.clone();
+            let stored = ThemeSettings::try_get(cx)
+                .map(|s| s.icon_theme().to_string())
+                .unwrap_or_default();
             self.active_icon_theme_id = if stored.is_empty() {
                 "default".to_string()
             } else {
@@ -669,9 +667,8 @@ impl SettingsView {
     }
 
     /// Write a generated field's value through the layered `SettingsStore`
-    /// (persists the `User` layer), then refresh the `PreferencesStore` /
-    /// `GlobalPreferences` bridge so not-yet-migrated consumers see it too
-    /// (the task's warning).
+    /// (persists the `User` layer) — every consumer reads that store
+    /// directly, so no separate bridge sync is needed.
     pub(crate) fn set_field_value(
         &mut self,
         json_path: &'static str,
@@ -694,7 +691,6 @@ impl SettingsView {
             self.notify_error(cx, "Could not save setting", err);
             return;
         }
-        self.prefs.update(cx, |p, cx| p.reload_from_disk(cx));
         self.sync_theme_from_prefs(cx);
         cx.notify();
     }
@@ -720,47 +716,42 @@ impl SettingsView {
         self.set_field_value(json_path, default_value, cx);
     }
 
-    // ── legacy generic field mutation (PreferencesStore) ────────────────
+    // ── camelCase-keyed field mutation (used by the Themes pane) ─────────
 
+    /// Write a `SettingsContent` leaf addressed by its bare camelCase key
+    /// (e.g. `"appTheme"`, `"iconTheme"`, `"themeVariantOverrides"`). Routes
+    /// through [`Self::set_field_value`] for keys that have a generated UI
+    /// row; `iconTheme` has a backing `SettingsContent` field but no row, so
+    /// it is written directly.
     pub(crate) fn set_pref(&mut self, key: &str, value: Value, cx: &mut Context<Self>) {
-        let key_owned = key.to_string();
-        self.prefs
-            .update(cx, |p, cx| p.set_value(&key_owned, value, cx));
-        // Propagate the values modules can't observe generically.
-        if key == "theme" {
-            let pref = match self.prefs.read(cx).get().theme {
-                ThemePref::System => ThemePreference::System,
-                ThemePref::Light => ThemePreference::Light,
-                ThemePref::Dark => ThemePreference::Dark,
-            };
-            self.theme.update(cx, |t, cx| t.set_preference(pref, cx));
+        if let Some(path) = self
+            .all_fields
+            .iter()
+            .find(|f| f.local_key() == key)
+            .map(|f| f.json_path)
+        {
+            self.set_field_value(path, value, cx);
+            return;
         }
-        // Keyboard shortcuts are no longer part of this generic `set_pref`
-        // path (T19-008) — the Shortcuts pane writes `keymap.json` directly
-        // (`crate::panes::shortcuts`) and re-applies via `apply_keymap_hook`.
-        // The `Preferences` store already republishes `GlobalPreferences` on
-        // every change (see `PreferencesStore::set_value`); terminal / editor /
-        // workspace all `observe_global` / re-read it, so most keys propagate
-        // for free — this is the port's generic `applySettingChange`. The rest
-        // are the non-observable side effects (T16-012):
-        match key {
-            // Reduce-motion and corner radius feed the theme/layout layer.
-            "reduceMotion" | "appCornerRadius" | "appLineHeight" => {
-                self.sync_theme_from_prefs(cx);
+        if key == "iconTheme" {
+            if cx.has_global::<SettingsStore>() {
+                let v = value.as_str().unwrap_or("default").to_string();
+                let _ = cx
+                    .global_mut::<SettingsStore>()
+                    .update_user_settings(move |c| c.appearance.icon_theme = Some(v.clone()));
             }
-            _ => {}
+            self.sync_theme_from_prefs(cx);
+            cx.notify();
+            return;
         }
-        // Typography + editor syntax scheme are pushed into the ThemeStore so
-        // open terminals / editors pick them up live (T13-003).
-        self.sync_theme_from_prefs(cx);
-        cx.notify();
+        tracing::warn!("set_pref: no SettingsContent field for key `{key}`");
     }
 
-    /// Mirror the font / editor-theme preferences into the [`ThemeStore`].
+    /// Re-derive the [`ThemeStore`] state (color mode, fonts, metrics, active
+    /// theme + variant, icon theme) from the layered settings.
     pub(crate) fn sync_theme_from_prefs(&mut self, cx: &mut Context<Self>) {
-        let p = self.prefs.read(cx).get().clone();
         let theme = self.theme.clone();
-        apply_prefs_to_theme(&p, &theme, cx);
+        apply_prefs_to_theme(&theme, cx);
     }
 
     pub(crate) fn toggle_bool(&mut self, field: &AnyField, cx: &mut Context<Self>) {

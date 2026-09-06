@@ -13,12 +13,61 @@
 use gpui::{App, Context, Window};
 use labonair_command_palette::{Page as PalettePage, PaletteChoice, PaletteData, PaletteEvent};
 use labonair_panel::DockPosition;
+use labonair_settings::{Settings as _, SettingsStore, ThemeSettings};
 
 use labonair_workspace::search_overlay::SearchOverlay;
 
 use crate::app_shell::AppShell;
 use crate::menu;
 use crate::modals::{CommandPaletteModal, UpdaterModal};
+
+/// Flip one boolean leaf across the layered [`SettingsStore`], keyed by its
+/// local key — the vocabulary `crate::commands::register_builtin_commands`'
+/// zen-mode/settings toggle table uses. Covers exactly the settings wired
+/// through [`AppShell::toggle_zen_pref`]; a key outside this list is a no-op.
+fn toggle_setting_bool(key: &str, cx: &mut App) {
+    if !cx.has_global::<SettingsStore>() {
+        return;
+    }
+    let _ = cx
+        .global_mut::<SettingsStore>()
+        .update_user_settings(|c| match key {
+            "zenModeShowHeader" => {
+                c.appearance.zen_mode_show_header =
+                    Some(!c.appearance.zen_mode_show_header.unwrap_or(true));
+            }
+            "zenModeShowStatusbar" => {
+                c.appearance.zen_mode_show_statusbar =
+                    Some(!c.appearance.zen_mode_show_statusbar.unwrap_or(true));
+            }
+            "editorWordWrap" => {
+                c.editor.editor_word_wrap = Some(!c.editor.editor_word_wrap.unwrap_or(false));
+            }
+            "editorLineNumbers" => {
+                c.editor.editor_line_numbers = Some(!c.editor.editor_line_numbers.unwrap_or(true));
+            }
+            "editorFormatOnSave" => {
+                c.editor.editor_format_on_save =
+                    Some(!c.editor.editor_format_on_save.unwrap_or(false));
+            }
+            "terminalCursorBlink" => {
+                c.terminal.terminal_cursor_blink =
+                    Some(!c.terminal.terminal_cursor_blink.unwrap_or(true));
+            }
+            "terminalShowPaneHeader" => {
+                c.terminal.terminal_show_pane_header =
+                    Some(!c.terminal.terminal_show_pane_header.unwrap_or(false));
+            }
+            "terminalShowPaneFooter" => {
+                c.terminal.terminal_show_pane_footer =
+                    Some(!c.terminal.terminal_show_pane_footer.unwrap_or(false));
+            }
+            "vimMode" => {
+                c.editor.editor_vim_mode = Some(!c.editor.editor_vim_mode.unwrap_or(false));
+            }
+            _ => {}
+        });
+}
 
 impl AppShell {
     // ── Genuine window actions (kept on the shell root) ────────────────────
@@ -141,24 +190,20 @@ impl AppShell {
 
     /// `view.zenMode`: both bars visible → hide both, otherwise show both.
     pub(crate) fn toggle_zen_mode(&mut self, cx: &mut Context<Self>) {
-        let p = self.prefs.read(cx).get();
-        let next = !(p.zen_mode_show_header || p.zen_mode_show_statusbar);
-        self.prefs.update(cx, |s, cx| {
-            s.set_value("zenModeShowHeader", serde_json::Value::Bool(next), cx);
-            s.set_value("zenModeShowStatusbar", serde_json::Value::Bool(next), cx);
-        });
+        let (show_header, show_statusbar) = ThemeSettings::try_get(cx)
+            .map(|s| (s.zen_mode_show_header(), s.zen_mode_show_statusbar()))
+            .unwrap_or((true, true));
+        let next = !(show_header || show_statusbar);
+        if cx.has_global::<SettingsStore>() {
+            let _ = cx.global_mut::<SettingsStore>().update_user_settings(|c| {
+                c.appearance.zen_mode_show_header = Some(next);
+                c.appearance.zen_mode_show_statusbar = Some(next);
+            });
+        }
     }
 
     pub(crate) fn toggle_zen_pref(&mut self, key: &str, cx: &mut Context<Self>) {
-        let cur = self
-            .prefs
-            .read(cx)
-            .value(key)
-            .and_then(|v| v.as_bool())
-            .unwrap_or(true);
-        self.prefs.update(cx, |s, cx| {
-            s.set_value(key, serde_json::Value::Bool(!cur), cx)
-        });
+        toggle_setting_bool(key, cx);
     }
 
     // ── Modal-layer mirrors (driven from `render`) ────────────────────────
@@ -219,11 +264,13 @@ impl AppShell {
             })
             .collect();
 
-        let p = self.prefs.read(cx).get();
-        let active_theme_id = if p.app_theme.is_empty() {
+        let app_theme = ThemeSettings::try_get(cx)
+            .map(|s| s.app_theme().to_string())
+            .unwrap_or_else(|| "default".to_string());
+        let active_theme_id = if app_theme.is_empty() {
             "default"
         } else {
-            p.app_theme.as_str()
+            app_theme.as_str()
         };
 
         let snippets = self
@@ -328,15 +375,10 @@ impl AppShell {
                 });
             }
             PaletteEvent::SetAppTheme(id) => {
-                labonair_settings_ui::activate_app_theme(&id, &self.prefs, &self.theme, cx);
+                labonair_settings_ui::activate_app_theme(&id, &self.theme, cx);
             }
             PaletteEvent::PreviewAppTheme(id) => {
-                labonair_settings_ui::preview_app_theme(
-                    id.as_deref(),
-                    &self.prefs,
-                    &self.theme,
-                    cx,
-                );
+                labonair_settings_ui::preview_app_theme(id.as_deref(), &self.theme, cx);
             }
             PaletteEvent::RunSnippet(id) => {
                 self.panels
@@ -360,27 +402,26 @@ impl AppShell {
                 });
             }
             PaletteEvent::SetColorMode(pref) => {
-                let key = match pref {
-                    crate::theme::ThemePreference::System => "system",
-                    crate::theme::ThemePreference::Light => "light",
-                    crate::theme::ThemePreference::Dark => "dark",
+                use labonair_settings::content::general::ThemePref;
+                let value = match pref {
+                    crate::theme::ThemePreference::System => ThemePref::System,
+                    crate::theme::ThemePreference::Light => ThemePref::Light,
+                    crate::theme::ThemePreference::Dark => ThemePref::Dark,
                 };
-                self.prefs.update(cx, |s, cx| {
-                    s.set_value("theme", serde_json::Value::String(key.into()), cx)
-                });
-                let p = self.prefs.read(cx).get().clone();
-                labonair_settings_ui::apply_prefs_to_theme(&p, &self.theme, cx);
+                if cx.has_global::<SettingsStore>() {
+                    let _ = cx
+                        .global_mut::<SettingsStore>()
+                        .update_user_settings(|c| c.general.theme = Some(value));
+                }
+                labonair_settings_ui::apply_prefs_to_theme(&self.theme, cx);
             }
             PaletteEvent::SetEditorTheme(id) => {
-                self.prefs.update(cx, |s, cx| {
-                    s.set_value(
-                        "editorTheme",
-                        serde_json::Value::String(id.slug().into()),
-                        cx,
-                    )
-                });
-                let p = self.prefs.read(cx).get().clone();
-                labonair_settings_ui::apply_prefs_to_theme(&p, &self.theme, cx);
+                if cx.has_global::<SettingsStore>() {
+                    let _ = cx.global_mut::<SettingsStore>().update_user_settings(|c| {
+                        c.editor.editor_theme = Some(id.slug().to_string())
+                    });
+                }
+                labonair_settings_ui::apply_prefs_to_theme(&self.theme, cx);
             }
         }
     }

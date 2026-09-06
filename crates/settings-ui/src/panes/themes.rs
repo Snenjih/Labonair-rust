@@ -155,11 +155,10 @@ impl SettingsView {
         let Some(family) = self.family_of(id, cx) else {
             return;
         };
-        let key = self
-            .prefs
-            .read(cx)
-            .get()
-            .theme_variant_overrides
+        let overrides = ThemeSettings::try_get(cx)
+            .map(|s| s.theme_variant_overrides())
+            .unwrap_or_default();
+        let key = overrides
             .get(&family)
             .and_then(|v| v.get(mode))
             .and_then(|v| v.as_str())
@@ -178,7 +177,9 @@ impl SettingsView {
             return;
         };
         let mode = self.resolved_mode_str(cx);
-        let mut overrides = self.prefs.read(cx).get().theme_variant_overrides.clone();
+        let mut overrides = ThemeSettings::try_get(cx)
+            .map(|s| s.theme_variant_overrides())
+            .unwrap_or_default();
         {
             let entry = overrides
                 .entry(family)

@@ -1,30 +1,20 @@
-//! Central, typed application preferences (T13-001).
+//! The legacy flat `Preferences` shape (T13-001), kept **only** as the
+//! deserialize target for [`super::migrate_v2`]'s one-time conversion of a
+//! pre-`schemaVersion: 2` `config.json` (the `"preferences"` object) into the
+//! typed `SettingsContent` area layout.
 //!
-//! Port of the relevant subset of `reference-src/src/modules/settings/store.ts`
-//! (`Preferences` type + `DEFAULT_PREFERENCES` + `loadPreferences`). The web
-//! app kept ~130 loosely-typed keys in a `LazyStore`; here the fields the Rust
-//! app actually consumes are modelled as one concretely-typed struct, grouped
-//! into the same categories, persisted as a `preferences` object inside the
-//! shared `config.json` (the same file `settings::editor` /
-//! `settings::mcp` / the bar-item registry use).
-//!
-//! Persistence rules:
-//! * load at startup, write on every change;
-//! * missing / unknown fields fall back to their `Default` value
-//!   (`#[serde(default)]` per field) — a preferences file written by an older
-//!   build never fails to load;
-//! * a corrupt settings file (not valid JSON, or not a JSON object) is moved
-//!   aside to `config.json.bak` and defaults are used, so a bad
-//!   write can never brick the app.
+//! Nothing in the running app reads or writes this type any more — every
+//! feature reads its slice of `labonair_settings::SettingsContent` through the
+//! `Settings` trait. The struct, its enums and `#[serde(default)]` per-field
+//! fallbacks are frozen here purely so an old settings file still migrates
+//! losslessly.
 
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::modules::fs::paths::config_dir;
-
-use super::CONFIG_FILE;
+#[cfg(test)]
 const KEY: &str = "preferences";
 
 /// The app theme the user picked. `System` follows the OS appearance.
@@ -478,68 +468,49 @@ impl Preferences {
     }
 }
 
-/// Load the persisted preferences (defaults if none saved / on corruption).
-pub fn preferences_load() -> Preferences {
-    load_from(&config_dir())
-}
-
-/// Persist the preferences, merging into the shared settings file.
-pub fn preferences_save(prefs: &Preferences) -> Result<(), String> {
-    save_to(&config_dir(), prefs)
-}
-
-/// Load preferences from an explicit config directory (testing / non-default
-/// profiles). `dir` is the directory that contains `config.json`.
-pub fn preferences_load_from(dir: &std::path::Path) -> Preferences {
-    load_from(dir)
-}
-
-/// Persist preferences into an explicit config directory.
-pub fn preferences_save_to(dir: &std::path::Path, prefs: &Preferences) -> Result<(), String> {
-    save_to(dir, prefs)
-}
-
-fn load_from(dir: &std::path::Path) -> Preferences {
-    let path = dir.join(CONFIG_FILE);
-    let Ok(raw) = std::fs::read_to_string(&path) else {
-        return Preferences::default();
-    };
-    match serde_json::from_str::<serde_json::Value>(&raw) {
-        Ok(serde_json::Value::Object(map)) => map
-            .get(KEY)
-            .cloned()
-            .and_then(|v| serde_json::from_value(v).ok())
-            .unwrap_or_default(),
-        _ => {
-            // File exists but is not a JSON object → corrupt. Preserve it for
-            // forensics and fall back to defaults rather than crash / clobber.
-            let _ = std::fs::rename(&path, path.with_extension("json.bak"));
-            Preferences::default()
-        }
-    }
-}
-
-fn save_to(dir: &std::path::Path, prefs: &Preferences) -> Result<(), String> {
-    let path = dir.join(CONFIG_FILE);
-    let mut map = std::fs::read_to_string(&path)
-        .ok()
-        .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
-        .and_then(|v| v.as_object().cloned())
-        .unwrap_or_default();
-    map.insert(
-        KEY.to_string(),
-        serde_json::to_value(prefs).map_err(|e| e.to_string())?,
-    );
-    std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
-    let tmp = path.with_extension("json.tmp");
-    let json = serde_json::to_string_pretty(&map).map_err(|e| e.to_string())?;
-    std::fs::write(&tmp, json).map_err(|e| e.to_string())?;
-    std::fs::rename(&tmp, &path).map_err(|e| e.to_string())
-}
-
 #[cfg(test)]
 mod tests {
+    use super::super::CONFIG_FILE;
     use super::*;
+
+    /// Test-only re-implementation of the retired `preferences_load` — reads
+    /// the `"preferences"` object out of a `config.json` and deserializes it,
+    /// so the historical deserialization coverage below still runs.
+    fn load_from(dir: &std::path::Path) -> Preferences {
+        let path = dir.join(CONFIG_FILE);
+        let Ok(raw) = std::fs::read_to_string(&path) else {
+            return Preferences::default();
+        };
+        match serde_json::from_str::<serde_json::Value>(&raw) {
+            Ok(serde_json::Value::Object(map)) => map
+                .get(KEY)
+                .cloned()
+                .and_then(|v| serde_json::from_value(v).ok())
+                .unwrap_or_default(),
+            _ => {
+                let _ = std::fs::rename(&path, path.with_extension("json.bak"));
+                Preferences::default()
+            }
+        }
+    }
+
+    fn save_to(dir: &std::path::Path, prefs: &Preferences) -> Result<(), String> {
+        let path = dir.join(CONFIG_FILE);
+        let mut map = std::fs::read_to_string(&path)
+            .ok()
+            .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+            .and_then(|v| v.as_object().cloned())
+            .unwrap_or_default();
+        map.insert(
+            KEY.to_string(),
+            serde_json::to_value(prefs).map_err(|e| e.to_string())?,
+        );
+        std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+        let tmp = path.with_extension("json.tmp");
+        let json = serde_json::to_string_pretty(&map).map_err(|e| e.to_string())?;
+        std::fs::write(&tmp, json).map_err(|e| e.to_string())?;
+        std::fs::rename(&tmp, &path).map_err(|e| e.to_string())
+    }
 
     fn tmp() -> std::path::PathBuf {
         let d = std::env::temp_dir().join(format!("labonair-prefs-{}", uuid::Uuid::new_v4()));

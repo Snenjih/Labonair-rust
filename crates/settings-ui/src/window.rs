@@ -8,7 +8,7 @@
 //! no parent-window handle — so the reference `always_on_top(true)`,
 //! `max_inner_size(1400, 900)` and `parent(main)` lifecycle tie have no
 //! equivalent. There is also no per-window hide, so `request_close` destroys the
-//! window; all persistent state lives in the shared [`PreferencesStore`] / theme
+//! window; all persistent state lives in the shared `SettingsStore` / theme
 //! / background entities, so the next open rebuilds it losslessly.
 
 use gpui::{
@@ -21,7 +21,6 @@ use tokio::runtime::Handle as TokioHandle;
 use labonair_backend::App as Backend;
 use labonair_hosts_ui::HostManagerView;
 
-use crate::store::PreferencesStore;
 use crate::view::SettingsView;
 
 /// Callback the shell installs so a `keymap.json` edit in the Shortcuts pane
@@ -52,7 +51,6 @@ pub(crate) fn apply_keybinds(cx: &mut App) {
 /// startup (the window is opened lazily, possibly long after `AppShell::new`).
 #[derive(Clone)]
 pub(crate) struct SettingsDeps {
-    prefs: Entity<PreferencesStore>,
     backend: Backend,
     tokio: TokioHandle,
     /// The app's single [`labonair_workspace::Workspace`] (T18-007) — the
@@ -89,10 +87,9 @@ pub(crate) struct SettingsTarget(pub(crate) Option<&'static str>);
 impl Global for SettingsTarget {}
 
 /// Publish the shared handles the settings window builds from. Call once from
-/// `AppShell::new` after the [`PreferencesStore`] exists.
+/// `AppShell::new` after `labonair_settings::init` has run.
 #[allow(clippy::too_many_arguments)]
 pub fn set_settings_deps(
-    prefs: Entity<PreferencesStore>,
     backend: Backend,
     tokio: TokioHandle,
     workspace: Entity<labonair_workspace::Workspace>,
@@ -100,7 +97,6 @@ pub fn set_settings_deps(
     cx: &mut App,
 ) {
     cx.set_global(SettingsDeps {
-        prefs,
         backend,
         tokio,
         workspace,
@@ -124,7 +120,7 @@ fn settings_bounds(cx: &mut App) -> Bounds<gpui::Pixels> {
 /// deep-linking to `tab`. Replaces the old in-`AppShell` modal overlay
 /// (T16-009). The window destroys on close and is cheaply rebuilt on the next
 /// open (GPUI 0.2.2 has no per-window hide); shared state lives in the
-/// [`PreferencesStore`] / theme / background entities, so nothing is lost.
+/// `SettingsStore` / theme / background entities, so nothing is lost.
 pub fn open_settings_window(slug: Option<&'static str>, cx: &mut App) {
     cx.set_global(SettingsTarget(slug));
 
@@ -165,7 +161,6 @@ pub fn open_settings_window(slug: Option<&'static str>, cx: &mut App) {
             let background = labonair_workspace::background::background_store(cx);
             let view = cx.new(|cx| {
                 let mut v = SettingsView::new(
-                    deps.prefs.clone(),
                     theme,
                     background,
                     deps.backend.clone(),

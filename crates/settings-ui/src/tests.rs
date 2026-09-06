@@ -1,24 +1,38 @@
 //! Field / category / keybind / theme-file unit tests, split out of the old
-//! `crates/ui/src/settings.rs` monolith in T16-007 (mechanical move — no logic
-//! change).
+//! `crates/ui/src/settings.rs` monolith in T16-007. Ported off the retired
+//! `PreferencesStore` onto the layered `labonair_settings::SettingsStore`.
 
 #[cfg(test)]
 mod cases {
-    use gpui::{AppContext, TestAppContext};
+    use gpui::TestAppContext;
     use serde_json::Value;
 
-    use labonair_backend::modules::settings::preferences::Preferences;
     use labonair_command_palette::{KeybindMap, ShortcutId};
+    use labonair_settings::{
+        EditorSettings, SettingsContent, SettingsLayer, SettingsStore, TerminalSettings,
+    };
     use labonair_settings_content::areas::AREAS;
 
     use crate::apply::*;
     use crate::schema::{all_fields, FieldControl};
-    use crate::store::PreferencesStore;
+
+    /// A `SettingsStore` global rooted at a throwaway temp path, with the
+    /// feature slices this crate reads registered.
+    fn install_store(cx: &mut gpui::App, content: SettingsContent) {
+        let path = std::env::temp_dir().join(format!(
+            "labonair-settings-ui-test-{}.json",
+            uuid::Uuid::new_v4()
+        ));
+        let mut store = SettingsStore::new(path);
+        store.register_setting::<TerminalSettings>();
+        store.register_setting::<EditorSettings>();
+        store.register_setting::<labonair_settings::ThemeSettings>();
+        store.set_layer(SettingsLayer::User, content);
+        cx.set_global(store);
+    }
 
     /// T19-004: every generated field's `json_path` area segment must be one
-    /// of `AREAS`' `target_module`s — `schema.rs` has its own, more thorough
-    /// version of this check; this one additionally proves `AREAS` and the
-    /// field registry agree from the crate's public surface.
+    /// of `AREAS`' `target_module`s.
     #[test]
     fn every_field_area_matches_an_areas_target_module() {
         let modules: std::collections::HashSet<&str> =
@@ -46,50 +60,71 @@ mod cases {
         }
     }
 
-    #[test]
-    fn font_overrides_snapshot_maps_prefs() {
-        let p = Preferences {
-            terminal_font_size: 18,
-            editor_font_family: "Iosevka".to_string(),
-            ..Default::default()
-        };
-        let o = font_overrides_from(&p);
-        assert_eq!(o.terminal_size, 18.0);
-        assert_eq!(o.editor_family, "Iosevka");
+    #[gpui::test]
+    fn font_overrides_snapshot_reads_settings(cx: &mut TestAppContext) {
+        let mut content = SettingsContent::default();
+        content.terminal.terminal_font_size = Some(18);
+        content.editor.editor_font_family = Some("Iosevka".to_string());
+        cx.update(|cx| {
+            install_store(cx, content);
+            let o = font_overrides_from_settings(cx);
+            assert_eq!(o.terminal_size, 18.0);
+            assert_eq!(o.editor_family, "Iosevka");
+        });
     }
 
-    #[gpui::test]
-    fn set_value_persists_and_notifies(cx: &mut TestAppContext) {
-        let dir = std::env::temp_dir().join(format!("labonair-set-{}", uuid::Uuid::new_v4()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let d2 = dir.clone();
-        let store = cx.new(|_| PreferencesStore::with_dir(d2));
-        let count = std::rc::Rc::new(std::cell::RefCell::new(0));
-        let c2 = count.clone();
-        cx.update(|cx| {
-            cx.observe(&store, move |_, _| *c2.borrow_mut() += 1)
-                .detach();
-        });
-        store.update(cx, |s, cx| {
-            s.set_value("terminalFontSize", Value::from(19), cx);
-        });
-        cx.run_until_parked();
-        assert_eq!(store.read_with(cx, |s, _| s.get().terminal_font_size), 19);
-        assert_eq!(*count.borrow(), 1);
-        // Persisted to disk — a fresh store reads it back.
+    #[test]
+    fn settings_store_write_persists_and_reloads() {
+        let path = std::env::temp_dir().join(format!(
+            "labonair-settings-ui-test-{}.json",
+            uuid::Uuid::new_v4()
+        ));
+        let mut store = SettingsStore::new(path.clone());
+        store.register_setting::<TerminalSettings>();
+        store
+            .update_user_settings(|c| c.terminal.terminal_font_size = Some(19))
+            .unwrap();
+        assert_eq!(store.merged().terminal.terminal_font_size, Some(19));
+        // Idempotent write is a no-op.
+        store
+            .update_user_settings(|c| c.terminal.terminal_font_size = Some(19))
+            .unwrap();
+
+        // A fresh store rooted at the same path reads the value back off disk.
+        let mut fresh = SettingsStore::new(path.clone());
+        fresh.reload_user_layer();
+        assert_eq!(fresh.merged().terminal.terminal_font_size, Some(19));
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn app_font_family_write_persists() {
+        let path = std::env::temp_dir().join(format!(
+            "labonair-settings-ui-test-{}.json",
+            uuid::Uuid::new_v4()
+        ));
+        let mut store = SettingsStore::new(path.clone());
+        store
+            .update_user_settings(|c| c.appearance.app_font_family = Some("Inter".into()))
+            .unwrap();
+        let mut fresh = SettingsStore::new(path.clone());
+        fresh.reload_user_layer();
         assert_eq!(
-            PreferencesStore::with_dir(dir.clone())
-                .get()
-                .terminal_font_size,
-            19
+            fresh.merged().appearance.app_font_family.as_deref(),
+            Some("Inter")
         );
-        // Idempotent set does not notify again.
-        store.update(cx, |s, cx| {
-            s.set_value("terminalFontSize", Value::from(19), cx);
-        });
-        cx.run_until_parked();
-        assert_eq!(*count.borrow(), 1);
-        std::fs::remove_dir_all(&dir).ok();
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn wrong_typed_field_write_is_rejected() {
+        let mut content = SettingsContent::defaults();
+        let field = all_fields()
+            .into_iter()
+            .find(|f| f.json_path == "terminal.terminalFontSize")
+            .unwrap();
+        assert!(!(field.set)(&mut content, Value::String("huge".into())));
+        assert_eq!(content.terminal.terminal_font_size, Some(15));
     }
 
     const SAMPLE_THEME: &str = r##"{
@@ -119,11 +154,8 @@ mod cases {
         std::fs::write(dir.join("good.json"), SAMPLE_THEME).unwrap();
         std::fs::write(dir.join("broken.json"), "{ not json").unwrap();
         std::fs::write(dir.join("notes.txt"), "ignore me").unwrap();
-        // A file literally named default.json must never shadow the built-in.
         std::fs::write(dir.join("default.json"), SAMPLE_THEME).unwrap();
 
-        // T20-005: the built-in "default" first, then one entry per user
-        // registry variant, id = "<file stem>/<variant name>".
         let list = scan_themes(&dir);
         assert_eq!(list[0].id, "default");
         assert!(list[0].builtin);
@@ -147,24 +179,6 @@ mod cases {
         assert!(read_theme_file_in(&dir, "mine").is_err());
         assert_eq!(scan_themes(&dir).len(), 1);
 
-        std::fs::remove_dir_all(&dir).ok();
-    }
-
-    #[gpui::test]
-    fn app_font_family_preference_persists(cx: &mut TestAppContext) {
-        let dir = std::env::temp_dir().join(format!("labonair-set-{}", uuid::Uuid::new_v4()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let store = cx.new(|_| PreferencesStore::with_dir(dir.clone()));
-        store.update(cx, |s, cx| {
-            s.set_value("appFontFamily", Value::String("Inter".into()), cx);
-        });
-        cx.run_until_parked();
-        assert_eq!(
-            PreferencesStore::with_dir(dir.clone())
-                .get()
-                .app_font_family,
-            "Inter"
-        );
         std::fs::remove_dir_all(&dir).ok();
     }
 
@@ -195,20 +209,5 @@ mod cases {
     #[test]
     fn shortcuts_category_is_registered() {
         assert!(AREAS.iter().any(|a| a.key == "shortcuts"));
-    }
-
-    #[gpui::test]
-    fn bad_type_is_rejected(cx: &mut TestAppContext) {
-        let dir = std::env::temp_dir().join(format!("labonair-set-{}", uuid::Uuid::new_v4()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let store = cx.new(|_| PreferencesStore::with_dir(dir.clone()));
-        store.update(cx, |s, cx| {
-            s.set_value("terminalFontSize", Value::String("huge".into()), cx);
-        });
-        assert_eq!(
-            store.read_with(cx, |s, _| s.get().terminal_font_size),
-            Preferences::default().terminal_font_size
-        );
-        std::fs::remove_dir_all(&dir).ok();
     }
 }

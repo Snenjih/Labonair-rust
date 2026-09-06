@@ -29,7 +29,8 @@ use labonair_panel_explorer::ExplorerView;
 use labonair_panel_git_graph::GitGraphView;
 use labonair_panel_scm::{GitPanelView, ScmEvent};
 use labonair_panel_snippets::SnippetsView;
-use labonair_settings_ui::{set_settings_deps, PreferencesStore};
+use labonair_settings::{GeneralSettings, Settings as _, WorkspaceSettings};
+use labonair_settings_ui::set_settings_deps;
 use labonair_workspace::agent_access::AgentAccessStore;
 use labonair_workspace::dock::DockData;
 use labonair_workspace::live_bridge::{LiveSnapshot, WorkspaceLiveBridge};
@@ -40,7 +41,7 @@ use labonair_workspace::toast_layer::ToastLayer;
 use crate::app_shell::{AppShell, ShellPanels};
 use crate::background::BackgroundStore;
 use crate::status_items::register_builtin_status_items;
-use crate::theme::{ThemePreference, ThemeStore};
+use crate::theme::ThemeStore;
 use crate::titlebar::Titlebar;
 use crate::updater::UpdaterView;
 use crate::window_state;
@@ -110,10 +111,8 @@ fn register_builtin_panels(
 }
 
 /// Build the persisted [`DockData`] array from the legacy `sidebar_*`
-/// preferences (T17-002 first-run migration).
-fn migrate_dock_layout(
-    p: &labonair_backend::modules::settings::preferences::Preferences,
-) -> String {
+/// settings (T17-002 first-run migration).
+fn migrate_dock_layout(p: &labonair_settings::WorkspaceSettings) -> String {
     // "ai" is parked (frontend AI removed pending redesign) — treat any saved
     // reference to it like the other retired panel names.
     let migrate_name = |raw: &str, fallback: &str| match raw {
@@ -123,10 +122,10 @@ fn migrate_dock_layout(
     let docks = [
         DockData {
             position: "left".to_string(),
-            open: p.sidebar_open,
-            size: p.sidebar_width as f32,
+            open: p.sidebar_open(),
+            size: p.sidebar_width() as f32,
             zoomed: false,
-            active_panel: Some(migrate_name(&p.sidebar_active_panel, "explorer")),
+            active_panel: Some(migrate_name(p.sidebar_active_panel(), "explorer")),
             panel_order: Vec::new(),
         },
         DockData {
@@ -134,7 +133,7 @@ fn migrate_dock_layout(
             // empty. The user can move any panel here from the left dock.
             position: "right".to_string(),
             open: false,
-            size: p.sidebar_right_width as f32,
+            size: p.sidebar_right_width() as f32,
             zoomed: false,
             active_panel: None,
             panel_order: Vec::new(),
@@ -212,13 +211,11 @@ pub(crate) fn bootstrap(
     let registry = Arc::new(TerminalRegistry::new());
     // Session restore (T14-001): load the previous snapshot up-front so the
     // workspace can replay it instead of opening the default tabs.
-    let session_snapshot = {
-        use labonair_backend::modules::settings::preferences::preferences_load;
-        preferences_load()
-            .session_restore
-            .then(crate::session::load_snapshot)
-            .flatten()
-    };
+    let session_snapshot = GeneralSettings::try_get(cx)
+        .map(|s| s.session_restore())
+        .unwrap_or(false)
+        .then(crate::session::load_snapshot)
+        .flatten();
     let workspace = cx.new(|cx| {
         Workspace::new(
             registry,
@@ -259,35 +256,18 @@ pub(crate) fn bootstrap(
     // this single entity so the app-shell keeps feeding it the active CWD.
     workspace.update(cx, |w, _cx| w.set_git_graph(git_graph.clone()));
 
-    // Central preferences store (T13-001); the settings UI lives in its own OS
-    // window. Apply the persisted theme preference to the ThemeStore once at
-    // startup; further changes flow through `SettingsView::set_pref`.
-    let prefs = cx.new(|_| PreferencesStore::new());
-    // Shell re-render on preference change — `render` reads
-    // `zen_mode_show_statusbar`; the titlebar observes `prefs` on its own.
-    cx.observe(&prefs, |_, _, cx| cx.notify()).detach();
-    {
-        use labonair_backend::modules::settings::preferences::ThemePref;
-        let pref = match prefs.read(cx).get().theme {
-            ThemePref::System => ThemePreference::System,
-            ThemePref::Light => ThemePreference::Light,
-            ThemePref::Dark => ThemePreference::Dark,
-        };
-        theme.update(cx, |t, cx| t.set_preference(pref, cx));
-    }
-    {
-        let p = prefs.read(cx).get().clone();
-        prefs.update(cx, |s, cx| s.publish_global(cx));
-        labonair_settings_ui::apply_prefs_to_theme(&p, &theme, cx);
-    }
+    // Apply the persisted theme preference + font/registry state to the
+    // ThemeStore once at startup; further changes flow through the layered
+    // `SettingsStore` (`SettingsView`'s generated field grid writes straight
+    // to it) and the `SettingsStore` observer below.
+    labonair_settings_ui::apply_prefs_to_theme(&theme, cx);
     // T20-005: live-reload the theme registry when the user themes folder
     // changes on disk — a dropped/edited/removed `*.json` re-resolves the
     // active theme with no restart.
     {
-        let prefs_w = prefs.clone();
         let theme_w = theme.clone();
         labonair_settings::watch_dir(cx, labonair_settings_ui::user_themes_dir(), move |cx| {
-            labonair_settings_ui::reload_theme_registry(&prefs_w, &theme_w, cx);
+            labonair_settings_ui::reload_theme_registry(&theme_w, cx);
         });
     }
     // T20-007: re-derive the `ThemeMetrics` (font scales / UI density /
@@ -321,7 +301,6 @@ pub(crate) fn bootstrap(
     crate::keymap_loader::reload_and_apply(cx);
     crate::keymap_loader::watch(cx);
     set_settings_deps(
-        prefs.clone(),
         backend.clone(),
         tokio.clone(),
         workspace.clone(),
@@ -341,7 +320,10 @@ pub(crate) fn bootstrap(
     // Auto-updater (T15-005). Kicks a quiet background check at startup when the
     // `checkForUpdates` preference is on (6 h backoff inside the store).
     let updater = cx.new(|cx| UpdaterView::new(tokio.clone(), theme.clone(), cx));
-    if prefs.read(cx).get().check_for_updates {
+    if GeneralSettings::try_get(cx)
+        .map(|s| s.check_for_updates())
+        .unwrap_or(true)
+    {
         updater.update(cx, |u, cx| u.run_check(false, cx));
     }
 
@@ -360,8 +342,7 @@ pub(crate) fn bootstrap(
     // the reusable seam for the AI-system rebuild.
     let live_bridge = WorkspaceLiveBridge::new();
 
-    let command_palette =
-        cx.new(|cx| CommandPalette::new(theme.clone(), workspace.clone(), prefs.clone(), cx));
+    let command_palette = cx.new(|cx| CommandPalette::new(theme.clone(), workspace.clone(), cx));
     cx.subscribe_in(
         &command_palette,
         window,
@@ -448,12 +429,14 @@ pub(crate) fn bootstrap(
     // covers force-quit within the last second).
     window.on_window_should_close(cx, {
         let workspace = workspace.clone();
-        let prefs = prefs.clone();
         move |window, cx| {
             if let WindowBounds::Windowed(bounds) = window.window_bounds() {
                 window_state::save(bounds);
             }
-            if prefs.read(cx).get().session_restore {
+            let session_restore = GeneralSettings::try_get(cx)
+                .map(|s| s.session_restore())
+                .unwrap_or(false);
+            if session_restore {
                 let snapshot = workspace.read(cx).session_snapshot(cx);
                 crate::session::save_snapshot(&snapshot);
             } else {
@@ -468,25 +451,24 @@ pub(crate) fn bootstrap(
     register_builtin_panels(&workspace, &explorer, &git_panel, &git_graph, &snippets, cx);
 
     // Build the three docks from the registry + the persisted layout (falling
-    // back to a migration of the legacy `sidebar_*` prefs).
-    let dock_layout = {
-        let p = prefs.read(cx).get();
-        if p.dock_layout.trim().is_empty() {
-            migrate_dock_layout(p)
-        } else {
-            p.dock_layout.clone()
-        }
+    // back to a migration of the legacy `sidebar_*` settings).
+    let workspace_settings = WorkspaceSettings::try_get(cx).cloned();
+    let dock_layout = match &workspace_settings {
+        Some(s) if !s.dock_layout().trim().is_empty() => s.dock_layout().to_string(),
+        Some(s) => migrate_dock_layout(s),
+        None => String::new(),
     };
     workspace.update(cx, |w, cx| w.init_docks(&dock_layout, window, cx));
 
     // Dock-layout persistence lives on the `Workspace` now (T17-003); the shell
-    // only supplies the write path into its `PreferencesStore`.
+    // only supplies the write path into the layered `SettingsStore`.
     workspace.update(cx, |w, _| {
-        let prefs = prefs.clone();
         w.set_dock_persist_hook(move |json, cx| {
-            prefs.update(cx, |s, cx| {
-                s.set_value("dockLayout", serde_json::Value::String(json), cx);
-            });
+            if cx.has_global::<labonair_settings::SettingsStore>() {
+                let _ = cx
+                    .global_mut::<labonair_settings::SettingsStore>()
+                    .update_user_settings(|c| c.workspace.dock_layout = Some(json));
+            }
         });
     });
 
@@ -504,7 +486,7 @@ pub(crate) fn bootstrap(
     let modal_layer = cx.new(|_| ModalLayer::new());
     let toast_layer = cx.new(|cx| ToastLayer::new(notifications.clone(), theme.clone(), cx));
 
-    let titlebar = cx.new(|cx| Titlebar::new(theme.clone(), prefs.clone(), workspace.clone(), cx));
+    let titlebar = cx.new(|cx| Titlebar::new(theme.clone(), workspace.clone(), cx));
 
     // The command table — the single definition site for every menu / keybind
     // / palette command (T17-007).
@@ -523,7 +505,6 @@ pub(crate) fn bootstrap(
     AppShell::from_parts(
         theme,
         background,
-        prefs,
         workspace,
         titlebar,
         panels,

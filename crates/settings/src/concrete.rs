@@ -4,24 +4,62 @@
 //! as the area's `defaults()` populates every leaf, which
 //! `labonair-settings-content`'s own tests enforce).
 //!
-//! Real consumers (this task, per the acceptance criteria): `ThemeSettings`
-//! (`crates/workspace/src/workspace.rs`, `reduce_motion`) and
-//! `TerminalSettings` (`crates/workspace/src/views/terminal.rs`, terminal
-//! opacity / copy-on-select / right-click-pastes). The other four
-//! (`EditorSettings`, `WorkspaceSettings`,
-//! `PersonalizationSettings`) are registered and available via `XSettings::
-//! get(cx)` now; wiring every remaining `GlobalPreferences` call site over to
-//! them is deliberately out of scope here (see the task's `## Notizen`) and
-//! follows incrementally (T20-007 and friends).
+//! These slices are the *single* settings surface every feature reads from —
+//! the legacy `Preferences` / `PreferencesStore` / `GlobalPreferences` bridge
+//! was retired once every call site moved onto `XSettings::get(cx)`.
 
 use labonair_settings_content::{
-    appearance::AppearanceContent, editor::EditorContent, file_manager::FileManagerContent,
-    personalization::PersonalizationContent, terminal::TerminalContent,
-    workspace::WorkspaceContent, MergeFrom, SettingsContent,
+    appearance::AppearanceContent,
+    editor::EditorContent,
+    file_manager::FileManagerContent,
+    general::{GeneralContent, StartupTab, ThemePref},
+    personalization::PersonalizationContent,
+    terminal::{CursorStyle, TerminalContent},
+    workspace::{PaletteSearchMode, WorkspaceContent},
+    MergeFrom, SettingsContent,
 };
 
 use crate::settings_trait::Settings;
 use crate::RegisterSetting;
+
+/// `general` area — startup / lifecycle behaviour (app color-mode preference,
+/// update checks, session restore, the startup tab).
+#[derive(Clone, Debug, PartialEq, RegisterSetting)]
+pub struct GeneralSettings(GeneralContent);
+
+impl Settings for GeneralSettings {
+    fn from_settings(content: &SettingsContent) -> Self {
+        let mut merged = GeneralContent::defaults();
+        merged.merge_from(&content.general);
+        Self(merged)
+    }
+}
+
+impl GeneralSettings {
+    pub fn content(&self) -> &GeneralContent {
+        &self.0
+    }
+
+    /// App color-mode preference (`System` follows the OS appearance).
+    pub fn theme_pref(&self) -> ThemePref {
+        self.0.theme.unwrap_or(ThemePref::System)
+    }
+
+    /// Check for new versions automatically on launch.
+    pub fn check_for_updates(&self) -> bool {
+        self.0.check_for_updates.unwrap_or(true)
+    }
+
+    /// Reopen the previous tabs / split layout on the next launch.
+    pub fn session_restore(&self) -> bool {
+        self.0.session_restore.unwrap_or(false)
+    }
+
+    /// What opens on launch when there is no session snapshot to restore.
+    pub fn default_startup_tab(&self) -> StartupTab {
+        self.0.default_startup_tab.unwrap_or_default()
+    }
+}
 
 /// `appearance` area — active theme id, variant overrides, reduce-motion,
 /// typography, background, tab-chrome layout. Named `ThemeSettings` (not
@@ -65,6 +103,31 @@ impl ThemeSettings {
 
     pub fn reduce_motion(&self) -> bool {
         self.0.reduce_motion.unwrap_or(false)
+    }
+
+    /// Per-theme light/dark variant selection (`themeVariantOverrides`).
+    pub fn theme_variant_overrides(&self) -> std::collections::BTreeMap<String, serde_json::Value> {
+        self.0.theme_variant_overrides.clone().unwrap_or_default()
+    }
+
+    /// Where the tab strip is drawn (`"titlebar"` | `"sidebar"` | …).
+    pub fn tabs_location(&self) -> &str {
+        self.0.tabs_location.as_deref().unwrap_or("titlebar")
+    }
+
+    /// Zen mode keeps the app header visible.
+    pub fn zen_mode_show_header(&self) -> bool {
+        self.0.zen_mode_show_header.unwrap_or(true)
+    }
+
+    /// Zen mode keeps the status bar visible.
+    pub fn zen_mode_show_statusbar(&self) -> bool {
+        self.0.zen_mode_show_statusbar.unwrap_or(true)
+    }
+
+    /// UI-chrome font size, px (raw `u32` — [`Self::ui_font_size`] gives the `f32`).
+    pub fn app_font_size(&self) -> u32 {
+        self.0.app_font_size.unwrap_or(16)
     }
 
     // ── T20-007 `theme_settings` layer ───────────────────────────────────
@@ -139,6 +202,65 @@ impl TerminalSettings {
     pub fn right_click_pastes(&self) -> bool {
         self.0.terminal_right_click_pastes.unwrap_or(false)
     }
+
+    /// Terminal text size, px.
+    pub fn font_size(&self) -> u32 {
+        self.0.terminal_font_size.unwrap_or(15)
+    }
+
+    /// Total scrollback the emulator keeps in memory, in rows.
+    pub fn scrollback(&self) -> u32 {
+        self.0.terminal_scrollback.unwrap_or(5_000)
+    }
+
+    /// Login shell override (empty = the OS default shell).
+    pub fn shell(&self) -> &str {
+        self.0.terminal_shell.as_deref().unwrap_or("")
+    }
+
+    /// Terminal text font family (empty = the theme's own mono family).
+    pub fn font_family(&self) -> &str {
+        self.0.terminal_font_family.as_deref().unwrap_or("")
+    }
+
+    /// Cursor shape.
+    pub fn cursor_style(&self) -> CursorStyle {
+        self.0.terminal_cursor_style.unwrap_or(CursorStyle::Bar)
+    }
+
+    pub fn cursor_blink(&self) -> bool {
+        self.0.terminal_cursor_blink.unwrap_or(true)
+    }
+
+    pub fn show_pane_header(&self) -> bool {
+        self.0.terminal_show_pane_header.unwrap_or(false)
+    }
+
+    pub fn show_pane_footer(&self) -> bool {
+        self.0.terminal_show_pane_footer.unwrap_or(false)
+    }
+
+    /// Ring the terminal bell on the BEL control character.
+    pub fn bell(&self) -> bool {
+        self.0.terminal_bell.unwrap_or(false)
+    }
+
+    /// Rows of scrollback persisted per pane on quit (`None` = persist everything).
+    pub fn session_scrollback_lines(&self) -> Option<usize> {
+        let n = self.0.session_scrollback_lines.unwrap_or(1_000);
+        (n > 0).then_some(n as usize)
+    }
+
+    /// Per-file ceiling for a persisted scrollback, in bytes.
+    pub fn scrollback_max_bytes(&self) -> usize {
+        (self.0.scrollback_max_size_mb.unwrap_or(10).max(1) as usize) * 1024 * 1024
+    }
+
+    /// Seconds a persisted scrollback file is kept before cleanup (`None` = forever).
+    pub fn scrollback_retention_secs(&self) -> Option<u64> {
+        let d = self.0.scrollback_retention_days.unwrap_or(0);
+        (d > 0).then(|| d as u64 * 86_400)
+    }
 }
 
 /// `editor` area.
@@ -157,6 +279,62 @@ impl EditorSettings {
     pub fn content(&self) -> &EditorContent {
         &self.0
     }
+
+    pub fn word_wrap(&self) -> bool {
+        self.0.editor_word_wrap.unwrap_or(false)
+    }
+
+    pub fn line_numbers(&self) -> bool {
+        self.0.editor_line_numbers.unwrap_or(true)
+    }
+
+    pub fn relative_line_numbers(&self) -> bool {
+        self.0.editor_relative_line_numbers.unwrap_or(false)
+    }
+
+    pub fn indent_with_tabs(&self) -> bool {
+        self.0.editor_indent_with_tabs.unwrap_or(false)
+    }
+
+    pub fn tab_size(&self) -> u32 {
+        self.0.editor_tab_size.unwrap_or(2)
+    }
+
+    pub fn vim_mode(&self) -> bool {
+        self.0.editor_vim_mode.unwrap_or(false)
+    }
+
+    pub fn format_on_save(&self) -> bool {
+        self.0.editor_format_on_save.unwrap_or(false)
+    }
+
+    pub fn vim_hlsearch(&self) -> bool {
+        self.0.vim_hlsearch.unwrap_or(true)
+    }
+
+    pub fn vim_incsearch(&self) -> bool {
+        self.0.vim_incsearch.unwrap_or(true)
+    }
+
+    pub fn vim_smartcase(&self) -> bool {
+        self.0.vim_smartcase.unwrap_or(true)
+    }
+
+    /// Syntax colour-scheme slug.
+    pub fn editor_theme(&self) -> &str {
+        self.0.editor_theme.as_deref().unwrap_or("atomone")
+    }
+
+    pub fn font_family(&self) -> &str {
+        self.0
+            .editor_font_family
+            .as_deref()
+            .unwrap_or("\"Lilex\", SFMono-Regular, Menlo, monospace")
+    }
+
+    pub fn font_size(&self) -> u32 {
+        self.0.editor_font_size.unwrap_or(15)
+    }
 }
 
 /// `workspace` area (startup tab, session restore, command palette, …).
@@ -174,6 +352,64 @@ impl Settings for WorkspaceSettings {
 impl WorkspaceSettings {
     pub fn content(&self) -> &WorkspaceContent {
         &self.0
+    }
+
+    // ── Dock / sidebar ──────────────────────────────────────────────────
+    /// `"left"` | `"right"` — which edge hosts the primary sidebar.
+    pub fn sidebar_position(&self) -> &str {
+        self.0.sidebar_position.as_deref().unwrap_or("left")
+    }
+
+    /// Persisted dock layout JSON (empty = not yet persisted).
+    pub fn dock_layout(&self) -> &str {
+        self.0.dock_layout.as_deref().unwrap_or("")
+    }
+
+    /// Legacy pre-dock-persistence fallback (`bootstrap::migrate_dock_layout`)
+    /// reads these four once, only when `dock_layout` is still empty.
+    pub fn sidebar_open(&self) -> bool {
+        self.0.sidebar_open.unwrap_or(true)
+    }
+
+    pub fn sidebar_active_panel(&self) -> &str {
+        self.0.sidebar_active_panel.as_deref().unwrap_or("explorer")
+    }
+
+    pub fn sidebar_width(&self) -> u32 {
+        self.0.sidebar_width.unwrap_or(225)
+    }
+
+    pub fn sidebar_right_width(&self) -> u32 {
+        self.0.sidebar_right_width.unwrap_or(225)
+    }
+
+    // ── Command palette ─────────────────────────────────────────────────
+    pub fn command_palette_search_mode(&self) -> PaletteSearchMode {
+        self.0
+            .command_palette_search_mode
+            .unwrap_or(PaletteSearchMode::Contains)
+    }
+
+    pub fn command_palette_history_size(&self) -> u32 {
+        self.0.command_palette_history_size.unwrap_or(5)
+    }
+
+    pub fn command_palette_opacity(&self) -> u32 {
+        self.0.command_palette_opacity.unwrap_or(95)
+    }
+
+    pub fn command_palette_position(&self) -> &str {
+        self.0.command_palette_position.as_deref().unwrap_or("top")
+    }
+
+    pub fn command_palette_show_recent(&self) -> bool {
+        self.0.command_palette_show_recent.unwrap_or(true)
+    }
+
+    pub fn command_palette_close_on_overlay_click(&self) -> bool {
+        self.0
+            .command_palette_close_on_overlay_click
+            .unwrap_or(true)
     }
 }
 

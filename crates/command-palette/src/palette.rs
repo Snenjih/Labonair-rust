@@ -9,9 +9,10 @@
 //!
 //! Execution: the palette does not own the app state — on `Enter` it emits
 //! [`PaletteEvent`], which the host shell turns into either a GPUI action
-//! dispatch or a direct workspace call. The host wires the palette to its
-//! concrete stores through the [`PalettePrefs`] / [`PaletteWorkspace`] /
-//! [`UiTheme`] contracts.
+//! dispatch or a direct workspace call. Pref/theme-derived scalars are read
+//! straight from the layered `labonair-settings` slices (see the "Settings
+//! reads" section below); [`PaletteWorkspace`] / [`UiTheme`] remain the
+//! generic host contracts for everything else.
 
 use gpui::prelude::FluentBuilder;
 use gpui::{
@@ -20,11 +21,135 @@ use gpui::{
     StatefulInteractiveElement, Styled, Window,
 };
 
+use labonair_settings::content::workspace::PaletteSearchMode as ContentSearchMode;
+use labonair_settings::{
+    EditorSettings, GeneralSettings, Settings as _, TerminalSettings, ThemeSettings,
+    WorkspaceSettings,
+};
 use labonair_theme::{EditorThemeId, ThemePreference};
 use labonair_ui_kit::{kbd, keybinding_hint, IconName, Palette, UiTheme};
 
 use crate::fuzzy::{match_score, SearchMode};
-use crate::keybind::{effective_keys, KeybindMap, ShortcutId};
+use crate::keybind::{effective_keys, KeybindDisplay, KeybindMap, ShortcutId};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Settings reads (T-block3: the palette reads its slice of the layered
+// `SettingsStore` directly — the old `PalettePrefs` host-contract trait is gone)
+// ─────────────────────────────────────────────────────────────────────────────
+
+fn palette_search_mode_setting(cx: &App) -> SearchMode {
+    match WorkspaceSettings::try_get(cx).map(|s| s.command_palette_search_mode()) {
+        Some(ContentSearchMode::StartsWith) => SearchMode::StartsWith,
+        Some(ContentSearchMode::Fuzzy) => SearchMode::Fuzzy,
+        _ => SearchMode::Contains,
+    }
+}
+
+fn set_palette_search_mode_setting(mode: SearchMode, cx: &mut App) {
+    let mapped = match mode {
+        SearchMode::Contains => ContentSearchMode::Contains,
+        SearchMode::StartsWith => ContentSearchMode::StartsWith,
+        SearchMode::Fuzzy => ContentSearchMode::Fuzzy,
+    };
+    if let Some(store) = cx.try_global::<labonair_settings::SettingsStore>() {
+        // `SettingsStore` is a global; mutate through `global_mut`.
+        let _ = store;
+        let _ = cx
+            .global_mut::<labonair_settings::SettingsStore>()
+            .update_user_settings(move |c| c.workspace.command_palette_search_mode = Some(mapped));
+    }
+}
+
+fn palette_history_size(cx: &App) -> u32 {
+    WorkspaceSettings::try_get(cx)
+        .map(|s| s.command_palette_history_size())
+        .unwrap_or(5)
+}
+
+fn palette_opacity(cx: &App) -> u32 {
+    WorkspaceSettings::try_get(cx)
+        .map(|s| s.command_palette_opacity())
+        .unwrap_or(95)
+}
+
+fn palette_position(cx: &App) -> String {
+    WorkspaceSettings::try_get(cx)
+        .map(|s| s.command_palette_position().to_string())
+        .unwrap_or_else(|| "top".to_string())
+}
+
+fn palette_show_recent(cx: &App) -> bool {
+    WorkspaceSettings::try_get(cx)
+        .map(|s| s.command_palette_show_recent())
+        .unwrap_or(true)
+}
+
+fn palette_close_on_overlay_click(cx: &App) -> bool {
+    WorkspaceSettings::try_get(cx)
+        .map(|s| s.command_palette_close_on_overlay_click())
+        .unwrap_or(true)
+}
+
+fn palette_color_mode(cx: &App) -> ThemePreference {
+    use labonair_settings::content::general::ThemePref;
+    match GeneralSettings::try_get(cx).map(|s| s.theme_pref()) {
+        Some(ThemePref::Light) => ThemePreference::Light,
+        Some(ThemePref::Dark) => ThemePreference::Dark,
+        _ => ThemePreference::System,
+    }
+}
+
+fn palette_editor_theme(cx: &App) -> EditorThemeId {
+    EditorSettings::try_get(cx)
+        .and_then(|s| EditorThemeId::from_slug(s.editor_theme()))
+        .unwrap_or_default()
+}
+
+fn palette_terminal_font_size(cx: &App) -> u32 {
+    TerminalSettings::try_get(cx)
+        .map(|s| s.font_size())
+        .unwrap_or(15)
+}
+
+fn palette_keybind_overrides(cx: &App) -> KeybindMap {
+    cx.try_global::<KeybindDisplay>()
+        .map(|d| d.0.clone())
+        .unwrap_or_default()
+}
+
+/// Current value of the boolean setting a `Toggle: …` row flips.
+fn palette_toggle_state(key: &str, cx: &App) -> bool {
+    match key {
+        "zenModeShowHeader" => ThemeSettings::try_get(cx)
+            .map(|s| s.zen_mode_show_header())
+            .unwrap_or(true),
+        "zenModeShowStatusbar" => ThemeSettings::try_get(cx)
+            .map(|s| s.zen_mode_show_statusbar())
+            .unwrap_or(true),
+        "editorWordWrap" => EditorSettings::try_get(cx)
+            .map(|s| s.word_wrap())
+            .unwrap_or(false),
+        "editorLineNumbers" => EditorSettings::try_get(cx)
+            .map(|s| s.line_numbers())
+            .unwrap_or(true),
+        "editorFormatOnSave" => EditorSettings::try_get(cx)
+            .map(|s| s.format_on_save())
+            .unwrap_or(false),
+        "terminalCursorBlink" => TerminalSettings::try_get(cx)
+            .map(|s| s.cursor_blink())
+            .unwrap_or(true),
+        "terminalShowPaneHeader" => TerminalSettings::try_get(cx)
+            .map(|s| s.show_pane_header())
+            .unwrap_or(false),
+        "terminalShowPaneFooter" => TerminalSettings::try_get(cx)
+            .map(|s| s.show_pane_footer())
+            .unwrap_or(false),
+        "vimMode" => EditorSettings::try_get(cx)
+            .map(|s| s.vim_mode())
+            .unwrap_or(false),
+        _ => false,
+    }
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Host contracts (decoupling — the palette crate never names `crates/ui`)
@@ -51,38 +176,6 @@ pub struct PaletteTabRow {
     pub label: String,
     pub kind_title: String,
     pub is_ssh: bool,
-}
-
-/// The preference surface the palette view reads. Implemented for the host
-/// app's preferences store in `crates/ui`.
-pub trait PalettePrefs {
-    fn command_palette_search_mode(&self) -> SearchMode;
-    fn command_palette_history_size(&self) -> u32;
-    fn command_palette_opacity(&self) -> u32;
-    fn command_palette_position(&self) -> String;
-    fn command_palette_show_recent(&self) -> bool;
-    fn command_palette_close_on_overlay_click(&self) -> bool;
-    /// Persist a new search mode (`set_value("commandPaletteSearchMode", …)`).
-    fn set_command_palette_search_mode(&mut self, mode: SearchMode, cx: &mut Context<Self>)
-    where
-        Self: Sized;
-
-    // ── Live state the palette used to receive through `PaletteData` ──────
-    // Read straight off the preferences store now (T17-007) — no per-open
-    // `build_palette_data` snapshot for these pref/theme-derived values.
-    /// Current app color-mode preference (`Change Color Mode…` sub-page state).
-    fn color_mode(&self) -> ThemePreference;
-    /// Active editor theme (`Change Editor Theme…` sub-page state).
-    fn editor_theme(&self) -> EditorThemeId;
-    /// Terminal font size, shown as the `Adjust Font Size…` subtitle.
-    fn terminal_font_size(&self) -> u32;
-    /// Current value of the boolean preference `key` flips (`Toggle: …` rows).
-    fn toggle_state(&self, key: &str) -> bool;
-    /// User keybind overrides, for rendering `effective_binding` hints.
-    /// Takes `cx` (T19-008): the host now derives this from the
-    /// `keymap.json`-backed `KeybindDisplay` GPUI global rather than a
-    /// `Preferences` field.
-    fn keybind_overrides(&self, cx: &App) -> KeybindMap;
 }
 
 /// The workspace surface the palette view reads.
@@ -579,8 +672,9 @@ pub struct PaletteChoice {
 /// lands — the pages exist and render a clean empty state meanwhile.
 ///
 /// Slimmed in T17-007: the pref/theme-derived scalars (`color_mode`,
-/// `editor_theme`, `font_size`, the toggle bools) moved to [`PalettePrefs`]
-/// reads. What remains is the genuinely panel-/workspace-/settings-sourced
+/// `editor_theme`, `font_size`, the toggle bools) are read straight from the
+/// layered `SettingsStore` (see this module's "Settings reads" section).
+/// What remains is the genuinely panel-/workspace-/settings-sourced
 /// choice lists that the palette crate cannot pull itself without a crate
 /// cycle (`labonair-panel-* → labonair-command-palette` back-edge,
 /// `labonair-settings-ui` dependency).
@@ -685,10 +779,9 @@ fn modal_scrim() -> Hsla {
 }
 
 /// The Cmd+P command palette overlay.
-pub struct CommandPalette<P, W, Th> {
+pub struct CommandPalette<W, Th> {
     theme: Entity<Th>,
     workspace: Entity<W>,
-    prefs: Entity<P>,
     open: bool,
     /// Navigation stack — `[Root]` at rest, pushed on drill-in.
     pages: Vec<Page>,
@@ -699,9 +792,8 @@ pub struct CommandPalette<P, W, Th> {
     focus: FocusHandle,
 }
 
-impl<P, W, Th> EventEmitter<PaletteEvent> for CommandPalette<P, W, Th>
+impl<W, Th> EventEmitter<PaletteEvent> for CommandPalette<W, Th>
 where
-    P: 'static,
     W: 'static,
     Th: 'static,
 {
@@ -709,30 +801,22 @@ where
 
 /// Emitted so a hosting [`ModalLayer`](labonair_workspace::modal_layer::ModalLayer)
 /// can drop the palette when it closes itself (Esc / overlay click / a pick).
-impl<P, W, Th> EventEmitter<DismissEvent> for CommandPalette<P, W, Th>
+impl<W, Th> EventEmitter<DismissEvent> for CommandPalette<W, Th>
 where
-    P: 'static,
     W: 'static,
     Th: 'static,
 {
 }
 
-impl<P, W, Th> CommandPalette<P, W, Th>
+impl<W, Th> CommandPalette<W, Th>
 where
-    P: PalettePrefs + 'static,
     W: PaletteWorkspace + 'static,
     Th: UiTheme + 'static,
 {
-    pub fn new(
-        theme: Entity<Th>,
-        workspace: Entity<W>,
-        prefs: Entity<P>,
-        cx: &mut Context<Self>,
-    ) -> Self {
+    pub fn new(theme: Entity<Th>, workspace: Entity<W>, cx: &mut Context<Self>) -> Self {
         Self {
             theme,
             workspace,
-            prefs,
             open: false,
             pages: vec![Page::Root],
             query: String::new(),
@@ -843,11 +927,11 @@ where
     }
 
     fn search_mode(&self, cx: &App) -> SearchMode {
-        self.prefs.read(cx).command_palette_search_mode()
+        palette_search_mode_setting(cx)
     }
 
     fn push_recent(&mut self, id: CommandId, cx: &App) {
-        let max = self.prefs.read(cx).command_palette_history_size().max(1) as usize;
+        let max = palette_history_size(cx).max(1) as usize;
         self.recent.retain(|&r| r != id);
         self.recent.insert(0, id);
         self.recent.truncate(max);
@@ -960,17 +1044,17 @@ where
 
     fn rows(&self, cx: &App) -> Vec<PaletteRow> {
         let mode = self.search_mode(cx);
-        let overrides = self.prefs.read(cx).keybind_overrides(cx);
+        let overrides = palette_keybind_overrides(cx);
         match self.page() {
             Page::Root => {
                 let ctx = self.active_context(cx);
-                let font_size = self.prefs.read(cx).terminal_font_size();
+                let font_size = palette_terminal_font_size(cx);
                 let tab_count = self.workspace.read(cx).palette_tab_rows(cx).len();
                 let mut root: Vec<PaletteRow> = search_mode(&self.query, ctx, mode)
                     .into_iter()
                     .map(|c| {
                         let right_label = toggle_pref_key(c.id).map(|k| {
-                            if self.prefs.read(cx).toggle_state(k) {
+                            if palette_toggle_state(k, cx) {
                                 "ON".to_string()
                             } else {
                                 "OFF".to_string()
@@ -1037,7 +1121,7 @@ where
                 secondary: None,
                 icon: Some(IconName::ArrowDownUp),
                 title: title.to_string(),
-                subtitle: Some(format!("{}px", self.prefs.read(cx).terminal_font_size())),
+                subtitle: Some(format!("{}px", palette_terminal_font_size(cx))),
                 section: "Font Size".to_string(),
                 keys: effective_keys(sc, &overrides),
                 right_label: None,
@@ -1059,8 +1143,7 @@ where
                 subtitle: None,
                 section: "Color Mode".to_string(),
                 keys: vec![],
-                right_label: (self.prefs.read(cx).color_mode() == pref)
-                    .then(|| "active".to_string()),
+                right_label: (palette_color_mode(cx) == pref).then(|| "active".to_string()),
                 has_sub: false,
             })
             .collect(),
@@ -1076,8 +1159,7 @@ where
                     subtitle: None,
                     section: "Editor Themes".to_string(),
                     keys: vec![],
-                    right_label: (self.prefs.read(cx).editor_theme() == id)
-                        .then(|| "active".to_string()),
+                    right_label: (palette_editor_theme(cx) == id).then(|| "active".to_string()),
                     has_sub: false,
                 })
                 .collect(),
@@ -1264,8 +1346,7 @@ where
 
     fn cycle_search_mode(&mut self, cx: &mut Context<Self>) {
         let next = self.search_mode(cx).next();
-        self.prefs
-            .update(cx, |s, cx| s.set_command_palette_search_mode(next, cx));
+        set_palette_search_mode_setting(next, cx);
         cx.notify();
     }
 }
@@ -1285,9 +1366,8 @@ fn editor_theme_label(id: EditorThemeId) -> String {
         .join(" ")
 }
 
-impl<P, W, Th> Focusable for CommandPalette<P, W, Th>
+impl<W, Th> Focusable for CommandPalette<W, Th>
 where
-    P: PalettePrefs + 'static,
     W: PaletteWorkspace + 'static,
     Th: UiTheme + 'static,
 {
@@ -1296,9 +1376,8 @@ where
     }
 }
 
-impl<P, W, Th> Render for CommandPalette<P, W, Th>
+impl<W, Th> Render for CommandPalette<W, Th>
 where
-    P: PalettePrefs + 'static,
     W: PaletteWorkspace + 'static,
     Th: UiTheme + 'static,
 {
@@ -1307,11 +1386,10 @@ where
             return div().into_any_element();
         }
 
-        let p = self.prefs.read(cx);
-        let opacity = (p.command_palette_opacity() as f32 / 100.0).clamp(0.35, 1.0);
-        let position = p.command_palette_position();
-        let show_recent = p.command_palette_show_recent();
-        let close_on_overlay = p.command_palette_close_on_overlay_click();
+        let opacity = (palette_opacity(cx) as f32 / 100.0).clamp(0.35, 1.0);
+        let position = palette_position(cx);
+        let show_recent = palette_show_recent(cx);
+        let close_on_overlay = palette_close_on_overlay_click(cx);
         let mode = self.search_mode(cx);
 
         let t = self.theme.read(cx);
@@ -1341,7 +1419,7 @@ where
         let mut rows = Vec::new();
         if page == Page::Root && self.query.is_empty() && show_recent && !self.recent.is_empty() {
             let ctx = self.active_context(cx);
-            let overrides = self.prefs.read(cx).keybind_overrides(cx);
+            let overrides = palette_keybind_overrides(cx);
             let avail: std::collections::HashSet<CommandId> =
                 available(ctx).into_iter().map(|c| c.id).collect();
             for id in self.recent.iter().copied().filter(|id| avail.contains(id)) {

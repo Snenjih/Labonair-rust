@@ -15,14 +15,13 @@ use gpui::{
     Subscription, Window,
 };
 use labonair_command_palette::CommandPalette;
-use labonair_settings_ui::PreferencesStore;
 
 use crate::theme::ThemeStore;
 use crate::updater::UpdaterView;
 use crate::workspace::Workspace;
 
 /// The concrete command-palette instantiation used throughout the shell.
-pub(crate) type ShellPalette = CommandPalette<PreferencesStore, Workspace, ThemeStore>;
+pub(crate) type ShellPalette = CommandPalette<Workspace, ThemeStore>;
 
 pub(crate) struct CommandPaletteModal {
     inner: Entity<ShellPalette>,

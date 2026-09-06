@@ -23,9 +23,8 @@ use gpui::{
 use labonair_backend::modules::fs::file::{
     file_mtime_sync, load_editor_file_sync, save_editor_file_sync, EditorLoad,
 };
-use labonair_backend::modules::settings::preferences::Preferences;
+use labonair_settings::{EditorSettings, Settings as _, SettingsStore};
 
-use crate::prefs::GlobalPreferences;
 use labonair_editor::{
     document::Motion, find_all, next_match, Document, Language, Match, Position, SearchQuery,
     SyntaxHighlighter, Vim, VimKey, VimMode, VimOptions,
@@ -75,9 +74,9 @@ pub struct EditorView {
     syntax_rev: u64,
     /// Vim keybinding state machine (T06-003) — `None` when Vim mode is off.
     vim: Option<Vim>,
-    /// Live editor preferences mirror (font/indent/line-numbers), refreshed
-    /// from [`GlobalPreferences`] (T13-003).
-    prefs: Preferences,
+    /// Live editor settings mirror (font/indent/line-numbers), refreshed from
+    /// the layered `SettingsStore` (T13-003).
+    prefs: EditorSettings,
     /// Settings-schema hover text (T19-006 Anweisung #5) — `Some((mouse
     /// position, description))` while the mouse is over a key/value in a
     /// `config.json`/`.labonair/settings.json` tab and that key
@@ -88,34 +87,33 @@ pub struct EditorView {
     hover: Option<(Point<Pixels>, SharedString)>,
 }
 
-/// The current preferences snapshot (defaults before the global is published).
-fn current_prefs(cx: &App) -> Preferences {
-    cx.try_global::<GlobalPreferences>()
-        .map(|g| g.0.clone())
-        .unwrap_or_default()
+/// The current editor-settings snapshot (all-defaults before the store exists).
+fn current_prefs(cx: &App) -> EditorSettings {
+    EditorSettings::try_get(cx).cloned().unwrap_or_else(|| {
+        EditorSettings::from_settings(&labonair_settings::SettingsContent::default())
+    })
 }
 
-fn vim_options(p: &Preferences) -> VimOptions {
-    let e = p.editor_prefs();
+fn vim_options(p: &EditorSettings) -> VimOptions {
     VimOptions {
-        number: e.number,
-        relativenumber: e.relative_number,
-        hlsearch: e.hlsearch,
-        incsearch: e.incsearch,
-        smartcase: e.smartcase,
-        expandtab: e.expandtab,
-        tabstop: e.tabstop,
-        shiftwidth: e.shiftwidth,
+        number: p.line_numbers(),
+        relativenumber: p.relative_line_numbers(),
+        hlsearch: p.vim_hlsearch(),
+        incsearch: p.vim_incsearch(),
+        smartcase: p.vim_smartcase(),
+        expandtab: !p.indent_with_tabs(),
+        tabstop: p.tab_size() as usize,
+        shiftwidth: p.tab_size() as usize,
     }
 }
 
 impl EditorView {
     pub fn new(theme: Entity<ThemeStore>, cx: &mut Context<Self>) -> Self {
         cx.observe(&theme, |_, _, cx| cx.notify()).detach();
-        cx.observe_global::<GlobalPreferences>(|this, cx| this.apply_prefs(cx))
+        cx.observe_global::<SettingsStore>(|this, cx| this.apply_prefs(cx))
             .detach();
         let prefs = current_prefs(cx);
-        let vim = prefs.editor_vim_mode.then(|| Vim::new(vim_options(&prefs)));
+        let vim = prefs.vim_mode().then(|| Vim::new(vim_options(&prefs)));
         Self {
             doc: Document::empty(),
             theme,
@@ -203,7 +201,7 @@ impl EditorView {
             return;
         }
         self.prefs = p;
-        match (&mut self.vim, self.prefs.editor_vim_mode) {
+        match (&mut self.vim, self.prefs.vim_mode()) {
             (Some(vim), true) => vim.options = vim_options(&self.prefs),
             (Some(_), false) => self.vim = None,
             (None, true) => self.vim = Some(Vim::new(vim_options(&self.prefs))),
@@ -214,10 +212,10 @@ impl EditorView {
 
     /// One indentation step for a Tab press outside Vim mode.
     fn indent_unit(&self) -> String {
-        if self.prefs.editor_indent_with_tabs {
+        if self.prefs.indent_with_tabs() {
             "\t".to_string()
         } else {
-            " ".repeat((self.prefs.editor_tab_size.max(1)) as usize)
+            " ".repeat((self.prefs.tab_size().max(1)) as usize)
         }
     }
 
@@ -225,7 +223,7 @@ impl EditorView {
     /// `editor_word_wrap` preference and the measured content width (T06-005).
     /// Mirrors CodeMirror's `EditorView.lineWrapping`.
     fn wrap_cols(&self) -> usize {
-        if !self.prefs.editor_word_wrap {
+        if !self.prefs.word_wrap() {
             return 0;
         }
         let (cw, _) = self.metrics;
@@ -1029,8 +1027,8 @@ impl Render for EditorView {
             .as_ref()
             .map(|v| (v.options.number, v.options.relativenumber))
             .unwrap_or((
-                self.prefs.editor_line_numbers,
-                self.prefs.editor_relative_line_numbers,
+                self.prefs.line_numbers(),
+                self.prefs.relative_line_numbers(),
             ));
         let gutter = (first..last).map(|line| {
             let on_cursor = line == cursor.line;
@@ -1316,6 +1314,28 @@ fn notify(cx: &mut App, title: &str, body: &str) {
 mod tests {
     use super::*;
     use gpui::{AppContext, TestAppContext};
+    use labonair_settings::content::editor::EditorContent;
+    use labonair_settings::{SettingsContent, SettingsLayer, SettingsStore};
+
+    /// Build an [`EditorSettings`] with `f` applied to a default `editor` area.
+    fn editor_prefs(f: impl FnOnce(&mut EditorContent)) -> EditorSettings {
+        let mut c = SettingsContent::default();
+        f(&mut c.editor);
+        EditorSettings::from_settings(&c)
+    }
+
+    /// Install a `SettingsStore` global whose `User` layer carries `f`'s edits,
+    /// so `EditorView::apply_prefs` (which reads the global) sees them.
+    fn install_editor_prefs(cx: &mut App, f: impl FnOnce(&mut EditorContent)) {
+        let mut c = SettingsContent::default();
+        f(&mut c.editor);
+        let mut store = SettingsStore::new(std::path::PathBuf::from(
+            "/tmp/labonair-editor-tests-unused/config.json",
+        ));
+        store.register_setting::<EditorSettings>();
+        store.set_layer(SettingsLayer::User, c);
+        cx.set_global(store);
+    }
 
     fn setup(cx: &mut TestAppContext) -> Entity<EditorView> {
         cx.update(|cx| {
@@ -1358,26 +1378,27 @@ mod tests {
     fn live_prefs_toggle_vim_and_indent(cx: &mut TestAppContext) {
         let view = setup(cx);
         cx.update(|cx| {
-            let p = Preferences {
-                editor_indent_with_tabs: false,
-                editor_tab_size: 3,
-                editor_vim_mode: true,
-                ..Default::default()
-            };
-            cx.set_global(GlobalPreferences(p));
+            install_editor_prefs(cx, |e| {
+                e.editor_indent_with_tabs = Some(false);
+                e.editor_tab_size = Some(3);
+                e.editor_vim_mode = Some(true);
+            });
         });
         cx.update(|cx| {
             view.update(cx, |v, cx| {
                 v.apply_prefs(cx);
                 assert!(v.vim.is_some(), "vim enabled via prefs");
                 assert_eq!(v.indent_unit(), "   ");
-
-                let p = Preferences {
-                    editor_vim_mode: false,
-                    editor_indent_with_tabs: true,
-                    ..Default::default()
-                };
-                cx.set_global(GlobalPreferences(p));
+            });
+        });
+        cx.update(|cx| {
+            install_editor_prefs(cx, |e| {
+                e.editor_vim_mode = Some(false);
+                e.editor_indent_with_tabs = Some(true);
+            });
+        });
+        cx.update(|cx| {
+            view.update(cx, |v, cx| {
                 v.apply_prefs(cx);
                 assert!(v.vim.is_none(), "vim disabled via prefs");
                 assert_eq!(v.indent_unit(), "\t");
@@ -1411,7 +1432,7 @@ mod tests {
                         height: px(360.0),
                     },
                 });
-                v.prefs.editor_word_wrap = true;
+                v.prefs = editor_prefs(|e| e.editor_word_wrap = Some(true));
                 assert_eq!(v.wrap_cols(), 45);
 
                 let long: String = "x".repeat(120);
@@ -1438,7 +1459,7 @@ mod tests {
         let view = setup(cx);
         cx.update(|cx| {
             view.update(cx, |v, cx| {
-                v.prefs.editor_word_wrap = false;
+                v.prefs = editor_prefs(|e| e.editor_word_wrap = Some(false));
                 assert_eq!(v.wrap_cols(), 0);
                 assert!(!v.wrap_vertical(true, false, cx));
                 assert!(!v.wrap_horizontal(true, false, cx));

@@ -5,11 +5,9 @@
 //! (`labonair-settings-content`) via the layered `SettingsStore`
 //! (`labonair-settings`, T19-002/003) instead of the old hand-maintained
 //! `FIELDS: &[FieldDef]` table — see `schema.rs` (the field registry) and
-//! `pages.rs` (the declarative navigation model). `PreferencesStore` /
-//! `GlobalPreferences` stay: they are the compatibility bridge every
-//! not-yet-`Settings`-trait-migrated module (terminal, editor, workspace,
-//! command-palette) still reads, kept in sync on every `SettingsStore` write
-//! (`store.rs`'s `reload_from_disk`).
+//! `pages.rs` (the declarative navigation model). Every feature now reads its
+//! slice of the layered `SettingsStore` through the `Settings` trait — the old
+//! `PreferencesStore` / `GlobalPreferences` bridge has been retired.
 
 mod apply;
 mod keymap_edit;
@@ -17,7 +15,6 @@ mod pages;
 mod panes;
 mod schema;
 mod search;
-mod store;
 mod view;
 mod window;
 
@@ -29,6 +26,5 @@ pub use apply::{
     preview_app_theme, reload_icon_theme_registry, reload_theme_registry, theme_choices,
     theme_metrics_from_settings, user_icon_themes_dir, user_themes_dir,
 };
-pub use store::{GlobalPreferences, PreferencesStore};
 pub use view::SettingsView;
 pub use window::{open_settings_window, set_keybind_apply_hook, set_settings_deps};

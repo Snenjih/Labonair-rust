@@ -4222,6 +4222,7 @@ dependencies = [
  "gpui",
  "labonair-backend",
  "labonair-gpui-ext",
+ "labonair-settings",
  "labonair-theme",
  "labonair-ui-kit",
  "serde_json",

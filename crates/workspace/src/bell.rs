@@ -10,8 +10,6 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use labonair_backend::modules::settings::preferences::Preferences;
-
 /// Minimum gap between two audible bells. A pragmatic debounce so a program
 /// spamming `BEL` does not machine-gun the speakers.
 const MIN_INTERVAL_MS: u64 = 120;
@@ -19,8 +17,8 @@ const MIN_INTERVAL_MS: u64 = 120;
 static LAST_RING_MS: AtomicU64 = AtomicU64::new(0);
 
 /// Whether a received `BEL` should produce an audible tone.
-pub fn should_ring(prefs: &Preferences) -> bool {
-    prefs.terminal_bell
+pub fn should_ring(enabled: bool) -> bool {
+    enabled
 }
 
 fn now_ms() -> u64 {
@@ -30,10 +28,10 @@ fn now_ms() -> u64 {
         .unwrap_or(0)
 }
 
-/// Play the terminal bell once, if `prefs` enables it and we are past the
-/// debounce window from the previous ring.
-pub fn ring(prefs: &Preferences) {
-    if !should_ring(prefs) {
+/// Play the terminal bell once, if `enabled` and we are past the debounce
+/// window from the previous ring.
+pub fn ring(enabled: bool) {
+    if !should_ring(enabled) {
         return;
     }
     let now = now_ms();
@@ -67,15 +65,13 @@ mod tests {
 
     #[test]
     fn gate_follows_preference() {
-        let mut p = Preferences::default();
-        assert!(!should_ring(&p), "off by default");
-        p.terminal_bell = true;
-        assert!(should_ring(&p));
+        assert!(!should_ring(false), "off by default");
+        assert!(should_ring(true));
     }
 
     #[test]
     fn ring_is_a_no_op_when_disabled() {
         // Must not panic / spawn anything when the pref is off.
-        ring(&Preferences::default());
+        ring(false);
     }
 }

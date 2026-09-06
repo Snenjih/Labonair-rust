@@ -35,7 +35,6 @@ pub mod markdown;
 pub mod modal_layer;
 pub mod pane;
 pub mod pane_group;
-pub mod prefs;
 pub mod search_overlay;
 pub mod session;
 pub mod status_bar;
@@ -83,8 +82,6 @@ use labonair_backend::modules::mcp::{
 use labonair_backend::modules::scrollback::{
     scrollback_cleanup, scrollback_delete, scrollback_load, scrollback_save,
 };
-use labonair_backend::modules::settings::preferences::CursorStyle as PrefCursorStyle;
-use labonair_backend::modules::settings::preferences::StartupTab;
 use labonair_backend::modules::sftp::commands::enqueue_transfer;
 use labonair_backend::modules::sftp::connection::sftp_disconnect as sftp_tab_disconnect;
 use labonair_backend::modules::ssh::client::{ssh_connect, ssh_disconnect, ssh_trust_host};
@@ -106,7 +103,6 @@ use crate::background::BackgroundStore;
 use crate::dock::{position_slug, RESIZE_HANDLE_SIZE};
 use crate::live_bridge::LiveCommand;
 use crate::pane::{CloseOutcome, Member, PaneId, SplitAxis, SplitDirection, WorkspaceLayout};
-use crate::prefs::GlobalPreferences;
 use crate::session::{
     plan_restore, PaneSessionKind, PaneSessionSnapshot, RestoreAction, RestoreResult,
     SerializedLayout, SessionSnapshot, TabSnapshot, WorkspaceTabSnapshot,
@@ -123,6 +119,9 @@ use labonair_hosts_ui::ssh_connection::{
 };
 use labonair_hosts_ui::{ActiveTunnelRow, HostManagerEvent, HostManagerView, HostStatus};
 use labonair_panel_git_graph::GitGraphView;
+use labonair_settings::content::general::StartupTab;
+use labonair_settings::content::terminal::CursorStyle as PrefCursorStyle;
+use labonair_settings::{GeneralSettings, Settings as _, TerminalSettings, WorkspaceSettings};
 use labonair_ui_kit::{
     context_menu, h_stack, indicator, ButtonSize, ButtonVariant, IconName, IndicatorSize, MenuItem,
     Palette,
@@ -241,28 +240,12 @@ const HANDLE: f32 = 6.0;
 /// up by this much to land in the `Workspace`'s own coordinate space.
 const TITLEBAR_OFFSET: f32 = 40.0;
 
-/// Per-file byte ceiling for a persisted scrollback, from the `scrollbackMaxSizeMb`
-/// preference (T14-002).
-fn scrollback_max_bytes(
-    p: &labonair_backend::modules::settings::preferences::Preferences,
-) -> usize {
-    (p.scrollback_max_size_mb.max(1) as usize) * 1024 * 1024
-}
-
-/// Retention window in seconds for persisted scrollback files (`None` = keep for
-/// the session's lifetime), from the `scrollbackRetentionDays` preference.
-fn scrollback_retention_secs(
-    p: &labonair_backend::modules::settings::preferences::Preferences,
-) -> Option<u64> {
-    (p.scrollback_retention_days > 0).then(|| p.scrollback_retention_days as u64 * 86_400)
-}
-
-/// Rows of scrollback to persist per pane (`None` = all), from the
-/// `sessionScrollbackLines` preference.
-fn session_scrollback_lines(
-    p: &labonair_backend::modules::settings::preferences::Preferences,
-) -> Option<usize> {
-    (p.session_scrollback_lines > 0).then_some(p.session_scrollback_lines as usize)
+/// The layered `terminal` settings slice, or its all-defaults value if the
+/// `SettingsStore` global was never installed (headless test).
+fn terminal_settings(cx: &App) -> TerminalSettings {
+    TerminalSettings::try_get(cx).cloned().unwrap_or_else(|| {
+        TerminalSettings::from_settings(&labonair_settings::SettingsContent::default())
+    })
 }
 
 /// Value carried by a tab drag.
@@ -383,8 +366,9 @@ pub struct Workspace {
     /// component reads it instead of a hard-coded `render_bar_item` match.
     status_item_registry: labonair_panel::StatusItemRegistry,
     /// Set once by the shell: persists the serialized `[DockData; 3]` layout
-    /// (the shell owns the `PreferencesStore`, which this crate cannot depend
-    /// on — hence the callback indirection). T17-003 moved this off `AppShell`.
+    /// (the shell writes it into the layered `SettingsStore`, which this
+    /// crate cannot depend on — hence the callback indirection). T17-003
+    /// moved this off `AppShell`.
     dock_persist_hook: Option<DockPersistHook>,
     /// Set once by the shell: opens Settings › Hosts (T19-010).
     open_host_settings_hook: Option<OpenHostSettingsHook>,
@@ -625,9 +609,8 @@ impl Workspace {
                 }
             }
             None => {
-                let startup = cx
-                    .try_global::<GlobalPreferences>()
-                    .map(|g| g.0.default_startup_tab)
+                let startup = GeneralSettings::try_get(cx)
+                    .map(|s| s.default_startup_tab())
                     .unwrap_or_default();
                 match startup {
                     StartupTab::Terminal => this.open_terminal_tab(window, cx),
@@ -687,9 +670,9 @@ impl Workspace {
 
     fn snapshot_workspace_tab(&self, tab: &Tab, cx: &App) -> Option<TabSnapshot> {
         let layout = self.layouts.get(&tab.id)?.clone();
-        let prefs = cx.try_global::<GlobalPreferences>().map(|g| g.0.clone());
-        let max_lines = prefs.as_ref().and_then(session_scrollback_lines);
-        let max_bytes = prefs.as_ref().map(scrollback_max_bytes);
+        let ts = terminal_settings(cx);
+        let max_lines = ts.session_scrollback_lines();
+        let max_bytes = Some(ts.scrollback_max_bytes());
         let sessions = layout
             .leaves()
             .iter()
@@ -734,18 +717,15 @@ impl Workspace {
 
     /// Remove orphaned / stale persisted scrollback files (T14-002).
     pub fn cleanup_scrollback(&self, cx: &App) {
-        let retention = cx
-            .try_global::<GlobalPreferences>()
-            .and_then(|g| scrollback_retention_secs(&g.0));
+        let retention = terminal_settings(cx).scrollback_retention_secs();
         scrollback_cleanup(&self.known_scrollback_ids(), retention);
     }
 
     /// Persist the snapshot now if the `sessionRestore` preference is on;
     /// otherwise remove any stale snapshot. Returns nothing — best effort.
     fn maybe_save_session(&self, cx: &App) {
-        if cx
-            .try_global::<GlobalPreferences>()
-            .map(|g| g.0.session_restore)
+        if GeneralSettings::try_get(cx)
+            .map(|s| s.session_restore())
             .unwrap_or(false)
         {
             crate::session::save_snapshot(&self.session_snapshot(cx));
@@ -1581,12 +1561,9 @@ impl Workspace {
         replay_scrollback_id: Option<&str>,
         cx: &App,
     ) -> Option<(SessionId, SessionHandle, String)> {
-        let p = cx
-            .try_global::<crate::prefs::GlobalPreferences>()
-            .map(|g| g.0.clone())
-            .unwrap_or_default();
-        let shell = (!p.terminal_shell.trim().is_empty()).then(|| p.terminal_shell.clone());
-        let cursor_shape = Some(match p.terminal_cursor_style {
+        let ts = terminal_settings(cx);
+        let shell = (!ts.shell().trim().is_empty()).then(|| ts.shell().to_string());
+        let cursor_shape = Some(match ts.cursor_style() {
             PrefCursorStyle::Block => labonair_terminal::CursorShape::Block,
             PrefCursorStyle::Underline => labonair_terminal::CursorShape::Underline,
             PrefCursorStyle::Bar => labonair_terminal::CursorShape::Beam,
@@ -1594,15 +1571,15 @@ impl Workspace {
         let scrollback_id = replay_scrollback_id
             .map(str::to_string)
             .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
-        let replay_scrollback =
-            replay_scrollback_id.and_then(|id| scrollback_load(id, Some(scrollback_max_bytes(&p))));
+        let replay_scrollback = replay_scrollback_id
+            .and_then(|id| scrollback_load(id, Some(ts.scrollback_max_bytes())));
         let options = SessionOptions {
             working_directory: cwd,
             shell,
-            scrollback: Some(p.terminal_scrollback.max(1) as usize),
+            scrollback: Some(ts.scrollback().max(1) as usize),
             replay_scrollback,
             cursor_shape,
-            cursor_blink: Some(p.terminal_cursor_blink),
+            cursor_blink: Some(ts.cursor_blink()),
             ..SessionOptions::default()
         };
         let session_id =
@@ -2111,12 +2088,11 @@ impl Workspace {
         self.open_host_settings_hook = Some(Arc::new(hook));
     }
 
-    /// The "primary" edge per the `sidebarPosition` preference (read from the
-    /// [`GlobalPreferences`](crate::prefs::GlobalPreferences) global).
+    /// The "primary" edge per the `sidebarPosition` setting
+    /// ([`WorkspaceSettings`]).
     pub fn primary_dock(&self, cx: &App) -> labonair_panel::DockPosition {
-        let right = cx
-            .try_global::<crate::prefs::GlobalPreferences>()
-            .map(|g| g.0.sidebar_position == "right")
+        let right = WorkspaceSettings::try_get(cx)
+            .map(|s| s.sidebar_position() == "right")
             .unwrap_or(false);
         if right {
             labonair_panel::DockPosition::Right

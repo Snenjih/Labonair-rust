@@ -1,11 +1,11 @@
 //! `labonair-command-palette` — the `Cmd+P` command palette plus the
 //! command / keyboard-shortcut model shared with the (future) `keymap.json`.
 //!
-//! Extracted from `crates/ui/src/command_palette.rs` in T16-004. The move is
-//! behaviour-neutral: the view became generic over three host contracts
-//! ([`PalettePrefs`], [`PaletteWorkspace`], [`labonair_ui_kit::UiTheme`]) so
-//! this crate never depends on `crates/ui`. The concrete impls for
-//! `PreferencesStore` / `Workspace` / `ThemeStore` live in `crates/ui`.
+//! Extracted from `crates/ui/src/command_palette.rs` in T16-004. Originally
+//! generic over three host contracts; pref/theme-derived reads have since
+//! moved onto the layered `labonair-settings` slices directly, so the view is
+//! now generic over [`PaletteWorkspace`] / [`labonair_ui_kit::UiTheme`] only.
+//! The concrete `Workspace` / `ThemeStore` impls live in `crates/shell`.
 //!
 //! Layout:
 //! * [`fuzzy`] — the `SearchMode` matcher (`match_score`), also used by the AI
@@ -27,6 +27,5 @@ pub use keybind::{
 pub use palette::{
     available, command, command_for_shortcut, commands, context_of, known_action_names, search,
     search_mode, toggle_pref_key, Command, CommandContext, CommandId, CommandPalette, Page,
-    PaletteChoice, PaletteData, PaletteEvent, PalettePrefs, PaletteTabKind, PaletteTabRow,
-    PaletteWorkspace,
+    PaletteChoice, PaletteData, PaletteEvent, PaletteTabKind, PaletteTabRow, PaletteWorkspace,
 };

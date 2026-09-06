@@ -30,7 +30,8 @@ use gpui::{
     StatefulInteractiveElement, Styled, Window, WindowControlArea,
 };
 use labonair_notifications::{notification_center, Notification};
-use labonair_settings_ui::{open_settings_window, PreferencesStore};
+use labonair_settings::{Settings as _, SettingsStore, ThemeSettings};
+use labonair_settings_ui::open_settings_window;
 use labonair_ui_kit::{popover_menu, IconName, MenuItem, Palette};
 
 use crate::theme::ThemeStore;
@@ -47,7 +48,6 @@ const TRAFFIC_LIGHT_INSET: f32 = 8.0;
 
 pub struct Titlebar {
     theme: Entity<ThemeStore>,
-    prefs: Entity<PreferencesStore>,
     workspace: Entity<Workspace>,
     /// The right-hand `Settings… / Profile` dropdown.
     menu_open: bool,
@@ -60,16 +60,17 @@ pub struct Titlebar {
 impl Titlebar {
     pub fn new(
         theme: Entity<ThemeStore>,
-        prefs: Entity<PreferencesStore>,
         workspace: Entity<Workspace>,
         cx: &mut Context<Self>,
     ) -> Self {
         cx.observe(&theme, |_, _, cx| cx.notify()).detach();
-        cx.observe(&prefs, |_, _, cx| cx.notify()).detach();
         cx.observe(&workspace, |_, _, cx| cx.notify()).detach();
+        if cx.has_global::<SettingsStore>() {
+            cx.observe_global::<SettingsStore>(|_, cx| cx.notify())
+                .detach();
+        }
         Self {
             theme,
-            prefs,
             workspace,
             menu_open: false,
             should_move: false,
@@ -169,7 +170,10 @@ impl Render for Titlebar {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let _span =
             tracing::trace_span!(target: "labonair::perf", "render", view = "titlebar").entered();
-        if !self.prefs.read(cx).get().zen_mode_show_header {
+        let show_header = ThemeSettings::try_get(cx)
+            .map(|s| s.zen_mode_show_header())
+            .unwrap_or(true);
+        if !show_header {
             // `zen_mode_show_header == false`: no custom titlebar — the OS
             // frame / traffic lights take over. On macOS the window still uses
             // `appears_transparent`, so the tabs simply move into the Tabs
@@ -184,7 +188,9 @@ impl Render for Titlebar {
 
         // `tabsLocation === "sidebar"` moves the tab strip out of the titlebar
         // and into the Tabs sidebar panel.
-        let tabs_in_sidebar = self.prefs.read(cx).get().tabs_location == "sidebar";
+        let tabs_in_sidebar = ThemeSettings::try_get(cx)
+            .map(|s| s.tabs_location() == "sidebar")
+            .unwrap_or(false);
         let tabs = (!tabs_in_sidebar).then(|| {
             self.workspace
                 .update(cx, |w, cx| w.render_tab_bar(cx).into_any_element())

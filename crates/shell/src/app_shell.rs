@@ -32,11 +32,11 @@ use gpui::{
 };
 use labonair_backend::App as Backend;
 use labonair_notifications::NotificationCenter;
+use labonair_settings::Settings as _;
 use tokio::runtime::Handle as TokioHandle;
 
 use labonair_panel_scm::GitPanelView;
 use labonair_panel_snippets::SnippetsView;
-use labonair_settings_ui::PreferencesStore;
 use labonair_workspace::live_bridge::WorkspaceLiveBridge;
 use labonair_workspace::modal_layer::ModalLayer;
 use labonair_workspace::status_bar::StatusBar;
@@ -73,7 +73,6 @@ pub(crate) struct ShellPanels {
 pub struct AppShell {
     pub(crate) theme: Entity<ThemeStore>,
     pub(crate) background: Entity<BackgroundStore>,
-    pub(crate) prefs: Entity<PreferencesStore>,
     pub(crate) workspace: Entity<Workspace>,
     pub(crate) titlebar: Entity<Titlebar>,
     pub(crate) panels: ShellPanels,
@@ -116,18 +115,12 @@ impl AppShell {
         &self.workspace
     }
 
-    /// The central preferences store (T13-001).
-    pub fn preferences(&self) -> &Entity<PreferencesStore> {
-        &self.prefs
-    }
-
     /// Assemble the shell from its already-built parts (called by
     /// [`crate::bootstrap`]).
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn from_parts(
         theme: Entity<ThemeStore>,
         background: Entity<BackgroundStore>,
-        prefs: Entity<PreferencesStore>,
         workspace: Entity<Workspace>,
         titlebar: Entity<Titlebar>,
         panels: ShellPanels,
@@ -142,7 +135,6 @@ impl AppShell {
         Self {
             theme,
             background,
-            prefs,
             workspace,
             titlebar,
             panels,
@@ -197,7 +189,9 @@ impl Render for AppShell {
             (t.background(), t.ui_font(), t.ui_font_size())
         };
         let background_layer = self.background.read(cx).layer(LayerScope::App);
-        let show_statusbar = self.prefs.read(cx).get().zen_mode_show_statusbar;
+        let show_statusbar = labonair_settings::ThemeSettings::try_get(cx)
+            .map(|s| s.zen_mode_show_statusbar())
+            .unwrap_or(true);
         let can_split = self.workspace.read(cx).active_is_terminal(cx);
         let has_split = self.workspace.read(cx).active_has_split(cx);
 

@@ -4,12 +4,9 @@
 //! `config.json` < …), merges them in the fixed order normative in
 //! `docs/architecture.md`, watches the user file live, and hands out
 //! feature-local typed slices (`ThemeSettings::get(cx)`,
-//! `TerminalSettings::get(cx)`, …) through the [`Settings`] trait. The
-//! `GlobalPreferences` bridge (`labonair-workspace::prefs`,
-//! `labonair-settings-ui::PreferencesStore`) is untouched by this crate and
-//! keeps every not-yet-migrated module working exactly as before — see the
-//! task's `## Notizen` (full migration off `GlobalPreferences` is explicitly
-//! out of scope here).
+//! `TerminalSettings::get(cx)`, …) through the [`Settings`] trait. This is
+//! the single settings surface every feature reads from — the legacy
+//! `GlobalPreferences` / `PreferencesStore` bridge has been retired.
 //!
 //! `extern crate self as labonair_settings` lets `#[derive(RegisterSetting)]`
 //! (used by this crate's own `concrete.rs`) address this crate's root via the
@@ -27,8 +24,8 @@ mod store;
 mod watch;
 
 pub use concrete::{
-    EditorSettings, ExplorerSettings, PersonalizationSettings, ScmSettings, TerminalSettings,
-    ThemeSettings, WorkspaceSettings,
+    EditorSettings, ExplorerSettings, GeneralSettings, PersonalizationSettings, ScmSettings,
+    TerminalSettings, ThemeSettings, WorkspaceSettings,
 };
 pub use keymap::{ensure_user_keymap_file, user_keymap_path};
 pub use project::{ensure_project_settings_file, PROJECT_SETTINGS_WHITELIST};

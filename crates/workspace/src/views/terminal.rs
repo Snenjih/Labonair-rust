@@ -40,7 +40,6 @@ use labonair_terminal::{
 
 use crate::background::{BackgroundStore, LayerScope};
 use crate::drag::{quote_paths, DraggedPaths};
-use crate::prefs::GlobalPreferences;
 use crate::theme::ThemeStore;
 use labonair_settings::Settings as _;
 use labonair_ui_kit::{context_menu, IconName, MenuItem, Palette};
@@ -113,11 +112,10 @@ impl TerminalView {
                     .iter()
                     .any(|e| matches!(e, TerminalEvent::Exit | TerminalEvent::ChildExit(_)));
                 if events.iter().any(|e| matches!(e, TerminalEvent::Bell)) {
-                    let prefs = cx
-                        .try_global::<GlobalPreferences>()
-                        .map(|g| g.0.clone())
-                        .unwrap_or_default();
-                    crate::bell::ring(&prefs);
+                    let bell = labonair_settings::TerminalSettings::try_get(cx)
+                        .map(|s| s.bell())
+                        .unwrap_or(false);
+                    crate::bell::ring(bell);
                 }
                 cx.notify();
                 !exited

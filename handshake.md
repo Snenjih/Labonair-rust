@@ -2,7 +2,95 @@
 
 Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now pure Rust/GPUI).
 
-## Current Session: 2026-09-06 (Settings rework — Block 2: sparse config.json)
+## Current Session: 2026-09-06 (Settings rework — Block 3: retire the legacy Preferences bridge)
+
+Ad-hoc request (3-block settings rework, orchestrated: Block 1 + Block 2 ran in
+parallel as forked subagents, then Block 3, then this orchestrator's own
+verification/fixup pass). **Block 3 (single settings system) done here.**
+
+**Goal:** every consumer of the legacy `Preferences` / `PreferencesStore` /
+`GlobalPreferences` bridge now reads its slice of the layered
+`labonair_settings::SettingsStore` directly; the bridge is deleted. Result:
+one settings system, not two.
+
+**What a forked subagent did (most of the migration, interrupted mid-`view.rs`
+by a session rate limit before it could commit):**
+- `crates/settings/src/concrete.rs`: new `GeneralSettings` slice
+  (theme_pref/check_for_updates/session_restore/default_startup_tab) +
+  getters added to `ThemeSettings` (theme_variant_overrides, tabs_location,
+  zen_mode_show_header/_statusbar, app_font_size), `TerminalSettings`
+  (font_size, scrollback, shell, font_family, cursor_style/_blink,
+  show_pane_header/_footer, bell, session_scrollback_lines,
+  scrollback_max_bytes, scrollback_retention_secs), `EditorSettings`
+  (word_wrap, line_numbers, relative_line_numbers, indent_with_tabs, tab_size,
+  vim_mode, format_on_save, vim_hlsearch/_incsearch/_smartcase, editor_theme,
+  font_family, font_size), `WorkspaceSettings` (sidebar_position, dock_layout,
+  command_palette_* × 6).
+- Migrated `crates/workspace/src/views/editor.rs`, `views/terminal.rs`,
+  `workspace.rs`; `crates/command-palette` (dropped the `PalettePrefs`
+  host-contract trait entirely — the palette now reads `WorkspaceSettings` /
+  `ThemeSettings` / `TerminalSettings` / `GeneralSettings` / `EditorSettings`
+  straight from `cx`, `CommandPalette::new`/`Titlebar::new` lost their `prefs`
+  param); `crates/settings-ui/src/apply.rs` (`apply_prefs_to_theme` etc. now
+  take `(theme, cx)`, no `&Preferences`); `crates/settings-ui/src/store.rs`
+  (`PreferencesStore`/`GlobalPreferences` deleted, file removed), `view.rs`,
+  `window.rs` (`set_settings_deps` lost its `prefs` param), `panes/themes.rs`.
+- Deleted `crates/backend/src/modules/settings/content_bridge.rs` entirely;
+  gutted `preferences.rs` to a deserialize-only `Preferences` shape (no
+  `preferences_load`/`_save`/`load_from`/`save_to` — `migrate_v2.rs` still
+  needs the type to parse a pre-schemaVersion-2 `"preferences"` blob; its own
+  tests reimplement a load/save pair locally).
+- Rewrote `crates/settings-ui/src/tests.rs` off `PreferencesStore::with_dir`
+  onto `labonair_settings::SettingsStore` + `update_user_settings`.
+
+**What the orchestrator finished after the subagent hit a rate limit
+mid-`view.rs` edit (uncommitted, ~21 files, `crates/shell` untouched):**
+- `crates/shell/src/bootstrap.rs`: removed the `PreferencesStore` entity +
+  `publish_global`/`cx.observe(&prefs, …)`; `apply_prefs_to_theme` now reads
+  `GeneralSettings`/`ThemeSettings` itself so the old manual theme-preference
+  block was dead code — deleted it; `session_snapshot` reads
+  `GeneralSettings::try_get`; `check_for_updates` gate reads `GeneralSettings`;
+  `set_settings_deps`/`CommandPalette::new`/`Titlebar::new`/
+  `AppShell::from_parts` calls updated to their new (shorter) signatures;
+  `migrate_dock_layout` retargeted from `&Preferences` to
+  `&WorkspaceSettings` (added `sidebar_open`/`_active_panel`/`_width`/
+  `_right_width` getters to `concrete.rs` for this); the dock-persist hook now
+  writes `c.workspace.dock_layout` through `SettingsStore::update_user_settings`
+  instead of `PreferencesStore::set_value`.
+- `crates/shell/src/actions.rs`: added `toggle_setting_bool(key, cx)` — a
+  small match over the 9 keys `commands.rs`' zen-mode/settings toggle table
+  passes to `toggle_zen_pref` (there is no generic key→`SettingsContent`-path
+  lookup exposed outside `settings-ui`'s private `schema::AnyField`, and 9
+  known keys didn't justify exporting one); `toggle_zen_mode` reads
+  `ThemeSettings` and writes both zen fields through `SettingsStore`;
+  `build_palette_data`'s active-theme lookup reads `ThemeSettings`;
+  `SetColorMode`/`SetEditorTheme` palette events write
+  `c.general.theme`/`c.editor.editor_theme` through `SettingsStore` instead of
+  the deleted `set_value`.
+- Fixed a handful of now-stale doc comments across `settings/src/settings.rs`,
+  `workspace/src/workspace.rs`, `settings-ui/src/{window.rs,view.rs,
+  keymap_edit.rs}`, `command-palette/src/{palette.rs,command_palette.rs}` that
+  still asserted the bridge existed / was "out of scope to remove".
+- `cargo fmt` (a few pre-existing formatting nits from the subagent's edits).
+
+**Verify (from repo root, full workspace):** `cargo check --workspace`,
+`cargo clippy --all-targets -- -D warnings`, `cargo fmt --check`, `cargo test
+--workspace` — all clean, 0 failures across every crate.
+`grep -rn "GlobalPreferences\|PreferencesStore\|preferences_save\|preferences_load\|content_bridge" crates`
+now only matches doc-comment prose (no live code).
+
+**State:** branch `master`, on top of Block 1 (`3a28b4c`) + Block 2
+(`82027e3`). This session's diff not yet committed as of this handshake entry
+— see the next commit right after this file is saved. Nothing left running;
+the 3-block settings rework is complete.
+
+**Next:** resume the normal roadmap (`tasks/ROADMAP.md`) — the next task after
+the settings-guidelines work is whatever `T19-*`/`T20-*` file is still
+`🔲 Todo` in phase order.
+
+---
+
+## Previous Session: 2026-09-06 (Settings rework — Block 2: sparse config.json)
 
 Ad-hoc request (3-block settings rework). **Block 2 (config.json only carries
 overrides again) done here.**

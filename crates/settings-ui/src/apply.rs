@@ -8,17 +8,18 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use gpui::{App, Entity};
-use serde_json::Value;
 
 use labonair_backend::modules::fs::paths::config_dir;
-use labonair_backend::modules::settings::preferences::Preferences;
 use labonair_command_palette::{resolve_conflict, Conflict, KeybindMap, ShortcutId};
-use labonair_settings::{Settings as _, ThemeSettings};
+use labonair_settings::content::general::ThemePref;
+use labonair_settings::{
+    EditorSettings, GeneralSettings, Settings as _, SettingsStore, TerminalSettings, ThemeSettings,
+};
 #[cfg(test)]
 use labonair_theme::ThemeFile;
+use labonair_theme::ThemePreference;
 use labonair_theme::{IconThemeRegistry, ThemeMetrics, ThemeRegistry, ThemeStore, UiDensity};
 
-use crate::store::PreferencesStore;
 use crate::view::ThemeEntry;
 
 // ─────────────────────────── keybind mutation (pure) ─────────────────────────
@@ -46,16 +47,25 @@ pub(crate) fn capture_keybind(map: &KeybindMap, id: ShortcutId, binding: &str) -
     }
 }
 
-/// Build the [`FontOverrides`] snapshot from the typography-relevant
-/// preferences. A blank family / zero size means "keep the theme default".
-pub(crate) fn font_overrides_from(p: &Preferences) -> labonair_theme::FontOverrides {
+/// Build the [`FontOverrides`] snapshot from the typography-relevant settings
+/// slices. A blank family / zero size means "keep the theme default".
+pub(crate) fn font_overrides_from_settings(cx: &App) -> labonair_theme::FontOverrides {
+    let appearance = ThemeSettings::try_get(cx);
+    let editor = EditorSettings::try_get(cx);
+    let terminal = TerminalSettings::try_get(cx);
     labonair_theme::FontOverrides {
-        app_family: p.app_font_family.clone(),
-        app_size: p.app_font_size as f32,
-        editor_family: p.editor_font_family.clone(),
-        editor_size: p.editor_font_size as f32,
-        terminal_family: p.terminal_font_family.clone(),
-        terminal_size: p.terminal_font_size as f32,
+        app_family: appearance
+            .map(|s| s.ui_font_family().to_string())
+            .unwrap_or_default(),
+        app_size: appearance.map(|s| s.ui_font_size()).unwrap_or(16.0),
+        editor_family: editor
+            .map(|s| s.font_family().to_string())
+            .unwrap_or_default(),
+        editor_size: editor.map(|s| s.font_size() as f32).unwrap_or(15.0),
+        terminal_family: terminal
+            .map(|s| s.font_family().to_string())
+            .unwrap_or_default(),
+        terminal_size: terminal.map(|s| s.font_size() as f32).unwrap_or(15.0),
         terminal_line_height: 0.0,
     }
 }
@@ -90,11 +100,26 @@ pub fn apply_theme_metrics(theme: &Entity<ThemeStore>, cx: &mut App) {
 /// Push the font + editor-syntax-theme preferences into the [`ThemeStore`], and
 /// (re)load + activate the persisted registry theme (T20-005). Used at startup
 /// (`AppShell`) and on every settings change.
-pub fn apply_prefs_to_theme(p: &Preferences, theme: &Entity<ThemeStore>, cx: &mut App) {
-    let overrides = font_overrides_from(p);
+pub fn apply_prefs_to_theme(theme: &Entity<ThemeStore>, cx: &mut App) {
+    // App color-mode preference (`general.theme`) — system / light / dark.
+    if let Some(g) = GeneralSettings::try_get(cx) {
+        let pref = match g.theme_pref() {
+            ThemePref::Light => ThemePreference::Light,
+            ThemePref::Dark => ThemePreference::Dark,
+            ThemePref::System => ThemePreference::System,
+        };
+        theme.update(cx, |t, cx| t.set_preference(pref, cx));
+    }
+
+    let overrides = font_overrides_from_settings(cx);
     theme.update(cx, |t, cx| t.set_font_overrides(overrides, cx));
     apply_theme_metrics(theme, cx);
-    if let Some(id) = labonair_theme::EditorThemeId::from_slug(&p.editor_theme) {
+
+    let appearance = ThemeSettings::try_get(cx).cloned();
+    let editor_theme_slug = EditorSettings::try_get(cx)
+        .map(|s| s.editor_theme().to_string())
+        .unwrap_or_else(|| "atomone".to_string());
+    if let Some(id) = labonair_theme::EditorThemeId::from_slug(&editor_theme_slug) {
         theme.update(cx, |t, cx| t.set_editor_theme(id, cx));
     }
 
@@ -103,10 +128,14 @@ pub fn apply_prefs_to_theme(p: &Preferences, theme: &Entity<ThemeStore>, cx: &mu
     theme.update(cx, |t, cx| {
         t.reload_user_themes(&themes_dir(), cx);
     });
-    let id = if p.app_theme.is_empty() {
+    let app_theme = appearance
+        .as_ref()
+        .map(|s| s.app_theme().to_string())
+        .unwrap_or_else(|| "default".to_string());
+    let id = if app_theme.is_empty() {
         "default"
     } else {
-        p.app_theme.as_str()
+        app_theme.as_str()
     };
     if theme
         .update(cx, |t, cx| t.set_active_theme(id, cx))
@@ -117,17 +146,25 @@ pub fn apply_prefs_to_theme(p: &Preferences, theme: &Entity<ThemeStore>, cx: &mu
             let _ = t.set_active_theme("default", cx);
         });
     }
-    apply_stored_theme_variant(&p.theme_variant_overrides, theme, cx);
+    let variant_overrides = appearance
+        .as_ref()
+        .map(|s| s.theme_variant_overrides())
+        .unwrap_or_default();
+    apply_stored_theme_variant(&variant_overrides, theme, cx);
 
     // Icon theme (T20-006): rescan the user icon-themes directory, then
     // activate the persisted id (`""` / `"default"` → built-in glyph set).
     theme.update(cx, |t, cx| {
         t.reload_user_icon_themes(&icon_themes_dir(), cx);
     });
-    let icon_id = if p.icon_theme.is_empty() {
+    let icon_theme = appearance
+        .as_ref()
+        .map(|s| s.icon_theme().to_string())
+        .unwrap_or_else(|| "default".to_string());
+    let icon_id = if icon_theme.is_empty() {
         "default"
     } else {
-        p.icon_theme.as_str()
+        icon_theme.as_str()
     };
     if theme
         .update(cx, |t, cx| t.set_active_icon_theme(icon_id, cx))
@@ -143,15 +180,13 @@ pub fn apply_prefs_to_theme(p: &Preferences, theme: &Entity<ThemeStore>, cx: &mu
 /// re-resolve the active theme (+ its persisted variant). Called on startup by
 /// [`apply_prefs_to_theme`] and by `labonair-shell`'s fs-watch on the themes
 /// folder (T20-005 live-reload).
-pub fn reload_theme_registry(
-    prefs: &Entity<PreferencesStore>,
-    theme: &Entity<ThemeStore>,
-    cx: &mut App,
-) {
+pub fn reload_theme_registry(theme: &Entity<ThemeStore>, cx: &mut App) {
     theme.update(cx, |t, cx| {
         t.reload_user_themes(&themes_dir(), cx);
     });
-    let overrides = prefs.read(cx).get().theme_variant_overrides.clone();
+    let overrides = ThemeSettings::try_get(cx)
+        .map(|s| s.theme_variant_overrides())
+        .unwrap_or_default();
     apply_stored_theme_variant(&overrides, theme, cx);
 }
 
@@ -228,13 +263,7 @@ pub fn theme_choices() -> Vec<(String, String)> {
 
 /// Live hover-preview of a theme by id (`Some`) or revert (`None`) — no
 /// persistence. Used by the command palette's Themes sub-page.
-pub fn preview_app_theme(
-    id: Option<&str>,
-    prefs: &Entity<PreferencesStore>,
-    theme: &Entity<ThemeStore>,
-    cx: &mut App,
-) {
-    let _ = prefs;
+pub fn preview_app_theme(id: Option<&str>, theme: &Entity<ThemeStore>, cx: &mut App) {
     match id {
         None => theme.update(cx, |t, cx| t.cancel_preview(cx)),
         Some(id) => theme.update(cx, |t, cx| t.preview_registry_theme(id, cx)),
@@ -243,17 +272,15 @@ pub fn preview_app_theme(
 
 /// Activate a JSON app theme by id (`"default"` = built-in), persist the
 /// selection, and re-apply its stored variant. Used by the palette.
-pub fn activate_app_theme(
-    id: &str,
-    prefs: &Entity<PreferencesStore>,
-    theme: &Entity<ThemeStore>,
-    cx: &mut App,
-) {
-    prefs.update(cx, |s, cx| {
-        s.set_value("appTheme", Value::String(id.to_string()), cx)
-    });
-    let p = prefs.read(cx).get().clone();
-    apply_prefs_to_theme(&p, theme, cx);
+pub fn activate_app_theme(id: &str, theme: &Entity<ThemeStore>, cx: &mut App) {
+    let id_owned = id.to_string();
+    if let Some(store) = cx.try_global::<SettingsStore>() {
+        let _ = store;
+        let _ = cx
+            .global_mut::<SettingsStore>()
+            .update_user_settings(move |c| c.appearance.app_theme = Some(id_owned));
+    }
+    apply_prefs_to_theme(theme, cx);
 }
 
 /// The selectable theme list (T20-005): the built-in "Labonair" entry (id
