@@ -24,17 +24,11 @@ labonair-workspace = { path = "../workspace" }
 labonair-panel = { path = "../panel" }
 labonair-backend = { path = "../backend" }
 labonair-filesystem = { path = "../filesystem" }
-# T19-010: Settings › Hosts embeds `HostManagerView` verbatim.
-labonair-hosts-ui = { path = "../hosts-ui" }
 # T19-004: the UI is generated from the typed `SettingsContent` tree via the
 # layered `SettingsStore` global (T19-002/003) instead of the old
 # hand-maintained `FIELDS` table.
 labonair-settings = { path = "../settings" }
 labonair-settings-content = { path = "../settings-content" }
-# T19-008: surgical `keymap.json` edits (rebind/unbind a shortcut) reuse the
-# same comment-preserving tree-sitter-json editor T19-005 built for
-# `settings.json`.
-labonair-settings-json = { path = "../settings-json" }
 
 [dev-dependencies]
 gpui = { workspace = true, features = ["test-support"] }

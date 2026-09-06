@@ -7,7 +7,6 @@ mod cases {
     use gpui::TestAppContext;
     use serde_json::Value;
 
-    use labonair_command_palette::{KeybindMap, ShortcutId};
     use labonair_settings::{
         EditorSettings, SettingsContent, SettingsLayer, SettingsStore, TerminalSettings,
     };
@@ -158,11 +157,9 @@ mod cases {
 
         let list = scan_themes(&dir);
         assert_eq!(list[0].id, "default");
-        assert!(list[0].builtin);
         let ids: Vec<&str> = list.iter().map(|t| t.id.as_str()).collect();
         assert_eq!(ids, vec!["default", "good/dark", "good/light"]);
         assert_eq!(list[1].name, "Sample \u{2014} dark");
-        assert!(!list[1].builtin);
 
         std::fs::remove_dir_all(&dir).ok();
     }
@@ -183,31 +180,9 @@ mod cases {
     }
 
     #[test]
-    fn capture_free_binding_sets_override() {
-        assert!(matches!(
-            capture_keybind(&KeybindMap::new(), ShortcutId::TabNew, "cmd-shift-y"),
-            KbCapture::Set
-        ));
-    }
-
-    #[test]
-    fn capture_detects_conflict() {
-        match capture_keybind(&KeybindMap::new(), ShortcutId::CommandPalette, "cmd-t") {
-            KbCapture::Conflict(other) => assert_eq!(other, ShortcutId::TabNew),
-            _ => panic!("cmd-t should collide with TabNew"),
+    fn capability_management_categories_are_not_registered() {
+        for removed in ["themes", "hosts", "shortcuts"] {
+            assert!(!AREAS.iter().any(|area| area.key == removed));
         }
-    }
-
-    #[test]
-    fn capture_refuses_reserved_accelerator() {
-        assert!(matches!(
-            capture_keybind(&KeybindMap::new(), ShortcutId::TabNew, "cmd-,"),
-            KbCapture::Reserved("Settings")
-        ));
-    }
-
-    #[test]
-    fn shortcuts_category_is_registered() {
-        assert!(AREAS.iter().any(|a| a.key == "shortcuts"));
     }
 }

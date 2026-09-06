@@ -324,13 +324,13 @@ enum PendingOpen {
 /// [`Workspace::set_dock_persist_hook`]).
 type DockPersistHook = Arc<dyn Fn(String, &mut App) + Send + Sync>;
 
-/// Opens the Settings window on the "Hosts" category (installed by the
-/// shell — see [`Workspace::set_open_host_settings_hook`]). `Workspace`
+/// Opens the Hosts capability surface (installed by the shell — see
+/// [`Workspace::set_open_hosts_hook`]). `Workspace`
 /// cannot depend on `labonair-settings-ui` (that crate already depends on
 /// `labonair-workspace`), so — mirroring [`DockPersistHook`] — the shell
-/// hands in a plain closure at startup instead (T19-010, replacing the old
+/// hands in a plain closure at startup instead (replacing the old
 /// `TabKind::Hosts` tab / `open_host_manager`).
-type OpenHostSettingsHook = Arc<dyn Fn(&mut App) + Send + Sync>;
+type OpenHostsHook = Arc<dyn Fn(&mut App) + Send + Sync>;
 
 /// The tabbed, split-pane workspace shell.
 pub struct Workspace {
@@ -370,8 +370,8 @@ pub struct Workspace {
     /// crate cannot depend on — hence the callback indirection). T17-003
     /// moved this off `AppShell`.
     dock_persist_hook: Option<DockPersistHook>,
-    /// Set once by the shell: opens Settings › Hosts (T19-010).
-    open_host_settings_hook: Option<OpenHostSettingsHook>,
+    /// Set once by the shell: opens the Hosts capability surface.
+    open_hosts_hook: Option<OpenHostsHook>,
     /// Debounce for [`Workspace::persist_docks`].
     last_dock_save: Option<std::time::Instant>,
     /// The three edge docks (T17-002). Empty at construction; populated by
@@ -555,7 +555,7 @@ impl Workspace {
             panel_registry: labonair_panel::PanelRegistry::new(),
             status_item_registry: labonair_panel::StatusItemRegistry::new(),
             dock_persist_hook: None,
-            open_host_settings_hook: None,
+            open_hosts_hook: None,
             last_dock_save: None,
             left_dock: crate::dock::Dock::new(labonair_panel::DockPosition::Left),
             right_dock: crate::dock::Dock::new(labonair_panel::DockPosition::Right),
@@ -1891,21 +1891,16 @@ impl Workspace {
         self.open_sftp(host_id, window, cx);
     }
 
-    /// Open Settings › Hosts (T19-010 — replaces the old `TabKind::Hosts`
-    /// tab / `open_host_manager`). Wired to the `Open Host Settings` native
-    /// menu item / `CommandId::OpenHostSettings` and the `＋▾` "All
-    /// hosts…" entry. A no-op if the shell hasn't installed the hook yet
-    /// (headless/test contexts).
-    pub fn open_host_settings(&mut self, cx: &mut Context<Self>) {
-        if let Some(hook) = self.open_host_settings_hook.clone() {
+    /// Open the Hosts capability surface. A no-op if the shell has not
+    /// installed the capability's UI hook yet (headless/test contexts).
+    pub fn open_hosts(&mut self, cx: &mut Context<Self>) {
+        if let Some(hook) = self.open_hosts_hook.clone() {
             hook(cx);
         }
     }
 
-    /// The shared host-manager entity (T19-010): embedded directly by
-    /// `labonair-settings-ui`'s Settings › Hosts pane, so an edit made there
-    /// is the exact same entity the connect flows / `known_hosts` already
-    /// read — no separate sync path needed.
+    /// The shared host-manager entity used by the Hosts capability and
+    /// connection flows.
     pub fn host_manager(&self) -> Entity<HostManagerView> {
         self.host_manager.clone()
     }
@@ -2086,10 +2081,10 @@ impl Workspace {
         self.dock_persist_hook = Some(Arc::new(hook));
     }
 
-    /// Install the shell's "open Settings › Hosts" callback (T19-010, see
-    /// [`OpenHostSettingsHook`]).
-    pub fn set_open_host_settings_hook(&mut self, hook: impl Fn(&mut App) + Send + Sync + 'static) {
-        self.open_host_settings_hook = Some(Arc::new(hook));
+    /// Install the shell's Hosts capability-surface callback (see
+    /// [`Self::open_hosts`]).
+    pub fn set_open_hosts_hook(&mut self, hook: impl Fn(&mut App) + Send + Sync + 'static) {
+        self.open_hosts_hook = Some(Arc::new(hook));
     }
 
     /// The "primary" edge per the `sidebarPosition` setting
@@ -3487,7 +3482,7 @@ impl Workspace {
                         .child(
                             loading_btn("ssh-l-edit", "Edit Host", c, muted, border, false, fg)
                                 .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
-                                    this.open_host_settings(cx)
+                                    this.open_hosts(cx)
                                 })),
                         )
                         .child(
@@ -3967,7 +3962,7 @@ impl Workspace {
                         move |_, _w, cx| {
                             v.update(cx, |this, cx| {
                                 this.new_tab_menu = None;
-                                this.open_host_settings(cx)
+                                this.open_hosts(cx)
                             })
                         }
                     }),

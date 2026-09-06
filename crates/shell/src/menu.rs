@@ -334,7 +334,7 @@ fn app_menus() -> Vec<Menu> {
         Menu {
             name: "Connections".into(),
             items: vec![
-                MenuItem::action("Open Host Settings", OpenHostSettings),
+                MenuItem::action("Open Hosts", OpenHostSettings),
                 MenuItem::separator(),
                 MenuItem::action("New SSH Connection\u{2026}", NewSshConnection),
                 MenuItem::action("New Quick SSH\u{2026}", NewQuickSsh),
@@ -363,7 +363,7 @@ fn dock_menu() -> Vec<MenuItem> {
         MenuItem::action("New Terminal Tab", NewTerminalTab),
         MenuItem::action("New SSH Connection\u{2026}", NewSshConnection),
         MenuItem::separator(),
-        MenuItem::action("Open Host Settings", OpenHostSettings),
+        MenuItem::action("Open Hosts", OpenHostSettings),
     ]
 }
 

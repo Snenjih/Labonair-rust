@@ -49,14 +49,10 @@ pub(crate) struct SearchRow {
     pub(crate) subtitle: &'static str,
 }
 
-/// Hand-curated keywords for a `AreaKind::Custom` pane (task step 1: "je
-/// Pane ein Grob-Eintrag + optional handgepflegte Stichworte", with the
-/// task's own example — "Keymap, Shortcut, Tastenkürzel" for Shortcuts).
+/// Hand-curated keywords for a `AreaKind::Custom` pane (task step 1: one
+/// pane entry plus optional hand-maintained keywords).
 fn pane_keywords(area_key: &str, subpage_slug: Option<&str>) -> &'static str {
     match (area_key, subpage_slug) {
-        ("themes", _) => "theme color scheme appearance palette variant",
-        ("hosts", _) => "host ssh server connection saved hosts",
-        ("shortcuts", _) => "keymap shortcut keybinding tastenkürzel hotkey",
         ("mcp", _) => "mcp agent bridge model context protocol",
         ("personalization", _) => "personalization status bar layout panel toggle",
         _ => "",
@@ -208,12 +204,14 @@ mod tests {
     }
 
     /// A query that only hits a custom pane's curated keyword list surfaces
-    /// that pane as a result (task Anweisung step 7's "shortcut" example).
+    /// that pane as a result.
     #[test]
     fn keyword_query_finds_a_custom_pane() {
         let idx = index();
         let rows = search(&idx, "tastenkürzel", 50);
-        assert!(rows.iter().any(|r| r.area_title == "Shortcuts"
+        assert!(rows.is_empty());
+        let rows = search(&idx, "status bar", 50);
+        assert!(rows.iter().any(|r| r.area_title == "Personalization"
             && matches!(
                 r.target,
                 SearchTarget::Pane {

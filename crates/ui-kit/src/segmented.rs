@@ -9,9 +9,8 @@
 //! * [`SegmentVariant::Solid`] — `tabsListVariants.default`: a `bg-muted`
 //!   container whose active segment lifts to `bg-background`.
 //!
-//! Replaces two hand-rolled versions: the Installed/Community tab pair
-//! (`crates/settings-ui/src/panes/themes.rs::render_theme_tabs`) and the theme
-//! variant picker (same file, `render_variant_picker`). The ModelPicker's
+//! Replaces hand-rolled theme picker controls and the theme variant picker.
+//! The ModelPicker's
 //! All/Favorites/Recent strip (`crates/panel-ai/src/panel_ai.rs`) is the same
 //! shape and moves over in T20-002.
 //!

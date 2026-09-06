@@ -1,7 +1,7 @@
 //! Loads, merges, validates and live-reloads `keymap.json` (T19-008), and
 //! feeds the result into [`crate::menu::apply_keymap`] plus the
-//! `KeybindDisplay` GPUI global the Shortcuts pane / command palette /
-//! panel-toggle tooltips read to show effective bindings.
+//! `KeybindDisplay` GPUI global the command palette and panel-toggle
+//! tooltips read to show effective bindings.
 //!
 //! This is the one place in the app that bridges `labonair-settings::keymap`
 //! (pure, decoupled from `CommandId`) with `labonair-command-palette`
@@ -32,8 +32,8 @@ thread_local! {
 }
 
 /// The current validation issues from the last `keymap.json` (re)load — for a
-/// settings-window banner or the Shortcuts pane to surface. Empty when the
-/// file is missing, empty, or fully valid.
+/// settings-window banner to surface. Empty when the file is missing, empty,
+/// or fully valid.
 pub fn last_issues() -> Vec<ValidationIssue> {
     LAST_ISSUES.with(|c| c.borrow().clone())
 }
@@ -114,8 +114,8 @@ pub fn effective_bindings() -> Vec<EffectiveBinding> {
     ])
 }
 
-/// Derive the `ShortcutId`-keyed display map ([`KeybindDisplay`]) the
-/// Shortcuts pane / command palette / panel-toggle tooltips render: absent =
+/// Derive the `ShortcutId`-keyed display map ([`KeybindDisplay`]) the command
+/// palette and panel-toggle tooltips render: absent =
 /// "runs on the `SHORTCUTS` table default", `Some(keystrokes)` = overridden,
 /// `Some("")` = explicitly unbound. Context-agnostic by design (T19-008's
 /// documented scope reduction — the display picks the first effective
@@ -141,8 +141,7 @@ fn display_map(effective: &[EffectiveBinding]) -> KeybindMap {
 }
 
 /// Load, merge, bind and publish the display global — the single entry point
-/// called at startup, on live-reload, and after the Shortcuts pane writes a
-/// surgical `keymap.json` edit.
+/// called at startup and on live-reload.
 pub fn reload_and_apply(cx: &mut App) {
     let effective = effective_bindings();
     crate::menu::apply_keymap(cx, &effective);

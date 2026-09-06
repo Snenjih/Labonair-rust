@@ -10,6 +10,28 @@
 use crate::view::*;
 
 impl SettingsView {
+    /// Load system fonts off the UI thread for the shared `FontFamily` field
+    /// renderer. Font selection is a Settings value; the picker itself is
+    /// owned by the generic settings UI rather than a theme-management pane.
+    pub(crate) fn load_system_fonts(&mut self, cx: &mut Context<Self>) {
+        if !self.system_fonts.is_empty() {
+            return;
+        }
+        let task = self
+            .tokio
+            .spawn(async { labonair_backend::modules::fonts::fonts_list_system().await });
+        cx.spawn(async move |this, cx| {
+            if let Ok(Ok(mut names)) = task.await {
+                names.sort_by_key(|name| name.to_lowercase());
+                let _ = this.update(cx, |this, cx| {
+                    this.system_fonts = names.into_iter().map(SharedString::from).collect();
+                    cx.notify();
+                });
+            }
+        })
+        .detach();
+    }
+
     /// The floating options list for an open `Select`/`FontFamily` dropdown
     /// (T16-010). Rendered as a `deferred` + `anchored` layer so it is not
     /// clipped by the scroll area, with a transparent full-window backdrop
@@ -714,15 +736,7 @@ impl SettingsView {
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
         match (area_key, self.active_subpage) {
-            ("themes", _) => self.render_themes(c, cx),
-            ("shortcuts", _) => {
-                let query = String::new();
-                self.render_shortcuts(&query, c, cx)
-            }
             ("mcp", _) => self.render_agent_bridge(c, cx),
-            ("hosts", None) => self.render_hosts_pane(c, cx),
-            ("hosts", Some(0)) => self.render_hosts_ssh_config(c, cx),
-            ("hosts", Some(_)) => self.render_hosts_availability(c, cx),
             ("personalization", _) => self.render_personalization(c, cx),
             _ => div().into_any_element(),
         }

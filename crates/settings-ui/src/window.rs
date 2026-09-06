@@ -18,34 +18,8 @@ use gpui::{
 use gpui_component::Root;
 use tokio::runtime::Handle as TokioHandle;
 
-use labonair_backend::App as Backend;
-use labonair_hosts_ui::HostManagerView;
-
 use crate::view::SettingsView;
-
-/// Callback the shell installs so a `keymap.json` edit in the Shortcuts pane
-/// can be pushed into the live GPUI key bindings + native menu. The actual
-/// keymap loading/merging/binding logic lives in `labonair-shell`'s
-/// `keymap_loader` (concrete `menu::` `actions!`, a crate this one must not
-/// depend on) — so the shell hands us a plain reload function pointer at
-/// startup, exactly like [`set_settings_deps`]. Argless (T19-008): the shell
-/// re-reads `keymap.json` from disk itself rather than being handed data.
-struct KeybindApplyHook(fn(&mut App));
-
-impl Global for KeybindApplyHook {}
-
-/// Publish the keymap-reload hook. Call once from `AppShell::new`.
-pub fn set_keybind_apply_hook(f: fn(&mut App), cx: &mut App) {
-    cx.set_global(KeybindApplyHook(f));
-}
-
-/// Ask the shell to reload `keymap.json` and re-apply the live key bindings,
-/// if it installed a hook (no-op in tests / headless).
-pub(crate) fn apply_keybinds(cx: &mut App) {
-    if let Some(f) = cx.try_global::<KeybindApplyHook>().map(|h| h.0) {
-        f(cx);
-    }
-}
+use labonair_backend::App as Backend;
 
 /// Shared handles the settings window needs, published by `AppShell` once at
 /// startup (the window is opened lazily, possibly long after `AppShell::new`).
@@ -58,11 +32,6 @@ pub(crate) struct SettingsDeps {
     /// visibility through it, the same methods the in-app right-click menus
     /// use.
     workspace: Entity<labonair_workspace::Workspace>,
-    /// The single shared [`HostManagerView`] (T19-010) — the Settings ›
-    /// Hosts pane embeds the exact same entity `Workspace` uses for
-    /// connecting / `known_hosts`, so an edit here is live everywhere with
-    /// no extra sync path.
-    host_manager: Entity<HostManagerView>,
 }
 
 impl Global for SettingsDeps {}
@@ -93,14 +62,12 @@ pub fn set_settings_deps(
     backend: Backend,
     tokio: TokioHandle,
     workspace: Entity<labonair_workspace::Workspace>,
-    host_manager: Entity<HostManagerView>,
     cx: &mut App,
 ) {
     cx.set_global(SettingsDeps {
         backend,
         tokio,
         workspace,
-        host_manager,
     });
 }
 
@@ -166,7 +133,6 @@ pub fn open_settings_window(slug: Option<&'static str>, cx: &mut App) {
                     deps.backend.clone(),
                     deps.tokio.clone(),
                     deps.workspace.clone(),
-                    deps.host_manager.clone(),
                     cx,
                 );
                 v.windowed = true;
@@ -175,7 +141,6 @@ pub fn open_settings_window(slug: Option<&'static str>, cx: &mut App) {
                 {
                     v.navigate_to_slug(slug);
                 }
-                v.refresh_themes(cx);
                 v.refresh_mcp_status(cx);
                 v.load_system_fonts(cx);
                 window.focus(&v.focus);

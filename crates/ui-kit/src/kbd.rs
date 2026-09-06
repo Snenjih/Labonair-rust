@@ -7,8 +7,8 @@
 //! `.../keybinding_hint.rs`.
 //!
 //! Before this module the port hand-rolled the chip in
-//! `crates/command-palette/src/palette.rs` (a private `kbd` fn) and again as
-//! bordered boxes in `crates/settings-ui/src/panes/shortcuts.rs`.
+//! `crates/command-palette/src/palette.rs` (a private `kbd` fn) and again in
+//! individual feature surfaces.
 //!
 //! ```ignore
 //! kbd_row(["\u{2318}", "K"], c)                 // just the chips

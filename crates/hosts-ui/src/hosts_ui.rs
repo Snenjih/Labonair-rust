@@ -2,9 +2,9 @@
 //!
 //! Extracted from `labonair-workspace` in T16-008. This is deliberately **not**
 //! a dock panel and has **no** `impl Panel` (see `docs/architecture.md §2`):
-//! the management surface is embedded by `labonair-settings-ui` (Settings ›
-//! Hosts, T19-010) and the connect surface is fed to the command palette as
-//! data. Per dependency-rule 9 this crate depends only on `labonair-backend`,
+//! the management surface is owned by the Hosts capability and the connect
+//! surface is fed to the command palette as data. Per dependency-rule 9 this
+//! crate depends only on `labonair-backend`,
 //! `labonair-ui-kit`, `labonair-theme` and `labonair-notifications` — never on
 //! `labonair-workspace` or `labonair-panel`. Opening an SSH/SFTP tab happens
 //! via [`HostManagerEvent`] emitted to the caller, not a direct call.

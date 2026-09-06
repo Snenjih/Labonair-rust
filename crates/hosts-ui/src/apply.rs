@@ -7,10 +7,10 @@
 //! secrets into `labonair_backend::modules::secrets` (never into
 //! `settings.json`) via `hosts::db::hosts_create`/`hosts_update` — that part
 //! is *not* duplicated or moved here. What is new for T19-010 is projecting
-//! the resulting **non-secret** host state into `hosts.entries` (so
-//! Settings › Hosts is a real `SettingsContent`-backed category, per
-//! `docs/settings-guidelines.md`) plus the opaque `credential_ref`, and
-//! doing so from exactly one place.
+//! the resulting **non-secret** host state into `hosts.entries` as a
+//! migration-compatible projection plus the opaque `credential_ref`, and
+//! doing so from exactly one place. Host management itself belongs to this
+//! capability, not to the Settings navigation.
 //!
 //! [`apply_host_change`] is that one place: `HostManagerView::reload`/
 //! `reload_list_only` (the only two functions that ever refresh

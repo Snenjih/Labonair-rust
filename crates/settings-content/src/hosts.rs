@@ -1,13 +1,13 @@
-//! `hosts` area — a **top-level** custom category (`docs/architecture.md`
-//! §8.1/§8.3), peer of `themes`, not nested under `connections`.
+//! Legacy persisted host projection retained for migration compatibility.
+//! Hosts are owned by the Hosts capability, not by the Settings navigation.
 //!
 //! Non-secret host metadata only. Credentials (passwords / private keys)
 //! never round-trip through `SettingsContent` / `settings.json` — a host
 //! entry carries only `credential_ref`, an opaque reference into the OS
 //! keychain (`labonair-backend::modules::secrets`). This mirrors, but does
 //! not replace, `labonair-backend::modules::hosts::db::Host` (the SQLite
-//! row) — that stays the authoritative runtime store; T19-010 is where the
-//! Settings › Hosts page decides how the two are reconciled.
+//! row) — that stays the authoritative runtime store; the Hosts capability
+//! owns any reconciliation between the two stores.
 
 use serde::{Deserialize, Serialize};
 

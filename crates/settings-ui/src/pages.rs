@@ -59,8 +59,8 @@ pub fn pages() -> Vec<SettingsPage> {
     AREAS.iter().map(build_page).collect()
 }
 
-/// Resolve a deep-link slug (`"terminal"`, `"terminal/advanced"`, `"hosts/
-/// ssh-config"`) to a `(page index, sub-page index)` pair against `pages`
+/// Resolve a deep-link slug (`"terminal"`, `"terminal/advanced"`) to a
+/// `(page index, sub-page index)` pair against `pages`
 /// (rule 7). Pure so it's testable without constructing a `SettingsView`
 /// (`SettingsView::navigate_to_slug` is a thin wrapper around this).
 pub fn resolve_slug(pages: &[SettingsPage], slug: &str) -> Option<(usize, Option<usize>)> {
@@ -103,29 +103,6 @@ fn build_page(area: &'static AreaMeta) -> SettingsPage {
         },
         // Custom top-level categories (rule 4): the body is a hand-written
         // render_fn dispatched by `SettingsView` on `area.key`.
-        // Hosts (T19-010): the main page embeds `HostManagerView` verbatim
-        // (list + edit form + jump-hosts + tunnels are already one
-        // component there, per the task's own Notizen — "nicht neu
-        // bauen"); the deep-link slugs `hosts/list`/`hosts/edit` from the
-        // task's Anweisungen both resolve to that same main-page body.
-        // `ssh-config`/`availability` get their own sub-pages since they
-        // are separately deep-linkable per the Akzeptanzkriterien.
-        AreaKind::Custom if area.key == "hosts" => SettingsPage {
-            area,
-            body: PageBody::Custom,
-            sub_pages: vec![
-                SubPage {
-                    title: "SSH Config",
-                    slug: "ssh-config",
-                    body: PageBody::Custom,
-                },
-                SubPage {
-                    title: "Availability",
-                    slug: "availability",
-                    body: PageBody::Custom,
-                },
-            ],
-        },
         AreaKind::Custom => SettingsPage {
             area,
             body: PageBody::Custom,
@@ -479,24 +456,6 @@ const CONNECTIONS_GROUPS: &[Group] = &[
     ),
 ];
 
-/// Hosts' `hosts/availability` sub-page field grid (T19-010) — the
-/// connections-area polling knobs rendered as normal generated
-/// `SettingField`s inside the Hosts custom pane's body (task Notizen:
-/// "Custom-Body heißt nicht 'keine generierten Felder'"). These fields are
-/// also reachable from the Connections area's own page
-/// (`CONNECTIONS_GROUPS`) — shown in both places deliberately, so managing a
-/// host's reachability doesn't require leaving Settings › Hosts.
-pub const HOSTS_AVAILABILITY_GROUPS: &[Group] = &[(
-    "Availability Polling",
-    &[
-        "hostPingInterval",
-        "sshConnectTimeoutSecs",
-        "sshAutoReconnect",
-        "sshAutoReconnectDelay",
-        "sshAutoReconnectMaxAttempts",
-    ],
-)];
-
 /// Personalization's field grid (used inside its Custom render_fn, same
 /// pattern as `AI_GROUPS` — see `render_personalization`'s call to
 /// `SettingsView::render_generated_body`).
@@ -549,8 +508,7 @@ const WORKSPACE_GROUPS: &[Group] = &[
 /// renderer-registry entry… not a one-off widget inlined into a page" is
 /// satisfied here by widgets that already existed before T19-004 and have
 /// real side effects the generic grid does not (MCP writes call the live
-/// backend bridge; Hosts is explicitly deferred to T19-010 per this task's
-/// own Notizen). Each entry is documented, not silently dropped — see
+/// backend bridge). Each entry is documented, not silently dropped — see
 /// `tests::every_field_is_reachable_generically_or_by_documented_exemption`.
 pub const DEDICATED_PANE_EXEMPTIONS: &[&str] = &[
     // `render_agent_bridge` (panes/generic.rs) owns these 5 — each write also
@@ -566,23 +524,6 @@ pub const DEDICATED_PANE_EXEMPTIONS: &[&str] = &[
     // `BTreeMap`s driven by drag/drop + toggle rows, not a scalar control).
     "personalization.statusBarItemPlacements",
     "personalization.panelToggleVisibility",
-    // Hosts (T19-010): `render_hosts_pane`/`render_hosts_ssh_config` own
-    // every `hosts.*` field directly via the embedded `HostManagerView`
-    // (list/edit form/jump-hosts/tunnels/SSH-config import-export) rather
-    // than a generic scalar grid — `entries` is a `Vec<HostEntry>`, not a
-    // single control, and the rest (`defaultShell`/`keepalive`/
-    // `sshConfigImport`/`layout`/`sort`/`cardScale`) are written by that
-    // same component's own save flow, not a generic field row.
-    "hosts.entries",
-    "hosts.defaultShell",
-    "hosts.keepalive",
-    "hosts.sshConfigImport",
-    "hosts.layout",
-    "hosts.sort",
-    "hosts.cardScale",
-    // `render_shortcuts` (panes/shortcuts.rs) renders this one field
-    // directly as its "reset to preset" control, not via a generic grid.
-    "keymap.baseKeymap",
 ];
 
 #[cfg(test)]
@@ -627,10 +568,9 @@ mod tests {
     /// unreachable in the UI (`docs/settings-guidelines.md` rule 2/6).
     /// Areas whose page renders a "Other" leftover fallback for anything not
     /// placed by a curated group — the true `AreaKind::Generated` pages, plus
-    /// the Custom areas that fold a generic grid into their body (AI,
-    /// Personalization). Areas *not* in this list (Themes, Hosts, Shortcuts,
-    /// MCP) render no generic fallback at all — every one of their fields
-    /// must be either placed or a documented exemption.
+    /// the Custom areas that fold a generic grid into their body
+    /// (Personalization). MCP renders no generic fallback at all — every one
+    /// of its fields must be either placed or a documented exemption.
     const AREAS_WITH_LEFTOVER_FALLBACK: &[&str] = &[
         "general",
         "appearance",
@@ -733,51 +673,6 @@ mod tests {
         }
     }
 
-    // ── T19-010: Hosts category + its deep links ────────────────────────
-
-    #[test]
-    fn hosts_is_a_top_level_custom_category_peer_of_themes() {
-        let pages = pages();
-        let hosts = pages.iter().find(|p| p.area.key == "hosts").unwrap();
-        let themes = pages.iter().find(|p| p.area.key == "themes").unwrap();
-        assert!(matches!(hosts.body, PageBody::Custom));
-        assert!(matches!(themes.body, PageBody::Custom));
-        assert_eq!(hosts.area.slug, "hosts");
-        // Peers: both are direct entries in `AREAS`, not nested under
-        // another category.
-        assert!(AREAS.iter().any(|a| a.key == "hosts"));
-        assert!(AREAS.iter().any(|a| a.key == "themes"));
-    }
-
-    #[test]
-    fn hosts_has_ssh_config_and_availability_sub_pages() {
-        let pages = pages();
-        let hosts = pages.iter().find(|p| p.area.key == "hosts").unwrap();
-        let slugs: Vec<&str> = hosts.sub_pages.iter().map(|sp| sp.slug).collect();
-        assert!(slugs.contains(&"ssh-config"));
-        assert!(slugs.contains(&"availability"));
-    }
-
-    #[test]
-    fn resolve_slug_lands_on_hosts_deep_links() {
-        let pages = pages();
-        let hosts_idx = pages.iter().position(|p| p.area.key == "hosts").unwrap();
-
-        // `settings://hosts` — main page, no sub-page.
-        assert_eq!(resolve_slug(&pages, "hosts"), Some((hosts_idx, None)));
-
-        // `settings://hosts/ssh-config` — the SSH Config sub-page.
-        let ssh_config_idx = pages[hosts_idx]
-            .sub_pages
-            .iter()
-            .position(|sp| sp.slug == "ssh-config")
-            .unwrap();
-        assert_eq!(
-            resolve_slug(&pages, "hosts/ssh-config"),
-            Some((hosts_idx, Some(ssh_config_idx)))
-        );
-    }
-
     #[test]
     fn resolve_slug_rejects_unknown_area_or_sub_page() {
         let pages = pages();
@@ -785,9 +680,9 @@ mod tests {
         // An unknown sub-page under a real area resolves the area with no
         // sub-page selected, rather than failing outright.
         assert_eq!(
-            resolve_slug(&pages, "hosts/does-not-exist"),
+            resolve_slug(&pages, "terminal/does-not-exist"),
             Some((
-                pages.iter().position(|p| p.area.key == "hosts").unwrap(),
+                pages.iter().position(|p| p.area.key == "terminal").unwrap(),
                 None
             ))
         );

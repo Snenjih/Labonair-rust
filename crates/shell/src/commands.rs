@@ -269,14 +269,11 @@ pub(crate) fn register_builtin_commands() -> CommandRegistry {
     });
 
     // ── Connections ─────────────────────────────────────────────────────
-    // T19-010: connecting is exclusively the command palette's Hosts page
-    // (`Enter` = SSH, `Shift+Enter` = SFTP) — managing hosts (add/edit/
-    // delete/credentials/jump-hosts/tunnels/SSH-config) is exclusively
-    // Settings › Hosts. `OpenHostSettings` is the only one of these that
-    // opens Settings; the rest open the palette's connect page, same as
-    // `NewSshConnection` (`Cmd+Shift+N`).
-    r.register(CommandId::OpenHostSettings, always, |s, _window, cx| {
-        s.workspace.update(cx, |w, cx| w.open_host_settings(cx));
+    // Connecting is exclusively the command palette's Hosts page
+    // (`Enter` = SSH, `Shift+Enter` = SFTP). Host management is no longer a
+    // Settings page; management will move to the Hosts capability surface.
+    r.register(CommandId::OpenHostSettings, always, |s, window, cx| {
+        s.show_command_palette(Some(PalettePage::Hosts), window, cx);
     });
     for id in [
         CommandId::NewSshTab,

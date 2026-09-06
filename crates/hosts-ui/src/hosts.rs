@@ -1299,14 +1299,13 @@ impl HostManagerView {
 
     // ── SSH-config import / export ─────────────────────────────────────────
 
-    /// Open the "Import from ~/.ssh/config" dialog (T19-010: a dedicated
-    /// button on the Settings › Hosts › SSH Config sub-page calls this
-    /// directly, alongside the toolbar entry point inside this view).
+    /// Open the "Import from ~/.ssh/config" dialog from the Hosts management
+    /// surface or its toolbar entry point.
     pub fn open_import_dialog(&mut self, cx: &mut Context<Self>) {
         self.open_import(cx);
     }
 
-    /// Open the "Export to ~/.ssh/config" dialog (T19-010, see
+    /// Open the "Export to ~/.ssh/config" dialog (see
     /// [`Self::open_import_dialog`]).
     pub fn open_export_dialog(&mut self, cx: &mut Context<Self>) {
         self.open_export(cx);

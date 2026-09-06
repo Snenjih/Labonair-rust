@@ -8,12 +8,10 @@
 pub use gpui::prelude::FluentBuilder;
 pub use gpui::{
     div, px, App, AppContext, ClickEvent, ClipboardItem, Context, Entity, FocusHandle, Focusable,
-    InteractiveElement, IntoElement, KeyDownEvent, ParentElement, PathPromptOptions, Pixels, Point,
-    Render, ScrollHandle, SharedString, StatefulInteractiveElement, Styled, Window,
+    InteractiveElement, IntoElement, KeyDownEvent, ParentElement, Pixels, Point, Render,
+    ScrollHandle, SharedString, StatefulInteractiveElement, Styled, Window,
 };
 pub use serde_json::Value;
-pub use std::fs;
-pub use std::path::PathBuf;
 pub use tokio::runtime::Handle as TokioHandle;
 
 pub use labonair_backend::modules::mcp::{
@@ -22,18 +20,15 @@ pub use labonair_backend::modules::mcp::{
 };
 pub use labonair_backend::modules::settings::mcp::{mcp_prefs_load, mcp_prefs_save, McpPrefs};
 pub use labonair_backend::App as Backend;
-pub use labonair_command_palette::{
-    effective_binding, shortcut, shortcut_slug, shortcuts, KeybindMap, ShortcutId,
-};
 pub use labonair_filesystem::paths::config_dir;
 pub use labonair_notifications::{notification_center, Notification};
-pub use labonair_settings::{Settings as _, SettingsStore, ThemeSettings};
+pub use labonair_settings::{Settings as _, SettingsStore};
 pub use labonair_settings_content::areas::AREAS;
 pub use labonair_theme::ThemeStore;
 pub use labonair_ui_kit::{
-    banner, button, h_stack, icon_for_path, list_header, list_separator, number_field,
-    segmented_control, select_popover, select_trigger, svg_path, v_stack, ButtonSize,
-    ButtonVariant, IconName, ListItem, Palette, SelectOption, Severity, Switch,
+    banner, button, h_stack, list_header, list_separator, number_field, select_popover,
+    select_trigger, v_stack, ButtonSize, ButtonVariant, IconName, ListItem, Palette, SelectOption,
+    Severity, Switch,
 };
 pub use labonair_workspace::background::BackgroundStore;
 
@@ -52,55 +47,12 @@ pub(crate) struct EditState {
     pub(crate) numeric: bool,
 }
 
-/// One row in the Appearance theme list (built-in default + user themes).
+/// One row in the command-palette theme list (built-in default + user themes).
 pub(crate) struct ThemeEntry {
     /// Filename stem — `"default"` for the built-in.
     pub(crate) id: String,
     /// Display name from the theme file.
     pub(crate) name: String,
-    /// Built-in themes can be activated/exported but never deleted.
-    pub(crate) builtin: bool,
-}
-
-/// One entry of the community theme index (port of `RemoteTheme`).
-#[derive(Clone, Debug, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct RemoteTheme {
-    pub(crate) id: String,
-    pub(crate) name: String,
-    #[serde(default)]
-    pub(crate) description: String,
-    #[serde(default)]
-    pub(crate) author: String,
-    pub(crate) raw_url: String,
-}
-
-pub(crate) const COMMUNITY_INDEX_URL: &str =
-    "https://raw.githubusercontent.com/Snenjih/labonair-themes/main/index.json";
-
-/// Fallback shown when the remote index cannot be fetched (port of
-/// `MOCK_COMMUNITY_THEMES`).
-pub(crate) fn mock_community_themes() -> Vec<RemoteTheme> {
-    vec![
-        RemoteTheme {
-            id: "catppuccin".into(),
-            name: "Catppuccin".into(),
-            description: "Soothing pastel theme — Latte, Frappé, Macchiato, Mocha".into(),
-            author: "Catppuccin".into(),
-            raw_url:
-                "https://raw.githubusercontent.com/Snenjih/labonair-themes/main/themes/catppuccin.json"
-                    .into(),
-        },
-        RemoteTheme {
-            id: "nord".into(),
-            name: "Nord".into(),
-            description: "An arctic, north-bluish color palette".into(),
-            author: "arcticicestudio".into(),
-            raw_url:
-                "https://raw.githubusercontent.com/Snenjih/labonair-themes/main/themes/nord.json"
-                    .into(),
-        },
-    ]
 }
 
 /// Which layer supplies a field's effective value, for the origin badge
@@ -147,31 +99,6 @@ pub struct SettingsView {
     pub(crate) editing: Option<EditState>,
     pub(crate) mcp: McpPrefs,
     pub(crate) mcp_token: Option<String>,
-    /// Available themes for the Appearance pane, refreshed when the modal opens.
-    pub(crate) theme_files: Vec<ThemeEntry>,
-    /// Which listed theme is active (`None` = built-in light/dark, no override).
-    pub(crate) active_theme_id: Option<String>,
-    /// Installed icon themes as `(id, display name)` — `"default"` first
-    /// (T20-006). Refreshed with `theme_files` when the window opens.
-    pub(crate) icon_theme_files: Vec<(String, String)>,
-    /// Active icon-theme id (`"default"` = built-in glyph set).
-    pub(crate) active_icon_theme_id: String,
-    /// Themes pane: `false` = Installed tab, `true` = Community tab.
-    pub(crate) themes_community_tab: bool,
-    /// Community/marketplace theme index (mock fallback on fetch failure).
-    pub(crate) community_themes: Vec<RemoteTheme>,
-    pub(crate) community_error: Option<String>,
-    pub(crate) community_loading: bool,
-    /// Community theme ids currently being downloaded.
-    pub(crate) installing_themes: std::collections::HashSet<String>,
-    /// In-progress "New Theme…" name prompt.
-    pub(crate) new_theme_prompt: Option<String>,
-    pub(crate) new_theme_focus: FocusHandle,
-    /// Shortcut currently capturing a new key combination (`Keyboard` pane).
-    pub(crate) recording: Option<ShortcutId>,
-    /// A captured combination that collides with another shortcut, awaiting
-    /// the user's overwrite / cancel decision.
-    pub(crate) kb_conflict: Option<KbConflict>,
     /// `true` when this view is the root of its own OS window (T16-009); `false`
     /// for the legacy in-`AppShell` modal path (kept for tests only).
     pub(crate) windowed: bool,
@@ -186,11 +113,6 @@ pub struct SettingsView {
     /// Personalization pane's statusbar-layout editor + panel-toggle
     /// visibility switches.
     pub(crate) workspace: Entity<labonair_workspace::Workspace>,
-    /// The shared [`HostManagerView`] (T19-010) — embedded verbatim as the
-    /// body of the Hosts custom category; the exact same entity
-    /// `Workspace` uses for connecting / `known_hosts`, so an edit here is
-    /// live everywhere immediately, with no separate sync path.
-    pub(crate) host_manager: Entity<labonair_hosts_ui::HostManagerView>,
     // ── T19-004: generated settings UI ──────────────────────────────────
     /// Every generated field (`crate::schema::all_fields()`), computed once.
     pub(crate) all_fields: Vec<AnyField>,
@@ -249,12 +171,6 @@ pub(crate) struct SelectMenu {
     pub(crate) default_sentinel: Option<SharedString>,
 }
 
-pub(crate) struct KbConflict {
-    pub(crate) id: ShortcutId,
-    pub(crate) binding: String,
-    pub(crate) other: ShortcutId,
-}
-
 impl SettingsView {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
@@ -263,13 +179,11 @@ impl SettingsView {
         backend: Backend,
         tokio: TokioHandle,
         workspace: Entity<labonair_workspace::Workspace>,
-        host_manager: Entity<labonair_hosts_ui::HostManagerView>,
         cx: &mut Context<Self>,
     ) -> Self {
         cx.observe(&theme, |_, _, cx| cx.notify()).detach();
         cx.observe(&background, |_, _, cx| cx.notify()).detach();
         cx.observe(&workspace, |_, _, cx| cx.notify()).detach();
-        cx.observe(&host_manager, |_, _, cx| cx.notify()).detach();
         // The statusbar layout (T18-005/T18-007) and panel-toggle visibility
         // both bump this global — reload-and-repaint so the Personalization
         // pane reflects the same live state as the in-app right-click menus.
@@ -310,25 +224,11 @@ impl SettingsView {
             editing: None,
             mcp: mcp_prefs_load(),
             mcp_token: None,
-            theme_files: Vec::new(),
-            active_theme_id: None,
-            icon_theme_files: Vec::new(),
-            active_icon_theme_id: "default".to_string(),
-            themes_community_tab: false,
-            community_themes: Vec::new(),
-            community_error: None,
-            community_loading: false,
-            installing_themes: std::collections::HashSet::new(),
-            new_theme_prompt: None,
-            new_theme_focus: cx.focus_handle(),
-            recording: None,
-            kb_conflict: None,
             windowed: false,
             dropdown: None,
             system_fonts: Vec::new(),
             focus: cx.focus_handle(),
             workspace,
-            host_manager,
             all_fields,
             pages,
             collapsed_sections: HashSet::new(),
@@ -353,8 +253,6 @@ impl SettingsView {
     pub fn open(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.open = true;
         self.editing = None;
-        self.recording = None;
-        self.kb_conflict = None;
         // Sidebar categories always start collapsed on (re)open.
         self.expanded_areas.clear();
         self.search.clear();
@@ -364,25 +262,6 @@ impl SettingsView {
         self.pending_scroll = None;
         window.focus(&self.focus);
         self.refresh_mcp_status(cx);
-        self.refresh_themes(cx);
-        if self.active_theme_id.is_none() {
-            let stored = ThemeSettings::try_get(cx)
-                .map(|s| s.app_theme().to_string())
-                .unwrap_or_default();
-            if !stored.is_empty() && stored != "default" {
-                self.active_theme_id = Some(stored);
-            }
-        }
-        {
-            let stored = ThemeSettings::try_get(cx)
-                .map(|s| s.icon_theme().to_string())
-                .unwrap_or_default();
-            self.active_icon_theme_id = if stored.is_empty() {
-                "default".to_string()
-            } else {
-                stored
-            };
-        }
         self.load_system_fonts(cx);
         cx.notify();
     }
@@ -716,37 +595,6 @@ impl SettingsView {
         self.set_field_value(json_path, default_value, cx);
     }
 
-    // ── camelCase-keyed field mutation (used by the Themes pane) ─────────
-
-    /// Write a `SettingsContent` leaf addressed by its bare camelCase key
-    /// (e.g. `"appTheme"`, `"iconTheme"`, `"themeVariantOverrides"`). Routes
-    /// through [`Self::set_field_value`] for keys that have a generated UI
-    /// row; `iconTheme` has a backing `SettingsContent` field but no row, so
-    /// it is written directly.
-    pub(crate) fn set_pref(&mut self, key: &str, value: Value, cx: &mut Context<Self>) {
-        if let Some(path) = self
-            .all_fields
-            .iter()
-            .find(|f| f.local_key() == key)
-            .map(|f| f.json_path)
-        {
-            self.set_field_value(path, value, cx);
-            return;
-        }
-        if key == "iconTheme" {
-            if cx.has_global::<SettingsStore>() {
-                let v = value.as_str().unwrap_or("default").to_string();
-                let _ = cx
-                    .global_mut::<SettingsStore>()
-                    .update_user_settings(move |c| c.appearance.icon_theme = Some(v.clone()));
-            }
-            self.sync_theme_from_prefs(cx);
-            cx.notify();
-            return;
-        }
-        tracing::warn!("set_pref: no SettingsContent field for key `{key}`");
-    }
-
     /// Re-derive the [`ThemeStore`] state (color mode, fonts, metrics, active
     /// theme + variant, icon theme) from the layered settings.
     pub(crate) fn sync_theme_from_prefs(&mut self, cx: &mut Context<Self>) {
@@ -822,11 +670,6 @@ impl SettingsView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.recording.is_some() {
-            self.record_key(ev, window, cx);
-            cx.stop_propagation();
-            return;
-        }
         let ks = &ev.keystroke;
         let key = ks.key.as_str();
         if self.editing.is_some() {

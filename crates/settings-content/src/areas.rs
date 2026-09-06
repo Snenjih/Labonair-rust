@@ -4,14 +4,12 @@
 //! this list.
 
 /// Whether a category's page is mechanically generated from a
-/// `SettingsContent` field's type (`T19-004`'s renderer registry), or is a
-/// hand-written [`docs::settings_guidelines`] rule-4 custom pane.
+/// `SettingsContent` field's type, or is a hand-written custom pane.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum AreaKind {
     /// Rendered field-by-field from `target_module`'s struct.
     Generated,
-    /// A bespoke `render_fn` (theme gallery, host manager, shortcut
-    /// recorder, …). May still read/write fields under `target_module`.
+    /// A bespoke render function for a genuine Settings value surface.
     Custom,
 }
 
@@ -82,33 +80,9 @@ pub const AREAS: &[AreaMeta] = &[
         kind: AreaKind::Generated,
         target_module: "workspace",
     },
-    // ── Custom top-level categories (guidelines rule 4) ────────────────
-    AreaMeta {
-        key: "themes",
-        title: "Themes",
-        slug: "themes",
-        kind: AreaKind::Custom,
-        // The active theme id + variant overrides live on `appearance`; the
-        // theme gallery itself reads the on-disk theme index, not a
-        // dedicated `SettingsContent` submodule.
-        target_module: "appearance",
-    },
-    AreaMeta {
-        key: "hosts",
-        title: "Hosts",
-        slug: "hosts",
-        kind: AreaKind::Custom,
-        target_module: "hosts",
-    },
-    AreaMeta {
-        key: "shortcuts",
-        title: "Shortcuts",
-        slug: "shortcuts",
-        kind: AreaKind::Custom,
-        // Bindings live in keymap.json (T19-008); SettingsContent only
-        // carries which base preset a reset seeds from.
-        target_module: "keymap",
-    },
+    // Themes, Hosts, and Shortcuts are intentionally not Settings areas.
+    // Their persisted compatibility data remains outside the navigation until
+    // the owning modules complete their storage migrations.
     AreaMeta {
         key: "mcp",
         title: "MCP",

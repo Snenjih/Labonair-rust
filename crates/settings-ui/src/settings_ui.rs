@@ -10,7 +10,6 @@
 //! `PreferencesStore` / `GlobalPreferences` bridge has been retired.
 
 mod apply;
-mod keymap_edit;
 mod pages;
 mod panes;
 mod schema;
@@ -27,4 +26,4 @@ pub use apply::{
     theme_metrics_from_settings, user_icon_themes_dir, user_themes_dir,
 };
 pub use view::SettingsView;
-pub use window::{open_settings_window, set_keybind_apply_hook, set_settings_deps};
+pub use window::{open_settings_window, set_settings_deps};

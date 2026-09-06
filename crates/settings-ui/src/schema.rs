@@ -5,7 +5,7 @@
 //! Blueprint: `zed-refrence/zed/crates/settings_ui/src/settings_ui.rs`'s
 //! `SettingField<T>` + `SettingFieldRenderer` registry, scoped down to what
 //! Labonair needs (`docs/settings-guidelines.md` rule 3): every entry below is
-//! a single declarative line naming a real `SettingsContent` field, a widget
+//! a single declarative line naming a real `SettingsContent` value field, a widget
 //! kind (`FieldControl`), and copy. `get`/`set` are generated once by the
 //! `field!` macro from the field's own Rust type via `serde_json`
 //! (`Serialize`/`DeserializeOwned`, already derived on every `SettingsContent`
@@ -134,12 +134,11 @@ macro_rules! field {
     };
 }
 
-/// Every `SettingsContent` leaf that has a settings-UI row (rule 2: "if it's
-/// not in `SettingsContent`, it is not a setting" — the converse this table
-/// enforces via `tests::every_leaf_field_has_exactly_one_settingfield` is "if
-/// it's in `SettingsContent`, it has exactly one row here"). Order is
-/// declaration order within each area; page layout (`pages.rs`) decides
-/// on-screen placement, not this list.
+/// Every `SettingsContent` value that is currently exposed as a Settings UI
+/// row. Compatibility-only data owned by another capability (for example
+/// saved hosts and keymap migration data) deliberately has no row here.
+/// Order is declaration order within each Settings area; page layout
+/// (`pages.rs`) decides on-screen placement, not this list.
 pub fn all_fields() -> Vec<AnyField> {
     use FieldControl::{Float, FontFamily, Int, Json, Select, Switch, Text};
     vec![
@@ -1265,72 +1264,6 @@ pub fn all_fields() -> Vec<AnyField> {
             Switch,
             "Show AI controls",
             "Show the AI agent/model controls in the status bar."
-        ),
-        // ── hosts ────────────────────────────────────────────────────────
-        field!(
-            hosts.entries,
-            "entries",
-            Json,
-            "Saved hosts",
-            "Non-secret host metadata; managed from the Hosts page (T19-010)."
-        ),
-        field!(
-            hosts.default_shell,
-            "defaultShell",
-            Text,
-            "Default remote shell",
-            "Shell command used for new SSH sessions when a host doesn't specify one."
-        ),
-        field!(
-            hosts.keepalive,
-            "keepalive",
-            Json,
-            "SSH keepalive",
-            "Keepalive interval / max-missed settings for SSH sessions."
-        ),
-        field!(
-            hosts.ssh_config_import,
-            "sshConfigImport",
-            Json,
-            "SSH config import",
-            "Whether to import hosts from ~/.ssh/config on startup, and from where."
-        ),
-        field!(
-            hosts.layout,
-            "layout",
-            Select(&[("grid", "Grid"), ("list", "List")]),
-            "Host Manager layout",
-            "Card grid or list layout for the Host Manager."
-        ),
-        field!(
-            hosts.sort,
-            "sort",
-            Select(&[
-                ("last_connected", "Last connected"),
-                ("name", "Name"),
-                ("manual", "Manual")
-            ]),
-            "Host Manager sort",
-            "Default sort order for saved hosts."
-        ),
-        field!(
-            hosts.card_scale,
-            "cardScale",
-            Int { min: 50, max: 200, step: 10 },
-            "Host card scale",
-            "Size of host cards in the Host Manager grid (%)."
-        ),
-        // ── keymap ───────────────────────────────────────────────────────
-        field!(
-            keymap.base_keymap,
-            "baseKeymap",
-            Select(&[
-                ("native", "Native"),
-                ("vsCode", "VS Code"),
-                ("jetBrains", "JetBrains")
-            ]),
-            "Base keymap",
-            "Preset a fresh install (or a reset) seeds shortcuts from."
         ),
     ]
 }

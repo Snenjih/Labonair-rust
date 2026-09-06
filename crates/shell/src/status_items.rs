@@ -1418,23 +1418,17 @@ impl StatusItem for AgentAccessStatusItem {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Jump hosts — opens the host manager (rewiring to Palette::Hosts is T17-009 /
-// T19-010, per the task; keep the current call 1:1 here).
+// Jump hosts — opens the command palette's Hosts page.
 // ─────────────────────────────────────────────────────────────────────────────
 
 pub struct JumpHostsStatusItem {
-    workspace: Entity<Workspace>,
     theme: Entity<ThemeStore>,
 }
 
 impl JumpHostsStatusItem {
-    pub fn new(
-        workspace: Entity<Workspace>,
-        theme: Entity<ThemeStore>,
-        cx: &mut Context<Self>,
-    ) -> Self {
+    pub fn new(theme: Entity<ThemeStore>, cx: &mut Context<Self>) -> Self {
         cx.observe(&theme, |_, _, cx| cx.notify()).detach();
-        Self { workspace, theme }
+        Self { theme }
     }
 }
 
@@ -1465,8 +1459,8 @@ impl StatusItem for JumpHostsStatusItem {
             IconName::Server,
             c,
             cx,
-            |this, _window, cx| {
-                this.workspace.update(cx, |w, cx| w.open_host_settings(cx));
+            |_this, window, cx| {
+                window.dispatch_action(Box::new(crate::menu::OpenHostSettings), cx);
             },
         )
     }
@@ -1540,7 +1534,7 @@ pub fn register_builtin_status_items(
     let agent = cx.new(|cx| {
         AgentAccessStatusItem::new(agent_access.clone(), workspace.clone(), theme.clone(), cx)
     });
-    let jump_hosts = cx.new(|cx| JumpHostsStatusItem::new(workspace.clone(), theme.clone(), cx));
+    let jump_hosts = cx.new(|cx| JumpHostsStatusItem::new(theme.clone(), cx));
 
     // Default right-cluster order (T18-004 point 1), each item's `order()`:
     //   cwd(10)/cursor(11)/preview(12)  — group 0, active-tab-derived text,

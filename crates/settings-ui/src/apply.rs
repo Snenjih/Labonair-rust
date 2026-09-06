@@ -1,15 +1,15 @@
-//! Pure helpers shared by the panes: keybind-capture resolution, the
-//! preferences -> `ThemeStore` bridge (`apply_prefs_to_theme`), and the user
-//! theme-file scan / read / write / delete primitives. Split out of the old
+//! Pure helpers shared by the Settings UI and command palette: the
+//! `Preferences` -> `ThemeStore` bridge (`apply_prefs_to_theme`) and the user
+//! theme-file scan primitives. Split out of the old
 //! `crates/ui/src/settings.rs` monolith in T16-007 (mechanical move — no logic
 //! change).
 
+#[cfg(test)]
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use gpui::{App, Entity};
 
-use labonair_command_palette::{resolve_conflict, Conflict, KeybindMap, ShortcutId};
 use labonair_filesystem::paths::config_dir;
 use labonair_settings::content::general::ThemePref;
 use labonair_settings::{
@@ -21,31 +21,6 @@ use labonair_theme::ThemePreference;
 use labonair_theme::{IconThemeRegistry, ThemeMetrics, ThemeRegistry, ThemeStore, UiDensity};
 
 use crate::view::ThemeEntry;
-
-// ─────────────────────────── keybind mutation (pure) ─────────────────────────
-
-/// Result of capturing a keystroke for a shortcut.
-pub(crate) enum KbCapture {
-    /// The keystroke is free to bind.
-    Set,
-    /// The keystroke is already used by another shortcut — needs a decision.
-    Conflict(ShortcutId),
-    /// The keystroke is an OS/menu-reserved accelerator — refused.
-    Reserved(&'static str),
-}
-
-/// Pure port of `useKeybindsStore.setKeybind` + conflict detection: decide
-/// what capturing `binding` for `id` means, given the current effective-
-/// binding display `map` (T19-008: the actual persistence target is now
-/// `keymap.json` via `crate::keymap_edit`, not this map — `map` here is only
-/// used to detect a conflict against the other shortcuts' current bindings).
-pub(crate) fn capture_keybind(map: &KeybindMap, id: ShortcutId, binding: &str) -> KbCapture {
-    match resolve_conflict(binding, Some(id), map) {
-        Some(Conflict::Reserved(label)) => KbCapture::Reserved(label),
-        Some(Conflict::Shortcut(other)) => KbCapture::Conflict(other),
-        None => KbCapture::Set,
-    }
-}
 
 /// Build the [`FontOverrides`] snapshot from the typography-relevant settings
 /// slices. A blank family / zero size means "keep the theme default".
@@ -293,13 +268,11 @@ pub(crate) fn scan_themes(dir: &Path) -> Vec<ThemeEntry> {
     let mut entries = vec![ThemeEntry {
         id: "default".to_string(),
         name: "Labonair".to_string(),
-        builtin: true,
     }];
     for meta in reg.list().into_iter().filter(|m| !m.builtin) {
         entries.push(ThemeEntry {
             id: meta.id(),
             name: format!("{} \u{2014} {}", meta.family, meta.variant_name),
-            builtin: false,
         });
     }
     entries
@@ -311,11 +284,13 @@ pub(crate) fn read_theme_file_in(dir: &Path, id: &str) -> Result<ThemeFile, Stri
     ThemeFile::from_json(&raw)
 }
 
+#[cfg(test)]
 pub(crate) fn save_theme_file_in(dir: &Path, id: &str, raw: &str) -> Result<(), String> {
     fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     fs::write(dir.join(format!("{id}.json")), raw).map_err(|e| e.to_string())
 }
 
+#[cfg(test)]
 pub(crate) fn delete_theme_in(dir: &Path, id: &str) -> Result<(), String> {
     if id == "default" {
         return Err("the built-in theme cannot be deleted".to_string());
@@ -323,6 +298,7 @@ pub(crate) fn delete_theme_in(dir: &Path, id: &str) -> Result<(), String> {
     fs::remove_file(dir.join(format!("{id}.json"))).map_err(|e| e.to_string())
 }
 
+#[cfg(test)]
 pub(crate) fn slugify(name: &str) -> String {
     let s: String = name
         .to_lowercase()

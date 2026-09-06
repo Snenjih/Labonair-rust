@@ -64,12 +64,15 @@ pub struct SettingsContent {
     #[serde(rename = "fileManager")]
     pub file_manager: FileManagerContent,
     pub connections: ConnectionsContent,
-    /// Top-level (peer of `themes`), not nested under `connections` — see
-    /// `docs/architecture.md` §8.1.
+    /// Legacy persisted host data retained for migration compatibility.
+    /// Host ownership and management belong to the Hosts capability, not to
+    /// the Settings navigation.
     pub hosts: HostsContent,
     pub workspace: WorkspaceContent,
     pub mcp: McpContent,
     pub personalization: PersonalizationContent,
+    /// Legacy persisted keymap preset data retained while the keymap
+    /// capability moves to its own registry and storage.
     pub keymap: KeymapContent,
 }
 
@@ -151,10 +154,20 @@ mod tests {
             .filter(|a| a.kind == AreaKind::Custom)
             .map(|a| a.key)
             .collect();
-        for expected in ["themes", "hosts", "shortcuts", "mcp", "personalization"] {
+        for expected in ["mcp", "personalization"] {
             assert!(
                 custom.contains(&expected),
                 "{expected} must be registered as a Custom top-level area"
+            );
+        }
+    }
+
+    #[test]
+    fn capability_management_areas_are_not_settings_categories() {
+        for removed in ["themes", "hosts", "shortcuts"] {
+            assert!(
+                !AREAS.iter().any(|area| area.key == removed),
+                "{removed} must be owned by its capability, not Settings"
             );
         }
     }

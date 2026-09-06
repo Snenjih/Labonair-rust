@@ -1,6 +1,27 @@
 # Handshake — Session State (Labonair-rust Port)
 
-## Current Session: 2026-09-06 (Architecture documentation baseline)
+## Current Session: 2026-09-06 (Settings ownership reset)
+
+The Settings navigation no longer registers `Themes`, `Hosts`, or
+`Shortcuts`. Their persisted compatibility values remain in
+`SettingsContent` for safe migration, but the Settings UI field registry no
+longer renders host or keymap management fields. The obsolete Settings panes
+for themes, hosts, and shortcuts were removed, including the old local
+keymap-editing surface. Theme selection remains available through the existing
+command-palette path; a dedicated Hosts management surface and the new keymap
+capability remain follow-up work.
+
+The old host-settings callback was renamed to the capability-neutral Hosts
+hook and is no longer wired to Settings. `Open Hosts` now routes through the
+command palette's Hosts page. This intentionally leaves host management
+surface wiring for the Hosts capability task instead of preserving a broken
+Settings deep link.
+
+Focused settings-content and settings-ui tests pass. The full workspace gates
+are still pending for this change; the current branch is `master`, with
+uncommitted changes based on `62a80d3`. `R01-001-backend-boundaries-and-
+contracts` remains `🔄 In Progress`; the next capability boundary is SSH/SFTP,
+followed by transfers. No source blocker.
 
 The snippet execution boundary is now typed end to end. `labonair-snippets`
 owns the shared `SnippetRunEvent` contract and asynchronous
@@ -32,15 +53,10 @@ architecture audits confirmed the next priority boundaries: SSH/SFTP
 capabilities, transfers, Hosts, Settings ownership, and the duplicated
 command/keymap definitions.
 
-Verification passed: `cargo fmt --all`, `cargo check --workspace
---all-targets`, `cargo clippy --workspace --all-targets -- -D warnings`,
-`cargo test --workspace`, `cargo fmt --check`, `git diff --check`, and
-`scripts/check-crate-deps.sh`.
-
-Verification for the source-control commit passed. Documentation-only changes
-are currently uncommitted on branch `master`; `R01-001` remains `🔄 In
-Progress`. The next implementation boundary is SSH/SFTP contracts, followed
-by the typed transfer registry. No source blocker.
+Verification for the source-control commit passed. The earlier architecture
+and documentation baseline is committed on branch `master`; `R01-001` remains
+`🔄 In Progress`. The next implementation boundary is SSH/SFTP contracts,
+followed by the typed transfer registry. No source blocker.
 
 ## Current Session: 2026-09-06 (Notification registry and toast removal)
 

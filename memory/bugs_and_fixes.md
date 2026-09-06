@@ -1,5 +1,19 @@
 # Bugs, fixes, and non-obvious constraints
 
+## 2026-09-06 — Settings management categories must be removed as a UI boundary
+
+**Finding:** Removing `Themes`, `Hosts`, and `Shortcuts` from `AREAS` alone
+left dead custom panes, field-registry entries, deep-link tests, and a host
+settings callback. That would make the old ownership model appear removed
+while still retaining unreachable Settings behavior.
+
+**Resolution:** Removed the three navigation entries and their Settings-only
+panes, removed host/keymap management rows from the Settings field registry,
+and kept the persisted `SettingsContent.hosts`/`keymap` values only as an
+explicit migration-compatibility layer. `Open Hosts` now targets the command
+palette Hosts page; host management surface wiring is left to the Hosts
+capability instead of keeping a broken `settings://hosts` deep link.
+
 ## 2026-09-06 — Historical architecture documents must be visibly superseded
 
 **Finding:** Several reports and early ADRs remained in active-looking paths

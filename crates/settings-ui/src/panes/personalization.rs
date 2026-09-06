@@ -6,8 +6,9 @@
 //! use (`set_status_bar_placement` / `set_panel_toggle_visible`) — there is
 //! no second write path.
 //!
-//! Hand-built like the Theme/Shortcuts panes (`SettingsPageItem::Custom`);
-//! the generic field-renderer infrastructure lands in T19-004.
+//! Hand-built because it edits ordered status-bar placements and panel
+//! visibility rather than scalar Settings fields; the generic field-renderer
+//! infrastructure is used for the value settings around it.
 
 use labonair_panel::{PanelIcon, StatusSide};
 use labonair_ui_kit::IconName;
