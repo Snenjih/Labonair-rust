@@ -90,7 +90,10 @@ fn open_project_picker(workspace: Entity<Workspace>, cx: &mut Context<AppShell>)
                     return;
                 };
                 let _ = workspace.update(cx, |workspace, cx| {
-                    workspace.set_project_context(root, cx);
+                    workspace.apply_transition(
+                        labonair_workspace::context::WorkspaceTransition::OpenProject { root },
+                        cx,
+                    );
                 });
             }
             Ok(Err(error)) => {

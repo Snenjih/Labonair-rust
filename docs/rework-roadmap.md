@@ -5,13 +5,15 @@
 
 The foundation migration is currently through `R01-009`, with the first Phase
 2 global-menu slice in `R02-001` and the workspace state/event boundary in
-progress under `R02-002`: capability-owned registries and surfaces
+`R02-002`: capability-owned registries and surfaces
 are established for transfers, command metadata, settings values,
 backgrounds, hosts, notifications, and icon-theme selection. Phase 3 is
 complete:
 remaining operation failures are retained in the statusbar notification
 registry, while actionable task dialogs remain local to the task that requires
-the user's decision.
+the user's decision. `R02-002` is complete; `R02-003` is the active task for
+persisted project identity, explicit return-to-standalone behavior, and the
+remaining project-lifecycle audit.
 
 This roadmap replaces the historical task order. Existing completed work remains valuable, but old tasks do not override the contracts in `docs/`.
 

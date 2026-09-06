@@ -1,5 +1,10 @@
 # Terminal Concept — Verbesserungen & Feature-Porting aus Zed
 
+> **Superseded — historical reference only.** Terminal work now follows the
+> current product contract, module rules, and active rework queue under
+> `docs/` and `tasks/rework/`. This proposal is retained for research only and
+> must not be treated as an implementation plan.
+
 > **Status:** Konzept / Entwurf
 > **Autor:** Niklas + Claude Code
 > **Erstellt:** 2026-09-04

@@ -81,7 +81,8 @@ same contract after SSH/SFTP define their transport-owned identity.
 
 ## Acceptance criteria
 
-- [ ] Project identity changes only through an explicit typed transition.
+- [x] Project identity changes only through the explicit typed
+      `WorkspaceTransition` contract.
 - [ ] Empty, active, project, and standalone states share one workspace model.
 - [ ] Session and project settings behavior is explicit and backward compatible.
 - [ ] No shell callback or feature-specific duplicate layout is introduced.
@@ -98,9 +99,12 @@ identity is applied before tabs are recreated so project settings and surface
 root observers receive the correct scope at startup. `Return to Standalone`
 is registered as one typed workspace command and is available from the native
 File menu and command palette; it changes identity only and preserves the
-existing tabs, panes, and shell layout. Focused workspace, command-registry,
-and shell tests pass, including a shell-registry assertion that both lifecycle
-commands use their canonical typed action names and execution registrations.
+existing tabs, panes, and shell layout. Both picker selection and session
+restore now use the same `WorkspaceTransition::OpenProject` path, while the
+command uses `WorkspaceTransition::ReturnToStandalone`; direct identity
+setters are no longer exposed. Focused workspace, command-registry, and shell
+tests pass, including a shell-registry assertion that both lifecycle commands
+use their canonical typed action names and execution registrations.
 
 The current release bundle (build 265) passes the exact-path five-second
 native launch smoke test and is resolved only as the Rust executable. A

@@ -1,5 +1,28 @@
 # Handshake — Session State (Labonair-rust Port)
 
+## Current Session: 2026-09-06 (Typed workspace transitions and documentation sync)
+
+`R02-003` remains active. Workspace identity changes now enter through the
+single typed `WorkspaceTransition` contract: project-picker selection and
+session restoration use `OpenProject`, while the command-palette/File-menu
+action uses `ReturnToStandalone`. Direct workspace-context setters are
+crate-private, and terminal CWD changes cannot be represented as identity
+transitions.
+
+The stale active-task references in `tasks/README.md` and the roadmap
+introduction were corrected to point to `R02-003`. Archived philosophy and
+terminal ideas now explicitly identify themselves as historical, non-binding
+material. The exact native Rust bundle was launched by its absolute path for
+verification; the process was confirmed as the Rust executable, but macOS
+Screen Capture again denied the PID-scoped screenshot, so the visual
+acceptance criterion remains open. The legacy Tauri app was not used.
+
+Focused Workspace and shell tests, `cargo check --workspace --all-targets`,
+Clippy, dependency verification, queue verification, and `git diff --check`
+pass. The full workspace test run has only the two known sandbox-restricted
+tests; both exact tests pass outside the sandbox. Next: finish the remaining
+R02-003 lifecycle/removal audit and obtain the required native visual evidence.
+
 ## Current Session: 2026-09-06 (Project identity persistence in progress)
 
 `R02-002` is complete and `R02-003` is now the active task. The workspace

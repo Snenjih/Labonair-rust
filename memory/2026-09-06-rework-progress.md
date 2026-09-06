@@ -22,6 +22,11 @@ settings and surface-root observers start from the same context. Returning to
 Standalone is an explicit command that leaves tabs, panes, and shell layout
 intact.
 
+Identity changes now use one typed `WorkspaceTransition` contract. The project
+picker, session restore, and Return to Standalone command all enter through
+that contract; direct workspace-context setters are crate-private, and a
+terminal CWD is not representable as an identity transition.
+
 ## Native visual verification boundary
 
 The exact Rust bundle passes the five-second LaunchServices smoke check and

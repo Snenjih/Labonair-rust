@@ -41,6 +41,18 @@ impl WorkspaceIdentity {
     }
 }
 
+/// Explicit identity transitions accepted by the workspace owner.
+///
+/// A terminal working-directory change is deliberately not represented here:
+/// it can affect a tool instance, but it cannot change workspace identity.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum WorkspaceTransition {
+    /// Anchor the workspace to a selected local or remote project root.
+    OpenProject { root: PathBuf },
+    /// Remove project scope while preserving the workspace's tools and layout.
+    ReturnToStandalone,
+}
+
 /// Runtime activity of a workspace, combining identity with tab presence.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum WorkspaceState {
@@ -98,11 +110,11 @@ impl WorkspaceContext {
         &self.identity
     }
 
-    pub fn set_standalone(&mut self) {
+    pub(crate) fn set_standalone(&mut self) {
         self.identity = WorkspaceIdentity::Standalone;
     }
 
-    pub fn set_project(&mut self, root: impl Into<PathBuf>) {
+    pub(crate) fn set_project(&mut self, root: impl Into<PathBuf>) {
         self.identity = WorkspaceIdentity::project(root);
     }
 }
@@ -169,6 +181,24 @@ mod tests {
 
         context.set_standalone();
         assert_eq!(context.identity(), &WorkspaceIdentity::Standalone);
+    }
+
+    #[test]
+    fn transition_contract_names_only_explicit_identity_changes() {
+        assert_eq!(
+            WorkspaceTransition::OpenProject {
+                root: PathBuf::from("/work/app"),
+            },
+            WorkspaceTransition::OpenProject {
+                root: PathBuf::from("/work/app"),
+            }
+        );
+        assert_ne!(
+            WorkspaceTransition::ReturnToStandalone,
+            WorkspaceTransition::OpenProject {
+                root: PathBuf::from("/work/app"),
+            }
+        );
     }
 
     #[test]

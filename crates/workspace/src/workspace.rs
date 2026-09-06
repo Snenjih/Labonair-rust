@@ -650,7 +650,10 @@ impl Workspace {
         // normalized to Standalone by `SessionSnapshot` deserialization.
         if let Some(snapshot) = restore.as_ref() {
             if let context::WorkspaceIdentity::Project { root } = &snapshot.identity {
-                this.set_project_context(root.clone(), cx);
+                this.apply_transition(
+                    context::WorkspaceTransition::OpenProject { root: root.clone() },
+                    cx,
+                );
             }
         }
 
@@ -954,26 +957,27 @@ impl Workspace {
         )
     }
 
-    /// Move this workspace into an explicitly project-scoped context.
-    pub fn set_project_context(
+    /// Apply one explicit project/standalone identity transition.
+    pub fn apply_transition(
         &mut self,
-        root: impl Into<std::path::PathBuf>,
+        transition: context::WorkspaceTransition,
         cx: &mut Context<Self>,
     ) {
-        let root = root.into();
-        self.context.set_project(root.clone());
-        self.last_project_settings_root = None;
-        labonair_settings::set_active_project_root(cx, Some(root));
-        cx.notify();
-    }
-
-    /// Return this workspace to a temporary standalone context.
-    pub fn set_standalone_context(&mut self, cx: &mut Context<Self>) {
-        if self.context.identity().is_project() {
-            self.context.set_standalone();
-            self.last_project_settings_root = None;
-            labonair_settings::set_active_project_root(cx, None);
-            cx.notify();
+        match transition {
+            context::WorkspaceTransition::OpenProject { root } => {
+                self.context.set_project(root.clone());
+                self.last_project_settings_root = None;
+                labonair_settings::set_active_project_root(cx, Some(root));
+                cx.notify();
+            }
+            context::WorkspaceTransition::ReturnToStandalone => {
+                if self.context.identity().is_project() {
+                    self.context.set_standalone();
+                    self.last_project_settings_root = None;
+                    labonair_settings::set_active_project_root(cx, None);
+                    cx.notify();
+                }
+            }
         }
     }
 

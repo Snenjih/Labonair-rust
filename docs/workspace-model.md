@@ -12,7 +12,9 @@ Labonair supports two equally valid entry modes:
 Both use the same tabs, panes, commands, notifications, and statusbar. The difference is identity and persistence, not a separate UI architecture.
 
 The current implementation represents this contract in
-`labonair-workspace::context` as `WorkspaceIdentity` plus `WorkspaceState`.
+`labonair-workspace::context` as `WorkspaceIdentity` plus `WorkspaceState`,
+with identity changes accepted through the typed `WorkspaceTransition`
+contract.
 `Workspace` owns the state and exposes one snapshot for shell surfaces. It
 starts as `Standalone`; the explicit native project picker changes the
 identity through the workspace API rather than inferring a project from a

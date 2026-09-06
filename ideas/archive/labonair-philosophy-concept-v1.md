@@ -1,5 +1,11 @@
 # Labonair Philosophy & Evolution Concept
 
+> **Superseded — historical reference only.** The current product and
+> architecture contracts are [`../../docs/product.md`](../../docs/product.md),
+> [`../../docs/architecture.md`](../../docs/architecture.md), and
+> [`../../docs/rework-roadmap.md`](../../docs/rework-roadmap.md). This draft
+> must not be used as an implementation instruction.
+
 > **Status:** Draft / Ideen-Konzept
 > **Autor:** Niklas + Claude Code
 > **Erstellt:** 2026-09-02

@@ -820,7 +820,12 @@ pub(crate) fn register_builtin_commands() -> CommandDispatcher {
             None,
         ),
         |s, _window, cx| {
-            s.workspace.update(cx, |w, cx| w.set_standalone_context(cx));
+            s.workspace.update(cx, |w, cx| {
+                w.apply_transition(
+                    labonair_workspace::context::WorkspaceTransition::ReturnToStandalone,
+                    cx,
+                );
+            });
         },
     );
     r.register(
