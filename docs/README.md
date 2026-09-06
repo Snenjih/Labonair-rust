@@ -32,7 +32,8 @@ Normative documents are written in English because they are also engineering con
 
 ## Supporting documents
 
-- [`adr/`](adr/) records decisions and their consequences.
+- [`adr/`](adr/) records accepted decisions and their consequences. Superseded
+  ADRs are kept separately in [`archive/adr/`](archive/adr/).
 - [`reports/`](reports/) contains source comparisons and research.
 - [`performance.md`](performance.md) and [`perf-baseline.md`](perf-baseline.md) contain measurements and performance notes.
 - [`archive/`](archive/) contains superseded architecture and design documents. Archived documents are historical references, not instructions.

@@ -792,7 +792,8 @@ calls). Their wiring lands with the phases that implement them.
 
 ### 8.11 `AppEvent` bus kept + `BackendEventBridge` — T17-008
 
-Decision recorded in full in [`docs/adr/0002-app-event-bus.md`](adr/0002-app-event-bus.md):
+Decision recorded in full in the archived
+[`docs/archive/adr/0002-app-event-bus.md`](../adr/0002-app-event-bus.md):
 **keep** `labonair_backend::EventBus` / `AppEvent`, connect it through one
 GPUI-side entity.
 
