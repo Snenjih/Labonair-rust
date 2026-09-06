@@ -9,7 +9,7 @@ context model now distinguishes `WorkspaceIdentity::Standalone` from
 `Project { root }` and `WorkspaceState::Empty` from `Active`, with explicit
 tested transitions and an identity label on the empty surface.
 
-The current branch is `master` at `ea0985b`; this partial migration is
+The current branch is `master` at `e633fb4`; this partial migration is
 committed locally.
 The explicit project-opening flow is now wired through GPUI's native folder
 picker, and project settings follow workspace identity rather than terminal
