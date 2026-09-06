@@ -74,7 +74,9 @@ fn main() {
         use labonair_backend::modules::fs::paths::config_dir;
         use labonair_backend::modules::settings::{
             migrate_config_file_name,
-            migrate_v2::{migrate_hosts_to_settings, migrate_settings_v1_to_v2},
+            migrate_v2::{
+                migrate_hosts_to_settings, migrate_settings_v1_to_v2, sparsify_v2_settings,
+            },
         };
 
         let settings_dir = config_dir();
@@ -84,6 +86,13 @@ fn main() {
         match migrate_settings_v1_to_v2(&settings_dir) {
             Ok(outcome) => tracing::info!("settings v1->v2 migration: {outcome:?}"),
             Err(err) => tracing::warn!("settings v1->v2 migration failed: {err}"),
+        }
+        // One-time cleanup of config.json files migrated before the migrator
+        // learned to emit only overrides (every area spelled out at its
+        // default). No-ops once `sparsified: true` is stamped.
+        match sparsify_v2_settings(&settings_dir) {
+            Ok(outcome) => tracing::info!("settings v2 sparsify: {outcome:?}"),
+            Err(err) => tracing::warn!("settings v2 sparsify failed: {err}"),
         }
         runtime.block_on(async {
             match labonair_backend::modules::hosts::db::hosts_get_all(&backend.db).await {

@@ -2,7 +2,48 @@
 
 Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now pure Rust/GPUI).
 
-## Current Session: 2026-09-06 (Settings rework — Block 1: scroll lag)
+## Current Session: 2026-09-06 (Settings rework — Block 2: sparse config.json)
+
+Ad-hoc request (3-block settings rework). **Block 2 (config.json only carries
+overrides again) done here.**
+
+**Problem:** `config.json` came out fully populated with every default. Two
+causes: (a) the old `PreferencesStore` writes the whole flat `Preferences`
+blob; (b) `migrate_settings_v1_to_v2` read that always-full blob and its
+`*_from` builders wrap every field in `Some(..)`, then wrote all 10 area
+objects verbatim + `preferences_legacy`/`editor_legacy`/`mcp_legacy`. (a) is
+Block 3's problem; (b) fixed here.
+
+**What (`crates/backend/src/modules/settings/migrate_v2.rs`):**
+- New `strip_defaults(value, default, &mut removed)` — recursively drops object
+  keys that are `null` or equal to their `SettingsContent::defaults()`
+  counterpart (number compare is tolerant: f32→f64→text drift ~1e-16, real
+  overrides differ by orders of magnitude). New `sparsify_settings_map()`
+  applies it to every area key + drops emptied areas.
+- `migrate_settings_v1_to_v2` now: no more `*_legacy` blobs (the `.json.bak`
+  copy is the safety net); `_migratedUnknown` only written when non-empty and
+  `barLayoutMigrated` only when `true`; calls `sparsify_settings_map` + stamps
+  `"sparsified": true` before writing.
+- New `pub fn sparsify_v2_settings(dir)` + `SparsifyOutcome` — one-time cleanup
+  of files migrated before this existed (guarded by the `sparsified` flag,
+  writes a `.bak`). Wired into `crates/app/src/main.rs` right after the v1→v2
+  call.
+- Tests: rewrote `full_migration_moves_every_field_and_counts_match` +
+  `partial_file_with_only_preferences_still_migrates` for the sparse contract;
+  new `migrator_output_only_carries_real_overrides`,
+  `sparsify_v2_settings_cleans_pre_existing_full_file_and_is_idempotent`,
+  `sparsify_v2_settings_skips_non_v2_files`. `full_legacy_settings()` now sets
+  `hmLayout`/`barLayoutMigrated` to non-defaults so the preserve paths stay
+  covered.
+
+**State:** branch `master`, on top of Block 1's `3a28b4c`. `cargo check -p
+labonair` + `cargo clippy -p labonair-backend -p labonair --all-targets -D
+warnings` + `cargo fmt --check` clean. `cargo test -p labonair-backend` green
+(230). Full-workspace `cargo test` is the orchestrator's final pass.
+
+---
+
+## Previous Session: 2026-09-06 (Settings rework — Block 1: scroll lag)
 
 Ad-hoc request (not a ROADMAP task; 3-block settings rework: fix scroll lag /
 sparse config.json / finish the `GlobalPreferences` → `SettingsContent`

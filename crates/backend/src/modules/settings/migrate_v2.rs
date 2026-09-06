@@ -28,9 +28,10 @@
 //!   T18-006's job (`migrate_bar_item_placements`, `statusBarItemPlacements`)
 //!   and has no `SettingsContent` counterpart (documented in
 //!   `content_bridge.rs` too).
-//! * `barLayoutMigrated` has no `SettingsContent` counterpart either; it is
-//!   preserved losslessly under `_migratedUnknown.preferences.barLayoutMigrated`
-//!   rather than silently dropped.
+//! * `barLayoutMigrated` has no `SettingsContent` counterpart either; when it
+//!   is `true` it is preserved losslessly under
+//!   `_migratedUnknown.preferences.barLayoutMigrated` rather than silently
+//!   dropped (its `false` default needs no entry — absence is unambiguous).
 //!
 //! The old `"editor"` key (`EditorPrefs` — Vim ex-command settings) maps
 //! `hlsearch`/`incsearch`/`smartcase`/`relativeNumber`/`vimMode` onto the new
@@ -62,6 +63,7 @@ use labonair_settings_content::{
     personalization::PersonalizationContent,
     terminal::{self, TerminalContent},
     workspace::{self, WorkspaceContent},
+    SettingsContent,
 };
 
 use super::mcp::McpPrefs;
@@ -72,15 +74,37 @@ use crate::modules::hosts::Host;
 use crate::modules::secrets::get_password;
 
 const KEY_PREFERENCES: &str = "preferences";
-const KEY_PREFERENCES_LEGACY: &str = "preferences_legacy";
 const KEY_EDITOR: &str = "editor";
-const KEY_EDITOR_LEGACY: &str = "editor_legacy";
 const KEY_MCP: &str = "mcp";
-const KEY_MCP_LEGACY: &str = "mcp_legacy";
 const KEY_SCHEMA_VERSION: &str = "schemaVersion";
 const KEY_MIGRATED_UNKNOWN: &str = "_migratedUnknown";
 const KEY_HOSTS_MIGRATED: &str = "hostsMigrated";
+/// Marks a `config.json` whose `SettingsContent` area objects have had every
+/// leaf that merely restates its built-in default removed — so the file only
+/// carries the user's actual overrides (`default.json` stays the full
+/// reference). Set both by a fresh v1->v2 migration and by the one-time
+/// [`sparsify_v2_settings`] cleanup of files migrated before this existed.
+const KEY_SPARSIFIED: &str = "sparsified";
 const SCHEMA_VERSION_V2: u64 = 2;
+
+/// `SettingsContent`'s top-level area keys (its `#[serde(rename_all =
+/// "camelCase")]` field names) — the only keys [`sparsify_settings_map`]
+/// touches. Anything else in `config.json` (`schemaVersion`,
+/// `_migratedUnknown`, `statusBarItemPlacements`, …) is left verbatim.
+const SETTINGS_CONTENT_AREAS: &[&str] = &[
+    "general",
+    "appearance",
+    "terminal",
+    "editor",
+    "fileManager",
+    "connections",
+    "hosts",
+    "workspace",
+    "ai",
+    "mcp",
+    "personalization",
+    "keymap",
+];
 
 /// Result of [`migrate_settings_v1_to_v2`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -97,6 +121,20 @@ pub enum SettingsV2Outcome {
         /// `keymap.json` (0 if there were none / no file was written).
         keybinds_migrated: usize,
     },
+}
+
+/// Result of [`sparsify_v2_settings`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SparsifyOutcome {
+    /// The file isn't a `schemaVersion: 2` document — nothing to do (a v1
+    /// file is handled by [`migrate_settings_v1_to_v2`] instead, which
+    /// sparsifies its own output).
+    NotV2,
+    /// Already carries `sparsified: true` — the cleanup has run before.
+    AlreadySparse,
+    /// Removed `removed` default-valued / `null` leaves (and any area object
+    /// that emptied out entirely) from the file.
+    Sparsified { removed: usize },
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -406,6 +444,107 @@ fn merge_object(dst: &mut Map<String, Value>, key: &str, patch: Map<String, Valu
     dst.insert(key.to_string(), Value::Object(obj));
 }
 
+/// Recursively drop, from `value`, every object key that either holds JSON
+/// `null` or `deep_eq`s the same key in `default`. Keys absent from `default`
+/// are kept as-is; a nested object that empties out is dropped too. `removed`
+/// is incremented once per dropped key. In this settings model a leaf is an
+/// `Option<T>`, so `null` == "unset at this layer" == absent — dropping it
+/// loses nothing.
+fn strip_defaults(value: &mut Value, default: &Value, removed: &mut usize) {
+    let Value::Object(def) = default else { return };
+    let Value::Object(obj) = value else { return };
+    let before = obj.len();
+    obj.retain(|_k, v| {
+        if v.is_null() {
+            return false;
+        }
+        let Some(dv) = def.get(_k) else {
+            return true;
+        };
+        // Numbers: tolerant compare. `f32` settings leaves (line heights,
+        // letter spacing, …) widen to `f64` when serialized, and serde_json's
+        // default parser doesn't round-trip `f64` exactly, so a value read
+        // back from `config.json` can differ from a freshly-computed default
+        // by ~1e-16. Any *real* override differs by orders of magnitude more.
+        if let (Some(a), Some(b)) = (v.as_f64(), dv.as_f64()) {
+            let tol = 1e-9 * a.abs().max(b.abs()).max(1.0);
+            return (a - b).abs() > tol;
+        }
+        if *v == *dv {
+            return false;
+        }
+        if v.is_object() && dv.is_object() {
+            strip_defaults(v, dv, removed);
+            return !v.as_object().is_some_and(|o| o.is_empty());
+        }
+        true
+    });
+    *removed += before - obj.len();
+}
+
+/// Apply [`strip_defaults`] to every `SettingsContent` area object present in
+/// `settings`, using `SettingsContent::defaults()` as the reference, and drop
+/// any area object that ends up empty. Returns the number of leaves/areas
+/// removed. Shared by the fresh v1->v2 migration and the standalone
+/// [`sparsify_v2_settings`] cleanup.
+fn sparsify_settings_map(settings: &mut Map<String, Value>) -> usize {
+    let defaults = serde_json::to_value(SettingsContent::defaults())
+        .expect("SettingsContent::defaults() always serializes");
+    let Value::Object(def_obj) = defaults else {
+        return 0;
+    };
+    let mut removed = 0usize;
+    for area in SETTINGS_CONTENT_AREAS {
+        let Some(def_area) = def_obj.get(*area) else {
+            continue;
+        };
+        let empty = {
+            let Some(v) = settings.get_mut(*area) else {
+                continue;
+            };
+            strip_defaults(v, def_area, &mut removed);
+            v.as_object().is_some_and(|o| o.is_empty())
+        };
+        if empty {
+            settings.remove(*area);
+            removed += 1;
+        }
+    }
+    removed
+}
+
+/// One-time, idempotent cleanup of a `schemaVersion: 2` `config.json` that
+/// was written *before* the migrator learned to emit only overrides — i.e. a
+/// file where every `SettingsContent` area was spelled out in full, all
+/// values equal to their defaults. Strips it back to just the user's real
+/// overrides (`default.json` remains the full reference) and stamps
+/// `sparsified: true` so it never runs twice. Best-effort: safe to call
+/// unconditionally on every startup, right after [`migrate_settings_v1_to_v2`]
+/// (a fresh v1->v2 migration already stamps `sparsified: true` itself, so
+/// this then no-ops).
+pub fn sparsify_v2_settings(dir: &Path) -> Result<SparsifyOutcome, String> {
+    let mut settings = read_settings_from(dir);
+
+    if settings.get(KEY_SCHEMA_VERSION).and_then(Value::as_u64) != Some(SCHEMA_VERSION_V2) {
+        return Ok(SparsifyOutcome::NotV2);
+    }
+    if settings.get(KEY_SPARSIFIED).and_then(Value::as_bool) == Some(true) {
+        return Ok(SparsifyOutcome::AlreadySparse);
+    }
+
+    let path = dir.join(CONFIG_FILE);
+    if path.exists() {
+        let _ = std::fs::copy(&path, path.with_extension("json.bak"));
+    }
+
+    let removed = sparsify_settings_map(&mut settings);
+    settings.insert(KEY_SPARSIFIED.to_string(), Value::Bool(true));
+    write_settings_to(dir, &settings)?;
+
+    log::info!("sparsified config.json (removed {removed} default-valued key(s))");
+    Ok(SparsifyOutcome::Sparsified { removed })
+}
+
 /// One-time, idempotent migration of the legacy `preferences`/`editor`/`mcp`
 /// top-level keys into the flat `SettingsContent` area layout, and of
 /// `preferences.keybinds` into `keymap.json`. Safe to call unconditionally
@@ -448,13 +587,12 @@ pub fn migrate_settings_v1_to_v2(dir: &Path) -> Result<SettingsV2Outcome, String
         .and_then(|v| serde_json::from_value(v).ok())
         .unwrap_or_default();
 
-    let prefs: Preferences = serde_json::from_value(raw_preferences.clone()).unwrap_or_default();
+    let prefs: Preferences = serde_json::from_value(raw_preferences).unwrap_or_default();
     let editor_prefs: EditorPrefs = raw_editor
         .clone()
         .and_then(|v| serde_json::from_value(v).ok())
         .unwrap_or_default();
     let mcp_prefs: McpPrefs = raw_mcp
-        .clone()
         .and_then(|v| serde_json::from_value(v).ok())
         .unwrap_or_default();
 
@@ -518,12 +656,14 @@ pub fn migrate_settings_v1_to_v2(dir: &Path) -> Result<SettingsV2Outcome, String
     merge_object(&mut settings, "hosts", hosts_patch);
 
     // `_migratedUnknown` — fields with no `SettingsContent` destination,
-    // preserved losslessly rather than dropped.
+    // preserved losslessly rather than dropped. Only written when it has real
+    // content: `barLayoutMigrated` defaults to `false` (absence is
+    // unambiguous), and the old `"editor"` Vim `:set` internals only exist if
+    // there was an `"editor"` key at all.
     let mut unknown_prefs = Map::new();
-    unknown_prefs.insert(
-        "barLayoutMigrated".to_string(),
-        Value::Bool(prefs.bar_layout_migrated),
-    );
+    if prefs.bar_layout_migrated {
+        unknown_prefs.insert("barLayoutMigrated".to_string(), Value::Bool(true));
+    }
     let mut unknown_editor = Map::new();
     if raw_editor.is_some() {
         unknown_editor.insert("number".to_string(), Value::Bool(editor_prefs.number));
@@ -538,20 +678,19 @@ pub fn migrate_settings_v1_to_v2(dir: &Path) -> Result<SettingsV2Outcome, String
         );
     }
     let mut unknown = Map::new();
-    unknown.insert("preferences".to_string(), Value::Object(unknown_prefs));
+    if !unknown_prefs.is_empty() {
+        unknown.insert("preferences".to_string(), Value::Object(unknown_prefs));
+    }
     if !unknown_editor.is_empty() {
         unknown.insert("editor".to_string(), Value::Object(unknown_editor));
     }
-    merge_object(&mut settings, KEY_MIGRATED_UNKNOWN, unknown);
+    if !unknown.is_empty() {
+        merge_object(&mut settings, KEY_MIGRATED_UNKNOWN, unknown);
+    }
 
-    // Legacy blobs kept verbatim as a safety net (T18-006 precedent).
-    settings.insert(KEY_PREFERENCES_LEGACY.to_string(), raw_preferences);
-    if let Some(raw_editor) = raw_editor {
-        settings.insert(KEY_EDITOR_LEGACY.to_string(), raw_editor);
-    }
-    if let Some(raw_mcp) = raw_mcp {
-        settings.insert(KEY_MCP_LEGACY.to_string(), raw_mcp);
-    }
+    // The pre-migration file is preserved as `config.json.bak` (written
+    // above) — no need to also carry verbatim `*_legacy` blobs inside the
+    // live file.
 
     settings.insert(
         KEY_SCHEMA_VERSION.to_string(),
@@ -559,6 +698,12 @@ pub fn migrate_settings_v1_to_v2(dir: &Path) -> Result<SettingsV2Outcome, String
     );
 
     let keybinds_migrated = write_keymap_overrides(dir, &keybinds)?;
+
+    // Strip every area leaf that merely restates its default, so the file
+    // holds only the user's real overrides (`default.json` is the full
+    // reference). Stamp `sparsified` so the standalone cleanup no-ops.
+    sparsify_settings_map(&mut settings);
+    settings.insert(KEY_SPARSIFIED.to_string(), Value::Bool(true));
 
     write_settings_to(dir, &settings)?;
 
@@ -848,6 +993,7 @@ pub fn migrate_hosts_to_settings(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use labonair_settings_content::MergeFrom;
     use std::collections::BTreeSet;
 
     fn tmp(name: &str) -> std::path::PathBuf {
@@ -860,9 +1006,26 @@ mod tests {
         dir
     }
 
+    /// `SettingsContent::defaults()` folded through a `config.json` map's
+    /// area keys, exactly as `labonair-settings`' `SettingsStore` would merge
+    /// the User layer — lets a test assert "sparsifying changed nothing an
+    /// app would observe".
+    fn merged_from_map(map: &Map<String, Value>) -> SettingsContent {
+        let user: SettingsContent =
+            serde_json::from_value(Value::Object(map.clone())).unwrap_or_default();
+        let mut merged = SettingsContent::defaults();
+        merged.merge_from(&user);
+        merged
+    }
+
     fn full_legacy_settings() -> Value {
         let mut prefs = serde_json::to_value(Preferences::default()).unwrap();
         prefs["terminalFontSize"] = Value::from(42);
+        // Non-default so it survives sparsification into `hosts.layout`.
+        prefs["hmLayout"] = Value::from("list");
+        // A genuinely unrepresentable field set to a non-default value — must
+        // be preserved verbatim under `_migratedUnknown`.
+        prefs["barLayoutMigrated"] = Value::from(true);
         prefs["keybinds"] = serde_json::json!({
             "tab.new": "cmd-t",
             "view.zoomIn": "",
@@ -1060,31 +1223,38 @@ mod tests {
 
         let after = read_settings_from(&dir);
         assert_eq!(after.get(KEY_SCHEMA_VERSION).unwrap(), &Value::from(2));
+        assert_eq!(after.get(KEY_SPARSIFIED).unwrap(), &Value::from(true));
+
+        // Non-default values survive sparsification, in the right area.
         assert_eq!(after["terminal"]["terminalFontSize"], Value::from(42));
         assert_eq!(after["editor"]["vimHlsearch"], Value::from(false));
         assert_eq!(after["mcp"]["bridgePort"], Value::from(51000));
-        assert_eq!(after["hosts"]["layout"], Value::from("grid"));
+        assert_eq!(after["hosts"]["layout"], Value::from("list"));
+
         // Unrelated top-level key (T18-006) survives untouched.
         assert_eq!(
             after["statusBarItemPlacements"]["cwd"]["side"],
             Value::from("left")
         );
-        // Legacy blobs preserved, original keys gone.
+
+        // The pre-migration file is preserved only as `.bak`; no verbatim
+        // `*_legacy` blobs are carried inside the live file any more.
+        assert!(dir.join("config.json.bak").exists());
         assert!(!after.contains_key("preferences"));
-        assert!(after.contains_key("preferences_legacy"));
-        assert!(after.contains_key("editor_legacy"));
-        assert!(after.contains_key("mcp_legacy"));
-        // Unknown fields preserved losslessly.
+        assert!(!after.contains_key("preferences_legacy"));
+        assert!(!after.contains_key("editor_legacy"));
+        assert!(!after.contains_key("mcp_legacy"));
+
+        // Genuinely unrepresentable fields are still preserved losslessly.
         assert_eq!(
             after["_migratedUnknown"]["preferences"]["barLayoutMigrated"],
-            Value::from(false)
+            Value::from(true)
         );
         assert_eq!(
             after["_migratedUnknown"]["editor"]["tabstop"],
             Value::from(8)
         );
 
-        assert!(dir.join("config.json.bak").exists());
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -1195,12 +1365,139 @@ mod tests {
                 keybinds_migrated: 0
             }
         );
+
+        // Input was `Preferences::default()` end to end, so every migrated
+        // area leaf equalled its `SettingsContent` default — nothing is left
+        // to persist. `default.json` stays the full reference; `config.json`
+        // is just the schema stamp.
         let after = read_settings_from(&dir);
-        assert!(after.contains_key("general"));
-        assert!(after.contains_key("mcp"));
+        assert_eq!(after.get(KEY_SCHEMA_VERSION), Some(&Value::from(2)));
+        assert_eq!(after.get(KEY_SPARSIFIED), Some(&Value::from(true)));
+        assert!(!after.contains_key("preferences"));
+        assert!(!after.contains_key("preferences_legacy"));
         assert!(!after.contains_key("editor_legacy"));
         assert!(!after.contains_key("mcp_legacy"));
+        assert!(!after.contains_key(KEY_MIGRATED_UNKNOWN));
+        for area in SETTINGS_CONTENT_AREAS {
+            assert!(
+                !after.contains_key(*area),
+                "all-default area `{area}` should have been stripped, found {:?}",
+                after.get(*area)
+            );
+        }
 
+        // And an app reading this file sees exactly the shipped defaults.
+        assert_eq!(merged_from_map(&after), SettingsContent::defaults());
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn migrator_output_only_carries_real_overrides() {
+        let dir = tmp("overrides-only");
+        let mut prefs = serde_json::to_value(Preferences::default()).unwrap();
+        prefs["terminalFontSize"] = Value::from(20);
+        prefs["editorTabSize"] = Value::from(8);
+        std::fs::write(
+            dir.join(CONFIG_FILE),
+            serde_json::to_string_pretty(&serde_json::json!({ "preferences": prefs })).unwrap(),
+        )
+        .unwrap();
+
+        migrate_settings_v1_to_v2(&dir).unwrap();
+        let after = read_settings_from(&dir);
+
+        // The two overridden leaves are present with their new values...
+        assert_eq!(after["terminal"]["terminalFontSize"], Value::from(20));
+        assert_eq!(after["editor"]["editorTabSize"], Value::from(8));
+        // ...and no `null`s leaked in from `appearance_from`'s `..Default`.
+        for (_area, v) in after.iter() {
+            if let Some(obj) = v.as_object() {
+                assert!(
+                    obj.values().all(|leaf| !leaf.is_null()),
+                    "sparsified config should carry no null leaves: {v}"
+                );
+            }
+        }
+        // Untouched, plain-scalar areas are gone entirely (a survivor here
+        // means `Preferences::default()` and `<Area>Content::defaults()`
+        // have drifted — a real bug, not test brittleness).
+        assert!(!after.contains_key("preferences"));
+        assert!(!after.contains_key("connections"));
+        assert!(!after.contains_key("personalization"));
+        assert_eq!(after.get(KEY_SPARSIFIED), Some(&Value::from(true)));
+
+        let mut expected = SettingsContent::defaults();
+        expected.terminal.terminal_font_size = Some(20);
+        expected.editor.editor_tab_size = Some(8);
+        assert_eq!(merged_from_map(&after), expected);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn sparsify_v2_settings_cleans_pre_existing_full_file_and_is_idempotent() {
+        let dir = tmp("sparsify-standalone");
+
+        // A v2 file written the buggy way: every area spelled out in full,
+        // all at their defaults, plus one genuine override and one unrelated
+        // key that must be preserved.
+        let mut full = serde_json::to_value(SettingsContent::defaults()).unwrap();
+        full["terminal"]["terminalFontSize"] = Value::from(20);
+        {
+            let obj = full.as_object_mut().unwrap();
+            obj.insert(KEY_SCHEMA_VERSION.to_string(), Value::from(2));
+            obj.insert(
+                "statusBarItemPlacements".to_string(),
+                serde_json::json!({ "cwd": { "side": "left" } }),
+            );
+        }
+        std::fs::write(
+            dir.join(CONFIG_FILE),
+            serde_json::to_string_pretty(&full).unwrap(),
+        )
+        .unwrap();
+
+        let merged_before = merged_from_map(&read_settings_from(&dir));
+
+        let outcome = sparsify_v2_settings(&dir).unwrap();
+        assert!(matches!(outcome, SparsifyOutcome::Sparsified { removed } if removed > 0));
+
+        let after = read_settings_from(&dir);
+        assert_eq!(
+            after["terminal"],
+            serde_json::json!({ "terminalFontSize": 20 })
+        );
+        assert!(!after.contains_key("general"));
+        assert!(!after.contains_key("appearance"));
+        assert_eq!(
+            after["statusBarItemPlacements"]["cwd"]["side"],
+            Value::from("left")
+        );
+        assert_eq!(after.get(KEY_SPARSIFIED), Some(&Value::from(true)));
+        assert_eq!(merged_from_map(&after), merged_before);
+        assert!(dir.join("config.json.bak").exists());
+
+        // Second run: flag already set, nothing rewritten.
+        assert_eq!(
+            sparsify_v2_settings(&dir).unwrap(),
+            SparsifyOutcome::AlreadySparse
+        );
+        assert_eq!(read_settings_from(&dir), after);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn sparsify_v2_settings_skips_non_v2_files() {
+        let dir = tmp("sparsify-non-v2");
+        std::fs::write(
+            dir.join(CONFIG_FILE),
+            r#"{"preferences":{"terminalFontSize":20}}"#,
+        )
+        .unwrap();
+        assert_eq!(sparsify_v2_settings(&dir).unwrap(), SparsifyOutcome::NotV2);
+        assert!(!dir.join("config.json.bak").exists());
         let _ = std::fs::remove_dir_all(&dir);
     }
 
