@@ -71,6 +71,25 @@ opening Hosts or presenting the native project picker. Workspace does not
 store a shell callback or decide whether the destination is a palette page,
 panel, or standalone window.
 
+## Identity transition matrix
+
+Identity changes are explicit and use the UI-free
+`WorkspaceTransition` contract. The `WorkspaceContext` applies the pure state
+change; `Workspace` then coordinates project-settings synchronization and UI
+invalidation for a changed transition.
+
+| Trigger | Transition | Identity effect | Layout/tool effect |
+|---|---|---|---|
+| User selects a folder in `Open Project…` | `OpenProject { root }` | Set the selected project root | Preserve existing tabs, panes, and shell zones |
+| Session restores a persisted project | `OpenProject { root }` | Restore the persisted project root before tab replay | Recreate the saved tools and layout |
+| User invokes `Return to Standalone` | `ReturnToStandalone` | Clear project scope | Preserve existing tabs, panes, and shell zones |
+| Terminal reports a new CWD | No transition | Do not change workspace identity | Update terminal metadata only |
+
+Legacy snapshots without an identity field resolve to `Standalone`. A
+terminal CWD may provide a convenience root for standalone Explorer/Git
+surfaces, but it can never activate project settings or convert a standalone
+workspace into a project workspace.
+
 ## Tool instances
 
 Tabs and panels reference tool instances through stable IDs and typed capabilities. The workspace orchestrates placement and focus; the owning tool module controls its state and operations.
