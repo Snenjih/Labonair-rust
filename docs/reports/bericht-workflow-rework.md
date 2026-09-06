@@ -1,5 +1,9 @@
 # Bericht: Workflow-Rework (Themen 1–3) — Tab-Verhalten, Host-Zugang, Settings
 
+> **Superseded — historical reference only.** This report must not define
+> Settings, Hosts, notification, or shell behavior. Use the normative
+> documents under `docs/` instead.
+
 **Status:** normativ für die Phasen 15–18. Ergänzt den Architektur-Rework
 ([`bericht-architektur-rework-roadmap.md`](bericht-architektur-rework-roadmap.md),
 [`docs/architecture.md`](../architecture.md)). Nach T16-005 vereinbart, während

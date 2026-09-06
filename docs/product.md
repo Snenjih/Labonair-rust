@@ -36,6 +36,11 @@ Only the active task should occupy permanent UI. Secondary actions use progressi
 
 Every meaningful action has a command identity and can receive a keybinding. Mouse interaction remains complete, but no important workflow may depend on mouse-only navigation.
 
+Every visible action that can be invoked by a user must expose a stable command
+ID. Frequent navigation and workflow actions should ship with a default
+binding; rare or destructive actions must remain reachable through the command
+palette even when they have no default binding.
+
 ### One responsibility, one home
 
 Every feature has one canonical owner and one primary entry point. Alternate entry points are allowed only when they improve discoverability without duplicating business logic.

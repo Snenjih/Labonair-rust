@@ -1,5 +1,9 @@
 # Bericht & Roadmap — Labonair-rust: Umbau in Zed-Architektur-Stil
 
+> **Superseded — historical reference only.** The normative architecture and
+> current implementation order are [`docs/architecture.md`](../architecture.md)
+> and [`docs/rework-roadmap.md`](../rework-roadmap.md).
+
 Erstellt: 2026-09-03
 Grundlage: `vergleichsbericht-zed-vs-rust.md` (Zed-Referenz vs. `crates/`)
 Status: **Planungsbericht** — noch keine Implementierung. Nach Freigabe werden

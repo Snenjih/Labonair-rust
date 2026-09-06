@@ -20,6 +20,13 @@ The settings system is not the owner of:
 
 Those capabilities have their own modules and entry points.
 
+Persisting a value does not transfer ownership to Settings. For example, the
+active color-theme ID or icon-theme ID may be stored as a user preference, but
+the theme module owns the registry, preview, validation, and selection flow.
+Likewise, keymap data is owned by the keymap module and host records by the
+hosts module; neither becomes a Settings category merely because it is saved
+to disk.
+
 ## Settings categories
 
 The initial categories are intentionally small:
@@ -32,6 +39,10 @@ The initial categories are intentionally small:
 - File Manager
 - Connection defaults
 - Updates
+
+Theme and icon-theme selection, keymap editing, and host management are not
+Settings pages even when their selected IDs or defaults are persisted through
+the settings storage layer.
 
 Categories may be added only when they contain real configurable values. A category may not exist solely to host a management UI.
 

@@ -1,6 +1,6 @@
 # Handshake — Session State (Labonair-rust Port)
 
-## Current Session: 2026-09-06 (Source-control capability boundary)
+## Current Session: 2026-09-06 (Architecture documentation baseline)
 
 The snippet execution boundary is now typed end to end. `labonair-snippets`
 owns the shared `SnippetRunEvent` contract and asynchronous
@@ -24,14 +24,23 @@ The source-control panel and workspace Project Diff now use the full
 and operation surface; `BackendGitService` is the concrete local/remote
 adapter. Neither UI surface knows the backend facade or SSH executor.
 
+The documentation baseline now has an authoritative capability matrix,
+Settings UI guidelines, an explicit transitional-edge inventory, a rework task
+template, and clear superseded markers on historical reports and ADRs. The
+obsolete `panel-explorer → backend` manifest edge was removed. Three parallel
+architecture audits confirmed the next priority boundaries: SSH/SFTP
+capabilities, transfers, Hosts, Settings ownership, and the duplicated
+command/keymap definitions.
+
 Verification passed: `cargo fmt --all`, `cargo check --workspace
 --all-targets`, `cargo clippy --workspace --all-targets -- -D warnings`,
 `cargo test --workspace`, `cargo fmt --check`, `git diff --check`, and
 `scripts/check-crate-deps.sh`.
 
-State: branch `master`, current source-control changes are uncommitted.
-`R01-001` remains `🔄 In Progress`; next is to continue replacing broad
-backend state with typed capability contracts. No source blocker.
+Verification for the source-control commit passed. Documentation-only changes
+are currently uncommitted on branch `master`; `R01-001` remains `🔄 In
+Progress`. The next implementation boundary is SSH/SFTP contracts, followed
+by the typed transfer registry. No source blocker.
 
 ## Current Session: 2026-09-06 (Notification registry and toast removal)
 

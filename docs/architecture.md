@@ -2,7 +2,7 @@
 
 **Status:** Normative target architecture
 **Version:** 2
-**Related:** [`product.md`](product.md), [`modules.md`](modules.md), [`registries.md`](registries.md)
+**Related:** [`product.md`](product.md), [`capabilities.md`](capabilities.md), [`modules.md`](modules.md), [`registries.md`](registries.md)
 
 ## 1. Architecture objective
 
@@ -29,7 +29,7 @@ One module may contain multiple crates. A crate must never become a second owner
 
 ```text
 Application composition
-  labonair-app / labonair-shell
+  labonair / labonair-shell
         ↓
 Workspace orchestration
   workspace, tabs, panes, docks, sessions
@@ -58,7 +58,6 @@ Dependencies point downward. A feature may depend on a foundation contract, but 
 | `labonair-process` | Process and PTY launching contracts. |
 | `labonair-secrets` | Keychain and secret references. |
 | `labonair-persistence` | Cloneable shared SQLite connection and schema lifecycle; feature modules own stores and queries. |
-| `labonair-git` | UI-free Git value types plus graph and source-control capability contracts; implementations are injected adapters. |
 
 ### Cross-cutting modules
 
@@ -82,7 +81,7 @@ Dependencies point downward. A feature may depend on a foundation contract, but 
 | Hosts | Saved host definitions, recent hosts, import/export, host management UI. The domain contract and store live in `labonair-hosts`; transport adapters remain capability-owned. |
 | Credentials | Credential metadata, secret references, and generated SSH key material in `labonair-credentials`. |
 | Transfers | Transfer queue, progress, cancellation, retry, history UI. |
-| Git | Git service and source-control UI. |
+| Git | `labonair-git` contracts, Git service adapters, source-control UI, and graph UI. |
 | Explorer | Local file navigation UI. |
 | Snippets | Snippet storage in `labonair-snippets`, execution, and UI. |
 | AI | Providers, sessions, context, tools, and future UI. |
@@ -91,7 +90,7 @@ The current repository does not yet match this map. The migration is tracked in 
 
 ## 5. Composition root
 
-Only `labonair-app` and `labonair-shell` may know all concrete feature modules. Their responsibilities are limited to:
+Only the `labonair` application package and `labonair-shell` may know all concrete feature modules. Their responsibilities are limited to:
 
 - initialize platform services;
 - create the application and workspace entities;

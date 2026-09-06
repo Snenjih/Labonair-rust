@@ -6,11 +6,14 @@ This directory contains the current product and engineering contract for Labonai
 
 - [`product.md`](product.md) — product identity, scope, and user-facing principles.
 - [`architecture.md`](architecture.md) — runtime architecture, layers, and dependency direction.
+- [`capabilities.md`](capabilities.md) — authoritative capability ownership and current migration matrix.
 - [`modules.md`](modules.md) — ownership and crate rules for feature modules.
 - [`registries.md`](registries.md) — command, keymap, theme, panel, status item, and notification registries.
 - [`design-system.md`](design-system.md) — visual language and reusable UI component rules.
 - [`workspace-model.md`](workspace-model.md) — project and standalone workspaces.
 - [`settings.md`](settings.md) — the boundary of the settings system.
+- [`settings-guidelines.md`](settings-guidelines.md) — normative Settings UI
+  navigation and field rules.
 - [`rework-roadmap.md`](rework-roadmap.md) — the current implementation sequence.
 
 Normative documents are written in English because they are also engineering contracts. `ideas/` contains proposals only; an idea becomes binding only after it is incorporated here or accepted in an ADR.

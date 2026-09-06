@@ -1,5 +1,9 @@
 # ADR 0002 — Keep the `AppEvent` backend→UI bus; add `BackendEventBridge`
 
+> **Superseded — historical reference only.** User-visible messages and new
+> cross-module communication follow the contracts in `docs/architecture.md`
+> and `docs/registries.md`.
+
 * **Status:** Superseded by ADR 0003 (historical event-bus decision)
 * **Date:** 2026-09-04
 * **Deciders:** project owner (Snenjih)

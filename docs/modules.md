@@ -23,6 +23,15 @@ Create a module when a capability has its own user intent, lifecycle, state, or 
 
 Do not create a module for a visual primitive or a one-line helper. Those belong to foundation crates.
 
+The product-module rule is intentionally stronger than the crate rule:
+
+> Every product capability has exactly one owning module and at least one
+> owning crate. A module may be split into core, UI, storage, and integration
+> crates only when a real dependency or lifecycle boundary exists.
+
+This means “one feature, one owner”, not “one crate for every tiny function”.
+Buttons, lists, badges, and other reusable controls remain in the UI kit.
+
 ## 3. When to create another crate
 
 Split a module into multiple crates when at least one of these is true:

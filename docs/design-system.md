@@ -12,6 +12,11 @@ All colors, spacing, radii, typography, shadows, focus states, and semantic stat
 
 Reference values from `reference-src` may be used as input during migration, but new values must be recorded in the token source rather than copied into views.
 
+The token source is the theme/design-token implementation and its focused
+tests. A view may not introduce a global color, spacing, radius, typography,
+shadow, or state value inline. If a new visual value is genuinely required,
+extend the token source first and record the reason in the owning task.
+
 ## UI-kit requirement
 
 The following must come from `labonair-ui-kit`:
@@ -43,3 +48,8 @@ Every interactive component must define normal, hover, pressed, selected, focuse
 ## Review rule
 
 A UI change is incomplete until it has been checked at normal, narrow, focused, empty, loading, and error states. Screenshots or a visual comparison are required for shell and shared-component changes.
+
+Exceptions to the UI-kit rule require all of: a documented reason, a
+composition of existing tokens, an owner, and a follow-up decision about
+whether the pattern belongs in `labonair-ui-kit`. One-off local styling is not
+an exception.

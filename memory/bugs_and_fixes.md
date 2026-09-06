@@ -1,5 +1,17 @@
 # Bugs, fixes, and non-obvious constraints
 
+## 2026-09-06 — Historical architecture documents must be visibly superseded
+
+**Finding:** Several reports and early ADRs remained in active-looking paths
+and still described Settings-host management, toasts, and the former task
+tree. The current normative docs were correct, but readers could not reliably
+distinguish historical evidence from project rules.
+
+**Resolution:** Added explicit superseded markers, introduced the normative
+capability matrix and Settings UI guidelines, documented the full transitional
+edge families, and added a rework task template. The old reports remain
+available for traceability but cannot override `docs/` contracts.
+
 ## 2026-09-06 — SCM and Project Diff need one source-control capability
 
 **Finding:** `panel-scm` and the workspace Project Diff still imported the

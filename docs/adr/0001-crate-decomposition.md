@@ -1,5 +1,8 @@
 # ADR 0001 — Decompose the `ui` monolith into ~22 crates
 
+> **Superseded — historical reference only.** ADR 0003 and the current
+> capability matrix replace this decomposition decision.
+
 * **Status:** Superseded by ADR 0003 (historical decomposition decision)
 * **Date:** 2026-09-03
 * **Deciders:** project owner (Snenjih)

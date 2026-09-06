@@ -89,9 +89,9 @@ ALLOWED = {
         # T19-008: surgical `keymap.json` edits reuse T19-005's tree-sitter
         # JSON editor.
         "labonair-settings-json",
-        # T19-010: Settings › Hosts embeds `HostManagerView` verbatim
-        # (rule 4's "may still read/write fields under `target_module`" —
-        # here, a whole existing component rather than a single field).
+        # Transitional: the legacy settings window still embeds the Hosts
+        # management surface. Hosts management must move to its own entry
+        # point before this edge is removed.
         "labonair-hosts-ui",
     },
 
@@ -138,7 +138,7 @@ ALLOWED = {
     # the contracts crate is a leaf (only gpui / gpui-ext), so no cycle.
     "labonair-panel-explorer": {
         "labonair-theme", "labonair-ui-kit", "labonair-panel",
-        "labonair-notifications", "labonair-backend", "labonair-workspace",
+        "labonair-notifications", "labonair-workspace",
         # transitional: settings reads move behind a feature settings contract
         "labonair-settings",
         "labonair-filesystem",

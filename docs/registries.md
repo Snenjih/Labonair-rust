@@ -4,6 +4,21 @@
 
 Registries are the extension mechanism for capabilities used by more than one consumer. A registry owns discovery and metadata; the owning module owns the behavior behind each entry.
 
+## Common registry contract
+
+Every registry must document:
+
+- its owner and lifecycle (startup, workspace-scoped, or long-lived);
+- its stable ID namespace and duplicate-ID behavior;
+- whether providers are static or asynchronous;
+- snapshot, refresh, and invalidation semantics;
+- action context and result/error handling;
+- persistence and migration behavior, if any;
+- focused contract tests and an explicit removal path for temporary adapters.
+
+Consumers receive snapshots or typed handles. They do not mutate another
+module's registry-owned state directly.
+
 ## Command registry
 
 The command palette consumes one command registry. Feature modules register commands with:
@@ -52,6 +67,10 @@ render toasts, run timers, or contain feature-specific error handling.
 The GPUI notification adapter may temporarily bridge callback actions for
 existing callers. New actions must use stable IDs and be interpreted by the
 owning module or command registry.
+
+User-visible errors are notifications too. A feature may keep an internal
+error state for retry logic, but it must not render a second feature-local
+error banner for the same user-facing failure.
 
 ## Registration rules
 

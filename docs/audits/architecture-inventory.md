@@ -47,7 +47,9 @@ The current Cargo metadata shows several transitional edges that conflict with t
 
 - `workspace` depends directly on AI, backend, command palette, hosts UI, notifications, settings, SFTP-related views, and feature views.
 - `settings-ui` depends on backend, workspace, hosts UI, command palette, notifications, and panel contracts.
-- `panel-explorer` depends on workspace, which prevents independent feature ownership.
+- `panel-explorer` still depends on workspace for drag/preview shims, but its
+  obsolete backend dependency has been removed; those remaining UI contracts
+  are a later extraction boundary.
 - `hosts-ui` depends on settings and notifications, even though Hosts is not a Settings concern and connection management should emit through the app notification contract.
 - `command-palette` depends on backend even though the palette should receive dynamic data through providers.
 - `backend` exposes a broad `App`, global event bus, and unrelated modules under one public crate.
@@ -60,6 +62,8 @@ The current Cargo metadata shows several transitional edges that conflict with t
   run events, and execution contracts now belong to `labonair-snippets`.
 - `backend` still exposes the shared database under the compatibility name `HostsDb`; connection/schema lifecycle now belongs to `labonair-persistence`.
 - `panel-snippets` no longer depends on `labonair-backend`; its database and SSH execution capabilities are injected from the composition root.
+- `panel-explorer` no longer declares or imports `labonair-backend`; filesystem
+  access already uses `labonair-filesystem` directly.
 - `panel-git-graph` no longer depends on `labonair-backend`; its graph contract and commit values live in `labonair-git` and the backend supplies an adapter.
 - `panel-scm` and workspace Project Diff no longer depend on `labonair-backend`; source-control values and operations live in `labonair-git`, with the backend supplying the execution adapter.
 - `shell/src/commands.rs`, `shell/src/status_items.rs`, and workspace views still contain feature-specific behavior that belongs to owning modules.
@@ -67,10 +71,27 @@ The current Cargo metadata shows several transitional edges that conflict with t
   notification presentation surface. The GPUI adapter remains until actions
   are migrated from callbacks to stable command IDs.
 
-The dependency verifier allows four additional transitional edges while these
-boundaries are extracted: command palette → settings, explorer → settings,
-SCM → editor, and SCM → settings. They are deliberately visible in the
-allow-list and must not be treated as target architecture.
+The dependency verifier allows only explicit transitional edges while these
+boundaries are extracted. They are deliberately visible in the allow-list and
+must not be treated as target architecture.
+
+The allow-list also contains the following explicitly tracked migration
+families. These are not target dependencies; each has a removal condition:
+
+| Transitional edge family | Temporary reason | Removal condition |
+|---|---|---|
+| `settings-ui → backend`, `settings-ui → hosts-ui`, `settings-ui → workspace`, `settings-ui → command-palette`, `settings-ui → notifications`, `settings-ui → ai` | The existing settings window still composes legacy management and integration views. | Settings owns only value fields; management surfaces register independently and the window consumes contracts only. |
+| `workspace → backend`, `workspace → ai`, `workspace → settings` | Workspace still hosts SSH/SFTP/session bridges and legacy global settings consumers. | SSH, SFTP, transfers, and settings providers are injected capabilities; workspace keeps orchestration only. |
+| `hosts-ui → backend`, `hosts-ui → settings`, `hosts-ui → settings-content` | Host CRUD, credential writes, and the legacy Settings projection are still being migrated. | Host management uses `labonair-hosts`, credentials, secrets, and SSH contracts directly; no Settings projection remains. |
+| `panel-explorer → workspace`, `panel-explorer → settings` | Explorer still reuses workspace drag/preview contracts and a legacy settings read. | Drag/drop and preview contracts move to foundation/owning modules and explorer receives a settings capability. |
+| `panel-scm → editor`, `panel-scm → settings` | SCM reuses unified diff helpers and one legacy presentation preference. | Diff contracts are shared by the Git module and the preference is provided through a narrow settings contract. |
+| `panel-ai → backend`, `panel-ai → editor`, `panel-ai → workspace` | AI UI is parked while the workspace/editor context bridge is redesigned. | AI consumes AI, editor-context, and workspace-session contracts without facade access. |
+| `command-palette → backend`, `command-palette → settings`, `command-palette → filesystem` | Palette still contains legacy action dispatch and settings/file providers. | All entries are registered by owning modules through provider contracts. |
+| `backend → feature contracts` | The backend is the current implementation adapter for extracted capabilities. | All consumers use injected adapters and backend exports no broad feature façade. |
+
+The verifier's allow-list is the machine-readable source for the exact edge
+set. Whenever an edge is added or removed, this table and the owning task must
+be updated in the same change.
 
 These are migration findings, not reasons to perform a destructive rewrite. Each edge should be removed when the owning contract exists and its consumers have moved.
 
