@@ -1,5 +1,17 @@
 # Bugs, fixes, and non-obvious constraints
 
+## 2026-09-06 — Secret storage extracted without retaining App ownership
+
+**Finding:** The secret store used `backend::App` only to resolve its data
+directory, which made encryption/cache logic appear to belong to the backend
+and forced unrelated callers through that facade.
+
+**Resolution:** Created `labonair-secrets` with `SecretsState::new(data_dir)`;
+the crate now owns path resolution from its state, plain/encrypted migration,
+cache, and secret operations. `backend::modules::secrets` is only a
+compatibility adapter until SSH, Hosts, and MCP consume the service directly.
+Added isolated plain-store and encryption-toggle round-trip tests.
+
 ## 2026-09-06 — Interrupted Cargo rebuild can leave stale artifact locks
 
 **Finding:** After `cargo clean` during a full-disk condition, an interrupted

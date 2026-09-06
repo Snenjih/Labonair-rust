@@ -79,7 +79,7 @@ impl App {
         Ok(App(Arc::new(AppInner {
             events: EventBus::new(),
             db,
-            secrets: SecretsState::default(),
+            secrets: SecretsState::new(data_dir.to_path_buf()),
             ssh: SshState::default(),
             trust: TrustState::default(),
             tunnels: TunnelState::default(),

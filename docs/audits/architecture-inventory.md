@@ -15,6 +15,7 @@ This document records the current repository shape during the module migration. 
 | `command-palette` | Palette UI, static commands, some keymap behavior | command-palette module + keymap module | Split registry/core from GPUI view. |
 | `editor` | Editor engine | editor module | Separate core from workspace view. |
 | `filesystem` | Local file access, traversal, mutation, search, and watcher implementation | foundation/platform service | First extracted service boundary; only the legacy `AppEvent` adapter remains in `backend` temporarily. |
+| `secrets` | Encrypted/plain local secret store and secret cache | foundation/platform service | Extracted from `backend`; backend keeps a compatibility adapter while SSH/Hosts/MCP migrate. |
 | `gpui-ext` | Shared GPUI helpers | foundation | Keep dependency-free from features. |
 | `hosts-ui` | Host management UI and host-related dependencies | hosts module | Remove settings and notification coupling. |
 | `notifications` | Notification state plus toast renderer | notifications module | Remove toast rendering; keep dropdown consumer. |
@@ -45,6 +46,7 @@ The current Cargo metadata shows several transitional edges that conflict with t
 - `command-palette` depends on backend even though the palette should receive dynamic data through providers.
 - `backend` exposes a broad `App`, global event bus, and unrelated modules under one public crate.
 - `backend` still owns the filesystem watcher adapter because it emits directly through the legacy app event bus; the actual watcher implementation now belongs to `labonair-filesystem`.
+- `backend` still owns the public secret API adapter even though storage now belongs to `labonair-secrets`; existing SSH/Hosts/MCP call sites still pass the backend app handle.
 - `shell/src/commands.rs`, `shell/src/status_items.rs`, and workspace views still contain feature-specific behavior that belongs to owning modules.
 - `workspace/src/toast_layer.rs` and `notifications` still encode the superseded toast model.
 
@@ -58,7 +60,7 @@ These are migration findings, not reasons to perform a destructive rewrite. Each
 ## Migration order
 
 1. Introduce stable IDs, typed domain events, and narrow service traits.
-2. Extract platform services from `backend` without changing user behavior. The pure filesystem service is now `labonair-filesystem`; watcher extraction is still open.
+2. Extract platform services from `backend` without changing user behavior. The filesystem service and secret store are now standalone; their legacy adapters and direct consumers remain to be migrated.
 3. Split notification state from presentation and replace toast rendering.
 4. Split command/keymap registries from the palette view.
 5. Move transfers to their own module and statusbar owner.

@@ -33,6 +33,8 @@ Reduce `labonair-backend` from a broad public application state container to nar
   no longer live in `labonair-backend`.
 - The legacy watcher remains in `labonair-backend` until its direct `App`/event
   bus dependency is replaced by a typed callback or domain-event contract.
+- Secret storage is now extracted as `labonair-secrets`; the backend exposes
+  only compatibility wrappers while its capability callers migrate.
 - Stable IDs, typed domain events, and the remaining service boundaries are
   still open in this task.
 

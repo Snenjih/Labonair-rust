@@ -4179,7 +4179,6 @@ dependencies = [
 name = "labonair-backend"
 version = "0.1.0"
 dependencies = [
- "aes-gcm 0.10.3",
  "axum",
  "base64",
  "dirs 6.0.0",
@@ -4190,6 +4189,7 @@ dependencies = [
  "grep-searcher",
  "ignore",
  "labonair-filesystem",
+ "labonair-secrets",
  "labonair-settings-content",
  "libc",
  "log",
@@ -4374,6 +4374,17 @@ dependencies = [
  "tokio",
  "tracing",
  "uuid",
+]
+
+[[package]]
+name = "labonair-secrets"
+version = "0.1.0"
+dependencies = [
+ "aes-gcm 0.10.3",
+ "labonair-filesystem",
+ "rand 0.8.8",
+ "serde_json",
+ "tokio",
 ]
 
 [[package]]

@@ -13,6 +13,7 @@ edition = "2021"
 # "`labonair-backend` -> leaf" line in `docs/architecture.md` §8.15.
 labonair-settings-content = { path = "../settings-content" }
 labonair-filesystem = { path = "../filesystem" }
+labonair-secrets = { path = "../secrets" }
 
 # SSH / SFTP — versions taken 1:1 from reference-src/src-tauri/Cargo.toml
 russh = { version = "0.62.2", default-features = false, features = ["ring", "flate2", "rsa"] }
@@ -42,7 +43,6 @@ thiserror = "1"
 log = "0.4"
 
 # Crypto / hashing
-aes-gcm = "0.10"
 rand = { version = "0.8", features = ["getrandom"] }
 md5 = "0.7"
 openssl = { version = "0.10", features = ["vendored"] }

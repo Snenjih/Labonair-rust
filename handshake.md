@@ -11,6 +11,18 @@ bootstrap, and AI file tools consume that crate directly. The backend keeps
 only a small legacy watcher adapter because it still emits through `AppEvent`;
 replacing that adapter requires the typed event contract from `R01-001`.
 
+The secret store is now also extracted into the UI-free
+`crates/secrets` (`labonair-secrets`) crate. It owns its data directory,
+encryption, cache, and migration logic; `backend` retains only compatibility
+wrappers for current SSH/Hosts/MCP callers.
+
+The secret boundary passed focused tests (plain round-trip and encryption
+migration), backend tests (213), Clippy, formatting, workspace check, and the
+dependency verifier. `R01-001-backend-boundaries-and-contracts` remains
+`🔄 In Progress`; the next boundary is persistence/host ownership and the
+typed capability contracts that remove the remaining `App` coupling. Current
+uncommitted changes are the next commit; no source blockers.
+
 Verification passed: `cargo fmt --check`, `cargo check --workspace
 --all-targets`, `cargo clippy --workspace --all-targets -- -D warnings`,
 `cargo test --workspace` (with approved loopback permission), and

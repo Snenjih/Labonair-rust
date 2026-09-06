@@ -30,6 +30,9 @@ ALLOWED = {
     # Platform service — no GPUI or feature-crate deps. Feature crates may
     # consume it directly; the backend edge is transitional during migration.
     "labonair-filesystem": set(),
+    # Platform service — secret storage and encryption, without GPUI or
+    # feature-module dependencies.
+    "labonair-secrets": {"labonair-filesystem"},
     "labonair-notifications": {
         "labonair-theme", "labonair-ui-kit", "labonair-gpui-ext",
     },
@@ -158,7 +161,9 @@ ALLOWED = {
     # `impl From<&SettingsContent> for Preferences` bridge — a pure,
     # non-UI leaf crate (no cycle: labonair-settings-content never depends
     # back on labonair-backend).
-    "labonair-backend": {"labonair-settings-content", "labonair-filesystem"},
+    "labonair-backend": {
+        "labonair-settings-content", "labonair-filesystem", "labonair-secrets",
+    },
     "labonair-ai": {"labonair-backend", "labonair-filesystem"},
 
     # Settings track (T19-001) — pure data model, no GPUI/UI/backend deps.
