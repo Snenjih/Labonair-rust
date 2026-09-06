@@ -56,6 +56,10 @@ identity collisions during local development. `scripts/smoke-test.sh` rebuilt
 the bundle and passed its structural checks plus all three Rust smoke tests.
 The full workspace check, Clippy, and workspace test suite also pass after
 reclaiming obsolete generated `target/` build data.
+After rebuilding with the distinct bundle ID, this shell still receives
+LaunchServices error `-10827` from `open`; no screenshot from that attempt is
+valid GUI evidence. The release smoke test is green, but the manual native
+GUI launch check remains open.
 
 ## Current Session: 2026-09-06 (Global menu and theme entrypoints complete)
 

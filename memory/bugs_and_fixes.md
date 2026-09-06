@@ -13,7 +13,11 @@ The old app remains a separate legacy process and cannot satisfy the native
 bundle checks.
 
 **Verification:** `scripts/smoke-test.sh` rebuilt the bundle, verified the
-identifier and structure, and passed all three Rust smoke tests.
+identifier and structure, and passed all three Rust smoke tests. Launching the
+bundle with `open` from this restricted shell still returns macOS
+LaunchServices error `-10827`; no screenshot from that attempt is accepted as
+GUI evidence. The failure is an environment/launch-path issue still requiring
+manual confirmation outside this shell.
 
 ## 2026-09-06 — Replace workspace shell callbacks with typed events
 
