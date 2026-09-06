@@ -14,7 +14,7 @@ This document records the current repository shape during the module migration. 
 | `ai` | AI providers, sessions, tools | AI module | Keep backend-facing core; rebuild UI later. |
 | `command-palette` | Palette UI, static commands, some keymap behavior | command-palette module + keymap module | Split registry/core from GPUI view. |
 | `editor` | Editor engine | editor module | Separate core from workspace view. |
-| `filesystem` | Local file access, traversal, mutation, and search | foundation/platform service | First extracted service boundary; watcher integration remains in `backend` temporarily. |
+| `filesystem` | Local file access, traversal, mutation, search, and watcher implementation | foundation/platform service | First extracted service boundary; only the legacy `AppEvent` adapter remains in `backend` temporarily. |
 | `gpui-ext` | Shared GPUI helpers | foundation | Keep dependency-free from features. |
 | `hosts-ui` | Host management UI and host-related dependencies | hosts module | Remove settings and notification coupling. |
 | `notifications` | Notification state plus toast renderer | notifications module | Remove toast rendering; keep dropdown consumer. |
@@ -44,7 +44,7 @@ The current Cargo metadata shows several transitional edges that conflict with t
 - `hosts-ui` depends on settings and notifications, even though Hosts is not a Settings concern and connection management should emit through the app notification contract.
 - `command-palette` depends on backend even though the palette should receive dynamic data through providers.
 - `backend` exposes a broad `App`, global event bus, and unrelated modules under one public crate.
-- `backend` still owns the filesystem watcher because it emits directly through the legacy app event bus; this is a deliberate temporary integration seam.
+- `backend` still owns the filesystem watcher adapter because it emits directly through the legacy app event bus; the actual watcher implementation now belongs to `labonair-filesystem`.
 - `shell/src/commands.rs`, `shell/src/status_items.rs`, and workspace views still contain feature-specific behavior that belongs to owning modules.
 - `workspace/src/toast_layer.rs` and `notifications` still encode the superseded toast model.
 

@@ -3,21 +3,25 @@
 ## Current Session: 2026-09-06 (First modular platform boundary)
 
 The first code migration from the architecture reset is complete: local file
-access, traversal, mutation, path resolution, and search now live in the new
-UI-free `crates/filesystem` (`labonair-filesystem`) crate. Explorer, editor,
+access, traversal, mutation, path resolution, search, and the watcher
+implementation now live in the new UI-free `crates/filesystem`
+(`labonair-filesystem`) crate. Explorer, editor,
 workspace local SFTP, shell status items, settings UI, command palette, app
 bootstrap, and AI file tools consume that crate directly. The backend keeps
-only the legacy filesystem watcher temporarily because it still emits through
-`AppEvent`; extracting that requires the typed event/callback contract from
-`R01-001`.
+only a small legacy watcher adapter because it still emits through `AppEvent`;
+replacing that adapter requires the typed event contract from `R01-001`.
 
 Verification passed: `cargo fmt --check`, `cargo check --workspace
 --all-targets`, `cargo clippy --workspace --all-targets -- -D warnings`,
 `cargo test --workspace` (with approved loopback permission), and
 `scripts/check-crate-deps.sh`. The task `R01-001-backend-boundaries-and-contracts`
 is still `🔄 In Progress`; stable IDs/events and the remaining backend
-boundaries are next. Branch `master` is ahead of `origin/master`; changes are
-ready to commit. No blockers.
+boundaries are next. The final watcher-only change passed focused tests for
+`labonair-filesystem` and `labonair-backend`; a second full workspace test
+link was not usable after an interrupted clean rebuild because Cargo left stale
+artifact locks, but the full workspace test suite had passed immediately
+before that watcher-only change. Branch `master` is ahead of `origin/master`;
+changes are ready to commit. No source blockers.
 
 ## Current Session: 2026-09-06 (Architecture and documentation reset — Phase 0)
 

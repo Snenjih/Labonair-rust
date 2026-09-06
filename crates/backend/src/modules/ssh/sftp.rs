@@ -1,8 +1,8 @@
 use crate::modules::errors::LabonairError;
-use crate::modules::fs::file::ReadResult;
 use crate::modules::sftp::net_error::is_network_error;
 use crate::modules::ssh::shell::shell_quote;
 use crate::modules::ssh::SshState;
+use labonair_filesystem::file::ReadResult;
 use russh_sftp::protocol::OpenFlags;
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
