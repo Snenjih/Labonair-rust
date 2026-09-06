@@ -2,7 +2,7 @@
 
 ## Status
 
-`⏳ Planned`
+`🔄 In Progress`
 
 ## Owner
 
@@ -53,3 +53,15 @@ The task is complete only when the selected compatibility path is deleted, the
 workspace no longer needs a feature-specific shell branch for the migrated
 slice, and the empty/standalone workflow is covered by the same surface model
 as project workspaces.
+
+## Progress
+
+The Hosts navigation callback has been replaced by the typed
+`WorkspaceEvent::OpenHosts` contract and a shell subscription. The workspace
+now owns the UI-free `WorkspaceIdentity` / `WorkspaceState` model, starts in a
+standalone identity, exposes explicit project/standalone transitions, and
+renders the identity on the empty surface. Focused workspace tests, compile,
+and Clippy checks pass.
+
+Remaining work is the explicit project-opening integration and the required
+manual visual check of the empty/project/standalone shell states.

@@ -11,6 +11,13 @@ Labonair supports two equally valid entry modes:
 
 Both use the same tabs, panes, commands, notifications, and statusbar. The difference is identity and persistence, not a separate UI architecture.
 
+The current implementation represents this contract in
+`labonair-workspace::context` as `WorkspaceIdentity` plus `WorkspaceState`.
+`Workspace` owns the state and exposes one snapshot for shell surfaces. It
+starts as `Standalone`; a future project-opening flow changes the identity
+explicitly through the workspace API rather than inferring a project from a
+terminal's current working directory.
+
 A workspace is an application context, not a requirement that every action be
 project-based. The context carries optional identity and shared navigation
 state; the tool module still owns the terminal, editor, SSH, SFTP, or transfer
@@ -47,7 +54,11 @@ No tool may require a project workspace unless its operation genuinely needs a p
 Host selection and host management remain owned by Hosts. A selected host may
 create a standalone remote workspace or attach to an existing workspace
 through the SSH/SFTP contracts; Workspace only places and focuses the
-resulting tool instance.
+  resulting tool instance.
+
+Workspace-to-shell navigation uses `WorkspaceEvent` for requests such as
+opening Hosts. Workspace does not store a shell callback or decide whether the
+destination is a palette page, panel, or standalone window.
 
 ## Tool instances
 

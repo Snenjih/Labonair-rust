@@ -53,6 +53,11 @@ in the normative documents linked from `docs/README.md`.
 The current Cargo metadata shows several transitional edges that conflict with the new rules:
 
 - `workspace` depends directly on AI, backend, command palette, hosts UI, notifications, settings, SFTP capability contracts, and feature views; transfer lifecycle state is no longer one of those responsibilities.
+- Workspace identity/activity now has one UI-free owner in `workspace/context.rs`
+  (`WorkspaceIdentity` + `WorkspaceState`). The previous Hosts shell callback
+  was removed; cross-surface Hosts navigation uses `WorkspaceEvent` and a
+  composition-root subscription. Remaining feature-view dependencies are
+  still transitional and are not hidden by this state model.
 - `settings-ui` depends on settings values, theme/UI primitives, notifications,
   command-palette fuzzy matching, and filesystem paths; it no longer depends on
   a workspace-owned background store, backend, Hosts UI, or panel contracts.

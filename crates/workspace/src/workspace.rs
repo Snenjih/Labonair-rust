@@ -26,6 +26,7 @@
 pub mod agent_access;
 pub mod backend_event_bridge;
 pub mod bell;
+pub mod context;
 pub mod dock;
 pub mod drag;
 pub mod live_bridge;
@@ -68,8 +69,8 @@ use crate::backend_event_bridge::BackendEventBridge;
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, point, px, relative, Animation, AnimationExt, App, AppContext, ClickEvent, Context,
-    DragMoveEvent, Entity, ExternalPaths, FocusHandle, Focusable, InteractiveElement, IntoElement,
-    KeyDownEvent, MouseButton, MouseDownEvent, ParentElement, Render, SharedString,
+    DragMoveEvent, Entity, EventEmitter, ExternalPaths, FocusHandle, Focusable, InteractiveElement,
+    IntoElement, KeyDownEvent, MouseButton, MouseDownEvent, ParentElement, Render, SharedString,
     StatefulInteractiveElement, Styled, Task, Window,
 };
 use labonair_backend::modules::mcp::{
@@ -330,16 +331,16 @@ enum PendingOpen {
 /// [`Workspace::set_dock_persist_hook`]).
 type DockPersistHook = Arc<dyn Fn(String, &mut App) + Send + Sync>;
 
-/// Opens the Hosts capability surface (installed by the shell — see
-/// [`Workspace::set_open_hosts_hook`]). `Workspace`
-/// cannot depend on `labonair-settings-ui` (that crate already depends on
-/// `labonair-workspace`), so — mirroring [`DockPersistHook`] — the shell
-/// hands in a plain closure at startup instead (replacing the old
-/// `TabKind::Hosts` tab / `open_host_manager`).
-type OpenHostsHook = Arc<dyn Fn(&mut App) + Send + Sync>;
+/// Events emitted by the workspace for actions owned by another surface.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum WorkspaceEvent {
+    /// Ask the application shell to reveal the canonical Hosts surface.
+    OpenHosts,
+}
 
 /// The tabbed, split-pane workspace shell.
 pub struct Workspace {
+    context: context::WorkspaceContext,
     registry: Arc<TerminalRegistry>,
     tabs: Entity<TabStore>,
     theme: Entity<ThemeStore>,
@@ -376,8 +377,6 @@ pub struct Workspace {
     /// crate cannot depend on — hence the callback indirection). T17-003
     /// moved this off `AppShell`.
     dock_persist_hook: Option<DockPersistHook>,
-    /// Set once by the shell: opens the Hosts capability surface.
-    open_hosts_hook: Option<OpenHostsHook>,
     /// Debounce for [`Workspace::persist_docks`].
     last_dock_save: Option<std::time::Instant>,
     /// The three edge docks (T17-002). Empty at construction; populated by
@@ -467,6 +466,8 @@ pub struct Workspace {
     /// actually changes, not on every render.
     last_project_settings_root: Option<String>,
 }
+
+impl EventEmitter<WorkspaceEvent> for Workspace {}
 
 impl Workspace {
     #[allow(clippy::too_many_arguments)]
@@ -589,7 +590,7 @@ impl Workspace {
             panel_registry: labonair_panel::PanelRegistry::new(),
             status_item_registry: labonair_panel::StatusItemRegistry::new(),
             dock_persist_hook: None,
-            open_hosts_hook: None,
+            context: context::WorkspaceContext::standalone(),
             last_dock_save: None,
             left_dock: crate::dock::Dock::new(labonair_panel::DockPosition::Left),
             right_dock: crate::dock::Dock::new(labonair_panel::DockPosition::Right),
@@ -901,6 +902,34 @@ impl Workspace {
     /// The tab store (for later phases / command palette wiring).
     pub fn tab_store(&self) -> &Entity<TabStore> {
         &self.tabs
+    }
+
+    /// The current project/standalone identity plus tab activity. This is the
+    /// only workspace state contract that permanent shell surfaces should use
+    /// when deciding whether the workspace is empty.
+    pub fn state(&self, cx: &App) -> context::WorkspaceState {
+        context::WorkspaceState::from_parts(
+            self.context.identity().clone(),
+            self.tabs.read(cx).len(),
+        )
+    }
+
+    /// Move this workspace into an explicitly project-scoped context.
+    pub fn set_project_context(
+        &mut self,
+        root: impl Into<std::path::PathBuf>,
+        cx: &mut Context<Self>,
+    ) {
+        self.context.set_project(root);
+        cx.notify();
+    }
+
+    /// Return this workspace to a temporary standalone context.
+    pub fn set_standalone_context(&mut self, cx: &mut Context<Self>) {
+        if self.context.identity().is_project() {
+            self.context.set_standalone();
+            cx.notify();
+        }
     }
 
     /// The working directory of the active pane's shell, if known — feeds the
@@ -1921,12 +1950,11 @@ impl Workspace {
         self.open_sftp(host_id, window, cx);
     }
 
-    /// Open the Hosts capability surface. A no-op if the shell has not
-    /// installed the capability's UI hook yet (headless/test contexts).
-    pub fn open_hosts(&mut self, cx: &mut Context<Self>) {
-        if let Some(hook) = self.open_hosts_hook.clone() {
-            hook(cx);
-        }
+    /// Request the canonical Hosts surface without knowing how the shell
+    /// presents it. The application composition root subscribes to this typed
+    /// event and opens the command-palette Hosts page.
+    pub fn request_open_hosts(&self, cx: &mut Context<Self>) {
+        cx.emit(WorkspaceEvent::OpenHosts);
     }
 
     /// The shared host-manager entity used by the Hosts capability and
@@ -2109,12 +2137,6 @@ impl Workspace {
         hook: impl Fn(String, &mut App) + Send + Sync + 'static,
     ) {
         self.dock_persist_hook = Some(Arc::new(hook));
-    }
-
-    /// Install the shell's Hosts capability-surface callback (see
-    /// [`Self::open_hosts`]).
-    pub fn set_open_hosts_hook(&mut self, hook: impl Fn(&mut App) + Send + Sync + 'static) {
-        self.open_hosts_hook = Some(Arc::new(hook));
     }
 
     /// The "primary" edge per the `sidebarPosition` setting
@@ -3515,7 +3537,7 @@ impl Workspace {
                         .child(
                             loading_btn("ssh-l-edit", "Edit Host", c, muted, border, false, fg)
                                 .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
-                                    this.open_hosts(cx)
+                                    this.request_open_hosts(cx)
                                 })),
                         )
                         .child(
@@ -3995,7 +4017,7 @@ impl Workspace {
                         move |_, _w, cx| {
                             v.update(cx, |this, cx| {
                                 this.new_tab_menu = None;
-                                this.open_hosts(cx)
+                                this.request_open_hosts(cx)
                             })
                         }
                     }),
@@ -4329,6 +4351,12 @@ impl Workspace {
                 )
                 .child(div().text_sm().text_color(muted).child(label))
         };
+        let context_label = match self.state(cx).identity() {
+            context::WorkspaceIdentity::Standalone => "Standalone workspace".to_string(),
+            context::WorkspaceIdentity::Project { root } => {
+                format!("Project \u{00b7} {}", root.display())
+            }
+        };
 
         div()
             .id("empty-workspace")
@@ -4340,6 +4368,7 @@ impl Workspace {
             .gap_4()
             .bg(bg)
             .child(div().text_sm().text_color(fg).child("Labonair"))
+            .child(div().text_xs().text_color(muted).child(context_label))
             .child(
                 div()
                     .flex()

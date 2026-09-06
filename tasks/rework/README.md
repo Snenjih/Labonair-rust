@@ -15,7 +15,7 @@ The active sequence is:
 7. `R01-008-notification-surface-owner.md` — Done
 8. `R01-009-inline-error-notification-adoption.md` — Done
 9. `R02-001-global-menu-and-theme-entrypoints.md` — Done
-10. `R02-002-shell-composition-and-standalone-workspaces.md` — Planned
+10. `R02-002-shell-composition-and-standalone-workspaces.md` — In Progress
 
 Phase 3 is complete. R02-001 is the first bounded Phase 2 shell task and also
 connects the already-established theme registry to its intended palette

@@ -4,7 +4,8 @@
 **Version:** 3
 
 The foundation migration is currently through `R01-009`, with the first Phase
-2 global-menu slice in `R02-001`: capability-owned registries and surfaces
+2 global-menu slice in `R02-001` and the workspace state/event boundary in
+progress under `R02-002`: capability-owned registries and surfaces
 are established for transfers, command metadata, settings values,
 backgrounds, hosts, notifications, and icon-theme selection. Phase 3 is
 complete:

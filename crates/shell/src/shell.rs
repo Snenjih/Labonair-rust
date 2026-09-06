@@ -62,5 +62,5 @@ pub(crate) mod theme {
     pub use labonair_theme::store::*;
 }
 pub(crate) mod workspace {
-    pub use labonair_workspace::Workspace;
+    pub use labonair_workspace::{Workspace, WorkspaceEvent};
 }

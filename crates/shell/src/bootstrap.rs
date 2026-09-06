@@ -51,7 +51,7 @@ use crate::theme::ThemeStore;
 use crate::titlebar::{Titlebar, TitlebarEvent};
 use crate::updater::UpdaterView;
 use crate::window_state;
-use crate::workspace::Workspace;
+use crate::workspace::{Workspace, WorkspaceEvent};
 use labonair_background::BackgroundStore;
 
 /// How often the AI live-bridge command queue is drained on the main thread.
@@ -268,6 +268,18 @@ pub(crate) fn bootstrap(
             cx,
         )
     });
+    // Workspace emits intent for cross-surface navigation; it does not hold a
+    // shell callback or know how the Hosts surface is presented.
+    cx.subscribe_in(
+        &workspace,
+        window,
+        |this, _, event: &WorkspaceEvent, window, cx| match event {
+            WorkspaceEvent::OpenHosts => {
+                this.show_command_palette(Some(labonair_command_palette::Page::Hosts), window, cx);
+            }
+        },
+    )
+    .detach();
     // Shell re-render on workspace change — keeps the `.when(can_split)` action
     // bindings in `render` in sync with the active tab.
     cx.observe(&workspace, |_, _, cx| cx.notify()).detach();

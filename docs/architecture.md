@@ -125,6 +125,12 @@ menu uses the shared `popover_menu` primitive and anchors it in window
 coordinates directly below the clicked button; it must not implement a second
 menu or feature-specific behavior.
 
+`labonair-workspace::context` owns the UI-free distinction between workspace
+identity (`Standalone` or `Project`) and activity (`Empty` or `Active`). Tool
+tabs do not choose a second layout model for standalone use. Cross-surface
+requests such as opening Hosts are emitted as typed `WorkspaceEvent` values;
+the shell subscribes and composes the canonical destination.
+
 ## 5. Composition root
 
 Only the `labonair` application package and `labonair-shell` may know all concrete feature modules. Their responsibilities are limited to:

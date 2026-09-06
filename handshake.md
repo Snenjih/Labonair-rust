@@ -1,5 +1,24 @@
 # Handshake — Session State (Labonair-rust Port)
 
+## Current Session: 2026-09-06 (Workspace state boundary in progress)
+
+`R02-002` is in progress. The old `Workspace` → shell `open_hosts_hook` was
+removed and replaced by typed `WorkspaceEvent::OpenHosts`; the shell now
+subscribes and opens the canonical Hosts palette page. A UI-free workspace
+context model now distinguishes `WorkspaceIdentity::Standalone` from
+`Project { root }` and `WorkspaceState::Empty` from `Active`, with explicit
+tested transitions and an identity label on the empty surface.
+
+The current branch is `master`; this partial migration is ready to be
+committed locally.
+The remaining R02-002 work is to connect an explicit project-opening flow and
+perform the required manual visual check for the shell states. The next task
+is not started. Focused workspace tests, the full workspace test suite
+(including the two known local HTTP/file-watcher tests outside the sandbox),
+`cargo check --workspace
+--all-targets`, `cargo clippy --workspace --all-targets -- -D warnings`,
+`git diff --check`, and the dependency verifier pass. No source blocker.
+
 ## Current Session: 2026-09-06 (Global menu and theme entrypoints complete)
 
 `R02-001` is complete. The titlebar global menu now contains Settings,

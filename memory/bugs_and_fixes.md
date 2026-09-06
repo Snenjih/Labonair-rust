@@ -1,5 +1,25 @@
 # Bugs, fixes, and non-obvious constraints
 
+## 2026-09-06 — Replace workspace shell callbacks with typed events
+
+**Finding:** `Workspace` stored an `open_hosts_hook` supplied by the shell and
+invoked it from feature UI. This made workspace behavior depend on a shell
+callback and hid the actual cross-surface navigation contract.
+
+**Resolution:** `WorkspaceEvent::OpenHosts` is now emitted by the workspace;
+`labonair-shell` subscribes at composition time and opens the canonical Hosts
+palette page. The workspace no longer stores or invokes a shell hook.
+
+**Non-obvious constraint:** Project identity must not be inferred from the
+active terminal's current working directory. Standalone terminals can have a
+cwd, so `WorkspaceContext` starts standalone and changes to `Project` only
+through an explicit project-opening transition.
+
+**Build note:** The first compile after this change failed because the shell's
+internal `workspace` re-export exposed only `Workspace`, not the new
+`WorkspaceEvent`. Re-exporting the event from `crates/shell/src/shell.rs`
+restored the intended composition-root boundary.
+
 ## 2026-09-06 — Icon-theme preview must be a separate transient layer
 
 **Finding:** The command palette already previewed app themes, but icon themes
