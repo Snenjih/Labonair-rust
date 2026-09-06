@@ -5,7 +5,7 @@
 //! emits a [`ProjectDiffRequest`]; the workspace opens/focuses exactly one of
 //! these views. It lists the changed files in a compact rail, renders the
 //! selected file's `git diff` as unified or side-by-side hunks, and stages /
-//! unstages individual hunks straight through the backend (`git apply
+//! unstages individual hunks through the Git capability (`git apply
 //! --cached`). Repeated requests re-point the selection instead of duplicating.
 
 use gpui::prelude::FluentBuilder;
@@ -13,11 +13,10 @@ use gpui::{
     div, px, App, ClickEvent, Context, Entity, FocusHandle, Focusable, InteractiveElement,
     IntoElement, ParentElement, Render, SharedString, StatefulInteractiveElement, Styled, Window,
 };
-use labonair_backend::modules::git;
-use labonair_backend::App as Backend;
 use labonair_editor::unified::{
     build_hunk_patch, is_whole_file_single_hunk, parse_diff_hunks, DiffHunk,
 };
+use labonair_git::GitService;
 use labonair_notifications::notify_err;
 use labonair_panel::{ProjectDiffFile, ProjectDiffMode, ProjectDiffRequest};
 use tokio::runtime::Handle as TokioHandle;
@@ -49,7 +48,7 @@ struct Colors {
 
 pub struct ProjectDiffView {
     theme: Entity<ThemeStore>,
-    backend: Backend,
+    git: std::sync::Arc<dyn GitService>,
     tokio: TokioHandle,
     focus: FocusHandle,
 
@@ -70,14 +69,14 @@ pub struct ProjectDiffView {
 impl ProjectDiffView {
     pub fn new(
         theme: Entity<ThemeStore>,
-        backend: Backend,
+        git: std::sync::Arc<dyn GitService>,
         tokio: TokioHandle,
         cx: &mut Context<Self>,
     ) -> Self {
         cx.observe(&theme, |_, _, cx| cx.notify()).detach();
         Self {
             theme,
-            backend,
+            git,
             tokio,
             focus: cx.focus_handle(),
             repo_root: None,
@@ -141,17 +140,15 @@ impl ProjectDiffView {
         self.gen += 1;
         let generation = self.gen;
         let session = self.session_id.clone();
-        let backend = self.backend.clone();
+        let git = self.git.clone();
         let jh = self.tokio.spawn(async move {
-            git::git_get_diff(
+            git.diff(
                 root,
                 file.path,
                 file.staged,
                 Some(false),
                 Some(file.untracked),
                 session,
-                &backend.ssh,
-                backend.clone(),
             )
             .await
         });
@@ -190,7 +187,7 @@ impl ProjectDiffView {
             return;
         };
         let session = self.session_id.clone();
-        let backend = self.backend.clone();
+        let git = self.git.clone();
         let files = parse_diff_hunks(&diff);
         let Some(parsed) = files.into_iter().next() else {
             notify_err::<()>(
@@ -214,19 +211,10 @@ impl ProjectDiffView {
         cx.notify();
         let jh = self.tokio.spawn(async move {
             match (whole, reverse, patch) {
-                (true, false, _) => {
-                    git::git_stage_file(root, path, session, &backend.ssh, backend.clone()).await
-                }
-                (true, true, _) => {
-                    git::git_unstage_file(root, path, session, &backend.ssh, backend.clone()).await
-                }
-                (false, false, Some(p)) => {
-                    git::git_stage_hunk(root, path, p, session, &backend.ssh, backend.clone()).await
-                }
-                (false, true, Some(p)) => {
-                    git::git_unstage_hunk(root, path, p, session, &backend.ssh, backend.clone())
-                        .await
-                }
+                (true, false, _) => git.stage_file(root, path, session).await,
+                (true, true, _) => git.unstage_file(root, path, session).await,
+                (false, false, Some(p)) => git.stage_hunk(root, path, p, session).await,
+                (false, true, Some(p)) => git.unstage_hunk(root, path, p, session).await,
                 _ => Ok(()),
             }
         });

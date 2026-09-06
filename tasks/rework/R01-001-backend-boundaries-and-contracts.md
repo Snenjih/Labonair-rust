@@ -65,6 +65,9 @@ Reduce `labonair-backend` from a broad public application state container to nar
 - The Git graph now consumes `labonair-git::GitGraphService` and
   `labonair-git::CommitInfo`; `BackendGitGraphService` is injected by the
   composition root, so the graph panel no longer imports the backend facade.
+- The SCM panel and workspace Project Diff now consume `labonair-git::GitService`;
+  Git value types and source-control operations are UI-free, and
+  `BackendGitService` is the only concrete execution adapter.
 - Stable IDs, typed domain events, and the remaining service boundaries are
   still open in this task.
 

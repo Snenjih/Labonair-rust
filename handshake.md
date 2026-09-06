@@ -1,6 +1,6 @@
 # Handshake — Session State (Labonair-rust Port)
 
-## Current Session: 2026-09-06 (Git graph capability boundary)
+## Current Session: 2026-09-06 (Source-control capability boundary)
 
 The snippet execution boundary is now typed end to end. `labonair-snippets`
 owns the shared `SnippetRunEvent` contract and asynchronous
@@ -19,15 +19,19 @@ UI-free `CommitInfo` value and `GitGraphService` contract; the backend exposes
 `BackendGitGraphService` as an injected adapter. `panel-git-graph` no longer
 depends on `labonair-backend`.
 
+The source-control panel and workspace Project Diff now use the full
+`labonair-git::GitService` contract. `labonair-git` owns the Git value types
+and operation surface; `BackendGitService` is the concrete local/remote
+adapter. Neither UI surface knows the backend facade or SSH executor.
+
 Verification passed: `cargo fmt --all`, `cargo check --workspace
 --all-targets`, `cargo clippy --workspace --all-targets -- -D warnings`,
 `cargo test --workspace`, `cargo fmt --check`, `git diff --check`, and
 `scripts/check-crate-deps.sh`.
 
-State: branch `master`, latest committed snippet isolation is `8e9d4ca`; the
-current Git graph contract changes are uncommitted. `R01-001` remains
-`🔄 In Progress`; next is to continue replacing broad backend state with typed
-capability contracts. No source blocker.
+State: branch `master`, current source-control changes are uncommitted.
+`R01-001` remains `🔄 In Progress`; next is to continue replacing broad
+backend state with typed capability contracts. No source blocker.
 
 ## Current Session: 2026-09-06 (Notification registry and toast removal)
 

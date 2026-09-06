@@ -113,6 +113,7 @@ ALLOWED = {
         "labonair-notifications", "labonair-command-palette",
         "labonair-panel", "labonair-panel-git-graph", "labonair-hosts-ui",
         "labonair-terminal", "labonair-editor", "labonair-backend",
+        "labonair-git",
         "labonair-ai", "labonair-settings", "labonair-settings-json",
         "labonair-filesystem",
     },
@@ -144,7 +145,7 @@ ALLOWED = {
     },
     "labonair-panel-scm": {
         "labonair-theme", "labonair-ui-kit", "labonair-panel",
-        "labonair-notifications", "labonair-backend",
+        "labonair-notifications", "labonair-git",
         # transitional: editor and settings contracts are extracted in Phase 7
         "labonair-editor", "labonair-settings",
     },

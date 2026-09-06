@@ -92,6 +92,7 @@ use labonair_backend::modules::ssh::tunnels::{
     active_tunnels, ssh_start_tunnels, ssh_stop_tunnels,
 };
 use labonair_backend::{App as Backend, AppEvent, EventChannel};
+use labonair_git::GitService;
 use labonair_terminal::{
     RemoteFeed, RemoteResizer, RemoteWriter, SessionHandle, SessionId, SessionOptions,
     TermDimensions, TerminalColors, TerminalRegistry,
@@ -403,6 +404,7 @@ pub struct Workspace {
 
     // ── SSH (T07-001) ──────────────────────────────────────────────────────
     backend: Backend,
+    git: Arc<dyn GitService>,
     tokio: TokioHandle,
     host_manager: Entity<HostManagerView>,
     /// Live SSH terminal tabs, keyed by registry session id.
@@ -571,6 +573,9 @@ impl Workspace {
             focus_handle: cx.focus_handle(),
             _meta_sync: meta_sync,
             _session_save: session_save,
+            git: Arc::new(labonair_backend::modules::git::BackendGitService::new(
+                backend.clone(),
+            )),
             backend,
             tokio,
             host_manager,
@@ -2302,10 +2307,10 @@ impl Workspace {
             Some(v) => v.clone(),
             None => {
                 let theme = self.theme.clone();
-                let backend = self.backend.clone();
+                let git = self.git.clone();
                 let tokio = self.tokio.clone();
                 let v = cx.new(|cx| {
-                    crate::views::project_diff::ProjectDiffView::new(theme, backend, tokio, cx)
+                    crate::views::project_diff::ProjectDiffView::new(theme, git, tokio, cx)
                 });
                 cx.observe(&v, |_, _, cx| cx.notify()).detach();
                 self.project_diff = Some(v.clone());

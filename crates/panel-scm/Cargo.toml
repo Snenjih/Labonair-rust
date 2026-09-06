@@ -17,7 +17,7 @@ labonair-panel = { path = "../panel" }
 labonair-editor = { path = "../editor" }
 labonair-settings = { path = "../settings" }
 labonair-notifications = { path = "../notifications" }
-labonair-backend = { path = "../backend" }
+labonair-git = { path = "../git" }
 
 [dev-dependencies]
 gpui = { workspace = true, features = ["test-support"] }

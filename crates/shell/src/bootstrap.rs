@@ -219,8 +219,11 @@ pub(crate) fn bootstrap(
     // bindings in `render` in sync with the active tab.
     cx.observe(&workspace, |_, _, cx| cx.notify()).detach();
 
+    let git_service = Arc::new(labonair_backend::modules::git::BackendGitService::new(
+        backend.clone(),
+    ));
     let git_panel =
-        cx.new(|cx| GitPanelView::new(backend.clone(), tokio.clone(), theme.clone(), cx));
+        cx.new(|cx| GitPanelView::new(git_service.clone(), tokio.clone(), theme.clone(), cx));
     // Source Control → workspace Project Diff (Zed-parity Phase 4, §12.6). The
     // panel emits a neutral `ProjectDiffRequest`; the workspace owns the single
     // Project Diff item's lifecycle (idempotent open/focus).

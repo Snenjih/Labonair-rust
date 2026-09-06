@@ -27,6 +27,7 @@ labonair-panel-git-graph = { path = "../panel-git-graph" }
 labonair-hosts-ui = { path = "../hosts-ui" }
 labonair-terminal = { path = "../terminal" }
 labonair-editor = { path = "../editor" }
+labonair-git = { path = "../git" }
 labonair-backend = { path = "../backend" }
 labonair-filesystem = { path = "../filesystem" }
 labonair-ai = { path = "../ai" }

@@ -4403,8 +4403,8 @@ name = "labonair-panel-scm"
 version = "0.1.0"
 dependencies = [
  "gpui",
- "labonair-backend",
  "labonair-editor",
+ "labonair-git",
  "labonair-notifications",
  "labonair-panel",
  "labonair-settings",
@@ -4619,6 +4619,7 @@ dependencies = [
  "labonair-command-palette",
  "labonair-editor",
  "labonair-filesystem",
+ "labonair-git",
  "labonair-gpui-ext",
  "labonair-hosts-ui",
  "labonair-notifications",

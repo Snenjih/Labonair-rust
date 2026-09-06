@@ -1,17 +1,15 @@
 //! Source-Control panel — Git status & staging (T09-001).
 //!
 //! [`GitPanelView`] is the GPUI-native port of the reference web app's
-//! `src/modules/source-control/` sidebar panel. It polls the backend's
+//! `src/modules/source-control/` sidebar panel. It polls the Git capability's
 //! batched [`git_get_workspace_state`] for the repo at the active working
 //! directory, renders changed files categorised into
 //! Conflicts / Staged / Unstaged / Untracked, lets the user stage/unstage
 //! whole files, whole sections and individual hunks, shows a unified-diff
 //! preview for the selected file, and drives commit / pull / push / fetch.
 //!
-//! The Git logic itself lives entirely in `labonair_backend::modules::git`
-//! (a `git` CLI wrapper — no `libgit2`). This view only wires it up: every
-//! backend call is dispatched onto the tokio runtime and its result folded
-//! back into the view on the GPUI thread.
+//! The Git logic is supplied through `labonair_git::GitService`; this view only
+//! owns presentation state and dispatches asynchronous capability calls.
 //!
 //! Polling uses a *generation guard* (`target_gen`, bumped only on a genuine
 //! repo/session change) plus an in-flight flag so a slow response for a
@@ -34,10 +32,7 @@ use gpui::{
     Focusable, InteractiveElement, IntoElement, KeyDownEvent, MouseDownEvent, ParentElement,
     Pixels, Point, Render, SharedString, StatefulInteractiveElement, Styled, Window,
 };
-use labonair_backend::modules::git::{
-    self, Branch, CommitInfo, FileStatus, GitStatus, WorkspaceGitState,
-};
-use labonair_backend::App as Backend;
+use labonair_git::{Branch, CommitInfo, FileStatus, GitService, GitStatus, WorkspaceGitState};
 use labonair_panel::{ProjectDiffFile, ProjectDiffMode, ProjectDiffRequest};
 use tokio::runtime::Handle as TokioHandle;
 
@@ -859,7 +854,7 @@ struct Colors {
 }
 
 pub struct GitPanelView {
-    backend: Backend,
+    git: std::sync::Arc<dyn GitService>,
     tokio: TokioHandle,
     theme: Entity<ThemeStore>,
     focus: FocusHandle,
@@ -963,7 +958,7 @@ impl EventEmitter<ScmEvent> for GitPanelView {}
 
 impl GitPanelView {
     pub fn new(
-        backend: Backend,
+        git: std::sync::Arc<dyn GitService>,
         tokio: TokioHandle,
         theme: Entity<ThemeStore>,
         cx: &mut Context<Self>,
@@ -993,7 +988,7 @@ impl GitPanelView {
         .detach();
 
         Self {
-            backend,
+            git,
             tokio,
             theme,
             focus: cx.focus_handle(),
@@ -1103,29 +1098,17 @@ impl GitPanelView {
         self.refreshing = true;
         let generation = self.target_gen;
         let session = self.session_id.clone();
-        let backend = self.backend.clone();
+        let git = self.git.clone();
 
         let jh = self.tokio.spawn(async move {
-            let is_repo =
-                git::git_is_repo(root.clone(), session.clone(), &backend.ssh, backend.clone())
-                    .await?;
+            let is_repo = git.is_repo(root.clone(), session.clone()).await?;
             if !is_repo {
                 return Ok::<_, String>(None);
             }
-            let repo_root = git::git_get_repo_root(
-                root.clone(),
-                session.clone(),
-                &backend.ssh,
-                backend.clone(),
-            )
-            .await?;
-            let state = git::git_get_workspace_state(
-                repo_root.clone(),
-                session.clone(),
-                &backend.ssh,
-                backend.clone(),
-            )
-            .await?;
+            let repo_root = git.repo_root(root.clone(), session.clone()).await?;
+            let state = git
+                .workspace_state(repo_root.clone(), session.clone())
+                .await?;
             Ok(Some((repo_root, state)))
         });
 
@@ -1240,20 +1223,11 @@ impl GitPanelView {
         }
         self.history_loading = true;
         let session = self.session_id.clone();
-        let backend = self.backend.clone();
+        let git = self.git.clone();
         let generation = self.target_gen;
-        let jh = self.tokio.spawn(async move {
-            git::git_get_log(
-                repo_root,
-                Some(100),
-                false,
-                session,
-                None,
-                &backend.ssh,
-                backend.clone(),
-            )
-            .await
-        });
+        let jh = self
+            .tokio
+            .spawn(async move { git.log(repo_root, Some(100), false, session, None).await });
         cx.spawn(async move |this, cx| {
             let res = jh.await.unwrap_or_else(|e| Err(e.to_string()));
             let _ = this.update(cx, |this, cx| {
@@ -1273,7 +1247,7 @@ impl GitPanelView {
         .detach();
     }
 
-    // ── generic backend-op dispatch ────────────────────────────────────────
+    // ── generic Git-operation dispatch ─────────────────────────────────────
 
     /// Runs `op` on the tokio runtime, notifies any error, then refreshes. The
     /// op is tagged with a [`RepoOperation`] identity so the affected control
@@ -1318,14 +1292,14 @@ impl GitPanelView {
     /// Stage every path in `paths` in one sequential op (section / directory
     /// aggregate checkbox).
     fn stage_paths(&mut self, paths: Vec<String>, cx: &mut Context<Self>) {
-        let Some((root, sid, be)) = self.ctx() else {
+        let Some((root, sid, git)) = self.ctx() else {
             return;
         };
         self.run_op(
             "Stage failed",
             async move {
                 for p in paths {
-                    git::git_stage_file(root.clone(), p, sid.clone(), &be.ssh, be.clone()).await?;
+                    git.stage_file(root.clone(), p, sid.clone()).await?;
                 }
                 Ok(())
             },
@@ -1335,15 +1309,14 @@ impl GitPanelView {
 
     /// Unstage every path in `paths` in one sequential op.
     fn unstage_paths(&mut self, paths: Vec<String>, cx: &mut Context<Self>) {
-        let Some((root, sid, be)) = self.ctx() else {
+        let Some((root, sid, git)) = self.ctx() else {
             return;
         };
         self.run_op(
             "Unstage failed",
             async move {
                 for p in paths {
-                    git::git_unstage_file(root.clone(), p, sid.clone(), &be.ssh, be.clone())
-                        .await?;
+                    git.unstage_file(root.clone(), p, sid.clone()).await?;
                 }
                 Ok(())
             },
@@ -1377,87 +1350,87 @@ impl GitPanelView {
         }
     }
 
-    fn ctx(&self) -> Option<(String, Option<String>, Backend)> {
+    fn ctx(&self) -> Option<(String, Option<String>, std::sync::Arc<dyn GitService>)> {
         Some((
             self.repo_root.clone()?,
             self.session_id.clone(),
-            self.backend.clone(),
+            self.git.clone(),
         ))
     }
 
     fn stage_file(&mut self, path: String, cx: &mut Context<Self>) {
-        let Some((root, sid, be)) = self.ctx() else {
+        let Some((root, sid, git)) = self.ctx() else {
             return;
         };
         self.run_op(
             "Stage failed",
-            async move { git::git_stage_file(root, path, sid, &be.ssh, be.clone()).await },
+            async move { git.stage_file(root, path, sid).await },
             cx,
         );
     }
 
     fn unstage_file(&mut self, path: String, cx: &mut Context<Self>) {
-        let Some((root, sid, be)) = self.ctx() else {
+        let Some((root, sid, git)) = self.ctx() else {
             return;
         };
         self.run_op(
             "Unstage failed",
-            async move { git::git_unstage_file(root, path, sid, &be.ssh, be.clone()).await },
+            async move { git.unstage_file(root, path, sid).await },
             cx,
         );
     }
 
     fn discard_file(&mut self, path: String, cx: &mut Context<Self>) {
-        let Some((root, sid, be)) = self.ctx() else {
+        let Some((root, sid, git)) = self.ctx() else {
             return;
         };
         self.run_op(
             "Discard failed",
-            async move { git::git_discard_file(root, path, sid, &be.ssh, be.clone()).await },
+            async move { git.discard_file(root, path, sid).await },
             cx,
         );
     }
 
     fn stage_all(&mut self, cx: &mut Context<Self>) {
-        let Some((root, sid, be)) = self.ctx() else {
+        let Some((root, sid, git)) = self.ctx() else {
             return;
         };
         self.run_op(
             "Stage all failed",
-            async move { git::git_stage_all(root, sid, &be.ssh, be.clone()).await },
+            async move { git.stage_all(root, sid).await },
             cx,
         );
     }
 
     fn unstage_all(&mut self, cx: &mut Context<Self>) {
-        let Some((root, sid, be)) = self.ctx() else {
+        let Some((root, sid, git)) = self.ctx() else {
             return;
         };
         self.run_op(
             "Unstage all failed",
-            async move { git::git_unstage_all(root, sid, &be.ssh, be.clone()).await },
+            async move { git.unstage_all(root, sid).await },
             cx,
         );
     }
 
     fn discard_all(&mut self, cx: &mut Context<Self>) {
-        let Some((root, sid, be)) = self.ctx() else {
+        let Some((root, sid, git)) = self.ctx() else {
             return;
         };
         self.run_op(
             "Discard all failed",
-            async move { git::git_discard_all(root, sid, &be.ssh, be.clone()).await },
+            async move { git.discard_all(root, sid).await },
             cx,
         );
     }
 
     fn clean_untracked(&mut self, cx: &mut Context<Self>) {
-        let Some((root, sid, be)) = self.ctx() else {
+        let Some((root, sid, git)) = self.ctx() else {
             return;
         };
         self.run_op(
             "Clean failed",
-            async move { git::git_clean_untracked(root, sid, &be.ssh, be.clone()).await },
+            async move { git.clean_untracked(root, sid).await },
             cx,
         );
     }
@@ -1499,7 +1472,7 @@ impl GitPanelView {
         if self.commit_disabled_reason(msg.is_empty()).is_some() {
             return;
         }
-        let Some((root, sid, be)) = self.ctx() else {
+        let Some((root, sid, git)) = self.ctx() else {
             return;
         };
         let mode = self.commit_mode();
@@ -1516,35 +1489,29 @@ impl GitPanelView {
             "Commit failed",
             async move {
                 if stage_tracked {
-                    git::git_stage_all(root.clone(), sid.clone(), &be.ssh, be.clone()).await?;
+                    git.stage_all(root.clone(), sid.clone()).await?;
                 }
-                git::git_commit(root, msg, amend, sid, &be.ssh, be.clone())
-                    .await
-                    .map(|_| ())
+                git.commit(root, msg, amend, sid).await.map(|_| ())
             },
             cx,
         );
     }
 
     fn pull(&mut self, cx: &mut Context<Self>) {
-        let Some((root, sid, be)) = self.ctx() else {
+        let Some((root, sid, git)) = self.ctx() else {
             return;
         };
         self.run_op_kind(
             RepoOperation::Pulling,
             "Pull failed",
-            async move {
-                git::git_pull(root, sid, &be.ssh, be.clone())
-                    .await
-                    .map(|_| ())
-            },
+            async move { git.pull(root, sid).await.map(|_| ()) },
             cx,
         );
     }
 
     fn push(&mut self, cx: &mut Context<Self>) {
         let has_upstream = self.current_branch_has_upstream();
-        let Some((root, sid, be)) = self.ctx() else {
+        let Some((root, sid, git)) = self.ctx() else {
             return;
         };
         let branch = self
@@ -1556,11 +1523,7 @@ impl GitPanelView {
             self.run_op_kind(
                 RepoOperation::Pushing,
                 "Push failed",
-                async move {
-                    git::git_push(root, None, None, sid, &be.ssh, be.clone())
-                        .await
-                        .map(|_| ())
-                },
+                async move { git.push(root, None, None, sid).await.map(|_| ()) },
                 cx,
             );
         } else {
@@ -1569,16 +1532,9 @@ impl GitPanelView {
                 RepoOperation::Pushing,
                 "Publish failed",
                 async move {
-                    git::git_push_set_upstream(
-                        root,
-                        "origin".to_string(),
-                        branch,
-                        sid,
-                        &be.ssh,
-                        be.clone(),
-                    )
-                    .await
-                    .map(|_| ())
+                    git.push(root, Some("origin".to_string()), Some(branch), sid)
+                        .await
+                        .map(|_| ())
                 },
                 cx,
             );
@@ -1588,7 +1544,7 @@ impl GitPanelView {
     /// Force-push. Only reached after an explicit in-panel confirmation
     /// (`PendingConfirm::ForcePush`) — never a bare primary button.
     fn force_push(&mut self, cx: &mut Context<Self>) {
-        let Some((root, sid, be)) = self.ctx() else {
+        let Some((root, sid, git)) = self.ctx() else {
             return;
         };
         let branch = self
@@ -1600,30 +1556,7 @@ impl GitPanelView {
             RepoOperation::Pushing,
             "Force push failed",
             async move {
-                git::git_push_force_with_lease(
-                    root,
-                    Some("origin".to_string()),
-                    Some(branch),
-                    sid,
-                    &be.ssh,
-                    be.clone(),
-                )
-                .await
-                .map(|_| ())
-            },
-            cx,
-        );
-    }
-
-    fn fetch(&mut self, cx: &mut Context<Self>) {
-        let Some((root, sid, be)) = self.ctx() else {
-            return;
-        };
-        self.run_op_kind(
-            RepoOperation::Fetching,
-            "Fetch failed",
-            async move {
-                git::git_fetch(root, sid, &be.ssh, be.clone())
+                git.push(root, Some("origin".to_string()), Some(branch), sid)
                     .await
                     .map(|_| ())
             },
@@ -1631,24 +1564,36 @@ impl GitPanelView {
         );
     }
 
+    fn fetch(&mut self, cx: &mut Context<Self>) {
+        let Some((root, sid, git)) = self.ctx() else {
+            return;
+        };
+        self.run_op_kind(
+            RepoOperation::Fetching,
+            "Fetch failed",
+            async move { git.fetch(root, sid).await.map(|_| ()) },
+            cx,
+        );
+    }
+
     fn abort(&mut self, cx: &mut Context<Self>) {
-        let Some((root, sid, be)) = self.ctx() else {
+        let Some((root, sid, git)) = self.ctx() else {
             return;
         };
         self.run_op(
             "Abort failed",
-            async move { git::git_abort(root, sid, &be.ssh, be.clone()).await },
+            async move { git.abort(root, sid).await },
             cx,
         );
     }
 
     fn git_continue(&mut self, cx: &mut Context<Self>) {
-        let Some((root, sid, be)) = self.ctx() else {
+        let Some((root, sid, git)) = self.ctx() else {
             return;
         };
         self.run_op(
             "Continue failed",
-            async move { git::git_continue(root, sid, &be.ssh, be.clone()).await },
+            async move { git.continue_operation(root, sid).await },
             cx,
         );
     }
@@ -1711,13 +1656,13 @@ impl GitPanelView {
     }
 
     fn checkout_branch(&mut self, name: String, cx: &mut Context<Self>) {
-        let Some((root, sid, be)) = self.ctx() else {
+        let Some((root, sid, git)) = self.ctx() else {
             return;
         };
         self.checkout_error = None;
         let name2 = name.clone();
         self.dispatch(
-            async move { git::git_checkout_branch(root, name2, sid, &be.ssh, be.clone()).await },
+            async move { git.checkout_branch(root, name2, sid).await },
             move |this, res, cx| match res {
                 Ok(()) => {
                     this.checkout_error = None;
@@ -1750,14 +1695,12 @@ impl GitPanelView {
             }
         };
         let checkout = self.new_branch_checkout;
-        let Some((root, sid, be)) = self.ctx() else {
+        let Some((root, sid, git)) = self.ctx() else {
             return;
         };
         self.new_branch_error = None;
         self.dispatch(
-            async move {
-                git::git_create_branch(root, name, from, checkout, sid, &be.ssh, be.clone()).await
-            },
+            async move { git.create_branch(root, name, from, checkout, sid).await },
             move |this, res, cx| match res {
                 Ok(()) => {
                     this.new_branch_open = false;
@@ -1773,14 +1716,12 @@ impl GitPanelView {
     }
 
     fn delete_branch(&mut self, name: String, force: bool, cx: &mut Context<Self>) {
-        let Some((root, sid, be)) = self.ctx() else {
+        let Some((root, sid, git)) = self.ctx() else {
             return;
         };
         let name2 = name.clone();
         self.dispatch(
-            async move {
-                git::git_delete_branch(root, name2, force, sid, &be.ssh, be.clone()).await
-            },
+            async move { git.delete_branch(root, name2, force, sid).await },
             move |this, res, cx| match res {
                 Ok(()) => {
                     this.delete_confirm_branch = None;
@@ -1813,13 +1754,11 @@ impl GitPanelView {
             cx.notify();
             return;
         }
-        let Some((root, sid, be)) = self.ctx() else {
+        let Some((root, sid, git)) = self.ctx() else {
             return;
         };
         self.dispatch(
-            async move {
-                git::git_rename_branch(root, old, new_name, sid, &be.ssh, be.clone()).await
-            },
+            async move { git.rename_branch(root, old, new_name, sid).await },
             move |this, res, cx| {
                 this.rename_target = None;
                 this.active_field = None;
@@ -1843,14 +1782,12 @@ impl GitPanelView {
             let f = self.new_tag_from.trim();
             (!f.is_empty()).then(|| f.to_string())
         };
-        let Some((root, sid, be)) = self.ctx() else {
+        let Some((root, sid, git)) = self.ctx() else {
             return;
         };
         self.tag_error = None;
         self.dispatch(
-            async move {
-                git::git_create_tag(root, name, message, from, sid, &be.ssh, be.clone()).await
-            },
+            async move { git.create_tag(root, name, message, from, sid).await },
             move |this, res, cx| match res {
                 Ok(()) => {
                     this.new_tag_open = false;
@@ -1867,11 +1804,11 @@ impl GitPanelView {
     }
 
     fn delete_tag(&mut self, name: String, cx: &mut Context<Self>) {
-        let Some((root, sid, be)) = self.ctx() else {
+        let Some((root, sid, git)) = self.ctx() else {
             return;
         };
         self.dispatch(
-            async move { git::git_delete_tag(root, name, sid, &be.ssh, be.clone()).await },
+            async move { git.delete_tag(root, name, sid).await },
             move |this, res, cx| {
                 this.delete_confirm_tag = None;
                 if let Err(e) = &res {
@@ -1885,15 +1822,11 @@ impl GitPanelView {
     }
 
     fn push_tag(&mut self, name: String, cx: &mut Context<Self>) {
-        let Some((root, sid, be)) = self.ctx() else {
+        let Some((root, sid, git)) = self.ctx() else {
             return;
         };
         self.dispatch(
-            async move {
-                git::git_push_tag(root, name, None, sid, &be.ssh, be.clone())
-                    .await
-                    .map(|_| ())
-            },
+            async move { git.push_tag(root, name, None, sid).await.map(|_| ()) },
             move |this, res, cx| {
                 if let Err(e) = &res {
                     this.tag_error = Some(e.clone());
@@ -1910,11 +1843,11 @@ impl GitPanelView {
             let m = self.stash_msg.trim();
             (!m.is_empty()).then(|| m.to_string())
         };
-        let Some((root, sid, be)) = self.ctx() else {
+        let Some((root, sid, git)) = self.ctx() else {
             return;
         };
         self.dispatch(
-            async move { git::git_stash_push(root, message, None, sid, &be.ssh, be.clone()).await },
+            async move { git.stash_push(root, message, None, sid).await },
             move |this, res, cx| {
                 this.stash_form_open = false;
                 this.stash_msg.clear();
@@ -1928,15 +1861,15 @@ impl GitPanelView {
 
     /// `pop == true` → `git stash pop`; otherwise `git stash apply`.
     fn stash_apply(&mut self, hash: String, pop: bool, cx: &mut Context<Self>) {
-        let Some((root, sid, be)) = self.ctx() else {
+        let Some((root, sid, git)) = self.ctx() else {
             return;
         };
         self.dispatch(
             async move {
                 if pop {
-                    git::git_stash_pop(root, hash, sid, &be.ssh, be.clone()).await
+                    git.stash_pop(root, hash, sid).await
                 } else {
-                    git::git_stash_apply(root, hash, sid, &be.ssh, be.clone()).await
+                    git.stash_apply(root, hash, sid).await
                 }
             },
             move |this, res, cx| {
@@ -1958,11 +1891,11 @@ impl GitPanelView {
     }
 
     fn stash_drop(&mut self, hash: String, cx: &mut Context<Self>) {
-        let Some((root, sid, be)) = self.ctx() else {
+        let Some((root, sid, git)) = self.ctx() else {
             return;
         };
         self.dispatch(
-            async move { git::git_stash_drop(root, hash, sid, &be.ssh, be.clone()).await },
+            async move { git.stash_drop(root, hash, sid).await },
             move |this, res, cx| {
                 this.drop_confirm_stash = None;
                 notify_err("Stash drop failed", res, cx);
@@ -3768,23 +3701,23 @@ impl Render for GitPanelView {
 
 impl GitPanelView {
     fn add_to_gitignore(&mut self, path: String, cx: &mut Context<Self>) {
-        let Some((root, sid, be)) = self.ctx() else {
+        let Some((root, sid, git)) = self.ctx() else {
             return;
         };
         self.run_op(
             "Add to .gitignore failed",
-            async move { git::git_add_to_gitignore(root, path, sid, &be.ssh, be.clone()).await },
+            async move { git.add_to_gitignore(root, path, sid).await },
             cx,
         );
     }
 
     fn add_to_exclude(&mut self, path: String, cx: &mut Context<Self>) {
-        let Some((root, sid, be)) = self.ctx() else {
+        let Some((root, sid, git)) = self.ctx() else {
             return;
         };
         self.run_op(
             "Add to exclude failed",
-            async move { git::git_add_to_exclude(root, path, sid, &be.ssh, be.clone()).await },
+            async move { git.add_to_exclude(root, path, sid).await },
             cx,
         );
     }

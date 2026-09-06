@@ -1,5 +1,17 @@
 # Bugs, fixes, and non-obvious constraints
 
+## 2026-09-06 — SCM and Project Diff need one source-control capability
+
+**Finding:** `panel-scm` and the workspace Project Diff still imported the
+backend facade directly for Git values and every local/remote operation. A
+graph-only contract was not sufficient because staging, commits, branches,
+tags, stashes, and synchronization were still coupled to backend internals.
+
+**Resolution:** Expanded `labonair-git` with the UI-free Git value types and
+`GitService` operation contract. `BackendGitService` now adapts the existing
+executor, while both UI surfaces receive only `Arc<dyn GitService>` from
+composition. The dependency verifier now rejects the old backend edges.
+
 ## 2026-09-06 — SSH snippet execution needs an injected capability contract
 
 **Finding:** After local snippet execution moved into `labonair-snippets`, the
