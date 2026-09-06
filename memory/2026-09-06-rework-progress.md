@@ -36,6 +36,10 @@ It now occurs only after an explicit identity transition or an explicit
 project-settings refresh, so rendering does not trigger settings I/O or
 notification side effects.
 
+The screenshot helper now validates every supplied PID against the exact
+native Rust executable and reports Screen Recording denial separately. It
+cannot accept a legacy-app or unrelated-process window as evidence.
+
 ## Native visual verification boundary
 
 The exact Rust bundle passes the five-second LaunchServices smoke check and

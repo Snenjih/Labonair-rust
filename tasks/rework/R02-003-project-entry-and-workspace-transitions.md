@@ -123,6 +123,9 @@ native launch smoke test and is resolved only as the Rust executable. A
 PID-scoped screenshot attempt was rejected by macOS Screen Capture with
 `could not create image from window`; no screenshot from that attempt is
 accepted as visual evidence, so the visual acceptance criterion remains open.
+The helper now also rejects any supplied PID whose executable is not the exact
+native Rust binary and reports the Screen Recording permission failure
+separately.
 
 ## Removal condition
 

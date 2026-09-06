@@ -27,7 +27,9 @@ target/release/bundle/macos/Labonair.app/Contents/MacOS/labonair
 The native bundle uses `com.labonair.rust`; the legacy Tauri application uses
 a different bundle identity. A visual helper must fail closed when it cannot
 find a layer-0 window owned by the exact Rust PID. It must never fall back to
-the generic application name or to the frontmost unrelated window.
+the generic application name or to the frontmost unrelated window. Even an
+explicitly supplied PID must resolve to the exact native executable before a
+capture is attempted.
 
 ## Required evidence
 
@@ -48,6 +50,7 @@ ownership, and do not infer visual success from a successful build.
 - `scripts/smoke-test.sh` verifies the bundle, core smoke tests, and optionally
   the exact Rust process with `LABONAIR_SMOKE_LAUNCH=1`.
 - `scripts/screenshot.sh` accepts an explicit Rust PID and fails closed when
-  no matching native window can be captured.
+  no matching native window can be captured. It also distinguishes an invalid
+  PID from a macOS Screen Recording permission failure.
 
 These helpers are verification tools, not additional application behavior.

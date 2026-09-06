@@ -30,6 +30,18 @@ if [ -z "$RUST_PID" ]; then
     exit 1
 fi
 
+# A caller-provided PID is still validated. This prevents an accidental
+# screenshot of an unrelated process (especially the legacy Tauri app) from
+# being accepted as Labonair evidence.
+RUST_COMMAND=$(ps -p "$RUST_PID" -o command= 2>/dev/null | sed 's/[[:space:]]*$//' || true)
+case "$RUST_COMMAND" in
+    "$RUST_BINARY"|"$RUST_BUNDLE_BINARY") ;;
+    *)
+        echo "PID $RUST_PID is not the native Rust Labonair executable: ${RUST_COMMAND:-process unavailable}" >&2
+        exit 1
+        ;;
+esac
+
 # Find the CGWindowID of the frontmost on-screen Labonair window (layer 0).
 WID=$(swift - "$RUST_PID" - <<'EOF' 2>/dev/null | head -1
 import CoreGraphics
@@ -52,7 +64,11 @@ EOF
 )
 
 if [ -n "$WID" ]; then
-    screencapture -x -l "$WID" -t png "$OUT"
+    if ! screencapture -x -l "$WID" -t png "$OUT"; then
+        echo "Rust Labonair window $WID was found for PID $RUST_PID, but macOS denied capture." >&2
+        echo "Grant Screen Recording permission to the terminal or runner, then retry." >&2
+        exit 1
+    fi
 else
     echo "Labonair window id not found; visual evidence was not captured" >&2
     exit 1

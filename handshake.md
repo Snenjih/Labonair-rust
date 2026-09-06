@@ -1,5 +1,19 @@
 # Handshake — Session State (Labonair-rust Port)
 
+## Current Session: 2026-09-07 (Native visual helper hardened)
+
+`R02-003` remains active. The native visual helper now validates every
+supplied PID against the exact Rust executable before looking up a window, and
+it reports a separate actionable error when macOS denies Screen Recording.
+The exact Rust bundle was opened at its absolute path; its visible layer-0
+window was confirmed for the exact native PID, while capture was denied by
+macOS. No legacy Tauri process was used.
+
+The latest transition slice is committed at `8171b30`; the screenshot-helper
+and documentation changes are currently the only uncommitted work. Next:
+finish the visual evidence once Screen Recording permission is available,
+then close `R02-003` and start `R03-001`.
+
 ## Current Session: 2026-09-06 (Typed workspace transitions and documentation sync)
 
 `R02-003` remains active. Workspace identity changes now enter through the
@@ -25,6 +39,10 @@ once at that boundary.
 The pure `WorkspaceContext` now performs the identity mutation and reports
 no-op transitions; the GPUI `Workspace` only coordinates settings and UI
 invalidation side effects afterward.
+
+The visual helper was hardened to validate every supplied PID against the
+exact native Rust executable and to distinguish that identity check from a
+macOS Screen Recording denial.
 
 Focused Workspace and shell tests, `cargo check --workspace --all-targets`,
 Clippy, dependency verification, queue verification, and `git diff --check`
