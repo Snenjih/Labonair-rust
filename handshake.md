@@ -9,8 +9,7 @@ context model now distinguishes `WorkspaceIdentity::Standalone` from
 `Project { root }` and `WorkspaceState::Empty` from `Active`, with explicit
 tested transitions and an identity label on the empty surface.
 
-The current branch is `master`; this partial migration is ready to be
-committed locally.
+The current branch is `master`; this partial migration is committed locally.
 The remaining R02-002 work is to connect an explicit project-opening flow and
 perform the required manual visual check for the shell states. The next task
 is not started. Focused workspace tests, the full workspace test suite
@@ -18,6 +17,11 @@ is not started. Focused workspace tests, the full workspace test suite
 `cargo check --workspace
 --all-targets`, `cargo clippy --workspace --all-targets -- -D warnings`,
 `git diff --check`, and the dependency verifier pass. No source blocker.
+
+The normative documentation now also includes `docs/repository-layout.md` and
+`docs/feature-lifecycle.md`, linked from `docs/README.md`, `README.md`, and
+`AGENTS.md`. They define canonical placement and the contract-first workflow
+for future feature additions, migrations, and removals.
 
 ## Current Session: 2026-09-06 (Global menu and theme entrypoints complete)
 

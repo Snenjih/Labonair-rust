@@ -2,7 +2,7 @@
 
 **Status:** Normative target architecture
 **Version:** 3
-**Related:** [`product.md`](product.md), [`capabilities.md`](capabilities.md), [`modules.md`](modules.md), [`registries.md`](registries.md)
+**Related:** [`product.md`](product.md), [`capabilities.md`](capabilities.md), [`modules.md`](modules.md), [`registries.md`](registries.md), [`repository-layout.md`](repository-layout.md), [`feature-lifecycle.md`](feature-lifecycle.md)
 
 ## 1. Architecture objective
 

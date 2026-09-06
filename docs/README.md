@@ -15,6 +15,8 @@ the migration is complete.
 - [`modules.md`](modules.md) — ownership and crate rules for feature modules.
 - [`registries.md`](registries.md) — command, keymap, theme, panel, status item, and notification registries.
 - [`design-system.md`](design-system.md) — visual language and reusable UI component rules.
+- [`repository-layout.md`](repository-layout.md) — canonical crate, source, and documentation placement.
+- [`feature-lifecycle.md`](feature-lifecycle.md) — required boundary-first workflow for feature changes.
 - [`workspace-model.md`](workspace-model.md) — project and standalone workspaces.
 - [`settings.md`](settings.md) — the boundary of the settings system.
 - [`settings-guidelines.md`](settings-guidelines.md) — normative Settings UI

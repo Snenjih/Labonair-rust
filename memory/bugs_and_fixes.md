@@ -20,6 +20,18 @@ internal `workspace` re-export exposed only `Workspace`, not the new
 `WorkspaceEvent`. Re-exporting the event from `crates/shell/src/shell.rs`
 restored the intended composition-root boundary.
 
+## 2026-09-06 — Make repository placement and feature changes explicit
+
+**Finding:** The architecture rules described ownership and dependency
+direction, but contributors still had to infer where capability files belonged
+and which design/registry/persistence checks preceded implementation.
+
+**Resolution:** Added normative `docs/repository-layout.md` and
+`docs/feature-lifecycle.md`, linked from the repository instructions and docs
+index. The lifecycle now requires classification, ownership, public contracts,
+UI-kit and user-message decisions, migration order, removal checks, and the
+full verification gates before a task is complete.
+
 ## 2026-09-06 — Icon-theme preview must be a separate transient layer
 
 **Finding:** The command palette already previewed app themes, but icon themes

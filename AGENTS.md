@@ -6,7 +6,7 @@ The documents in `docs/` define the target architecture. The inventory and
 capability matrix explicitly describe unfinished migrations; do not mistake a
 target rule for a claim that the current tree already satisfies it.
 
-The current product and engineering contracts are in [`docs/README.md`](docs/README.md). Read the relevant normative documents before changing architecture, product behavior, module boundaries, settings, registries, or UI.
+The current product and engineering contracts are in [`docs/README.md`](docs/README.md). Read the relevant normative documents before changing architecture, product behavior, module boundaries, settings, registries, or UI. The canonical repository placement is [`docs/repository-layout.md`](docs/repository-layout.md), and the required boundary-first change workflow is [`docs/feature-lifecycle.md`](docs/feature-lifecycle.md).
 
 ## Product direction
 
@@ -68,7 +68,7 @@ Before implementation, identify the owning module, canonical user entry point, p
 
 During implementation, keep feature logic inside its owner, route user messages through the notification center, and avoid shell-wide conditionals.
 
-For every new feature or migration, record the owner, canonical capability
+For every new feature or migration, follow [`docs/feature-lifecycle.md`](docs/feature-lifecycle.md) and record the owner, canonical capability
 crate, public contract, user entry point, registry contributions, settings,
 persistence, notifications, and UI-kit components before coding. Add the
 capability to `docs/capabilities.md` and the work to
