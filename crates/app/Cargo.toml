@@ -29,6 +29,47 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 dirs = { workspace = true }
 
+# macOS dock / cmd-tab icon shim (`src/dock_icon.rs`). GPUI 0.2.2 exposes no
+# runtime app-icon API, and an un-bundled `cargo run` binary otherwise shows the
+# generic executable icon; this sets `NSApp.applicationIconImage` at startup.
+# All three crates are already in the tree via `gpui`/`muda` — this only
+# re-declares the feature set we rely on.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-app-kit = { version = "0.3", default-features = false, features = [
+    "std",
+    "NSApplication",
+    "NSResponder",
+    "NSImage",
+] }
+objc2-foundation = { version = "0.3", default-features = false, features = [
+    "std",
+    "NSData",
+] }
+
 [dev-dependencies]
 labonair-terminal = { path = "../terminal" }
 labonair-theme = { path = "../theme" }
+
+# ── macOS .app bundle (`cargo bundle`) ──────────────────────────────────────
+# Mirrors the reference `src-tauri/tauri.conf.json` `bundle` block. `cargo run`
+# uses the runtime shim above; a packaged build embeds `icon.icns` so Finder,
+# the Dock and the standard About panel pick it up.
+[package.metadata.bundle]
+name = "Labonair"
+identifier = "com.labonair.app"
+category = "public.app-category.developer-tools"
+short_description = "Native terminal, SSH & SFTP client with integrated AI"
+long_description = """
+Labonair — a native terminal, SSH & SFTP client with integrated AI: multi-tab
+and split layout, file explorer, code editor, source control and AI agents.
+"""
+icon = [
+    "assets/app-icon/32x32.png",
+    "assets/app-icon/128x128.png",
+    "assets/app-icon/128x128@2x.png",
+    "assets/app-icon/256x256@2x.png",
+    "assets/app-icon/icon.icns",
+    "assets/app-icon/icon.ico",
+]
+minimum_system_version = "10.15"

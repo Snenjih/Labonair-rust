@@ -4,6 +4,8 @@ use gpui::{
 };
 
 use gpui_component::Root;
+
+mod dock_icon;
 use labonair_backend::App as Backend;
 #[cfg(debug_assertions)]
 use labonair_backend::AppEvent;
@@ -103,6 +105,9 @@ fn main() {
     Application::new()
         .with_assets(labonair_shell::Assets)
         .run(move |cx: &mut App| {
+            // Dock / cmd-tab icon for the un-bundled `cargo run` binary
+            // (a packaged `.app` uses the embedded `icon.icns` instead).
+            dock_icon::set_dock_icon();
             labonair_shell::init_fonts(cx);
             // T19-002: layered SettingsStore (default < user < …) — before
             // the first render, before gpui-component so nothing built below
