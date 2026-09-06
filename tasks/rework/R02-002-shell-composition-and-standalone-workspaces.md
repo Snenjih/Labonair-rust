@@ -75,5 +75,11 @@ visual check. The valid screenshot shows the empty standalone workspace and
 the expected shell zones. Project-state and transition visuals remain open;
 the helper supports both debug and bundled Rust executables and rejects the
 installed legacy Tauri app.
+
+The shell's Explorer and Git root synchronization now uses the explicit
+workspace project identity before consulting the active terminal cwd. This
+means opening a project updates its file and Git surfaces, while standalone
+terminals retain cwd-driven behavior. Regression tests cover both precedence
+orders.
 Session identity persistence and the final removal audit continue in
 `R02-003`.

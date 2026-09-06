@@ -1,5 +1,18 @@
 # Bugs, fixes, and non-obvious constraints
 
+## 2026-09-06 — Project identity must drive Explorer and Git roots
+
+**Finding:** Selecting a project updated `WorkspaceIdentity` and project
+settings, but shell synchronization still derived Explorer and Git roots only
+from the active terminal cwd. A project with no terminal therefore continued
+to show the home directory, and a terminal `cd` could move project surfaces.
+
+**Resolution:** `labonair-shell::bootstrap` now resolves an explicit project
+root first. Only standalone workspaces fall back to the active terminal cwd;
+the Explorer may then fall back to the home directory, while Git remains
+unscoped without a project or terminal. Pure resolver tests cover project
+precedence and standalone fallbacks.
+
 ## 2026-09-06 — Keep the native bundle distinct from the legacy app
 
 **Finding:** The native Rust bundle and the installed legacy Tauri bundle both

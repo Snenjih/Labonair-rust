@@ -57,6 +57,11 @@ create a standalone remote workspace or attach to an existing workspace
 through the SSH/SFTP contracts; Workspace only places and focuses the
   resulting tool instance.
 
+Project identity is also the authoritative root for shell-owned project
+surfaces such as Explorer and Git. A standalone workspace may use the active
+terminal cwd as a convenience fallback, but changing directories in a
+terminal must never change the root of an explicitly selected project.
+
 Workspace-to-shell navigation uses `WorkspaceEvent` for requests such as
 opening Hosts or presenting the native project picker. Workspace does not
 store a shell callback or decide whether the destination is a palette page,
