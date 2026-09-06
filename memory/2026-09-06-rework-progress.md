@@ -27,6 +27,11 @@ picker, session restore, and Return to Standalone command all enter through
 that contract; direct workspace-context setters are crate-private, and a
 terminal CWD is not representable as an identity transition.
 
+Project-settings synchronization was removed from the workspace render path.
+It now occurs only after an explicit identity transition or an explicit
+project-settings refresh, so rendering does not trigger settings I/O or
+notification side effects.
+
 ## Native visual verification boundary
 
 The exact Rust bundle passes the five-second LaunchServices smoke check and

@@ -462,12 +462,11 @@ pub struct Workspace {
     pending_snippet_ssh: HashMap<String, String>,
 
     // ── Project settings (T19-003) ──────────────────────────────────────
-    /// The explicit project identity key last time
-    /// `sync_project_settings_root` ran, so
-    /// `labonair_settings::set_active_project_root` (which loads/reloads
-    /// `.labonair/settings.json` + its live-watch) is only called when the
-    /// project identity changes, not on every render.
-    last_project_settings_root: Option<String>,
+    /// Signature of the rejected project-settings keys already reported for
+    /// the current explicit project transition. This is only notification
+    /// deduplication; project settings are synchronized by transitions, never
+    /// from the render path.
+    last_project_settings_rejection_signature: Option<String>,
 }
 
 impl EventEmitter<WorkspaceEvent> for Workspace {}
@@ -637,7 +636,7 @@ impl Workspace {
             pending_mcp: Vec::new(),
             agent_access,
             pending_snippet_ssh: HashMap::new(),
-            last_project_settings_root: None,
+            last_project_settings_rejection_signature: None,
         };
         cx.observe(&this.agent_access, |_, _, cx| cx.notify())
             .detach();
@@ -966,14 +965,15 @@ impl Workspace {
         match transition {
             context::WorkspaceTransition::OpenProject { root } => {
                 self.context.set_project(root.clone());
-                self.last_project_settings_root = None;
+                self.last_project_settings_rejection_signature = None;
                 labonair_settings::set_active_project_root(cx, Some(root));
+                self.notify_project_settings_rejections(cx);
                 cx.notify();
             }
             context::WorkspaceTransition::ReturnToStandalone => {
                 if self.context.identity().is_project() {
                     self.context.set_standalone();
-                    self.last_project_settings_root = None;
+                    self.last_project_settings_rejection_signature = None;
                     labonair_settings::set_active_project_root(cx, None);
                     cx.notify();
                 }
@@ -995,34 +995,20 @@ impl Workspace {
         self.active_pane_view(cx).and_then(|v| v.read(cx).cwd())
     }
 
-    /// Synchronize the explicitly selected project identity into
-    /// `labonair-settings` (T19-003). A terminal cwd is not a project identity:
-    /// standalone terminals can move through many directories and must not
-    /// silently activate a project's settings layer. Called once per `render`
-    /// (cheap: a string comparison plus, only on an actual change,
-    /// `labonair_settings::set_active_project_root`, which is itself a no-op
-    /// if the canonicalized root did not change).
-    /// Also notifies newly-whitelist-rejected project-settings keys, if any
-    /// (Anweisung #4's "einmal sichtbar gemeldet").
-    fn sync_project_settings_root(&mut self, cx: &mut Context<Self>) {
-        let root = self
-            .context
-            .identity()
-            .project_root()
-            .map(std::path::Path::to_path_buf);
-        let root_key = root
-            .as_ref()
-            .map(|path| path.to_string_lossy().into_owned());
-        if root_key == self.last_project_settings_root {
-            return;
-        }
-        self.last_project_settings_root = root_key;
-        labonair_settings::set_active_project_root(cx, root);
-
+    /// Report project-settings keys rejected by the project whitelist once per
+    /// explicit project transition. This is deliberately called after a
+    /// transition or an explicit project-settings refresh, never during
+    /// rendering.
+    fn notify_project_settings_rejections(&mut self, cx: &mut Context<Self>) {
         let rejected = cx
             .global::<labonair_settings::SettingsStore>()
             .project_rejected_keys();
         if !rejected.is_empty() {
+            let signature = rejected.join("\u{1f}");
+            if self.last_project_settings_rejection_signature.as_deref() == Some(&signature) {
+                return;
+            }
+            self.last_project_settings_rejection_signature = Some(signature);
             let body = format!(
                 "Ignored (not allowed from a project settings file): {}",
                 rejected.join(", ")
@@ -1064,6 +1050,7 @@ impl Workspace {
         // before `ensure_project_settings_file` created it — force a
         // reload + fresh watch rather than relying on the next render.
         labonair_settings::refresh_project_watch(cx);
+        self.notify_project_settings_rejections(cx);
         self.open_file(path.to_string_lossy().into_owned(), false, window, cx);
         true
     }
@@ -4961,7 +4948,6 @@ impl Render for Workspace {
         // T19-003: keep `labonair-settings`'s active project root in sync
         // with the explicit workspace identity (cheap no-op unless it
         // changed — see the method doc).
-        self.sync_project_settings_root(cx);
         // Drain host-manager connect requests here — `connect_host` needs a
         // `&mut Window` and `cx.subscribe` does not provide one.
         if !self.pending_connect.is_empty() {

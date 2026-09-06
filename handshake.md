@@ -17,6 +17,11 @@ verification; the process was confirmed as the Rust executable, but macOS
 Screen Capture again denied the PID-scoped screenshot, so the visual
 acceptance criterion remains open. The legacy Tauri app was not used.
 
+Project-settings synchronization was also removed from `Workspace::render`.
+The settings layer is now loaded only by an explicit workspace transition or
+an explicit project-settings refresh, and rejected project keys are reported
+once at that boundary.
+
 Focused Workspace and shell tests, `cargo check --workspace --all-targets`,
 Clippy, dependency verification, queue verification, and `git diff --check`
 pass. The full workspace test run has only the two known sandbox-restricted

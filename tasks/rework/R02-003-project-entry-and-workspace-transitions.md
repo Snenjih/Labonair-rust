@@ -107,6 +107,12 @@ setters are no longer exposed. Focused workspace, command-registry, and shell
 tests pass, including a shell-registry assertion that both lifecycle commands
 use their canonical typed action names and execution registrations.
 
+Project-settings synchronization was removed from `Workspace::render`. The
+settings layer now loads only after an explicit `WorkspaceTransition` or an
+explicit project-settings refresh, keeping rendering free of stateful I/O;
+whitelist rejection notifications are deduplicated at that transition
+boundary.
+
 The current release bundle (build 265) passes the exact-path five-second
 native launch smoke test and is resolved only as the Rust executable. A
 PID-scoped screenshot attempt was rejected by macOS Screen Capture with
