@@ -5057,12 +5057,13 @@ impl Workspace {
     fn on_key_down(&mut self, ev: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
         let ks = &ev.keystroke;
         let m = &ks.modifiers;
-        // Cmd-based shortcuts (full configurability lands in Phase 12).
+        // Legacy direct handling retained for tab cycling until every
+        // workspace navigation action is dispatched through the keymap.
         if !m.platform || m.control || m.alt {
             return;
         }
-        // Cmd-T / Cmd-W / Cmd-D / Cmd-Shift-D and tab cycling are GPUI actions
-        // now (see `labonair_ui::menu`), bound so the native menu shares the path.
+        // Most tab/pane actions are GPUI actions now (see the shell keymap
+        // adapter), while this legacy cycling path remains local for now.
         match (m.shift, ks.key.as_str()) {
             (true, "]") | (false, "}") => {
                 self.cycle_tab(true, window, cx);

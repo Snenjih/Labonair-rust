@@ -527,7 +527,8 @@ pub(crate) fn register_builtin_commands() -> CommandDispatcher {
     // ── Connections ─────────────────────────────────────────────────────
     // Connecting is exclusively the command palette's Hosts page
     // (`Enter` = SSH, `Shift+Enter` = SFTP). Host management is no longer a
-    // Settings page; management will move to the Hosts capability surface.
+    // Hosts capability surface; this command opens its canonical selection
+    // page and does not create a Settings category.
     r.register(
         command_descriptor(
             CommandId::OpenHostSettings,

@@ -41,7 +41,7 @@ pub struct KeymapBlock {
 pub struct KeymapFile(pub Vec<KeymapBlock>);
 
 /// Where an [`EffectiveBinding`] came from — shown as the binding's "source"
-/// in the Shortcuts settings pane.
+/// in the keymap management surface.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum KeybindSource {
     Default,
