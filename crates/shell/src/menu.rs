@@ -35,6 +35,7 @@ actions!(
     [
         // ── File ──────────────────────────────────────────────────────────
         OpenProject,
+        ReturnToStandalone,
         NewTerminalTab,
         NewSshTab,
         NewSftpTab,
@@ -209,6 +210,7 @@ fn action_for(name: &str) -> Option<Box<dyn Action>> {
         "connections::NewQuickSsh" => Box::new(NewQuickSsh),
         "settings::Open" => Box::new(OpenSettings),
         "workspace::OpenProject" => Box::new(OpenProject),
+        "workspace::ReturnToStandalone" => Box::new(ReturnToStandalone),
         "app::CheckForUpdates" => Box::new(CheckForUpdates),
         "debug::CyclePanelDock" => Box::new(DebugCyclePanelDock),
         "debug::ToggleDockZoom" => Box::new(DebugToggleDockZoom),
@@ -292,6 +294,7 @@ fn app_menus() -> Vec<Menu> {
             name: "File".into(),
             items: vec![
                 MenuItem::action("Open Project…", OpenProject),
+                MenuItem::action("Return to Standalone", ReturnToStandalone),
                 MenuItem::action("New Terminal Tab", NewTerminalTab),
                 MenuItem::action("New SSH Tab", NewSshTab),
                 MenuItem::action("New SFTP Tab", NewSftpTab),

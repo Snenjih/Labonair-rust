@@ -1,25 +1,24 @@
 # Handshake — Session State (Labonair-rust Port)
 
-## Current Session: 2026-09-06 (Workspace root ownership narrowed)
+## Current Session: 2026-09-06 (Project identity persistence in progress)
 
-`R02-002` remains in progress. The workspace module now owns the canonical
-project-versus-standalone root contracts through `Workspace::filesystem_root`
-and `Workspace::git_root`; their pure precedence rules and regression tests
-live in `workspace/context.rs`. The shell bootstrap only consumes those
-contracts when composing Explorer and Git, so the duplicate shell resolver
-and its tests are gone. The architecture inventory and R02-002 progress log
-were updated accordingly.
+`R02-002` is complete and `R02-003` is now the active task. The workspace
+module owns the canonical project-versus-standalone root contracts through
+`Workspace::filesystem_root` and `Workspace::git_root`; their pure precedence
+rules and regression tests live in `workspace/context.rs`. The shell bootstrap
+only consumes those contracts when composing Explorer and Git.
 
-The current branch is `master`; the boundary implementation is committed in
-`37dcb76`. Focused
-workspace tests, `cargo check --workspace --all-targets`,
-`cargo clippy --workspace --all-targets -- -D warnings`, queue/dependency
-checks, and `git diff --check` pass. The full workspace test run has only the
-two known sandbox restrictions; the AI local-SSE test and settings file-watcher
-test both pass when rerun outside the sandbox. The native Rust bundle visual
-check remains valid and separate from the legacy Tauri app. Next: finish the
-remaining R02-002 shell/standalone audit, then begin R02-003 for explicit
-project-entry and workspace-transition persistence.
+R02-003 now persists `WorkspaceIdentity` in session snapshots, restores a
+project identity before recreating tabs, defaults legacy snapshots to
+Standalone, and registers the explicit `Return to Standalone` command in the
+native File menu and command palette. The transition changes identity only and
+preserves the existing tab/pane/shell layout. The current branch is `master`
+with the implementation changes uncommitted. Focused Workspace, command
+registry, and shell tests pass; the full workspace gates have the same two
+sandbox-only failures whose isolated reruns pass outside the sandbox. The
+native Rust bundle smoke and prior PID-scoped visual check remain valid; the
+legacy Tauri app is never used as evidence. Next: add the remaining project
+transition/removal audit and visual coverage before closing R02-003.
 
 ## Current Session: 2026-09-06 (Workspace state boundary in progress)
 

@@ -17,8 +17,8 @@ The active sequence is:
 8. `R01-008-notification-surface-owner.md` — Done
 9. `R01-009-inline-error-notification-adoption.md` — Done
 10. `R02-001-global-menu-and-theme-entrypoints.md` — Done
-11. `R02-002-shell-composition-and-standalone-workspaces.md` — In Progress
-12. `R02-003-project-entry-and-workspace-transitions.md` — Planned
+11. `R02-002-shell-composition-and-standalone-workspaces.md` — Done
+12. `R02-003-project-entry-and-workspace-transitions.md` — In Progress
 13. `R03-001-command-palette-provider-registry.md` — Planned
 14. `R03-002-keymap-runtime-and-editor.md` — Planned
 15. `R04-001-static-theme-registries-and-preview.md` — Planned
@@ -29,7 +29,7 @@ The active sequence is:
 
 Phase 3 is complete. R02-001 is the first bounded Phase 2 shell task and also
 connects the already-established theme registry to its intended palette
-surface. R02-002 is the active task; R02-003 is queued for session identity
+surface. R02-002 is complete; R02-003 is the active task for session identity
 persistence and explicit project/standalone lifecycle completion. Later
 command-palette/keymap migrations remain blocked on their own task contracts.
 

@@ -150,6 +150,7 @@ pub(crate) fn attach_action_handlers(
 
     on!(menu::NewTerminalTab => CommandId::NewTerminalTab);
     on!(menu::OpenProject => CommandId::OpenProject);
+    on!(menu::ReturnToStandalone => CommandId::ReturnToStandalone);
     on!(menu::NewEditorTab => CommandId::NewEditorTab);
     on!(menu::NewPreviewTab => CommandId::NewPreviewTab);
     on!(menu::NewSshTab => CommandId::NewSshTab);
@@ -806,6 +807,20 @@ pub(crate) fn register_builtin_commands() -> CommandDispatcher {
         ),
         |_s, _window, cx| {
             open_settings_window(None, cx);
+        },
+    );
+    r.register(
+        command_descriptor(
+            CommandId::ReturnToStandalone,
+            "Return to Standalone",
+            "Workspace",
+            always,
+            None,
+            CommandIcon::Folder,
+            None,
+        ),
+        |s, _window, cx| {
+            s.workspace.update(cx, |w, cx| w.set_standalone_context(cx));
         },
     );
     r.register(

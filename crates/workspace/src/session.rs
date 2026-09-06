@@ -18,6 +18,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 
+use crate::context::WorkspaceIdentity;
 use crate::pane::{PaneId, SplitAxis, WorkspaceLayout};
 use crate::pane_group::{Member, PaneAxis, PaneGroup};
 
@@ -35,6 +36,10 @@ pub struct SessionSnapshot {
     pub version: u32,
     /// Unix seconds the snapshot was taken (diagnostics only).
     pub saved_at: u64,
+    /// Explicit project/standalone identity. Missing in legacy snapshots,
+    /// which therefore restore as a temporary standalone workspace.
+    #[serde(default)]
+    pub identity: WorkspaceIdentity,
     /// Index into [`SessionSnapshot::tabs`] of the tab that was active.
     pub active_tab_index: usize,
     pub tabs: Vec<TabSnapshot>,
@@ -42,14 +47,24 @@ pub struct SessionSnapshot {
 
 impl SessionSnapshot {
     /// Build a snapshot from already-collected tab descriptors, stamping the
-    /// version + timestamp.
+    /// version + timestamp. Legacy callers create a standalone snapshot.
     pub fn new(tabs: Vec<TabSnapshot>, active_tab_index: usize) -> Self {
+        Self::with_identity(WorkspaceIdentity::standalone(), tabs, active_tab_index)
+    }
+
+    /// Build a snapshot while preserving the workspace's explicit identity.
+    pub fn with_identity(
+        identity: WorkspaceIdentity,
+        tabs: Vec<TabSnapshot>,
+        active_tab_index: usize,
+    ) -> Self {
         Self {
             version: SNAPSHOT_VERSION,
             saved_at: SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .map(|d| d.as_secs())
                 .unwrap_or(0),
+            identity,
             active_tab_index,
             tabs,
         }
@@ -625,8 +640,22 @@ mod tests {
             "tabs":[{"kind":"home"}]}"#;
         let snap: SessionSnapshot = serde_json::from_str(json).unwrap();
         assert_eq!(snap.tabs, vec![TabSnapshot::Home]);
+        assert_eq!(snap.identity, WorkspaceIdentity::Standalone);
         let actions = plan_restore(&snap, |_| false, |_| false, || 1);
         assert_eq!(actions, vec![RestoreAction::Home]);
+    }
+
+    #[test]
+    fn project_identity_round_trips_and_legacy_snapshots_default_to_standalone() {
+        let snapshot =
+            SessionSnapshot::with_identity(WorkspaceIdentity::project("/work/app"), Vec::new(), 0);
+        let json = serde_json::to_string(&snapshot).unwrap();
+        let restored: SessionSnapshot = serde_json::from_str(&json).unwrap();
+        assert_eq!(restored.identity, WorkspaceIdentity::project("/work/app"));
+
+        let legacy = r#"{"version":1,"savedAt":0,"activeTabIndex":0,"tabs":[]}"#;
+        let restored: SessionSnapshot = serde_json::from_str(legacy).unwrap();
+        assert_eq!(restored.identity, WorkspaceIdentity::Standalone);
     }
 
     #[test]

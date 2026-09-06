@@ -52,11 +52,11 @@ The first bounded implementation is
 [`R02-001-global-menu-and-theme-entrypoints.md`](../tasks/rework/R02-001-global-menu-and-theme-entrypoints.md):
 the titlebar publishes typed global-menu events and delegates Settings,
 Keymap, Themes, Icon Themes, and Hosts to their owning surfaces.
-The next bounded implementation is
+The completed bounded implementation is
 [`R02-002-shell-composition-and-standalone-workspaces.md`](../tasks/rework/R02-002-shell-composition-and-standalone-workspaces.md):
-it narrows one remaining shell/workspace behavior slice and verifies empty,
+it narrowed one remaining shell/workspace behavior slice and verified empty,
 project, and standalone workspace transitions.
-The following bounded task is
+The active following task is
 [`R02-003-project-entry-and-workspace-transitions.md`](../tasks/rework/R02-003-project-entry-and-workspace-transitions.md):
 it completes session identity persistence, explicit return-to-standalone
 behavior, and the removal audit for cwd-based project inference.

@@ -2,7 +2,7 @@
 
 ## Status
 
-`🔄 In Progress`
+`✅ Done`
 
 ## Owner
 
@@ -36,16 +36,16 @@ actions without inventing a second application mode.
 
 ## Acceptance criteria
 
-- [ ] The selected shell/workspace slice has one documented owner and no
+- [x] The selected shell/workspace slice has one documented owner and no
   duplicate shell implementation.
-- [ ] Empty, project, and standalone workspace states have explicit typed
+- [x] Empty, project, and standalone workspace states have explicit typed
   state transitions and tests.
-- [ ] Permanent chrome remains in its documented zones and uses existing
+- [x] Permanent chrome remains in its documented zones and uses existing
   shared components.
-- [ ] No new broad backend or shell facade is introduced.
-- [ ] Capability matrix, inventory, roadmap, and dependency allow-list agree
+- [x] No new broad backend or shell facade is introduced.
+- [x] Capability matrix, inventory, roadmap, and dependency allow-list agree
   with the moved boundary.
-- [ ] Full workspace verification gates and a visual shell check pass.
+- [x] Full workspace verification gates and a visual shell check pass.
 
 ## Removal condition
 
@@ -72,9 +72,10 @@ checks pass.
 The correct Rust app bundle was launched through
 `target/release/bundle/macos/Labonair.app` and captured with a PID-scoped
 visual check. The valid screenshot shows the empty standalone workspace and
-the expected shell zones. Project-state and transition visuals remain open;
-the helper supports both debug and bundled Rust executables and rejects the
-installed legacy Tauri app.
+the expected shell zones. Project-state persistence and the explicit
+transition action are implemented in the following R02-003 task; the helper
+supports both debug and bundled Rust executables and rejects the installed
+legacy Tauri app.
 
 The shell's Explorer and Git root synchronization now uses the explicit
 workspace project identity before consulting the active terminal cwd. This
@@ -91,13 +92,13 @@ legacy Tauri application cannot satisfy the check.
 The launch boundary was narrowed further: `open -n -W` with the absolute Rust
 bundle path starts the native app reliably, and the smoke test resolves and
 checks only the resulting Rust executable PID. A current PID-scoped capture
-confirms the standalone shell zones; project selection and transition visuals
-remain open.
+confirms the standalone shell zones; project identity persistence and the
+return transition are verified by R02-003.
 
 The native Empty-state shortcut hint now matches the canonical keymap
 registry: Commands is shown as `⌘P`, not the stale `⌘K`. The corrected bundle
 was rebuilt and checked with a PID-scoped screenshot; project selection and
-transition visuals remain open.
+transition behavior are covered by R02-003.
 
 Workspace root precedence is now owned by `labonair-workspace`: its public
 `Workspace::filesystem_root` and `Workspace::git_root` contracts centralize
@@ -105,5 +106,5 @@ the project-versus-standalone fallback rules, while pure resolver tests live
 beside `WorkspaceContext`. The shell now only consumes those contracts when
 composing Explorer and Git surfaces; the duplicate shell resolver and tests
 were removed.
-Session identity persistence and the final removal audit continue in
-`R02-003`.
+R02-002 is complete. Session identity persistence and the explicit
+return-to-standalone lifecycle continue in `R02-003`.

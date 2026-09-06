@@ -644,6 +644,16 @@ impl Workspace {
         cx.observe(&this.ssh_connection, |_, _, cx| cx.notify())
             .detach();
 
+        // Restore the persisted identity before recreating tabs so settings,
+        // Explorer, and Git observers see the correct project scope from the
+        // first workspace notification. Missing identity data is already
+        // normalized to Standalone by `SessionSnapshot` deserialization.
+        if let Some(snapshot) = restore.as_ref() {
+            if let context::WorkspaceIdentity::Project { root } = &snapshot.identity {
+                this.set_project_context(root.clone(), cx);
+            }
+        }
+
         // Startup (T14-001 / T17-009). A passed-in snapshot means session
         // restore is on *and* a snapshot was found — replay it verbatim, even
         // if it restores zero tabs (an empty workspace is a valid state). With
@@ -714,7 +724,7 @@ impl Workspace {
                 tabs.push(snap);
             }
         }
-        SessionSnapshot::new(tabs, active_index)
+        SessionSnapshot::with_identity(self.context.identity().clone(), tabs, active_index)
     }
 
     fn snapshot_workspace_tab(&self, tab: &Tab, cx: &App) -> Option<TabSnapshot> {

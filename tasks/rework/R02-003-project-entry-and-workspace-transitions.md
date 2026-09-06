@@ -2,7 +2,7 @@
 
 ## Status
 
-`⏳ Planned`
+`🔄 In Progress`
 
 ## Owner
 
@@ -88,6 +88,18 @@ same contract after SSH/SFTP define their transport-owned identity.
 - [ ] Passive failures use notifications; no new toast or duplicate inline error.
 - [ ] Focused tests and full repository gates pass.
 - [ ] Required visual shell check passes.
+
+## Progress
+
+The workspace session snapshot now carries the explicit
+`WorkspaceIdentity`. Legacy snapshots without the field deserialize as
+Standalone, while project snapshots round-trip their root. Restored project
+identity is applied before tabs are recreated so project settings and surface
+root observers receive the correct scope at startup. `Return to Standalone`
+is registered as one typed workspace command and is available from the native
+File menu and command palette; it changes identity only and preserves the
+existing tabs, panes, and shell layout. Focused workspace, command-registry,
+and shell tests pass.
 
 ## Removal condition
 

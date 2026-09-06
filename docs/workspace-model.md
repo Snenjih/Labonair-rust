@@ -16,8 +16,10 @@ The current implementation represents this contract in
 `Workspace` owns the state and exposes one snapshot for shell surfaces. It
 starts as `Standalone`; the explicit native project picker changes the
 identity through the workspace API rather than inferring a project from a
-terminal's current working directory. Session identity persistence and an
-explicit return-to-standalone action remain in `R02-003`.
+terminal's current working directory. Session snapshots now persist that
+identity, while legacy snapshots default to Standalone. The explicit
+return-to-standalone action uses the same workspace model without changing
+the tab, pane, or shell layout.
 
 A workspace is an application context, not a requirement that every action be
 project-based. The context carries optional identity and shared navigation

@@ -63,7 +63,9 @@ The current Cargo metadata shows several transitional edges that conflict with t
   centralized in `Workspace::filesystem_root` / `Workspace::git_root`, with
   pure resolver tests owned by `workspace/context.rs`; the shell only consumes
   those contracts. Remaining feature-view dependencies are still transitional
-  and are not hidden by this state model.
+  and are not hidden by this state model. Session snapshots now persist the
+  explicit workspace identity, with missing identity fields normalized to
+  Standalone for backward compatibility.
 - `settings-ui` depends on settings values, theme/UI primitives, notifications,
   command-palette fuzzy matching, and filesystem paths; it no longer depends on
   a workspace-owned background store, backend, Hosts UI, or panel contracts.
