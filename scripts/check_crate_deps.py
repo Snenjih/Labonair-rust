@@ -7,10 +7,10 @@ meta = json.load(sys.stdin)
 # ---------------------------------------------------------------------------
 # ALLOW-LIST — workspace-internal deps permitted per crate.
 #
-# Derived 1:1 from docs/architecture.md §3 + §8.4. Each entry is annotated with
-# the rule it follows. Edges marked "[deviation]" are pre-existing, accepted,
-# and recorded in the architecture doc / perf-baseline; they are listed so the
-# check still catches *new* regressions.
+# Derived from docs/architecture.md and the v2 migration inventory in
+# docs/audits/architecture-inventory.md. Entries marked transitional are
+# temporary compatibility edges. They remain explicit so a new edge still
+# fails the build and each transitional edge can be removed independently.
 # ---------------------------------------------------------------------------
 ALLOWED = {
     # bin — depends on the shell + the engines it boots (rule 3 consumer side).
@@ -33,6 +33,8 @@ ALLOWED = {
     "labonair-command-palette": {
         "labonair-theme", "labonair-ui-kit", "labonair-gpui-ext",
         "labonair-backend",
+        # transitional: palette settings reads move behind a provider contract
+        "labonair-settings",
     },
 
     # Settings track ------------------------------------------------------
@@ -104,10 +106,14 @@ ALLOWED = {
     "labonair-panel-explorer": {
         "labonair-theme", "labonair-ui-kit", "labonair-panel",
         "labonair-notifications", "labonair-backend", "labonair-workspace",
+        # transitional: settings reads move behind a feature settings contract
+        "labonair-settings",
     },
     "labonair-panel-scm": {
         "labonair-theme", "labonair-ui-kit", "labonair-panel",
         "labonair-notifications", "labonair-backend",
+        # transitional: editor and settings contracts are extracted in Phase 7
+        "labonair-editor", "labonair-settings",
     },
     "labonair-panel-git-graph": {
         "labonair-theme", "labonair-ui-kit", "labonair-panel",
@@ -309,5 +315,6 @@ if errors:
 print(
     f"crate dependency check OK — {len(graph)} workspace crates, "
     f"{sum(len(v) for v in graph.values())} internal edges, acyclic, "
-    f"all rules in docs/architecture.md §3 satisfied."
+    f"no untracked boundary violations. Transitional edges remain documented "
+    f"in docs/audits/architecture-inventory.md."
 )

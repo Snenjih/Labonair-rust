@@ -25,6 +25,17 @@ and marked superseded tasks/ADRs as historical. The target is capability-owned
 modules with explicit composition, typed cross-module contracts, and shared
 UI-kit primitives.
 
+## 2026-09-06 — Dependency gate must distinguish target and migration edges
+
+**Finding:** `scripts/check_crate_deps.py` still encoded the v1 crate graph and
+failed on four already-known transitional edges, while its success message
+claimed that the old architecture was fully satisfied.
+
+**Resolution:** Updated the checker to use the v2 migration inventory, keep the
+four transitional edges explicit, reject every untracked edge/cycle, and report
+that a green result means no untracked violation rather than migration
+completion. The remaining edges are now removable one by one as contracts move.
+
 ## 2026-09-05 — GPUI panic: "hover style already set" when `.hover()` applied twice
 
 **Context:** `ui-kit::ListItem` lets call sites override a row's background via

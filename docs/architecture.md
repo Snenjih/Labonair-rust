@@ -153,3 +153,8 @@ Architecture changes require:
 - `cargo test --workspace`
 - dependency graph verification
 - a visual check for any UI or layout change
+
+The dependency verifier currently permits only the explicit transitional edges
+listed in [`audits/architecture-inventory.md`](audits/architecture-inventory.md).
+It must be kept strict while those edges are removed. A green dependency check
+therefore means "no untracked violation", not that the migration is complete.

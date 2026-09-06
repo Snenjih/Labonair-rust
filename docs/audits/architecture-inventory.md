@@ -46,6 +46,11 @@ The current Cargo metadata shows several transitional edges that conflict with t
 - `shell/src/commands.rs`, `shell/src/status_items.rs`, and workspace views still contain feature-specific behavior that belongs to owning modules.
 - `workspace/src/toast_layer.rs` and `notifications` still encode the superseded toast model.
 
+The dependency verifier allows four additional transitional edges while these
+boundaries are extracted: command palette → settings, explorer → settings,
+SCM → editor, and SCM → settings. They are deliberately visible in the
+allow-list and must not be treated as target architecture.
+
 These are migration findings, not reasons to perform a destructive rewrite. Each edge should be removed when the owning contract exists and its consumers have moved.
 
 ## Migration order

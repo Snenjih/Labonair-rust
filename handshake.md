@@ -6,10 +6,12 @@ User-requested overhaul is active. The normative documentation now defines
 Labonair as a modular Dev-Op workspace for project and standalone workflows.
 Added `docs/{product,architecture,modules,registries,design-system,workspace-model,settings,rework-roadmap}.md`, an architecture inventory under `docs/audits/`, and reports/archive indexes. Replaced the old root `AGENTS.md`, `CLAUDE.md`, `README.md`, and `tasks/ROADMAP.md` instructions with the v2 contracts. Moved superseded architecture/idea documents to `docs/archive/` and `ideas/archive/`, and moved historical reports to `docs/reports/`. Marked the stale in-progress render task and Hosts-in-Settings task as historical.
 
-The target crate graph is documented but not yet implemented. The next step is
+The target crate graph is documented but not yet implemented. The live
+dependency verifier was updated to allow only the four explicitly documented
+transitional edges and to reject new untracked edges/cycles. The next step is
 the Phase 0 migration matrix and then the first technical boundary work:
 extracting platform services from `backend` while introducing typed contracts.
-No product feature implementation was changed in this documentation pass.
+No product feature implementation was changed in this pass.
 
 State: branch `master`, latest commit `docs: establish modular product
 architecture v2`, one commit ahead of `origin/master`. Working tree is clean.
