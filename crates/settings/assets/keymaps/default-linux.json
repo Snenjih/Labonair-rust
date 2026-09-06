@@ -28,8 +28,6 @@
       "ctrl-9": "tab::Select9",
       "ctrl-]": "pane::FocusNext",
       "ctrl-f": "search::Toggle",
-      "ctrl-i": "ai::TogglePanel",
-      "ctrl-l": "ai::AskSelection",
       "ctrl-b": "sidebar::Toggle",
       "ctrl-shift-z": "view::ToggleZenMode",
       "ctrl-=": "view::ZoomIn",

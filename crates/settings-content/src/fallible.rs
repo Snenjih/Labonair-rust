@@ -61,7 +61,6 @@ pub fn parse(json: &str) -> (SettingsContent, Vec<FieldError>) {
         connections: area!("connections"),
         hosts: area!("hosts"),
         workspace: area!("workspace"),
-        ai: area!("ai"),
         mcp: area!("mcp"),
         personalization: area!("personalization"),
         keymap: area!("keymap"),

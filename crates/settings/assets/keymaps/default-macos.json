@@ -27,8 +27,6 @@
       "cmd-9": "tab::Select9",
       "cmd-]": "pane::FocusNext",
       "cmd-f": "search::Toggle",
-      "cmd-i": "ai::TogglePanel",
-      "cmd-l": "ai::AskSelection",
       "cmd-b": "sidebar::Toggle",
       "cmd-shift-z": "view::ToggleZenMode",
       "cmd-=": "view::ZoomIn",

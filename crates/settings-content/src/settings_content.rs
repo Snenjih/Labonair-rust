@@ -14,7 +14,6 @@ mod merge_from;
 pub mod areas;
 pub mod fallible;
 
-pub mod ai;
 pub mod appearance;
 pub mod connections;
 pub mod editor;
@@ -37,7 +36,6 @@ pub use labonair_settings_macros::MergeFrom;
 
 use serde::{Deserialize, Serialize};
 
-use ai::AiContent;
 use appearance::AppearanceContent;
 use connections::ConnectionsContent;
 use editor::EditorContent;
@@ -70,7 +68,6 @@ pub struct SettingsContent {
     /// `docs/architecture.md` §8.1.
     pub hosts: HostsContent,
     pub workspace: WorkspaceContent,
-    pub ai: AiContent,
     pub mcp: McpContent,
     pub personalization: PersonalizationContent,
     pub keymap: KeymapContent,
@@ -90,7 +87,6 @@ impl SettingsContent {
             connections: ConnectionsContent::defaults(),
             hosts: HostsContent::defaults(),
             workspace: WorkspaceContent::defaults(),
-            ai: AiContent::defaults(),
             mcp: McpContent::defaults(),
             personalization: PersonalizationContent::defaults(),
             keymap: KeymapContent::defaults(),
@@ -117,7 +113,6 @@ mod tests {
         "connections",
         "hosts",
         "workspace",
-        "ai",
         "mcp",
         "personalization",
         "keymap",
@@ -156,14 +151,7 @@ mod tests {
             .filter(|a| a.kind == AreaKind::Custom)
             .map(|a| a.key)
             .collect();
-        for expected in [
-            "themes",
-            "hosts",
-            "shortcuts",
-            "ai",
-            "mcp",
-            "personalization",
-        ] {
+        for expected in ["themes", "hosts", "shortcuts", "mcp", "personalization"] {
             assert!(
                 custom.contains(&expected),
                 "{expected} must be registered as a Custom top-level area"

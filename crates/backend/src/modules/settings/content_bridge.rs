@@ -18,7 +18,7 @@
 //! own `keymap.json` and removed the field entirely.
 
 use labonair_settings_content::{
-    ai, appearance, general, hosts, terminal, workspace, MergeFrom, SettingsContent,
+    appearance, general, hosts, terminal, workspace, MergeFrom, SettingsContent,
 };
 
 use super::preferences::{CursorStyle, Preferences, StartupTab, ThemePref};
@@ -70,7 +70,6 @@ impl From<&SettingsContent> for Preferences {
         let c = merged.connections;
         let h: hosts::HostsContent = merged.hosts;
         let w = merged.workspace;
-        let ai: ai::AiContent = merged.ai;
         let mcp = merged.mcp;
         let p = merged.personalization;
 
@@ -241,29 +240,6 @@ impl From<&SettingsContent> for Preferences {
                 .unwrap_or_default(),
 
             git_status_poll_interval_ms: w.git_status_poll_interval_ms.unwrap_or_default(),
-
-            ai_enabled: ai.ai_enabled.unwrap_or_default(),
-            ai_max_agent_steps: ai.ai_max_agent_steps.unwrap_or_default(),
-            ai_terminal_context_lines: ai.ai_terminal_context_lines.unwrap_or_default(),
-            ai_temperature: ai.ai_temperature.unwrap_or_default(),
-            ai_warn_destructive_commands: ai.ai_warn_destructive_commands.unwrap_or_default(),
-            ai_auto_open_mini_on_send: ai.ai_auto_open_mini_on_send.unwrap_or_default(),
-            ai_notify_on_headless_command: ai.ai_notify_on_headless_command.unwrap_or_default(),
-            ai_shell_max_timeout_secs: ai.ai_shell_max_timeout_secs.unwrap_or_default(),
-            ai_shell_max_output_kb: ai.ai_shell_max_output_kb.unwrap_or_default(),
-            default_model_id: ai.default_model_id.unwrap_or_default(),
-            custom_instructions: ai.custom_instructions.unwrap_or_default(),
-            autocomplete_enabled: ai.autocomplete_enabled.unwrap_or_default(),
-            autocomplete_provider: ai.autocomplete_provider.unwrap_or_default(),
-            autocomplete_model_id: ai.autocomplete_model_id.unwrap_or_default(),
-            lmstudio_base_url: ai.lmstudio_base_url.unwrap_or_default(),
-            lmstudio_chat_model_id: ai.lmstudio_chat_model_id.unwrap_or_default(),
-            openai_compatible_base_url: ai.openai_compatible_base_url.unwrap_or_default(),
-            openai_compatible_model_id: ai.openai_compatible_model_id.unwrap_or_default(),
-            mlx_base_url: ai.mlx_base_url.unwrap_or_default(),
-            mlx_chat_model_id: ai.mlx_chat_model_id.unwrap_or_default(),
-            ollama_base_url: ai.ollama_base_url.unwrap_or_default(),
-            ollama_chat_model_id: ai.ollama_chat_model_id.unwrap_or_default(),
 
             mcp_bridge_enabled: mcp.bridge_enabled.unwrap_or_default(),
             mcp_bridge_port: mcp.bridge_port.unwrap_or_default(),

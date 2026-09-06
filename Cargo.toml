@@ -18,7 +18,6 @@ members = [
     "crates/panel-scm",
     "crates/panel-git-graph",
     "crates/panel-snippets",
-    "crates/panel-ai",
     "crates/shell",
     "crates/terminal",
     "crates/editor",

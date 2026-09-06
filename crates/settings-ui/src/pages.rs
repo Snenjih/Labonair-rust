@@ -102,18 +102,7 @@ fn build_page(area: &'static AreaMeta) -> SettingsPage {
             },
         },
         // Custom top-level categories (rule 4): the body is a hand-written
-        // render_fn dispatched by `SettingsView` on `area.key`; "ai" also
-        // gets a Custom sub-page for its provider/agent/directive lists
-        // (Notizen: AI must have a sub-page too).
-        AreaKind::Custom if area.key == "ai" => SettingsPage {
-            area,
-            body: PageBody::Custom,
-            sub_pages: vec![SubPage {
-                title: "Providers & Agents",
-                slug: "providers",
-                body: PageBody::Custom,
-            }],
-        },
+        // render_fn dispatched by `SettingsView` on `area.key`.
         // Hosts (T19-010): the main page embeds `HostManagerView` verbatim
         // (list + edit form + jump-hosts + tunnels are already one
         // component there, per the task's own Notizen — "nicht neu
@@ -176,7 +165,6 @@ pub fn placed_keys_for_area(area_key: &str) -> Vec<&'static str> {
             out.extend(EDITOR_MAIN.iter().flat_map(|(_, k)| k.iter().copied()));
             out.extend(EDITOR_DISPLAY.iter().flat_map(|(_, k)| k.iter().copied()));
         }
-        "ai" => out.extend(AI_GROUPS.iter().flat_map(|(_, k)| k.iter().copied())),
         "personalization" => {
             out.extend(
                 PERSONALIZATION_GROUPS
@@ -230,7 +218,6 @@ pub fn section_label_for_field(
         "editor" => find(EDITOR_MAIN)
             .map(|l| ("", l))
             .or_else(|| find(EDITOR_DISPLAY).map(|l| ("display", l))),
-        "ai" => find(AI_GROUPS).map(|l| ("", l)),
         "personalization" => find(PERSONALIZATION_GROUPS).map(|l| ("", l)),
         _ => find(groups_for(area_key)).map(|l| ("", l)),
     }
@@ -246,50 +233,6 @@ fn groups_for(area_key: &str) -> &'static [Group] {
         _ => &[],
     }
 }
-
-/// AI's field grid (used inside its Custom render_fn — AI is `AreaKind::
-/// Custom` per `AREAS`, but its body still renders the generic grid for its
-/// scalar preferences before the bespoke provider/agent/directive sections,
-/// exactly as rule 4 allows: "may still read/write fields under
-/// `target_module`").
-pub const AI_GROUPS: &[Group] = &[
-    (
-        "Defaults",
-        &[
-            "defaultModelId",
-            "autocompleteEnabled",
-            "autocompleteProvider",
-            "autocompleteModelId",
-        ],
-    ),
-    ("General", &["aiEnabled", "aiWarnDestructiveCommands"]),
-    (
-        "Behaviour",
-        &[
-            "aiAutoOpenMiniOnSend",
-            "aiNotifyOnHeadlessCommand",
-            "aiMaxAgentSteps",
-            "aiTemperature",
-            "aiTerminalContextLines",
-            "aiShellMaxTimeoutSecs",
-            "aiShellMaxOutputKb",
-        ],
-    ),
-    (
-        "Local Providers",
-        &[
-            "lmstudioBaseURL",
-            "lmstudioChatModelId",
-            "openaiCompatibleBaseURL",
-            "openaiCompatibleModelId",
-            "mlxBaseURL",
-            "mlxChatModelId",
-            "ollamaBaseURL",
-            "ollamaChatModelId",
-        ],
-    ),
-    ("Agent Instructions", &["customInstructions"]),
-];
 
 const GENERAL_GROUPS: &[Group] = &[
     ("Appearance", &["theme"]),
@@ -658,13 +601,8 @@ mod tests {
                 collect(&sp.body, area, &mut out);
             }
         }
-        // AI's / Personalization's Custom bodies also render their own
-        // generic-grid groups (see panes dispatch).
-        for (_, keys) in AI_GROUPS {
-            for k in *keys {
-                out.insert(format!("ai.{k}"));
-            }
-        }
+        // Personalization's Custom body also renders its own generic-grid
+        // groups (see panes dispatch).
         for (_, keys) in PERSONALIZATION_GROUPS {
             for k in *keys {
                 out.insert(format!("personalization.{k}"));
@@ -702,7 +640,6 @@ mod tests {
         "file_manager",
         "connections",
         "workspace",
-        "ai",
         "personalization",
     ];
 
@@ -758,9 +695,9 @@ mod tests {
     }
 
     #[test]
-    fn terminal_editor_ai_have_at_least_one_sub_page() {
+    fn terminal_editor_have_at_least_one_sub_page() {
         for page in pages() {
-            if matches!(page.area.key, "terminal" | "editor" | "ai") {
+            if matches!(page.area.key, "terminal" | "editor") {
                 assert!(
                     !page.sub_pages.is_empty(),
                     "{} must have at least one SubPageLink (task Notizen)",

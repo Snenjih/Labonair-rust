@@ -52,7 +52,6 @@ use serde_json::{Map, Value};
 use std::path::Path;
 
 use labonair_settings_content::{
-    ai::AiContent,
     appearance::AppearanceContent,
     connections::ConnectionsContent,
     editor::EditorContent,
@@ -358,33 +357,6 @@ fn hosts_hm_from(p: &Preferences) -> (Option<String>, Option<String>, Option<u32
     )
 }
 
-fn ai_from(p: &Preferences) -> AiContent {
-    AiContent {
-        ai_enabled: Some(p.ai_enabled),
-        ai_max_agent_steps: Some(p.ai_max_agent_steps),
-        ai_terminal_context_lines: Some(p.ai_terminal_context_lines),
-        ai_temperature: Some(p.ai_temperature),
-        ai_warn_destructive_commands: Some(p.ai_warn_destructive_commands),
-        ai_auto_open_mini_on_send: Some(p.ai_auto_open_mini_on_send),
-        ai_notify_on_headless_command: Some(p.ai_notify_on_headless_command),
-        ai_shell_max_timeout_secs: Some(p.ai_shell_max_timeout_secs),
-        ai_shell_max_output_kb: Some(p.ai_shell_max_output_kb),
-        default_model_id: Some(p.default_model_id.clone()),
-        custom_instructions: Some(p.custom_instructions.clone()),
-        autocomplete_enabled: Some(p.autocomplete_enabled),
-        autocomplete_provider: Some(p.autocomplete_provider.clone()),
-        autocomplete_model_id: Some(p.autocomplete_model_id.clone()),
-        lmstudio_base_url: Some(p.lmstudio_base_url.clone()),
-        lmstudio_chat_model_id: Some(p.lmstudio_chat_model_id.clone()),
-        openai_compatible_base_url: Some(p.openai_compatible_base_url.clone()),
-        openai_compatible_model_id: Some(p.openai_compatible_model_id.clone()),
-        mlx_base_url: Some(p.mlx_base_url.clone()),
-        mlx_chat_model_id: Some(p.mlx_chat_model_id.clone()),
-        ollama_base_url: Some(p.ollama_base_url.clone()),
-        ollama_chat_model_id: Some(p.ollama_chat_model_id.clone()),
-    }
-}
-
 /// Builds the `mcp` area from the old separate `"mcp"` key (`McpPrefs`) —
 /// the authoritative source, per `Preferences`' own doc comment on its
 /// `mcp_bridge_*` mirror fields.
@@ -518,10 +490,6 @@ pub fn migrate_settings_v1_to_v2(dir: &Path) -> Result<SettingsV2Outcome, String
             serde_json::to_value(workspace_from(&prefs)).map_err(|e| e.to_string())?,
         ),
         (
-            "ai",
-            serde_json::to_value(ai_from(&prefs)).map_err(|e| e.to_string())?,
-        ),
-        (
             "mcp",
             serde_json::to_value(mcp_from(&mcp_prefs)).map_err(|e| e.to_string())?,
         ),
@@ -636,8 +604,6 @@ const SLUG_TO_ACTION: &[(&str, &str)] = &[
     ("pane.close", "pane::Close"),
     ("pane.focusNext", "pane::FocusNext"),
     ("search.focus", "search::Toggle"),
-    ("ai.toggle", "ai::TogglePanel"),
-    ("ai.askSelection", "ai::AskSelection"),
     ("sidebar.toggle", "sidebar::Toggle"),
     ("view.zenMode", "view::ToggleZenMode"),
     ("view.zoomIn", "view::ZoomIn"),
@@ -1053,28 +1019,6 @@ mod tests {
             "commandPaletteHistorySize",
             "commandPaletteCloseOnOverlayClick",
             "gitStatusPollIntervalMs",
-            "aiEnabled",
-            "aiMaxAgentSteps",
-            "aiTerminalContextLines",
-            "aiTemperature",
-            "aiWarnDestructiveCommands",
-            "aiAutoOpenMiniOnSend",
-            "aiNotifyOnHeadlessCommand",
-            "aiShellMaxTimeoutSecs",
-            "aiShellMaxOutputKb",
-            "defaultModelId",
-            "customInstructions",
-            "autocompleteEnabled",
-            "autocompleteProvider",
-            "autocompleteModelId",
-            "lmstudioBaseURL",
-            "lmstudioChatModelId",
-            "openaiCompatibleBaseURL",
-            "openaiCompatibleModelId",
-            "mlxBaseURL",
-            "mlxChatModelId",
-            "ollamaBaseURL",
-            "ollamaChatModelId",
             "mcpBridgeEnabled",
             "mcpBridgePort",
             "mcpMaxCommandTimeoutSecs",

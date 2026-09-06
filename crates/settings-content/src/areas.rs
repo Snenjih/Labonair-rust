@@ -110,13 +110,6 @@ pub const AREAS: &[AreaMeta] = &[
         target_module: "keymap",
     },
     AreaMeta {
-        key: "ai",
-        title: "AI",
-        slug: "ai",
-        kind: AreaKind::Custom,
-        target_module: "ai",
-    },
-    AreaMeta {
         key: "mcp",
         title: "MCP",
         slug: "mcp",

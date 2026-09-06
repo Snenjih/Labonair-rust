@@ -25,7 +25,6 @@ use labonair_terminal::TerminalRegistry;
 use tokio::runtime::Handle as TokioHandle;
 
 use labonair_command_palette::{CommandPalette, PaletteEvent};
-use labonair_panel_ai::{AiChatEvent, AiChatStore, AiChatView};
 use labonair_panel_explorer::ExplorerView;
 use labonair_panel_git_graph::GitGraphView;
 use labonair_panel_scm::{GitPanelView, ScmEvent};
@@ -73,7 +72,7 @@ pub(crate) fn refresh_live_snapshot(
     });
 }
 
-/// Register the five built-in panels on the workspace's `PanelRegistry`.
+/// Register the built-in panels on the workspace's `PanelRegistry`.
 ///
 /// This is the **only** place in the app that names concrete panel types.
 fn register_builtin_panels(
@@ -82,7 +81,6 @@ fn register_builtin_panels(
     git_panel: &Entity<GitPanelView>,
     git_graph: &Entity<GitGraphView>,
     snippets: &Entity<SnippetsView>,
-    ai_chat: &Entity<AiChatView>,
     cx: &mut App,
 ) {
     use labonair_panel::{AnyPanelHandle, Panel, PanelRegistration};
@@ -102,7 +100,6 @@ fn register_builtin_panels(
         reg(git_panel, cx),
         reg(git_graph, cx),
         reg(snippets, cx),
-        reg(ai_chat, cx),
     ];
     workspace.update(cx, |w, _cx| {
         let registry = w.panel_registry_mut();
@@ -117,8 +114,10 @@ fn register_builtin_panels(
 fn migrate_dock_layout(
     p: &labonair_backend::modules::settings::preferences::Preferences,
 ) -> String {
+    // "ai" is parked (frontend AI removed pending redesign) — treat any saved
+    // reference to it like the other retired panel names.
     let migrate_name = |raw: &str, fallback: &str| match raw {
-        "hosts" | "tabs" | "" => fallback.to_string(),
+        "hosts" | "tabs" | "ai" | "" => fallback.to_string(),
         other => other.to_string(),
     };
     let docks = [
@@ -131,11 +130,13 @@ fn migrate_dock_layout(
             panel_order: Vec::new(),
         },
         DockData {
+            // The right dock hosted the AI panel; with AI parked it starts
+            // empty. The user can move any panel here from the left dock.
             position: "right".to_string(),
-            open: p.sidebar_right_open,
+            open: false,
             size: p.sidebar_right_width as f32,
             zoomed: false,
-            active_panel: Some(migrate_name(&p.sidebar_right_active_panel, "ai")),
+            active_panel: None,
             panel_order: Vec::new(),
         },
         DockData {
@@ -354,26 +355,10 @@ pub(crate) fn bootstrap(
         )
     });
 
+    // The AI live-bridge stays wired to the workspace (snapshot feed + command
+    // drain below) even though the frontend AI panel is parked — the bridge is
+    // the reusable seam for the AI-system rebuild.
     let live_bridge = WorkspaceLiveBridge::new();
-    let ai_store = cx.new(|_| AiChatStore::new(tokio.clone()));
-    ai_store.update(cx, {
-        let lb = live_bridge.clone();
-        move |s, _| s.set_live_bridge(Arc::new(lb))
-    });
-    let ai_chat = cx.new(|cx| AiChatView::new(ai_store, theme.clone(), cx));
-    // AI-panel "run in terminal" — serviced straight from the event (no
-    // `pending_ai` buffer / `drain_pending_ai`, T17-006).
-    cx.subscribe_in(
-        &ai_chat,
-        window,
-        |this, _, event: &AiChatEvent, window, cx| {
-            let AiChatEvent::RunInTerminal(cmd) = event;
-            let cmd = cmd.clone();
-            this.workspace
-                .update(cx, |w, cx| w.run_in_active_terminal(cmd, window, cx));
-        },
-    )
-    .detach();
 
     let command_palette =
         cx.new(|cx| CommandPalette::new(theme.clone(), workspace.clone(), prefs.clone(), cx));
@@ -480,9 +465,7 @@ pub(crate) fn bootstrap(
     });
 
     // The registry must be populated before the docks are built from it.
-    register_builtin_panels(
-        &workspace, &explorer, &git_panel, &git_graph, &snippets, &ai_chat, cx,
-    );
+    register_builtin_panels(&workspace, &explorer, &git_panel, &git_graph, &snippets, cx);
 
     // Build the three docks from the registry + the persisted layout (falling
     // back to a migration of the legacy `sidebar_*` prefs).
@@ -533,7 +516,6 @@ pub(crate) fn bootstrap(
     let panels = ShellPanels {
         git_panel,
         snippets,
-        ai_chat,
         updater,
         command_palette,
     };

@@ -27,8 +27,8 @@ mod store;
 mod watch;
 
 pub use concrete::{
-    AiSettings, EditorSettings, ExplorerSettings, PersonalizationSettings, ScmSettings,
-    TerminalSettings, ThemeSettings, WorkspaceSettings,
+    EditorSettings, ExplorerSettings, PersonalizationSettings, ScmSettings, TerminalSettings,
+    ThemeSettings, WorkspaceSettings,
 };
 pub use keymap::{ensure_user_keymap_file, user_keymap_path};
 pub use project::{ensure_project_settings_file, PROJECT_SETTINGS_WHITELIST};

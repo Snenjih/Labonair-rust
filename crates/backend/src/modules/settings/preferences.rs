@@ -287,34 +287,6 @@ pub struct Preferences {
     // ── Source Control ───────────────────────────────────────────────────
     pub git_status_poll_interval_ms: u32,
 
-    // ── AI ───────────────────────────────────────────────────────────────
-    pub ai_enabled: bool,
-    pub ai_max_agent_steps: u32,
-    pub ai_terminal_context_lines: u32,
-    pub ai_temperature: f32,
-    pub ai_warn_destructive_commands: bool,
-    pub ai_auto_open_mini_on_send: bool,
-    pub ai_notify_on_headless_command: bool,
-    pub ai_shell_max_timeout_secs: u32,
-    pub ai_shell_max_output_kb: u32,
-    pub default_model_id: String,
-    pub custom_instructions: String,
-    pub autocomplete_enabled: bool,
-    pub autocomplete_provider: String,
-    pub autocomplete_model_id: String,
-    #[serde(rename = "lmstudioBaseURL")]
-    pub lmstudio_base_url: String,
-    pub lmstudio_chat_model_id: String,
-    #[serde(rename = "openaiCompatibleBaseURL")]
-    pub openai_compatible_base_url: String,
-    pub openai_compatible_model_id: String,
-    #[serde(rename = "mlxBaseURL")]
-    pub mlx_base_url: String,
-    pub mlx_chat_model_id: String,
-    #[serde(rename = "ollamaBaseURL")]
-    pub ollama_base_url: String,
-    pub ollama_chat_model_id: String,
-
     // ── AI Agent Bridge (MCP) mirror ─────────────────────────────────────
     /// Mirrors of `settings::mcp::McpPrefs`, kept here so the value roundtrips
     /// and the global search can address it. `settings::mcp` remains the
@@ -478,29 +450,6 @@ impl Default for Preferences {
             command_palette_close_on_overlay_click: true,
 
             git_status_poll_interval_ms: 5000,
-
-            ai_enabled: true,
-            ai_max_agent_steps: 24,
-            ai_terminal_context_lines: 300,
-            ai_temperature: 0.7,
-            ai_warn_destructive_commands: true,
-            ai_auto_open_mini_on_send: true,
-            ai_notify_on_headless_command: true,
-            ai_shell_max_timeout_secs: 300,
-            ai_shell_max_output_kb: 256,
-            default_model_id: String::new(),
-            custom_instructions: String::new(),
-            autocomplete_enabled: false,
-            autocomplete_provider: "cerebras".to_string(),
-            autocomplete_model_id: String::new(),
-            lmstudio_base_url: "http://localhost:1234/v1".to_string(),
-            lmstudio_chat_model_id: String::new(),
-            openai_compatible_base_url: String::new(),
-            openai_compatible_model_id: String::new(),
-            mlx_base_url: "http://localhost:8080".to_string(),
-            mlx_chat_model_id: String::new(),
-            ollama_base_url: "http://localhost:11434".to_string(),
-            ollama_chat_model_id: String::new(),
 
             mcp_bridge_enabled: false,
             mcp_bridge_port: 47823,
@@ -771,10 +720,6 @@ mod tests {
                 "explorerRemotePollInterval":10,
                 "commandPaletteBlur":12,
                 "commandPalettePosition":"center",
-                "aiMaxAgentSteps":40,
-                "aiTemperature":0.3,
-                "defaultModelId":"claude-x",
-                "ollamaBaseURL":"http://host:1",
                 "mcpBridgePort":50000,
                 "statusBarShowAiControls":false
             }}"#,
@@ -808,10 +753,6 @@ mod tests {
         assert_eq!(p.explorer_remote_poll_interval, 10);
         assert_eq!(p.command_palette_blur, 12);
         assert_eq!(p.command_palette_position, "center");
-        assert_eq!(p.ai_max_agent_steps, 40);
-        assert!((p.ai_temperature - 0.3).abs() < f32::EPSILON);
-        assert_eq!(p.default_model_id, "claude-x");
-        assert_eq!(p.ollama_base_url, "http://host:1");
         assert_eq!(p.mcp_bridge_port, 50000);
         assert!(!p.status_bar_show_ai_controls);
 

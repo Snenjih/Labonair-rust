@@ -48,8 +48,7 @@ pub(crate) use crate::window::*;
 use std::collections::HashSet;
 
 pub(crate) struct EditState {
-    /// The field's `json_path` (e.g. `"terminal.terminalFontSize"`), or a
-    /// non-field synthetic key (`"provkey:<id>"` for AI provider API keys).
+    /// The field's `json_path` (e.g. `"terminal.terminalFontSize"`).
     pub(crate) key: String,
     pub(crate) buffer: String,
     pub(crate) numeric: bool,
@@ -76,22 +75,6 @@ pub(crate) struct RemoteTheme {
     #[serde(default)]
     pub(crate) author: String,
     pub(crate) raw_url: String,
-}
-
-/// Inline agent/directive editor state — three keydown-buffer fields.
-pub(crate) struct AiEditor {
-    pub(crate) kind: AiEditKind,
-    pub(crate) id: String,
-    pub(crate) labels: [&'static str; 3],
-    pub(crate) fields: [String; 3],
-    pub(crate) focus_idx: usize,
-    pub(crate) multiline_last: bool,
-}
-
-#[derive(PartialEq)]
-pub(crate) enum AiEditKind {
-    Agent,
-    Directive,
 }
 
 pub(crate) const COMMUNITY_INDEX_URL: &str =
@@ -198,19 +181,9 @@ pub struct SettingsView {
     /// An open `Select` dropdown (json_path + anchor position + options),
     /// drawn as a deferred floating layer so it escapes the scroll clip.
     pub(crate) dropdown: Option<SelectMenu>,
-    /// AI provider instances + their keychain-backed API keys (T16-012).
-    pub(crate) instances: labonair_ai::InstanceStore,
-    pub(crate) secrets: std::sync::Arc<labonair_ai::KeyringSecretStore>,
     /// Scanned system font family names for the `FontFamily` picker, loaded
     /// once asynchronously when the window opens.
     pub(crate) system_fonts: Vec<SharedString>,
-    /// AI agents + directives (T16-019) — loaded when the window opens.
-    pub(crate) agents: Vec<labonair_backend::modules::agents::Agent>,
-    pub(crate) active_agent_id: String,
-    pub(crate) directives: Vec<labonair_backend::modules::directives::Directive>,
-    /// Open inline agent/directive editor (keydown-buffer modal).
-    pub(crate) ai_editor: Option<AiEditor>,
-    pub(crate) ai_editor_focus: FocusHandle,
     pub(crate) focus: FocusHandle,
     /// The app's [`labonair_workspace::Workspace`] (T18-007) — backs the
     /// Personalization pane's statusbar-layout editor + panel-toggle
@@ -358,14 +331,7 @@ impl SettingsView {
             kb_conflict: None,
             windowed: false,
             dropdown: None,
-            instances: labonair_ai::InstanceStore::open_default(),
-            secrets: std::sync::Arc::new(labonair_ai::KeyringSecretStore),
             system_fonts: Vec::new(),
-            agents: Vec::new(),
-            active_agent_id: String::new(),
-            directives: Vec::new(),
-            ai_editor: None,
-            ai_editor_focus: cx.focus_handle(),
             focus: cx.focus_handle(),
             workspace,
             host_manager,
@@ -420,7 +386,6 @@ impl SettingsView {
             };
         }
         self.load_system_fonts(cx);
-        self.refresh_agents_directives();
         cx.notify();
     }
 
@@ -562,7 +527,6 @@ impl SettingsView {
         }
         let area = &AREAS[area_idx];
         let custom_groups: &[(&'static str, &'static [&'static str])] = match area.key {
-            "ai" => crate::pages::AI_GROUPS,
             "personalization" => crate::pages::PERSONALIZATION_GROUPS,
             _ => &[],
         };
@@ -579,11 +543,6 @@ impl SettingsView {
             out.push("Other");
         }
         out
-    }
-
-    pub(crate) fn go_to_subpage(&mut self, i: usize, cx: &mut Context<Self>) {
-        self.active_subpage = Some(i);
-        cx.notify();
     }
 
     pub(crate) fn go_back_to_main_page(&mut self, cx: &mut Context<Self>) {
@@ -785,13 +744,6 @@ impl SettingsView {
         // for free — this is the port's generic `applySettingChange`. The rest
         // are the non-observable side effects (T16-012):
         match key {
-            // Keep the AI chat's active model in sync with the settings pref.
-            "defaultModelId" => {
-                let v = self.prefs.read(cx).get().default_model_id.clone();
-                if !v.is_empty() {
-                    let _ = self.instances.set_active_model_ref(&v);
-                }
-            }
             // Reduce-motion and corner radius feed the theme/layout layer.
             "reduceMotion" | "appCornerRadius" | "appLineHeight" => {
                 self.sync_theme_from_prefs(cx);
@@ -801,27 +753,6 @@ impl SettingsView {
         // Typography + editor syntax scheme are pushed into the ThemeStore so
         // open terminals / editors pick them up live (T13-003).
         self.sync_theme_from_prefs(cx);
-        cx.notify();
-    }
-
-    // ── AI providers (T16-012) ───────────────────────────────────────────
-
-    pub(crate) fn add_provider(
-        &mut self,
-        provider: labonair_ai::ProviderId,
-        cx: &mut Context<Self>,
-    ) {
-        match self.instances.add(provider) {
-            Ok(_) => cx.notify(),
-            Err(e) => self.notify_error(cx, "Could not add provider", e),
-        }
-    }
-
-    pub(crate) fn remove_provider(&mut self, id: String, cx: &mut Context<Self>) {
-        if let Err(e) = self.instances.remove(&id) {
-            self.notify_error(cx, "Could not remove provider", e);
-        }
-        let _ = labonair_ai::secret_store::clear_instance_key(&*self.secrets, &id);
         cx.notify();
     }
 
@@ -874,24 +805,6 @@ impl SettingsView {
         let Some(edit) = self.editing.take() else {
             return;
         };
-        // Provider API keys are keychain-backed, never a preference key.
-        if let Some(instance_id) = edit.key.strip_prefix("provkey:") {
-            let trimmed = edit.buffer.trim();
-            let res = if trimmed.is_empty() {
-                labonair_ai::secret_store::clear_instance_key(&*self.secrets, instance_id)
-            } else {
-                labonair_ai::secret_store::set_instance_key(&*self.secrets, instance_id, trimmed)
-            };
-            match res {
-                Ok(()) => self.notify(
-                    cx,
-                    Notification::success("API key saved", "Stored in the OS keychain."),
-                ),
-                Err(e) => self.notify_error(cx, "Could not save API key", e),
-            }
-            cx.notify();
-            return;
-        }
         let Some(field) = self.field_by_path(&edit.key) else {
             return;
         };

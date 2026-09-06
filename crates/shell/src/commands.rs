@@ -150,13 +150,8 @@ pub(crate) fn attach_action_handlers(
     on!(menu::PrevTab => CommandId::PrevTab);
     on!(menu::Find => CommandId::Find);
     on!(menu::ToggleSidebar => CommandId::ToggleSidebar);
-    on!(menu::ToggleAiPanel => CommandId::ToggleAiPanel);
     on!(menu::ToggleZenMode => CommandId::ToggleZenMode);
     on!(menu::FocusNextPane => CommandId::FocusNextPane);
-    on!(menu::AskAboutSelection => CommandId::AskSelection);
-    on!(menu::NewAiSession => CommandId::NewAiSession);
-    on!(menu::ClearChat => CommandId::ClearChat);
-    on!(menu::AiSettings => CommandId::OpenAiSettings);
     on!(menu::OpenSettings => CommandId::OpenSettings);
     on!(menu::OpenKeymapJson => CommandId::OpenKeymapJson);
     on!(menu::CheckForUpdates => CommandId::CheckForUpdates);
@@ -321,27 +316,6 @@ pub(crate) fn register_builtin_commands() -> CommandRegistry {
         cx.notify();
     });
 
-    // ── AI ─────────────────────────────────────────────────────────────
-    r.register(CommandId::ToggleAiPanel, always, |s, _window, cx| {
-        s.select_panel("ai", cx);
-    });
-    r.register(CommandId::AskSelection, always, |s, _window, cx| {
-        let Some((label, text)) = s.workspace.read(cx).active_selection(cx) else {
-            return;
-        };
-        s.panels
-            .ai_chat
-            .update(cx, |v, cx| v.attach_selection(label, text, cx));
-        s.open_panel("ai", cx);
-    });
-    r.register(CommandId::NewAiSession, always, |s, _window, cx| {
-        s.panels.ai_chat.update(cx, |v, cx| v.new_session(cx));
-        s.open_panel("ai", cx);
-    });
-    r.register(CommandId::ClearChat, always, |s, _window, cx| {
-        s.panels.ai_chat.update(cx, |v, cx| v.clear_active_chat(cx));
-    });
-
     // ── Snippets / source control ──────────────────────────────────────
     r.register(CommandId::OpenSnippetsPanel, always, |s, _window, cx| {
         s.open_panel("snippets", cx);
@@ -407,9 +381,6 @@ pub(crate) fn register_builtin_commands() -> CommandRegistry {
     // ── Application ────────────────────────────────────────────────────
     r.register(CommandId::OpenSettings, always, |_s, _window, cx| {
         open_settings_window(None, cx);
-    });
-    r.register(CommandId::OpenAiSettings, always, |_s, _window, cx| {
-        open_settings_window(Some("ai"), cx);
     });
     r.register(CommandId::OpenProjectSettings, always, |s, window, cx| {
         s.workspace

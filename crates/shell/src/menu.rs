@@ -30,11 +30,6 @@ use std::rc::Rc;
 use labonair_notifications::{notification_center, Notification};
 use labonair_settings::keymap::EffectiveBinding;
 
-/// `AskAboutSelection` is defined in `labonair-workspace` (so `views::terminal`
-/// can dispatch it without a dependency cycle, T16-006); re-exported here so the
-/// menu / keybind wiring below and `crate::menu::AskAboutSelection` still work.
-pub use labonair_workspace::AskAboutSelection;
-
 actions!(
     labonair,
     [
@@ -56,7 +51,6 @@ actions!(
         SelectAll,
         // ── View ──────────────────────────────────────────────────────────
         ToggleSidebar,
-        ToggleAiPanel,
         ZoomIn,
         ZoomOut,
         ResetZoom,
@@ -85,10 +79,6 @@ actions!(
         OpenHostSettings,
         NewSshConnection,
         NewQuickSsh,
-        // ── AI ────────────────────────────────────────────────────────────
-        NewAiSession,
-        ClearChat,
-        AiSettings,
         // ── Window ────────────────────────────────────────────────────────
         Minimize,
         ZoomWindow,
@@ -130,9 +120,8 @@ pub fn init(cx: &mut App) {
             ),
         )
     });
-    // `OpenSettings` / `AiSettings` are handled by `AppShell` (open the
-    // dedicated settings OS window, deep-linking to the AI tab for `AiSettings`
-    // — T16-009).
+    // `OpenSettings` is handled by `AppShell` (opens the dedicated settings OS
+    // window — T16-009).
     // `CheckForUpdates` is handled by `AppShell` (drives the auto-updater,
     // T15-005) so the menu item, the command-palette entry and any shortcut
     // share one code path.
@@ -213,15 +202,10 @@ fn action_for(name: &str) -> Option<Box<dyn Action>> {
         "view::ZoomOut" => Box::new(ZoomOut),
         "view::ZoomReset" => Box::new(ResetZoom),
         "view::ToggleFullScreen" => Box::new(ToggleFullScreen),
-        "ai::TogglePanel" => Box::new(ToggleAiPanel),
-        "ai::AskSelection" => Box::new(AskAboutSelection),
-        "ai::NewSession" => Box::new(NewAiSession),
-        "ai::ClearChat" => Box::new(ClearChat),
         "connections::OpenHostSettings" => Box::new(OpenHostSettings),
         "connections::NewSshConnection" => Box::new(NewSshConnection),
         "connections::NewQuickSsh" => Box::new(NewQuickSsh),
         "settings::Open" => Box::new(OpenSettings),
-        "settings::OpenAi" => Box::new(AiSettings),
         "app::CheckForUpdates" => Box::new(CheckForUpdates),
         "debug::CyclePanelDock" => Box::new(DebugCyclePanelDock),
         "debug::ToggleDockZoom" => Box::new(DebugToggleDockZoom),
@@ -330,7 +314,6 @@ fn app_menus() -> Vec<Menu> {
             name: "View".into(),
             items: vec![
                 MenuItem::action("Toggle Sidebar", ToggleSidebar),
-                MenuItem::action("Toggle AI Panel", ToggleAiPanel),
                 MenuItem::separator(),
                 MenuItem::action("Zoom In", ZoomIn),
                 MenuItem::action("Zoom Out", ZoomOut),
@@ -355,18 +338,6 @@ fn app_menus() -> Vec<Menu> {
                 MenuItem::separator(),
                 MenuItem::action("New SSH Connection\u{2026}", NewSshConnection),
                 MenuItem::action("New Quick SSH\u{2026}", NewQuickSsh),
-            ],
-        },
-        Menu {
-            name: "AI".into(),
-            items: vec![
-                MenuItem::action("Toggle AI Panel", ToggleAiPanel),
-                MenuItem::action("New AI Session", NewAiSession),
-                MenuItem::action("Ask about Selection", AskAboutSelection),
-                MenuItem::separator(),
-                MenuItem::action("Clear Current Chat", ClearChat),
-                MenuItem::separator(),
-                MenuItem::action("AI Settings\u{2026}", AiSettings),
             ],
         },
         Menu {
@@ -447,7 +418,6 @@ mod tests {
                 "View",
                 "Terminal",
                 "Connections",
-                "AI",
                 "Window",
             ]
         );

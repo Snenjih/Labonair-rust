@@ -57,8 +57,6 @@ fn pane_keywords(area_key: &str, subpage_slug: Option<&str>) -> &'static str {
         ("themes", _) => "theme color scheme appearance palette variant",
         ("hosts", _) => "host ssh server connection saved hosts",
         ("shortcuts", _) => "keymap shortcut keybinding tastenkürzel hotkey",
-        ("ai", None) => "ai assistant model chat overview",
-        ("ai", Some("providers")) => "ai provider agent api key model directive",
         ("mcp", _) => "mcp agent bridge model context protocol",
         ("personalization", _) => "personalization status bar layout panel toggle",
         _ => "",

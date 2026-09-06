@@ -4,7 +4,47 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
-## Current Session: 2026-09-06 (Remove path-bookmarks feature)
+## Current Session: 2026-09-06 (Park the AI frontend)
+
+Ad-hoc request (not a ROADMAP task; user: remove AI from the frontend so the
+rest of the ported UI can be reworked without it in the way — keep the AI
+backend for a from-scratch rebuild later, once Labonair is usable again). Done
+in one commit on `master`. Git tag **`ai-ui-v1`** on the parent commit for
+recovery.
+
+**Removed (frontend):** `crates/panel-ai/` (whole crate — AI chat dock + composer)
++ its workspace member / `shell` dep / bootstrap wiring; right dock now starts
+closed with no active panel. Command palette AI commands + `Page::AiSessions` +
+`ShortcutId::{AiToggle,AiAskSelection}` (`cmd-i`/`cmd-l` now free). Native "AI"
+menu + View‑menu "Toggle AI Panel". Terminal context-menu "Ask AI about
+Selection". **Whole Settings "AI" category** — `settings-ui/panes/ai.rs`,
+`AI_GROUPS`, `AiEditor`, provider/agent/directive UI + `view.rs` fields;
+`AiSettings` in `crates/settings`. `AiContent` deleted from `settings-content`
+(`ai.rs`, `ai` area, `default.json` block) + `Preferences.ai_*` (~22 fields) +
+`content_bridge`/`migrate_v2` AI plumbing + affected invariant tests
+(settings-content / settings-ui / backend). Nothing outside the settings
+subsystem consumed any of it.
+
+**Kept (backend, warm for the rebuild):** `crates/ai/` entirely (providers,
+sse, sessions, keyring, tools, `LiveBridge` trait); `backend/modules/{agents,
+directives,model_prefs}`; `WorkspaceLiveBridge` (still wired to the workspace,
+just unfed). Known dormant leftovers: `statusBarShowAiControls` (Personalization
+toggle), `PanelIcon::Ai`, `app` crate's unused `labonair-ai` dep, About-box
+"integrated AI" blurb. Full detail in memory `ai-frontend-parked.md`.
+
+Rebuild plan (later): one central headless `AiService` + `Provider` registry
+(CIEL = just another provider) + `ContextProvider` trait; terminal/editor/SFTP/
+fullscreen dock onto it. Concept: `ideas/labonair-philosophy-concept.md` §4.
+
+Gates green on this machine: `cargo fmt --check`, `cargo clippy --workspace
+--all-targets -D warnings`, `cargo test --workspace` (48 test binaries, 0 failed).
+
+Next: resume the UI/settings overhaul of the ported systems (next ROADMAP task
+is still **T20-006**, Icon-Themes).
+
+---
+
+## Previous Session: 2026-09-06 (Remove path-bookmarks feature)
 
 Ad-hoc request (not a ROADMAP task; user asked to remove the bookmarks system
 "vollständig" without breaking other systems). Done in one commit.

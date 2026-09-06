@@ -34,7 +34,6 @@ use labonair_backend::App as Backend;
 use labonair_notifications::NotificationCenter;
 use tokio::runtime::Handle as TokioHandle;
 
-use labonair_panel_ai::AiChatView;
 use labonair_panel_scm::GitPanelView;
 use labonair_panel_snippets::SnippetsView;
 use labonair_settings_ui::PreferencesStore;
@@ -58,7 +57,7 @@ const SAVE_THROTTLE: Duration = Duration::from_millis(1000);
 /// The concrete panel / feature entities the shell keeps direct handles to.
 ///
 /// They live in `labonair-shell`, not `Workspace`, because
-/// `labonair-panel-{explorer,scm,snippets,ai}` already depend on
+/// `labonair-panel-{explorer,scm,snippets}` already depend on
 /// `labonair-workspace` — storing their concrete `Entity<…>` on `Workspace`
 /// would be a dependency cycle (`docs/architecture.md` §8.4). Grouped so
 /// `AppShell` stays a thin composition root and the action handlers in
@@ -66,7 +65,6 @@ const SAVE_THROTTLE: Duration = Duration::from_millis(1000);
 pub(crate) struct ShellPanels {
     pub(crate) git_panel: Entity<GitPanelView>,
     pub(crate) snippets: Entity<SnippetsView>,
-    pub(crate) ai_chat: Entity<AiChatView>,
     pub(crate) updater: Entity<UpdaterView>,
     pub(crate) command_palette: Entity<ShellPalette>,
 }

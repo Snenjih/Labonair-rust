@@ -659,10 +659,10 @@ impl SettingsView {
 
     /// Dispatch a Custom top-level category's body (rule 4) — the one
     /// registration point a new custom category needs: an `AREAS` entry
-    /// (data) + one match arm here (render_fn). `AI`/`Personalization` also
-    /// fold in their own generic field grid (`AI_GROUPS`/
-    /// `PERSONALIZATION_GROUPS`) before their bespoke sections, exactly as
-    /// rule 4 allows ("may still read/write fields under `target_module`").
+    /// (data) + one match arm here (render_fn). `Personalization` also folds
+    /// in its own generic field grid (`PERSONALIZATION_GROUPS`) before its
+    /// bespoke sections, exactly as rule 4 allows ("may still read/write
+    /// fields under `target_module`").
     fn render_custom_body(
         &mut self,
         area_key: &'static str,
@@ -680,8 +680,6 @@ impl SettingsView {
             ("hosts", Some(0)) => self.render_hosts_ssh_config(c, cx),
             ("hosts", Some(_)) => self.render_hosts_availability(c, cx),
             ("personalization", _) => self.render_personalization(c, cx),
-            ("ai", None) => self.render_ai_overview(c, cx),
-            ("ai", Some(_)) => self.render_ai_providers_subpage(c, cx),
             _ => div().into_any_element(),
         }
     }
@@ -690,8 +688,8 @@ impl SettingsView {
     /// disclosure collapse state) — the core loop `render_generated_body`
     /// uses for `AreaKind::Generated` pages, reused directly by the Custom
     /// panes that fold their own field grid into a bespoke body before their
-    /// non-field sections (`AI_GROUPS`, `PERSONALIZATION_GROUPS` — rule 4:
-    /// "may still read/write fields under `target_module`").
+    /// non-field sections (`PERSONALIZATION_GROUPS` — rule 4: "may still
+    /// read/write fields under `target_module`").
     pub(crate) fn render_field_groups(
         &mut self,
         groups: &[(&'static str, &'static [&'static str])],

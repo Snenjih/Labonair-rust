@@ -67,13 +67,6 @@ impl AppShell {
         cx.notify();
     }
 
-    /// Status-bar-toggle intent: open + activate `name`, or close its dock if
-    /// it is already the active panel there.
-    pub(crate) fn select_panel(&mut self, name: &str, cx: &mut Context<Self>) {
-        self.workspace.update(cx, |w, cx| w.select_panel(name, cx));
-        cx.notify();
-    }
-
     /// "show me X" — never closes the dock (palette / menu intent).
     pub(crate) fn open_panel(&mut self, name: &str, cx: &mut Context<Self>) {
         self.workspace.update(cx, |w, cx| w.open_panel(name, cx));
@@ -247,20 +240,6 @@ impl AppShell {
             })
             .collect();
 
-        let ai_sessions = self
-            .panels
-            .ai_chat
-            .read(cx)
-            .session_choices(cx)
-            .into_iter()
-            .map(|(id, title, active)| PaletteChoice {
-                id,
-                title,
-                subtitle: None,
-                active,
-            })
-            .collect();
-
         let git_branches = self
             .panels
             .git_panel
@@ -317,7 +296,6 @@ impl AppShell {
             hosts,
             recent_hosts,
             snippets,
-            ai_sessions,
             git_branches,
             symbols,
             app_themes,
@@ -364,12 +342,6 @@ impl AppShell {
                 self.panels
                     .snippets
                     .update(cx, |s, cx| s.run_by_id(&id, window, cx));
-            }
-            PaletteEvent::SwitchAiSession(id) => {
-                self.panels
-                    .ai_chat
-                    .update(cx, |v, cx| v.switch_to_session(&id, cx));
-                self.open_panel("ai", cx);
             }
             PaletteEvent::SwitchBranch(name) => {
                 self.panels

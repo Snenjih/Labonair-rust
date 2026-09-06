@@ -8,16 +8,16 @@
 //! (`crates/workspace/src/workspace.rs`, `reduce_motion`) and
 //! `TerminalSettings` (`crates/workspace/src/views/terminal.rs`, terminal
 //! opacity / copy-on-select / right-click-pastes). The other four
-//! (`EditorSettings`, `AiSettings`, `WorkspaceSettings`,
+//! (`EditorSettings`, `WorkspaceSettings`,
 //! `PersonalizationSettings`) are registered and available via `XSettings::
 //! get(cx)` now; wiring every remaining `GlobalPreferences` call site over to
 //! them is deliberately out of scope here (see the task's `## Notizen`) and
 //! follows incrementally (T20-007 and friends).
 
 use labonair_settings_content::{
-    ai::AiContent, appearance::AppearanceContent, editor::EditorContent,
-    file_manager::FileManagerContent, personalization::PersonalizationContent,
-    terminal::TerminalContent, workspace::WorkspaceContent, MergeFrom, SettingsContent,
+    appearance::AppearanceContent, editor::EditorContent, file_manager::FileManagerContent,
+    personalization::PersonalizationContent, terminal::TerminalContent,
+    workspace::WorkspaceContent, MergeFrom, SettingsContent,
 };
 
 use crate::settings_trait::Settings;
@@ -155,24 +155,6 @@ impl Settings for EditorSettings {
 
 impl EditorSettings {
     pub fn content(&self) -> &EditorContent {
-        &self.0
-    }
-}
-
-/// `ai` area.
-#[derive(Clone, Debug, PartialEq, RegisterSetting)]
-pub struct AiSettings(AiContent);
-
-impl Settings for AiSettings {
-    fn from_settings(content: &SettingsContent) -> Self {
-        let mut merged = AiContent::defaults();
-        merged.merge_from(&content.ai);
-        Self(merged)
-    }
-}
-
-impl AiSettings {
-    pub fn content(&self) -> &AiContent {
         &self.0
     }
 }

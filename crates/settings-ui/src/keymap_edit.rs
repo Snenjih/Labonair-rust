@@ -217,23 +217,23 @@ mod tests {
     #[test]
     fn overwrite_unbinds_other_and_binds_self() {
         let user = KeymapFile::default();
-        // `AiToggle`'s default is `cmd-i`; give it to `TabNew` instead. Both
-        // the loser's old keystrokes (`cmd-i`) and the winner's own previous
-        // default (`cmd-t`) get explicitly nulled.
+        // `search::Toggle`'s default is `cmd-f`; give it to `TabNew` instead.
+        // Both the loser's old keystrokes (`cmd-f`) and the winner's own
+        // previous default (`cmd-t`) get explicitly nulled.
         let ops = compute_ops(
             &[
-                ("ai::TogglePanel", None),
-                ("tab::NewTerminal", Some("cmd-i")),
+                ("search::Toggle", None),
+                ("tab::NewTerminal", Some("cmd-f")),
             ],
             &user,
         );
         assert_eq!(
             ops,
             vec![
-                ("cmd-i".to_string(), Value::Null),
+                ("cmd-f".to_string(), Value::Null),
                 ("cmd-t".to_string(), Value::Null),
                 (
-                    "cmd-i".to_string(),
+                    "cmd-f".to_string(),
                     Value::String("tab::NewTerminal".to_string())
                 ),
             ]

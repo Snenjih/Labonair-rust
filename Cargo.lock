@@ -4292,25 +4292,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "labonair-panel-ai"
-version = "0.1.0"
-dependencies = [
- "gpui",
- "labonair-ai",
- "labonair-backend",
- "labonair-command-palette",
- "labonair-editor",
- "labonair-panel",
- "labonair-theme",
- "labonair-ui-kit",
- "labonair-workspace",
- "serde_json",
- "tokio",
- "tracing",
- "uuid",
-]
-
-[[package]]
 name = "labonair-panel-explorer"
 version = "0.1.0"
 dependencies = [
@@ -4433,7 +4414,6 @@ version = "0.1.0"
 dependencies = [
  "gpui",
  "gpui-component",
- "labonair-ai",
  "labonair-backend",
  "labonair-command-palette",
  "labonair-gpui-ext",
@@ -4465,7 +4445,6 @@ dependencies = [
  "labonair-gpui-ext",
  "labonair-notifications",
  "labonair-panel",
- "labonair-panel-ai",
  "labonair-panel-explorer",
  "labonair-panel-git-graph",
  "labonair-panel-scm",

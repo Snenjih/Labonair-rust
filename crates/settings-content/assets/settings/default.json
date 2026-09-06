@@ -211,31 +211,6 @@
     "sidebarRightWidth": 225
   },
 
-  "ai": {
-    "aiEnabled": true,
-    "aiMaxAgentSteps": 24,
-    "aiTerminalContextLines": 300,
-    "aiTemperature": 0.7,
-    "aiWarnDestructiveCommands": true,
-    "aiAutoOpenMiniOnSend": true,
-    "aiNotifyOnHeadlessCommand": true,
-    "aiShellMaxTimeoutSecs": 300,
-    "aiShellMaxOutputKb": 256,
-    "defaultModelId": "",
-    "customInstructions": "",
-    "autocompleteEnabled": false,
-    "autocompleteProvider": "cerebras",
-    "autocompleteModelId": "",
-    "lmstudioBaseURL": "http://localhost:1234/v1",
-    "lmstudioChatModelId": "",
-    "openaiCompatibleBaseURL": "",
-    "openaiCompatibleModelId": "",
-    "mlxBaseURL": "http://localhost:8080",
-    "mlxChatModelId": "",
-    "ollamaBaseURL": "http://localhost:11434",
-    "ollamaChatModelId": ""
-  },
-
   "mcp": {
     "bridgeEnabled": false,
     "bridgePort": 47823,

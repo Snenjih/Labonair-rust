@@ -29,8 +29,8 @@ pub fn register_all(cx: &mut App) {
 mod tests {
     use super::*;
     use crate::concrete::{
-        AiSettings, EditorSettings, ExplorerSettings, PersonalizationSettings, TerminalSettings,
-        ThemeSettings, WorkspaceSettings,
+        EditorSettings, ExplorerSettings, PersonalizationSettings, TerminalSettings, ThemeSettings,
+        WorkspaceSettings,
     };
     use crate::settings_trait::Settings;
     use crate::store;
@@ -52,7 +52,6 @@ mod tests {
             assert_eq!(ThemeSettings::get(cx).app_theme(), "default");
             assert_eq!(TerminalSettings::get(cx).terminal_opacity(), 100);
             let _ = EditorSettings::get(cx);
-            let _ = AiSettings::get(cx);
             let _ = WorkspaceSettings::get(cx);
             let _ = PersonalizationSettings::get(cx);
             assert!(ExplorerSettings::get(cx).sticky_ancestors());

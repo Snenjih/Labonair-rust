@@ -75,14 +75,12 @@ fn panel_toggle_icon(icon: PanelIcon) -> IconName {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Panel title + rebindable shortcut, for the button's tooltip. Only
-/// "explorer" (`SidebarToggle`) and "ai" (`AiToggle`) currently have a
-/// dedicated shortcut (`crates/command-palette/src/keybind.rs`); the others
-/// show the title alone.
+/// "explorer" (`SidebarToggle`) currently has a dedicated shortcut
+/// (`crates/command-palette/src/keybind.rs`); the others show the title alone.
 fn panel_toggle_shortcut(persistent_name: &str) -> Option<labonair_command_palette::ShortcutId> {
     use labonair_command_palette::ShortcutId;
     match persistent_name {
         "explorer" => Some(ShortcutId::SidebarToggle),
-        "ai" => Some(ShortcutId::AiToggle),
         _ => None,
     }
 }
@@ -93,7 +91,6 @@ fn panel_toggle_title(persistent_name: &str) -> &'static str {
         "source-control" => "Source Control",
         "git-graph" => "Git Graph",
         "snippets" => "Snippets",
-        "ai" => "AI",
         _ => "Panel",
     }
 }

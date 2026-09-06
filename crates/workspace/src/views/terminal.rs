@@ -658,20 +658,6 @@ impl TerminalView {
                     })
                 }
             }),
-            MenuItem::separator(),
-            MenuItem::new("term-ask-ai", "Ask AI about Selection")
-                .icon(IconName::Sparkles)
-                .disabled(!has_selection)
-                .on_click({
-                    let v = view.clone();
-                    move |_, window, cx| {
-                        v.update(cx, |this, cx| {
-                            this.menu = None;
-                            cx.notify();
-                        });
-                        window.dispatch_action(Box::new(crate::AskAboutSelection), cx);
-                    }
-                }),
         ];
         let dismiss = {
             let v = view.clone();

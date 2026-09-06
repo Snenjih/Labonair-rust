@@ -130,9 +130,6 @@ pub enum CommandId {
     ZoomIn,
     ZoomOut,
     ZoomReset,
-    ToggleAiPanel,
-    AskSelection,
-    NewAiSession,
     OpenSnippetsPanel,
     OpenGitGraph,
     FocusSourceControl,
@@ -160,7 +157,6 @@ pub enum CommandId {
     ChangeAppTheme,
     ChangeColorMode,
     ChangeEditorTheme,
-    SwitchAiSession,
     RunSnippet,
     GitSwitchBranch,
     GoToSymbol,
@@ -168,7 +164,6 @@ pub enum CommandId {
     /// the palette-side escape hatch for items the user hid via the
     /// statusbar's right-click menu.
     ShowStatusBarItem,
-    OpenAiSettings,
     ToggleEditorWordWrap,
     ToggleLineNumbers,
     ToggleFormatOnSave,
@@ -186,7 +181,6 @@ pub enum CommandId {
     NewSftpTab,
     NewSshConnection,
     NewQuickSsh,
-    ClearChat,
     FocusNextPane,
     SelectTab1,
     SelectTab2,
@@ -262,11 +256,6 @@ const ACTION_NAMES: &[(CommandId, &str)] = &[
     (CommandId::ToggleCursorBlink, "terminal::ToggleCursorBlink"),
     (CommandId::TogglePaneHeader, "terminal::TogglePaneHeader"),
     (CommandId::TogglePaneFooter, "terminal::TogglePaneFooter"),
-    (CommandId::ToggleAiPanel, "ai::TogglePanel"),
-    (CommandId::AskSelection, "ai::AskSelection"),
-    (CommandId::NewAiSession, "ai::NewSession"),
-    (CommandId::SwitchAiSession, "ai::SwitchSession"),
-    (CommandId::ClearChat, "ai::ClearChat"),
     (CommandId::RunSnippet, "snippets::Run"),
     (CommandId::OpenSnippetsPanel, "snippets::OpenPanel"),
     (CommandId::OpenGitGraph, "git::OpenGraph"),
@@ -280,7 +269,6 @@ const ACTION_NAMES: &[(CommandId, &str)] = &[
     (CommandId::OpenCommandPalette, "command_palette::Toggle"),
     (CommandId::OpenShortcuts, "settings::OpenShortcuts"),
     (CommandId::OpenSettings, "settings::Open"),
-    (CommandId::OpenAiSettings, "settings::OpenAi"),
     (CommandId::OpenProjectSettings, "settings::OpenProjectJson"),
     (CommandId::OpenSettingsJson, "settings::OpenUserJson"),
     (CommandId::OpenKeymapJson, "zed::OpenKeymap"),
@@ -352,7 +340,6 @@ pub enum Page {
     Themes,
     Hosts,
     Snippets,
-    AiSessions,
     Outline,
     GitBranches,
     StatusBarHidden,
@@ -370,7 +357,6 @@ impl Page {
             Page::Themes => "Search themes\u{2026}",
             Page::Hosts => "Search hosts\u{2026}",
             Page::Snippets => "Search snippets\u{2026}",
-            Page::AiSessions => "Search sessions\u{2026}",
             Page::Outline => "Search symbols\u{2026}",
             Page::GitBranches => "Search branches\u{2026}",
             Page::StatusBarHidden => "Search hidden items\u{2026}",
@@ -388,7 +374,6 @@ impl Page {
             Page::Themes => "App Theme",
             Page::Hosts => "Hosts",
             Page::Snippets => "Snippets",
-            Page::AiSessions => "AI Sessions",
             Page::Outline => "Symbols",
             Page::GitBranches => "Branches",
             Page::StatusBarHidden => "Hidden Status Bar Items",
@@ -442,10 +427,6 @@ static COMMANDS: &[Command] = &[
     Command { id: CommandId::ZoomIn,             title: "Zoom In",                 section: "View",           contexts: &[],                            shortcut: Some(ViewZoomIn),    icon: I::Plus,       sub_page: None },
     Command { id: CommandId::ZoomOut,            title: "Zoom Out",                section: "View",           contexts: &[],                            shortcut: Some(ViewZoomOut),   icon: I::Minus,      sub_page: None },
     Command { id: CommandId::ZoomReset,          title: "Reset Zoom",              section: "View",           contexts: &[],                            shortcut: Some(ViewZoomReset), icon: I::Refresh,    sub_page: None },
-    Command { id: CommandId::ToggleAiPanel,      title: "Toggle AI Panel",         section: "AI",             contexts: &[],                            shortcut: Some(AiToggle),      icon: I::Sparkles,   sub_page: None },
-    Command { id: CommandId::AskSelection,       title: "Ask AI About Selection",  section: "AI",             contexts: &[],                            shortcut: Some(AiAskSelection),icon: I::Sparkles,   sub_page: None },
-    Command { id: CommandId::NewAiSession,       title: "New AI Session",          section: "AI",             contexts: &[],                            shortcut: None,                icon: I::Refresh,    sub_page: None },
-    Command { id: CommandId::SwitchAiSession,    title: "Switch AI Session\u{2026}",section: "AI",            contexts: &[],                            shortcut: None,                icon: I::Sparkles,   sub_page: Some(Page::AiSessions) },
     Command { id: CommandId::OpenSnippetsPanel,  title: "Open Snippets Panel",     section: "Snippets",       contexts: &[],                            shortcut: None,                icon: I::Command,    sub_page: None },
     Command { id: CommandId::RunSnippet,         title: "Run Snippet\u{2026}",     section: "Snippets",       contexts: &[],                            shortcut: None,                icon: I::Command,    sub_page: Some(Page::Snippets) },
     Command { id: CommandId::OpenGitGraph,       title: "Open Git Graph",          section: "Source Control", contexts: &[],                            shortcut: None,                icon: I::GitBranch,  sub_page: None },
@@ -468,7 +449,6 @@ static COMMANDS: &[Command] = &[
     Command { id: CommandId::OpenSettings,       title: "Open Settings",           section: "Application",    contexts: &[],                            shortcut: None,                icon: I::SquarePen,  sub_page: None },
     Command { id: CommandId::OpenProjectSettings,title: "Open Project Settings (.labonair/settings.json)", section: "Application", contexts: &[],       shortcut: None,                icon: I::SquarePen,  sub_page: None },
     Command { id: CommandId::OpenSettingsJson,title: "Open Settings (JSON)", section: "Application", contexts: &[],       shortcut: None,                icon: I::SquarePen,  sub_page: None },
-    Command { id: CommandId::OpenAiSettings,     title: "Manage AI Keys & Models", section: "Application",    contexts: &[],                            shortcut: None,                icon: I::Sparkles,   sub_page: None },
     Command { id: CommandId::CheckForUpdates,    title: "Check for Updates\u{2026}", section: "Application",   contexts: &[],                            shortcut: None,                icon: I::Download,   sub_page: None },
     // Debug-only: opens the ui-kit component gallery (T20-004). Absent from
     // release builds entirely, matching the shell-side command registration.
@@ -575,8 +555,6 @@ pub enum PaletteEvent {
     PreviewAppTheme(Option<String>),
     /// Run a saved snippet by id with its default execution mode.
     RunSnippet(String),
-    /// Switch the AI panel to a chat session by id.
-    SwitchAiSession(String),
     /// Check out a git branch by name.
     SwitchBranch(String),
     /// Jump the active editor's caret to a 0-based line (Go to Symbol).
@@ -612,7 +590,6 @@ pub struct PaletteData {
     /// Most-recently-connected hosts (host pre-sorts by `last_connected_at`,
     /// caps at 5) — shown as quick-connect rows at the palette root.
     pub recent_hosts: Vec<PaletteChoice>,
-    pub ai_sessions: Vec<PaletteChoice>,
     pub snippets: Vec<PaletteChoice>,
     pub git_branches: Vec<PaletteChoice>,
     pub symbols: Vec<PaletteChoice>,
@@ -670,8 +647,6 @@ enum RowKey {
     SetAppTheme(String),
     /// Run a saved snippet by id with its default execution mode.
     RunSnippet(String),
-    /// Switch the AI panel to a chat session by id.
-    SwitchAiSession(String),
     /// Check out a git branch by name.
     SwitchBranch(String),
     /// Jump the active editor's caret to a 0-based line (Go to Symbol).
@@ -1123,14 +1098,6 @@ where
                 "No snippets saved yet",
                 |c| RowKey::RunSnippet(c.id.clone()),
             ),
-            Page::AiSessions => self.choice_rows(
-                &self.data.ai_sessions,
-                "AI Sessions",
-                IconName::Sparkles,
-                mode,
-                "No AI sessions yet",
-                |c| RowKey::SwitchAiSession(c.id.clone()),
-            ),
             Page::Outline => self.choice_rows(
                 &self.data.symbols,
                 "Symbols",
@@ -1211,10 +1178,6 @@ where
             RowKey::RunSnippet(id) => {
                 self.close(cx);
                 cx.emit(PaletteEvent::RunSnippet(id));
-            }
-            RowKey::SwitchAiSession(id) => {
-                self.close(cx);
-                cx.emit(PaletteEvent::SwitchAiSession(id));
             }
             RowKey::SwitchBranch(name) => {
                 self.close(cx);
@@ -1708,22 +1671,21 @@ mod tests {
         CommandId::ClosePane, CommandId::CloseTab, CommandId::NextTab, CommandId::PrevTab,
         CommandId::SwitchTab, CommandId::Find, CommandId::ToggleSidebar,
         CommandId::ToggleFullScreen, CommandId::ZoomIn, CommandId::ZoomOut,
-        CommandId::ZoomReset, CommandId::ToggleAiPanel, CommandId::AskSelection,
-        CommandId::NewAiSession, CommandId::OpenSnippetsPanel, CommandId::OpenGitGraph,
+        CommandId::ZoomReset, CommandId::OpenSnippetsPanel, CommandId::OpenGitGraph,
         CommandId::FocusSourceControl, CommandId::OpenHostSettings, CommandId::ClearTerminal,
         CommandId::OpenShortcuts, CommandId::OpenSettings, CommandId::OpenProjectSettings,
         CommandId::OpenSettingsJson, CommandId::CheckForUpdates, CommandId::FormatDocument,
         CommandId::ToggleZenModeHeader,
         CommandId::ToggleZenModeStatusbar, CommandId::ToggleZenMode, CommandId::AdjustFontSize,
         CommandId::ConnectSsh, CommandId::OpenSftp, CommandId::ChangeAppTheme,
-        CommandId::ChangeColorMode, CommandId::ChangeEditorTheme, CommandId::SwitchAiSession,
+        CommandId::ChangeColorMode, CommandId::ChangeEditorTheme,
         CommandId::RunSnippet, CommandId::GitSwitchBranch, CommandId::GoToSymbol,
-        CommandId::ShowStatusBarItem, CommandId::OpenAiSettings, CommandId::ToggleEditorWordWrap,
+        CommandId::ShowStatusBarItem, CommandId::ToggleEditorWordWrap,
         CommandId::ToggleLineNumbers, CommandId::ToggleFormatOnSave, CommandId::ToggleCursorBlink,
         CommandId::TogglePaneHeader, CommandId::TogglePaneFooter, CommandId::ToggleVimMode,
         CommandId::OpenCommandPalette, CommandId::NewPreviewTab, CommandId::Save,
         CommandId::NewSshTab, CommandId::NewSftpTab, CommandId::NewSshConnection,
-        CommandId::NewQuickSsh, CommandId::ClearChat, CommandId::FocusNextPane,
+        CommandId::NewQuickSsh, CommandId::FocusNextPane,
         CommandId::SelectTab1, CommandId::SelectTab2, CommandId::SelectTab3,
         CommandId::SelectTab4, CommandId::SelectTab5, CommandId::SelectTab6,
         CommandId::SelectTab7, CommandId::SelectTab8, CommandId::SelectTab9,
@@ -1762,7 +1724,6 @@ mod tests {
             "Connections",
             "Search",
             "View",
-            "AI",
             "Snippets",
             "Source Control",
             "Editor",
@@ -1906,7 +1867,6 @@ mod tests {
             Page::Themes,
             Page::Hosts,
             Page::Snippets,
-            Page::AiSessions,
             Page::Outline,
             Page::GitBranches,
             Page::StatusBarHidden,
