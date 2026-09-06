@@ -21,7 +21,7 @@ Verification passes: `cargo fmt --check`, `cargo check --workspace
 --all-targets`, `cargo clippy --workspace --all-targets -- -D warnings`,
 `cargo test --workspace` (with local listener/file-watcher permissions),
 `git diff --check`, and `scripts/check-crate-deps.py`. The current branch is
-`master`; changes are committed in `719dc92`. Next:
+`master`; the changes are committed locally. Next:
 `R01-005-settings-ownership-and-reduction`. No source blocker.
 
 ## Current Session: 2026-09-06 (Typed transfer registry complete)
