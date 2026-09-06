@@ -37,7 +37,7 @@ messages go to the notification dropdown, and settings contain values only.
 ```text
 cargo check --workspace --all-targets
 cargo build
-cargo run
+cargo run -p labonair
 cargo fmt --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace

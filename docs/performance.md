@@ -17,7 +17,7 @@ can be judged against them.
 ## 1. Baseline measurement method
 
 All numbers are taken on the primary target (macOS, Apple Silicon, release
-build: `cargo run --release`). Record them in the table when a machine is
+build: `cargo run --release -p labonair`). Record them in the table when a machine is
 available; the method is what matters for regression comparison.
 
 | Metric | How to measure |

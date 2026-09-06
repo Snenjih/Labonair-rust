@@ -11,3 +11,7 @@ registered by the owning module and wired by the composition root. Do not add
 static shell-wide command, panel, theme, host, or notification tables.
 
 Use the local `reference-src/` and `zed-refrence/` trees as read-only references. Never copy Zed implementation code into the project.
+
+For local execution and visual verification, use `cargo run -p labonair` or
+an explicit native Rust executable path. Never use `open -a Labonair`, because
+the legacy Tauri app may be installed under the same display name.

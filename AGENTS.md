@@ -61,6 +61,10 @@ Notifications are shown in the statusbar notification dropdown. There is no toas
 - Do not add speculative abstractions or compatibility paths without an explicit removal reason.
 - Consult GPUI and the local Zed reference source before relying on undocumented APIs.
 - Never expose secrets in source, logs, SQLite, tests, or commits.
+- Run the native application with `cargo run -p labonair` or an explicit
+  `target/**/labonair` path. Never use `open -a Labonair` for development or
+  visual verification because the legacy Tauri app may share that display
+  name.
 
 ## Feature workflow
 

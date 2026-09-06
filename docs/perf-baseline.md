@@ -69,7 +69,7 @@ The render path is instrumented through the opt-in `labonair::perf` tracing
 target. Enable it with:
 
 ```sh
-RUST_LOG=labonair::perf=trace cargo run
+RUST_LOG=labonair::perf=trace cargo run -p labonair
 ```
 
 Every core render emits a `render` span with its `view` field (`shell`,
