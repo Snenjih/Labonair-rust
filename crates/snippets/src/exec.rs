@@ -5,6 +5,8 @@
 //! events are presented or bridged to another transport.
 
 use std::collections::HashMap;
+use std::future::Future;
+use std::pin::Pin;
 use std::process::Stdio;
 use std::sync::{Arc, RwLock};
 
@@ -17,9 +19,10 @@ pub enum OutputStream {
     Stderr,
 }
 
-/// Typed lifecycle events emitted by a local snippet process.
+/// Typed lifecycle events emitted by a snippet process, regardless of where it
+/// runs.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum LocalRunEvent {
+pub enum SnippetRunEvent {
     Output {
         run_id: String,
         data: String,
@@ -33,7 +36,25 @@ pub enum LocalRunEvent {
 }
 
 /// Event sink supplied by the owning UI or application adapter.
-pub type LocalRunEventSink = Arc<dyn Fn(LocalRunEvent) + Send + Sync>;
+pub type SnippetRunEventSink = Arc<dyn Fn(SnippetRunEvent) + Send + Sync>;
+
+/// Boxed asynchronous operation used by a backend execution adapter.
+pub type ExecutionFuture = Pin<Box<dyn Future<Output = Result<(), String>> + Send>>;
+
+/// Capability contract for executing a snippet through an established SSH
+/// session. The snippets capability owns this contract; the backend owns the
+/// transport-specific implementation.
+pub trait SshCommandExecutor: Send + Sync {
+    fn execute(
+        &self,
+        run_id: String,
+        session_id: String,
+        command: String,
+        sink: SnippetRunEventSink,
+    ) -> ExecutionFuture;
+
+    fn cancel(&self, run_id: String) -> ExecutionFuture;
+}
 
 /// Tracks local snippet processes that can be cancelled by run ID.
 #[derive(Debug, Default)]
@@ -102,7 +123,7 @@ pub async fn run_local(
     command: String,
     working_dir: Option<String>,
     registry: &LocalRunRegistry,
-    sink: LocalRunEventSink,
+    sink: SnippetRunEventSink,
 ) -> Result<(), String> {
     let trimmed = command.trim().to_string();
     if trimmed.is_empty() {
@@ -132,7 +153,7 @@ pub async fn run_local(
         let mut lines = reader.lines();
         tokio::spawn(async move {
             while let Ok(Some(line)) = lines.next_line().await {
-                output_sink(LocalRunEvent::Output {
+                output_sink(SnippetRunEvent::Output {
                     run_id: output_run_id.clone(),
                     data: line + "\n",
                     stream: OutputStream::Stdout,
@@ -149,7 +170,7 @@ pub async fn run_local(
         let mut lines = reader.lines();
         tokio::spawn(async move {
             while let Ok(Some(line)) = lines.next_line().await {
-                error_sink(LocalRunEvent::Output {
+                error_sink(SnippetRunEvent::Output {
                     run_id: error_run_id.clone(),
                     data: line + "\n",
                     stream: OutputStream::Stderr,
@@ -167,7 +188,7 @@ pub async fn run_local(
         .map(|status| status.code().unwrap_or(-1))
         .unwrap_or(-1);
     let cancelled = registry.finish(&run_id)?;
-    sink(LocalRunEvent::Done {
+    sink(SnippetRunEvent::Done {
         run_id,
         exit_code,
         cancelled,
@@ -198,7 +219,7 @@ mod tests {
         let events = events.lock().unwrap();
         assert!(events.iter().any(|event| matches!(
             event,
-            LocalRunEvent::Output {
+            SnippetRunEvent::Output {
                 stream: OutputStream::Stdout,
                 data,
                 ..
@@ -206,7 +227,7 @@ mod tests {
         )));
         assert!(events.iter().any(|event| matches!(
             event,
-            LocalRunEvent::Output {
+            SnippetRunEvent::Output {
                 stream: OutputStream::Stderr,
                 data,
                 ..
@@ -214,7 +235,7 @@ mod tests {
         )));
         assert!(matches!(
             events.last(),
-            Some(LocalRunEvent::Done {
+            Some(SnippetRunEvent::Done {
                 exit_code: 0,
                 cancelled: false,
                 ..

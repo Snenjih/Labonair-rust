@@ -35,11 +35,13 @@ use gpui::{
     IntoElement, KeyDownEvent, MouseButton, MouseDownEvent, ParentElement, Render, SharedString,
     StatefulInteractiveElement, Styled, Window,
 };
-use labonair_backend::modules::snippets::exec::{snippet_run_cancel, snippet_run_ssh};
 use labonair_backend::App as Backend;
 use labonair_hosts::{store as host_store, Host};
 use labonair_snippets::{
-    exec::{run_local, LocalRunEvent, LocalRunEventSink, LocalRunRegistry, OutputStream},
+    exec::{
+        run_local, LocalRunRegistry, OutputStream, SnippetRunEvent, SnippetRunEventSink,
+        SshCommandExecutor,
+    },
     store as snippet_store, CommandSnippet, SnippetGroup, SnippetReorderItem,
 };
 use tokio::runtime::Handle as TokioHandle;
@@ -418,28 +420,6 @@ enum RunEvent {
     },
 }
 
-fn parse_run_event(name: &str, payload: &serde_json::Value) -> Option<RunEvent> {
-    match name {
-        "snippet_run_output" => Some(RunEvent::Output {
-            run_id: payload.get("runId")?.as_str()?.to_string(),
-            data: payload.get("data")?.as_str()?.to_string(),
-            is_err: payload.get("stream").and_then(|v| v.as_str()) == Some("stderr"),
-        }),
-        "snippet_run_done" => Some(RunEvent::Done {
-            run_id: payload.get("runId")?.as_str()?.to_string(),
-            exit_code: payload
-                .get("exitCode")
-                .and_then(|v| v.as_i64())
-                .unwrap_or(-1) as i32,
-            cancelled: payload
-                .get("cancelled")
-                .and_then(|v| v.as_bool())
-                .unwrap_or(false),
-        }),
-        _ => None,
-    }
-}
-
 pub struct SnippetsView {
     backend: Backend,
     tokio: TokioHandle,
@@ -473,6 +453,7 @@ pub struct SnippetsView {
     run_events: std::sync::mpsc::Receiver<RunEvent>,
     run_event_tx: std::sync::mpsc::Sender<RunEvent>,
     local_runs: std::sync::Arc<LocalRunRegistry>,
+    ssh_executor: std::sync::Arc<dyn SshCommandExecutor>,
     _poll: gpui::Task<()>,
 }
 
@@ -488,32 +469,12 @@ impl SnippetsView {
         tokio: TokioHandle,
         theme: Entity<ThemeStore>,
         workspace: Entity<Workspace>,
+        ssh_executor: std::sync::Arc<dyn SshCommandExecutor>,
         cx: &mut Context<Self>,
     ) -> Self {
         cx.observe(&theme, |_, _, cx| cx.notify()).detach();
 
-        // Forward snippet-run events off the broadcast bus into a plain channel.
         let (tx, rx) = std::sync::mpsc::channel::<RunEvent>();
-        {
-            let bus_tx = tx.clone();
-            let mut bus = backend.events.subscribe();
-            tokio.spawn(async move {
-                use tokio::sync::broadcast::error::RecvError;
-                loop {
-                    match bus.recv().await {
-                        Ok(raw) => {
-                            if let Some(ev) = parse_run_event(&raw.name, &raw.payload) {
-                                if bus_tx.send(ev).is_err() {
-                                    break;
-                                }
-                            }
-                        }
-                        Err(RecvError::Lagged(_)) => continue,
-                        Err(RecvError::Closed) => break,
-                    }
-                }
-            });
-        }
 
         let poll = cx.spawn(async move |this, cx| loop {
             cx.background_executor()
@@ -563,6 +524,7 @@ impl SnippetsView {
             run_events: rx,
             run_event_tx: tx,
             local_runs: std::sync::Arc::new(LocalRunRegistry::new()),
+            ssh_executor,
             _poll: poll,
         };
         this.reload(cx);
@@ -967,7 +929,6 @@ impl SnippetsView {
         self.log_open = true;
         self.selected_run = Some(run_id.clone());
 
-        let app = self.backend.clone();
         if let Some(host_id) = host_id {
             let Some(session_id) = self.workspace.read(cx).ssh_session_for_host(&host_id) else {
                 self.fail_silent(
@@ -977,26 +938,12 @@ impl SnippetsView {
                 cx.notify();
                 return;
             };
-            let state_app = app.clone();
-            self.tokio.spawn(async move {
-                let _ = snippet_run_ssh(
-                    app.clone(),
-                    run_id,
-                    session_id,
-                    command,
-                    &state_app.ssh,
-                    &state_app.snippet_run,
-                )
-                .await;
-            });
-        } else {
-            let working_dir = snippet.working_dir.clone().filter(|s| !s.is_empty());
-            let local_runs = self.local_runs.clone();
+            let ssh_executor = self.ssh_executor.clone();
             let events = self.run_event_tx.clone();
             self.tokio.spawn(async move {
-                let sink: LocalRunEventSink = std::sync::Arc::new(move |event| {
+                let sink: SnippetRunEventSink = std::sync::Arc::new(move |event| {
                     let event = match event {
-                        LocalRunEvent::Output {
+                        SnippetRunEvent::Output {
                             run_id,
                             data,
                             stream,
@@ -1005,7 +952,39 @@ impl SnippetsView {
                             data,
                             is_err: stream == OutputStream::Stderr,
                         },
-                        LocalRunEvent::Done {
+                        SnippetRunEvent::Done {
+                            run_id,
+                            exit_code,
+                            cancelled,
+                        } => RunEvent::Done {
+                            run_id,
+                            exit_code,
+                            cancelled,
+                        },
+                    };
+                    let _ = events.send(event);
+                });
+                let _ = ssh_executor
+                    .execute(run_id, session_id, command, sink)
+                    .await;
+            });
+        } else {
+            let working_dir = snippet.working_dir.clone().filter(|s| !s.is_empty());
+            let local_runs = self.local_runs.clone();
+            let events = self.run_event_tx.clone();
+            self.tokio.spawn(async move {
+                let sink: SnippetRunEventSink = std::sync::Arc::new(move |event| {
+                    let event = match event {
+                        SnippetRunEvent::Output {
+                            run_id,
+                            data,
+                            stream,
+                        } => RunEvent::Output {
+                            run_id,
+                            data,
+                            is_err: stream == OutputStream::Stderr,
+                        },
+                        SnippetRunEvent::Done {
                             run_id,
                             exit_code,
                             cancelled,
@@ -1034,14 +1013,14 @@ impl SnippetsView {
     }
 
     fn cancel_run(&mut self, run_id: String, cx: &mut Context<Self>) {
-        let app = self.backend.clone();
         let rid = run_id.clone();
         let local_runs = self.local_runs.clone();
+        let ssh_executor = self.ssh_executor.clone();
         self.tokio.spawn(async move {
             match local_runs.cancel(&rid).await {
                 Ok(Some(_)) => {}
                 Ok(None) | Err(_) => {
-                    let _ = snippet_run_cancel(rid, &app.snippet_run).await;
+                    let _ = ssh_executor.cancel(rid).await;
                 }
             }
         });

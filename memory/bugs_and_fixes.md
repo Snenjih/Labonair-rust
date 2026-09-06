@@ -1,5 +1,24 @@
 # Bugs, fixes, and non-obvious constraints
 
+## 2026-09-06 — SSH snippet execution needs an injected capability contract
+
+**Finding:** After local snippet execution moved into `labonair-snippets`, the
+panel still called the backend's russh function directly and translated raw
+`AppEvent` payloads back into UI events. That preserved the old backend/UI
+coupling and made the local and SSH execution paths structurally different.
+
+**Resolution:** Added shared `SnippetRunEvent` values and the asynchronous
+`SshCommandExecutor` contract to `labonair-snippets`. The backend now exposes
+`BackendSshExecutor` as an adapter that owns russh session/channel details.
+`SnippetsView` receives the trait object during composition and consumes typed
+events through its existing local channel. The raw event wrapper remains only
+as a compatibility seam for older callers.
+
+**Non-obvious constraint:** `SnippetRunState` must be shared by the injected
+adapter and cancellation calls, so `AppInner::snippet_run` is an `Arc` rather
+than an inline state value. This keeps cancellation independent from the UI
+and avoids copying the in-flight channel registry.
+
 ## 2026-09-06 — Local snippet execution belongs in the snippets capability
 
 **Finding:** Local snippet execution was implemented in

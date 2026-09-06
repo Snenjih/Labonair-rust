@@ -1,6 +1,10 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, RwLock};
 
+use labonair_snippets::exec::{
+    ExecutionFuture, OutputStream, SnippetRunEvent, SnippetRunEventSink, SshCommandExecutor,
+};
+
 /// Tracks in-flight snippet runs so `snippet_run_cancel` can reach back into
 /// them — SSH runs by the split-off write half of their exec channel (same
 /// `Arc<ChannelWriteHalf<..>>`, no-lock-needed shape as `ssh::PtyChannelState`,
@@ -14,6 +18,47 @@ use std::sync::{Arc, RwLock};
 pub struct SnippetRunState {
     ssh: RwLock<HashMap<String, Arc<russh::ChannelWriteHalf<russh::client::Msg>>>>,
     cancelled: RwLock<HashSet<String>>,
+}
+
+/// Backend implementation of the snippets capability's SSH execution
+/// contract. The panel only sees `SshCommandExecutor`; russh and session
+/// storage remain private to this adapter.
+pub struct BackendSshExecutor {
+    ssh_state: crate::modules::ssh::SshState,
+    run_state: Arc<SnippetRunState>,
+}
+
+impl BackendSshExecutor {
+    pub fn new(ssh_state: crate::modules::ssh::SshState, run_state: Arc<SnippetRunState>) -> Self {
+        Self {
+            ssh_state,
+            run_state,
+        }
+    }
+}
+
+impl SshCommandExecutor for BackendSshExecutor {
+    fn execute(
+        &self,
+        run_id: String,
+        session_id: String,
+        command: String,
+        sink: SnippetRunEventSink,
+    ) -> ExecutionFuture {
+        Box::pin(run_ssh_with_sink(
+            run_id,
+            session_id,
+            command,
+            self.ssh_state.clone(),
+            self.run_state.clone(),
+            sink,
+        ))
+    }
+
+    fn cancel(&self, run_id: String) -> ExecutionFuture {
+        let run_state = self.run_state.clone();
+        Box::pin(async move { snippet_run_cancel(run_id, &run_state).await })
+    }
 }
 
 /// Cancels a running snippet started via `snippet_run_local` or
@@ -48,10 +93,63 @@ pub async fn snippet_run_ssh(
     session_id: String,
     command: String,
     ssh_state: &crate::modules::ssh::SshState,
-    run_state: &SnippetRunState,
+    run_state: &Arc<SnippetRunState>,
 ) -> Result<(), String> {
-    let session = crate::get_session_arc!(ssh_state, &session_id);
+    let app_for_events = app.clone();
+    let sink: SnippetRunEventSink = Arc::new(move |event| match event {
+        SnippetRunEvent::Output {
+            run_id,
+            data,
+            stream,
+        } => {
+            let _ = app_for_events.emit(
+                "snippet_run_output",
+                serde_json::json!({
+                    "runId": run_id,
+                    "data": data,
+                    "stream": match stream {
+                        OutputStream::Stdout => "stdout",
+                        OutputStream::Stderr => "stderr",
+                    }
+                }),
+            );
+        }
+        SnippetRunEvent::Done {
+            run_id,
+            exit_code,
+            cancelled,
+        } => {
+            let _ = app_for_events.emit(
+                "snippet_run_done",
+                serde_json::json!({
+                    "runId": run_id,
+                    "exitCode": exit_code,
+                    "cancelled": cancelled
+                }),
+            );
+        }
+    });
 
+    run_ssh_with_sink(
+        run_id,
+        session_id,
+        command,
+        ssh_state.clone(),
+        run_state.clone(),
+        sink,
+    )
+    .await
+}
+
+async fn run_ssh_with_sink(
+    run_id: String,
+    session_id: String,
+    command: String,
+    ssh_state: crate::modules::ssh::SshState,
+    run_state: Arc<SnippetRunState>,
+    sink: SnippetRunEventSink,
+) -> Result<(), String> {
+    let session = crate::get_session_arc!(&ssh_state, &session_id);
     let channel = session
         .handle
         .channel_open_session()
@@ -62,47 +160,29 @@ pub async fn snippet_run_ssh(
         .await
         .map_err(|e| e.to_string())?;
 
-    // Split so the write half (needed by `snippet_run_cancel` to close the
-    // channel from another task) can be registered while this task keeps
-    // exclusive ownership of the read half's message loop below.
     let (mut read_half, write_half) = channel.split();
-    let write_half = Arc::new(write_half);
     run_state
         .ssh
         .write()
         .unwrap()
-        .insert(run_id.clone(), write_half);
+        .insert(run_id.clone(), Arc::new(write_half));
 
-    // One loop interleaves stdout/stderr as they arrive off the same message
-    // stream, streaming BOTH live via `snippet_run_output` as each message
-    // comes in — unlike the old sequential `read()`-loop-then-full-stderr-dump
-    // pattern, which only streamed stdout live and buffered stderr until the
-    // stdout side had fully closed.
     let mut exit_code: i32 = -1;
     while let Some(msg) = read_half.wait().await {
         match msg {
-            russh::ChannelMsg::Data { data } => {
-                let chunk = String::from_utf8_lossy(&data).into_owned();
-                let _ = app.emit(
-                    "snippet_run_output",
-                    serde_json::json!({ "runId": run_id, "data": chunk, "stream": "stdout" }),
-                );
-            }
+            russh::ChannelMsg::Data { data } => sink(SnippetRunEvent::Output {
+                run_id: run_id.clone(),
+                data: String::from_utf8_lossy(&data).into_owned(),
+                stream: OutputStream::Stdout,
+            }),
             russh::ChannelMsg::ExtendedData { data, ext: 1 } => {
-                let chunk = String::from_utf8_lossy(&data).into_owned();
-                let _ = app.emit(
-                    "snippet_run_output",
-                    serde_json::json!({ "runId": run_id, "data": chunk, "stream": "stderr" }),
-                );
+                sink(SnippetRunEvent::Output {
+                    run_id: run_id.clone(),
+                    data: String::from_utf8_lossy(&data).into_owned(),
+                    stream: OutputStream::Stderr,
+                });
             }
             russh::ChannelMsg::ExtendedData { .. } => {}
-            // `ExitStatus` arrives *after* `Eof` (and before `Close`), so
-            // breaking on Eof/Close here would discard it and leave
-            // `exit_code` stuck at -1 forever — matches russh's own
-            // client_exec_simple.rs example, which explicitly warns against
-            // leaving the loop early. `read_half.wait()` returns `None` on its
-            // own once the channel is fully closed, ending the loop naturally
-            // (including when `snippet_run_cancel` force-closes it).
             russh::ChannelMsg::ExitStatus { exit_status } => exit_code = exit_status as i32,
             _ => {}
         }
@@ -110,11 +190,10 @@ pub async fn snippet_run_ssh(
 
     run_state.ssh.write().unwrap().remove(&run_id);
     let cancelled = run_state.cancelled.write().unwrap().remove(&run_id);
-
-    let _ = app.emit(
-        "snippet_run_done",
-        serde_json::json!({ "runId": run_id, "exitCode": exit_code, "cancelled": cancelled }),
-    );
-
+    sink(SnippetRunEvent::Done {
+        run_id,
+        exit_code,
+        cancelled,
+    });
     Ok(())
 }

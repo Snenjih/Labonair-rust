@@ -314,11 +314,18 @@ pub(crate) fn bootstrap(
     }
 
     let snippets = cx.new(|cx| {
+        let ssh_executor = std::sync::Arc::new(
+            labonair_backend::modules::snippets::exec::BackendSshExecutor::new(
+                backend.ssh.clone(),
+                backend.snippet_run.clone(),
+            ),
+        );
         SnippetsView::new(
             backend.clone(),
             tokio.clone(),
             theme.clone(),
             workspace.clone(),
+            ssh_executor,
             cx,
         )
     });
