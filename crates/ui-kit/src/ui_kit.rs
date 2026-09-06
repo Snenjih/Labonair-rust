@@ -82,7 +82,9 @@ pub use divider::{divider, Axis};
 #[cfg(any(debug_assertions, feature = "gallery"))]
 pub use gallery::{open_gallery_window, Gallery};
 pub use git_change_row::{git_change_row, GitChangeRow, StageState};
-pub use icon::{chevron_icon, file_icon, folder_icon, glyph_icon, icon_for_path, IconName};
+pub use icon::{
+    chevron_icon_path, file_icon_path, folder_icon_path, icon_for_path, svg_path, IconName,
+};
 pub use indicator::{indicator, IndicatorSize};
 pub use kbd::{kbd, kbd_row, keybinding_hint};
 pub use list::{list_header, list_separator, ListItem};
@@ -110,11 +112,11 @@ pub use gpui_component::{badge::Badge, switch::Switch, tooltip::Tooltip};
 pub mod prelude {
     pub use crate::ActiveThemeExt;
     pub use crate::{
-        banner, button, checkbox, chevron_icon, context_menu, disclosure, divider, file_icon,
-        folder_icon, git_change_row, glyph_icon, h_stack, icon_for_path, icon_toggle_button,
-        indicator, kbd, kbd_row, keybinding_hint, list_header, list_separator, number_field,
-        popover, popover_menu, segmented_control, select_popover, select_trigger, selected_label,
-        toggle_base, tree_row, v_stack,
+        banner, button, checkbox, chevron_icon_path, context_menu, disclosure, divider,
+        file_icon_path, folder_icon_path, git_change_row, h_stack, icon_for_path,
+        icon_toggle_button, indicator, kbd, kbd_row, keybinding_hint, list_header, list_separator,
+        number_field, popover, popover_menu, segmented_control, select_popover, select_trigger,
+        selected_label, svg_path, toggle_base, tree_row, v_stack,
     };
     pub use crate::{
         Axis, Badge, Banner, ButtonSize, ButtonVariant, Checkbox, Density, GitChangeRow, IconName,

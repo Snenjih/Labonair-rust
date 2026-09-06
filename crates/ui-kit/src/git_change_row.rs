@@ -55,6 +55,7 @@ pub struct GitChangeRow {
     label: SharedString,
     secondary: Option<SharedString>,
     icon: Option<IconName>,
+    icon_path: Option<SharedString>,
     selected: bool,
     tooltip: Option<SharedString>,
     actions: Option<AnyElement>,
@@ -84,6 +85,7 @@ pub fn git_change_row(
         label: label.into(),
         secondary: None,
         icon: None,
+        icon_path: None,
         selected: false,
         tooltip: None,
         actions: None,
@@ -116,6 +118,13 @@ impl GitChangeRow {
 
     pub fn icon(mut self, icon: IconName) -> Self {
         self.icon = Some(icon);
+        self
+    }
+
+    /// File-type glyph as an icon-theme asset path (takes precedence over
+    /// [`Self::icon`]).
+    pub fn icon_path(mut self, path: Option<SharedString>) -> Self {
+        self.icon_path = path;
         self
     }
 
@@ -217,6 +226,21 @@ impl IntoElement for GitChangeRow {
                 .child(el)
         });
 
+        // File-type glyph: an icon-theme asset path wins over a bare `IconName`.
+        let file_glyph = match self.icon_path {
+            Some(p) => Some(
+                gpui::svg()
+                    .path(p)
+                    .size(px(14.0))
+                    .flex_none()
+                    .text_color(c.muted)
+                    .into_any_element(),
+            ),
+            None => self
+                .icon
+                .map(|icon| icon.svg(c.muted).size(px(14.0)).into_any_element()),
+        };
+
         let mut row = div()
             .id(self.id.clone())
             .group(self.id.clone())
@@ -249,9 +273,7 @@ impl IntoElement for GitChangeRow {
                     .text_color(self.status_color)
                     .child(self.status_glyph),
             )
-            .when_some(self.icon, |x, icon| {
-                x.child(icon.svg(c.muted).size(px(14.0)))
-            })
+            .when_some(file_glyph, |x, el| x.child(el))
             .child(
                 div()
                     .flex_1()

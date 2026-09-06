@@ -634,8 +634,7 @@ impl SettingsView {
         let preview: Vec<gpui::AnyElement> = samples
             .iter()
             .map(|(name, is_dir, exp)| {
-                icon_for_path(preview_theme, name, *is_dir, *exp)
-                    .svg(c.muted)
+                svg_path(icon_for_path(preview_theme, name, *is_dir, *exp), c.muted)
                     .into_any_element()
             })
             .collect();

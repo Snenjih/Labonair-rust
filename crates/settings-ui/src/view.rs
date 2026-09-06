@@ -33,8 +33,8 @@ pub use labonair_settings_content::areas::AREAS;
 pub use labonair_theme::{ThemePreference, ThemeStore};
 pub use labonair_ui_kit::{
     banner, button, h_stack, icon_for_path, list_header, list_separator, number_field,
-    segmented_control, select_popover, select_trigger, v_stack, ButtonSize, ButtonVariant,
-    IconName, ListItem, Palette, SelectOption, Severity, Switch,
+    segmented_control, select_popover, select_trigger, svg_path, v_stack, ButtonSize,
+    ButtonVariant, IconName, ListItem, Palette, SelectOption, Severity, Switch,
 };
 pub use labonair_workspace::background::BackgroundStore;
 

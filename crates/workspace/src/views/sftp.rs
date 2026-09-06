@@ -42,8 +42,8 @@ use labonair_backend::App as Backend;
 
 use crate::theme::ThemeStore;
 use labonair_ui_kit::{
-    banner, button, context_menu, divider, icon_for_path, icon_toggle_button, Axis, ButtonSize,
-    ButtonVariant, IconName, ListItem, MenuClick, MenuItem, Palette, Severity,
+    banner, button, context_menu, divider, icon_for_path, icon_toggle_button, svg_path, Axis,
+    ButtonSize, ButtonVariant, IconName, ListItem, MenuClick, MenuItem, Palette, Severity,
 };
 
 /// A menu action against the SFTP view (wrapped into a [`MenuClick`]).
@@ -1316,11 +1316,11 @@ impl SftpView {
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
         let selected = pane.selected.as_deref() == Some(entry.path.as_str());
-        let glyph = if entry.is_dir {
+        let glyph: SharedString = if entry.is_dir {
             let store = self.theme.read(cx);
             icon_for_path(store.icon_theme(), "", true, false)
         } else if entry.is_symlink {
-            IconName::Link
+            IconName::Link.path().into()
         } else {
             let store = self.theme.read(cx);
             icon_for_path(store.icon_theme(), &entry.name, false, false)
@@ -1374,7 +1374,7 @@ impl SftpView {
 
         ListItem::new(id, c.fg, c.muted, c.border)
             .selected(selected)
-            .child(div().child(glyph.svg(c.muted)))
+            .child(div().child(svg_path(glyph, c.muted)))
             .child(
                 div()
                     .flex_1()

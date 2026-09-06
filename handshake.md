@@ -4,6 +4,70 @@ Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now 
 
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
+## Current Session: 2026-09-06 (Zed-parity icon system — full Lucide UI set + Zed icon-theme model)
+
+Ad-hoc request (not a ROADMAP task; user: "einfach machen, keine Task erstellen").
+All four gates green on this machine: `cargo fmt --check`, `cargo check
+--workspace --all-targets`, `cargo clippy --workspace --all-targets -D
+warnings`, `cargo test --workspace` (0 failed). `cargo test -p labonair --test
+smoke` green. App launches; chrome icons render (verified by screenshot, since
+discarded). `scripts/check-crate-deps.sh` still reports the **3 pre-existing**
+panel-explorer/panel-scm → settings/editor violations (present on HEAD with this
+work stashed — not introduced here; no new `labonair-*` edges added).
+
+**Two strictly separated icon systems, mirroring Zed** (`docs/architecture.md`
+§8.19 rewritten):
+
+1. **UI / chrome icons** — `labonair_ui_kit::IconName` regenerated to Zed's
+   full `snake_case` set (~297 variants, one per `crates/shell/assets/icons/*.svg`
+   — those SVGs were *already vendored* in the repo, so this was mostly a code
+   change) + a 9-file `// + Labonair addition` block (`house`, `shield`,
+   `square`, `palette`, `panel_{left,top,bottom}`, `arrow_down_up`,
+   `circle_check`). Back-compat **alias assoc-consts** on `impl IconName`
+   (`Search = MagnifyingGlass`, `X = Close`, `Minus = Dash`, `Refresh =
+   RotateCw`, `Zap = BoltOutlined`, `Globe = Public`, `Type = Font`, …) keep
+   every existing call site compiling — no sed across the 15 consumer crates
+   (all uses are expression position; no `match` on `IconName` outside ui-kit).
+   Deleted 33 obsolete kebab SVGs, renamed 5 kebab→snake.
+2. **File / folder icons** — `crates/theme/src/icon_theme.rs` `IconThemeContent`
+   moved to Zed's **two-level shape**: `file_stems`/`file_suffixes` → *icon key*
+   → `file_icons` map → asset path (`icons/file_icons/rust.svg`). `directory` /
+   `chevron` / new `named_directory_icons` are direct paths. New resolver
+   `file_icon_path` / `directory_icon_path` / `chevron_icon_path` (return
+   `&str` asset path; hard-fallback `icons/file_icons/file.svg`, never blank).
+   `DEFAULT_FILE_STEMS` / `DEFAULT_FILE_SUFFIXES` / new `DEFAULT_FILE_ICONS`
+   transcribed 1:1 from Zed's `FILE_STEMS_BY_ICON_KEY` /
+   `FILE_SUFFIXES_BY_ICON_KEY` / `FILE_ICONS`; `assets/icon_themes/labonair.json`
+   regenerated (`REGEN_BUILTIN_ICON_THEME=1`). `load_user_icon_themes` now also
+   accepts a Zed-style family file (`{ name, author, themes: [...] }`).
+
+Render path:
+- `labonair_ui_kit::icon` — removed `file_icon` / `folder_icon` / `glyph_icon` /
+  `chevron_icon` + the ~90-ext match table; added `file_icon_path` /
+  `folder_icon_path` / `chevron_icon_path` / `icon_for_path` (→ `SharedString`
+  path) + `svg_path(path, color)`.
+- `TreeRow` / `GitChangeRow` gained `icon_path(Option<SharedString>)` /
+  `chevron_path(…)` that win over the `IconName` setters.
+- `panel-explorer` (tree + root row), `workspace/views/sftp.rs`,
+  `settings-ui/panes/themes.rs` (icon-theme preview) resolve through
+  `ThemeStore::icon_theme()`.
+- `crates/shell/src/assets.rs` — `ICONS` hand-list replaced by `rust-embed`
+  (`EmbeddedAssets`, new workspace dep `rust-embed = "8"`); new tests:
+  `every_icon_variant_has_an_asset`, `no_dangling_ui_icon`,
+  `builtin_icon_theme_paths_all_resolve`.
+
+Not done / deviations from the approved plan:
+- **No new `crates/icons` crate** — kept `IconName` in `ui-kit`, assets in
+  `shell` (both already existed as a 2-crate split); avoids crate-graph +
+  `check_crate_deps.py` churn.
+- **Tab-bar / command-palette icons stay category glyphs** (Zed does the same
+  on editor tabs) — not wired to per-file `file_icon_path`.
+- License: `assets/icons/LICENSES` covers Lucide (ISC); Zed's `file_icons/*.svg`
+  provenance noted in `docs/architecture.md` §8.19 (revisit if GPL-only).
+
+Next task: resume the ROADMAP — **T20-007** (`theme_settings` metric layer) is
+the next open item after Phase 19.
+
 ## Current Session: 2026-09-06 (App icon port from reference-src)
 
 Ad-hoc request (not a ROADMAP task), committed on its own so it does not

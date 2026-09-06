@@ -1148,25 +1148,49 @@ Rule 3 / settings-guidelines):**
 back to the built-in if its file vanished. `labonair-theme` gains no
 `notify` dependency.
 
-### 8.19 Icon themes — T20-006
+### 8.19 Icon themes — T20-006 (+ Zed-parity icon-set revision)
 
-`crates/theme/src/icon_theme.rs` replaces the hard-coded
-`labonair-ui-kit::icon::file_icon` extension table with a swappable **JSON icon
-theme**: `IconThemeContent` (`{ name, author?, file_stems, file_suffixes,
-directory: {collapsed, expanded}, chevron: {collapsed, expanded}, default_file }`
-— maps from file name / extension to a *glyph id*, the kebab-case `IconName`
-SVG stem), `IconThemeRegistry` (`builtin()` from the embedded
-`assets/icon_themes/labonair.json` + `load_user_icon_themes(dir)`, `list()`,
-`get(id)`), and lookup helpers. `IconThemeContent::file_glyph` applies
-`file_stems` (whole name, case-folded) → **longest** dot-suffix (`archive.tar.gz`
-tries `tar.gz` before `gz`) → `default_file`.
+**Two strictly separated icon systems, mirroring Zed** (`zed-refrence/zed/crates/icons`
++ `zed-refrence/zed/crates/file_icons`):
 
-`labonair-ui-kit::icon` gains `glyph_icon(id) -> IconName` (unknown id →
-`IconName::File` + one-time `eprintln` warning, so a hand-written user theme
-can't crash a view), `icon_for_path(theme, name, is_dir, is_expanded)` and
-`chevron_icon(theme, is_expanded)`; `file_icon` / `folder_icon` stay as thin
-wrappers over a `LazyLock` built-in `IconThemeRegistry`. Explorer + SFTP rows
-now resolve their glyphs through `ThemeStore::icon_theme()`.
+1. **UI / chrome icons** — `labonair-ui-kit::IconName`, one variant per SVG in
+   `crates/shell/assets/icons/*.svg`. That set is now a **verbatim vendored
+   copy of Zed's full Lucide-derived set** (~297 SVGs, `snake_case` names, ISC —
+   `assets/icons/LICENSES`) plus a small `// + Labonair addition` block for
+   glyphs Zed has no equivalent for (`house`, `shield`, `square`, dock-panel
+   toggles, `arrow_down_up`, `circle_check`, `palette`). `IconName` also carries
+   back-compat **alias assoc-consts** (`Search = MagnifyingGlass`, `X = Close`,
+   `Refresh = RotateCw`, …) so the port's earlier semantic call sites compile
+   unchanged. The SVG bundle is embedded with `rust-embed`
+   (`labonair_shell::EmbeddedAssets`), not a hand-maintained list.
+2. **File / folder icons** — a swappable **JSON icon theme**
+   (`crates/theme/src/icon_theme.rs`) transcribed 1:1 from Zed's
+   `"Zed (Default)"`. `IconThemeContent` now has Zed's **two-level shape**:
+   `file_stems` / `file_suffixes` map a name/suffix → an *icon key*
+   (`"rust"`), and `file_icons` maps a key → an **asset path**
+   (`"icons/file_icons/rust.svg"`, a vendored copy of Zed's per-language SVG
+   set under `crates/shell/assets/icons/file_icons/`). `directory` / `chevron`
+   / optional `named_directory_icons` are direct asset paths.
+   `IconThemeContent::file_icon_path(name)` / `directory_icon_path(name, expanded)`
+   / `chevron_icon_path(expanded)` return the resolved asset path; lookup order
+   = whole (lower-cased) name in stems→suffixes → progressively shorter
+   dot-suffixes (`archive.tar.gz` → `tar.gz` → `gz`; `.gitignore` → `gitignore`)
+   → `default_file` key; a missing key falls back to `default_file` then to the
+   literal `icons/file_icons/file.svg` (never blank / panic).
+
+`IconThemeRegistry` (`builtin()` from the embedded
+`assets/icon_themes/labonair.json` + `load_user_icon_themes(dir)` — now also
+accepts a Zed-style **family** file `{ name, author, themes: [ … ] }`,
+`list()`, `get(id)`) is unchanged in shape.
+
+`labonair-ui-kit::icon` exposes `file_icon_path` / `folder_icon_path` /
+`chevron_icon_path` / `icon_for_path(theme, name, is_dir, is_expanded)` (all
+return a `SharedString` asset path) + `svg_path(path, color)` to render one.
+The old `file_icon` / `folder_icon` / `glyph_icon` / `chevron_icon`
+(`-> IconName`) and the hand-coded ~90-extension match table are **removed**.
+`TreeRow` / `GitChangeRow` gained `icon_path(Option<SharedString>)` /
+`chevron_path(…)` that win over the `IconName` setters. Explorer + SFTP rows +
+the Settings icon-theme preview resolve through `ThemeStore::icon_theme()`.
 
 `ThemeStore` holds `icon_registry` + `active_icon_theme` with
 `set_active_icon_theme(id)` / `reload_user_icon_themes(dir)` / `icon_theme()`;
@@ -1180,22 +1204,28 @@ preview + Import / Open-folder). `labonair-shell` adds a second
 
 * **No `JsonSchema` derive on `IconThemeContent`** — same reasoning as §8.18
   (`labonair-theme` is the zero-workspace-dep leaf crate). `serde` only.
-* **Built-in icon theme is generated from Rust tables.**
-  `DEFAULT_FILE_STEMS` / `DEFAULT_FILE_SUFFIXES` in `icon_theme.rs` are the
-  1:1 transcription of the old `file_icon` match arms and the single source of
-  truth for `assets/icon_themes/labonair.json` (regen with
-  `REGEN_BUILTIN_ICON_THEME=1 cargo test -p labonair-theme builtin_icon`). A
-  ui-kit test asserts the built-in theme reproduces the legacy `file_icon`
-  glyph for every single-segment key.
-* **`.env*` narrowed from a prefix rule to explicit stems.** The old
-  `file_icon` matched every `.env*` by `starts_with(".env")`; the built-in
-  icon theme lists the common members (`​.env`, `.env.local`,
-  `.env.development`, …). A truly novel `.env.<x>` now falls back to
-  `default_file` — a user icon theme can add the stem.
-* **Two new multi-segment suffix keys with teeth** — `d.ts` → `file-code`
-  (vs `ts` → `braces`) exercises the longest-suffix rule with a genuinely
-  different glyph; `tar.gz` / `tar.bz2` / `tar.xz` / `tar.zst` map to the
-  same `archive` glyph as their tail (no behavior change).
+* **Built-in icon theme is generated from Rust tables, now transcribed from
+  Zed.** `DEFAULT_FILE_STEMS` / `DEFAULT_FILE_SUFFIXES` / `DEFAULT_FILE_ICONS`
+  in `icon_theme.rs` are a 1:1 transcription of Zed's
+  `FILE_STEMS_BY_ICON_KEY` / `FILE_SUFFIXES_BY_ICON_KEY` / `FILE_ICONS`, and
+  the single source of truth for `assets/icon_themes/labonair.json` (regen with
+  `REGEN_BUILTIN_ICON_THEME=1 cargo test -p labonair-theme builtin_icon`). The
+  earlier "reproduce the legacy `file_icon` mapping" test is replaced by
+  "resolves Zed's path for representative files" + "every referenced icon key
+  resolves to a `file_icons/*.svg`".
+* **UI icon names not one big rename.** Rather than sed-ing ~15 crates onto
+  Zed's variant names, `IconName` keeps the port's names as alias assoc-consts
+  pointing at the Zed-named variant that owns the glyph. All call sites are
+  expression position (no `match` arms on `IconName` outside `ui-kit`), so this
+  is sound. New code should prefer the Zed names.
+* **Tab-bar / command-palette icons stay category glyphs**, not per-file —
+  `TabKind::indicator()` etc. still return an `IconName` (now a Zed glyph via
+  the aliases). Zed itself uses a category icon on editor tabs, so no per-file
+  wiring was added there.
+* **file_icons asset licensing.** `assets/icons/LICENSES` covers the Lucide UI
+  set (ISC). Zed's `file_icons/*.svg` are vendored from the Zed repo
+  (GPL-3.0-or-later / Apache-2.0); our repo is Apache-2.0. Provenance is
+  recorded here; revisit if Zed clarifies the asset license as GPL-only.
 
 ### 8.20 `theme_settings` metric layer — T20-007
 

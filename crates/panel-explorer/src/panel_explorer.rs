@@ -73,8 +73,8 @@ use crate::theme::ThemeStore;
 use crate::workspace::Workspace;
 use labonair_notifications::{notification_center, Notification};
 use labonair_ui_kit::{
-    button, chevron_icon, context_menu, icon_for_path, tree_row, ButtonSize, ButtonVariant,
-    IconName, InputEvent, InputState, MenuClick, MenuItem, Palette, TreeRowState,
+    button, chevron_icon_path, context_menu, icon_for_path, svg_path, tree_row, ButtonSize,
+    ButtonVariant, IconName, InputEvent, InputState, MenuClick, MenuItem, Palette, TreeRowState,
 };
 
 /// A menu action expressed against the view + window (wrapped into a
@@ -1674,7 +1674,7 @@ impl Render for ExplorerView {
                     .gap_1()
                     .text_xs()
                     .text_color(c.fg)
-                    .child(root_icon.svg(c.muted).size(px(15.0)))
+                    .child(svg_path(root_icon, c.muted).size(px(15.0)))
                     .child(
                         div()
                             .overflow_hidden()
@@ -2565,7 +2565,7 @@ fn explorer_row_element(
                 let it = store.icon_theme();
                 (
                     icon_for_path(it, name, *is_dir, *expanded),
-                    is_dir.then(|| chevron_icon(it, *expanded)),
+                    is_dir.then(|| chevron_icon_path(it, *expanded)),
                 )
             };
 
@@ -2616,8 +2616,8 @@ fn explorer_row_element(
                 .depth(*depth)
                 .indent_step(INDENT)
                 .indent_guides(indent_guides)
-                .chevron(chevron)
-                .icon(glyph)
+                .chevron_path(chevron)
+                .icon_path(Some(glyph))
                 .tooltip(SharedString::from(path.to_string_lossy().to_string()))
                 .state(TreeRowState {
                     selected: *selected && !drop_target,
@@ -2889,11 +2889,14 @@ mod tests {
     }
 
     #[test]
-    fn file_icon_maps_known_extensions() {
-        use labonair_ui_kit::file_icon;
-        assert_eq!(file_icon("main.rs"), IconName::FileCode);
-        assert_eq!(file_icon("data.json"), IconName::FileJson);
-        assert_eq!(file_icon("weird.unknownext"), IconName::File);
+    fn file_icon_resolves_to_icon_theme_paths() {
+        let t = labonair_theme::IconThemeContent::default();
+        assert_eq!(t.file_icon_path("main.rs"), "icons/file_icons/rust.svg");
+        assert_eq!(t.file_icon_path("data.json"), "icons/file_icons/code.svg");
+        assert_eq!(
+            t.file_icon_path("weird.unknownext"),
+            "icons/file_icons/file.svg"
+        );
     }
 
     #[test]

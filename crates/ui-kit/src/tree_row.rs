@@ -61,6 +61,10 @@ pub struct TreeRow {
     indent_step: f32,
     chevron: Option<IconName>,
     icon: Option<IconName>,
+    /// Icon-theme asset path for the leading glyph; wins over `icon` when set.
+    icon_path: Option<SharedString>,
+    /// Icon-theme asset path for the disclosure chevron; wins over `chevron`.
+    chevron_path: Option<SharedString>,
     label: SharedString,
     tooltip: Option<SharedString>,
     label_tint: Option<Hsla>,
@@ -89,6 +93,8 @@ pub fn tree_row(id: impl Into<ElementId>, c: Palette, label: impl Into<SharedStr
         indent_step: TREE_INDENT_STEP,
         chevron: None,
         icon: None,
+        icon_path: None,
+        chevron_path: None,
         label: label.into(),
         tooltip: None,
         label_tint: None,
@@ -124,6 +130,21 @@ impl TreeRow {
     /// Leading file / folder glyph.
     pub fn icon(mut self, icon: IconName) -> Self {
         self.icon = Some(icon);
+        self
+    }
+
+    /// Leading glyph as an icon-theme asset path (takes precedence over
+    /// [`Self::icon`]). Used by the file tree, which resolves each entry
+    /// against the active icon theme.
+    pub fn icon_path(mut self, path: Option<SharedString>) -> Self {
+        self.icon_path = path;
+        self
+    }
+
+    /// Disclosure chevron as an icon-theme asset path (takes precedence over
+    /// [`Self::chevron`]).
+    pub fn chevron_path(mut self, path: Option<SharedString>) -> Self {
+        self.chevron_path = path;
         self
     }
 
@@ -269,10 +290,29 @@ impl IntoElement for TreeRow {
                 .flex()
                 .items_center()
                 .justify_center()
-                .children(self.chevron.map(|ch| ch.svg(c.muted).size(px(12.0)))),
+                .children(match self.chevron_path {
+                    Some(p) => Some(
+                        gpui::svg()
+                            .path(p)
+                            .size(px(12.0))
+                            .flex_none()
+                            .text_color(c.muted),
+                    ),
+                    None => self
+                        .chevron
+                        .map(|ch| ch.svg(c.muted).size(px(12.0)).flex_none()),
+                }),
         );
 
-        if let Some(icon) = self.icon {
+        if let Some(p) = self.icon_path {
+            row = row.child(
+                gpui::svg()
+                    .path(p)
+                    .size(px(14.0))
+                    .flex_none()
+                    .text_color(c.muted),
+            );
+        } else if let Some(icon) = self.icon {
             row = row.child(icon.svg(c.muted).size(px(14.0)));
         }
 

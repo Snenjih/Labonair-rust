@@ -2,319 +2,591 @@
   "name": "Labonair",
   "author": "Labonair",
   "file_stems": {
-    ".dockerignore": "package",
-    ".env": "key-round",
-    ".env.development": "key-round",
-    ".env.example": "key-round",
-    ".env.local": "key-round",
-    ".env.production": "key-round",
-    ".env.sample": "key-round",
-    ".env.test": "key-round",
-    ".git": "git-branch",
-    ".gitattributes": "git-branch",
-    ".gitignore": "git-branch",
-    ".gitmodules": "git-branch",
-    "cargo.lock": "package",
-    "cargo.toml": "package",
-    "changelog.md": "book",
-    "cmakelists.txt": "terminal",
-    "composer.json": "package",
-    "composer.lock": "package",
-    "containerfile": "package",
-    "contributing.md": "book",
-    "copying": "book",
-    "dockerfile": "package",
-    "gemfile": "package",
-    "gemfile.lock": "package",
-    "go.mod": "package",
-    "go.sum": "package",
-    "justfile": "terminal",
-    "license": "book",
-    "license.md": "book",
-    "license.txt": "book",
-    "makefile": "terminal",
-    "notice": "book",
-    "package-lock.json": "package",
-    "package.json": "package",
-    "pnpm-lock.yaml": "package",
-    "poetry.lock": "package",
-    "pyproject.toml": "package",
-    "readme": "book",
-    "readme.md": "book",
-    "readme.txt": "book",
-    "yarn.lock": "package"
+    ".dockerignore": "docker",
+    "containerfile": "docker",
+    "dockerfile": "docker",
+    "podfile": "ruby",
+    "procfile": "heroku"
   },
   "file_suffixes": {
-    "3gp": "film",
-    "7z": "archive",
-    "a": "binary",
-    "aac": "music",
-    "adoc": "book",
-    "ai": "image",
-    "aiff": "music",
-    "apk": "package",
-    "appimage": "package",
-    "arrow": "table",
-    "asc": "key-round",
-    "asciidoc": "book",
-    "astro": "braces",
-    "atom": "file-code",
-    "avi": "film",
+    "aac": "audio",
+    "accdb": "storage",
+    "app.src": "erlang",
+    "astro": "astro",
+    "avi": "video",
     "avif": "image",
-    "awk": "file-terminal",
-    "azw3": "book",
-    "bash": "file-terminal",
-    "bat": "file-terminal",
-    "bin": "binary",
+    "bak": "backup",
+    "bal": "ballerina",
+    "bash": "terminal",
+    "bash_aliases": "terminal",
+    "bash_login": "terminal",
+    "bash_logout": "terminal",
+    "bash_profile": "terminal",
+    "bashrc": "terminal",
+    "bicep": "bicep",
     "bmp": "image",
-    "bz2": "archive",
-    "c": "file-code",
-    "cab": "archive",
-    "cc": "file-code",
-    "cer": "key-round",
-    "cfg": "hash",
-    "cjs": "braces",
-    "class": "binary",
-    "clj": "file-code",
-    "cljs": "file-code",
-    "cmd": "file-terminal",
-    "coffee": "braces",
-    "conf": "hash",
-    "cpp": "file-code",
-    "crt": "key-round",
-    "cs": "file-code",
-    "csr": "key-round",
-    "css": "palette",
-    "csv": "table",
-    "cts": "braces",
-    "cxx": "file-code",
-    "d": "file-code",
-    "d.ts": "file-code",
-    "dart": "file-code",
-    "db": "database",
-    "deb": "package",
-    "diff": "git-compare",
-    "dll": "binary",
-    "dmg": "package",
-    "doc": "file-text",
-    "docx": "file-text",
-    "dotenv": "hash",
-    "duckdb": "database",
-    "dylib": "binary",
-    "editorconfig": "hash",
-    "ejs": "globe",
-    "elm": "braces",
-    "env": "hash",
-    "eot": "type",
-    "epub": "book",
-    "erb": "globe",
-    "erl": "file-code",
-    "ex": "file-code",
-    "exe": "binary",
-    "exs": "file-code",
-    "fig": "image",
-    "fish": "file-terminal",
-    "flac": "music",
-    "flatpak": "package",
-    "flv": "film",
-    "fs": "file-code",
-    "gd": "brackets",
-    "geojson": "file-json",
+    "brushrc": "terminal",
+    "c": "c",
+    "c++": "cpp",
+    "cairo": "cairo",
+    "cc": "cpp",
+    "chart.lock": "helm",
+    "chart.yaml": "helm",
+    "chart.yml": "helm",
+    "cjs": "javascript",
+    "cjsx": "react",
+    "coffee": "coffeescript",
+    "commit_editmsg": "vcs",
+    "compose.yaml": "docker",
+    "compose.yml": "docker",
+    "conf": "settings",
+    "cpp": "cpp",
+    "cppm": "cpp",
+    "cr": "crystal",
+    "cs": "csharp",
+    "csproj": "csproj",
+    "css": "css",
+    "csv": "storage",
+    "cts": "typescript",
+    "ctsx": "react",
+    "cue": "cue",
+    "cxx": "cpp",
+    "dart": "dart",
+    "dat": "storage",
+    "db": "storage",
+    "dbf": "storage",
+    "diff": "diff",
+    "dll": "storage",
+    "doc": "document",
+    "docker-compose.yaml": "docker",
+    "docker-compose.yml": "docker",
+    "docx": "document",
+    "ecr": "crystal",
+    "edit_description": "vcs",
+    "editorconfig": "editorconfig",
+    "eex": "elixir",
+    "elm": "elm",
+    "emakefile": "erlang",
+    "erl": "erlang",
+    "escript": "erlang",
+    "eslint.config.cjs": "eslint",
+    "eslint.config.cts": "eslint",
+    "eslint.config.js": "eslint",
+    "eslint.config.mjs": "eslint",
+    "eslint.config.mts": "eslint",
+    "eslint.config.ts": "eslint",
+    "eslintrc": "eslint",
+    "eslintrc.js": "eslint",
+    "eslintrc.json": "eslint",
+    "ex": "elixir",
+    "exs": "elixir",
+    "fish": "terminal",
+    "flac": "audio",
+    "fmp": "storage",
+    "fp7": "storage",
+    "frm": "storage",
+    "fs": "fsharp",
+    "fsproj": "fsproj",
+    "gdb": "storage",
     "gif": "image",
-    "go": "file-code",
-    "gpg": "key-round",
-    "gql": "database",
-    "graphql": "database",
-    "groovy": "brackets",
-    "gz": "archive",
-    "h": "file-code",
-    "haml": "globe",
-    "handlebars": "globe",
-    "hbs": "globe",
-    "hcl": "hash",
+    "gitattributes": "vcs",
+    "gitignore": "vcs",
+    "gitkeep": "vcs",
+    "gitlab-ci.yaml": "gitlab",
+    "gitlab-ci.yml": "gitlab",
+    "gitmodules": "vcs",
+    "gleam": "gleam",
+    "go": "go",
+    "gql": "graphql",
+    "graphql": "graphql",
+    "graphqls": "graphql",
+    "h": "c",
+    "h++": "cpp",
+    "handlebars": "code",
+    "hbs": "template",
+    "hcl": "hcl",
+    "heex": "elixir",
     "heic": "image",
-    "hpp": "file-code",
-    "hs": "file-code",
-    "htm": "globe",
-    "html": "globe",
-    "hxx": "file-code",
-    "icns": "image",
+    "heif": "image",
+    "helmfile.yaml": "helm",
+    "helmfile.yml": "helm",
+    "hh": "cpp",
+    "hpp": "cpp",
+    "hrl": "erlang",
+    "hs": "haskell",
+    "htm": "html",
+    "html": "html",
+    "hxx": "cpp",
+    "ib": "storage",
     "ico": "image",
-    "img": "package",
-    "ini": "hash",
-    "ipynb": "file-code",
-    "iso": "package",
-    "jar": "binary",
-    "java": "file-code",
-    "jl": "brackets",
+    "ini": "settings",
+    "inl": "cpp",
+    "ipynb": "ipynb",
+    "ixx": "cpp",
+    "j2k": "image",
+    "java": "java",
+    "jfif": "image",
+    "jl": "julia",
+    "jp2": "image",
     "jpeg": "image",
     "jpg": "image",
-    "js": "braces",
-    "json": "file-json",
-    "json5": "file-json",
-    "jsonc": "file-json",
-    "jsonl": "file-json",
-    "jsx": "braces",
-    "kdbx": "key-round",
-    "key": "key-round",
-    "keychain": "key-round",
-    "keynote": "file-text",
-    "kt": "file-code",
-    "kts": "file-code",
-    "less": "palette",
-    "liquid": "globe",
-    "lock": "package",
-    "log": "file-text",
-    "lua": "brackets",
-    "lz4": "archive",
-    "m": "file-code",
-    "m4a": "music",
-    "m4v": "film",
-    "markdown": "book",
-    "md": "book",
-    "mdx": "book",
-    "me": "file-text",
-    "mid": "music",
-    "midi": "music",
-    "mjs": "braces",
-    "mkv": "film",
-    "ml": "file-code",
-    "mm": "file-code",
-    "mobi": "book",
-    "mov": "film",
-    "mp3": "music",
-    "mp4": "film",
-    "mpeg": "film",
-    "mpg": "film",
-    "msi": "package",
-    "mts": "braces",
-    "mustache": "globe",
-    "ndjson": "file-json",
-    "nfo": "file-text",
-    "nim": "file-code",
-    "nix": "hash",
-    "njk": "globe",
-    "node": "binary",
-    "nu": "file-terminal",
-    "o": "binary",
-    "obj": "binary",
-    "odp": "file-text",
-    "ods": "table",
-    "odt": "file-text",
-    "ogg": "music",
-    "opus": "music",
-    "org": "book",
-    "otf": "type",
-    "p12": "key-round",
-    "pages": "file-text",
-    "parquet": "table",
-    "patch": "git-compare",
-    "pcss": "palette",
-    "pdf": "book",
-    "pem": "key-round",
-    "pfb": "type",
-    "pfx": "key-round",
-    "php": "brackets",
-    "phtml": "brackets",
-    "pkg": "package",
-    "pl": "brackets",
-    "plist": "file-code",
-    "pm": "brackets",
+    "js": "javascript",
+    "json": "json",
+    "jsonc": "json",
+    "jsx": "react",
+    "jxl": "image",
+    "kdl": "kdl",
+    "kt": "kotlin",
+    "ldf": "storage",
+    "leex": "elixir",
+    "lock": "lock",
+    "lockb": "bun",
+    "log": "log",
+    "lua": "lua",
+    "luau": "luau",
+    "m4a": "audio",
+    "m4v": "video",
+    "markdown": "markdown",
+    "md": "markdown",
+    "mdb": "storage",
+    "mdf": "storage",
+    "mdx": "document",
+    "merge_msg": "vcs",
+    "metadata": "code",
+    "metal": "metal",
+    "mjs": "javascript",
+    "mjsx": "react",
+    "mka": "audio",
+    "mkv": "video",
+    "ml": "ocaml",
+    "mli": "ocaml",
+    "mlx": "ocaml",
+    "mod": "go",
+    "mov": "video",
+    "mp3": "audio",
+    "mp4": "video",
+    "mts": "typescript",
+    "mtsx": "react",
+    "myd": "storage",
+    "myi": "storage",
+    "neex": "elixir",
+    "nim": "nim",
+    "nimble": "nim",
+    "nims": "nim",
+    "nix": "nix",
+    "notes_editmsg": "vcs",
+    "nu": "terminal",
+    "odin": "odin",
+    "odp": "document",
+    "ods": "document",
+    "odt": "document",
+    "ogg": "audio",
+    "opus": "audio",
+    "otf": "font",
+    "pcss": "css",
+    "pdb": "storage",
+    "pdf": "document",
+    "php": "php",
+    "plist": "template",
     "png": "image",
-    "ppk": "key-round",
-    "ppt": "file-text",
-    "pptx": "file-text",
-    "prisma": "database",
-    "properties": "hash",
-    "ps1": "file-terminal",
+    "postcss": "css",
+    "pp": "puppet",
+    "ppt": "document",
+    "pptx": "document",
+    "prettier.config.cjs": "prettier",
+    "prettier.config.js": "prettier",
+    "prettier.config.mjs": "prettier",
+    "prettierignore": "prettier",
+    "prettierrc": "prettier",
+    "prettierrc.cjs": "prettier",
+    "prettierrc.js": "prettier",
+    "prettierrc.json": "prettier",
+    "prettierrc.json5": "prettier",
+    "prettierrc.mjs": "prettier",
+    "prettierrc.toml": "prettier",
+    "prettierrc.yaml": "prettier",
+    "prettierrc.yml": "prettier",
+    "prisma": "prisma",
+    "profile": "terminal",
+    "ps1": "terminal",
     "psd": "image",
-    "psm1": "file-terminal",
-    "pub": "key-round",
-    "pug": "globe",
-    "py": "brackets",
-    "pyc": "binary",
-    "pyd": "binary",
-    "pyi": "brackets",
-    "pyw": "brackets",
-    "r": "brackets",
-    "raku": "brackets",
-    "rar": "archive",
-    "rb": "brackets",
-    "rkt": "brackets",
-    "rpm": "package",
-    "rs": "file-code",
-    "rss": "file-code",
-    "rst": "book",
-    "rtf": "file-text",
-    "sass": "palette",
-    "scala": "file-code",
-    "scss": "palette",
-    "sed": "file-terminal",
-    "sh": "file-terminal",
-    "sketch": "image",
-    "snap": "package",
-    "so": "binary",
-    "sql": "database",
-    "sqlite": "database",
-    "sqlite3": "database",
-    "styl": "palette",
-    "svelte": "braces",
+    "psv": "storage",
+    "py": "python",
+    "qoi": "image",
+    "r": "r",
+    "rb": "ruby",
+    "rdata": "storage",
+    "rebar.config": "erlang",
+    "requirements.yaml": "helm",
+    "requirements.yml": "helm",
+    "rkt": "code",
+    "roc": "roc",
+    "rs": "rust",
+    "rtf": "document",
+    "sass": "sass",
+    "sav": "storage",
+    "sc": "scala",
+    "scala": "scala",
+    "scm": "code",
+    "scss": "sass",
+    "sdf": "storage",
+    "sh": "terminal",
+    "sln": "vs_sln",
+    "sol": "solidity",
+    "sql": "storage",
+    "sqlite": "storage",
+    "ssv": "storage",
+    "stylelint.config.cjs": "stylelint",
+    "stylelint.config.js": "stylelint",
+    "stylelint.config.mjs": "stylelint",
+    "stylelintignore": "stylelint",
+    "stylelintrc": "stylelint",
+    "stylelintrc.cjs": "stylelint",
+    "stylelintrc.js": "stylelint",
+    "stylelintrc.json": "stylelint",
+    "stylelintrc.mjs": "stylelint",
+    "stylelintrc.yaml": "stylelint",
+    "stylelintrc.yml": "stylelint",
+    "suo": "vs_suo",
+    "surql": "surrealql",
+    "svelte": "svelte",
     "svg": "image",
-    "swift": "file-code",
-    "tar": "archive",
-    "tar.bz2": "archive",
-    "tar.gz": "archive",
-    "tar.xz": "archive",
-    "tar.zst": "archive",
-    "tcl": "brackets",
-    "tex": "book",
-    "text": "file-text",
-    "tf": "hash",
-    "tfvars": "hash",
-    "tgz": "archive",
-    "tif": "image",
+    "swift": "swift",
+    "tag_editmsg": "vcs",
+    "tcl": "tcl",
+    "tf": "terraform",
+    "tfvars": "terraform",
     "tiff": "image",
-    "toml": "hash",
-    "ts": "braces",
-    "tsv": "table",
-    "tsx": "braces",
-    "ttf": "type",
-    "twig": "globe",
-    "txt": "file-text",
-    "typ": "book",
-    "vb": "file-code",
-    "vue": "braces",
-    "wasm": "binary",
-    "wav": "music",
-    "webm": "film",
+    "toml": "toml",
+    "tpl": "helm",
+    "ts": "typescript",
+    "tsv": "storage",
+    "tsx": "react",
+    "ttf": "font",
+    "txt": "document",
+    "v": "v",
+    "values.yaml": "helm",
+    "values.yml": "helm",
+    "vbproj": "vbproj",
+    "vsh": "v",
+    "vue": "vue",
+    "vv": "v",
+    "vy": "vyper",
+    "vyi": "vyper",
+    "wav": "audio",
+    "webm": "video",
     "webp": "image",
-    "wma": "music",
-    "wmv": "film",
-    "woff": "type",
-    "woff2": "type",
-    "xcf": "image",
-    "xhtml": "globe",
-    "xls": "table",
-    "xlsx": "table",
-    "xml": "file-code",
-    "xsd": "file-code",
-    "xsl": "file-code",
-    "xslt": "file-code",
-    "xz": "archive",
-    "yaml": "hash",
-    "yml": "hash",
-    "zig": "file-code",
-    "zip": "archive",
-    "zsh": "file-terminal",
-    "zst": "archive"
+    "wgsl": "wgsl",
+    "wma": "audio",
+    "wmv": "video",
+    "woff": "font",
+    "woff2": "font",
+    "work": "go",
+    "wv": "audio",
+    "xls": "document",
+    "xlsx": "document",
+    "xml": "template",
+    "xrl": "erlang",
+    "yaml": "yaml",
+    "yml": "yaml",
+    "yrl": "erlang",
+    "zig": "zig",
+    "zlogin": "terminal",
+    "zlogout": "terminal",
+    "zprofile": "terminal",
+    "zsh": "terminal",
+    "zsh_aliases": "terminal",
+    "zsh_histfile": "terminal",
+    "zsh_history": "terminal",
+    "zshenv": "terminal",
+    "zshrc": "terminal"
   },
+  "file_icons": {
+    "astro": {
+      "path": "icons/file_icons/astro.svg"
+    },
+    "audio": {
+      "path": "icons/file_icons/audio.svg"
+    },
+    "ballerina": {
+      "path": "icons/file_icons/ballerina.svg"
+    },
+    "bicep": {
+      "path": "icons/file_icons/file.svg"
+    },
+    "bun": {
+      "path": "icons/file_icons/bun.svg"
+    },
+    "c": {
+      "path": "icons/file_icons/c.svg"
+    },
+    "cairo": {
+      "path": "icons/file_icons/cairo.svg"
+    },
+    "code": {
+      "path": "icons/file_icons/code.svg"
+    },
+    "coffeescript": {
+      "path": "icons/file_icons/coffeescript.svg"
+    },
+    "cpp": {
+      "path": "icons/file_icons/cpp.svg"
+    },
+    "crystal": {
+      "path": "icons/file_icons/file.svg"
+    },
+    "csharp": {
+      "path": "icons/file_icons/file.svg"
+    },
+    "csproj": {
+      "path": "icons/file_icons/file.svg"
+    },
+    "css": {
+      "path": "icons/file_icons/css.svg"
+    },
+    "cue": {
+      "path": "icons/file_icons/file.svg"
+    },
+    "dart": {
+      "path": "icons/file_icons/dart.svg"
+    },
+    "default": {
+      "path": "icons/file_icons/file.svg"
+    },
+    "diff": {
+      "path": "icons/file_icons/diff.svg"
+    },
+    "docker": {
+      "path": "icons/file_icons/docker.svg"
+    },
+    "document": {
+      "path": "icons/file_icons/book.svg"
+    },
+    "editorconfig": {
+      "path": "icons/file_icons/editorconfig.svg"
+    },
+    "elixir": {
+      "path": "icons/file_icons/elixir.svg"
+    },
+    "elm": {
+      "path": "icons/file_icons/elm.svg"
+    },
+    "erlang": {
+      "path": "icons/file_icons/erlang.svg"
+    },
+    "eslint": {
+      "path": "icons/file_icons/eslint.svg"
+    },
+    "font": {
+      "path": "icons/file_icons/font.svg"
+    },
+    "fsharp": {
+      "path": "icons/file_icons/fsharp.svg"
+    },
+    "fsproj": {
+      "path": "icons/file_icons/file.svg"
+    },
+    "gitlab": {
+      "path": "icons/file_icons/gitlab.svg"
+    },
+    "gleam": {
+      "path": "icons/file_icons/gleam.svg"
+    },
+    "go": {
+      "path": "icons/file_icons/go.svg"
+    },
+    "graphql": {
+      "path": "icons/file_icons/graphql.svg"
+    },
+    "haskell": {
+      "path": "icons/file_icons/haskell.svg"
+    },
+    "hcl": {
+      "path": "icons/file_icons/hcl.svg"
+    },
+    "helm": {
+      "path": "icons/file_icons/helm.svg"
+    },
+    "heroku": {
+      "path": "icons/file_icons/heroku.svg"
+    },
+    "html": {
+      "path": "icons/file_icons/html.svg"
+    },
+    "image": {
+      "path": "icons/file_icons/image.svg"
+    },
+    "ipynb": {
+      "path": "icons/file_icons/jupyter.svg"
+    },
+    "java": {
+      "path": "icons/file_icons/java.svg"
+    },
+    "javascript": {
+      "path": "icons/file_icons/javascript.svg"
+    },
+    "json": {
+      "path": "icons/file_icons/code.svg"
+    },
+    "julia": {
+      "path": "icons/file_icons/julia.svg"
+    },
+    "kdl": {
+      "path": "icons/file_icons/kdl.svg"
+    },
+    "kotlin": {
+      "path": "icons/file_icons/kotlin.svg"
+    },
+    "lock": {
+      "path": "icons/file_icons/lock.svg"
+    },
+    "log": {
+      "path": "icons/file_icons/info.svg"
+    },
+    "lua": {
+      "path": "icons/file_icons/lua.svg"
+    },
+    "luau": {
+      "path": "icons/file_icons/luau.svg"
+    },
+    "markdown": {
+      "path": "icons/file_icons/book.svg"
+    },
+    "metal": {
+      "path": "icons/file_icons/metal.svg"
+    },
+    "nim": {
+      "path": "icons/file_icons/nim.svg"
+    },
+    "nix": {
+      "path": "icons/file_icons/nix.svg"
+    },
+    "ocaml": {
+      "path": "icons/file_icons/ocaml.svg"
+    },
+    "odin": {
+      "path": "icons/file_icons/odin.svg"
+    },
+    "phoenix": {
+      "path": "icons/file_icons/phoenix.svg"
+    },
+    "php": {
+      "path": "icons/file_icons/php.svg"
+    },
+    "prettier": {
+      "path": "icons/file_icons/prettier.svg"
+    },
+    "prisma": {
+      "path": "icons/file_icons/prisma.svg"
+    },
+    "puppet": {
+      "path": "icons/file_icons/puppet.svg"
+    },
+    "python": {
+      "path": "icons/file_icons/python.svg"
+    },
+    "r": {
+      "path": "icons/file_icons/r.svg"
+    },
+    "react": {
+      "path": "icons/file_icons/react.svg"
+    },
+    "roc": {
+      "path": "icons/file_icons/roc.svg"
+    },
+    "ruby": {
+      "path": "icons/file_icons/ruby.svg"
+    },
+    "rust": {
+      "path": "icons/file_icons/rust.svg"
+    },
+    "sass": {
+      "path": "icons/file_icons/sass.svg"
+    },
+    "scala": {
+      "path": "icons/file_icons/scala.svg"
+    },
+    "settings": {
+      "path": "icons/file_icons/settings.svg"
+    },
+    "solidity": {
+      "path": "icons/file_icons/file.svg"
+    },
+    "storage": {
+      "path": "icons/file_icons/database.svg"
+    },
+    "stylelint": {
+      "path": "icons/file_icons/javascript.svg"
+    },
+    "surrealql": {
+      "path": "icons/file_icons/surrealql.svg"
+    },
+    "svelte": {
+      "path": "icons/file_icons/html.svg"
+    },
+    "swift": {
+      "path": "icons/file_icons/swift.svg"
+    },
+    "tcl": {
+      "path": "icons/file_icons/tcl.svg"
+    },
+    "template": {
+      "path": "icons/file_icons/html.svg"
+    },
+    "terminal": {
+      "path": "icons/file_icons/terminal.svg"
+    },
+    "terraform": {
+      "path": "icons/file_icons/terraform.svg"
+    },
+    "toml": {
+      "path": "icons/file_icons/toml.svg"
+    },
+    "typescript": {
+      "path": "icons/file_icons/typescript.svg"
+    },
+    "v": {
+      "path": "icons/file_icons/v.svg"
+    },
+    "vbproj": {
+      "path": "icons/file_icons/file.svg"
+    },
+    "vcs": {
+      "path": "icons/file_icons/git.svg"
+    },
+    "video": {
+      "path": "icons/file_icons/video.svg"
+    },
+    "vs_sln": {
+      "path": "icons/file_icons/file.svg"
+    },
+    "vs_suo": {
+      "path": "icons/file_icons/file.svg"
+    },
+    "vue": {
+      "path": "icons/file_icons/vue.svg"
+    },
+    "vyper": {
+      "path": "icons/file_icons/vyper.svg"
+    },
+    "wgsl": {
+      "path": "icons/file_icons/wgsl.svg"
+    },
+    "yaml": {
+      "path": "icons/file_icons/yaml.svg"
+    },
+    "zig": {
+      "path": "icons/file_icons/zig.svg"
+    }
+  },
+  "named_directory_icons": {},
   "directory": {
-    "collapsed": "folder",
-    "expanded": "folder-open"
+    "collapsed": "icons/file_icons/folder.svg",
+    "expanded": "icons/file_icons/folder_open.svg"
   },
   "chevron": {
-    "collapsed": "chevron-right",
-    "expanded": "chevron-down"
+    "collapsed": "icons/file_icons/chevron_right.svg",
+    "expanded": "icons/file_icons/chevron_down.svg"
   },
-  "default_file": "file"
+  "default_file": "default"
 }

@@ -1322,9 +1322,10 @@ mod tests {
         std::fs::write(
             &path,
             r#"{ "name": "Mono", "file_suffixes": { "rs": "binary" },
-                "directory": { "collapsed": "folder", "expanded": "folder-open" },
-                "chevron": { "collapsed": "chevron-right", "expanded": "chevron-down" },
-                "default_file": "file" }"#,
+                "file_icons": { "binary": { "path": "icons/file_icons/file.svg" } },
+                "directory": { "collapsed": "icons/file_icons/folder.svg", "expanded": "icons/file_icons/folder_open.svg" },
+                "chevron": { "collapsed": "icons/file_icons/chevron_right.svg", "expanded": "icons/file_icons/chevron_down.svg" },
+                "default_file": "default" }"#,
         )
         .unwrap();
 
@@ -1333,12 +1334,18 @@ mod tests {
             store.update(cx, |s, cx| {
                 // Built-in by default.
                 assert_eq!(s.active_icon_theme_id(), "default");
-                assert_eq!(s.icon_theme().file_glyph("main.rs"), "file-code");
+                assert_eq!(
+                    s.icon_theme().file_icon_path("main.rs"),
+                    "icons/file_icons/rust.svg"
+                );
 
                 s.reload_user_icon_themes(&dir, cx);
                 assert!(s.list_icon_themes().iter().any(|m| m.id == "mono"));
                 s.set_active_icon_theme("mono", cx).unwrap();
-                assert_eq!(s.icon_theme().file_glyph("main.rs"), "binary");
+                assert_eq!(
+                    s.icon_theme().file_icon_path("main.rs"),
+                    "icons/file_icons/file.svg"
+                );
 
                 // Unknown id → error, active unchanged.
                 assert!(s.set_active_icon_theme("bogus", cx).is_err());
@@ -1348,7 +1355,10 @@ mod tests {
                 std::fs::remove_file(&path).unwrap();
                 s.reload_user_icon_themes(&dir, cx);
                 assert_eq!(s.active_icon_theme_id(), "default");
-                assert_eq!(s.icon_theme().file_glyph("main.rs"), "file-code");
+                assert_eq!(
+                    s.icon_theme().file_icon_path("main.rs"),
+                    "icons/file_icons/rust.svg"
+                );
             });
         });
 
