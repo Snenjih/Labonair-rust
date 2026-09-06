@@ -208,6 +208,7 @@ pub enum Page {
     ColorMode,
     EditorTheme,
     Themes,
+    IconThemes,
     Hosts,
     Snippets,
     Outline,
@@ -225,6 +226,7 @@ impl Page {
             Page::ColorMode => "Search color modes\u{2026}",
             Page::EditorTheme => "Search editor themes\u{2026}",
             Page::Themes => "Search themes\u{2026}",
+            Page::IconThemes => "Search icon themes\u{2026}",
             Page::Hosts => "Search hosts\u{2026}",
             Page::Snippets => "Search snippets\u{2026}",
             Page::Outline => "Search symbols\u{2026}",
@@ -242,6 +244,7 @@ impl Page {
             Page::ColorMode => "Color Mode",
             Page::EditorTheme => "Editor Theme",
             Page::Themes => "App Theme",
+            Page::IconThemes => "Icon Themes",
             Page::Hosts => "Hosts",
             Page::Snippets => "Snippets",
             Page::Outline => "Symbols",
@@ -322,6 +325,7 @@ fn page_for(page: CommandSubmenu) -> Page {
         CommandSubmenu::ColorMode => Page::ColorMode,
         CommandSubmenu::EditorTheme => Page::EditorTheme,
         CommandSubmenu::Themes => Page::Themes,
+        CommandSubmenu::IconThemes => Page::IconThemes,
         CommandSubmenu::Hosts => Page::Hosts,
         CommandSubmenu::Snippets => Page::Snippets,
         CommandSubmenu::Outline => Page::Outline,
@@ -402,9 +406,13 @@ pub enum PaletteEvent {
     },
     /// Activate a JSON app theme by id (`"default"` = built-in light/dark).
     SetAppTheme(String),
+    /// Activate a registered icon theme by id (`"default"` = built-in).
+    SetIconTheme(String),
     /// Live hover-preview a theme by id (`Some`) or revert (`None`) — fired as
     /// the highlight moves across the `Themes` sub-page.
     PreviewAppTheme(Option<String>),
+    /// Live hover-preview an icon theme by id (`Some`) or revert (`None`).
+    PreviewIconTheme(Option<String>),
     /// Run a saved snippet by id with its default execution mode.
     RunSnippet(String),
     /// Check out a git branch by name.
@@ -450,6 +458,8 @@ pub struct PaletteData {
     pub git_branches: Vec<PaletteChoice>,
     pub symbols: Vec<PaletteChoice>,
     pub app_themes: Vec<PaletteChoice>,
+    /// Registered icon themes supplied by the theme capability.
+    pub icon_themes: Vec<PaletteChoice>,
     /// Status-bar items the user has hidden via the right-click menu
     /// (T18-005) — the `StatusBarHidden` page's "click to show again" list.
     pub status_bar_hidden: Vec<PaletteChoice>,
@@ -498,6 +508,8 @@ enum RowKey {
     },
     /// Activate a JSON app theme by id (`"default"` = built-in).
     SetAppTheme(String),
+    /// Activate a registered icon theme by id.
+    SetIconTheme(String),
     /// Run a saved snippet by id with its default execution mode.
     RunSnippet(String),
     /// Check out a git branch by name.
@@ -622,6 +634,7 @@ where
         self.open(window, cx);
         if page != Page::Root {
             self.pages.push(page);
+            self.sync_theme_preview(cx);
         }
         cx.notify();
     }
@@ -633,6 +646,7 @@ where
         self.pages = vec![Page::Root];
         self.selected = 0;
         cx.emit(PaletteEvent::PreviewAppTheme(None));
+        cx.emit(PaletteEvent::PreviewIconTheme(None));
         if was_open {
             cx.emit(DismissEvent);
         }
@@ -667,18 +681,28 @@ where
         }
     }
 
-    /// Emit a live theme-preview for the highlighted row on the `Themes`
-    /// sub-page, or a revert (`None`) on any other page. Called on every
-    /// selection / navigation change while the palette is open.
+    /// Emit live previews for the highlighted row on either theme page, or
+    /// revert both previews on any other page. Called on every selection /
+    /// navigation change while the palette is open.
     fn sync_theme_preview(&mut self, cx: &mut Context<Self>) {
         if matches!(self.page(), Page::Themes) {
             let rows = self.rows(cx);
             if let Some(RowKey::SetAppTheme(id)) = rows.get(self.selected).map(|r| r.key.clone()) {
                 cx.emit(PaletteEvent::PreviewAppTheme(Some(id)));
+                cx.emit(PaletteEvent::PreviewIconTheme(None));
+                return;
+            }
+        }
+        if matches!(self.page(), Page::IconThemes) {
+            let rows = self.rows(cx);
+            if let Some(RowKey::SetIconTheme(id)) = rows.get(self.selected).map(|r| r.key.clone()) {
+                cx.emit(PaletteEvent::PreviewAppTheme(None));
+                cx.emit(PaletteEvent::PreviewIconTheme(Some(id)));
                 return;
             }
         }
         cx.emit(PaletteEvent::PreviewAppTheme(None));
+        cx.emit(PaletteEvent::PreviewIconTheme(None));
     }
 
     fn active_context(&self, cx: &App) -> Option<CommandContext> {
@@ -943,6 +967,14 @@ where
                 "No themes installed yet",
                 |c| RowKey::SetAppTheme(c.id.clone()),
             ),
+            Page::IconThemes => self.choice_rows(
+                &self.data.icon_themes,
+                "Icon Themes",
+                IconName::Palette,
+                mode,
+                "No icon themes installed yet",
+                |c| RowKey::SetIconTheme(c.id.clone()),
+            ),
             Page::Hosts => self.host_rows(&self.data.hosts, "Hosts", mode),
             Page::Snippets => self.choice_rows(
                 &self.data.snippets,
@@ -1028,6 +1060,10 @@ where
             RowKey::SetAppTheme(id) => {
                 self.close(cx);
                 cx.emit(PaletteEvent::SetAppTheme(id));
+            }
+            RowKey::SetIconTheme(id) => {
+                self.close(cx);
+                cx.emit(PaletteEvent::SetIconTheme(id));
             }
             RowKey::RunSnippet(id) => {
                 self.close(cx);
@@ -1634,6 +1670,7 @@ mod tests {
             Page::ColorMode,
             Page::EditorTheme,
             Page::Themes,
+            Page::IconThemes,
             Page::Hosts,
             Page::Snippets,
             Page::Outline,

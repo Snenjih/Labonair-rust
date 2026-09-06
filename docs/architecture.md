@@ -118,6 +118,13 @@ The current repository does not yet match every ownership boundary in this
 map. The migration is tracked in [`rework-roadmap.md`](rework-roadmap.md), and
 the observed state is recorded in [`audits/architecture-inventory.md`](audits/architecture-inventory.md).
 
+The titlebar is a shell surface, not a feature owner. Its single global-menu
+button publishes `TitlebarEvent` intent. The composition root connects that
+intent to Settings, the keymap file surface, or a Command Palette page. The
+menu uses the shared `popover_menu` primitive and anchors it in window
+coordinates directly below the clicked button; it must not implement a second
+menu or feature-specific behavior.
+
 ## 5. Composition root
 
 Only the `labonair` application package and `labonair-shell` may know all concrete feature modules. Their responsibilities are limited to:

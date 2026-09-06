@@ -1,5 +1,27 @@
 # Handshake — Session State (Labonair-rust Port)
 
+## Current Session: 2026-09-06 (Global menu and theme entrypoints complete)
+
+`R02-001` is complete. The titlebar global menu now contains Settings,
+Keymap, Themes, Icon Themes, and Hosts; its actions publish typed
+`TitlebarEvent` values and the shell composition root delegates them to the
+owning surfaces. The shared `popover_menu` remains the only implementation,
+with a window-space anchor under the clicked titlebar button. The placeholder
+Profile action was removed.
+
+The command palette now has a separate searchable Icon Themes page with Enter
+activation, persisted selection, and a transient preview layer in
+`ThemeStore`. App-theme previews and host Enter/Shift+Enter SSH/SFTP behavior
+remain intact. R02-002 is defined as the next planned task for shell
+composition and empty/standalone workspace transitions.
+
+The current branch is `master`; this change is committed locally. Full
+verification passes: `cargo fmt --all -- --check`, `cargo check --workspace
+--all-targets`, `cargo clippy --workspace --all-targets -- -D warnings`,
+focused palette/theme/shell tests, `cargo test --workspace --no-fail-fast`
+with the two OS-restricted tests rerun outside the sandbox,
+`git diff --check`, and `scripts/check_crate_deps.py`. No source blocker.
+
 ## Current Session: 2026-09-06 (Notification adoption complete)
 
 `R01-009` is complete. Operation failures from Explorer, SFTP, Preview, Git

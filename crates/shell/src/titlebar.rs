@@ -7,8 +7,8 @@
 //!   Editor / Preview / Git Graph · SSH ▸ / SFTP ▸ recent hosts · All hosts…).
 //!   The `＋` button is part of the tab strip, so it does not count as a
 //!   "second button" against the layout contract (`docs/architecture.md` §4).
-//! * **right** — exactly one [`IconName::Ellipsis`] button that opens a small
-//!   dropdown (`Settings…`, `Profile`, room for more).
+//! * **right** — exactly one [`IconName::Ellipsis`] button that opens the
+//!   global menu (`Settings`, `Keymap`, `Themes`, `Icon Themes`, `Hosts`).
 //!
 //! Gone from the old header: the app title, the `⋯` app-menu, the inline search
 //! box (`⌘F` now opens the workspace's [`labonair_workspace::search_overlay::SearchOverlay`],
@@ -25,19 +25,35 @@
 //! renders nothing and the OS window frame / traffic lights take over.
 
 use gpui::{
-    div, point, px, App, ClickEvent, Context, Entity, FocusHandle, Focusable, InteractiveElement,
-    IntoElement, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, Pixels,
-    Point, Render, StatefulInteractiveElement, Styled, Window, WindowControlArea,
+    div, point, px, App, ClickEvent, Context, Entity, EventEmitter, FocusHandle, Focusable,
+    InteractiveElement, IntoElement, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
+    ParentElement, Pixels, Point, Render, StatefulInteractiveElement, Styled, Window,
+    WindowControlArea,
 };
-use labonair_notifications::{notification_center, Notification};
+use labonair_command_palette::Page as PalettePage;
 use labonair_settings::{Settings as _, SettingsStore, ThemeSettings};
-use labonair_settings_ui::open_settings_window;
 use labonair_ui_kit::{popover_menu, IconName, MenuItem, Palette};
 
 use crate::theme::ThemeStore;
 use crate::workspace::Workspace;
 
 const HEADER_H: f32 = 40.0;
+
+/// Navigation requested by the titlebar's single global menu. The titlebar
+/// emits intent only; the shell composition root connects it to the owning
+/// Settings, Workspace, and Command Palette surfaces.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum TitlebarEvent {
+    Settings,
+    Keymap,
+    Palette(PalettePage),
+}
+
+fn global_menu_anchor(position: Point<Pixels>) -> Point<Pixels> {
+    // MouseDownEvent::position is window-space. The menu is aligned to the
+    // button's x coordinate and starts immediately below the 40px titlebar.
+    point(position.x, px(HEADER_H))
+}
 /// Left inset reserved for the macOS traffic-light buttons, plus extra
 /// breathing room so the first tab doesn't crowd the traffic lights. Linux
 /// has no traffic lights, so the tab strip starts flush there.
@@ -49,7 +65,7 @@ const TRAFFIC_LIGHT_INSET: f32 = 8.0;
 pub struct Titlebar {
     theme: Entity<ThemeStore>,
     workspace: Entity<Workspace>,
-    /// The right-hand `Settings… / Profile` dropdown.
+    /// The right-hand global menu dropdown.
     menu_open: bool,
     /// Window-space anchor for that dropdown — the pointer position of the
     /// press that opened it, so `popover_menu` drops below the `⋯` button
@@ -85,9 +101,8 @@ impl Titlebar {
 
     /// The single right-hand icon button + its dropdown.
     ///
-    /// `Settings…` is functional; `Profile` is a deliberate placeholder — a
-    /// future account / profile surface hangs off this entry. The separator +
-    /// this doc-comment mark where further entries slot in.
+    /// The menu only publishes typed navigation intent. Feature behavior stays
+    /// in the owning surface and is wired by `bootstrap`.
     fn render_account_menu(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
         let c = Palette::from_theme(self.theme.read(cx));
         let open = self.menu_open;
@@ -108,34 +123,58 @@ impl Titlebar {
                 }
             };
             let items = vec![
-                MenuItem::new("acc-settings", "Settings\u{2026}")
-                    .icon(IconName::Palette)
+                MenuItem::new("global-settings", "Settings\u{2026}")
+                    .icon(IconName::Settings)
                     .keybind(["\u{2318}", ","])
                     .on_click({
-                        let close = close.clone();
+                        let view = view.clone();
                         move |_, _w, cx| {
-                            close(cx);
-                            open_settings_window(None, cx);
+                            emit_titlebar_event(&view, TitlebarEvent::Settings, cx);
+                        }
+                    }),
+                MenuItem::new("global-keymap", "Keymap")
+                    .icon(IconName::Pencil)
+                    .on_click({
+                        let view = view.clone();
+                        move |_, _w, cx| {
+                            emit_titlebar_event(&view, TitlebarEvent::Keymap, cx);
                         }
                     }),
                 MenuItem::separator(),
-                // Placeholder — future account / profile features hang off
-                // this entry. Add further items below the separator.
-                MenuItem::new("acc-profile", "Profile")
-                    .icon(IconName::Shield)
+                MenuItem::new("global-themes", "Themes\u{2026}")
+                    .icon(IconName::Sparkles)
                     .on_click({
-                        let close = close.clone();
+                        let view = view.clone();
                         move |_, _w, cx| {
-                            close(cx);
-                            notification_center(cx).update(cx, |c, cx| {
-                                c.push(
-                                    Notification::info(
-                                        "Profile",
-                                        "Account & profile features are coming soon.",
-                                    ),
-                                    cx,
-                                );
-                            });
+                            emit_titlebar_event(
+                                &view,
+                                TitlebarEvent::Palette(PalettePage::Themes),
+                                cx,
+                            );
+                        }
+                    }),
+                MenuItem::new("global-icon-themes", "Icon Themes\u{2026}")
+                    .icon(IconName::Palette)
+                    .on_click({
+                        let view = view.clone();
+                        move |_, _w, cx| {
+                            emit_titlebar_event(
+                                &view,
+                                TitlebarEvent::Palette(PalettePage::IconThemes),
+                                cx,
+                            );
+                        }
+                    }),
+                MenuItem::new("global-hosts", "Hosts\u{2026}")
+                    .icon(IconName::Server)
+                    .on_click({
+                        let view = view.clone();
+                        move |_, _w, cx| {
+                            emit_titlebar_event(
+                                &view,
+                                TitlebarEvent::Palette(PalettePage::Hosts),
+                                cx,
+                            );
                         }
                     }),
             ];
@@ -167,13 +206,23 @@ impl Titlebar {
                             this.menu_open = !this.menu_open;
                             // Anchor the flyout's top-right under the button:
                             // snap-to-window pulls it left off this near-edge x.
-                            this.menu_anchor = point(ev.position.x, px(HEADER_H));
+                            this.menu_anchor = global_menu_anchor(ev.position);
                             cx.notify();
                         }),
                     ),
             )
             .children(menu.map(|(items, dismiss)| popover_menu(anchor, c, dismiss, items)))
     }
+}
+
+impl EventEmitter<TitlebarEvent> for Titlebar {}
+
+fn emit_titlebar_event(view: &Entity<Titlebar>, event: TitlebarEvent, cx: &mut App) {
+    view.update(cx, |this, cx| {
+        this.menu_open = false;
+        cx.emit(event);
+        cx.notify();
+    });
 }
 
 impl Render for Titlebar {
@@ -258,5 +307,17 @@ impl Render for Titlebar {
 impl Focusable for Titlebar {
     fn focus_handle(&self, _cx: &App) -> FocusHandle {
         self.focus_handle.clone()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn global_menu_anchor_uses_window_x_and_titlebar_bottom() {
+        let anchor = global_menu_anchor(point(px(712.0), px(19.0)));
+        assert_eq!(anchor.x, px(712.0));
+        assert_eq!(anchor.y, px(HEADER_H));
     }
 }

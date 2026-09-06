@@ -1,5 +1,36 @@
 # Bugs, fixes, and non-obvious constraints
 
+## 2026-09-06 — Icon-theme preview must be a separate transient layer
+
+**Finding:** The command palette already previewed app themes, but icon themes
+had only an active persisted ID. Applying a highlighted icon theme directly
+would make scrolling change user settings before confirmation.
+
+**Resolution:** `ThemeStore` now keeps an optional, non-persisted icon-theme
+preview ID. `icon_theme()` resolves the preview before the active ID,
+`cancel_icon_theme_preview` restores the active selection, and activation
+clears the preview. The palette emits separate preview events for app and icon
+theme pages so changing pages cannot leave the other preview layer active.
+
+**Non-obvious constraint:** The Explorer already reads `ThemeStore::icon_theme`
+for every render, so the preview becomes visible through the existing icon
+rendering path without a second UI or icon registry.
+
+## 2026-09-06 — GPUI global-menu events must leave the titlebar
+
+**Finding:** Calling Settings or workspace actions directly from the titlebar
+would make permanent shell chrome own feature behavior and would prevent the
+same entry points from being reused by other global surfaces.
+
+**Resolution:** The titlebar emits a small `TitlebarEvent`; bootstrap subscribes
+to it and delegates to Settings, Workspace keymap opening, or a Command Palette
+page. The shared `popover_menu` remains the only menu implementation.
+
+**Non-obvious constraint:** `MouseDownEvent::position` is window-space, so the
+global menu anchor must retain the event's x coordinate and use the titlebar
+bottom as y. Passing a local element coordinate reproduces the old top-left /
+opposite-side placement bug.
+
 ## 2026-09-06 — Host UI needs shared capability state, not the backend facade
 
 **Finding:** Removing `labonair-backend` from `labonair-hosts-ui` required the

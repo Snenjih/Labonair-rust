@@ -48,7 +48,7 @@ use crate::app_shell::{AppShell, ShellPanels};
 use crate::settings_services::settings_services;
 use crate::status_items::register_builtin_status_items;
 use crate::theme::ThemeStore;
-use crate::titlebar::Titlebar;
+use crate::titlebar::{Titlebar, TitlebarEvent};
 use crate::updater::UpdaterView;
 use crate::window_state;
 use crate::workspace::Workspace;
@@ -531,6 +531,24 @@ pub(crate) fn bootstrap(
 
     let modal_layer = cx.new(|_| ModalLayer::new());
     let titlebar = cx.new(|cx| Titlebar::new(theme.clone(), workspace.clone(), cx));
+    cx.subscribe_in(
+        &titlebar,
+        window,
+        |this, _, event: &TitlebarEvent, window, cx| match event {
+            TitlebarEvent::Settings => {
+                labonair_settings_ui::open_settings_window(None, cx);
+            }
+            TitlebarEvent::Keymap => {
+                this.workspace.update(cx, |workspace, cx| {
+                    workspace.open_or_create_user_keymap_json(window, cx);
+                });
+            }
+            TitlebarEvent::Palette(page) => {
+                this.show_command_palette(Some(*page), window, cx);
+            }
+        },
+    )
+    .detach();
 
     // `git_graph` is not kept on the shell: the workspace owns the shared
     // `Entity<GitGraphView>` (via `set_git_graph`) and the CWD-feed closure

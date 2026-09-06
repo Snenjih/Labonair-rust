@@ -3,9 +3,11 @@
 **Status:** Current implementation plan
 **Version:** 3
 
-The foundation migration is currently through `R01-009`: capability-owned
-registries and surfaces are established for transfers, command metadata,
-settings values, backgrounds, hosts, and notifications. Phase 3 is complete:
+The foundation migration is currently through `R01-009`, with the first Phase
+2 global-menu slice in `R02-001`: capability-owned registries and surfaces
+are established for transfers, command metadata, settings values,
+backgrounds, hosts, notifications, and icon-theme selection. Phase 3 is
+complete:
 remaining operation failures are retained in the statusbar notification
 registry, while actionable task dialogs remain local to the task that requires
 the user's decision.
@@ -44,6 +46,15 @@ registered without editing unrelated feature internals or a shell-wide table.
 - allow empty and standalone workspaces;
 - fix popover/dropdown anchoring;
 - move shell logic into composition only.
+
+The first bounded implementation is
+[`R02-001-global-menu-and-theme-entrypoints.md`](../tasks/rework/R02-001-global-menu-and-theme-entrypoints.md):
+the titlebar publishes typed global-menu events and delegates Settings,
+Keymap, Themes, Icon Themes, and Hosts to their owning surfaces.
+The next bounded implementation is
+[`R02-002-shell-composition-and-standalone-workspaces.md`](../tasks/rework/R02-002-shell-composition-and-standalone-workspaces.md):
+it narrows one remaining shell/workspace behavior slice and verifies empty,
+project, and standalone workspace transitions.
 
 **Exit:** all permanent UI has one documented location and layout behavior is consistent.
 

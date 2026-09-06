@@ -1,0 +1,55 @@
+# R02-002 — Shell composition and standalone workspaces
+
+## Status
+
+`⏳ Planned`
+
+## Owner
+
+- Modules: `workspace` and application composition
+- Canonical crates: `labonair-workspace` and `labonair-shell`
+- Related contracts: [`../../docs/architecture.md`](../../docs/architecture.md),
+  [`../../docs/workspace-model.md`](../../docs/workspace-model.md)
+
+## Goal
+
+Make the shell a predictable composition layer and make a workspace a useful
+runtime context even when it has no project root. The same capability surfaces
+must work for project workflows and one-off terminal, editor, SSH, and SFTP
+actions without inventing a second application mode.
+
+## Scope
+
+- Inventory remaining shell/workspace feature behavior and broad injected
+  dependencies before moving code.
+- Keep permanent shell chrome limited to titlebar, workspace content, docks,
+  statusbar, and modal/overlay hosts.
+- Move one bounded feature-specific behavior slice out of shell/workspace into
+  its owning capability and replace it with a typed contract or registration.
+- Define and test empty-workspace, project-workspace, and standalone-tool
+  transitions without special-case shell layouts.
+- Reuse UI-kit controls and the existing overlay anchor contract.
+
+## Dependencies
+
+- `R02-001-global-menu-and-theme-entrypoints.md` — Done
+
+## Acceptance criteria
+
+- [ ] The selected shell/workspace slice has one documented owner and no
+  duplicate shell implementation.
+- [ ] Empty, project, and standalone workspace states have explicit typed
+  state transitions and tests.
+- [ ] Permanent chrome remains in its documented zones and uses existing
+  shared components.
+- [ ] No new broad backend or shell facade is introduced.
+- [ ] Capability matrix, inventory, roadmap, and dependency allow-list agree
+  with the moved boundary.
+- [ ] Full workspace verification gates and a visual shell check pass.
+
+## Removal condition
+
+The task is complete only when the selected compatibility path is deleted, the
+workspace no longer needs a feature-specific shell branch for the migrated
+slice, and the empty/standalone workflow is covered by the same surface model
+as project workspaces.

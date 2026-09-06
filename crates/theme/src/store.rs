@@ -137,6 +137,9 @@ pub struct ThemeStore {
     /// Active icon-theme id (`"default"` = the built-in "Labonair" set). Resolved
     /// through [`IconThemeRegistry::get`] on every access by [`Self::icon_theme`].
     active_icon_theme: String,
+    /// Transient icon-theme preview used by the command palette. It is never
+    /// persisted and is discarded when the palette closes or changes page.
+    preview_icon_theme: Option<String>,
     /// The live metric layer (T20-007): font scales, UI density, corner-radius
     /// scale, reduce-motion. Pushed in by the settings bridge via
     /// [`Self::set_metrics`]; `ThemeMetrics::default()` reproduces pre-T20-007
@@ -168,6 +171,7 @@ impl ThemeStore {
             registry_variant: None,
             icon_registry: IconThemeRegistry::builtin(),
             active_icon_theme: crate::BUILTIN_ICON_THEME_ID.to_string(),
+            preview_icon_theme: None,
             metrics: ThemeMetrics::default(),
             active: ActiveTheme::new(Theme::dark(), ThemeMetrics::default()),
         };
@@ -227,8 +231,12 @@ impl ThemeStore {
     /// The resolved active icon theme — falls back to the built-in set if the
     /// stored id no longer names a registered theme.
     pub fn icon_theme(&self) -> &IconThemeContent {
+        let id = self
+            .preview_icon_theme
+            .as_deref()
+            .unwrap_or(&self.active_icon_theme);
         self.icon_registry
-            .get(&self.active_icon_theme)
+            .get(id)
             .unwrap_or_else(|_| self.icon_registry.builtin_theme())
     }
 
@@ -248,11 +256,40 @@ impl ThemeStore {
         if !self.icon_registry.contains(&id) {
             return Err(format!("icon theme not found: {id}"));
         }
+        let had_preview = self.preview_icon_theme.take().is_some();
         if self.active_icon_theme != id {
             self.active_icon_theme = id;
             cx.notify();
+        } else if had_preview {
+            cx.notify();
         }
         Ok(())
+    }
+
+    /// Preview a registered icon theme without changing the persisted active
+    /// selection. `None` restores the active theme.
+    pub fn preview_icon_theme(
+        &mut self,
+        id: Option<&str>,
+        cx: &mut Context<Self>,
+    ) -> Result<(), String> {
+        let next = match id {
+            None => None,
+            Some(id) if self.icon_registry.contains(id) => Some(id.to_string()),
+            Some(id) => return Err(format!("icon theme not found: {id}")),
+        };
+        if self.preview_icon_theme != next {
+            self.preview_icon_theme = next;
+            cx.notify();
+        }
+        Ok(())
+    }
+
+    /// Cancel a transient icon-theme preview and restore the active theme.
+    pub fn cancel_icon_theme_preview(&mut self, cx: &mut Context<Self>) {
+        if self.preview_icon_theme.take().is_some() {
+            cx.notify();
+        }
     }
 
     /// Rescan the user icon-themes directory and rebuild the registry. If the
@@ -263,6 +300,7 @@ impl ThemeStore {
         if !self.icon_registry.contains(&self.active_icon_theme) {
             self.active_icon_theme = crate::BUILTIN_ICON_THEME_ID.to_string();
         }
+        self.preview_icon_theme = None;
         cx.notify();
         warnings
     }
@@ -1341,6 +1379,13 @@ mod tests {
 
                 s.reload_user_icon_themes(&dir, cx);
                 assert!(s.list_icon_themes().iter().any(|m| m.id == "mono"));
+                s.preview_icon_theme(Some("mono"), cx).unwrap();
+                assert_eq!(
+                    s.icon_theme().file_icon_path("main.rs"),
+                    "icons/file_icons/file.svg"
+                );
+                s.preview_icon_theme(Some("bogus"), cx).unwrap_err();
+                s.cancel_icon_theme_preview(cx);
                 s.set_active_icon_theme("mono", cx).unwrap();
                 assert_eq!(
                     s.icon_theme().file_icon_path("main.rs"),

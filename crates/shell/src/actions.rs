@@ -326,6 +326,27 @@ impl AppShell {
             })
             .collect();
 
+        let active_icon_theme_id = ThemeSettings::try_get(cx)
+            .map(|s| s.icon_theme().to_string())
+            .unwrap_or_else(|| "default".to_string());
+        let active_icon_theme_id = if active_icon_theme_id.is_empty() {
+            "default"
+        } else {
+            active_icon_theme_id.as_str()
+        };
+        let icon_themes = self
+            .theme
+            .read(cx)
+            .list_icon_themes()
+            .into_iter()
+            .map(|theme| PaletteChoice {
+                active: theme.id == active_icon_theme_id,
+                id: theme.id,
+                title: theme.name,
+                subtitle: theme.builtin.then(|| "built-in".to_string()),
+            })
+            .collect();
+
         let status_bar_hidden = {
             let ws = self.workspace.read(cx);
             let registry = ws.status_item_registry();
@@ -354,6 +375,7 @@ impl AppShell {
             git_branches,
             symbols,
             app_themes,
+            icon_themes,
             status_bar_hidden,
         }
     }
@@ -385,8 +407,26 @@ impl AppShell {
             PaletteEvent::SetAppTheme(id) => {
                 labonair_settings_ui::activate_app_theme(&id, &self.theme, cx);
             }
+            PaletteEvent::SetIconTheme(id) => {
+                if cx.has_global::<SettingsStore>() {
+                    let persisted_id = id.clone();
+                    let _ = cx
+                        .global_mut::<SettingsStore>()
+                        .update_user_settings(move |c| {
+                            c.appearance.icon_theme = Some(persisted_id);
+                        });
+                }
+                let _ = self
+                    .theme
+                    .update(cx, |theme, cx| theme.set_active_icon_theme(id, cx));
+            }
             PaletteEvent::PreviewAppTheme(id) => {
                 labonair_settings_ui::preview_app_theme(id.as_deref(), &self.theme, cx);
+            }
+            PaletteEvent::PreviewIconTheme(id) => {
+                let _ = self
+                    .theme
+                    .update(cx, |theme, cx| theme.preview_icon_theme(id.as_deref(), cx));
             }
             PaletteEvent::RunSnippet(id) => {
                 self.panels

@@ -15,7 +15,7 @@ in the normative documents linked from `docs/README.md`.
 | `backend` | Mixed filesystem, PTY, SSH, SFTP, Git, hosts, settings, updater, MCP, persistence | split across platform services and feature modules | Highest-priority god-object boundary; SSH/SFTP contracts and adapters now isolate transport consumers. |
 | `ai` | AI providers, sessions, tools | AI module | Keep backend-facing core; rebuild UI later. |
 | `command-palette-core` | UI-free command descriptors and registry (new migration boundary) | command-palette module | Keep metadata and provider discovery here; feature-owned behavior remains outside the palette. |
-| `command-palette` | Palette UI, static commands, duplicate shell dispatch integration | command-palette module | Consume the core registry; remove static entries and the duplicate shell registry. |
+| `command-palette` | Palette UI, dynamic sub-pages, and transitional duplicate shell dispatch integration | command-palette module | Consume the core registry; global-menu navigation is typed; remove static entries and the duplicate shell registry. |
 | `editor` | Editor engine | editor module | Separate core from workspace view. |
 | `filesystem` | Local file access, traversal, mutation, search, and watcher implementation | foundation/platform service | First extracted service boundary; only the legacy `AppEvent` adapter remains in `backend` temporarily. |
 | `secrets` | Encrypted/plain local secret store and secret cache | foundation/platform service | Extracted from `backend`; backend keeps a compatibility adapter while SSH/Hosts/MCP migrate. |
@@ -41,7 +41,7 @@ in the normative documents linked from `docs/README.md`.
 | `keymap` | UI-free keymap values, resolution, and conflict handling | keymap module | Extracted from command-palette; management UI and shell integration remain to migrate. |
 | `shell` | App shell, menus, commands, status items, updater | application composition + shell surface | Reduce to registration and composition. |
 | `terminal` | Terminal engine and renderer support | terminal module | Split engine from GPUI view when useful. |
-| `theme` | Runtime theme, fonts, and built-in color/icon registries | themes module | Keep one Themes owner; finish palette picker and transactional preview without remote downloads. |
+| `theme` | Runtime theme, fonts, and built-in color/icon registries | themes module | Keep one Themes owner; app and icon palette pickers now use separate registry-backed pages with transactional preview; remote downloads remain deferred. |
 | `ui-kit` | Shared UI primitives | foundation | Enforce as the only source of shared controls. |
 | `workspace` | Workspace, tabs, panes, docks, views, and compatibility bridges | workspace plus tool modules | Transfer lifecycle/UI moved to `labonair-transfers` / `labonair-transfers-ui`; Workspace only submits requests and refreshes SFTP panes. |
 | `background` | Background image storage and GPUI layer | backgrounds module | `BackgroundStore`, image import/delete, persistence, and rendering now live in `labonair-background`; no longer workspace-owned. |
@@ -81,6 +81,9 @@ The current Cargo metadata shows several transitional edges that conflict with t
 - `panel-git-graph` no longer depends on `labonair-backend`; its graph contract and commit values live in `labonair-git` and the backend supplies an adapter.
 - `panel-scm` and workspace Project Diff no longer depend on `labonair-backend`; source-control values and operations live in `labonair-git`, with the backend supplying the execution adapter.
 - `shell/src/commands.rs`, `shell/src/status_items.rs`, and workspace views still contain feature-specific behavior that belongs to owning modules.
+- `shell/src/titlebar.rs` now owns only the permanent global-menu trigger and
+  typed navigation events; Settings, Keymap, Themes, Icon Themes, and Hosts
+  are handled by their owning surfaces through the composition root.
 - The notification statusbar item has moved into `labonair-notifications`; the
   remaining shell status-item code is composition and other status surfaces.
 - `shell/src/commands.rs` still maintains a second behavior registry beside

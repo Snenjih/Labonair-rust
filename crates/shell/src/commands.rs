@@ -930,6 +930,15 @@ pub(crate) fn register_builtin_commands() -> CommandDispatcher {
             Some(CommandSubmenu::Themes),
         ),
         command_descriptor(
+            CommandId::ChangeIconTheme,
+            "Change Icon Theme…",
+            "View",
+            always,
+            None,
+            CommandIcon::Palette,
+            Some(CommandSubmenu::IconThemes),
+        ),
+        command_descriptor(
             CommandId::ChangeColorMode,
             "Change Color Mode…",
             "View",
