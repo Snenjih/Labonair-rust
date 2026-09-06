@@ -4371,7 +4371,6 @@ name = "labonair-panel-explorer"
 version = "0.1.0"
 dependencies = [
  "gpui",
- "labonair-backend",
  "labonair-filesystem",
  "labonair-notifications",
  "labonair-panel",
