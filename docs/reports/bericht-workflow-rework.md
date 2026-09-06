@@ -4,7 +4,9 @@
 > Settings, Hosts, notification, or shell behavior. Use the normative
 > documents under `docs/` instead.
 
-**Status:** normativ für die Phasen 15–18. Ergänzt den Architektur-Rework
+**Status:** historischer Planungsbericht; nicht bindend. Die aktuellen Regeln
+stehen in den normativen Dokumenten unter `docs/`. Der Bericht ergänzt nicht
+mehr den Architektur-Rework
 ([`bericht-architektur-rework-roadmap.md`](bericht-architektur-rework-roadmap.md),
 [`docs/architecture.md`](../architecture.md)). Nach T16-005 vereinbart, während
 T16-006 lief — deshalb landete der Palette-Anteil (konzeptionell ≤ T16-004) in

@@ -1,7 +1,8 @@
 # Settings Design Contract
 
-**Status:** Normative. Binding for every settings page from `T19-001` onward, and
-for any settings-related change to existing pages. Established by `T19-000`.
+**Status:** Superseded — historical reference only. Current Settings rules are
+[`docs/settings-guidelines.md`](../../settings-guidelines.md); this document
+describes the earlier T19 design and is not an implementation instruction.
 
 ## Why this document exists
 

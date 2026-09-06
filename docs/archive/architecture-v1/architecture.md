@@ -1,10 +1,10 @@
-# Labonair-rust — Target Architecture
+# Labonair-rust — Target Architecture (superseded)
 
-**Status:** authoritative. Every task of the architecture rework (T16-002 …
-T22-001) references this document as the single source of truth. If a later task
-is unclear, look here first — do not re-decide. The crate graph may still be
-refined by a later task (e.g. a panel that ends up as a tab view), but every
-deviation is written back into this file and noted in `handshake.md`.
+**Status:** Superseded — historical reference only. The current architecture
+and implementation order are [`docs/architecture.md`](../../architecture.md)
+and [`docs/rework-roadmap.md`](../../rework-roadmap.md). This document records
+the earlier T16–T22 design and must not be used as an implementation
+instruction.
 
 Sources: `bericht-architektur-rework-roadmap.md` (planning report, §1–§2) and
 `vergleichsbericht-zed-vs-rust.md` (Zed reference comparison). Zed pattern
