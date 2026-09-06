@@ -4357,10 +4357,13 @@ name = "labonair-hosts-ui"
 version = "0.1.0"
 dependencies = [
  "gpui",
- "labonair-backend",
+ "labonair-credentials",
  "labonair-errors",
  "labonair-hosts",
  "labonair-notifications",
+ "labonair-persistence",
+ "labonair-secrets",
+ "labonair-snippets",
  "labonair-ssh",
  "labonair-theme",
  "labonair-ui-kit",

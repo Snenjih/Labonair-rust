@@ -187,7 +187,8 @@ ALLOWED = {
     # typed model — a pure data/store edge, not workspace/shell/panel*.
     "labonair-hosts-ui": {
         "labonair-theme", "labonair-ui-kit", "labonair-notifications",
-        "labonair-backend", "labonair-hosts", "labonair-settings",
+        "labonair-hosts", "labonair-credentials", "labonair-persistence",
+        "labonair-secrets", "labonair-snippets", "labonair-settings",
         "labonair-settings-content", "labonair-ssh",
         "labonair-errors",
     },

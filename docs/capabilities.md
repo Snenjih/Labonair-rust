@@ -27,7 +27,7 @@ coordination or reusable-service responsibility instead.
 | Filesystem | `filesystem` | `labonair-filesystem` | Consuming feature UI | local filesystem and watcher | Explorer/editor consumers | Extracted |
 | SSH | `ssh` | `labonair-ssh` | SSH connection surface | Backend adapter owns russh, auth, tunnels, jump hosts | Host action or standalone SSH | Contract and injected workspace/Hosts paths migrated; backend adapter remains transitional |
 | SFTP | `sftp` | `labonair-sftp` | SFTP browser | Backend adapter owns russh-sftp; session comes from SSH | Host action or standalone SFTP | Authenticated session/browser contract and view migration complete; transfer queue remains separate |
-| Hosts | `hosts` | `labonair-hosts` | `labonair-hosts-ui` | `labonair-persistence`, credentials, SSH adapters | Titlebar global menu → Hosts; picker in Command Palette | Domain/store extracted; management UI migration open |
+| Hosts | `hosts` | `labonair-hosts` | `labonair-hosts-ui` | `labonair-persistence`, credentials, SSH adapters | Titlebar global menu → Hosts; picker in Command Palette | Domain/store extracted; UI now consumes canonical stores through injected contracts |
 | Credentials | `credentials` | `labonair-credentials` | Hosts UI consumer | `labonair-secrets`, keychain | Host management | Extracted |
 | Transfers | `transfers` | `labonair-transfers` | `labonair-transfers-ui` | SFTP/SSH worker adapter | Statusbar Transfers badge | Typed registry and statusbar UI extracted; legacy backend event adapter remains transitional |
 | Git / source control | `git` | `labonair-git` | `labonair-panel-scm`, `labonair-panel-git-graph`, Project Diff | backend Git executor adapter | Source Control panel / palette | Contracts extracted |

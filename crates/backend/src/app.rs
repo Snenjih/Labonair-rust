@@ -27,7 +27,7 @@ use crate::modules::terminal_exec::TerminalExecState;
 pub struct AppInner {
     pub events: EventBus,
     pub db: HostsDb,
-    pub secrets: SecretsState,
+    pub secrets: Arc<SecretsState>,
     pub ssh: SshState,
     pub trust: TrustState,
     pub tunnels: TunnelState,
@@ -79,7 +79,7 @@ impl App {
         Ok(App(Arc::new(AppInner {
             events: EventBus::new(),
             db,
-            secrets: SecretsState::new(data_dir.to_path_buf()),
+            secrets: Arc::new(SecretsState::new(data_dir.to_path_buf())),
             ssh: SshState::default(),
             trust: TrustState::default(),
             tunnels: TunnelState::default(),

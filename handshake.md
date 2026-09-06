@@ -1,5 +1,23 @@
 # Handshake — Session State (Labonair-rust Port)
 
+## Current Session: 2026-09-06 (Hosts UI capability boundary)
+
+`R01-007` is complete. `labonair-hosts-ui` no longer depends on the broad
+`labonair-backend` facade. It consumes the canonical host, credential, and
+snippet stores directly and receives the shared database, secret state, data
+directory, and a narrow typed host-event callback from Workspace. The callback
+preserves MCP agent-access revocation when a host is blocked. Backend
+compatibility adapters remain only for other consumers and are documented with
+their removal condition.
+
+Verification passes: focused Hosts UI tests, `cargo fmt --all -- --check`,
+`cargo check --workspace --all-targets`, `cargo clippy --workspace
+--all-targets -- -D warnings`, `git diff --check`, and
+`scripts/check-crate-deps.py`. The current branch is `master`; the change is
+committed locally. Next: remove the next broad shell ownership edge or
+start the notification-surface migration, based on the dependency audit.
+No source blocker.
+
 ## Current Session: 2026-09-06 (Background capability boundary)
 
 `R01-006` is complete. Background image storage, import/delete operations,

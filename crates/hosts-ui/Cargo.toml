@@ -16,8 +16,11 @@ uuid = { workspace = true }
 labonair-theme = { path = "../theme" }
 labonair-ui-kit = { path = "../ui-kit" }
 labonair-notifications = { path = "../notifications" }
-labonair-backend = { path = "../backend" }
 labonair-hosts = { path = "../hosts" }
+labonair-credentials = { path = "../credentials" }
+labonair-persistence = { path = "../persistence" }
+labonair-secrets = { path = "../secrets" }
+labonair-snippets = { path = "../snippets" }
 labonair-ssh = { path = "../ssh" }
 labonair-errors = { path = "../errors" }
 

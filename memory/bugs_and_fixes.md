@@ -1,5 +1,17 @@
 # Bugs, fixes, and non-obvious constraints
 
+## 2026-09-06 — Host UI needs shared capability state, not the backend facade
+
+**Finding:** Removing `labonair-backend` from `labonair-hosts-ui` required the
+UI to receive the same database and secret cache that the application already
+owns. Constructing a second `SecretsState` would have split the cache and could
+have produced inconsistent secret reads.
+
+**Resolution:** `AppInner.secrets` is now an `Arc<SecretsState>`, and Workspace
+injects the shared database, secret handle, data directory, and a typed
+`HostEventHandler`. The callback preserves MCP grant revocation when a host is
+blocked without exposing the broad application facade to the UI crate.
+
 ## 2026-09-06 — Settings migrations must not recreate removed capability areas
 
 **Finding:** Removing `mcp`, `personalization`, `hosts`, and `keymap` from

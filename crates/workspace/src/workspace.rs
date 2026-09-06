@@ -510,8 +510,18 @@ impl Workspace {
         });
 
         let host_manager = cx.new(|cx| {
+            let app_for_host_events = backend.clone();
+            let host_event_handler = Arc::new(move |event| {
+                labonair_backend::modules::hosts::db::revoke_agent_access(
+                    &app_for_host_events,
+                    event,
+                )
+            });
             HostManagerView::new(
-                backend.clone(),
+                backend.db.clone(),
+                backend.secrets.clone(),
+                labonair_filesystem::paths::data_dir(),
+                Some(host_event_handler),
                 ssh_tester,
                 ssh_config,
                 tokio.clone(),

@@ -25,7 +25,7 @@ in the normative documents linked from `docs/README.md`.
 | `credentials` | Credential domain, secret-backed metadata, and SSH keypair generation | credentials module | Extracted from `backend`; backend keeps App-signature adapters while callers migrate. |
 | `snippets` | Snippet domain, SQLite store, and local/SSH execution contracts | snippets module | Shared run events and the SSH executor contract are standalone; backend owns only the russh adapter. |
 | `gpui-ext` | Shared GPUI helpers | foundation | Keep dependency-free from features. |
-| `hosts-ui` | Host management UI and host-related dependencies | hosts module | Settings projection removed; notification coupling remains to be migrated. |
+| `hosts-ui` | Host management UI and host-related dependencies | hosts module | Consumes host, credential, snippet, database, and secret contracts directly; notification coupling remains to be migrated. |
 | `notifications-core` | UI-free notification registry and lifecycle | notifications module | New owner of retention, ordering, deduplication, read state, and structured metadata. |
 | `notifications` | GPUI notification adapter | notifications module | Toast renderer removed; statusbar dropdown remains the consumer. |
 | `panel` | Panel/status contracts | workspace foundation | Keep contracts-only. |
@@ -59,8 +59,9 @@ The current Cargo metadata shows several transitional edges that conflict with t
 - `panel-explorer` still depends on workspace for drag/preview shims, but its
   obsolete backend dependency has been removed; those remaining UI contracts
   are a later extraction boundary.
-- `hosts-ui` no longer depends on Settings; its connection management still
-  needs the notification contract migration to be completed.
+- `hosts-ui` no longer depends on Settings or the backend facade; Workspace
+  injects its database, secret state, and the narrow MCP-revocation callback.
+  Its notification contract migration is still open.
 - `command-palette` depends on backend even though the palette should receive dynamic data through providers.
 - `keymap` is now UI-free, but the temporary GPUI adapter and some consumers
   still enter through `command-palette`; the keymap editor and stable command
@@ -69,7 +70,7 @@ The current Cargo metadata shows several transitional edges that conflict with t
 - `backend` still owns the filesystem watcher adapter because it emits directly through the legacy app event bus; the actual watcher implementation now belongs to `labonair-filesystem`.
 - `backend` still owns the public secret API adapter even though storage now belongs to `labonair-secrets`; existing SSH/Hosts/MCP call sites still pass the backend app handle.
 - `backend` still re-exports the structured error contract for old internal paths, while the implementation now belongs to `labonair-errors`.
-- `backend` still exposes compatibility signatures for host and credential operations and owns the MCP event adapter; host and credential models/persistence now belong to their capability crates.
+- `backend` still exposes compatibility signatures for host and credential operations and owns the MCP event adapter for remaining consumers; host and credential models/persistence now belong to their capability crates.
 - `backend` still owns only the transitional russh snippet-execution adapter and
   exposes a compatibility database re-export; snippet models, persistence,
   run events, and execution contracts now belong to `labonair-snippets`.

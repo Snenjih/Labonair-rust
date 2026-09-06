@@ -15,7 +15,7 @@ pub use labonair_hosts::store::{
 };
 pub use labonair_persistence::initialize_database as initialize_db;
 
-fn revoke_agent_access(app: &crate::App, event: HostEvent) -> Result<(), LabonairError> {
+pub fn revoke_agent_access(app: &crate::App, event: HostEvent) -> Result<(), LabonairError> {
     let HostEvent::AgentAccessBlocked { host_id } = event;
     let expired: Vec<String> = {
         let grants = app

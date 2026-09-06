@@ -6,9 +6,9 @@
 //!
 //! Ports `reference-src/src/modules/hosts/*` behaviour: hosts grouped by group,
 //! a status indicator per host, connect / edit / duplicate / delete actions, a
-//! host add/edit form and a credential manager. All persistence goes through
-//! `labonair_backend::modules::{hosts, credentials}` (SQLite + the app secret
-//! store); secrets are never shown in clear text here.
+//! host add/edit form and a credential manager. Persistence uses the host,
+//! credential, and snippet capability stores (SQLite + the app secret store);
+//! secrets are never shown in clear text here.
 //!
 //! Connecting is delegated to the `Workspace`:
 //! this view emits [`HostManagerEvent::Connect`] and the workspace opens the
@@ -24,11 +24,12 @@ use gpui::{
     MouseDownEvent, ParentElement, Pixels, Point, Render, SharedString, StatefulInteractiveElement,
     Styled, Task, Window,
 };
-use labonair_backend::modules::credentials::{self, Credential};
-use labonair_backend::modules::hosts;
-use labonair_backend::modules::snippets;
-use labonair_backend::App as Backend;
+use labonair_credentials::{self, Credential};
+use labonair_hosts::store::{HostCreateRequest, HostEventHandler, HostUpdateRequest};
 use labonair_hosts::{store as host_store, Group, Host, ReorderItem};
+use labonair_persistence::Database;
+use labonair_secrets::SecretsState;
+use labonair_snippets::store as snippet_store;
 use labonair_ssh::{
     ImportConflict, SshConfigEntry, SshConfigService, SshConnectionTester, SshTestResult,
 };
@@ -100,8 +101,8 @@ impl Render for HostDragGhost {
 enum AuthMethod {
     Password,
     Key,
-    /// Auth via a saved [`Credential`] (key or password). Backend auth_method
-    /// string is `"credential"` — matches `reference-src` and
+    /// Auth via a saved [`Credential`] (key or password). The persisted
+    /// auth_method string is `"credential"` — matches `reference-src` and
     /// `ssh::client` / `config_parser` which special-case that exact value.
     Credential,
     None,
@@ -252,7 +253,7 @@ struct HostForm {
     default_path_sftp: String,
     password: String,
     /// Sudo-password autofill — persisted to the OS keychain, never SQLite.
-    /// Empty string on load (backend never returns the plaintext); only
+    /// Empty string on load (the host store never returns the plaintext); only
     /// written when the user types a replacement.
     sudo_password: String,
     /// `true` once a sudo password is on file for this host (drives the
@@ -541,7 +542,10 @@ impl SaveState {
 }
 
 pub struct HostManagerView {
-    app: Backend,
+    database: Database,
+    secrets: std::sync::Arc<SecretsState>,
+    data_dir: std::path::PathBuf,
+    host_event_handler: Option<std::sync::Arc<HostEventHandler<'static>>>,
     ssh_tester: std::sync::Arc<dyn SshConnectionTester>,
     ssh_config: std::sync::Arc<dyn SshConfigService>,
     tokio: TokioHandle,
@@ -597,8 +601,12 @@ pub struct HostManagerView {
 impl EventEmitter<HostManagerEvent> for HostManagerView {}
 
 impl HostManagerView {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
-        app: Backend,
+        database: Database,
+        secrets: std::sync::Arc<SecretsState>,
+        data_dir: std::path::PathBuf,
+        host_event_handler: Option<std::sync::Arc<HostEventHandler<'static>>>,
         ssh_tester: std::sync::Arc<dyn SshConnectionTester>,
         ssh_config: std::sync::Arc<dyn SshConfigService>,
         tokio: TokioHandle,
@@ -615,7 +623,10 @@ impl HostManagerView {
             }
         });
         let this = Self {
-            app,
+            database,
+            secrets,
+            data_dir,
+            host_event_handler,
             ssh_tester,
             ssh_config,
             tokio,
@@ -723,18 +734,20 @@ impl HostManagerView {
             .unwrap_or_default()
     }
 
-    /// Reload hosts / groups / credentials from the backend.
+    /// Reload hosts / groups / credentials from their capability stores.
     pub fn reload(&self, cx: &mut Context<Self>) {
-        let app = self.app.clone();
+        let database = self.database.clone();
         let jh = self.tokio.spawn(async move {
-            let hosts = host_store::hosts_get_all(&app.db).await.unwrap_or_default();
-            let groups = host_store::groups_get_all(&app.db)
+            let hosts = host_store::hosts_get_all(&database)
                 .await
                 .unwrap_or_default();
-            let creds = credentials::credentials_get_all(&app.db)
+            let groups = host_store::groups_get_all(&database)
                 .await
                 .unwrap_or_default();
-            let snippets = snippets::db::snippets_get_all(&app.db)
+            let creds = labonair_credentials::credentials_get_all(&database)
+                .await
+                .unwrap_or_default();
+            let snippets = snippet_store::snippets_get_all(&database)
                 .await
                 .unwrap_or_default()
                 .into_iter()
@@ -850,7 +863,9 @@ impl HostManagerView {
         if keep_form {
             self.save_state = SaveState::Saving;
         }
-        let app = self.app.clone();
+        let database = self.database.clone();
+        let secrets = self.secrets.clone();
+        let host_event_handler = self.host_event_handler.clone();
         let icon = Some(form.icon.clone().unwrap_or_default());
         let snippet_id = Some(form.snippet_id.clone().unwrap_or_default());
         let snippet_mode = Some(form.snippet_mode.clone());
@@ -866,7 +881,7 @@ impl HostManagerView {
             (!form.default_path.trim().is_empty()).then(|| form.default_path.trim().to_string());
         let password = (!form.password.is_empty()).then(|| form.password.clone());
         // On edit: only send `Some(_)` when the user actually typed a new
-        // sudo password (backend interprets `Some("")` as "clear").
+        // sudo password (the host store interprets `Some("")` as "clear").
         let sudo_password = form.sudo_password.clone();
         let default_path_sftp = Some(form.default_path_sftp.trim().to_string());
         let keep_alive_interval: Option<i64> = form.keep_alive_interval.trim().parse().ok();
@@ -891,73 +906,76 @@ impl HostManagerView {
         let addr = form.address.trim().to_string();
         let user = form.username.trim().to_string();
 
+        let create_request = HostCreateRequest {
+            name,
+            host_address: addr,
+            port,
+            username: user,
+            auth_method: auth,
+            private_key_path: key_path,
+            group_id,
+            tags: None,
+            password,
+            sudo_password: (!sudo_password.is_empty()).then_some(sudo_password),
+            default_path_ssh: default_path,
+            default_path_sftp,
+            pin_to_top: Some(pin_to_top),
+            keep_alive_interval,
+            keep_alive_tries,
+            sort_order: None,
+            tunnels: Some(tunnels_json),
+            startup_snippet_id: snippet_id,
+            startup_snippet_mode: snippet_mode,
+            credential_id: cred_id,
+            jump_host_id,
+            notes,
+            icon,
+            block_agent_access: Some(block_agent_access),
+        };
         let jh = self.tokio.spawn(async move {
             match editing {
                 Some(id) => {
-                    let _ = hosts::db::hosts_update(
-                        app.clone(),
-                        &app.db,
-                        &app.secrets,
+                    let request = HostUpdateRequest {
                         id,
-                        Some(name),                                                 // name
-                        Some(addr),                                                 // host_address
-                        Some(port),                                                 // port
-                        Some(user),                                                 // username
-                        Some(auth),                                                 // auth_method
-                        key_path, // private_key_path
-                        group_id, // group_id
-                        None,     // tags
-                        password, // password
-                        (!sudo_password.is_empty()).then(|| sudo_password.clone()), // sudo_password
-                        default_path, // default_path_ssh
-                        default_path_sftp, // default_path_sftp
-                        Some(pin_to_top), // pin_to_top
-                        keep_alive_interval, // keep_alive_interval
-                        keep_alive_tries, // keep_alive_tries
-                        None,     // sort_order
-                        Some(tunnels_json), // tunnels
-                        snippet_id, // startup_snippet_id
-                        snippet_mode, // startup_snippet_mode
-                        Some(cred_id.clone().unwrap_or_default()), // credential_id ("" clears)
-                        Some(jump_host_id.clone().unwrap_or_default()), // jump_host_id ("" clears)
-                        notes,    // notes
-                        icon,     // icon
-                        Some(block_agent_access), // block_agent_access
+                        name: Some(create_request.name.clone()),
+                        host_address: Some(create_request.host_address.clone()),
+                        port: Some(create_request.port),
+                        username: Some(create_request.username.clone()),
+                        auth_method: Some(create_request.auth_method.clone()),
+                        private_key_path: create_request.private_key_path.clone(),
+                        group_id: create_request.group_id.clone(),
+                        tags: create_request.tags.clone(),
+                        password: create_request.password.clone(),
+                        sudo_password: create_request.sudo_password.clone(),
+                        default_path_ssh: create_request.default_path_ssh.clone(),
+                        default_path_sftp: create_request.default_path_sftp.clone(),
+                        pin_to_top: create_request.pin_to_top,
+                        keep_alive_interval: create_request.keep_alive_interval,
+                        keep_alive_tries: create_request.keep_alive_tries,
+                        sort_order: create_request.sort_order,
+                        tunnels: create_request.tunnels.clone(),
+                        startup_snippet_id: create_request.startup_snippet_id.clone(),
+                        startup_snippet_mode: create_request.startup_snippet_mode.clone(),
+                        credential_id: Some(
+                            create_request.credential_id.clone().unwrap_or_default(),
+                        ),
+                        jump_host_id: Some(create_request.jump_host_id.clone().unwrap_or_default()),
+                        notes: create_request.notes.clone(),
+                        icon: create_request.icon.clone(),
+                        block_agent_access: create_request.block_agent_access,
+                    };
+                    host_store::hosts_update(
+                        &database,
+                        &secrets,
+                        request,
+                        host_event_handler.as_deref(),
                     )
-                    .await;
+                    .await
+                    .map(|_| ())
                 }
-                None => {
-                    let _ = hosts::db::hosts_create(
-                        app.clone(),
-                        &app.db,
-                        &app.secrets,
-                        name,                                                       // name
-                        addr,                                                       // host_address
-                        port,                                                       // port
-                        user,                                                       // username
-                        auth,                                                       // auth_method
-                        key_path, // private_key_path
-                        group_id, // group_id
-                        None,     // tags
-                        password, // password
-                        (!sudo_password.is_empty()).then(|| sudo_password.clone()), // sudo_password
-                        default_path, // default_path_ssh
-                        default_path_sftp, // default_path_sftp
-                        Some(pin_to_top), // pin_to_top
-                        keep_alive_interval, // keep_alive_interval
-                        keep_alive_tries, // keep_alive_tries
-                        None,     // sort_order
-                        Some(tunnels_json), // tunnels
-                        snippet_id, // startup_snippet_id
-                        snippet_mode, // startup_snippet_mode
-                        cred_id,  // credential_id
-                        jump_host_id, // jump_host_id
-                        notes,    // notes
-                        icon,     // icon
-                        Some(block_agent_access), // block_agent_access
-                    )
-                    .await;
-                }
+                None => host_store::hosts_create(&database, &secrets, create_request)
+                    .await
+                    .map(|_| ()),
             }
         });
         cx.spawn(async move |this, cx| {
@@ -985,10 +1003,12 @@ impl HostManagerView {
     /// Re-fetch just the host/group rows (used after autosave — must not touch
     /// `self.form`).
     fn reload_list_only(&self, cx: &mut Context<Self>) {
-        let app = self.app.clone();
+        let database = self.database.clone();
         let jh = self.tokio.spawn(async move {
-            let hosts = host_store::hosts_get_all(&app.db).await.unwrap_or_default();
-            let groups = host_store::groups_get_all(&app.db)
+            let hosts = host_store::hosts_get_all(&database)
+                .await
+                .unwrap_or_default();
+            let groups = host_store::groups_get_all(&database)
                 .await
                 .unwrap_or_default();
             (hosts, groups)
@@ -1006,10 +1026,11 @@ impl HostManagerView {
     }
 
     fn duplicate_host(&mut self, id: String, cx: &mut Context<Self>) {
-        let app = self.app.clone();
-        let jh = self.tokio.spawn(async move {
-            hosts::db::hosts_duplicate(app.clone(), &app.db, &app.secrets, id).await
-        });
+        let database = self.database.clone();
+        let secrets = self.secrets.clone();
+        let jh = self
+            .tokio
+            .spawn(async move { host_store::hosts_duplicate(&database, &secrets, id).await });
         cx.spawn(async move |this, cx| {
             let _ = jh.await;
             let _ = this.update(cx, |this, cx| this.reload(cx));
@@ -1022,10 +1043,11 @@ impl HostManagerView {
             self.form = None;
             self.save_state = SaveState::Idle;
         }
-        let app = self.app.clone();
-        let jh = self.tokio.spawn(async move {
-            hosts::db::hosts_delete(app.clone(), &app.db, &app.secrets, id).await
-        });
+        let database = self.database.clone();
+        let secrets = self.secrets.clone();
+        let jh = self
+            .tokio
+            .spawn(async move { host_store::hosts_delete(&database, &secrets, id).await });
         cx.spawn(async move |this, cx| {
             let _ = jh.await;
             let _ = this.update(cx, |this, cx| this.reload(cx));
@@ -1056,10 +1078,10 @@ impl HostManagerView {
                 sort_order: i as i64,
             })
             .collect();
-        let app = self.app.clone();
+        let database = self.database.clone();
         let jh = self
             .tokio
-            .spawn(async move { host_store::hosts_reorder(&app.db, items).await });
+            .spawn(async move { host_store::hosts_reorder(&database, items).await });
         cx.spawn(async move |this, cx| {
             let _ = jh.await;
             let _ = this.update(cx, |this, cx| this.reload_list_only(cx));
@@ -1069,38 +1091,41 @@ impl HostManagerView {
 
     /// Move a host into (`Some(id)`) or out of (`None`) a group.
     fn move_host_to_group(&mut self, host_id: &str, group: Option<String>, cx: &mut Context<Self>) {
-        let app = self.app.clone();
+        let database = self.database.clone();
+        let secrets = self.secrets.clone();
         let id = host_id.to_string();
         let jh = self.tokio.spawn(async move {
-            hosts::db::hosts_update(
-                app.clone(),
-                &app.db,
-                &app.secrets,
-                id,
-                None,                            // name
-                None,                            // host_address
-                None,                            // port
-                None,                            // username
-                None,                            // auth_method
-                None,                            // private_key_path
-                Some(group.unwrap_or_default()), // group_id ("" clears)
-                None,                            // tags
-                None,                            // password
-                None,                            // sudo_password
-                None,                            // default_path_ssh
-                None,                            // default_path_sftp
-                None,                            // pin_to_top
-                None,                            // keep_alive_interval
-                None,                            // keep_alive_tries
-                None,                            // sort_order
-                None,                            // tunnels
-                None,                            // startup_snippet_id
-                None,                            // startup_snippet_mode
-                None,                            // credential_id
-                None,                            // jump_host_id
-                None,                            // notes
-                None,                            // icon
-                None,                            // block_agent_access
+            host_store::hosts_update(
+                &database,
+                &secrets,
+                HostUpdateRequest {
+                    id,
+                    name: None,
+                    host_address: None,
+                    port: None,
+                    username: None,
+                    auth_method: None,
+                    private_key_path: None,
+                    group_id: Some(group.unwrap_or_default()),
+                    tags: None,
+                    password: None,
+                    sudo_password: None,
+                    default_path_ssh: None,
+                    default_path_sftp: None,
+                    pin_to_top: None,
+                    keep_alive_interval: None,
+                    keep_alive_tries: None,
+                    sort_order: None,
+                    tunnels: None,
+                    startup_snippet_id: None,
+                    startup_snippet_mode: None,
+                    credential_id: None,
+                    jump_host_id: None,
+                    notes: None,
+                    icon: None,
+                    block_agent_access: None,
+                },
+                None,
             )
             .await
         });
@@ -1148,37 +1173,39 @@ impl HostManagerView {
     /// Connect via the quick-connect box (`user@host:port`), creating a saved
     /// host row first so the connection flow has something to key on.
     fn quick_connect(&mut self, user: String, host: String, port: u16, cx: &mut Context<Self>) {
-        let app = self.app.clone();
+        let database = self.database.clone();
+        let secrets = self.secrets.clone();
         let name = host.clone();
         let jh = self.tokio.spawn(async move {
-            hosts::db::hosts_create(
-                app.clone(),
-                &app.db,
-                &app.secrets,
-                name,
-                host,
-                port as i64,
-                user,
-                "password".to_string(),
-                None, // private_key_path
-                None, // group_id
-                None, // tags
-                None, // password
-                None, // sudo_password
-                None, // default_path_ssh
-                None, // default_path_sftp
-                None, // pin_to_top
-                None, // keep_alive_interval
-                None, // keep_alive_tries
-                None, // sort_order
-                None, // tunnels
-                None, // startup_snippet_id
-                None, // startup_snippet_mode
-                None, // credential_id
-                None, // jump_host_id
-                None, // notes
-                None, // icon
-                None, // block_agent_access
+            host_store::hosts_create(
+                &database,
+                &secrets,
+                HostCreateRequest {
+                    name,
+                    host_address: host,
+                    port: port as i64,
+                    username: user,
+                    auth_method: "password".to_string(),
+                    private_key_path: None,
+                    group_id: None,
+                    tags: None,
+                    password: None,
+                    sudo_password: None,
+                    default_path_ssh: None,
+                    default_path_sftp: None,
+                    pin_to_top: None,
+                    keep_alive_interval: None,
+                    keep_alive_tries: None,
+                    sort_order: None,
+                    tunnels: None,
+                    startup_snippet_id: None,
+                    startup_snippet_mode: None,
+                    credential_id: None,
+                    jump_host_id: None,
+                    notes: None,
+                    icon: None,
+                    block_agent_access: None,
+                },
             )
             .await
         });
@@ -1198,11 +1225,11 @@ impl HostManagerView {
         if name.trim().is_empty() {
             return;
         }
-        let app = self.app.clone();
+        let database = self.database.clone();
         let name = name.trim().to_string();
         let jh = self
             .tokio
-            .spawn(async move { host_store::groups_create(&app.db, name, None, None).await });
+            .spawn(async move { host_store::groups_create(&database, name, None, None).await });
         cx.spawn(async move |this, cx| {
             let _ = jh.await;
             let _ = this.update(cx, |this, cx| this.reload(cx));
@@ -1211,10 +1238,10 @@ impl HostManagerView {
     }
 
     fn delete_group(&mut self, id: String, cx: &mut Context<Self>) {
-        let app = self.app.clone();
+        let database = self.database.clone();
         let jh = self
             .tokio
-            .spawn(async move { host_store::groups_delete(&app.db, id).await });
+            .spawn(async move { host_store::groups_delete(&database, id).await });
         cx.spawn(async move |this, cx| {
             let _ = jh.await;
             let _ = this.update(cx, |this, cx| this.reload(cx));
@@ -1232,12 +1259,13 @@ impl HostManagerView {
             draft.name.trim().to_string()
         };
         let is_key = draft.is_key;
-        let app = self.app.clone();
+        let database = self.database.clone();
+        let secrets = self.secrets.clone();
+        let data_dir = self.data_dir.clone();
         let jh = self.tokio.spawn(async move {
-            let cred = credentials::credentials_create(
-                app.clone(),
-                &app.db,
-                &app.secrets,
+            let cred = labonair_credentials::credentials_create(
+                &database,
+                &secrets,
                 name,
                 if is_key { "key" } else { "password" }.to_string(),
                 None,
@@ -1247,10 +1275,10 @@ impl HostManagerView {
             )
             .await?;
             if is_key {
-                let res = credentials::credential_generate_keypair(
-                    app.clone(),
-                    &app.db,
-                    &app.secrets,
+                let res = labonair_credentials::credential_generate_keypair(
+                    &data_dir,
+                    &database,
+                    &secrets,
                     cred.id.clone(),
                     "ed25519".to_string(),
                     None,
@@ -1278,9 +1306,11 @@ impl HostManagerView {
     }
 
     fn delete_credential(&mut self, id: String, cx: &mut Context<Self>) {
-        let app = self.app.clone();
+        let database = self.database.clone();
+        let secrets = self.secrets.clone();
+        let data_dir = self.data_dir.clone();
         let jh = self.tokio.spawn(async move {
-            credentials::credentials_delete(app.clone(), &app.db, &app.secrets, id).await
+            labonair_credentials::credentials_delete(&database, &secrets, &data_dir, id).await
         });
         cx.spawn(async move |this, cx| {
             let _ = jh.await;
@@ -3441,10 +3471,10 @@ impl HostManagerView {
         if name.is_empty() {
             return;
         }
-        let app = self.app.clone();
+        let database = self.database.clone();
         let jh = self
             .tokio
-            .spawn(async move { host_store::groups_update(&app.db, id, name).await });
+            .spawn(async move { host_store::groups_update(&database, id, name).await });
         cx.spawn(async move |this, cx| {
             let _ = jh.await;
             let _ = this.update(cx, |this, cx| this.reload(cx));
@@ -3749,12 +3779,24 @@ mod tests {
         let rt = tokio::runtime::Runtime::new().unwrap();
         let handle = rt.handle().clone();
         let dir = std::env::temp_dir().join(format!("labonair-hm-{}", uuid::Uuid::new_v4()));
-        let backend = labonair_backend::App::new(&dir).unwrap();
+        let connection = labonair_persistence::initialize_database(dir.clone()).unwrap();
+        let database = Database(std::sync::Arc::new(std::sync::Mutex::new(connection)));
+        let secrets = std::sync::Arc::new(SecretsState::new(dir.clone()));
         let ssh_service = std::sync::Arc::new(TestSshServices);
         let view = cx.update(|cx| {
             let theme = cx.new(|_| ThemeStore::new(WindowAppearance::Dark));
             cx.new(|cx| {
-                HostManagerView::new(backend, ssh_service.clone(), ssh_service, handle, theme, cx)
+                HostManagerView::new(
+                    database,
+                    secrets,
+                    dir.clone(),
+                    None,
+                    ssh_service.clone(),
+                    ssh_service,
+                    handle,
+                    theme,
+                    cx,
+                )
             })
         });
         (rt, view)
@@ -3839,7 +3881,7 @@ mod tests {
         assert!(form.sudo_password.is_empty());
 
         // Legacy "agent" spelling still resolves to the Credential mode, and
-        // Credential serializes back to the backend's "credential" string.
+        // Credential serializes back to the persisted "credential" string.
         assert_eq!(AuthMethod::from_str("agent"), AuthMethod::Credential);
         assert_eq!(AuthMethod::Credential.as_str(), "credential");
     }
