@@ -70,8 +70,11 @@ canonical keymap JSON editor. Focused workspace tests, compile, and Clippy
 checks pass.
 
 Remaining work is the required manual visual check of the
-empty/project/standalone shell states. `cargo run` reaches the native binary,
-but the current desktop session exposes no Labonair window to the available UI
-surface, so this check cannot be inferred from startup or compilation.
+empty/project/standalone shell states. `cargo run` reaches the native Rust
+binary, but the process currently exposes no capturable layer-0 window. The
+first generic-name screenshot was invalid because it captured the installed
+legacy Tauri app; `scripts/screenshot.sh` now requires the Rust PID and fails
+closed in that situation. This check cannot be inferred from startup or
+compilation.
 Session identity persistence and the final removal audit continue in
 `R02-003`.

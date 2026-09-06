@@ -9,7 +9,7 @@ context model now distinguishes `WorkspaceIdentity::Standalone` from
 `Project { root }` and `WorkspaceState::Empty` from `Active`, with explicit
 tested transitions and an identity label on the empty surface.
 
-The current branch is `master` at `3602c1b`; this partial migration is
+The current branch is `master` at `1a61698`; this partial migration is
 committed locally.
 The explicit project-opening flow is now wired through GPUI's native folder
 picker, and project settings follow workspace identity rather than terminal
@@ -21,10 +21,12 @@ workspace test suite
 --all-targets`, `cargo clippy --workspace --all-targets -- -D warnings`,
 `git diff --check`, and the dependency verifier pass. No source blocker.
 
-The native binary was also launched successfully with `cargo run`, but this
-desktop session exposes no Labonair window to the available UI surface; a
-system screenshot showed only the Codex desktop. The visual acceptance check
-therefore remains honestly open rather than being inferred from compilation.
+The native binary was launched with `cargo run`. The first visual helper used
+the generic owner name and therefore captured the installed legacy
+`/Applications/Labonair.app`; that screenshot is invalid evidence. The helper
+now requires the PID of the Rust binary and fails closed if that exact process
+has no layer-0 window. The Rust process currently starts without exposing a
+capturable window, so the visual acceptance check remains open.
 
 The normative documentation now also includes `docs/repository-layout.md` and
 `docs/feature-lifecycle.md`, linked from `docs/README.md`, `README.md`, and

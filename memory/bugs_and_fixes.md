@@ -36,6 +36,18 @@ canonical keymap flow.
 This preserves old user keymap files without keeping a duplicate Settings or
 Shortcuts surface.
 
+## 2026-09-06 — Make visual screenshots fail closed
+
+**Finding:** `scripts/screenshot.sh` initially identified windows only by the
+generic owner name `Labonair`. Because `/Applications/Labonair.app` is the
+legacy Tauri app, a visual check could inspect that app instead of the Rust
+binary. The earlier full-display fallback had the same class of risk.
+
+**Resolution:** The script now resolves `target/debug/labonair`, accepts an
+optional Rust PID, filters CoreGraphics windows by that exact process PID, and
+exits with an error when no matching layer-0 window is present. Only a
+screenshot targeted at the Rust process is accepted as visual evidence.
+
 ## 2026-09-06 — Make repository placement and feature changes explicit
 
 **Finding:** The architecture rules described ownership and dependency
