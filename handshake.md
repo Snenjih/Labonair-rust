@@ -14,10 +14,10 @@ The exact Rust bundle was opened at its absolute path; its visible layer-0
 window was confirmed for the exact native PID, while capture was denied by
 macOS. No legacy Tauri process was used.
 
-The latest transition slice is committed at `8171b30`; the screenshot-helper
-and documentation changes are currently the only uncommitted work. Next:
-finish the visual evidence once Screen Recording permission is available,
-then close `R02-003` and start `R03-001`.
+The latest transition slice is committed at `8171b30`; the visual-helper and
+permission-documentation follow-ups are committed at `4c48922` and `ab5bf4a`.
+The worktree is clean. Next: finish the visual evidence once Screen Recording
+permission is available, then close `R02-003` and start `R03-001`.
 
 ## Current Session: 2026-09-06 (Typed workspace transitions and documentation sync)
 
