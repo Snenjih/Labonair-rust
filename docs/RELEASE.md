@@ -40,6 +40,10 @@ Do not use `open -a Labonair` for development or visual verification. The
 legacy Tauri application may be installed under the same display name, which
 would launch the wrong application.
 
+The complete native visual-verification contract is in
+[`visual-verification.md`](visual-verification.md). In particular, packaged
+checks must use the absolute Rust bundle path and an exact executable PID.
+
 The script:
 
 1. `cargo build --release -p labonair`,
