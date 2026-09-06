@@ -57,7 +57,7 @@ Dependencies point downward. A feature may depend on a foundation contract, but 
 | `labonair-errors` | Structured, UI-free domain error contract and recovery metadata. |
 | `labonair-process` | Process and PTY launching contracts. |
 | `labonair-secrets` | Keychain and secret references. |
-| `labonair-persistence` | Small persistence primitives and migrations. |
+| `labonair-persistence` | Shared SQLite connection and schema lifecycle; feature modules own stores and queries. |
 
 ### Cross-cutting modules
 

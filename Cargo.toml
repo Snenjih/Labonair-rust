@@ -24,6 +24,7 @@ members = [
     "crates/filesystem",
     "crates/secrets",
     "crates/errors",
+    "crates/persistence",
     "crates/hosts",
     "crates/backend",
     "crates/ai",

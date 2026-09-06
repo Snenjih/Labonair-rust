@@ -4191,6 +4191,7 @@ dependencies = [
  "labonair-errors",
  "labonair-filesystem",
  "labonair-hosts",
+ "labonair-persistence",
  "labonair-secrets",
  "labonair-settings-content",
  "libc",
@@ -4397,6 +4398,13 @@ dependencies = [
  "tokio",
  "tracing",
  "uuid",
+]
+
+[[package]]
+name = "labonair-persistence"
+version = "0.1.0"
+dependencies = [
+ "rusqlite",
 ]
 
 [[package]]

@@ -1,13 +1,15 @@
 # Handshake — Session State (Labonair-rust Port)
 
-## Current Session: 2026-09-06 (Host domain contract extraction)
+## Current Session: 2026-09-06 (Host and persistence boundaries)
 
 The host model boundary is now standalone in `crates/hosts`
 (`labonair-hosts`). `Host`, `Group`, and `ReorderItem` no longer belong to the
 backend module and are consumed directly by `hosts-ui` and `panel-snippets`.
-The backend intentionally still owns `HostsDb` and App-bound persistence/
+The backend intentionally still owns host queries and App-bound persistence/
 transport adapters; moving those wholesale would preserve the coupling this
-rework is meant to remove.
+rework is meant to remove. The shared SQLite connection and schema lifecycle
+are now owned by `crates/persistence` (`labonair-persistence`), while the
+backend's `HostsDb` name remains a compatibility alias.
 
 Updated the workspace manifest, lockfile, dependency verifier, architecture
 inventory, architecture contract, and `R01-001` progress. Verification passed:
@@ -16,10 +18,11 @@ inventory, architecture contract, and `R01-001` progress. Verification passed:
 `cargo test -p labonair-hosts -p labonair-backend -p labonair-hosts-ui -p
 labonair-panel-snippets`, and `scripts/check-crate-deps.sh`.
 
-State: branch `master`, host boundary changes are uncommitted and ready for
-the next commit. `R01-001` remains `🔄 In Progress`; next is extracting host
-persistence behind a narrow store/service contract and replacing its direct
-`App`/MCP coupling with a typed capability callback. No source blocker.
+State: branch `master`, host and persistence boundary changes are uncommitted
+and ready for the next commit. `R01-001` remains `🔄 In Progress`; next is
+extracting host persistence behind a narrow store/service contract and
+replacing its direct `App`/MCP coupling with a typed capability callback. No
+source blocker.
 
 ## Current Session: 2026-09-06 (First modular platform boundary)
 

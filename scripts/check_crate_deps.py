@@ -39,6 +39,9 @@ ALLOWED = {
     # Host domain contract. Persistence and transports remain transitional
     # backend adapters until the host store is extracted.
     "labonair-hosts": set(),
+    # Shared SQLite lifecycle only. Feature stores own their queries and
+    # domain models; this crate must remain UI- and backend-free.
+    "labonair-persistence": set(),
     "labonair-notifications": {
         "labonair-theme", "labonair-ui-kit", "labonair-gpui-ext",
     },
@@ -172,6 +175,7 @@ ALLOWED = {
     "labonair-backend": {
         "labonair-settings-content", "labonair-filesystem", "labonair-secrets",
         "labonair-errors", "labonair-hosts",
+        "labonair-persistence",
     },
     "labonair-ai": {"labonair-backend", "labonair-filesystem"},
 

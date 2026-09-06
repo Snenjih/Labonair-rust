@@ -39,6 +39,9 @@ Reduce `labonair-backend` from a broad public application state container to nar
   backend keeps only a re-export for old internal paths.
 - Saved-host domain models are now extracted as `labonair-hosts`; the backend
   still owns the transitional SQLite store and App-bound operations.
+- Shared SQLite connection/schema lifecycle is now extracted as
+  `labonair-persistence`; feature-specific stores still use the compatibility
+  backend database handle until their queries move behind capability APIs.
 - Stable IDs, typed domain events, and the remaining service boundaries are
   still open in this task.
 

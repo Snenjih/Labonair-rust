@@ -1,8 +1,7 @@
 pub mod db;
 
 pub use labonair_hosts::{Group, Host, ReorderItem};
-
-pub struct HostsDb(pub std::sync::Mutex<rusqlite::Connection>);
+pub use labonair_persistence::Database as HostsDb;
 
 /// The opaque `credential_ref` a `hosts.entries` (`SettingsContent`) row
 /// carries when the host has a secret stored under the `"labonair-app"`

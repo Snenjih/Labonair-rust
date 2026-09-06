@@ -1,5 +1,16 @@
 # Bugs, fixes, and non-obvious constraints
 
+## 2026-09-06 — Shared database lifecycle is infrastructure, not host logic
+
+**Finding:** The existing `HostsDb` wrapper initialized one SQLite database
+containing hosts, credentials, and snippets. Treating that wrapper as the
+host module's store would keep unrelated persistence concerns coupled.
+
+**Resolution:** Created `labonair-persistence` for the shared SQLite
+connection, schema creation, and idempotent migrations. The backend keeps only
+the compatibility alias `HostsDb` and the old initialization path for now;
+feature-specific query ownership remains the next migration step.
+
 ## 2026-09-06 — Host domain models must be separated before host persistence
 
 **Finding:** `backend::modules::hosts` combined serializable host models,

@@ -18,6 +18,7 @@ This document records the current repository shape during the module migration. 
 | `secrets` | Encrypted/plain local secret store and secret cache | foundation/platform service | Extracted from `backend`; backend keeps a compatibility adapter while SSH/Hosts/MCP migrate. |
 | `errors` | Structured error catalog and recovery hints | foundation/platform contract | Extracted from `backend`; capability crates can consume it without importing the backend facade. |
 | `hosts` | Saved-host and host-group domain contract | hosts module | Extracted as UI/backend-free models; persistence and transport adapters remain transitional in `backend`. |
+| `persistence` | Shared SQLite connection and schema lifecycle | foundation/platform service | Extracted from the host adapter; feature-specific queries still remain in `backend` and are next to migrate. |
 | `gpui-ext` | Shared GPUI helpers | foundation | Keep dependency-free from features. |
 | `hosts-ui` | Host management UI and host-related dependencies | hosts module | Remove settings and notification coupling. |
 | `notifications` | Notification state plus toast renderer | notifications module | Remove toast rendering; keep dropdown consumer. |
@@ -51,6 +52,7 @@ The current Cargo metadata shows several transitional edges that conflict with t
 - `backend` still owns the public secret API adapter even though storage now belongs to `labonair-secrets`; existing SSH/Hosts/MCP call sites still pass the backend app handle.
 - `backend` still re-exports the structured error contract for old internal paths, while the implementation now belongs to `labonair-errors`.
 - `backend` still owns host persistence and App-bound host operations; the saved-host domain models now belong to `labonair-hosts`.
+- `backend` still exposes the shared database under the compatibility name `HostsDb`; connection/schema lifecycle now belongs to `labonair-persistence`.
 - `shell/src/commands.rs`, `shell/src/status_items.rs`, and workspace views still contain feature-specific behavior that belongs to owning modules.
 - `workspace/src/toast_layer.rs` and `notifications` still encode the superseded toast model.
 
@@ -64,7 +66,7 @@ These are migration findings, not reasons to perform a destructive rewrite. Each
 ## Migration order
 
 1. Introduce stable IDs, typed domain events, and narrow service traits.
-2. Extract platform services and capability contracts from `backend` without changing user behavior. The filesystem service, secret store, error contract, and host domain contract are now standalone; their legacy adapters and direct consumers remain to be migrated.
+2. Extract platform services and capability contracts from `backend` without changing user behavior. The filesystem service, secret store, error contract, host domain contract, and shared database lifecycle are now standalone; their legacy adapters and direct consumers remain to be migrated.
 3. Split notification state from presentation and replace toast rendering.
 4. Split command/keymap registries from the palette view.
 5. Move transfers to their own module and statusbar owner.
