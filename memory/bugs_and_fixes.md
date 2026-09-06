@@ -6,10 +6,9 @@
 directly, but only waited and then killed its PID. A binary that exited during
 startup could therefore be reported as launched successfully.
 
-**Resolution:** The smoke test now checks the exact Rust PID with `kill -0`
-after one second and prints the native launch log before failing. It then
-allows the process to run for the remaining verification interval and stops
-that PID directly.
+**Resolution:** The smoke test now opens the `.app` with `open -n -W` using
+its absolute repository path, resolves the resulting exact Rust executable
+PID, checks that PID with `ps`, and stops that PID directly.
 
 The first run after this check was added exposed an additional native launch
 failure: the release executable stayed alive for the first second but then
@@ -17,22 +16,26 @@ terminated with `Abort trap: 6` before the five-second interval ended. The
 smoke test now checks both ends of the interval, so this remains a real launch
 blocker rather than a false green result.
 
-The macOS diagnostic report identifies the failure in `NSApplication` and
+The macOS diagnostic report identified the failure in `NSApplication` and
 LaunchServices (`_RegisterApplication` / `GetCurrentProcess`) while the
 process has bundle ID `com.labonair.rust`; it is not a legacy-app collision.
-The same environment reports LaunchServices `-10827` when opening the bundle,
-so GUI acceptance still requires a working logged-in AppKit/LaunchServices
-session outside this restricted runner.
+That applied to direct executable invocation; opening the exact `.app` path
+through LaunchServices is the reliable macOS form.
+
+The reliable macOS launch form is `open -n -W` with the absolute `.app` path.
+Launching the executable directly can initialize AppKit without a visible
+window in this runner, while the exact bundle launch produces a PID-scoped
+window that `scripts/screenshot.sh` can verify.
 
 ## 2026-09-06 — Never launch visual checks through the shared app name
 
 **Finding:** A generic `open -a Labonair` launch can resolve the installed
 legacy Tauri application because it shares the native app's display name.
 
-**Resolution:** The release smoke test now executes the bundled Rust binary
-at `Labonair.app/Contents/MacOS/labonair` directly. Release documentation and
-manual verification use either that absolute bundle path or `cargo run -p
-labonair`; the generic application-name launch is explicitly forbidden.
+**Resolution:** The release smoke test and manual verification open the
+absolute Rust bundle path and then target its exact executable PID. Release
+documentation uses that path or `cargo run -p labonair`; the generic
+application-name launch is explicitly forbidden.
 
 ## 2026-09-06 — Project identity must drive Explorer and Git roots
 

@@ -52,24 +52,18 @@ cwd-based project inference.
 
 The native macOS bundle now uses the distinct identifier `com.labonair.rust`
 instead of the legacy Tauri app's `com.labonair.app`, preventing LaunchServices
-identity collisions during local development. `scripts/smoke-test.sh` rebuilt
-the bundle and passed its structural checks plus all three Rust smoke tests.
-The full workspace check, Clippy, and workspace test suite also pass after
-reclaiming obsolete generated `target/` build data.
-After rebuilding with the distinct bundle ID, this shell still receives
-LaunchServices error `-10827` from `open`; no screenshot from that attempt is
-valid GUI evidence. The release smoke test is green, but the manual native
-GUI launch check remains open.
+identity collisions during local development. `scripts/smoke-test.sh` rebuilds
+the bundle and passes its structural checks plus all three Rust smoke tests.
+The exact absolute bundle path also starts the native app through
+`open -n -W`; no generic app-name launch is used.
 The latest R02-002 slice fixes a real state propagation bug: Explorer and Git
 now resolve the explicit workspace project root before the active terminal
 cwd, with focused regression tests for project and standalone precedence.
 
 The visual verification path was corrected after an invalid legacy-app launch:
-the native app is now started directly as `cargo run -p labonair` or via the
-absolute bundled executable, never with `open -a Labonair`. The release smoke
-test follows the same direct-executable rule. A current direct Rust launch
-reached PID 33476, but this restricted session still exposed no matching
-CoreGraphics layer-0 window, so no screenshot was accepted as visual evidence.
+the native app is now started with `cargo run -p labonair` or `open -n -W` on
+the absolute bundle path, never with `open -a Labonair`. The release smoke test
+follows the same exact-bundle/PID rule.
 
 The optional release launch smoke test now checks that the exact Rust process
 survives the full interval and fails on early termination. The current run
@@ -78,6 +72,13 @@ process aborts in macOS `NSApplication`/LaunchServices with `SIGABRT` in this
 runner; the diagnostic report names bundle ID `com.labonair.rust`. This is an
 environmental AppKit/LaunchServices limitation, not evidence of the old Tauri
 app being launched.
+
+That direct-executable limitation was isolated: the reliable macOS path is
+`open -n -W` against the absolute Rust `.app` path. The corrected smoke test
+now uses that path and the exact executable PID, and a current PID-scoped
+capture shows the native standalone shell with Explorer, workspace, and
+statusbar zones. Project selection/transition interaction remains to be
+verified before R02-002 can close.
 
 ## Current Session: 2026-09-06 (Global menu and theme entrypoints complete)
 

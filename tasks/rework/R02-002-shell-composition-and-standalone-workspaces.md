@@ -84,9 +84,14 @@ orders.
 
 The native launch verification path is now PID- and executable-specific. The
 optional release smoke test rejects a Rust process that exits during the
-interval. In the current restricted macOS runner, LaunchServices aborts
-`com.labonair.rust` during `NSApplication` initialization; this remains an
-environmental visual-gate blocker and is not accepted as evidence from the
-legacy Tauri application.
+interval. The macOS test opens the absolute Rust bundle path through
+LaunchServices and never resolves the shared `Labonair` display name, so the
+legacy Tauri application cannot satisfy the check.
+
+The launch boundary was narrowed further: `open -n -W` with the absolute Rust
+bundle path starts the native app reliably, and the smoke test resolves and
+checks only the resulting Rust executable PID. A current PID-scoped capture
+confirms the standalone shell zones; project selection and transition visuals
+remain open.
 Session identity persistence and the final removal audit continue in
 `R02-003`.
