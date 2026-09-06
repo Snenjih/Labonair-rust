@@ -9,7 +9,7 @@ context model now distinguishes `WorkspaceIdentity::Standalone` from
 `Project { root }` and `WorkspaceState::Empty` from `Active`, with explicit
 tested transitions and an identity label on the empty surface.
 
-The current branch is `master` at `2e4aaff`; this partial migration is
+The current branch is `master` at `ed10650`; this partial migration is
 committed locally.
 The explicit project-opening flow is now wired through GPUI's native folder
 picker, and project settings follow workspace identity rather than terminal
@@ -54,6 +54,8 @@ The native macOS bundle now uses the distinct identifier `com.labonair.rust`
 instead of the legacy Tauri app's `com.labonair.app`, preventing LaunchServices
 identity collisions during local development. `scripts/smoke-test.sh` rebuilt
 the bundle and passed its structural checks plus all three Rust smoke tests.
+The full workspace check, Clippy, and workspace test suite also pass after
+reclaiming obsolete generated `target/` build data.
 
 ## Current Session: 2026-09-06 (Global menu and theme entrypoints complete)
 
