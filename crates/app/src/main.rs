@@ -126,60 +126,64 @@ fn main() {
             gpui_component::init(cx);
             let bounds = window_state::load()
                 .unwrap_or_else(|| Bounds::centered(None, size(px(1200.0), px(800.0)), cx));
-            cx.open_window(
-                WindowOptions {
-                    window_bounds: Some(WindowBounds::Windowed(bounds)),
-                    titlebar: Some(TitlebarOptions {
-                        // Reference uses macOS `titleBarStyle: "Overlay"` +
-                        // `hiddenTitle: true`: one transparent overlay titlebar
-                        // with the traffic lights floating over the app's own
-                        // header. No OS-drawn title text.
-                        title: None,
-                        appears_transparent: true,
-                        // Vertically centre the 14px-tall traffic lights inside
-                        // the 40px custom header.
-                        traffic_light_position: Some(point(px(19.0), px((40.0 - 14.0) / 2.0))),
-                    }),
-                    window_min_size: Some(size(px(720.0), px(480.0))),
-                    ..Default::default()
-                },
-                move |window, cx| {
-                    let theme = labonair_shell::init_theme(window.appearance(), cx);
-                    window
-                        .observe_window_appearance({
-                            let theme = theme.clone();
-                            move |window, cx| {
-                                let appearance = window.appearance();
-                                theme.update(cx, |store, cx| {
-                                    store.set_system_appearance(appearance, cx)
-                                });
-                            }
-                        })
-                        .detach();
-                    let background = labonair_shell::init_background(cx);
-                    let notifications = labonair_shell::init_notifications(cx);
-                    let backend = backend.clone();
-                    let tokio_handle = tokio_handle.clone();
-                    // The window's first layer must be a `gpui_component::Root`
-                    // so gpui-component primitives (Input, popovers, dialogs,
-                    // notifications) can reach their deferred render layers.
-                    let shell = cx.new(|cx| {
-                        AppShell::new(
-                            theme,
-                            background,
-                            notifications,
-                            backend,
-                            tokio_handle,
-                            window,
-                            cx,
-                        )
-                    });
-                    let shell_view: gpui::AnyView = shell.into();
-                    cx.new(|cx| Root::new(shell_view, window, cx))
-                },
-            )
-            .expect("failed to open window");
+            let window = cx
+                .open_window(
+                    WindowOptions {
+                        window_bounds: Some(WindowBounds::Windowed(bounds)),
+                        titlebar: Some(TitlebarOptions {
+                            // Reference uses macOS `titleBarStyle: "Overlay"` +
+                            // `hiddenTitle: true`: one transparent overlay titlebar
+                            // with the traffic lights floating over the app's own
+                            // header. No OS-drawn title text.
+                            title: None,
+                            appears_transparent: true,
+                            // Vertically centre the 14px-tall traffic lights inside
+                            // the 40px custom header.
+                            traffic_light_position: Some(point(px(19.0), px((40.0 - 14.0) / 2.0))),
+                        }),
+                        window_min_size: Some(size(px(720.0), px(480.0))),
+                        ..Default::default()
+                    },
+                    move |window, cx| {
+                        let theme = labonair_shell::init_theme(window.appearance(), cx);
+                        window
+                            .observe_window_appearance({
+                                let theme = theme.clone();
+                                move |window, cx| {
+                                    let appearance = window.appearance();
+                                    theme.update(cx, |store, cx| {
+                                        store.set_system_appearance(appearance, cx)
+                                    });
+                                }
+                            })
+                            .detach();
+                        let background = labonair_shell::init_background(cx);
+                        let notifications = labonair_shell::init_notifications(cx);
+                        let backend = backend.clone();
+                        let tokio_handle = tokio_handle.clone();
+                        // The window's first layer must be a `gpui_component::Root`
+                        // so gpui-component primitives (Input, popovers, dialogs,
+                        // notifications) can reach their deferred render layers.
+                        let shell = cx.new(|cx| {
+                            AppShell::new(
+                                theme,
+                                background,
+                                notifications,
+                                backend,
+                                tokio_handle,
+                                window,
+                                cx,
+                            )
+                        });
+                        let shell_view: gpui::AnyView = shell.into();
+                        cx.new(|cx| Root::new(shell_view, window, cx))
+                    },
+                )
+                .expect("failed to open window");
             labonair_shell::init_menus(cx);
             cx.activate(true);
+            window
+                .update(cx, |_, window, _| window.activate_window())
+                .expect("failed to activate main window");
         });
 }

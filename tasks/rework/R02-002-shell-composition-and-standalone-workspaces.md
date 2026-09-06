@@ -69,12 +69,11 @@ legacy keymap action name remains only as a compatibility alias to the
 canonical keymap JSON editor. Focused workspace tests, compile, and Clippy
 checks pass.
 
-Remaining work is the required manual visual check of the
-empty/project/standalone shell states. `cargo run` reaches the native Rust
-binary, but the process currently exposes no capturable layer-0 window. The
-first generic-name screenshot was invalid because it captured the installed
-legacy Tauri app; `scripts/screenshot.sh` now requires the Rust PID and fails
-closed in that situation. This check cannot be inferred from startup or
-compilation.
+The correct Rust app bundle was launched through
+`target/release/bundle/macos/Labonair.app` and captured with a PID-scoped
+visual check. The valid screenshot shows the empty standalone workspace and
+the expected shell zones. Project-state and transition visuals remain open;
+the helper supports both debug and bundled Rust executables and rejects the
+installed legacy Tauri app.
 Session identity persistence and the final removal audit continue in
 `R02-003`.

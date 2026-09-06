@@ -48,6 +48,12 @@ optional Rust PID, filters CoreGraphics windows by that exact process PID, and
 exits with an error when no matching layer-0 window is present. Only a
 screenshot targeted at the Rust process is accepted as visual evidence.
 
+The helper also recognizes the packaged Rust executable under
+`target/release/bundle/macos/Labonair.app/Contents/MacOS/labonair`. Launching
+the bundle was necessary for reliable macOS window visibility in the visual
+check; the installed legacy app remains a separate process and is never a
+valid target.
+
 ## 2026-09-06 — Keep the active rework queue authoritative
 
 **Finding:** `R01-001` was still marked in progress even though later R01

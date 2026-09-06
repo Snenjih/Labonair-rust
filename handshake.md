@@ -21,12 +21,13 @@ workspace test suite
 --all-targets`, `cargo clippy --workspace --all-targets -- -D warnings`,
 `git diff --check`, and the dependency verifier pass. No source blocker.
 
-The native binary was launched with `cargo run`. The first visual helper used
-the generic owner name and therefore captured the installed legacy
-`/Applications/Labonair.app`; that screenshot is invalid evidence. The helper
-now requires the PID of the Rust binary and fails closed if that exact process
-has no layer-0 window. The Rust process currently starts without exposing a
-capturable window, so the visual acceptance check remains open.
+The first visual helper used the generic owner name and therefore captured the
+installed legacy `/Applications/Labonair.app`; that screenshot is invalid
+evidence. The corrected helper requires the PID of the Rust binary and fails
+closed if that exact process has no layer-0 window. The Rust app bundle was
+then launched through `target/release/bundle/macos/Labonair.app`; a valid
+PID-scoped screenshot confirms the empty standalone workspace and shell zones.
+Project-state and transition visuals remain open.
 
 The normative documentation now also includes `docs/repository-layout.md` and
 `docs/feature-lifecycle.md`, linked from `docs/README.md`, `README.md`, and

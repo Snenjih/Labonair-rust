@@ -14,17 +14,19 @@ set -euo pipefail
 OUT="${1:-shots/labonair.png}"
 mkdir -p "$(dirname "$OUT")"
 
-RUST_BINARY="$(cd "$(dirname "$0")/../target/debug" && pwd)/labonair"
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+RUST_BINARY="$REPO_ROOT/target/debug/labonair"
+RUST_BUNDLE_BINARY="$REPO_ROOT/target/release/bundle/macos/Labonair.app/Contents/MacOS/labonair"
 RUST_PID="${2:-${LABONAIR_RUST_PID:-}}"
 
 # Never activate or match by the generic application name: the legacy Tauri
 # app is installed as /Applications/Labonair.app and has the same owner name.
 if [ -z "$RUST_PID" ]; then
-    RUST_PID=$(pgrep -f -- '(^|/)target/debug/labonair$' | head -1 || true)
+    RUST_PID=$(pgrep -f -- '(^|/)(target/debug/labonair|target/release/bundle/macos/Labonair\.app/Contents/MacOS/labonair)$' | head -1 || true)
 fi
 
 if [ -z "$RUST_PID" ]; then
-    echo "Rust Labonair process not found: $RUST_BINARY" >&2
+    echo "Rust Labonair process not found: $RUST_BINARY or $RUST_BUNDLE_BINARY" >&2
     exit 1
 fi
 
