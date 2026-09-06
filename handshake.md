@@ -19,12 +19,12 @@ inventory, architecture contract, and `R01-001` progress. Verification passed:
 `cargo test -p labonair-hosts -p labonair-backend -p labonair-hosts-ui -p
 labonair-panel-snippets`, and `scripts/check-crate-deps.sh`.
 
-State: branch `master`, latest commits are `2b32ae4` (shared persistence
-lifecycle), `595f5ed` (host store queries), and the next host write-boundary
-commit is pending. `R01-001` remains `🔄 In Progress`; next is
-extracting host persistence behind a narrow store/service contract and
-replacing its direct `App`/MCP coupling with a typed capability callback. No
-source blocker.
+State: branch `master`, latest host persistence commit is `4859e35`. The full
+`cargo test --workspace` suite also passes with the typed write boundary and
+the working tree is clean. `R01-001` remains `🔄 In Progress`; next is
+extracting the remaining credentials/snippets persistence from the shared
+database surface and continuing the typed service/event migration. No source
+blocker.
 
 ## Current Session: 2026-09-06 (First modular platform boundary)
 
