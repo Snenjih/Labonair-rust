@@ -43,11 +43,14 @@ cargo test -p labonair --test smoke
 
 if [[ "${LABONAIR_SMOKE_LAUNCH:-0}" == "1" ]]; then
 	echo "### 4. launch bundle for 5s"
-	open -W --new -a "$APP" &
-	OPEN_PID=$!
+	# Execute the bundled Rust binary directly. Do not use `open -a Labonair`:
+	# the legacy Tauri app has the same display name and is commonly installed
+	# in /Applications.
+	"$APP/Contents/MacOS/labonair" >/tmp/labonair-rust-smoke.log 2>&1 &
+	RUST_PID=$!
 	sleep 5
-	osascript -e 'tell application "Labonair" to quit' || killall labonair || true
-	wait "$OPEN_PID" 2>/dev/null || true
+	kill "$RUST_PID" 2>/dev/null || true
+	wait "$RUST_PID" 2>/dev/null || true
 	echo "  launched and quit cleanly"
 fi
 

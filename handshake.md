@@ -64,6 +64,13 @@ The latest R02-002 slice fixes a real state propagation bug: Explorer and Git
 now resolve the explicit workspace project root before the active terminal
 cwd, with focused regression tests for project and standalone precedence.
 
+The visual verification path was corrected after an invalid legacy-app launch:
+the native app is now started directly as `cargo run -p labonair` or via the
+absolute bundled executable, never with `open -a Labonair`. The release smoke
+test follows the same direct-executable rule. A current direct Rust launch
+reached PID 33476, but this restricted session still exposed no matching
+CoreGraphics layer-0 window, so no screenshot was accepted as visual evidence.
+
 ## Current Session: 2026-09-06 (Global menu and theme entrypoints complete)
 
 `R02-001` is complete. The titlebar global menu now contains Settings,

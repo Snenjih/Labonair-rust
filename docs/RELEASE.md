@@ -28,6 +28,18 @@ scripts/package-macos.sh            # -> target/release/bundle/macos/Labonair.ap
 scripts/package-macos.sh --dmg      # also builds Labonair_<version>_<arch>.dmg
 ```
 
+To run the native Rust application locally, use an explicit repository path:
+
+```sh
+cargo run -p labonair
+# or, after packaging:
+target/release/bundle/macos/Labonair.app/Contents/MacOS/labonair
+```
+
+Do not use `open -a Labonair` for development or visual verification. The
+legacy Tauri application may be installed under the same display name, which
+would launch the wrong application.
+
 The script:
 
 1. `cargo build --release -p labonair`,

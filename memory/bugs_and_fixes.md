@@ -1,5 +1,15 @@
 # Bugs, fixes, and non-obvious constraints
 
+## 2026-09-06 — Never launch visual checks through the shared app name
+
+**Finding:** A generic `open -a Labonair` launch can resolve the installed
+legacy Tauri application because it shares the native app's display name.
+
+**Resolution:** The release smoke test now executes the bundled Rust binary
+at `Labonair.app/Contents/MacOS/labonair` directly. Release documentation and
+manual verification use either that absolute bundle path or `cargo run -p
+labonair`; the generic application-name launch is explicitly forbidden.
+
 ## 2026-09-06 — Project identity must drive Explorer and Git roots
 
 **Finding:** Selecting a project updated `WorkspaceIdentity` and project
