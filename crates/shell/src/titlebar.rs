@@ -26,8 +26,8 @@
 
 use gpui::{
     div, point, px, App, ClickEvent, Context, Entity, FocusHandle, Focusable, InteractiveElement,
-    IntoElement, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, Render,
-    StatefulInteractiveElement, Styled, Window, WindowControlArea,
+    IntoElement, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, Pixels,
+    Point, Render, StatefulInteractiveElement, Styled, Window, WindowControlArea,
 };
 use labonair_notifications::{notification_center, Notification};
 use labonair_settings::{Settings as _, SettingsStore, ThemeSettings};
@@ -51,6 +51,10 @@ pub struct Titlebar {
     workspace: Entity<Workspace>,
     /// The right-hand `Settings… / Profile` dropdown.
     menu_open: bool,
+    /// Window-space anchor for that dropdown — the pointer position of the
+    /// press that opened it, so `popover_menu` drops below the `⋯` button
+    /// instead of at the window's top-left corner.
+    menu_anchor: Point<Pixels>,
     /// Drag-to-move latch: set on a background press, consumed on the first
     /// move (→ `start_window_move`), cleared on release.
     should_move: bool,
@@ -73,6 +77,7 @@ impl Titlebar {
             theme,
             workspace,
             menu_open: false,
+            menu_anchor: point(px(0.0), px(HEADER_H)),
             should_move: false,
             focus_handle: cx.focus_handle(),
         }
@@ -86,6 +91,7 @@ impl Titlebar {
     fn render_account_menu(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
         let c = Palette::from_theme(self.theme.read(cx));
         let open = self.menu_open;
+        let anchor = self.menu_anchor;
         let view = cx.entity();
 
         // T20-001: the dropdown is the shared `popover_menu` primitive (the
@@ -155,14 +161,18 @@ impl Titlebar {
                     .text_color(c.muted)
                     .hover(move |s| s.bg(c.border).text_color(c.fg))
                     .child(IconName::Ellipsis.svg(c.muted))
-                    .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
-                        this.menu_open = !this.menu_open;
-                        cx.notify();
-                    })),
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(|this, ev: &MouseDownEvent, _w, cx| {
+                            this.menu_open = !this.menu_open;
+                            // Anchor the flyout's top-right under the button:
+                            // snap-to-window pulls it left off this near-edge x.
+                            this.menu_anchor = point(ev.position.x, px(HEADER_H));
+                            cx.notify();
+                        }),
+                    ),
             )
-            .children(menu.map(|(items, dismiss)| {
-                popover_menu(point(px(0.0), px(HEADER_H)), c, dismiss, items)
-            }))
+            .children(menu.map(|(items, dismiss)| popover_menu(anchor, c, dismiss, items)))
     }
 }
 

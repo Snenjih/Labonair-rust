@@ -191,6 +191,19 @@ impl MenuItem {
     }
 }
 
+/// A fixed 16px centred box holding a 14px glyph — keeps every row's icon the
+/// same size and every label aligned to the same left edge regardless of the
+/// individual SVG's internal padding.
+fn icon_slot(icon: IconName, color: gpui::Hsla) -> impl IntoElement {
+    div()
+        .flex_none()
+        .flex()
+        .items_center()
+        .justify_center()
+        .size(px(16.0))
+        .child(icon.svg(color).size(px(14.0)))
+}
+
 fn render_item(item: MenuItem, c: Palette, depth: usize) -> AnyElement {
     match item.kind {
         Kind::Separator => div()
@@ -234,11 +247,13 @@ fn render_item(item: MenuItem, c: Palette, depth: usize) -> AnyElement {
                 .rounded_sm()
                 .text_size(px(13.0))
                 .text_color(text_color)
-                .when(checked, |d| {
-                    d.child(IconName::CircleCheck.svg(text_color).size(px(13.0)))
-                })
-                .when(!checked && icon.is_some(), |d| {
-                    d.child(icon.unwrap().svg(text_color).size(px(14.0)))
+                .when(checked || icon.is_some(), |d| {
+                    let glyph = if checked {
+                        IconName::CircleCheck
+                    } else {
+                        icon.unwrap()
+                    };
+                    d.child(icon_slot(glyph, text_color))
                 })
                 .child(label)
                 .when_some(detail, |d, text| {
@@ -280,10 +295,17 @@ fn render_item(item: MenuItem, c: Palette, depth: usize) -> AnyElement {
             let panel = div()
                 .absolute()
                 .left_full()
-                .top_0()
-                .ml(c.space(2.0))
+                // A small downward offset so the flyout reads as hanging off
+                // the trigger row rather than capping it. Kept flush on the
+                // left edge (no `ml` gap) so the pointer can cross from the
+                // trigger into the panel without passing over dead space —
+                // otherwise `group_hover` drops and the panel vanishes.
+                .top(c.space(4.0))
                 .invisible()
                 .group_hover(group.clone(), |s| s.visible())
+                // Once open, keep it open while the pointer is over the panel
+                // itself (the trigger's `group` hitbox no longer covers it).
+                .hover(|s| s.visible())
                 .flex()
                 .flex_col()
                 .min_w(c.space(160.0))
@@ -308,12 +330,12 @@ fn render_item(item: MenuItem, c: Palette, depth: usize) -> AnyElement {
                 .text_size(px(13.0))
                 .text_color(c.popover_fg)
                 .hover(|s| s.bg(c.accent).text_color(c.accent_fg))
-                .when_some(icon, |d, ic| d.child(ic.svg(c.popover_fg).size(px(14.0))))
+                .when_some(icon, |d, ic| d.child(icon_slot(ic, c.popover_fg)))
                 .child(label)
                 .child(
                     div()
                         .ml_auto()
-                        .child(IconName::ChevronRight.svg(c.muted).size(px(13.0))),
+                        .child(IconName::ChevronRight.svg(c.muted).size(px(14.0))),
                 )
                 .child(panel)
                 .into_any_element()

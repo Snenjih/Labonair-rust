@@ -3971,7 +3971,7 @@ impl Workspace {
 
         let items: Vec<MenuItem> = vec![
             MenuItem::new("nt-term", "Terminal")
-                .icon(IconName::Terminal)
+                .icon(IconName::ToolTerminal)
                 .keybind(["\u{2318}", "T"])
                 .on_click({
                     let v = view.clone();
