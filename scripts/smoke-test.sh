@@ -31,7 +31,7 @@ check "icon present"             "[[ -f '$APP/Contents/Resources/AppIcon.icns' ]
 check "PkgInfo present"          "[[ -f '$APP/Contents/PkgInfo' ]]"
 VERS="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist")"
 check "version substituted"      "[[ '$VERS' != '__VERSION__' && -n '$VERS' ]]"
-check "identifier correct"       "[[ \"\$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' '$APP/Contents/Info.plist')\" == 'com.labonair.app' ]]"
+check "identifier correct"       "[[ \"\$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' '$APP/Contents/Info.plist')\" == 'com.labonair.rust' ]]"
 if [[ -n "${LABONAIR_SIGN_IDENTITY:-}" ]]; then
 	check "signature valid"          "codesign --verify --deep --strict '$APP'"
 fi

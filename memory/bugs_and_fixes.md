@@ -1,5 +1,20 @@
 # Bugs, fixes, and non-obvious constraints
 
+## 2026-09-06 — Keep the native bundle distinct from the legacy app
+
+**Finding:** The native Rust bundle and the installed legacy Tauri bundle both
+used `com.labonair.app`. macOS LaunchServices could therefore resolve the
+wrong application identity while developing or opening the bundle.
+
+**Resolution:** The native package now uses the distinct identifier
+`com.labonair.rust` consistently in `crates/app/Cargo.toml`, the macOS
+`Info.plist`, entitlements, release documentation, and bundle smoke test.
+The old app remains a separate legacy process and cannot satisfy the native
+bundle checks.
+
+**Verification:** `scripts/smoke-test.sh` rebuilt the bundle, verified the
+identifier and structure, and passed all three Rust smoke tests.
+
 ## 2026-09-06 — Replace workspace shell callbacks with typed events
 
 **Finding:** `Workspace` stored an `open_hosts_hook` supplied by the shell and

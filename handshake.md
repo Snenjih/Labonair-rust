@@ -50,6 +50,11 @@ bounded task after `R02-002`; it defines session identity persistence,
 explicit return-to-standalone behavior, and the final removal audit for
 cwd-based project inference.
 
+The native macOS bundle now uses the distinct identifier `com.labonair.rust`
+instead of the legacy Tauri app's `com.labonair.app`, preventing LaunchServices
+identity collisions during local development. `scripts/smoke-test.sh` rebuilt
+the bundle and passed its structural checks plus all three Rust smoke tests.
+
 ## Current Session: 2026-09-06 (Global menu and theme entrypoints complete)
 
 `R02-001` is complete. The titlebar global menu now contains Settings,

@@ -78,7 +78,7 @@ LABONAIR_NOTARY_PROFILE=labonair-notary \
 
 Signing uses `--options runtime` (hardened runtime) with
 `packaging/macos/Labonair.entitlements` (keychain access group
-`com.labonair.app`, sandbox disabled — needed for terminal/editor filesystem
+`com.labonair.rust`, sandbox disabled — needed for terminal/editor filesystem
 access, network client for SSH/SFTP). Notarization zips the `.app` (or signs
 the dmg), submits with `--wait`, then staples.
 

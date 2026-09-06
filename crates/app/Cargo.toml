@@ -58,7 +58,7 @@ labonair-theme = { path = "../theme" }
 # the Dock and the standard About panel pick it up.
 [package.metadata.bundle]
 name = "Labonair"
-identifier = "com.labonair.app"
+identifier = "com.labonair.rust"
 category = "public.app-category.developer-tools"
 short_description = "Native terminal, SSH & SFTP client with integrated AI"
 long_description = """
