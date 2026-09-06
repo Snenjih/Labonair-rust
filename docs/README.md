@@ -2,6 +2,11 @@
 
 This directory contains the current product and engineering contract for Labonair.
 
+The documents describe two different kinds of truth: normative documents
+define the target rules, while `audits/architecture-inventory.md` records the
+unfinished current tree. A target statement must not be used as evidence that
+the migration is complete.
+
 ## Normative documents
 
 - [`product.md`](product.md) — product identity, scope, and user-facing principles.
@@ -35,3 +40,16 @@ When documents disagree, use this order:
 3. accepted ADRs;
 4. implementation tasks;
 5. reports and archived material.
+
+## Required change record
+
+Before implementing a new capability or migrating an existing one, identify
+its owning module and canonical capability crate, its user entry point, public
+typed contract, state and persistence owner, commands and keymap entries,
+notifications, registry contributions, and UI-kit components. Update the
+capability matrix and roadmap/task record before or with the implementation.
+
+During migration, keep a single active owner, move contracts before adapters
+and consumers, and give every temporary compatibility path a removal
+condition. The final change must remove obsolete registrations, settings,
+events, and dependencies rather than preserving them as parallel paths.

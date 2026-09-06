@@ -14,8 +14,21 @@ The active architecture and rework sequence are documented in [`docs/`](docs/):
 - [`docs/registries.md`](docs/registries.md) — registry contracts
 - [`docs/design-system.md`](docs/design-system.md) — UI consistency rules
 - [`docs/rework-roadmap.md`](docs/rework-roadmap.md) — implementation sequence
+- [`docs/capabilities.md`](docs/capabilities.md) — ownership and migration matrix
+- [`docs/settings.md`](docs/settings.md) — value-only settings boundary
+- [`docs/workspace-model.md`](docs/workspace-model.md) — project and standalone workflows
 
 The old task tree remains for historical traceability. New work must follow the rework roadmap and not the historical queue.
+
+The architectural invariant is simple: one product capability, one owning
+module, and one canonical capability crate. A module may split into sibling
+core, UI, storage, or integration crates only when a real boundary justifies
+it. The shell composes registered capabilities; it does not implement them.
+
+Before adding a feature, update the capability matrix, choose its canonical
+surface, define its typed contract, and check whether an existing registry or
+UI-kit component already provides the needed extension point. User-visible
+messages go to the notification dropdown, and settings contain values only.
 
 ## Build commands
 

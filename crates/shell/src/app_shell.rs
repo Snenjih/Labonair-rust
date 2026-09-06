@@ -42,7 +42,7 @@ use labonair_workspace::modal_layer::ModalLayer;
 use labonair_workspace::status_bar::StatusBar;
 
 use crate::background::{BackgroundStore, LayerScope};
-use crate::commands::CommandRegistry;
+use crate::commands::CommandDispatcher;
 use crate::modals::ShellPalette;
 use crate::theme::ThemeStore;
 use crate::titlebar::Titlebar;
@@ -79,7 +79,7 @@ pub struct AppShell {
     /// Every menu / keybind / palette command. Single definition site:
     /// [`register_builtin_commands`](crate::commands::register_builtin_commands)
     /// (T17-007).
-    pub(crate) command_registry: CommandRegistry,
+    pub(crate) command_registry: CommandDispatcher,
     /// The app's single modal-overlay slot (T17-005).
     pub(crate) modal_layer: Entity<ModalLayer>,
     /// Real `LiveBridge` for the AI agent — snapshot refreshed event-driven
@@ -122,7 +122,7 @@ impl AppShell {
         titlebar: Entity<Titlebar>,
         panels: ShellPanels,
         status_bar: Entity<StatusBar>,
-        command_registry: CommandRegistry,
+        command_registry: CommandDispatcher,
         modal_layer: Entity<ModalLayer>,
         live_bridge: WorkspaceLiveBridge,
         live_drain: Task<()>,

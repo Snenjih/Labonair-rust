@@ -8,6 +8,7 @@ The active sequence is:
 
 1. `R01-002-ssh-sftp-capability-contracts.md` — Done
 2. `R01-003-typed-transfer-registry.md` — Done
-3. `R01-004-command-palette-keymap-registry.md` — Todo
+3. `R01-004-command-palette-keymap-registry.md` — Done
+4. `R01-005-settings-ownership-and-reduction.md` — Todo
 
 Only the earliest task whose dependencies are complete may be started.

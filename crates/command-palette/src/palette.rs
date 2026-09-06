@@ -1,8 +1,8 @@
 //! Command registry + the [`CommandPalette`] modal overlay view.
 //!
-//! * **Data** — a static [`Command`] registry (id / title / section /
-//!   contexts / optional shortcut) plus pure filtering / search helpers. All
-//!   unit-tested, no GPUI needed.
+//! * **Data** — a UI adapter for the injected, UI-free command registry
+//!   descriptors (id / title / section / contexts / optional shortcut) plus
+//!   pure filtering / search helpers.
 //! * **View** — [`CommandPalette`], a modal overlay opened with `Cmd+P`. Type
 //!   to filter, arrow keys to move, `Enter` to run, `Esc` to close. Commands
 //!   that need an argument ("Switch Tab\u{2026}") push a follow-up page.
@@ -30,7 +30,11 @@ use labonair_theme::{EditorThemeId, ThemePreference};
 use labonair_ui_kit::{kbd, keybinding_hint, IconName, Palette, UiTheme};
 
 use crate::fuzzy::{match_score, SearchMode};
-use crate::keybind::{effective_keys, KeybindDisplay, KeybindMap, ShortcutId};
+use crate::KeybindDisplay;
+use labonair_command_palette_core::{
+    toggle_pref_key, CommandContext, CommandDescriptor, CommandIcon, CommandId, CommandSubmenu,
+};
+use labonair_keymap::{effective_keys, KeybindMap, ShortcutId};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Settings reads (T-block3: the palette reads its slice of the layered
@@ -187,235 +191,8 @@ pub trait PaletteWorkspace {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Command registry (port of command-palette/*)
+// Command registry adapter
 // ─────────────────────────────────────────────────────────────────────────────
-
-/// The surface the active tab exposes — drives which context-scoped
-/// commands the palette offers. Port of the reference `CommandContext`.
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
-pub enum CommandContext {
-    Terminal,
-    Editor,
-    Sftp,
-    Home,
-    SshTerminal,
-}
-
-/// Every palette command. New domains/phases add a variant + a [`COMMANDS`]
-/// row + an arm in the host's `run_palette_command`.
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
-pub enum CommandId {
-    NewTerminalTab,
-    NewEditorTab,
-    DuplicateTab,
-    CloseOtherTabs,
-    SplitRight,
-    SplitDown,
-    ClosePane,
-    CloseTab,
-    NextTab,
-    PrevTab,
-    /// Opens the tab-switcher follow-up page.
-    SwitchTab,
-    Find,
-    ToggleSidebar,
-    ToggleFullScreen,
-    ZoomIn,
-    ZoomOut,
-    ZoomReset,
-    OpenSnippetsPanel,
-    OpenGitGraph,
-    FocusSourceControl,
-    OpenHostSettings,
-    ClearTerminal,
-    OpenShortcuts,
-    OpenSettings,
-    /// Create (if missing) and open `<active pane's cwd>/.labonair/
-    /// settings.json` — the per-project settings layer (T19-003).
-    OpenProjectSettings,
-    /// Create (if missing) and open `~/.config/labonair/config.json`
-    /// as an editor tab — the raw JSON path, alongside the Settings UI
-    /// (T19-005).
-    OpenSettingsJson,
-    CheckForUpdates,
-    FormatDocument,
-    /// Zen-mode toggles (T13-005) — mirror `useSettingsCommands.ts`.
-    ToggleZenModeHeader,
-    ToggleZenModeStatusbar,
-    ToggleZenMode,
-    // Block D — sub-page navigators + extra settings toggles.
-    AdjustFontSize,
-    ConnectSsh,
-    OpenSftp,
-    ChangeAppTheme,
-    ChangeColorMode,
-    ChangeEditorTheme,
-    RunSnippet,
-    GitSwitchBranch,
-    GoToSymbol,
-    /// Opens the "show hidden status-bar item" follow-up page (T18-005) —
-    /// the palette-side escape hatch for items the user hid via the
-    /// statusbar's right-click menu.
-    ShowStatusBarItem,
-    ToggleEditorWordWrap,
-    ToggleLineNumbers,
-    ToggleFormatOnSave,
-    ToggleCursorBlink,
-    TogglePaneHeader,
-    TogglePaneFooter,
-    ToggleVimMode,
-    // ── Menu / keyboard-only ids (no `COMMANDS` row) ──────────────────────
-    // Dispatched through the shell's `CommandRegistry` (T17-007) from the
-    // native menu bar + key bindings; they never appear as palette rows.
-    OpenCommandPalette,
-    NewPreviewTab,
-    Save,
-    NewSshTab,
-    NewSftpTab,
-    NewSshConnection,
-    NewQuickSsh,
-    FocusNextPane,
-    SelectTab1,
-    SelectTab2,
-    SelectTab3,
-    SelectTab4,
-    SelectTab5,
-    SelectTab6,
-    SelectTab7,
-    SelectTab8,
-    SelectTab9,
-    DebugCyclePanelDock,
-    DebugToggleDockZoom,
-    /// Open `keymap.json` as an editor tab (T19-008) — mirrors
-    /// `OpenSettingsJson`/`OpenProjectSettings`.
-    OpenKeymapJson,
-    /// Open the ui-kit component gallery in its own window (T20-004). Only
-    /// registered / shown in debug builds; a no-op in release.
-    OpenComponentGallery,
-}
-
-/// `(CommandId, "<namespace>::<Name>")` — the action-name vocabulary
-/// `keymap.json` bindings reference (T19-008). One entry per [`CommandId`]
-/// variant; [`CommandId::action_name`] / [`CommandId::from_action_name`] are
-/// built from this single table so the two directions can't drift.
-#[rustfmt::skip]
-const ACTION_NAMES: &[(CommandId, &str)] = &[
-    (CommandId::NewTerminalTab, "tab::NewTerminal"),
-    (CommandId::NewEditorTab, "tab::NewEditor"),
-    (CommandId::NewPreviewTab, "tab::NewPreview"),
-    (CommandId::NewSshTab, "tab::NewSsh"),
-    (CommandId::NewSftpTab, "tab::NewSftp"),
-    (CommandId::DuplicateTab, "tab::Duplicate"),
-    (CommandId::CloseOtherTabs, "tab::CloseOthers"),
-    (CommandId::CloseTab, "tab::Close"),
-    (CommandId::NextTab, "tab::Next"),
-    (CommandId::PrevTab, "tab::Prev"),
-    (CommandId::SwitchTab, "tab::Switch"),
-    (CommandId::SelectTab1, "tab::Select1"),
-    (CommandId::SelectTab2, "tab::Select2"),
-    (CommandId::SelectTab3, "tab::Select3"),
-    (CommandId::SelectTab4, "tab::Select4"),
-    (CommandId::SelectTab5, "tab::Select5"),
-    (CommandId::SelectTab6, "tab::Select6"),
-    (CommandId::SelectTab7, "tab::Select7"),
-    (CommandId::SelectTab8, "tab::Select8"),
-    (CommandId::SelectTab9, "tab::Select9"),
-    (CommandId::Save, "tab::Save"),
-    (CommandId::SplitRight, "pane::SplitRight"),
-    (CommandId::SplitDown, "pane::SplitDown"),
-    (CommandId::ClosePane, "pane::Close"),
-    (CommandId::FocusNextPane, "pane::FocusNext"),
-    (CommandId::ClearTerminal, "terminal::Clear"),
-    (CommandId::Find, "search::Toggle"),
-    (CommandId::ToggleSidebar, "sidebar::Toggle"),
-    (CommandId::ToggleFullScreen, "view::ToggleFullScreen"),
-    (CommandId::ZoomIn, "view::ZoomIn"),
-    (CommandId::ZoomOut, "view::ZoomOut"),
-    (CommandId::ZoomReset, "view::ZoomReset"),
-    (CommandId::AdjustFontSize, "view::AdjustFontSize"),
-    (CommandId::ChangeAppTheme, "view::ChangeAppTheme"),
-    (CommandId::ChangeColorMode, "view::ChangeColorMode"),
-    (CommandId::ChangeEditorTheme, "view::ChangeEditorTheme"),
-    (CommandId::ToggleZenMode, "view::ToggleZenMode"),
-    (CommandId::ToggleZenModeHeader, "view::ToggleZenModeHeader"),
-    (CommandId::ToggleZenModeStatusbar, "view::ToggleZenModeStatusbar"),
-    (CommandId::ShowStatusBarItem, "view::ShowStatusBarItem"),
-    (CommandId::ToggleEditorWordWrap, "editor::ToggleWordWrap"),
-    (CommandId::ToggleLineNumbers, "editor::ToggleLineNumbers"),
-    (CommandId::ToggleFormatOnSave, "editor::ToggleFormatOnSave"),
-    (CommandId::FormatDocument, "editor::FormatDocument"),
-    (CommandId::GoToSymbol, "editor::GoToSymbol"),
-    (CommandId::ToggleVimMode, "editor::ToggleVimMode"),
-    (CommandId::ToggleCursorBlink, "terminal::ToggleCursorBlink"),
-    (CommandId::TogglePaneHeader, "terminal::TogglePaneHeader"),
-    (CommandId::TogglePaneFooter, "terminal::TogglePaneFooter"),
-    (CommandId::RunSnippet, "snippets::Run"),
-    (CommandId::OpenSnippetsPanel, "snippets::OpenPanel"),
-    (CommandId::OpenGitGraph, "git::OpenGraph"),
-    (CommandId::FocusSourceControl, "git::FocusSourceControl"),
-    (CommandId::GitSwitchBranch, "git::SwitchBranch"),
-    (CommandId::OpenHostSettings, "connections::OpenHostSettings"),
-    (CommandId::NewSshConnection, "connections::NewSshConnection"),
-    (CommandId::NewQuickSsh, "connections::NewQuickSsh"),
-    (CommandId::ConnectSsh, "connections::Connect"),
-    (CommandId::OpenSftp, "connections::OpenSftp"),
-    (CommandId::OpenCommandPalette, "command_palette::Toggle"),
-    (CommandId::OpenShortcuts, "settings::OpenShortcuts"),
-    (CommandId::OpenSettings, "settings::Open"),
-    (CommandId::OpenProjectSettings, "settings::OpenProjectJson"),
-    (CommandId::OpenSettingsJson, "settings::OpenUserJson"),
-    (CommandId::OpenKeymapJson, "zed::OpenKeymap"),
-    (CommandId::CheckForUpdates, "app::CheckForUpdates"),
-    (CommandId::DebugCyclePanelDock, "debug::CyclePanelDock"),
-    (CommandId::DebugToggleDockZoom, "debug::ToggleDockZoom"),
-    (CommandId::OpenComponentGallery, "debug::OpenComponentGallery"),
-];
-
-impl CommandId {
-    /// The `<namespace>::<Name>` string a `keymap.json` binding names this
-    /// command by. Every variant has exactly one entry in [`ACTION_NAMES`]
-    /// (enforced by `tests::every_command_id_has_a_unique_action_name`).
-    pub fn action_name(self) -> &'static str {
-        ACTION_NAMES
-            .iter()
-            .find(|(id, _)| *id == self)
-            .map(|(_, name)| *name)
-            .unwrap_or_else(|| panic!("CommandId::{self:?} has no ACTION_NAMES entry"))
-    }
-
-    /// Reverse of [`Self::action_name`] — resolves a `keymap.json` action
-    /// string back to the [`CommandId`] it dispatches, or `None` if the
-    /// action name is unknown.
-    pub fn from_action_name(name: &str) -> Option<Self> {
-        ACTION_NAMES
-            .iter()
-            .find(|(_, n)| *n == name)
-            .map(|(id, _)| *id)
-    }
-}
-
-/// Every valid `keymap.json` action name — the "known actions" set
-/// `labonair_settings::keymap::validate_keymap` needs, without that pure
-/// crate having to depend on this one (T19-008).
-pub fn known_action_names() -> std::collections::BTreeSet<&'static str> {
-    ACTION_NAMES.iter().map(|(_, name)| *name).collect()
-}
-
-/// The camelCase preference key a `Toggle: …` command flips, if any.
-pub fn toggle_pref_key(id: CommandId) -> Option<&'static str> {
-    Some(match id {
-        CommandId::ToggleZenModeHeader => "zenModeShowHeader",
-        CommandId::ToggleZenModeStatusbar => "zenModeShowStatusbar",
-        CommandId::ToggleEditorWordWrap => "editorWordWrap",
-        CommandId::ToggleLineNumbers => "editorLineNumbers",
-        CommandId::ToggleFormatOnSave => "editorFormatOnSave",
-        CommandId::ToggleCursorBlink => "terminalCursorBlink",
-        CommandId::TogglePaneHeader => "terminalShowPaneHeader",
-        CommandId::TogglePaneFooter => "terminalShowPaneFooter",
-        CommandId::ToggleVimMode => "vimMode",
-        _ => return None,
-    })
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Sub-pages (port of the reference `CommandPage` registry — 11 named pages)
@@ -474,13 +251,15 @@ impl Page {
     }
 }
 
+#[derive(Clone, Debug)]
 pub struct Command {
     pub id: CommandId,
-    pub title: &'static str,
-    pub section: &'static str,
+    pub title: String,
+    pub section: String,
+    pub aliases: Vec<String>,
     /// Empty = always available; otherwise only when the active context is
     /// listed (reference `filterByContext`).
-    pub contexts: &'static [CommandContext],
+    pub contexts: Vec<CommandContext>,
     /// Right-aligned shortcut hint, if the command has a bound shortcut.
     pub shortcut: Option<ShortcutId>,
     /// Leading icon (reference renders a Hugeicons glyph on every row).
@@ -489,128 +268,108 @@ pub struct Command {
     pub sub_page: Option<Page>,
 }
 
-use CommandContext::{Editor as CtxEditor, SshTerminal, Terminal as CtxTerminal};
-use IconName as I;
-use ShortcutId::*;
-
-#[rustfmt::skip]
-static COMMANDS: &[Command] = &[
-    Command { id: CommandId::NewTerminalTab,     title: "New Terminal Tab",        section: "Layout",         contexts: &[],                            shortcut: Some(TabNew),        icon: I::Terminal,   sub_page: None },
-    Command { id: CommandId::NewEditorTab,       title: "New Editor Tab",          section: "Layout",         contexts: &[],                            shortcut: Some(TabNewEditor),  icon: I::File,       sub_page: None },
-    Command { id: CommandId::DuplicateTab,       title: "Duplicate Tab",           section: "Layout",         contexts: &[],                            shortcut: None,                icon: I::Copy,       sub_page: None },
-    Command { id: CommandId::CloseOtherTabs,     title: "Close Other Tabs",        section: "Layout",         contexts: &[],                            shortcut: None,                icon: I::X,          sub_page: None },
-    Command { id: CommandId::SwitchTab,          title: "Switch Tab\u{2026}",      section: "Layout",         contexts: &[],                            shortcut: None,                icon: I::Terminal,   sub_page: Some(Page::Tabs) },
-    Command { id: CommandId::AdjustFontSize,     title: "Adjust Font Size\u{2026}",section: "Layout",         contexts: &[CtxTerminal, CtxEditor],      shortcut: None,                icon: I::ArrowDownUp,sub_page: Some(Page::Zoom) },
-    Command { id: CommandId::SplitRight,         title: "Split Pane Right",        section: "Layout",         contexts: &[CtxTerminal],                 shortcut: Some(PaneSplitRight),icon: I::ChevronRight,sub_page: None },
-    Command { id: CommandId::SplitDown,          title: "Split Pane Down",         section: "Layout",         contexts: &[CtxTerminal],                 shortcut: Some(PaneSplitDown), icon: I::ChevronDown,sub_page: None },
-    Command { id: CommandId::ClosePane,          title: "Close Active Pane",       section: "Layout",         contexts: &[CtxTerminal],                 shortcut: Some(PaneClose),     icon: I::X,          sub_page: None },
-    Command { id: CommandId::CloseTab,           title: "Close Current Tab",       section: "Tab Actions",    contexts: &[],                            shortcut: Some(TabClose),      icon: I::X,          sub_page: None },
-    Command { id: CommandId::NextTab,            title: "Next Tab",                section: "Tab Actions",    contexts: &[],                            shortcut: Some(TabNext),       icon: I::ChevronRight,sub_page: None },
-    Command { id: CommandId::PrevTab,            title: "Previous Tab",            section: "Tab Actions",    contexts: &[],                            shortcut: Some(TabPrev),       icon: I::ChevronRight,sub_page: None },
-    Command { id: CommandId::ClearTerminal,      title: "Clear Terminal",          section: "Terminal",       contexts: &[CtxTerminal, SshTerminal],    shortcut: None,                icon: I::Trash,      sub_page: None },
-    Command { id: CommandId::OpenHostSettings,   title: "Open Hosts",              section: "Connections",    contexts: &[],                            shortcut: None,                icon: I::Server,     sub_page: None },
-    Command { id: CommandId::ConnectSsh,         title: "Connect SSH\u{2026}",     section: "Connections",    contexts: &[],                            shortcut: None,                icon: I::Terminal,   sub_page: Some(Page::Hosts) },
-    Command { id: CommandId::OpenSftp,           title: "Open SFTP\u{2026}",       section: "Connections",    contexts: &[],                            shortcut: None,                icon: I::Folder,     sub_page: Some(Page::Hosts) },
-    Command { id: CommandId::Find,               title: "Find in Current Pane",    section: "Search",         contexts: &[],                            shortcut: Some(SearchFocus),   icon: I::Search,     sub_page: None },
-    Command { id: CommandId::ToggleSidebar,      title: "Toggle File Explorer",    section: "View",           contexts: &[],                            shortcut: Some(SidebarToggle), icon: I::PanelLeft,  sub_page: None },
-    Command { id: CommandId::ToggleFullScreen,   title: "Toggle Full Screen",      section: "View",           contexts: &[],                            shortcut: None,                icon: I::Square,     sub_page: None },
-    Command { id: CommandId::ChangeAppTheme,     title: "Change App Theme\u{2026}",section: "View",           contexts: &[],                            shortcut: None,                icon: I::Sparkles,   sub_page: Some(Page::Themes) },
-    Command { id: CommandId::ChangeColorMode,    title: "Change Color Mode\u{2026}",section: "View",          contexts: &[],                            shortcut: None,                icon: I::ArrowDownUp,sub_page: Some(Page::ColorMode) },
-    Command { id: CommandId::ChangeEditorTheme,  title: "Change Editor Theme\u{2026}",section: "View",        contexts: &[CtxEditor],                   shortcut: None,                icon: I::Sparkles,   sub_page: Some(Page::EditorTheme) },
-    Command { id: CommandId::ZoomIn,             title: "Zoom In",                 section: "View",           contexts: &[],                            shortcut: Some(ViewZoomIn),    icon: I::Plus,       sub_page: None },
-    Command { id: CommandId::ZoomOut,            title: "Zoom Out",                section: "View",           contexts: &[],                            shortcut: Some(ViewZoomOut),   icon: I::Minus,      sub_page: None },
-    Command { id: CommandId::ZoomReset,          title: "Reset Zoom",              section: "View",           contexts: &[],                            shortcut: Some(ViewZoomReset), icon: I::Refresh,    sub_page: None },
-    Command { id: CommandId::OpenSnippetsPanel,  title: "Open Snippets Panel",     section: "Snippets",       contexts: &[],                            shortcut: None,                icon: I::Command,    sub_page: None },
-    Command { id: CommandId::RunSnippet,         title: "Run Snippet\u{2026}",     section: "Snippets",       contexts: &[],                            shortcut: None,                icon: I::Command,    sub_page: Some(Page::Snippets) },
-    Command { id: CommandId::OpenGitGraph,       title: "Open Git Graph",          section: "Source Control", contexts: &[],                            shortcut: None,                icon: I::GitBranch,  sub_page: None },
-    Command { id: CommandId::FocusSourceControl, title: "Focus Source Control",    section: "Source Control", contexts: &[],                            shortcut: None,                icon: I::GitBranch,  sub_page: None },
-    Command { id: CommandId::GitSwitchBranch,    title: "Git: Switch Branch\u{2026}",section: "Source Control",contexts: &[],                          shortcut: None,                icon: I::GitBranch,  sub_page: Some(Page::GitBranches) },
-    Command { id: CommandId::FormatDocument,     title: "Format Document",         section: "Editor",         contexts: &[CtxEditor],                   shortcut: None,                icon: I::SquarePen,  sub_page: None },
-    Command { id: CommandId::GoToSymbol,         title: "Go to Symbol\u{2026}",    section: "Editor",         contexts: &[CtxEditor],                   shortcut: None,                icon: I::FileCode,   sub_page: Some(Page::Outline) },
-    Command { id: CommandId::ShowStatusBarItem,  title: "Statusbar: Show Hidden Item\u{2026}", section: "View", contexts: &[],                           shortcut: None,                icon: I::Eye,        sub_page: Some(Page::StatusBarHidden) },
-    Command { id: CommandId::ToggleZenModeHeader,    title: "Toggle: Show Header Bar",   section: "Settings",  contexts: &[],                           shortcut: None,                icon: I::Eye,        sub_page: None },
-    Command { id: CommandId::ToggleZenModeStatusbar, title: "Toggle: Show Status Bar",   section: "Settings",  contexts: &[],                           shortcut: None,                icon: I::Eye,        sub_page: None },
-    Command { id: CommandId::ToggleZenMode,          title: "Toggle: Zen Mode",         section: "Settings",  contexts: &[],                           shortcut: Some(ViewZenMode),   icon: I::Eye,        sub_page: None },
-    Command { id: CommandId::ToggleEditorWordWrap,   title: "Toggle: Editor Word Wrap",  section: "Settings",  contexts: &[CtxEditor],                   shortcut: None,               icon: I::ArrowDownUp,sub_page: None },
-    Command { id: CommandId::ToggleLineNumbers,      title: "Toggle: Line Numbers",     section: "Settings",  contexts: &[CtxEditor],                   shortcut: None,               icon: I::SquareCheck,sub_page: None },
-    Command { id: CommandId::ToggleFormatOnSave,     title: "Toggle: Format on Save",   section: "Settings",  contexts: &[CtxEditor],                   shortcut: None,               icon: I::SquareCheck,sub_page: None },
-    Command { id: CommandId::ToggleCursorBlink,      title: "Toggle: Terminal Cursor Blink", section: "Settings", contexts: &[CtxTerminal],             shortcut: None,               icon: I::Eye,        sub_page: None },
-    Command { id: CommandId::TogglePaneHeader,       title: "Toggle: Terminal Pane Header",   section: "Settings", contexts: &[CtxTerminal],             shortcut: None,               icon: I::PanelTop,   sub_page: None },
-    Command { id: CommandId::TogglePaneFooter,       title: "Toggle: Terminal Pane Footer",   section: "Settings", contexts: &[CtxTerminal],             shortcut: None,               icon: I::PanelBottom,sub_page: None },
-    Command { id: CommandId::ToggleVimMode,          title: "Toggle: Vim Mode",         section: "Settings",  contexts: &[],                            shortcut: None,               icon: I::SquareCheck,sub_page: None },
-    Command { id: CommandId::OpenShortcuts,      title: "Keyboard Shortcuts",      section: "Application",    contexts: &[],                            shortcut: Some(ShortcutsOpen), icon: I::SquareCheck,sub_page: None },
-    Command { id: CommandId::OpenSettings,       title: "Open Settings",           section: "Application",    contexts: &[],                            shortcut: None,                icon: I::SquarePen,  sub_page: None },
-    Command { id: CommandId::OpenProjectSettings,title: "Open Project Settings (.labonair/settings.json)", section: "Application", contexts: &[],       shortcut: None,                icon: I::SquarePen,  sub_page: None },
-    Command { id: CommandId::OpenSettingsJson,title: "Open Settings (JSON)", section: "Application", contexts: &[],       shortcut: None,                icon: I::SquarePen,  sub_page: None },
-    Command { id: CommandId::CheckForUpdates,    title: "Check for Updates\u{2026}", section: "Application",   contexts: &[],                            shortcut: None,                icon: I::Download,   sub_page: None },
-    // Debug-only: opens the ui-kit component gallery (T20-004). Absent from
-    // release builds entirely, matching the shell-side command registration.
-    #[cfg(debug_assertions)]
-    Command { id: CommandId::OpenComponentGallery, title: "Debug: Open Component Gallery", section: "Application", contexts: &[],                       shortcut: None,                icon: I::Palette,    sub_page: None },
-];
-
-/// The whole registry, unfiltered.
-pub fn commands() -> &'static [Command] {
-    COMMANDS
+impl Command {
+    /// Adapt the UI-free descriptor into the palette's presentation model.
+    pub fn from_descriptor(descriptor: CommandDescriptor) -> Self {
+        Self {
+            id: descriptor.id,
+            title: descriptor.title,
+            section: descriptor.section,
+            aliases: descriptor.aliases,
+            contexts: descriptor.contexts,
+            shortcut: descriptor.shortcut,
+            icon: icon_for(descriptor.icon),
+            sub_page: descriptor.submenu.map(page_for),
+        }
+    }
 }
 
-/// Look up a command by id.
-pub fn command(id: CommandId) -> &'static Command {
-    COMMANDS
-        .iter()
-        .find(|c| c.id == id)
-        .expect("every CommandId has a COMMANDS entry")
+fn icon_for(icon: CommandIcon) -> IconName {
+    match icon {
+        CommandIcon::Terminal => IconName::Terminal,
+        CommandIcon::File => IconName::File,
+        CommandIcon::Copy => IconName::Copy,
+        CommandIcon::Close => IconName::X,
+        CommandIcon::ChevronRight => IconName::ChevronRight,
+        CommandIcon::ChevronDown => IconName::ChevronDown,
+        CommandIcon::Trash => IconName::Trash,
+        CommandIcon::Server => IconName::Server,
+        CommandIcon::Folder => IconName::Folder,
+        CommandIcon::Search => IconName::Search,
+        CommandIcon::PanelLeft => IconName::PanelLeft,
+        CommandIcon::Square => IconName::Square,
+        CommandIcon::Sparkles => IconName::Sparkles,
+        CommandIcon::Plus => IconName::Plus,
+        CommandIcon::Minus => IconName::Minus,
+        CommandIcon::Refresh => IconName::Refresh,
+        CommandIcon::Command => IconName::Command,
+        CommandIcon::GitBranch => IconName::GitBranch,
+        CommandIcon::Edit => IconName::SquarePen,
+        CommandIcon::FileCode => IconName::FileCode,
+        CommandIcon::Eye => IconName::Eye,
+        CommandIcon::Check => IconName::SquareCheck,
+        CommandIcon::PanelTop => IconName::PanelTop,
+        CommandIcon::PanelBottom => IconName::PanelBottom,
+        CommandIcon::Download => IconName::Download,
+        CommandIcon::Palette => IconName::Palette,
+    }
 }
 
-/// Commands available in `ctx`. Port of `useCommandRegistry`'s
-/// `filterByContext`: no-context commands always show; context-scoped ones
-/// only when their context is active.
-pub fn available(ctx: Option<CommandContext>) -> Vec<&'static Command> {
-    COMMANDS
+fn page_for(page: CommandSubmenu) -> Page {
+    match page {
+        CommandSubmenu::Tabs => Page::Tabs,
+        CommandSubmenu::Zoom => Page::Zoom,
+        CommandSubmenu::ColorMode => Page::ColorMode,
+        CommandSubmenu::EditorTheme => Page::EditorTheme,
+        CommandSubmenu::Themes => Page::Themes,
+        CommandSubmenu::Hosts => Page::Hosts,
+        CommandSubmenu::Snippets => Page::Snippets,
+        CommandSubmenu::Outline => Page::Outline,
+        CommandSubmenu::GitBranches => Page::GitBranches,
+        CommandSubmenu::StatusBarHidden => Page::StatusBarHidden,
+    }
+}
+
+/// Commands are supplied by the shell's composition registry. The palette owns
+/// presentation and filtering, but never defines the product command list.
+fn available(commands: &[Command], ctx: Option<CommandContext>) -> Vec<&Command> {
+    commands
         .iter()
-        .filter(|c| match ctx {
-            None => c.contexts.is_empty(),
-            Some(active) => c.contexts.is_empty() || c.contexts.contains(&active),
+        .filter(|command| match ctx {
+            None => command.contexts.is_empty(),
+            Some(active) => command.contexts.is_empty() || command.contexts.contains(&active),
         })
         .collect()
 }
 
-/// Search over title + section, restricted to what's available in `ctx`,
-/// using `mode` (substring / prefix / fuzzy). Results are ranked by score
-/// (best first); ties keep registry order.
-pub fn search_mode(
+/// Search over title + section, restricted to what's available in the active context.
+fn search_mode<'a>(
+    commands: &'a [Command],
     query: &str,
     ctx: Option<CommandContext>,
     mode: SearchMode,
-) -> Vec<&'static Command> {
-    let mut scored: Vec<(i64, usize, &'static Command)> = available(ctx)
+) -> Vec<&'a Command> {
+    let mut scored: Vec<(i64, usize, &Command)> = available(commands, ctx)
         .into_iter()
         .enumerate()
-        .filter_map(|(i, c)| {
-            let hay = format!("{} {}", c.title, c.section);
-            match_score(mode, &hay, query).map(|s| (s, i, c))
+        .filter_map(|(index, command)| {
+            let haystack = std::iter::once(command.title.as_str())
+                .chain(std::iter::once(command.section.as_str()))
+                .chain(command.aliases.iter().map(String::as_str))
+                .collect::<Vec<_>>()
+                .join(" ");
+            match_score(mode, &haystack, query).map(|score| (score, index, command))
         })
         .collect();
     scored.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.cmp(&b.1)));
-    scored.into_iter().map(|(_, _, c)| c).collect()
+    scored.into_iter().map(|(_, _, command)| command).collect()
 }
 
-/// Back-compat substring search (used by tests and callers that don't care
-/// about the configured mode).
-pub fn search(query: &str, ctx: Option<CommandContext>) -> Vec<&'static Command> {
-    search_mode(query, ctx, SearchMode::Contains)
+fn command(commands: &[Command], id: CommandId) -> Option<&Command> {
+    commands.iter().find(|command| command.id == id)
 }
 
-/// Which command a keyboard shortcut triggers, if any — the palette and the
-/// global shortcut handler run the *same* command for a given binding.
-pub fn command_for_shortcut(id: ShortcutId) -> Option<CommandId> {
-    COMMANDS
-        .iter()
-        .find(|c| c.shortcut == Some(id))
-        .map(|c| c.id)
-}
-
-/// The active tab's [`CommandContext`], if it maps to one.
+/// Map the active palette tab to the registry context used for filtering.
 pub fn context_of(kind: PaletteTabKind, is_ssh: bool) -> Option<CommandContext> {
     Some(match kind {
         PaletteTabKind::Workspace if is_ssh => CommandContext::SshTerminal,
@@ -680,6 +439,9 @@ pub struct PaletteChoice {
 /// `labonair-settings-ui` dependency).
 #[derive(Clone, Debug, Default)]
 pub struct PaletteData {
+    /// Snapshot of the composition-root command registry. The palette never
+    /// constructs this list itself.
+    pub commands: Vec<Command>,
     pub hosts: Vec<PaletteChoice>,
     /// Most-recently-connected hosts (host pre-sorts by `last_connected_at`,
     /// caps at 5) — shown as quick-connect rows at the palette root.
@@ -695,7 +457,7 @@ pub struct PaletteData {
 
 /// Persisted "recently used" command ids (mirrors the reference
 /// `labonair-palette-recent` localStorage list). Stored as debug-formatted
-/// [`CommandId`] strings in `command-palette-recent.json` in the config dir.
+/// Stable action names in `command-palette-recent.json` in the config dir.
 mod recent {
     use super::CommandId;
 
@@ -712,17 +474,14 @@ mod recent {
     }
 
     pub fn save(ids: &[CommandId]) {
-        let slugs: Vec<String> = ids.iter().map(|id| format!("{id:?}")).collect();
+        let slugs: Vec<&str> = ids.iter().map(|id| id.action_name()).collect();
         if let Ok(json) = serde_json::to_string(&slugs) {
             let _ = std::fs::write(path(), json);
         }
     }
 
     fn from_slug(s: &str) -> Option<CommandId> {
-        super::COMMANDS
-            .iter()
-            .map(|c| c.id)
-            .find(|id| format!("{id:?}") == s)
+        CommandId::from_action_name(s)
     }
 }
 
@@ -1050,40 +809,41 @@ where
                 let ctx = self.active_context(cx);
                 let font_size = palette_terminal_font_size(cx);
                 let tab_count = self.workspace.read(cx).palette_tab_rows(cx).len();
-                let mut root: Vec<PaletteRow> = search_mode(&self.query, ctx, mode)
-                    .into_iter()
-                    .map(|c| {
-                        let right_label = toggle_pref_key(c.id).map(|k| {
-                            if palette_toggle_state(k, cx) {
-                                "ON".to_string()
-                            } else {
-                                "OFF".to_string()
+                let mut root: Vec<PaletteRow> =
+                    search_mode(&self.data.commands, &self.query, ctx, mode)
+                        .into_iter()
+                        .map(|c| {
+                            let right_label = toggle_pref_key(c.id).map(|k| {
+                                if palette_toggle_state(k, cx) {
+                                    "ON".to_string()
+                                } else {
+                                    "OFF".to_string()
+                                }
+                            });
+                            let subtitle = match c.id {
+                                CommandId::AdjustFontSize => Some(format!("{font_size}px")),
+                                CommandId::SwitchTab => Some(format!("{tab_count} open")),
+                                _ => None,
+                            };
+                            PaletteRow {
+                                key: c
+                                    .sub_page
+                                    .map(RowKey::Navigate)
+                                    .unwrap_or(RowKey::Command(c.id)),
+                                secondary: None,
+                                icon: Some(c.icon),
+                                title: c.title.to_string(),
+                                subtitle,
+                                section: c.section.to_string(),
+                                keys: c
+                                    .shortcut
+                                    .map(|s| effective_keys(s, &overrides))
+                                    .unwrap_or_default(),
+                                right_label,
+                                has_sub: c.sub_page.is_some(),
                             }
-                        });
-                        let subtitle = match c.id {
-                            CommandId::AdjustFontSize => Some(format!("{font_size}px")),
-                            CommandId::SwitchTab => Some(format!("{tab_count} open")),
-                            _ => None,
-                        };
-                        PaletteRow {
-                            key: c
-                                .sub_page
-                                .map(RowKey::Navigate)
-                                .unwrap_or(RowKey::Command(c.id)),
-                            secondary: None,
-                            icon: Some(c.icon),
-                            title: c.title.to_string(),
-                            subtitle,
-                            section: c.section.to_string(),
-                            keys: c
-                                .shortcut
-                                .map(|s| effective_keys(s, &overrides))
-                                .unwrap_or_default(),
-                            right_label,
-                            has_sub: c.sub_page.is_some(),
-                        }
-                    })
-                    .collect();
+                        })
+                        .collect();
                 if !self.data.recent_hosts.is_empty() {
                     root.extend(self.host_rows(&self.data.recent_hosts, "Hosts", mode));
                 }
@@ -1110,9 +870,21 @@ where
                     .collect()
             }
             Page::Zoom => [
-                (CommandId::ZoomIn, "Increase Font Size", ViewZoomIn),
-                (CommandId::ZoomOut, "Decrease Font Size", ViewZoomOut),
-                (CommandId::ZoomReset, "Reset Font Size", ViewZoomReset),
+                (
+                    CommandId::ZoomIn,
+                    "Increase Font Size",
+                    ShortcutId::ViewZoomIn,
+                ),
+                (
+                    CommandId::ZoomOut,
+                    "Decrease Font Size",
+                    ShortcutId::ViewZoomOut,
+                ),
+                (
+                    CommandId::ZoomReset,
+                    "Reset Font Size",
+                    ShortcutId::ViewZoomReset,
+                ),
             ]
             .into_iter()
             .filter(|(_, title, _)| match_score(mode, title, &self.query).is_some())
@@ -1420,10 +1192,14 @@ where
         if page == Page::Root && self.query.is_empty() && show_recent && !self.recent.is_empty() {
             let ctx = self.active_context(cx);
             let overrides = palette_keybind_overrides(cx);
-            let avail: std::collections::HashSet<CommandId> =
-                available(ctx).into_iter().map(|c| c.id).collect();
+            let avail: std::collections::HashSet<CommandId> = available(&self.data.commands, ctx)
+                .into_iter()
+                .map(|c| c.id)
+                .collect();
             for id in self.recent.iter().copied().filter(|id| avail.contains(id)) {
-                let c = command(id);
+                let Some(c) = command(&self.data.commands, id) else {
+                    continue;
+                };
                 rows.push(PaletteRow {
                     key: c
                         .sub_page
@@ -1738,145 +1514,54 @@ where
 mod tests {
     use super::*;
 
-    /// Every `CommandId` variant, hand-listed (no `strum` dep in this crate,
-    /// per T19-008's scope) so `action_name`/`from_action_name` round-trip
-    /// coverage doesn't silently skip a variant added later without also
-    /// updating this list.
-    #[rustfmt::skip]
-    const ALL_COMMAND_IDS: &[CommandId] = &[
-        CommandId::NewTerminalTab, CommandId::NewEditorTab, CommandId::DuplicateTab,
-        CommandId::CloseOtherTabs, CommandId::SplitRight, CommandId::SplitDown,
-        CommandId::ClosePane, CommandId::CloseTab, CommandId::NextTab, CommandId::PrevTab,
-        CommandId::SwitchTab, CommandId::Find, CommandId::ToggleSidebar,
-        CommandId::ToggleFullScreen, CommandId::ZoomIn, CommandId::ZoomOut,
-        CommandId::ZoomReset, CommandId::OpenSnippetsPanel, CommandId::OpenGitGraph,
-        CommandId::FocusSourceControl, CommandId::OpenHostSettings, CommandId::ClearTerminal,
-        CommandId::OpenShortcuts, CommandId::OpenSettings, CommandId::OpenProjectSettings,
-        CommandId::OpenSettingsJson, CommandId::CheckForUpdates, CommandId::FormatDocument,
-        CommandId::ToggleZenModeHeader,
-        CommandId::ToggleZenModeStatusbar, CommandId::ToggleZenMode, CommandId::AdjustFontSize,
-        CommandId::ConnectSsh, CommandId::OpenSftp, CommandId::ChangeAppTheme,
-        CommandId::ChangeColorMode, CommandId::ChangeEditorTheme,
-        CommandId::RunSnippet, CommandId::GitSwitchBranch, CommandId::GoToSymbol,
-        CommandId::ShowStatusBarItem, CommandId::ToggleEditorWordWrap,
-        CommandId::ToggleLineNumbers, CommandId::ToggleFormatOnSave, CommandId::ToggleCursorBlink,
-        CommandId::TogglePaneHeader, CommandId::TogglePaneFooter, CommandId::ToggleVimMode,
-        CommandId::OpenCommandPalette, CommandId::NewPreviewTab, CommandId::Save,
-        CommandId::NewSshTab, CommandId::NewSftpTab, CommandId::NewSshConnection,
-        CommandId::NewQuickSsh, CommandId::FocusNextPane,
-        CommandId::SelectTab1, CommandId::SelectTab2, CommandId::SelectTab3,
-        CommandId::SelectTab4, CommandId::SelectTab5, CommandId::SelectTab6,
-        CommandId::SelectTab7, CommandId::SelectTab8, CommandId::SelectTab9,
-        CommandId::DebugCyclePanelDock, CommandId::DebugToggleDockZoom,
-        CommandId::OpenKeymapJson, CommandId::OpenComponentGallery,
-    ];
-
-    #[test]
-    fn every_command_id_has_a_unique_action_name() {
-        assert_eq!(
-            ALL_COMMAND_IDS.len(),
-            ACTION_NAMES.len(),
-            "ALL_COMMAND_IDS and ACTION_NAMES have drifted apart"
-        );
-        for id in ALL_COMMAND_IDS {
-            assert_eq!(
-                CommandId::from_action_name(id.action_name()),
-                Some(*id),
-                "{id:?} action_name round-trip failed"
-            );
-        }
-        let mut names: Vec<&str> = ACTION_NAMES.iter().map(|(_, n)| *n).collect();
-        names.sort_unstable();
-        let mut deduped = names.clone();
-        deduped.dedup();
-        assert_eq!(names.len(), deduped.len(), "duplicate action name");
+    fn palette_commands() -> Vec<Command> {
+        vec![
+            Command::from_descriptor(CommandDescriptor::new(
+                CommandId::NewTerminalTab,
+                "New Terminal Tab",
+                "Layout",
+            )),
+            Command::from_descriptor(
+                CommandDescriptor::new(CommandId::SplitRight, "Split Pane Right", "Layout")
+                    .with_contexts(&[CommandContext::Terminal])
+                    .with_shortcut(ShortcutId::PaneSplitRight),
+            ),
+            Command::from_descriptor(
+                CommandDescriptor::new(CommandId::FormatDocument, "Format Document", "Editor")
+                    .with_contexts(&[CommandContext::Editor]),
+            ),
+        ]
     }
 
     #[test]
-    fn registry_lists_all_domains() {
-        let sections: std::collections::HashSet<_> = commands().iter().map(|c| c.section).collect();
-        for expected in [
-            "Layout",
-            "Tab Actions",
-            "Terminal",
-            "Connections",
-            "Search",
-            "View",
-            "Snippets",
-            "Source Control",
-            "Editor",
-            "Settings",
-            "Application",
-        ] {
-            assert!(sections.contains(expected), "missing domain {expected}");
-        }
-    }
-
-    #[test]
-    fn command_lookup_by_id() {
-        assert_eq!(command(CommandId::ZoomIn).title, "Zoom In");
-        assert_eq!(
-            command(CommandId::SplitRight).contexts,
-            &[CommandContext::Terminal]
-        );
-    }
-
-    #[test]
-    fn context_filtering() {
-        // No context: only always-available commands.
-        let home = available(None);
-        assert!(home.iter().all(|c| c.contexts.is_empty()));
+    fn registry_snapshot_drives_filtering_and_search() {
+        let commands = palette_commands();
+        let home = available(&commands, None);
         assert!(home.iter().any(|c| c.id == CommandId::NewTerminalTab));
         assert!(!home.iter().any(|c| c.id == CommandId::SplitRight));
 
-        // Terminal context: unlocks split/clear, still no editor commands.
-        let term = available(Some(CommandContext::Terminal));
+        let term = available(&commands, Some(CommandContext::Terminal));
         assert!(term.iter().any(|c| c.id == CommandId::SplitRight));
-        assert!(term.iter().any(|c| c.id == CommandId::ClearTerminal));
-        assert!(!term.iter().any(|c| c.id == CommandId::FormatDocument));
-
-        // Editor context: format shows, split does not.
-        let editor = available(Some(CommandContext::Editor));
+        let editor = available(&commands, Some(CommandContext::Editor));
         assert!(editor.iter().any(|c| c.id == CommandId::FormatDocument));
-        assert!(!editor.iter().any(|c| c.id == CommandId::SplitRight));
 
-        // SSH terminal shares the "clear terminal" command.
-        assert!(available(Some(CommandContext::SshTerminal))
-            .iter()
-            .any(|c| c.id == CommandId::ClearTerminal));
+        let hits = search_mode(
+            &commands,
+            "split pane",
+            Some(CommandContext::Terminal),
+            SearchMode::Contains,
+        );
+        assert!(hits.iter().any(|c| c.id == CommandId::SplitRight));
+        assert!(search_mode(&commands, "zzzznope", None, SearchMode::Contains).is_empty());
     }
 
     #[test]
-    fn search_matches_title_and_section() {
-        let by_title = search("split pane", Some(CommandContext::Terminal));
-        assert!(by_title.iter().any(|c| c.id == CommandId::SplitRight));
-
-        let by_section = search("source control", None);
-        assert!(by_section.iter().any(|c| c.id == CommandId::OpenGitGraph));
-
-        // Empty query returns everything available.
-        assert_eq!(search("", None).len(), available(None).len());
-        // Nonsense filters to nothing.
-        assert!(search("zzzznope", None).is_empty());
-    }
-
-    #[test]
-    fn shortcut_triggers_its_command() {
-        assert_eq!(
-            command_for_shortcut(ShortcutId::TabNew),
-            Some(CommandId::NewTerminalTab),
-        );
-        assert_eq!(
-            command_for_shortcut(ShortcutId::PaneSplitRight),
-            Some(CommandId::SplitRight),
-        );
-        assert_eq!(
-            command_for_shortcut(ShortcutId::ViewZenMode),
-            Some(CommandId::ToggleZenMode),
-        );
-        // Shortcuts with no palette command (tab-number jumps, pane focus).
-        assert_eq!(command_for_shortcut(ShortcutId::TabSelect5), None);
-        assert_eq!(command_for_shortcut(ShortcutId::PaneFocusNext), None);
+    fn descriptor_metadata_is_adapted_for_the_view() {
+        let commands = palette_commands();
+        let split = command(&commands, CommandId::SplitRight).expect("test command");
+        assert_eq!(split.title, "Split Pane Right");
+        assert_eq!(split.contexts, vec![CommandContext::Terminal]);
+        assert_eq!(split.shortcut, Some(ShortcutId::PaneSplitRight));
     }
 
     #[test]
@@ -1898,15 +1583,21 @@ mod tests {
 
     #[test]
     fn search_mode_ranks_results() {
-        let hits = search_mode("split", Some(CommandContext::Terminal), SearchMode::Fuzzy);
+        let commands = palette_commands();
+        let hits = search_mode(
+            &commands,
+            "split",
+            Some(CommandContext::Terminal),
+            SearchMode::Fuzzy,
+        );
         assert!(hits.iter().any(|c| c.id == CommandId::SplitRight));
         // Fuzzy still filters nonsense out.
-        assert!(search_mode("zzzznope", None, SearchMode::Fuzzy).is_empty());
+        assert!(search_mode(&commands, "zzzznope", None, SearchMode::Fuzzy).is_empty());
     }
 
     #[test]
     fn every_command_has_an_icon_and_nav_targets_resolve() {
-        for c in commands() {
+        for c in palette_commands() {
             // `icon` is non-optional by type; assert `sub_page` rows are
             // navigators, not runnable no-ops.
             let _ = c.icon;

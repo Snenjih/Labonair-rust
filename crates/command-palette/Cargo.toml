@@ -12,10 +12,10 @@ gpui = { workspace = true }
 serde_json = { workspace = true }
 labonair-theme = { path = "../theme" }
 labonair-ui-kit = { path = "../ui-kit" }
-labonair-gpui-ext = { path = "../gpui-ext" }
-labonair-backend = { path = "../backend" }
 labonair-filesystem = { path = "../filesystem" }
 labonair-settings = { path = "../settings" }
+labonair-keymap = { path = "../keymap" }
+labonair-command-palette-core = { path = "../command-palette-core" }
 
 [dev-dependencies]
 gpui = { workspace = true, features = ["test-support"] }

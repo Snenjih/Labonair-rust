@@ -1,7 +1,7 @@
 # Labonair Product Contract
 
 **Status:** Normative
-**Version:** 2
+**Version:** 3
 **Scope:** Product identity and user-facing behavior
 
 ## Product identity
@@ -45,6 +45,11 @@ palette even when they have no default binding.
 
 Every feature has one canonical owner and one primary entry point. Alternate entry points are allowed only when they improve discoverability without duplicating business logic.
 
+The owner is a product module with one canonical capability crate. The module
+may expose sibling crates when UI, storage, or platform integration has a real
+boundary, but users must still experience one coherent feature and the code
+must still have one owner.
+
 ### Local and remote parity
 
 Local and remote workflows should use the same workspace concepts wherever their capabilities are equivalent. Differences belong in the owning module, not in shell-wide special cases.
@@ -52,6 +57,17 @@ Local and remote workflows should use the same workspace concepts wherever their
 ### Progressive replacement
 
 Existing implementation may be reused only when it satisfies this contract. Compatibility code is temporary and must have an explicit removal plan.
+
+### Deliberate scope
+
+Labonair optimizes for the workflows it supports today. A feature is kept only
+when it serves a current user flow, strengthens a defined capability, or is a
+small foundation primitive required by an owned capability. Marketplace downloads, extension
+hosting, remote theme fetching, duplicate management surfaces, and decorative
+shell chrome are deferred until a concrete workflow and owner exist. A
+feature with no current workflow is removed or explicitly parked; it is not
+given a permanent menu, setting, or abstraction merely because the old app
+had one.
 
 ## Product surfaces
 
@@ -69,7 +85,9 @@ No feature may add a new permanent global strip, badge row, or shell toolbar wit
 
 - Themes and icon themes are selected through command-palette submenus with live preview.
 - Hosts are selected through a command-palette submenu; `Enter` opens SSH and `Shift+Enter` opens SFTP.
-- Host management is a dedicated management surface, not a settings category.
+- The titlebar's global menu exposes Keymap, Themes, Icon Themes, and Hosts.
+  Hosts management is a dedicated management surface, not a settings category;
+  host selection remains a command-palette submenu.
 - Notifications are persistent entries in the statusbar notification dropdown. There is no toast system.
 - Transfers are represented by a statusbar item with progress and history.
 - Jump hosts are part of connection configuration and connection execution, not a standalone primary menu.

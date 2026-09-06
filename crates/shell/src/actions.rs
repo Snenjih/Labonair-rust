@@ -11,7 +11,9 @@
 //! `.on_action`s on the shell root (they only touch `Window`).
 
 use gpui::{App, Context, Window};
-use labonair_command_palette::{Page as PalettePage, PaletteChoice, PaletteData, PaletteEvent};
+use labonair_command_palette::{
+    Command as PaletteCommand, Page as PalettePage, PaletteChoice, PaletteData, PaletteEvent,
+};
 use labonair_panel::DockPosition;
 use labonair_settings::{Settings as _, SettingsStore, ThemeSettings};
 
@@ -340,6 +342,12 @@ impl AppShell {
         };
 
         PaletteData {
+            commands: self
+                .command_registry
+                .descriptors()
+                .into_iter()
+                .map(PaletteCommand::from_descriptor)
+                .collect(),
             hosts,
             recent_hosts,
             snippets,

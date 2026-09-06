@@ -347,8 +347,12 @@ pub(crate) fn bootstrap(
     // restart. Must run after the theme/prefs wiring above so a startup
     // banner (if the shipped default asset somehow fails to parse) has a
     // notification center to post into.
-    crate::keymap_loader::reload_and_apply(cx);
-    crate::keymap_loader::watch(cx);
+    // Build the command metadata and behaviour registry before keymap loading:
+    // default shortcut resolution must use the same descriptors that the
+    // palette receives later.
+    let command_registry = crate::commands::register_builtin_commands();
+    crate::keymap_loader::reload_and_apply(cx, &command_registry);
+    crate::keymap_loader::watch(cx, command_registry.clone());
     set_settings_deps(backend.clone(), tokio.clone(), workspace.clone(), cx);
     // Auto-updater (T15-005). Kicks a quiet background check at startup when the
     // `checkForUpdates` preference is on (6 h backoff inside the store).
@@ -526,10 +530,6 @@ pub(crate) fn bootstrap(
 
     let modal_layer = cx.new(|_| ModalLayer::new());
     let titlebar = cx.new(|cx| Titlebar::new(theme.clone(), workspace.clone(), cx));
-
-    // The command table — the single definition site for every menu / keybind
-    // / palette command (T17-007).
-    let command_registry = crate::commands::register_builtin_commands();
 
     // `git_graph` is not kept on the shell: the workspace owns the shared
     // `Entity<GitGraphView>` (via `set_git_graph`) and the CWD-feed closure

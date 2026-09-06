@@ -2,7 +2,11 @@
 
 **Status:** Normative
 
-Registries are the extension mechanism for capabilities used by more than one consumer. A registry owns discovery and metadata; the owning module owns the behavior behind each entry.
+Registries are the extension mechanism for a capability that has multiple
+providers or consumers and therefore needs discovery. A registry owns
+discovery, stable metadata, and lifecycle; the owning module owns the behavior
+behind each entry. For a single provider and consumer, prefer a direct typed
+trait or event instead of inventing a registry.
 
 ## Common registry contract
 
@@ -19,9 +23,16 @@ Every registry must document:
 Consumers receive snapshots or typed handles. They do not mutate another
 module's registry-owned state directly.
 
+Registration is performed by the owning module through a typed API. The
+composition root invokes those registration functions and connects concrete
+services, but it must not become a second registry owner or maintain a
+parallel list of entries. IDs are stable and duplicate registration is an
+error.
+
 ## Command registry
 
-The command palette consumes one command registry. Feature modules register commands with:
+The command-palette module owns one command registry. Feature modules register
+their own commands with:
 
 - stable action ID;
 - title and searchable aliases;
@@ -30,13 +41,25 @@ The command palette consumes one command registry. Feature modules register comm
 - default keybinding metadata;
 - execution callback or typed action payload.
 
-The palette owns search, filtering, navigation, preview, and selection. It does not own feature state or a giant dispatch table.
+The palette owns search, filtering, navigation, preview, and selection. It
+does not own feature state, feature behavior, a giant dispatch table, or a
+second static command table in the shell. A submenu is a registry/provider
+contribution, not a special case in the palette view.
 
-Submenus are registered providers. Dynamic entries such as hosts, themes, and tabs are supplied by providers that expose a snapshot and an action.
+Adding a command must be a contribution from its owning module; it must not
+require editing a palette-owned list of every feature command. The stable ID
+is namespaced and opaque to the view, and execution is resolved by the owning
+module after selection.
+
+Submenus are registered providers. Dynamic entries such as hosts, themes, and
+tabs are supplied by providers that expose an immutable snapshot and a typed
+action. The provider owns loading, filtering data, and execution; the palette
+only owns the common picker interaction.
 
 ## Keymap registry
 
-Every command-capable action may register a keybinding descriptor. The keymap system owns:
+Every command-capable action may register a keybinding descriptor with the
+keymap module. The keymap system owns:
 
 - keymap file loading and persistence;
 - contexts and precedence;
@@ -44,13 +67,22 @@ Every command-capable action may register a keybinding descriptor. The keymap sy
 - display formatting;
 - user overrides.
 
-The keymap system does not contain feature behavior. A feature owns the action it registers.
+The keymap system does not contain feature behavior. A feature owns the action
+it registers and supplies the stable command ID; keymap resolution only maps
+that ID to user input. The keymap editor is a keymap surface, not a Settings
+category.
 
 ## Theme registries
 
-Color themes and icon themes have separate registries. Each entry contains a stable ID, display name, metadata, and a complete or layered definition. Preview is transactional: navigation applies a temporary preview, while confirmation persists the selected ID.
+The themes module owns separate color-theme and icon-theme registries. Each
+entry contains a stable ID, display name, metadata, and a complete or layered
+definition. Preview is transactional: navigation applies a temporary preview,
+while confirmation persists the selected ID. The global menu exposes both
+surfaces through the command palette; neither is a Settings management page.
 
-Initial themes are built in. Downloading and extensions are future modules, not part of the initial registry contract.
+Initial themes are built in. Downloading and extensions are deferred until a
+concrete workflow and owner exist; they are not part of the initial registry
+contract.
 
 ## Panel and status-item registries
 
@@ -71,6 +103,11 @@ owning module or command registry.
 User-visible errors are notifications too. A feature may keep an internal
 error state for retry logic, but it must not render a second feature-local
 error banner for the same user-facing failure.
+
+Publishing a notification is the complete user-message path. A caller must
+not publish the same event and also render a toast, inline banner, or feature
+local message. The statusbar dropdown is the sole global notification
+presentation surface.
 
 ## Transfer registry
 

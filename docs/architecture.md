@@ -1,7 +1,7 @@
 # Labonair Architecture
 
 **Status:** Normative target architecture
-**Version:** 2
+**Version:** 3
 **Related:** [`product.md`](product.md), [`capabilities.md`](capabilities.md), [`modules.md`](modules.md), [`registries.md`](registries.md)
 
 ## 1. Architecture objective
@@ -18,12 +18,19 @@ The architecture optimizes for three properties:
 
 - **Capability:** a user-facing ability such as SSH, SFTP, terminal, themes, or transfers.
 - **Module:** the complete ownership boundary of one capability.
-- **Crate:** a Rust compilation and dependency boundary inside a module or foundation layer.
+- **Capability crate:** the canonical Rust crate for one product capability. It
+  is the default starting point for the module and must not contain unrelated
+  product capabilities.
+- **Sibling crate:** an additional crate inside the same owning module, used
+  only for a real core, UI, storage, or integration boundary.
 - **Composition root:** the application startup code that constructs services and invokes registration functions.
 - **Registry:** an extensible collection of metadata and providers owned by a foundation or host contract.
 - **Workspace:** a runtime context containing tabs, panes, tools, and optional project/remote identity.
 
-One module may contain multiple crates. A crate must never become a second owner for a capability.
+Every product capability has exactly one owning module and one canonical
+capability crate. A module may contain sibling crates, but splitting a module
+does not split ownership. Foundation crates are not product capabilities and
+must have one explicit, reusable foundation responsibility.
 
 ## 3. Layer model
 
@@ -39,7 +46,7 @@ Feature modules
   keymap, notifications, command-palette, settings, ai
         ↓
 Foundation and platform services
-  ui-kit, gpui-ext, runtime, filesystem, secrets, persistence, process
+  ui-kit, gpui-ext, filesystem, secrets, persistence
 ```
 
 Dependencies point downward. A feature may depend on a foundation contract, but a feature must not depend on the shell. Cross-feature behavior uses a typed contract, registry, or event; it does not reach into another feature's private state.
@@ -52,39 +59,43 @@ Dependencies point downward. A feature may depend on a foundation contract, but 
 |---|---|
 | `labonair-gpui-ext` | GPUI helpers and small shared primitives. |
 | `labonair-ui-kit` | Buttons, inputs, lists, dropdowns, dialogs, icons, badges, disclosure, tabs, and other reusable components. |
-| `labonair-runtime` | Tokio/foreground runtime bridging and lifecycle helpers. |
 | `labonair-filesystem` | Local filesystem abstractions and watchers. |
 | `labonair-errors` | Structured, UI-free domain error contract and recovery metadata. |
-| `labonair-process` | Process and PTY launching contracts. |
 | `labonair-secrets` | Keychain and secret references. |
 | `labonair-persistence` | Cloneable shared SQLite connection and schema lifecycle; feature modules own stores and queries. |
+| `labonair-panel` | UI-free panel, dock, and status-item contracts used by workspace-owned surfaces. |
 
-### Cross-cutting modules
+### Capability modules and crates
 
-| Module | Initial crate split |
-|---|---|
-| Settings | `settings-content`, `settings-core`, `settings-json`, `settings-ui`, `settings-macros` |
-| Keymap | `keymap-core`, `keymap-ui` |
-| Command palette | `command-palette-core`, `command-palette-ui` |
-| Notifications | `notifications-core`, `notifications-ui` |
-| Themes | `theme-core`, `theme-ui` |
-| Workspace | `workspace-core`, `workspace-ui` |
+The names below are the current canonical crates. They are not a request to
+pre-create empty `-core` or `-ui` crates. A sibling crate is added only when
+the module has a demonstrated dependency, lifecycle, storage, or platform
+boundary.
+
+| Module | Canonical capability crate | Existing sibling crates | Ownership boundary |
+|---|---|---|---|
+| Settings | `labonair-settings` | `settings-content`, `settings-json`, `settings-macros`, `settings-ui` | Typed values, layered persistence, and value-only settings UI. |
+| Keymap | `labonair-keymap` | none yet | Binding descriptors, file data, resolution, and conflicts; no feature behavior. |
+| Command palette | `labonair-command-palette-core` | `labonair-command-palette` | UI-free command registry contract; the sibling owns GPUI search/navigation and submenu presentation. |
+| Notifications | `labonair-notifications-core` | `notifications` | Notification registry/state and its GPUI statusbar presentation. |
+| Themes | `labonair-theme` | none yet | Built-in color and icon-theme registries, preview, and selection. |
+| Workspace | `labonair-workspace` | none; panel crates are separate capabilities | Workspace identity, tabs, panes, focus, layout, and session orchestration. |
 
 ### Product modules
 
-| Module | Responsibility |
-|---|---|
-| Terminal | PTY sessions, terminal engine, renderer, terminal commands. |
-| Editor | Buffers, syntax, editing behavior, editor commands. |
-| SSH | SSH transport, authentication, tunnels, jump-host execution. |
-| SFTP | Remote filesystem browsing and SFTP operations. |
-| Hosts | Saved host definitions, recent hosts, import/export, host management UI. The domain contract and store live in `labonair-hosts`; transport adapters remain capability-owned. |
-| Credentials | Credential metadata, secret references, and generated SSH key material in `labonair-credentials`. |
-| Transfers | Transfer queue, progress, cancellation, conflict resolution, and history UI. Retry is a follow-up contract when supported by the worker. |
-| Git | `labonair-git` contracts, Git service adapters, source-control UI, and graph UI. |
-| Explorer | Local file navigation UI. |
-| Snippets | Snippet storage in `labonair-snippets`, execution, and UI. |
-| AI | Providers, sessions, context, tools, and future UI. |
+| Module | Canonical capability crate | Responsibility |
+|---|---|---|
+| Terminal | `labonair-terminal` | PTY sessions, terminal engine, renderer, and terminal commands. |
+| Editor | `labonair-editor` | Buffers, syntax, editing behavior, and editor commands. |
+| SSH | `labonair-ssh` | SSH transport, authentication, tunnels, and jump-host execution. |
+| SFTP | `labonair-sftp` | Remote filesystem browsing and SFTP operations. |
+| Hosts | `labonair-hosts` | Saved host definitions, recent hosts, import/export, and host management. Transport adapters remain capability-owned. |
+| Credentials | `labonair-credentials` | Credential metadata, secret references, and generated SSH key material. |
+| Transfers | `labonair-transfers` | Transfer queue, progress, cancellation, conflict resolution, and lifecycle history. Retry is a follow-up contract when supported by the worker. |
+| Git | `labonair-git` | Git contracts and source-control behavior; sibling panel crates provide Git views. |
+| Explorer | `labonair-panel-explorer` | Local file navigation UI over filesystem contracts. |
+| Snippets | `labonair-snippets` | Snippet storage, execution contracts, and snippet behavior; sibling panel crate provides the view. |
+| AI | `labonair-ai` | Providers, sessions, context, tools, and future UI. |
 
 The first transport split is intentionally contract-first:
 `labonair-ssh` owns UI-free SSH session, PTY, trust, remote-command, tunnel,
@@ -101,7 +112,9 @@ latter owns the queue dropdown and resolution dialogs. The backend exposes a
 temporary worker adapter, while SFTP only submits typed transfer requests.
 The statusbar owns the trigger/anchor, but not transfer state.
 
-The current repository does not yet match this map. The migration is tracked in [`rework-roadmap.md`](rework-roadmap.md); this map is the target, not a claim about the current tree.
+The current repository does not yet match every ownership boundary in this
+map. The migration is tracked in [`rework-roadmap.md`](rework-roadmap.md), and
+the observed state is recorded in [`audits/architecture-inventory.md`](audits/architecture-inventory.md).
 
 ## 5. Composition root
 
@@ -114,6 +127,11 @@ Only the `labonair` application package and `labonair-shell` may know all concre
 - compose the permanent shell.
 
 They must not contain SSH logic, transfer logic, theme definitions, settings field definitions, or feature-specific rendering.
+
+The composition root may construct concrete implementations and pass them to
+owners, but it may not reinterpret their domain events or duplicate their
+registries. Registration calls belong to the owning module; the root only
+assembles registrations and connects typed interfaces.
 
 ## 6. Communication rules
 
@@ -139,12 +157,22 @@ The application event bus is a transport boundary, not a business-logic layer. E
 - The shell is the only all-feature composition layer.
 - Every new dependency edge requires a reason in the module manifest or an ADR.
 - A CI allow-list must verify the dependency graph and reject cycles or forbidden edges.
+- A feature crate may depend on another module's public contract crate when its
+  user flow requires it, but not on that module's private state or feature UI.
+- No new capability code may be added to `labonair-backend`; during migration it
+  may contain only explicitly named adapters whose removal condition is tracked
+  in the inventory.
 
 ## 8. UI ownership
 
 Feature crates own feature-specific views. `labonair-ui-kit` owns reusable visual and interaction primitives. A feature must use the kit for buttons, dropdowns, lists, menus, inputs, badges, popovers, dialogs, and standard rows.
 
 Feature-specific components may compose kit components, but may not fork their styling locally. New shared behavior is added to the kit first, with a documented API and a component test.
+
+The UI kit is a component boundary, not a product module. It may provide
+generic buttons, inputs, lists, menus, dropdowns, dialogs, badges, tabs,
+disclosure, scrolling, and focus behavior, but it must not know about hosts,
+themes, transfers, or any other product capability.
 
 ## 9. Runtime lifecycle
 
@@ -160,7 +188,33 @@ Initialization is explicit and ordered:
 
 I/O is asynchronous. The GPUI foreground thread only performs bounded state updates and rendering. No startup or render path may perform blocking filesystem, network, process, or database work.
 
-## 10. Verification
+## 10. Adding and migrating a capability
+
+Every feature change follows the same boundary-first sequence:
+
+1. Record the user flow, disposition (`keep`, `redesign`, `defer`, or
+   `remove`), owner, canonical entry point, and canonical capability crate in
+   the capability matrix and roadmap.
+2. Define the owning module's domain state, public typed contract, events,
+   persistence, commands/keybindings, notifications, and required UI-kit
+   components. Choose a direct trait, typed event, or registry based on the
+   number of providers and consumers; do not introduce a registry by default.
+3. Implement state, behavior, UI, and tests inside the owner. Register
+   commands, panels, status items, themes, or notifications through their
+   typed registration APIs; do not add a second central table.
+4. Wire concrete implementations only in the composition root. Consumers use
+   public contracts or immutable snapshots and never mutate another module's
+   state directly.
+5. During migration, move the contract first, then adapters and consumers.
+   Mark each compatibility path with a removal condition, update the
+   inventory and dependency verifier, and remove the old path before declaring
+   the migration complete.
+
+Do not introduce a new abstraction, permanent surface, or sibling crate
+without a current consumer and a documented boundary. If a capability has no
+current workflow, remove it or park it outside the permanent product surface.
+
+## 11. Verification
 
 Architecture changes require:
 

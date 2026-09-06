@@ -1,6 +1,5 @@
-//! Keyboard-shortcut model: the rebindable [`ShortcutId`] table (port of the
-//! reference `shortcuts.ts`), user keybind overrides ([`KeybindMap`]) and
-//! conflict detection.
+//! UI-free keyboard-shortcut model: the rebindable [`ShortcutId`] table,
+//! user keybind overrides ([`KeybindMap`]), resolution, and conflict detection.
 
 /// Every rebindable keyboard shortcut. IDs match the reference `ShortcutId`.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
@@ -221,16 +220,6 @@ pub fn shortcut_from_slug(slug: &str) -> Option<ShortcutId> {
 /// install running entirely on defaults.
 pub type KeybindMap = std::collections::BTreeMap<String, String>;
 
-/// GPUI global publishing the current effective-binding display map, derived
-/// from the merged `keymap.json` (T19-008). Populated by
-/// `labonair-shell::keymap_loader` on every (re)load; read by
-/// `PalettePrefs::keybind_overrides` and any other display site that used to
-/// read the old `Preferences.keybinds` blob directly (now removed).
-#[derive(Debug, Clone, Default)]
-pub struct KeybindDisplay(pub KeybindMap);
-
-impl gpui::Global for KeybindDisplay {}
-
 /// The keystroke a shortcut currently resolves to, honouring user
 /// overrides. `None` = the shortcut is disabled (overridden to empty).
 pub fn effective_binding(id: ShortcutId, overrides: &KeybindMap) -> Option<String> {
@@ -315,11 +304,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn every_shortcut_id_has_one_entry_and_parses() {
+    fn every_shortcut_id_has_one_entry_and_has_a_valid_binding_shape() {
         for s in shortcuts() {
             assert_eq!(shortcut(s.id).id, s.id);
-            gpui::Keystroke::parse(s.binding)
-                .unwrap_or_else(|e| panic!("bad binding {:?}: {e:?}", s.binding));
+            assert!(!s.binding.is_empty());
+            assert!(!s.binding.chars().any(char::is_whitespace));
         }
     }
 

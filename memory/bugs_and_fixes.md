@@ -1,5 +1,21 @@
 # Bugs, fixes, and non-obvious constraints
 
+## 2026-09-06 — Command metadata must be shared with keymap and palette
+
+**Finding:** The command palette had a static presentation table while the
+shell kept a second behaviour/context registry. This allowed commands to be
+visible in one surface but absent from keymap discovery or dispatch.
+
+**Resolution:** Added the UI-free `labonair-command-palette-core` registry and
+descriptor/provider contracts. The palette now adapts injected snapshots,
+the shell keeps only execution closures, and keymap loading resolves default
+shortcuts through the same descriptor registry. The old palette `COMMANDS`
+table and its shortcut lookup path were removed.
+
+**Non-obvious constraint:** The keymap core must not depend on GPUI. GPUI's
+`KeybindDisplay` remains a presentation adapter in the command-palette crate,
+while keymap tests validate binding shape without importing GPUI.
+
 ## 2026-09-06 — Full AI test suite needs local listener permission
 
 **Finding:** The first sandboxed `cargo test --workspace` run failed only in

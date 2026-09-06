@@ -1,5 +1,29 @@
 # Handshake — Session State (Labonair-rust Port)
 
+## Current Session: 2026-09-06 (Command palette and keymap registries)
+
+`R01-004` is complete. Added the UI-free `labonair-command-palette-core`
+crate with stable command descriptors, duplicate-safe registration,
+module-owned command providers, dynamic submenu provider contracts, contexts,
+aliases, and typed submenu rows. The GPUI palette now consumes a command
+snapshot supplied by the shell and owns only search, filtering, navigation,
+preview, and selection. The old static `COMMANDS` table was removed.
+
+The shell now keeps execution closures in a dispatcher backed by the shared
+metadata registry, and keymap loading resolves default shortcut display and
+validation through that same registry. Keymap domain logic is in the separate
+GPUI-free `labonair-keymap` crate; `KeybindDisplay` remains only a GPUI
+adapter. The normative documentation and architecture inventory were
+updated, and `R01-005-settings-ownership-and-reduction` was added as the next
+bounded migration task.
+
+Verification passes: `cargo fmt --check`, `cargo check --workspace
+--all-targets`, `cargo clippy --workspace --all-targets -- -D warnings`,
+`cargo test --workspace` (with local listener/file-watcher permissions),
+`git diff --check`, and `scripts/check-crate-deps.py`. The current branch is
+`master`; changes are committed in `719dc92`. Next:
+`R01-005-settings-ownership-and-reduction`. No source blocker.
+
 ## Current Session: 2026-09-06 (Typed transfer registry complete)
 
 `R01-003` is complete. Added the UI-free `labonair-transfers` capability

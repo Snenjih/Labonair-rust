@@ -11,13 +11,13 @@
 use std::cell::RefCell;
 
 use gpui::App;
-use labonair_command_palette::{
-    command_for_shortcut, known_action_names, shortcut_slug, shortcuts, KeybindDisplay, KeybindMap,
-};
+use labonair_command_palette::{shortcut_slug, shortcuts, KeybindDisplay, KeybindMap};
 use labonair_settings::keymap::{
     self, merge_keymaps, parse_keymap_jsonc, validate_keymap, EffectiveBinding, KeybindSource,
     KeymapFile, Severity, ValidationIssue,
 };
+
+use crate::commands::CommandDispatcher;
 
 thread_local! {
     /// The last successfully-parsed user `keymap.json`. Kept across a reload
@@ -38,15 +38,18 @@ pub fn last_issues() -> Vec<ValidationIssue> {
     LAST_ISSUES.with(|c| c.borrow().clone())
 }
 
-fn known_actions() -> std::collections::BTreeSet<&'static str> {
-    known_action_names()
+fn known_actions(registry: &CommandDispatcher) -> std::collections::BTreeSet<&'static str> {
+    registry
+        .iter()
+        .map(|descriptor| descriptor.id.action_name())
+        .collect()
 }
 
 /// Parse + validate the user `keymap.json`. On success, caches it as the new
 /// "last known good" file. On a parse/structural failure, keeps the previous
 /// last-good file and records the issue. Missing file = an empty (valid)
 /// keymap, not an error.
-fn load_user_keymap() -> KeymapFile {
+fn load_user_keymap(registry: &CommandDispatcher) -> KeymapFile {
     let path = keymap::user_keymap_path();
     let Ok(text) = std::fs::read_to_string(&path) else {
         LAST_ISSUES.with(|c| c.borrow_mut().clear());
@@ -56,7 +59,7 @@ fn load_user_keymap() -> KeymapFile {
 
     match parse_keymap_jsonc(&text) {
         Ok(file) => {
-            let issues = validate_keymap(&file, &known_actions(), &text);
+            let issues = validate_keymap(&file, &known_actions(registry), &text);
             let has_errors = issues.iter().any(|i| i.severity == Severity::Error);
             if has_errors {
                 tracing::warn!(
@@ -105,9 +108,9 @@ fn load_default_keymap() -> KeymapFile {
 
 /// The merged effective keymap: shipped defaults, then the user's
 /// `keymap.json` (or the last known-good snapshot of it) on top.
-pub fn effective_bindings() -> Vec<EffectiveBinding> {
+pub(crate) fn effective_bindings(registry: &CommandDispatcher) -> Vec<EffectiveBinding> {
     let default = load_default_keymap();
-    let user = load_user_keymap();
+    let user = load_user_keymap(registry);
     merge_keymaps(&[
         (KeybindSource::Default, &default),
         (KeybindSource::User, &user),
@@ -120,10 +123,10 @@ pub fn effective_bindings() -> Vec<EffectiveBinding> {
 /// `Some("")` = explicitly unbound. Context-agnostic by design (T19-008's
 /// documented scope reduction — the display picks the first effective
 /// binding for the command regardless of context).
-fn display_map(effective: &[EffectiveBinding]) -> KeybindMap {
+fn display_map(effective: &[EffectiveBinding], registry: &CommandDispatcher) -> KeybindMap {
     let mut map = KeybindMap::new();
     for s in shortcuts() {
-        let Some(cmd_id) = command_for_shortcut(s.id) else {
+        let Some(cmd_id) = registry.command_for_shortcut(s.id) else {
             continue;
         };
         let action_name = cmd_id.action_name();
@@ -142,17 +145,17 @@ fn display_map(effective: &[EffectiveBinding]) -> KeybindMap {
 
 /// Load, merge, bind and publish the display global — the single entry point
 /// called at startup and on live-reload.
-pub fn reload_and_apply(cx: &mut App) {
-    let effective = effective_bindings();
+pub(crate) fn reload_and_apply(cx: &mut App, registry: &CommandDispatcher) {
+    let effective = effective_bindings(registry);
     crate::menu::apply_keymap(cx, &effective);
-    cx.set_global(KeybindDisplay(display_map(&effective)));
+    cx.set_global(KeybindDisplay(display_map(&effective, registry)));
 }
 
 /// Start the live fs-watch on `keymap.json` (T19-008 Anweisung #6). Call once
 /// at startup, after the first [`reload_and_apply`].
-pub fn watch(cx: &App) {
-    labonair_settings::watch_file(cx, keymap::user_keymap_path(), |cx| {
-        reload_and_apply(cx);
+pub(crate) fn watch(cx: &App, registry: CommandDispatcher) {
+    labonair_settings::watch_file(cx, keymap::user_keymap_path(), move |cx| {
+        reload_and_apply(cx, &registry);
     });
 }
 
@@ -166,7 +169,8 @@ mod tests {
     #[test]
     fn effective_bindings_include_defaults() {
         let default = load_default_keymap();
-        let effective = effective_bindings();
+        let registry = crate::commands::register_builtin_commands();
+        let effective = effective_bindings(&registry);
         let default_actions: std::collections::BTreeSet<&str> = default
             .0
             .iter()
@@ -185,8 +189,9 @@ mod tests {
 
     #[test]
     fn display_map_omits_unshifted_defaults() {
-        let effective = effective_bindings();
-        let map = display_map(&effective);
+        let registry = crate::commands::register_builtin_commands();
+        let effective = effective_bindings(&registry);
+        let map = display_map(&effective, &registry);
         // `TabNew`'s default (`cmd-t`) is unchanged in a clean environment,
         // so it must not appear as an "override" in the display map.
         assert!(!map.contains_key(shortcut_slug(labonair_command_palette::ShortcutId::TabNew)));

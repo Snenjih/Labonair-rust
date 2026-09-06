@@ -17,6 +17,12 @@ tests. A view may not introduce a global color, spacing, radius, typography,
 shadow, or state value inline. If a new visual value is genuinely required,
 extend the token source first and record the reason in the owning task.
 
+Tokens are semantic rather than feature-specific: a feature consumes, for
+example, surface, text, focus, selected, danger, and spacing roles instead of
+defining a `host-row-blue` or `terminal-padding` value. Color-theme and
+icon-theme registries provide the active values; feature views do not select
+or persist themes themselves.
+
 ## UI-kit requirement
 
 The following must come from `labonair-ui-kit`:
@@ -43,7 +49,18 @@ Every interactive component must define normal, hover, pressed, selected, focuse
 - Align popovers to their triggering element in the same window coordinate space.
 - Use progressive disclosure for secondary actions.
 - Lists must define selection, focus, empty, loading, and error behavior.
-- Long lists must use bounded or virtualized rendering where measurement requires it.
+- Long lists must use a bounded, scrollable, or virtualized container.
+- User-facing error explanations belong in the notification dropdown. A local
+  error state may still prevent an invalid action or render an invalid control,
+  but it must not create a second inline error message for the same failure.
+
+## Surface ownership
+
+Feature views own composition and domain content. The UI kit owns the
+interaction mechanics and visual variants of reusable controls. The shell
+owns only placement of permanent zones and overlay anchors. A dropdown or
+popover must be positioned from the triggering element's bounds in the same
+window coordinate space; it must never choose a fixed opposite-side location.
 
 ## Review rule
 

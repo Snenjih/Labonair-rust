@@ -2,7 +2,7 @@
 
 ## Status
 
-`⬜ Todo`
+`✅ Done`
 
 ## Owner
 

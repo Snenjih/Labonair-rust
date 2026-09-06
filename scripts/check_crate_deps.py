@@ -37,6 +37,10 @@ ALLOWED = {
     "labonair-sftp": {"labonair-errors", "labonair-ssh"},
     # UI-free transfer lifecycle, event, and worker contracts.
     "labonair-transfers": set(),
+    # UI-free shortcut identities, defaults, persistence keys, and conflict
+    # resolution. GPUI publication remains in the palette/shell adapters.
+    "labonair-keymap": set(),
+    "labonair-command-palette-core": {"labonair-keymap"},
     # Platform service — secret storage and encryption, without GPUI or
     # feature-module dependencies.
     "labonair-secrets": {"labonair-filesystem"},
@@ -68,9 +72,10 @@ ALLOWED = {
         "labonair-notifications-core",
     },
     "labonair-command-palette": {
-        "labonair-theme", "labonair-ui-kit", "labonair-gpui-ext",
-        "labonair-backend",
+        "labonair-theme", "labonair-ui-kit",
         "labonair-filesystem",
+        "labonair-keymap",
+        "labonair-command-palette-core",
         # transitional: palette settings reads move behind a provider contract
         "labonair-settings",
     },
@@ -134,6 +139,8 @@ ALLOWED = {
     "labonair-shell": {
         "labonair-theme", "labonair-ui-kit", "labonair-gpui-ext",
         "labonair-notifications", "labonair-command-palette",
+        "labonair-command-palette-core",
+        "labonair-keymap",
         "labonair-workspace", "labonair-settings-ui", "labonair-panel",
         "labonair-panel-explorer", "labonair-panel-scm",
         "labonair-panel-git-graph", "labonair-panel-snippets",

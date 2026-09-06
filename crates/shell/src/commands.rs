@@ -1,4 +1,4 @@
-//! `CommandRegistry` — the single, data-driven definition site for every
+//! `CommandDispatcher` — the single, data-driven definition site for every
 //! Labonair command (T17-007).
 //!
 //! Before T17-007 the shell root carried a ~50-entry
@@ -6,26 +6,25 @@
 //! `run_palette_command` match: adding a command meant editing four places
 //! (a `menu::` action, an `AppShell::act_*` handler, an `.on_action` line, a
 //! `run_palette_command` arm). Now every command is one
-//! [`CommandRegistry::register`] call in [`register_builtin_commands`]; the
+//! [`CommandDispatcher::register`] call in [`register_builtin_commands`]; the
 //! native menu bar, the key bindings and the command palette all dispatch the
 //! same [`CommandId`] through [`AppShell::dispatch_command`].
 //!
 //! ## Sanctioned deviation (see `docs/architecture.md` §8)
 //!
-//! The task text places `CommandRegistry` in `labonair-command-palette` (or a
-//! new `labonair-commands` crate). It lives in `labonair-shell` instead: a
-//! command body needs `&mut AppShell` to reach the shell-owned panel / feature
-//! entities (`panels.ai_chat`, `panels.updater`, `panels.command_palette`,
-//! `titlebar`, …) that cannot move onto `Workspace` without a crate cycle —
-//! the exact same root cause recorded in §8.4 / §8.9. `AppShell` is only
-//! nameable here, so `CommandFn` and the registry are here too. Palette and
-//! keymap still *share* the registry: they dispatch through the common
-//! [`CommandId`] vocabulary owned by `labonair-command-palette`.
+//! The UI-free metadata registry lives in `labonair-command-palette-core`.
+//! This module adds only the shell-owned execution closures, keeping the
+//! palette, menu, and keymap on the same descriptor snapshot without making
+//! the core registry depend on GPUI or `AppShell`.
 
 use std::rc::Rc;
 
 use gpui::{Context, Div, InteractiveElement, Window};
-use labonair_command_palette::{CommandContext, CommandId, Page as PalettePage};
+use labonair_command_palette::Page as PalettePage;
+use labonair_command_palette_core::{
+    CommandContext, CommandDescriptor, CommandIcon, CommandId,
+    CommandRegistry as PaletteCommandRegistry, CommandSubmenu,
+};
 use labonair_settings_ui::open_settings_window;
 
 use crate::app_shell::AppShell;
@@ -37,38 +36,43 @@ use crate::pane::SplitDirection;
 /// (side-stepping the `&mut AppShell` / `&AppShell.command_registry` borrow).
 pub(crate) type CommandFn = Rc<dyn Fn(&mut AppShell, &mut Window, &mut Context<AppShell>)>;
 
-/// One registered command.
+/// Shell-owned execution half of one registered command.
+#[derive(Clone)]
 pub(crate) struct Command {
     pub(crate) id: CommandId,
-    /// Contexts the command is offered in (empty = always). Mirrors the
-    /// palette's `Command::contexts`; used by [`CommandRegistry::visible_in`].
-    pub(crate) contexts: &'static [CommandContext],
     pub(crate) run: CommandFn,
 }
 
-/// The app's command table. Populated once by [`register_builtin_commands`].
-#[derive(Default)]
-pub(crate) struct CommandRegistry {
+/// Shell dispatcher backed by the UI-free command metadata registry.
+#[derive(Clone, Default)]
+pub(crate) struct CommandDispatcher {
+    metadata: PaletteCommandRegistry,
     commands: Vec<Command>,
 }
 
-impl CommandRegistry {
-    /// Register a command. One call per command — the whole point of T17-007.
+impl CommandDispatcher {
+    /// Register metadata and behaviour together. The descriptor is the only
+    /// source consumed by palette, menus, and keymap tooling.
     pub(crate) fn register(
         &mut self,
-        id: CommandId,
-        contexts: &'static [CommandContext],
+        descriptor: CommandDescriptor,
         run: impl Fn(&mut AppShell, &mut Window, &mut Context<AppShell>) + 'static,
     ) {
-        debug_assert!(
-            !self.commands.iter().any(|c| c.id == id),
-            "command {id:?} registered twice"
-        );
+        let id = descriptor.id;
+        if let Err(error) = self.metadata.register(descriptor) {
+            panic!("invalid built-in command registry: {error}");
+        }
         self.commands.push(Command {
             id,
-            contexts,
             run: Rc::new(run),
         });
+    }
+
+    /// Publish a palette-only command with no shell execution body.
+    pub(crate) fn register_descriptor(&mut self, descriptor: CommandDescriptor) {
+        if let Err(error) = self.metadata.register(descriptor) {
+            panic!("invalid built-in command registry: {error}");
+        }
     }
 
     /// The `run` closure for `id`, if one is registered.
@@ -82,21 +86,29 @@ impl CommandRegistry {
     /// Every registered command. Part of the registry read API (also consumed
     /// by the file-based keymap in T19-008).
     #[allow(dead_code)]
-    pub(crate) fn iter(&self) -> impl Iterator<Item = &Command> {
-        self.commands.iter()
+    pub(crate) fn iter(&self) -> impl Iterator<Item = &CommandDescriptor> {
+        self.metadata.iter()
     }
 
     /// Commands available in `ctx` (no-context commands always; context-scoped
     /// ones only when their context is active) — same rule the palette applies.
     #[allow(dead_code)]
-    pub(crate) fn visible_in(&self, ctx: Option<CommandContext>) -> Vec<&Command> {
-        self.commands
-            .iter()
-            .filter(|c| match ctx {
-                None => c.contexts.is_empty(),
-                Some(active) => c.contexts.is_empty() || c.contexts.contains(&active),
-            })
-            .collect()
+    pub(crate) fn visible_in(&self, ctx: Option<CommandContext>) -> Vec<&CommandDescriptor> {
+        self.metadata.available(ctx)
+    }
+
+    /// Clone the descriptor snapshot for the palette view.
+    pub(crate) fn descriptors(&self) -> Vec<CommandDescriptor> {
+        self.metadata.snapshot()
+    }
+
+    /// Resolve the default shortcut through the same registry used by the
+    /// palette, rather than a second shortcut-to-command table.
+    pub(crate) fn command_for_shortcut(
+        &self,
+        shortcut: labonair_keymap::ShortcutId,
+    ) -> Option<CommandId> {
+        self.metadata.command_for_shortcut(shortcut)
     }
 }
 
@@ -190,230 +202,835 @@ const CTX_EDITOR: &[CommandContext] = &[CommandContext::Editor];
 const CTX_TERMINAL: &[CommandContext] = &[CommandContext::Terminal];
 const CTX_TERMINALS: &[CommandContext] = &[CommandContext::Terminal, CommandContext::SshTerminal];
 
-pub(crate) fn register_builtin_commands() -> CommandRegistry {
-    let mut r = CommandRegistry::default();
+#[allow(clippy::too_many_arguments)]
+fn command_descriptor(
+    id: CommandId,
+    title: &str,
+    section: &str,
+    contexts: &[CommandContext],
+    shortcut: Option<labonair_keymap::ShortcutId>,
+    icon: CommandIcon,
+    submenu: Option<CommandSubmenu>,
+) -> CommandDescriptor {
+    let mut descriptor = CommandDescriptor::new(id, title, section)
+        .with_contexts(contexts)
+        .with_icon(icon);
+    if let Some(shortcut) = shortcut {
+        descriptor = descriptor.with_shortcut(shortcut);
+    }
+    if let Some(submenu) = submenu {
+        descriptor = descriptor.with_submenu(submenu);
+    }
+    descriptor
+}
+
+pub(crate) fn register_builtin_commands() -> CommandDispatcher {
+    let mut r = CommandDispatcher::default();
     let always = ALWAYS;
 
     // ── Tabs / layout ────────────────────────────────────────────────────
-    r.register(CommandId::NewTerminalTab, always, |s, window, cx| {
-        s.workspace
-            .update(cx, |w, cx| w.new_terminal_tab(window, cx));
-    });
-    r.register(CommandId::NewEditorTab, always, |s, window, cx| {
-        s.workspace.update(cx, |w, cx| w.new_editor_tab(window, cx));
-    });
-    r.register(CommandId::NewPreviewTab, always, |s, window, cx| {
-        s.workspace
-            .update(cx, |w, cx| w.new_preview_tab(window, cx));
-    });
-    r.register(CommandId::Save, always, |s, _window, cx| {
-        s.workspace.update(cx, |w, cx| w.save_active(cx));
-    });
-    r.register(CommandId::CloseTab, always, |s, window, cx| {
-        s.workspace.update(cx, |w, cx| w.close_active(window, cx));
-    });
-    r.register(CommandId::DuplicateTab, always, |s, window, cx| {
-        s.workspace
-            .update(cx, |w, cx| w.duplicate_active_tab(window, cx));
-    });
-    r.register(CommandId::CloseOtherTabs, always, |s, window, cx| {
-        s.workspace
-            .update(cx, |w, cx| w.close_other_tabs(window, cx));
-    });
-    r.register(CommandId::NextTab, always, |s, window, cx| {
-        s.workspace.update(cx, |w, cx| w.cycle(true, window, cx));
-    });
-    r.register(CommandId::PrevTab, always, |s, window, cx| {
-        s.workspace.update(cx, |w, cx| w.cycle(false, window, cx));
-    });
-    r.register(CommandId::FocusNextPane, always, |s, window, cx| {
-        s.workspace
-            .update(cx, |w, cx| w.focus_next_pane(window, cx));
-    });
-    for (id, idx) in [
-        (CommandId::SelectTab1, 0usize),
-        (CommandId::SelectTab2, 1),
-        (CommandId::SelectTab3, 2),
-        (CommandId::SelectTab4, 3),
-        (CommandId::SelectTab5, 4),
-        (CommandId::SelectTab6, 5),
-        (CommandId::SelectTab7, 6),
-        (CommandId::SelectTab8, 7),
-        (CommandId::SelectTab9, 8),
-    ] {
-        r.register(id, always, move |s, window, cx| {
+    r.register(
+        command_descriptor(
+            CommandId::NewTerminalTab,
+            "New Terminal Tab",
+            "Layout",
+            always,
+            Some(labonair_keymap::ShortcutId::TabNew),
+            CommandIcon::Terminal,
+            None,
+        ),
+        |s, window, cx| {
             s.workspace
-                .update(cx, |w, cx| w.select_tab_by_index(idx, window, cx));
-        });
+                .update(cx, |w, cx| w.new_terminal_tab(window, cx));
+        },
+    );
+    r.register(
+        command_descriptor(
+            CommandId::NewEditorTab,
+            "New Editor Tab",
+            "Layout",
+            always,
+            Some(labonair_keymap::ShortcutId::TabNewEditor),
+            CommandIcon::File,
+            None,
+        ),
+        |s, window, cx| {
+            s.workspace.update(cx, |w, cx| w.new_editor_tab(window, cx));
+        },
+    );
+    r.register(
+        command_descriptor(
+            CommandId::NewPreviewTab,
+            "New Preview Tab",
+            "Layout",
+            always,
+            Some(labonair_keymap::ShortcutId::TabNewPreview),
+            CommandIcon::File,
+            None,
+        ),
+        |s, window, cx| {
+            s.workspace
+                .update(cx, |w, cx| w.new_preview_tab(window, cx));
+        },
+    );
+    r.register(
+        command_descriptor(
+            CommandId::Save,
+            "Save",
+            "Tab Actions",
+            always,
+            None,
+            CommandIcon::Edit,
+            None,
+        ),
+        |s, _window, cx| {
+            s.workspace.update(cx, |w, cx| w.save_active(cx));
+        },
+    );
+    r.register(
+        command_descriptor(
+            CommandId::CloseTab,
+            "Close Current Tab",
+            "Tab Actions",
+            always,
+            Some(labonair_keymap::ShortcutId::TabClose),
+            CommandIcon::Close,
+            None,
+        ),
+        |s, window, cx| {
+            s.workspace.update(cx, |w, cx| w.close_active(window, cx));
+        },
+    );
+    r.register(
+        command_descriptor(
+            CommandId::DuplicateTab,
+            "Duplicate Tab",
+            "Layout",
+            always,
+            None,
+            CommandIcon::Copy,
+            None,
+        ),
+        |s, window, cx| {
+            s.workspace
+                .update(cx, |w, cx| w.duplicate_active_tab(window, cx));
+        },
+    );
+    r.register(
+        command_descriptor(
+            CommandId::CloseOtherTabs,
+            "Close Other Tabs",
+            "Layout",
+            always,
+            None,
+            CommandIcon::Close,
+            None,
+        ),
+        |s, window, cx| {
+            s.workspace
+                .update(cx, |w, cx| w.close_other_tabs(window, cx));
+        },
+    );
+    r.register(
+        command_descriptor(
+            CommandId::NextTab,
+            "Next Tab",
+            "Tab Actions",
+            always,
+            Some(labonair_keymap::ShortcutId::TabNext),
+            CommandIcon::ChevronRight,
+            None,
+        ),
+        |s, window, cx| {
+            s.workspace.update(cx, |w, cx| w.cycle(true, window, cx));
+        },
+    );
+    r.register(
+        command_descriptor(
+            CommandId::PrevTab,
+            "Previous Tab",
+            "Tab Actions",
+            always,
+            Some(labonair_keymap::ShortcutId::TabPrev),
+            CommandIcon::ChevronRight,
+            None,
+        ),
+        |s, window, cx| {
+            s.workspace.update(cx, |w, cx| w.cycle(false, window, cx));
+        },
+    );
+    r.register(
+        command_descriptor(
+            CommandId::FocusNextPane,
+            "Focus Next Pane",
+            "Layout",
+            always,
+            None,
+            CommandIcon::ChevronRight,
+            None,
+        ),
+        |s, window, cx| {
+            s.workspace
+                .update(cx, |w, cx| w.focus_next_pane(window, cx));
+        },
+    );
+    for (id, idx, title, shortcut) in [
+        (
+            CommandId::SelectTab1,
+            0usize,
+            "Select Tab 1",
+            labonair_keymap::ShortcutId::TabSelect1,
+        ),
+        (
+            CommandId::SelectTab2,
+            1,
+            "Select Tab 2",
+            labonair_keymap::ShortcutId::TabSelect2,
+        ),
+        (
+            CommandId::SelectTab3,
+            2,
+            "Select Tab 3",
+            labonair_keymap::ShortcutId::TabSelect3,
+        ),
+        (
+            CommandId::SelectTab4,
+            3,
+            "Select Tab 4",
+            labonair_keymap::ShortcutId::TabSelect4,
+        ),
+        (
+            CommandId::SelectTab5,
+            4,
+            "Select Tab 5",
+            labonair_keymap::ShortcutId::TabSelect5,
+        ),
+        (
+            CommandId::SelectTab6,
+            5,
+            "Select Tab 6",
+            labonair_keymap::ShortcutId::TabSelect6,
+        ),
+        (
+            CommandId::SelectTab7,
+            6,
+            "Select Tab 7",
+            labonair_keymap::ShortcutId::TabSelect7,
+        ),
+        (
+            CommandId::SelectTab8,
+            7,
+            "Select Tab 8",
+            labonair_keymap::ShortcutId::TabSelect8,
+        ),
+        (
+            CommandId::SelectTab9,
+            8,
+            "Select Tab 9",
+            labonair_keymap::ShortcutId::TabSelect9,
+        ),
+    ] {
+        r.register(
+            command_descriptor(
+                id,
+                title,
+                "Tab Actions",
+                always,
+                Some(shortcut),
+                CommandIcon::Terminal,
+                None,
+            ),
+            move |s, window, cx| {
+                s.workspace
+                    .update(cx, |w, cx| w.select_tab_by_index(idx, window, cx));
+            },
+        );
     }
 
     // ── Terminal panes ──────────────────────────────────────────────────
-    r.register(CommandId::SplitRight, CTX_TERMINAL, |s, window, cx| {
-        s.workspace
-            .update(cx, |w, cx| w.split(SplitDirection::Right, window, cx));
-    });
-    r.register(CommandId::SplitDown, CTX_TERMINAL, |s, window, cx| {
-        s.workspace
-            .update(cx, |w, cx| w.split(SplitDirection::Down, window, cx));
-    });
-    r.register(CommandId::ClosePane, CTX_TERMINAL, |s, window, cx| {
-        s.workspace.update(cx, |w, cx| w.close_pane(window, cx));
-    });
-    r.register(CommandId::ClearTerminal, CTX_TERMINALS, |s, _window, cx| {
-        s.workspace.update(cx, |w, cx| w.clear_active_terminal(cx));
-    });
+    r.register(
+        command_descriptor(
+            CommandId::SplitRight,
+            "Split Pane Right",
+            "Layout",
+            CTX_TERMINAL,
+            Some(labonair_keymap::ShortcutId::PaneSplitRight),
+            CommandIcon::ChevronRight,
+            None,
+        ),
+        |s, window, cx| {
+            s.workspace
+                .update(cx, |w, cx| w.split(SplitDirection::Right, window, cx));
+        },
+    );
+    r.register(
+        command_descriptor(
+            CommandId::SplitDown,
+            "Split Pane Down",
+            "Layout",
+            CTX_TERMINAL,
+            Some(labonair_keymap::ShortcutId::PaneSplitDown),
+            CommandIcon::ChevronDown,
+            None,
+        ),
+        |s, window, cx| {
+            s.workspace
+                .update(cx, |w, cx| w.split(SplitDirection::Down, window, cx));
+        },
+    );
+    r.register(
+        command_descriptor(
+            CommandId::ClosePane,
+            "Close Active Pane",
+            "Layout",
+            CTX_TERMINAL,
+            Some(labonair_keymap::ShortcutId::PaneClose),
+            CommandIcon::Close,
+            None,
+        ),
+        |s, window, cx| {
+            s.workspace.update(cx, |w, cx| w.close_pane(window, cx));
+        },
+    );
+    r.register(
+        command_descriptor(
+            CommandId::ClearTerminal,
+            "Clear Terminal",
+            "Terminal",
+            CTX_TERMINALS,
+            None,
+            CommandIcon::Trash,
+            None,
+        ),
+        |s, _window, cx| {
+            s.workspace.update(cx, |w, cx| w.clear_active_terminal(cx));
+        },
+    );
 
     // ── Search ──────────────────────────────────────────────────────────
-    r.register(CommandId::Find, always, |s, window, cx| {
-        s.toggle_search_overlay(window, cx);
-    });
+    r.register(
+        command_descriptor(
+            CommandId::Find,
+            "Find in Current Pane",
+            "Search",
+            always,
+            Some(labonair_keymap::ShortcutId::SearchFocus),
+            CommandIcon::Search,
+            None,
+        ),
+        |s, window, cx| {
+            s.toggle_search_overlay(window, cx);
+        },
+    );
 
     // ── Connections ─────────────────────────────────────────────────────
     // Connecting is exclusively the command palette's Hosts page
     // (`Enter` = SSH, `Shift+Enter` = SFTP). Host management is no longer a
     // Settings page; management will move to the Hosts capability surface.
-    r.register(CommandId::OpenHostSettings, always, |s, window, cx| {
-        s.show_command_palette(Some(PalettePage::Hosts), window, cx);
-    });
-    for id in [
-        CommandId::NewSshTab,
-        CommandId::NewSftpTab,
-        CommandId::NewQuickSsh,
-        CommandId::NewSshConnection,
-    ] {
-        r.register(id, always, |s, window, cx| {
+    r.register(
+        command_descriptor(
+            CommandId::OpenHostSettings,
+            "Open Hosts",
+            "Connections",
+            always,
+            None,
+            CommandIcon::Server,
+            None,
+        ),
+        |s, window, cx| {
             s.show_command_palette(Some(PalettePage::Hosts), window, cx);
-        });
+        },
+    );
+    for (id, title, icon) in [
+        (CommandId::NewSshTab, "New SSH Tab", CommandIcon::Terminal),
+        (CommandId::NewSftpTab, "New SFTP Tab", CommandIcon::Folder),
+        (
+            CommandId::NewQuickSsh,
+            "New Quick SSH",
+            CommandIcon::Terminal,
+        ),
+        (
+            CommandId::NewSshConnection,
+            "New SSH Connection",
+            CommandIcon::Terminal,
+        ),
+    ] {
+        r.register(
+            command_descriptor(
+                id,
+                title,
+                "Connections",
+                always,
+                None,
+                icon,
+                Some(CommandSubmenu::Hosts),
+            ),
+            |s, window, cx| {
+                s.show_command_palette(Some(PalettePage::Hosts), window, cx);
+            },
+        );
     }
 
     // ── View / sidebar ─────────────────────────────────────────────────
-    r.register(CommandId::ToggleSidebar, always, |s, _window, cx| {
-        s.toggle_sidebar(cx);
-    });
-    r.register(CommandId::DebugCyclePanelDock, always, |s, _window, cx| {
-        let pos = s.primary_dock(cx);
-        let Some(name) = s
-            .workspace
-            .read(cx)
-            .dock(pos)
-            .active_name()
-            .map(str::to_owned)
-        else {
-            return;
-        };
-        s.move_panel(&name, pos.next(), cx);
-    });
-    r.register(CommandId::DebugToggleDockZoom, always, |s, _window, cx| {
-        let pos = s.primary_dock(cx);
-        s.workspace.update(cx, |w, cx| {
-            let z = w.dock(pos).is_zoomed();
-            w.dock_mut(pos).set_zoomed(!z);
-            w.persist_docks(cx);
-        });
-        cx.notify();
-    });
+    r.register(
+        command_descriptor(
+            CommandId::ToggleSidebar,
+            "Toggle File Explorer",
+            "View",
+            always,
+            Some(labonair_keymap::ShortcutId::SidebarToggle),
+            CommandIcon::PanelLeft,
+            None,
+        ),
+        |s, _window, cx| {
+            s.toggle_sidebar(cx);
+        },
+    );
+    r.register(
+        command_descriptor(
+            CommandId::DebugCyclePanelDock,
+            "Debug: Cycle Panel Dock",
+            "Application",
+            always,
+            None,
+            CommandIcon::PanelLeft,
+            None,
+        ),
+        |s, _window, cx| {
+            let pos = s.primary_dock(cx);
+            let Some(name) = s
+                .workspace
+                .read(cx)
+                .dock(pos)
+                .active_name()
+                .map(str::to_owned)
+            else {
+                return;
+            };
+            s.move_panel(&name, pos.next(), cx);
+        },
+    );
+    r.register(
+        command_descriptor(
+            CommandId::DebugToggleDockZoom,
+            "Debug: Toggle Dock Zoom",
+            "Application",
+            always,
+            None,
+            CommandIcon::Square,
+            None,
+        ),
+        |s, _window, cx| {
+            let pos = s.primary_dock(cx);
+            s.workspace.update(cx, |w, cx| {
+                let z = w.dock(pos).is_zoomed();
+                w.dock_mut(pos).set_zoomed(!z);
+                w.persist_docks(cx);
+            });
+            cx.notify();
+        },
+    );
 
     // ── Snippets / source control ──────────────────────────────────────
-    r.register(CommandId::OpenSnippetsPanel, always, |s, _window, cx| {
-        s.open_panel("snippets", cx);
-    });
-    r.register(CommandId::OpenGitGraph, always, |s, _window, cx| {
-        s.workspace.update(cx, |w, cx| w.open_git_graph_tab(cx));
-    });
-    r.register(CommandId::FocusSourceControl, always, |s, _window, cx| {
-        s.open_panel("source-control", cx);
-    });
+    r.register(
+        command_descriptor(
+            CommandId::OpenSnippetsPanel,
+            "Open Snippets Panel",
+            "Snippets",
+            always,
+            None,
+            CommandIcon::Command,
+            None,
+        ),
+        |s, _window, cx| {
+            s.open_panel("snippets", cx);
+        },
+    );
+    r.register(
+        command_descriptor(
+            CommandId::OpenGitGraph,
+            "Open Git Graph",
+            "Source Control",
+            always,
+            None,
+            CommandIcon::GitBranch,
+            None,
+        ),
+        |s, _window, cx| {
+            s.workspace.update(cx, |w, cx| w.open_git_graph_tab(cx));
+        },
+    );
+    r.register(
+        command_descriptor(
+            CommandId::FocusSourceControl,
+            "Focus Source Control",
+            "Source Control",
+            always,
+            None,
+            CommandIcon::GitBranch,
+            None,
+        ),
+        |s, _window, cx| {
+            s.open_panel("source-control", cx);
+        },
+    );
 
     // ── Palette ────────────────────────────────────────────────────────
-    r.register(CommandId::OpenCommandPalette, always, |s, window, cx| {
-        s.toggle_command_palette(window, cx);
-    });
+    r.register(
+        command_descriptor(
+            CommandId::OpenCommandPalette,
+            "Open Command Palette",
+            "Application",
+            always,
+            Some(labonair_keymap::ShortcutId::CommandPalette),
+            CommandIcon::Command,
+            None,
+        ),
+        |s, window, cx| {
+            s.toggle_command_palette(window, cx);
+        },
+    );
 
     // ── Zen-mode / settings toggles ────────────────────────────────────
-    r.register(CommandId::ToggleZenMode, always, |s, _window, cx| {
-        s.toggle_zen_mode(cx);
-    });
-    for (id, key, ctx) in [
-        (CommandId::ToggleZenModeHeader, "zenModeShowHeader", ALWAYS),
+    r.register(
+        command_descriptor(
+            CommandId::ToggleZenMode,
+            "Toggle: Zen Mode",
+            "Settings",
+            always,
+            Some(labonair_keymap::ShortcutId::ViewZenMode),
+            CommandIcon::Eye,
+            None,
+        ),
+        |s, _window, cx| {
+            s.toggle_zen_mode(cx);
+        },
+    );
+    for (id, key, ctx, title, icon) in [
+        (
+            CommandId::ToggleZenModeHeader,
+            "zenModeShowHeader",
+            ALWAYS,
+            "Toggle: Show Header Bar",
+            CommandIcon::Eye,
+        ),
         (
             CommandId::ToggleZenModeStatusbar,
             "zenModeShowStatusbar",
             ALWAYS,
+            "Toggle: Show Status Bar",
+            CommandIcon::Eye,
         ),
         (
             CommandId::ToggleEditorWordWrap,
             "editorWordWrap",
             CTX_EDITOR,
+            "Toggle: Editor Word Wrap",
+            CommandIcon::ChevronDown,
         ),
         (
             CommandId::ToggleLineNumbers,
             "editorLineNumbers",
             CTX_EDITOR,
+            "Toggle: Line Numbers",
+            CommandIcon::Check,
         ),
         (
             CommandId::ToggleFormatOnSave,
             "editorFormatOnSave",
             CTX_EDITOR,
+            "Toggle: Format on Save",
+            CommandIcon::Check,
         ),
         (
             CommandId::ToggleCursorBlink,
             "terminalCursorBlink",
             CTX_TERMINAL,
+            "Toggle: Terminal Cursor Blink",
+            CommandIcon::Eye,
         ),
         (
             CommandId::TogglePaneHeader,
             "terminalShowPaneHeader",
             CTX_TERMINAL,
+            "Toggle: Terminal Pane Header",
+            CommandIcon::PanelTop,
         ),
         (
             CommandId::TogglePaneFooter,
             "terminalShowPaneFooter",
             CTX_TERMINAL,
+            "Toggle: Terminal Pane Footer",
+            CommandIcon::PanelBottom,
         ),
-        (CommandId::ToggleVimMode, "vimMode", ALWAYS),
+        (
+            CommandId::ToggleVimMode,
+            "vimMode",
+            ALWAYS,
+            "Toggle: Vim Mode",
+            CommandIcon::Check,
+        ),
     ] {
-        r.register(id, ctx, move |s, _window, cx| s.toggle_zen_pref(key, cx));
+        r.register(
+            command_descriptor(id, title, "Settings", ctx, None, icon, None),
+            move |s, _window, cx| s.toggle_zen_pref(key, cx),
+        );
     }
 
     // ── Application ────────────────────────────────────────────────────
-    r.register(CommandId::OpenSettings, always, |_s, _window, cx| {
-        open_settings_window(None, cx);
-    });
-    r.register(CommandId::OpenProjectSettings, always, |s, window, cx| {
-        s.workspace
-            .update(cx, |w, cx| w.open_or_create_project_settings(window, cx));
-    });
-    r.register(CommandId::OpenSettingsJson, always, |s, window, cx| {
-        s.workspace
-            .update(cx, |w, cx| w.open_or_create_user_settings_json(window, cx));
-    });
-    r.register(CommandId::OpenKeymapJson, always, |s, window, cx| {
-        s.workspace
-            .update(cx, |w, cx| w.open_or_create_user_keymap_json(window, cx));
-    });
-    r.register(CommandId::CheckForUpdates, always, |s, _window, cx| {
-        s.panels.updater.update(cx, |u, cx| u.run_check(true, cx));
-    });
+    r.register(
+        command_descriptor(
+            CommandId::OpenSettings,
+            "Open Settings",
+            "Application",
+            always,
+            None,
+            CommandIcon::Edit,
+            None,
+        ),
+        |_s, _window, cx| {
+            open_settings_window(None, cx);
+        },
+    );
+    r.register(
+        command_descriptor(
+            CommandId::OpenProjectSettings,
+            "Open Project Settings (.labonair/settings.json)",
+            "Application",
+            always,
+            None,
+            CommandIcon::Edit,
+            None,
+        ),
+        |s, window, cx| {
+            s.workspace
+                .update(cx, |w, cx| w.open_or_create_project_settings(window, cx));
+        },
+    );
+    r.register(
+        command_descriptor(
+            CommandId::OpenSettingsJson,
+            "Open Settings (JSON)",
+            "Application",
+            always,
+            None,
+            CommandIcon::Edit,
+            None,
+        ),
+        |s, window, cx| {
+            s.workspace
+                .update(cx, |w, cx| w.open_or_create_user_settings_json(window, cx));
+        },
+    );
+    r.register(
+        command_descriptor(
+            CommandId::OpenKeymapJson,
+            "Open Keymap (JSON)",
+            "Application",
+            always,
+            None,
+            CommandIcon::Edit,
+            None,
+        ),
+        |s, window, cx| {
+            s.workspace
+                .update(cx, |w, cx| w.open_or_create_user_keymap_json(window, cx));
+        },
+    );
+    r.register(
+        command_descriptor(
+            CommandId::CheckForUpdates,
+            "Check for Updates…",
+            "Application",
+            always,
+            None,
+            CommandIcon::Download,
+            None,
+        ),
+        |s, _window, cx| {
+            s.panels.updater.update(cx, |u, cx| u.run_check(true, cx));
+        },
+    );
 
     // T20-004: debug-only — open the ui-kit component gallery in its own
     // window. The palette row (`Debug: Open Component Gallery`) and the
     // `gallery.rs` view are both compiled out of release builds too.
     #[cfg(debug_assertions)]
     r.register(
-        CommandId::OpenComponentGallery,
-        always,
+        command_descriptor(
+            CommandId::OpenComponentGallery,
+            "Debug: Open Component Gallery",
+            "Application",
+            always,
+            None,
+            CommandIcon::Palette,
+            None,
+        ),
         |_s, _window, cx| {
             labonair_ui_kit::open_gallery_window(cx);
         },
     );
 
-    // Not registered on purpose (no behaviour of their own, unchanged from
-    // pre-T17-007 no-op action dispatches): `ZoomIn` / `ZoomOut` / `ZoomReset`
-    // / `OpenShortcuts` / `FormatDocument`, and every sub-page navigator id
-    // (`SwitchTab`, `AdjustFontSize`, `ConnectSsh`, `OpenSftp`,
-    // `ChangeAppTheme`, `ChangeColorMode`, `ChangeEditorTheme`,
-    // `SwitchAiSession`, `RunSnippet`, `GitSwitchBranch`, `GoToSymbol`) which
-    // the palette resolves internally and never emits as `Run`.
+    // Palette-only entries still belong to the same registry. They have no
+    // shell execution closure because the palette resolves their submenu or
+    // emits a typed selection event itself.
+    for descriptor in [
+        command_descriptor(
+            CommandId::ToggleFullScreen,
+            "Toggle Full Screen",
+            "View",
+            always,
+            None,
+            CommandIcon::Square,
+            None,
+        ),
+        command_descriptor(
+            CommandId::SwitchTab,
+            "Switch Tab…",
+            "Layout",
+            always,
+            None,
+            CommandIcon::Terminal,
+            Some(CommandSubmenu::Tabs),
+        ),
+        command_descriptor(
+            CommandId::AdjustFontSize,
+            "Adjust Font Size…",
+            "Layout",
+            &[CommandContext::Terminal, CommandContext::Editor],
+            None,
+            CommandIcon::ChevronDown,
+            Some(CommandSubmenu::Zoom),
+        ),
+        command_descriptor(
+            CommandId::ConnectSsh,
+            "Connect SSH…",
+            "Connections",
+            always,
+            None,
+            CommandIcon::Terminal,
+            Some(CommandSubmenu::Hosts),
+        ),
+        command_descriptor(
+            CommandId::OpenSftp,
+            "Open SFTP…",
+            "Connections",
+            always,
+            None,
+            CommandIcon::Folder,
+            Some(CommandSubmenu::Hosts),
+        ),
+        command_descriptor(
+            CommandId::ChangeAppTheme,
+            "Change App Theme…",
+            "View",
+            always,
+            None,
+            CommandIcon::Sparkles,
+            Some(CommandSubmenu::Themes),
+        ),
+        command_descriptor(
+            CommandId::ChangeColorMode,
+            "Change Color Mode…",
+            "View",
+            always,
+            None,
+            CommandIcon::ChevronDown,
+            Some(CommandSubmenu::ColorMode),
+        ),
+        command_descriptor(
+            CommandId::ChangeEditorTheme,
+            "Change Editor Theme…",
+            "View",
+            CTX_EDITOR,
+            None,
+            CommandIcon::Sparkles,
+            Some(CommandSubmenu::EditorTheme),
+        ),
+        command_descriptor(
+            CommandId::RunSnippet,
+            "Run Snippet…",
+            "Snippets",
+            always,
+            None,
+            CommandIcon::Command,
+            Some(CommandSubmenu::Snippets),
+        ),
+        command_descriptor(
+            CommandId::GitSwitchBranch,
+            "Git: Switch Branch…",
+            "Source Control",
+            always,
+            None,
+            CommandIcon::GitBranch,
+            Some(CommandSubmenu::GitBranches),
+        ),
+        command_descriptor(
+            CommandId::FormatDocument,
+            "Format Document",
+            "Editor",
+            CTX_EDITOR,
+            None,
+            CommandIcon::Edit,
+            None,
+        ),
+        command_descriptor(
+            CommandId::GoToSymbol,
+            "Go to Symbol…",
+            "Editor",
+            CTX_EDITOR,
+            None,
+            CommandIcon::FileCode,
+            Some(CommandSubmenu::Outline),
+        ),
+        command_descriptor(
+            CommandId::ShowStatusBarItem,
+            "Statusbar: Show Hidden Item…",
+            "View",
+            always,
+            None,
+            CommandIcon::Eye,
+            Some(CommandSubmenu::StatusBarHidden),
+        ),
+        command_descriptor(
+            CommandId::OpenShortcuts,
+            "Keyboard Shortcuts",
+            "Application",
+            always,
+            Some(labonair_keymap::ShortcutId::ShortcutsOpen),
+            CommandIcon::Check,
+            None,
+        ),
+        command_descriptor(
+            CommandId::ZoomIn,
+            "Zoom In",
+            "View",
+            always,
+            Some(labonair_keymap::ShortcutId::ViewZoomIn),
+            CommandIcon::Plus,
+            None,
+        ),
+        command_descriptor(
+            CommandId::ZoomOut,
+            "Zoom Out",
+            "View",
+            always,
+            Some(labonair_keymap::ShortcutId::ViewZoomOut),
+            CommandIcon::Minus,
+            None,
+        ),
+        command_descriptor(
+            CommandId::ZoomReset,
+            "Reset Zoom",
+            "View",
+            always,
+            Some(labonair_keymap::ShortcutId::ViewZoomReset),
+            CommandIcon::Refresh,
+            None,
+        ),
+    ] {
+        r.register_descriptor(descriptor);
+    }
 
     r
 }

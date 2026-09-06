@@ -3,7 +3,9 @@
 **Status:** Working migration inventory
 **Date:** 2026-09-06
 
-This document records the current repository shape during the module migration. It is evidence for the rework; it is not a target design.
+This document records the current repository shape during the module migration.
+It is evidence for the rework; it is not a target design. The target rules are
+in the normative documents linked from `docs/README.md`.
 
 ## Current workspace crates
 
@@ -12,7 +14,8 @@ This document records the current repository shape during the module migration. 
 | `app` | Binary/bootstrap | application composition | Keep small; remove feature logic. |
 | `backend` | Mixed filesystem, PTY, SSH, SFTP, Git, hosts, settings, updater, MCP, persistence | split across platform services and feature modules | Highest-priority god-object boundary; SSH/SFTP contracts and adapters now isolate transport consumers. |
 | `ai` | AI providers, sessions, tools | AI module | Keep backend-facing core; rebuild UI later. |
-| `command-palette` | Palette UI, static commands, some keymap behavior | command-palette module + keymap module | Split registry/core from GPUI view. |
+| `command-palette-core` | UI-free command descriptors and registry (new migration boundary) | command-palette module | Keep metadata and provider discovery here; feature-owned behavior remains outside the palette. |
+| `command-palette` | Palette UI, static commands, duplicate shell dispatch integration | command-palette module | Consume the core registry; remove static entries and the duplicate shell registry. |
 | `editor` | Editor engine | editor module | Separate core from workspace view. |
 | `filesystem` | Local file access, traversal, mutation, search, and watcher implementation | foundation/platform service | First extracted service boundary; only the legacy `AppEvent` adapter remains in `backend` temporarily. |
 | `secrets` | Encrypted/plain local secret store and secret cache | foundation/platform service | Extracted from `backend`; backend keeps a compatibility adapter while SSH/Hosts/MCP migrate. |
@@ -34,10 +37,11 @@ This document records the current repository shape during the module migration. 
 | `settings-content` | Typed settings data | settings module | Keep only actual configuration values. |
 | `settings-json` | JSON editing | settings module | Keep as persistence adapter. |
 | `settings-macros` | Settings derives | settings module | Keep implementation detail. |
-| `settings-ui` | Settings views and generated fields | settings module | Remove Hosts, Themes, Icon Themes, Shortcuts management. |
+| `settings-ui` | Settings views and generated fields | settings module | Misplaced management categories are removed; remaining value audit and UI integration migration are open. |
+| `keymap` | UI-free keymap values, resolution, and conflict handling | keymap module | Extracted from command-palette; management UI and shell integration remain to migrate. |
 | `shell` | App shell, menus, commands, status items, updater | application composition + shell surface | Reduce to registration and composition. |
 | `terminal` | Terminal engine and renderer support | terminal module | Split engine from GPUI view when useful. |
-| `theme` | Runtime theme and fonts | themes module | Add explicit color/icon registries. |
+| `theme` | Runtime theme, fonts, and built-in color/icon registries | themes module | Keep one Themes owner; finish palette picker and transactional preview without remote downloads. |
 | `ui-kit` | Shared UI primitives | foundation | Enforce as the only source of shared controls. |
 | `workspace` | Workspace, tabs, panes, docks, views, and compatibility bridges | workspace plus tool modules | Transfer lifecycle/UI moved to `labonair-transfers` / `labonair-transfers-ui`; Workspace only submits requests and refreshes SFTP panes. |
 | `transfers` | Typed transfer values, lifecycle registry, and service/event contracts | transfers module | New UI-free owner; backend worker adapter remains transitional. |
@@ -54,6 +58,9 @@ The current Cargo metadata shows several transitional edges that conflict with t
   are a later extraction boundary.
 - `hosts-ui` depends on settings and notifications, even though Hosts is not a Settings concern and connection management should emit through the app notification contract.
 - `command-palette` depends on backend even though the palette should receive dynamic data through providers.
+- `keymap` is now UI-free, but the temporary GPUI adapter and some consumers
+  still enter through `command-palette`; the keymap editor and stable command
+  registration path are not complete.
 - `backend` exposes a broad `App`, global event bus, and unrelated modules under one public crate.
 - `backend` still owns the filesystem watcher adapter because it emits directly through the legacy app event bus; the actual watcher implementation now belongs to `labonair-filesystem`.
 - `backend` still owns the public secret API adapter even though storage now belongs to `labonair-secrets`; existing SSH/Hosts/MCP call sites still pass the backend app handle.
@@ -69,6 +76,9 @@ The current Cargo metadata shows several transitional edges that conflict with t
 - `panel-git-graph` no longer depends on `labonair-backend`; its graph contract and commit values live in `labonair-git` and the backend supplies an adapter.
 - `panel-scm` and workspace Project Diff no longer depend on `labonair-backend`; source-control values and operations live in `labonair-git`, with the backend supplying the execution adapter.
 - `shell/src/commands.rs`, `shell/src/status_items.rs`, and workspace views still contain feature-specific behavior that belongs to owning modules.
+- `shell/src/commands.rs` still maintains a second behavior registry beside
+  the command-palette entries; the migration must leave one typed command
+  registry and keep execution in the owning modules.
 - The former toast path has been removed; the statusbar is now the only
   notification presentation surface. The GPUI adapter remains until actions
   are migrated from callbacks to stable command IDs.
@@ -94,6 +104,12 @@ families. These are not target dependencies; each has a removal condition:
 The verifier's allow-list is the machine-readable source for the exact edge
 set. Whenever an edge is added or removed, this table and the owning task must
 be updated in the same change.
+
+No new capability may be added to `backend`, `shell`, or `workspace` merely
+because those crates already have access to it. New code must first establish
+the owning capability crate and then inject or register it at composition.
+This inventory is updated when a boundary moves; it is not a license to keep a
+transitional edge after its removal condition has been met.
 
 These are migration findings, not reasons to perform a destructive rewrite. Each edge should be removed when the owning contract exists and its consumers have moved.
 

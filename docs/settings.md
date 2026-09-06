@@ -6,6 +6,10 @@
 
 Settings are typed, persisted values that change application behavior or presentation. They may have global, user, and project/workspace layers when that scope is meaningful.
 
+Settings are a value service, not a feature directory. A setting belongs here
+only when changing the value changes behavior or presentation and the owning
+feature can consume it through the typed settings contract.
+
 ## What settings are not
 
 The settings system is not the owner of:
@@ -17,6 +21,9 @@ The settings system is not the owner of:
 - transfer history;
 - command registration;
 - feature management screens.
+
+There is no `Shortcuts`, `Hosts`, `Themes`, or `Icon Themes` settings
+category. Keymap, host, and theme management are separate capability surfaces.
 
 Those capabilities have their own modules and entry points.
 
@@ -44,7 +51,18 @@ Theme and icon-theme selection, keymap editing, and host management are not
 Settings pages even when their selected IDs or defaults are persisted through
 the settings storage layer.
 
+Their canonical entry points are the titlebar global menu and its command
+palette surfaces: Keymap opens keymap management, Themes and Icon Themes open
+their respective pickers, and Hosts opens host selection/management. The
+themes and hosts modules own those flows; Settings may persist only a typed
+preference exposed by their contracts.
+
 Categories may be added only when they contain real configurable values. A category may not exist solely to host a management UI.
+
+Do not add a category for a registry, resource catalog, connection list,
+history view, or feature workflow. Those belong to the owning module's
+surface. If a category becomes empty, duplicate, or unused, remove it and
+migrate only values that still have a consumer.
 
 ## Field rules
 
@@ -59,6 +77,13 @@ Every setting has:
 - a visible description.
 
 Unknown values should survive migrations when safe. Removed settings require a deliberate migration or an explicit compatibility decision.
+
+Before retaining a field, identify its consumers and scope. A field with no
+current consumer is removed or explicitly deprecated with a removal condition;
+it is not kept as a placeholder for a possible future feature. Settings
+migrations must be idempotent, preserve user data where safe, and never move
+ownership of hosts, themes, keymaps, notifications, or transfers into the
+settings crate.
 
 ## UI rules
 

@@ -4230,13 +4230,20 @@ name = "labonair-command-palette"
 version = "0.1.0"
 dependencies = [
  "gpui",
- "labonair-backend",
+ "labonair-command-palette-core",
  "labonair-filesystem",
- "labonair-gpui-ext",
+ "labonair-keymap",
  "labonair-settings",
  "labonair-theme",
  "labonair-ui-kit",
  "serde_json",
+]
+
+[[package]]
+name = "labonair-command-palette-core"
+version = "0.1.0"
+dependencies = [
+ "labonair-keymap",
 ]
 
 [[package]]
@@ -4350,6 +4357,10 @@ dependencies = [
  "tokio",
  "uuid",
 ]
+
+[[package]]
+name = "labonair-keymap"
+version = "0.1.0"
 
 [[package]]
 name = "labonair-notifications"
@@ -4550,8 +4561,10 @@ dependencies = [
  "gpui-component",
  "labonair-backend",
  "labonair-command-palette",
+ "labonair-command-palette-core",
  "labonair-filesystem",
  "labonair-gpui-ext",
+ "labonair-keymap",
  "labonair-notifications",
  "labonair-panel",
  "labonair-panel-explorer",

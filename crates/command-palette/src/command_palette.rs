@@ -10,22 +10,32 @@
 //! Layout:
 //! * [`fuzzy`] — the `SearchMode` matcher (`match_score`), also used by the AI
 //!   composer's `@`-file picker and the settings search.
-//! * [`keybind`] — the rebindable [`ShortcutId`] table, [`KeybindMap`] user
+//! * `labonair-keymap` — the rebindable [`ShortcutId`] table, [`KeybindMap`] user
 //!   overrides and conflict detection.
-//! * [`palette`] — the [`Command`] registry plus the [`CommandPalette`] view.
+//! * [`palette`] — the command-palette presentation adapter and view.
 
 mod fuzzy;
-mod keybind;
 mod palette;
 
 pub use fuzzy::{match_score, SearchMode};
-pub use keybind::{
-    effective_binding, effective_keys, find_conflict, keystroke_tokens, resolve_conflict, shortcut,
-    shortcut_from_slug, shortcut_keys, shortcut_slug, shortcuts, Conflict, KeybindDisplay,
-    KeybindMap, Shortcut, ShortcutGroup, ShortcutId, RESERVED_ACCELERATORS,
+pub use labonair_command_palette_core::{
+    known_action_names, toggle_pref_key, CommandContext, CommandDescriptor, CommandIcon, CommandId,
+    CommandProvider, CommandRegistry, CommandRegistryError, CommandSubmenu, SubmenuDescriptor,
+    SubmenuItem, SubmenuProvider,
 };
+pub use labonair_keymap::{
+    effective_binding, effective_keys, find_conflict, keystroke_tokens, resolve_conflict, shortcut,
+    shortcut_from_slug, shortcut_keys, shortcut_slug, shortcuts, Conflict, KeybindMap, Shortcut,
+    ShortcutGroup, ShortcutId, RESERVED_ACCELERATORS,
+};
+
+/// GPUI-facing publication of the effective keymap. The keymap domain stays
+/// UI-free; this wrapper is an adapter consumed by palette/statusbar views.
+#[derive(Debug, Clone, Default)]
+pub struct KeybindDisplay(pub KeybindMap);
+
+impl gpui::Global for KeybindDisplay {}
 pub use palette::{
-    available, command, command_for_shortcut, commands, context_of, known_action_names, search,
-    search_mode, toggle_pref_key, Command, CommandContext, CommandId, CommandPalette, Page,
-    PaletteChoice, PaletteData, PaletteEvent, PaletteTabKind, PaletteTabRow, PaletteWorkspace,
+    context_of, Command, CommandPalette, Page, PaletteChoice, PaletteData, PaletteEvent,
+    PaletteTabKind, PaletteTabRow, PaletteWorkspace,
 };
