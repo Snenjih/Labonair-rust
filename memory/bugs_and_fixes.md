@@ -1,5 +1,29 @@
 # Bugs, fixes, and non-obvious constraints
 
+## 2026-09-06 — Smoke launch must prove the native process stays alive
+
+**Finding:** The optional GUI smoke path started the bundled executable
+directly, but only waited and then killed its PID. A binary that exited during
+startup could therefore be reported as launched successfully.
+
+**Resolution:** The smoke test now checks the exact Rust PID with `kill -0`
+after one second and prints the native launch log before failing. It then
+allows the process to run for the remaining verification interval and stops
+that PID directly.
+
+The first run after this check was added exposed an additional native launch
+failure: the release executable stayed alive for the first second but then
+terminated with `Abort trap: 6` before the five-second interval ended. The
+smoke test now checks both ends of the interval, so this remains a real launch
+blocker rather than a false green result.
+
+The macOS diagnostic report identifies the failure in `NSApplication` and
+LaunchServices (`_RegisterApplication` / `GetCurrentProcess`) while the
+process has bundle ID `com.labonair.rust`; it is not a legacy-app collision.
+The same environment reports LaunchServices `-10827` when opening the bundle,
+so GUI acceptance still requires a working logged-in AppKit/LaunchServices
+session outside this restricted runner.
+
 ## 2026-09-06 — Never launch visual checks through the shared app name
 
 **Finding:** A generic `open -a Labonair` launch can resolve the installed

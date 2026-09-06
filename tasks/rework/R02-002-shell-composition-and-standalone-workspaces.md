@@ -81,5 +81,12 @@ workspace project identity before consulting the active terminal cwd. This
 means opening a project updates its file and Git surfaces, while standalone
 terminals retain cwd-driven behavior. Regression tests cover both precedence
 orders.
+
+The native launch verification path is now PID- and executable-specific. The
+optional release smoke test rejects a Rust process that exits during the
+interval. In the current restricted macOS runner, LaunchServices aborts
+`com.labonair.rust` during `NSApplication` initialization; this remains an
+environmental visual-gate blocker and is not accepted as evidence from the
+legacy Tauri application.
 Session identity persistence and the final removal audit continue in
 `R02-003`.

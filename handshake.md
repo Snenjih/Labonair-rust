@@ -71,6 +71,14 @@ test follows the same direct-executable rule. A current direct Rust launch
 reached PID 33476, but this restricted session still exposed no matching
 CoreGraphics layer-0 window, so no screenshot was accepted as visual evidence.
 
+The optional release launch smoke test now checks that the exact Rust process
+survives the full interval and fails on early termination. The current run
+proves the bundle structure and all three Rust smoke tests, but the native
+process aborts in macOS `NSApplication`/LaunchServices with `SIGABRT` in this
+runner; the diagnostic report names bundle ID `com.labonair.rust`. This is an
+environmental AppKit/LaunchServices limitation, not evidence of the old Tauri
+app being launched.
+
 ## Current Session: 2026-09-06 (Global menu and theme entrypoints complete)
 
 `R02-001` is complete. The titlebar global menu now contains Settings,

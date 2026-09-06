@@ -7,9 +7,9 @@
 #      (`cargo test -p labonair --test smoke`: backend init, PTY shell round-trip,
 #       update-manifest check).
 #
-# Note: launching the GUI itself needs a logged-in window server, so the
-# executable-launch check is opt-in via LABONAIR_SMOKE_LAUNCH=1 (it opens the
-# app for 5s then quits it).
+# Note: launching the GUI itself needs a logged-in window server and a working
+# macOS AppKit/LaunchServices session, so the executable-launch check is opt-in
+# via LABONAIR_SMOKE_LAUNCH=1 (it runs the exact bundled Rust binary for 5s).
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -48,7 +48,23 @@ if [[ "${LABONAIR_SMOKE_LAUNCH:-0}" == "1" ]]; then
 	# in /Applications.
 	"$APP/Contents/MacOS/labonair" >/tmp/labonair-rust-smoke.log 2>&1 &
 	RUST_PID=$!
-	sleep 5
+	native_process_alive() {
+		local state
+		state="$(ps -p "$RUST_PID" -o state= 2>/dev/null | tr -d '[:space:]')"
+		[[ -n "$state" && "$state" != Z* ]]
+	}
+	sleep 1
+	if ! native_process_alive; then
+		echo "  FAIL native Rust process exited during launch" >&2
+		sed -n '1,80p' /tmp/labonair-rust-smoke.log >&2 || true
+		exit 1
+	fi
+	sleep 4
+	if ! native_process_alive; then
+		echo "  FAIL native Rust process did not survive the launch interval" >&2
+		sed -n '1,80p' /tmp/labonair-rust-smoke.log >&2 || true
+		exit 1
+	fi
 	kill "$RUST_PID" 2>/dev/null || true
 	wait "$RUST_PID" 2>/dev/null || true
 	echo "  launched and quit cleanly"
