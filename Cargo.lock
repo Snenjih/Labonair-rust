@@ -4188,6 +4188,7 @@ dependencies = [
  "grep-regex",
  "grep-searcher",
  "ignore",
+ "labonair-credentials",
  "labonair-errors",
  "labonair-filesystem",
  "labonair-hosts",
@@ -4231,6 +4232,20 @@ dependencies = [
  "labonair-theme",
  "labonair-ui-kit",
  "serde_json",
+]
+
+[[package]]
+name = "labonair-credentials"
+version = "0.1.0"
+dependencies = [
+ "base64",
+ "labonair-persistence",
+ "labonair-secrets",
+ "openssl",
+ "rusqlite",
+ "russh",
+ "serde",
+ "uuid",
 ]
 
 [[package]]

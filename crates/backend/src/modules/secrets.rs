@@ -70,15 +70,6 @@ pub(crate) fn store_password(
     labonair_secrets::store_password(state, service, account, password)
 }
 
-pub(crate) fn delete_password(
-    _app: &crate::App,
-    state: &SecretsState,
-    service: &str,
-    account: &str,
-) -> Result<(), String> {
-    labonair_secrets::delete_password(state, service, account)
-}
-
 pub(crate) fn get_password(
     _app: &crate::App,
     state: &SecretsState,

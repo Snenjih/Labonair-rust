@@ -19,6 +19,7 @@ This document records the current repository shape during the module migration. 
 | `errors` | Structured error catalog and recovery hints | foundation/platform contract | Extracted from `backend`; capability crates can consume it without importing the backend facade. |
 | `hosts` | Saved-host and host-group domain contract plus host store | hosts module | Models and all host persistence, including secret-bearing writes, are standalone; only the MCP event adapter remains transitional in `backend`. |
 | `persistence` | Shared SQLite connection and schema lifecycle | foundation/platform service | Extracted from the host adapter; feature-specific queries still remain in `backend` and are next to migrate. |
+| `credentials` | Credential domain, secret-backed metadata, and SSH keypair generation | credentials module | Extracted from `backend`; backend keeps App-signature adapters while callers migrate. |
 | `gpui-ext` | Shared GPUI helpers | foundation | Keep dependency-free from features. |
 | `hosts-ui` | Host management UI and host-related dependencies | hosts module | Remove settings and notification coupling. |
 | `notifications` | Notification state plus toast renderer | notifications module | Remove toast rendering; keep dropdown consumer. |
@@ -51,7 +52,7 @@ The current Cargo metadata shows several transitional edges that conflict with t
 - `backend` still owns the filesystem watcher adapter because it emits directly through the legacy app event bus; the actual watcher implementation now belongs to `labonair-filesystem`.
 - `backend` still owns the public secret API adapter even though storage now belongs to `labonair-secrets`; existing SSH/Hosts/MCP call sites still pass the backend app handle.
 - `backend` still re-exports the structured error contract for old internal paths, while the implementation now belongs to `labonair-errors`.
-- `backend` still exposes compatibility signatures for host writes and owns the MCP event adapter; host models and persistence now belong to `labonair-hosts`.
+- `backend` still exposes compatibility signatures for host and credential operations and owns the MCP event adapter; host and credential models/persistence now belong to their capability crates.
 - `backend` still exposes the shared database under the compatibility name `HostsDb`; connection/schema lifecycle now belongs to `labonair-persistence`.
 - `shell/src/commands.rs`, `shell/src/status_items.rs`, and workspace views still contain feature-specific behavior that belongs to owning modules.
 - `workspace/src/toast_layer.rs` and `notifications` still encode the superseded toast model.

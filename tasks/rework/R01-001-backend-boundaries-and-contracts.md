@@ -45,6 +45,9 @@ Reduce `labonair-backend` from a broad public application state container to nar
 - Host reads, ordering, group mutations, and secret-bearing writes now use
   `labonair_hosts::store`; the backend retains only compatibility signatures
   and the MCP-specific event adapter.
+- Credential metadata, secret-backed operations, host references, and SSH
+  keypair generation now use `labonair-credentials`; the backend retains only
+  App-signature adapters while callers migrate.
 - Stable IDs, typed domain events, and the remaining service boundaries are
   still open in this task.
 

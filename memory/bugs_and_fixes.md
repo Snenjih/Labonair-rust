@@ -34,6 +34,18 @@ contract; the backend adapter remains responsible for inspecting MCP grants
 and emitting `AppEvent::McpGrantExpired`. Added a direct store test proving
 secrets do not enter the `Host` read model.
 
+## 2026-09-06 — Credential capability has the same backend facade pattern
+
+**Finding:** Credential metadata, secret storage, host references, and SSH
+keypair generation were all implemented in `backend::modules::credentials`.
+The module only needed database, secrets, and an explicit data directory; it
+did not need `App` or UI state.
+
+**Resolution:** Extracted the implementation into
+`labonair-credentials`, including the russh-compatible keypair tests. The
+backend module now only adapts the old App-based signatures and resolves the
+data directory at the composition boundary.
+
 ## 2026-09-06 — Host domain models must be separated before host persistence
 
 **Finding:** `backend::modules::hosts` combined serializable host models,
