@@ -115,7 +115,7 @@ impl CommandDispatcher {
 impl AppShell {
     /// Run the command bound to `id`. No-op for ids with no behaviour of their
     /// own — the palette sub-page navigators (`SwitchTab`, `ConnectSsh`, …) and
-    /// the not-yet-wired `ZoomIn` / `OpenShortcuts` / `FormatDocument`
+    /// the not-yet-wired `ZoomIn` / `FormatDocument`
     /// placeholders, all of which were no-op action dispatches before T17-007.
     pub(crate) fn dispatch_command(
         &mut self,
@@ -1015,15 +1015,6 @@ pub(crate) fn register_builtin_commands() -> CommandDispatcher {
             None,
             CommandIcon::Eye,
             Some(CommandSubmenu::StatusBarHidden),
-        ),
-        command_descriptor(
-            CommandId::OpenShortcuts,
-            "Keyboard Shortcuts",
-            "Application",
-            always,
-            Some(labonair_keymap::ShortcutId::ShortcutsOpen),
-            CommandIcon::Check,
-            None,
         ),
         command_descriptor(
             CommandId::ZoomIn,

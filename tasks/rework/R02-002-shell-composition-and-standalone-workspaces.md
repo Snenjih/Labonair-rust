@@ -64,7 +64,10 @@ renders the identity on the empty surface. The native `Open Project…` action
 now emits `WorkspaceEvent::OpenProject`; the composition root presents GPUI's
 platform folder picker and applies the selected root through the workspace
 boundary. Project settings follow that explicit identity instead of terminal
-CWD changes. Focused workspace tests, compile, and Clippy checks pass.
+CWD changes. The stale native `Keyboard Shortcuts` entry was removed; its
+legacy keymap action name remains only as a compatibility alias to the
+canonical keymap JSON editor. Focused workspace tests, compile, and Clippy
+checks pass.
 
 Remaining work is the required manual visual check of the
 empty/project/standalone shell states. `cargo run` reaches the native binary,

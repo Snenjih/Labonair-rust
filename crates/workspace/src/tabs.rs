@@ -6,9 +6,8 @@
 //! kind-specific data in [`TabData`]. The reference keeps this in the
 //! `useTabs` Zustand store; here it is the GPUI [`TabStore`] entity. The
 //! host-manager dashboard was a `TabKind::Hosts` tab through T17-009; T19-010
-//! removed it — host management is now a Settings category
-//! (`labonair-settings-ui`'s Hosts pane), connecting is the command
-//! palette's `Page::Hosts`.
+//! removed it — host management is now owned by the Hosts capability
+//! surface, while connecting is the command palette's `Page::Hosts`.
 //!
 //! "Tab" and "session" are deliberately **not** the same thing (mirrors the
 //! React version): the visible workspace tab is backed by a local PTY session

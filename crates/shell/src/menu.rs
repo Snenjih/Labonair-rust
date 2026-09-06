@@ -83,7 +83,6 @@ actions!(
         // ── Window ────────────────────────────────────────────────────────
         Minimize,
         ZoomWindow,
-        OpenShortcuts,
         OpenKeymapJson,
         CommandPalette,
         NextTab,
@@ -173,7 +172,9 @@ fn fixed_bindings() -> Vec<KeyBinding> {
 fn action_for(name: &str) -> Option<Box<dyn Action>> {
     Some(match name {
         "command_palette::Toggle" => Box::new(CommandPalette),
-        "settings::OpenShortcuts" => Box::new(OpenShortcuts),
+        // Preserve the legacy action name for existing keymap files while
+        // routing it to the canonical keymap-file surface.
+        "settings::OpenShortcuts" => Box::new(OpenKeymapJson),
         "zed::OpenKeymap" => Box::new(OpenKeymapJson),
         "tab::NewTerminal" => Box::new(NewTerminalTab),
         "tab::NewPreview" => Box::new(NewPreviewTab),
@@ -349,7 +350,7 @@ fn app_menus() -> Vec<Menu> {
                 MenuItem::action("Minimize", Minimize),
                 MenuItem::action("Zoom", ZoomWindow),
                 MenuItem::separator(),
-                MenuItem::action("Keyboard Shortcuts", OpenShortcuts),
+                MenuItem::action("Open Keymap (JSON)", OpenKeymapJson),
                 MenuItem::action("Settings", OpenSettings),
                 MenuItem::separator(),
                 MenuItem::action("Next Tab", NextTab),
@@ -406,6 +407,12 @@ mod tests {
             &file,
         )]);
         assert!(bindings_from_keymap(&effective).is_empty());
+    }
+
+    #[test]
+    fn legacy_shortcuts_action_resolves_to_keymap_surface() {
+        assert!(action_for("settings::OpenShortcuts").is_some());
+        assert!(action_for("zed::OpenKeymap").is_some());
     }
 
     #[test]

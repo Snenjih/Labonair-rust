@@ -30,6 +30,10 @@ The normative documentation now also includes `docs/repository-layout.md` and
 `AGENTS.md`. They define canonical placement and the contract-first workflow
 for future feature additions, migrations, and removals.
 
+The stale native `Keyboard Shortcuts` menu path was also removed. Existing
+`settings::OpenShortcuts` keymap entries remain accepted only as a compatibility
+alias and now resolve to the canonical keymap JSON editor.
+
 `R02-003-project-entry-and-workspace-transitions.md` is now queued as the next
 bounded task after `R02-002`; it defines session identity persistence,
 explicit return-to-standalone behavior, and the final removal audit for

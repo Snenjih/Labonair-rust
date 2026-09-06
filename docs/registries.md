@@ -72,6 +72,12 @@ it registers and supplies the stable command ID; keymap resolution only maps
 that ID to user input. The keymap editor is a keymap surface, not a Settings
 category.
 
+The legacy action name `settings::OpenShortcuts` is accepted only as a
+migration alias for existing user keymap files and resolves to the canonical
+`Open Keymap (JSON)` action. It is not registered as a separate palette entry,
+native menu surface, or Settings page. New actions must use the keymap/command
+contracts rather than the legacy name.
+
 ## Theme registries
 
 The themes module owns separate color-theme and icon-theme registries. Each

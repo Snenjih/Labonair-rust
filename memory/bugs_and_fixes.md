@@ -25,6 +25,17 @@ available desktop UI surface exposes no Labonair window in this session. A
 system screenshot showed only the Codex desktop, so the R02-002 visual check
 cannot be treated as passed from this environment.
 
+## 2026-09-06 — Remove the stale shortcuts menu path
+
+**Finding:** The native Window menu still exposed `Keyboard Shortcuts` through
+an unregistered legacy action, while the current product surface is the
+canonical keymap flow.
+
+**Resolution:** The menu now exposes `Open Keymap (JSON)` and maps the old
+`settings::OpenShortcuts` action name to the existing `OpenKeymapJson` action.
+This preserves old user keymap files without keeping a duplicate Settings or
+Shortcuts surface.
+
 ## 2026-09-06 — Make repository placement and feature changes explicit
 
 **Finding:** The architecture rules described ownership and dependency
