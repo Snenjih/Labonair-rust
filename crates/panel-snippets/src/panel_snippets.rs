@@ -35,13 +35,12 @@ use gpui::{
     IntoElement, KeyDownEvent, MouseButton, MouseDownEvent, ParentElement, Render, SharedString,
     StatefulInteractiveElement, Styled, Window,
 };
-use labonair_backend::modules::snippets::db as sdb;
 use labonair_backend::modules::snippets::exec::{
     snippet_run_cancel, snippet_run_local, snippet_run_ssh,
 };
-use labonair_backend::modules::snippets::{CommandSnippet, SnippetGroup, SnippetReorderItem};
 use labonair_backend::App as Backend;
 use labonair_hosts::{store as host_store, Host};
+use labonair_snippets::{store as snippet_store, CommandSnippet, SnippetGroup, SnippetReorderItem};
 use tokio::runtime::Handle as TokioHandle;
 
 use crate::theme::ThemeStore;
@@ -570,8 +569,10 @@ impl SnippetsView {
     pub fn reload(&self, cx: &mut Context<Self>) {
         let app = self.backend.clone();
         let jh = self.tokio.spawn(async move {
-            let snippets = sdb::snippets_get_all(&app.db).await.unwrap_or_default();
-            let groups = sdb::snippet_groups_get_all(&app.db)
+            let snippets = snippet_store::snippets_get_all(&app.db)
+                .await
+                .unwrap_or_default();
+            let groups = snippet_store::snippet_groups_get_all(&app.db)
                 .await
                 .unwrap_or_default();
             let hosts = host_store::hosts_get_all(&app.db).await.unwrap_or_default();
@@ -655,7 +656,7 @@ impl SnippetsView {
 
         let jh = self.tokio.spawn(async move {
             match id {
-                None => sdb::snippets_create(
+                None => snippet_store::snippets_create(
                     &app.db,
                     name,
                     command,
@@ -670,7 +671,7 @@ impl SnippetsView {
                 )
                 .await
                 .map(|_| ()),
-                Some(id) => sdb::snippets_update(
+                Some(id) => snippet_store::snippets_update(
                     &app.db,
                     id,
                     Some(name),
@@ -703,7 +704,7 @@ impl SnippetsView {
         let app = self.backend.clone();
         let jh = self
             .tokio
-            .spawn(async move { sdb::snippets_delete(&app.db, id).await });
+            .spawn(async move { snippet_store::snippets_delete(&app.db, id).await });
         cx.spawn(async move |this, cx| {
             let _ = jh.await;
             let _ = this.update(cx, |this, cx| {
@@ -731,7 +732,7 @@ impl SnippetsView {
             Some(s.sort_order + 1),
         );
         let jh = self.tokio.spawn(async move {
-            sdb::snippets_create(
+            snippet_store::snippets_create(
                 &app.db, name, command, target, desc, host, mode, wd, group, tags, order,
             )
             .await
@@ -777,7 +778,7 @@ impl SnippetsView {
         let app = self.backend.clone();
         let jh = self
             .tokio
-            .spawn(async move { sdb::snippets_reorder(&app.db, items).await });
+            .spawn(async move { snippet_store::snippets_reorder(&app.db, items).await });
         cx.spawn(async move |this, cx| {
             let _ = jh.await;
             let _ = this.update(cx, |this, cx| this.reload(cx));
@@ -791,9 +792,9 @@ impl SnippetsView {
             return;
         }
         let app = self.backend.clone();
-        let jh = self
-            .tokio
-            .spawn(async move { sdb::snippet_groups_create(&app.db, name, None, None).await });
+        let jh = self.tokio.spawn(async move {
+            snippet_store::snippet_groups_create(&app.db, name, None, None).await
+        });
         cx.spawn(async move |this, cx| {
             let _ = jh.await;
             let _ = this.update(cx, |this, cx| {
@@ -809,7 +810,7 @@ impl SnippetsView {
         let app = self.backend.clone();
         let jh = self
             .tokio
-            .spawn(async move { sdb::snippet_groups_delete(&app.db, id).await });
+            .spawn(async move { snippet_store::snippet_groups_delete(&app.db, id).await });
         cx.spawn(async move |this, cx| {
             let _ = jh.await;
             let _ = this.update(cx, |this, cx| this.reload(cx));

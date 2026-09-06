@@ -46,6 +46,16 @@ did not need `App` or UI state.
 backend module now only adapts the old App-based signatures and resolves the
 data directory at the composition boundary.
 
+## 2026-09-06 — Snippet persistence is independent from process execution
+
+**Finding:** Snippet models and CRUD queries lived beside local/SSH execution
+and therefore forced the entire backend module into every snippet UI caller.
+
+**Resolution:** Created `labonair-snippets` with domain models and the SQLite
+store, migrated `panel-snippets` to consume it directly, and retained only
+the execution functions in the backend until process/session contracts are
+extracted.
+
 ## 2026-09-06 — Host domain models must be separated before host persistence
 
 **Finding:** `backend::modules::hosts` combined serializable host models,

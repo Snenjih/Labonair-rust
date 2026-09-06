@@ -18,6 +18,7 @@ labonair-errors = { path = "../errors" }
 labonair-hosts = { path = "../hosts" }
 labonair-persistence = { path = "../persistence" }
 labonair-credentials = { path = "../credentials" }
+labonair-snippets = { path = "../snippets" }
 
 # SSH / SFTP — versions taken 1:1 from reference-src/src-tauri/Cargo.toml
 russh = { version = "0.62.2", default-features = false, features = ["ring", "flate2", "rsa"] }

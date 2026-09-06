@@ -83,7 +83,7 @@ Dependencies point downward. A feature may depend on a foundation contract, but 
 | Transfers | Transfer queue, progress, cancellation, retry, history UI. |
 | Git | Git service and source-control UI. |
 | Explorer | Local file navigation UI. |
-| Snippets | Snippet storage, execution, and UI. |
+| Snippets | Snippet storage in `labonair-snippets`, execution, and UI. |
 | AI | Providers, sessions, context, tools, and future UI. |
 
 The current repository does not yet match this map. The migration is tracked in [`rework-roadmap.md`](rework-roadmap.md); this map is the target, not a claim about the current tree.

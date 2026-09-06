@@ -48,6 +48,9 @@ Reduce `labonair-backend` from a broad public application state container to nar
 - Credential metadata, secret-backed operations, host references, and SSH
   keypair generation now use `labonair-credentials`; the backend retains only
   App-signature adapters while callers migrate.
+- Snippet models and SQLite persistence now use `labonair-snippets`; process
+  execution remains in the backend until local/SSH session contracts are
+  extracted.
 - Stable IDs, typed domain events, and the remaining service boundaries are
   still open in this task.
 

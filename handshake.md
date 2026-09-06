@@ -1,6 +1,6 @@
 # Handshake — Session State (Labonair-rust Port)
 
-## Current Session: 2026-09-06 (Host and capability boundaries)
+## Current Session: 2026-09-06 (Host, credentials, and snippets boundaries)
 
 The host model boundary is now standalone in `crates/hosts`
 (`labonair-hosts`). `Host`, `Group`, and `ReorderItem` no longer belong to the
@@ -12,6 +12,11 @@ revocation. The shared SQLite connection and schema lifecycle are owned by
 `crates/persistence` (`labonair-persistence`), while the backend's `HostsDb`
 name remains a compatibility alias.
 
+Credentials are standalone in `crates/credentials`; the backend keeps only
+App-signature adapters. Snippet models and SQLite persistence are standalone
+in `crates/snippets`; snippet process execution remains in the backend until
+the local/SSH process contracts are extracted.
+
 Updated the workspace manifest, lockfile, dependency verifier, architecture
 inventory, architecture contract, and `R01-001` progress. Verification passed:
 `cargo fmt --all`, `cargo check --workspace --all-targets`,
@@ -20,7 +25,8 @@ inventory, architecture contract, and `R01-001` progress. Verification passed:
 labonair-panel-snippets`, and `scripts/check-crate-deps.sh`.
 
 State: branch `master`, latest host persistence commit is `4859e35`; the
-credentials capability is committed as `734c393`. The full
+credentials capability is committed as `734c393`, and the snippet boundary
+is currently uncommitted. The full
 `cargo test --workspace` suite, Clippy, workspace check, formatting, and the
 dependency verifier pass. `R01-001` remains `🔄 In Progress`; next is
 extracting snippet persistence/execution from the shared database surface and

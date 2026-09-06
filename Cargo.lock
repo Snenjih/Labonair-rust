@@ -4195,6 +4195,7 @@ dependencies = [
  "labonair-persistence",
  "labonair-secrets",
  "labonair-settings-content",
+ "labonair-snippets",
  "libc",
  "log",
  "md5 0.7.0",
@@ -4412,6 +4413,7 @@ dependencies = [
  "labonair-hosts",
  "labonair-notifications",
  "labonair-panel",
+ "labonair-snippets",
  "labonair-theme",
  "labonair-ui-kit",
  "labonair-workspace",
@@ -4546,6 +4548,18 @@ dependencies = [
  "serde_json",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "labonair-snippets"
+version = "0.1.0"
+dependencies = [
+ "labonair-errors",
+ "labonair-persistence",
+ "rusqlite",
+ "serde",
+ "tokio",
+ "uuid",
 ]
 
 [[package]]

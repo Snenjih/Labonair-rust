@@ -48,6 +48,9 @@ ALLOWED = {
     "labonair-credentials": {
         "labonair-persistence", "labonair-secrets",
     },
+    # Snippet domain and SQLite store. Process execution remains in the
+    # transitional backend adapter until process/session contracts are split.
+    "labonair-snippets": {"labonair-errors", "labonair-persistence"},
     "labonair-notifications": {
         "labonair-theme", "labonair-ui-kit", "labonair-gpui-ext",
     },
@@ -146,7 +149,7 @@ ALLOWED = {
     "labonair-panel-snippets": {
         "labonair-theme", "labonair-ui-kit", "labonair-panel",
         "labonair-notifications", "labonair-backend", "labonair-hosts",
-        "labonair-workspace",
+        "labonair-snippets", "labonair-workspace",
     },
     # [deviation] panel-ai also pulls command-palette (slash-command model)
     # and editor (composer buffer) — accepted, still no panel-* / shell edge.
@@ -181,7 +184,7 @@ ALLOWED = {
     "labonair-backend": {
         "labonair-settings-content", "labonair-filesystem", "labonair-secrets",
         "labonair-errors", "labonair-hosts", "labonair-persistence",
-        "labonair-credentials",
+        "labonair-credentials", "labonair-snippets",
         "labonair-persistence",
     },
     "labonair-ai": {"labonair-backend", "labonair-filesystem"},

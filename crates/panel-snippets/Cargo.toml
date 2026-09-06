@@ -19,6 +19,7 @@ labonair-panel = { path = "../panel" }
 labonair-notifications = { path = "../notifications" }
 labonair-backend = { path = "../backend" }
 labonair-hosts = { path = "../hosts" }
+labonair-snippets = { path = "../snippets" }
 labonair-workspace = { path = "../workspace" }
 
 [dev-dependencies]
