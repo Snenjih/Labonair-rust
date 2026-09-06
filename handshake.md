@@ -2,6 +2,37 @@
 
 Authored by: GPUI-native port of Labonair (formerly Tauri v2 + React 19 → now pure Rust/GPUI).
 
+## Current Session: 2026-09-06 (Settings rework — Block 1: scroll lag)
+
+Ad-hoc request (not a ROADMAP task; 3-block settings rework: fix scroll lag /
+sparse config.json / finish the `GlobalPreferences` → `SettingsContent`
+migration). **Block 1 (scroll lag) done here.**
+
+**What:** the settings window re-serialized the *entire* `SettingsContent` tree
+(~170 fields × every layer) inside `SettingsStore::source_of`, once per visible
+field per frame → jank while scrolling.
+- `crates/settings/src/store.rs`: added `SettingsStore.layer_values:
+  BTreeMap<SettingsLayer, serde_json::Value>`, rebuilt in `recompute()`.
+  `source_of()` now reads that cache instead of calling `serde_json::to_value`
+  per call. New test `source_of_tracks_the_layer_value_cache_across_set_layer`.
+- `crates/settings-ui/src/panes/generic.rs`: new `field_render_inputs()` resolves
+  `(OriginBadge, value)` for all visible rows in one pass; `render_field()` now
+  takes them as params instead of querying the store per row. `render_generated_body`
+  + `render_field_groups` updated; `panes/shortcuts.rs` single call site updated.
+- 1.3 (cache `Select` option Vecs): no change needed — those Vecs are built on
+  dropdown-open, not per frame. 1.4 (virtualize the list): not needed, 1.1
+  removes the dominant cost.
+
+**State:** branch `master`. `cargo check` + `cargo clippy --all-targets -D
+warnings` + `cargo fmt --check` clean; `cargo test -p labonair-settings` green
+(50). Full `cargo test` not run clean from here — the shared working tree had
+Block 2's in-progress edit to `crates/backend/src/modules/settings/migrate_v2.rs`
+(non-compiling intermediate) at commit time; `labonair-settings-ui` tests
+blocked on that, not on Block 1.
+
+**Next:** Blocks 2 (sparse config.json) + 3 (GlobalPreferences removal), then a
+full-workspace verification pass.
+
 > This file is the authoritative continuity doc for the **port** project. This is a **hard fork** — fully standalone, no link/symlink/submodule to any external Labonair repo. The old web-app source is a frozen read-only copy at `reference-src/` inside this repo and is the only reference. Do not mistake the old git history/tech for the current target.
 
 ## Current Session: 2026-09-06 (Park the AI frontend)

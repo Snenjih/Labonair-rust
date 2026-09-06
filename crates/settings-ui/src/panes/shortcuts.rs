@@ -152,7 +152,9 @@ impl SettingsView {
             .find(|f| f.json_path == "keymap.baseKeymap")
             .copied()
         {
-            root = root.child(self.render_field(&base_keymap, c, cx));
+            let origin = self.field_origin(&base_keymap, cx);
+            let value = self.field_value(&base_keymap, cx);
+            root = root.child(self.render_field(&base_keymap, origin, value, c, cx));
         }
         let mut root = root.child(
             div()

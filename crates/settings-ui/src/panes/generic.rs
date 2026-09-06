@@ -68,19 +68,45 @@ impl SettingsView {
         ))
     }
 
+    /// Resolve `(origin badge, effective value)` for every field a page is
+    /// about to render, in one pass. Keeps the per-row `render_field` calls
+    /// free of store lookups so a scroll repaint doesn't re-query
+    /// `source_of` / `field_value` for each visible row every frame.
+    pub(crate) fn field_render_inputs<'a>(
+        &self,
+        fields: impl IntoIterator<Item = &'a AnyField>,
+        cx: &App,
+    ) -> std::collections::HashMap<&'static str, (OriginBadge, Option<Value>)> {
+        fields
+            .into_iter()
+            .map(|f| {
+                (
+                    f.json_path,
+                    (self.field_origin(f, cx), self.field_value(f, cx)),
+                )
+            })
+            .collect()
+    }
+
     /// Render one generated field row: label/description + origin badge +
     /// reset (rule 5) + a control chosen by `FieldControl` (rule 3's
     /// renderer registry — `bool → Switch`, numeric → stepper, `enum`/closed
     /// `String` → dropdown, `String` → text input, anything else → the raw
     /// JSON fallback).
+    ///
+    /// `origin` + `value` are passed in already computed: the batch renderers
+    /// (`render_generated_body`, `render_field_groups`) resolve them once per
+    /// visible field via [`Self::field_render_inputs`] instead of every row
+    /// re-querying the store — this is part of what keeps scrolling smooth.
     pub(crate) fn render_field(
         &self,
         field: &AnyField,
+        origin: OriginBadge,
+        value: Option<Value>,
         c: &Palette,
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
         let json_path = field.json_path;
-        let value = self.field_value(field, cx);
         let control = match field.control {
             FieldControl::Switch => {
                 let on = value.as_ref().and_then(|v| v.as_bool()).unwrap_or(false);
@@ -215,7 +241,6 @@ impl SettingsView {
             FieldControl::Json => self.render_text_control(json_path, true, value, c, cx),
         };
 
-        let origin = self.field_origin(field, cx);
         let non_default = origin != OriginBadge::Default;
         // T19-007: a search jump briefly pulses the target row so the user
         // can find it among a page's other fields.
@@ -577,32 +602,50 @@ impl SettingsView {
         let pending_scroll = self.pending_scroll;
         let mut scroll_to_row: Option<usize> = None;
 
-        for item in &items {
+        let leftover: Vec<AnyField> = leftover_fields(area.target_module, &self.all_fields)
+            .into_iter()
+            .copied()
+            .collect();
+
+        // Resolve every placed `Item` key to its `AnyField` once, then batch
+        // the store lookups for all rows (placed + "Other") in a single pass.
+        let placed: Vec<Option<AnyField>> = items
+            .iter()
+            .map(|item| match item {
+                SettingsPageItemOwned::SectionHeader(_) => None,
+                SettingsPageItemOwned::Item(key) => self
+                    .all_fields
+                    .iter()
+                    .find(|f| f.area() == area.target_module && f.local_key() == *key)
+                    .copied(),
+            })
+            .collect();
+        let inputs = self.field_render_inputs(placed.iter().flatten().chain(leftover.iter()), cx);
+        let row_input = |field: &AnyField| {
+            inputs
+                .get(field.json_path)
+                .cloned()
+                .unwrap_or((OriginBadge::Default, None))
+        };
+
+        for (item, resolved) in items.iter().zip(placed.iter()) {
             match item {
                 SettingsPageItemOwned::SectionHeader(label) => {
                     section_rows.push((rows.len(), label));
                     rows.push(self.render_section_header(label, c, cx));
                 }
-                SettingsPageItemOwned::Item(key) => {
-                    if let Some(field) = self
-                        .all_fields
-                        .iter()
-                        .find(|f| f.area() == area.target_module && f.local_key() == *key)
-                        .copied()
-                    {
+                SettingsPageItemOwned::Item(_) => {
+                    if let Some(field) = resolved {
                         if pending_scroll == Some(field.json_path) {
                             scroll_to_row = Some(rows.len());
                         }
-                        rows.push(self.render_field(&field, c, cx));
+                        let (origin, value) = row_input(field);
+                        rows.push(self.render_field(field, origin, value, c, cx));
                     }
                 }
             }
         }
 
-        let leftover: Vec<AnyField> = leftover_fields(area.target_module, &self.all_fields)
-            .into_iter()
-            .copied()
-            .collect();
         if !leftover.is_empty() {
             let label: &'static str = "Other";
             section_rows.push((rows.len(), label));
@@ -611,7 +654,8 @@ impl SettingsView {
                 if pending_scroll == Some(field.json_path) {
                     scroll_to_row = Some(rows.len());
                 }
-                rows.push(self.render_field(field, c, cx));
+                let (origin, value) = row_input(field);
+                rows.push(self.render_field(field, origin, value, c, cx));
             }
         }
 
@@ -700,6 +744,20 @@ impl SettingsView {
         let pending_scroll = self.pending_scroll;
         let mut scroll_to_row: Option<usize> = None;
         let mut rows = Vec::new();
+
+        let visible_fields: Vec<AnyField> = groups
+            .iter()
+            .filter(|(label, _)| !self.section_collapsed(label))
+            .flat_map(|(_, keys)| keys.iter())
+            .filter_map(|key| {
+                self.all_fields
+                    .iter()
+                    .find(|f| f.area() == area_target_module && f.local_key() == *key)
+                    .copied()
+            })
+            .collect();
+        let inputs = self.field_render_inputs(visible_fields.iter(), cx);
+
         for (label, keys) in groups {
             rows.push(self.render_section_header(label, c, cx));
             if self.section_collapsed(label) {
@@ -715,7 +773,11 @@ impl SettingsView {
                     if pending_scroll == Some(field.json_path) {
                         scroll_to_row = Some(rows.len());
                     }
-                    rows.push(self.render_field(&field, c, cx));
+                    let (origin, value) = inputs
+                        .get(field.json_path)
+                        .cloned()
+                        .unwrap_or((OriginBadge::Default, None));
+                    rows.push(self.render_field(&field, origin, value, c, cx));
                 }
             }
         }

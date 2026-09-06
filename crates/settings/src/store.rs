@@ -73,6 +73,12 @@ pub struct SettingsStore {
     /// The merged, effective tree — `Default` folded through every other
     /// layer present in `raw`, in order.
     merged: SettingsContent,
+    /// Each `raw` layer serialized to a `serde_json::Value`, rebuilt by
+    /// [`Self::recompute`]. [`Self::source_of`] is called once per visible
+    /// settings field per frame; deriving it from this cache instead of
+    /// re-serializing the whole `SettingsContent` tree on every call is what
+    /// keeps the settings window's scroll smooth.
+    layer_values: BTreeMap<SettingsLayer, Value>,
     /// Where the `User` layer is read from / persisted to.
     user_path: PathBuf,
     /// Non-fatal per-area parse errors from the last `User` layer (re)load
@@ -159,6 +165,7 @@ impl SettingsStore {
         let mut store = Self {
             raw,
             merged: SettingsContent::default(),
+            layer_values: BTreeMap::new(),
             user_path,
             parse_errors: Vec::new(),
             user_json_error: None,
@@ -192,6 +199,15 @@ impl SettingsStore {
             merged.merge_from(content);
         }
         self.merged = merged;
+        self.layer_values = self
+            .raw
+            .iter()
+            .filter_map(|(layer, content)| {
+                serde_json::to_value(content)
+                    .ok()
+                    .map(|value| (layer.clone(), value))
+            })
+            .collect();
         for builder in &self.builders {
             builder(&self.merged, &mut self.values);
         }
@@ -562,11 +578,8 @@ impl SettingsStore {
     /// defaults()` is fully populated — but a path that doesn't resolve to
     /// any real field also lands here rather than panicking).
     pub fn source_of(&self, json_path: &str) -> SettingsLayer {
-        for (layer, content) in self.raw.iter().rev() {
-            let Ok(value) = serde_json::to_value(content) else {
-                continue;
-            };
-            if json_leaf(&value, json_path).is_some_and(|v| !v.is_null()) {
+        for (layer, value) in self.layer_values.iter().rev() {
+            if json_leaf(value, json_path).is_some_and(|v| !v.is_null()) {
                 return layer.clone();
             }
         }
@@ -1160,6 +1173,31 @@ mod tests {
         assert_eq!(
             store.source_of("terminal.terminalFontSize"),
             SettingsLayer::User
+        );
+    }
+
+    #[test]
+    fn source_of_tracks_the_layer_value_cache_across_set_layer() {
+        let mut store = SettingsStore::new(tmp_path());
+        assert_eq!(
+            store.source_of("terminal.terminalFontSize"),
+            SettingsLayer::Default
+        );
+
+        let mut user = SettingsContent::default();
+        user.terminal.terminal_font_size = Some(21);
+        store.set_layer(SettingsLayer::User, user);
+        assert_eq!(
+            store.source_of("terminal.terminalFontSize"),
+            SettingsLayer::User
+        );
+
+        // Replacing the layer with one that no longer sets the leaf must fall
+        // back to Default — i.e. the cache is rebuilt on every `set_layer`.
+        store.set_layer(SettingsLayer::User, SettingsContent::default());
+        assert_eq!(
+            store.source_of("terminal.terminalFontSize"),
+            SettingsLayer::Default
         );
     }
 }
