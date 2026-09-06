@@ -5,10 +5,11 @@
 The host model boundary is now standalone in `crates/hosts`
 (`labonair-hosts`). `Host`, `Group`, and `ReorderItem` no longer belong to the
 backend module and are consumed directly by `hosts-ui` and `panel-snippets`.
-The backend intentionally still owns host queries and App-bound persistence/
+The backend intentionally still owns secret-bearing host writes and App-bound
 transport adapters; moving those wholesale would preserve the coupling this
-rework is meant to remove. The shared SQLite connection and schema lifecycle
-are now owned by `crates/persistence` (`labonair-persistence`), while the
+rework is meant to remove. Host reads, ordering, and group mutations now use
+`labonair_hosts::store` directly. The shared SQLite connection and schema
+lifecycle are owned by `crates/persistence` (`labonair-persistence`), while the
 backend's `HostsDb` name remains a compatibility alias.
 
 Updated the workspace manifest, lockfile, dependency verifier, architecture
@@ -18,8 +19,8 @@ inventory, architecture contract, and `R01-001` progress. Verification passed:
 `cargo test -p labonair-hosts -p labonair-backend -p labonair-hosts-ui -p
 labonair-panel-snippets`, and `scripts/check-crate-deps.sh`.
 
-State: branch `master`, host and persistence boundary changes are uncommitted
-and ready for the next commit. `R01-001` remains `🔄 In Progress`; next is
+State: branch `master`, host store changes are uncommitted and ready for the
+next commit. `R01-001` remains `🔄 In Progress`; next is
 extracting host persistence behind a narrow store/service contract and
 replacing its direct `App`/MCP coupling with a typed capability callback. No
 source blocker.

@@ -4295,7 +4295,11 @@ dependencies = [
 name = "labonair-hosts"
 version = "0.1.0"
 dependencies = [
+ "labonair-errors",
+ "labonair-persistence",
+ "rusqlite",
  "serde",
+ "uuid",
 ]
 
 [[package]]

@@ -36,9 +36,9 @@ ALLOWED = {
     # Cross-cutting structured error contract. It contains no workspace
     # dependencies and is shared by capability services during migration.
     "labonair-errors": set(),
-    # Host domain contract. Persistence and transports remain transitional
-    # backend adapters until the host store is extracted.
-    "labonair-hosts": set(),
+    # Hosts owns domain models plus capability-local query code. Secret-bearing
+    # writes and MCP side effects remain transitional backend adapters.
+    "labonair-hosts": {"labonair-errors", "labonair-persistence"},
     # Shared SQLite lifecycle only. Feature stores own their queries and
     # domain models; this crate must remain UI- and backend-free.
     "labonair-persistence": set(),

@@ -4,4 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+labonair-errors = { path = "../errors" }
+labonair-persistence = { path = "../persistence" }
+rusqlite = { workspace = true }
 serde = { workspace = true }
+uuid = { workspace = true }

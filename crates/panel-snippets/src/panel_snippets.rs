@@ -35,14 +35,13 @@ use gpui::{
     IntoElement, KeyDownEvent, MouseButton, MouseDownEvent, ParentElement, Render, SharedString,
     StatefulInteractiveElement, Styled, Window,
 };
-use labonair_backend::modules::hosts;
 use labonair_backend::modules::snippets::db as sdb;
 use labonair_backend::modules::snippets::exec::{
     snippet_run_cancel, snippet_run_local, snippet_run_ssh,
 };
 use labonair_backend::modules::snippets::{CommandSnippet, SnippetGroup, SnippetReorderItem};
 use labonair_backend::App as Backend;
-use labonair_hosts::Host;
+use labonair_hosts::{store as host_store, Host};
 use tokio::runtime::Handle as TokioHandle;
 
 use crate::theme::ThemeStore;
@@ -575,7 +574,7 @@ impl SnippetsView {
             let groups = sdb::snippet_groups_get_all(&app.db)
                 .await
                 .unwrap_or_default();
-            let hosts = hosts::db::hosts_get_all(&app.db).await.unwrap_or_default();
+            let hosts = host_store::hosts_get_all(&app.db).await.unwrap_or_default();
             (snippets, groups, hosts)
         });
         cx.spawn(async move |this, cx| {

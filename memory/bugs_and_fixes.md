@@ -11,6 +11,16 @@ connection, schema creation, and idempotent migrations. The backend keeps only
 the compatibility alias `HostsDb` and the old initialization path for now;
 feature-specific query ownership remains the next migration step.
 
+## 2026-09-06 — Host read and group operations can move without App state
+
+**Finding:** Host listing, ordering, and group CRUD only need the shared
+database and do not need secrets, MCP grants, or GPUI state.
+
+**Resolution:** Added `labonair_hosts::store` and migrated host manager and
+snippet consumers to use it directly. Secret-bearing create/update/delete and
+duplicate operations remain in the backend adapter until their secret and MCP
+event contracts are explicit.
+
 ## 2026-09-06 — Host domain models must be separated before host persistence
 
 **Finding:** `backend::modules::hosts` combined serializable host models,

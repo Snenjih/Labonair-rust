@@ -4,6 +4,8 @@
 //! keeps the host contract reusable by host management, SSH, SFTP, snippets,
 //! and command-palette providers without importing the application backend.
 
+pub mod store;
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 pub struct Host {
     pub id: String,

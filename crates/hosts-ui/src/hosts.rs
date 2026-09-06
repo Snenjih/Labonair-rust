@@ -30,7 +30,7 @@ use labonair_backend::modules::snippets;
 use labonair_backend::modules::ssh::client::{ssh_test_connection, TestConnectionResult};
 use labonair_backend::modules::ssh::config_parser::{self, ImportConflict, SshConfigEntry};
 use labonair_backend::App as Backend;
-use labonair_hosts::{Group, Host, ReorderItem};
+use labonair_hosts::{store as host_store, Group, Host, ReorderItem};
 use tokio::runtime::Handle as TokioHandle;
 
 use crate::theme::ThemeStore;
@@ -720,8 +720,10 @@ impl HostManagerView {
     pub fn reload(&self, cx: &mut Context<Self>) {
         let app = self.app.clone();
         let jh = self.tokio.spawn(async move {
-            let hosts = hosts::db::hosts_get_all(&app.db).await.unwrap_or_default();
-            let groups = hosts::db::groups_get_all(&app.db).await.unwrap_or_default();
+            let hosts = host_store::hosts_get_all(&app.db).await.unwrap_or_default();
+            let groups = host_store::groups_get_all(&app.db)
+                .await
+                .unwrap_or_default();
             let creds = credentials::credentials_get_all(&app.db)
                 .await
                 .unwrap_or_default();
@@ -982,8 +984,10 @@ impl HostManagerView {
     fn reload_list_only(&self, cx: &mut Context<Self>) {
         let app = self.app.clone();
         let jh = self.tokio.spawn(async move {
-            let hosts = hosts::db::hosts_get_all(&app.db).await.unwrap_or_default();
-            let groups = hosts::db::groups_get_all(&app.db).await.unwrap_or_default();
+            let hosts = host_store::hosts_get_all(&app.db).await.unwrap_or_default();
+            let groups = host_store::groups_get_all(&app.db)
+                .await
+                .unwrap_or_default();
             (hosts, groups)
         });
         cx.spawn(async move |this, cx| {
@@ -1053,7 +1057,7 @@ impl HostManagerView {
         let app = self.app.clone();
         let jh = self
             .tokio
-            .spawn(async move { hosts::db::hosts_reorder(&app.db, items).await });
+            .spawn(async move { host_store::hosts_reorder(&app.db, items).await });
         cx.spawn(async move |this, cx| {
             let _ = jh.await;
             let _ = this.update(cx, |this, cx| this.reload_list_only(cx));
@@ -1206,7 +1210,7 @@ impl HostManagerView {
         let name = name.trim().to_string();
         let jh = self
             .tokio
-            .spawn(async move { hosts::db::groups_create(&app.db, name, None, None).await });
+            .spawn(async move { host_store::groups_create(&app.db, name, None, None).await });
         cx.spawn(async move |this, cx| {
             let _ = jh.await;
             let _ = this.update(cx, |this, cx| this.reload(cx));
@@ -1218,7 +1222,7 @@ impl HostManagerView {
         let app = self.app.clone();
         let jh = self
             .tokio
-            .spawn(async move { hosts::db::groups_delete(&app.db, id).await });
+            .spawn(async move { host_store::groups_delete(&app.db, id).await });
         cx.spawn(async move |this, cx| {
             let _ = jh.await;
             let _ = this.update(cx, |this, cx| this.reload(cx));
@@ -3449,7 +3453,7 @@ impl HostManagerView {
         let app = self.app.clone();
         let jh = self
             .tokio
-            .spawn(async move { hosts::db::groups_update(&app.db, id, name).await });
+            .spawn(async move { host_store::groups_update(&app.db, id, name).await });
         cx.spawn(async move |this, cx| {
             let _ = jh.await;
             let _ = this.update(cx, |this, cx| this.reload(cx));
