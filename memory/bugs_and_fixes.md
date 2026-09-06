@@ -20,6 +20,11 @@ internal `workspace` re-export exposed only `Workspace`, not the new
 `WorkspaceEvent`. Re-exporting the event from `crates/shell/src/shell.rs`
 restored the intended composition-root boundary.
 
+**Environment note:** `cargo run` reaches the running native binary, but the
+available desktop UI surface exposes no Labonair window in this session. A
+system screenshot showed only the Codex desktop, so the R02-002 visual check
+cannot be treated as passed from this environment.
+
 ## 2026-09-06 — Make repository placement and feature changes explicit
 
 **Finding:** The architecture rules described ownership and dependency

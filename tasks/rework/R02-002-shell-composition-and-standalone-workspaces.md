@@ -67,5 +67,8 @@ boundary. Project settings follow that explicit identity instead of terminal
 CWD changes. Focused workspace tests, compile, and Clippy checks pass.
 
 Remaining work is the required manual visual check of the
-empty/project/standalone shell states. Session identity persistence and the
-final removal audit continue in `R02-003`.
+empty/project/standalone shell states. `cargo run` reaches the native binary,
+but the current desktop session exposes no Labonair window to the available UI
+surface, so this check cannot be inferred from startup or compilation.
+Session identity persistence and the final removal audit continue in
+`R02-003`.

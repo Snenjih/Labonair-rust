@@ -20,6 +20,11 @@ workspace test suite
 --all-targets`, `cargo clippy --workspace --all-targets -- -D warnings`,
 `git diff --check`, and the dependency verifier pass. No source blocker.
 
+The native binary was also launched successfully with `cargo run`, but this
+desktop session exposes no Labonair window to the available UI surface; a
+system screenshot showed only the Codex desktop. The visual acceptance check
+therefore remains honestly open rather than being inferred from compilation.
+
 The normative documentation now also includes `docs/repository-layout.md` and
 `docs/feature-lifecycle.md`, linked from `docs/README.md`, `README.md`, and
 `AGENTS.md`. They define canonical placement and the contract-first workflow

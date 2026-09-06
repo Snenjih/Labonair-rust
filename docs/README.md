@@ -23,6 +23,11 @@ the migration is complete.
   navigation and field rules.
 - [`rework-roadmap.md`](rework-roadmap.md) — the current implementation sequence.
 
+The executable task queue derived from the roadmap is
+[`../tasks/rework/README.md`](../tasks/rework/README.md). The older
+`tasks/phase-*` tree and the original roadmap are retained for traceability
+only.
+
 Normative documents are written in English because they are also engineering contracts. `ideas/` contains proposals only; an idea becomes binding only after it is incorporated here or accepted in an ADR.
 
 ## Supporting documents
