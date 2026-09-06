@@ -9,9 +9,9 @@ Added `docs/{product,architecture,modules,registries,design-system,workspace-mod
 The target crate graph is documented but not yet implemented. The live
 dependency verifier was updated to allow only the four explicitly documented
 transitional edges and to reject new untracked edges/cycles. The next step is
-the Phase 0 migration matrix and then the first technical boundary work:
-extracting platform services from `backend` while introducing typed contracts.
-No product feature implementation was changed in this pass.
+the next active task is `R01-001-backend-boundaries-and-contracts`: extract
+platform services from `backend` while introducing typed contracts. No product
+feature implementation was changed in this pass.
 
 State: branch `master`, latest commits are `docs: establish modular product
 architecture v2` and `chore: align dependency gate with architecture v2`, two
