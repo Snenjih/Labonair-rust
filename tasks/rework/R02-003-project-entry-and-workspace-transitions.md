@@ -83,11 +83,12 @@ same contract after SSH/SFTP define their transport-owned identity.
 
 - [x] Project identity changes only through the explicit typed
       `WorkspaceTransition` contract.
-- [ ] Empty, active, project, and standalone states share one workspace model.
-- [ ] Session and project settings behavior is explicit and backward compatible.
-- [ ] No shell callback or feature-specific duplicate layout is introduced.
-- [ ] Passive failures use notifications; no new toast or duplicate inline error.
-- [ ] Focused tests and full repository gates pass.
+- [x] Empty, active, project, and standalone states share one workspace model.
+- [x] Session and project settings behavior is explicit and backward compatible.
+- [x] No shell callback or feature-specific duplicate layout is introduced.
+- [x] Passive failures use notifications; no new toast or duplicate inline error.
+- [x] Focused tests and full repository gates pass; the two OS-restricted tests
+      pass in their isolated outside-sandbox runs.
 - [ ] Required visual shell check passes.
 
 ## Progress

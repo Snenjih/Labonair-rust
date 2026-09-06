@@ -65,7 +65,9 @@ The current Cargo metadata shows several transitional edges that conflict with t
   those contracts. Remaining feature-view dependencies are still transitional
   and are not hidden by this state model. Session snapshots now persist the
   explicit workspace identity, with missing identity fields normalized to
-  Standalone for backward compatibility.
+  Standalone for backward compatibility. Identity mutation is now centralized
+  behind the typed `WorkspaceTransition` contract; project-picker selection,
+  session restore, and return-to-standalone do not use separate setter paths.
 - `settings-ui` depends on settings values, theme/UI primitives, notifications,
   command-palette fuzzy matching, and filesystem paths; it no longer depends on
   a workspace-owned background store, backend, Hosts UI, or panel contracts.
