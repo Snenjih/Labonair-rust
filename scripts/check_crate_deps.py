@@ -35,6 +35,8 @@ ALLOWED = {
     "labonair-ssh": {"labonair-errors"},
     # UI-free SFTP contracts may use opaque SSH session ids only.
     "labonair-sftp": {"labonair-errors", "labonair-ssh"},
+    # UI-free transfer lifecycle, event, and worker contracts.
+    "labonair-transfers": set(),
     # Platform service — secret storage and encryption, without GPUI or
     # feature-module dependencies.
     "labonair-secrets": {"labonair-filesystem"},
@@ -121,7 +123,7 @@ ALLOWED = {
         "labonair-git",
         "labonair-ai", "labonair-settings", "labonair-settings-json",
         "labonair-filesystem",
-        "labonair-ssh", "labonair-sftp",
+        "labonair-ssh", "labonair-sftp", "labonair-transfers",
     },
     # rule 3: the only crate that knows every concrete panel type — it also
     # touches the `labonair-panel` contracts crate to register them (T17-001).
@@ -137,7 +139,13 @@ ALLOWED = {
         "labonair-panel-git-graph", "labonair-panel-snippets",
         "labonair-panel-ai", "labonair-terminal", "labonair-backend",
         "labonair-settings", "labonair-filesystem", "labonair-ssh",
-        "labonair-sftp",
+        "labonair-sftp", "labonair-transfers", "labonair-transfers-ui",
+    },
+
+    # Transfer presentation — owns the statusbar dropdown, while lifecycle
+    # state and worker contracts remain in `labonair-transfers`.
+    "labonair-transfers-ui": {
+        "labonair-theme", "labonair-ui-kit", "labonair-transfers",
     },
 
     # Panels — rule 2 (+ §8.4: explorer/snippets/ai may pull workspace).
@@ -200,7 +208,7 @@ ALLOWED = {
         "labonair-settings-content", "labonair-filesystem", "labonair-secrets",
         "labonair-errors", "labonair-hosts", "labonair-persistence",
         "labonair-credentials", "labonair-snippets", "labonair-git",
-        "labonair-ssh", "labonair-sftp",
+        "labonair-ssh", "labonair-sftp", "labonair-transfers",
         "labonair-persistence",
     },
     "labonair-ai": {"labonair-backend", "labonair-filesystem"},

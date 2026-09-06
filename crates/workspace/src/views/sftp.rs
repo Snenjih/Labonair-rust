@@ -7,7 +7,7 @@
 //! bar + up/reload/hidden-toggle per pane, inline rename / new file / new
 //! folder, a right-click context menu, a permissions (chmod/chown) dialog and
 //! a properties dialog. The transfer *queue* UI lives in
-//! [`crate::transfers`] (T08-002); this module only *triggers* transfers
+//! `labonair-transfers-ui` (R01-003); this module only *triggers* transfers
 //! (drag between panes + context-menu upload/download) via `SftpEvent`.
 //!
 //! Remote work is injected through the focused SSH/SFTP capability contracts.
@@ -38,6 +38,7 @@ use labonair_ssh::{
     SshConnectRequest, SshConnectionService, SshEventSink, SshRemoteCommandService,
     SshSessionEvent, SshSessionId,
 };
+use labonair_transfers::TransferDirection;
 
 use crate::theme::ThemeStore;
 use labonair_ui_kit::{
@@ -294,13 +295,13 @@ pub enum SftpEvent {
         remote_path: String,
         host_id: String,
     },
-    /// Queue a transfer (T08-002). `direction` is `"upload"` or `"download"`;
-    /// folders are handled recursively by the backend worker.
+    /// Queue a transfer (T08-002); folders are handled recursively by the
+    /// injected transfer worker.
     Enqueue {
         session_id: String,
         src_path: String,
         dest_path: String,
-        direction: &'static str,
+        direction: TransferDirection,
     },
     /// Result of the remote SSH/SFTP connection attempt — drives the shared
     /// connecting screen (`ConnectionStatusStore`). `error` is `None` on success.
@@ -924,8 +925,8 @@ impl SftpView {
     fn enqueue(&mut self, from: Side, src_paths: Vec<String>, cx: &mut Context<Self>) {
         self.menu = None;
         let (dest_dir, direction) = match from {
-            Side::Local => (self.remote.path.clone(), "upload"),
-            Side::Remote => (self.local.path.clone(), "download"),
+            Side::Local => (self.remote.path.clone(), TransferDirection::Upload),
+            Side::Remote => (self.local.path.clone(), TransferDirection::Download),
         };
         let session_id = self.session_id.clone();
         for src in src_paths {

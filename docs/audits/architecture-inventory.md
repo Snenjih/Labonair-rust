@@ -39,13 +39,15 @@ This document records the current repository shape during the module migration. 
 | `terminal` | Terminal engine and renderer support | terminal module | Split engine from GPUI view when useful. |
 | `theme` | Runtime theme and fonts | themes module | Add explicit color/icon registries. |
 | `ui-kit` | Shared UI primitives | foundation | Enforce as the only source of shared controls. |
-| `workspace` | Workspace, tabs, panes, docks, views, transfers, bridges | workspace plus tool modules | Reduce cross-feature ownership gradually. |
+| `workspace` | Workspace, tabs, panes, docks, views, and compatibility bridges | workspace plus tool modules | Transfer lifecycle/UI moved to `labonair-transfers` / `labonair-transfers-ui`; Workspace only submits requests and refreshes SFTP panes. |
+| `transfers` | Typed transfer values, lifecycle registry, and service/event contracts | transfers module | New UI-free owner; backend worker adapter remains transitional. |
+| `transfers-ui` | Statusbar-anchored transfer queue and resolution dialogs | transfers module | New canonical transfer presentation; uses only typed transfer contracts and shared UI primitives. |
 
 ## Current structural violations
 
 The current Cargo metadata shows several transitional edges that conflict with the new rules:
 
-- `workspace` depends directly on AI, backend, command palette, hosts UI, notifications, settings, SFTP capability contracts, and feature views.
+- `workspace` depends directly on AI, backend, command palette, hosts UI, notifications, settings, SFTP capability contracts, and feature views; transfer lifecycle state is no longer one of those responsibilities.
 - `settings-ui` depends on backend, workspace, hosts UI, command palette, notifications, and panel contracts.
 - `panel-explorer` still depends on workspace for drag/preview shims, but its
   obsolete backend dependency has been removed; those remaining UI contracts
@@ -81,7 +83,7 @@ families. These are not target dependencies; each has a removal condition:
 | Transitional edge family | Temporary reason | Removal condition |
 |---|---|---|
 | `settings-ui → backend`, `settings-ui → hosts-ui`, `settings-ui → workspace`, `settings-ui → command-palette`, `settings-ui → notifications`, `settings-ui → ai` | The existing settings window still composes legacy management and integration views. | Settings owns only value fields; management surfaces register independently and the window consumes contracts only. |
-| `workspace → backend`, `workspace → ai`, `workspace → settings` | Workspace still hosts transfer compatibility, session bridges, and legacy global settings consumers. SSH/SFTP transport access is now injected. | Transfers and settings providers are injected capabilities; workspace keeps orchestration only. |
+| `workspace → backend`, `workspace → ai`, `workspace → settings` | Workspace still hosts session bridges and legacy global settings consumers. SSH/SFTP and transfer access are now injected. | Settings providers and remaining session adapters are injected capabilities; workspace keeps orchestration only. |
 | `hosts-ui → backend`, `hosts-ui → settings`, `hosts-ui → settings-content` | Host CRUD, credential writes, and the legacy Settings projection are still being migrated. | Host management uses `labonair-hosts`, credentials, secrets, and SSH contracts directly; no Settings projection remains. |
 | `panel-explorer → workspace`, `panel-explorer → settings` | Explorer still reuses workspace drag/preview contracts and a legacy settings read. | Drag/drop and preview contracts move to foundation/owning modules and explorer receives a settings capability. |
 | `panel-scm → editor`, `panel-scm → settings` | SCM reuses unified diff helpers and one legacy presentation preference. | Diff contracts are shared by the Git module and the preference is provided through a narrow settings contract. |
@@ -103,7 +105,7 @@ These are migration findings, not reasons to perform a destructive rewrite. Each
    `labonair-notifications-core` now owns the UI-free registry; the GPUI
    adapter and statusbar dropdown consume retained records.
 4. Split command/keymap registries from the palette view.
-5. Move transfers to their own module and statusbar owner.
+5. Move transfers to their own module and statusbar owner. The typed registry, worker adapter, and statusbar UI are now in place; raw event compatibility remains only at the backend boundary.
 6. Move hosts and SSH ownership out of Settings/workspace.
 7. Move terminal/editor/SFTP views to their owning modules.
 8. Remove compatibility edges and enforce the target graph.

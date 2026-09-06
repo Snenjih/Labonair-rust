@@ -2,7 +2,7 @@
 
 ## Status
 
-`⬜ Todo`
+`✅ Done`
 
 ## Owner
 
@@ -14,7 +14,9 @@
 
 Replace the workspace/backend transfer split with a retained, typed transfer
 registry that owns transfer identity, lifecycle, progress, cancellation,
-retry, conflict state, and history.
+conflict state, and history. Retry remains a separate capability addition once
+the worker has a typed retry contract; this task must not invent a second
+execution path for it.
 
 ## Scope
 
@@ -32,7 +34,7 @@ retry, conflict state, and history.
 
 ## Persistence and migration
 
-- Preserve resumable/active transfer behavior and existing user data.
+- Preserve active transfer behavior and existing user data.
 - Define whether history is retained in memory or persisted before adding a
   schema; do not silently discard existing records.
 - Keep an explicit compatibility adapter for legacy `AppEvent` payloads until
@@ -40,8 +42,8 @@ retry, conflict state, and history.
 
 ## Acceptance criteria
 
-- [ ] One registry owns all transfer lifecycle state.
-- [ ] Statusbar shows active progress, failures, cancellation, and history.
-- [ ] Workspace no longer owns transfer domain state.
-- [ ] Producers do not render transfer-specific toasts or inline errors.
-- [ ] Focused registry/event tests and full task verification gates pass.
+- [x] One registry owns all transfer lifecycle state.
+- [x] Statusbar shows active progress, failures, cancellation, and history.
+- [x] Workspace no longer owns transfer domain state.
+- [x] Producers do not render transfer-specific toasts or inline errors.
+- [x] Focused registry/event tests and full task verification gates pass.

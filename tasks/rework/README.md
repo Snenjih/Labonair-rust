@@ -4,6 +4,10 @@ These tasks are derived from [`docs/rework-roadmap.md`](../../docs/rework-roadma
 
 Each task must define its owning module, public contracts, allowed dependency changes, registry contributions, UI-kit usage, persistence/migration impact, tests, and full verification gates.
 
-The planned follow-up boundaries are `R01-002-ssh-sftp-capability-contracts.md`
-and `R01-003-typed-transfer-registry.md`. They remain `Todo` until the current
-R01-001 contract work is explicitly closed.
+The active sequence is:
+
+1. `R01-002-ssh-sftp-capability-contracts.md` — Done
+2. `R01-003-typed-transfer-registry.md` — Done
+3. `R01-004-command-palette-keymap-registry.md` — Todo
+
+Only the earliest task whose dependencies are complete may be started.

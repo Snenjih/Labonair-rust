@@ -80,7 +80,7 @@ Dependencies point downward. A feature may depend on a foundation contract, but 
 | SFTP | Remote filesystem browsing and SFTP operations. |
 | Hosts | Saved host definitions, recent hosts, import/export, host management UI. The domain contract and store live in `labonair-hosts`; transport adapters remain capability-owned. |
 | Credentials | Credential metadata, secret references, and generated SSH key material in `labonair-credentials`. |
-| Transfers | Transfer queue, progress, cancellation, retry, history UI. |
+| Transfers | Transfer queue, progress, cancellation, conflict resolution, and history UI. Retry is a follow-up contract when supported by the worker. |
 | Git | `labonair-git` contracts, Git service adapters, source-control UI, and graph UI. |
 | Explorer | Local file navigation UI. |
 | Snippets | Snippet storage in `labonair-snippets`, execution, and UI. |
@@ -93,6 +93,13 @@ session handle and remote-browser contracts. `labonair-backend` implements
 both through adapters; workspace and feature views consume injected traits.
 Transfers remain a separate capability and are not part of the SFTP browser
 contract.
+
+The transfer capability is now split into `labonair-transfers` and
+`labonair-transfers-ui`. The former owns the UI-free job values, typed worker
+contracts, event translation boundary, and retained lifecycle registry. The
+latter owns the queue dropdown and resolution dialogs. The backend exposes a
+temporary worker adapter, while SFTP only submits typed transfer requests.
+The statusbar owns the trigger/anchor, but not transfer state.
 
 The current repository does not yet match this map. The migration is tracked in [`rework-roadmap.md`](rework-roadmap.md); this map is the target, not a claim about the current tree.
 

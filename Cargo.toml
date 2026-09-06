@@ -32,6 +32,8 @@ members = [
     "crates/git",
     "crates/ssh",
     "crates/sftp",
+    "crates/transfers",
+    "crates/transfers-ui",
     "crates/backend",
     "crates/ai",
     "crates/theme",

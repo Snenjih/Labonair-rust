@@ -23,6 +23,7 @@ use labonair_panel::{
     AnyStatusItemHandle, DockPosition, PanelIcon, StatusItem, StatusItemRegistration,
     StatusMenuEntry, StatusSide,
 };
+use labonair_transfers_ui::{TransferUiEvent, TransfersView};
 use labonair_ui_kit::{icon_toggle_button, IconName, Palette};
 use labonair_workspace::agent_access::{AgentAccessEntry, AgentAccessStore};
 
@@ -1133,20 +1134,30 @@ impl StatusItem for UpdaterStatusItem {
 
 pub struct TransfersStatusItem {
     workspace: Entity<Workspace>,
-    transfers: Entity<labonair_workspace::transfers::TransfersView>,
+    transfers: Entity<TransfersView>,
     theme: Entity<ThemeStore>,
 }
 
 impl TransfersStatusItem {
     pub fn new(
         workspace: Entity<Workspace>,
+        transfers: Entity<TransfersView>,
         theme: Entity<ThemeStore>,
         cx: &mut Context<Self>,
     ) -> Self {
-        let transfers = workspace.read(cx).transfers_entity();
         cx.observe(&workspace, |_, _, cx| cx.notify()).detach();
         cx.observe(&transfers, |_, _, cx| cx.notify()).detach();
         cx.observe(&theme, |_, _, cx| cx.notify()).detach();
+        cx.subscribe(&transfers, |this, _, event: &TransferUiEvent, cx| {
+            let TransferUiEvent::Completed {
+                session_id,
+                direction,
+            } = event;
+            this.workspace.update(cx, |workspace, cx| {
+                workspace.refresh_sftp_after_transfer(session_id, *direction, cx);
+            });
+        })
+        .detach();
         Self {
             workspace,
             transfers,
@@ -1176,21 +1187,47 @@ impl StatusItem for TransfersStatusItem {
     }
 
     fn render_status(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
-        // Only shown while a transfer is queued/running (T18-004 point 5) —
-        // the reference "conditional status item" rule, same as `updater`.
-        if self.transfers.read(cx).active_count() == 0 {
+        // Keep the item visible while retained history exists, so completed
+        // and failed jobs remain discoverable from the statusbar.
+        let (total, active, open) = {
+            let transfers = self.transfers.read(cx);
+            (
+                transfers.total_count(),
+                transfers.active_count(),
+                transfers.is_open(),
+            )
+        };
+        if total == 0 {
             return div().into_any_element();
         }
         let c = Palette::from_theme(self.theme.read(cx));
-        simple_bar_button(
+        let button = simple_bar_button(
             "bar-transfers",
             IconName::ArrowDownUp,
             c,
             cx,
             |this, _window, cx| {
-                this.workspace.update(cx, |w, cx| w.reveal_transfers(cx));
+                this.transfers
+                    .update(cx, |transfers, cx| transfers.toggle(cx));
             },
-        )
+        );
+        div()
+            .relative()
+            .child(button)
+            .when(active > 0, |element| {
+                element.child(
+                    div()
+                        .absolute()
+                        .top(px(-2.0))
+                        .right(px(-2.0))
+                        .min_w(px(8.0))
+                        .h(px(8.0))
+                        .rounded_full()
+                        .bg(c.accent),
+                )
+            })
+            .when(open, |element| element.child(self.transfers.clone()))
+            .into_any_element()
     }
 }
 
@@ -1504,6 +1541,7 @@ pub fn register_builtin_status_items(
     notifications: &Entity<labonair_notifications::NotificationCenter>,
     updater: &Entity<UpdaterView>,
     agent_access: &Entity<AgentAccessStore>,
+    transfers_view: &Entity<TransfersView>,
     cx: &mut App,
 ) {
     fn reg<T: StatusItem + 'static>(view: &Entity<T>, cx: &App) -> StatusItemRegistration {
@@ -1530,7 +1568,9 @@ pub fn register_builtin_status_items(
     let cursor = cx.new(|cx| CursorPositionStatusItem::new(workspace.clone(), theme.clone(), cx));
     let preview = cx.new(|cx| PreviewUrlStatusItem::new(workspace.clone(), theme.clone(), cx));
     let updater_item = cx.new(|cx| UpdaterStatusItem::new(updater.clone(), theme.clone(), cx));
-    let transfers = cx.new(|cx| TransfersStatusItem::new(workspace.clone(), theme.clone(), cx));
+    let transfers = cx.new(|cx| {
+        TransfersStatusItem::new(workspace.clone(), transfers_view.clone(), theme.clone(), cx)
+    });
     let agent = cx.new(|cx| {
         AgentAccessStatusItem::new(agent_access.clone(), workspace.clone(), theme.clone(), cx)
     });

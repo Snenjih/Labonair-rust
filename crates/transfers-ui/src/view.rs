@@ -1,8 +1,4 @@
-//! SFTP transfer queue UI (T08-002).
-//!
-//! TODO(shell): temporary resident of `labonair-workspace` — `Workspace` owns
-//! `Entity<TransfersView>` today. This module's long-term home is
-//! `labonair-shell`.
+//! Transfer queue UI (T08-002).
 //!
 //! Ported from `reference-src/src/modules/sftp/store/transferStore.ts` +
 //! `reference-src/src/modules/header/components/TransferDropdown.tsx`. The React
@@ -11,23 +7,18 @@
 //! lists jobs with a live progress bar, a per-job step log, a cancel button and
 //! two modal dialogs (conflict / file-error).
 //!
-//! Here the backend transfer worker
-//! ([`labonair_backend::modules::sftp::worker`]) is unchanged — it already
-//! processes the queue, walks folders recursively, verifies checksums and
-//! emits the same four events on the in-process [`labonair_backend::EventBus`].
-//! [`Workspace`](crate::Workspace) forwards those events off the bus
-//! as [`TransferBusEvent`]s and pumps them into [`TransfersView::apply`]. This
-//! module owns the queue display, the cancel action, the conflict/file-error
-//! resolution (`resolve_conflict`) and the "overwrite/skip all" sticky policy.
+//! The UI receives a typed event source and sends actions through an injected
+//! [`labonair_transfers::TransferService`]. Lifecycle state is owned by the
+//! UI-free [`labonair_transfers::TransferRegistry`], not by Workspace.
 //!
 //! Deviations from the reference:
-//! * The popover is a fixed bottom-right panel toggled by a pill, not a
-//!   configurable status-bar/header bar-item (bar-item placement is a Phase 12
-//!   concern).
+//! * The popover is anchored to the status-bar item; it is not rendered as a
+//!   workspace overlay.
 //! * The conflict modal's "Rename" uses an auto-generated `name_1.ext` seed
 //!   (editable) instead of a free-form field with the original name.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
+use std::sync::Arc;
 
 use gpui::{
     div, px, App, ClickEvent, Context, Entity, EventEmitter, FocusHandle, Focusable,
@@ -36,67 +27,15 @@ use gpui::{
 };
 use tokio::runtime::Handle as TokioHandle;
 
-use labonair_backend::modules::sftp::commands::{cancel_transfer, resolve_conflict};
-use labonair_backend::modules::sftp::{TransferDirection, TransferJob, TransferStatus};
-use labonair_backend::App as Backend;
-
-use crate::theme::ThemeStore;
-use labonair_ui_kit::{
-    button, indicator, ButtonSize, ButtonVariant, IconName, IndicatorSize, ListItem, Palette,
+use labonair_theme::store::ThemeStore;
+use labonair_transfers::{
+    RegistryUpdate, ResolveRequest, TransferDirection, TransferEvent, TransferEventError,
+    TransferEventSource, TransferJob, TransferRegistry, TransferResolution, TransferService,
+    TransferSnapshot, TransferStatus,
 };
-
-// ── bus events ─────────────────────────────────────────────────────────────
-
-/// A transfer-worker event lifted off the backend broadcast bus. Decoded from
-/// the raw `(name, payload)` form by [`TransferBusEvent::from_raw`] — the typed
-/// [`labonair_backend::AppEvent`] can't carry these because the worker emits
-/// the full [`TransferJob`] for `transfer_progress`, not `AppEvent`'s reduced
-/// shape.
-#[derive(Clone, Debug)]
-pub enum TransferBusEvent {
-    Progress(TransferJob),
-    Step {
-        job_id: String,
-        ts: i64,
-        message: String,
-    },
-    Conflict {
-        job_id: String,
-        src_path: String,
-        dest_path: String,
-    },
-    FileError {
-        job_id: String,
-        path: String,
-        error: String,
-    },
-}
-
-impl TransferBusEvent {
-    pub fn from_raw(name: &str, payload: &serde_json::Value) -> Option<Self> {
-        match name {
-            "transfer_progress" => serde_json::from_value::<TransferJob>(payload.clone())
-                .ok()
-                .map(Self::Progress),
-            "transfer_step" => Some(Self::Step {
-                job_id: payload.get("job_id")?.as_str()?.to_string(),
-                ts: payload.get("ts").and_then(|v| v.as_i64()).unwrap_or(0),
-                message: payload.get("message")?.as_str()?.to_string(),
-            }),
-            "file_conflict" => Some(Self::Conflict {
-                job_id: payload.get("job_id")?.as_str()?.to_string(),
-                src_path: payload.get("src_path")?.as_str()?.to_string(),
-                dest_path: payload.get("dest_path")?.as_str()?.to_string(),
-            }),
-            "file_error" => Some(Self::FileError {
-                job_id: payload.get("job_id")?.as_str()?.to_string(),
-                path: payload.get("path")?.as_str()?.to_string(),
-                error: payload.get("error")?.as_str()?.to_string(),
-            }),
-            _ => None,
-        }
-    }
-}
+use labonair_ui_kit::{
+    button, indicator, ButtonSize, ButtonVariant, IndicatorSize, ListItem, Palette,
+};
 
 // ── pure helpers (unit-tested) ─────────────────────────────────────────────
 
@@ -160,29 +99,6 @@ fn is_active(status: &TransferStatus) -> bool {
     matches!(status, TransferStatus::Queued | TransferStatus::Running)
 }
 
-fn is_terminal(status: &TransferStatus) -> bool {
-    matches!(
-        status,
-        TransferStatus::Completed | TransferStatus::Cancelled | TransferStatus::Failed(_)
-    )
-}
-
-// ── model ──────────────────────────────────────────────────────────────────
-
-#[derive(Clone)]
-pub struct TransferStep {
-    pub ts: i64,
-    pub message: String,
-}
-
-struct JobRow {
-    job: TransferJob,
-    /// Set while a `file_conflict` for this job awaits the user: `(src, dest)`.
-    conflict: Option<(String, String)>,
-    /// Set while a per-file `file_error` awaits the user: `(rel_path, error)`.
-    file_error: Option<(String, String)>,
-}
-
 /// Which resolution dialog is open (only one at a time, matching the
 /// reference's conflict-before-file-error precedence).
 enum Modal {
@@ -196,7 +112,7 @@ enum Modal {
 }
 
 /// Emitted so the workspace can refresh the pane that just received a file.
-pub enum TransfersEvent {
+pub enum TransferUiEvent {
     Completed {
         session_id: String,
         direction: TransferDirection,
@@ -204,14 +120,10 @@ pub enum TransfersEvent {
 }
 
 pub struct TransfersView {
-    backend: Backend,
+    service: Arc<dyn TransferService>,
+    registry: TransferRegistry,
     tokio: TokioHandle,
     theme: Entity<ThemeStore>,
-    /// Newest job first.
-    jobs: Vec<JobRow>,
-    steps: HashMap<String, Vec<TransferStep>>,
-    /// Sticky "overwrite"/"skip" per session id, set by "…All" in the modal.
-    sticky: HashMap<String, String>,
     expanded_logs: HashSet<String>,
     modal: Option<Modal>,
     /// Panel open/closed.
@@ -220,7 +132,7 @@ pub struct TransfersView {
     dialog_focus: FocusHandle,
 }
 
-impl EventEmitter<TransfersEvent> for TransfersView {}
+impl EventEmitter<TransferUiEvent> for TransfersView {}
 
 impl Focusable for TransfersView {
     fn focus_handle(&self, _cx: &App) -> FocusHandle {
@@ -230,145 +142,122 @@ impl Focusable for TransfersView {
 
 impl TransfersView {
     pub fn new(
-        backend: Backend,
+        service: Arc<dyn TransferService>,
+        events: Arc<dyn TransferEventSource>,
         tokio: TokioHandle,
         theme: Entity<ThemeStore>,
         cx: &mut Context<Self>,
     ) -> Self {
-        Self {
-            backend,
+        let this = Self {
+            service,
+            registry: TransferRegistry::default(),
             tokio,
             theme,
-            jobs: Vec::new(),
-            steps: HashMap::new(),
-            sticky: HashMap::new(),
             expanded_logs: HashSet::new(),
             modal: None,
             open: false,
             focus: cx.focus_handle(),
             dialog_focus: cx.focus_handle(),
-        }
-    }
-
-    fn row(&mut self, id: &str) -> Option<&mut JobRow> {
-        self.jobs.iter_mut().find(|r| r.job.id == id)
-    }
-
-    fn session_of(&self, id: &str) -> Option<String> {
-        self.jobs
-            .iter()
-            .find(|r| r.job.id == id)
-            .map(|r| r.job.session_id.clone())
+        };
+        let view = cx.entity().downgrade();
+        let service = this.service.clone();
+        let tokio = this.tokio.clone();
+        let mut receiver = events.subscribe();
+        cx.spawn(async move |_, cx| loop {
+            let event = match receiver.recv().await {
+                Ok(event) => event,
+                Err(TransferEventError::Lagged(skipped)) => {
+                    tracing::warn!(skipped, "transfer event stream lagged");
+                    continue;
+                }
+                Err(TransferEventError::Closed) => break,
+            };
+            let update = match view.update(cx, |this, cx| this.apply(event, cx)) {
+                Ok(update) => update,
+                Err(_) => break,
+            };
+            if let RegistryUpdate::Resolve(requests) = update {
+                for request in requests {
+                    let service = service.clone();
+                    tokio.spawn(async move {
+                        let _ = service.resolve(request.job_id, request.resolution).await;
+                    });
+                }
+            }
+        })
+        .detach();
+        this
     }
 
     // ── event intake ───────────────────────────────────────────────────────
 
-    pub fn apply(&mut self, ev: TransferBusEvent, cx: &mut Context<Self>) {
-        match ev {
-            TransferBusEvent::Progress(job) => self.on_progress(job, cx),
-            TransferBusEvent::Step {
-                job_id,
-                ts,
-                message,
-            } => {
-                self.steps
-                    .entry(job_id)
-                    .or_default()
-                    .push(TransferStep { ts, message });
-            }
-            TransferBusEvent::Conflict {
-                job_id,
-                src_path,
-                dest_path,
-            } => self.on_conflict(job_id, src_path, dest_path, cx),
-            TransferBusEvent::FileError {
-                job_id,
-                path,
-                error,
-            } => {
-                if let Some(row) = self.row(&job_id) {
-                    row.file_error = Some((path, error));
-                    row.job.status = TransferStatus::Paused;
-                }
-                if self.modal.is_none() {
-                    self.modal = Some(Modal::FileError { job_id });
-                }
+    pub fn apply(&mut self, event: TransferEvent, cx: &mut Context<Self>) -> RegistryUpdate {
+        let modal = match &event {
+            TransferEvent::Conflict { job_id, .. } => Some((job_id.clone(), false)),
+            TransferEvent::FileError { job_id, .. } => Some((job_id.clone(), true)),
+            _ => None,
+        };
+        let was_empty = self.registry.snapshot().is_empty();
+        let update = self.registry.apply(event);
+        if was_empty && !self.registry.snapshot().is_empty() {
+            // A newly queued transfer should be visible immediately. The
+            // transfer module owns this presentation policy; Workspace only
+            // submits the request.
+            self.open = true;
+        }
+        if let Some((job_id, is_file_error)) = modal {
+            if self.modal.is_none()
+                && self
+                    .registry
+                    .snapshot()
+                    .iter()
+                    .find(|record| record.job.id == job_id)
+                    .map(|record| {
+                        if is_file_error {
+                            record.file_error.is_some()
+                        } else {
+                            record.conflict.is_some()
+                        }
+                    })
+                    .unwrap_or(false)
+            {
+                self.modal = Some(if is_file_error {
+                    Modal::FileError { job_id }
+                } else {
+                    Modal::Conflict {
+                        job_id,
+                        renaming: None,
+                    }
+                });
             }
         }
-        cx.notify();
-    }
-
-    fn on_progress(&mut self, job: TransferJob, cx: &mut Context<Self>) {
-        let completed = matches!(job.status, TransferStatus::Completed);
-        let (session_id, direction) = (job.session_id.clone(), job.direction.clone());
-        // A fresh progress update after a pause means the worker resumed — drop
-        // any stale conflict/error dialog state for this job.
-        let clear_dialog = !matches!(job.status, TransferStatus::Queued);
-
-        if let Some(row) = self.row(&job.id) {
-            row.job = job;
-            if clear_dialog {
-                row.conflict = None;
-                row.file_error = None;
-            }
-        } else {
-            self.jobs.insert(
-                0,
-                JobRow {
-                    job,
-                    conflict: None,
-                    file_error: None,
-                },
-            );
-        }
-
-        // Close a modal whose job just left the paused state.
-        if let Some(m) = &self.modal {
-            let mid = match m {
-                Modal::Conflict { job_id, .. } | Modal::FileError { job_id } => job_id.clone(),
+        if let Some(modal) = &self.modal {
+            let job_id = match modal {
+                Modal::Conflict { job_id, .. } | Modal::FileError { job_id } => job_id,
             };
             if self
-                .row(&mid)
-                .map(|r| r.conflict.is_none() && r.file_error.is_none())
+                .registry
+                .snapshot()
+                .iter()
+                .find(|record| &record.job.id == job_id)
+                .map(|record| record.conflict.is_none() && record.file_error.is_none())
                 .unwrap_or(true)
             {
                 self.modal = None;
             }
         }
-
-        if completed {
-            cx.emit(TransfersEvent::Completed {
-                session_id,
-                direction,
+        cx.notify();
+        if let RegistryUpdate::Completed {
+            session_id,
+            direction,
+        } = &update
+        {
+            cx.emit(TransferUiEvent::Completed {
+                session_id: session_id.clone(),
+                direction: *direction,
             });
         }
-    }
-
-    fn on_conflict(
-        &mut self,
-        job_id: String,
-        src_path: String,
-        dest_path: String,
-        cx: &mut Context<Self>,
-    ) {
-        // Session-wide "…All" already chosen → resolve without surfacing UI,
-        // including for conflicts a big recursive copy reports progressively.
-        if let Some(session) = self.session_of(&job_id) {
-            if let Some(policy) = self.sticky.get(&session).cloned() {
-                self.send_resolution(&job_id, &policy, None, cx);
-                return;
-            }
-        }
-        if let Some(row) = self.row(&job_id) {
-            row.conflict = Some((src_path, dest_path));
-            row.job.status = TransferStatus::Paused;
-        }
-        if self.modal.is_none() {
-            self.modal = Some(Modal::Conflict {
-                job_id,
-                renaming: None,
-            });
-        }
+        update
     }
 
     // ── actions ────────────────────────────────────────────────────────────
@@ -379,32 +268,41 @@ impl TransfersView {
         cx.notify();
     }
 
+    pub fn toggle(&mut self, cx: &mut Context<Self>) {
+        self.open = !self.open;
+        cx.notify();
+    }
+
+    pub fn is_open(&self) -> bool {
+        self.open
+    }
+
+    pub fn total_count(&self) -> usize {
+        self.registry.snapshot().len()
+    }
+
     /// Number of jobs still queued or running — the `transfers` statusbar
     /// item (T18-004) is only visible/active while this is non-zero.
     pub fn active_count(&self) -> usize {
-        self.jobs
-            .iter()
-            .filter(|r| is_active(&r.job.status))
-            .count()
+        self.registry.active_count()
     }
 
     pub fn cancel(&mut self, id: String, cx: &mut Context<Self>) {
-        let worker = self.backend.transfer.clone();
+        let service = self.service.clone();
         self.tokio.spawn(async move {
-            let _ = cancel_transfer(id, &worker).await;
+            let _ = service.cancel(id).await;
         });
         cx.notify();
     }
 
     pub fn clear_completed(&mut self, cx: &mut Context<Self>) {
+        self.registry.clear_completed();
         let kept: HashSet<String> = self
-            .jobs
-            .iter()
-            .filter(|r| !is_terminal(&r.job.status))
-            .map(|r| r.job.id.clone())
+            .registry
+            .snapshot()
+            .into_iter()
+            .map(|record| record.job.id)
             .collect();
-        self.jobs.retain(|r| kept.contains(&r.job.id));
-        self.steps.retain(|k, _| kept.contains(k));
         self.expanded_logs.retain(|k| kept.contains(k));
         cx.notify();
     }
@@ -412,21 +310,25 @@ impl TransfersView {
     fn send_resolution(
         &mut self,
         id: &str,
-        resolution: &str,
-        new_name: Option<String>,
+        resolution: TransferResolution,
         cx: &mut Context<Self>,
     ) {
-        if let Some(row) = self.row(id) {
-            row.conflict = None;
-            row.file_error = None;
-            row.job.status = TransferStatus::Running;
-        }
-        let worker = self.backend.transfer.clone();
-        let (id, resolution) = (id.to_string(), resolution.to_string());
-        self.tokio.spawn(async move {
-            let _ = resolve_conflict(id, resolution, new_name, &worker).await;
-        });
+        let update = self.registry.resolve(id, resolution);
+        let RegistryUpdate::Resolve(requests) = update else {
+            return;
+        };
+        self.dispatch_resolutions(requests);
         cx.notify();
+    }
+
+    fn dispatch_resolutions(&self, requests: Vec<ResolveRequest>) {
+        let service = self.service.clone();
+        let tokio = self.tokio.clone();
+        tokio.spawn(async move {
+            for request in requests {
+                let _ = service.resolve(request.job_id, request.resolution).await;
+            }
+        });
     }
 
     /// Resolve one conflict from the modal. `overwrite_all` / `skip_all` set the
@@ -435,42 +337,28 @@ impl TransfersView {
         &mut self,
         job_id: String,
         choice: &str,
-        new_name: Option<String>,
+        _new_name: Option<String>,
         cx: &mut Context<Self>,
     ) {
         self.modal = None;
-        match choice {
-            "overwrite_all" | "skip_all" => {
-                let base = if choice == "overwrite_all" {
-                    "overwrite"
-                } else {
-                    "skip"
-                };
-                if let Some(session) = self.session_of(&job_id) {
-                    self.sticky.insert(session.clone(), base.to_string());
-                    let siblings: Vec<String> = self
-                        .jobs
-                        .iter()
-                        .filter(|r| {
-                            r.job.session_id == session
-                                && r.job.id != job_id
-                                && r.conflict.is_some()
-                        })
-                        .map(|r| r.job.id.clone())
-                        .collect();
-                    for sib in siblings {
-                        self.send_resolution(&sib, base, None, cx);
-                    }
-                }
-                self.send_resolution(&job_id, base, None, cx);
-            }
-            other => self.send_resolution(&job_id, other, new_name, cx),
-        }
+        let resolution = match choice {
+            "overwrite" | "overwrite_all" => TransferResolution::Overwrite,
+            "skip" | "skip_all" => TransferResolution::Skip,
+            "rename" => TransferResolution::Rename(_new_name.unwrap_or_default()),
+            _ => return,
+        };
+        self.send_resolution(&job_id, resolution, cx);
     }
 
     fn resolve_file_error(&mut self, job_id: String, choice: &str, cx: &mut Context<Self>) {
         self.modal = None;
-        self.send_resolution(&job_id, choice, None, cx);
+        let resolution = match choice {
+            "skip" => TransferResolution::Skip,
+            "skip_all" => TransferResolution::SkipAll,
+            "abort" => TransferResolution::Abort,
+            _ => return,
+        };
+        self.send_resolution(&job_id, resolution, cx);
     }
 }
 
@@ -572,47 +460,17 @@ impl Render for TransfersView {
             return modal;
         }
 
-        let active = self
-            .jobs
-            .iter()
-            .filter(|r| is_active(&r.job.status))
-            .count();
-        if self.jobs.is_empty() {
+        let records = self.registry.snapshot();
+        if records.is_empty() || !self.open {
             return div().into_any_element();
         }
 
-        let mut root = div()
+        div()
             .absolute()
-            .right(px(12.0))
-            .bottom(px(12.0))
-            .flex()
-            .flex_col()
-            .items_end()
-            .gap_2();
-
-        if self.open {
-            root = root.child(self.render_panel(c, cx));
-        }
-
-        root.child(
-            button(
-                "transfers-pill",
-                c.palette,
-                ButtonVariant::Outline,
-                ButtonSize::Xs,
-            )
-            .shadow_lg()
-            .child(IconName::ArrowDownUp.svg(c.fg).size(px(12.0)))
-            .child(SharedString::from(format!(
-                "{active} active \u{00b7} {} total",
-                self.jobs.len()
-            )))
-            .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
-                this.open = !this.open;
-                cx.notify();
-            })),
-        )
-        .into_any_element()
+            .bottom(px(24.0))
+            .right(px(0.0))
+            .child(self.render_panel(c, cx))
+            .into_any_element()
     }
 }
 
@@ -651,8 +509,8 @@ impl TransfersView {
             .flex_1()
             .min_h_0()
             .overflow_y_scroll();
-        for row in &self.jobs {
-            list = list.child(self.render_job(row, c, cx));
+        for record in self.registry.snapshot() {
+            list = list.child(self.render_job(&record, c, cx));
         }
 
         div()
@@ -671,17 +529,22 @@ impl TransfersView {
             .into_any_element()
     }
 
-    fn render_job(&self, row: &JobRow, c: Colors, cx: &mut Context<Self>) -> gpui::AnyElement {
-        let job = &row.job;
+    fn render_job(
+        &self,
+        record: &TransferSnapshot,
+        c: Colors,
+        cx: &mut Context<Self>,
+    ) -> gpui::AnyElement {
+        let job = &record.job;
         let name = base_name(&job.dest_path).to_string();
         let pct = percent(job);
-        let (label, tint) = match &job.status {
-            TransferStatus::Running => ("running", c.info),
-            TransferStatus::Completed => ("done", c.ok),
-            TransferStatus::Paused => ("paused", c.warn),
-            TransferStatus::Failed(_) => ("failed", c.err),
-            TransferStatus::Cancelled => ("cancelled", c.muted),
-            TransferStatus::Queued => ("queued", c.muted),
+        let label = status_label(&job.status);
+        let tint = match &job.status {
+            TransferStatus::Running => c.info,
+            TransferStatus::Completed => c.ok,
+            TransferStatus::Paused => c.warn,
+            TransferStatus::Failed(_) => c.err,
+            TransferStatus::Cancelled | TransferStatus::Queued => c.muted,
         };
         let arrow = if matches!(job.direction, TransferDirection::Download) {
             "\u{2193}"
@@ -691,11 +554,7 @@ impl TransfersView {
         let id = job.id.clone();
         let id_cancel = job.id.clone();
         let id_log = job.id.clone();
-        let has_steps = self
-            .steps
-            .get(&job.id)
-            .map(|s| !s.is_empty())
-            .unwrap_or(false);
+        let has_steps = !record.steps.is_empty();
         let log_open = self.expanded_logs.contains(&job.id);
         let active = is_active(&job.status);
         let failed_msg = match &job.status {
@@ -827,31 +686,32 @@ impl TransfersView {
             );
         }
 
-        if log_open {
-            if let Some(steps) = self.steps.get(&row.job.id) {
-                let mut log = div()
-                    .id(SharedString::from(format!("transfer-log-{}", row.job.id)))
-                    .mt_1()
-                    .max_h(px(120.0))
-                    .overflow_y_scroll()
-                    .rounded_sm()
-                    .bg(c.bg)
-                    .px_2()
-                    .py_1()
-                    .flex()
-                    .flex_col()
-                    .gap_0p5();
-                for s in steps {
-                    log = log.child(
-                        div()
-                            .text_xs()
-                            .font_family("monospace")
-                            .text_color(c.muted)
-                            .child(SharedString::from(s.message.clone())),
-                    );
-                }
-                container = container.child(log);
+        if log_open && !record.steps.is_empty() {
+            let mut log = div()
+                .id(SharedString::from(format!(
+                    "transfer-log-{}",
+                    record.job.id
+                )))
+                .mt_1()
+                .max_h(px(120.0))
+                .overflow_y_scroll()
+                .rounded_sm()
+                .bg(c.bg)
+                .px_2()
+                .py_1()
+                .flex()
+                .flex_col()
+                .gap_0p5();
+            for s in &record.steps {
+                log = log.child(
+                    div()
+                        .text_xs()
+                        .font_family("monospace")
+                        .text_color(c.muted)
+                        .child(SharedString::from(s.message.clone())),
+                );
             }
+            container = container.child(log);
         }
 
         container.into_any_element()
@@ -863,16 +723,22 @@ impl TransfersView {
             Modal::Conflict { job_id, .. } => (job_id.clone(), false),
             Modal::FileError { job_id } => (job_id.clone(), true),
         };
-        let row = self.jobs.iter().find(|r| r.job.id == job_id)?;
+        let row = self
+            .registry
+            .snapshot()
+            .into_iter()
+            .find(|record| record.job.id == job_id)?;
 
         let body = if is_file_error {
-            let (path, error) = row.file_error.clone().unwrap_or_default();
+            let file_error = row.file_error.as_ref()?;
+            let path = file_error.path.clone();
+            let error = file_error.error.clone();
             self.render_file_error_body(&job_id, &path, &error, c, cx)
         } else {
             let dest = row
                 .conflict
                 .as_ref()
-                .map(|(_, d)| d.clone())
+                .map(|conflict| conflict.destination_path.clone())
                 .unwrap_or_else(|| row.job.dest_path.clone());
             self.render_conflict_body(&job_id, &dest, c, cx)
         };
@@ -880,11 +746,10 @@ impl TransfersView {
         Some(
             div()
                 .absolute()
-                .inset_0()
-                .flex()
-                .items_center()
-                .justify_center()
-                .bg(crate::theme::modal_scrim())
+                .bottom(px(24.0))
+                .right(px(0.0))
+                .w(px(420.0))
+                .bg(labonair_theme::store::modal_scrim())
                 .child(
                     div()
                         .id("transfer-modal")
@@ -1149,22 +1014,22 @@ mod tests {
     }
 
     #[test]
-    fn bus_event_decodes_progress_and_step() {
+    fn typed_event_decoder_is_available_in_the_core_contract() {
         let j = serde_json::json!({
             "id": "1", "session_id": "s", "src_path": "/a", "dest_path": "/b",
             "direction": "download", "status": "running", "bytes_total": 10,
             "bytes_transferred": 5, "speed_bps": 0.0, "skipped_count": 0
         });
         assert!(matches!(
-            TransferBusEvent::from_raw("transfer_progress", &j),
-            Some(TransferBusEvent::Progress(_))
+            TransferEvent::from_raw("transfer_progress", &j),
+            Some(TransferEvent::Progress(_))
         ));
         let s = serde_json::json!({ "job_id": "1", "ts": 42, "message": "hi" });
         assert!(matches!(
-            TransferBusEvent::from_raw("transfer_step", &s),
-            Some(TransferBusEvent::Step { ts: 42, .. })
+            TransferEvent::from_raw("transfer_step", &s),
+            Some(TransferEvent::Step { timestamp: 42, .. })
         ));
-        assert!(TransferBusEvent::from_raw("unrelated", &s).is_none());
+        assert!(TransferEvent::from_raw("unrelated", &s).is_none());
     }
 
     #[test]

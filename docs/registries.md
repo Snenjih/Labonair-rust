@@ -72,6 +72,23 @@ User-visible errors are notifications too. A feature may keep an internal
 error state for retry logic, but it must not render a second feature-local
 error banner for the same user-facing failure.
 
+## Transfer registry
+
+`labonair-transfers::TransferRegistry` is the sole owner of transfer lifecycle
+state. It is long-lived for the application session and retains queued,
+active, paused, failed, cancelled, and completed records until the user clears
+terminal history. It consumes typed `TransferEvent` values and exposes
+immutable `TransferSnapshot` values to the UI.
+
+`TransferService` is the action contract for enqueue, cancellation, and
+conflict/file-error resolution. `TransferEventSource` is the read-only event
+boundary. The backend's legacy `AppEvent` bus is translated once by its
+adapter; no workspace or statusbar code decodes raw event names. The
+statusbar-hosted `labonair-transfers-ui` view is the canonical presentation
+surface and emits only a typed completion signal for the SFTP pane refresh.
+Transfer history is intentionally in-memory for this migration; durable
+history requires a separate persistence decision and schema task.
+
 ## Registration rules
 
 - Registration is explicit at application startup.

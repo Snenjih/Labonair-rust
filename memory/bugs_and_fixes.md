@@ -357,3 +357,19 @@ closely translate Zed function bodies, type layouts, comments, or algorithms
 unless the project first makes an explicit, reviewed licensing decision.
 
 **Reference:** `docs/ui-comparison-zed-sidebar-status-bar.md` section 2.
+## 2026-09-06 — Transfer capability extraction and wire compatibility
+
+**Decision:** Transfer lifecycle state and the queue UI now belong to the
+`transfers` module. `labonair-transfers` is UI-free and receives legacy worker
+events only through the backend adapter; `labonair-transfers-ui` owns the
+statusbar queue. Workspace owns only the typed enqueue request and the
+tab-local SFTP refresh callback. Transfer history remains in memory until a
+separate persistence decision; retry remains a separate typed worker feature.
+
+**Bug found:** The first typed `TransferStatus` enum omitted the existing
+`serde(rename_all = "snake_case")` contract. The decoder therefore rejected
+worker payloads such as `"status": "running"` even though compilation passed.
+
+**Fix:** Restored the wire-format attribute in `crates/transfers/src/lib.rs`
+and added a decoder regression test. The focused transfer tests and full
+workspace gates now pass.

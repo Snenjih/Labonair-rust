@@ -356,7 +356,7 @@ fn finish_job(
                     session_id: job.session_id.clone(),
                     src_path: job.src_path.clone(),
                     dest_path: job.dest_path.clone(),
-                    direction: job.direction.clone(),
+                    direction: job.direction,
                     status: TransferStatus::Queued,
                     bytes_total: 0,
                     bytes_transferred: 0,

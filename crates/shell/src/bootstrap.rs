@@ -27,6 +27,8 @@ use labonair_ssh::{
     SshRemoteCommandService, SshRemoteFileService, SshTunnelService,
 };
 use labonair_terminal::TerminalRegistry;
+use labonair_transfers::{TransferEventSource, TransferService};
+use labonair_transfers_ui::TransfersView;
 use tokio::runtime::Handle as TokioHandle;
 
 use labonair_command_palette::{CommandPalette, PaletteEvent};
@@ -227,6 +229,21 @@ pub(crate) fn bootstrap(
     let sftp_browser_service: Arc<dyn SftpBrowserService> = Arc::new(
         labonair_backend::modules::sftp::contract::BackendSftpService::new(backend.clone()),
     );
+    let transfer_service: Arc<dyn TransferService> = Arc::new(
+        labonair_backend::modules::transfers::BackendTransferService::new(backend.clone()),
+    );
+    let transfer_events: Arc<dyn TransferEventSource> = Arc::new(
+        labonair_backend::modules::transfers::BackendTransferEventSource::new(backend.clone()),
+    );
+    let transfers = cx.new(|cx| {
+        TransfersView::new(
+            transfer_service.clone(),
+            transfer_events,
+            tokio.clone(),
+            theme.clone(),
+            cx,
+        )
+    });
     let workspace = cx.new(|cx| {
         Workspace::new(
             registry,
@@ -242,6 +259,7 @@ pub(crate) fn bootstrap(
             ssh_config,
             sftp_session_service.clone(),
             sftp_browser_service.clone(),
+            transfer_service,
             tokio.clone(),
             agent_access.clone(),
             session_snapshot,
@@ -501,6 +519,7 @@ pub(crate) fn bootstrap(
         &notifications,
         &updater,
         &agent_access,
+        &transfers,
         cx,
     );
     let status_bar = cx.new(|cx| StatusBar::new(workspace.clone(), theme.clone(), cx));

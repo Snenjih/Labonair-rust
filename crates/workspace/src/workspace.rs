@@ -19,10 +19,9 @@
 //! Crate root (`labonair-workspace`, extracted in T16-006). Besides [`Workspace`]
 //! it hosts the pane tree, session snapshot/replay, the tab store, the AI live
 //! bridge, the per-workspace stores (`agent_access`, `background`) and every
-//! tab-content view under [`views`]. `hosts`/`transfers` are acknowledged
-//! temporary residents here — `Workspace` owns those view entities today; long
-//! term `hosts` becomes `labonair-panel-hosts` (T16-008) and `transfers` moves
-//! to `labonair-shell`.
+//! workspace-owned tab-content view under [`views`]. Transfer state and UI are
+//! owned by `labonair-transfers` / `labonair-transfers-ui`; Workspace only
+//! forwards transfer requests from SFTP views to the injected service.
 
 pub mod agent_access;
 pub mod backend_event_bridge;
@@ -41,7 +40,6 @@ pub mod status_bar;
 pub mod status_placements;
 pub mod syntax_theme;
 pub mod tabs;
-pub mod transfers;
 pub mod views;
 
 /// Re-export shim so `crate::theme::…` paths in the moved modules keep
@@ -81,7 +79,6 @@ use labonair_backend::modules::mcp::{
 use labonair_backend::modules::scrollback::{
     scrollback_cleanup, scrollback_delete, scrollback_load, scrollback_save,
 };
-use labonair_backend::modules::sftp::commands::enqueue_transfer;
 use labonair_backend::{App as Backend, AppEvent};
 use labonair_git::GitService;
 use labonair_sftp::{SftpBrowserService, SftpSessionService};
@@ -94,6 +91,7 @@ use labonair_terminal::{
     RemoteFeed, RemoteResizer, RemoteWriter, SessionHandle, SessionId, SessionOptions,
     TermDimensions, TerminalColors, TerminalRegistry,
 };
+use labonair_transfers::{TransferDirection, TransferRequest, TransferService};
 use tokio::runtime::Handle as TokioHandle;
 
 use crate::background::BackgroundStore;
@@ -106,7 +104,6 @@ use crate::session::{
 };
 use crate::tabs::{Tab, TabData, TabKind, TabStore};
 use crate::theme::ThemeStore;
-use crate::transfers::{TransferBusEvent, TransfersEvent, TransfersView};
 use crate::views::editor::{EditorEvent, EditorView};
 use crate::views::preview::PreviewView;
 use crate::views::sftp::{SftpEvent, SftpView};
@@ -439,8 +436,9 @@ pub struct Workspace {
     /// Tab ids the loading screen asked to close (needs `&mut Window`).
     pending_tab_close: Vec<u64>,
     /// Backend event bus → UI bridge (T17-008): decodes `AppEvent` /
-    /// `TransferBusEvent` off `backend.events` on the GPUI foreground and pushes
-    /// them straight into this entity — event-driven, no poll drain.
+    /// SSH events off `backend.events` on the GPUI foreground and pushes them
+    /// straight into this entity — event-driven, no poll drain. Transfer
+    /// events have their own capability-owned bridge.
     _backend_event_bridge: Entity<BackendEventBridge>,
     /// Periodic tunnel-liveness refresh (state poll, not event-driven).
     _ssh_poll: Task<()>,
@@ -448,8 +446,8 @@ pub struct Workspace {
     /// window-close hook in `AppShell` covers the normal path.
     _session_save: Task<()>,
 
-    // ── SFTP transfers (T08-002) ──────────────────────────────────────────
-    transfers: Entity<TransfersView>,
+    // ── SFTP transfer requests (R01-003) ──────────────────────────────────
+    transfer_service: Arc<dyn TransferService>,
 
     // ── MCP bridge (T11-005) ──────────────────────────────────────────────
     /// Tab open/close requests from the MCP bridge, drained in `render`.
@@ -487,6 +485,7 @@ impl Workspace {
         ssh_config: Arc<dyn SshConfigService>,
         sftp_session: Arc<dyn SftpSessionService>,
         sftp_browser: Arc<dyn SftpBrowserService>,
+        transfer_service: Arc<dyn TransferService>,
         tokio: TokioHandle,
         agent_access: Entity<AgentAccessStore>,
         restore: Option<SessionSnapshot>,
@@ -545,14 +544,6 @@ impl Workspace {
             let backend = backend.clone();
             cx.new(|cx| BackendEventBridge::new(backend, workspace, cx))
         };
-
-        let transfers =
-            cx.new(|cx| TransfersView::new(backend.clone(), tokio.clone(), theme.clone(), cx));
-        cx.observe(&transfers, |_, _, cx| cx.notify()).detach();
-        cx.subscribe(&transfers, |this, _, ev: &TransfersEvent, cx| {
-            this.on_transfers_event(ev, cx)
-        })
-        .detach();
 
         let ssh_poll = cx.spawn(async move |this, cx| loop {
             cx.background_executor().timer(SSH_POLL_INTERVAL).await;
@@ -629,7 +620,7 @@ impl Workspace {
             pending_tab_close: Vec::new(),
             _backend_event_bridge: backend_event_bridge,
             _ssh_poll: ssh_poll,
-            transfers,
+            transfer_service,
             pending_mcp: Vec::new(),
             agent_access,
             pending_snippet_ssh: HashMap::new(),
@@ -1065,17 +1056,6 @@ impl Workspace {
     pub fn send_cd(&self, path: &str, cx: &App) {
         let cmd = format!("cd {}\n", shell_quote(path));
         self.inject_into_active_terminal(&cmd, cx);
-    }
-
-    /// Open the SFTP transfer-queue panel (statusbar `transfers` bar item).
-    pub fn reveal_transfers(&self, cx: &mut Context<Self>) {
-        self.transfers.update(cx, |t, cx| t.reveal(cx));
-    }
-
-    /// The transfer-queue view entity, so the shell can observe it directly
-    /// for the `transfers` statusbar item (T18-004).
-    pub fn transfers_entity(&self) -> Entity<TransfersView> {
-        self.transfers.clone()
     }
 
     /// Open a new local terminal tab rooted at `path` (breadcrumb "open in new
@@ -2633,43 +2613,18 @@ impl Workspace {
                 dest_path,
                 direction,
             } => {
-                let worker = self.backend.transfer.clone();
-                let (sid, src, dest, dir) = (
-                    session_id.clone(),
-                    src_path.clone(),
-                    dest_path.clone(),
-                    direction.to_string(),
-                );
+                let service = self.transfer_service.clone();
+                let request = TransferRequest {
+                    session_id: session_id.clone(),
+                    src_path: src_path.clone(),
+                    dest_path: dest_path.clone(),
+                    direction: *direction,
+                };
                 self.tokio.spawn(async move {
-                    if let Err(e) = enqueue_transfer(sid, src, dest, dir, &worker).await {
+                    if let Err(e) = service.enqueue(request).await {
                         tracing::warn!(%e, "enqueue_transfer failed");
                     }
                 });
-                // Surface the transfer panel so the user sees the new job.
-                self.transfers.update(cx, |t, cx| {
-                    t.reveal(cx);
-                });
-            }
-        }
-    }
-
-    fn on_transfers_event(&mut self, ev: &TransfersEvent, cx: &mut Context<Self>) {
-        match ev {
-            TransfersEvent::Completed {
-                session_id,
-                direction,
-            } => {
-                let remote = matches!(
-                    direction,
-                    labonair_backend::modules::sftp::TransferDirection::Upload
-                );
-                let view = self
-                    .sftp_views
-                    .iter()
-                    .find_map(|(_, v)| (v.read(cx).session_id() == session_id).then(|| v.clone()));
-                if let Some(view) = view {
-                    view.update(cx, |v, cx| v.reload_side(remote, cx));
-                }
             }
         }
     }
@@ -2732,6 +2687,26 @@ impl Workspace {
         );
         self.focus_active(window, cx);
         cx.notify();
+    }
+
+    /// Refresh the SFTP pane affected by a completed transfer. Transfer
+    /// lifecycle state belongs to the transfers module; Workspace only owns
+    /// the tab-local view refresh because it owns SFTP tab entities.
+    pub fn refresh_sftp_after_transfer(
+        &mut self,
+        session_id: &str,
+        direction: TransferDirection,
+        cx: &mut Context<Self>,
+    ) {
+        let remote = matches!(direction, TransferDirection::Upload);
+        let view = self
+            .sftp_views
+            .values()
+            .find(|view| view.read(cx).session_id() == session_id)
+            .cloned();
+        if let Some(view) = view {
+            view.update(cx, |view, cx| view.reload_side(remote, cx));
+        }
     }
 
     // ── SSH connection flow (T07-001) ──────────────────────────────────────
@@ -3071,17 +3046,6 @@ impl Workspace {
         };
         self.ssh_connection.update(cx, |s, cx| s.resume(ssh_id, cx));
         self.spawn_ssh_connect(ssh_id.to_string(), host_id, passphrase, password, feed, cx);
-    }
-
-    /// Apply one transfer-worker bus event to the transfers view. Called by
-    /// [`BackendEventBridge`](crate::backend_event_bridge::BackendEventBridge).
-    pub(crate) fn apply_transfer_bus_event(
-        &mut self,
-        ev: TransferBusEvent,
-        cx: &mut Context<Self>,
-    ) {
-        let view = self.transfers.clone();
-        view.update(cx, |t, cx| t.apply(ev, cx));
     }
 
     pub(crate) fn handle_ssh_event(&mut self, ev: AppEvent, cx: &mut Context<Self>) {
@@ -4990,7 +4954,6 @@ impl Render for Workspace {
             .children(confirm)
             .children(context_menu)
             .children(new_tab_menu)
-            .child(self.transfers.clone())
     }
 }
 

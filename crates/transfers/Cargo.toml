@@ -1,0 +1,13 @@
+[package]
+name = "labonair-transfers"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "labonair_transfers"
+path = "src/lib.rs"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+

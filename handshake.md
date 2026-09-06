@@ -1,5 +1,28 @@
 # Handshake — Session State (Labonair-rust Port)
 
+## Current Session: 2026-09-06 (Typed transfer registry complete)
+
+`R01-003` is complete. Added the UI-free `labonair-transfers` capability
+crate, which owns typed transfer jobs, worker contracts, event translation,
+retained lifecycle state, conflict/file-error resolution, and in-memory
+history. Added `labonair-transfers-ui` for the statusbar-anchored queue and
+resolution dialogs. The backend now supplies an explicit adapter for the
+legacy SFTP worker/event bus; Workspace only submits typed requests and
+refreshes SFTP panes after completion. Transfer state is no longer stored in
+Workspace, and the old workspace transfer bridge/UI path is gone.
+
+Updated the architecture, registry contract, capability matrix, migration
+inventory, dependency verifier, and active rework tasks. The transfer
+registry is intentionally in-memory; durable history and retry are explicit
+follow-up decisions, not hidden compatibility behavior. Verification passes:
+`cargo fmt --check`, `cargo check --workspace --all-targets`, `cargo clippy
+--workspace --all-targets -- -D warnings`, `cargo test --workspace`, and
+`scripts/check-crate-deps.sh`.
+
+The current branch is `master`; the changes are committed. Next:
+`R01-004` — replace static command definitions with command-palette and keymap
+registries. No source blocker.
+
 ## Current Session: 2026-09-06 (SSH/SFTP capability boundary complete)
 
 `R01-002` is complete. Added the UI-free `labonair-ssh` and `labonair-sftp`

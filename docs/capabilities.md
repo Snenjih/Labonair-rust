@@ -21,7 +21,7 @@ migration into an architectural claim.
 | SFTP | `sftp` | `labonair-sftp` | SFTP browser | Backend adapter owns russh-sftp; session comes from SSH | Host action or standalone SFTP | Authenticated session/browser contract and view migration complete; transfer queue remains separate |
 | Hosts | `hosts` | `labonair-hosts` | `labonair-hosts-ui` | `labonair-persistence`, credentials, SSH adapters | Command Palette → Hosts | Domain/store extracted; UI migration open |
 | Credentials | `credentials` | `labonair-credentials` | Hosts UI consumer | `labonair-secrets`, keychain | Host management | Extracted |
-| Transfers | `transfers` | Target: `labonair-transfers-core` | Target: `labonair-transfers-ui` | SFTP/SSH worker adapter | Statusbar Transfers badge | Workspace/backend-owned; extraction next |
+| Transfers | `transfers` | `labonair-transfers` | `labonair-transfers-ui` | SFTP/SSH worker adapter | Statusbar Transfers badge | Typed registry and statusbar UI extracted; legacy backend event adapter remains transitional |
 | Git / source control | `git` | `labonair-git` | `labonair-panel-scm`, `labonair-panel-git-graph`, Project Diff | backend Git executor adapter | Source Control panel / palette | Contracts extracted |
 | Explorer | `explorer` | Filesystem contracts | `labonair-panel-explorer` | `labonair-filesystem` | Explorer dock panel | Backend edge removed; workspace shim remains |
 | Snippets | `snippets` | `labonair-snippets` | `labonair-panel-snippets` | persistence and injected SSH executor | Snippets panel / palette | Contracts and panel isolated |
