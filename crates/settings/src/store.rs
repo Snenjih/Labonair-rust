@@ -1060,7 +1060,8 @@ mod tests {
         .unwrap();
 
         store.set_active_project_root(Some(root));
-        assert_eq!(store.merged().mcp.bridge_port, Some(47823)); // untouched default
+        let serialized = serde_json::to_value(store.merged()).unwrap();
+        assert!(serialized.get("mcp").is_none()); // removed capability area stays absent
         assert_eq!(store.project_rejected_keys(), &["mcp".to_string()]);
     }
 

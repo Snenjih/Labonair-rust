@@ -1,7 +1,7 @@
 //! `GitChangeRow` — a dense version-control entry (Zed-parity redesign Phase 2,
 //! `docs/ui-comparison-zed-sidebar-status-bar.md` §9.5 / §10.4 / §12.5).
 //!
-//! Distinct from [`ListItem`](crate::ListItem): a tri-state staging *control*
+//! Distinct from [`ListItem`](labonair_ui_kit::ListItem): a tri-state staging *control*
 //! (checkbox: Unstaged / Staged / PartiallyStaged) whose meaning is independent
 //! of the semantic status icon/tint, file identity with a full-path fallback,
 //! and contextual actions that stay hidden until the row is hovered.
@@ -18,9 +18,7 @@ use gpui::{
     Window,
 };
 
-use crate::density::Density;
-use crate::icon::IconName;
-use crate::palette::Palette;
+use labonair_ui_kit::{Density, IconName, Palette, Tooltip};
 
 /// The staging state of a file or an aggregate (section / directory).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -291,8 +289,7 @@ impl IntoElement for GitChangeRow {
             .children(actions);
 
         if let Some(tooltip) = self.tooltip {
-            row = row
-                .tooltip(move |window, cx| crate::Tooltip::new(tooltip.clone()).build(window, cx));
+            row = row.tooltip(move |window, cx| Tooltip::new(tooltip.clone()).build(window, cx));
         }
         if let Some(h) = self.on_click {
             row = row.on_click(move |ev, w, cx| h(ev, w, cx));
@@ -307,7 +304,20 @@ impl IntoElement for GitChangeRow {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_support::test_palette;
+    use labonair_theme::Theme;
+    use labonair_ui_kit::UiTheme;
+
+    struct TestTheme(Theme);
+
+    impl UiTheme for TestTheme {
+        fn theme(&self) -> &Theme {
+            &self.0
+        }
+    }
+
+    fn test_palette() -> Palette {
+        Palette::from_theme(&TestTheme(Theme::dark()))
+    }
 
     #[test]
     fn builds_in_every_stage_state() {

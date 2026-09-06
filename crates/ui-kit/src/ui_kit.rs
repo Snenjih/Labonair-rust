@@ -54,7 +54,6 @@ mod disclosure;
 mod divider;
 #[cfg(any(debug_assertions, feature = "gallery"))]
 mod gallery;
-mod git_change_row;
 mod icon;
 mod indicator;
 mod kbd;
@@ -81,7 +80,6 @@ pub use disclosure::disclosure;
 pub use divider::{divider, Axis};
 #[cfg(any(debug_assertions, feature = "gallery"))]
 pub use gallery::{open_gallery_window, Gallery};
-pub use git_change_row::{git_change_row, GitChangeRow, StageState};
 pub use icon::{
     chevron_icon_path, file_icon_path, folder_icon_path, icon_for_path, svg_path, IconName,
 };
@@ -113,15 +111,15 @@ pub mod prelude {
     pub use crate::ActiveThemeExt;
     pub use crate::{
         banner, button, checkbox, chevron_icon_path, context_menu, disclosure, divider,
-        file_icon_path, folder_icon_path, git_change_row, h_stack, icon_for_path,
-        icon_toggle_button, indicator, kbd, kbd_row, keybinding_hint, list_header, list_separator,
-        number_field, popover, popover_menu, segmented_control, select_popover, select_trigger,
-        selected_label, svg_path, toggle_base, tree_row, v_stack,
+        file_icon_path, folder_icon_path, h_stack, icon_for_path, icon_toggle_button, indicator,
+        kbd, kbd_row, keybinding_hint, list_header, list_separator, number_field, popover,
+        popover_menu, segmented_control, select_popover, select_trigger, selected_label, svg_path,
+        toggle_base, tree_row, v_stack,
     };
     pub use crate::{
-        Axis, Badge, Banner, ButtonSize, ButtonVariant, Checkbox, Density, GitChangeRow, IconName,
-        IndicatorSize, ListItem, MenuClick, MenuItem, NumberField, Palette, SegmentSize,
-        SegmentVariant, SegmentedControl, SelectOption, Severity, StageState, Switch, ToggleSize,
-        ToggleVariant, Tooltip, TreeRow, TreeRowState, UiTheme, DISABLED_OPACITY,
+        Axis, Badge, Banner, ButtonSize, ButtonVariant, Checkbox, Density, IconName, IndicatorSize,
+        ListItem, MenuClick, MenuItem, NumberField, Palette, SegmentSize, SegmentVariant,
+        SegmentedControl, SelectOption, Severity, Switch, ToggleSize, ToggleVariant, Tooltip,
+        TreeRow, TreeRowState, UiTheme, DISABLED_OPACITY,
     };
 }

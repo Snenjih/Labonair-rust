@@ -2,16 +2,14 @@
 //! filter (`panes/generic.rs`'s old `render_global_search`, which rendered
 //! matched fields inline). This module is pure data: an index built once
 //! (task Warnung: never rebuilt per keystroke) over every generated field's
-//! title + description + `json_path`, plus one hand-curated entry per
-//! `AreaKind::Custom` pane (main page and sub-pages), and a scorer on top of
+//! title + description + `json_path`, and a scorer on top of
 //! the shared fuzzy matcher (`labonair_command_palette::fuzzy`, already used
 //! by the command palette / `@`-file picker). `crate::view`/`crate::panes`
 //! own the rendering + keyboard navigation on top of this.
 
 use labonair_command_palette::{match_score, SearchMode};
-use labonair_settings_content::areas::{AreaKind, AREAS};
+use labonair_settings_content::areas::AREAS;
 
-use crate::pages::SettingsPage;
 use crate::schema::AnyField;
 
 /// What a search hit navigates to.
@@ -19,12 +17,6 @@ use crate::schema::AnyField;
 pub(crate) enum SearchTarget {
     /// Indexes [`crate::view::SettingsView::all_fields`].
     Field(usize),
-    /// A custom pane: the area index into `AREAS`/`SettingsView::pages`, and
-    /// the sub-page index (`None` = the area's main page).
-    Pane {
-        area_index: usize,
-        subpage_index: Option<usize>,
-    },
 }
 
 /// One indexed, searchable entry.
@@ -34,7 +26,7 @@ struct SearchEntry {
     area_title: &'static str,
     title: &'static str,
     /// Shown small under the title in a result row (a field's `json_path`;
-    /// empty for a pane).
+    /// empty for a future non-field target).
     subtitle: &'static str,
     haystack: String,
 }
@@ -49,21 +41,10 @@ pub(crate) struct SearchRow {
     pub(crate) subtitle: &'static str,
 }
 
-/// Hand-curated keywords for a `AreaKind::Custom` pane (task step 1: one
-/// pane entry plus optional hand-maintained keywords).
-fn pane_keywords(area_key: &str, subpage_slug: Option<&str>) -> &'static str {
-    match (area_key, subpage_slug) {
-        ("mcp", _) => "mcp agent bridge model context protocol",
-        ("personalization", _) => "personalization status bar layout panel toggle",
-        _ => "",
-    }
-}
-
-/// Build the full search index: every [`AnyField`] plus one entry per
-/// `AreaKind::Custom` page (main page + sub-pages). Rebuild only when the
-/// settings window opens / its schema changes (task Warnung) — never on
-/// every keystroke.
-fn build_index(all_fields: &[AnyField], pages: &[SettingsPage]) -> Vec<SearchEntry> {
+/// Build the full search index over every SettingsContent field. Rebuild only
+/// when the settings window opens / its schema changes (task Warnung) — never
+/// on every keystroke.
+fn build_index(all_fields: &[AnyField]) -> Vec<SearchEntry> {
     let mut out = Vec::new();
     for (i, field) in all_fields.iter().enumerate() {
         let Some(area_index) = AREAS.iter().position(|a| a.target_module == field.area()) else {
@@ -81,31 +62,6 @@ fn build_index(all_fields: &[AnyField], pages: &[SettingsPage]) -> Vec<SearchEnt
             ),
         });
     }
-    for (area_index, page) in pages.iter().enumerate() {
-        let area = page.area;
-        if area.kind != AreaKind::Custom {
-            continue;
-        }
-        let mut push_pane =
-            |title: &'static str, subpage_index: Option<usize>, slug: Option<&str>| {
-                let keywords = pane_keywords(area.key, slug);
-                out.push(SearchEntry {
-                    target: SearchTarget::Pane {
-                        area_index,
-                        subpage_index,
-                    },
-                    area_index,
-                    area_title: area.title,
-                    title,
-                    subtitle: "",
-                    haystack: format!("{title} {keywords}"),
-                });
-            };
-        push_pane(area.title, None, None);
-        for (sp_i, sp) in page.sub_pages.iter().enumerate() {
-            push_pane(sp.title, Some(sp_i), Some(sp.slug));
-        }
-    }
     out
 }
 
@@ -113,8 +69,8 @@ fn build_index(all_fields: &[AnyField], pages: &[SettingsPage]) -> Vec<SearchEnt
 pub(crate) struct SearchIndex(Vec<SearchEntry>);
 
 impl SearchIndex {
-    pub(crate) fn build(all_fields: &[AnyField], pages: &[SettingsPage]) -> Self {
-        Self(build_index(all_fields, pages))
+    pub(crate) fn build(all_fields: &[AnyField]) -> Self {
+        Self(build_index(all_fields))
     }
 }
 
@@ -169,11 +125,10 @@ pub(crate) fn search(index: &SearchIndex, query: &str, limit: usize) -> Vec<Sear
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::pages::pages;
     use crate::schema::all_fields;
 
     fn index() -> SearchIndex {
-        SearchIndex::build(&all_fields(), &pages())
+        SearchIndex::build(&all_fields())
     }
 
     /// Query `cursor` finds fields from multiple categories (Terminal's
@@ -201,24 +156,6 @@ mod tests {
         assert!(rows
             .iter()
             .any(|r| r.subtitle == "terminal.terminalFontSize"));
-    }
-
-    /// A query that only hits a custom pane's curated keyword list surfaces
-    /// that pane as a result.
-    #[test]
-    fn keyword_query_finds_a_custom_pane() {
-        let idx = index();
-        let rows = search(&idx, "tastenkürzel", 50);
-        assert!(rows.is_empty());
-        let rows = search(&idx, "status bar", 50);
-        assert!(rows.iter().any(|r| r.area_title == "Personalization"
-            && matches!(
-                r.target,
-                SearchTarget::Pane {
-                    subpage_index: None,
-                    ..
-                }
-            )));
     }
 
     /// Empty query yields no results (category-view fallback is the caller's

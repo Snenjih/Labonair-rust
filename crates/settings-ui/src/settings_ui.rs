@@ -14,6 +14,7 @@ mod pages;
 mod panes;
 mod schema;
 mod search;
+mod services;
 mod view;
 mod window;
 
@@ -25,5 +26,6 @@ pub use apply::{
     preview_app_theme, reload_icon_theme_registry, reload_theme_registry, theme_choices,
     theme_metrics_from_settings, user_icon_themes_dir, user_themes_dir,
 };
+pub use services::{ServiceFuture, SettingsServices, SystemFontService};
 pub use view::SettingsView;
 pub use window::{open_settings_window, set_settings_deps};

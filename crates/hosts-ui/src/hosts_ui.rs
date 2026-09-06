@@ -13,9 +13,7 @@ pub(crate) mod theme {
     pub use labonair_theme::store::*;
 }
 
-mod apply;
 mod hosts;
 pub mod ssh_connection;
 
-pub use apply::apply_host_change;
 pub use hosts::{ActiveTunnelRow, HostManagerEvent, HostManagerView, HostStatus};

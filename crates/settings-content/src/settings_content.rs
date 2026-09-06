@@ -19,9 +19,13 @@ pub mod connections;
 pub mod editor;
 pub mod file_manager;
 pub mod general;
+// Migration-only wire types for reading legacy host settings. Hosts are not
+// part of `SettingsContent` and are never serialized by this crate's tree.
 pub mod hosts;
-pub mod keymap;
+// Migration-only wire types; MCP runtime configuration belongs to the
+// AI/MCP capability and is not part of SettingsContent.
 pub mod mcp;
+// Migration-only wire types; statusbar/panel layout belongs to Workspace.
 pub mod personalization;
 pub mod terminal;
 pub mod workspace;
@@ -41,10 +45,6 @@ use connections::ConnectionsContent;
 use editor::EditorContent;
 use file_manager::FileManagerContent;
 use general::GeneralContent;
-use hosts::HostsContent;
-use keymap::KeymapContent;
-use mcp::McpContent;
-use personalization::PersonalizationContent;
 use terminal::TerminalContent;
 use workspace::WorkspaceContent;
 
@@ -64,16 +64,7 @@ pub struct SettingsContent {
     #[serde(rename = "fileManager")]
     pub file_manager: FileManagerContent,
     pub connections: ConnectionsContent,
-    /// Legacy persisted host data retained for migration compatibility.
-    /// Host ownership and management belong to the Hosts capability, not to
-    /// the Settings navigation.
-    pub hosts: HostsContent,
     pub workspace: WorkspaceContent,
-    pub mcp: McpContent,
-    pub personalization: PersonalizationContent,
-    /// Legacy persisted keymap preset data retained while the keymap
-    /// capability moves to its own registry and storage.
-    pub keymap: KeymapContent,
 }
 
 impl SettingsContent {
@@ -88,11 +79,7 @@ impl SettingsContent {
             editor: EditorContent::defaults(),
             file_manager: FileManagerContent::defaults(),
             connections: ConnectionsContent::defaults(),
-            hosts: HostsContent::defaults(),
             workspace: WorkspaceContent::defaults(),
-            mcp: McpContent::defaults(),
-            personalization: PersonalizationContent::defaults(),
-            keymap: KeymapContent::defaults(),
         }
     }
 }
@@ -114,11 +101,7 @@ mod tests {
         "editor",
         "file_manager",
         "connections",
-        "hosts",
         "workspace",
-        "mcp",
-        "personalization",
-        "keymap",
     ];
 
     #[test]
@@ -154,17 +137,15 @@ mod tests {
             .filter(|a| a.kind == AreaKind::Custom)
             .map(|a| a.key)
             .collect();
-        for expected in ["mcp", "personalization"] {
-            assert!(
-                custom.contains(&expected),
-                "{expected} must be registered as a Custom top-level area"
-            );
-        }
+        assert!(
+            custom.is_empty(),
+            "Settings has no integration-owned custom areas"
+        );
     }
 
     #[test]
     fn capability_management_areas_are_not_settings_categories() {
-        for removed in ["themes", "hosts", "shortcuts"] {
+        for removed in ["themes", "hosts", "shortcuts", "keymap"] {
             assert!(
                 !AREAS.iter().any(|area| area.key == removed),
                 "{removed} must be owned by its capability, not Settings"
@@ -199,33 +180,22 @@ mod tests {
     }
 
     #[test]
-    fn hosts_entries_serialize_without_secrets() {
-        use hosts::{HostAuthMethod, HostEntry};
+    fn legacy_capability_sections_are_not_parsed_or_serialized() {
+        let (content, errors) = fallible::parse(
+            r#"{
+                "hosts": { "entries": [{ "name": "legacy" }] },
+                "keymap": { "baseKeymap": "vscode" }
+            }"#,
+        );
+        assert!(errors.is_empty());
 
-        let mut content = SettingsContent::defaults();
-        content.hosts.entries = Some(vec![HostEntry {
-            id: "h1".into(),
-            name: "prod".into(),
-            address: "prod.example.com".into(),
-            port: 22,
-            user: "deploy".into(),
-            auth_method: HostAuthMethod::PublicKey,
-            credential_ref: Some("keyring:prod-deploy".into()),
-            ..Default::default()
-        }]);
-
-        let json = serde_json::to_value(&content.hosts).unwrap();
+        let json = serde_json::to_value(content).unwrap();
         let json_str = json.to_string();
-        assert!(json_str.contains("keyring:prod-deploy"));
-        // Nothing named "password"/"privateKey"/"secret" ever appears.
-        for forbidden in ["password", "privateKey", "secret", "passphrase"] {
+        for forbidden in ["hosts", "keymap", "legacy", "baseKeymap"] {
             assert!(
                 !json_str.to_lowercase().contains(&forbidden.to_lowercase()),
-                "hosts JSON must never contain {forbidden}"
+                "settings JSON must never contain removed capability field {forbidden}"
             );
         }
-
-        let back: hosts::HostsContent = serde_json::from_value(json).unwrap();
-        assert_eq!(back, content.hosts);
     }
 }

@@ -80,21 +80,4 @@ pub const AREAS: &[AreaMeta] = &[
         kind: AreaKind::Generated,
         target_module: "workspace",
     },
-    // Themes, Hosts, and Shortcuts are intentionally not Settings areas.
-    // Their persisted compatibility data remains outside the navigation until
-    // the owning modules complete their storage migrations.
-    AreaMeta {
-        key: "mcp",
-        title: "MCP",
-        slug: "mcp",
-        kind: AreaKind::Custom,
-        target_module: "mcp",
-    },
-    AreaMeta {
-        key: "personalization",
-        title: "Personalization",
-        slug: "personalization",
-        kind: AreaKind::Custom,
-        target_module: "personalization",
-    },
 ];

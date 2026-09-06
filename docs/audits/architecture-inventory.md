@@ -25,7 +25,7 @@ in the normative documents linked from `docs/README.md`.
 | `credentials` | Credential domain, secret-backed metadata, and SSH keypair generation | credentials module | Extracted from `backend`; backend keeps App-signature adapters while callers migrate. |
 | `snippets` | Snippet domain, SQLite store, and local/SSH execution contracts | snippets module | Shared run events and the SSH executor contract are standalone; backend owns only the russh adapter. |
 | `gpui-ext` | Shared GPUI helpers | foundation | Keep dependency-free from features. |
-| `hosts-ui` | Host management UI and host-related dependencies | hosts module | Remove settings and notification coupling. |
+| `hosts-ui` | Host management UI and host-related dependencies | hosts module | Settings projection removed; notification coupling remains to be migrated. |
 | `notifications-core` | UI-free notification registry and lifecycle | notifications module | New owner of retention, ordering, deduplication, read state, and structured metadata. |
 | `notifications` | GPUI notification adapter | notifications module | Toast renderer removed; statusbar dropdown remains the consumer. |
 | `panel` | Panel/status contracts | workspace foundation | Keep contracts-only. |
@@ -37,7 +37,7 @@ in the normative documents linked from `docs/README.md`.
 | `settings-content` | Typed settings data | settings module | Keep only actual configuration values. |
 | `settings-json` | JSON editing | settings module | Keep as persistence adapter. |
 | `settings-macros` | Settings derives | settings module | Keep implementation detail. |
-| `settings-ui` | Settings views and generated fields | settings module | Misplaced management categories are removed; remaining value audit and UI integration migration are open. |
+| `settings-ui` | Settings views and generated fields | settings module | Value-only generated UI; receives only the system-font discovery contract. |
 | `keymap` | UI-free keymap values, resolution, and conflict handling | keymap module | Extracted from command-palette; management UI and shell integration remain to migrate. |
 | `shell` | App shell, menus, commands, status items, updater | application composition + shell surface | Reduce to registration and composition. |
 | `terminal` | Terminal engine and renderer support | terminal module | Split engine from GPUI view when useful. |
@@ -52,11 +52,15 @@ in the normative documents linked from `docs/README.md`.
 The current Cargo metadata shows several transitional edges that conflict with the new rules:
 
 - `workspace` depends directly on AI, backend, command palette, hosts UI, notifications, settings, SFTP capability contracts, and feature views; transfer lifecycle state is no longer one of those responsibilities.
-- `settings-ui` depends on backend, workspace, hosts UI, command palette, notifications, and panel contracts.
+- `settings-ui` depends on settings values, theme/UI primitives, notifications,
+  command-palette fuzzy matching, filesystem paths, and a temporary workspace
+  background-store shim; it no longer depends on backend, Hosts UI, or panel
+  contracts.
 - `panel-explorer` still depends on workspace for drag/preview shims, but its
   obsolete backend dependency has been removed; those remaining UI contracts
   are a later extraction boundary.
-- `hosts-ui` depends on settings and notifications, even though Hosts is not a Settings concern and connection management should emit through the app notification contract.
+- `hosts-ui` no longer depends on Settings; its connection management still
+  needs the notification contract migration to be completed.
 - `command-palette` depends on backend even though the palette should receive dynamic data through providers.
 - `keymap` is now UI-free, but the temporary GPUI adapter and some consumers
   still enter through `command-palette`; the keymap editor and stable command
@@ -92,9 +96,8 @@ families. These are not target dependencies; each has a removal condition:
 
 | Transitional edge family | Temporary reason | Removal condition |
 |---|---|---|
-| `settings-ui → backend`, `settings-ui → hosts-ui`, `settings-ui → workspace`, `settings-ui → command-palette`, `settings-ui → notifications`, `settings-ui → ai` | The existing settings window still composes legacy management and integration views. | Settings owns only value fields; management surfaces register independently and the window consumes contracts only. |
+| `settings-ui → workspace` | The settings window still uses the workspace-owned background store while that presentation capability is extracted. | Move `BackgroundStore` to a dedicated background/theme capability and inject it through a narrow contract. |
 | `workspace → backend`, `workspace → ai`, `workspace → settings` | Workspace still hosts session bridges and legacy global settings consumers. SSH/SFTP and transfer access are now injected. | Settings providers and remaining session adapters are injected capabilities; workspace keeps orchestration only. |
-| `hosts-ui → backend`, `hosts-ui → settings`, `hosts-ui → settings-content` | Host CRUD, credential writes, and the legacy Settings projection are still being migrated. | Host management uses `labonair-hosts`, credentials, secrets, and SSH contracts directly; no Settings projection remains. |
 | `panel-explorer → workspace`, `panel-explorer → settings` | Explorer still reuses workspace drag/preview contracts and a legacy settings read. | Drag/drop and preview contracts move to foundation/owning modules and explorer receives a settings capability. |
 | `panel-scm → editor`, `panel-scm → settings` | SCM reuses unified diff helpers and one legacy presentation preference. | Diff contracts are shared by the Git module and the preference is provided through a narrow settings contract. |
 | `panel-ai → backend`, `panel-ai → editor`, `panel-ai → workspace` | AI UI is parked while the workspace/editor context bridge is redesigned. | AI consumes AI, editor-context, and workspace-session contracts without facade access. |

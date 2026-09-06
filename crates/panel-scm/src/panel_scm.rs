@@ -24,6 +24,8 @@ pub(crate) mod theme {
     pub use labonair_theme::store::*;
 }
 
+pub mod git_change_row;
+
 use std::time::Duration;
 
 use gpui::prelude::FluentBuilder;
@@ -36,12 +38,13 @@ use labonair_git::{Branch, CommitInfo, FileStatus, GitService, GitStatus, Worksp
 use labonair_panel::{ProjectDiffFile, ProjectDiffMode, ProjectDiffRequest};
 use tokio::runtime::Handle as TokioHandle;
 
+use crate::git_change_row::{git_change_row, StageState};
 use crate::theme::ThemeStore;
 use labonair_notifications::notify_err;
 use labonair_ui_kit::{
-    button, checkbox, context_menu, disclosure, field_input, git_change_row, h_stack,
-    segmented_control, ButtonSize, ButtonVariant, IconName, InputEvent, InputState, ListItem,
-    MenuItem, Palette, SegmentSize, SegmentVariant, StageState,
+    button, checkbox, context_menu, disclosure, field_input, h_stack, segmented_control,
+    ButtonSize, ButtonVariant, IconName, InputEvent, InputState, ListItem, MenuItem, Palette,
+    SegmentSize, SegmentVariant,
 };
 
 // Unified-diff parsing moved to `labonair-editor` in the Zed-parity Phase 4

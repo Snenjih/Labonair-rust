@@ -2,7 +2,7 @@
 
 ## Status
 
-`⬜ Todo`
+`✅ Done`
 
 ## Owner
 
@@ -57,15 +57,28 @@ away from direct backend, workspace, MCP, and registry access.
 
 ## Acceptance criteria
 
-- [ ] Settings navigation contains values only; capability-management entries
+- [x] Settings navigation contains values only; capability-management entries
   are absent.
-- [ ] `settings-ui` no longer stores or calls the broad backend/workspace
+- [x] `settings-ui` no longer stores or calls the broad backend/workspace
   integrations for MCP, Hosts, or personalization.
-- [ ] Duplicate runtime settings models have one canonical owner; migrations
+- [x] Duplicate runtime settings models have one canonical owner; migrations
   are explicit and covered by fixtures.
-- [ ] User-visible Settings diagnostics reach the notification registry and no
+- [x] User-visible Settings diagnostics reach the notification registry and no
   longer render as inline error banners.
-- [ ] Every retained setting has a tested consumer or a documented removal /
+- [x] Every retained setting has a tested consumer or a documented removal /
   deferral decision.
-- [ ] Focused Settings and notification tests plus all workspace verification
+- [x] Focused Settings and notification tests plus all workspace verification
   gates pass.
+
+## Outcome
+
+- `SettingsContent` now contains only typed application values. Hosts, keymaps,
+  MCP runtime preferences, and statusbar/panel presentation state are not
+  serialized as Settings areas.
+- Legacy host/MCP wire types remain only behind named migration code. The
+  migration preserves standalone MCP data, skips obsolete host-manager values,
+  and keeps host-store migration separate from SettingsContent.
+- Settings UI has no backend, Hosts UI, panel, or personalization integration
+  and publishes parse/schema diagnostics through Notifications.
+- Product-specific SCM presentation code moved out of `ui-kit` into
+  `panel-scm`; shared UI primitives remain in `ui-kit`.

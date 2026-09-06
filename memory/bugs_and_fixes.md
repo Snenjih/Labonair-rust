@@ -1,5 +1,22 @@
 # Bugs, fixes, and non-obvious constraints
 
+## 2026-09-06 — Settings migrations must not recreate removed capability areas
+
+**Finding:** Removing `mcp`, `personalization`, `hosts`, and `keymap` from
+`SettingsContent` exposed that the v1→v2 migrator still generated those areas.
+This caused missing-key panics in migration fixtures and would have recreated
+the ownership problem on every migrated installation.
+
+**Resolution:** The migrator now writes only the seven canonical
+`SettingsContent` areas, leaves standalone MCP preferences untouched for the
+MCP owner, treats host-manager preferences as explicitly skipped, and keeps
+host-store migration as a separate named legacy step. Migration fixtures now
+assert that removed areas are absent while real value overrides still survive.
+
+**Non-obvious constraint:** `settings-content/src/hosts.rs`, `mcp.rs`, and
+`personalization.rs` remain public only as migration wire types. They must not
+be added back to `SettingsContent` or the generated Settings schema.
+
 ## 2026-09-06 — Command metadata must be shared with keymap and palette
 
 **Finding:** The command palette had a static presentation table while the

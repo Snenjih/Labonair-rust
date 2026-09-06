@@ -59,14 +59,11 @@ use labonair_settings_content::{
     file_manager::FileManagerContent,
     general::{self, GeneralContent},
     hosts::{HostAuthMethod, HostEntry, HostTunnel},
-    mcp::McpContent,
-    personalization::PersonalizationContent,
     terminal::{self, TerminalContent},
     workspace::{self, WorkspaceContent},
     SettingsContent,
 };
 
-use super::mcp::McpPrefs;
 use super::preferences::{CursorStyle, Preferences, StartupTab, ThemePref};
 use super::{editor::EditorPrefs, CONFIG_FILE};
 use super::{read_settings_from, write_settings_to};
@@ -75,7 +72,6 @@ use crate::modules::secrets::get_password;
 
 const KEY_PREFERENCES: &str = "preferences";
 const KEY_EDITOR: &str = "editor";
-const KEY_MCP: &str = "mcp";
 const KEY_SCHEMA_VERSION: &str = "schemaVersion";
 const KEY_MIGRATED_UNKNOWN: &str = "_migratedUnknown";
 const KEY_HOSTS_MIGRATED: &str = "hostsMigrated";
@@ -98,12 +94,7 @@ const SETTINGS_CONTENT_AREAS: &[&str] = &[
     "editor",
     "fileManager",
     "connections",
-    "hosts",
     "workspace",
-    "ai",
-    "mcp",
-    "personalization",
-    "keymap",
 ];
 
 /// Result of [`migrate_settings_v1_to_v2`].
@@ -138,7 +129,7 @@ pub enum SparsifyOutcome {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// Preferences/editor/mcp -> SettingsContent areas
+// Preferences/editor -> SettingsContent areas
 // ─────────────────────────────────────────────────────────────────────────
 
 fn theme_pref(v: ThemePref) -> general::ThemePref {
@@ -213,23 +204,6 @@ fn appearance_from(p: &Preferences) -> AppearanceContent {
         // T20-007 `theme_settings` fields have no legacy `Preferences` key —
         // they resolve to their `AppearanceContent::defaults()` on read.
         ..AppearanceContent::default()
-    }
-}
-
-fn personalization_from(p: &Preferences) -> PersonalizationContent {
-    PersonalizationContent {
-        // Owned exclusively by T18-006/T18-007's own top-level-key
-        // migrations (`statusBarItemPlacements`/`panelToggleVisibility`);
-        // left unset here so this migration never clobbers them.
-        status_bar_item_placements: None,
-        panel_toggle_visibility: None,
-        status_bar_show_explorer_button: Some(p.status_bar_show_explorer_button),
-        status_bar_show_snippets_button: Some(p.status_bar_show_snippets_button),
-        status_bar_show_source_control_button: Some(p.status_bar_show_source_control_button),
-        status_bar_show_tabs_button: Some(p.status_bar_show_tabs_button),
-        status_bar_show_cwd_breadcrumb: Some(p.status_bar_show_cwd_breadcrumb),
-        status_bar_show_preview_url: Some(p.status_bar_show_preview_url),
-        status_bar_show_ai_controls: Some(p.status_bar_show_ai_controls),
     }
 }
 
@@ -383,30 +357,6 @@ fn connections_from(p: &Preferences) -> ConnectionsContent {
     }
 }
 
-/// Just the `hm*` (Host-Manager UI) slice of `hosts` — `entries` is left
-/// untouched here (that's [`migrate_hosts_to_settings`]'s job, merged in
-/// separately so the two migrations can run independently/idempotently).
-fn hosts_hm_from(p: &Preferences) -> (Option<String>, Option<String>, Option<u32>) {
-    (
-        Some(p.hm_layout.clone()),
-        Some(p.hm_sort.clone()),
-        Some(p.hm_card_scale),
-    )
-}
-
-/// Builds the `mcp` area from the old separate `"mcp"` key (`McpPrefs`) —
-/// the authoritative source, per `Preferences`' own doc comment on its
-/// `mcp_bridge_*` mirror fields.
-fn mcp_from(m: &McpPrefs) -> McpContent {
-    McpContent {
-        bridge_enabled: Some(m.bridge_enabled),
-        bridge_port: Some(m.bridge_port as u32),
-        max_command_timeout_secs: Some(m.max_command_timeout_secs as u32),
-        auto_revoke_minutes: Some(m.auto_revoke_minutes),
-        notify_on_activity: Some(m.notify_on_activity),
-    }
-}
-
 /// Every field of `Preferences` this migration deliberately leaves alone
 /// (owned by another migration / has no `SettingsContent` counterpart), by
 /// its `#[serde(rename_all = "camelCase")]` JSON key.
@@ -415,6 +365,11 @@ const SKIPPED_PREFERENCES_FIELDS: &[&str] = &[
     // T18-006's job (`statusBarItemPlacements`); no `SettingsContent`
     // counterpart (see `content_bridge.rs`).
     "barItemPlacements",
+    // Host-manager layout is owned by the Hosts capability and is not a
+    // SettingsContent value. Host data migration has its own named step.
+    "hmLayout",
+    "hmSort",
+    "hmCardScale",
 ];
 
 /// Preferences fields with no `SettingsContent` destination, preserved
@@ -574,7 +529,8 @@ pub fn migrate_settings_v1_to_v2(dir: &Path) -> Result<SettingsV2Outcome, String
 
     let raw_preferences = settings.remove(KEY_PREFERENCES).expect("checked above");
     let raw_editor = settings.remove(KEY_EDITOR);
-    let raw_mcp = settings.remove(KEY_MCP);
+    // Keep the standalone `mcp` object untouched. It is owned and loaded by
+    // the MCP capability, not by SettingsContent.
 
     // `preferences.keybinds` was removed from the `Preferences` struct by
     // T19-008 (keybinds now live in their own `keymap.json`), so a pre-T19-008
@@ -591,12 +547,6 @@ pub fn migrate_settings_v1_to_v2(dir: &Path) -> Result<SettingsV2Outcome, String
         .clone()
         .and_then(|v| serde_json::from_value(v).ok())
         .unwrap_or_default();
-    let mcp_prefs: McpPrefs = raw_mcp
-        .and_then(|v| serde_json::from_value(v).ok())
-        .unwrap_or_default();
-
-    let (hm_layout, hm_sort, hm_card_scale) = hosts_hm_from(&prefs);
-
     let areas: &[(&str, Value)] = &[
         (
             "general",
@@ -626,33 +576,10 @@ pub fn migrate_settings_v1_to_v2(dir: &Path) -> Result<SettingsV2Outcome, String
             "workspace",
             serde_json::to_value(workspace_from(&prefs)).map_err(|e| e.to_string())?,
         ),
-        (
-            "mcp",
-            serde_json::to_value(mcp_from(&mcp_prefs)).map_err(|e| e.to_string())?,
-        ),
-        (
-            "personalization",
-            serde_json::to_value(personalization_from(&prefs)).map_err(|e| e.to_string())?,
-        ),
     ];
     for (key, value) in areas {
         settings.insert((*key).to_string(), value.clone());
     }
-
-    // `hosts.layout`/`hosts.sort`/`hosts.cardScale` — merged into whatever
-    // `hosts` object already exists (e.g. a prior `migrate_hosts_to_settings`
-    // run's `entries`), never overwriting it wholesale.
-    let mut hosts_patch = Map::new();
-    hosts_patch.insert(
-        "layout".to_string(),
-        serde_json::to_value(hm_layout).unwrap(),
-    );
-    hosts_patch.insert("sort".to_string(), serde_json::to_value(hm_sort).unwrap());
-    hosts_patch.insert(
-        "cardScale".to_string(),
-        serde_json::to_value(hm_card_scale).unwrap(),
-    );
-    merge_object(&mut settings, "hosts", hosts_patch);
 
     // `_migratedUnknown` — fields with no `SettingsContent` destination,
     // preserved losslessly rather than dropped. Only written when it has real
@@ -1020,7 +947,7 @@ mod tests {
     fn full_legacy_settings() -> Value {
         let mut prefs = serde_json::to_value(Preferences::default()).unwrap();
         prefs["terminalFontSize"] = Value::from(42);
-        // Non-default so it survives sparsification into `hosts.layout`.
+        // Host-manager layout is intentionally not migrated into SettingsContent.
         prefs["hmLayout"] = Value::from("list");
         // A genuinely unrepresentable field set to a non-default value — must
         // be preserved verbatim under `_migratedUnknown`.
@@ -1227,7 +1154,7 @@ mod tests {
         assert_eq!(after["terminal"]["terminalFontSize"], Value::from(42));
         assert_eq!(after["editor"]["vimHlsearch"], Value::from(false));
         assert_eq!(after["mcp"]["bridgePort"], Value::from(51000));
-        assert_eq!(after["hosts"]["layout"], Value::from("list"));
+        assert!(!after.contains_key("hosts"));
 
         // Unrelated top-level key (T18-006) survives untouched.
         assert_eq!(

@@ -21,6 +21,8 @@ The settings system is not the owner of:
 - transfer history;
 - command registration;
 - feature management screens.
+- MCP/agent bridge runtime configuration;
+- statusbar item placement and panel visibility.
 
 There is no `Shortcuts`, `Hosts`, `Themes`, or `Icon Themes` settings
 category. Keymap, host, and theme management are separate capability surfaces.
@@ -32,7 +34,8 @@ active color-theme ID or icon-theme ID may be stored as a user preference, but
 the theme module owns the registry, preview, validation, and selection flow.
 Likewise, keymap data is owned by the keymap module and host records by the
 hosts module; neither becomes a Settings category merely because it is saved
-to disk.
+to disk. MCP preferences and statusbar/panel layout follow the same rule and
+are loaded by their owning capabilities.
 
 ## Settings categories
 

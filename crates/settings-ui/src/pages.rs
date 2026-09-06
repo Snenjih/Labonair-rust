@@ -30,10 +30,6 @@ pub enum SettingsPageItem {
 pub enum PageBody {
     /// Rendered mechanically from `items` + the trailing "Other" fallback.
     Generated(Vec<SettingsPageItem>),
-    /// A hand-written `render_fn`, dispatched by `SettingsView` on
-    /// `area.key` (`docs/settings-guidelines.md` rule 4) — still inside the
-    /// standard header/search/badge chrome, only the body is custom.
-    Custom,
 }
 
 /// A `SubPageLink` target (rule 1: "large categories may additionally have
@@ -101,13 +97,7 @@ fn build_page(area: &'static AreaMeta) -> SettingsPage {
                 sub_pages: Vec::new(),
             },
         },
-        // Custom top-level categories (rule 4): the body is a hand-written
-        // render_fn dispatched by `SettingsView` on `area.key`.
-        AreaKind::Custom => SettingsPage {
-            area,
-            body: PageBody::Custom,
-            sub_pages: Vec::new(),
-        },
+        AreaKind::Custom => unreachable!("settings areas are value-generated only"),
     }
 }
 
@@ -142,13 +132,6 @@ pub fn placed_keys_for_area(area_key: &str) -> Vec<&'static str> {
             out.extend(EDITOR_MAIN.iter().flat_map(|(_, k)| k.iter().copied()));
             out.extend(EDITOR_DISPLAY.iter().flat_map(|(_, k)| k.iter().copied()));
         }
-        "personalization" => {
-            out.extend(
-                PERSONALIZATION_GROUPS
-                    .iter()
-                    .flat_map(|(_, k)| k.iter().copied()),
-            );
-        }
         _ => out.extend(
             groups_for(area_key)
                 .iter()
@@ -165,11 +148,7 @@ pub fn leftover_fields<'a>(area_key: &str, fields: &'a [AnyField]) -> Vec<&'a An
     let placed = placed_keys_for_area(area_key);
     fields
         .iter()
-        .filter(|f| {
-            f.area() == area_key
-                && !placed.contains(&f.local_key())
-                && !DEDICATED_PANE_EXEMPTIONS.contains(&f.json_path)
-        })
+        .filter(|f| f.area() == area_key && !placed.contains(&f.local_key()))
         .collect()
 }
 
@@ -195,7 +174,6 @@ pub fn section_label_for_field(
         "editor" => find(EDITOR_MAIN)
             .map(|l| ("", l))
             .or_else(|| find(EDITOR_DISPLAY).map(|l| ("display", l))),
-        "personalization" => find(PERSONALIZATION_GROUPS).map(|l| ("", l)),
         _ => find(groups_for(area_key)).map(|l| ("", l)),
     }
 }
@@ -456,22 +434,6 @@ const CONNECTIONS_GROUPS: &[Group] = &[
     ),
 ];
 
-/// Personalization's field grid (used inside its Custom render_fn, same
-/// pattern as `AI_GROUPS` — see `render_personalization`'s call to
-/// `SettingsView::render_generated_body`).
-pub const PERSONALIZATION_GROUPS: &[Group] = &[(
-    "Status Bar Buttons",
-    &[
-        "statusBarShowExplorerButton",
-        "statusBarShowSnippetsButton",
-        "statusBarShowSourceControlButton",
-        "statusBarShowTabsButton",
-        "statusBarShowCwdBreadcrumb",
-        "statusBarShowPreviewUrl",
-        "statusBarShowAiControls",
-    ],
-)];
-
 const WORKSPACE_GROUPS: &[Group] = &[
     (
         "Command Palette",
@@ -502,37 +464,13 @@ const WORKSPACE_GROUPS: &[Group] = &[
     ),
 ];
 
-/// Fields covered by dedicated, non-generic pane UI rather than the
-/// [`AnyField`] grid — the settings-design-contract rule 3/4 allowance for
-/// "a field that needs something outside this table needs a new
-/// renderer-registry entry… not a one-off widget inlined into a page" is
-/// satisfied here by widgets that already existed before T19-004 and have
-/// real side effects the generic grid does not (MCP writes call the live
-/// backend bridge). Each entry is documented, not silently dropped — see
-/// `tests::every_field_is_reachable_generically_or_by_documented_exemption`.
-pub const DEDICATED_PANE_EXEMPTIONS: &[&str] = &[
-    // `render_agent_bridge` (panes/generic.rs) owns these 5 — each write also
-    // calls the live backend (`mcp_set_port`, …), which a generic
-    // SettingsContent-only write would not do.
-    "mcp.bridgeEnabled",
-    "mcp.bridgePort",
-    "mcp.maxCommandTimeoutSecs",
-    "mcp.autoRevokeMinutes",
-    "mcp.notifyOnActivity",
-    // `render_personalization` (panes/personalization.rs) owns the status
-    // bar layout editor + panel-toggle visibility grid directly (they are
-    // `BTreeMap`s driven by drag/drop + toggle rows, not a scalar control).
-    "personalization.statusBarItemPlacements",
-    "personalization.panelToggleVisibility",
-];
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::schema::all_fields;
     use std::collections::HashSet;
 
-    fn all_generated_and_custom_grid_keys() -> HashSet<String> {
+    fn all_generated_grid_keys() -> HashSet<String> {
         let mut out = HashSet::new();
         for page in pages() {
             let area = page.area.target_module;
@@ -541,36 +479,25 @@ mod tests {
                 collect(&sp.body, area, &mut out);
             }
         }
-        // Personalization's Custom body also renders its own generic-grid
-        // groups (see panes dispatch).
-        for (_, keys) in PERSONALIZATION_GROUPS {
-            for k in *keys {
-                out.insert(format!("personalization.{k}"));
-            }
-        }
         out
     }
 
     fn collect(body: &PageBody, area: &str, out: &mut HashSet<String>) {
-        if let PageBody::Generated(items) = body {
-            for item in items {
-                if let SettingsPageItem::Item(key) = item {
-                    out.insert(format!("{area}.{key}"));
-                }
+        let PageBody::Generated(items) = body;
+        for item in items {
+            if let SettingsPageItem::Item(key) = item {
+                out.insert(format!("{area}.{key}"));
             }
         }
     }
 
     /// Every `AnyField` is either placed by a curated group (asserted
     /// structurally elsewhere), covered by the trailing "Other" fallback for
-    /// its area's page, or explicitly exempted with a documented reason.
+    /// its area's page.
     /// Together these three paths mean no `SettingsContent` field can go
     /// unreachable in the UI (`docs/settings-guidelines.md` rule 2/6).
-    /// Areas whose page renders a "Other" leftover fallback for anything not
-    /// placed by a curated group — the true `AreaKind::Generated` pages, plus
-    /// the Custom areas that fold a generic grid into their body
-    /// (Personalization). MCP renders no generic fallback at all — every one
-    /// of its fields must be either placed or a documented exemption.
+    /// Every settings area renders a generic "Other" fallback for anything
+    /// not placed by a curated group.
     const AREAS_WITH_LEFTOVER_FALLBACK: &[&str] = &[
         "general",
         "appearance",
@@ -579,48 +506,22 @@ mod tests {
         "file_manager",
         "connections",
         "workspace",
-        "personalization",
     ];
 
     #[test]
     fn every_field_is_reachable_generically_or_by_documented_exemption() {
         let fields = all_fields();
-        let placed = all_generated_and_custom_grid_keys();
+        let placed = all_generated_grid_keys();
         for f in &fields {
             let json_path = f.json_path;
             let has_fallback = AREAS_WITH_LEFTOVER_FALLBACK.contains(&f.area());
             let reachable_generically = placed.contains(json_path)
                 || (has_fallback && !leftover_fields(f.area(), &fields).is_empty());
-            let exempted = DEDICATED_PANE_EXEMPTIONS.contains(&json_path);
             assert!(
-                reachable_generically || exempted,
-                "field `{json_path}` is neither placed in a page, covered by the \
-                 leftover fallback, nor a documented DEDICATED_PANE_EXEMPTIONS entry"
+                reachable_generically,
+                "field `{json_path}` is neither placed in a page nor covered by the \
+                 leftover fallback"
             );
-        }
-    }
-
-    /// No leftover-fallback field is *also* a documented exemption — an
-    /// exemption always means "this key never reaches the generic grid at
-    /// all", not "it happens to also fall through".
-    #[test]
-    fn exemptions_are_never_double_counted_in_the_leftover_fallback() {
-        let fields = all_fields();
-        let placed = all_generated_and_custom_grid_keys();
-        for exempt in DEDICATED_PANE_EXEMPTIONS {
-            let area = exempt.split('.').next().unwrap();
-            let local = exempt.rsplit('.').next().unwrap();
-            assert!(
-                !placed.contains(*exempt),
-                "`{exempt}` is both a DEDICATED_PANE_EXEMPTIONS entry and placed in a page"
-            );
-            if AREAS_WITH_LEFTOVER_FALLBACK.contains(&area) {
-                let leftover = leftover_fields(area, &fields);
-                assert!(
-                    !leftover.iter().any(|f| f.local_key() == local),
-                    "`{exempt}` is exempted but would also render via the generic leftover fallback"
-                );
-            }
         }
     }
 

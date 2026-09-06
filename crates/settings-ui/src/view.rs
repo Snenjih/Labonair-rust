@@ -7,28 +7,21 @@
 
 pub use gpui::prelude::FluentBuilder;
 pub use gpui::{
-    div, px, App, AppContext, ClickEvent, ClipboardItem, Context, Entity, FocusHandle, Focusable,
+    div, px, App, AppContext, ClickEvent, Context, Entity, FocusHandle, Focusable,
     InteractiveElement, IntoElement, KeyDownEvent, ParentElement, Pixels, Point, Render,
     ScrollHandle, SharedString, StatefulInteractiveElement, Styled, Window,
 };
 pub use serde_json::Value;
 pub use tokio::runtime::Handle as TokioHandle;
 
-pub use labonair_backend::modules::mcp::{
-    mcp_get_status, mcp_regenerate_token, mcp_set_auto_revoke_minutes, mcp_set_enabled,
-    mcp_set_max_command_timeout_secs, mcp_set_port,
-};
-pub use labonair_backend::modules::settings::mcp::{mcp_prefs_load, mcp_prefs_save, McpPrefs};
-pub use labonair_backend::App as Backend;
 pub use labonair_filesystem::paths::config_dir;
 pub use labonair_notifications::{notification_center, Notification};
 pub use labonair_settings::{Settings as _, SettingsStore};
 pub use labonair_settings_content::areas::AREAS;
 pub use labonair_theme::ThemeStore;
 pub use labonair_ui_kit::{
-    banner, button, h_stack, list_header, list_separator, number_field, select_popover,
-    select_trigger, v_stack, ButtonSize, ButtonVariant, IconName, ListItem, Palette, SelectOption,
-    Severity, Switch,
+    button, h_stack, list_header, list_separator, number_field, select_popover, select_trigger,
+    v_stack, ButtonSize, ButtonVariant, IconName, ListItem, Palette, SelectOption, Switch,
 };
 pub use labonair_workspace::background::BackgroundStore;
 
@@ -36,6 +29,7 @@ pub(crate) use crate::apply::*;
 pub(crate) use crate::pages::*;
 pub(crate) use crate::schema::*;
 pub(crate) use crate::search::{SearchIndex, SearchRow, SearchTarget};
+pub(crate) use crate::services::{SettingsServices, SystemFontService};
 pub(crate) use crate::window::*;
 
 use std::collections::HashSet;
@@ -87,7 +81,7 @@ pub struct SettingsView {
     /// for its `cx.observe` subscription's lifetime.
     #[allow(dead_code)]
     pub(crate) background: Entity<BackgroundStore>,
-    pub(crate) backend: Backend,
+    pub(crate) font_service: std::sync::Arc<dyn SystemFontService>,
     pub(crate) tokio: TokioHandle,
     pub(crate) open: bool,
     /// Index into `AREAS` / `self.pages` — the active top-level category.
@@ -97,8 +91,6 @@ pub struct SettingsView {
     pub(crate) active_subpage: Option<usize>,
     pub(crate) search: String,
     pub(crate) editing: Option<EditState>,
-    pub(crate) mcp: McpPrefs,
-    pub(crate) mcp_token: Option<String>,
     /// `true` when this view is the root of its own OS window (T16-009); `false`
     /// for the legacy in-`AppShell` modal path (kept for tests only).
     pub(crate) windowed: bool,
@@ -109,26 +101,11 @@ pub struct SettingsView {
     /// once asynchronously when the window opens.
     pub(crate) system_fonts: Vec<SharedString>,
     pub(crate) focus: FocusHandle,
-    /// The app's [`labonair_workspace::Workspace`] (T18-007) — backs the
-    /// Personalization pane's statusbar-layout editor + panel-toggle
-    /// visibility switches.
-    pub(crate) workspace: Entity<labonair_workspace::Workspace>,
     // ── T19-004: generated settings UI ──────────────────────────────────
     /// Every generated field (`crate::schema::all_fields()`), computed once.
     pub(crate) all_fields: Vec<AnyField>,
     /// Every top-level page (`crate::pages::pages()`), in `AREAS` order.
     pub(crate) pages: Vec<SettingsPage>,
-    /// Collapsed disclosure sections: `(area index, sub-page slug or "" for
-    /// the main page, section label)`. Absent = open (rule 1: "Default: alle
-    /// offen").
-    ///
-    /// Deviation from `docs/settings-guidelines.md` rule 1 (recorded in
-    /// `docs/architecture.md` §8.3): section headers are no longer
-    /// user-collapsible — the section list now lives in the sidebar as
-    /// scroll anchors. This set is kept only so the search jump
-    /// (`activate_search_hit`) can still "un-collapse" defensively; nothing
-    /// inserts into it any more.
-    pub(crate) collapsed_sections: HashSet<(usize, &'static str, &'static str)>,
     /// Top-level sidebar rows whose sub-section list is expanded
     /// (`docs/architecture.md` §8.3 deviation). The active area is expanded
     /// on navigation.
@@ -141,8 +118,8 @@ pub struct SettingsView {
     /// currently topmost (rule 1's scroll-spy).
     pub(crate) content_scroll: ScrollHandle,
     // ── T19-007: global settings search ─────────────────────────────────
-    /// Every field + custom pane, indexed once (`open()`) — never rebuilt per
-    /// keystroke (task Warnung).
+    /// Every SettingsContent field, indexed once (`open()`) — never rebuilt
+    /// per keystroke (task Warnung).
     pub(crate) search_index: SearchIndex,
     /// The current query's scored, category-grouped hits — recomputed
     /// whenever `search` changes, cached so `on_key`'s Up/Down/Enter can act
@@ -160,6 +137,11 @@ pub struct SettingsView {
     /// rendered its rows — set by a search jump, consumed by
     /// `render_generated_body`.
     pub(crate) pending_scroll: Option<&'static str>,
+    /// Fingerprint of the settings diagnostics most recently published to the
+    /// app-wide notification registry. This prevents watcher-triggered
+    /// repaints from creating duplicate notifications while still allowing a
+    /// changed problem to be reported again.
+    pub(crate) published_diagnostics: Option<String>,
 }
 
 pub(crate) struct SelectMenu {
@@ -176,28 +158,22 @@ impl SettingsView {
     pub fn new(
         theme: Entity<ThemeStore>,
         background: Entity<BackgroundStore>,
-        backend: Backend,
+        services: SettingsServices,
         tokio: TokioHandle,
-        workspace: Entity<labonair_workspace::Workspace>,
         cx: &mut Context<Self>,
     ) -> Self {
         cx.observe(&theme, |_, _, cx| cx.notify()).detach();
         cx.observe(&background, |_, _, cx| cx.notify()).detach();
-        cx.observe(&workspace, |_, _, cx| cx.notify()).detach();
-        // The statusbar layout (T18-005/T18-007) and panel-toggle visibility
-        // both bump this global — reload-and-repaint so the Personalization
-        // pane reflects the same live state as the in-app right-click menus.
-        cx.observe_global::<labonair_workspace::status_placements::StatusBarLayoutTick>(|_, cx| {
-            cx.notify()
-        })
-        .detach();
         // The layered `SettingsStore` (T19-002/003) notifies on every write —
         // including ones this window did not make itself (e.g. a project
         // `.labonair/settings.json` edit) — so origin badges / values stay
         // live without a bespoke observer list.
         if cx.has_global::<SettingsStore>() {
-            cx.observe_global::<SettingsStore>(|_, cx| cx.notify())
-                .detach();
+            cx.observe_global::<SettingsStore>(|this, cx| {
+                this.publish_settings_diagnostics(cx);
+                cx.notify();
+            })
+            .detach();
         }
         // Deep-link: jump to the requested area/section slug when another
         // part of the app asks for one while this window is open.
@@ -211,27 +187,23 @@ impl SettingsView {
         .detach();
         let all_fields = all_fields();
         let pages = pages();
-        let search_index = SearchIndex::build(&all_fields, &pages);
+        let search_index = SearchIndex::build(&all_fields);
         Self {
             theme,
             background,
-            backend,
+            font_service: services.fonts,
             tokio,
             open: false,
             active_area: 0,
             active_subpage: None,
             search: String::new(),
             editing: None,
-            mcp: mcp_prefs_load(),
-            mcp_token: None,
             windowed: false,
             dropdown: None,
             system_fonts: Vec::new(),
             focus: cx.focus_handle(),
-            workspace,
             all_fields,
             pages,
-            collapsed_sections: HashSet::new(),
             // Every sidebar category starts collapsed; `open()` re-clears this
             // so it holds on every reopen too.
             expanded_areas: HashSet::new(),
@@ -243,6 +215,7 @@ impl SettingsView {
             highlight: None,
             highlight_token: 0,
             pending_scroll: None,
+            published_diagnostics: None,
         }
     }
 
@@ -261,7 +234,7 @@ impl SettingsView {
         self.highlight = None;
         self.pending_scroll = None;
         window.focus(&self.focus);
-        self.refresh_mcp_status(cx);
+        self.publish_settings_diagnostics(cx);
         self.load_system_fonts(cx);
         cx.notify();
     }
@@ -294,25 +267,6 @@ impl SettingsView {
         }
     }
 
-    pub(crate) fn refresh_mcp_status(&self, cx: &mut Context<Self>) {
-        let app = self.backend.clone();
-        let task = self
-            .tokio
-            .spawn(async move { mcp_get_status(app.clone(), &app.mcp, &app.secrets).await });
-        cx.spawn(async move |this, cx| {
-            if let Ok(Ok(status)) = task.await {
-                let _ = this.update(cx, |this, cx| {
-                    this.mcp_token = status.token;
-                    this.mcp.bridge_port = status.port;
-                    this.mcp.max_command_timeout_secs = status.max_command_timeout_secs;
-                    this.mcp.auto_revoke_minutes = status.auto_revoke_minutes;
-                    cx.notify();
-                });
-            }
-        })
-        .detach();
-    }
-
     pub(crate) fn notify(&self, cx: &mut Context<Self>, n: Notification) {
         notification_center(cx).update(cx, |c, cx| {
             c.push(n, cx);
@@ -321,6 +275,131 @@ impl SettingsView {
 
     pub(crate) fn notify_error(&self, cx: &mut Context<Self>, title: &'static str, body: String) {
         self.notify(cx, Notification::error(title, body));
+    }
+
+    /// Publish settings-file diagnostics through the app-wide notification
+    /// registry. Settings owns parsing and validation, but it must not render
+    /// a second, settings-specific error surface: the statusbar notification
+    /// dropdown is the single user-facing destination for these findings.
+    pub(crate) fn publish_settings_diagnostics(&mut self, cx: &mut Context<Self>) {
+        let (fingerprint, notifications) = {
+            let Some(store) = cx.try_global::<SettingsStore>() else {
+                return;
+            };
+            let mut fingerprint = String::new();
+            let mut notifications = Vec::new();
+
+            if let Some(error) = store.user_json_error() {
+                let details = error.to_string();
+                fingerprint.push_str("user-json:");
+                fingerprint.push_str(&details);
+                notifications.push(
+                    Notification::error(
+                        "Settings file syntax error",
+                        "config.json could not be parsed. Fix the file before editing settings.",
+                    )
+                    .source("settings")
+                    .details(details),
+                );
+            }
+
+            for error in store.parse_errors() {
+                let details = error.message.clone();
+                fingerprint.push_str("parse:");
+                fingerprint.push_str(error.area);
+                fingerprint.push_str(&details);
+                notifications.push(
+                    Notification::error(
+                        "Invalid settings section",
+                        format!(
+                            "The `{}` settings section is using its defaults.",
+                            error.area
+                        ),
+                    )
+                    .source("settings")
+                    .details(details),
+                );
+            }
+
+            for (layer, errors) in [
+                ("user", store.schema_errors()),
+                ("project", store.project_schema_errors()),
+            ] {
+                for error in errors {
+                    let path = if error.json_path.is_empty() {
+                        "the settings file"
+                    } else {
+                        error.json_path.as_str()
+                    };
+                    let details = error.to_string();
+                    fingerprint.push_str(layer);
+                    fingerprint.push_str(":schema:");
+                    fingerprint.push_str(&details);
+                    notifications.push(
+                        Notification::error(
+                            "Invalid setting",
+                            format!("The {layer} setting `{path}` is using its default."),
+                        )
+                        .source("settings")
+                        .details(details),
+                    );
+                }
+            }
+
+            for (layer, warnings) in [
+                ("user", store.schema_warnings()),
+                ("project", store.project_schema_warnings()),
+            ] {
+                for warning in warnings {
+                    let path = if warning.json_path.is_empty() {
+                        "the settings file"
+                    } else {
+                        warning.json_path.as_str()
+                    };
+                    let details = warning.to_string();
+                    fingerprint.push_str(layer);
+                    fingerprint.push_str(":warning:");
+                    fingerprint.push_str(&details);
+                    notifications.push(
+                        Notification::warning(
+                            "Unknown settings key",
+                            format!("The {layer} key `{path}` was ignored."),
+                        )
+                        .source("settings")
+                        .details(details),
+                    );
+                }
+            }
+
+            for key in store.project_rejected_keys() {
+                fingerprint.push_str("project-rejected:");
+                fingerprint.push_str(key);
+                notifications.push(
+                    Notification::warning(
+                        "Project setting ignored",
+                        format!("The project key `{key}` is not allowed."),
+                    )
+                    .source("settings")
+                    .details("Project settings are limited to safe, non-network values."),
+                );
+            }
+
+            (fingerprint, notifications)
+        };
+
+        if self.published_diagnostics.as_deref() == Some(fingerprint.as_str()) {
+            return;
+        }
+        self.published_diagnostics = (!fingerprint.is_empty()).then_some(fingerprint);
+        if notifications.is_empty() {
+            return;
+        }
+
+        notification_center(cx).update(cx, |center, cx| {
+            for notification in notifications {
+                center.push(notification, cx);
+            }
+        });
     }
 
     // ── navigation (T19-004) ────────────────────────────────────────────
@@ -340,16 +419,6 @@ impl SettingsView {
         match self.active_subpage {
             Some(i) => &self.pages[self.active_area].sub_pages[i].body,
             None => &self.pages[self.active_area].body,
-        }
-    }
-
-    /// The sub-page slug to key `collapsed_sections`/scroll state by (`""`
-    /// for the main page — never a real slug, since every `AreaMeta::slug`
-    /// / `SubPage::slug` is non-empty).
-    pub(crate) fn active_subpage_slug(&self) -> &'static str {
-        match self.active_subpage {
-            Some(i) => self.pages[self.active_area].sub_pages[i].slug,
-            None => "",
         }
     }
 
@@ -389,29 +458,18 @@ impl SettingsView {
 
     /// Section labels shown under a top-level sidebar row: the curated
     /// section headers of the area's generated main page, plus a trailing
-    /// "Other" when leftover fields exist. Custom panes contribute their
-    /// folded-in field-group labels (AI, Personalization) or nothing.
+    /// "Other" when leftover fields exist.
     pub(crate) fn section_labels_for_area(&self, area_idx: usize) -> Vec<&'static str> {
         let mut out: Vec<&'static str> = Vec::new();
         if let Some(page) = self.pages.get(area_idx) {
-            if let PageBody::Generated(items) = &page.body {
-                for item in items {
-                    if let SettingsPageItem::SectionHeader(label) = item {
-                        out.push(label);
-                    }
+            let PageBody::Generated(items) = &page.body;
+            for item in items {
+                if let SettingsPageItem::SectionHeader(label) = item {
+                    out.push(label);
                 }
             }
         }
         let area = &AREAS[area_idx];
-        let custom_groups: &[(&'static str, &'static [&'static str])] = match area.key {
-            "personalization" => crate::pages::PERSONALIZATION_GROUPS,
-            _ => &[],
-        };
-        for (label, _) in custom_groups {
-            if !out.contains(label) {
-                out.push(label);
-            }
-        }
         if matches!(
             self.pages.get(area_idx).map(|p| &p.body),
             Some(PageBody::Generated(_))
@@ -442,9 +500,9 @@ impl SettingsView {
     }
 
     /// Enter/click on a search result: navigate to its area (+ sub-page),
-    /// un-collapse the section it lives in, clear the query, and (for a
-    /// field) schedule a scroll-to + highlight pulse once the target page has
-    /// rendered (`render_generated_body` consumes `pending_scroll`).
+    /// clear the query, and schedule a scroll-to + highlight pulse once the
+    /// target page has rendered (`render_generated_body` consumes
+    /// `pending_scroll`).
     pub(crate) fn activate_search_hit(&mut self, target: SearchTarget, cx: &mut Context<Self>) {
         match target {
             SearchTarget::Field(idx) => {
@@ -455,37 +513,21 @@ impl SettingsView {
                 else {
                     return;
                 };
-                let (subpage_index, section) =
-                    match section_label_for_field(field.area(), field.local_key()) {
-                        Some(("", label)) => (None, Some(label)),
-                        Some((slug, label)) => (
-                            self.pages[area_index]
-                                .sub_pages
-                                .iter()
-                                .position(|sp| sp.slug == slug),
-                            Some(label),
-                        ),
-                        // Not placed by any curated group — falls through to
-                        // the trailing "Other" section on the area's main page.
-                        None => (None, Some("Other")),
-                    };
+                let subpage_index = match section_label_for_field(field.area(), field.local_key()) {
+                    Some(("", _)) => None,
+                    Some((slug, _)) => self.pages[area_index]
+                        .sub_pages
+                        .iter()
+                        .position(|sp| sp.slug == slug),
+                    // Not placed by any curated group — falls through to
+                    // the trailing "Other" section on the area's main page.
+                    None => None,
+                };
                 self.active_area = area_index;
                 self.active_subpage = subpage_index;
                 self.expanded_areas.insert(area_index);
-                if let Some(label) = section {
-                    let subpage_slug = self.active_subpage_slug();
-                    self.collapsed_sections
-                        .remove(&(area_index, subpage_slug, label));
-                }
                 self.pending_scroll = Some(field.json_path);
                 self.set_highlight(field.json_path, cx);
-            }
-            SearchTarget::Pane {
-                area_index,
-                subpage_index,
-            } => {
-                self.active_area = area_index;
-                self.active_subpage = subpage_index;
             }
         }
         self.search.clear();
@@ -513,11 +555,6 @@ impl SettingsView {
             });
         })
         .detach();
-    }
-
-    pub(crate) fn section_collapsed(&self, label: &'static str) -> bool {
-        self.collapsed_sections
-            .contains(&(self.active_area, self.active_subpage_slug(), label))
     }
 
     // ── generic field read/write (T19-004) ──────────────────────────────
@@ -1001,10 +1038,8 @@ impl Render for SettingsView {
             }));
 
         // Left: fixed-order top-level categories (rule 1), sourced from
-        // `AREAS` — a Custom category (Themes, Hosts, Shortcuts, AI, MCP,
-        // Personalization) is a normal entry here, exactly like a Generated
-        // one (rule 4: "a custom pane may be registered as a top-level
-        // category exactly like a field-based one").
+        // `AREAS` contains only value-oriented settings categories. Capability
+        // management surfaces are registered by their owning modules.
         //
         // `docs/architecture.md` §8.3 deviation: each top-level row carries a
         // disclosure chevron that reveals the page's section labels as
@@ -1105,47 +1140,6 @@ impl Render for SettingsView {
         let windowed = self.windowed;
 
         let header = self.render_header(&c, cx);
-        let json_error_banner = cx
-            .try_global::<SettingsStore>()
-            .and_then(|s| s.user_json_error())
-            .map(|err| {
-                // T20-001: the shared `Banner` primitive — this used to
-                // hardcode `gpui::red()`, bypassing the theme's status tokens
-                // (Critical Rule 3).
-                banner(Severity::Error, c).child(SharedString::from(format!(
-                    "config.json has a syntax error ({err}) — fix it before \
-                     changing settings here.",
-                )))
-            });
-
-        // Schema-validation findings (T19-006): only hard type/enum *errors*
-        // still surface as a banner here — a file can be valid JSON but have
-        // a field set to the wrong type, which blocks editing and must be
-        // shown. Unknown-/legacy-key *warnings* (`hostsMigrated`,
-        // `schemaVersion`, …) are deliberately no longer rendered: they are
-        // informational, not blocking, and cluttered the top of every page.
-        // TODO(notification-system): route `schema_warnings()` /
-        // `project_schema_warnings()` through the app notification center as
-        // dismissible notices instead of a settings banner.
-        let schema_banner = cx.try_global::<SettingsStore>().and_then(|s| {
-            let errors: Vec<_> = s
-                .schema_errors()
-                .iter()
-                .chain(s.project_schema_errors())
-                .collect();
-            if errors.is_empty() {
-                return None;
-            }
-            let lines: Vec<SharedString> = errors
-                .iter()
-                .map(|e| SharedString::from(e.to_string()))
-                .collect();
-            Some(
-                banner(Severity::Error, c)
-                    .stacked(true)
-                    .children(lines.into_iter().map(|line| div().child(line))),
-            )
-        });
 
         let content = div().flex_1().min_h_0().flex().child(sidebar).child(
             div()
@@ -1178,8 +1172,6 @@ impl Render for SettingsView {
             .text_color(c.fg)
             .on_key_down(cx.listener(Self::on_key))
             .child(header)
-            .children(json_error_banner)
-            .children(schema_banner)
             .child(content)
             .children(self.render_dropdown(&c, cx));
 
@@ -1273,82 +1265,4 @@ impl SettingsView {
             )
             .into_any_element()
     }
-}
-
-// T20-003: no `SectionHeader` primitive exists in `labonair-ui-kit` yet
-// (documented gap) — `list_header` is the closest existing primitive for a
-// small muted heading above a group of rows, so custom-pane section titles
-// (`panes/ai.rs`, `panes/personalization.rs`) call `list_header` directly
-// instead of this crate's own helper, which is now unused.
-
-pub(crate) fn bridge_switch_row(
-    title: &'static str,
-    desc: &'static str,
-    on: bool,
-    c: &Palette,
-    cx: &mut Context<SettingsView>,
-    f: impl Fn(&mut SettingsView, &mut Context<SettingsView>) + 'static,
-) -> impl IntoElement {
-    div()
-        .flex()
-        .items_center()
-        .justify_between()
-        .gap_4()
-        .py_2()
-        .border_b_1()
-        .border_color(c.border)
-        .child(
-            div()
-                .flex()
-                .flex_col()
-                .gap_0p5()
-                .flex_1()
-                .min_w_0()
-                .child(div().text_color(c.fg).child(title))
-                .child(div().text_size(px(11.0)).text_color(c.muted).child(desc)),
-        )
-        .child(
-            // T20-003: the shared `gpui-component` `Switch` (re-exported by
-            // `labonair-ui-kit` — its own colours are the sanctioned
-            // exception, see `ui_kit.rs`'s module doc).
-            Switch::new(SharedString::from(format!("mcp-sw-{title}")))
-                .checked(on)
-                .on_click(cx.listener(move |this, _: &bool, _w, cx| f(this, cx))),
-        )
-}
-
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn bridge_int_row(
-    title: &'static str,
-    value: i64,
-    min: i64,
-    max: i64,
-    step: i64,
-    c: &Palette,
-    cx: &mut Context<SettingsView>,
-    f: impl Fn(&mut SettingsView, i64, &mut Context<SettingsView>) + Clone + 'static,
-) -> impl IntoElement {
-    div()
-        .flex()
-        .items_center()
-        .justify_between()
-        .gap_4()
-        .py_2()
-        .border_b_1()
-        .border_color(c.border)
-        .child(div().text_color(c.fg).flex_1().min_w_0().child(title))
-        .child(
-            // T20-003: the shared `NumberField` stepper primitive, no track
-            // (this is a bounded integer knob, not a slider-shaped setting).
-            number_field(
-                SharedString::from(format!("mcp-{title}")),
-                *c,
-                value as f64,
-                min as f64,
-                max as f64,
-                step as f64,
-            )
-            .track(false)
-            .on_change(cx.listener(move |this, next: &f64, _w, cx| f(this, *next as i64, cx))),
-        )
 }

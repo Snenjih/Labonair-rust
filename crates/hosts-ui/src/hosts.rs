@@ -750,10 +750,6 @@ impl HostManagerView {
                     this.credentials = c;
                     this.snippets = s;
                     this.refresh_ping(cx);
-                    // T19-010: project into `hosts.entries` — the one write
-                    // path (`crate::apply::apply_host_change`), see its doc
-                    // comment.
-                    crate::apply::apply_host_change(&this.app, &this.hosts, cx);
                     cx.notify();
                 });
             }
@@ -1002,7 +998,6 @@ impl HostManagerView {
                 let _ = this.update(cx, |this, cx| {
                     this.hosts = h;
                     this.groups = g;
-                    crate::apply::apply_host_change(&this.app, &this.hosts, cx);
                     cx.notify();
                 });
             }

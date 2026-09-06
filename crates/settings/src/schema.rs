@@ -364,8 +364,8 @@ mod tests {
     #[test]
     fn map_shaped_field_does_not_warn_on_its_keys() {
         let instance = json!({
-            "personalization": {
-                "panelToggleVisibility": { "explorer": true, "sftp": false }
+            "appearance": {
+                "themeVariantOverrides": { "terminal": "default", "editor": "default" }
             }
         });
         let (errors, warnings) = validate(&instance, None);

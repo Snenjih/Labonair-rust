@@ -2,8 +2,7 @@
 //! (dispatches on `FieldControl` — the renderer registry), the generated-page
 //! renderer (static section headers + trailing "Other" fallback; section
 //! navigation lives in the sidebar per `docs/architecture.md` §8.3), the
-//! top-level `render_body` dispatch (search / Generated / Custom), and the
-//! MCP "AI Agent Bridge" pane.
+//! top-level `render_body` dispatch.
 //!
 //! Part of `SettingsView` — see `crate::view`.
 
@@ -17,15 +16,24 @@ impl SettingsView {
         if !self.system_fonts.is_empty() {
             return;
         }
-        let task = self
-            .tokio
-            .spawn(async { labonair_backend::modules::fonts::fonts_list_system().await });
-        cx.spawn(async move |this, cx| {
-            if let Ok(Ok(mut names)) = task.await {
+        let service = self.font_service.clone();
+        let task = self.tokio.spawn(async move { service.list().await });
+        cx.spawn(async move |this, cx| match task.await {
+            Ok(Ok(mut names)) => {
                 names.sort_by_key(|name| name.to_lowercase());
                 let _ = this.update(cx, |this, cx| {
                     this.system_fonts = names.into_iter().map(SharedString::from).collect();
                     cx.notify();
+                });
+            }
+            Ok(Err(error)) => {
+                let _ = this.update(cx, |this, cx| {
+                    this.notify_error(cx, "System fonts", error);
+                });
+            }
+            Err(error) => {
+                let _ = this.update(cx, |this, cx| {
+                    this.notify_error(cx, "System fonts", error.to_string());
                 });
             }
         })
@@ -391,185 +399,6 @@ impl SettingsView {
             .into_any_element()
     }
 
-    pub(crate) fn render_agent_bridge(
-        &self,
-        c: &Palette,
-        cx: &mut Context<Self>,
-    ) -> gpui::AnyElement {
-        let m = self.mcp;
-        let setup = if m.bridge_enabled {
-            self.mcp_token.as_ref().map(|tok| {
-                format!(
-                    "claude mcp add --transport http labonair http://127.0.0.1:{}/mcp --header \"Authorization: Bearer {}\" --scope user",
-                    m.bridge_port, tok
-                )
-            })
-        } else {
-            None
-        };
-
-        let mut col = div().flex().flex_col();
-
-        col = col.child(bridge_switch_row(
-            "Enable AI Agent Bridge",
-            "Let an external agent CLI drive granted SSH / local tabs over MCP.",
-            m.bridge_enabled,
-            c,
-            cx,
-            |this, cx| {
-                let next = !this.mcp.bridge_enabled;
-                this.mcp.bridge_enabled = next;
-                let _ = mcp_prefs_save(&this.mcp);
-                let app = this.backend.clone();
-                this.tokio.spawn(async move {
-                    let _ = mcp_set_enabled(next, app.clone(), &app.mcp, &app.secrets).await;
-                });
-                this.refresh_mcp_status(cx);
-                cx.notify();
-            },
-        ));
-
-        col = col.child(bridge_int_row(
-            "Port",
-            m.bridge_port as i64,
-            1024,
-            65535,
-            1,
-            c,
-            cx,
-            |this, v, cx| {
-                this.mcp.bridge_port = v as u16;
-                let _ = mcp_prefs_save(&this.mcp);
-                let app = this.backend.clone();
-                let port = this.mcp.bridge_port;
-                this.tokio.spawn(async move {
-                    let _ = mcp_set_port(port, app.clone(), &app.mcp, &app.secrets).await;
-                });
-                this.refresh_mcp_status(cx);
-                cx.notify();
-            },
-        ));
-
-        col = col.child(bridge_int_row(
-            "Max command timeout (s)",
-            m.max_command_timeout_secs as i64,
-            5,
-            3600,
-            5,
-            c,
-            cx,
-            |this, v, cx| {
-                this.mcp.max_command_timeout_secs = v as u64;
-                let _ = mcp_prefs_save(&this.mcp);
-                let app = this.backend.clone();
-                let secs = this.mcp.max_command_timeout_secs;
-                this.tokio.spawn(async move {
-                    let _ = mcp_set_max_command_timeout_secs(secs, &app.mcp).await;
-                });
-                cx.notify();
-            },
-        ));
-
-        col = col.child(bridge_int_row(
-            "Auto-revoke after (min, 0 = off)",
-            m.auto_revoke_minutes as i64,
-            0,
-            1440,
-            5,
-            c,
-            cx,
-            |this, v, cx| {
-                this.mcp.auto_revoke_minutes = v as u32;
-                let _ = mcp_prefs_save(&this.mcp);
-                let app = this.backend.clone();
-                let mins = this.mcp.auto_revoke_minutes;
-                this.tokio.spawn(async move {
-                    let _ = mcp_set_auto_revoke_minutes(mins, &app.mcp).await;
-                });
-                cx.notify();
-            },
-        ));
-
-        col = col.child(bridge_switch_row(
-            "Notify on agent activity",
-            "Show a notification for every command / keystroke an agent sends.",
-            m.notify_on_activity,
-            c,
-            cx,
-            |this, cx| {
-                this.mcp.notify_on_activity = !this.mcp.notify_on_activity;
-                let _ = mcp_prefs_save(&this.mcp);
-                cx.notify();
-            },
-        ));
-
-        col = col.child(
-            div().flex().items_center().gap_2().py_2().child(
-                button("mcp-regen", *c, ButtonVariant::Outline, ButtonSize::Xs)
-                    .child("Regenerate token")
-                    .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
-                        let app = this.backend.clone();
-                        let task = this.tokio.spawn(async move {
-                            mcp_regenerate_token(app.clone(), &app.mcp, &app.secrets).await
-                        });
-                        cx.spawn(async move |this, cx| {
-                            if let Ok(Ok(status)) = task.await {
-                                let _ = this.update(cx, |this, cx| {
-                                    this.mcp_token = status.token;
-                                    cx.notify();
-                                });
-                            }
-                        })
-                        .detach();
-                    })),
-            ),
-        );
-
-        if let Some(cmd) = setup {
-            let copy = cmd.clone();
-            col = col.child(
-                div()
-                    .mt_2()
-                    .flex()
-                    .flex_col()
-                    .gap_1()
-                    .child(
-                        div()
-                            .text_size(px(11.0))
-                            .text_color(c.muted)
-                            .child("claude mcp add \u{2026}"),
-                    )
-                    .child(
-                        div()
-                            .p_2()
-                            .rounded_sm()
-                            .bg(c.bg)
-                            .border_1()
-                            .border_color(c.border)
-                            .text_size(px(11.0))
-                            .text_color(c.fg)
-                            .child(SharedString::from(cmd)),
-                    )
-                    .child(
-                        button("mcp-copy", *c, ButtonVariant::Outline, ButtonSize::Xs)
-                            .child(IconName::Copy.svg(c.fg))
-                            .child("Copy")
-                            .on_click(cx.listener(move |_this, _: &ClickEvent, _w, cx| {
-                                cx.write_to_clipboard(ClipboardItem::new_string(copy.clone()));
-                                notification_center(cx).update(cx, |n, cx| {
-                                    n.push(
-                                        Notification::info("Copied", "Setup command copied."),
-                                        cx,
-                                    );
-                                });
-                            })),
-                    ),
-            );
-        }
-
-        col.into_any_element()
-    }
-
     // ── T19-004: top-level render dispatch ──────────────────────────────
 
     pub(crate) fn render_body(&mut self, c: &Palette, cx: &mut Context<Self>) -> gpui::AnyElement {
@@ -579,21 +408,7 @@ impl SettingsView {
         // exactly as when browsing, so a search jump lands the field in its
         // normal place (with a highlight pulse) rather than a duplicate
         // inline render.
-        let area = &AREAS[self.active_area];
-        match self.active_body_kind() {
-            PageBodyKind::Generated => self.render_generated_body(c, cx),
-            PageBodyKind::Custom => self.render_custom_body(area.key, c, cx),
-        }
-    }
-
-    /// Cheap tag mirroring `active_body()`'s variant, without holding a
-    /// borrow of `self.pages` across the `render_generated_body`/
-    /// `render_custom_body` call (both need `&mut self`).
-    fn active_body_kind(&self) -> PageBodyKind {
-        match self.active_body() {
-            PageBody::Generated(_) => PageBodyKind::Generated,
-            PageBody::Custom => PageBodyKind::Custom,
-        }
+        self.render_generated_body(c, cx)
     }
 
     /// Render the active `PageBody::Generated` page/sub-page: collapsible
@@ -604,10 +419,9 @@ impl SettingsView {
         // would give — reading it through `pages` (rather than `AREAS`
         // directly) keeps `SettingsPage::area` a real, exercised field.
         let area = *self.pages[self.active_area].area;
-        let items: Vec<SettingsPageItemOwned> = match self.active_body() {
-            PageBody::Generated(items) => items.iter().map(SettingsPageItemOwned::from).collect(),
-            PageBody::Custom => return div().into_any_element(),
-        };
+        let PageBody::Generated(items) = self.active_body();
+        let items: Vec<SettingsPageItemOwned> =
+            items.iter().map(SettingsPageItemOwned::from).collect();
         let leading = if area.key == "general" && self.active_subpage.is_none() {
             Some(self.render_about_hero(c, cx))
         } else {
@@ -722,97 +536,6 @@ impl SettingsView {
     // The scroll-spy jump bar that used to sit at the top of every generated
     // page (image #4's chip row) was removed here per `docs/architecture.md`
     // §8.3 — section navigation is now the sidebar's expandable sub-entries.
-
-    /// Dispatch a Custom top-level category's body (rule 4) — the one
-    /// registration point a new custom category needs: an `AREAS` entry
-    /// (data) + one match arm here (render_fn). `Personalization` also folds
-    /// in its own generic field grid (`PERSONALIZATION_GROUPS`) before its
-    /// bespoke sections, exactly as rule 4 allows ("may still read/write
-    /// fields under `target_module`").
-    fn render_custom_body(
-        &mut self,
-        area_key: &'static str,
-        c: &Palette,
-        cx: &mut Context<Self>,
-    ) -> gpui::AnyElement {
-        match (area_key, self.active_subpage) {
-            ("mcp", _) => self.render_agent_bridge(c, cx),
-            ("personalization", _) => self.render_personalization(c, cx),
-            _ => div().into_any_element(),
-        }
-    }
-
-    /// Render one group list (`SectionHeader`+`Item` rows only, honoring
-    /// disclosure collapse state) — the core loop `render_generated_body`
-    /// uses for `AreaKind::Generated` pages, reused directly by the Custom
-    /// panes that fold their own field grid into a bespoke body before their
-    /// non-field sections (`PERSONALIZATION_GROUPS` — rule 4: "may still
-    /// read/write fields under `target_module`").
-    pub(crate) fn render_field_groups(
-        &mut self,
-        groups: &[(&'static str, &'static [&'static str])],
-        area_target_module: &'static str,
-        c: &Palette,
-        cx: &mut Context<Self>,
-    ) -> gpui::AnyElement {
-        let pending_scroll = self.pending_scroll;
-        let mut scroll_to_row: Option<usize> = None;
-        let mut rows = Vec::new();
-
-        let visible_fields: Vec<AnyField> = groups
-            .iter()
-            .filter(|(label, _)| !self.section_collapsed(label))
-            .flat_map(|(_, keys)| keys.iter())
-            .filter_map(|key| {
-                self.all_fields
-                    .iter()
-                    .find(|f| f.area() == area_target_module && f.local_key() == *key)
-                    .copied()
-            })
-            .collect();
-        let inputs = self.field_render_inputs(visible_fields.iter(), cx);
-
-        for (label, keys) in groups {
-            rows.push(self.render_section_header(label, c, cx));
-            if self.section_collapsed(label) {
-                continue;
-            }
-            for key in *keys {
-                if let Some(field) = self
-                    .all_fields
-                    .iter()
-                    .find(|f| f.area() == area_target_module && f.local_key() == *key)
-                    .copied()
-                {
-                    if pending_scroll == Some(field.json_path) {
-                        scroll_to_row = Some(rows.len());
-                    }
-                    let (origin, value) = inputs
-                        .get(field.json_path)
-                        .cloned()
-                        .unwrap_or((OriginBadge::Default, None));
-                    rows.push(self.render_field(&field, origin, value, c, cx));
-                }
-            }
-        }
-        if let Some(row) = scroll_to_row {
-            self.content_scroll.scroll_to_item(row);
-            self.pending_scroll = None;
-        }
-        div()
-            .flex()
-            .flex_col()
-            .gap_2()
-            .children(rows)
-            .into_any_element()
-    }
-}
-
-/// Which variant `SettingsPage::body`/`SubPage::body` is, without holding a
-/// borrow across a `&mut self` call.
-enum PageBodyKind {
-    Generated,
-    Custom,
 }
 
 /// An owned mirror of `SettingsPageItem` (`&'static str`s only — cheap to

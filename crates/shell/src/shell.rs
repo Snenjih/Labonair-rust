@@ -23,6 +23,7 @@ pub mod cwd_breadcrumb;
 pub mod keymap_loader;
 pub mod menu;
 pub mod modals;
+mod settings_services;
 pub mod status_items;
 pub mod titlebar;
 pub mod updater;

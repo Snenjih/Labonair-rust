@@ -1,5 +1,30 @@
 # Handshake — Session State (Labonair-rust Port)
 
+## Current Session: 2026-09-06 (Settings ownership and reduction)
+
+`R01-005` is complete. Settings now serializes and renders only typed,
+value-oriented application settings. Hosts, keymaps, MCP runtime preferences,
+and statusbar/panel management are no longer SettingsContent areas or Settings
+navigation pages. Legacy host/MCP wire types remain only behind explicit
+migration code; standalone MCP data is preserved and obsolete host-manager
+values are skipped instead of being recreated in the Settings tree.
+
+The Settings UI no longer imports the backend facade, Hosts UI, panel contracts,
+or personalization integration. It publishes JSON/schema diagnostics through
+the notification registry and retains only an injected system-font discovery
+service. Product-specific SCM row presentation moved from `ui-kit` into
+`panel-scm`. The dependency inventory and verifier now describe the reduced
+graph, and removed capability sections are covered by migration fixtures.
+
+Verification passes: `cargo fmt --check`, `cargo check --workspace
+--all-targets`, `cargo clippy --workspace --all-targets -- -D warnings`,
+`cargo test --workspace --no-fail-fast` (with local listener/file-watcher
+permissions), `git diff --check`, and `scripts/check-crate-deps.py`. The
+current branch is `master`; committed locally on top of `21c7f18`.
+Next: define the next
+bounded task for the remaining Settings → Workspace background-storage edge.
+No source blocker.
+
 ## Current Session: 2026-09-06 (Command palette and keymap registries)
 
 `R01-004` is complete. Added the UI-free `labonair-command-palette-core`

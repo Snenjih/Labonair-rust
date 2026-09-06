@@ -5,4 +5,3 @@
 //! navigation model.
 
 mod generic;
-mod personalization;

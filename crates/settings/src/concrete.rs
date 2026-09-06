@@ -13,7 +13,6 @@ use labonair_settings_content::{
     editor::EditorContent,
     file_manager::FileManagerContent,
     general::{GeneralContent, StartupTab, ThemePref},
-    personalization::PersonalizationContent,
     terminal::{CursorStyle, TerminalContent},
     workspace::{PaletteSearchMode, WorkspaceContent},
     MergeFrom, SettingsContent,
@@ -410,24 +409,6 @@ impl WorkspaceSettings {
         self.0
             .command_palette_close_on_overlay_click
             .unwrap_or(true)
-    }
-}
-
-/// `personalization` area (status-bar/panel placement, sidebar layout).
-#[derive(Clone, Debug, PartialEq, RegisterSetting)]
-pub struct PersonalizationSettings(PersonalizationContent);
-
-impl Settings for PersonalizationSettings {
-    fn from_settings(content: &SettingsContent) -> Self {
-        let mut merged = PersonalizationContent::defaults();
-        merged.merge_from(&content.personalization);
-        Self(merged)
-    }
-}
-
-impl PersonalizationSettings {
-    pub fn content(&self) -> &PersonalizationContent {
-        &self.0
     }
 }
 

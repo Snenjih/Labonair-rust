@@ -12,26 +12,21 @@
 //! / background entities, so the next open rebuilds it losslessly.
 
 use gpui::{
-    point, px, size, App, AppContext, Bounds, Entity, Global, TitlebarOptions, WindowBounds,
-    WindowHandle, WindowKind, WindowOptions,
+    point, px, size, App, AppContext, Bounds, Global, TitlebarOptions, WindowBounds, WindowHandle,
+    WindowKind, WindowOptions,
 };
 use gpui_component::Root;
 use tokio::runtime::Handle as TokioHandle;
 
+use crate::services::SettingsServices;
 use crate::view::SettingsView;
-use labonair_backend::App as Backend;
 
 /// Shared handles the settings window needs, published by `AppShell` once at
 /// startup (the window is opened lazily, possibly long after `AppShell::new`).
 #[derive(Clone)]
 pub(crate) struct SettingsDeps {
-    backend: Backend,
+    services: SettingsServices,
     tokio: TokioHandle,
-    /// The app's single [`labonair_workspace::Workspace`] (T18-007) — the
-    /// Personalization pane reads/writes the statusbar layout + panel-toggle
-    /// visibility through it, the same methods the in-app right-click menus
-    /// use.
-    workspace: Entity<labonair_workspace::Workspace>,
 }
 
 impl Global for SettingsDeps {}
@@ -58,17 +53,8 @@ impl Global for SettingsTarget {}
 /// Publish the shared handles the settings window builds from. Call once from
 /// `AppShell::new` after `labonair_settings::init` has run.
 #[allow(clippy::too_many_arguments)]
-pub fn set_settings_deps(
-    backend: Backend,
-    tokio: TokioHandle,
-    workspace: Entity<labonair_workspace::Workspace>,
-    cx: &mut App,
-) {
-    cx.set_global(SettingsDeps {
-        backend,
-        tokio,
-        workspace,
-    });
+pub fn set_settings_deps(services: SettingsServices, tokio: TokioHandle, cx: &mut App) {
+    cx.set_global(SettingsDeps { services, tokio });
 }
 
 /// Window bounds: 860 logical px wide, height = 80 % of the primary display
@@ -130,9 +116,8 @@ pub fn open_settings_window(slug: Option<&'static str>, cx: &mut App) {
                 let mut v = SettingsView::new(
                     theme,
                     background,
-                    deps.backend.clone(),
+                    deps.services.clone(),
                     deps.tokio.clone(),
-                    deps.workspace.clone(),
                     cx,
                 );
                 v.windowed = true;
@@ -141,7 +126,7 @@ pub fn open_settings_window(slug: Option<&'static str>, cx: &mut App) {
                 {
                     v.navigate_to_slug(slug);
                 }
-                v.refresh_mcp_status(cx);
+                v.publish_settings_diagnostics(cx);
                 v.load_system_fonts(cx);
                 window.focus(&v.focus);
                 v

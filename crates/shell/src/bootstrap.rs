@@ -46,6 +46,7 @@ use labonair_workspace::status_bar::StatusBar;
 
 use crate::app_shell::{AppShell, ShellPanels};
 use crate::background::BackgroundStore;
+use crate::settings_services::settings_services;
 use crate::status_items::register_builtin_status_items;
 use crate::theme::ThemeStore;
 use crate::titlebar::Titlebar;
@@ -353,7 +354,7 @@ pub(crate) fn bootstrap(
     let command_registry = crate::commands::register_builtin_commands();
     crate::keymap_loader::reload_and_apply(cx, &command_registry);
     crate::keymap_loader::watch(cx, command_registry.clone());
-    set_settings_deps(backend.clone(), tokio.clone(), workspace.clone(), cx);
+    set_settings_deps(settings_services(), tokio.clone(), cx);
     // Auto-updater (T15-005). Kicks a quiet background check at startup when the
     // `checkForUpdates` preference is on (6 h backoff inside the store).
     let updater = cx.new(|cx| UpdaterView::new(tokio.clone(), theme.clone(), cx));

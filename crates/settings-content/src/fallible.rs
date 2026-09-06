@@ -59,11 +59,7 @@ pub fn parse(json: &str) -> (SettingsContent, Vec<FieldError>) {
         editor: area!("editor"),
         file_manager: area!("fileManager"),
         connections: area!("connections"),
-        hosts: area!("hosts"),
         workspace: area!("workspace"),
-        mcp: area!("mcp"),
-        personalization: area!("personalization"),
-        keymap: area!("keymap"),
     };
 
     (content, errors)
@@ -102,5 +98,21 @@ mod tests {
         let (content, errors) = parse(json);
         assert!(errors.is_empty());
         assert_eq!(content.general.autostart, Some(true));
+    }
+
+    #[test]
+    fn ignores_removed_capability_sections() {
+        let (content, errors) = parse(
+            r#"{
+                "hosts": { "entries": [{ "name": "legacy" }] },
+                "keymap": { "baseKeymap": "vscode" },
+                "general": { "autostart": true }
+            }"#,
+        );
+        assert!(errors.is_empty());
+        assert_eq!(content.general.autostart, Some(true));
+        let serialized = serde_json::to_value(content).unwrap();
+        assert!(serialized.get("hosts").is_none());
+        assert!(serialized.get("keymap").is_none());
     }
 }

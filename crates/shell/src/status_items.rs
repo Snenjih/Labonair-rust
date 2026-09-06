@@ -53,7 +53,7 @@ fn simple_bar_button<T: 'static>(
         .into_any_element()
 }
 
-fn panel_toggle_icon(icon: PanelIcon) -> IconName {
+pub(crate) fn panel_toggle_icon(icon: PanelIcon) -> IconName {
     match icon {
         PanelIcon::Explorer => IconName::FolderTree,
         PanelIcon::SourceControl => IconName::GitBranch,
@@ -86,7 +86,7 @@ fn panel_toggle_shortcut(persistent_name: &str) -> Option<labonair_command_palet
     }
 }
 
-fn panel_toggle_title(persistent_name: &str) -> &'static str {
+pub(crate) fn panel_toggle_title(persistent_name: &str) -> &'static str {
     match persistent_name {
         "explorer" => "Explorer",
         "source-control" => "Source Control",

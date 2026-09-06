@@ -81,13 +81,8 @@ ALLOWED = {
     },
 
     # Settings track ------------------------------------------------------
-    # rule 7: settings-ui depends on settings + ui-kit (+ hosts-ui later,
-    # T19-010).
-    # [deviation] workspace / command-palette / ai edges are pre-Phase-18
-    # couplings kept until the settings track fully replaces them.
-    # labonair-panel: T18-007's Personalization pane reads/writes the
-    # StatusItemRegistry / PanelRegistry contracts (StatusSide, DockPosition,
-    # …) directly, same as `labonair-workspace` already does.
+    # rule 7: settings-ui renders SettingsContent values and receives only
+    # narrow discovery services from the composition root.
     # T19-004: the generated field grid + navigation is built directly off
     # `labonair-settings-content::SettingsContent`/`areas::AREAS` and the
     # layered `labonair-settings::SettingsStore` global — the old
@@ -96,15 +91,8 @@ ALLOWED = {
     "labonair-settings-ui": {
         "labonair-theme", "labonair-ui-kit", "labonair-gpui-ext",
         "labonair-notifications", "labonair-command-palette",
-        "labonair-workspace", "labonair-panel", "labonair-backend", "labonair-ai",
+        "labonair-workspace",
         "labonair-settings", "labonair-settings-content", "labonair-filesystem",
-        # T19-008: surgical `keymap.json` edits reuse T19-005's tree-sitter
-        # JSON editor.
-        "labonair-settings-json",
-        # Transitional: the legacy settings window still embeds the Hosts
-        # management surface. Hosts management must move to its own entry
-        # point before this edge is removed.
-        "labonair-hosts-ui",
     },
 
     # Workspace track --------------------------------------------------

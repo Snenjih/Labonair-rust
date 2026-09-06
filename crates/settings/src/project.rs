@@ -178,7 +178,8 @@ mod tests {
     #[test]
     fn filter_and_parse_drops_a_forbidden_area_entirely() {
         let (content, rejected) = filter_and_parse(r#"{"mcp":{"bridgePort":9999}}"#);
-        assert_eq!(content.mcp, Default::default());
+        let serialized = serde_json::to_value(content).unwrap();
+        assert!(serialized.get("mcp").is_none());
         assert_eq!(rejected, vec!["mcp".to_string()]);
     }
 
