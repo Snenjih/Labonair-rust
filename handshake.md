@@ -25,12 +25,12 @@ inventory, architecture contract, and `R01-001` progress. Verification passed:
 labonair-panel-snippets`, and `scripts/check-crate-deps.sh`.
 
 State: branch `master`, latest host persistence commit is `4859e35`; the
-credentials capability is committed as `734c393`, and the snippet boundary
-is currently uncommitted. The full
+credentials capability is committed as `734c393` and the snippet boundary as
+`d02e7ef`. The full
 `cargo test --workspace` suite, Clippy, workspace check, formatting, and the
 dependency verifier pass. `R01-001` remains `🔄 In Progress`; next is
-extracting snippet persistence/execution from the shared database surface and
-continuing the typed service/event migration. No source blocker.
+extracting snippet process execution from the backend and continuing the typed
+service/event migration. No source blocker.
 
 ## Current Session: 2026-09-06 (First modular platform boundary)
 
