@@ -1,10 +1,10 @@
 # ADR 0002 — Keep the `AppEvent` backend→UI bus; add `BackendEventBridge`
 
-* **Status:** Accepted
+* **Status:** Superseded by ADR 0003 (historical event-bus decision)
 * **Date:** 2026-09-04
 * **Deciders:** project owner (Snenjih)
 * **Related:** `docs/architecture.md §8.11`, roadmap task **T17-008**,
-  `vergleichsbericht-zed-vs-rust.md` (P3 recommendation "`AppEvent` bus:
+  `../reports/vergleichsbericht-zed-vs-rust.md` (P3 recommendation "`AppEvent` bus:
   use it or drop it"), ADR 0001
 
 ## Context

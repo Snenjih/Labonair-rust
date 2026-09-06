@@ -60,29 +60,29 @@ This is an engineering boundary, not legal advice. The implementation plan below
 
 The highest-value Labonair sources are:
 
-- [`docs/architecture.md`](architecture.md): normative shell, dock, titlebar, and status-bar contract.
-- [`crates/workspace/src/status_bar.rs`](../crates/workspace/src/status_bar.rs): status-bar registry, layout, grouping, and item placement.
-- [`crates/shell/src/status_items.rs`](../crates/shell/src/status_items.rs): the aggregate panel-toggle strip and built-in status items.
-- [`crates/workspace/src/dock.rs`](../crates/workspace/src/dock.rs): dock state, size constraints, activation, movement, and persistence.
-- [`crates/workspace/src/workspace.rs`](../crates/workspace/src/workspace.rs): shared dock chrome and resize-handle rendering.
-- [`crates/ui-kit/src/list.rs`](../crates/ui-kit/src/list.rs): generic list-row primitive used by both panels.
-- [`crates/ui-kit/src/toggle.rs`](../crates/ui-kit/src/toggle.rs): 20 px status-bar toggle primitive.
-- [`crates/panel-explorer/src/panel_explorer.rs`](../crates/panel-explorer/src/panel_explorer.rs): Explorer model, toolbar, search, tree rows, selection, drag/drop, and context menu.
-- [`crates/panel-scm/src/panel_scm.rs`](../crates/panel-scm/src/panel_scm.rs): Source Control toolbar, sections, file rows, diff, branch controls, stashes, and commit form.
-- [`reference-src/src/modules/statusbar/StatusBar.tsx`](../reference-src/src/modules/statusbar/StatusBar.tsx), [`renderBarItem.tsx`](../reference-src/src/modules/statusbar/lib/renderBarItem.tsx), [`FileExplorer.tsx`](../reference-src/src/modules/explorer/FileExplorer.tsx), [`FileTreeNode.tsx`](../reference-src/src/modules/explorer/FileTreeNode.tsx), and [`VirtualizedTreeList.tsx`](../reference-src/src/modules/explorer/components/VirtualizedTreeList.tsx): the frozen web UI that explains many current presentation choices.
+- [`docs/architecture.md`](../architecture.md): normative shell, dock, titlebar, and status-bar contract.
+- [`crates/workspace/src/status_bar.rs`](../../crates/workspace/src/status_bar.rs): status-bar registry, layout, grouping, and item placement.
+- [`crates/shell/src/status_items.rs`](../../crates/shell/src/status_items.rs): the aggregate panel-toggle strip and built-in status items.
+- [`crates/workspace/src/dock.rs`](../../crates/workspace/src/dock.rs): dock state, size constraints, activation, movement, and persistence.
+- [`crates/workspace/src/workspace.rs`](../../crates/workspace/src/workspace.rs): shared dock chrome and resize-handle rendering.
+- [`crates/ui-kit/src/list.rs`](../../crates/ui-kit/src/list.rs): generic list-row primitive used by both panels.
+- [`crates/ui-kit/src/toggle.rs`](../../crates/ui-kit/src/toggle.rs): 20 px status-bar toggle primitive.
+- [`crates/panel-explorer/src/panel_explorer.rs`](../../crates/panel-explorer/src/panel_explorer.rs): Explorer model, toolbar, search, tree rows, selection, drag/drop, and context menu.
+- [`crates/panel-scm/src/panel_scm.rs`](../../crates/panel-scm/src/panel_scm.rs): Source Control toolbar, sections, file rows, diff, branch controls, stashes, and commit form.
+- [`reference-src/src/modules/statusbar/StatusBar.tsx`](../../reference-src/src/modules/statusbar/StatusBar.tsx), [`renderBarItem.tsx`](../../reference-src/src/modules/statusbar/lib/renderBarItem.tsx), [`FileExplorer.tsx`](../../reference-src/src/modules/explorer/FileExplorer.tsx), [`FileTreeNode.tsx`](../../reference-src/src/modules/explorer/FileTreeNode.tsx), and [`VirtualizedTreeList.tsx`](../../reference-src/src/modules/explorer/components/VirtualizedTreeList.tsx): the frozen web UI that explains many current presentation choices.
 
 ### 3.2 Zed
 
 The highest-value Zed sources are:
 
-- [`workspace/src/status_bar.rs`](../zed-refrence/zed/crates/workspace/src/status_bar.rs): status-bar layout, keyboard focus, accessibility, and hideable items.
-- [`workspace/src/dock.rs`](../zed-refrence/zed/crates/workspace/src/dock.rs): dock renderer and per-dock `PanelButtons`.
-- [`project_panel/src/project_panel.rs`](../zed-refrence/zed/crates/project_panel/src/project_panel.rs): virtualized tree, row states, decorations, sticky ancestors, and interaction behavior.
-- [`project_panel/src/project_panel_settings.rs`](../zed-refrence/zed/crates/project_panel/src/project_panel_settings.rs): user-adjustable density, indentation, icons, Git status, diagnostics, sticky scroll, reveal, folding, and sorting.
-- [`git_ui/src/git_panel.rs`](../zed-refrence/zed/crates/git_ui/src/git_panel.rs): Changes/History navigation, action hierarchy, change list, diff entry point, repository footer, and commit editor.
-- [`git_ui/src/git_panel_settings.rs`](../zed-refrence/zed/crates/git_ui/src/git_panel_settings.rs): Git panel view and behavior settings.
-- [`ui/src/components/list/list_item.rs`](../zed-refrence/zed/crates/ui/src/components/list/list_item.rs): density-aware semantic list rows.
-- [`ui/src/components/button/icon_button.rs`](../zed-refrence/zed/crates/ui/src/components/button/icon_button.rs), [`button_like.rs`](../zed-refrence/zed/crates/ui/src/components/button/button_like.rs), and [`styles/spacing.rs`](../zed-refrence/zed/crates/ui/src/styles/spacing.rs): the shared sizing, state, spacing, and accessibility foundations.
+- [`workspace/src/status_bar.rs`](../../zed-refrence/zed/crates/workspace/src/status_bar.rs): status-bar layout, keyboard focus, accessibility, and hideable items.
+- [`workspace/src/dock.rs`](../../zed-refrence/zed/crates/workspace/src/dock.rs): dock renderer and per-dock `PanelButtons`.
+- [`project_panel/src/project_panel.rs`](../../zed-refrence/zed/crates/project_panel/src/project_panel.rs): virtualized tree, row states, decorations, sticky ancestors, and interaction behavior.
+- [`project_panel/src/project_panel_settings.rs`](../../zed-refrence/zed/crates/project_panel/src/project_panel_settings.rs): user-adjustable density, indentation, icons, Git status, diagnostics, sticky scroll, reveal, folding, and sorting.
+- [`git_ui/src/git_panel.rs`](../../zed-refrence/zed/crates/git_ui/src/git_panel.rs): Changes/History navigation, action hierarchy, change list, diff entry point, repository footer, and commit editor.
+- [`git_ui/src/git_panel_settings.rs`](../../zed-refrence/zed/crates/git_ui/src/git_panel_settings.rs): Git panel view and behavior settings.
+- [`ui/src/components/list/list_item.rs`](../../zed-refrence/zed/crates/ui/src/components/list/list_item.rs): density-aware semantic list rows.
+- [`ui/src/components/button/icon_button.rs`](../../zed-refrence/zed/crates/ui/src/components/button/icon_button.rs), [`button_like.rs`](../../zed-refrence/zed/crates/ui/src/components/button/button_like.rs), and [`styles/spacing.rs`](../../zed-refrence/zed/crates/ui/src/styles/spacing.rs): the shared sizing, state, spacing, and accessibility foundations.
 
 User-facing behavior is corroborated by Zed's official [Project Panel](https://zed.dev/docs/project-panel), [Git](https://zed.dev/docs/git), [All Settings](https://zed.dev/docs/reference/all-settings), [Visual Customization](https://zed.dev/docs/visual-customization), [panel-system article](https://zed.dev/blog/new-panel-system), and [workspace glossary](https://zed.dev/docs/development/glossary).
 
@@ -92,21 +92,21 @@ These anchors are the shortest route from a report finding to the two implementa
 
 | Concern | Labonair anchor | Zed anchor |
 |---|---|---|
-| Status-bar root | [`StatusBar::render`, line 260](../crates/workspace/src/status_bar.rs#L260) | [`StatusBar::render`, line 115](../zed-refrence/zed/crates/workspace/src/status_bar.rs#L115) |
-| Panel-button group | [`PanelTogglesStatusItem`, line 213](../crates/shell/src/status_items.rs#L213) | [`PanelButtons`, line 1390](../zed-refrence/zed/crates/workspace/src/dock.rs#L1390) |
-| Dock surface/resize | [`Workspace::render_dock`, line 4702](../crates/workspace/src/workspace.rs#L4702) | [`Dock::render`, line 1270](../zed-refrence/zed/crates/workspace/src/dock.rs#L1270) |
-| General list row | [`ListItem::into_element`, line 135](../crates/ui-kit/src/list.rs#L135) | [`ListItem`, line 32](../zed-refrence/zed/crates/ui/src/components/list/list_item.rs#L32) |
-| Explorer/Project Panel root | [`ExplorerView::render`, line 1004](../crates/panel-explorer/src/panel_explorer.rs#L1004) | [`ProjectPanel::render`, line 7120](../zed-refrence/zed/crates/project_panel/src/project_panel.rs#L7120) |
-| Explorer/Project entry | [`ExplorerView::render_row`, line 1408](../crates/panel-explorer/src/panel_explorer.rs#L1408) | [`ProjectPanel::render_entry`, line 5741](../zed-refrence/zed/crates/project_panel/src/project_panel.rs#L5741) |
-| Explorer virtualization | no virtual list in the current Explorer root | [`uniform_list`, line 7315](../zed-refrence/zed/crates/project_panel/src/project_panel.rs#L7315) |
-| Explorer settings | scattered current settings and fixed values | [`ProjectPanelSettings`, line 13](../zed-refrence/zed/crates/project_panel/src/project_panel_settings.rs#L13) |
-| Git panel root | [`GitPanelView::render`, line 2941](../crates/panel-scm/src/panel_scm.rs#L2941) | [`GitPanel::render`, line 8928](../zed-refrence/zed/crates/git_ui/src/git_panel.rs#L8928) |
-| Git header | action bar at [`GitPanelView::render`, line 2977](../crates/panel-scm/src/panel_scm.rs#L2977) | [`render_changes_header`, line 6390](../zed-refrence/zed/crates/git_ui/src/git_panel.rs#L6390) |
-| Git change rows | [`render_section`, line 1533](../crates/panel-scm/src/panel_scm.rs#L1533) | virtualized entries around [`uniform_list`, line 7760](../zed-refrence/zed/crates/git_ui/src/git_panel.rs#L7760) |
-| Git diff | [`render_diff`, line 1701](../crates/panel-scm/src/panel_scm.rs#L1701) | Project Diff flow documented and dispatched from Git UI rather than embedded in the panel |
-| Git repository footer | [`render_branch_bar`, line 1852](../crates/panel-scm/src/panel_scm.rs#L1852) | [`render_footer`, line 6485](../zed-refrence/zed/crates/git_ui/src/git_panel.rs#L6485) |
-| Commit composer/action | [`render_commit_form`, line 1962](../crates/panel-scm/src/panel_scm.rs#L1962) | [`render_commit_button`, line 6667](../zed-refrence/zed/crates/git_ui/src/git_panel.rs#L6667) |
-| Git settings | current behavior is mostly fixed in the panel | [`GitPanelSettings`, line 18](../zed-refrence/zed/crates/git_ui/src/git_panel_settings.rs#L18) |
+| Status-bar root | [`StatusBar::render`, line 260](../../crates/workspace/src/status_bar.rs#L260) | [`StatusBar::render`, line 115](../../zed-refrence/zed/crates/workspace/src/status_bar.rs#L115) |
+| Panel-button group | [`PanelTogglesStatusItem`, line 213](../../crates/shell/src/status_items.rs#L213) | [`PanelButtons`, line 1390](../../zed-refrence/zed/crates/workspace/src/dock.rs#L1390) |
+| Dock surface/resize | [`Workspace::render_dock`, line 4702](../../crates/workspace/src/workspace.rs#L4702) | [`Dock::render`, line 1270](../../zed-refrence/zed/crates/workspace/src/dock.rs#L1270) |
+| General list row | [`ListItem::into_element`, line 135](../../crates/ui-kit/src/list.rs#L135) | [`ListItem`, line 32](../../zed-refrence/zed/crates/ui/src/components/list/list_item.rs#L32) |
+| Explorer/Project Panel root | [`ExplorerView::render`, line 1004](../../crates/panel-explorer/src/panel_explorer.rs#L1004) | [`ProjectPanel::render`, line 7120](../../zed-refrence/zed/crates/project_panel/src/project_panel.rs#L7120) |
+| Explorer/Project entry | [`ExplorerView::render_row`, line 1408](../../crates/panel-explorer/src/panel_explorer.rs#L1408) | [`ProjectPanel::render_entry`, line 5741](../../zed-refrence/zed/crates/project_panel/src/project_panel.rs#L5741) |
+| Explorer virtualization | no virtual list in the current Explorer root | [`uniform_list`, line 7315](../../zed-refrence/zed/crates/project_panel/src/project_panel.rs#L7315) |
+| Explorer settings | scattered current settings and fixed values | [`ProjectPanelSettings`, line 13](../../zed-refrence/zed/crates/project_panel/src/project_panel_settings.rs#L13) |
+| Git panel root | [`GitPanelView::render`, line 2941](../../crates/panel-scm/src/panel_scm.rs#L2941) | [`GitPanel::render`, line 8928](../../zed-refrence/zed/crates/git_ui/src/git_panel.rs#L8928) |
+| Git header | action bar at [`GitPanelView::render`, line 2977](../../crates/panel-scm/src/panel_scm.rs#L2977) | [`render_changes_header`, line 6390](../../zed-refrence/zed/crates/git_ui/src/git_panel.rs#L6390) |
+| Git change rows | [`render_section`, line 1533](../../crates/panel-scm/src/panel_scm.rs#L1533) | virtualized entries around [`uniform_list`, line 7760](../../zed-refrence/zed/crates/git_ui/src/git_panel.rs#L7760) |
+| Git diff | [`render_diff`, line 1701](../../crates/panel-scm/src/panel_scm.rs#L1701) | Project Diff flow documented and dispatched from Git UI rather than embedded in the panel |
+| Git repository footer | [`render_branch_bar`, line 1852](../../crates/panel-scm/src/panel_scm.rs#L1852) | [`render_footer`, line 6485](../../zed-refrence/zed/crates/git_ui/src/git_panel.rs#L6485) |
+| Commit composer/action | [`render_commit_form`, line 1962](../../crates/panel-scm/src/panel_scm.rs#L1962) | [`render_commit_button`, line 6667](../../zed-refrence/zed/crates/git_ui/src/git_panel.rs#L6667) |
+| Git settings | current behavior is mostly fixed in the panel | [`GitPanelSettings`, line 18](../../zed-refrence/zed/crates/git_ui/src/git_panel_settings.rs#L18) |
 
 ## 4. Structural anatomy
 

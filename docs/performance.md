@@ -1,4 +1,6 @@
-# Performance & Cross-Platform Baseline (T15-003)
+# Performance & Cross-Platform Baseline
+
+**Status:** Supporting baseline; historical measurements may reference the pre-reset implementation.
 
 Reference doc for the "performance is the motive of the port" goal. Captures
 the measurement method, the target envelope, the manual regression checklist,
@@ -76,20 +78,20 @@ Any Rust number materially worse than that is a regression to investigate.
 |---|---|---|
 | Startup | backend workers `spawn_workers()` + event logger are `tokio::spawn`; the window opens without waiting on them. SQLite open is the only sync step and is cheap. | `crates/app/src/main.rs` |
 | TreeSitter grammars | behind the `build-grammars` feature / loaded lazily, not at boot. | editor crate |
-| Fonts | bundled assets registered once at `init_fonts`. | `crates/ui/src/theme.rs` |
-| Terminal render | alacritty computes the renderable diff; GPUI retains the element tree and only repaints on `cx.notify()` after PTY output. Cursor overlay reuses the measured cell metrics. | `crates/ui/src/terminal.rs`, `crates/terminal/` |
-| Explorer | `generation` counter discards stale async dir reads; 500-entry page cap + lazy expansion; watcher is `notify-debouncer-mini` at 300 ms, non-recursive, watch-set synced to open dirs. | `crates/ui/src/explorer.rs` |
-| SFTP list | same page-capped `overflow_y_scroll` column pattern as Explorer. | `crates/ui/src/sftp.rs` |
-| Git-Graph | row list virtualised with `uniform_list` — only visible commit rows build elements. | `crates/ui/src/git_graph.rs` |
-| Git status poll | `refreshing` flag prevents overlap; `target_gen` guard drops stale results; no-op when `root` is `None`; interval is 2 s local, `× REMOTE_POLL_MULTIPLIER` for SSH. | `crates/ui/src/git.rs` |
-| Session sync | workspace meta (cwd/title) pushed to the tab store on change, not polled. | `crates/ui/src/workspace.rs` |
-| AI streaming | incremental markdown append from T11-003; no full recompute per chunk. | `crates/ui/src/ai_chat.rs` |
+| Fonts | bundled assets registered once at `init_fonts`. | `crates/theme/src/fonts.rs` |
+| Terminal render | alacritty computes the renderable diff; GPUI retains the element tree and only repaints on `cx.notify()` after PTY output. | `crates/workspace/src/views/terminal.rs`, `crates/terminal/` |
+| Explorer | `generation` counter discards stale async dir reads; bounded rendering and lazy expansion. | `crates/panel-explorer/src/panel_explorer.rs` |
+| SFTP list | bounded scrolling and async remote listing. | `crates/workspace/src/views/sftp.rs` |
+| Git-Graph | row list virtualised with `uniform_list` — only visible commit rows build elements. | `crates/panel-git-graph/src/panel_git_graph.rs` |
+| Git status poll | refresh guards prevent overlap and stale results. | `crates/panel-scm/src/panel_scm.rs` |
+| Session sync | workspace metadata is pushed on change, not polled. | `crates/workspace/src/workspace.rs` |
+| AI streaming | frontend AI is currently paused; backend streaming remains available for the future rebuild. | `crates/ai/` |
 
 ### Follow-ups deliberately deferred (need a profiler + a real workload)
 
 - Windowing `uniform_list` for Explorer/SFTP (currently page-capped, which
   keeps the element count bounded but not constant). Noted in
-  `crates/ui/src/explorer.rs` module docs.
+  `crates/panel-explorer/src/panel_explorer.rs` module docs.
 - Pausing the Git status poll while the panel is off-screen or the window is
   unfocused — would need a visibility signal from `AppShell`. Low payoff at a
   2 s interval with the existing guards; revisit if profiling shows it.
@@ -103,7 +105,7 @@ Any Rust number materially worse than that is a regression to investigate.
 - Native title bar: `TitlebarOptions { appears_transparent: false }` in
   `main.rs` — standard traffic-light chrome, no custom drag region.
 - Menus: native `cx.set_menus` (App menu bar + Dock menu) from
-  `crates/ui/src/menu.rs` — no in-window menu rendering to pay for.
+  `crates/shell/src/menu.rs` — no in-window menu rendering to pay for.
 - DPI: GPUI's Metal renderer is scale-factor aware; all sizes are logical
   `px(..)` so Retina is automatic. Terminal cell metrics are derived from
   `text_system().ch_advance` at the current scale.
@@ -114,7 +116,7 @@ Any Rust number materially worse than that is a regression to investigate.
 - Keep it buildable: no macOS-only APIs leak outside `main.rs`'s window
   setup and `menu.rs`. GPUI selects the Vulkan/Blade renderer on Linux; the
   view layer is renderer-agnostic (logical `px`, theme tokens, no platform
-  branches in `crates/ui/src/*` view code).
+  branches in feature view code).
 - Open items for the Linux pass: file-dialog / open-in-browser shims,
   keychain backend (`keyring` already abstracts this), font fallback list.
 

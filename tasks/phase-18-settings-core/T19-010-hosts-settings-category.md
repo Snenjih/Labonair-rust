@@ -1,7 +1,7 @@
 # T19-010: Settings › Hosts — Host- & Credential-Verwaltung als Top-Level-Kategorie
 
 ## Status
-✅ Done
+🗄️ Historical — the new product contract explicitly removes Hosts from Settings
 
 ## Phase
 18 — Settings-System Zed-Style

@@ -1,7 +1,7 @@
 # T21-001: Render-Pfad-Profiling & Frame-Hygiene
 
 ## Status
-🔄 In Progress
+🗄️ Archived — superseded by the architecture reset
 
 ## Phase
 20 — Performance & Modularitäts-Abnahme

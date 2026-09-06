@@ -1,15 +1,15 @@
 # Bericht: Workflow-Rework (Themen 1–3) — Tab-Verhalten, Host-Zugang, Settings
 
 **Status:** normativ für die Phasen 15–18. Ergänzt den Architektur-Rework
-([`bericht-architektur-rework-roadmap.md`](./bericht-architektur-rework-roadmap.md),
-[`docs/architecture.md`](./docs/architecture.md)). Nach T16-005 vereinbart, während
+([`bericht-architektur-rework-roadmap.md`](bericht-architektur-rework-roadmap.md),
+[`docs/architecture.md`](../architecture.md)). Nach T16-005 vereinbart, während
 T16-006 lief — deshalb landete der Palette-Anteil (konzeptionell ≤ T16-004) in
 T16-007.
 
 Die drei Themen **erweitern** den geplanten Umbau, ohne seine Muster
 (PanelRegistry, StatusItemRegistry, SettingsStore, `MergeFrom`), die
 Abhängigkeitsregeln oder den azyklischen Crate-Graph zu brechen. Jede Abweichung
-vom T16-001-Plan steht in [`docs/architecture.md §8`](./docs/architecture.md).
+vom T16-001-Plan steht in [`docs/architecture.md §8`](../architecture.md).
 
 ---
 

@@ -1,5 +1,30 @@
 # Bugs, fixes, and non-obvious constraints
 
+## 2026-09-06 — Workspace AI integration test needs loopback permission
+
+**Finding:** The first sandboxed `cargo test --workspace` run failed only at
+`client::tests::end_to_end_streams_openai_sse_over_http` because the test binds
+a local TCP listener and the sandbox returned `Operation not permitted`.
+
+**Resolution:** Re-ran the unchanged workspace test with approved loopback
+network permission; all workspace tests passed. This is an environment
+constraint, not a product or documentation regression.
+
+## 2026-09-06 — Architecture reset supersedes the port-era planning contract
+
+**Finding:** The former `AGENTS.md`, architecture document, settings contract,
+roadmap, and reports still treated feature parity, a toast layer, Hosts in
+Settings, and a broad backend as active decisions. They conflicted with the
+new Dev-Op workspace direction.
+
+**Resolution:** Added the v2 product, architecture, module, registry,
+design-system, workspace, settings, and rework-roadmap contracts under
+`docs/`; reduced `AGENTS.md` and `CLAUDE.md` to current rules; archived the
+former architecture and idea documents; moved reports under `docs/reports/`;
+and marked superseded tasks/ADRs as historical. The target is capability-owned
+modules with explicit composition, typed cross-module contracts, and shared
+UI-kit primitives.
+
 ## 2026-09-05 — GPUI panic: "hover style already set" when `.hover()` applied twice
 
 **Context:** `ui-kit::ListItem` lets call sites override a row's background via

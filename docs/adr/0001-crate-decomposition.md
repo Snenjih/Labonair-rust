@@ -1,10 +1,10 @@
 # ADR 0001 — Decompose the `ui` monolith into ~22 crates
 
-* **Status:** Accepted (amended 2026-09-03 — see below)
+* **Status:** Superseded by ADR 0003 (historical decomposition decision)
 * **Date:** 2026-09-03
 * **Deciders:** project owner (Snenjih)
-* **Related:** `docs/architecture.md`, `bericht-architektur-rework-roadmap.md`,
-  `vergleichsbericht-zed-vs-rust.md`, roadmap phases 15–21 (T16-001 … T22-001)
+* **Related:** `docs/architecture.md`, `../reports/bericht-architektur-rework-roadmap.md`,
+  `../reports/vergleichsbericht-zed-vs-rust.md`, roadmap phases 15–21 (T16-001 … T22-001)
 
 > **Amendment (workflow rework, themes 1–3):** `labonair-panel-hosts` is
 > removed from the ~22-crate target — the SSH host manager is neither a tab nor

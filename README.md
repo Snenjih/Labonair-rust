@@ -1,47 +1,31 @@
 # Labonair-rust
 
-A **hard fork** of Labonair (Tauri v2 + React 19) rewritten as a pure native
-Rust application on **GPUI** (the Zed editor's UI framework). Single binary, no
-WebView, no JS, no IPC — UI and backend are direct in-process calls.
+Labonair is a standalone native Rust application built with GPUI. It is a fast, keyboard-first Dev-Op workspace for local and remote work, combining terminal, editor, SSH, SFTP, Git, transfers, themes, keymap, notifications, and AI as independently owned capabilities.
 
-This repo is fully standalone. The original web-app source is a frozen,
-read-only reference copy at [`reference-src/`](./reference-src/) and is the only
-reference — never a build target.
+The product supports both project workspaces and standalone use. It is not a terminal-only app, an IDE-only app, or a Zed fork. Zed is used as a clean-room reference for interaction patterns and architecture ideas. The frozen predecessor source is [`reference-src/`](reference-src/).
 
-## Goal
+## Current direction
 
-Full feature parity — everything Labonair does today must work in the pure-Rust
-version. Only unavoidable deviation: the in-app web-preview tab becomes native
-markdown rendering + "open in system browser" (GPUI cannot embed a WebView).
+The active architecture and rework sequence are documented in [`docs/`](docs/):
 
-## Status
+- [`docs/product.md`](docs/product.md) — product contract
+- [`docs/architecture.md`](docs/architecture.md) — target architecture
+- [`docs/modules.md`](docs/modules.md) — module and crate rules
+- [`docs/registries.md`](docs/registries.md) — registry contracts
+- [`docs/design-system.md`](docs/design-system.md) — UI consistency rules
+- [`docs/rework-roadmap.md`](docs/rework-roadmap.md) — implementation sequence
 
-See [tasks/ROADMAP.md](./tasks/ROADMAP.md) and [handshake.md](./handshake.md).
+The old task tree remains for historical traceability. New work must follow the rework roadmap and not the historical queue.
 
-## Workspace layout
+## Build commands
 
-| Crate | Purpose |
-|---|---|
-| `crates/app` | Main binary — GPUI application entry (`labonair`) |
-| `crates/ui` | UI components & theme provider |
-| `crates/theme` | Theme system & design tokens (from `reference-src` `globals.css`) |
-| `crates/terminal` | Terminal engine (`alacritty_terminal`) + GPUI renderer |
-| `crates/editor` | TreeSitter-based code editor |
-| `crates/backend` | SSH, SFTP, Git, filesystem, PTY, hosts, credentials, secrets |
-| `crates/ai` | AI provider integration, agent/tool system, chat sessions |
+```text
+cargo check --workspace --all-targets
+cargo build
+cargo run
+cargo fmt --check
+cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace
+```
 
-## Commands
-
-| Task | Command |
-|---|---|
-| Type-check | `cargo check` |
-| Build | `cargo build` |
-| Run | `cargo run` |
-| Lint | `cargo clippy --all-targets -- -D warnings` |
-| Format | `cargo fmt` |
-| Test | `cargo test` |
-
-Platform: macOS first (Metal), Linux later, no Windows. Building GPUI on macOS
-requires the Metal Toolchain (`xcodebuild -downloadComponent MetalToolchain`).
-
-The roadmap and task-by-task plan live in [`tasks/`](./tasks/).
+Platform priority is macOS first, with Linux later. The application contains no WebView, JavaScript frontend, or IPC layer.

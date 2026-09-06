@@ -1,0 +1,38 @@
+# Workspace Model
+
+**Status:** Normative
+
+## Workspace types
+
+Labonair supports two equally valid entry modes:
+
+1. **Project workspace** — tied to a local folder, remote folder, repository, or other durable work context.
+2. **Standalone workspace** — a temporary context for a terminal, editor, SSH, SFTP, or other single action.
+
+Both use the same tabs, panes, commands, notifications, and statusbar. The difference is identity and persistence, not a separate UI architecture.
+
+## Workspace contents
+
+A workspace contains:
+
+- optional project or remote identity;
+- tabs;
+- recursive split panes;
+- active tool instances;
+- layout state;
+- scoped settings overrides where supported;
+- session persistence metadata.
+
+No tool may require a project workspace unless its operation genuinely needs a project root.
+
+## Tool instances
+
+Tabs and panels reference tool instances through stable IDs and typed capabilities. The workspace orchestrates placement and focus; the owning tool module controls its state and operations.
+
+## Empty workspace
+
+An empty workspace is valid. The shell must not create a fallback terminal merely to fill space. The empty state offers only a small set of discoverable actions, such as opening a terminal or invoking the command palette.
+
+## Remote contexts
+
+An SSH connection may provide a workspace root and terminal sessions. An SFTP connection may provide a remote filesystem context. Shared concepts should have common identifiers, while transport-specific behavior remains owned by SSH or SFTP.
