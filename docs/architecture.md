@@ -132,7 +132,9 @@ requests such as opening Hosts or presenting the project picker are emitted as
 typed `WorkspaceEvent` values; the shell subscribes and composes the
 platform-specific destination. Identity mutation uses the single typed
 `WorkspaceTransition` contract (`OpenProject` or `ReturnToStandalone`); a
-terminal current-working-directory event is never a workspace transition.
+terminal current-working-directory event is never a workspace transition. The
+pure `WorkspaceContext` applies that transition; GPUI workspace state only
+coordinates the resulting settings and invalidation side effects.
 
 ## 5. Composition root
 

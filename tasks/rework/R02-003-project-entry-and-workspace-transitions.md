@@ -103,15 +103,20 @@ File menu and command palette; it changes identity only and preserves the
 existing tabs, panes, and shell layout. Both picker selection and session
 restore now use the same `WorkspaceTransition::OpenProject` path, while the
 command uses `WorkspaceTransition::ReturnToStandalone`; direct identity
-setters are no longer exposed. Focused workspace, command-registry, and shell
-tests pass, including a shell-registry assertion that both lifecycle commands
-use their canonical typed action names and execution registrations.
+setters are no longer exposed. The pure `WorkspaceContext` owns the identity
+mutation and reports no-op transitions; the GPUI `Workspace` only applies the
+corresponding settings and invalidation side effects. Focused workspace,
+command-registry, and shell tests pass, including a shell-registry assertion
+that both lifecycle commands use their canonical typed action names and
+execution registrations.
 
 Project-settings synchronization was removed from `Workspace::render`. The
 settings layer now loads only after an explicit `WorkspaceTransition` or an
 explicit project-settings refresh, keeping rendering free of stateful I/O;
 whitelist rejection notifications are deduplicated at that transition
-boundary.
+boundary. The UI-free `WorkspaceContext` performs the actual identity mutation
+and returns whether a transition changed state; GPUI `Workspace` only applies
+the resulting settings and invalidation side effects.
 
 The current release bundle (build 265) passes the exact-path five-second
 native launch smoke test and is resolved only as the Rust executable. A

@@ -110,12 +110,19 @@ impl WorkspaceContext {
         &self.identity
     }
 
-    pub(crate) fn set_standalone(&mut self) {
-        self.identity = WorkspaceIdentity::Standalone;
-    }
-
-    pub(crate) fn set_project(&mut self, root: impl Into<PathBuf>) {
-        self.identity = WorkspaceIdentity::project(root);
+    /// Apply an explicit identity transition and report whether the identity
+    /// changed. This pure operation is the only place where the mutable
+    /// workspace context changes identity.
+    pub(crate) fn apply_transition(&mut self, transition: &WorkspaceTransition) -> bool {
+        let next = match transition {
+            WorkspaceTransition::OpenProject { root } => WorkspaceIdentity::project(root.clone()),
+            WorkspaceTransition::ReturnToStandalone => WorkspaceIdentity::standalone(),
+        };
+        if self.identity == next {
+            return false;
+        }
+        self.identity = next;
+        true
     }
 }
 
@@ -173,32 +180,32 @@ mod tests {
         let mut context = WorkspaceContext::standalone();
         assert!(!context.identity().is_project());
 
-        context.set_project("/work/app");
+        context.apply_transition(&WorkspaceTransition::OpenProject {
+            root: PathBuf::from("/work/app"),
+        });
         assert_eq!(
             context.identity().project_root(),
             Some(Path::new("/work/app"))
         );
 
-        context.set_standalone();
+        context.apply_transition(&WorkspaceTransition::ReturnToStandalone);
         assert_eq!(context.identity(), &WorkspaceIdentity::Standalone);
     }
 
     #[test]
-    fn transition_contract_names_only_explicit_identity_changes() {
-        assert_eq!(
-            WorkspaceTransition::OpenProject {
-                root: PathBuf::from("/work/app"),
-            },
-            WorkspaceTransition::OpenProject {
-                root: PathBuf::from("/work/app"),
-            }
-        );
-        assert_ne!(
-            WorkspaceTransition::ReturnToStandalone,
-            WorkspaceTransition::OpenProject {
-                root: PathBuf::from("/work/app"),
-            }
-        );
+    fn context_applies_only_explicit_identity_transitions() {
+        let mut context = WorkspaceContext::standalone();
+        let open = WorkspaceTransition::OpenProject {
+            root: PathBuf::from("/work/app"),
+        };
+        assert!(context.apply_transition(&open));
+        assert_eq!(context.identity(), &WorkspaceIdentity::project("/work/app"));
+        assert!(!context.apply_transition(&open));
+
+        let standalone = WorkspaceTransition::ReturnToStandalone;
+        assert!(context.apply_transition(&standalone));
+        assert_eq!(context.identity(), &WorkspaceIdentity::Standalone);
+        assert!(!context.apply_transition(&standalone));
     }
 
     #[test]

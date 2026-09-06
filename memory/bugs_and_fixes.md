@@ -1,5 +1,17 @@
 # Bugs, fixes, and non-obvious constraints
 
+## 2026-09-06 — Keep project-settings loading out of render
+
+**Finding:** `Workspace::render` synchronized the project-settings layer. Even
+with a cached root comparison, that path could load/reload a project file and
+publish notifications as a render side effect.
+
+**Resolution:** Project settings are synchronized from the typed
+`WorkspaceTransition` boundary and from the explicit project-settings refresh
+command only. Rejected-key notifications are deduplicated there as well. The
+pure `WorkspaceContext` owns transition mutation and no-op detection; the GPUI
+workspace only coordinates the resulting side effects.
+
 ## 2026-09-06 — Command action names belong to the command ID
 
 **Finding:** The shell lifecycle-registry test initially called

@@ -962,21 +962,20 @@ impl Workspace {
         transition: context::WorkspaceTransition,
         cx: &mut Context<Self>,
     ) {
+        if !self.context.apply_transition(&transition) {
+            return;
+        }
         match transition {
             context::WorkspaceTransition::OpenProject { root } => {
-                self.context.set_project(root.clone());
                 self.last_project_settings_rejection_signature = None;
                 labonair_settings::set_active_project_root(cx, Some(root));
                 self.notify_project_settings_rejections(cx);
                 cx.notify();
             }
             context::WorkspaceTransition::ReturnToStandalone => {
-                if self.context.identity().is_project() {
-                    self.context.set_standalone();
-                    self.last_project_settings_rejection_signature = None;
-                    labonair_settings::set_active_project_root(cx, None);
-                    cx.notify();
-                }
+                self.last_project_settings_rejection_signature = None;
+                labonair_settings::set_active_project_root(cx, None);
+                cx.notify();
             }
         }
     }

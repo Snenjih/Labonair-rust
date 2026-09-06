@@ -27,6 +27,10 @@ picker, session restore, and Return to Standalone command all enter through
 that contract; direct workspace-context setters are crate-private, and a
 terminal CWD is not representable as an identity transition.
 
+The pure `WorkspaceContext` now applies the transition and reports no-op
+requests. The GPUI `Workspace` owns only the settings synchronization and UI
+invalidation that follow a changed identity.
+
 Project-settings synchronization was removed from the workspace render path.
 It now occurs only after an explicit identity transition or an explicit
 project-settings refresh, so rendering does not trigger settings I/O or
