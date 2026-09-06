@@ -12,18 +12,17 @@
 
 ## Goal
 
-Make project entry, standalone tool entry, and returning to an empty workspace
-explicit user flows over the same workspace surface. Project identity must be
-chosen by a project-opening action and must never be inferred from a terminal
-working directory.
+Complete the project and standalone lifecycle over the shared workspace
+surface. Project identity is already selected by the explicit `Open Project…`
+flow from `R02-002`; this task makes that identity persistent and ensures
+returning to standalone or empty state is explicit and lossless.
 
 ## Scope
 
-- Add the typed request/response boundary for opening a local project root.
-- Connect the application or a dedicated project picker to
-  `WorkspaceContext::set_project` and `set_standalone_context`.
 - Carry project identity through the workspace/session contract where
   persistence is enabled; keep standalone sessions temporary by default.
+- Add an explicit close-project/return-standalone action and composition
+  wiring using the existing workspace transition contract.
 - Ensure project-scoped settings follow the explicit workspace identity and do
   not silently change when a terminal changes directory.
 - Exercise empty, active, project, and standalone transitions with focused
@@ -35,9 +34,10 @@ same contract after SSH/SFTP define their transport-owned identity.
 
 ## Contracts and ownership
 
-- Public domain values: `labonair-workspace::context`
-- Service/event boundary: typed workspace request events and immutable state
-  snapshots; no shell callback fields
+- Public domain values: `labonair-workspace::context` and workspace session
+  snapshots
+- Service/event boundary: existing typed workspace request events and
+  immutable state snapshots; no shell callback fields
 - Registry contributions: none unless more than one project provider exists
 - UI surface: the existing workspace/overlay surface, with any picker owned by
   the project entry capability
@@ -46,8 +46,8 @@ same contract after SSH/SFTP define their transport-owned identity.
 
 ## Dependencies
 
-- Existing edges removed: cwd-based project inference once identity sync moves
-  to the explicit transition
+- Existing edges removed in R02-002: cwd-based project inference for the active
+  project settings layer
 - New edges: only a narrow project-picker contract if a provider is required
 - Dependency verifier change: update the allow-list and inventory together;
   never add a shell-to-feature implementation edge
@@ -58,12 +58,12 @@ same contract after SSH/SFTP define their transport-owned identity.
   preserve existing `.labonair/settings.json` data
 - Storage: session identity migration is required if snapshots gain a project
   root; old snapshots remain valid as standalone snapshots
-- Compatibility: any legacy cwd inference must have no remaining consumers
+- Compatibility: any remaining legacy cwd inference must have no consumers
   before this task is marked complete
 
 ## User-visible behavior
 
-- Canonical entry point: a command/picker action opens a project root; terminal,
+- Canonical entry point: `Open Project…` opens a project root; terminal,
   editor, SSH, and SFTP actions can still start standalone
 - Notifications: invalid or inaccessible roots use the notification registry
   with actionable details; no duplicate inline error row or toast
@@ -71,12 +71,12 @@ same contract after SSH/SFTP define their transport-owned identity.
 
 ## Implementation plan
 
-1. Extend the workspace context contract and snapshot model → verify transition,
-   identity, and backward-compatibility tests.
-2. Add the explicit project-opening action and composition wiring → verify a
-   project can be opened without changing the shell layout model.
-3. Remove cwd inference and update settings/session consumers → verify the
-   dependency inventory and project-scope tests.
+1. Extend the workspace context and snapshot model → verify identity,
+   transition, and backward-compatibility tests.
+2. Add explicit close-project/standalone behavior → verify a project can be
+   left without changing the shell layout model.
+3. Remove any remaining cwd inference and update settings/session consumers →
+   verify the dependency inventory and project-scope tests.
 4. Verify normal, empty, standalone, and project shell states visually.
 
 ## Acceptance criteria
@@ -100,4 +100,3 @@ inference or compatibility path remains in active code.
 This task follows `R02-002`. It intentionally does not create a project
 manager crate until a second project provider or independent project lifecycle
 requires one.
-

@@ -10,9 +10,11 @@ context model now distinguishes `WorkspaceIdentity::Standalone` from
 tested transitions and an identity label on the empty surface.
 
 The current branch is `master`; this partial migration is committed locally.
-The remaining R02-002 work is to connect an explicit project-opening flow and
-perform the required manual visual check for the shell states. The next task
-is not started. Focused workspace tests, the full workspace test suite
+The explicit project-opening flow is now wired through GPUI's native folder
+picker, and project settings follow workspace identity rather than terminal
+CWD. The remaining R02-002 work is the required manual visual check for the
+shell states. The next task is not started. Focused workspace tests, the full
+workspace test suite
 (including the two known local HTTP/file-watcher tests outside the sandbox),
 `cargo check --workspace
 --all-targets`, `cargo clippy --workspace --all-targets -- -D warnings`,
@@ -24,7 +26,8 @@ The normative documentation now also includes `docs/repository-layout.md` and
 for future feature additions, migrations, and removals.
 
 `R02-003-project-entry-and-workspace-transitions.md` is now queued as the next
-bounded task after `R02-002`; it defines explicit project entry and removal of
+bounded task after `R02-002`; it defines session identity persistence,
+explicit return-to-standalone behavior, and the final removal audit for
 cwd-based project inference.
 
 ## Current Session: 2026-09-06 (Global menu and theme entrypoints complete)

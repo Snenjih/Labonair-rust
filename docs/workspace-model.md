@@ -57,8 +57,9 @@ through the SSH/SFTP contracts; Workspace only places and focuses the
   resulting tool instance.
 
 Workspace-to-shell navigation uses `WorkspaceEvent` for requests such as
-opening Hosts. Workspace does not store a shell callback or decide whether the
-destination is a palette page, panel, or standalone window.
+opening Hosts or presenting the native project picker. Workspace does not
+store a shell callback or decide whether the destination is a palette page,
+panel, or standalone window.
 
 ## Tool instances
 

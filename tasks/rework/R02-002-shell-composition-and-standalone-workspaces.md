@@ -60,8 +60,12 @@ The Hosts navigation callback has been replaced by the typed
 `WorkspaceEvent::OpenHosts` contract and a shell subscription. The workspace
 now owns the UI-free `WorkspaceIdentity` / `WorkspaceState` model, starts in a
 standalone identity, exposes explicit project/standalone transitions, and
-renders the identity on the empty surface. Focused workspace tests, compile,
-and Clippy checks pass.
+renders the identity on the empty surface. The native `Open Project…` action
+now emits `WorkspaceEvent::OpenProject`; the composition root presents GPUI's
+platform folder picker and applies the selected root through the workspace
+boundary. Project settings follow that explicit identity instead of terminal
+CWD changes. Focused workspace tests, compile, and Clippy checks pass.
 
-Remaining work is the explicit project-opening integration and the required
-manual visual check of the empty/project/standalone shell states.
+Remaining work is the required manual visual check of the
+empty/project/standalone shell states. Session identity persistence and the
+final removal audit continue in `R02-003`.

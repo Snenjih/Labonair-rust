@@ -336,6 +336,8 @@ type DockPersistHook = Arc<dyn Fn(String, &mut App) + Send + Sync>;
 pub enum WorkspaceEvent {
     /// Ask the application shell to reveal the canonical Hosts surface.
     OpenHosts,
+    /// Ask the application shell to present the native project-folder picker.
+    OpenProject,
 }
 
 /// The tabbed, split-pane workspace shell.
@@ -460,10 +462,11 @@ pub struct Workspace {
     pending_snippet_ssh: HashMap<String, String>,
 
     // ── Project settings (T19-003) ──────────────────────────────────────
-    /// The active pane's cwd last time `sync_project_settings_root` ran, so
+    /// The explicit project identity key last time
+    /// `sync_project_settings_root` ran, so
     /// `labonair_settings::set_active_project_root` (which loads/reloads
-    /// `.labonair/settings.json` + its live-watch) is only called when it
-    /// actually changes, not on every render.
+    /// `.labonair/settings.json` + its live-watch) is only called when the
+    /// project identity changes, not on every render.
     last_project_settings_root: Option<String>,
 }
 
@@ -920,7 +923,10 @@ impl Workspace {
         root: impl Into<std::path::PathBuf>,
         cx: &mut Context<Self>,
     ) {
-        self.context.set_project(root);
+        let root = root.into();
+        self.context.set_project(root.clone());
+        self.last_project_settings_root = None;
+        labonair_settings::set_active_project_root(cx, Some(root));
         cx.notify();
     }
 
@@ -928,8 +934,18 @@ impl Workspace {
     pub fn set_standalone_context(&mut self, cx: &mut Context<Self>) {
         if self.context.identity().is_project() {
             self.context.set_standalone();
+            self.last_project_settings_root = None;
+            labonair_settings::set_active_project_root(cx, None);
             cx.notify();
         }
+    }
+
+    /// Request an explicit project-folder selection from the application
+    /// composition root. Workspace owns the resulting identity; the shell
+    /// only supplies the platform picker because it owns the application
+    /// window and platform services.
+    pub fn request_open_project(&self, cx: &mut Context<Self>) {
+        cx.emit(WorkspaceEvent::OpenProject);
     }
 
     /// The working directory of the active pane's shell, if known — feeds the
@@ -938,22 +954,29 @@ impl Workspace {
         self.active_pane_view(cx).and_then(|v| v.read(cx).cwd())
     }
 
-    /// Push the active pane's cwd into `labonair-settings` as the active
-    /// project root (T19-003) whenever it changes — `labonair-settings` is a
-    /// leaf crate with no notion of "pane"/"cwd" itself
-    /// (`docs/architecture.md` §3), so this is the one place that bridges
-    /// the two. Called once per `render` (cheap: a `String` compare plus,
-    /// only on an actual change, `labonair_settings::set_active_project_root`
-    /// — which is itself a no-op if the canonicalized root didn't change).
+    /// Synchronize the explicitly selected project identity into
+    /// `labonair-settings` (T19-003). A terminal cwd is not a project identity:
+    /// standalone terminals can move through many directories and must not
+    /// silently activate a project's settings layer. Called once per `render`
+    /// (cheap: a string comparison plus, only on an actual change,
+    /// `labonair_settings::set_active_project_root`, which is itself a no-op
+    /// if the canonicalized root did not change).
     /// Also notifies newly-whitelist-rejected project-settings keys, if any
     /// (Anweisung #4's "einmal sichtbar gemeldet").
     fn sync_project_settings_root(&mut self, cx: &mut Context<Self>) {
-        let cwd = self.active_cwd(cx);
-        if cwd == self.last_project_settings_root {
+        let root = self
+            .context
+            .identity()
+            .project_root()
+            .map(std::path::Path::to_path_buf);
+        let root_key = root
+            .as_ref()
+            .map(|path| path.to_string_lossy().into_owned());
+        if root_key == self.last_project_settings_root {
             return;
         }
-        self.last_project_settings_root = cwd.clone();
-        labonair_settings::set_active_project_root(cx, cwd.map(std::path::PathBuf::from));
+        self.last_project_settings_root = root_key;
+        labonair_settings::set_active_project_root(cx, root);
 
         let rejected = cx
             .global::<labonair_settings::SettingsStore>()
@@ -969,17 +992,26 @@ impl Workspace {
 
     /// Command: create (if missing) `<project root>/.labonair/settings.json`
     /// from the commented scaffold and open it as an editor tab (T19-003
-    /// Anweisung #6). The "project root" is the active pane's cwd; a no-op
-    /// (returns `false`) if there isn't one (no active terminal/SSH pane).
+    /// Anweisung #6). The root comes from the explicit workspace identity;
+    /// terminal cwd is intentionally not used as an implicit project choice.
     pub fn open_or_create_project_settings(
         &mut self,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> bool {
-        let Some(cwd) = self.active_cwd(cx) else {
+        let Some(root) = self
+            .context
+            .identity()
+            .project_root()
+            .map(std::path::Path::to_path_buf)
+        else {
+            labonair_notifications::notify_err::<()>(
+                "Project settings",
+                Err("Open a project before opening project settings.".to_string()),
+                cx,
+            );
             return false;
         };
-        let root = std::path::PathBuf::from(cwd);
         let path = match labonair_settings::ensure_project_settings_file(&root) {
             Ok(path) => path,
             Err(err) => {
@@ -989,7 +1021,7 @@ impl Workspace {
         };
         // The directory may not have existed (and thus not been watchable)
         // before `ensure_project_settings_file` created it — force a
-        // reload + fresh watch rather than relying on the next cwd change.
+        // reload + fresh watch rather than relying on the next render.
         labonair_settings::refresh_project_watch(cx);
         self.open_file(path.to_string_lossy().into_owned(), false, window, cx);
         true
@@ -4886,7 +4918,7 @@ impl Render for Workspace {
         let _span =
             tracing::trace_span!(target: "labonair::perf", "render", view = "workspace").entered();
         // T19-003: keep `labonair-settings`'s active project root in sync
-        // with the active pane's cwd (cheap no-op unless it actually
+        // with the explicit workspace identity (cheap no-op unless it
         // changed — see the method doc).
         self.sync_project_settings_root(cx);
         // Drain host-manager connect requests here — `connect_host` needs a

@@ -32,6 +32,25 @@ index. The lifecycle now requires classification, ownership, public contracts,
 UI-kit and user-message decisions, migration order, removal checks, and the
 full verification gates before a task is complete.
 
+## 2026-09-06 — GPUI path picker and explicit project settings identity
+
+**Finding:** GPUI 0.2.2 exposes the native folder picker through
+`App::prompt_for_paths(PathPromptOptions)`, returning a oneshot receiver. The
+first implementation attempted to resolve the method through
+`BorrowMut<App>` on `Context<AppShell>`, which was ambiguous.
+
+**Resolution:** Call `prompt_for_paths` directly through `Context`'s `Deref`
+to `App`, then handle the asynchronous result in the shell composition root.
+The selected directory is applied through `Workspace::set_project_context`.
+
+**Important behavior:** Project settings must be keyed by explicit workspace
+identity. The active terminal's cwd is only terminal metadata and must never
+activate or replace the project settings layer.
+
+**Build note:** `WorkspaceIdentity::project_root()` returns `Option<&Path>`;
+when a owned path is needed, use `map(Path::to_path_buf)` rather than
+`cloned()`, because the latter is not available on this `Option` shape.
+
 ## 2026-09-06 — Icon-theme preview must be a separate transient layer
 
 **Finding:** The command palette already previewed app themes, but icon themes

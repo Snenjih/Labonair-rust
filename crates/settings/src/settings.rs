@@ -62,14 +62,13 @@ pub fn init(cx: &mut App) {
     store::write_schema_file();
 }
 
-/// Set (or clear, with `None`) the active project root — the folder the
-/// active pane/explorer currently has open (T19-003). Loads `<root>/
-/// .labonair/settings.json` (if present) as the `SettingsLayer::Project`
-/// layer, through the whitelist filter (`project::filter_and_parse`), and
-/// (re)starts that file's live fs-watch; a no-op if `root` is already the
-/// active (canonicalized) root. This crate has no notion of "explorer" or
-/// "active pane" itself (leaf crate — `docs/architecture.md` §3) — call this
-/// from `labonair-workspace` whenever the active pane's cwd changes.
+/// Set (or clear, with `None`) the active project root (T19-003). Loads
+/// `<root>/.labonair/settings.json` (if present) as the
+/// `SettingsLayer::Project` layer, through the whitelist filter
+/// (`project::filter_and_parse`), and (re)starts that file's live fs-watch; a
+/// no-op if `root` is already the active (canonicalized) root. This crate has
+/// no notion of workspace identity — call this from `labonair-workspace` only
+/// after an explicit project transition, never for terminal cwd changes.
 pub fn set_active_project_root(cx: &mut App, root: Option<std::path::PathBuf>) {
     let changed = cx
         .global_mut::<SettingsStore>()

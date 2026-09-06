@@ -20,8 +20,8 @@ The active sequence is:
 
 Phase 3 is complete. R02-001 is the first bounded Phase 2 shell task and also
 connects the already-established theme registry to its intended palette
-surface. R02-002 is the active task; R02-003 is queued for the explicit
-project-entry contract. Later command-palette/keymap migrations remain
-blocked on their own task contracts.
+surface. R02-002 is the active task; R02-003 is queued for session identity
+persistence and explicit project/standalone lifecycle completion. Later
+command-palette/keymap migrations remain blocked on their own task contracts.
 
 Only the earliest task whose dependencies are complete may be started.

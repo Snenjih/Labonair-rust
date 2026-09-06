@@ -128,8 +128,9 @@ menu or feature-specific behavior.
 `labonair-workspace::context` owns the UI-free distinction between workspace
 identity (`Standalone` or `Project`) and activity (`Empty` or `Active`). Tool
 tabs do not choose a second layout model for standalone use. Cross-surface
-requests such as opening Hosts are emitted as typed `WorkspaceEvent` values;
-the shell subscribes and composes the canonical destination.
+requests such as opening Hosts or presenting the project picker are emitted as
+typed `WorkspaceEvent` values; the shell subscribes and composes the
+platform-specific destination.
 
 ## 5. Composition root
 

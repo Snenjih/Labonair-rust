@@ -34,6 +34,7 @@ actions!(
     labonair,
     [
         // ── File ──────────────────────────────────────────────────────────
+        OpenProject,
         NewTerminalTab,
         NewSshTab,
         NewSftpTab,
@@ -206,6 +207,7 @@ fn action_for(name: &str) -> Option<Box<dyn Action>> {
         "connections::NewSshConnection" => Box::new(NewSshConnection),
         "connections::NewQuickSsh" => Box::new(NewQuickSsh),
         "settings::Open" => Box::new(OpenSettings),
+        "workspace::OpenProject" => Box::new(OpenProject),
         "app::CheckForUpdates" => Box::new(CheckForUpdates),
         "debug::CyclePanelDock" => Box::new(DebugCyclePanelDock),
         "debug::ToggleDockZoom" => Box::new(DebugToggleDockZoom),
@@ -288,6 +290,7 @@ fn app_menus() -> Vec<Menu> {
         Menu {
             name: "File".into(),
             items: vec![
+                MenuItem::action("Open Project…", OpenProject),
                 MenuItem::action("New Terminal Tab", NewTerminalTab),
                 MenuItem::action("New SSH Tab", NewSshTab),
                 MenuItem::action("New SFTP Tab", NewSftpTab),

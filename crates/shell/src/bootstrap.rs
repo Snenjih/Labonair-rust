@@ -14,13 +14,13 @@
 
 use std::sync::Arc;
 
-use gpui::{App, AppContext, Context, Entity, Window, WindowBounds};
+use gpui::{App, AppContext, Context, Entity, PathPromptOptions, Window, WindowBounds};
 use labonair_backend::modules::mcp::{
     mcp_set_auto_revoke_minutes, mcp_set_enabled, mcp_set_max_command_timeout_secs, mcp_set_port,
 };
 use labonair_backend::modules::settings::mcp::mcp_prefs_load;
 use labonair_backend::App as Backend;
-use labonair_notifications::NotificationCenter;
+use labonair_notifications::{notification_center, Notification, NotificationCenter};
 use labonair_sftp::{SftpBrowserService, SftpSessionService};
 use labonair_ssh::{
     SshConfigService, SshConnectionService, SshConnectionTester, SshPtyService,
@@ -59,6 +59,53 @@ use labonair_background::BackgroundStore;
 /// replaces the former per-frame drain with a light background poll — the same
 /// idiom `Workspace` uses for its SSH / transfer event bridges.
 const LIVE_DRAIN_INTERVAL: std::time::Duration = std::time::Duration::from_millis(120);
+
+/// Ask the platform for one project directory and apply the result through
+/// the workspace's explicit identity boundary. The shell owns the platform
+/// picker, but it does not own project state.
+fn open_project_picker(workspace: Entity<Workspace>, cx: &mut Context<AppShell>) {
+    let receiver = cx.prompt_for_paths(PathPromptOptions {
+        files: false,
+        directories: true,
+        multiple: false,
+        prompt: Some("Open Project".into()),
+    });
+
+    cx.spawn(async move |_this, cx| {
+        let result = receiver.await;
+        match result {
+            Ok(Ok(Some(paths))) => {
+                let Some(root) = paths.into_iter().find(|path| path.is_dir()) else {
+                    let _ = cx.update(|app| {
+                        notification_center(app).update(app, |center, cx| {
+                            center.push(
+                                Notification::error(
+                                    "Open Project",
+                                    "The selected path is not an accessible folder.",
+                                ),
+                                cx,
+                            );
+                        });
+                    });
+                    return;
+                };
+                let _ = workspace.update(cx, |workspace, cx| {
+                    workspace.set_project_context(root, cx);
+                });
+            }
+            Ok(Err(error)) => {
+                let message = format!("The project folder picker could not be opened: {error}");
+                let _ = cx.update(|app| {
+                    notification_center(app).update(app, |center, cx| {
+                        center.push(Notification::error("Open Project", message), cx);
+                    });
+                });
+            }
+            Ok(Ok(None)) | Err(_) => {}
+        }
+    })
+    .detach();
+}
 
 /// Rebuild the AI live-bridge [`LiveSnapshot`] from the current workspace +
 /// explorer state. Called event-driven (T17-006) from `cx.observe` on the
@@ -277,6 +324,7 @@ pub(crate) fn bootstrap(
             WorkspaceEvent::OpenHosts => {
                 this.show_command_palette(Some(labonair_command_palette::Page::Hosts), window, cx);
             }
+            WorkspaceEvent::OpenProject => open_project_picker(this.workspace.clone(), cx),
         },
     )
     .detach();
