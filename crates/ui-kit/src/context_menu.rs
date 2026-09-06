@@ -333,6 +333,7 @@ pub fn context_menu(
 ) -> AnyElement {
     let dismiss = Rc::new(dismiss);
     let d2 = dismiss.clone();
+    let d3 = dismiss.clone();
 
     // `anchored().snap_to_window()` positions the card in *window* coordinates
     // (the right-click `MouseDownEvent::position` is already window-space) and
@@ -342,10 +343,15 @@ pub fn context_menu(
     // `absolute().inset_0()` child of whatever view opened it, which made the
     // menu mispositioned (anchor is window-space, parent is not the window),
     // clipped by scrollable panels, and sometimes hidden behind later siblings.
+    // `on_mouse_down_out` on the card itself is the reliable dismiss path: the
+    // full-screen backdrop below is laid out relative to whichever (often tiny,
+    // e.g. a 20px status-bar item) element opened the menu, so `inset_0` does
+    // not actually cover the window and a click next to the menu would leave it
+    // stuck open. The card, by contrast, always knows its own bounds.
     let card = anchored()
         .position(anchor)
         .snap_to_window()
-        .child(menu_card(c, items));
+        .child(menu_card(c, items).on_mouse_down_out(move |_, w, cx| d3(w, cx)));
 
     deferred(
         div()
@@ -388,10 +394,12 @@ pub fn popover_menu(
     dismiss: impl Fn(&mut Window, &mut App) + 'static,
     items: Vec<MenuItem>,
 ) -> AnyElement {
+    let dismiss = Rc::new(dismiss);
+    let d_out = dismiss.clone();
     let card = anchored()
         .position(anchor)
         .snap_to_window()
-        .child(menu_card(c, items));
+        .child(menu_card(c, items).on_mouse_down_out(move |_, w, cx| d_out(w, cx)));
 
     deferred(
         div()

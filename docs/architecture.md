@@ -270,6 +270,21 @@ These are stated so T16-010 can derive a mechanical check (e.g. `cargo-depgraph`
   five — Explorer, SCM, Git-Graph, Snippets, AI), active highlighted. Right:
   info dropdowns — Notifications (badge dropdown), CWD breadcrumb, Updater,
   Transfers, Agent-Access, Jump-Hosts — each a `StatusItem`.
+  * **Extensibility.** The bar renders purely from `StatusItemRegistry`
+    (`labonair-panel`), keyed by an arbitrary `&'static str` id + an `Arc`
+    constructor — it has *no* dependency on the panel system.
+    `labonair-shell::register_builtin_status_items` is just the built-in list;
+    any crate can register its own `StatusItem` entity on the workspace's
+    registry to add a widget. The per-dock panel-button groups
+    (`dock-buttons-*`) are the only status items that touch `PanelRegistry`.
+  * **One right-click menu per item.** `StatusBar` owns the single context menu:
+    the shared "Move left / Move right / Hide" block, with the item's own rows
+    (from `StatusItem::status_menu_entries`) merged in above it. A widget with
+    bespoke actions (the CWD breadcrumb's "Copy path", …) contributes through
+    that hook instead of opening a competing menu of its own.
+  * **Dock-button menu.** Right-clicking a panel toggle lists every dock the
+    panel supports as a checkable row (current dock ticked → flip directly),
+    then "Hide Button".
 * **Modal / Overlay layer** — `ModalLayer` (command palette, dialogs, bookmarks,
   updater modal, transient `Cmd+F` search) and `ToastLayer` (toasts). Nothing
   else renders overlays.

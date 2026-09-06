@@ -12,7 +12,10 @@
 //! Personalization (T18-005): every item except the structural per-dock panel-
 //! button groups (`not_moveable`, see [`StatusItem::hideable`] /
 //! `crate::status_placements`) gets a right-click menu — "Move left" / "Move
-//! right" / "Hide" — that calls [`Workspace::set_status_bar_placement`]. The
+//! right" / "Hide" — that calls [`Workspace::set_status_bar_placement`]. An item
+//! may prepend its own rows to that same single menu via
+//! [`StatusItem::status_menu_entries`](labonair_panel::StatusItem::status_menu_entries),
+//! so a widget with bespoke actions never opens a second, competing menu. The
 //! side/hidden overrides live on the registry
 //! ([`StatusItemRegistry::resolve_side`] / [`StatusItemRegistry::is_hidden`]);
 //! this component just reads them each render and re-reads them from disk
@@ -24,7 +27,7 @@ use gpui::{
     KeyDownEvent, MouseButton, MouseDownEvent, ParentElement, Pixels, Point, Render, SharedString,
     Styled, Window,
 };
-use labonair_panel::{AnyStatusItemHandle, StatusItemConstructor, StatusSide};
+use labonair_panel::{AnyStatusItemHandle, StatusItemConstructor, StatusMenuEntry, StatusSide};
 use labonair_ui_kit::{context_menu, MenuItem, Palette};
 
 use crate::status_placements::StatusBarLayoutTick;
@@ -153,12 +156,12 @@ impl StatusBar {
             (registry.resolve_side(id), registry.is_hidden(id))
         };
         let (side, hidden) = registry_snapshot;
-        let hideable = self
+        let (hideable, extra_entries) = self
             .items
             .iter()
             .find(|(_, _, _, item_id, _)| *item_id == id)
-            .map(|(_, _, _, _, h)| h.hideable(cx))
-            .unwrap_or(false);
+            .map(|(_, _, _, _, h)| (h.hideable(cx), h.status_menu_entries(cx)))
+            .unwrap_or((false, Vec::new()));
 
         let view = cx.entity();
         let close = {
@@ -172,6 +175,38 @@ impl StatusBar {
         };
 
         let mut items: Vec<MenuItem> = Vec::new();
+
+        // The item's own contributed rows come first, so a widget with custom
+        // actions (e.g. the CWD breadcrumb) presents *one* merged menu rather
+        // than a second, competing context menu (T20 status-bar rework).
+        let had_extra = !extra_entries.is_empty();
+        for entry in extra_entries {
+            match entry {
+                StatusMenuEntry::Separator => items.push(MenuItem::separator()),
+                StatusMenuEntry::Label(text) => items.push(MenuItem::label(text)),
+                StatusMenuEntry::Action {
+                    id: eid,
+                    label,
+                    checked,
+                    disabled,
+                    on_click,
+                } => {
+                    let close = close.clone();
+                    items.push(
+                        MenuItem::new(eid, label)
+                            .checked(checked)
+                            .disabled(disabled)
+                            .on_click(move |_, window, cx| {
+                                on_click(window, cx);
+                                close(cx);
+                            }),
+                    );
+                }
+            }
+        }
+        if had_extra {
+            items.push(MenuItem::separator());
+        }
         {
             let ws = self.workspace.clone();
             let close = close.clone();

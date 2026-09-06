@@ -20,7 +20,8 @@ use gpui::{
     StatefulInteractiveElement, Styled, Window,
 };
 use labonair_panel::{
-    AnyStatusItemHandle, DockPosition, PanelIcon, StatusItem, StatusItemRegistration, StatusSide,
+    AnyStatusItemHandle, DockPosition, PanelIcon, StatusItem, StatusItemRegistration,
+    StatusMenuEntry, StatusSide,
 };
 use labonair_panel_explorer::BookmarksView;
 use labonair_ui_kit::{icon_toggle_button, IconName, Palette};
@@ -161,16 +162,26 @@ impl DockPanelButtons {
         cx.notify();
     }
 
-    /// The right-click menu for one button: only the dock positions the panel
-    /// actually supports (so the menu can never present an unexecutable move),
-    /// plus "Hide from status bar".
+    /// The right-click menu for one button: **every** dock position the panel
+    /// supports (plus the one it currently sits in), shown as a checkable list
+    /// with the current dock ticked so the user can flip it left/right/bottom
+    /// directly from one menu; then "Hide Button".
     fn render_dock_menu(&mut self, cx: &mut Context<Self>) -> Option<AnyElement> {
         use labonair_ui_kit::{context_menu, MenuItem};
 
         let (name, pos) = self.dock_menu.clone()?;
-        let dests = {
+        let current = self.position;
+        let positions = {
             let ws = self.workspace.read(cx);
-            ws.dock(self.position).move_destinations(name.as_ref(), cx)
+            let mut v = ws.dock(current).move_destinations(name.as_ref(), cx);
+            v.push(current);
+            // Stable, human order regardless of what `move_destinations` returns.
+            v.sort_by_key(|d| match d {
+                DockPosition::Left => 0,
+                DockPosition::Bottom => 1,
+                DockPosition::Right => 2,
+            });
+            v
         };
         let view = cx.entity();
         let close = {
@@ -184,13 +195,14 @@ impl DockPanelButtons {
         };
 
         let dest_label = |d: DockPosition| match d {
-            DockPosition::Left => "Dock left",
-            DockPosition::Right => "Dock right",
-            DockPosition::Bottom => "Dock bottom",
+            DockPosition::Left => "Dock Left",
+            DockPosition::Right => "Dock Right",
+            DockPosition::Bottom => "Dock Bottom",
         };
 
         let mut items: Vec<MenuItem> = Vec::new();
-        for d in dests {
+        for d in positions {
+            let is_current = d == current;
             let move_name = name.clone();
             let ws = self.workspace.clone();
             let close = close.clone();
@@ -199,33 +211,34 @@ impl DockPanelButtons {
                     SharedString::from(format!("dock-move-{}", dest_label(d))),
                     dest_label(d),
                 )
+                .checked(is_current)
                 .on_click(move |_, _w, cx| {
-                    let move_name = move_name.clone();
-                    ws.update(cx, |w, cx| {
-                        if w.move_panel(move_name.as_ref(), d, cx) {
-                            w.persist_docks(cx);
-                            cx.notify();
-                        }
-                    });
+                    if !is_current {
+                        let move_name = move_name.clone();
+                        ws.update(cx, |w, cx| {
+                            if w.move_panel(move_name.as_ref(), d, cx) {
+                                w.persist_docks(cx);
+                                cx.notify();
+                            }
+                        });
+                    }
                     close(cx);
                 }),
             );
         }
-        if !items.is_empty() {
-            items.push(MenuItem::separator());
-        }
+        items.push(MenuItem::separator());
         let hide_name = name.clone();
         let ws_hide = self.workspace.clone();
         let close_hide = close.clone();
-        items.push(MenuItem::new("dock-hide", "Hide from status bar").on_click(
-            move |_, _w, cx| {
+        items.push(
+            MenuItem::new("dock-hide", "Hide Button").on_click(move |_, _w, cx| {
                 let hide_name = hide_name.to_string();
                 ws_hide.update(cx, |w, cx| {
                     w.set_panel_toggle_visible(hide_name, false, cx);
                 });
                 close_hide(cx);
-            },
-        ));
+            }),
+        );
 
         let dismiss = move |_w: &mut Window, cx: &mut App| close(cx);
         Some(context_menu(
@@ -561,7 +574,6 @@ pub struct CwdStatusItem {
     workspace: Entity<Workspace>,
     theme: Entity<ThemeStore>,
     expanded: bool,
-    crumb_menu: Option<(bc::Segment, Point<Pixels>)>,
     subdir_menu: Option<(String, Point<Pixels>, Option<Vec<String>>)>,
 }
 
@@ -577,7 +589,6 @@ impl CwdStatusItem {
             workspace,
             theme,
             expanded: false,
-            crumb_menu: None,
             subdir_menu: None,
         }
     }
@@ -586,15 +597,8 @@ impl CwdStatusItem {
         dirs::home_dir().map(|p| p.to_string_lossy().into_owned())
     }
 
-    fn open_crumb_menu(&mut self, seg: bc::Segment, pos: Point<Pixels>, cx: &mut Context<Self>) {
-        self.crumb_menu = Some((seg, pos));
-        self.subdir_menu = None;
-        cx.notify();
-    }
-
     fn open_subdir_menu(&mut self, dir: String, pos: Point<Pixels>, cx: &mut Context<Self>) {
         self.subdir_menu = Some((dir.clone(), pos, None));
-        self.crumb_menu = None;
         cx.notify();
 
         // Only local listing is wired; remote SSH browsing is deferred.
@@ -658,20 +662,6 @@ impl CwdStatusItem {
                         .text_size(px(text_px))
                         .text_color(muted.opacity(0.7))
                         .child("no directory")
-                        .on_mouse_down(
-                            MouseButton::Right,
-                            cx.listener(|this, ev: &MouseDownEvent, _w, cx| {
-                                this.open_crumb_menu(
-                                    bc::Segment {
-                                        label: String::new(),
-                                        full_path: String::new(),
-                                        is_home: false,
-                                    },
-                                    ev.position,
-                                    cx,
-                                );
-                            }),
-                        )
                         .into_any_element();
                 }
             },
@@ -760,7 +750,6 @@ impl CwdStatusItem {
         };
         let show_chevron = is_current && current_is_dropdown;
         let seg_click = seg.clone();
-        let seg_menu = seg.clone();
         // T20-003: a `rounded_full` breadcrumb-segment pill with an optional
         // leading home icon and trailing chevron, plus a right-click menu on
         // the same element — no `ui-kit` primitive matches this shape
@@ -791,106 +780,6 @@ impl CwdStatusItem {
                     this.workspace.update(cx, |w, cx| w.send_cd(&p, cx));
                 }
             }))
-            .on_mouse_down(
-                MouseButton::Right,
-                cx.listener(move |this, ev: &MouseDownEvent, _w, cx| {
-                    this.open_crumb_menu(seg_menu.clone(), ev.position, cx);
-                }),
-            )
-    }
-
-    fn render_crumb_menu(&mut self, cx: &mut Context<Self>) -> Option<AnyElement> {
-        use labonair_ui_kit::{context_menu, MenuItem};
-        let (seg, pos) = self.crumb_menu.clone()?;
-        let cwd = self.workspace.read(cx).active_cwd(cx);
-        let has_path = !seg.full_path.is_empty();
-        let rel = cwd
-            .as_deref()
-            .map(|c| bc::relative_path(c, &seg.full_path))
-            .unwrap_or_else(|| seg.full_path.clone());
-        let abs = seg.full_path.clone();
-        let view = cx.entity();
-        let close = {
-            let v = view.clone();
-            move |cx: &mut App| {
-                v.update(cx, |this, cx| {
-                    this.crumb_menu = None;
-                    cx.notify();
-                })
-            }
-        };
-
-        let mut items: Vec<MenuItem> = Vec::new();
-        if has_path {
-            items.push(MenuItem::label(if seg.is_home {
-                "Home".to_string()
-            } else {
-                seg.label.clone()
-            }));
-            items.push(MenuItem::separator());
-            items.push(
-                MenuItem::new("cm-copy-abs", "Copy absolute path").on_click({
-                    let close = close.clone();
-                    let abs = abs.clone();
-                    move |_, _w, cx| {
-                        cx.write_to_clipboard(gpui::ClipboardItem::new_string(abs.clone()));
-                        close(cx);
-                    }
-                }),
-            );
-            items.push(
-                MenuItem::new("cm-copy-rel", "Copy relative path").on_click({
-                    let close = close.clone();
-                    let rel = rel.clone();
-                    move |_, _w, cx| {
-                        cx.write_to_clipboard(gpui::ClipboardItem::new_string(rel.clone()));
-                        close(cx);
-                    }
-                }),
-            );
-            items.push(MenuItem::separator());
-            items.push(
-                MenuItem::new("cm-cd", "Open in current terminal").on_click({
-                    let v = view.clone();
-                    let abs = abs.clone();
-                    move |_, _w, cx| {
-                        v.update(cx, |this, cx| {
-                            this.workspace.update(cx, |w, cx| w.send_cd(&abs, cx));
-                            this.crumb_menu = None;
-                            cx.notify();
-                        });
-                    }
-                }),
-            );
-            items.push(
-                MenuItem::new("cm-cd-new", "Open in new terminal").on_click({
-                    let v = view.clone();
-                    let abs = abs.clone();
-                    move |_, window, cx| {
-                        v.update(cx, |this, cx| {
-                            this.workspace
-                                .update(cx, |w, cx| w.cd_in_new_tab(abs.clone(), window, cx));
-                            this.crumb_menu = None;
-                            cx.notify();
-                        });
-                    }
-                }),
-            );
-        }
-
-        // The right-click "move to titlebar / hide" personalization entries
-        // are T18-005 (they used the removed `move_bar_item`).
-        if items.is_empty() {
-            return None;
-        }
-
-        let dismiss = move |_w: &mut Window, cx: &mut App| close(cx);
-        Some(context_menu(
-            pos,
-            Palette::from_theme(self.theme.read(cx)),
-            dismiss,
-            items,
-        ))
     }
 
     fn render_subdir_menu(&mut self, cx: &mut Context<Self>) -> Option<AnyElement> {
@@ -968,16 +857,45 @@ impl StatusItem for CwdStatusItem {
         cx.notify();
     }
 
+    /// Path actions for the active directory, merged into the status bar's one
+    /// right-click menu above "Move left / Move right / Hide" — the CWD widget
+    /// used to open its own competing context menu here.
+    fn status_menu_entries(&mut self, cx: &mut Context<Self>) -> Vec<StatusMenuEntry> {
+        let Some(cwd) = self.workspace.read(cx).active_cwd(cx) else {
+            return Vec::new();
+        };
+        let ws = self.workspace.clone();
+        let copy = cwd.clone();
+        let cd = cwd.clone();
+        let cd_new = cwd.clone();
+        vec![
+            StatusMenuEntry::action("cwd-copy-path", "Copy path", move |_w, cx| {
+                cx.write_to_clipboard(gpui::ClipboardItem::new_string(copy.clone()));
+            }),
+            StatusMenuEntry::action("cwd-open-terminal", "Open in current terminal", {
+                let ws = ws.clone();
+                move |_w, cx| {
+                    ws.update(cx, |w, cx| w.send_cd(&cd, cx));
+                }
+            }),
+            StatusMenuEntry::action(
+                "cwd-open-new-terminal",
+                "Open in new terminal",
+                move |window, cx| {
+                    ws.update(cx, |w, cx| w.cd_in_new_tab(cd_new.clone(), window, cx));
+                },
+            ),
+        ]
+    }
+
     fn render_status(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         let row = self.render_breadcrumb(cx);
-        let crumb_menu = self.render_crumb_menu(cx);
         let subdir_menu = self.render_subdir_menu(cx);
         div()
             .flex()
             .items_center()
             .min_w_0()
             .child(row)
-            .children(crumb_menu)
             .children(subdir_menu)
             .into_any_element()
     }

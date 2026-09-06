@@ -27,5 +27,5 @@ pub use dock::{
 pub use project_diff::{ProjectDiffFile, ProjectDiffMode, ProjectDiffRequest};
 pub use status::{
     AnyStatusItemHandle, StatusItem, StatusItemConstructor, StatusItemHandle, StatusItemHide,
-    StatusItemRegistration, StatusItemRegistry, StatusPlacement, StatusSide,
+    StatusItemRegistration, StatusItemRegistry, StatusMenuEntry, StatusPlacement, StatusSide,
 };

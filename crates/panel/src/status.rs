@@ -5,12 +5,94 @@
 //! (`docs/architecture.md` §4) drops Zed's titlebar scope, so an item only
 //! chooses between the left and right side of the status bar and may describe
 //! how it hides itself.
+//!
+//! # Extensibility
+//!
+//! The status bar renders **purely** from [`StatusItemRegistry`] — it is keyed
+//! by an arbitrary `&'static str` id and an [`Arc`] constructor closure, and
+//! has *no* dependency on the panel system. `labonair-shell`'s
+//! `register_builtin_status_items` is just the one built-in list; any crate can
+//! build an entity that implements [`StatusItem`] and call
+//! [`StatusItemRegistry::register`] on the workspace's registry to add a new
+//! status-bar widget. (The only panel coupling is the three `dock-buttons-*`
+//! groups, which happen to iterate the panel registry.)
+//!
+//! A registered item is not limited to the shared "Move left / Move right /
+//! Hide" right-click menu: it can contribute its own rows through
+//! [`StatusItem::status_menu_entries`], which `StatusBar` merges into that same
+//! single menu (so a widget with custom actions — e.g. the CWD breadcrumb's
+//! "Copy path" — never opens a second, competing context menu).
 
 use std::collections::HashMap;
+use std::rc::Rc;
 use std::sync::Arc;
 
-use gpui::{AnyElement, AnyView, EntityId, Global};
+use gpui::{AnyElement, AnyView, EntityId, Global, SharedString};
 use labonair_gpui_ext::prelude::*;
+
+/// Click handler for a [`StatusMenuEntry::Action`] — runs on the main thread
+/// when the row is clicked; the status bar closes the menu afterwards.
+pub type StatusMenuHandler = Rc<dyn Fn(&mut Window, &mut App)>;
+
+/// A custom row a [`StatusItem`] contributes to its own status-bar right-click
+/// menu, merged **above** the shared "Move left / Move right / Hide" block by
+/// `StatusBar`.
+///
+/// Deliberately ui-kit-free so this trait can stay in this leaf crate; the
+/// status bar maps each entry onto a `labonair_ui_kit::MenuItem`. Rebuilt every
+/// time the menu opens, so `Rc` (main-thread only) is enough for the handler.
+pub enum StatusMenuEntry {
+    /// A clickable action row.
+    Action {
+        /// Element id, unique within the menu.
+        id: SharedString,
+        /// Row label.
+        label: SharedString,
+        /// Draw a leading check mark (radio / toggle state).
+        checked: bool,
+        /// Dim the row and ignore clicks.
+        disabled: bool,
+        /// Runs on click; the status bar closes the menu afterwards.
+        on_click: StatusMenuHandler,
+    },
+    /// A horizontal divider.
+    Separator,
+    /// A non-interactive section heading.
+    Label(SharedString),
+}
+
+impl StatusMenuEntry {
+    /// A plain action row.
+    pub fn action(
+        id: impl Into<SharedString>,
+        label: impl Into<SharedString>,
+        on_click: impl Fn(&mut Window, &mut App) + 'static,
+    ) -> Self {
+        Self::Action {
+            id: id.into(),
+            label: label.into(),
+            checked: false,
+            disabled: false,
+            on_click: Rc::new(on_click),
+        }
+    }
+
+    /// Set the leading check mark.
+    pub fn checked(mut self, value: bool) -> Self {
+        if let Self::Action { checked, .. } = &mut self {
+            *checked = value;
+        }
+        self
+    }
+
+    /// Dim + disable the row.
+    pub fn disabled(mut self, value: bool) -> Self {
+        if let Self::Action { disabled, .. } = &mut self {
+            *disabled = value;
+        }
+        self
+    }
+}
 
 /// Which side of the status bar an item defaults to.
 ///
@@ -97,6 +179,14 @@ pub trait StatusItem: Render {
     /// Render the item's content for the status bar row.
     fn render_status(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement;
 
+    /// Extra rows this item contributes to its status-bar right-click menu,
+    /// rendered above the shared "Move left / Move right / Hide" block (see
+    /// [`StatusMenuEntry`]). Called every time the menu opens. Default: none.
+    fn status_menu_entries(&mut self, cx: &mut Context<Self>) -> Vec<StatusMenuEntry> {
+        let _ = cx;
+        Vec::new()
+    }
+
     /// Whether the user is offered a "hide" affordance for this item. The
     /// persistence of that choice lands in T18-005; here it is only advisory.
     fn hideable(&self) -> bool {
@@ -136,6 +226,8 @@ pub trait StatusItemHandle: Send + Sync {
     fn group(&self, cx: &App) -> u32;
     /// See [`StatusItem::hideable`].
     fn hideable(&self, cx: &App) -> bool;
+    /// See [`StatusItem::status_menu_entries`].
+    fn status_menu_entries(&self, cx: &mut App) -> Vec<StatusMenuEntry>;
     /// See [`StatusItem::on_active_tab_changed`].
     fn on_active_tab_changed(&self, cx: &mut App);
     /// See [`StatusItem::hide`].
@@ -167,6 +259,10 @@ impl<T: StatusItem + 'static> StatusItemHandle for Entity<T> {
 
     fn hideable(&self, cx: &App) -> bool {
         self.read(cx).hideable()
+    }
+
+    fn status_menu_entries(&self, cx: &mut App) -> Vec<StatusMenuEntry> {
+        self.update(cx, |item, cx| item.status_menu_entries(cx))
     }
 
     fn on_active_tab_changed(&self, cx: &mut App) {
