@@ -38,7 +38,9 @@ ALLOWED = {
     "labonair-errors": set(),
     # Hosts owns domain models plus capability-local query code. Secret-bearing
     # writes and MCP side effects remain transitional backend adapters.
-    "labonair-hosts": {"labonair-errors", "labonair-persistence"},
+    "labonair-hosts": {
+        "labonair-errors", "labonair-persistence", "labonair-secrets",
+    },
     # Shared SQLite lifecycle only. Feature stores own their queries and
     # domain models; this crate must remain UI- and backend-free.
     "labonair-persistence": set(),

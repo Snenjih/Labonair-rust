@@ -42,9 +42,9 @@ Reduce `labonair-backend` from a broad public application state container to nar
 - Shared SQLite connection/schema lifecycle is now extracted as
   `labonair-persistence`; feature-specific stores still use the compatibility
   backend database handle until their queries move behind capability APIs.
-- Host reads, ordering, and group mutations now use `labonair_hosts::store`
-  directly; secret-bearing writes and MCP side effects remain compatibility
-  adapters until their typed contracts are ready.
+- Host reads, ordering, group mutations, and secret-bearing writes now use
+  `labonair_hosts::store`; the backend retains only compatibility signatures
+  and the MCP-specific event adapter.
 - Stable IDs, typed domain events, and the remaining service boundaries are
   still open in this task.
 

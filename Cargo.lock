@@ -4297,8 +4297,10 @@ version = "0.1.0"
 dependencies = [
  "labonair-errors",
  "labonair-persistence",
+ "labonair-secrets",
  "rusqlite",
  "serde",
+ "tokio",
  "uuid",
 ]
 

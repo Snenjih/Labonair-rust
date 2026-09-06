@@ -5,12 +5,12 @@
 The host model boundary is now standalone in `crates/hosts`
 (`labonair-hosts`). `Host`, `Group`, and `ReorderItem` no longer belong to the
 backend module and are consumed directly by `hosts-ui` and `panel-snippets`.
-The backend intentionally still owns secret-bearing host writes and App-bound
-transport adapters; moving those wholesale would preserve the coupling this
-rework is meant to remove. Host reads, ordering, and group mutations now use
-`labonair_hosts::store` directly. The shared SQLite connection and schema
-lifecycle are owned by `crates/persistence` (`labonair-persistence`), while the
-backend's `HostsDb` name remains a compatibility alias.
+All host persistence, including secret-bearing writes, now lives in
+`labonair_hosts::store`. The backend retains only old function signatures as a
+compatibility adapter and translates the typed `HostEvent` into MCP grant
+revocation. The shared SQLite connection and schema lifecycle are owned by
+`crates/persistence` (`labonair-persistence`), while the backend's `HostsDb`
+name remains a compatibility alias.
 
 Updated the workspace manifest, lockfile, dependency verifier, architecture
 inventory, architecture contract, and `R01-001` progress. Verification passed:
@@ -20,8 +20,8 @@ inventory, architecture contract, and `R01-001` progress. Verification passed:
 labonair-panel-snippets`, and `scripts/check-crate-deps.sh`.
 
 State: branch `master`, latest commits are `2b32ae4` (shared persistence
-lifecycle) and `595f5ed` (host store queries). `R01-001` remains
-`🔄 In Progress`; next is
+lifecycle), `595f5ed` (host store queries), and the next host write-boundary
+commit is pending. `R01-001` remains `🔄 In Progress`; next is
 extracting host persistence behind a narrow store/service contract and
 replacing its direct `App`/MCP coupling with a typed capability callback. No
 source blocker.

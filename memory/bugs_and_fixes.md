@@ -21,6 +21,19 @@ snippet consumers to use it directly. Secret-bearing create/update/delete and
 duplicate operations remain in the backend adapter until their secret and MCP
 event contracts are explicit.
 
+## 2026-09-06 — Host write ownership moved behind typed requests
+
+**Finding:** Keeping the old host write implementation in `backend` would
+leave the host capability dependent on the application facade even after its
+domain and read paths were extracted.
+
+**Resolution:** Moved create, update, duplicate, delete, and sudo-password
+storage into `labonair_hosts::store` using `HostCreateRequest` and
+`HostUpdateRequest`. `HostEvent::AgentAccessBlocked` is the only callback
+contract; the backend adapter remains responsible for inspecting MCP grants
+and emitting `AppEvent::McpGrantExpired`. Added a direct store test proving
+secrets do not enter the `Host` read model.
+
 ## 2026-09-06 — Host domain models must be separated before host persistence
 
 **Finding:** `backend::modules::hosts` combined serializable host models,
