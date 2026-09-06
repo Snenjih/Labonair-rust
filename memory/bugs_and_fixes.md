@@ -1,5 +1,13 @@
 # Bugs, fixes, and non-obvious constraints
 
+## 2026-09-06 — Empty-state shortcut must use the registered palette binding
+
+**Finding:** The native Empty workspace surface displayed `⌘K` for Commands,
+but the canonical `CommandPalette` shortcut registry defines `⌘P`.
+
+**Resolution:** The workspace hint now displays `⌘P`, keeping the visible
+shortcut and the keymap registry consistent.
+
 ## 2026-09-06 — Smoke launch must prove the native process stays alive
 
 **Finding:** The optional GUI smoke path started the bundled executable

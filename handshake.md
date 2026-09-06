@@ -80,6 +80,11 @@ capture shows the native standalone shell with Explorer, workspace, and
 statusbar zones. Project selection/transition interaction remains to be
 verified before R02-002 can close.
 
+The native Empty-state shortcut label was also corrected from `⌘K` to the
+registered `⌘P` Command Palette binding. The updated bundle was rebuilt and a
+PID-scoped native screenshot confirms the corrected label; the Explorer may
+still show its asynchronous loading state during this verification.
+
 ## Current Session: 2026-09-06 (Global menu and theme entrypoints complete)
 
 `R02-001` is complete. The titlebar global menu now contains Settings,

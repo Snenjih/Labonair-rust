@@ -4408,7 +4408,7 @@ impl Workspace {
                     .gap_2()
                     .child(hint("\u{2318}T", "New Terminal"))
                     .child(hint("\u{2318}E", "Editor"))
-                    .child(hint("\u{2318}K", "Commands"))
+                    .child(hint("\u{2318}P", "Commands"))
                     .child(hint("\u{2318},", "Settings"))
                     .child(hint("\u{2318}\u{21e7}N", "Hosts")),
             )

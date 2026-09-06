@@ -93,5 +93,10 @@ bundle path starts the native app reliably, and the smoke test resolves and
 checks only the resulting Rust executable PID. A current PID-scoped capture
 confirms the standalone shell zones; project selection and transition visuals
 remain open.
+
+The native Empty-state shortcut hint now matches the canonical keymap
+registry: Commands is shown as `⌘P`, not the stale `⌘K`. The corrected bundle
+was rebuilt and checked with a PID-scoped screenshot; project selection and
+transition visuals remain open.
 Session identity persistence and the final removal audit continue in
 `R02-003`.
