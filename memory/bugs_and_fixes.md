@@ -1,5 +1,33 @@
 # Bugs, fixes, and non-obvious constraints
 
+## 2026-09-06 — Notification lifecycle must be UI-free
+
+**Finding:** `labonair-notifications` combined notification data, GPUI entity
+state, toast rendering, severity-specific timers, callback actions, and an
+error preference gate. That made the notification system a presentation
+implementation instead of a reusable cross-module registry.
+
+**Resolution:** Added `labonair-notifications-core` with typed notification
+kinds, stable registry IDs, retained records, read state, details, action
+metadata, bounded history, and explicit deduplication. The GPUI crate now only
+adapts the registry and keeps temporary callback compatibility. Notifications
+are retained for the statusbar dropdown; no timer or toast layer remains.
+
+**Verification detail:** The statusbar uses `overflow_y_scroll` for the full
+history and toggles record details on row activation. The unread badge is
+driven by registry read state rather than total retained records.
+
+## 2026-09-06 — Remove dead error-notification setting with the toast path
+
+**Finding:** `notify_on_errors` was exposed by Settings but no longer had a
+valid product behavior once all messages were required to reach the central
+notification dropdown.
+
+**Resolution:** Removed the field from the typed settings content, legacy
+preferences projection, migration mapping, and settings UI. Existing JSON
+remains forward-compatible because unknown removed fields are ignored during
+deserialization.
+
 ## 2026-09-06 — Shared database lifecycle is infrastructure, not host logic
 
 **Finding:** The existing `HostsDb` wrapper initialized one SQLite database

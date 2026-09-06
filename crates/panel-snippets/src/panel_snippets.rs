@@ -897,7 +897,7 @@ impl SnippetsView {
             match snippet.host_id.as_deref() {
                 Some(id) if self.hosts.iter().any(|h| h.id == id) => Some(id.to_string()),
                 Some(_) => {
-                    self.toast_err(
+                    self.notify_error(
                         "Snippet host missing",
                         "This snippet's target host no longer exists — edit the snippet to pick a new host.",
                         cx,
@@ -1019,7 +1019,7 @@ impl SnippetsView {
         let _ = cx;
     }
 
-    fn toast_err(&self, title: &'static str, message: &'static str, cx: &mut Context<Self>) {
+    fn notify_error(&self, title: &'static str, message: &'static str, cx: &mut Context<Self>) {
         let center = notification_center(cx);
         center.update(cx, |c, cx| {
             c.push(Notification::error(title, message), cx);

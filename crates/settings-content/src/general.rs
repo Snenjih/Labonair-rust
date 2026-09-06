@@ -58,7 +58,6 @@ pub struct GeneralContent {
     pub autostart: Option<bool>,
     /// Encrypt stored credentials at rest.
     pub credential_encryption: Option<bool>,
-    pub notify_on_errors: Option<bool>,
     pub confirm_quit_with_ssh: Option<bool>,
     pub check_for_updates: Option<bool>,
     /// Reopen the previous tabs / split layout on the next launch.
@@ -74,7 +73,6 @@ impl GeneralContent {
             startup_terminal_count: Some(1),
             autostart: Some(false),
             credential_encryption: Some(false),
-            notify_on_errors: Some(false),
             confirm_quit_with_ssh: Some(true),
             check_for_updates: Some(true),
             session_restore: Some(false),

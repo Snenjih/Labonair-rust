@@ -1,78 +1,46 @@
-//! App-wide notification / toast system (T04-004).
+//! GPUI adapter for the app-wide notification registry.
 //!
-//! Ported from `reference-src/src/modules/notifications/` — the
-//! `useNotificationStore` + `NotificationDropdown`. The reference keeps a
-//! persistent, newest-first list with a 2s title+message+type spam guard, a
-//! 100-item cap and a `notifyOnErrors` gate for passive/background errors,
-//! plus an `addActionResultNotification` path that bypasses that gate for
-//! user-initiated action results. All of that is kept here.
-//!
-//! On top of the reference the pure-Rust port renders the list as **stacked
-//! toasts** in the top-right of the app shell with
-//! per-severity auto-dismiss, manual close and an optional action button — the
-//! reference relied on `motion/react` + a Radix popover for the same UX.
-//!
-//! Access goes through the [`GlobalNotificationCenter`] global — see
-//! [`notification_center`] / [`init`]. The [`notify_err`] helper turns a
-//! `Result<T, String>` (Critical Rule 6) into an error toast at the call site.
+//! The retained data model and lifecycle live in
+//! [`labonair_notifications_core`]. This crate adds only GPUI invalidation and
+//! callback-backed compatibility actions. Notifications are consumed by the
+//! statusbar dropdown; this crate deliberately has no toast renderer.
 
-use std::time::{Duration, Instant};
+use std::{collections::HashMap, time::Instant};
 
 use gpui::{App, AppContext, Context, Entity, Global, SharedString, Window};
+use labonair_notifications_core::{NotificationDraft, NotificationKind, NotificationRegistry};
 
-use labonair_ui_kit::UiTheme;
-
-/// Severity of a notification. Names match the reference `NotificationType`
-/// (`error | warning | info | success`).
+/// Severity of a notification. This is the GPUI-facing spelling retained for
+/// current feature callers; the UI-free registry uses [`NotificationKind`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Severity {
+    Message,
     Info,
     Success,
     Warning,
     Error,
 }
 
-impl Severity {
-    /// Auto-dismiss timeout when the caller does not set one explicitly.
-    /// `Error` stays until dismissed manually (the reference never
-    /// auto-cleared errors either — they lived in the dropdown until
-    /// "Clear all").
-    pub fn default_timeout(self) -> Option<Duration> {
-        match self {
-            Severity::Info => Some(Duration::from_secs(5)),
-            Severity::Success => Some(Duration::from_secs(4)),
-            Severity::Warning => Some(Duration::from_secs(8)),
-            Severity::Error => None,
-        }
-    }
-
-    /// The toast icon for this severity.
-    fn glyph(self) -> labonair_ui_kit::IconName {
-        use labonair_ui_kit::IconName;
-        match self {
-            Severity::Info => IconName::Info,
-            Severity::Success => IconName::CircleCheck,
-            Severity::Warning => IconName::Warning,
-            Severity::Error => IconName::CircleX,
-        }
-    }
-
-    fn color(self, theme: &impl UiTheme) -> gpui::Hsla {
-        let status = &theme.theme().status;
-        match self {
-            Severity::Info => status.info,
-            Severity::Success => status.success,
-            Severity::Warning => status.warning,
-            Severity::Error => status.error,
+impl From<Severity> for NotificationKind {
+    fn from(value: Severity) -> Self {
+        match value {
+            Severity::Message => Self::Message,
+            Severity::Info => Self::Info,
+            Severity::Success => Self::Success,
+            Severity::Warning => Self::Warning,
+            Severity::Error => Self::Error,
         }
     }
 }
 
-/// Callback fired when a toast's action button is clicked.
+/// Callback fired when a compatibility action is activated in the dropdown.
 type ActionCallback = Box<dyn FnMut(&mut Window, &mut App) + 'static>;
 
-/// A button rendered inside a toast. The callback fires once, then the toast
-/// is dismissed.
+/// A callback-backed action for existing callers.
+///
+/// New actions should eventually use a stable command/action ID rather than a
+/// closure. The registry already stores action metadata separately from this
+/// adapter-specific callback.
 pub struct NotificationAction {
     pub label: SharedString,
     callback: ActionCallback,
@@ -98,16 +66,16 @@ impl std::fmt::Debug for NotificationAction {
     }
 }
 
-/// A notification to push. `id` and `timestamp` are assigned on insert.
+/// A notification draft to publish. Identity and read state are assigned by
+/// the UI-free registry on insert.
 #[derive(Debug)]
 pub struct Notification {
     pub severity: Severity,
     pub title: SharedString,
     pub body: SharedString,
     pub source: Option<SharedString>,
-    /// Explicit auto-dismiss timeout; falls back to
-    /// [`Severity::default_timeout`] when `None`.
-    pub timeout: Option<Duration>,
+    pub details: Option<SharedString>,
+    pub dedupe_key: Option<SharedString>,
     pub action: Option<NotificationAction>,
 }
 
@@ -122,9 +90,14 @@ impl Notification {
             title: title.into(),
             body: body.into(),
             source: None,
-            timeout: None,
+            details: None,
+            dedupe_key: None,
             action: None,
         }
+    }
+
+    pub fn message(title: impl Into<SharedString>, body: impl Into<SharedString>) -> Self {
+        Self::new(Severity::Message, title, body)
     }
 
     pub fn info(title: impl Into<SharedString>, body: impl Into<SharedString>) -> Self {
@@ -148,8 +121,13 @@ impl Notification {
         self
     }
 
-    pub fn timeout(mut self, timeout: Duration) -> Self {
-        self.timeout = Some(timeout);
+    pub fn details(mut self, details: impl Into<SharedString>) -> Self {
+        self.details = Some(details.into());
+        self
+    }
+
+    pub fn dedupe_key(mut self, key: impl Into<SharedString>) -> Self {
+        self.dedupe_key = Some(key.into());
         self
     }
 
@@ -157,55 +135,32 @@ impl Notification {
         self.action = Some(action);
         self
     }
-
-    fn resolved_timeout(&self) -> Option<Duration> {
-        self.timeout.or_else(|| self.severity.default_timeout())
-    }
 }
 
-/// A live notification held by the center.
-struct Active {
-    id: u64,
-    severity: Severity,
-    title: SharedString,
-    body: SharedString,
-    source: Option<SharedString>,
-    created: Instant,
-    action: Option<NotificationAction>,
-}
-
-/// Read-only view of a live notification, for rendering.
+/// Read-only view of a retained notification for the statusbar dropdown.
 #[derive(Debug, Clone)]
-pub struct ToastSnapshot {
+pub struct NotificationSnapshot {
     pub id: u64,
     pub severity: Severity,
     pub title: SharedString,
     pub body: SharedString,
+    pub details: Option<SharedString>,
     pub source: Option<SharedString>,
     pub action_label: Option<SharedString>,
+    pub read: bool,
 }
 
-/// Newest-first spam guard window, matching the reference (`Date.now() - newest < 2000`).
-const SPAM_WINDOW: Duration = Duration::from_millis(2000);
-/// Hard cap on retained notifications, matching the reference `.slice(0, 100)`.
-const MAX_ITEMS: usize = 100;
-
-/// App-wide notification queue. A GPUI entity; observe it to re-render toasts.
+/// GPUI-facing adapter around [`NotificationRegistry`].
 pub struct NotificationCenter {
-    items: Vec<Active>,
-    next_id: u64,
-    /// Gate for passive/background error notifications (reference
-    /// `preferencesStore.notifyOnErrors`). Defaults to `true` until the
-    /// settings store (T13-001) wires the real preference.
-    notify_on_errors: bool,
+    registry: NotificationRegistry,
+    actions: HashMap<u64, NotificationAction>,
 }
 
 impl Default for NotificationCenter {
     fn default() -> Self {
         Self {
-            items: Vec::new(),
-            next_id: 1,
-            notify_on_errors: true,
+            registry: NotificationRegistry::new(),
+            actions: HashMap::new(),
         }
     }
 }
@@ -215,134 +170,138 @@ impl NotificationCenter {
         Self::default()
     }
 
-    pub fn set_notify_on_errors(&mut self, enabled: bool) {
-        self.notify_on_errors = enabled;
-    }
-
-    pub fn notify_on_errors(&self) -> bool {
-        self.notify_on_errors
-    }
-
-    /// Pushes a notification. `Error` severity is dropped when
-    /// [`Self::notify_on_errors`] is `false` (reference `addNotification`
-    /// gate). Returns the assigned id, or `None` if gated/spam-blocked.
+    /// Publish a retained notification. There is no error gate or timeout:
+    /// every message reaches the notification dropdown until dismissed.
     pub fn push(&mut self, notif: Notification, cx: &mut Context<Self>) -> Option<u64> {
-        if notif.severity == Severity::Error && !self.notify_on_errors {
-            return None;
-        }
         self.insert(notif, Instant::now(), cx)
     }
 
-    /// Like [`Self::push`] but bypasses the error gate — for direct,
-    /// user-initiated action results (reference `addActionResultNotification`).
+    /// Compatibility alias for callers that distinguish action results. All
+    /// user-visible messages now use the same retained registry.
     pub fn push_action_result(
         &mut self,
         notif: Notification,
         cx: &mut Context<Self>,
     ) -> Option<u64> {
-        self.insert(notif, Instant::now(), cx)
+        self.push(notif, cx)
     }
 
-    /// Insert with an explicit "now" — the spam guard reference point.
-    /// Public for deterministic testing.
+    /// Insert with an explicit clock value for deterministic adapter tests.
     pub fn insert(
         &mut self,
         notif: Notification,
         now: Instant,
         cx: &mut Context<Self>,
     ) -> Option<u64> {
-        // Spam guard: drop if the newest notification has the same
-        // title + body + severity within the window. `title` is part of the
-        // key so two different actions failing with the same error text stay
-        // visible.
-        if let Some(newest) = self.items.first() {
-            if newest.title == notif.title
-                && newest.body == notif.body
-                && newest.severity == notif.severity
-                && now.duration_since(newest.created) < SPAM_WINDOW
-            {
-                return None;
-            }
-        }
-
-        let id = self.next_id;
-        self.next_id += 1;
-        let timeout = notif.resolved_timeout();
-        self.items.insert(
-            0,
-            Active {
-                id,
-                severity: notif.severity,
-                title: notif.title,
-                body: notif.body,
-                source: notif.source,
-                created: now,
-                action: notif.action,
-            },
+        let action = notif.action;
+        let default_key = format!(
+            "{:?}|{}|{}|{}",
+            notif.severity,
+            notif.title,
+            notif.body,
+            notif
+                .source
+                .as_ref()
+                .map(|value| value.to_string())
+                .unwrap_or_default()
         );
-        self.items.truncate(MAX_ITEMS);
-
-        if let Some(after) = timeout {
-            cx.spawn(async move |this, cx| {
-                cx.background_executor().timer(after).await;
-                let _ = this.update(cx, |this, cx| this.dismiss(id, cx));
-            })
-            .detach();
+        let mut draft = NotificationDraft::new(
+            notif.severity.into(),
+            notif.title.to_string(),
+            notif.body.to_string(),
+        )
+        .dedupe_key(
+            notif
+                .dedupe_key
+                .as_ref()
+                .map(|value| value.to_string())
+                .unwrap_or(default_key),
+        );
+        if let Some(source) = notif.source {
+            draft = draft.source(source.to_string());
         }
+        if let Some(details) = notif.details {
+            draft = draft.details(details.to_string());
+        }
+        if let Some(action) = action {
+            draft = draft.action(labonair_notifications_core::NotificationAction::new(
+                "default",
+                action.label.to_string(),
+            ));
+            let id = self.registry.insert(draft, now)?;
+            self.actions.insert(id, action);
+            cx.notify();
+            return Some(id);
+        }
+        let id = self.registry.insert(draft, now)?;
         cx.notify();
         Some(id)
     }
 
-    /// Removes a notification by id. No-op if not present.
     pub fn dismiss(&mut self, id: u64, cx: &mut Context<Self>) {
-        let before = self.items.len();
-        self.items.retain(|n| n.id != id);
-        if self.items.len() != before {
+        self.actions.remove(&id);
+        if self.registry.dismiss(id) {
             cx.notify();
         }
     }
 
-    /// Removes every notification (reference "Clear all").
-    pub fn clear_all(&mut self, cx: &mut Context<Self>) {
-        if self.items.is_empty() {
-            return;
+    pub fn mark_read(&mut self, id: u64, cx: &mut Context<Self>) {
+        if self.registry.mark_read(id) {
+            cx.notify();
         }
-        self.items.clear();
-        cx.notify();
+    }
+
+    pub fn clear_all(&mut self, cx: &mut Context<Self>) {
+        self.actions.clear();
+        if self.registry.clear() {
+            cx.notify();
+        }
     }
 
     pub fn len(&self) -> usize {
-        self.items.len()
+        self.registry.len()
+    }
+
+    pub fn unread_count(&self) -> usize {
+        self.registry.unread_count()
     }
 
     pub fn is_empty(&self) -> bool {
-        self.items.is_empty()
+        self.registry.is_empty()
     }
 
-    /// Newest-first snapshots for rendering.
-    pub fn snapshots(&self) -> Vec<ToastSnapshot> {
-        self.items
+    pub fn snapshots(&self) -> Vec<NotificationSnapshot> {
+        self.registry
+            .list()
             .iter()
-            .map(|n| ToastSnapshot {
-                id: n.id,
-                severity: n.severity,
-                title: n.title.clone(),
-                body: n.body.clone(),
-                source: n.source.clone(),
-                action_label: n.action.as_ref().map(|a| a.label.clone()),
+            .map(|item| NotificationSnapshot {
+                id: item.id,
+                severity: match item.kind {
+                    NotificationKind::Message => Severity::Message,
+                    NotificationKind::Info => Severity::Info,
+                    NotificationKind::Success => Severity::Success,
+                    NotificationKind::Warning => Severity::Warning,
+                    NotificationKind::Error => Severity::Error,
+                },
+                title: SharedString::from(item.title.clone()),
+                body: SharedString::from(item.summary.clone()),
+                details: item.details.clone().map(SharedString::from),
+                source: item.source.clone().map(SharedString::from),
+                action_label: item
+                    .actions
+                    .first()
+                    .map(|action| SharedString::from(action.label.clone())),
+                read: item.read,
             })
             .collect()
     }
 
-    /// Fires the action callback for `id` (if any) and dismisses that toast.
     pub fn trigger_action(&mut self, id: u64, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(pos) = self.items.iter().position(|n| n.id == id) else {
+        let Some(mut action) = self.actions.remove(&id) else {
             return;
         };
-        if let Some(mut action) = self.items[pos].action.take() {
-            (action.callback)(window, cx);
-        }
-        self.items.remove(pos);
+        (action.callback)(window, cx);
+        self.registry.dismiss(id);
         cx.notify();
     }
 }
@@ -352,23 +311,19 @@ pub struct GlobalNotificationCenter(pub Entity<NotificationCenter>);
 
 impl Global for GlobalNotificationCenter {}
 
-/// Creates the [`NotificationCenter`] and installs it as a global. Call once
-/// at startup.
+/// Creates the [`NotificationCenter`] and installs it as a global.
 pub fn init(cx: &mut App) -> Entity<NotificationCenter> {
     let center = cx.new(|_| NotificationCenter::new());
     cx.set_global(GlobalNotificationCenter(center.clone()));
     center
 }
 
-/// The [`NotificationCenter`] entity from the global. Panics if [`init`] has
-/// not run.
+/// The [`NotificationCenter`] entity from the global.
 pub fn notification_center(cx: &App) -> Entity<NotificationCenter> {
     cx.global::<GlobalNotificationCenter>().0.clone()
 }
 
-/// Turns a `Result<T, String>` into an error toast on failure (via the
-/// action-result path, so it shows regardless of the error gate). Returns the
-/// `Ok` value, or `None` on error.
+/// Turns a `Result<T, String>` into a retained error notification.
 pub fn notify_err<T>(
     title: impl Into<SharedString>,
     result: Result<T, String>,
@@ -386,144 +341,6 @@ pub fn notify_err<T>(
     }
 }
 
-// ── Toast rendering ─────────────────────────────────────────────────────────
-
-use gpui::{
-    div, px, InteractiveElement, IntoElement, ParentElement, StatefulInteractiveElement, Styled,
-};
-use labonair_ui_kit::{ButtonSize, ButtonVariant, Palette};
-
-/// Builds the stacked toast overlay for the app shell. Returns `None` when
-/// there is nothing to show. The overlay container only occupies its own
-/// top-right box, so clicks elsewhere pass through untouched; only the toast
-/// cards are interactive.
-pub fn render_overlay<Th: UiTheme + 'static>(
-    center: &Entity<NotificationCenter>,
-    theme: &Entity<Th>,
-    cx: &mut App,
-) -> Option<gpui::AnyElement> {
-    let snapshots = center.read(cx).snapshots();
-    if snapshots.is_empty() {
-        return None;
-    }
-    let theme = theme.read(cx);
-    let core = &theme.theme().core;
-    let (card, fg, muted, border) = (
-        core.card,
-        core.foreground,
-        theme.muted_foreground(),
-        theme.border(),
-    );
-    let c = Palette::from_theme(theme);
-
-    let toasts = snapshots.into_iter().map(|t| {
-        let accent = t.severity.color(theme);
-        let center_close = center.clone();
-        let center_action = center.clone();
-        let id = t.id;
-        let action_label = t.action_label.clone();
-
-        div()
-            .id(("toast", id))
-            .w(px(360.0))
-            .flex()
-            .flex_col()
-            .gap_1()
-            .p_3()
-            .rounded_lg()
-            .bg(card)
-            .border_1()
-            .border_color(accent)
-            .shadow_lg()
-            .child(
-                div()
-                    .flex()
-                    .items_start()
-                    .gap_2()
-                    .child(div().child(t.severity.glyph().svg(accent)))
-                    .child(
-                        div()
-                            .flex_1()
-                            .min_w_0()
-                            .flex()
-                            .flex_col()
-                            .gap_0p5()
-                            .child(
-                                div()
-                                    .flex()
-                                    .items_center()
-                                    .gap_2()
-                                    .child(
-                                        div()
-                                            .text_color(fg)
-                                            .font_weight(gpui::FontWeight::SEMIBOLD)
-                                            .child(t.title.clone()),
-                                    )
-                                    .children(t.source.clone().map(|s| {
-                                        div()
-                                            .px_1()
-                                            .rounded_sm()
-                                            .bg(border)
-                                            .text_color(muted)
-                                            .child(s)
-                                    })),
-                            )
-                            .child(div().text_color(muted).child(t.body.clone())),
-                    )
-                    .child(
-                        // T20-003: a 16px icon-only close glyph — smaller
-                        // than any `ButtonSize::Icon*` scale (24/36/32/40px);
-                        // bumping it up would visibly enlarge the toast's
-                        // close affordance, documented exception.
-                        div()
-                            .id(("toast-close", id))
-                            .flex_shrink_0()
-                            .size(px(16.0))
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .rounded_sm()
-                            .text_color(muted)
-                            .hover(|s| s.bg(border).text_color(fg))
-                            .child("\u{2715}")
-                            .on_click(move |_, _window, cx| {
-                                center_close.update(cx, |c, cx| c.dismiss(id, cx));
-                            }),
-                    ),
-            )
-            .children(action_label.map(|label| {
-                div().flex().justify_end().child(
-                    labonair_ui_kit::button_no_hover(
-                        ("toast-action", id),
-                        c,
-                        ButtonVariant::Default,
-                        ButtonSize::Xs,
-                    )
-                    .bg(accent)
-                    .text_color(card)
-                    .hover(|s| s.opacity(0.9))
-                    .child(label)
-                    .on_click(move |_, window, cx| {
-                        center_action.update(cx, |c, cx| c.trigger_action(id, window, cx));
-                    }),
-                )
-            }))
-            .into_any_element()
-    });
-
-    Some(
-        div()
-            .absolute()
-            .top_4()
-            .right_4()
-            .flex()
-            .flex_col()
-            .gap_2()
-            .children(toasts)
-            .into_any_element(),
-    )
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -534,161 +351,62 @@ mod tests {
     }
 
     #[gpui::test]
-    fn push_adds_newest_first_with_ids(cx: &mut TestAppContext) {
+    fn push_adds_newest_first_and_tracks_unread(cx: &mut TestAppContext) {
         cx.update(|cx| {
-            let c = cx.new(|_| NotificationCenter::new());
-            c.update(cx, |c, cx| {
-                let a = c.push(Notification::info("A", "first"), cx).unwrap();
-                let b = c.push(Notification::info("B", "second"), cx).unwrap();
+            let center = cx.new(|_| NotificationCenter::new());
+            center.update(cx, |center, cx| {
+                let a = center.push(Notification::info("A", "first"), cx).unwrap();
+                let b = center.push(Notification::info("B", "second"), cx).unwrap();
                 assert_ne!(a, b);
-                let s = c.snapshots();
-                assert_eq!(s.len(), 2);
-                assert_eq!(s[0].title, "B");
-                assert_eq!(s[1].title, "A");
+                assert_eq!(center.snapshots()[0].title, "B");
+                assert_eq!(center.unread_count(), 2);
+                center.mark_read(b, cx);
+                assert_eq!(center.unread_count(), 1);
             });
         });
     }
 
     #[gpui::test]
-    fn spam_guard_blocks_then_allows(cx: &mut TestAppContext) {
+    fn equivalent_recent_messages_are_deduplicated(cx: &mut TestAppContext) {
         cx.update(|cx| {
-            let c = cx.new(|_| NotificationCenter::new());
-            c.update(cx, |c, cx| {
-                let t0 = Instant::now();
-                assert!(c.insert(base(), t0, cx).is_some());
-                // identical within window → blocked
-                assert!(c
-                    .insert(base(), t0 + Duration::from_millis(500), cx)
+            let center = cx.new(|_| NotificationCenter::new());
+            center.update(cx, |center, cx| {
+                let now = Instant::now();
+                assert!(center.insert(base(), now, cx).is_some());
+                assert!(center
+                    .insert(base(), now + std::time::Duration::from_millis(500), cx)
                     .is_none());
-                // different body → allowed
-                assert!(c
-                    .insert(Notification::info("Test", "Other"), t0, cx)
-                    .is_some());
-                // different type, same text → allowed
-                assert!(c
-                    .insert(Notification::warning("Test", "Hello"), t0, cx)
-                    .is_some());
-                // after the window → allowed
-                assert!(c
-                    .insert(base(), t0 + Duration::from_millis(2001), cx)
-                    .is_some());
-            });
-        });
-    }
-
-    #[gpui::test]
-    fn spam_guard_keeps_different_titles(cx: &mut TestAppContext) {
-        cx.update(|cx| {
-            let c = cx.new(|_| NotificationCenter::new());
-            c.update(cx, |c, cx| {
-                let t0 = Instant::now();
-                assert!(c
-                    .insert(Notification::error("Push Failed", "dead session"), t0, cx)
-                    .is_some());
-                assert!(c
-                    .insert(Notification::error("Stash Failed", "dead session"), t0, cx)
-                    .is_some());
-                assert_eq!(c.len(), 2);
-            });
-        });
-    }
-
-    #[gpui::test]
-    fn error_gate(cx: &mut TestAppContext) {
-        cx.update(|cx| {
-            let c = cx.new(|_| NotificationCenter::new());
-            c.update(cx, |c, cx| {
-                c.set_notify_on_errors(false);
-                assert!(c.push(Notification::error("E", "x"), cx).is_none());
-                assert_eq!(c.len(), 0);
-                // action-result path bypasses the gate
-                assert!(c
-                    .push_action_result(Notification::error("E", "x"), cx)
-                    .is_some());
-                assert_eq!(c.len(), 1);
-                // non-error still passes
-                c.set_notify_on_errors(true);
-                assert!(c.push(Notification::error("E2", "y"), cx).is_some());
-            });
-        });
-    }
-
-    #[gpui::test]
-    fn cap_at_100(cx: &mut TestAppContext) {
-        cx.update(|cx| {
-            let c = cx.new(|_| NotificationCenter::new());
-            c.update(cx, |c, cx| {
-                for i in 0..105 {
-                    c.push(Notification::info("T", format!("msg-{i}")), cx);
-                }
-                assert_eq!(c.len(), 100);
-            });
-        });
-    }
-
-    #[gpui::test]
-    fn dismiss_and_clear(cx: &mut TestAppContext) {
-        cx.update(|cx| {
-            let c = cx.new(|_| NotificationCenter::new());
-            c.update(cx, |c, cx| {
-                let id = c.push(base(), cx).unwrap();
-                c.dismiss(999, cx);
-                assert_eq!(c.len(), 1);
-                c.dismiss(id, cx);
-                assert_eq!(c.len(), 0);
-                c.push(Notification::info("a", "1"), cx);
-                c.push(Notification::info("b", "2"), cx);
-                c.clear_all(cx);
-                assert!(c.is_empty());
-            });
-        });
-    }
-
-    #[gpui::test]
-    fn action_button_fires_callback_once(cx: &mut TestAppContext) {
-        let fired = std::rc::Rc::new(std::cell::Cell::new(0));
-        let f2 = fired.clone();
-        cx.update(|cx| {
-            let c = cx.new(|_| NotificationCenter::new());
-            c.update(cx, |c, cx| {
-                let id = c
-                    .push(
-                        Notification::warning("Reconnect", "Session dropped").action(
-                            NotificationAction::new("Retry", move |_, _| {
-                                f2.set(f2.get() + 1);
-                            }),
-                        ),
+                assert!(center
+                    .insert(
+                        Notification::info("Test", "Other"),
+                        now + std::time::Duration::from_millis(500),
                         cx,
                     )
-                    .unwrap();
-                assert_eq!(
-                    c.snapshots()[0]
-                        .action_label
-                        .as_ref()
-                        .map(|s| s.to_string()),
-                    Some("Retry".to_string())
-                );
-                // trigger_action needs a Window; simulate the callback path by
-                // taking it directly is not possible here, so assert the label
-                // wiring and that dismiss removes it.
-                c.dismiss(id, cx);
+                    .is_some());
             });
         });
-        assert_eq!(fired.get(), 0, "callback must not fire without a click");
     }
 
     #[gpui::test]
-    fn auto_dismiss_after_timeout(cx: &mut TestAppContext) {
-        let c = cx.new(|_| NotificationCenter::new());
-        c.update(cx, |c, cx| {
-            c.push(
-                Notification::info("A", "x").timeout(Duration::from_millis(50)),
-                cx,
-            );
-            assert_eq!(c.len(), 1);
+    fn details_and_clear_are_available_to_dropdown(cx: &mut TestAppContext) {
+        cx.update(|cx| {
+            let center = cx.new(|_| NotificationCenter::new());
+            center.update(cx, |center, cx| {
+                center.push(
+                    Notification::error("Failed", "Could not connect")
+                        .details("The server rejected the connection."),
+                    cx,
+                );
+                assert_eq!(
+                    center.snapshots()[0]
+                        .details
+                        .as_ref()
+                        .map(|value| value.to_string()),
+                    Some("The server rejected the connection.".to_string())
+                );
+                center.clear_all(cx);
+                assert!(center.is_empty());
+            });
         });
-        cx.executor().advance_clock(Duration::from_millis(100));
-        cx.run_until_parked();
-        c.update(cx, |c, _| assert_eq!(c.len(), 0));
     }
 }

@@ -9,7 +9,7 @@
 //!   split-pane [`PaneGroup`](labonair_workspace::pane_group) itself;
 //! * the [`StatusBar`] entity — renders purely from the workspace's
 //!   [`StatusItemRegistry`](labonair_panel::StatusItemRegistry) (T17-003);
-//! * the two overlay layers — [`ModalLayer`] + [`ToastLayer`] (T17-005).
+//! * the modal layer; notifications are rendered by the statusbar dropdown.
 //!
 //! No feature logic lives in `render` anymore: there are no `drain_pending_*`
 //! calls, no per-frame `sync_live_bridge`, no `build_palette_data`. The wiring
@@ -40,7 +40,6 @@ use labonair_panel_snippets::SnippetsView;
 use labonair_workspace::live_bridge::WorkspaceLiveBridge;
 use labonair_workspace::modal_layer::ModalLayer;
 use labonair_workspace::status_bar::StatusBar;
-use labonair_workspace::toast_layer::ToastLayer;
 
 use crate::background::{BackgroundStore, LayerScope};
 use crate::commands::CommandRegistry;
@@ -83,8 +82,6 @@ pub struct AppShell {
     pub(crate) command_registry: CommandRegistry,
     /// The app's single modal-overlay slot (T17-005).
     pub(crate) modal_layer: Entity<ModalLayer>,
-    /// The stacked, non-blocking toast overlay (T17-005).
-    pub(crate) toast_layer: Entity<ToastLayer<ThemeStore>>,
     /// Real `LiveBridge` for the AI agent — snapshot refreshed event-driven
     /// (T17-006), command queue drained by [`Self`]'s background task.
     pub(crate) live_bridge: WorkspaceLiveBridge,
@@ -127,7 +124,6 @@ impl AppShell {
         status_bar: Entity<StatusBar>,
         command_registry: CommandRegistry,
         modal_layer: Entity<ModalLayer>,
-        toast_layer: Entity<ToastLayer<ThemeStore>>,
         live_bridge: WorkspaceLiveBridge,
         live_drain: Task<()>,
         cx: &mut Context<Self>,
@@ -141,7 +137,6 @@ impl AppShell {
             status_bar,
             command_registry,
             modal_layer,
-            toast_layer,
             live_bridge,
             _live_drain: live_drain,
             focus_handle: cx.focus_handle(),
@@ -223,9 +218,9 @@ impl Render for AppShell {
             )
             .when(show_statusbar, |d| d.child(self.status_bar.clone()))
             .children(background_layer)
-            // Overlays: exactly two children (T17-005 / layout contract).
+            // Notifications use the statusbar dropdown and must not create a
+            // separate notification overlay.
             .child(self.modal_layer.clone())
-            .child(self.toast_layer.clone())
     }
 }
 

@@ -33,6 +33,9 @@ ALLOWED = {
     # Platform service — secret storage and encryption, without GPUI or
     # feature-module dependencies.
     "labonair-secrets": {"labonair-filesystem"},
+    # UI-free notification lifecycle and metadata. This is the only owner of
+    # retention, ordering, deduplication, and read state.
+    "labonair-notifications-core": set(),
     # Cross-cutting structured error contract. It contains no workspace
     # dependencies and is shared by capability services during migration.
     "labonair-errors": set(),
@@ -52,7 +55,7 @@ ALLOWED = {
     # transitional backend adapter until process/session contracts are split.
     "labonair-snippets": {"labonair-errors", "labonair-persistence"},
     "labonair-notifications": {
-        "labonair-theme", "labonair-ui-kit", "labonair-gpui-ext",
+        "labonair-notifications-core",
     },
     "labonair-command-palette": {
         "labonair-theme", "labonair-ui-kit", "labonair-gpui-ext",
@@ -160,7 +163,7 @@ ALLOWED = {
     },
 
     # Host access — rule 9: not a panel crate; no workspace / shell / panel*.
-    # [deviation] also pulls notifications for toast feedback.
+    # [deviation] also pulls notifications for user-visible feedback.
     # T19-010: `apply_host_change` projects into `hosts.entries` via
     # `labonair-settings`'s layered store + `labonair-settings-content`'s
     # typed model — a pure data/store edge, not workspace/shell/panel*.

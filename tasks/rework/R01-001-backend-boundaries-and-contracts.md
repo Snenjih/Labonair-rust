@@ -51,6 +51,12 @@ Reduce `labonair-backend` from a broad public application state container to nar
 - Snippet models and SQLite persistence now use `labonair-snippets`; process
   execution remains in the backend until local/SSH session contracts are
   extracted.
+- Notification lifecycle is now UI-free in `labonair-notifications-core`.
+  The GPUI adapter delegates retention, deduplication, read state, details,
+  and actions to that registry; the shell no longer mounts a toast overlay.
+- The statusbar notification dropdown now shows the unread badge, all retained
+  records in a scrollable list, and expandable details. Notification records
+  are not auto-dismissed.
 - Stable IDs, typed domain events, and the remaining service boundaries are
   still open in this task.
 

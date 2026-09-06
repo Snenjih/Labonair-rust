@@ -41,7 +41,6 @@ pub mod status_bar;
 pub mod status_placements;
 pub mod syntax_theme;
 pub mod tabs;
-pub mod toast_layer;
 pub mod transfers;
 pub mod views;
 
@@ -871,7 +870,7 @@ impl Workspace {
     /// the two. Called once per `render` (cheap: a `String` compare plus,
     /// only on an actual change, `labonair_settings::set_active_project_root`
     /// — which is itself a no-op if the canonicalized root didn't change).
-    /// Also toasts newly-whitelist-rejected project-settings keys, if any
+    /// Also notifies newly-whitelist-rejected project-settings keys, if any
     /// (Anweisung #4's "einmal sichtbar gemeldet").
     fn sync_project_settings_root(&mut self, cx: &mut Context<Self>) {
         let cwd = self.active_cwd(cx);

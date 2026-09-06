@@ -187,13 +187,6 @@ pub fn all_fields() -> Vec<AnyField> {
             "Encrypt saved credentials at rest with an OS-backed key."
         ),
         field!(
-            general.notify_on_errors,
-            "notifyOnErrors",
-            Switch,
-            "Notify on errors",
-            "Show a toast when a background task fails."
-        ),
-        field!(
             general.confirm_quit_with_ssh,
             "confirmQuitWithSsh",
             Switch,
@@ -1207,7 +1200,7 @@ pub fn all_fields() -> Vec<AnyField> {
             "notifyOnActivity",
             Switch,
             "Notify on agent activity",
-            "Show a toast for every command / keystroke an agent sends."
+            "Show a notification for every command / keystroke an agent sends."
         ),
         // ── personalization ─────────────────────────────────────────────
         field!(

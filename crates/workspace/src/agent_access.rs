@@ -110,7 +110,8 @@ impl AgentAccessStore {
 
     /// Grant or revoke agent access for one tab: pushes the change to the Rust
     /// bridge (`mcp_set_session_grant`) and mirrors it locally. The local
-    /// mirror is applied optimistically and rolled back with an error toast if
+    /// mirror is applied optimistically and rolled back with an error
+    /// notification if
     /// the backend rejects the grant (e.g. the host has "Block AI Agent
     /// Access" set).
     #[allow(clippy::too_many_arguments)]

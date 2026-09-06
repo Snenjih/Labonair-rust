@@ -1,7 +1,7 @@
 //! Startup wiring for [`AppShell`] — extracted from `AppShell::new` in T17-006.
 //!
 //! [`bootstrap`] builds every child entity (workspace, panels, palette,
-//! updater, docks, status bar, modal + toast layers, titlebar), runs the
+//! updater, docks, status bar, modal layer, titlebar), runs the
 //! ordered startup sequence (MCP-prefs hydrate → session snapshot → theme
 //! preference → `apply_prefs_to_theme` → keybinds → settings deps → updater
 //! check) and sets up the reactive edges that used to be a dozen
@@ -36,7 +36,6 @@ use labonair_workspace::dock::DockData;
 use labonair_workspace::live_bridge::{LiveSnapshot, WorkspaceLiveBridge};
 use labonair_workspace::modal_layer::ModalLayer;
 use labonair_workspace::status_bar::StatusBar;
-use labonair_workspace::toast_layer::ToastLayer;
 
 use crate::app_shell::{AppShell, ShellPanels};
 use crate::background::BackgroundStore;
@@ -172,19 +171,6 @@ pub(crate) fn bootstrap(
     }
 
     cx.observe(&background, |_, _, cx| cx.notify()).detach();
-
-    // Demo: a startup toast proves the system is reachable from anywhere
-    // (acceptance criterion). Debug builds only.
-    #[cfg(debug_assertions)]
-    notifications.update(cx, |center, cx| {
-        center.push(
-            labonair_notifications::Notification::info(
-                "Welcome to Labonair",
-                "Notifications appear here. This demo toast auto-dismisses.",
-            ),
-            cx,
-        );
-    });
 
     let agent_access = cx.new(|_| AgentAccessStore::new(backend.clone(), tokio.clone()));
 
@@ -484,8 +470,6 @@ pub(crate) fn bootstrap(
     let status_bar = cx.new(|cx| StatusBar::new(workspace.clone(), theme.clone(), cx));
 
     let modal_layer = cx.new(|_| ModalLayer::new());
-    let toast_layer = cx.new(|cx| ToastLayer::new(notifications.clone(), theme.clone(), cx));
-
     let titlebar = cx.new(|cx| Titlebar::new(theme.clone(), workspace.clone(), cx));
 
     // The command table — the single definition site for every menu / keybind
@@ -511,7 +495,6 @@ pub(crate) fn bootstrap(
         status_bar,
         command_registry,
         modal_layer,
-        toast_layer,
         live_bridge,
         live_drain,
         cx,

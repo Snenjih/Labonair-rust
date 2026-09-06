@@ -374,6 +374,7 @@ pub struct NotificationsStatusItem {
     center: Entity<labonair_notifications::NotificationCenter>,
     theme: Entity<ThemeStore>,
     open: Option<Point<Pixels>>,
+    expanded: std::collections::HashSet<u64>,
     focus: gpui::FocusHandle,
 }
 
@@ -389,6 +390,7 @@ impl NotificationsStatusItem {
             center,
             theme,
             open: None,
+            expanded: std::collections::HashSet::new(),
             focus: cx.focus_handle(),
         }
     }
@@ -425,7 +427,7 @@ impl StatusItem for NotificationsStatusItem {
     fn render_status(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         // Bell stays visible even at 0 (T18-004 point 1: notifications is
         // always shown, rightmost); only the badge disappears (point 3).
-        let count = self.center.read(cx).len();
+        let count = self.center.read(cx).unread_count();
         let (fg, muted, accent, border) = {
             let t = self.theme.read(cx);
             (t.foreground(), t.muted_foreground(), t.accent(), t.border())
@@ -523,28 +525,58 @@ impl StatusItem for NotificationsStatusItem {
                         )),
                     ),
             )
-            .children(snapshots.into_iter().take(6).map(|s| {
+            .child(
                 div()
-                    .flex()
-                    .flex_col()
-                    .gap_0p5()
-                    .px_3()
-                    .py_1p5()
-                    .border_b_1()
-                    .border_color(border2)
-                    .child(
+                    .id("bar-notifications-list")
+                    .max_h(px(360.0))
+                    .overflow_y_scroll()
+                    .children(snapshots.into_iter().map(|s| {
+                        let id = s.id;
+                        let is_expanded = self.expanded.contains(&id);
+                        let row_view = view.clone();
                         div()
-                            .text_xs()
-                            .text_color(fg2)
-                            .child(SharedString::from(s.title.to_string())),
-                    )
-                    .child(
-                        div()
-                            .text_size(px(11.0))
-                            .text_color(muted2)
-                            .child(SharedString::from(s.body.to_string())),
-                    )
-            }))
+                            .id(SharedString::from(format!("bar-notification-{id}")))
+                            .flex()
+                            .flex_col()
+                            .gap_0p5()
+                            .px_3()
+                            .py_1p5()
+                            .border_b_1()
+                            .border_color(border2)
+                            .hover(|style| style.bg(border2))
+                            .on_click(move |_: &ClickEvent, _window, cx| {
+                                row_view.update(cx, |item, cx| {
+                                    if !item.expanded.insert(id) {
+                                        item.expanded.remove(&id);
+                                    }
+                                    item.center
+                                        .update(cx, |center, cx| center.mark_read(id, cx));
+                                    cx.notify();
+                                });
+                            })
+                            .child(
+                                div()
+                                    .text_xs()
+                                    .text_color(fg2)
+                                    .child(SharedString::from(s.title.to_string())),
+                            )
+                            .child(
+                                div()
+                                    .text_size(px(11.0))
+                                    .text_color(muted2)
+                                    .child(SharedString::from(s.body.to_string())),
+                            )
+                            .when(is_expanded && s.details.is_some(), |row| {
+                                row.child(
+                                    div()
+                                        .pt_1()
+                                        .text_size(px(11.0))
+                                        .text_color(muted2)
+                                        .child(s.details.unwrap_or_default()),
+                                )
+                            })
+                    })),
+            )
             .into_any_element();
 
         div()

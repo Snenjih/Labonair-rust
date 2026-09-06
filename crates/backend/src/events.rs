@@ -165,7 +165,7 @@ pub enum AppEvent {
     },
     /// The bridge listener failed to come up (e.g. port already in use). The
     /// backend has already rolled `enabled` back to `false`; the UI surfaces
-    /// this as an error toast.
+    /// this as an error notification.
     McpServerError {
         message: String,
     },

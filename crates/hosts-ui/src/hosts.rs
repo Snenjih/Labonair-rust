@@ -795,7 +795,7 @@ impl HostManagerView {
         .detach();
     }
 
-    fn notify_toast(&self, title: &str, body: String, cx: &mut Context<Self>) {
+    fn notify(&self, title: &str, body: String, cx: &mut Context<Self>) {
         let n = Notification::info(title.to_string(), body);
         notification_center(cx).update(cx, |c, cx| {
             c.push(n, cx);
@@ -1110,7 +1110,7 @@ impl HostManagerView {
     }
 
     /// Run `ssh_test_connection` for the open host and drop the outcome into
-    /// `test_result` (form-header line) + a toast.
+    /// `test_result` (form-header line) + a notification.
     fn test_connection(&mut self, cx: &mut Context<Self>) {
         let Some(id) = self.form.as_ref().and_then(|f| f.editing_id.clone()) else {
             return;
@@ -1144,7 +1144,7 @@ impl HostManagerView {
                     Ok(Err(e)) => format!("Failed: {e}"),
                     Err(e) => format!("Failed: {e}"),
                 };
-                this.notify_toast("Test Connection", msg.clone(), cx);
+                this.notify("Test Connection", msg.clone(), cx);
                 this.test_result = Some(msg);
                 cx.notify();
             });
@@ -1272,7 +1272,7 @@ impl HostManagerView {
             let out = jh.await;
             let _ = this.update(cx, |this, cx| {
                 if let Ok(Ok(Some(pubkey))) = out {
-                    this.notify_toast(
+                    this.notify(
                         "SSH key generated",
                         format!("Public key (add to the server's authorized_keys):\n{pubkey}"),
                         cx,
@@ -1371,7 +1371,7 @@ impl HostManagerView {
                 match res {
                     Ok(Ok(ids)) => {
                         this.import = None;
-                        this.notify_toast(
+                        this.notify(
                             "SSH config imported",
                             format!("{} of {count} host(s) imported.", ids.len()),
                             cx,
@@ -1456,7 +1456,7 @@ impl HostManagerView {
                 let _ = this.update(cx, |this, cx| {
                     cx.write_to_clipboard(ClipboardItem::new_string(block.clone()));
                     this.export = None;
-                    this.notify_toast(
+                    this.notify(
                         "SSH config copied",
                         "The generated Host blocks were copied to the clipboard.".to_string(),
                         cx,
@@ -1472,7 +1472,7 @@ impl HostManagerView {
                 match write {
                     Ok(Ok(path)) => {
                         this.export = None;
-                        this.notify_toast(
+                        this.notify(
                             "SSH config exported",
                             format!("Host blocks appended to {path}"),
                             cx,

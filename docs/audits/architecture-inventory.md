@@ -23,7 +23,8 @@ This document records the current repository shape during the module migration. 
 | `snippets` | Snippet domain and SQLite store | snippets module | Extracted from `backend`; process execution remains a transitional backend adapter. |
 | `gpui-ext` | Shared GPUI helpers | foundation | Keep dependency-free from features. |
 | `hosts-ui` | Host management UI and host-related dependencies | hosts module | Remove settings and notification coupling. |
-| `notifications` | Notification state plus toast renderer | notifications module | Remove toast rendering; keep dropdown consumer. |
+| `notifications-core` | UI-free notification registry and lifecycle | notifications module | New owner of retention, ordering, deduplication, read state, and structured metadata. |
+| `notifications` | GPUI notification adapter | notifications module | Toast renderer removed; statusbar dropdown remains the consumer. |
 | `panel` | Panel/status contracts | workspace foundation | Keep contracts-only. |
 | `panel-explorer` | Explorer panel | explorer module | Remove workspace dependency through contracts. |
 | `panel-git-graph` | Git graph panel | git module | Keep UI-specific graph surface. |
@@ -57,7 +58,9 @@ The current Cargo metadata shows several transitional edges that conflict with t
 - `backend` still owns snippet process execution and exposes a compatibility database re-export; snippet models and persistence now belong to `labonair-snippets`.
 - `backend` still exposes the shared database under the compatibility name `HostsDb`; connection/schema lifecycle now belongs to `labonair-persistence`.
 - `shell/src/commands.rs`, `shell/src/status_items.rs`, and workspace views still contain feature-specific behavior that belongs to owning modules.
-- `workspace/src/toast_layer.rs` and `notifications` still encode the superseded toast model.
+- The former toast path has been removed; the statusbar is now the only
+  notification presentation surface. The GPUI adapter remains until actions
+  are migrated from callbacks to stable command IDs.
 
 The dependency verifier allows four additional transitional edges while these
 boundaries are extracted: command palette → settings, explorer → settings,
@@ -71,6 +74,8 @@ These are migration findings, not reasons to perform a destructive rewrite. Each
 1. Introduce stable IDs, typed domain events, and narrow service traits.
 2. Extract platform services and capability contracts from `backend` without changing user behavior. The filesystem service, secret store, error contract, host domain contract, and shared database lifecycle are now standalone; their legacy adapters and direct consumers remain to be migrated.
 3. Split notification state from presentation and replace toast rendering.
+   `labonair-notifications-core` now owns the UI-free registry; the GPUI
+   adapter and statusbar dropdown consume retained records.
 4. Split command/keymap registries from the palette view.
 5. Move transfers to their own module and statusbar owner.
 6. Move hosts and SSH ownership out of Settings/workspace.

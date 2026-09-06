@@ -32,8 +32,8 @@ pub struct McpPrefs {
     /// Revoke a granted tab after this many minutes without agent activity.
     /// `0` disables auto-revoke.
     pub auto_revoke_minutes: u32,
-    /// Show a toast on every agent action (run command / send keys /
-    /// open-close tab). Error toasts are always shown, independent of this.
+    /// Show a notification on every agent action (run command / send keys /
+    /// open-close tab).
     pub notify_on_activity: bool,
 }
 

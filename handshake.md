@@ -1,5 +1,31 @@
 # Handshake — Session State (Labonair-rust Port)
 
+## Current Session: 2026-09-06 (Notification registry and toast removal)
+
+The notification boundary now follows the modular architecture. Added the
+UI-free `labonair-notifications-core` registry for typed kinds, stable IDs,
+retention, newest-first ordering, deduplication, read state, expandable
+details, and action metadata. `labonair-notifications` is now only a GPUI
+adapter with temporary compatibility callbacks. The statusbar notification
+dropdown uses unread counts, renders all retained records in a scrollable list,
+and expands details on selection. The shell no longer mounts a toast overlay,
+and the old workspace `ToastLayer`/renderer and startup demo were removed.
+
+Removed the now-unused `notify_on_errors` setting and updated active code and
+documentation terminology from toast to notification. The registry and
+adapter have focused tests; the dependency allow-list and architecture
+inventory document the new boundary.
+
+Verification passed: `cargo fmt --all`, `cargo check --workspace
+--all-targets`, `cargo clippy --workspace --all-targets -- -D warnings`,
+`cargo test --workspace`, and `scripts/check-crate-deps.sh`.
+
+State: branch `master`, latest committed snippet boundary is `d02e7ef`; this
+notification boundary is ready to commit. `R01-001-backend-boundaries-and-
+contracts` remains `🔄 In Progress`; next is extracting snippet process
+execution and then continuing typed service/event migration. No source
+blocker.
+
 ## Current Session: 2026-09-06 (Host, credentials, and snippets boundaries)
 
 The host model boundary is now standalone in `crates/hosts`

@@ -253,7 +253,6 @@ const GENERAL_GROUPS: &[Group] = &[
     ("Security", &["credentialEncryption"]),
     ("Quit", &["confirmQuitWithSsh"]),
     ("Updates", &["checkForUpdates"]),
-    ("Notifications", &["notifyOnErrors"]),
 ];
 
 const APPEARANCE_GROUPS: &[Group] = &[

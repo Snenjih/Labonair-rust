@@ -1,0 +1,10 @@
+[package]
+name = "labonair-notifications-core"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "labonair_notifications_core"
+path = "src/lib.rs"
+
+[dependencies]

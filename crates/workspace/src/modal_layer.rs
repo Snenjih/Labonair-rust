@@ -84,8 +84,8 @@ struct ActiveModal {
 }
 
 /// The single modal-overlay slot. Held as an [`Entity`] by the shell and
-/// rendered as one of the workspace composition's two overlay children (the
-/// other being [`crate::toast_layer::ToastLayer`]).
+/// rendered as the workspace composition's only global overlay. Notifications
+/// are rendered by the statusbar dropdown instead.
 #[derive(Default)]
 pub struct ModalLayer {
     active_modal: Option<ActiveModal>,

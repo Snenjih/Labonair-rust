@@ -4343,10 +4343,12 @@ name = "labonair-notifications"
 version = "0.1.0"
 dependencies = [
  "gpui",
- "labonair-gpui-ext",
- "labonair-theme",
- "labonair-ui-kit",
+ "labonair-notifications-core",
 ]
+
+[[package]]
+name = "labonair-notifications-core"
+version = "0.1.0"
 
 [[package]]
 name = "labonair-panel"

@@ -17,7 +17,7 @@ const MAX_REMOTE_READ_BYTES: u64 = 5 * 1024 * 1024;
 /// same event `pty.rs` emits for PTY sessions and the transfer worker emits
 /// for failed jobs — so every browsing surface (sidebar tree, SFTP tab)
 /// reacts the same way to a dropped connection instead of just showing a
-/// one-off error toast.
+/// one-off error notification.
 fn handle_sftp_error(
     app: &crate::App,
     state: &SshState,

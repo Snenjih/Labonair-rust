@@ -110,7 +110,7 @@ pub fn init(cx: &mut App) {
     cx.on_action(|_: &HideOthers, cx: &mut App| cx.hide_other_apps());
     cx.on_action(|_: &ShowAll, cx: &mut App| cx.unhide_other_apps());
     cx.on_action(|_: &About, cx: &mut App| {
-        toast(
+        notify(
             cx,
             "About Labonair",
             concat!(
@@ -132,7 +132,7 @@ pub fn init(cx: &mut App) {
     cx.set_dock_menu(dock_menu());
 }
 
-fn toast(cx: &mut App, title: &'static str, body: &'static str) {
+fn notify(cx: &mut App, title: &'static str, body: &'static str) {
     notification_center(cx).update(cx, |center, cx| {
         center.push(Notification::info(title, body), cx);
     });

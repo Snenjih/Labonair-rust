@@ -470,7 +470,7 @@ impl SettingsView {
 
         col = col.child(bridge_switch_row(
             "Notify on agent activity",
-            "Show a toast for every command / keystroke an agent sends.",
+            "Show a notification for every command / keystroke an agent sends.",
             m.notify_on_activity,
             c,
             cx,

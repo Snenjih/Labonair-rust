@@ -43,7 +43,15 @@ Panels register identity, title, icon, supported docks, and a view factory. Stat
 
 ## Notification center
 
-The notification center is the single user-message sink. It accepts structured notifications with severity, title, summary, optional details, source, timestamp, actions, and deduplication metadata. It does not render toasts and does not contain feature-specific error handling.
+`labonair-notifications-core` is the single user-message registry. It accepts
+structured notifications with kind, title, summary, optional details, source,
+timestamp, actions, and deduplication metadata. Records remain available until
+dismissed or cleared and expose read state for the statusbar badge. It does not
+render toasts, run timers, or contain feature-specific error handling.
+
+The GPUI notification adapter may temporarily bridge callback actions for
+existing callers. New actions must use stable IDs and be interpreted by the
+owning module or command registry.
 
 ## Registration rules
 

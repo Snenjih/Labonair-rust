@@ -1275,7 +1275,7 @@ impl GitPanelView {
 
     // ── generic backend-op dispatch ────────────────────────────────────────
 
-    /// Runs `op` on the tokio runtime, toasts any error, then refreshes. The
+    /// Runs `op` on the tokio runtime, notifies any error, then refreshes. The
     /// op is tagged with a [`RepoOperation`] identity so the affected control
     /// can show progress / be disabled without freezing the whole panel.
     fn run_op_kind<F>(
@@ -1666,7 +1666,7 @@ impl GitPanelView {
     // ── branch / tag / stash operations ────────────────────────────────────
 
     /// Like [`run_op`], but hands the raw `Result` to `done` instead of always
-    /// toasting — lets callers surface inline errors / drive follow-up state.
+    /// notifying — lets callers surface follow-up state.
     fn dispatch<F>(
         &mut self,
         op: F,

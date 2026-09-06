@@ -868,7 +868,7 @@ async fn apply_hunk_patch(
 /// class of error when the file changed (was re-staged, amended, etc.)
 /// since the diff the hunk patch was built from was fetched — surface a
 /// clear, actionable message instead of git's raw stderr, which is written
-/// for a terminal user, not a UI toast (e.g. `error: patch failed:
+/// for a terminal user, not a UI notification (e.g. `error: patch failed:
 /// file.txt:1\nerror: file.txt: patch does not apply`).
 fn classify_apply_error(err: &str, file: &str) -> String {
     let lower = err.to_lowercase();
