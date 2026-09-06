@@ -54,6 +54,7 @@ Dependencies point downward. A feature may depend on a foundation contract, but 
 | `labonair-ui-kit` | Buttons, inputs, lists, dropdowns, dialogs, icons, badges, disclosure, tabs, and other reusable components. |
 | `labonair-runtime` | Tokio/foreground runtime bridging and lifecycle helpers. |
 | `labonair-filesystem` | Local filesystem abstractions and watchers. |
+| `labonair-errors` | Structured, UI-free domain error contract and recovery metadata. |
 | `labonair-process` | Process and PTY launching contracts. |
 | `labonair-secrets` | Keychain and secret references. |
 | `labonair-persistence` | Small persistence primitives and migrations. |

@@ -16,6 +16,19 @@ The secret store is now also extracted into the UI-free
 encryption, cache, and migration logic; `backend` retains only compatibility
 wrappers for current SSH/Hosts/MCP callers.
 
+The structured error catalog is now also standalone in
+`crates/errors` (`labonair-errors`). Backend code keeps a re-export during
+migration, while capability crates can begin consuming the error contract
+without importing backend internals.
+
+The structured error catalog is likewise standalone in `crates/errors`
+(`labonair-errors`), including its 19 classification/serialization tests;
+`backend::modules::errors` is only a compatibility re-export. Focused tests
+for errors, secrets, and backend all pass, as do Clippy, formatting, workspace
+check, and the dependency verifier. `R01-001-backend-boundaries-and-contracts`
+remains `🔄 In Progress`; next is extracting host persistence behind a service
+contract rather than moving the current `App` coupling wholesale.
+
 The secret boundary passed focused tests (plain round-trip and encryption
 migration), backend tests (213), Clippy, formatting, workspace check, and the
 dependency verifier. `R01-001-backend-boundaries-and-contracts` remains

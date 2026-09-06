@@ -16,6 +16,7 @@ This document records the current repository shape during the module migration. 
 | `editor` | Editor engine | editor module | Separate core from workspace view. |
 | `filesystem` | Local file access, traversal, mutation, search, and watcher implementation | foundation/platform service | First extracted service boundary; only the legacy `AppEvent` adapter remains in `backend` temporarily. |
 | `secrets` | Encrypted/plain local secret store and secret cache | foundation/platform service | Extracted from `backend`; backend keeps a compatibility adapter while SSH/Hosts/MCP migrate. |
+| `errors` | Structured error catalog and recovery hints | foundation/platform contract | Extracted from `backend`; capability crates can consume it without importing the backend facade. |
 | `gpui-ext` | Shared GPUI helpers | foundation | Keep dependency-free from features. |
 | `hosts-ui` | Host management UI and host-related dependencies | hosts module | Remove settings and notification coupling. |
 | `notifications` | Notification state plus toast renderer | notifications module | Remove toast rendering; keep dropdown consumer. |
@@ -47,6 +48,7 @@ The current Cargo metadata shows several transitional edges that conflict with t
 - `backend` exposes a broad `App`, global event bus, and unrelated modules under one public crate.
 - `backend` still owns the filesystem watcher adapter because it emits directly through the legacy app event bus; the actual watcher implementation now belongs to `labonair-filesystem`.
 - `backend` still owns the public secret API adapter even though storage now belongs to `labonair-secrets`; existing SSH/Hosts/MCP call sites still pass the backend app handle.
+- `backend` still re-exports the structured error contract for old internal paths, while the implementation now belongs to `labonair-errors`.
 - `shell/src/commands.rs`, `shell/src/status_items.rs`, and workspace views still contain feature-specific behavior that belongs to owning modules.
 - `workspace/src/toast_layer.rs` and `notifications` still encode the superseded toast model.
 

@@ -23,6 +23,7 @@ members = [
     "crates/editor",
     "crates/filesystem",
     "crates/secrets",
+    "crates/errors",
     "crates/backend",
     "crates/ai",
     "crates/theme",

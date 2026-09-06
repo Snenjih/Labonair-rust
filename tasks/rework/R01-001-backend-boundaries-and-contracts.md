@@ -35,6 +35,8 @@ Reduce `labonair-backend` from a broad public application state container to nar
   bus dependency is replaced by a typed callback or domain-event contract.
 - Secret storage is now extracted as `labonair-secrets`; the backend exposes
   only compatibility wrappers while its capability callers migrate.
+- The structured error catalog is now extracted as `labonair-errors`; the
+  backend keeps only a re-export for old internal paths.
 - Stable IDs, typed domain events, and the remaining service boundaries are
   still open in this task.
 

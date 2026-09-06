@@ -4188,6 +4188,7 @@ dependencies = [
  "grep-regex",
  "grep-searcher",
  "ignore",
+ "labonair-errors",
  "labonair-filesystem",
  "labonair-secrets",
  "labonair-settings-content",
@@ -4250,6 +4251,18 @@ dependencies = [
  "tree-sitter-toml-ng",
  "tree-sitter-typescript",
  "tree-sitter-yaml",
+]
+
+[[package]]
+name = "labonair-errors"
+version = "0.1.0"
+dependencies = [
+ "rusqlite",
+ "russh",
+ "russh-sftp",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
 ]
 
 [[package]]

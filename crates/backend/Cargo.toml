@@ -14,6 +14,7 @@ edition = "2021"
 labonair-settings-content = { path = "../settings-content" }
 labonair-filesystem = { path = "../filesystem" }
 labonair-secrets = { path = "../secrets" }
+labonair-errors = { path = "../errors" }
 
 # SSH / SFTP — versions taken 1:1 from reference-src/src-tauri/Cargo.toml
 russh = { version = "0.62.2", default-features = false, features = ["ring", "flate2", "rsa"] }

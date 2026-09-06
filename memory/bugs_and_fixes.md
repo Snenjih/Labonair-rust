@@ -1,5 +1,16 @@
 # Bugs, fixes, and non-obvious constraints
 
+## 2026-09-06 — Structured errors extracted as a shared contract
+
+**Finding:** `LabonairError` was implemented in `backend`, so any future
+capability crate that needed consistent classification or recovery metadata
+would have to depend on the backend facade.
+
+**Resolution:** Created `labonair-errors` and moved the catalog, conversions,
+classification rules, serialization, and tests there. `backend::modules::errors`
+now only re-exports it, preserving existing internal call sites while making
+the contract available to standalone capability services.
+
 ## 2026-09-06 — Secret storage extracted without retaining App ownership
 
 **Finding:** The secret store used `backend::App` only to resolve its data

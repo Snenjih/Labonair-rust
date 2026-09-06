@@ -33,6 +33,9 @@ ALLOWED = {
     # Platform service — secret storage and encryption, without GPUI or
     # feature-module dependencies.
     "labonair-secrets": {"labonair-filesystem"},
+    # Cross-cutting structured error contract. It contains no workspace
+    # dependencies and is shared by capability services during migration.
+    "labonair-errors": set(),
     "labonair-notifications": {
         "labonair-theme", "labonair-ui-kit", "labonair-gpui-ext",
     },
@@ -163,6 +166,7 @@ ALLOWED = {
     # back on labonair-backend).
     "labonair-backend": {
         "labonair-settings-content", "labonair-filesystem", "labonair-secrets",
+        "labonair-errors",
     },
     "labonair-ai": {"labonair-backend", "labonair-filesystem"},
 
