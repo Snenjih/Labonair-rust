@@ -1,5 +1,24 @@
 # Handshake — Session State (Labonair-rust Port)
 
+## Current Session: 2026-09-06 (Notifications statusbar ownership)
+
+`R01-008` is complete. The retained notification registry and its statusbar
+dropdown are now owned by `labonair-notifications`. The shell only constructs
+and registers `NotificationsStatusItem`; notification-specific rendering no
+longer lives in `shell/src/status_items.rs`. The dropdown remains scrollable,
+supports read state, expansion, clear-all, retained details, and action
+affordances. No toast surface was added.
+
+The next bounded task is `R01-009`, which migrates the remaining feature-local
+user-facing error surfaces to the notification registry while preserving
+actionable task dialogs such as transfer conflict resolution.
+
+Verification passes: `cargo fmt --all -- --check`, `cargo check --workspace
+--all-targets`, `cargo clippy --workspace --all-targets -- -D warnings`,
+`cargo test --workspace --no-fail-fast`, `git diff --check`, and
+`scripts/check-crate-deps.py`. The current branch is `master`; this change is
+committed locally. No source blocker.
+
 ## Current Session: 2026-09-06 (Hosts UI capability boundary)
 
 `R01-007` is complete. `labonair-hosts-ui` no longer depends on the broad

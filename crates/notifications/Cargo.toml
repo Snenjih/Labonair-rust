@@ -10,6 +10,9 @@ path = "src/notifications.rs"
 [dependencies]
 gpui = { workspace = true }
 labonair-notifications-core = { path = "../notifications-core" }
+labonair-panel = { path = "../panel" }
+labonair-theme = { path = "../theme" }
+labonair-ui-kit = { path = "../ui-kit" }
 
 [dev-dependencies]
 gpui = { workspace = true, features = ["test-support"] }

@@ -35,7 +35,7 @@ Real emitters (`App::emit` / `App::emit_event` call sites in
 | `session_established`, `auth_required`, `passphrase_required`, `known_hosts_warning`, `ssh_connection_lost`, `ssh_connect_log` | `ssh/client.rs`, `ssh/pty.rs`, `git/executor.rs` | SSH loading screen + connect prompt |
 | `fs:dir-changed` | `fs/watcher.rs` (`emit_event`) | explorer auto-refresh (follow-up) |
 | `menu:activated` | native menus | shell command dispatch (follow-up) |
-| `mcp_open_tab_request`, `mcp_close_tab_request`, `mcp_grant_expired`, `mcp_server_error`, `mcp_activity` | `mcp/server.rs`, `mcp/mod.rs`, `hosts/db.rs` | workspace MCP tab ops + error toast |
+| `mcp_open_tab_request`, `mcp_close_tab_request`, `mcp_grant_expired`, `mcp_server_error`, `mcp_activity` | `mcp/server.rs`, `mcp/mod.rs`, `hosts/db.rs` | workspace MCP tab ops + retained statusbar notification |
 | `snippet_output`, `snippet_step`, `snippet_exit`, … | `snippets/exec.rs` | snippets panel run log |
 
 Existing UI consumers (already subscribing before this ADR):
@@ -46,7 +46,7 @@ Existing UI consumers (already subscribing before this ADR):
   events, 60 ms poll-drain.
 
 So the bus already has **two** real consumers plus a fistful of well-defined
-follow-up consumers (explorer, scm, mcp toast, native menus). That clears the
+follow-up consumers (explorer, scm, MCP notifications, native menus). That clears the
 task's "≥3 sensible consumers → keep" bar comfortably.
 
 ## Decision

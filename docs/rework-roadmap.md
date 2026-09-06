@@ -3,6 +3,13 @@
 **Status:** Current implementation plan
 **Version:** 3
 
+The foundation migration is currently through `R01-008`: capability-owned
+registries and surfaces are established for transfers, command metadata,
+settings values, backgrounds, hosts, and notifications. The next bounded task
+is `R01-009-inline-error-notification-adoption`, which completes the Phase 3
+exit condition by moving remaining user-facing error text into the retained
+statusbar notification registry.
+
 This roadmap replaces the historical task order. Existing completed work remains valuable, but old tasks do not override the contracts in `docs/`.
 
 Work proceeds in dependency order. A later phase may not introduce a second

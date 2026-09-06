@@ -27,7 +27,7 @@ in the normative documents linked from `docs/README.md`.
 | `gpui-ext` | Shared GPUI helpers | foundation | Keep dependency-free from features. |
 | `hosts-ui` | Host management UI and host-related dependencies | hosts module | Consumes host, credential, snippet, database, and secret contracts directly; notification coupling remains to be migrated. |
 | `notifications-core` | UI-free notification registry and lifecycle | notifications module | New owner of retention, ordering, deduplication, read state, and structured metadata. |
-| `notifications` | GPUI notification adapter | notifications module | Toast renderer removed; statusbar dropdown remains the consumer. |
+| `notifications` | GPUI notification adapter and statusbar dropdown | notifications module | Owns the statusbar notification item; shell only registers it. |
 | `panel` | Panel/status contracts | workspace foundation | Keep contracts-only. |
 | `panel-explorer` | Explorer panel | explorer module | Remove workspace dependency through contracts. |
 | `panel-git-graph` | Git graph panel | git module | Consumes `labonair-git::GitGraphService`; backend implementation is injected at composition. |
@@ -81,6 +81,8 @@ The current Cargo metadata shows several transitional edges that conflict with t
 - `panel-git-graph` no longer depends on `labonair-backend`; its graph contract and commit values live in `labonair-git` and the backend supplies an adapter.
 - `panel-scm` and workspace Project Diff no longer depend on `labonair-backend`; source-control values and operations live in `labonair-git`, with the backend supplying the execution adapter.
 - `shell/src/commands.rs`, `shell/src/status_items.rs`, and workspace views still contain feature-specific behavior that belongs to owning modules.
+- The notification statusbar item has moved into `labonair-notifications`; the
+  remaining shell status-item code is composition and other status surfaces.
 - `shell/src/commands.rs` still maintains a second behavior registry beside
   the command-palette entries; the migration must leave one typed command
   registry and keep execution in the owning modules.

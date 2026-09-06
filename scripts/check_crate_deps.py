@@ -73,6 +73,7 @@ ALLOWED = {
     "labonair-snippets": {"labonair-errors", "labonair-persistence"},
     "labonair-notifications": {
         "labonair-notifications-core",
+        "labonair-panel", "labonair-theme", "labonair-ui-kit",
     },
     "labonair-command-palette": {
         "labonair-theme", "labonair-ui-kit",

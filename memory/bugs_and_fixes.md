@@ -428,3 +428,23 @@ module into `labonair-background`, replacing the backend path with the
 filesystem platform service. `settings-ui` now has no workspace dependency;
 the remaining workspace-to-background edge is only app composition and is
 explicitly tracked for a later synchronization/standalone-surface task.
+
+## 2026-09-06 — Notification statusbar presentation belongs to Notifications
+
+**Finding:** The retained notification registry lived in the Notifications
+capability, but the global statusbar item and dropdown were still implemented
+in `shell/src/status_items.rs`. This made the shell the accidental owner of
+notification rendering and allowed the capability boundary to drift.
+
+**Resolution:** Moved `NotificationsStatusItem` into
+`crates/notifications/src/status_item.rs`. The item owns the statusbar bell,
+scrollable dropdown, expansion/read state, clear-all behavior, and retained
+action affordances. The shell now only constructs and registers the public
+capability item.
+
+**Non-obvious constraint:** The panel `StatusItem` contract is intentionally
+UI-agnostic, so the notifications UI may depend on `labonair-panel`,
+`labonair-theme`, and `labonair-ui-kit`; those shared contracts must not depend
+back on Notifications. The existing callback-backed action adapter remains
+temporary until producers publish stable command IDs through the command
+registry.

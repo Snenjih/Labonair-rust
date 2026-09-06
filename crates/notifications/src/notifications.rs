@@ -10,6 +10,10 @@ use std::{collections::HashMap, time::Instant};
 use gpui::{App, AppContext, Context, Entity, Global, SharedString, Window};
 use labonair_notifications_core::{NotificationDraft, NotificationKind, NotificationRegistry};
 
+mod status_item;
+
+pub use status_item::NotificationsStatusItem;
+
 /// Severity of a notification. This is the GPUI-facing spelling retained for
 /// current feature callers; the UI-free registry uses [`NotificationKind`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
