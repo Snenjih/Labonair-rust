@@ -57,9 +57,10 @@ The current Cargo metadata shows several transitional edges that conflict with t
   (`WorkspaceIdentity` + `WorkspaceState`). The previous Hosts shell callback
   was removed; cross-surface Hosts navigation and the project-picker request
   use `WorkspaceEvent` and composition-root subscriptions. Project settings
-  now follow explicit workspace identity rather than terminal cwd. Remaining
-  feature-view dependencies are still transitional and are not hidden by this
-  state model.
+  now follow explicit workspace identity rather than terminal cwd. Explorer
+  and Git root synchronization also gives that explicit identity precedence;
+  only standalone workspaces fall back to terminal cwd. Remaining feature-view
+  dependencies are still transitional and are not hidden by this state model.
 - `settings-ui` depends on settings values, theme/UI primitives, notifications,
   command-palette fuzzy matching, and filesystem paths; it no longer depends on
   a workspace-owned background store, backend, Hosts UI, or panel contracts.
