@@ -34,7 +34,7 @@ use labonair_command_palette_core::{
     toggle_pref_key, CommandContext, CommandDescriptor, CommandIcon, CommandId, CommandSubmenu,
     SubmenuAction, SubmenuItem, SubmenuRegistry,
 };
-use labonair_keymap::{keystroke_tokens, ShortcutId};
+use labonair_keymap::ShortcutId;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Settings reads (T-block3: the palette reads its slice of the layered
@@ -280,13 +280,7 @@ impl Command {
 }
 
 fn command_key_tokens(command: &Command, display: &KeybindDisplay) -> Vec<String> {
-    let binding = match display.by_command.get(&command.id) {
-        Some(binding) => binding.clone(),
-        None => command.default_binding.clone(),
-    };
-    binding
-        .map(|binding| keystroke_tokens(&binding))
-        .unwrap_or_default()
+    display.keys_for(command.id, command.default_binding.as_deref())
 }
 
 fn icon_for(icon: CommandIcon) -> IconName {

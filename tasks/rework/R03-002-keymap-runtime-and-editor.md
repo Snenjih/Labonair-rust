@@ -153,6 +153,7 @@ shell's debug actions. The shell adapter derives matching metadata only while
 the transitional execution registrations remain; provider equality tests catch
 drift.
 
-The palette now renders hints from the effective `CommandId` map rather than
-the legacy `ShortcutId` table. That table remains only for the last statusbar
-panel-tooltip consumer and is explicitly a compatibility path.
+The palette, panel tooltips, and tab context-menu hints now render from the
+effective `CommandId` map rather than the legacy `ShortcutId` table. The old
+table remains exported only for migration compatibility and is not an active
+UI source.

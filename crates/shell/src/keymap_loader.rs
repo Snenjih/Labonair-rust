@@ -8,9 +8,7 @@
 //! existing filesystem watcher.
 
 use gpui::App;
-use labonair_command_palette::{
-    canonical_action_name, shortcut_slug, shortcuts, KeybindDisplay, KeybindMap,
-};
+use labonair_command_palette::KeybindDisplay;
 use labonair_keymap::file::{self, EffectiveBinding, ValidationIssue};
 
 use crate::commands::CommandDispatcher;
@@ -29,34 +27,14 @@ pub(crate) fn effective_bindings(registry: &CommandDispatcher) -> Vec<EffectiveB
     labonair_keymap::adapter::load_descriptors(registry.iter()).effective_bindings
 }
 
-/// Derive the command-keyed display snapshot used by the palette, plus the
-/// temporary `ShortcutId` compatibility map still consumed by panel-toggle
-/// tooltips. The command map is context-agnostic by design: it picks the first
-/// effective binding for each command.
+/// Derive the command-keyed display snapshot used by all UI surfaces. The map
+/// is context-agnostic by design: it picks the first effective binding for
+/// each command.
 fn display_map(effective: &[EffectiveBinding], registry: &CommandDispatcher) -> KeybindDisplay {
-    let mut legacy = KeybindMap::new();
     let mut by_command = registry
         .iter()
         .map(|descriptor| (descriptor.id, None))
         .collect::<std::collections::HashMap<_, _>>();
-    for s in shortcuts() {
-        let Some(cmd_id) = registry.command_for_shortcut(s.id) else {
-            continue;
-        };
-        let action_name = cmd_id.action_name();
-        match effective
-            .iter()
-            .find(|b| canonical_action_name(&b.action) == Some(action_name))
-        {
-            Some(b) if b.keystrokes != s.binding => {
-                legacy.insert(shortcut_slug(s.id).to_string(), b.keystrokes.clone());
-            }
-            Some(_) => {}
-            None => {
-                legacy.insert(shortcut_slug(s.id).to_string(), String::new());
-            }
-        }
-    }
     for binding in effective {
         if let Some(command) = labonair_keymap::runtime::command_for_action(&binding.action) {
             by_command.entry(command).and_modify(|current| {
@@ -66,7 +44,7 @@ fn display_map(effective: &[EffectiveBinding], registry: &CommandDispatcher) -> 
             });
         }
     }
-    KeybindDisplay { by_command, legacy }
+    KeybindDisplay { by_command }
 }
 
 /// Load, merge, bind and publish the display global — the single entry point
@@ -89,6 +67,7 @@ pub(crate) fn watch(cx: &App, registry: CommandDispatcher) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use labonair_command_palette::canonical_action_name;
 
     /// `effective_bindings()` always includes the shipped default asset's
     /// bindings when no user `keymap.json` exists in this process's config
@@ -122,10 +101,10 @@ mod tests {
         let registry = crate::commands::register_builtin_commands();
         let effective = effective_bindings(&registry);
         let map = display_map(&effective, &registry);
-        // `TabNew`'s default (`cmd-t`) is unchanged in a clean environment,
-        // so it must not appear as an "override" in the display map.
-        assert!(!map
-            .legacy
-            .contains_key(shortcut_slug(labonair_command_palette::ShortcutId::TabNew)));
+        assert_eq!(
+            map.by_command
+                .get(&labonair_command_palette::CommandId::NewTerminalTab),
+            Some(&Some("cmd-t".to_string()))
+        );
     }
 }

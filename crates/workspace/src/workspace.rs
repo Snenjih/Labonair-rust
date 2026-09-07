@@ -4692,12 +4692,7 @@ impl Workspace {
         // `Kbd` chips, resolved through the user's `keymap.json` overrides.
         let close_keys = cx
             .try_global::<labonair_command_palette::KeybindDisplay>()
-            .map(|g| {
-                labonair_command_palette::effective_keys(
-                    labonair_command_palette::ShortcutId::TabClose,
-                    &g.legacy,
-                )
-            })
+            .map(|g| g.keys_for(labonair_command_palette::CommandId::CloseTab, Some("cmd-w")))
             .unwrap_or_default();
         items.push(
             MenuItem::new("close", "Close")

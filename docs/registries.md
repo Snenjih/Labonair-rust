@@ -107,8 +107,9 @@ in the adapter because they are richer than the keymap runtime's portable
 context identifiers; the adapter must not duplicate action-name aliases.
 
 Palette and other UI surfaces consume effective bindings by `CommandId`. The
-legacy `ShortcutId` display map is compatibility-only and must not be used as
-the source for new command rows or keymap management views.
+legacy `ShortcutId` table remains exported only for migration of older callers;
+it must not be used as the source for new command rows or keymap management
+views.
 
 The legacy action name `settings::OpenShortcuts` is accepted only as a
 migration alias for existing user keymap files and resolves to the canonical

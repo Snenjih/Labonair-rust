@@ -145,8 +145,7 @@ to `labonair-interaction-contracts`.
 
 ## R03-002 command-keyed display path
 
-Changed the palette's active key-hint lookup to use the effective keymap by
-`CommandId`, with descriptor defaults as the test/bootstrap fallback. The old
-`ShortcutId` map remains only for statusbar panel tooltips and is documented as
-a temporary compatibility path. This removes the legacy shortcut table from
-the palette's active rendering source.
+Changed the palette, panel tooltips, and tab context-menu key-hint lookups to
+use the effective keymap by `CommandId`, with descriptor defaults as the
+test/bootstrap fallback. The old `ShortcutId` table is no longer an active UI
+source and remains exported only for migration compatibility.

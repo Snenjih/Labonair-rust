@@ -125,9 +125,9 @@ The current Cargo metadata shows several transitional edges that conflict with t
 - Owner providers now publish the migrated defaults for palette, editor search,
   workspace navigation, Zen mode, and shell debug actions. The old JSON asset
   remains as a compatibility layer until all default metadata is migrated.
-- The command palette now renders key hints from effective `CommandId`
-  bindings. Its old `ShortcutId` lookup is no longer an active palette source;
-  only statusbar panel tooltips still use that compatibility map.
+- The command palette, panel tooltips, and tab context-menu hints now render
+  from effective `CommandId` bindings. The old `ShortcutId` lookup is no longer
+  an active UI source and remains exported only for migration compatibility.
 - `backend` exposes a broad `App`, global event bus, and unrelated modules under one public crate.
 - `backend` still owns the filesystem watcher adapter because it emits directly through the legacy app event bus; the actual watcher implementation now belongs to `labonair-filesystem`.
 - `backend` still owns the public secret API adapter even though storage now belongs to `labonair-secrets`; existing SSH/Hosts/MCP call sites still pass the backend app handle.

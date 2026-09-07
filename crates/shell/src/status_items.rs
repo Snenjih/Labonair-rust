@@ -75,13 +75,10 @@ pub(crate) fn panel_toggle_icon(icon: PanelIcon) -> IconName {
 // click and moving a panel moves its button to the matching group.
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Panel title + rebindable shortcut, for the button's tooltip. Only
-/// "explorer" (`SidebarToggle`) currently has a dedicated shortcut
-/// (`crates/command-palette/src/keybind.rs`); the others show the title alone.
-fn panel_toggle_shortcut(persistent_name: &str) -> Option<labonair_command_palette::ShortcutId> {
-    use labonair_command_palette::ShortcutId;
+/// Panel title + command identity, for the button's tooltip.
+fn panel_toggle_command(persistent_name: &str) -> Option<labonair_command_palette::CommandId> {
     match persistent_name {
-        "explorer" => Some(ShortcutId::SidebarToggle),
+        "explorer" => Some(labonair_command_palette::CommandId::ToggleSidebar),
         _ => None,
     }
 }
@@ -286,9 +283,9 @@ impl StatusItem for DockPanelButtons {
 
     fn render_status(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         let c = Palette::from_theme(self.theme.read(cx));
-        let keybind_overrides = cx
+        let keybind_display = cx
             .try_global::<labonair_command_palette::KeybindDisplay>()
-            .map(|g| g.legacy.clone())
+            .cloned()
             .unwrap_or_default();
 
         let mut panels: Vec<(SharedString, IconName, bool)> = {
@@ -332,8 +329,8 @@ impl StatusItem for DockPanelButtons {
                 let click_name = name.clone();
                 let rmb_name = name.clone();
                 let title = panel_toggle_title(name.as_ref());
-                let keys = panel_toggle_shortcut(name.as_ref())
-                    .map(|id| labonair_command_palette::effective_keys(id, &keybind_overrides))
+                let keys = panel_toggle_command(name.as_ref())
+                    .map(|id| keybind_display.keys_for(id, None))
                     .unwrap_or_default();
                 let tooltip_text: SharedString = if keys.is_empty() {
                     SharedString::from(title)

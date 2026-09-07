@@ -36,9 +36,20 @@ pub use labonair_keymap::{
 pub struct KeybindDisplay {
     /// Canonical display lookup keyed by the command identity.
     pub by_command: std::collections::HashMap<CommandId, Option<String>>,
-    /// Temporary compatibility map for statusbar components still keyed by
-    /// `ShortcutId`.
-    pub legacy: KeybindMap,
+}
+
+impl KeybindDisplay {
+    /// Return display tokens for a command. `None` in the map means explicitly
+    /// unbound; an absent entry uses the supplied descriptor fallback.
+    pub fn keys_for(&self, command: CommandId, fallback: Option<&str>) -> Vec<String> {
+        let binding = match self.by_command.get(&command) {
+            Some(binding) => binding.as_deref(),
+            None => fallback,
+        };
+        binding
+            .map(labonair_keymap::keystroke_tokens)
+            .unwrap_or_default()
+    }
 }
 
 impl gpui::Global for KeybindDisplay {}
