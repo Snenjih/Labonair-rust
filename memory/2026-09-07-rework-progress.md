@@ -859,3 +859,10 @@ The interactive CWD breadcrumb status item was then moved into
 rendering, subdirectory actions, and its status-menu contribution; shell
 composition now requests only its typed registration. Workspace/Shell Clippy
 and tests, dependency validation, formatting, and diff checks pass.
+
+The GPUI updater view was moved from `labonair-shell` into the new
+`labonair-updater-ui` sibling. The UI-free `labonair-updater` capability stays
+independent; the sibling owns the dialog, progress rendering, notification
+integration, and updater state view. Shell keeps only a compatibility module
+re-export for existing composition consumers, with no updater UI source left
+in the shell.

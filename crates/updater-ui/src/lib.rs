@@ -24,8 +24,8 @@ use labonair_updater as updater;
 use labonair_updater::AvailableUpdate;
 use tokio::runtime::Handle as TokioHandle;
 
-use crate::theme::ThemeStore;
 use labonair_notifications::{notification_center, Notification};
+use labonair_theme::{modal_scrim, store::ThemeStore};
 use labonair_ui_kit::{button, ButtonSize, ButtonVariant, Palette};
 
 const RESTART_DELAY: Duration = Duration::from_millis(700);
@@ -461,7 +461,7 @@ impl Render for UpdaterView {
             .flex()
             .items_center()
             .justify_center()
-            .bg(crate::theme::modal_scrim())
+            .bg(modal_scrim())
             .child(
                 div()
                     .id("updater-card")

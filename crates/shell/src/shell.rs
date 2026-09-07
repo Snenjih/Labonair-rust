@@ -27,15 +27,14 @@ pub mod modals;
 mod settings_services;
 pub mod status_items;
 pub mod titlebar;
-pub mod updater;
 pub mod window_state;
 
 pub use app_shell::AppShell;
 pub use assets::Assets;
 pub use composition::AppComposition;
+pub use labonair_updater_ui::{UpdaterStatus, UpdaterView};
 pub use menu::{apply_keymap, init as init_menus};
 pub use titlebar::Titlebar;
-pub use updater::{UpdaterStatus, UpdaterView};
 
 // --- Convenience re-exports for the `crates/app` bootstrap -----------------
 // `main.rs` stays a straight-line bootstrap: it reaches every init hook
@@ -93,6 +92,9 @@ pub(crate) mod background {
 }
 pub(crate) mod session {
     pub use labonair_workspace::session::*;
+}
+pub(crate) mod updater {
+    pub use labonair_updater_ui::*;
 }
 pub(crate) mod theme {
     pub use labonair_theme::store::*;

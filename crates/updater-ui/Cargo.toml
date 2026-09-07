@@ -1,0 +1,19 @@
+[package]
+name = "labonair-updater-ui"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "labonair_updater_ui"
+path = "src/lib.rs"
+
+[dependencies]
+gpui = { workspace = true }
+tokio = { workspace = true }
+labonair-theme = { path = "../theme" }
+labonair-ui-kit = { path = "../ui-kit" }
+labonair-notifications = { path = "../notifications" }
+labonair-updater = { path = "../updater" }
+
+[dev-dependencies]
+gpui = { workspace = true, features = ["test-support"] }

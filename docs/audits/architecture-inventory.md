@@ -57,7 +57,7 @@ removal conditions.
 | `ui-kit` | Shared UI primitives | foundation | Enforce as the only source of shared controls. |
 | `workspace` | Workspace, tabs, panes, docks, views, and compatibility bridges | workspace plus tool modules | Transfer lifecycle/UI moved to `labonair-transfers` / `labonair-transfers-ui`; Workspace only submits requests and refreshes SFTP panes. |
 | `background` | Background image storage and GPUI layer | backgrounds module | `BackgroundStore`, image import/delete, persistence, and rendering now live in `labonair-background`; no longer workspace-owned. |
-| `updater` | Update manifest, download/verification/install logic | updater module | Shell retains only the GPUI updater view; capability logic is isolated in `labonair-updater` and no longer backend-owned. |
+| `updater` | Update manifest, download/verification/install logic | updater module | GPUI presentation is isolated in the `updater-ui` sibling; capability logic remains in `labonair-updater` and is no longer backend-owned. |
 | `transfers` | Typed transfer values, lifecycle registry, and service/event contracts | transfers module | UI-free owner; concrete SFTP execution is supplied by the `transfers-ssh` integration sibling. |
 | `transfers-ssh` | Concrete SFTP transfer worker and russh/russh-sftp execution adapter | transfers module | Dedicated integration sibling extracted from the backend; owns chunking, checksums, conflicts, cancellation, and reconnect requeue behavior. |
 | `transfers-ui` | Statusbar-anchored transfer queue and resolution dialogs | transfers module | New canonical transfer presentation; uses only typed transfer contracts and shared UI primitives. |
@@ -213,7 +213,8 @@ The current Cargo metadata shows several transitional edges that conflict with t
   `labonair-workspace::cwd_status_item` as well. Cursor Position, Preview URL,
   and Dock panel buttons (including their move/hide menu) are also Workspace-
   owned contributions. The remaining shell-owned statusbar surface is the
-  updater badge.
+  updater badge; its dialog/state view now comes from the `updater-ui` sibling,
+  while the badge registration itself remains a composition adapter.
 - `shell/src/commands.rs` still maintains a second behavior registry beside
   the command-palette entries; the migration must leave one typed command
   registry and keep execution in the owning modules.
