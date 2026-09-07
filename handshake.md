@@ -56,9 +56,9 @@ compatibility fields and their defaults are now removed from SettingsContent.
 Focused layout, settings-content, and backend migration tests pass. Full check,
 Clippy, dependency, queue, formatting, and diff gates are green; the AI HTTP
 test required one isolated unsandboxed rerun because its local test server
-cannot bind inside the sandbox. Current HEAD is the commit before this second
-R05 slice; after commit, continue with consumer proof and removal of the next
-confirmed legacy settings group. No blockers.
+cannot bind inside the sandbox. Current HEAD is `a474d03` on `master`; continue
+with consumer proof and removal of the next confirmed legacy settings group.
+No blockers.
 
 `R02-003` is complete. The user confirmed the native Rust shell visual state
 is acceptable, closing the final visual acceptance criterion. The project and

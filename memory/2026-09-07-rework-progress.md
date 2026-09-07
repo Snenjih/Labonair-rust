@@ -287,3 +287,4 @@ legacy `Preferences` remains only as an input wire shape and records these
 fields in its exhaustive migration-accounting test. JSONC parsing is used for
 the legacy config read, while the owner file is written atomically as JSON.
 Focused layout, settings-content, and backend migration tests pass.
+This removal is committed in `a474d03`; the active task remains R05-001.
