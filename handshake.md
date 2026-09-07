@@ -24,7 +24,7 @@ Legacy `appCornerRadius` values are converted to the current
 `cornerRadiusScale` field during migration, with the modern value taking
 precedence when both are present.
 
-Current HEAD is `94fac70` on `master`; the worktree is clean before this
+Current HEAD is `f36fa39` on `master`; the worktree is clean before this
 handshake update. The first R06
 boundaries removed the backend error facade, removed AI's stale backend edge,
 moved system-font discovery into the Theme owner, deleted the unconsumed
@@ -74,6 +74,13 @@ exists only as a private wire shape inside the v1→v2 migrator, with the exact
 historical defaults preserved so sparsification does not create false user
 overrides. Full workspace tests, Clippy, dependency, queue, and diff checks
 pass after correcting this migration default regression.
+The remaining pre-v2 Settings wire model and one-time config migration now
+live in `labonair_settings::legacy_migrations`. The backend Settings module and
+its transitional `labonair-settings-content` dependency are removed; runtime
+SettingsContent remains the canonical value model. Full workspace check,
+Clippy, tests, formatting, dependency validation, queue validation, and diff
+checks pass. This boundary is committed as `f36fa39`; R06-001 remains active
+with the remaining concrete backend adapters as the next cleanup area.
 SSH, MCP, and Transfer event-source adapters now retain only `EventBus`, not
 the aggregate `App` handle.
 The Transfer service adapter now retains only `TransferWorkerState` as well.
