@@ -90,6 +90,14 @@ package instead of the backend's historical `0.1.0`. Full check, Clippy,
 workspace tests, formatting, dependency validation, queue validation, and diff
 checks pass. This extraction is committed as `844729a`; R06-001 remains
 active and the next cleanup area is the remaining SSH/SFTP platform adapters.
+The unreferenced `backend::modules::shell` compatibility copy was removed
+after repository-wide source search found no active consumer outside its own
+tests. Its one-shot command runner, persistent agent shell, and
+background-process state were not part of a reachable product workflow; the
+active PTY/terminal and AI tool paths are unchanged. Full check, Clippy,
+workspace tests, formatting, dependency validation, queue validation, and diff
+checks pass. This cleanup is committed as `75039c4`; R06-001 remains active
+with SSH/SFTP and other remaining concrete adapters as the next area.
 
 SSH, MCP, and Transfer event-source adapters now retain only `EventBus`, not
 the aggregate `App` handle.
