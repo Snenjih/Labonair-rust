@@ -50,7 +50,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           # The .dmg is the human download; the .app.tar.gz + latest.json are
-          # consumed by the in-app auto-updater (T15-005).
+          # consumed by the in-app auto-updater.
           files: |
             target/release/bundle/macos/*.dmg
             target/release/bundle/macos/*.app.tar.gz

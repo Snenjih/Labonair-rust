@@ -169,6 +169,11 @@ verified that the documented backend absence check now passes. These changes
 are documentation/cleanup only; no historical report or archived task was
 rewritten.
 
+Active CI/release tooling was audited as well: GitHub labeler paths now point
+to the current capability crates, the obsolete Backend changelog category is
+gone, and the dependency checker no longer carries a dead backend engine
+entry. Queue, dependency, backend-absence, and diff checks remain green.
+
 The current R05 slices removed the untyped `general.notifyOnErrors` default,
 moved Background values behind their owner, moved dock/sidebar runtime state
 to the versioned Workspace-owned `workspace-layout.json`, and removed

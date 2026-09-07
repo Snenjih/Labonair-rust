@@ -11,15 +11,11 @@ dependencies:
       - "**/Cargo.toml"
       - "Cargo.lock"
 
-backend:
-  - changed-files:
-    - any-glob-to-any-file:
-      - "crates/backend/**"
-
 ui:
   - changed-files:
     - any-glob-to-any-file:
-      - "crates/ui/**"
+      - "crates/ui-kit/**"
+      - "crates/gpui-ext/**"
       - "crates/app/**"
 
 theme:
@@ -31,8 +27,7 @@ terminal:
   - changed-files:
     - any-glob-to-any-file:
       - "crates/terminal/**"
-      - "crates/backend/src/modules/pty/**"
-      - "crates/backend/src/modules/terminal_exec/**"
+      - "crates/terminal-integration/**"
 
 editor:
   - changed-files:
@@ -43,26 +38,36 @@ ai:
   - changed-files:
     - any-glob-to-any-file:
       - "crates/ai/**"
-      - "crates/backend/src/modules/mcp/**"
+      - "crates/mcp-core/**"
+      - "crates/mcp-server/**"
+      - "crates/panel-ai/**"
 
 ssh/sftp:
   - changed-files:
     - any-glob-to-any-file:
-      - "crates/backend/src/modules/ssh/**"
-      - "crates/backend/src/modules/sftp/**"
+      - "crates/ssh/**"
+      - "crates/ssh-transport/**"
+      - "crates/sftp/**"
+      - "crates/sftp-ssh/**"
 
 hosts:
   - changed-files:
     - any-glob-to-any-file:
-      - "crates/backend/src/modules/hosts/**"
-      - "crates/backend/src/modules/credentials/**"
+      - "crates/hosts/**"
+      - "crates/hosts-ui/**"
+      - "crates/credentials/**"
 
 git:
   - changed-files:
     - any-glob-to-any-file:
-      - "crates/backend/src/modules/git/**"
+      - "crates/git/**"
+      - "crates/git-transport/**"
+      - "crates/panel-scm/**"
+      - "crates/panel-git-graph/**"
 
 snippets:
   - changed-files:
     - any-glob-to-any-file:
-      - "crates/backend/src/modules/snippets/**"
+      - "crates/snippets/**"
+      - "crates/snippets-ssh/**"
+      - "crates/panel-snippets/**"

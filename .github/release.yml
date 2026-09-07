@@ -24,9 +24,6 @@ changelog:
       labels:
         - ui
         - theme
-    - title: "Backend"
-      labels:
-        - backend
     - title: "Other Changes"
       labels:
         - "*"

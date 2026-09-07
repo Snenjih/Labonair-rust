@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# End-to-end release smoke test (T15-004):
+# End-to-end native release smoke test:
 #   1. build the macOS .app bundle,
 #   2. structurally verify it (binary, Info.plist, icon, version),
 #   3. run the core-functionality smoke test against the release code

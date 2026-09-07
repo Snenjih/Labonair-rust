@@ -12,8 +12,8 @@
 #   * the graph is acyclic (rule 8);
 #   * transitive "must-not-reach" invariants — e.g. no `labonair-panel-*` may
 #     reach `labonair-shell` or another `labonair-panel-*` even indirectly
-#     (docs/architecture.md §3 warning), and the engine crates
-#     (`backend`/`ai`/`editor`) may not reach any UI crate.
+#     (docs/architecture.md §3 warning), and the UI-free engine crates
+#     (`ai`/`editor`) may not reach any UI crate.
 #
 # `cargo metadata` only reports *direct* deps, so the transitive checks build
 # the graph and traverse it here.

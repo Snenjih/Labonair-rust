@@ -321,7 +321,7 @@ ALLOWED = {
     },
 }
 
-# UI crates the engines (backend/ai/editor) must not reach, even transitively.
+# UI crates the UI-free engines (ai/editor) must not reach, even transitively.
 UI_CRATES = {
     "labonair-gpui-ext", "labonair-ui-kit", "labonair-theme",
     "labonair-background",
@@ -427,7 +427,7 @@ if "labonair-panel" in ws_members:
             f"docs/architecture.md §3 rule 1 (contracts crate breaks the cycle)."
         )
 
-for engine in ("labonair-backend", "labonair-ai", "labonair-editor"):
+for engine in ("labonair-ai", "labonair-editor"):
     if engine not in ws_members:
         continue
     bad = UI_CRATES & reaches(engine)

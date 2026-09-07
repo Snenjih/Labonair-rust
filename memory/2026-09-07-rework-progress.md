@@ -969,3 +969,8 @@ The backend facade had already been removed from the tracked workspace, but
 empty filesystem remnants under `crates/backend/` still made the documented
 absence check fail. Those empty directories were removed; the dependency
 verifier and absence check now agree with the source tree.
+
+Active GitHub labeler/release metadata and dependency-checker comments were
+also aligned with the current crate graph. Removed `crates/backend/**` and
+`crates/ui/**` path rules are gone, while current terminal, remote, Git, AI,
+host, snippet, and UI-kit crates are covered.
