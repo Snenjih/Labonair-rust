@@ -192,7 +192,10 @@ The current Cargo metadata shows several transitional edges that conflict with t
   same Git contracts by injection instead of constructing adapters internally.
 - `panel-scm` and workspace Project Diff consume `labonair-git`; source-control
   execution is supplied by `labonair-git-transport`.
-- `shell/src/commands.rs`, `shell/src/status_items.rs`, and workspace views still contain feature-specific behavior that belongs to owning modules.
+- `shell/src/commands.rs` and `shell/src/status_items.rs` still contain
+  feature-specific behavior that belongs to owning modules. Panel contribution
+  construction has moved to the panel owners; command execution and status-item
+  ownership remain tracked by R07-002.
 - `shell/src/titlebar.rs` now owns only the permanent global-menu trigger and
   typed navigation events; Settings, Keymap, Themes, Icon Themes, and Hosts
   are handled by their owning surfaces through the composition root.

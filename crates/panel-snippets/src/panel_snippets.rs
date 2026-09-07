@@ -28,6 +28,7 @@ pub(crate) mod workspace {
 }
 
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 
 use gpui::prelude::FluentBuilder;
 use gpui::{
@@ -53,6 +54,23 @@ use labonair_ui_kit::{
     button, context_menu, disclosure, icon_toggle_button, list_header, segmented_control,
     ButtonSize, ButtonVariant, IconName, ListItem, MenuItem, Palette,
 };
+
+/// Build the Snippets contribution for the workspace-owned panel registry.
+pub fn panel_registration(
+    view: &Entity<SnippetsView>,
+    cx: &App,
+) -> labonair_panel::PanelRegistration {
+    use labonair_panel::{AnyPanelHandle, Panel, PanelRegistration};
+
+    let handle = view.clone();
+    let registration = PanelRegistration {
+        persistent_name: SnippetsView::persistent_name(),
+        default_position: view.read(cx).position(cx),
+        icon: view.read(cx).icon(),
+        build: Arc::new(move |_window, _cx| Arc::new(handle.clone()) as AnyPanelHandle),
+    };
+    registration
+}
 
 // ── Pure helpers: variable extraction / substitution ─────────────────────────
 

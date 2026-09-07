@@ -796,3 +796,13 @@ its role explicit without creating a replacement feature facade. The active
 crate graph contains 50 workspace crates, is acyclic, and has no backend
 dependency or broad-facade allow-list exception. Current source and docs use
 the named integration siblings as the ownership boundary.
+
+## R07-001 audit — Panel contribution ownership
+
+The four built-in panel crates now each build their own typed
+`PanelRegistration`. Shell composition only collects those contributions and
+inserts them into the shared Workspace registry; it no longer contains a
+generic helper that names every concrete panel type. The Git Graph crate stays
+acyclic because it returns a contribution without importing Workspace. The
+remaining shell command-execution and status-item lists are tracked separately
+by R07-002.

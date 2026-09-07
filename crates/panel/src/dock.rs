@@ -240,12 +240,10 @@ pub struct PanelRegistration {
 ///
 /// Zed has no single registry type — panels are added ad hoc via
 /// `Dock::add_panel` (`zed-refrence/zed/crates/workspace/src/dock.rs:629`).
-/// Labonair's architecture (`docs/architecture.md` §1.3, §4) wants the panel
-/// set declared once by `labonair-shell` and read back by both the workspace
-/// (which dock renders what) and the status bar (one toggle per registration).
-/// This container is that single list. It is consumable either as a `gpui`
-/// global or as a field on `Workspace`; the wiring lands in T17-001/003, so the
-/// method surface is frozen now to stay stable through that change.
+/// Labonair's architecture (`docs/architecture.md` §1.3, §4) wants one panel
+/// registry read by both the workspace (which dock renders what) and the
+/// status bar (one toggle per registration). Capability modules build typed
+/// contributions; application composition only inserts them into this list.
 #[derive(Default)]
 pub struct PanelRegistry {
     panels: Vec<PanelRegistration>,

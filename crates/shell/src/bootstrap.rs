@@ -134,43 +134,6 @@ pub(crate) fn refresh_live_snapshot(
     });
 }
 
-/// Register the built-in panels on the workspace's `PanelRegistry`.
-///
-/// This is the **only** place in the app that names concrete panel types.
-fn register_builtin_panels(
-    workspace: &Entity<Workspace>,
-    explorer: &Entity<ExplorerView>,
-    git_panel: &Entity<GitPanelView>,
-    git_graph: &Entity<GitGraphView>,
-    snippets: &Entity<SnippetsView>,
-    cx: &mut App,
-) {
-    use labonair_panel::{AnyPanelHandle, Panel, PanelRegistration};
-
-    fn reg<T: Panel + 'static>(view: &Entity<T>, cx: &App) -> PanelRegistration {
-        let handle = view.clone();
-        PanelRegistration {
-            persistent_name: T::persistent_name(),
-            default_position: view.read(cx).position(cx),
-            icon: view.read(cx).icon(),
-            build: Arc::new(move |_window, _cx| Arc::new(handle.clone()) as AnyPanelHandle),
-        }
-    }
-
-    let registrations = [
-        reg(explorer, cx),
-        reg(git_panel, cx),
-        reg(git_graph, cx),
-        reg(snippets, cx),
-    ];
-    workspace.update(cx, |w, _cx| {
-        let registry = w.panel_registry_mut();
-        for registration in registrations {
-            registry.register(registration);
-        }
-    });
-}
-
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn bootstrap(
     theme: Entity<ThemeStore>,
@@ -587,8 +550,20 @@ pub(crate) fn bootstrap(
         }
     });
 
-    // The registry must be populated before the docks are built from it.
-    register_builtin_panels(&workspace, &explorer, &git_panel, &git_graph, &snippets, cx);
+    // Each panel owner builds its typed contribution; composition only inserts
+    // the contributions into the shared workspace registry.
+    let panel_contributions = [
+        labonair_panel_explorer::panel_registration(&explorer, cx),
+        labonair_panel_scm::panel_registration(&git_panel, cx),
+        labonair_panel_git_graph::panel_registration(&git_graph, cx),
+        labonair_panel_snippets::panel_registration(&snippets, cx),
+    ];
+    workspace.update(cx, |workspace, _cx| {
+        let registry = workspace.panel_registry_mut();
+        for contribution in panel_contributions {
+            registry.register(contribution);
+        }
+    });
 
     // Build the three docks from the workspace-owned layout file. The app
     // startup migration has already moved legacy Settings values there.

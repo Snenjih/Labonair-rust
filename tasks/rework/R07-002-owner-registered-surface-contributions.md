@@ -19,13 +19,14 @@
 ## Goal
 
 Remove the remaining shell-owned feature contribution tables. Capability
-modules must register their command execution, panels, and status items through
-typed owner APIs; `labonair-shell` may only assemble those contributions and
-connect the native window actions that have no capability owner.
+modules must register their command execution and status items through typed
+owner APIs; `labonair-shell` may only assemble those contributions and connect
+the native window actions that have no capability owner. Panel contributions
+already follow this boundary and are included as the reference pattern.
 
 ## Scope
 
-- In scope: `shell/src/commands.rs`, shell panel/status registration, owner
+- In scope: `shell/src/commands.rs`, shell status-item registration, owner
   contribution APIs, command execution callbacks, and dependency/documentation
   evidence.
 - Out of scope: redesigning command behavior, adding new commands, changing
@@ -36,8 +37,9 @@ connect the native window actions that have no capability owner.
 - The command-palette core remains the single metadata registry.
 - Each owning module supplies its command metadata and execution contribution;
   execution must not be duplicated in a shell-wide command table.
-- Panel and status-item registrations are contributed by their owning modules
-  and consumed by the generic workspace registries.
+- Panel registrations are contributed by their owning modules and consumed by
+  the generic workspace registry. Status-item registrations must follow the
+  same pattern.
 - The shell remains responsible only for composition, native-window actions,
   and wiring typed services/events.
 
@@ -61,6 +63,6 @@ statusbar placement, and native-window behavior must remain unchanged.
 
 ## Removal condition
 
-The task is complete when adding an owner command, panel, or status item does
-not require editing a shell feature table, while the shell still composes and
-the full verification gates pass.
+The task is complete when adding an owner command or status item does not
+require editing a shell feature table, while the shell still composes and the
+full verification gates pass.

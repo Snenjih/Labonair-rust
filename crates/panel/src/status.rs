@@ -10,9 +10,9 @@
 //!
 //! The status bar renders **purely** from [`StatusItemRegistry`] — it is keyed
 //! by an arbitrary `&'static str` id and an [`Arc`] constructor closure, and
-//! has *no* dependency on the panel system. `labonair-shell`'s
-//! `register_builtin_status_items` is just the one built-in list; any crate can
-//! build an entity that implements [`StatusItem`] and call
+//! has *no* dependency on the panel system. Application composition only
+//! inserts owner-built contributions; any crate can build an entity that
+//! implements [`StatusItem`] and call
 //! [`StatusItemRegistry::register`] on the workspace's registry to add a new
 //! status-bar widget. (The only panel coupling is the three `dock-buttons-*`
 //! groups, which happen to iterate the panel registry.)
@@ -301,9 +301,9 @@ pub struct StatusItemRegistration {
 
 /// The set of every status-item type known to the running app.
 ///
-/// Same rationale as [`crate::PanelRegistry`]: `labonair-shell` declares the
-/// items once, the workspace's status bar reads them back. Method surface is
-/// frozen now so T17-003 can wire it without churn.
+/// Same rationale as [`crate::PanelRegistry`]: capability modules build typed
+/// contributions and application composition inserts them once; the
+/// workspace's status bar reads them back.
 #[derive(Default)]
 pub struct StatusItemRegistry {
     items: Vec<StatusItemRegistration>,

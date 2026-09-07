@@ -89,6 +89,23 @@ const SEARCH_MAX_VISITS: usize = 4000;
 /// Re-exported here so `crate::explorer::DraggedPaths` keeps resolving.
 pub use labonair_workspace::drag::{quote_paths, shell_quote, DraggedPaths};
 
+/// Build the Explorer contribution for the workspace-owned panel registry.
+pub fn panel_registration(
+    view: &Entity<ExplorerView>,
+    cx: &App,
+) -> labonair_panel::PanelRegistration {
+    use labonair_panel::{AnyPanelHandle, Panel, PanelRegistration};
+
+    let handle = view.clone();
+    let registration = PanelRegistration {
+        persistent_name: ExplorerView::persistent_name(),
+        default_position: view.read(cx).position(cx),
+        icon: view.read(cx).icon(),
+        build: Arc::new(move |_window, _cx| Arc::new(handle.clone()) as AnyPanelHandle),
+    };
+    registration
+}
+
 /// The little chip that follows the pointer while dragging explorer rows.
 pub struct DragPreview {
     label: SharedString,

@@ -102,9 +102,10 @@ a separate product decision after the core workflow is stable.
 - [x] Current normative documents identify the product scope, capability
       owners, registry contracts, Settings boundary, and deferred ideas.
 - [ ] `labonair-shell` still owns a central command-execution table and the
-      built-in panel/status-item registration lists. The metadata registries
-      exist, but contribution ownership is not yet fully isolated in the
-      feature modules. This is tracked by
+      built-in status-item registration list. The command metadata and panel
+      registries exist, but contribution ownership is not yet fully isolated
+      in the feature modules. The panel contribution boundary is now owner
+      supplied; the remaining command/status work is tracked by
       [`R07-002-owner-registered-surface-contributions.md`](R07-002-owner-registered-surface-contributions.md).
 - [ ] A complete visual state matrix is still required for the permanent
       surfaces. Existing spot checks are not sufficient evidence for the R07

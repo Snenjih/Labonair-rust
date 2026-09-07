@@ -47,6 +47,23 @@ use labonair_ui_kit::{
     Palette,
 };
 
+/// Build the Git Graph contribution for the workspace-owned panel registry.
+pub fn panel_registration(
+    view: &Entity<GitGraphView>,
+    cx: &App,
+) -> labonair_panel::PanelRegistration {
+    use labonair_panel::{AnyPanelHandle, Panel, PanelRegistration};
+
+    let handle = view.clone();
+    let registration = PanelRegistration {
+        persistent_name: GitGraphView::persistent_name(),
+        default_position: view.read(cx).position(cx),
+        icon: view.read(cx).icon(),
+        build: Arc::new(move |_window, _cx| Arc::new(handle.clone()) as AnyPanelHandle),
+    };
+    registration
+}
+
 // ── geometry ───────────────────────────────────────────────────────────────
 
 const ROW_H: f32 = 32.0;

@@ -26,6 +26,7 @@ pub(crate) mod theme {
 
 pub mod git_change_row;
 
+use std::sync::Arc;
 use std::time::Duration;
 
 use gpui::prelude::FluentBuilder;
@@ -46,6 +47,23 @@ use labonair_ui_kit::{
     ButtonSize, ButtonVariant, IconName, InputEvent, InputState, ListItem, MenuItem, Palette,
     SegmentSize, SegmentVariant,
 };
+
+/// Build the Source Control contribution for the workspace-owned panel registry.
+pub fn panel_registration(
+    view: &Entity<GitPanelView>,
+    cx: &App,
+) -> labonair_panel::PanelRegistration {
+    use labonair_panel::{AnyPanelHandle, Panel, PanelRegistration};
+
+    let handle = view.clone();
+    let registration = PanelRegistration {
+        persistent_name: GitPanelView::persistent_name(),
+        default_position: view.read(cx).position(cx),
+        icon: view.read(cx).icon(),
+        build: Arc::new(move |_window, _cx| Arc::new(handle.clone()) as AnyPanelHandle),
+    };
+    registration
+}
 
 // Unified-diff parsing moved to `labonair-editor` in the Zed-parity Phase 4
 // redesign so the panel and the workspace Project Diff item share one
