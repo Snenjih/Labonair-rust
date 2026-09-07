@@ -41,9 +41,9 @@ use labonair_workspace::live_bridge::WorkspaceLiveBridge;
 use labonair_workspace::modal_layer::ModalLayer;
 use labonair_workspace::status_bar::StatusBar;
 
-use crate::backend::BackendComposition;
 use crate::background::{BackgroundStore, LayerScope};
 use crate::commands::CommandDispatcher;
+use crate::composition::AppComposition;
 use crate::modals::ShellPalette;
 use crate::theme::ThemeStore;
 use crate::titlebar::Titlebar;
@@ -97,7 +97,7 @@ impl AppShell {
         theme: Entity<ThemeStore>,
         background: Entity<BackgroundStore>,
         notifications: Entity<NotificationCenter>,
-        backend: BackendComposition,
+        composition: AppComposition,
         tokio: TokioHandle,
         window: &mut Window,
         cx: &mut Context<Self>,
@@ -106,7 +106,15 @@ impl AppShell {
         // `bootstrap` (or self-managed by the child entities).
         cx.observe(&theme, |_, _, cx| cx.notify()).detach();
 
-        crate::bootstrap::bootstrap(theme, background, notifications, backend, tokio, window, cx)
+        crate::bootstrap::bootstrap(
+            theme,
+            background,
+            notifications,
+            composition,
+            tokio,
+            window,
+            cx,
+        )
     }
 
     /// The workspace view (for menu / command-palette wiring).

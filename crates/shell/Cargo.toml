@@ -39,13 +39,13 @@ labonair-editor = { path = "../editor" }
 labonair-git = { path = "../git" }
 labonair-git-transport = { path = "../git-transport" }
 labonair-snippets = { path = "../snippets" }
+labonair-snippets-ssh = { path = "../snippets-ssh" }
 labonair-settings-ui = { path = "../settings-ui" }
 labonair-panel-explorer = { path = "../panel-explorer" }
 labonair-panel-scm = { path = "../panel-scm" }
 labonair-panel-git-graph = { path = "../panel-git-graph" }
 labonair-panel-snippets = { path = "../panel-snippets" }
 labonair-terminal = { path = "../terminal" }
-labonair-backend = { path = "../backend" }
 labonair-persistence = { path = "../persistence" }
 labonair-ssh = { path = "../ssh" }
 labonair-ssh-transport = { path = "../ssh-transport" }

@@ -134,8 +134,8 @@ The first transport split is intentionally contract-first:
 tester, and SSH-config contracts. `labonair-sftp` owns the authenticated SFTP
 session handle and remote-browser contracts. `labonair-ssh-transport` owns the
 concrete russh implementation and its contract adapters; workspace and feature
-views consume injected traits. `labonair-backend` no longer owns the SSH
-transport module.
+views consume injected traits. No broad backend package owns transport code;
+the application composition root wires the integration sibling explicitly.
 The `labonair-sftp-ssh` integration sibling owns concrete SFTP session setup
 and the `labonair-sftp` service adapters; it receives SSH state and the raw
 event transport explicitly.
@@ -154,13 +154,13 @@ contracts, event translation boundary, and retained lifecycle registry. The
 latter owns the queue dropdown and resolution dialogs. The
 `labonair-transfers-ssh` integration sibling owns the concrete SFTP worker,
 including execution, checksums, conflicts, cancellation, and reconnect
-requeue behavior. The backend and SFTP capability only translate services and
-submit typed transfer requests. The statusbar owns the trigger/anchor, but not
-transfer state.
+requeue behavior. The shell composition root and SFTP capability only connect
+services and submit typed transfer requests. The statusbar owns the
+trigger/anchor, but not transfer state.
 
 SSH connection lifecycle and MCP bridge events follow the same contract-first
 rule. `labonair-ssh` and `labonair-mcp-core` expose typed event sources and
-receivers; shell composition supplies the backend translation adapters, and
+receivers; shell composition supplies the named integration adapters, and
 Workspace owns only the GPUI bridges and feature reaction. No Workspace code
 subscribes to a transport adapter directly; the shared raw transport is owned
 by `labonair-events` and remains hidden behind the composition boundary.
@@ -243,9 +243,9 @@ serialize a feature's private state into Settings as a shortcut.
 - A CI allow-list must verify the dependency graph and reject cycles or forbidden edges.
 - A feature crate may depend on another module's public contract crate when its
   user flow requires it, but not on that module's private state or feature UI.
-- No new capability code may be added to `labonair-backend`; during migration it
-  may contain only explicitly named adapters whose removal condition is tracked
-  in the inventory.
+- No new capability code may be added to an application-composition crate.
+  Concrete integration code belongs in the owning module's named sibling crate
+  and is injected through its public capability contracts.
 
 ## 8. UI ownership
 

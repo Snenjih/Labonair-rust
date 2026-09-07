@@ -2,7 +2,8 @@
 //!
 //! This crate owns credential metadata, secret references, and generated key
 //! material. It has no application or UI dependency; composition-specific
-//! adapters belong in the backend or application root.
+//! adapters belong in named integration siblings composed by the application
+//! root.
 
 use base64::Engine as _;
 use labonair_persistence::Database;

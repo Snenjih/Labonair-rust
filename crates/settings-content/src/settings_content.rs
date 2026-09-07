@@ -2,7 +2,7 @@
 //!
 //! Blueprint: `zed-refrence/zed/crates/settings_content/src/settings_content.rs`
 //! (+ `merge_from.rs`, `fallible_options.rs`). This crate has **no** GPUI, UI,
-//! or `labonair-backend` dependency (`docs/architecture.md` §2 settings
+//! or application-composition dependency (`docs/architecture.md` §2 settings
 //! track) — it is a pure data model that `T19-002`'s `SettingsStore` layers
 //! (default < user < project). Historical flat `Preferences` input is read
 //! only by `labonair_settings::legacy_migrations` and never becomes a runtime

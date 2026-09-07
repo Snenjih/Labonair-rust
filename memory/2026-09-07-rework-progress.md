@@ -780,3 +780,19 @@ MCP service/event adapters moved from `labonair-backend` into
 `labonair-mcp-server`. The shell now composes this integration sibling with
 explicit SSH, local-terminal, database, secrets, and EventBus capabilities;
 `labonair-mcp-core` remains contracts-only.
+
+## R06-001 — Snippet/transfer adapters and backend package removal
+
+The remaining concrete SSH snippet executor moved into the new
+`labonair-snippets-ssh` integration sibling. The transfer service and event
+source adapters moved into `labonair-transfers-ssh` beside the concrete SFTP
+worker. Both integrations receive explicit capability state and EventBus
+values; neither exposes or accepts aggregate application state.
+
+The obsolete `labonair-backend` package, root exports, module tree, workspace
+member, and shell dependency were then deleted. The shell composition bundle is
+now named `AppComposition` and lives in `labonair-shell::composition`, making
+its role explicit without creating a replacement feature facade. The active
+crate graph contains 50 workspace crates, is acyclic, and has no backend
+dependency or broad-facade allow-list exception. Current source and docs use
+the named integration siblings as the ownership boundary.

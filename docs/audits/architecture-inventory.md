@@ -17,7 +17,7 @@ removal conditions.
 | Current crate | Current role | Target owner | Migration note |
 |---|---|---|---|
 | `app` | Binary/bootstrap | application composition | Keep small; remove feature logic. |
-| `backend` | Snippet and transfer service/event adapters | split across platform services and feature modules | Platform-adapter package; SSH transport now lives in `labonair-ssh-transport`, SFTP in `labonair-sftp-ssh`, Git in `labonair-git-transport`, MCP in `labonair-mcp-server`, and concrete transfer execution in `labonair-transfers-ssh`; broad application composition state, Settings migrations, and updater capability logic no longer live here. |
+| `backend` | Removed | none | The former broad facade and its module tree were deleted. Concrete SSH snippet execution is owned by `labonair-snippets-ssh`; transfer execution and adapters are owned by `labonair-transfers-ssh`. |
 | `ai` | AI providers, sessions, tools | AI module | Keep backend-facing core; rebuild UI later. |
 | `command-palette-core` | UI-free command descriptors and registry (new migration boundary) | command-palette module | Keep metadata and provider discovery here; feature-owned behavior remains outside the palette. Initial owner providers now live in workspace, terminal, editor, hosts, theme, and settings crates. |
 | `command-palette` | Palette UI, dynamic sub-pages, and transitional duplicate shell dispatch integration | command-palette module | Consume the core registry; global-menu navigation is typed; remove static entries and the duplicate shell registry. |
@@ -31,9 +31,10 @@ removal conditions.
 | `git-transport` | Concrete local/remote Git CLI execution and Git contract adapters | Git module | Dedicated integration sibling extracted from the backend; receives SSH state and EventBus explicitly and keeps `labonair-git` contracts implementation-free. |
 | `mcp-server` | Concrete MCP HTTP server, grants, PTY bridge, and MCP event/service adapters | AI/MCP module | Dedicated integration sibling extracted from the backend; receives explicit terminal, SSH, database, secrets, and EventBus capabilities while `labonair-mcp-core` remains contracts-only. |
 | `hosts` | Saved-host and host-group domain contract plus host store | hosts module | Models, host persistence, canonical picker snapshots, and typed SSH/SFTP requests are standalone; the shell composes one manager/window instance. MCP event and transport implementations are isolated in their integration siblings. |
-| `persistence` | Shared SQLite connection and schema lifecycle | foundation/platform service | Extracted from the host adapter; feature-specific queries still remain in `backend` and are next to migrate. |
+| `persistence` | Shared SQLite connection and schema lifecycle | foundation/platform service | Extracted from the host adapter; feature queries are owned by their capability crates or integration siblings. |
 | `credentials` | Credential domain, secret-backed metadata, and SSH keypair generation | credentials module | Extracted from `backend`; the unused backend compatibility module is removed. |
-| `snippets` | Snippet domain, SQLite store, and local/SSH execution contracts | snippets module | Shared run events and the SSH executor contract are standalone; backend owns only the russh adapter. |
+| `snippets` | Snippet domain, SQLite store, and local/SSH execution contracts | snippets module | Shared run events and the SSH executor contract are standalone; `labonair-snippets-ssh` supplies the concrete russh adapter. |
+| `snippets-ssh` | Concrete SSH snippet execution adapter | snippets module | Dedicated integration sibling | Receives `SshState`, `Database`, and `EventBus` through the snippet execution contract; no application facade. |
 | `gpui-ext` | Shared GPUI helpers | foundation | Keep dependency-free from features. |
 | `interaction-contracts` | Stable shortcut and interaction identities | foundation | Keep UI-free and below command/keymap modules; no feature state or behavior. |
 | `hosts-ui` | Host management UI and host-related dependencies | hosts module | Owns the native Hosts management window and consumes host, credential, snippet, database, and secret contracts directly; it emits typed open requests and operation failures publish through Notifications. |
@@ -41,7 +42,7 @@ removal conditions.
 | `notifications` | GPUI notification adapter and statusbar dropdown | notifications module | Owns the statusbar notification item; shell only registers it. |
 | `panel` | Panel/status contracts | workspace foundation | Keep contracts-only. |
 | `panel-explorer` | Explorer panel | explorer module | Remove workspace dependency through contracts. |
-| `panel-git-graph` | Git graph panel | git module | Consumes `labonair-git::GitGraphService`; backend implementation is injected at composition. |
+| `panel-git-graph` | Git graph panel | git module | Consumes `labonair-git::GitGraphService`; the `labonair-git-transport` implementation is injected at composition. |
 | `panel-scm` | Source-control panel | git module | Consumes `labonair-git::GitService`; backend implementation is injected at composition. |
 | `panel-snippets` | Snippet panel and execution UI | snippets module | Receives `Database` and execution contracts; has no backend-facade dependency. |
 | `settings` | Layered settings store | settings module | Keep as core after removing misplaced categories. |
@@ -96,7 +97,9 @@ The current Cargo metadata shows several transitional edges that conflict with t
   through the Hosts-owned native window. Workspace retains only the injected
   capability handle needed for connection/session orchestration. Its
   notification contract migration is still open.
-- `command-palette` still depends on backend even though the palette should receive dynamic data through providers; the runtime snapshot registry now makes that handoff explicit and is the removal seam for this edge.
+- `command-palette` no longer depends on a backend facade. Dynamic data is
+  supplied through the runtime snapshot registry and owner-local providers;
+  remaining shell dispatch duplication is a separate cleanup item.
 - Initial command metadata providers now live in the owning workspace, terminal,
   editor, hosts, themes, and settings crates. The shell still contains
   transitional execution adapters and descriptors for those IDs; the adapter
@@ -146,9 +149,10 @@ The current Cargo metadata shows several transitional edges that conflict with t
 - `keymap::file::KeymapDocument` now separates authoritative raw user source
   from derived parsing/validation state, providing the lossless foundation for
   the dedicated keymap management/editor surface.
-- `labonair-shell` owns the composition-only `BackendComposition` bundle. The
-  backend no longer exposes an aggregate `App`/`AppState` facade; its global
-  event bus and concrete modules are platform-adapter implementation details.
+- `labonair-shell` owns the composition-only `AppComposition` bundle in
+  `shell::composition`. The former backend crate no longer exposes an
+  aggregate `App`/`AppState` facade; concrete integrations are named sibling
+  crates and are injected through capability contracts.
   Shell's direct `labonair-persistence` edge is intentional: the composition
   root initializes the shared database before injecting it into capability
   adapters.
@@ -160,26 +164,34 @@ The current Cargo metadata shows several transitional edges that conflict with t
   removed. Shared OSC 7/133 payloads live in the UI-free
   `labonair-terminal-integration` protocol crate, so the backend does not
   depend on the GPUI terminal engine.
-- `backend` still owns explicit secret-state adapters even though storage now
-  belongs to `labonair-secrets`; SSH/SFTP/MCP call sites no longer pass an
-  aggregate application handle.
-- `backend` no longer re-exports the structured error contract; backend transport code imports `labonair-errors` directly. The stale `labonair-ai → backend` dependency was also removed because AI already consumes `labonair-filesystem` directly. System-font discovery now belongs to `labonair-theme`; the unused backend custom-font module was removed. The remaining facade exports are tracked in [`backend-facade-inventory.md`](backend-facade-inventory.md).
-- Host CRUD/domain ownership and its compatibility signatures have left
-  `backend`; `labonair-hosts` now owns the store and the shell injects the one
+- Secret storage belongs to `labonair-secrets`; SSH/SFTP/MCP and snippet
+  integration call sites receive explicit state rather than an aggregate
+  application handle.
+- The structured error contract is consumed directly from `labonair-errors`.
+  The stale `labonair-ai → backend` dependency and the complete backend crate
+  were removed. System-font discovery belongs to `labonair-theme`; the unused
+  backend custom-font module was removed. The R06 removal evidence is tracked
+  in [`backend-facade-inventory.md`](backend-facade-inventory.md).
+- Host CRUD/domain ownership and its compatibility signatures have left the
+  former backend; `labonair-hosts` now owns the store and the shell injects the one
   MCP revocation handler. Backend transport code still reads host records while
   SSH/SFTP adapters are migrated to narrower capability services.
-- `backend` still owns only the transitional russh snippet-execution adapter;
-  snippet models, persistence,
-  run events, and execution contracts now belong to `labonair-snippets`.
-- `backend` now consumes the shared `labonair-persistence::Database` directly;
-  the former `HostsDb` compatibility alias and backend Hosts module are gone.
+- Snippet models, persistence, run events, and execution contracts belong to
+  `labonair-snippets`; the concrete russh executor is isolated in
+  `labonair-snippets-ssh`.
+- The former backend consumed the shared `labonair-persistence::Database`; the
+  `HostsDb` compatibility alias and backend Hosts module are gone.
   SSH/SFTP transport adapters still query host records through that foundation
-  database and remain tracked migration work.
-- `panel-snippets` no longer depends on `labonair-backend`; its database and SSH execution capabilities are injected from the composition root.
-- `panel-explorer` no longer declares or imports `labonair-backend`; filesystem
+  database and remain explicit integration inputs.
+- `panel-snippets` receives its database and SSH execution capabilities through
+  the composition root, with concrete execution owned by `labonair-snippets-ssh`.
+- `panel-explorer` no longer declares or imports a backend facade; filesystem
   access already uses `labonair-filesystem` directly.
-- `panel-git-graph` no longer depends on `labonair-backend`; its graph contract and commit values live in `labonair-git` and the backend supplies an adapter. Workspace now receives the same Git contracts by injection instead of constructing adapters internally.
-- `panel-scm` and workspace Project Diff no longer depend on `labonair-backend`; source-control values and operations live in `labonair-git`, with the backend supplying the execution adapter.
+- `panel-git-graph` consumes the `labonair-git` contract and receives the
+  `labonair-git-transport` adapter from composition. Workspace receives the
+  same Git contracts by injection instead of constructing adapters internally.
+- `panel-scm` and workspace Project Diff consume `labonair-git`; source-control
+  execution is supplied by `labonair-git-transport`.
 - `shell/src/commands.rs`, `shell/src/status_items.rs`, and workspace views still contain feature-specific behavior that belongs to owning modules.
 - `shell/src/titlebar.rs` now owns only the permanent global-menu trigger and
   typed navigation events; Settings, Keymap, Themes, Icon Themes, and Hosts
@@ -229,14 +241,14 @@ families. These are not target dependencies; each has a removal condition:
 | `panel-scm → editor`, `panel-scm → settings` | SCM reuses unified diff helpers and one legacy presentation preference. | Diff contracts are shared by the Git module and the preference is provided through a narrow settings contract. |
 | `panel-ai → backend`, `panel-ai → editor`, `panel-ai → workspace` | AI UI is parked while the workspace/editor context bridge is redesigned. | AI consumes AI, editor-context, and workspace-session contracts without facade access. |
 | `command-palette → backend`, `command-palette → settings`, `command-palette → filesystem` | Palette still contains legacy action dispatch and settings/file providers. | All entries are registered by owning modules through provider contracts. |
-| `backend → feature contracts` | The backend is the current implementation adapter for extracted capabilities. | All consumers use injected adapters and backend exports no broad feature façade. |
+| `application composition → integration siblings` | The shell must construct concrete platform integrations so feature modules can remain contract-only. | Keep construction and registration in `labonair-shell`; do not expose a replacement aggregate facade. |
 
 The verifier's allow-list is the machine-readable source for the exact edge
 set. Whenever an edge is added or removed, this table and the owning task must
 be updated in the same change.
 
-No new capability may be added to `backend`, `shell`, or `workspace` merely
-because those crates already have access to it. New code must first establish
+No new capability may be added to `shell` or `workspace` merely because those
+crates already have access to it. New code must first establish
 the owning capability crate and then inject or register it at composition.
 This inventory is updated when a boundary moves; it is not a license to keep a
 transitional edge after its removal condition has been met.
@@ -246,12 +258,12 @@ These are migration findings, not reasons to perform a destructive rewrite. Each
 ## Migration order
 
 1. Introduce stable IDs, typed domain events, and narrow service traits.
-2. Extract platform services and capability contracts from `backend` without changing user behavior. The filesystem service, secret store, error contract, host domain contract, and shared database lifecycle are now standalone; their legacy adapters and direct consumers remain to be migrated.
+2. Extract platform services and capability contracts from the former backend without changing user behavior. The filesystem service, secret store, error contract, host domain contract, and shared database lifecycle are now standalone.
 3. Split notification state from presentation and replace toast rendering.
    `labonair-notifications-core` now owns the UI-free registry; the GPUI
    adapter and statusbar dropdown consume retained records.
 4. Split command/keymap registries from the palette view.
-5. Move transfers to their own module and statusbar owner. The typed registry, concrete worker integration, and statusbar UI are now in place; raw adapter transport lives in `labonair-events` while compatibility decoding remains at the backend boundary.
+5. Move transfers to their own module and statusbar owner. The typed registry, concrete worker integration, and statusbar UI are now in place; raw adapter transport lives in `labonair-events` while decoding remains in `labonair-transfers-ssh`.
 6. Move hosts and SSH ownership out of Settings/workspace.
 7. Move terminal/editor/SFTP views to their owning modules.
 8. Remove compatibility edges and enforce the target graph.
@@ -262,6 +274,6 @@ The inventory was produced from:
 
 ```text
 cargo metadata --no-deps --format-version 1
-find crates/backend/src/modules -maxdepth 2 -type f
-rg -n "pub struct|pub enum|pub trait|pub fn" crates/backend/src/modules crates/shell/src crates/workspace/src
+test ! -e crates/backend
+rg -n "pub struct|pub enum|pub trait|pub fn" crates/shell/src crates/workspace/src crates/*/src
 ```

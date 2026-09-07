@@ -47,7 +47,7 @@ use labonair_workspace::modal_layer::ModalLayer;
 use labonair_workspace::status_bar::StatusBar;
 
 use crate::app_shell::{AppShell, ShellPanels};
-use crate::backend::BackendComposition;
+use crate::composition::AppComposition;
 use crate::local_terminal_access::TerminalRegistryAccess;
 use crate::settings_services::settings_services;
 use crate::status_items::register_builtin_status_items;
@@ -176,7 +176,7 @@ pub(crate) fn bootstrap(
     theme: Entity<ThemeStore>,
     background: Entity<BackgroundStore>,
     notifications: Entity<NotificationCenter>,
-    backend: BackendComposition,
+    backend: AppComposition,
     tokio: TokioHandle,
     window: &mut Window,
     cx: &mut Context<AppShell>,
@@ -324,12 +324,10 @@ pub(crate) fn bootstrap(
             backend.events.clone(),
         ));
     let transfer_service: Arc<dyn TransferService> = Arc::new(
-        labonair_backend::modules::transfers::BackendTransferService::new(backend.transfer.clone()),
+        labonair_transfers_ssh::adapter::TransferServiceAdapter::new(backend.transfer.clone()),
     );
     let transfer_events: Arc<dyn TransferEventSource> = Arc::new(
-        labonair_backend::modules::transfers::BackendTransferEventSource::new(
-            backend.events.clone(),
-        ),
+        labonair_transfers_ssh::adapter::TransferEventSourceAdapter::new(backend.events.clone()),
     );
     let git_service: Arc<dyn labonair_git::GitService> =
         Arc::new(labonair_git_transport::GitTransportService::new(
@@ -465,12 +463,11 @@ pub(crate) fn bootstrap(
     }
 
     let snippets = cx.new(|cx| {
-        let ssh_executor = std::sync::Arc::new(
-            labonair_backend::modules::snippets::exec::BackendSshExecutor::new(
+        let ssh_executor =
+            std::sync::Arc::new(labonair_snippets_ssh::exec::SshSnippetExecutor::new(
                 backend.ssh.clone(),
                 backend.snippet_run.clone(),
-            ),
-        );
+            ));
         SnippetsView::new(
             backend.db.clone(),
             tokio.clone(),

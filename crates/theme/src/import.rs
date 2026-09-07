@@ -4,7 +4,7 @@
 //! and keep a list of imported themes. This module owns the *conversion* between
 //! that on-disk JSON format ([`ThemeFile`]) and the typed [`Theme`] the renderer
 //! consumes. Persistence (writing the files, listing them, deleting user
-//! themes) lives in the backend `themes` module — this crate only parses and
+//! themes) lives in the theme capability registry — this module only parses and
 //! converts, it never executes anything from a theme file.
 //!
 //! # JSON schema (compatible with Labonair's existing theme files)

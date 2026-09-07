@@ -1,0 +1,17 @@
+[package]
+name = "labonair-snippets-ssh"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "labonair_snippets_ssh"
+path = "src/lib.rs"
+
+[dependencies]
+labonair-events = { path = "../events" }
+labonair-snippets = { path = "../snippets" }
+labonair-ssh-transport = { path = "../ssh-transport" }
+russh = { version = "0.62.2", default-features = false, features = ["ring", "flate2", "rsa"] }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+

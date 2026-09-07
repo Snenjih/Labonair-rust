@@ -2,7 +2,7 @@
 
 ## Status
 
-`🔄 In Progress`
+`✅ Done`
 
 ## Owner
 
@@ -244,6 +244,16 @@ boundary still exists; that package must not become a second capability owner.
       classification, and SSH contract adapters into the dedicated
       `labonair-ssh-transport` integration sibling; the backend no longer
       owns an SSH module.
-- [ ] Move the remaining contracts and adapters behind injected capability
+- [x] Move the remaining contracts and adapters behind injected capability
       services.
-- [ ] Delete the broad `App` facade paths and remaining compatibility edges.
+- [x] Delete the broad `App` facade paths and remaining compatibility edges.
+
+## Completion evidence
+
+The former `labonair-backend` package and its module tree are removed from the
+workspace. Concrete SSH snippet execution is owned by
+`labonair-snippets-ssh`, transfer execution and adapters are owned by
+`labonair-transfers-ssh`, and application construction is named
+`labonair-shell::composition::AppComposition`. No workspace crate declares or
+imports the broad backend facade; feature modules receive typed contracts or
+registry snapshots instead.

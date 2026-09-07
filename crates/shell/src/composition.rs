@@ -1,24 +1,22 @@
 //! Composition-only state for the native application.
 //!
-//! This bundle exists at the shell boundary so `labonair-backend` can remain a
-//! package of concrete platform adapters instead of exposing a broad
-//! application facade. Feature code receives the individual capabilities it
-//! needs from [`crate::bootstrap`].
+//! This bundle exists at the application composition boundary. Feature code
+//! receives the individual capabilities it needs from [`crate::bootstrap`].
 
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::{Arc, Mutex as StdMutex};
 
-use labonair_backend::modules::snippets::exec::SnippetRunState;
 use labonair_events::EventBus;
 use labonair_mcp_server::McpState;
 use labonair_persistence::Database;
 use labonair_secrets::SecretsState;
+use labonair_snippets_ssh::exec::SnippetRunState;
 use labonair_ssh_transport::tunnels::TunnelState;
 use labonair_ssh_transport::{SshState, TrustState};
 use labonair_transfers::{ConflictMap, TransferSettings, TransferWorkerState, WorkerMessage};
 
-pub struct BackendCompositionInner {
+pub struct AppCompositionInner {
     pub(crate) events: EventBus,
     pub(crate) db: Database,
     pub(crate) secrets: Arc<SecretsState>,
@@ -33,18 +31,18 @@ pub struct BackendCompositionInner {
 
 /// Cloneable composition state owned by the application shell.
 #[derive(Clone)]
-pub struct BackendComposition(Arc<BackendCompositionInner>);
+pub struct AppComposition(Arc<AppCompositionInner>);
 
-impl std::ops::Deref for BackendComposition {
-    type Target = BackendCompositionInner;
+impl std::ops::Deref for AppComposition {
+    type Target = AppCompositionInner;
 
     fn deref(&self) -> &Self::Target {
         &self.0
     }
 }
 
-impl BackendComposition {
-    /// Builds the concrete backend capabilities rooted at `data_dir`.
+impl AppComposition {
+    /// Builds the concrete application capabilities rooted at `data_dir`.
     pub fn new(data_dir: &Path) -> Result<Self, String> {
         std::fs::create_dir_all(data_dir).map_err(|error| error.to_string())?;
         let connection = labonair_persistence::initialize_database(data_dir.to_path_buf())?;
@@ -59,7 +57,7 @@ impl BackendComposition {
             settings,
         };
 
-        Ok(Self(Arc::new(BackendCompositionInner {
+        Ok(Self(Arc::new(AppCompositionInner {
             events: EventBus::new(),
             db,
             secrets: Arc::new(SecretsState::new(data_dir.to_path_buf())),
@@ -86,7 +84,7 @@ impl BackendComposition {
             loop {
                 match receiver.recv().await {
                     Ok(raw) => {
-                        tracing::debug!(name = %raw.name, payload = ?raw.payload, "backend event")
+                        tracing::debug!(name = %raw.name, payload = ?raw.payload, "application event")
                     }
                     Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {
                         tracing::warn!(skipped, "event bus subscriber lagged");

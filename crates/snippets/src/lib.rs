@@ -1,8 +1,8 @@
 //! Saved command snippets and snippet groups.
 //!
 //! Persistence, domain data, and local process execution live here. SSH
-//! execution remains a temporary backend adapter until the SSH session
-//! contract is exposed to this capability without importing backend state.
+//! execution is supplied by the UI-free `labonair-snippets-ssh` integration
+//! sibling through the typed SSH capability contracts.
 
 pub mod exec;
 pub mod store;

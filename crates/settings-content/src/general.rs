@@ -1,6 +1,5 @@
 //! `general` area — startup / lifecycle behaviour. Field names carried over
-//! 1:1 (camelCase serde) from `labonair-backend`'s `Preferences` "General"
-//! group.
+//! 1:1 (camelCase serde) from the legacy `Preferences` "General" group.
 
 use crate::MergeFrom;
 use serde::{Deserialize, Serialize};

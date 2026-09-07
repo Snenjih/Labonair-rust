@@ -809,8 +809,9 @@ pub fn migrate_settings_v1_to_v2(dir: &Path) -> Result<SettingsV2Outcome, String
 
 /// Old `ShortcutId` slug -> new `CommandId::action_name()` string. Kept as a
 /// self-contained string table (rather than importing `CommandId` itself)
-/// because `labonair-backend` must not depend on `labonair-command-palette`
-/// (that edge already runs the other way — see `scripts/check_crate_deps.py`).
+/// because the settings migration layer must not depend on
+/// `labonair-command-palette` (that edge already runs the other way — see
+/// `scripts/check_crate_deps.py`).
 /// Verified 1:1 against `crates/command-palette/src/keybind.rs`'s
 /// `shortcut_slug` and `crates/command-palette/src/palette.rs`'s
 /// `ACTION_NAMES` (T17-007/T19-008).

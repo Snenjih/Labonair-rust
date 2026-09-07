@@ -1,3 +1,7 @@
+//! Concrete SFTP transfer execution and capability adapters.
+
+pub mod adapter;
+
 use labonair_events::EventBus;
 use labonair_ssh_transport::net_error::is_network_error;
 use labonair_ssh_transport::{RushSession, SshState};

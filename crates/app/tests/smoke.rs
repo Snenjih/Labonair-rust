@@ -12,14 +12,14 @@
 
 use std::time::{Duration, Instant};
 
-use labonair_shell::{BackendComposition, UpdateManifest, CURRENT_VERSION};
+use labonair_shell::{AppComposition, UpdateManifest, CURRENT_VERSION};
 use labonair_terminal::{SessionOptions, TermDimensions, TerminalColors, TerminalSession};
 
 #[test]
 fn backend_state_initializes_in_a_fresh_data_dir() {
     let tmp = std::env::temp_dir().join(format!("labonair-smoke-be-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&tmp);
-    let backend = BackendComposition::new(&tmp).expect("backend init");
+    let backend = AppComposition::new(&tmp).expect("application init");
     // The SQLite file is created by the composition root.
     assert!(tmp.join("labonair.db").exists(), "hosts db not created");
     drop(backend);

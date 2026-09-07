@@ -1,7 +1,7 @@
 //! UI-free SSH capability contracts.
 //!
-//! Transport implementations live in `labonair-backend`. Feature crates use
-//! these focused contracts instead of importing russh or backend state. The
+//! Transport implementations live in `labonair-ssh-transport`. Feature crates
+//! use these focused contracts instead of importing russh or transport state. The
 //! traits are split by responsibility so a consumer that only needs PTY I/O
 //! does not depend on host configuration or tunnel management.
 
@@ -161,8 +161,9 @@ pub trait SshRemoteCommandService: Send + Sync {
 
 /// Transitional remote-file lifecycle contract used by the editor bridge.
 /// The implementation owns the temporary-file mechanics; the workspace only
-/// receives paths and coordinates editor tabs. This keeps backend transport
-/// modules out of the workspace until streaming file I/O is introduced.
+/// receives paths and coordinates editor tabs. This keeps transport
+/// implementation details out of the workspace until streaming file I/O is
+/// introduced.
 pub trait SshRemoteFileService: Send + Sync {
     fn prepare_remote_edit<'a>(
         &'a self,

@@ -12,7 +12,8 @@ use labonair_mcp_core::{SessionKind, TabOpResult};
 
 /// Explicit capability access required by the MCP HTTP server. This is built
 /// at the composition boundary so MCP tools do not retain the aggregate
-/// backend `App` just to reach terminal, SSH, persistence, secrets, or events.
+/// aggregate application state just to reach terminal, SSH, persistence,
+/// secrets, or events.
 #[derive(Clone)]
 pub struct McpServerAccess {
     pub(crate) ssh: labonair_ssh_transport::SshState,
@@ -48,7 +49,7 @@ const DEFAULT_MAX_COMMAND_TIMEOUT_MS: u64 = 300_000;
 const AUTO_REVOKE_SWEEP_INTERVAL: Duration = Duration::from_secs(60);
 
 /// Revoke MCP grants when the Hosts capability blocks agent access for a host.
-/// This is the only host-specific integration retained by the backend; host
+/// This is the host-specific integration owned by the MCP server; host
 /// persistence and lifecycle remain entirely inside `labonair-hosts`.
 pub fn revoke_agent_access(
     state: &McpState,

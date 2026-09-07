@@ -1,7 +1,7 @@
 //! Local command execution owned by the snippets capability.
 //!
 //! The runner has no knowledge of GPUI, the application event bus, or the
-//! backend facade. Consumers provide a typed event sink and decide how those
+//! application composition. Consumers provide a typed event sink and decide how those
 //! events are presented or bridged to another transport.
 
 use std::collections::HashMap;

@@ -6,14 +6,14 @@ use gpui::{
 use gpui_component::Root;
 
 mod dock_icon;
-use labonair_shell::{window_state, AppShell, BackendComposition};
+use labonair_shell::{window_state, AppComposition, AppShell};
 use tracing_subscriber::EnvFilter;
 
 /// `tracing` logging: default-off for noisy deps, `debug` for our crates, all
 /// overridable via `RUST_LOG`.
 fn init_logging() {
-    let filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new("warn,labonair=debug,labonair_backend=debug"));
+    let filter =
+        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("warn,labonair=debug"));
     tracing_subscriber::fmt()
         .with_env_filter(filter)
         .with_ansi(true)
@@ -31,7 +31,7 @@ fn main() {
     let data_dir = dirs::data_dir()
         .unwrap_or_else(|| std::path::PathBuf::from("."))
         .join("labonair");
-    let backend = BackendComposition::new(&data_dir).expect("failed to initialize backend state");
+    let backend = AppComposition::new(&data_dir).expect("failed to initialize application state");
     backend.spawn_workers();
     #[cfg(debug_assertions)]
     backend.spawn_event_logger();

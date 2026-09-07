@@ -180,7 +180,7 @@ ALLOWED = {
         "labonair-workspace", "labonair-settings-ui", "labonair-panel",
         "labonair-panel-explorer", "labonair-panel-scm",
         "labonair-panel-git-graph", "labonair-panel-snippets",
-        "labonair-panel-ai", "labonair-terminal", "labonair-backend",
+        "labonair-panel-ai", "labonair-terminal",
         "labonair-events",
         "labonair-settings", "labonair-filesystem", "labonair-ssh",
         "labonair-ssh-transport",
@@ -193,7 +193,7 @@ ALLOWED = {
         # Provider metadata contracts are assembled here; feature behavior
         # remains in the owning crates and is not implemented by this root.
         "labonair-editor", "labonair-git", "labonair-git-transport",
-        "labonair-hosts",
+        "labonair-hosts", "labonair-snippets-ssh",
         "labonair-hosts-ui", "labonair-snippets", "labonair-secrets",
     },
 
@@ -232,7 +232,7 @@ ALLOWED = {
     # and editor (composer buffer) — accepted, still no panel-* / shell edge.
     "labonair-panel-ai": {
         "labonair-theme", "labonair-ui-kit", "labonair-panel",
-        "labonair-command-palette", "labonair-backend", "labonair-editor",
+        "labonair-command-palette", "labonair-editor",
         "labonair-ai", "labonair-workspace",
     },
 
@@ -267,6 +267,10 @@ ALLOWED = {
     "labonair-git-transport": {
         "labonair-events", "labonair-git", "labonair-ssh-transport",
     },
+    # Concrete SSH execution adapter for the UI-free snippets contracts.
+    "labonair-snippets-ssh": {
+        "labonair-events", "labonair-snippets", "labonair-ssh-transport",
+    },
     # Concrete MCP HTTP server, grants, event adapters, and PTY bridge.
     "labonair-mcp-server": {
         "labonair-errors", "labonair-events", "labonair-hosts",
@@ -275,12 +279,6 @@ ALLOWED = {
     },
     "labonair-editor": {
         "labonair-command-palette-core", "labonair-interaction-contracts",
-    },
-    # Backend contains only concrete platform adapters. Settings migrations are
-    # owned by `labonair-settings::legacy_migrations`.
-    "labonair-backend": {
-        "labonair-events", "labonair-snippets", "labonair-ssh-transport",
-        "labonair-transfers",
     },
     "labonair-ai": {"labonair-filesystem"},
 

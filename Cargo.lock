@@ -4170,20 +4170,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "labonair-backend"
-version = "0.1.0"
-dependencies = [
- "labonair-events",
- "labonair-snippets",
- "labonair-ssh-transport",
- "labonair-transfers",
- "russh",
- "serde_json",
- "tokio",
- "uuid",
-]
-
-[[package]]
 name = "labonair-background"
 version = "0.1.0"
 dependencies = [
@@ -4640,7 +4626,6 @@ dependencies = [
  "dirs 6.0.0",
  "gpui",
  "gpui-component",
- "labonair-backend",
  "labonair-background",
  "labonair-command-palette",
  "labonair-command-palette-core",
@@ -4669,6 +4654,7 @@ dependencies = [
  "labonair-sftp",
  "labonair-sftp-ssh",
  "labonair-snippets",
+ "labonair-snippets-ssh",
  "labonair-ssh",
  "labonair-ssh-transport",
  "labonair-terminal",
@@ -4698,6 +4684,18 @@ dependencies = [
  "serde",
  "tokio",
  "uuid",
+]
+
+[[package]]
+name = "labonair-snippets-ssh"
+version = "0.1.0"
+dependencies = [
+ "labonair-events",
+ "labonair-snippets",
+ "labonair-ssh-transport",
+ "russh",
+ "serde_json",
+ "tokio",
 ]
 
 [[package]]

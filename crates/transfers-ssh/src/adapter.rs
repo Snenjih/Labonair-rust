@@ -1,4 +1,4 @@
-//! Backend adapters for the transfer capability.
+//! Concrete service and event adapters for the transfer capability.
 
 use labonair_events::{EventBus, RawEvent};
 use labonair_transfers::{
@@ -9,17 +9,17 @@ use labonair_transfers::{
 use tokio::sync::broadcast;
 
 #[derive(Clone)]
-pub struct BackendTransferService {
+pub struct TransferServiceAdapter {
     worker: TransferWorkerState,
 }
 
-impl BackendTransferService {
+impl TransferServiceAdapter {
     pub fn new(worker: TransferWorkerState) -> Self {
         Self { worker }
     }
 }
 
-impl TransferService for BackendTransferService {
+impl TransferService for TransferServiceAdapter {
     fn enqueue<'a>(&'a self, request: TransferRequest) -> BoxFuture<'a, Result<String, String>> {
         let worker = self.worker.clone();
         Box::pin(async move {
@@ -76,29 +76,29 @@ impl TransferService for BackendTransferService {
     }
 }
 
-pub struct BackendTransferEventSource {
+pub struct TransferEventSourceAdapter {
     events: EventBus,
 }
 
-impl BackendTransferEventSource {
+impl TransferEventSourceAdapter {
     pub fn new(events: EventBus) -> Self {
         Self { events }
     }
 }
 
-struct BackendTransferEventReceiver {
+struct TransferEventReceiverAdapter {
     receiver: broadcast::Receiver<RawEvent>,
 }
 
-impl TransferEventSource for BackendTransferEventSource {
+impl TransferEventSource for TransferEventSourceAdapter {
     fn subscribe(&self) -> Box<dyn TransferEventReceiver> {
-        Box::new(BackendTransferEventReceiver {
+        Box::new(TransferEventReceiverAdapter {
             receiver: self.events.subscribe(),
         })
     }
 }
 
-impl TransferEventReceiver for BackendTransferEventReceiver {
+impl TransferEventReceiver for TransferEventReceiverAdapter {
     fn recv<'a>(&'a mut self) -> BoxFuture<'a, Result<TransferEvent, TransferEventError>> {
         Box::pin(async move {
             loop {

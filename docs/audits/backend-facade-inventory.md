@@ -2,29 +2,27 @@
 
 **Status:** R06-001 working inventory  
 **Date:** 2026-09-07  
-**Evidence:** `crates/backend/src/lib.rs`, `crates/events/src/lib.rs`, every file under
-`crates/backend/src/modules/`, Cargo metadata, and source search for
-`labonair_backend` / `labonair-backend`.
+**Evidence:** the former `crates/backend/` tree, current Cargo metadata, and
+source search for `labonair_backend` / `labonair-backend`.
 
 This is a current-state inventory, not an ownership declaration. The target
 ownership is defined by [`../architecture.md`](../architecture.md) and
-[`../capabilities.md`](../capabilities.md). A backend entry may remain only as
-a concrete platform adapter with a named consumer and removal condition.
+[`../capabilities.md`](../capabilities.md). The former backend package has now
+been removed; concrete platform integrations live in named sibling crates.
 
-## Public facade surface
+## Former public facade surface
 
 | Surface | Current location | External consumers | Target boundary | R06 state |
 |---|---|---|---|---|
-| `BackendComposition` | `shell::backend` | `app`, `shell` composition | application composition plus injected capability services | owns construction, worker startup, and capability extraction; no feature module receives a broad state facade |
-| `EventBus`, `EventChannel`, `RawEvent` | `labonair-events` | shell composition and backend transport adapters | UI-free adapter transport; typed capability events remain in their owning contracts | moved out of `backend`; the transport crate owns no product state, while event-source adapters receive it only at the composition boundary |
+| `AppComposition` | `shell::composition` | `app`, `shell` composition | application composition plus injected capability services | owns construction, worker startup, and capability extraction; no feature module receives a broad state facade |
+| `EventBus`, `EventChannel`, `RawEvent` | `labonair-events` | shell composition and named integration adapters | UI-free adapter transport; typed capability events remain in their owning contracts | moved out of the former backend; the transport crate owns no product state |
 | updater constants and operations | `labonair-updater` | `shell::updater`, app smoke tests | updater capability plus shell UI | Moved out of the backend; the shell consumes the dedicated capability crate |
 | structured errors | formerly `backend::modules::errors` and root re-exports | no external backend import remains | `labonair-errors` | Root re-export and module removed in the first R06 slice |
 
-## Module export and consumer map
+## Former module export and consumer map
 
-The export count is based on public declarations in the module source. “Internal
-only” means no non-backend crate currently imports that module; it still may
-participate in the `BackendComposition` state graph or in another backend module.
+This table records the former module boundaries and their final disposition. It
+is retained as removal evidence, not as a current package structure.
 
 | Backend module | Public surface | Current external consumers | Intended owner / disposition |
 |---|---|---|---|
@@ -42,27 +40,27 @@ participate in the `BackendComposition` state graph or in another backend module
 | `settings` | removed | no active backend consumers | `labonair-settings` owns the one-time `legacy_migrations` boundary; SettingsContent remains the canonical runtime value model |
 | `sftp` | removed from backend | none | Concrete SFTP session and contract adapters now live in `labonair-sftp-ssh`; transfer execution lives in `labonair-transfers-ssh` |
 | `shell` | removed | no active consumers outside its own tests | No canonical runtime consumer existed; future local command/background-process capability must be introduced through its owning Terminal/AI contract rather than another backend module |
-| `snippets` | SSH executor adapter | `shell`; internal backend use | `labonair-snippets` owns the store and execution contracts; the unreferenced backend DB re-export was removed, while SSH execution receives explicit SSH state and EventBus capabilities |
+| `snippets` | SSH executor adapter | `shell` | `labonair-snippets` owns the store and execution contracts; `labonair-snippets-ssh` owns concrete SSH execution and receives explicit SSH state and EventBus capabilities |
 | `ssh-transport` | SSH state, russh transport, PTY, remote files, tunnels, config import/export | `shell`; internal Git/SFTP/snippet/MCP use | `labonair-ssh-transport` integration sibling; it implements the UI-free `labonair-ssh` contracts and owns the concrete session registry and transport state |
 | `terminal_exec` | removed | no active consumers; MCP owns its live terminal execution path | dead compatibility module and `App` state removed; MCP server remains the active owner |
 | `themes` | removed | no active backend consumers | `labonair-theme` owns the static theme and icon-theme registries; network download is intentionally not part of the current product surface |
-| `transfers` | `BackendTransferService` and event source | `shell` | `labonair-transfers` integration boundary; service receives only `TransferWorkerState`, event translation stays once at adapter edge, and concrete worker execution is isolated in `labonair-transfers-ssh` |
+| `transfers` | `TransferServiceAdapter` and event source | `shell` | `labonair-transfers` owns the contracts and registry; `labonair-transfers-ssh` owns the concrete worker and adapters, with only explicit worker state and EventBus inputs |
 | `updater` | moved out of backend | `shell::updater`, app smoke tests | `labonair-updater` owns manifest parsing, version checks, verification, download/install helpers, and check cadence; shell owns only the GPUI view |
 
 ## Direct dependency evidence
 
-Cargo currently declares `labonair-backend` directly in these non-backend
-crates:
+No current workspace crate declares `labonair-backend`. The final direct
+dependency audit is:
 
 | Crate | Why it currently imports backend | Removal seam |
 |---|---|---|
-| `labonair` | invokes shell-owned composition and startup hooks | no direct runtime backend dependency; terminal/theme edges are smoke-test-only dev dependencies and the app entrypoint remains thin |
-| `labonair-shell` | constructs `BackendComposition`, builds SSH/SFTP/Git/transfer adapters, reads MCP/settings/updater compatibility APIs | one composition-only adapter import per capability, with no feature state access; Git adapters receive explicit SSH/EventBus capabilities |
-| `labonair-ai` | no active backend usage; stale dependency declaration | removed in the R06 inventory pass |
+| `labonair` | invokes shell-owned composition and startup hooks | no backend dependency; the app entrypoint remains thin |
+| `labonair-shell` | constructs `AppComposition` and named integrations | composition-only adapter imports; feature state is injected through public contracts |
+| `labonair-ai` | no backend usage | no backend dependency |
 
-`settings`, `settings-content`, and related crates contain historical comments
-or migration references to backend names, but they do not declare or import the
-backend crate as a runtime dependency. The former backend Settings module is
+`settings`, `settings-content`, and related crates contain historical migration
+references to the predecessor wire model, but they do not declare or import a
+backend crate. The former backend Settings module is
 gone; `labonair_settings::legacy_migrations` is the only owner of the legacy
 pre-v2 wire migration path.
 
@@ -73,12 +71,9 @@ capability contracts.
 
 ## First completed boundary
 
-The error contract no longer passes through the facade. Backend transport code
-imports `labonair-errors` directly, while `backend::modules::errors`, the root
-error re-exports, and the unused `AppResult` alias are gone. This establishes
-the migration pattern for the remaining entries: move or consume the canonical
-contract first, then delete the backend compatibility path once source search
-and focused tests prove that no external consumer remains.
+The error contract no longer passes through a facade. Integration code imports
+`labonair-errors` directly, while `backend::modules::errors`, the root error
+re-exports, and the unused `AppResult` alias are gone.
 
 The live `statusBarItemPlacements` and `panelToggleVisibility` blobs now have
 their persistence implementation in `labonair-workspace::status_placements`.
@@ -153,8 +148,8 @@ and composition container rather than an event facade.
 ## Verification commands
 
 ```text
-rg -n "labonair_backend|labonair-backend|backend::" crates --glob '*.rs' --glob 'Cargo.toml'
-find crates/backend/src/modules -maxdepth 2 -type f | sort
+rg -n "labonair_backend|labonair-backend|BackendComposition|crate::backend|backend::" crates --glob '*.rs' --glob 'Cargo.toml'
+test ! -e crates/backend
 cargo metadata --no-deps --format-version 1
 scripts/check-crate-deps.sh
 ```

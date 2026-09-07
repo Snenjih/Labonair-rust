@@ -22,15 +22,15 @@ pub struct SnippetRunState {
     cancelled: RwLock<HashSet<String>>,
 }
 
-/// Backend implementation of the snippets capability's SSH execution
-/// contract. The panel only sees `SshCommandExecutor`; russh and session
-/// storage remain private to this adapter.
-pub struct BackendSshExecutor {
+/// SSH implementation of the snippets capability's execution contract. The
+/// panel only sees `SshCommandExecutor`; russh and session storage remain
+/// private to this adapter.
+pub struct SshSnippetExecutor {
     ssh_state: labonair_ssh_transport::SshState,
     run_state: Arc<SnippetRunState>,
 }
 
-impl BackendSshExecutor {
+impl SshSnippetExecutor {
     pub fn new(
         ssh_state: labonair_ssh_transport::SshState,
         run_state: Arc<SnippetRunState>,
@@ -42,7 +42,7 @@ impl BackendSshExecutor {
     }
 }
 
-impl SshCommandExecutor for BackendSshExecutor {
+impl SshCommandExecutor for SshSnippetExecutor {
     fn execute(
         &self,
         run_id: String,
