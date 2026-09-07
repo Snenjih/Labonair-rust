@@ -30,6 +30,10 @@ settings migration. Its unused backend read/write API and `App` lock were
 removed, along with the obsolete unit test; current status-bar placement APIs
 remain unchanged for the live workspace surface.
 
+The affected backend/workspace/shell tests and all repository gates passed
+after the bar-placement removal. Current HEAD is `fc68c23`; the worktree is
+clean and R06-001 remains active.
+
 ## Native visual verification
 
 The exact Rust bundle was opened through its absolute `.app` path. Core
