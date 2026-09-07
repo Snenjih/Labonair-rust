@@ -11,6 +11,7 @@
 //! * [`render`] — pure grid → style-run batching + resize math for the GPUI
 //!   renderer (T03-002). The GPUI element itself lives in `labonair-ui`.
 
+pub mod command_provider;
 pub mod engine;
 pub mod input;
 pub mod palette;

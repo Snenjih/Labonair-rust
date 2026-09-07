@@ -75,6 +75,24 @@ owner.
 3. Delete the duplicate shell table and obsolete palette entries → verify
    dependency graph, keymap compatibility fixtures, and visual palette states.
 
+## Progress
+
+The first provider-owned metadata slice is now wired. `labonair-workspace`,
+`labonair-terminal`, `labonair-editor`, `labonair-hosts`, `labonair-theme`,
+and `labonair-settings` each expose a UI-free `CommandProvider` from their
+owning crate. The shell composition root assembles those providers into the
+single palette registry, while the existing shell execution closures verify
+their descriptors against the owner snapshot. This prevents provider-owned
+rows from becoming a second palette list and gives each capability a direct
+registration seam.
+
+`labonair-keymap` is intentionally not made a dependency of
+`labonair-command-palette-core`: the core currently depends on `ShortcutId`
+from keymap, so adding the reverse edge creates a Cargo cycle. `Open Keymap`
+therefore remains a temporary shell adapter until the stable command/shortcut
+identity contract is extracted into a lower-level crate or the dependency is
+otherwise inverted.
+
 ## Acceptance criteria
 
 - [ ] One typed registry/provider surface is the only source of palette rows.

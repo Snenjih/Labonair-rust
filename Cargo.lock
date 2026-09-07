@@ -4278,6 +4278,7 @@ dependencies = [
 name = "labonair-editor"
 version = "0.1.0"
 dependencies = [
+ "labonair-command-palette-core",
  "tree-sitter",
  "tree-sitter-bash",
  "tree-sitter-c",
@@ -4343,6 +4344,7 @@ dependencies = [
 name = "labonair-hosts"
 version = "0.1.0"
 dependencies = [
+ "labonair-command-palette-core",
  "labonair-errors",
  "labonair-persistence",
  "labonair-secrets",
@@ -4493,6 +4495,7 @@ dependencies = [
  "inventory",
  "jsonc-parser",
  "jsonschema",
+ "labonair-command-palette-core",
  "labonair-settings-content",
  "labonair-settings-json",
  "labonair-settings-macros",
@@ -4578,8 +4581,10 @@ dependencies = [
  "labonair-background",
  "labonair-command-palette",
  "labonair-command-palette-core",
+ "labonair-editor",
  "labonair-filesystem",
  "labonair-gpui-ext",
+ "labonair-hosts",
  "labonair-keymap",
  "labonair-notifications",
  "labonair-panel",
@@ -4632,6 +4637,7 @@ version = "0.1.0"
 dependencies = [
  "alacritty_terminal",
  "gpui",
+ "labonair-command-palette-core",
  "labonair-theme",
  "libc",
  "portable-pty",
@@ -4643,6 +4649,7 @@ name = "labonair-theme"
 version = "0.1.0"
 dependencies = [
  "gpui",
+ "labonair-command-palette-core",
  "palette",
  "serde",
  "serde_json",
@@ -4692,6 +4699,7 @@ dependencies = [
  "labonair-backend",
  "labonair-background",
  "labonair-command-palette",
+ "labonair-command-palette-core",
  "labonair-editor",
  "labonair-filesystem",
  "labonair-git",

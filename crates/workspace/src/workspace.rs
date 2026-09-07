@@ -26,6 +26,7 @@
 pub mod agent_access;
 pub mod backend_event_bridge;
 pub mod bell;
+pub mod command_provider;
 pub mod context;
 pub mod dock;
 pub mod drag;

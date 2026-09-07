@@ -36,6 +36,7 @@ notify-debouncer-mini = "0.4"
 inventory = "0.3"
 dirs = { workspace = true }
 tracing = { workspace = true }
+labonair-command-palette-core = { path = "../command-palette-core" }
 jsonschema = { version = "0.53.0", default-features = false }
 schemars = "0.8"
 

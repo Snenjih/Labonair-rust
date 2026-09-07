@@ -14,7 +14,7 @@ in the normative documents linked from `docs/README.md`.
 | `app` | Binary/bootstrap | application composition | Keep small; remove feature logic. |
 | `backend` | Mixed filesystem, PTY, SSH, SFTP, Git, hosts, settings, updater, MCP, persistence | split across platform services and feature modules | Highest-priority god-object boundary; SSH/SFTP contracts and adapters now isolate transport consumers. |
 | `ai` | AI providers, sessions, tools | AI module | Keep backend-facing core; rebuild UI later. |
-| `command-palette-core` | UI-free command descriptors and registry (new migration boundary) | command-palette module | Keep metadata and provider discovery here; feature-owned behavior remains outside the palette. |
+| `command-palette-core` | UI-free command descriptors and registry (new migration boundary) | command-palette module | Keep metadata and provider discovery here; feature-owned behavior remains outside the palette. Initial owner providers now live in workspace, terminal, editor, hosts, theme, and settings crates. |
 | `command-palette` | Palette UI, dynamic sub-pages, and transitional duplicate shell dispatch integration | command-palette module | Consume the core registry; global-menu navigation is typed; remove static entries and the duplicate shell registry. |
 | `editor` | Editor engine | editor module | Separate core from workspace view. |
 | `filesystem` | Local file access, traversal, mutation, search, and watcher implementation | foundation/platform service | First extracted service boundary; only the legacy `AppEvent` adapter remains in `backend` temporarily. |
@@ -81,6 +81,12 @@ The current Cargo metadata shows several transitional edges that conflict with t
   injects its database, secret state, and the narrow MCP-revocation callback.
   Its notification contract migration is still open.
 - `command-palette` depends on backend even though the palette should receive dynamic data through providers.
+- Initial command metadata providers now live in the owning workspace, terminal,
+  editor, hosts, themes, and settings crates. The shell still contains
+  transitional execution adapters and descriptors for those IDs; the adapter
+  asserts equality against the provider snapshot so it cannot silently create
+  a second palette source. Keymap metadata remains outside this slice because
+  `command-palette-core → keymap` currently prevents a reverse dependency.
 - `keymap` is now UI-free, but the temporary GPUI adapter and some consumers
   still enter through `command-palette`; the keymap editor and stable command
   registration path are not complete.

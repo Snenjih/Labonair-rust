@@ -9,6 +9,7 @@
 //! add the runtime theme provider/store and user import/export.
 
 mod color;
+pub mod command_provider;
 pub mod contrast;
 pub mod fonts;
 pub mod icon_theme;

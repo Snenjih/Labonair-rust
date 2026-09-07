@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 # gpui not needed by the core editing model; the GPUI view lives in labonair-ui.
+labonair-command-palette-core = { path = "../command-palette-core" }
 
 # Syntax highlighting — Tree-sitter (grammar-based parsing, same approach as Zed).
 tree-sitter = "0.25"

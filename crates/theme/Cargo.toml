@@ -9,6 +9,7 @@ palette = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tracing = { workspace = true }
+labonair-command-palette-core = { path = "../command-palette-core" }
 
 [dev-dependencies]
 gpui = { workspace = true, features = ["test-support"] }

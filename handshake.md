@@ -14,10 +14,14 @@ implemented through the typed `WorkspaceTransition` contract; cwd changes do
 not mutate project identity. The worktree is clean before starting the next
 task.
 
-The active task is `R03-001-command-palette-provider-registry.md`. Next work
-is to make command discovery provider-owned through one typed registry,
-remove duplicate shell/palette declarations, and preserve stable action IDs
-and documented compatibility aliases. The current branch is `master`.
+The active task is `R03-001-command-palette-provider-registry.md`. Its first
+provider slice is wired: workspace, terminal, editor, hosts, themes, and
+settings now contribute command metadata from their owning crates. The shell
+assembles the providers and verifies its transitional execution adapters
+against the owner snapshots. Keymap remains blocked from direct provider
+registration until the command/shortcut identity dependency is inverted.
+Next: migrate the remaining shell metadata groups and remove the transitional
+duplicate declarations. The current branch is `master`.
 
 ## Current Session: 2026-09-07 (Native visual helper hardened)
 

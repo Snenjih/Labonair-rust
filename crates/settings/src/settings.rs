@@ -14,6 +14,7 @@
 //! without special-casing "am I the defining crate" in the macro.
 extern crate self as labonair_settings;
 
+pub mod command_provider;
 mod concrete;
 pub mod keymap;
 pub mod project;

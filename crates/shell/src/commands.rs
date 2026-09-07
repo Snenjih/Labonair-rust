@@ -22,7 +22,7 @@ use std::rc::Rc;
 use gpui::{Context, Div, InteractiveElement, Window};
 use labonair_command_palette::Page as PalettePage;
 use labonair_command_palette_core::{
-    CommandContext, CommandDescriptor, CommandIcon, CommandId,
+    CommandContext, CommandDescriptor, CommandIcon, CommandId, CommandProvider,
     CommandRegistry as PaletteCommandRegistry, CommandSubmenu,
 };
 use labonair_settings_ui::open_settings_window;
@@ -59,7 +59,12 @@ impl CommandDispatcher {
         run: impl Fn(&mut AppShell, &mut Window, &mut Context<AppShell>) + 'static,
     ) {
         let id = descriptor.id;
-        if let Err(error) = self.metadata.register(descriptor) {
+        if let Some(registered) = self.metadata.command(id) {
+            assert_eq!(
+                registered, &descriptor,
+                "command metadata differs between its owner provider and shell adapter"
+            );
+        } else if let Err(error) = self.metadata.register(descriptor) {
             panic!("invalid built-in command registry: {error}");
         }
         self.commands.push(Command {
@@ -68,9 +73,23 @@ impl CommandDispatcher {
         });
     }
 
+    /// Register metadata contributed by an owning capability. The shell only
+    /// assembles providers; it does not define their palette rows.
+    pub(crate) fn register_provider<P: CommandProvider>(&mut self, provider: &P) {
+        if let Err(error) = self.metadata.register_provider(provider) {
+            panic!("invalid command provider registry: {error}");
+        }
+    }
+
     /// Publish a palette-only command with no shell execution body.
     pub(crate) fn register_descriptor(&mut self, descriptor: CommandDescriptor) {
-        if let Err(error) = self.metadata.register(descriptor) {
+        let id = descriptor.id;
+        if let Some(registered) = self.metadata.command(id) {
+            assert_eq!(
+                registered, &descriptor,
+                "command metadata differs between its owner provider and shell adapter"
+            );
+        } else if let Err(error) = self.metadata.register(descriptor) {
             panic!("invalid built-in command registry: {error}");
         }
     }
@@ -229,6 +248,17 @@ fn command_descriptor(
 pub(crate) fn register_builtin_commands() -> CommandDispatcher {
     let mut r = CommandDispatcher::default();
     let always = ALWAYS;
+
+    // Capability-owned metadata enters through providers. The existing
+    // execution registrations below are transitional shell adapters; their
+    // descriptors are checked against the owner snapshot and never become a
+    // second palette source.
+    r.register_provider(&labonair_workspace::command_provider::WorkspaceCommandProvider);
+    r.register_provider(&labonair_terminal::command_provider::TerminalCommandProvider);
+    r.register_provider(&labonair_editor::command_provider::EditorCommandProvider);
+    r.register_provider(&labonair_hosts::command_provider::HostsCommandProvider);
+    r.register_provider(&labonair_theme::command_provider::ThemeCommandProvider);
+    r.register_provider(&labonair_settings::command_provider::SettingsCommandProvider);
 
     // ── Tabs / layout ────────────────────────────────────────────────────
     r.register(

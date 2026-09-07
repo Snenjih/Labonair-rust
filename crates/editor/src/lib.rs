@@ -8,6 +8,7 @@
 //! mode (T06-003) and diff view (T06-004) build on top.
 
 pub mod buffer;
+pub mod command_provider;
 pub mod diff;
 pub mod document;
 pub mod history;

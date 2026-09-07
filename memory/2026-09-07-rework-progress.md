@@ -17,3 +17,14 @@ visual acceptance criterion for `R02-003` is closed. Project and standalone
 workspace identity now use the typed `WorkspaceTransition` contract with
 session persistence and no cwd-based inference. `R03-001` is the next active
 task.
+
+## R03-001 provider boundary
+
+Workspace, terminal, editor, hosts, themes, and settings now expose
+owner-local `CommandProvider` implementations. The shell composition root
+assembles them into the single command registry and its transitional execution
+adapters assert descriptor equality against the owner snapshots. A direct
+keymap provider was deliberately not added: `command-palette-core` currently
+depends on keymap's `ShortcutId`, so `keymap → command-palette-core` would be
+a Cargo cycle. The future fix is to extract/invert the stable command/shortcut
+identity contract.
