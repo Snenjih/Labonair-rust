@@ -182,7 +182,7 @@ Legacy `appCornerRadius` values are converted to the current
 `cornerRadiusScale` field during migration, with the modern value taking
 precedence when both are present.
 
-Current HEAD is `90bbddf` on `master`; the worktree contains this handshake
+Current HEAD is `b83b4a9` on `master`; the worktree contains this handshake
 update before its commit. R06
 boundaries removed the backend error facade, removed AI's stale backend edge,
 moved system-font discovery into the Theme owner, deleted the unconsumed
