@@ -24,7 +24,7 @@ Legacy `appCornerRadius` values are converted to the current
 `cornerRadiusScale` field during migration, with the modern value taking
 precedence when both are present.
 
-Current HEAD is `5dbaf5d` on `master`; the worktree is clean before this
+Current HEAD is `aac43f4` on `master`; the worktree is clean before this
 handshake update. The first R06
 boundaries removed the backend error facade, removed AI's stale backend edge,
 moved system-font discovery into the Theme owner, deleted the unconsumed
@@ -39,8 +39,8 @@ Workspace MCP grant lifecycle and tab-operation responses now use injected
 `McpSessionAccessService` and `McpTabOperationService` contracts; the backend
 bridge is constructed only in shell composition. R06-001 remains active; the
 SSH and MCP event delivery now also uses injected typed event sources, and the
-Workspace crate no longer declares `labonair-backend`. The remaining global
-event bus is internal to shell-composed backend adapters. The backend
+Workspace crate no longer declares `labonair-backend`. Raw adapter events are
+transported by `labonair-events` and remain behind shell-composed adapters. The backend
 filesystem watcher, `App::watcher` state, and filesystem compatibility module
 are now removed as well. R06-001 remains active; the next boundary is the
 remaining backend-owned platform state and compatibility adapters.
@@ -68,6 +68,14 @@ workspace tests, Clippy, formatting, dependency validation, queue validation,
 and diff checks pass; this boundary is committed as `5dbaf5d`. R06-001 remains
 active; the next boundary is the remaining transport adapter extraction and
 injected capability cleanup.
+The concrete SSH module is now owned by the new `labonair-ssh-transport`
+integration sibling. It contains the russh session registry, authentication,
+PTY, remote operations, tunnel state, config adapter, network-error
+classification, and SSH contract adapters; `labonair-backend` no longer owns
+an SSH module. Full workspace tests, Clippy, formatting, dependency
+validation, queue validation, and diff checks pass; this boundary is committed
+as `aac43f4`. R06-001 remains active; the next boundary is the remaining
+SFTP/transfer worker and other backend platform adapters.
 The broad backend `AppEvent` enum and typed-emitter helper are also gone;
 SSH and MCP adapters decode their own raw event names directly at the
 capability boundary.
