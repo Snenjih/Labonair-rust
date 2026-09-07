@@ -325,7 +325,7 @@ impl EditorSettings {
     }
 }
 
-/// `workspace` area (startup tab, session restore, command palette, …).
+/// `workspace` area (command palette preferences).
 #[derive(Clone, Debug, PartialEq, RegisterSetting)]
 pub struct WorkspaceSettings(WorkspaceContent);
 

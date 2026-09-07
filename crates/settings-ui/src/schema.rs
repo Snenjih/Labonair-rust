@@ -443,13 +443,6 @@ pub fn all_fields() -> Vec<AnyField> {
             "Editor font size in points."
         ),
         field!(
-            editor.editor_line_height,
-            "editorLineHeight",
-            Float { min_centi: 100, max_centi: 300, step_centi: 5 },
-            "Line height",
-            "Editor line height multiplier."
-        ),
-        field!(
             editor.editor_tab_size,
             "editorTabSize",
             Int { min: 2, max: 8, step: 2 },
@@ -490,55 +483,6 @@ pub fn all_fields() -> Vec<AnyField> {
             Switch,
             "Format on save",
             "Run the formatter when saving."
-        ),
-        field!(
-            editor.editor_trim_trailing_whitespace,
-            "editorTrimTrailingWhitespace",
-            Switch,
-            "Trim trailing whitespace",
-            "Remove trailing spaces on save."
-        ),
-        field!(
-            editor.editor_insert_final_newline,
-            "editorInsertFinalNewline",
-            Switch,
-            "Insert final newline",
-            "Ensure a trailing newline on save."
-        ),
-        field!(
-            editor.editor_bracket_matching,
-            "editorBracketMatching",
-            Switch,
-            "Bracket matching",
-            "Highlight the matching bracket at the cursor."
-        ),
-        field!(
-            editor.editor_show_cursor_position,
-            "editorShowCursorPosition",
-            Switch,
-            "Cursor position",
-            "Show line/column in the status bar."
-        ),
-        field!(
-            editor.editor_show_selection_stats,
-            "editorShowSelectionStats",
-            Switch,
-            "Selection stats",
-            "Show selected character / line counts."
-        ),
-        field!(
-            editor.editor_show_outline,
-            "editorShowOutline",
-            Switch,
-            "Outline panel",
-            "Show the document symbol outline."
-        ),
-        field!(
-            editor.editor_indentation_guides,
-            "editorIndentationGuides",
-            Switch,
-            "Indentation guides",
-            "Draw vertical indentation guide lines."
         ),
         field!(
             editor.editor_vim_mode,

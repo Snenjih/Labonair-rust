@@ -272,32 +272,12 @@ const EDITOR_MAIN: &[Group] = &[
         ],
     ),
     ("Theme", &["editorTheme"]),
-    (
-        "Font",
-        &["editorFontFamily", "editorFontSize", "editorLineHeight"],
-    ),
+    ("Font", &["editorFontFamily", "editorFontSize"]),
     ("Behaviour", &["editorFormatOnSave", "editorTabSize"]),
     ("Indentation", &["editorIndentWithTabs"]),
 ];
 
-const EDITOR_DISPLAY: &[Group] = &[
-    (
-        "Display",
-        &[
-            "editorLineNumbers",
-            "editorWordWrap",
-            "editorBracketMatching",
-            "editorShowCursorPosition",
-            "editorShowSelectionStats",
-            "editorShowOutline",
-            "editorIndentationGuides",
-        ],
-    ),
-    (
-        "On Save",
-        &["editorTrimTrailingWhitespace", "editorInsertFinalNewline"],
-    ),
-];
+const EDITOR_DISPLAY: &[Group] = &[("Display", &["editorLineNumbers", "editorWordWrap"])];
 
 const FILE_MANAGER_GROUPS: &[Group] = &[
     ("Browsing", &["explorerShowHiddenByDefault"]),

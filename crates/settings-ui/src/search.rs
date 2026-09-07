@@ -131,21 +131,19 @@ mod tests {
         SearchIndex::build(&all_fields())
     }
 
-    /// Query `cursor` finds fields from multiple categories (Terminal's
-    /// cursor style/blink, Editor's cursor-position toggle), each grouped
-    /// under its own category title (task Anweisung step 7 / Akzeptanz).
+    /// Query `font` finds fields from multiple categories (Appearance,
+    /// Terminal, and Editor), each grouped under its own category title.
     #[test]
-    fn cursor_query_finds_multiple_categories() {
+    fn font_query_finds_multiple_categories() {
         let idx = index();
-        let rows = search(&idx, "cursor", 50);
+        let rows = search(&idx, "font", 50);
+        assert!(rows.iter().any(|r| r.area_title == "Appearance"));
         assert!(rows.iter().any(|r| r.area_title == "Terminal"));
         assert!(rows.iter().any(|r| r.area_title == "Editor"));
         assert!(rows
             .iter()
-            .any(|r| r.subtitle == "terminal.terminalCursorStyle"));
-        assert!(rows
-            .iter()
-            .any(|r| r.subtitle == "editor.editorShowCursorPosition"));
+            .any(|r| r.subtitle == "terminal.terminalFontSize"));
+        assert!(rows.iter().any(|r| r.subtitle == "editor.editorFontSize"));
     }
 
     /// An exact `json_path` query finds exactly that field.

@@ -54,7 +54,8 @@ means a runtime module, not merely serialization or the generated Settings UI.
 | `terminal` | `terminalUseWebgl` | impossible in native GPUI terminal path; legacy WebView option | Remove; legacy input remains deserializable only |
 | `terminal` | `terminalComposerEnabled`, `terminalComposerHistoryPopup`, `terminalComposerArgumentCompletion`, `terminalBlocksEnabled`, `terminalBlocksAutoCollapseOnAltScreen` | no supported native workflow or consumer | Remove; legacy input remains deserializable only |
 | `editor` | `editorFontFamily`, `editorFontSize`, `editorLineHeight`, `editorTabSize`, `editorWordWrap`, `editorLineNumbers`, `editorRelativeLineNumbers`, `editorIndentWithTabs` | native editor settings adapter; Global + Project where whitelisted | Keep |
-| `editor` | `editorFormatOnSave`, `editorTrimTrailingWhitespace`, `editorInsertFinalNewline`, `editorBracketMatching`, `editorShowCursorPosition`, `editorShowSelectionStats`, `editorShowOutline`, `editorIndentationGuides` | editor/document view; Global + Project where safe | Keep |
+| `editor` | `editorFormatOnSave` | editor command/action surface; Global + Project where safe | Keep |
+| `editor` | `editorLineHeight`, `editorTrimTrailingWhitespace`, `editorInsertFinalNewline`, `editorBracketMatching`, `editorShowCursorPosition`, `editorShowSelectionStats`, `editorShowOutline`, `editorIndentationGuides` | no current native editor consumer | Remove; legacy input remains deserializable only |
 | `editor` | `editorAutoSave`, `editorAutoSaveDelay`, `editorAutocompleteDebounceMs`, `editorMaxFileSizeMb` | no current native editor consumer | Remove; legacy input remains deserializable only |
 | `editor` | `editorVimMode`, `vimHlsearch`, `vimIncsearch`, `vimSmartcase` | editor Vim runtime; Global + safe Project values | Keep |
 | `editor` | `editorTheme` | syntax-theme selection persistence; Global + safe Project values | Keep as value, no management page |
