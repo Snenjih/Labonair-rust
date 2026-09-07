@@ -7,6 +7,7 @@ edition = "2021"
 gpui = { workspace = true }
 labonair-theme = { path = "../theme" }
 labonair-terminal-integration = { path = "../terminal-integration" }
+labonair-command-palette-runtime = { path = "../command-palette-runtime" }
 alacritty_terminal = { workspace = true }
 flate2 = "1"
 portable-pty = { workspace = true }

@@ -243,7 +243,6 @@ pub(crate) fn attach_action_handlers(
 const ALWAYS: &[CommandContext] = &[];
 const CTX_EDITOR: &[CommandContext] = &[CommandContext::Editor];
 const CTX_TERMINAL: &[CommandContext] = &[CommandContext::Terminal];
-const CTX_TERMINALS: &[CommandContext] = &[CommandContext::Terminal, CommandContext::SshTerminal];
 
 #[allow(clippy::too_many_arguments)]
 fn command_descriptor(
@@ -305,26 +304,11 @@ fn compose_builtin_commands(workspace: Option<&gpui::Entity<Workspace>>) -> Comm
     r.register_provider(&ShellCommandProvider);
     if let Some(workspace) = workspace {
         labonair_workspace::command_provider::register_handlers(&mut r.owner_handlers, workspace);
+        labonair_terminal::command_provider::register_handlers(
+            &mut r.owner_handlers,
+            labonair_workspace::command_provider::terminal_command_target(workspace),
+        );
     }
-
-    // Tabs, pane layout, focus, and project lifecycle are registered by
-    // `labonair-workspace::command_provider`; only the remaining terminal
-    // behavior stays in this compatibility section.
-    // ── Terminal ────────────────────────────────────────────────────────
-    r.register(
-        command_descriptor(
-            CommandId::ClearTerminal,
-            "Clear Terminal",
-            "Terminal",
-            CTX_TERMINALS,
-            None,
-            CommandIcon::Trash,
-            None,
-        ),
-        |s, _window, cx| {
-            s.workspace.update(cx, |w, cx| w.clear_active_terminal(cx));
-        },
-    );
 
     // ── Search ──────────────────────────────────────────────────────────
     r.register(

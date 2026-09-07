@@ -265,6 +265,7 @@ ALLOWED = {
     "labonair-terminal-integration": set(),
     "labonair-terminal": {
         "labonair-theme", "labonair-command-palette-core",
+        "labonair-command-palette-runtime",
         "labonair-terminal-integration",
     },
     # Concrete russh/platform implementation of the SSH capability. The

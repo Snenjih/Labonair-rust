@@ -1,7 +1,9 @@
-//! Workspace-owned command metadata.
+//! Workspace-owned command metadata and composition adapters.
 //!
 //! The workspace capability contributes its discoverable commands and their
 //! executable handlers without importing the palette UI or application shell.
+
+use std::rc::Rc;
 
 use gpui::Entity;
 use labonair_command_palette_core::{
@@ -10,6 +12,7 @@ use labonair_command_palette_core::{
 };
 use labonair_command_palette_runtime::CommandHandlerRegistry;
 use labonair_keymap::ShortcutId;
+use labonair_terminal::command_provider::TerminalCommandTarget;
 
 use crate::context::WorkspaceTransition;
 use crate::Workspace;
@@ -17,6 +20,20 @@ use crate::Workspace;
 /// Stable command metadata contributed by the workspace capability.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct WorkspaceCommandProvider;
+
+struct WorkspaceTerminalCommandTarget(Entity<Workspace>);
+
+impl TerminalCommandTarget for WorkspaceTerminalCommandTarget {
+    fn clear_active_terminal(&self, cx: &mut gpui::App) {
+        self.0
+            .update(cx, |workspace, cx| workspace.clear_active_terminal(cx));
+    }
+}
+
+/// Adapt Workspace's active-pane operation to the terminal command contract.
+pub fn terminal_command_target(workspace: &Entity<Workspace>) -> Rc<dyn TerminalCommandTarget> {
+    Rc::new(WorkspaceTerminalCommandTarget(workspace.clone()))
+}
 
 /// Register executable handlers for commands owned by Workspace.
 ///

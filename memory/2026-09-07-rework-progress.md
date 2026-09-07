@@ -872,3 +872,10 @@ owner. It now owns the badge rendering, updater-state observation, click action,
 and typed `StatusItemRegistration`; shell composition only inserts the owner
 registration. The panel dependency is explicit in the updater UI crate and in
 the dependency-boundary validator.
+
+The Terminal `ClearTerminal` command was then moved out of the shell execution
+table. `labonair-terminal::command_provider` now owns its executable handler
+and accepts a narrow `TerminalCommandTarget`; Workspace provides the adapter
+for its active-pane operation. This keeps terminal command ownership local
+without introducing a terminal-to-workspace dependency or a second dispatch
+table.

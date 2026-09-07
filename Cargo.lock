@@ -4750,6 +4750,7 @@ dependencies = [
  "flate2",
  "gpui",
  "labonair-command-palette-core",
+ "labonair-command-palette-runtime",
  "labonair-terminal-integration",
  "labonair-theme",
  "libc",
