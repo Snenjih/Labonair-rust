@@ -24,7 +24,7 @@ Legacy `appCornerRadius` values are converted to the current
 `cornerRadiusScale` field during migration, with the modern value taking
 precedence when both are present.
 
-Current HEAD is `3d5fc76` on `master`; the worktree is clean. The first R06
+Current HEAD is `61251a0` on `master`; the worktree is clean. The first R06
 boundaries removed the backend error facade, removed AI's stale backend edge,
 moved system-font discovery into the Theme owner, deleted the unconsumed
 backend custom-font module, removed the dead legacy bar-placement API while
@@ -39,9 +39,10 @@ Workspace MCP grant lifecycle and tab-operation responses now use injected
 bridge is constructed only in shell composition. R06-001 remains active; the
 SSH and MCP event delivery now also uses injected typed event sources, and the
 Workspace crate no longer declares `labonair-backend`. The remaining global
-event bus is internal to shell-composed backend adapters. R06-001 remains
-active; the next boundary is the remaining backend-owned platform state and
-compatibility adapters.
+event bus is internal to shell-composed backend adapters. The backend
+filesystem watcher, `App::watcher` state, and filesystem compatibility module
+are now removed as well. R06-001 remains active; the next boundary is the
+remaining backend-owned platform state and compatibility adapters.
 The General cleanup including `startupTerminalCount` is committed in
 `61abf4c`; the corner-radius normalization is committed in `c6e9890`, the
 unused Appearance values in `d596df2`, and the unwired Editor values in
