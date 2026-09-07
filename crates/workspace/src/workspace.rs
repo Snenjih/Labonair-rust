@@ -84,9 +84,8 @@ use labonair_backend::{App as Backend, AppEvent};
 use labonair_git::GitService;
 use labonair_sftp::{SftpBrowserService, SftpSessionService};
 use labonair_ssh::{
-    SshConfigService, SshConnectRequest, SshConnectionService, SshConnectionTester, SshEventSink,
-    SshPtyService, SshRemoteCommandService, SshRemoteFileService, SshSessionEvent, SshSessionId,
-    SshTunnelService,
+    SshConnectRequest, SshConnectionService, SshEventSink, SshPtyService, SshRemoteCommandService,
+    SshRemoteFileService, SshSessionEvent, SshSessionId, SshTunnelService,
 };
 use labonair_terminal::{
     RemoteFeed, RemoteResizer, RemoteWriter, SessionHandle, SessionId, SessionOptions,
@@ -109,10 +108,11 @@ use crate::views::preview::PreviewView;
 use crate::views::sftp::{SftpEvent, SftpView};
 use crate::views::terminal::TerminalView;
 use labonair_background::BackgroundStore;
+use labonair_hosts::{HostOpenMode, HostOpenRequest, HostPickerRow};
 use labonair_hosts_ui::ssh_connection::{
     ConnStage, ConnectionKind, ConnectionState, ConnectionStatusStore, StageStatus,
 };
-use labonair_hosts_ui::{ActiveTunnelRow, HostManagerEvent, HostManagerView, HostStatus};
+use labonair_hosts_ui::{ActiveTunnelRow, HostManagerView, HostStatus};
 use labonair_panel_git_graph::GitGraphView;
 use labonair_settings::content::general::StartupTab;
 use labonair_settings::content::terminal::CursorStyle as PrefCursorStyle;
@@ -484,13 +484,12 @@ impl Workspace {
         ssh_remote: Arc<dyn SshRemoteCommandService>,
         ssh_remote_file: Arc<dyn SshRemoteFileService>,
         ssh_tunnels: Arc<dyn SshTunnelService>,
-        ssh_tester: Arc<dyn SshConnectionTester>,
-        ssh_config: Arc<dyn SshConfigService>,
         sftp_session: Arc<dyn SftpSessionService>,
         sftp_browser: Arc<dyn SftpBrowserService>,
         transfer_service: Arc<dyn TransferService>,
         tokio: TokioHandle,
         agent_access: Entity<AgentAccessStore>,
+        host_manager: Entity<HostManagerView>,
         restore: Option<SessionSnapshot>,
         window: &mut Window,
         cx: &mut Context<Self>,
@@ -513,41 +512,7 @@ impl Workspace {
             }
         });
 
-        let host_manager = cx.new(|cx| {
-            let app_for_host_events = backend.clone();
-            let host_event_handler = Arc::new(move |event| {
-                labonair_backend::modules::hosts::db::revoke_agent_access(
-                    &app_for_host_events,
-                    event,
-                )
-            });
-            HostManagerView::new(
-                backend.db.clone(),
-                backend.secrets.clone(),
-                labonair_filesystem::paths::data_dir(),
-                Some(host_event_handler),
-                ssh_tester,
-                ssh_config,
-                tokio.clone(),
-                theme.clone(),
-                cx,
-            )
-        });
         cx.observe(&host_manager, |_, _, cx| cx.notify()).detach();
-        cx.subscribe(
-            &host_manager,
-            |this, _, ev: &HostManagerEvent, cx| match ev {
-                HostManagerEvent::Connect(host_id) => {
-                    this.pending_connect.push(host_id.clone());
-                    cx.notify();
-                }
-                HostManagerEvent::OpenSftp(host_id) => {
-                    this.pending_sftp.push(host_id.clone());
-                    cx.notify();
-                }
-            },
-        )
-        .detach();
 
         // Backend event bus → UI (T17-008): one foreground subscription that
         // decodes each raw event and pushes it straight into this entity. No
@@ -1980,17 +1945,14 @@ impl Workspace {
         labonair_command_palette::context_of(palette_tab_kind(active.kind), is_ssh)
     }
 
-    /// `(id, name)` for every known host — feeds the command palette's host
-    /// choices.
-    pub fn known_hosts(&self, cx: &App) -> Vec<(String, String)> {
-        let hm = self.host_manager.read(cx);
-        hm.host_ids()
-            .into_iter()
-            .map(|id| {
-                let name = hm.host_name(&id).unwrap_or_else(|| id.clone());
-                (id, name)
-            })
-            .collect()
+    /// Canonical rows for every known host — feeds palette host choices.
+    pub fn host_picker_rows(&self, cx: &App) -> Vec<HostPickerRow> {
+        self.host_manager.read(cx).picker_rows()
+    }
+
+    /// Recent hosts for palette providers; ordering and labels belong to Hosts.
+    pub fn recent_host_picker_rows(&self, cx: &App, n: usize) -> Vec<HostPickerRow> {
+        self.host_manager.read(cx).recent_picker_rows(n)
     }
 
     /// The host the active tab targets (SSH terminal or SFTP browser), if any.
@@ -2010,9 +1972,32 @@ impl Workspace {
         self.open_sftp(host_id, window, cx);
     }
 
-    /// Request the canonical Hosts surface without knowing how the shell
-    /// presents it. The application composition root subscribes to this typed
-    /// event and opens the command-palette Hosts page.
+    /// Open a saved host through the typed Hosts request contract.
+    pub fn open_host_request(
+        &mut self,
+        request: HostOpenRequest,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        match request.mode {
+            HostOpenMode::Ssh => self.open_ssh_tab(request.host_id, window, cx),
+            HostOpenMode::Sftp => self.open_sftp_tab(request.host_id, window, cx),
+        }
+    }
+
+    /// Queue a Hosts request emitted by the management window, which has no
+    /// access to the workspace window handle.
+    pub fn enqueue_host_request(&mut self, request: HostOpenRequest, cx: &mut Context<Self>) {
+        match request.mode {
+            HostOpenMode::Ssh => self.pending_connect.push(request.host_id),
+            HostOpenMode::Sftp => self.pending_sftp.push(request.host_id),
+        }
+        cx.notify();
+    }
+
+    /// Request the canonical Hosts management surface without knowing how the
+    /// shell presents it. The application composition root subscribes to this
+    /// typed event and opens the Hosts-owned window.
     pub fn request_open_hosts(&self, cx: &mut Context<Self>) {
         cx.emit(WorkspaceEvent::OpenHosts);
     }
@@ -2021,12 +2006,6 @@ impl Workspace {
     /// connection flows.
     pub fn host_manager(&self) -> Entity<HostManagerView> {
         self.host_manager.clone()
-    }
-
-    /// Up to `n` known hosts, most-recently-connected first — feeds the `+`
-    /// new-tab dropdown's SSH / SFTP submenus.
-    pub fn recent_hosts(&self, cx: &App, n: usize) -> Vec<(String, String, String)> {
-        self.host_manager.read(cx).recent_hosts(n)
     }
 
     /// Open (or reuse) an SSH terminal tab for `host_id` (`+` dropdown / menu).
@@ -4051,7 +4030,7 @@ impl Workspace {
         pos: gpui::Point<gpui::Pixels>,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
-        let recent = self.recent_hosts(cx, 5);
+        let recent = self.recent_host_picker_rows(cx, 5);
         let view = cx.entity();
 
         // Recent-host rows for one protocol submenu (`ssh == false` → SFTP),
@@ -4062,11 +4041,12 @@ impl Workspace {
             if recent.is_empty() {
                 sub.push(MenuItem::new(format!("nt-{proto}-empty"), "No hosts yet").disabled(true));
             } else {
-                for (id, name, address) in &recent {
-                    let (id, address) = (id.clone(), address.clone());
+                for row in &recent {
+                    let (id, name, subtitle) =
+                        (row.id.clone(), row.name.clone(), row.subtitle.clone());
                     sub.push(
-                        MenuItem::new(SharedString::from(format!("nt-{proto}-{id}")), name.clone())
-                            .detail(address)
+                        MenuItem::new(SharedString::from(format!("nt-{proto}-{id}")), name)
+                            .detail(subtitle)
                             .on_click({
                                 let v = view.clone();
                                 move |_, w, cx| {

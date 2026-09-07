@@ -11,7 +11,7 @@
 //! secrets are never shown in clear text here.
 //!
 //! Connecting is delegated to the `Workspace`:
-//! this view emits [`HostManagerEvent::Connect`] and the workspace opens the
+//! this view emits [`HostManagerEvent::Open`] and the workspace opens the
 //! SSH terminal tab and drives the trust / auth prompts.
 
 use std::collections::{HashMap, HashSet};
@@ -26,7 +26,9 @@ use gpui::{
 };
 use labonair_credentials::{self, Credential};
 use labonair_hosts::store::{HostCreateRequest, HostEventHandler, HostUpdateRequest};
-use labonair_hosts::{store as host_store, Group, Host, ReorderItem};
+use labonair_hosts::{
+    store as host_store, Group, Host, HostOpenRequest, HostPickerRow, ReorderItem,
+};
 use labonair_persistence::Database;
 use labonair_secrets::SecretsState;
 use labonair_snippets::store as snippet_store;
@@ -65,10 +67,8 @@ impl HostStatus {
 
 /// Emitted to the workspace to drive an action it owns.
 pub enum HostManagerEvent {
-    /// Open an SSH terminal tab for this host id.
-    Connect(String),
-    /// Open a dual-pane SFTP browser tab for this host id.
-    OpenSftp(String),
+    /// Open the requested transport for a saved host.
+    Open(HostOpenRequest),
 }
 
 /// One running port-forward, as shown in the host manager's active-tunnel panel.
@@ -688,29 +688,28 @@ impl HostManagerView {
         self.hosts.iter().map(|h| h.id.clone()).collect()
     }
 
-    /// Up to `n` hosts, most-recently-connected first (nulls last), then by
-    /// name — the `+` new-tab dropdown's SSH / SFTP recent-host lists. Each
-    /// entry is `(id, name, host_address)`.
-    pub fn recent_hosts(&self, n: usize) -> Vec<(String, String, String)> {
-        let mut hosts: Vec<&Host> = self.hosts.iter().collect();
-        hosts.sort_by(|a, b| {
-            b.last_connected_at
-                .cmp(&a.last_connected_at)
-                .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
-        });
-        hosts
-            .into_iter()
-            .take(n)
-            .map(|h| (h.id.clone(), h.name.clone(), h.host_address.clone()))
-            .collect()
-    }
-
     /// Display name for a host id, if known.
     pub fn host_name(&self, host_id: &str) -> Option<String> {
         self.hosts
             .iter()
             .find(|h| h.id == host_id)
             .map(|h| h.name.clone())
+    }
+
+    /// Canonical host rows consumed by command-palette providers.
+    pub fn picker_rows(&self) -> Vec<HostPickerRow> {
+        self.hosts.iter().map(Host::picker_row).collect()
+    }
+
+    /// Canonical recent-host rows consumed by new-tab and palette pickers.
+    pub fn recent_picker_rows(&self, n: usize) -> Vec<HostPickerRow> {
+        let mut hosts: Vec<&Host> = self.hosts.iter().collect();
+        hosts.sort_by(|a, b| {
+            b.last_connected_at
+                .cmp(&a.last_connected_at)
+                .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+        });
+        hosts.into_iter().take(n).map(Host::picker_row).collect()
     }
 
     /// Display name of the jump host a given host routes through, if any.
@@ -1350,7 +1349,7 @@ impl HostManagerView {
                 if let Ok(Ok(host)) = result {
                     this.search.clear();
                     this.reload(cx);
-                    cx.emit(HostManagerEvent::Connect(host.id));
+                    cx.emit(HostManagerEvent::Open(HostOpenRequest::ssh(host.id)));
                 }
             });
         })
@@ -2464,7 +2463,7 @@ impl HostManagerView {
                     self.btn("hd-connect", "Connect", p, true, cx)
                         .on_click(cx.listener(move |_this, _: &ClickEvent, _w, cx| {
                             if let Some(id) = id_conn.clone() {
-                                cx.emit(HostManagerEvent::Connect(id));
+                                cx.emit(HostManagerEvent::Open(HostOpenRequest::ssh(id)));
                             }
                         })),
                 )
@@ -2472,7 +2471,7 @@ impl HostManagerView {
                     self.btn("hd-sftp", "SFTP", p, false, cx)
                         .on_click(cx.listener(move |_this, _: &ClickEvent, _w, cx| {
                             if let Some(id) = id_sftp.clone() {
-                                cx.emit(HostManagerEvent::OpenSftp(id));
+                                cx.emit(HostManagerEvent::Open(HostOpenRequest::sftp(id)));
                             }
                         })),
                 )
@@ -3760,7 +3759,7 @@ impl HostManagerView {
                         let id = id.clone();
                         v.update(cx, |this, cx| {
                             this.host_menu = None;
-                            cx.emit(HostManagerEvent::Connect(id));
+                            cx.emit(HostManagerEvent::Open(HostOpenRequest::ssh(id)));
                         });
                     }
                 }),
@@ -3773,7 +3772,7 @@ impl HostManagerView {
                         let id = id.clone();
                         v.update(cx, |this, cx| {
                             this.host_menu = None;
-                            cx.emit(HostManagerEvent::OpenSftp(id));
+                            cx.emit(HostManagerEvent::Open(HostOpenRequest::sftp(id)));
                         });
                     }
                 }),

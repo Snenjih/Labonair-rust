@@ -4361,6 +4361,7 @@ name = "labonair-hosts-ui"
 version = "0.1.0"
 dependencies = [
  "gpui",
+ "gpui-component",
  "labonair-credentials",
  "labonair-errors",
  "labonair-hosts",
@@ -4374,6 +4375,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+ "tracing",
  "uuid",
 ]
 
@@ -4616,6 +4618,7 @@ dependencies = [
  "labonair-git",
  "labonair-gpui-ext",
  "labonair-hosts",
+ "labonair-hosts-ui",
  "labonair-keymap",
  "labonair-keymap-ui",
  "labonair-notifications",
@@ -4738,6 +4741,7 @@ dependencies = [
  "labonair-filesystem",
  "labonair-git",
  "labonair-gpui-ext",
+ "labonair-hosts",
  "labonair-hosts-ui",
  "labonair-keymap",
  "labonair-notifications",

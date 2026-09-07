@@ -133,6 +133,7 @@ ALLOWED = {
         "labonair-theme", "labonair-ui-kit", "labonair-gpui-ext",
         "labonair-notifications", "labonair-command-palette",
         "labonair-panel", "labonair-panel-git-graph", "labonair-hosts-ui",
+        "labonair-hosts",
         "labonair-terminal", "labonair-editor", "labonair-backend",
         "labonair-git",
         "labonair-ai", "labonair-settings", "labonair-settings-json",
@@ -163,7 +164,7 @@ ALLOWED = {
         # Provider metadata contracts are assembled here; feature behavior
         # remains in the owning crates and is not implemented by this root.
         "labonair-editor", "labonair-git", "labonair-hosts",
-        "labonair-snippets",
+        "labonair-hosts-ui", "labonair-snippets",
     },
 
     # Transfer presentation — owns the statusbar dropdown, while lifecycle
@@ -207,14 +208,12 @@ ALLOWED = {
 
     # Host access — rule 9: not a panel crate; no workspace / shell / panel*.
     # [deviation] also pulls notifications for user-visible feedback.
-    # T19-010: `apply_host_change` projects into `hosts.entries` via
-    # `labonair-settings`'s layered store + `labonair-settings-content`'s
-    # typed model — a pure data/store edge, not workspace/shell/panel*.
+    # Host definitions stay in the Hosts-owned store; Settings is deliberately
+    # absent so the management surface cannot create a second write path.
     "labonair-hosts-ui": {
         "labonair-theme", "labonair-ui-kit", "labonair-notifications",
         "labonair-hosts", "labonair-credentials", "labonair-persistence",
-        "labonair-secrets", "labonair-snippets", "labonair-settings",
-        "labonair-settings-content", "labonair-ssh",
+        "labonair-secrets", "labonair-snippets", "labonair-ssh",
         "labonair-errors",
     },
 

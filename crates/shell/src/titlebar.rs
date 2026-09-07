@@ -46,6 +46,7 @@ const HEADER_H: f32 = 40.0;
 pub(crate) enum TitlebarEvent {
     Settings,
     Keymap,
+    Hosts,
     Palette(PalettePage),
 }
 
@@ -170,11 +171,7 @@ impl Titlebar {
                     .on_click({
                         let view = view.clone();
                         move |_, _w, cx| {
-                            emit_titlebar_event(
-                                &view,
-                                TitlebarEvent::Palette(PalettePage::Hosts),
-                                cx,
-                            );
+                            emit_titlebar_event(&view, TitlebarEvent::Hosts, cx);
                         }
                     }),
             ];

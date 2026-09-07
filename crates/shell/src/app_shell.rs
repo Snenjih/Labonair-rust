@@ -35,6 +35,7 @@ use labonair_notifications::NotificationCenter;
 use labonair_settings::Settings as _;
 use tokio::runtime::Handle as TokioHandle;
 
+use labonair_hosts_ui::HostManagerView;
 use labonair_panel_scm::GitPanelView;
 use labonair_panel_snippets::SnippetsView;
 use labonair_workspace::live_bridge::WorkspaceLiveBridge;
@@ -66,6 +67,7 @@ pub(crate) struct ShellPanels {
     pub(crate) snippets: Entity<SnippetsView>,
     pub(crate) updater: Entity<UpdaterView>,
     pub(crate) command_palette: Entity<ShellPalette>,
+    pub(crate) hosts: Entity<HostManagerView>,
 }
 
 /// The root view: window chrome around the [`Workspace`].

@@ -26,6 +26,20 @@ state and the full verification gates pass. R04-002 is the next active task
 for the single Hosts owner and SSH/SFTP picker flow. The combined
 implementation/documentation commit is `20bff4b`.
 
+R04-002 is now in its Hosts-owner implementation slice.
+`labonair-hosts` defines typed `HostOpenRequest`/`HostOpenMode` values and
+canonical immutable `HostPickerRow` data. The shell composes one
+`HostManagerView`; the Hosts UI opens it in a dedicated native window from the
+titlebar, the Open Hosts command, and connection-error recovery. The command
+palette consumes owner snapshots and maps Enter to SSH and Shift+Enter to SFTP
+at the shell boundary. The obsolete SQLite-hosts-to-Settings migration,
+marker, Settings host model, and startup projection were removed, so host
+definitions stay in the Hosts store and secrets stay in the secret store.
+Focused tests pass. Remaining for R04-002: backend host/transport adapter
+cleanup and visual review of empty, filtered, invalid, and connection-pending
+states. Full repository gates pass. The implementation/documentation commit is
+`98e01b4`; the worktree is clean.
+
 `R02-003` is complete. The user confirmed the native Rust shell visual state
 is acceptable, closing the final visual acceptance criterion. The project and
 standalone lifecycle is explicit, persisted through session snapshots, and

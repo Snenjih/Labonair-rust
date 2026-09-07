@@ -2,8 +2,7 @@
 //! `preferences`/`editor`/`mcp` top-level keys in `config.json`
 //! into the flat, area-based `SettingsContent` layout (T19-001), the
 //! `preferences.keybinds` override blob into `keymap.json` (T19-008's file
-//! shape), and the SQLite-backed hosts (`backend::modules::hosts`) into
-//! `hosts.entries` + the secret store — without losing user data.
+//! shape) and the `keymap.json` override layer without losing user data.
 //!
 //! ## Field-mapping table (`preferences.*` -> `SettingsContent.*`)
 //!
@@ -14,9 +13,8 @@
 //!   builder functions below, one per area, field order mirroring
 //!   `Preferences`' own category comments (and `content_bridge.rs`'s reverse
 //!   direction, which this migration inverts).
-//! * `hmLayout`/`hmSort`/`hmCardScale` move from the "Sidebar / Host-Manager"
-//!   category into the `hosts` area (`hosts.layout`/`hosts.sort`/
-//!   `hosts.cardScale`), per T19-001.
+//! * `hmLayout`/`hmSort`/`hmCardScale` remain outside Settings because the
+//!   Hosts capability owns its management state.
 //! * `dockLayout`/`sidebar*` (position/open/activePanel/rightOpen/
 //!   rightActivePanel/width/rightWidth) move into the `workspace` area.
 //! * `mcpBridge*`/`mcpMaxCommandTimeoutSecs`/`mcpAutoRevokeMinutes`/
@@ -58,7 +56,6 @@ use labonair_settings_content::{
     editor::EditorContent,
     file_manager::FileManagerContent,
     general::{self, GeneralContent},
-    hosts::{HostAuthMethod, HostEntry, HostTunnel},
     terminal::{self, TerminalContent},
     workspace::{self, WorkspaceContent},
     SettingsContent,
@@ -67,14 +64,11 @@ use labonair_settings_content::{
 use super::preferences::{CursorStyle, Preferences, StartupTab, ThemePref};
 use super::{editor::EditorPrefs, CONFIG_FILE};
 use super::{read_settings_from, write_settings_to};
-use crate::modules::hosts::Host;
-use crate::modules::secrets::get_password;
 
 const KEY_PREFERENCES: &str = "preferences";
 const KEY_EDITOR: &str = "editor";
 const KEY_SCHEMA_VERSION: &str = "schemaVersion";
 const KEY_MIGRATED_UNKNOWN: &str = "_migratedUnknown";
-const KEY_HOSTS_MIGRATED: &str = "hostsMigrated";
 /// Marks a `config.json` whose `SettingsContent` area objects have had every
 /// leaf that merely restates its built-in default removed — so the file only
 /// carries the user's actual overrides (`default.json` stays the full
@@ -743,179 +737,6 @@ fn keystroke_key(keystroke: &str, action: &str) -> String {
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────
-// SQLite hosts -> `hosts.entries` + secret store (Thema 2, best-effort per
-// T19-009's own scope note: full reconciliation with the live SQLite store
-// is T19-010's job; this only hydrates the settings-content projection so
-// the new Settings UI has something to show before T19-010 lands).
-// ─────────────────────────────────────────────────────────────────────────
-
-/// Result of [`migrate_hosts_to_settings`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum HostsV2Outcome {
-    /// The `hostsMigrated` marker was already set; nothing was touched.
-    AlreadyMigrated,
-    /// No SQLite hosts existed; marker set, nothing to write.
-    NothingToMigrate,
-    Migrated {
-        migrated: usize,
-    },
-}
-
-fn map_auth_method(s: &str) -> HostAuthMethod {
-    match s {
-        "key" => HostAuthMethod::PublicKey,
-        "agent" => HostAuthMethod::Agent,
-        // "password" and any unrecognised legacy value.
-        _ => HostAuthMethod::Password,
-    }
-}
-
-/// Best-effort tag-list parse: the SQLite `tags` column is an opaque string
-/// with no backend-enforced shape (written by the not-yet-ported host
-/// editor UI). Tries a JSON string array first, falls back to a
-/// comma-separated list, then to empty (never fails/panics).
-fn parse_tags(raw: &str) -> Vec<String> {
-    if let Ok(list) = serde_json::from_str::<Vec<String>>(raw) {
-        return list;
-    }
-    let trimmed = raw.trim();
-    if trimmed.is_empty() {
-        return Vec::new();
-    }
-    trimmed
-        .split(',')
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
-        .collect()
-}
-
-/// Best-effort tunnel-list parse: same caveat as [`parse_tags`] — the SQLite
-/// `tunnels` column's exact JSON shape isn't yet nailed down (T19-010's
-/// job); a shape that doesn't parse cleanly into `{localPort, remoteHost,
-/// remotePort}` objects is dropped (logged), not fatal, and the SQLite row
-/// itself is never touched so no data is actually lost.
-fn parse_tunnels(raw: &str) -> Vec<HostTunnel> {
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase")]
-    struct RawTunnel {
-        local_port: u16,
-        remote_host: String,
-        remote_port: u16,
-    }
-    match serde_json::from_str::<Vec<RawTunnel>>(raw) {
-        Ok(list) => list
-            .into_iter()
-            .map(|t| HostTunnel {
-                local_port: t.local_port,
-                remote_host: t.remote_host,
-                remote_port: t.remote_port,
-            })
-            .collect(),
-        Err(e) => {
-            log::debug!("settings v1->v2: could not parse host tunnels ({e}), dropping");
-            Vec::new()
-        }
-    }
-}
-
-/// Pure host -> `HostEntry` transform (non-secret fields only). `credential_ref`
-/// is resolved by the caller (needs the secret store) and passed in.
-fn host_to_entry(host: &Host, credential_ref: Option<String>) -> HostEntry {
-    HostEntry {
-        id: host.id.clone(),
-        name: host.name.clone(),
-        address: host.host_address.clone(),
-        port: host.port.clamp(0, u16::MAX as i64) as u16,
-        user: host.username.clone(),
-        auth_method: map_auth_method(&host.auth_method),
-        jump_host_ref: host.jump_host_id.clone(),
-        tunnels: host
-            .tunnels
-            .as_deref()
-            .map(parse_tunnels)
-            .unwrap_or_default(),
-        last_connected_at: host.last_connected_at,
-        group: host.group_id.clone(),
-        tags: host.tags.as_deref().map(parse_tags).unwrap_or_default(),
-        credential_ref,
-    }
-}
-
-/// The opaque `credential_ref` string a migrated host entry gets when its
-/// secret already lives in the secret store (`backend::modules::secrets`,
-/// this codebase's local-file/keychain-equivalent credential store — see
-/// that module's doc comment). No secret is copied or moved; this is purely
-/// a reference alongside the existing `service::account` key so a future
-/// reader (T19-010) knows where to look it up again.
-fn credential_ref_for(app: &crate::App, host: &Host) -> Option<String> {
-    if get_password(app, &app.secrets, "labonair-app", &host.id)
-        .ok()
-        .flatten()
-        .is_some()
-    {
-        return Some(format!("secrets:labonair-app:{}", host.id));
-    }
-    if let Some(cred_id) = &host.credential_id {
-        if get_password(app, &app.secrets, "labonair-cred", cred_id)
-            .ok()
-            .flatten()
-            .is_some()
-        {
-            return Some(format!("secrets:labonair-cred:{cred_id}"));
-        }
-    }
-    None
-}
-
-/// One-time, idempotent hydration of the SQLite-backed hosts
-/// (`backend::modules::hosts`) into `hosts.entries` (non-secret fields) —
-/// secrets stay exactly where they already are (the secret store), only a
-/// `credential_ref` is added. The SQLite table itself is never modified or
-/// deleted (Warnung: "SQLite-Tabelle nicht löschen").
-pub fn migrate_hosts_to_settings(
-    dir: &Path,
-    hosts: &[Host],
-    app: &crate::App,
-) -> Result<HostsV2Outcome, String> {
-    let mut settings = read_settings_from(dir);
-
-    if settings.get(KEY_HOSTS_MIGRATED).and_then(Value::as_bool) == Some(true) {
-        return Ok(HostsV2Outcome::AlreadyMigrated);
-    }
-
-    if hosts.is_empty() {
-        settings.insert(KEY_HOSTS_MIGRATED.to_string(), Value::Bool(true));
-        write_settings_to(dir, &settings)?;
-        return Ok(HostsV2Outcome::NothingToMigrate);
-    }
-
-    let path = dir.join(CONFIG_FILE);
-    if path.exists() {
-        let _ = std::fs::copy(&path, path.with_extension("json.bak"));
-    }
-
-    let entries: Vec<HostEntry> = hosts
-        .iter()
-        .map(|h| host_to_entry(h, credential_ref_for(app, h)))
-        .collect();
-    let migrated = entries.len();
-
-    let mut hosts_patch = Map::new();
-    hosts_patch.insert(
-        "entries".to_string(),
-        serde_json::to_value(&entries).map_err(|e| e.to_string())?,
-    );
-    merge_object(&mut settings, "hosts", hosts_patch);
-    settings.insert(KEY_HOSTS_MIGRATED.to_string(), Value::Bool(true));
-
-    write_settings_to(dir, &settings)?;
-
-    log::info!("migrated {migrated} SQLite host(s) into settings.json hosts.entries");
-
-    Ok(HostsV2Outcome::Migrated { migrated })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1423,84 +1244,6 @@ mod tests {
         .unwrap();
         assert_eq!(sparsify_v2_settings(&dir).unwrap(), SparsifyOutcome::NotV2);
         assert!(!dir.join("config.json.bak").exists());
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn host_migration_writes_entries_without_secrets_and_is_idempotent() {
-        let dir = tmp("hosts");
-        let app = crate::App::new(&dir.join("appdata")).unwrap();
-
-        let host = Host {
-            id: "h1".to_string(),
-            name: "prod".to_string(),
-            host_address: "prod.example.com".to_string(),
-            port: 22,
-            username: "deploy".to_string(),
-            auth_method: "key".to_string(),
-            private_key_path: None,
-            group_id: None,
-            tags: Some("[\"prod\",\"web\"]".to_string()),
-            created_at: 0,
-            last_connected_at: Some(123),
-            default_path_ssh: None,
-            default_path_sftp: None,
-            pin_to_top: false,
-            sudo_password_set: false,
-            keep_alive_interval: None,
-            keep_alive_tries: None,
-            sort_order: 0,
-            tunnels: None,
-            startup_snippet_id: None,
-            startup_snippet_mode: None,
-            credential_id: None,
-            jump_host_id: None,
-            notes: None,
-            icon: None,
-            block_agent_access: false,
-        };
-        crate::modules::secrets::store_password(&app, &app.secrets, "labonair-app", "h1", "s3cr3t")
-            .unwrap();
-
-        let outcome = migrate_hosts_to_settings(&dir, std::slice::from_ref(&host), &app).unwrap();
-        assert_eq!(outcome, HostsV2Outcome::Migrated { migrated: 1 });
-
-        let after = read_settings_from(&dir);
-        let entries = after["hosts"]["entries"].as_array().unwrap();
-        assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0]["id"], Value::from("h1"));
-        assert_eq!(entries[0]["authMethod"], Value::from("publicKey"));
-        assert_eq!(
-            entries[0]["credentialRef"],
-            Value::from("secrets:labonair-app:h1")
-        );
-        assert_eq!(entries[0]["tags"], serde_json::json!(["prod", "web"]));
-
-        let json_str = serde_json::to_string(&after["hosts"]).unwrap();
-        for forbidden in ["s3cr3t", "password", "privateKey"] {
-            assert!(
-                !json_str.to_lowercase().contains(&forbidden.to_lowercase()),
-                "hosts JSON must never contain {forbidden}"
-            );
-        }
-
-        let second = migrate_hosts_to_settings(&dir, std::slice::from_ref(&host), &app).unwrap();
-        assert_eq!(second, HostsV2Outcome::AlreadyMigrated);
-
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn no_hosts_marks_migrated_without_writing_entries() {
-        let dir = tmp("no-hosts");
-        let app = crate::App::new(&dir.join("appdata")).unwrap();
-
-        let outcome = migrate_hosts_to_settings(&dir, &[], &app).unwrap();
-        assert_eq!(outcome, HostsV2Outcome::NothingToMigrate);
-
-        let after = read_settings_from(&dir);
-        assert_eq!(after.get(KEY_HOSTS_MIGRATED).unwrap(), &Value::Bool(true));
-
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

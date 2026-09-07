@@ -147,7 +147,7 @@ the observed state is recorded in [`audits/architecture-inventory.md`](audits/ar
 
 The titlebar is a shell surface, not a feature owner. Its single global-menu
 button publishes `TitlebarEvent` intent. The composition root connects that
-intent to Settings, the keymap file surface, or a Command Palette page. The
+intent to Settings, the keymap file surface, the Hosts management surface, or a Command Palette page. The
 menu uses the shared `popover_menu` primitive and anchors it in window
 coordinates directly below the clicked button; it must not implement a second
 menu or feature-specific behavior.

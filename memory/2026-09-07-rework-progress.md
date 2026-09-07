@@ -203,3 +203,16 @@ R04-001 is complete. The user confirmed the native visual state. The next
 active queue task is R04-002, which establishes the single Hosts owner and
 SSH/SFTP picker flow. The combined implementation/documentation commit is
 `20bff4b`.
+
+## R04-002 Hosts owner slice
+
+The Hosts capability now exposes typed `HostOpenRequest`/`HostOpenMode` values
+and canonical immutable picker rows. `HostManagerView` is composed once by the
+shell and opened through the Hosts-owned native window; the titlebar, Open Hosts
+command, and SSH error recovery all use that surface. Palette host rows are
+owner snapshots with SSH as the primary action and SFTP as the Shift+Enter
+secondary action. The obsolete SQLite-hosts-to-Settings projection was removed
+from startup and migration code, along with the Settings host model and
+credential-ref compatibility helper. Focused Hosts/UI/Workspace/Shell tests
+pass. The task remains active for backend adapter cleanup and visual state
+review.

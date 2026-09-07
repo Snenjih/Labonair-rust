@@ -285,7 +285,7 @@ impl AppShell {
             "hosts",
             "Hosts",
             CommandSubmenu::Hosts,
-            self.workspace.read(cx).known_hosts(cx),
+            self.workspace.read(cx).host_picker_rows(cx),
         );
         register_snapshot(&mut submenus, hosts);
 
@@ -293,11 +293,7 @@ impl AppShell {
             "recent-hosts",
             "Recent Hosts",
             CommandSubmenu::RecentHosts,
-            self.workspace
-                .read(cx)
-                .recent_hosts(cx, 5)
-                .into_iter()
-                .map(|(id, name, _address)| (id, name)),
+            self.workspace.read(cx).recent_host_picker_rows(cx, 5),
         );
         register_snapshot(&mut submenus, recent_hosts);
 
@@ -406,12 +402,13 @@ impl AppShell {
             // Runnable commands go through the shared registry (T17-007).
             PaletteEvent::Run(id) => self.dispatch_command(id, window, cx),
             PaletteEvent::ConnectHost { host_id, sftp } => {
+                let request = if sftp {
+                    labonair_hosts::HostOpenRequest::sftp(host_id)
+                } else {
+                    labonair_hosts::HostOpenRequest::ssh(host_id)
+                };
                 self.workspace.update(cx, |w, cx| {
-                    if sftp {
-                        w.open_sftp_tab(host_id, window, cx);
-                    } else {
-                        w.open_ssh_tab(host_id, window, cx);
-                    }
+                    w.open_host_request(request, window, cx);
                 });
             }
             PaletteEvent::SetAppTheme(id) => {

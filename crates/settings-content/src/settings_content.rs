@@ -19,9 +19,6 @@ pub mod connections;
 pub mod editor;
 pub mod file_manager;
 pub mod general;
-// Migration-only wire types for reading legacy host settings. Hosts are not
-// part of `SettingsContent` and are never serialized by this crate's tree.
-pub mod hosts;
 // Migration-only wire types; MCP runtime configuration belongs to the
 // AI/MCP capability and is not part of SettingsContent.
 pub mod mcp;

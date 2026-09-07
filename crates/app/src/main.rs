@@ -66,16 +66,12 @@ fn main() {
 
     // T19-009: one-time migration of the legacy `preferences`/`editor`/`mcp`
     // split into the flat `SettingsContent` area layout (+ `keymap.json` for
-    // keybind overrides, + SQLite hosts into `hosts.entries`). Must run
-    // before `labonair_settings::init(cx)` below, which reads the very same
-    // `config.json` file and would otherwise silently see an
-    // all-defaults tree for an old-format file.
+    // keybind overrides). Hosts remain owned by their SQLite registry; no
+    // host definitions are projected into Settings.
     {
         use labonair_backend::modules::settings::{
             migrate_config_file_name,
-            migrate_v2::{
-                migrate_hosts_to_settings, migrate_settings_v1_to_v2, sparsify_v2_settings,
-            },
+            migrate_v2::{migrate_settings_v1_to_v2, sparsify_v2_settings},
         };
         use labonair_filesystem::paths::config_dir;
 
@@ -94,15 +90,6 @@ fn main() {
             Ok(outcome) => tracing::info!("settings v2 sparsify: {outcome:?}"),
             Err(err) => tracing::warn!("settings v2 sparsify failed: {err}"),
         }
-        runtime.block_on(async {
-            match labonair_backend::modules::hosts::db::hosts_get_all(&backend.db).await {
-                Ok(hosts) => match migrate_hosts_to_settings(&settings_dir, &hosts, &backend) {
-                    Ok(outcome) => tracing::info!("hosts v1->v2 migration: {outcome:?}"),
-                    Err(err) => tracing::warn!("hosts v1->v2 migration failed: {err}"),
-                },
-                Err(err) => tracing::warn!("failed to load hosts for v1->v2 migration: {err}"),
-            }
-        });
     }
 
     drop(guard);

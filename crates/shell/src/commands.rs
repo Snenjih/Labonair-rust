@@ -25,6 +25,7 @@ use labonair_command_palette_core::{
     CommandContext, CommandDescriptor, CommandIcon, CommandId, CommandProvider,
     CommandRegistry as PaletteCommandRegistry, CommandSubmenu,
 };
+use labonair_hosts_ui::open_hosts_window;
 use labonair_settings_ui::open_settings_window;
 
 use crate::app_shell::AppShell;
@@ -587,8 +588,8 @@ pub(crate) fn register_builtin_commands() -> CommandDispatcher {
             CommandIcon::Server,
             None,
         ),
-        |s, window, cx| {
-            s.show_command_palette(Some(PalettePage::Hosts), window, cx);
+        |s, _window, cx| {
+            open_hosts_window(s.panels.hosts.clone(), cx);
         },
     );
     for (id, title, icon) in [

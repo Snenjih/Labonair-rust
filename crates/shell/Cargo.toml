@@ -34,6 +34,7 @@ labonair-keymap-ui = { path = "../keymap-ui" }
 labonair-panel = { path = "../panel" }
 labonair-workspace = { path = "../workspace" }
 labonair-hosts = { path = "../hosts" }
+labonair-hosts-ui = { path = "../hosts-ui" }
 labonair-editor = { path = "../editor" }
 labonair-git = { path = "../git" }
 labonair-snippets = { path = "../snippets" }

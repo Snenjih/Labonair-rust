@@ -15,5 +15,7 @@ pub(crate) mod theme {
 
 mod hosts;
 pub mod ssh_connection;
+mod window;
 
 pub use hosts::{ActiveTunnelRow, HostManagerEvent, HostManagerView, HostStatus};
+pub use window::open_hosts_window;

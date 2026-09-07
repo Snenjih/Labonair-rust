@@ -88,6 +88,22 @@ Shift+Enter opening SFTP, while jump hosts remain part of SSH configuration.
 - [ ] Empty, filtered, configured, invalid, and connection-pending states are
       visually checked.
 
+## Progress
+
+- [x] Added `HostOpenRequest`/`HostOpenMode` and the immutable
+      `HostPickerRow` contract to `labonair-hosts`; SSH is primary and SFTP is
+      the secondary picker action.
+- [x] Composed one `HostManagerView` in the shell and added the Hosts-owned
+      native management window. Titlebar Hosts, the Open Hosts command, and
+      host-connection error recovery now use that canonical surface.
+- [x] The command palette consumes owner-provided host snapshots and converts
+      selections into typed SSH/SFTP requests at the composition boundary.
+- [x] Removed the obsolete SQLite-hosts-to-Settings projection, migration
+      marker, and Settings host model. Host definitions remain in the
+      Hosts-owned store and secrets remain in the secret store.
+- [ ] Finish the remaining backend host/transport adapter cleanup and perform
+      the visual state review for empty, filtered, invalid, and pending flows.
+
 ## Removal condition
 
 This task is complete only when no host definition, host-management action, or

@@ -20,13 +20,13 @@ in the normative documents linked from `docs/README.md`.
 | `filesystem` | Local file access, traversal, mutation, search, and watcher implementation | foundation/platform service | First extracted service boundary; only the legacy `AppEvent` adapter remains in `backend` temporarily. |
 | `secrets` | Encrypted/plain local secret store and secret cache | foundation/platform service | Extracted from `backend`; backend keeps a compatibility adapter while SSH/Hosts/MCP migrate. |
 | `errors` | Structured error catalog and recovery hints | foundation/platform contract | Extracted from `backend`; capability crates can consume it without importing the backend facade. |
-| `hosts` | Saved-host and host-group domain contract plus host store | hosts module | Models and all host persistence, including secret-bearing writes, are standalone; only the MCP event adapter remains transitional in `backend`. |
+| `hosts` | Saved-host and host-group domain contract plus host store | hosts module | Models, host persistence, canonical picker snapshots, and typed SSH/SFTP requests are standalone; the shell composes one manager/window instance. Only the MCP event adapter and transport implementations remain transitional in `backend`. |
 | `persistence` | Shared SQLite connection and schema lifecycle | foundation/platform service | Extracted from the host adapter; feature-specific queries still remain in `backend` and are next to migrate. |
 | `credentials` | Credential domain, secret-backed metadata, and SSH keypair generation | credentials module | Extracted from `backend`; backend keeps App-signature adapters while callers migrate. |
 | `snippets` | Snippet domain, SQLite store, and local/SSH execution contracts | snippets module | Shared run events and the SSH executor contract are standalone; backend owns only the russh adapter. |
 | `gpui-ext` | Shared GPUI helpers | foundation | Keep dependency-free from features. |
 | `interaction-contracts` | Stable shortcut and interaction identities | foundation | Keep UI-free and below command/keymap modules; no feature state or behavior. |
-| `hosts-ui` | Host management UI and host-related dependencies | hosts module | Consumes host, credential, snippet, database, and secret contracts directly; operation failures publish through Notifications. |
+| `hosts-ui` | Host management UI and host-related dependencies | hosts module | Owns the native Hosts management window and consumes host, credential, snippet, database, and secret contracts directly; it emits typed open requests and operation failures publish through Notifications. |
 | `notifications-core` | UI-free notification registry and lifecycle | notifications module | New owner of retention, ordering, deduplication, read state, and structured metadata. |
 | `notifications` | GPUI notification adapter and statusbar dropdown | notifications module | Owns the statusbar notification item; shell only registers it. |
 | `panel` | Panel/status contracts | workspace foundation | Keep contracts-only. |
@@ -78,9 +78,12 @@ The current Cargo metadata shows several transitional edges that conflict with t
 - `panel-explorer` still depends on workspace for drag/preview shims, but its
   obsolete backend dependency has been removed; those remaining UI contracts
   are a later extraction boundary.
-- `hosts-ui` no longer depends on Settings or the backend facade; Workspace
-  injects its database, secret state, and the narrow MCP-revocation callback.
-  Its notification contract migration is still open.
+- `hosts-ui` no longer depends on Settings or the backend facade; the shell
+  composes one `HostManagerView`, injects its database, secret state, transport
+  contracts, and the narrow MCP-revocation callback, then opens the manager
+  through the Hosts-owned native window. Workspace retains only the injected
+  capability handle needed for connection/session orchestration. Its
+  notification contract migration is still open.
 - `command-palette` still depends on backend even though the palette should receive dynamic data through providers; the runtime snapshot registry now makes that handoff explicit and is the removal seam for this edge.
 - Initial command metadata providers now live in the owning workspace, terminal,
   editor, hosts, themes, and settings crates. The shell still contains

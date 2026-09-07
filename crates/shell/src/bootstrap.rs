@@ -20,6 +20,7 @@ use labonair_backend::modules::mcp::{
 };
 use labonair_backend::modules::settings::mcp::mcp_prefs_load;
 use labonair_backend::App as Backend;
+use labonair_hosts_ui::{open_hosts_window, HostManagerEvent, HostManagerView};
 use labonair_notifications::{notification_center, Notification, NotificationCenter};
 use labonair_sftp::{SftpBrowserService, SftpSessionService};
 use labonair_ssh::{
@@ -274,6 +275,25 @@ pub(crate) fn bootstrap(
         Arc::new(labonair_backend::modules::ssh::contract::BackendSshService::new(backend.clone()));
     let ssh_config: Arc<dyn SshConfigService> =
         Arc::new(labonair_backend::modules::ssh::contract::BackendSshService::new(backend.clone()));
+    let host_manager = {
+        let app_for_host_events = backend.clone();
+        let host_event_handler = Arc::new(move |event| {
+            labonair_backend::modules::hosts::db::revoke_agent_access(&app_for_host_events, event)
+        });
+        cx.new(|cx| {
+            HostManagerView::new(
+                backend.db.clone(),
+                backend.secrets.clone(),
+                labonair_filesystem::paths::data_dir(),
+                Some(host_event_handler),
+                ssh_tester,
+                ssh_config,
+                tokio.clone(),
+                theme.clone(),
+                cx,
+            )
+        })
+    };
     let sftp_session_service: Arc<dyn SftpSessionService> = Arc::new(
         labonair_backend::modules::sftp::contract::BackendSftpService::new(backend.clone()),
     );
@@ -306,13 +326,12 @@ pub(crate) fn bootstrap(
             ssh_remote_service.clone(),
             ssh_remote_file_service.clone(),
             ssh_tunnel_service.clone(),
-            ssh_tester,
-            ssh_config,
             sftp_session_service.clone(),
             sftp_browser_service.clone(),
             transfer_service,
             tokio.clone(),
             agent_access.clone(),
+            host_manager.clone(),
             session_snapshot,
             window,
             cx,
@@ -323,9 +342,9 @@ pub(crate) fn bootstrap(
     cx.subscribe_in(
         &workspace,
         window,
-        |this, _, event: &WorkspaceEvent, window, cx| match event {
+        |this, _, event: &WorkspaceEvent, _window, cx| match event {
             WorkspaceEvent::OpenHosts => {
-                this.show_command_palette(Some(labonair_command_palette::Page::Hosts), window, cx);
+                open_hosts_window(this.panels.hosts.clone(), cx);
             }
             WorkspaceEvent::OpenProject => open_project_picker(this.workspace.clone(), cx),
         },
@@ -386,6 +405,14 @@ pub(crate) fn bootstrap(
         })
         .detach();
     }
+    cx.observe(&host_manager, |_, _, cx| cx.notify()).detach();
+    cx.subscribe(&host_manager, |this, _, event: &HostManagerEvent, cx| {
+        let HostManagerEvent::Open(request) = event;
+        this.workspace.update(cx, |workspace, cx| {
+            workspace.enqueue_host_request(request.clone(), cx)
+        });
+    })
+    .detach();
     // `keymap.json` (T19-008): load + merge + bind, publish the display
     // global, then live-watch the file so an edit takes effect with no
     // restart. Must run after the theme/prefs wiring above so a startup
@@ -589,6 +616,9 @@ pub(crate) fn bootstrap(
                     cx,
                 );
             }
+            TitlebarEvent::Hosts => {
+                open_hosts_window(this.panels.hosts.clone(), cx);
+            }
             TitlebarEvent::Palette(page) => {
                 this.show_command_palette(Some(*page), window, cx);
             }
@@ -604,6 +634,7 @@ pub(crate) fn bootstrap(
         snippets,
         updater,
         command_palette,
+        hosts: host_manager,
     };
 
     AppShell::from_parts(

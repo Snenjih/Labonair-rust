@@ -28,6 +28,7 @@ labonair-keymap = { path = "../keymap" }
 labonair-panel = { path = "../panel" }
 labonair-panel-git-graph = { path = "../panel-git-graph" }
 labonair-hosts-ui = { path = "../hosts-ui" }
+labonair-hosts = { path = "../hosts" }
 labonair-terminal = { path = "../terminal" }
 labonair-editor = { path = "../editor" }
 labonair-git = { path = "../git" }
