@@ -86,6 +86,11 @@ their descriptors against the owner snapshot. This prevents provider-owned
 rows from becoming a second palette list and gives each capability a direct
 registration seam.
 
+The migrated provider rows are no longer repeated in the palette-only shell
+descriptor table. Shell-side entries for commands that still need GPUI
+execution are explicitly transitional adapters and are checked against the
+owner metadata at startup; they are not a second discovery source.
+
 `labonair-keymap` is intentionally not made a dependency of
 `labonair-command-palette-core`: the core currently depends on `ShortcutId`
 from keymap, so adding the reverse edge creates a Cargo cycle. `Open Keymap`

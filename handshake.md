@@ -20,8 +20,10 @@ settings now contribute command metadata from their owning crates. The shell
 assembles the providers and verifies its transitional execution adapters
 against the owner snapshots. Keymap remains blocked from direct provider
 registration until the command/shortcut identity dependency is inverted.
-Next: migrate the remaining shell metadata groups and remove the transitional
-duplicate declarations. The current branch is `master`.
+The migrated provider rows were also removed from the palette-only shell table;
+remaining shell descriptors are execution adapters checked against the owner
+snapshot. Next: migrate the remaining metadata and remove those transitional
+declarations. The current branch is `master`.
 
 ## Current Session: 2026-09-07 (Native visual helper hardened)
 

@@ -28,3 +28,8 @@ keymap provider was deliberately not added: `command-palette-core` currently
 depends on keymap's `ShortcutId`, so `keymap → command-palette-core` would be
 a Cargo cycle. The future fix is to extract/invert the stable command/shortcut
 identity contract.
+
+The migrated provider rows were removed from the palette-only shell table.
+Remaining shell descriptors are transitional execution adapters and are
+validated against owner metadata, so they cannot silently become a second
+palette discovery source.
