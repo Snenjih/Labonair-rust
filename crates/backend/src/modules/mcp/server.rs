@@ -67,7 +67,7 @@ async fn write_to_grant(
 /// function refuses rather than risk hanging on a prompt nobody can answer.
 async fn require_non_interactive_auth(
     hosts_db: &labonair_persistence::Database,
-    secrets: &crate::modules::secrets::SecretsState,
+    secrets: &labonair_secrets::SecretsState,
     host_id: &str,
 ) -> Result<(), String> {
     let (auth_method, credential_id): (String, Option<String>) = {
@@ -100,7 +100,7 @@ async fn require_non_interactive_auth(
         Some(cid) => ("labonair-cred", cid),
         None => ("labonair-app", host_id),
     };
-    let has_secret = crate::modules::secrets::get_password(secrets, service, account)?.is_some();
+    let has_secret = labonair_secrets::get_password(secrets, service, account)?.is_some();
     if !has_secret {
         return Err(
             "this host requires interactive authentication (no stored password/passphrase found) — \

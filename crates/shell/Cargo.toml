@@ -57,6 +57,7 @@ labonair-filesystem = { path = "../filesystem" }
 labonair-settings = { path = "../settings" }
 labonair-mcp-core = { path = "../mcp-core" }
 labonair-updater = { path = "../updater" }
+labonair-secrets = { path = "../secrets" }
 
 [dev-dependencies]
 gpui = { workspace = true, features = ["test-support"] }

@@ -121,7 +121,7 @@ pub async fn ssh_start_tunnels(
     host_id: String,
     tunnel_state: &TunnelState,
     hosts_db: &labonair_persistence::Database,
-    secrets: &crate::modules::secrets::SecretsState,
+    secrets: &labonair_secrets::SecretsState,
     trust_state: &super::TrustState,
     events: EventBus,
     connect_timeout_secs: Option<u64>,
@@ -166,7 +166,7 @@ pub async fn ssh_start_tunnels(
     }
 
     let password: Option<String> = if auth_method == "password" {
-        crate::modules::secrets::get_password(secrets, "labonair-app", &host_id)
+        labonair_secrets::get_password(secrets, "labonair-app", &host_id)
             .ok()
             .flatten()
     } else {

@@ -38,7 +38,7 @@ participate in the `BackendComposition` state graph or in another backend module
 | `model_prefs` | removed | no active consumers | removed as an unreferenced backend copy; model selection state remains an AI-owned concern when its UI contract is defined |
 | `pty` | local PTY state, sessions, events, I/O operations | indirect through backend/MCP | terminal owner; expose a terminal service rather than `App` state |
 | `scrollback` | scrollback persistence helpers | `shell`, `workspace` | moved to `labonair-terminal::scrollback`; Workspace supplies session/retention context |
-| `secrets` | secret-state compatibility API | internal SSH/SFTP/MCP adapters | `labonair-secrets`; compatibility wrappers now accept only `SecretsState`, with no aggregate `App` parameter |
+| `secrets` | removed | no backend compatibility consumers | `labonair-secrets` is the canonical owner; SSH/SFTP/MCP adapters and shell composition use its `SecretsState` and operations directly |
 | `settings` | removed | no active backend consumers | `labonair-settings` owns the one-time `legacy_migrations` boundary; SettingsContent remains the canonical runtime value model |
 | `sftp` | session adapter, remote operations, transfer worker state/commands | `shell`; internal SSH/transfer adapters | `labonair-sftp` and `labonair-transfers` integration boundaries; SFTP service now receives only SSH state plus the raw event bus, and legacy connection orchestration receives EventBus instead of App |
 | `shell` | removed | no active consumers outside its own tests | No canonical runtime consumer existed; future local command/background-process capability must be introduced through its owning Terminal/AI contract rather than another backend module |

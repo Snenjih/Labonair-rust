@@ -17,7 +17,7 @@ pub struct McpServerAccess {
     pub(crate) ssh: crate::modules::ssh::SshState,
     pub(crate) pty: Arc<crate::modules::pty::PtyState>,
     pub(crate) db: labonair_persistence::Database,
-    pub(crate) secrets: Arc<crate::modules::secrets::SecretsState>,
+    pub(crate) secrets: Arc<labonair_secrets::SecretsState>,
     pub(crate) events: crate::EventBus,
 }
 
@@ -26,7 +26,7 @@ impl McpServerAccess {
         ssh: crate::modules::ssh::SshState,
         pty: Arc<crate::modules::pty::PtyState>,
         db: labonair_persistence::Database,
-        secrets: Arc<crate::modules::secrets::SecretsState>,
+        secrets: Arc<labonair_secrets::SecretsState>,
         events: crate::EventBus,
     ) -> Self {
         Self {
@@ -221,9 +221,9 @@ fn build_status(state: &McpState, token: Option<String>) -> McpStatus {
 
 pub async fn mcp_get_status(
     state: &McpState,
-    secrets: &crate::modules::secrets::SecretsState,
+    secrets: &labonair_secrets::SecretsState,
 ) -> Result<McpStatus, String> {
-    let token = crate::modules::secrets::get_password(secrets, MCP_SERVICE, MCP_TOKEN_ACCOUNT)?;
+    let token = labonair_secrets::get_password(secrets, MCP_SERVICE, MCP_TOKEN_ACCOUNT)?;
     Ok(build_status(state, token))
 }
 
@@ -240,12 +240,12 @@ pub async fn mcp_set_enabled(
 ) -> Result<McpStatus, String> {
     if enabled {
         let existing =
-            crate::modules::secrets::get_password(&access.secrets, MCP_SERVICE, MCP_TOKEN_ACCOUNT)?;
+            labonair_secrets::get_password(&access.secrets, MCP_SERVICE, MCP_TOKEN_ACCOUNT)?;
         let token = match existing {
             Some(t) => t,
             None => {
                 let t = generate_token();
-                crate::modules::secrets::store_password(
+                labonair_secrets::store_password(
                     &access.secrets,
                     MCP_SERVICE,
                     MCP_TOKEN_ACCOUNT,
@@ -273,12 +273,7 @@ pub async fn mcp_regenerate_token(
     state: &McpState,
 ) -> Result<McpStatus, String> {
     let token = generate_token();
-    crate::modules::secrets::store_password(
-        &access.secrets,
-        MCP_SERVICE,
-        MCP_TOKEN_ACCOUNT,
-        &token,
-    )?;
+    labonair_secrets::store_password(&access.secrets, MCP_SERVICE, MCP_TOKEN_ACCOUNT, &token)?;
     if state.enabled.load(Ordering::Relaxed) {
         server::ensure_started(access, state.clone(), token.clone());
     }
@@ -296,7 +291,7 @@ pub async fn mcp_set_port(
     state.port.store(port, Ordering::Relaxed);
     if state.enabled.load(Ordering::Relaxed) {
         let token =
-            crate::modules::secrets::get_password(&access.secrets, MCP_SERVICE, MCP_TOKEN_ACCOUNT)?
+            labonair_secrets::get_password(&access.secrets, MCP_SERVICE, MCP_TOKEN_ACCOUNT)?
                 .unwrap_or_default();
         server::ensure_started(access, state.clone(), token.clone());
         return Ok(build_status(state, Some(token)));

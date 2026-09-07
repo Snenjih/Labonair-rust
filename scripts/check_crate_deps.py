@@ -173,7 +173,7 @@ ALLOWED = {
         # Provider metadata contracts are assembled here; feature behavior
         # remains in the owning crates and is not implemented by this root.
         "labonair-editor", "labonair-git", "labonair-hosts",
-        "labonair-hosts-ui", "labonair-snippets",
+        "labonair-hosts-ui", "labonair-snippets", "labonair-secrets",
     },
 
     # Transfer presentation — owns the statusbar dropdown, while lifecycle

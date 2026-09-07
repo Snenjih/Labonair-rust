@@ -12,7 +12,6 @@ use std::sync::{Arc, Mutex as StdMutex};
 use labonair_backend::events::EventBus;
 use labonair_backend::modules::mcp::McpState;
 use labonair_backend::modules::pty::PtyState;
-use labonair_backend::modules::secrets::SecretsState;
 use labonair_backend::modules::sftp::{
     ConflictMap, TransferSettings, TransferWorkerState, WorkerMessage,
 };
@@ -20,6 +19,7 @@ use labonair_backend::modules::snippets::exec::SnippetRunState;
 use labonair_backend::modules::ssh::tunnels::TunnelState;
 use labonair_backend::modules::ssh::{SshState, TrustState};
 use labonair_persistence::Database;
+use labonair_secrets::SecretsState;
 
 pub struct BackendCompositionInner {
     pub(crate) events: EventBus,

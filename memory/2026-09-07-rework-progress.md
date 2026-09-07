@@ -1,5 +1,12 @@
 # Rework progress — 2026-09-07
 
+## Secrets ownership boundary
+
+The backend Secrets compatibility wrapper is removed. Shell composition and
+the SSH/SFTP/MCP adapters now use `labonair_secrets::SecretsState` plus its
+canonical operations directly; no second storage API or backend re-export
+remains. The storage format and secret lifecycle are unchanged.
+
 ## Unreferenced backend shell cleanup
 
 The backend `shell` module was removed after repository-wide source search

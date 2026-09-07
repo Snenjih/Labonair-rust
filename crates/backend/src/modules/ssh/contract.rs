@@ -16,7 +16,7 @@ pub struct BackendSshConnectionService {
     state: super::SshState,
     trust: super::TrustState,
     hosts_db: labonair_persistence::Database,
-    secrets: std::sync::Arc<super::super::secrets::SecretsState>,
+    secrets: std::sync::Arc<labonair_secrets::SecretsState>,
     events: EventBus,
 }
 
@@ -25,7 +25,7 @@ impl BackendSshConnectionService {
         state: super::SshState,
         trust: super::TrustState,
         hosts_db: labonair_persistence::Database,
-        secrets: std::sync::Arc<super::super::secrets::SecretsState>,
+        secrets: std::sync::Arc<labonair_secrets::SecretsState>,
         events: EventBus,
     ) -> Self {
         Self {
@@ -42,7 +42,7 @@ impl BackendSshConnectionService {
 pub struct BackendSshConnectionTester {
     trust: super::TrustState,
     hosts_db: labonair_persistence::Database,
-    secrets: std::sync::Arc<super::super::secrets::SecretsState>,
+    secrets: std::sync::Arc<labonair_secrets::SecretsState>,
     events: EventBus,
 }
 
@@ -50,7 +50,7 @@ impl BackendSshConnectionTester {
     pub fn new(
         trust: super::TrustState,
         hosts_db: labonair_persistence::Database,
-        secrets: std::sync::Arc<super::super::secrets::SecretsState>,
+        secrets: std::sync::Arc<labonair_secrets::SecretsState>,
         events: EventBus,
     ) -> Self {
         Self {
@@ -77,7 +77,7 @@ impl BackendSshConfigService {
 pub struct BackendSshTunnelService {
     tunnel_state: tunnels::TunnelState,
     hosts_db: labonair_persistence::Database,
-    secrets: std::sync::Arc<super::super::secrets::SecretsState>,
+    secrets: std::sync::Arc<labonair_secrets::SecretsState>,
     trust: super::TrustState,
     events: EventBus,
 }
@@ -86,7 +86,7 @@ impl BackendSshTunnelService {
     pub fn new(
         tunnel_state: tunnels::TunnelState,
         hosts_db: labonair_persistence::Database,
-        secrets: std::sync::Arc<super::super::secrets::SecretsState>,
+        secrets: std::sync::Arc<labonair_secrets::SecretsState>,
         trust: super::TrustState,
         events: EventBus,
     ) -> Self {

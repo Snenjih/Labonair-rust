@@ -530,8 +530,9 @@ and forced unrelated callers through that facade.
 
 **Resolution:** Created `labonair-secrets` with `SecretsState::new(data_dir)`;
 the crate now owns path resolution from its state, plain/encrypted migration,
-cache, and secret operations. `backend::modules::secrets` is only a
-compatibility adapter until SSH, Hosts, and MCP consume the service directly.
+cache, and secret operations. At the time, `backend::modules::secrets` was a
+compatibility adapter until SSH, Hosts, and MCP consumed the service directly;
+that adapter was later removed once the direct migration completed.
 Added isolated plain-store and encryption-toggle round-trip tests.
 
 ## 2026-09-06 — Interrupted Cargo rebuild can leave stale artifact locks

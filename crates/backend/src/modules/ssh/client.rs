@@ -291,7 +291,7 @@ pub async fn ssh_connect(
     state: &super::SshState,
     trust_state: &super::TrustState,
     hosts_db: &labonair_persistence::Database,
-    secrets: &crate::modules::secrets::SecretsState,
+    secrets: &labonair_secrets::SecretsState,
     events: EventBus,
     connect_timeout_secs: Option<u64>,
 ) -> Result<(), LabonairError> {
@@ -368,11 +368,11 @@ pub async fn ssh_connect(
                 "Retrieving credentials from local store…"
             );
             if let Some(cid) = &credential_id {
-                crate::modules::secrets::get_password(secrets, "labonair-cred", cid)
+                labonair_secrets::get_password(secrets, "labonair-cred", cid)
                     .ok()
                     .flatten()
             } else {
-                crate::modules::secrets::get_password(secrets, "labonair-app", &host_id)
+                labonair_secrets::get_password(secrets, "labonair-app", &host_id)
                     .ok()
                     .flatten()
             }
@@ -384,7 +384,7 @@ pub async fn ssh_connect(
     // For key auth via credential, the passphrase may be stored in the credential's secret.
     let passphrase = if credential_id.is_some() && auth_method == "key" && passphrase.is_none() {
         if let Some(cid) = &credential_id {
-            crate::modules::secrets::get_password(secrets, "labonair-cred", cid)
+            labonair_secrets::get_password(secrets, "labonair-cred", cid)
                 .ok()
                 .flatten()
         } else {
@@ -806,7 +806,7 @@ pub(crate) struct JumpHostParams {
 /// this was extracted from.
 pub(crate) fn resolve_jump_host(
     hosts_db: &labonair_persistence::Database,
-    secrets: &crate::modules::secrets::SecretsState,
+    secrets: &labonair_secrets::SecretsState,
     jump_host_id: &str,
 ) -> Result<JumpHostParams, LabonairError> {
     let (jh_addr, jh_port, jh_user, jh_auth, jh_key, jh_kai, jh_cred_id): (
@@ -865,11 +865,11 @@ pub(crate) fn resolve_jump_host(
     // Fetch jump host password from keyring
     let jh_pw: Option<String> = if jh_auth == "password" {
         if let Some(ref jcid) = jh_cred_id {
-            crate::modules::secrets::get_password(secrets, "labonair-cred", jcid)
+            labonair_secrets::get_password(secrets, "labonair-cred", jcid)
                 .ok()
                 .flatten()
         } else {
-            crate::modules::secrets::get_password(secrets, "labonair-app", jump_host_id)
+            labonair_secrets::get_password(secrets, "labonair-app", jump_host_id)
                 .ok()
                 .flatten()
         }
@@ -1041,7 +1041,7 @@ pub async fn ssh_test_connection(
     password_override: Option<String>,
     trust_state: &super::TrustState,
     hosts_db: &labonair_persistence::Database,
-    secrets: &crate::modules::secrets::SecretsState,
+    secrets: &labonair_secrets::SecretsState,
     events: EventBus,
     connect_timeout_secs: Option<u64>,
 ) -> Result<TestConnectionResult, LabonairError> {
@@ -1106,11 +1106,11 @@ pub async fn ssh_test_connection(
         if password_override.is_some() {
             password_override
         } else if let Some(cid) = &credential_id {
-            crate::modules::secrets::get_password(secrets, "labonair-cred", cid)
+            labonair_secrets::get_password(secrets, "labonair-cred", cid)
                 .ok()
                 .flatten()
         } else {
-            crate::modules::secrets::get_password(secrets, "labonair-app", &host_id)
+            labonair_secrets::get_password(secrets, "labonair-app", &host_id)
                 .ok()
                 .flatten()
         }
@@ -1121,7 +1121,7 @@ pub async fn ssh_test_connection(
     // Same credential-sourced-passphrase fallback as `ssh_connect`.
     let passphrase = if credential_id.is_some() && auth_method == "key" && passphrase.is_none() {
         if let Some(cid) = &credential_id {
-            crate::modules::secrets::get_password(secrets, "labonair-cred", cid)
+            labonair_secrets::get_password(secrets, "labonair-cred", cid)
                 .ok()
                 .flatten()
         } else {
@@ -1572,7 +1572,7 @@ mod tests {
         ssh: super::super::SshState,
         trust: super::super::TrustState,
         db: labonair_persistence::Database,
-        secrets: Arc<super::super::super::secrets::SecretsState>,
+        secrets: Arc<labonair_secrets::SecretsState>,
         events: crate::EventBus,
     }
 
@@ -1583,7 +1583,7 @@ mod tests {
             ssh: super::super::SshState::default(),
             trust: super::super::TrustState::default(),
             db: labonair_persistence::Database(Arc::new(std::sync::Mutex::new(connection))),
-            secrets: Arc::new(super::super::super::secrets::SecretsState::new(dir)),
+            secrets: Arc::new(labonair_secrets::SecretsState::new(dir)),
             events: crate::EventBus::new(),
         }
     }

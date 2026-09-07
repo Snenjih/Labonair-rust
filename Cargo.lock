@@ -4627,6 +4627,7 @@ dependencies = [
  "labonair-panel-scm",
  "labonair-panel-snippets",
  "labonair-persistence",
+ "labonair-secrets",
  "labonair-settings",
  "labonair-settings-ui",
  "labonair-sftp",

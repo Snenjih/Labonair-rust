@@ -105,7 +105,7 @@ pub async fn sftp_connect(
     state: &SshState,
     trust_state: &TrustState,
     hosts_db: &labonair_persistence::Database,
-    secrets: &crate::modules::secrets::SecretsState,
+    secrets: &labonair_secrets::SecretsState,
     events: EventBus,
 ) -> Result<(), LabonairError> {
     // Idempotent: a session already live under this session_id whose SFTP
@@ -192,11 +192,11 @@ pub async fn sftp_connect(
         if password_override.is_some() {
             password_override.clone()
         } else if let Some(ref cid) = credential_id {
-            crate::modules::secrets::get_password(secrets, "labonair-cred", cid)
+            labonair_secrets::get_password(secrets, "labonair-cred", cid)
                 .ok()
                 .flatten()
         } else {
-            crate::modules::secrets::get_password(secrets, "labonair-app", &host_id)
+            labonair_secrets::get_password(secrets, "labonair-app", &host_id)
                 .ok()
                 .flatten()
         }
@@ -207,7 +207,7 @@ pub async fn sftp_connect(
     // Passphrase from credential secret for key auth.
     let passphrase = if credential_id.is_some() && auth_method == "key" && passphrase.is_none() {
         if let Some(ref cid) = credential_id {
-            crate::modules::secrets::get_password(secrets, "labonair-cred", cid)
+            labonair_secrets::get_password(secrets, "labonair-cred", cid)
                 .ok()
                 .flatten()
         } else {

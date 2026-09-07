@@ -206,8 +206,11 @@ boundary still exists; that package must not become a second capability owner.
 - [x] Removed the unreferenced backend `shell` compatibility module, including
       one-shot commands, persistent agent shells, and background-process state;
       no active crate used this duplicate execution path.
-- [x] Secrets compatibility wrappers and jump-host resolution no longer take
-      the aggregate `App`; they receive only their actual state dependencies.
+- [x] Removed the backend Secrets compatibility wrapper; SSH, SFTP, MCP, and
+      shell composition now use the canonical `labonair-secrets` state and
+      operations directly.
+- [x] SSH secret access and jump-host resolution no longer take the aggregate
+      `App`; they receive only their actual state dependencies.
 - [ ] Move the remaining contracts and adapters behind injected capability
       services.
 - [ ] Delete the broad `App` facade paths and remaining compatibility edges.

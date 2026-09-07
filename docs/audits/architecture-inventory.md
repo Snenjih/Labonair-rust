@@ -23,7 +23,7 @@ removal conditions.
 | `command-palette` | Palette UI, dynamic sub-pages, and transitional duplicate shell dispatch integration | command-palette module | Consume the core registry; global-menu navigation is typed; remove static entries and the duplicate shell registry. |
 | `editor` | Editor engine | editor module | Separate core from workspace view. |
 | `filesystem` | Local file access, traversal, mutation, search, and watcher implementation | foundation/platform service | Canonical owner; backend watcher state and filesystem compatibility re-exports have been removed. |
-| `secrets` | Encrypted/plain local secret store and secret cache | foundation/platform service | Extracted from `backend`; remaining backend callers use explicit `SecretsState` adapters. |
+| `secrets` | Encrypted/plain local secret store and secret cache | foundation/platform service | Extracted from `backend`; backend and shell callers use `labonair-secrets` directly with explicit `SecretsState`. |
 | `errors` | Structured error catalog and recovery hints | foundation/platform contract | Extracted from `backend`; the backend compatibility module and root re-exports were removed in R06-001's first boundary. |
 | `hosts` | Saved-host and host-group domain contract plus host store | hosts module | Models, host persistence, canonical picker snapshots, and typed SSH/SFTP requests are standalone; the shell composes one manager/window instance. Only the MCP event adapter and transport implementations remain transitional in `backend`. |
 | `persistence` | Shared SQLite connection and schema lifecycle | foundation/platform service | Extracted from the host adapter; feature-specific queries still remain in `backend` and are next to migrate. |
