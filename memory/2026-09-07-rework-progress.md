@@ -841,3 +841,9 @@ duplicate tab operations, and project lifecycle. Their metadata remains in the
 Workspace provider, while executable callbacks come from the Workspace handler
 contribution. The shell command table now retains only unmigrated feature
 adapters and native-window wiring.
+
+Cursor Position and Preview URL statusbar views were moved into
+`labonair-workspace::status_items` and now expose typed registrations. Shell
+composition no longer constructs these views directly; their rendering still
+uses the existing Workspace active-tab query contract. Targeted Clippy, tests,
+dependency validation, formatting, and diff checks pass.

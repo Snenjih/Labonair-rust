@@ -210,7 +210,8 @@ The current Cargo metadata shows several transitional edges that conflict with t
   workspace shell surfaces still awaiting owner extraction.
 - The pure CWD breadcrumb path/provider helpers now belong to
   `labonair-workspace::cwd_breadcrumb`; only the interactive statusbar view
-  remains in the shell until the next extraction slice.
+  remains in the shell until the next extraction slice. Cursor Position and
+  Preview URL are now also Workspace-owned statusbar contributions.
 - `shell/src/commands.rs` still maintains a second behavior registry beside
   the command-palette entries; the migration must leave one typed command
   registry and keep execution in the owning modules.

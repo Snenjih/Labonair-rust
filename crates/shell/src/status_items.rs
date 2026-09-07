@@ -672,131 +672,6 @@ impl StatusItem for CwdStatusItem {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Editor cursor position.
-// ─────────────────────────────────────────────────────────────────────────────
-
-pub struct CursorPositionStatusItem {
-    workspace: Entity<Workspace>,
-    theme: Entity<ThemeStore>,
-}
-
-impl CursorPositionStatusItem {
-    pub fn new(
-        workspace: Entity<Workspace>,
-        theme: Entity<ThemeStore>,
-        cx: &mut Context<Self>,
-    ) -> Self {
-        cx.observe(&workspace, |_, _, cx| cx.notify()).detach();
-        cx.observe(&theme, |_, _, cx| cx.notify()).detach();
-        Self { workspace, theme }
-    }
-}
-
-impl Render for CursorPositionStatusItem {
-    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        self.render_status(window, cx)
-    }
-}
-
-impl StatusItem for CursorPositionStatusItem {
-    fn id(&self) -> &'static str {
-        "cursor-position"
-    }
-    fn default_side(&self) -> StatusSide {
-        StatusSide::Right
-    }
-    // Same breadcrumb group as `cwd`/`preview-url` — all three are
-    // active-tab-derived text, not a standalone action item.
-    fn order(&self) -> i32 {
-        11
-    }
-    fn group(&self) -> u32 {
-        0
-    }
-
-    fn render_status(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
-        let Some((line, col)) = self.workspace.read(cx).active_editor_cursor(cx) else {
-            return div().into_any_element();
-        };
-        let muted = self.theme.read(cx).muted_foreground();
-        div()
-            .text_size(px(11.0))
-            .text_color(muted)
-            .child(SharedString::from(format!("Ln {line}, Col {col}")))
-            .into_any_element()
-    }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Preview URL (native markdown preview tab).
-// ─────────────────────────────────────────────────────────────────────────────
-
-pub struct PreviewUrlStatusItem {
-    workspace: Entity<Workspace>,
-    theme: Entity<ThemeStore>,
-}
-
-impl PreviewUrlStatusItem {
-    pub fn new(
-        workspace: Entity<Workspace>,
-        theme: Entity<ThemeStore>,
-        cx: &mut Context<Self>,
-    ) -> Self {
-        cx.observe(&workspace, |_, _, cx| cx.notify()).detach();
-        cx.observe(&theme, |_, _, cx| cx.notify()).detach();
-        Self { workspace, theme }
-    }
-}
-
-impl Render for PreviewUrlStatusItem {
-    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        self.render_status(window, cx)
-    }
-}
-
-impl StatusItem for PreviewUrlStatusItem {
-    fn id(&self) -> &'static str {
-        "preview-url"
-    }
-    fn default_side(&self) -> StatusSide {
-        StatusSide::Right
-    }
-    fn order(&self) -> i32 {
-        12
-    }
-    fn group(&self) -> u32 {
-        0
-    }
-
-    fn render_status(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
-        let Some(url) = self.workspace.read(cx).active_preview_url(cx) else {
-            return div().into_any_element();
-        };
-        let (muted, fg) = {
-            let t = self.theme.read(cx);
-            (t.muted_foreground(), t.foreground())
-        };
-        let open = url.clone();
-        div()
-            .id("bar-preview-url")
-            .flex()
-            .items_center()
-            .gap_1()
-            .text_size(px(11.0))
-            .text_color(muted)
-            .hover(|s| s.text_color(fg))
-            .child(IconName::Globe.svg(muted).size(px(11.0)))
-            .child(SharedString::from(
-                url.strip_prefix("http://").unwrap_or(&url).to_string(),
-            ))
-            .on_click(cx.listener(move |_, _: &ClickEvent, _w, cx| {
-                cx.open_url(&open);
-            }))
-            .into_any_element()
-    }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
 // Auto-updater.
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -922,8 +797,9 @@ pub fn register_builtin_status_items(
         )
     });
     let cwd = cx.new(|cx| CwdStatusItem::new(workspace.clone(), theme.clone(), cx));
-    let cursor = cx.new(|cx| CursorPositionStatusItem::new(workspace.clone(), theme.clone(), cx));
-    let preview = cx.new(|cx| PreviewUrlStatusItem::new(workspace.clone(), theme.clone(), cx));
+    let cursor =
+        labonair_workspace::status_items::cursor_position_registration(workspace, theme, cx);
+    let preview = labonair_workspace::status_items::preview_url_registration(workspace, theme, cx);
     let updater_item = cx.new(|cx| UpdaterStatusItem::new(updater.clone(), theme.clone(), cx));
     let transfers =
         labonair_transfers_ui::status_item_registration(workspace, transfers_view, theme, cx);
@@ -946,8 +822,8 @@ pub fn register_builtin_status_items(
         reg(&dock_btn_bottom, cx),
         reg(&notifications_item, cx),
         reg(&cwd, cx),
-        reg(&cursor, cx),
-        reg(&preview, cx),
+        cursor,
+        preview,
         reg(&updater_item, cx),
         transfers,
         agent,
