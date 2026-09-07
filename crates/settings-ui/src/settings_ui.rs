@@ -10,6 +10,7 @@
 //! `PreferencesStore` / `GlobalPreferences` bridge has been retired.
 
 mod apply;
+pub mod command_provider;
 mod pages;
 mod panes;
 mod schema;

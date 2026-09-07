@@ -23,7 +23,6 @@ use labonair_command_palette_core::{
 };
 use labonair_command_palette_runtime::CommandHandlerRegistry;
 use labonair_hosts_ui::open_hosts_window;
-use labonair_settings_ui::open_settings_window;
 
 use crate::app_shell::AppShell;
 use crate::menu;
@@ -238,9 +237,9 @@ pub(crate) fn attach_action_handlers(
     el
 }
 
-/// The one place every command is defined. Adding a command = one
-/// `r.register(...)` line here (plus, only if it needs a keystroke / menu item,
-/// a `menu::` action + a line in [`attach_action_handlers`]).
+/// Shared descriptor helper for the remaining shell-owned adapters. Feature
+/// commands are defined by their owner `CommandProvider`; a shell-owned
+/// command is limited to composition or a native-window action.
 const ALWAYS: &[CommandContext] = &[];
 
 #[allow(clippy::too_many_arguments)]
@@ -307,6 +306,7 @@ fn compose_builtin_commands(
     r.register_provider(&ShellCommandProvider);
     r.register_provider(&labonair_updater_ui::command_provider::UpdaterCommandProvider);
     labonair_settings::command_provider::register_handlers(&mut r.owner_handlers);
+    labonair_settings_ui::command_provider::register_handlers(&mut r.owner_handlers);
     if let Some(updater) = updater {
         labonair_updater_ui::command_provider::register_handlers(&mut r.owner_handlers, updater);
     }
@@ -518,20 +518,6 @@ fn compose_builtin_commands(
         ),
         |s, _window, cx| {
             s.workspace.update(cx, |w, cx| w.request_open_project(cx));
-        },
-    );
-    r.register(
-        command_descriptor(
-            CommandId::OpenSettings,
-            "Open Settings",
-            "Application",
-            always,
-            None,
-            CommandIcon::Edit,
-            None,
-        ),
-        |_s, _window, cx| {
-            open_settings_window(None, cx);
         },
     );
     r.register(

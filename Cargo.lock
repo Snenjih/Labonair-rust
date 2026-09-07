@@ -4588,6 +4588,8 @@ dependencies = [
  "gpui",
  "gpui-component",
  "labonair-command-palette",
+ "labonair-command-palette-core",
+ "labonair-command-palette-runtime",
  "labonair-filesystem",
  "labonair-gpui-ext",
  "labonair-notifications",

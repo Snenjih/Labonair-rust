@@ -3,10 +3,10 @@
 //! modal-layer mirrors, the shared `AppShell` helper methods that command
 //! closures call, and the last three genuine window actions.
 //!
-//! T17-007 removed the ~50-entry `.on_action(cx.listener(Self::act_*))` chain:
-//! every former `act_*` body is now a closure in
-//! [`register_builtin_commands`](crate::commands::register_builtin_commands),
-//! dispatched by [`AppShell::dispatch_command`](crate::commands). Only
+//! T17-007 removed the ~50-entry `.on_action(cx.listener(Self::act_*))` chain.
+//! Owner modules now contribute executable handlers through the command
+//! runtime; remaining shell adapters are dispatched by
+//! [`AppShell::dispatch_command`](crate::commands). Only
 //! `Minimize` / `Zoom` / `Toggle Full Screen` stay as real window
 //! `.on_action`s on the shell root (they only touch `Window`).
 

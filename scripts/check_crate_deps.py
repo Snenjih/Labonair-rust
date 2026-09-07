@@ -143,6 +143,7 @@ ALLOWED = {
     "labonair-settings-ui": {
         "labonair-theme", "labonair-ui-kit", "labonair-gpui-ext",
         "labonair-notifications", "labonair-command-palette",
+        "labonair-command-palette-core", "labonair-command-palette-runtime",
         "labonair-settings", "labonair-settings-content", "labonair-filesystem",
     },
 

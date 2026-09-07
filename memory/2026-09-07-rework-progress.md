@@ -891,3 +891,8 @@ are owned by the updater UI sibling and receive the existing `UpdaterView`
 entity from bootstrap. The shell command table no longer contains updater
 behavior; the updater entity is created before keymap/command composition so
 owner handlers are available from the first registry snapshot.
+
+The Settings window entrypoint was then moved into
+`labonair-settings-ui::command_provider`. The sibling owns the executable
+`OpenSettings` handler, while the metadata remains in the Settings command
+provider; shell composition only connects the two owner contributions.
