@@ -232,9 +232,12 @@ The current Cargo metadata shows several transitional edges that conflict with t
   owned contributions. The updater dialog, state view, and statusbar badge are
   now owned by the `updater-ui` sibling; shell composition only inserts the
   typed owner registration.
-- `shell/src/commands.rs` still maintains a second behavior registry beside
-  the command-palette entries; the migration must leave one typed command
-  registry and keep execution in the owning modules.
+- `shell/src/commands.rs` now retains only the native/debug compatibility
+  behavior registry; ordinary command execution is owner-registered. However,
+  `shell/src/actions.rs` still interprets dynamic palette submenu events for
+  themes, hosts, snippets, Git, tabs, symbols, and status items. R07-002 must
+  move those actions behind owner contributions without introducing another
+  shell-wide feature dispatch table.
 - The former toast path has been removed; the statusbar is now the only
   notification presentation surface. The GPUI adapter remains until actions
   are migrated from callbacks to stable command IDs.

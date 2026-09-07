@@ -103,11 +103,16 @@ a separate product decision after the core workflow is stable.
 - [x] Current normative documents identify the product scope, capability
       owners, registry contracts, Settings boundary, and deferred ideas.
 - [x] Product command behavior is owner-registered. Workspace, Terminal,
-      Hosts-UI, Settings, Settings-UI, Keymap-UI, Updater-UI, and Command
-      Palette now contribute executable handlers through the typed runtime
-      registry. The shell command table retains only the native Fullscreen
-      action and the debug-only component gallery, which are composition/native
-      concerns rather than product capability behavior.
+  Hosts-UI, Settings, Settings-UI, Keymap-UI, Updater-UI, and Command
+  Palette now contribute executable handlers through the typed runtime
+  registry. The shell command table retains only the native Fullscreen
+  action and the debug-only component gallery, which are composition/native
+  concerns rather than product capability behavior.
+- [ ] Dynamic palette submenu actions are not yet fully owner-executable:
+      `shell/src/actions.rs::handle_palette_event` still interprets theme,
+      host, snippet, Git, tab, symbol, color-mode, and status-item actions.
+      This is a concrete owner-contribution follow-up for R07-002, not a
+      reason to add another shell-wide dispatch table.
 - [ ] The remaining status-item and shell composition code still needs the
       final source audit and visual evidence; any genuine feature-owned residue
       must be moved through the bounded R07-002 task.

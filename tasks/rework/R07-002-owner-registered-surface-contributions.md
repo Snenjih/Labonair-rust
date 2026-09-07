@@ -18,19 +18,19 @@
 
 ## Goal
 
-Close any owner-contribution residue discovered by the R07-001 acceptance
-audit. Capability modules must register their command execution and status
-items through typed owner APIs; `labonair-shell` may only assemble those
-contributions and connect native/debug actions that have no capability owner.
-Panel contributions and all currently migrated product commands/status items
+Close the owner-contribution residue discovered by the R07-001 acceptance
+audit. Capability modules must register their command and dynamic-palette
+action execution through typed owner APIs; `labonair-shell` may only assemble
+those contributions and connect native/debug actions that have no capability
+owner. Panel contributions, status items, and ordinary command handlers
 already follow this boundary and are the reference pattern.
 
 ## Scope
 
 - In scope: any remaining feature-owned residue in
-  `shell/src/commands.rs` or shell status-item registration, owner
-  contribution APIs, command execution callbacks, and dependency/documentation
-  evidence.
+  `shell/src/commands.rs`, `shell/src/actions.rs`, or shell status-item
+  registration; owner contribution APIs; command and submenu execution
+  callbacks; and dependency/documentation evidence.
 - Out of scope: redesigning command behavior, adding new commands, changing
   product surfaces, or introducing extension/marketplace infrastructure.
 
@@ -39,6 +39,9 @@ already follow this boundary and are the reference pattern.
 - The command-palette core remains the single metadata registry.
 - Each owning module supplies its command metadata and execution contribution;
   execution must not be duplicated in a shell-wide command table.
+- Dynamic submenu actions must resolve through owner contributions or a typed
+  action registry. The shell must not match every feature-specific
+  `PaletteEvent` variant and call feature entities directly.
 - Panel registrations are contributed by their owning modules and consumed by
   the generic workspace registry. Status-item registrations must follow the
   same pattern.
@@ -65,6 +68,6 @@ statusbar placement, and native-window behavior must remain unchanged.
 
 ## Removal condition
 
-The task is complete when adding an owner command or status item does not
-require editing a shell feature table, while the shell still composes and the
-full verification gates pass.
+The task is complete when adding an owner command, dynamic submenu action, or
+status item does not require editing a shell feature table, while the shell
+still composes and the full verification gates pass.
