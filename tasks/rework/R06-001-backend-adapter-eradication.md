@@ -114,8 +114,13 @@ boundary still exists; that package must not become a second capability owner.
       `labonair-terminal::scrollback`; Workspace now supplies only session and
       retention context.
 - [x] Established `labonair-mcp-core` for stable MCP session/grant contracts
-      and injected it into the Workspace agent-access mirror; the concrete
-      bridge remains an explicit shell-constructed backend adapter.
+      and injected it into the Workspace agent-access mirror and tab-operation
+      flow; the concrete bridge remains an explicit shell-constructed backend
+      adapter.
+- [x] Moved Workspace MCP grant revocation, grant creation, and tab-operation
+      responses behind the injected `McpSessionAccessService` and
+      `McpTabOperationService` contracts; only the legacy event-bus bridge and
+      aggregate MCP server state remain backend-coupled.
 - [ ] Move the remaining contracts and adapters behind injected capability
       services.
 - [ ] Delete the broad `App` facade paths and remaining compatibility edges.

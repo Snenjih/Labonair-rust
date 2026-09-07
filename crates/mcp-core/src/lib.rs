@@ -54,6 +54,15 @@ pub trait McpSessionAccessService: Send + Sync {
     fn set_session_grant(&self, request: SessionGrantRequest) -> BoxFuture<'_, Result<(), String>>;
 }
 
+/// Narrow MCP capability used to complete an agent-requested tab operation.
+pub trait McpTabOperationService: Send + Sync {
+    fn respond_tab_operation(
+        &self,
+        request_id: String,
+        result: TabOpResult,
+    ) -> BoxFuture<'_, Result<(), String>>;
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

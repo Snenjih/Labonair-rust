@@ -62,13 +62,15 @@ only. The affected checks passed and this cleanup is committed as `8cdf216`.
 
 The MCP boundary now has a real UI-free contract crate,
 `labonair-mcp-core`, for `SessionKind`, `TabOpResult`,
-`SessionGrantRequest`, and `McpSessionAccessService`. The backend implements
-that contract through `BackendMcpSessionAccess`, while shell composition
-injects it into `AgentAccessStore`; the Workspace agent-access mirror no
-longer stores or imports `labonair_backend::App`. The MCP server still owns
-the aggregate bridge state, so the remaining R06 work is its tab-operation and
-event-bus extraction. Full workspace check, Clippy, tests, dependency, queue,
-format, and diff gates passed for this boundary.
+`SessionGrantRequest`, `McpSessionAccessService`, and
+`McpTabOperationService`. The backend implements those contracts through
+`BackendMcpSessionAccess`, while shell composition injects them into
+`AgentAccessStore` and Workspace. Workspace grant revocation, grant creation,
+and tab-operation responses no longer call backend MCP functions directly;
+grant failures are returned as failed tab-operation results. The MCP server
+still owns aggregate bridge state, and the legacy global event bus remains the
+next extraction boundary. Focused check, Clippy, and tests passed for this
+slice; repository-wide gates are run before commit.
 
 ## Native visual verification
 

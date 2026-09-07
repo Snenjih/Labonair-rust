@@ -75,10 +75,11 @@ use gpui::{
     IntoElement, KeyDownEvent, MouseButton, MouseDownEvent, ParentElement, Render, SharedString,
     StatefulInteractiveElement, Styled, Task, Window,
 };
-use labonair_backend::modules::mcp::{mcp_set_session_grant, mcp_tab_op_response};
 use labonair_backend::{App as Backend, AppEvent};
 use labonair_git::{GitGraphService, GitService};
-use labonair_mcp_core::{SessionKind, TabOpResult};
+use labonair_mcp_core::{
+    McpSessionAccessService, McpTabOperationService, SessionGrantRequest, SessionKind, TabOpResult,
+};
 use labonair_sftp::{SftpBrowserService, SftpSessionService};
 use labonair_ssh::{
     SshConnectRequest, SshConnectionService, SshEventSink, SshPtyService, SshRemoteCommandService,
@@ -401,7 +402,6 @@ pub struct Workspace {
     _meta_sync: Task<()>,
 
     // ── SSH (T07-001) ──────────────────────────────────────────────────────
-    backend: Backend,
     ssh: Arc<dyn SshConnectionService>,
     ssh_pty: Arc<dyn SshPtyService>,
     ssh_remote: Arc<dyn SshRemoteCommandService>,
@@ -411,6 +411,8 @@ pub struct Workspace {
     sftp_browser: Arc<dyn SftpBrowserService>,
     git: Arc<dyn GitService>,
     git_graph_service: Arc<dyn GitGraphService>,
+    mcp_access: Arc<dyn McpSessionAccessService>,
+    mcp_tab_operations: Arc<dyn McpTabOperationService>,
     tokio: TokioHandle,
     host_manager: Entity<HostManagerView>,
     /// Live SSH terminal tabs, keyed by registry session id.
@@ -479,6 +481,8 @@ impl Workspace {
         sftp_browser: Arc<dyn SftpBrowserService>,
         git: Arc<dyn GitService>,
         git_graph_service: Arc<dyn GitGraphService>,
+        mcp_access: Arc<dyn McpSessionAccessService>,
+        mcp_tab_operations: Arc<dyn McpTabOperationService>,
         transfer_service: Arc<dyn TransferService>,
         tokio: TokioHandle,
         agent_access: Entity<AgentAccessStore>,
@@ -571,7 +575,8 @@ impl Workspace {
             _session_save: session_save,
             git,
             git_graph_service,
-            backend,
+            mcp_access,
+            mcp_tab_operations,
             ssh,
             ssh_pty,
             ssh_remote,
@@ -2517,7 +2522,7 @@ impl Workspace {
             if let Some(t) = self.ssh_tabs.remove(&sid) {
                 self.ssh_connection
                     .update(cx, |s, cx| s.remove(&t.ssh_id, cx));
-                let app = self.backend.clone();
+                let mcp_access = self.mcp_access.clone();
                 let ssh = self.ssh.clone();
                 let tunnels = self.ssh_tunnels.clone();
                 let ssh_id = t.ssh_id.clone();
@@ -2525,18 +2530,17 @@ impl Workspace {
                 let tab_key = t.tab_id.to_string();
                 self.tokio.spawn(async move {
                     // Closing a tab revokes any MCP bridge grant that followed it.
-                    let _ = mcp_set_session_grant(
-                        tab_key,
-                        String::new(),
-                        false,
-                        String::new(),
-                        SessionKind::Ssh,
-                        None,
-                        None,
-                        app.clone(),
-                        &app.mcp,
-                    )
-                    .await;
+                    let _ = mcp_access
+                        .set_session_grant(SessionGrantRequest {
+                            tab_id: tab_key,
+                            session_id: String::new(),
+                            granted: false,
+                            label: String::new(),
+                            kind: SessionKind::Ssh,
+                            local_pty_id: None,
+                            host_id: None,
+                        })
+                        .await;
                     let _ = ssh.disconnect(SshSessionId::new(ssh_id)).await;
                     let _ = tunnels.stop(host_id).await;
                 });
@@ -2782,9 +2786,11 @@ impl Workspace {
     /// Push a completed [`TabOpResult`] back to a pending MCP `open_tab` /
     /// `close_tab` tool call waiting on its `oneshot` in `modules::mcp::server`.
     fn respond_mcp_tab_op(&self, request_id: String, result: TabOpResult) {
-        let mcp = self.backend.mcp.clone();
+        let mcp_tab_operations = self.mcp_tab_operations.clone();
         self.tokio.spawn(async move {
-            let _ = mcp_tab_op_response(request_id, result, &mcp).await;
+            let _ = mcp_tab_operations
+                .respond_tab_operation(request_id, result)
+                .await;
         });
     }
 
@@ -2832,31 +2838,36 @@ impl Workspace {
             return;
         };
         let tab_id_str = tab_id.to_string();
-        let app = self.backend.clone();
+        let mcp_access = self.mcp_access.clone();
+        let mcp_tab_operations = self.mcp_tab_operations.clone();
         self.tokio.spawn(async move {
-            let _ = mcp_set_session_grant(
-                tab_id_str.clone(),
-                ssh_id.clone(),
-                true,
-                label,
-                SessionKind::Ssh,
-                None,
-                Some(host_id),
-                app.clone(),
-                &app.mcp,
-            )
-            .await;
-            let _ = mcp_tab_op_response(
-                request_id,
-                TabOpResult {
+            let result = match mcp_access
+                .set_session_grant(SessionGrantRequest {
+                    tab_id: tab_id_str.clone(),
+                    session_id: ssh_id.clone(),
+                    granted: true,
+                    label,
+                    kind: SessionKind::Ssh,
+                    local_pty_id: None,
+                    host_id: Some(host_id),
+                })
+                .await
+            {
+                Ok(()) => TabOpResult {
                     ok: true,
                     session_id: Some(ssh_id),
                     tab_id: Some(tab_id_str),
                     error: None,
                 },
-                &app.mcp,
-            )
-            .await;
+                Err(error) => TabOpResult {
+                    ok: false,
+                    error: Some(error),
+                    ..Default::default()
+                },
+            };
+            let _ = mcp_tab_operations
+                .respond_tab_operation(request_id, result)
+                .await;
         });
     }
 

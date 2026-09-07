@@ -22,7 +22,7 @@ use labonair_backend::modules::mcp::{
 use labonair_backend::modules::settings::mcp::mcp_prefs_load;
 use labonair_backend::App as Backend;
 use labonair_hosts_ui::{open_hosts_window, HostManagerEvent, HostManagerView};
-use labonair_mcp_core::McpSessionAccessService;
+use labonair_mcp_core::{McpSessionAccessService, McpTabOperationService};
 use labonair_notifications::{notification_center, Notification, NotificationCenter};
 use labonair_sftp::{SftpBrowserService, SftpSessionService};
 use labonair_ssh::{
@@ -192,9 +192,11 @@ pub(crate) fn bootstrap(
 
     cx.observe(&background, |_, _, cx| cx.notify()).detach();
 
-    let agent_access_service: Arc<dyn McpSessionAccessService> =
-        Arc::new(BackendMcpSessionAccess::new(backend.clone()));
-    let agent_access = cx.new(|_| AgentAccessStore::new(agent_access_service, tokio.clone()));
+    let backend_mcp = Arc::new(BackendMcpSessionAccess::new(backend.clone()));
+    let agent_access_service: Arc<dyn McpSessionAccessService> = backend_mcp.clone();
+    let mcp_tab_operations: Arc<dyn McpTabOperationService> = backend_mcp;
+    let agent_access =
+        cx.new(|_| AgentAccessStore::new(agent_access_service.clone(), tokio.clone()));
 
     // The Rust `McpState` boots with no persistence of its own — mirror the
     // saved preferences into it once at startup. Port/timeout/auto-revoke first
@@ -299,6 +301,8 @@ pub(crate) fn bootstrap(
             sftp_browser_service.clone(),
             git_service.clone(),
             git_graph_service.clone(),
+            agent_access_service,
+            mcp_tab_operations,
             transfer_service,
             tokio.clone(),
             agent_access.clone(),
