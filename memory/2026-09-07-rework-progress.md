@@ -907,3 +907,9 @@ Workspace surface commands were then moved into
 Snippets and Source Control panel focus, and Git Graph tab opening. Their
 handlers operate on the Workspace entity directly, so the shell no longer
 contains layout/panel orchestration closures or helper methods for them.
+
+The two settings-file editor commands (`OpenProjectSettings` and
+`OpenSettingsJson`) were then moved to the Workspace handler contribution as
+well. Settings continues to own their command metadata, while Workspace owns
+the tab/file lifecycle that executes them; the shell no longer contains these
+cross-surface closures.

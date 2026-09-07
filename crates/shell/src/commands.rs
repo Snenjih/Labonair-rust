@@ -410,36 +410,6 @@ fn compose_builtin_commands(
             });
         },
     );
-    r.register(
-        command_descriptor(
-            CommandId::OpenProjectSettings,
-            "Open Project Settings (.labonair/settings.json)",
-            "Application",
-            always,
-            None,
-            CommandIcon::Edit,
-            None,
-        ),
-        |s, window, cx| {
-            s.workspace
-                .update(cx, |w, cx| w.open_or_create_project_settings(window, cx));
-        },
-    );
-    r.register(
-        command_descriptor(
-            CommandId::OpenSettingsJson,
-            "Open Settings (JSON)",
-            "Application",
-            always,
-            None,
-            CommandIcon::Edit,
-            None,
-        ),
-        |s, window, cx| {
-            s.workspace
-                .update(cx, |w, cx| w.open_or_create_user_settings_json(window, cx));
-        },
-    );
     let keymap_descriptor = command_descriptor(
         CommandId::OpenKeymapJson,
         "Open Keymap (JSON)",

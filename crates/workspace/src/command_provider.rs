@@ -152,6 +152,20 @@ pub fn register_handlers(registry: &mut CommandHandlerRegistry, workspace: &Enti
     });
 
     let workspace_handle = workspace.clone();
+    register!(CommandId::OpenProjectSettings, move |window, cx| {
+        workspace_handle.update(cx, |workspace, cx| {
+            workspace.open_or_create_project_settings(window, cx);
+        });
+    });
+
+    let workspace_handle = workspace.clone();
+    register!(CommandId::OpenSettingsJson, move |window, cx| {
+        workspace_handle.update(cx, |workspace, cx| {
+            workspace.open_or_create_user_settings_json(window, cx);
+        });
+    });
+
+    let workspace_handle = workspace.clone();
     register!(CommandId::ToggleSidebar, move |_window, cx| {
         workspace_handle.update(cx, |workspace, cx| {
             let position = workspace.primary_dock();
