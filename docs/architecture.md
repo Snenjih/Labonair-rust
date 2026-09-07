@@ -60,6 +60,11 @@ palette UI crate. `labonair-keymap` may depend on the command contract to
 publish keymap-owned commands, while the command contract depends only on the
 identity foundation. This one-way direction keeps the graph acyclic.
 
+`labonair-command-palette-runtime` is the GPUI-facing execution bridge. Owner
+crates contribute handlers that capture their own entities and services; the
+shell supplies only the active window/application context. It must not become
+a product facade or contain a central feature dispatch table.
+
 Persisted keymap action names cross into the runtime through one canonical
 resolver (`keymap::runtime::command_for_action`). Platform adapters may map the
 resulting `CommandId` to GPUI actions, but they must not introduce a second
@@ -107,7 +112,7 @@ boundary.
 |---|---|---|---|
 | Settings | `labonair-settings` | `settings-content`, `settings-json`, `settings-macros`, `settings-ui` | Typed values, layered persistence, and value-only settings UI. |
 | Keymap | `labonair-keymap` | `keymap-ui` | Binding descriptors, file data, resolution, conflicts, and a presentation adapter; no feature behavior. |
-| Command palette | `labonair-command-palette-core` | `labonair-command-palette` | UI-free command registry contract; the sibling owns GPUI search/navigation and submenu presentation. |
+| Command palette | `labonair-command-palette-core` | `labonair-command-palette`, `labonair-command-palette-runtime` | UI-free command registry contract; the UI sibling owns search/navigation and submenu presentation, while the runtime sibling carries owner-provided GPUI handlers. |
 | Notifications | `labonair-notifications-core` | `notifications` | Notification registry/state and its GPUI statusbar presentation. |
 | Themes | `labonair-theme` | none yet | Built-in color and icon-theme registries, preview, and selection. |
 | Workspace | `labonair-workspace` | none; panel crates are separate capabilities | Workspace identity, tabs, panes, focus, layout, and session orchestration. |

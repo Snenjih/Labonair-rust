@@ -1,0 +1,12 @@
+[package]
+name = "labonair-command-palette-runtime"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "labonair_command_palette_runtime"
+path = "src/lib.rs"
+
+[dependencies]
+gpui = { workspace = true }
+labonair-command-palette-core = { path = "../command-palette-core" }

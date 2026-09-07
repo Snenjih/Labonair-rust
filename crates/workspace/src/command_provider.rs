@@ -1,19 +1,139 @@
 //! Workspace-owned command metadata.
 //!
-//! The workspace capability contributes its discoverable commands without
-//! importing the palette UI or the application shell. Execution is still
-//! connected by the composition root until command handlers move behind
-//! capability-owned action services.
+//! The workspace capability contributes its discoverable commands and their
+//! executable handlers without importing the palette UI or application shell.
 
+use gpui::Entity;
 use labonair_command_palette_core::{
     CommandContext, CommandDescriptor, CommandIcon, CommandId, CommandProvider, CommandSubmenu,
     SubmenuAction, SubmenuDescriptor, SubmenuItem, SubmenuSnapshot,
 };
+use labonair_command_palette_runtime::CommandHandlerRegistry;
 use labonair_keymap::ShortcutId;
+
+use crate::context::WorkspaceTransition;
+use crate::Workspace;
 
 /// Stable command metadata contributed by the workspace capability.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct WorkspaceCommandProvider;
+
+/// Register executable handlers for commands owned by Workspace.
+///
+/// The callbacks capture only the Workspace entity and therefore remain
+/// usable by any composition root. The shell supplies the active window and
+/// application context when dispatching; it does not define these behaviors.
+pub fn register_handlers(registry: &mut CommandHandlerRegistry, workspace: &Entity<Workspace>) {
+    macro_rules! register {
+        ($id:expr, $handler:expr) => {
+            registry
+                .register($id, $handler)
+                .expect("workspace command handler must have a unique id");
+        };
+    }
+
+    let workspace_handle = workspace.clone();
+    register!(CommandId::NewTerminalTab, move |window, cx| {
+        workspace_handle.update(cx, |workspace, cx| workspace.new_terminal_tab(window, cx));
+    });
+
+    let workspace_handle = workspace.clone();
+    register!(CommandId::NewEditorTab, move |window, cx| {
+        workspace_handle.update(cx, |workspace, cx| workspace.new_editor_tab(window, cx));
+    });
+
+    let workspace_handle = workspace.clone();
+    register!(CommandId::NewPreviewTab, move |window, cx| {
+        workspace_handle.update(cx, |workspace, cx| workspace.new_preview_tab(window, cx));
+    });
+
+    let workspace_handle = workspace.clone();
+    register!(CommandId::Save, move |_window, cx| {
+        workspace_handle.update(cx, |workspace, cx| workspace.save_active(cx));
+    });
+
+    let workspace_handle = workspace.clone();
+    register!(CommandId::CloseTab, move |window, cx| {
+        workspace_handle.update(cx, |workspace, cx| workspace.close_active(window, cx));
+    });
+
+    let workspace_handle = workspace.clone();
+    register!(CommandId::DuplicateTab, move |window, cx| {
+        workspace_handle.update(cx, |workspace, cx| {
+            workspace.duplicate_active_tab(window, cx)
+        });
+    });
+
+    let workspace_handle = workspace.clone();
+    register!(CommandId::CloseOtherTabs, move |window, cx| {
+        workspace_handle.update(cx, |workspace, cx| workspace.close_other_tabs(window, cx));
+    });
+
+    let workspace_handle = workspace.clone();
+    register!(CommandId::NextTab, move |window, cx| {
+        workspace_handle.update(cx, |workspace, cx| workspace.cycle(true, window, cx));
+    });
+
+    let workspace_handle = workspace.clone();
+    register!(CommandId::PrevTab, move |window, cx| {
+        workspace_handle.update(cx, |workspace, cx| workspace.cycle(false, window, cx));
+    });
+
+    let workspace_handle = workspace.clone();
+    register!(CommandId::FocusNextPane, move |window, cx| {
+        workspace_handle.update(cx, |workspace, cx| workspace.focus_next_pane(window, cx));
+    });
+
+    for (id, index) in [
+        (CommandId::SelectTab1, 0),
+        (CommandId::SelectTab2, 1),
+        (CommandId::SelectTab3, 2),
+        (CommandId::SelectTab4, 3),
+        (CommandId::SelectTab5, 4),
+        (CommandId::SelectTab6, 5),
+        (CommandId::SelectTab7, 6),
+        (CommandId::SelectTab8, 7),
+        (CommandId::SelectTab9, 8),
+    ] {
+        let workspace_handle = workspace.clone();
+        register!(id, move |window, cx| {
+            workspace_handle.update(cx, |workspace, cx| {
+                workspace.select_tab_by_index(index, window, cx)
+            });
+        });
+    }
+
+    let workspace_handle = workspace.clone();
+    register!(CommandId::SplitRight, move |window, cx| {
+        workspace_handle.update(cx, |workspace, cx| {
+            workspace.split(crate::pane::SplitDirection::Right, window, cx)
+        });
+    });
+
+    let workspace_handle = workspace.clone();
+    register!(CommandId::SplitDown, move |window, cx| {
+        workspace_handle.update(cx, |workspace, cx| {
+            workspace.split(crate::pane::SplitDirection::Down, window, cx)
+        });
+    });
+
+    let workspace_handle = workspace.clone();
+    register!(CommandId::ClosePane, move |window, cx| {
+        workspace_handle.update(cx, |workspace, cx| workspace.close_pane(window, cx));
+    });
+
+    let workspace_handle = workspace.clone();
+    register!(CommandId::OpenProject, move |_window, cx| {
+        workspace_handle.update(cx, |workspace, cx| workspace.request_open_project(cx));
+    });
+
+    let workspace_handle = workspace.clone();
+    register!(CommandId::ReturnToStandalone, move |_window, cx| {
+        workspace_handle.update(cx, |workspace, cx| {
+            workspace.apply_transition(WorkspaceTransition::ReturnToStandalone, cx);
+        });
+    });
+}
 
 pub fn zoom_submenu() -> SubmenuSnapshot {
     SubmenuSnapshot {

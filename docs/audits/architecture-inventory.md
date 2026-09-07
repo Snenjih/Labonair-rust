@@ -192,10 +192,11 @@ The current Cargo metadata shows several transitional edges that conflict with t
   same Git contracts by injection instead of constructing adapters internally.
 - `panel-scm` and workspace Project Diff consume `labonair-git`; source-control
   execution is supplied by `labonair-git-transport`.
-- `shell/src/commands.rs` and `shell/src/status_items.rs` still contain
-  feature-specific behavior that belongs to owning modules. Panel contribution
-  construction has moved to the panel owners; command execution and status-item
-  ownership remain tracked by R07-002.
+- `shell/src/status_items.rs` still contains workspace-shell status behavior
+  that belongs in owner modules. Panel contribution construction has moved to
+  panel owners. The new `labonair-command-palette-runtime` bridge lets owner
+  crates contribute executable handlers; the old shell behavior table remains
+  transitional until the handlers are removed from `shell/src/commands.rs`.
 - The dedicated Jump Hosts status item was removed. Jump-host routing remains
   part of SSH connection configuration and execution, while host management and
   host selection keep their canonical menu/palette entry points.

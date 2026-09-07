@@ -4205,6 +4205,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "labonair-command-palette-runtime"
+version = "0.1.0"
+dependencies = [
+ "gpui",
+ "labonair-command-palette-core",
+]
+
+[[package]]
 name = "labonair-credentials"
 version = "0.1.0"
 dependencies = [
@@ -4629,6 +4637,7 @@ dependencies = [
  "labonair-background",
  "labonair-command-palette",
  "labonair-command-palette-core",
+ "labonair-command-palette-runtime",
  "labonair-editor",
  "labonair-events",
  "labonair-filesystem",
@@ -4847,6 +4856,7 @@ dependencies = [
  "labonair-background",
  "labonair-command-palette",
  "labonair-command-palette-core",
+ "labonair-command-palette-runtime",
  "labonair-editor",
  "labonair-filesystem",
  "labonair-git",

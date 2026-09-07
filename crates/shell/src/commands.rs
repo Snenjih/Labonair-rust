@@ -1,21 +1,17 @@
-//! `CommandDispatcher` — the single, data-driven definition site for every
-//! Labonair command (T17-007).
+//! `CommandDispatcher` — application composition for command contributions.
 //!
 //! Before T17-007 the shell root carried a ~50-entry
 //! `.on_action(cx.listener(Self::act_*))` chain plus a parallel
-//! `run_palette_command` match: adding a command meant editing four places
-//! (a `menu::` action, an `AppShell::act_*` handler, an `.on_action` line, a
-//! `run_palette_command` arm). Now every command is one
-//! [`CommandDispatcher::register`] call in [`register_builtin_commands`]; the
-//! native menu bar, the key bindings and the command palette all dispatch the
-//! same [`CommandId`] through [`AppShell::dispatch_command`].
+//! `run_palette_command` match. The long-term contract is now split into a
+//! UI-free metadata registry and owner-provided executable handlers; this
+//! module only assembles those contributions and retains transitional shell
+//! adapters for commands that have not moved yet.
 //!
 //! ## Sanctioned deviation (see `docs/architecture.md` §8)
 //!
 //! The UI-free metadata registry lives in `labonair-command-palette-core`.
-//! This module adds only the shell-owned execution closures, keeping the
-//! palette, menu, and keymap on the same descriptor snapshot without making
-//! the core registry depend on GPUI or `AppShell`.
+//! `labonair-command-palette-runtime` carries GPUI-facing owner handlers
+//! without making the core registry depend on GPUI or `AppShell`.
 
 use std::rc::Rc;
 
@@ -25,12 +21,14 @@ use labonair_command_palette_core::{
     CommandContext, CommandDescriptor, CommandIcon, CommandId, CommandProvider,
     CommandRegistry as PaletteCommandRegistry, CommandSubmenu,
 };
+use labonair_command_palette_runtime::CommandHandlerRegistry;
 use labonair_hosts_ui::open_hosts_window;
 use labonair_settings_ui::open_settings_window;
 
 use crate::app_shell::AppShell;
 use crate::menu;
 use crate::pane::SplitDirection;
+use crate::workspace::Workspace;
 
 /// The behaviour half of a command: run against the app root. Boxed so the
 /// registry is plain data and a command can be cloned out before it runs
@@ -49,6 +47,7 @@ pub(crate) struct Command {
 pub(crate) struct CommandDispatcher {
     metadata: PaletteCommandRegistry,
     commands: Vec<Command>,
+    owner_handlers: CommandHandlerRegistry,
 }
 
 /// Native-window metadata owned by the shell composition surface. This is
@@ -97,6 +96,12 @@ impl CommandDispatcher {
         } else if let Err(error) = self.metadata.register(descriptor) {
             panic!("invalid built-in command registry: {error}");
         }
+        // Owner handlers are registered before the compatibility adapters
+        // below. Do not retain a second executable behavior for an owner-owned
+        // command while the old table is being removed incrementally.
+        if self.owner_handlers.handler(id).is_some() {
+            return;
+        }
         self.commands.push(Command {
             id,
             run: Rc::new(run),
@@ -117,6 +122,14 @@ impl CommandDispatcher {
             .iter()
             .find(|c| c.id == id)
             .map(|c| c.run.clone())
+    }
+
+    /// Owner-provided executable handler for `id`, if one is registered.
+    pub(crate) fn owner_handler_for(
+        &self,
+        id: CommandId,
+    ) -> Option<labonair_command_palette_runtime::CommandHandler> {
+        self.owner_handlers.handler(id)
     }
 
     /// Every registered command. Part of the registry read API (also consumed
@@ -150,7 +163,9 @@ impl AppShell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if let Some(run) = self.command_registry.run_for(id) {
+        if let Some(run) = self.command_registry.owner_handler_for(id) {
+            run(window, cx);
+        } else if let Some(run) = self.command_registry.run_for(id) {
             run(self, window, cx);
         }
     }
@@ -256,7 +271,19 @@ fn command_descriptor(
     descriptor
 }
 
+#[allow(dead_code)]
 pub(crate) fn register_builtin_commands() -> CommandDispatcher {
+    compose_builtin_commands(None)
+}
+
+/// Compose the command registry with owner-provided executable handlers.
+pub(crate) fn register_builtin_commands_for(
+    workspace: &gpui::Entity<Workspace>,
+) -> CommandDispatcher {
+    compose_builtin_commands(Some(workspace))
+}
+
+fn compose_builtin_commands(workspace: Option<&gpui::Entity<Workspace>>) -> CommandDispatcher {
     let mut r = CommandDispatcher::default();
     let always = ALWAYS;
 
@@ -277,6 +304,9 @@ pub(crate) fn register_builtin_commands() -> CommandDispatcher {
         &labonair_command_palette_core::command_provider::CommandPaletteCommandProvider,
     );
     r.register_provider(&ShellCommandProvider);
+    if let Some(workspace) = workspace {
+        labonair_workspace::command_provider::register_handlers(&mut r.owner_handlers, workspace);
+    }
 
     // ── Tabs / layout ────────────────────────────────────────────────────
     r.register(

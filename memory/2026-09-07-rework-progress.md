@@ -823,3 +823,14 @@ The pure CWD breadcrumb helpers were moved from `labonair-shell` to
 needs to move, but its path/provider model is now owned by the workspace
 module. Workspace check, dependency validation, formatting, and diff checks
 pass after the move.
+
+## R07-001 — Command handler boundary
+
+Added the neutral `labonair-command-palette-runtime` crate for GPUI-facing
+owner callbacks. Workspace now registers tab, pane, project-lifecycle, and
+focus handlers against its own `Entity<Workspace>` without importing shell or
+palette UI. Shell composition installs those handlers before its transitional
+legacy adapters; an owner handler suppresses the duplicate legacy behavior at
+runtime. The old shell table is still present and must be deleted incrementally
+after the remaining owners (terminal, editor, hosts, themes, settings, and
+shell-native actions) receive equivalent contributions.

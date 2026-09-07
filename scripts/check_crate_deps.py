@@ -75,6 +75,7 @@ ALLOWED = {
         "labonair-theme", "labonair-ui-kit",
     },
     "labonair-command-palette-core": {"labonair-interaction-contracts"},
+    "labonair-command-palette-runtime": {"labonair-command-palette-core"},
     # Platform service — secret storage and encryption, without GPUI or
     # feature-module dependencies.
     "labonair-secrets": {"labonair-filesystem"},
@@ -164,6 +165,7 @@ ALLOWED = {
         "labonair-ssh", "labonair-sftp", "labonair-transfers",
         "labonair-background", "labonair-mcp-core",
         "labonair-command-palette-core", "labonair-keymap",
+        "labonair-command-palette-runtime",
     },
     # rule 3: the only crate that knows every concrete panel type — it also
     # touches the `labonair-panel` contracts crate to register them (T17-001).
@@ -175,6 +177,7 @@ ALLOWED = {
         "labonair-theme", "labonair-ui-kit", "labonair-gpui-ext",
         "labonair-notifications", "labonair-command-palette",
         "labonair-command-palette-core",
+        "labonair-command-palette-runtime",
         "labonair-keymap",
         "labonair-keymap-ui",
         "labonair-workspace", "labonair-settings-ui", "labonair-panel",

@@ -78,9 +78,9 @@ pub struct AppShell {
     pub(crate) titlebar: Entity<Titlebar>,
     pub(crate) panels: ShellPanels,
     pub(crate) status_bar: Entity<StatusBar>,
-    /// Every menu / keybind / palette command. Single definition site:
-    /// [`register_builtin_commands`](crate::commands::register_builtin_commands)
-    /// (T17-007).
+    /// Every menu / keybind / palette command and its owner contributions.
+    /// Metadata comes from providers; executable owner handlers are assembled
+    /// during bootstrap (T17-007 / R07).
     pub(crate) command_registry: CommandDispatcher,
     /// The app's single modal-overlay slot (T17-005).
     pub(crate) modal_layer: Entity<ModalLayer>,

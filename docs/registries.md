@@ -31,9 +31,11 @@ error.
 
 The command registry contract is intentionally UI-free. Capability crates may
 depend on `labonair-command-palette-core` to publish metadata, while the
-palette UI depends on the contract and only renders its snapshots. Stable
-shortcut identities live in `labonair-interaction-contracts`, so the command
-core and keymap runtime can depend on the same foundation without a cycle.
+palette UI depends on the contract and only renders its snapshots. Executable
+owner callbacks use the separate `labonair-command-palette-runtime` bridge;
+that bridge knows GPUI but not the shell or any product module. Stable shortcut
+identities live in `labonair-interaction-contracts`, so the command core,
+runtime, and keymap can depend on the same foundation without a cycle.
 
 ## Command registry
 
