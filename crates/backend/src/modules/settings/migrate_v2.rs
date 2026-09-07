@@ -53,7 +53,6 @@ use std::path::Path;
 
 use labonair_settings_content::{
     appearance::AppearanceContent,
-    connections::ConnectionsContent,
     editor::EditorContent,
     file_manager::FileManagerContent,
     general::{self, GeneralContent},
@@ -347,8 +346,6 @@ fn editor_from(p: &Preferences, e: &EditorPrefs) -> EditorContent {
 
 fn file_manager_from(p: &Preferences) -> FileManagerContent {
     FileManagerContent {
-        sftp_show_hidden_files: Some(p.sftp_show_hidden_files),
-        sftp_show_up_folder: Some(p.sftp_show_up_folder),
         explorer_show_hidden_by_default: Some(p.explorer_show_hidden_by_default),
         // Zed-parity Phase 3 tree options — no v1 `Preferences` equivalent, so
         // a migrated file just inherits the shipped defaults.
@@ -360,32 +357,6 @@ fn file_manager_from(p: &Preferences) -> FileManagerContent {
             .explorer_fold_single_child_dirs,
         explorer_git_decorations: FileManagerContent::defaults().explorer_git_decorations,
         scm_file_tree: FileManagerContent::defaults().scm_file_tree,
-        sftp_column_size: Some(p.sftp_column_size),
-        sftp_column_modified: Some(p.sftp_column_modified),
-        sftp_column_permissions: Some(p.sftp_column_permissions),
-        sftp_column_type: Some(p.sftp_column_type),
-        sftp_remote_edit_show_transfers: Some(p.sftp_remote_edit_show_transfers),
-        sftp_max_remote_file_size_mb: Some(p.sftp_max_remote_file_size_mb),
-        sftp_font_size: Some(p.sftp_font_size),
-        sftp_max_concurrent_transfers: Some(p.sftp_max_concurrent_transfers),
-        sftp_default_conflict_resolution: Some(p.sftp_default_conflict_resolution.clone()),
-        sftp_chunk_size_kb: Some(p.sftp_chunk_size_kb),
-        sftp_on_folder_file_error: Some(p.sftp_on_folder_file_error.clone()),
-    }
-}
-
-fn connections_from(p: &Preferences) -> ConnectionsContent {
-    ConnectionsContent {
-        host_ping_interval: Some(p.host_ping_interval),
-        ssh_connect_timeout_secs: Some(p.ssh_connect_timeout_secs),
-        ssh_auto_reconnect: Some(p.ssh_auto_reconnect),
-        ssh_auto_reconnect_delay: Some(p.ssh_auto_reconnect_delay),
-        ssh_auto_reconnect_max_attempts: Some(p.ssh_auto_reconnect_max_attempts),
-        explorer_remote_poll_interval: Some(p.explorer_remote_poll_interval),
-        explorer_auto_reconnect: Some(p.explorer_auto_reconnect),
-        explorer_idle_session_timeout_min: Some(p.explorer_idle_session_timeout_min),
-        explorer_max_idle_sessions: Some(p.explorer_max_idle_sessions),
-        explorer_max_cached_remote_scopes: Some(p.explorer_max_cached_remote_scopes),
     }
 }
 
@@ -467,6 +438,43 @@ const REMOVED_EDITOR_FIELDS: &[&str] = &[
     "editorAutoSaveDelay",
     "editorAutocompleteDebounceMs",
     "editorMaxFileSizeMb",
+];
+
+/// Legacy SFTP and transfer preferences now owned by the SFTP/transfer
+/// runtime, not by the general Settings value store. The current native
+/// transfer worker keeps its own validated runtime policy.
+#[cfg_attr(not(test), allow(dead_code))]
+const REMOVED_FILE_MANAGER_FIELDS: &[&str] = &[
+    "sftpShowHiddenFiles",
+    "sftpShowUpFolder",
+    "sftpColumnSize",
+    "sftpColumnModified",
+    "sftpColumnPermissions",
+    "sftpColumnType",
+    "sftpRemoteEditShowTransfers",
+    "sftpMaxRemoteFileSizeMb",
+    "sftpFontSize",
+    "sftpMaxConcurrentTransfers",
+    "sftpDefaultConflictResolution",
+    "sftpChunkSizeKb",
+    "sftpOnFolderFileError",
+];
+
+/// Legacy connection timing preferences had no native Settings consumer.
+/// Connection definitions and runtime policy belong to their transport/Hosts
+/// owners and remain readable here only for old configuration files.
+#[cfg_attr(not(test), allow(dead_code))]
+const REMOVED_CONNECTION_FIELDS: &[&str] = &[
+    "hostPingInterval",
+    "sshConnectTimeoutSecs",
+    "sshAutoReconnect",
+    "sshAutoReconnectDelay",
+    "sshAutoReconnectMaxAttempts",
+    "explorerRemotePollInterval",
+    "explorerAutoReconnect",
+    "explorerIdleSessionTimeoutMin",
+    "explorerMaxIdleSessions",
+    "explorerMaxCachedRemoteScopes",
 ];
 
 /// Legacy appearance value converted to the current typed scale field before
@@ -686,10 +694,6 @@ pub fn migrate_settings_v1_to_v2(dir: &Path) -> Result<SettingsV2Outcome, String
         (
             "fileManager",
             serde_json::to_value(file_manager_from(&prefs)).map_err(|e| e.to_string())?,
-        ),
-        (
-            "connections",
-            serde_json::to_value(connections_from(&prefs)).map_err(|e| e.to_string())?,
         ),
         (
             "workspace",
@@ -1066,6 +1070,8 @@ mod tests {
         accounted.extend(REMOVED_GENERAL_FIELDS.iter().copied());
         accounted.extend(REMOVED_APPEARANCE_FIELDS.iter().copied());
         accounted.extend(REMOVED_EDITOR_FIELDS.iter().copied());
+        accounted.extend(REMOVED_FILE_MANAGER_FIELDS.iter().copied());
+        accounted.extend(REMOVED_CONNECTION_FIELDS.iter().copied());
         accounted.extend(MOVED_APPEARANCE_FIELDS.iter().copied());
         accounted.extend(UNKNOWN_PREFERENCES_FIELDS.iter().copied());
 

@@ -35,7 +35,7 @@ const INITIAL_PROJECT_SETTINGS: &str =
 /// addition, not a reason to open either area's existing fields, which are
 /// all either credentials-adjacent or network endpoints); `mcp`
 /// (bridge port/enable — explicitly forbidden by the task); `connections`
-/// (SSH/explorer network timing knobs); `keymap` (explicitly forbidden);
+/// (legacy SSH/explorer network timing knobs); `keymap` (explicitly forbidden);
 /// `appearance`, `file_manager`, `personalization` (cosmetic, but not asked
 /// for — narrower is cheaper to widen later than a leak is to undo, per the
 /// task's own `## Notizen`).

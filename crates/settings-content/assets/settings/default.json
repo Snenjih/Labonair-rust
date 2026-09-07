@@ -96,41 +96,13 @@
   },
 
   "fileManager": {
-    "sftpShowHiddenFiles": false,
-    "sftpShowUpFolder": true,
     "explorerShowHiddenByDefault": false,
     "explorerIndentGuides": true,
     "explorerStickyAncestors": true,
     "explorerAutoRevealActiveFile": false,
     "explorerFoldSingleChildDirs": false,
     "explorerGitDecorations": true,
-    "scmFileTree": false,
-    "sftpColumnSize": true,
-    "sftpColumnModified": true,
-    "sftpColumnPermissions": true,
-    "sftpColumnType": false,
-    "sftpRemoteEditShowTransfers": true,
-    "sftpMaxRemoteFileSizeMb": 5,
-    "sftpFontSize": 13,
-    "sftpMaxConcurrentTransfers": 2,
-    // "ask" | "overwrite" | "skip".
-    "sftpDefaultConflictResolution": "ask",
-    "sftpChunkSizeKb": 64,
-    // "ask" | "skip" | "abort".
-    "sftpOnFolderFileError": "ask"
-  },
-
-  "connections": {
-    "hostPingInterval": 60,
-    "sshConnectTimeoutSecs": 10,
-    "sshAutoReconnect": false,
-    "sshAutoReconnectDelay": 5,
-    "sshAutoReconnectMaxAttempts": 3,
-    "explorerRemotePollInterval": 20,
-    "explorerAutoReconnect": false,
-    "explorerIdleSessionTimeoutMin": 5,
-    "explorerMaxIdleSessions": 3,
-    "explorerMaxCachedRemoteScopes": 5
+    "scmFileTree": false
   },
 
   "workspace": {

@@ -58,7 +58,6 @@ pub fn parse(json: &str) -> (SettingsContent, Vec<FieldError>) {
         terminal: area!("terminal"),
         editor: area!("editor"),
         file_manager: area!("fileManager"),
-        connections: area!("connections"),
         workspace: area!("workspace"),
     };
 

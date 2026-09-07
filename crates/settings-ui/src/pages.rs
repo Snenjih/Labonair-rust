@@ -183,7 +183,6 @@ fn groups_for(area_key: &str) -> &'static [Group] {
         "general" => GENERAL_GROUPS,
         "appearance" => APPEARANCE_GROUPS,
         "file_manager" => FILE_MANAGER_GROUPS,
-        "connections" => CONNECTIONS_GROUPS,
         "workspace" => WORKSPACE_GROUPS,
         _ => &[],
     }
@@ -301,14 +300,7 @@ const EDITOR_DISPLAY: &[Group] = &[
 ];
 
 const FILE_MANAGER_GROUPS: &[Group] = &[
-    (
-        "Browsing",
-        &[
-            "sftpShowHiddenFiles",
-            "sftpShowUpFolder",
-            "explorerShowHiddenByDefault",
-        ],
-    ),
+    ("Browsing", &["explorerShowHiddenByDefault"]),
     (
         "Explorer tree",
         &[
@@ -320,55 +312,6 @@ const FILE_MANAGER_GROUPS: &[Group] = &[
         ],
     ),
     ("Source Control", &["scmFileTree"]),
-    (
-        "Columns",
-        &[
-            "sftpColumnSize",
-            "sftpColumnModified",
-            "sftpColumnPermissions",
-            "sftpColumnType",
-        ],
-    ),
-    (
-        "Remote Editing",
-        &[
-            "sftpRemoteEditShowTransfers",
-            "sftpMaxRemoteFileSizeMb",
-            "sftpFontSize",
-        ],
-    ),
-    (
-        "Transfers",
-        &[
-            "sftpMaxConcurrentTransfers",
-            "sftpDefaultConflictResolution",
-            "sftpChunkSizeKb",
-            "sftpOnFolderFileError",
-        ],
-    ),
-];
-
-const CONNECTIONS_GROUPS: &[Group] = &[
-    ("Host Availability", &["hostPingInterval"]),
-    (
-        "SSH Terminal Sessions",
-        &[
-            "sshConnectTimeoutSecs",
-            "sshAutoReconnect",
-            "sshAutoReconnectDelay",
-            "sshAutoReconnectMaxAttempts",
-        ],
-    ),
-    (
-        "Remote File Browsing",
-        &[
-            "explorerRemotePollInterval",
-            "explorerAutoReconnect",
-            "explorerIdleSessionTimeoutMin",
-            "explorerMaxIdleSessions",
-            "explorerMaxCachedRemoteScopes",
-        ],
-    ),
 ];
 
 const WORKSPACE_GROUPS: &[Group] = &[
@@ -428,7 +371,6 @@ mod tests {
         "terminal",
         "editor",
         "file_manager",
-        "connections",
         "workspace",
     ];
 

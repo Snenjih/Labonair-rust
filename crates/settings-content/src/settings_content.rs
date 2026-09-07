@@ -15,7 +15,6 @@ pub mod areas;
 pub mod fallible;
 
 pub mod appearance;
-pub mod connections;
 pub mod editor;
 pub mod file_manager;
 pub mod general;
@@ -38,7 +37,6 @@ pub use labonair_settings_macros::MergeFrom;
 use serde::{Deserialize, Serialize};
 
 use appearance::AppearanceContent;
-use connections::ConnectionsContent;
 use editor::EditorContent;
 use file_manager::FileManagerContent;
 use general::GeneralContent;
@@ -60,7 +58,6 @@ pub struct SettingsContent {
     pub editor: EditorContent,
     #[serde(rename = "fileManager")]
     pub file_manager: FileManagerContent,
-    pub connections: ConnectionsContent,
     pub workspace: WorkspaceContent,
 }
 
@@ -75,7 +72,6 @@ impl SettingsContent {
             terminal: TerminalContent::defaults(),
             editor: EditorContent::defaults(),
             file_manager: FileManagerContent::defaults(),
-            connections: ConnectionsContent::defaults(),
             workspace: WorkspaceContent::defaults(),
         }
     }
@@ -97,7 +93,6 @@ mod tests {
         "terminal",
         "editor",
         "file_manager",
-        "connections",
         "workspace",
     ];
 

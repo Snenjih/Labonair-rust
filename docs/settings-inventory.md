@@ -59,10 +59,8 @@ means a runtime module, not merely serialization or the generated Settings UI.
 | `editor` | `editorVimMode`, `vimHlsearch`, `vimIncsearch`, `vimSmartcase` | editor Vim runtime; Global + safe Project values | Keep |
 | `editor` | `editorTheme` | syntax-theme selection persistence; Global + safe Project values | Keep as value, no management page |
 | `fileManager` | `explorerShowHiddenByDefault`, `explorerIndentGuides`, `explorerStickyAncestors`, `explorerAutoRevealActiveFile`, `explorerFoldSingleChildDirs`, `explorerGitDecorations`, `scmFileTree` | Explorer/SCM owners; Global + safe Project values | Keep |
-| `fileManager` | `sftpShowHiddenFiles`, `sftpShowUpFolder`, `sftpColumnSize`, `sftpColumnModified`, `sftpColumnPermissions`, `sftpColumnType`, `sftpFontSize` | SFTP browser owner; current consumers need completion/tests | Review |
-| `fileManager` | `sftpRemoteEditShowTransfers`, `sftpMaxRemoteFileSizeMb`, `sftpMaxConcurrentTransfers`, `sftpDefaultConflictResolution`, `sftpChunkSizeKb`, `sftpOnFolderFileError` | transfer/SFTP policy; no complete native consumer yet | Move to SFTP/transfers owner, then remove duplicates |
-| `connections` | `hostPingInterval`, `sshConnectTimeoutSecs`, `sshAutoReconnect`, `sshAutoReconnectDelay`, `sshAutoReconnectMaxAttempts` | SSH/host transport policy; Global; never host definitions | Keep only after transport contract tests |
-| `connections` | `explorerRemotePollInterval`, `explorerAutoReconnect`, `explorerIdleSessionTimeoutMin`, `explorerMaxIdleSessions`, `explorerMaxCachedRemoteScopes` | remote Explorer session policy; no complete native consumer found | Review, likely Move or Remove |
+| `fileManager` | `sftpShowHiddenFiles`, `sftpShowUpFolder`, `sftpColumnSize`, `sftpColumnModified`, `sftpColumnPermissions`, `sftpColumnType`, `sftpFontSize` | no current native SFTP-browser Settings consumer | Remove; legacy input remains deserializable only |
+| `fileManager` | `sftpRemoteEditShowTransfers`, `sftpMaxRemoteFileSizeMb`, `sftpMaxConcurrentTransfers`, `sftpDefaultConflictResolution`, `sftpChunkSizeKb`, `sftpOnFolderFileError` | runtime transfer policy belongs to the SFTP/transfer owner | Remove from Settings; future owner defines its own typed policy |
 | `workspace` | `commandPaletteSearchMode`, `commandPaletteShowRecent`, `commandPaletteHistorySize`, `commandPaletteOpacity`, `commandPalettePosition`, `commandPaletteCloseOnOverlayClick` | command-palette runtime; Global | Keep as palette values, no registration state |
 | `workspace` | `commandPaletteBlur`, `commandPaletteAnimation` | palette rendering policy; GPUI consumer must be confirmed | Review |
 | `workspace` | `gitStatusPollIntervalMs` | Git panel polling; Global | Keep |
@@ -72,9 +70,9 @@ means a runtime module, not merely serialization or the generated Settings UI.
 
 1. Add focused consumer tests for every **Keep**/**Review** field whose runtime
    owner is currently indirect.
-2. Move Background and workspace layout state behind their owning module
+2. Keep Background and workspace layout state behind their owning module
    contracts, preserving existing user data with explicit migrations. Both
-   owner paths are now active; remaining work is consumer proof and removal of
+   owner paths are active; remaining work is consumer proof and removal of
    other legacy fields.
 3. Remove confirmed legacy/unsupported fields from the typed model and UI;
    retain unknown legacy JSON according to the migration policy.

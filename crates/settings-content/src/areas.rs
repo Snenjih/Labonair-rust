@@ -67,13 +67,6 @@ pub const AREAS: &[AreaMeta] = &[
         target_module: "file_manager",
     },
     AreaMeta {
-        key: "connections",
-        title: "Connections",
-        slug: "connections",
-        kind: AreaKind::Generated,
-        target_module: "connections",
-    },
-    AreaMeta {
         key: "workspace",
         title: "Workspace",
         slug: "workspace",

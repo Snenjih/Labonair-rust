@@ -55,7 +55,6 @@ The initial categories are intentionally small:
 - Editor
 - Workspace
 - File Manager
-- Connection defaults
 - Updates
 
 Theme and icon-theme selection, keymap editing, and host management are not
