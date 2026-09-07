@@ -54,12 +54,6 @@ pub enum FieldControl {
     Select(&'static [(&'static str, &'static str)]),
     FontFamily,
     Text,
-    /// The "anything else" fallback (rule 3): a raw JSON snippet editor. Used
-    /// for containers (`Vec`, `BTreeMap`, nested structs) that have no
-    /// scalar widget — this is what makes "no `SettingsContent` field is
-    /// unreachable" true mechanically, without a bespoke widget per
-    /// container type.
-    Json,
 }
 
 /// One generated settings row: a stable deep-link path into the merged
@@ -140,7 +134,7 @@ macro_rules! field {
 /// Order is declaration order within each Settings area; page layout
 /// (`pages.rs`) decides on-screen placement, not this list.
 pub fn all_fields() -> Vec<AnyField> {
-    use FieldControl::{Float, FontFamily, Int, Json, Select, Switch, Text};
+    use FieldControl::{Float, FontFamily, Int, Select, Switch, Text};
     vec![
         // ── general ─────────────────────────────────────────────────────
         field!(
@@ -179,20 +173,9 @@ pub fn all_fields() -> Vec<AnyField> {
             "Reopen all tabs, SSH connections, SFTP paths and editor files on the next launch."
         ),
         // ── appearance ──────────────────────────────────────────────────
-        field!(
-            appearance.app_theme,
-            "appTheme",
-            Text,
-            "Active theme id",
-            "JSON theme file id (\"default\" = built-in); managed from the Themes page."
-        ),
-        field!(
-            appearance.theme_variant_overrides,
-            "themeVariantOverrides",
-            Json,
-            "Theme variant overrides",
-            "Per-theme light/dark variant selection; managed from the Themes page."
-        ),
+        // Active app-theme selection and variant overrides remain persisted
+        // values for the Themes owner, but are intentionally not Settings UI
+        // fields. The Themes palette is their only management surface.
         field!(
             appearance.app_font_size,
             "appFontSize",

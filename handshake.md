@@ -12,6 +12,9 @@ operation-error surface. The Explorer clipboard strip and editor conflict
 banner are actionable decision surfaces. The AI error model was corrected in
 the current working tree so it no longer points to the removed Settings → AI
 route or assumes a chat error banner; focused `labonair-ai` tests pass. The
+Settings UI audit also removed the editable `appTheme` and
+`themeVariantOverrides` rows while preserving those values for the Themes
+owner; focused Settings-UI tests pass. The
 remaining blockers are unchanged: dynamic palette actions still need the
 R07-002 owner-execution migration, legacy Settings warning classification needs
 R07-003, and native visual capture is blocked by missing Screen Recording

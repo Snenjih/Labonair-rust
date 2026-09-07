@@ -222,7 +222,6 @@ const APPEARANCE_GROUPS: &[Group] = &[
     ),
     ("Layout", &["tabsLocation"]),
     ("Zen Mode", &["zenModeShowHeader", "zenModeShowStatusbar"]),
-    ("Active Theme", &["appTheme", "themeVariantOverrides"]),
 ];
 
 const TERMINAL_MAIN: &[Group] = &[

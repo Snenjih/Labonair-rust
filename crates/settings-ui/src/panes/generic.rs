@@ -267,8 +267,7 @@ impl SettingsView {
                 }))
                 .into_any_element()
             }
-            FieldControl::Text => self.render_text_control(json_path, false, value, c, cx),
-            FieldControl::Json => self.render_text_control(json_path, true, value, c, cx),
+            FieldControl::Text => self.render_text_control(json_path, value, c, cx),
         };
 
         let non_default = origin != OriginBadge::Default;
@@ -349,14 +348,10 @@ impl SettingsView {
             .into_any_element()
     }
 
-    /// `Text`/`Json` share the same click-to-edit text-box widget; `Json`
-    /// round-trips through `serde_json::from_str` instead of storing the raw
-    /// string (the settings-guidelines rule 3 fallback: "a raw JSON snippet
-    /// editor" for any type without a dedicated widget).
+    /// Text fields use the shared click-to-edit text-box widget.
     fn render_text_control(
         &self,
         json_path: &'static str,
-        json_mode: bool,
         value: Option<Value>,
         c: &Palette,
         cx: &mut Context<Self>,
@@ -368,7 +363,6 @@ impl SettingsView {
             .map(|e| e.buffer.clone());
         let display_value = editing.clone().unwrap_or_else(|| match value {
             Some(Value::String(s)) => s,
-            Some(v) if json_mode => v.to_string(),
             _ => String::new(),
         });
         let active = editing.is_some();
@@ -379,7 +373,7 @@ impl SettingsView {
         // `panes/ai.rs`'s provider-key box).
         div()
             .id(SharedString::from(format!("txt-{json_path}")))
-            .w(px(if json_mode { 260.0 } else { 200.0 }))
+            .w(px(200.0))
             .px_2()
             .py(px(3.0))
             .rounded_sm()

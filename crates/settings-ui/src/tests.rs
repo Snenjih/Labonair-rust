@@ -131,5 +131,13 @@ mod cases {
         for removed in ["themes", "hosts", "shortcuts"] {
             assert!(!AREAS.iter().any(|area| area.key == removed));
         }
+
+        let fields = all_fields();
+        for removed in ["appearance.appTheme", "appearance.themeVariantOverrides"] {
+            assert!(
+                !fields.iter().any(|field| field.json_path == removed),
+                "management value `{removed}` must not be an editable Settings field"
+            );
+        }
     }
 }

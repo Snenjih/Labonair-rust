@@ -985,3 +985,10 @@ operation-error surface. The Explorer clipboard strip and editor conflict
 banner are actionable decision surfaces. The AI error model was updated to
 avoid embedding the removed Settings → AI route or a chat-error-banner
 assumption; focused `labonair-ai` tests pass.
+
+The Settings UI audit found that `appTheme` and `themeVariantOverrides` were
+still exposed as editable Appearance fields despite the documented removal of
+theme management from Settings. Those generated rows and their obsolete JSON
+fallback control were removed; the values remain in the typed model only for
+the Themes owner's persistence/preview pipeline. Focused Settings-UI tests
+pass.

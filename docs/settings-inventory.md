@@ -40,7 +40,7 @@ means a runtime module, not merely serialization or the generated Settings UI.
 | `general` | `restoreWindowState`, `defaultStartupTab`, `sessionRestore` | shell/workspace launch and session restore; Global + Project where whitelisted | Keep |
 | `general` | `startupTerminalCount`, `autostart`, `credentialEncryption`, `confirmQuitWithSsh` | no current native runtime consumer or supported workflow | Remove; legacy input remains deserializable only |
 | `general` | `checkForUpdates` | updater launch policy; Global | Keep |
-| `appearance` | `appTheme`, `iconTheme`, `themeVariantOverrides` | theme registry selection persistence; Global; capability-owned registry | Keep as values, no management page |
+| `appearance` | `appTheme`, `iconTheme`, `themeVariantOverrides` | theme registry selection persistence; Global; capability-owned registry | Keep as hidden values, no generated Settings fields or management page |
 | `appearance` | `appFontFamily`, `appFontSize`, `appLineHeight`, `bufferFontFamily`, `bufferFontSize`, `bufferLineHeight`, `uiDensity`, `cornerRadiusScale`, `reduceMotion` | theme metrics/font pipeline; Global | Keep |
 | `appearance` | `backgroundImage`, `backgroundOpacity`, `backgroundBlur`, `backgroundTintColor`, `backgroundTintOpacity` | `labonair-background` store; Global | Removed from Settings model; values migrate to the Background owner |
 | `appearance` | `appCornerRadius` | superseded by `cornerRadiusScale`; no current consumer | Remove; legacy values migrate to `cornerRadiusScale` |

@@ -115,6 +115,9 @@ a separate product decision after the core workflow is stable.
 - [x] The AI error model no longer embeds a removed Settings → AI route or a
       chat-error-banner assumption; callers choose the notification or future
       actionable surface at the capability boundary.
+- [x] Theme registry selections remain persistable values, but `appTheme` and
+      `themeVariantOverrides` are no longer registered as editable Settings
+      fields; theme management now has only the Themes palette surface.
 - [ ] Dynamic palette submenu actions are not yet fully owner-executable:
       `shell/src/actions.rs::handle_palette_event` still interprets theme,
       host, snippet, Git, tab, symbol, color-mode, and status-item actions.
