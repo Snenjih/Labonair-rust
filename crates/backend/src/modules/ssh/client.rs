@@ -363,11 +363,11 @@ pub async fn ssh_connect(
         } else {
             log_step!(app, session_id, "Retrieving credentials from local store…");
             if let Some(cid) = &credential_id {
-                crate::modules::secrets::get_password(&app, secrets, "labonair-cred", cid)
+                crate::modules::secrets::get_password(secrets, "labonair-cred", cid)
                     .ok()
                     .flatten()
             } else {
-                crate::modules::secrets::get_password(&app, secrets, "labonair-app", &host_id)
+                crate::modules::secrets::get_password(secrets, "labonair-app", &host_id)
                     .ok()
                     .flatten()
             }
@@ -379,7 +379,7 @@ pub async fn ssh_connect(
     // For key auth via credential, the passphrase may be stored in the credential's secret.
     let passphrase = if credential_id.is_some() && auth_method == "key" && passphrase.is_none() {
         if let Some(cid) = &credential_id {
-            crate::modules::secrets::get_password(&app, secrets, "labonair-cred", cid)
+            crate::modules::secrets::get_password(secrets, "labonair-cred", cid)
                 .ok()
                 .flatten()
         } else {
@@ -393,7 +393,7 @@ pub async fn ssh_connect(
     let jump = match jump_host_id.as_deref() {
         Some(jid) => {
             log_step!(app, session_id, "Resolving jump host…");
-            Some(resolve_jump_host(hosts_db, secrets, &app, jid)?)
+            Some(resolve_jump_host(hosts_db, secrets, jid)?)
         }
         None => None,
     };
@@ -792,7 +792,6 @@ pub(crate) struct JumpHostParams {
 pub(crate) fn resolve_jump_host(
     hosts_db: &labonair_persistence::Database,
     secrets: &crate::modules::secrets::SecretsState,
-    app: &crate::App,
     jump_host_id: &str,
 ) -> Result<JumpHostParams, LabonairError> {
     let (jh_addr, jh_port, jh_user, jh_auth, jh_key, jh_kai, jh_cred_id): (
@@ -851,11 +850,11 @@ pub(crate) fn resolve_jump_host(
     // Fetch jump host password from keyring
     let jh_pw: Option<String> = if jh_auth == "password" {
         if let Some(ref jcid) = jh_cred_id {
-            crate::modules::secrets::get_password(app, secrets, "labonair-cred", jcid)
+            crate::modules::secrets::get_password(secrets, "labonair-cred", jcid)
                 .ok()
                 .flatten()
         } else {
-            crate::modules::secrets::get_password(app, secrets, "labonair-app", jump_host_id)
+            crate::modules::secrets::get_password(secrets, "labonair-app", jump_host_id)
                 .ok()
                 .flatten()
         }
@@ -1092,11 +1091,11 @@ pub async fn ssh_test_connection(
         if password_override.is_some() {
             password_override
         } else if let Some(cid) = &credential_id {
-            crate::modules::secrets::get_password(&app, secrets, "labonair-cred", cid)
+            crate::modules::secrets::get_password(secrets, "labonair-cred", cid)
                 .ok()
                 .flatten()
         } else {
-            crate::modules::secrets::get_password(&app, secrets, "labonair-app", &host_id)
+            crate::modules::secrets::get_password(secrets, "labonair-app", &host_id)
                 .ok()
                 .flatten()
         }
@@ -1107,7 +1106,7 @@ pub async fn ssh_test_connection(
     // Same credential-sourced-passphrase fallback as `ssh_connect`.
     let passphrase = if credential_id.is_some() && auth_method == "key" && passphrase.is_none() {
         if let Some(cid) = &credential_id {
-            crate::modules::secrets::get_password(&app, secrets, "labonair-cred", cid)
+            crate::modules::secrets::get_password(secrets, "labonair-cred", cid)
                 .ok()
                 .flatten()
         } else {
@@ -1119,7 +1118,7 @@ pub async fn ssh_test_connection(
 
     // Step 3: jump host, if any.
     let jump = match jump_host_id.as_deref() {
-        Some(jid) => Some(resolve_jump_host(hosts_db, secrets, &app, jid)?),
+        Some(jid) => Some(resolve_jump_host(hosts_db, secrets, jid)?),
         None => None,
     };
 

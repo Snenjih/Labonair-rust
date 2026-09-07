@@ -99,8 +99,7 @@ async fn require_non_interactive_auth(app: &crate::App, host_id: &str) -> Result
         Some(cid) => ("labonair-cred", cid),
         None => ("labonair-app", host_id),
     };
-    let has_secret =
-        crate::modules::secrets::get_password(app, secrets, service, account)?.is_some();
+    let has_secret = crate::modules::secrets::get_password(secrets, service, account)?.is_some();
     if !has_secret {
         return Err(
             "this host requires interactive authentication (no stored password/passphrase found) — \

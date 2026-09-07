@@ -190,12 +190,10 @@ fn build_status(state: &McpState, token: Option<String>) -> McpStatus {
 }
 
 pub async fn mcp_get_status(
-    app: crate::App,
     state: &McpState,
     secrets: &crate::modules::secrets::SecretsState,
 ) -> Result<McpStatus, String> {
-    let token =
-        crate::modules::secrets::get_password(&app, secrets, MCP_SERVICE, MCP_TOKEN_ACCOUNT)?;
+    let token = crate::modules::secrets::get_password(secrets, MCP_SERVICE, MCP_TOKEN_ACCOUNT)?;
     Ok(build_status(state, token))
 }
 
@@ -213,13 +211,12 @@ pub async fn mcp_set_enabled(
 ) -> Result<McpStatus, String> {
     if enabled {
         let existing =
-            crate::modules::secrets::get_password(&app, secrets, MCP_SERVICE, MCP_TOKEN_ACCOUNT)?;
+            crate::modules::secrets::get_password(secrets, MCP_SERVICE, MCP_TOKEN_ACCOUNT)?;
         let token = match existing {
             Some(t) => t,
             None => {
                 let t = generate_token();
                 crate::modules::secrets::store_password(
-                    &app,
                     secrets,
                     MCP_SERVICE,
                     MCP_TOKEN_ACCOUNT,
@@ -248,7 +245,7 @@ pub async fn mcp_regenerate_token(
     secrets: &crate::modules::secrets::SecretsState,
 ) -> Result<McpStatus, String> {
     let token = generate_token();
-    crate::modules::secrets::store_password(&app, secrets, MCP_SERVICE, MCP_TOKEN_ACCOUNT, &token)?;
+    crate::modules::secrets::store_password(secrets, MCP_SERVICE, MCP_TOKEN_ACCOUNT, &token)?;
     if state.enabled.load(Ordering::Relaxed) {
         server::ensure_started(app.clone(), state.clone(), token.clone());
     }
@@ -266,9 +263,8 @@ pub async fn mcp_set_port(
 ) -> Result<McpStatus, String> {
     state.port.store(port, Ordering::Relaxed);
     if state.enabled.load(Ordering::Relaxed) {
-        let token =
-            crate::modules::secrets::get_password(&app, secrets, MCP_SERVICE, MCP_TOKEN_ACCOUNT)?
-                .unwrap_or_default();
+        let token = crate::modules::secrets::get_password(secrets, MCP_SERVICE, MCP_TOKEN_ACCOUNT)?
+            .unwrap_or_default();
         server::ensure_started(app.clone(), state.clone(), token.clone());
         return Ok(build_status(state, Some(token)));
     }

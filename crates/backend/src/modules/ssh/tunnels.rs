@@ -164,7 +164,7 @@ pub async fn ssh_start_tunnels(
     }
 
     let password: Option<String> = if auth_method == "password" {
-        crate::modules::secrets::get_password(&app, secrets, "labonair-app", &host_id)
+        crate::modules::secrets::get_password(secrets, "labonair-app", &host_id)
             .ok()
             .flatten()
     } else {
@@ -174,8 +174,7 @@ pub async fn ssh_start_tunnels(
     // Resolve jump host fields (if any) — same helper the terminal/SFTP paths use.
     let jump = match jump_host_id.as_deref() {
         Some(jid) => Some(
-            super::client::resolve_jump_host(hosts_db, secrets, &app, jid)
-                .map_err(|e| e.to_string())?,
+            super::client::resolve_jump_host(hosts_db, secrets, jid).map_err(|e| e.to_string())?,
         ),
         None => None,
     };

@@ -38,7 +38,7 @@ participate in the `App` state graph or in another backend module.
 | `model_prefs` | model preference values and local load/save | none found | AI owner; verify against current AI configuration before moving |
 | `pty` | local PTY state, sessions, events, I/O operations | indirect through backend/MCP | terminal owner; expose a terminal service rather than `App` state |
 | `scrollback` | scrollback persistence helpers | `shell`, `workspace` | moved to `labonair-terminal::scrollback`; Workspace supplies session/retention context |
-| `secrets` | secret-state compatibility API | no external module import found | `labonair-secrets`; remove wrapper after internal adapters accept `SecretsState`/service |
+| `secrets` | secret-state compatibility API | internal SSH/SFTP/MCP adapters | `labonair-secrets`; compatibility wrappers now accept only `SecretsState`, with no aggregate `App` parameter |
 | `settings` | legacy preferences, migrations, MCP prefs | `app`, `shell`, `workspace`; internal backend modules | Settings owns value persistence; Workspace owns live status-bar/panel layout persistence; legacy `barItemPlacements` is migration-only |
 | `sftp` | session adapter, remote operations, transfer worker state/commands | `shell`; internal SSH/transfer adapters | `labonair-sftp` and `labonair-transfers` integration boundaries; SFTP service now receives only SSH state plus the raw event bus |
 | `shell` | local command execution, shell sessions, background processes | no active external module import found | terminal/workspace owner; split local process service from backend facade |
@@ -122,6 +122,12 @@ Connection, trust, config, tester, and tunnel operations still share the
 broader adapter because their helper implementations currently require
 database, secrets, trust, or tunnel state; they remain the next extraction
 surface rather than being hidden behind the PTY/file adapter.
+
+The standalone Secrets compatibility wrappers were narrowed as well. Secret
+reads/writes, encryption access, and service-name migration now receive only
+`SecretsState`; the SSH/SFTP/MCP callers no longer pass `App` merely to
+reach the secret store. Jump-host resolution consequently depends only on its
+database and secrets inputs.
 
 ## Verification commands
 

@@ -122,6 +122,12 @@ use `BackendSshRemoteService` with `SshState + EventBus`. Connection,
 trust, config, tester, and tunnel operations remain in the broader adapter
 until their database/secrets/trust/tunnel dependencies are extracted.
 
+The Secrets compatibility surface was narrowed alongside this work:
+`SecretsState` is now the only state passed to secret reads/writes,
+encryption access, and service-name migration. SSH, SFTP, and MCP no longer
+pass the aggregate App merely to read or store a secret, and jump-host
+resolution now takes only database and secrets inputs.
+
 ## Native visual verification
 
 The exact Rust bundle was opened through its absolute `.app` path. Core

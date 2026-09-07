@@ -191,11 +191,11 @@ pub async fn sftp_connect(
         if password_override.is_some() {
             password_override.clone()
         } else if let Some(ref cid) = credential_id {
-            crate::modules::secrets::get_password(&app, secrets, "labonair-cred", cid)
+            crate::modules::secrets::get_password(secrets, "labonair-cred", cid)
                 .ok()
                 .flatten()
         } else {
-            crate::modules::secrets::get_password(&app, secrets, "labonair-app", &host_id)
+            crate::modules::secrets::get_password(secrets, "labonair-app", &host_id)
                 .ok()
                 .flatten()
         }
@@ -206,7 +206,7 @@ pub async fn sftp_connect(
     // Passphrase from credential secret for key auth.
     let passphrase = if credential_id.is_some() && auth_method == "key" && passphrase.is_none() {
         if let Some(ref cid) = credential_id {
-            crate::modules::secrets::get_password(&app, secrets, "labonair-cred", cid)
+            crate::modules::secrets::get_password(secrets, "labonair-cred", cid)
                 .ok()
                 .flatten()
         } else {
@@ -219,7 +219,7 @@ pub async fn sftp_connect(
     // Resolve jump host fields (if any) — same helper the terminal path uses.
     let jump = match jump_host_id.as_deref() {
         Some(jid) => Some(crate::modules::ssh::client::resolve_jump_host(
-            hosts_db, secrets, &app, jid,
+            hosts_db, secrets, jid,
         )?),
         None => None,
     };

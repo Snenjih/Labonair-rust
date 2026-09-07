@@ -7,7 +7,6 @@
 pub use labonair_secrets::SecretsState;
 
 pub async fn secrets_get(
-    _app: crate::App,
     state: &SecretsState,
     service: String,
     account: String,
@@ -16,7 +15,6 @@ pub async fn secrets_get(
 }
 
 pub async fn secrets_set(
-    _app: crate::App,
     state: &SecretsState,
     service: String,
     account: String,
@@ -26,7 +24,6 @@ pub async fn secrets_set(
 }
 
 pub async fn secrets_delete(
-    _app: crate::App,
     state: &SecretsState,
     service: String,
     account: String,
@@ -35,7 +32,6 @@ pub async fn secrets_delete(
 }
 
 pub async fn secrets_get_all(
-    _app: crate::App,
     state: &SecretsState,
     service: String,
     accounts: Vec<String>,
@@ -43,12 +39,11 @@ pub async fn secrets_get_all(
     labonair_secrets::secrets_get_all(state, service, accounts).await
 }
 
-pub async fn secrets_get_encryption_enabled(app: crate::App) -> Result<bool, String> {
-    labonair_secrets::secrets_get_encryption_enabled(&app.secrets).await
+pub async fn secrets_get_encryption_enabled(state: &SecretsState) -> Result<bool, String> {
+    labonair_secrets::secrets_get_encryption_enabled(state).await
 }
 
 pub async fn secrets_set_encryption_enabled(
-    _app: crate::App,
     state: &SecretsState,
     enabled: bool,
 ) -> Result<(), String> {
@@ -56,12 +51,11 @@ pub async fn secrets_set_encryption_enabled(
 }
 
 #[allow(dead_code)]
-pub(crate) fn migrate_service_names(_app: &crate::App, state: &SecretsState) {
+pub(crate) fn migrate_service_names(state: &SecretsState) {
     labonair_secrets::migrate_service_names(state);
 }
 
 pub(crate) fn store_password(
-    _app: &crate::App,
     state: &SecretsState,
     service: &str,
     account: &str,
@@ -71,7 +65,6 @@ pub(crate) fn store_password(
 }
 
 pub(crate) fn get_password(
-    _app: &crate::App,
     state: &SecretsState,
     service: &str,
     account: &str,

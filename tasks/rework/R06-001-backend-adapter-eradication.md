@@ -143,8 +143,10 @@ boundary still exists; that package must not become a second capability owner.
 - [x] The Git operation surface now receives explicit `EventBus` values, and
       both Git service adapters retain only `SshState` plus `EventBus`.
 - [x] SSH PTY operations are provided by a dedicated adapter with only
-      `SshState); remote command/file operations use a dedicated adapter with
+      `SshState`; remote command/file operations use a dedicated adapter with
       only `SshState` plus `EventBus`.
+- [x] Secrets compatibility wrappers and jump-host resolution no longer take
+      the aggregate `App`; they receive only their actual state dependencies.
 - [ ] Move the remaining contracts and adapters behind injected capability
       services.
 - [ ] Delete the broad `App` facade paths and remaining compatibility edges.
