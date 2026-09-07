@@ -3,15 +3,15 @@
 //! This belongs to the notifications capability rather than the application
 //! shell. The shell only registers the item in the global statusbar registry.
 
-use std::collections::HashSet;
+use std::{collections::HashSet, sync::Arc};
 
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, px, AnyElement, App, ClickEvent, Context, Entity, FocusHandle, Focusable,
+    div, px, AnyElement, App, AppContext, ClickEvent, Context, Entity, FocusHandle, Focusable,
     InteractiveElement, IntoElement, ParentElement, Pixels, Point, Render, SharedString,
     StatefulInteractiveElement, Styled, Window,
 };
-use labonair_panel::{StatusItem, StatusSide};
+use labonair_panel::{AnyStatusItemHandle, StatusItem, StatusItemRegistration, StatusSide};
 use labonair_theme::store::ThemeStore;
 use labonair_ui_kit::{icon_toggle_button, ButtonSize, ButtonVariant, IconName, Palette};
 
@@ -267,5 +267,22 @@ impl StatusItem for NotificationsStatusItem {
                 content,
             ))
             .into_any_element()
+    }
+}
+
+/// Build the notification status-bar contribution for application composition.
+pub fn registration(
+    center: &Entity<NotificationCenter>,
+    theme: &Entity<ThemeStore>,
+    cx: &mut App,
+) -> StatusItemRegistration {
+    let item = cx.new(|cx| NotificationsStatusItem::new(center.clone(), theme.clone(), cx));
+    let handle = item.clone();
+    StatusItemRegistration {
+        id: item.read(cx).id(),
+        default_side: item.read(cx).default_side(),
+        order: item.read(cx).order(),
+        group: item.read(cx).group(),
+        build: Arc::new(move |_window, _cx| Arc::new(handle.clone()) as AnyStatusItemHandle),
     }
 }

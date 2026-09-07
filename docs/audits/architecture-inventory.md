@@ -223,7 +223,8 @@ The current Cargo metadata shows several transitional edges that conflict with t
 - The notification statusbar item has moved into `labonair-notifications`;
   Agent Access now belongs to `labonair-workspace`, and the Transfers item to
   `labonair-transfers-ui`; all permanent feature status items now expose owner
-  registrations, and the remaining shell status-item code is composition.
+  registrations, including notification item construction, and the remaining
+  shell status-item code is composition.
 - The pure CWD breadcrumb path/provider helpers now belong to
   `labonair-workspace::cwd_breadcrumb`; the interactive CWD view now lives in
   `labonair-workspace::cwd_status_item` as well. Cursor Position, Preview URL,

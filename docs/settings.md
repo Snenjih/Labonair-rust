@@ -47,7 +47,7 @@ file is never overwritten.
 
 ## Settings categories
 
-The initial categories are intentionally small:
+The initial categories are intentionally small and currently consist of:
 
 - General
 - Appearance
@@ -55,7 +55,9 @@ The initial categories are intentionally small:
 - Editor
 - Workspace
 - File Manager
-- Updates
+
+Update policy is a General field and is grouped under the General page's
+Updates section; it is not a separate management category.
 
 Theme and icon-theme selection, keymap editing, and host management are not
 Settings pages even when their selected IDs or defaults are persisted through

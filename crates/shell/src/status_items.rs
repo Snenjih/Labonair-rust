@@ -11,10 +11,8 @@
 //! that is T18-005 / T18-006. Items expose `default_side` + `order`; the
 //! `StatusItemRegistry` resolves the rest.
 
-use std::sync::Arc;
-
-use gpui::{App, AppContext, Entity};
-use labonair_panel::{AnyStatusItemHandle, DockPosition, StatusItem, StatusItemRegistration};
+use gpui::{App, Entity};
+use labonair_panel::DockPosition;
 use labonair_transfers_ui::TransfersView;
 use labonair_workspace::agent_access::AgentAccessStore;
 
@@ -40,17 +38,6 @@ pub fn register_builtin_status_items(
     transfers_view: &Entity<TransfersView>,
     cx: &mut App,
 ) {
-    fn reg<T: StatusItem + 'static>(view: &Entity<T>, cx: &App) -> StatusItemRegistration {
-        let handle = view.clone();
-        StatusItemRegistration {
-            id: view.read(cx).id(),
-            default_side: view.read(cx).default_side(),
-            order: view.read(cx).order(),
-            group: view.read(cx).group(),
-            build: Arc::new(move |_window, _cx| Arc::new(handle.clone()) as AnyStatusItemHandle),
-        }
-    }
-
     let dock_btn_left = labonair_workspace::dock_status_item::registration(
         workspace,
         theme,
@@ -69,13 +56,7 @@ pub fn register_builtin_status_items(
         DockPosition::Bottom,
         cx,
     );
-    let notifications_item = cx.new(|cx| {
-        labonair_notifications::NotificationsStatusItem::new(
-            notifications.clone(),
-            theme.clone(),
-            cx,
-        )
-    });
+    let notifications_item = labonair_notifications::registration(notifications, theme, cx);
     let cwd = labonair_workspace::cwd_status_item::registration(workspace, theme, cx);
     let cursor =
         labonair_workspace::status_items::cursor_position_registration(workspace, theme, cx);
@@ -100,7 +81,7 @@ pub fn register_builtin_status_items(
         dock_btn_left,
         dock_btn_right,
         dock_btn_bottom,
-        reg(&notifications_item, cx),
+        notifications_item,
         cwd,
         cursor,
         preview,

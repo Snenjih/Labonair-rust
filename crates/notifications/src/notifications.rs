@@ -12,7 +12,7 @@ use labonair_notifications_core::{NotificationDraft, NotificationKind, Notificat
 
 mod status_item;
 
-pub use status_item::NotificationsStatusItem;
+pub use status_item::{registration, NotificationsStatusItem};
 
 /// Severity of a notification. This is the GPUI-facing spelling retained for
 /// current feature callers; the UI-free registry uses [`NotificationKind`].

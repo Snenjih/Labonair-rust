@@ -3,12 +3,12 @@
 **Status:** Current implementation plan
 **Version:** 4
 
-The rework is through the completed R05 settings reduction. Capability-owned
-registries and surfaces are established for command metadata, settings values,
-backgrounds, hosts, notifications, and theme selection; the shell/workspace
-identity and R05 Settings audit are complete. The next implementation boundary
-is R06: remove the broad backend facade while preserving the established
-capability contracts.
+The rework is through the completed R06 backend-adapter eradication. The
+capability-owned registries and surfaces, shell/workspace identity, settings
+reduction, and explicit module boundaries are established. R07 is now the
+active acceptance and cleanup phase: prove that documentation, ownership,
+dependency direction, and permanent product surfaces agree, then remove the
+remaining transitional shell adapters.
 
 This roadmap replaces the historical task order. Existing completed work remains valuable, but old tasks do not override the contracts in `docs/`.
 
@@ -81,15 +81,15 @@ the current task.
 - register commands from owning modules;
 - build the keymap file/editor and conflict handling.
 
-The implementation is split into two bounded tasks after the workspace
-identity work:
+The implementation was split into two bounded tasks after the workspace
+identity work, and both are complete:
 
 - [`R03-001-command-palette-provider-registry.md`](../tasks/rework/R03-001-command-palette-provider-registry.md)
-  removes the remaining shell-owned command behavior and makes provider-owned
-  dynamic submenus the only palette source.
+  removed the remaining shell-owned product command behavior and made
+  provider-owned dynamic submenus the only palette source.
 - [`R03-002-keymap-runtime-and-editor.md`](../tasks/rework/R03-002-keymap-runtime-and-editor.md)
-  makes the keymap a runtime command-binding capability with contexts,
-  conflicts, persistence, and a dedicated editor surface.
+  made the keymap a runtime command-binding capability with contexts, conflicts,
+  persistence, and a dedicated editor surface.
 
 **Exit:** palette and keymap changes are localized to their registries and
 owning modules; adding a command does not require editing an unrelated central
@@ -106,15 +106,15 @@ table.
 **Exit:** themes, icon themes, and hosts are absent from Settings and fully accessible through their intended surfaces.
 
 The existing global-menu entrypoints are only navigation. Theme selection and
-host management still require bounded implementation tasks after the command
-and keymap contracts are stable; they must not grow new Settings categories.
+host management are now implemented through their bounded tasks; they must not
+grow new Settings categories.
 
-The bounded tasks are:
+The bounded tasks are complete:
 
 - [`R04-001-static-theme-registries-and-preview.md`](../tasks/rework/R04-001-static-theme-registries-and-preview.md)
-  completes built-in color/icon registries, preview, and confirmation.
+  completed built-in color/icon registries, preview, and confirmation.
 - [`R04-002-host-management-and-connection-pickers.md`](../tasks/rework/R04-002-host-management-and-connection-pickers.md)
-  gives saved hosts one management surface and one SSH/SFTP picker flow.
+  gave saved hosts one management surface and one SSH/SFTP picker flow.
 
 ## Phase 6 — Settings reduction
 
@@ -157,11 +157,12 @@ and implemented only through bounded follow-up tasks.
 Remote theme downloads, marketplace behavior, and extension hosting remain
 deferred until a later product decision adds a concrete workflow and owner.
 
-The cross-module visual and workflow gate is
+The cross-module visual and workflow gate is currently active:
 [`R07-001-product-surface-acceptance.md`](../tasks/rework/R07-001-product-surface-acceptance.md).
-Its first bounded follow-up is
+The separately tracked owner-contribution task is
 [`R07-002-owner-registered-surface-contributions.md`](../tasks/rework/R07-002-owner-registered-surface-contributions.md),
-which removes the remaining shell-owned feature contribution tables.
+but it may only be activated after the R07-001 acceptance audit confirms the
+remaining discrepancies.
 
 ## Change and removal gates
 

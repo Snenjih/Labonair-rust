@@ -101,12 +101,15 @@ a separate product decision after the core workflow is stable.
       graph; R06-001 records the removal evidence.
 - [x] Current normative documents identify the product scope, capability
       owners, registry contracts, Settings boundary, and deferred ideas.
-- [ ] `labonair-shell` still owns a central command-execution table and the
-      built-in status-item registration list. The command metadata and panel
-      registries exist, but contribution ownership is not yet fully isolated
-      in the feature modules. The panel contribution boundary is now owner
-      supplied; the remaining command/status work is tracked by
-      [`R07-002-owner-registered-surface-contributions.md`](R07-002-owner-registered-surface-contributions.md).
+- [x] Product command behavior is owner-registered. Workspace, Terminal,
+      Hosts-UI, Settings, Settings-UI, Keymap-UI, Updater-UI, and Command
+      Palette now contribute executable handlers through the typed runtime
+      registry. The shell command table retains only the native Fullscreen
+      action and the debug-only component gallery, which are composition/native
+      concerns rather than product capability behavior.
+- [ ] The remaining status-item and shell composition code still needs the
+      final source audit and visual evidence; any genuine feature-owned residue
+      must be moved through the bounded R07-002 task.
 - [ ] A complete visual state matrix is still required for the permanent
       surfaces. Existing spot checks are not sufficient evidence for the R07
       acceptance gate.

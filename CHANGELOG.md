@@ -20,14 +20,15 @@ versions follow [SemVer](https://semver.org/).
 
 ### Added
 - **Auto-updater — macOS (T15-005).**
-  - `labonair_backend::updater` gained `fetch_manifest` / `download_update`
+  - `labonair-updater` gained `fetch_manifest` / `download_update`
     (streamed, with progress) / `verify_update` (minisign Ed25519, pre-hashed —
     empty key or signature is a hard failure) / `apply_macos_update` (atomic
     `.app` swap with rollback) / `relaunch`, plus a 6 h auto-check backoff.
-  - `labonair_ui::updater::UpdaterView` — native GPUI update dialog
+  - `labonair-updater-ui::UpdaterView` — native GPUI update dialog
     (available / downloading + progress / ready), a startup background check
     gated on the `checkForUpdates` preference, and a **Check for Updates…**
-    entry in the app menu and the command palette. Failures surface as toasts.
+    entry in the app menu and the command palette. Failures surface in the
+    statusbar notification dropdown.
   - `scripts/package-macos.sh` now emits `Labonair_<version>_<arch>.app.tar.gz`
     + a filled `latest.json`, signing the tarball with minisign when
     `LABONAIR_UPDATER_KEY` is set; `.github/workflows/release.yml` uploads both.

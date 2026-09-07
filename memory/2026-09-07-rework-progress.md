@@ -938,3 +938,8 @@ and `NewSshConnection`) were then moved into
 `labonair-hosts-ui::command_provider`. Hosts-UI owns their registration; the
 shell injects only the callback that opens the Hosts command-palette page, where
 the row's primary action is SSH and its `Shift+Enter` secondary action is SFTP.
+
+The notification statusbar registration was then moved into
+`labonair-notifications`. The owner now constructs its own
+`StatusItemRegistration`; shell status composition only collects that typed
+registration alongside the other owner contributions.

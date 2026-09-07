@@ -796,3 +796,13 @@ for the Hosts picker handler.
 typed Hosts picker callback from bootstrap in the runtime path. The callback
 only opens the existing canonical palette page; host selection and transport
 intent remain owned by Hosts-UI and its typed picker snapshots.
+
+## 2026-09-07 — Import `AppContext` for owner status registration
+
+**Build failure:** Moving notification status-item construction into the
+Notifications crate caused `App::new` to be unavailable at the new
+registration boundary, because the extension trait was not imported there.
+
+**Fix:** Imported GPUI's `AppContext` in the Notifications status-item module.
+The shell no longer needs that construction helper or the corresponding
+status-item trait imports.
