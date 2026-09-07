@@ -50,6 +50,21 @@ pub(crate) struct CommandDispatcher {
     commands: Vec<Command>,
 }
 
+/// Native-window metadata owned by the shell composition surface. This is
+/// intentionally the only command provider that lives in `labonair-shell`:
+/// the command targets a GPUI `Window`, not a product capability.
+#[derive(Clone, Copy, Debug, Default)]
+struct ShellCommandProvider;
+
+impl CommandProvider for ShellCommandProvider {
+    fn commands(&self) -> Vec<CommandDescriptor> {
+        vec![
+            CommandDescriptor::new(CommandId::ToggleFullScreen, "Toggle Full Screen", "View")
+                .with_icon(CommandIcon::Square),
+        ]
+    }
+}
+
 impl CommandDispatcher {
     /// Register metadata and behaviour together. The descriptor is the only
     /// source consumed by palette, menus, and keymap tooling.
@@ -78,19 +93,6 @@ impl CommandDispatcher {
     pub(crate) fn register_provider<P: CommandProvider>(&mut self, provider: &P) {
         if let Err(error) = self.metadata.register_provider(provider) {
             panic!("invalid command provider registry: {error}");
-        }
-    }
-
-    /// Publish a palette-only command with no shell execution body.
-    pub(crate) fn register_descriptor(&mut self, descriptor: CommandDescriptor) {
-        let id = descriptor.id;
-        if let Some(registered) = self.metadata.command(id) {
-            assert_eq!(
-                registered, &descriptor,
-                "command metadata differs between its owner provider and shell adapter"
-            );
-        } else if let Err(error) = self.metadata.register(descriptor) {
-            panic!("invalid built-in command registry: {error}");
         }
     }
 
@@ -264,6 +266,7 @@ pub(crate) fn register_builtin_commands() -> CommandDispatcher {
     r.register_provider(
         &labonair_command_palette_core::command_provider::CommandPaletteCommandProvider,
     );
+    r.register_provider(&ShellCommandProvider);
 
     // ── Tabs / layout ────────────────────────────────────────────────────
     r.register(
@@ -942,11 +945,10 @@ pub(crate) fn register_builtin_commands() -> CommandDispatcher {
         },
     );
 
-    // Palette-only entries still belong to the same registry. They have no
-    // shell execution closure because the palette resolves their submenu or
-    // emits a typed selection event itself.
-    {
-        let descriptor = command_descriptor(
+    // Native-window command: the shell owns both metadata and execution
+    // because the action targets GPUI's Window directly.
+    r.register(
+        command_descriptor(
             CommandId::ToggleFullScreen,
             "Toggle Full Screen",
             "View",
@@ -954,9 +956,9 @@ pub(crate) fn register_builtin_commands() -> CommandDispatcher {
             None,
             CommandIcon::Square,
             None,
-        );
-        r.register_descriptor(descriptor);
-    }
+        ),
+        |_s, window, _cx| window.toggle_fullscreen(),
+    );
 
     r
 }

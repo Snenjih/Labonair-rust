@@ -92,14 +92,14 @@ execution are explicitly transitional adapters and are checked against the
 owner metadata at startup; they are not a second discovery source.
 
 The provider slice now also covers workspace tabs and panes, Git commands, and
-snippet commands. The remaining palette-only shell declarations are limited
-to `Toggle Full Screen`, whose execution directly targets the native window
-and therefore remains a shell composition exception. Keymap metadata remains
-the outstanding dependency-inversion item described above.
+snippet commands. There are no remaining palette-only shell declarations:
+`Toggle Full Screen` now has a shell-owned provider because its execution
+directly targets the native window. Keymap metadata remains the outstanding
+dependency-inversion item described above.
 
 The command-palette core now contributes its own global palette command, and
 Settings contributes the remaining settings-toggle metadata. The shell's
-palette-only list is therefore reduced to the single native-window exception.
+palette-only list has been removed entirely.
 
 The legacy `settings::OpenShortcuts` action is now an explicit compatibility
 alias for `zed::OpenKeymap`. It is accepted by keymap validation and normalized

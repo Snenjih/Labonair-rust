@@ -24,10 +24,11 @@ The migrated provider rows were also removed from the palette-only shell table;
 remaining shell descriptors are execution adapters checked against the owner
 snapshot. Next: migrate the remaining metadata and remove those transitional
 declarations. Workspace tabs/panes, Git, and Snippets now also provide
-owner-local metadata; the only remaining palette-only shell row is the native
-window `Toggle Full Screen` exception, while keymap identity inversion remains
-open. Command-palette core now owns the global palette command and Settings
-owns toggle-command metadata. The current branch is `master`.
+owner-local metadata; the palette-only table is now gone. `Toggle Full Screen`
+is a shell-owned provider because it targets the native window directly, while
+keymap identity inversion remains open. Command-palette core now owns the
+global palette command and Settings owns toggle-command metadata. The current
+branch is `master`.
 The legacy `settings::OpenShortcuts` keymap action is now an explicit
 compatibility alias for `zed::OpenKeymap`, accepted by validation but excluded
 from command discovery.
