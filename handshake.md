@@ -24,7 +24,7 @@ Legacy `appCornerRadius` values are converted to the current
 `cornerRadiusScale` field during migration, with the modern value taking
 precedence when both are present.
 
-Current HEAD is `0d1140b` on `master`; the worktree is clean. The first R06
+Current HEAD is `9e3db88` on `master`; the worktree is clean. The first R06
 boundaries removed the backend error facade, removed AI's stale backend edge,
 moved system-font discovery into the Theme owner, deleted the unconsumed
 backend custom-font module, removed the dead legacy bar-placement API while
@@ -51,6 +51,8 @@ the aggregate `App` handle.
 The Transfer service adapter now retains only `TransferWorkerState` as well.
 The SFTP service adapter now retains only `SshState` and `EventBus`; its remote
 operations no longer receive the aggregate `App` for connection-loss events.
+The MCP grant/session adapter now retains only `McpState` and `Database`; host
+revocation and auto-revoke use explicit state plus `EventBus`.
 The General cleanup including `startupTerminalCount` is committed in
 `61abf4c`; the corner-radius normalization is committed in `c6e9890`, the
 unused Appearance values in `d596df2`, and the unwired Editor values in
