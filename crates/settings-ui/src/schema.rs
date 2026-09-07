@@ -541,38 +541,6 @@ pub fn all_fields() -> Vec<AnyField> {
             "Draw vertical indentation guide lines."
         ),
         field!(
-            editor.editor_auto_save,
-            "editorAutoSave",
-            Select(&[
-                ("off", "Off"),
-                ("afterDelay", "After delay"),
-                ("onFocusChange", "On focus change")
-            ]),
-            "Auto save",
-            "When to automatically save edited files."
-        ),
-        field!(
-            editor.editor_auto_save_delay,
-            "editorAutoSaveDelay",
-            Int { min: 100, max: 60_000, step: 100 },
-            "Auto save delay",
-            "Idle time before an auto save when 'after delay' is selected (ms)."
-        ),
-        field!(
-            editor.editor_autocomplete_debounce_ms,
-            "editorAutocompleteDebounceMs",
-            Int { min: 50, max: 2000, step: 50 },
-            "Autocomplete debounce",
-            "Idle time before requesting an AI completion (ms)."
-        ),
-        field!(
-            editor.editor_max_file_size_mb,
-            "editorMaxFileSizeMb",
-            Int { min: 1, max: 100, step: 1 },
-            "Max file size",
-            "Files larger than this open read-only / unhighlighted (MB)."
-        ),
-        field!(
             editor.editor_vim_mode,
             "vimMode",
             Switch,

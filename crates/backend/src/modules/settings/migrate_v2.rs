@@ -337,10 +337,6 @@ fn editor_from(p: &Preferences, e: &EditorPrefs) -> EditorContent {
         editor_show_selection_stats: Some(p.editor_show_selection_stats),
         editor_show_outline: Some(p.editor_show_outline),
         editor_indentation_guides: Some(p.editor_indentation_guides),
-        editor_auto_save: Some(p.editor_auto_save.clone()),
-        editor_auto_save_delay: Some(p.editor_auto_save_delay),
-        editor_autocomplete_debounce_ms: Some(p.editor_autocomplete_debounce_ms),
-        editor_max_file_size_mb: Some(p.editor_max_file_size_mb),
         editor_vim_mode: Some(p.editor_vim_mode),
         editor_theme: Some(p.editor_theme.clone()),
         vim_hlsearch: Some(e.hlsearch),
@@ -461,6 +457,16 @@ const REMOVED_APPEARANCE_FIELDS: &[&str] = &[
     "sidebarGroupSingleTabs",
     "badgesAlwaysVisible",
     "titlebarsIconsPosition",
+];
+
+/// Legacy editor preferences with no native editor consumer. They remain
+/// readable in the backend wire shape solely for old configuration files.
+#[cfg_attr(not(test), allow(dead_code))]
+const REMOVED_EDITOR_FIELDS: &[&str] = &[
+    "editorAutoSave",
+    "editorAutoSaveDelay",
+    "editorAutocompleteDebounceMs",
+    "editorMaxFileSizeMb",
 ];
 
 /// Legacy appearance value converted to the current typed scale field before
@@ -1059,6 +1065,7 @@ mod tests {
         accounted.extend(REMOVED_TERMINAL_FIELDS.iter().copied());
         accounted.extend(REMOVED_GENERAL_FIELDS.iter().copied());
         accounted.extend(REMOVED_APPEARANCE_FIELDS.iter().copied());
+        accounted.extend(REMOVED_EDITOR_FIELDS.iter().copied());
         accounted.extend(MOVED_APPEARANCE_FIELDS.iter().copied());
         accounted.extend(UNKNOWN_PREFERENCES_FIELDS.iter().copied());
 

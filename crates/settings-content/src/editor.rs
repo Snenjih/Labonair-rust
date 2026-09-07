@@ -26,11 +26,6 @@ pub struct EditorContent {
     pub editor_show_selection_stats: Option<bool>,
     pub editor_show_outline: Option<bool>,
     pub editor_indentation_guides: Option<bool>,
-    /// `"off"` | `"afterDelay"` | `"onFocusChange"`.
-    pub editor_auto_save: Option<String>,
-    pub editor_auto_save_delay: Option<u32>,
-    pub editor_autocomplete_debounce_ms: Option<u32>,
-    pub editor_max_file_size_mb: Option<u32>,
     #[serde(rename = "vimMode")]
     pub editor_vim_mode: Option<bool>,
     /// Syntax colour scheme slug.
@@ -63,10 +58,6 @@ impl EditorContent {
             editor_show_selection_stats: Some(true),
             editor_show_outline: Some(false),
             editor_indentation_guides: Some(true),
-            editor_auto_save: Some("off".to_string()),
-            editor_auto_save_delay: Some(1000),
-            editor_autocomplete_debounce_ms: Some(350),
-            editor_max_file_size_mb: Some(10),
             editor_vim_mode: Some(false),
             editor_theme: Some("atomone".to_string()),
             vim_hlsearch: Some(true),

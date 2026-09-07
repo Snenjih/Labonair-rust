@@ -86,11 +86,6 @@
     "editorShowSelectionStats": true,
     "editorShowOutline": false,
     "editorIndentationGuides": true,
-    // "off" | "afterDelay" | "onFocusChange".
-    "editorAutoSave": "off",
-    "editorAutoSaveDelay": 1000,
-    "editorAutocompleteDebounceMs": 350,
-    "editorMaxFileSizeMb": 10,
     "vimMode": false,
     // Syntax colour scheme slug; "auto" (not the default) follows the app theme.
     "editorTheme": "atomone",

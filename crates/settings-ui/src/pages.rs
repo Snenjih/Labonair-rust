@@ -277,17 +277,8 @@ const EDITOR_MAIN: &[Group] = &[
         "Font",
         &["editorFontFamily", "editorFontSize", "editorLineHeight"],
     ),
-    (
-        "Behaviour",
-        &[
-            "editorFormatOnSave",
-            "editorAutoSave",
-            "editorAutoSaveDelay",
-            "editorTabSize",
-        ],
-    ),
+    ("Behaviour", &["editorFormatOnSave", "editorTabSize"]),
     ("Indentation", &["editorIndentWithTabs"]),
-    ("Files", &["editorMaxFileSizeMb"]),
 ];
 
 const EDITOR_DISPLAY: &[Group] = &[
@@ -307,7 +298,6 @@ const EDITOR_DISPLAY: &[Group] = &[
         "On Save",
         &["editorTrimTrailingWhitespace", "editorInsertFinalNewline"],
     ),
-    ("AI Completion", &["editorAutocompleteDebounceMs"]),
 ];
 
 const FILE_MANAGER_GROUPS: &[Group] = &[
