@@ -1,11 +1,11 @@
 mod adapter;
 mod executor;
 
-use crate::modules::sftp::net_error::is_network_error;
-use crate::modules::ssh::shell::shell_quote;
-use crate::modules::ssh::SshState;
 use executor::{resolve_executor, GitExecutor, GIT_NOT_INSTALLED};
 use labonair_events::EventBus;
+use labonair_ssh_transport::net_error::is_network_error;
+use labonair_ssh_transport::shell::shell_quote;
+use labonair_ssh_transport::SshState;
 
 pub use adapter::{BackendGitGraphService, BackendGitService};
 pub use labonair_git::{
@@ -2099,13 +2099,13 @@ rename_src.txt\0\
     // path) that the T09-002 Source-Control branch/stash UI wires up.
 
     struct TestCapabilities {
-        ssh: super::SshState,
+        ssh: labonair_ssh_transport::SshState,
         events: EventBus,
     }
 
     fn test_capabilities() -> TestCapabilities {
         TestCapabilities {
-            ssh: super::SshState::default(),
+            ssh: labonair_ssh_transport::SshState::default(),
             events: EventBus::new(),
         }
     }

@@ -1,6 +1,6 @@
-use super::net_error::is_network_error;
-use crate::modules::ssh::{RushSession, SshState};
 use labonair_events::EventBus;
+use labonair_ssh_transport::net_error::is_network_error;
+use labonair_ssh_transport::{RushSession, SshState};
 use labonair_transfers::{
     ConflictMap, ConflictResolution, TransferDirection, TransferJob, TransferSettings,
     TransferStatus, TransferStepPayload, WorkerMessage,
@@ -466,7 +466,7 @@ fn get_session_and_sftp(
     ssh_state: &SshState,
     session_id: &str,
 ) -> Result<(Arc<RushSession>, Arc<russh_sftp::client::SftpSession>), String> {
-    let session = crate::get_session_arc!(ssh_state, session_id);
+    let session = labonair_ssh_transport::get_session_arc!(ssh_state, session_id);
     let sftp = session
         .sftp
         .get()

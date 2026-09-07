@@ -3,7 +3,7 @@
 /// (close quote, escaped quote, reopen quote), which also handles embedded
 /// newlines, `$()`, backticks, and other shell metacharacters correctly
 /// since nothing inside single quotes is interpreted except `'` itself.
-pub(crate) fn shell_quote(s: &str) -> String {
+pub fn shell_quote(s: &str) -> String {
     format!("'{}'", s.replace('\'', "'\\''"))
 }
 

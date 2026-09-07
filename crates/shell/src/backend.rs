@@ -11,11 +11,11 @@ use std::sync::{Arc, Mutex as StdMutex};
 
 use labonair_backend::modules::mcp::McpState;
 use labonair_backend::modules::snippets::exec::SnippetRunState;
-use labonair_backend::modules::ssh::tunnels::TunnelState;
-use labonair_backend::modules::ssh::{SshState, TrustState};
 use labonair_events::EventBus;
 use labonair_persistence::Database;
 use labonair_secrets::SecretsState;
+use labonair_ssh_transport::tunnels::TunnelState;
+use labonair_ssh_transport::{SshState, TrustState};
 use labonair_transfers::{ConflictMap, TransferSettings, TransferWorkerState, WorkerMessage};
 
 pub struct BackendCompositionInner {

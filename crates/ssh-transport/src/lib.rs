@@ -1,10 +1,19 @@
+//! Concrete russh-based implementation of the SSH capability.
+//!
+//! This crate is a platform/integration sibling of `labonair-ssh`: it owns
+//! sessions, authentication, PTY plumbing, remote commands, tunnels, and the
+//! translation adapters that implement the UI-free SSH contracts. It is kept
+//! separate from the contract crate so consumers do not inherit russh or
+//! platform state merely to describe an SSH operation.
+
 pub mod client;
 pub mod config_parser;
 pub mod contract;
 pub mod exec;
+pub mod net_error;
 pub mod pty;
 pub mod sftp;
-pub(crate) mod shell;
+pub mod shell;
 pub(crate) mod shell_integration;
 pub mod tunnels;
 

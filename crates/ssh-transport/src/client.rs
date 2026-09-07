@@ -789,7 +789,7 @@ where
 /// `ssh_connect`'s jump-host resolution step used to build inline before
 /// being extracted into `resolve_jump_host` so the SFTP/tunnels path (via
 /// `establish_authenticated_session`) can reuse it.
-pub(crate) struct JumpHostParams {
+pub struct JumpHostParams {
     pub address: String,
     pub port: i64,
     pub username: String,
@@ -804,7 +804,7 @@ pub(crate) struct JumpHostParams {
 /// host's own `jump_host_id` (if it has one) is intentionally never queried
 /// here, so chained jump hosts remain unsupported, matching the behavior
 /// this was extracted from.
-pub(crate) fn resolve_jump_host(
+pub fn resolve_jump_host(
     hosts_db: &labonair_persistence::Database,
     secrets: &labonair_secrets::SecretsState,
     jump_host_id: &str,
@@ -937,7 +937,7 @@ async fn connect_transport_maybe_via_jump(
 /// `establish_authenticated_session_from_stream` that first opens the
 /// transport. Used by SFTP connect and tunnels.
 #[allow(clippy::too_many_arguments)]
-pub(crate) async fn establish_authenticated_session(
+pub async fn establish_authenticated_session(
     session_id: &str,
     host_address: &str,
     port: i64,

@@ -171,6 +171,7 @@ ALLOWED = {
         "labonair-panel-ai", "labonair-terminal", "labonair-backend",
         "labonair-events",
         "labonair-settings", "labonair-filesystem", "labonair-ssh",
+        "labonair-ssh-transport",
         "labonair-sftp", "labonair-transfers", "labonair-transfers-ui",
         "labonair-background", "labonair-mcp-core", "labonair-persistence",
         "labonair-updater",
@@ -239,6 +240,13 @@ ALLOWED = {
         "labonair-theme", "labonair-command-palette-core",
         "labonair-terminal-integration",
     },
+    # Concrete russh/platform implementation of the SSH capability. The
+    # contract crate remains UI-free and transport-independent.
+    "labonair-ssh-transport": {
+        "labonair-errors", "labonair-events", "labonair-filesystem",
+        "labonair-persistence", "labonair-secrets", "labonair-ssh",
+        "labonair-terminal-integration",
+    },
     "labonair-editor": {
         "labonair-command-palette-core", "labonair-interaction-contracts",
     },
@@ -250,6 +258,7 @@ ALLOWED = {
         "labonair-credentials", "labonair-snippets", "labonair-git",
         "labonair-ssh", "labonair-sftp", "labonair-transfers",
         "labonair-mcp-core", "labonair-terminal-integration",
+        "labonair-ssh-transport",
     },
     "labonair-ai": {"labonair-filesystem"},
 

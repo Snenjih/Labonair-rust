@@ -2,8 +2,8 @@
 
 use labonair_git::{GitFuture, GitGraphService, GitService};
 
-use crate::modules::ssh::SshState;
 use labonair_events::EventBus;
+use labonair_ssh_transport::SshState;
 
 use super::CommitInfo;
 

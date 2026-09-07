@@ -15,7 +15,7 @@ use labonair_mcp_core::{SessionKind, TabOpResult};
 /// backend `App` just to reach terminal, SSH, persistence, secrets, or events.
 #[derive(Clone)]
 pub struct McpServerAccess {
-    pub(crate) ssh: crate::modules::ssh::SshState,
+    pub(crate) ssh: labonair_ssh_transport::SshState,
     pub(crate) local_terminal: Arc<dyn labonair_mcp_core::LocalTerminalAccess>,
     pub(crate) db: labonair_persistence::Database,
     pub(crate) secrets: Arc<labonair_secrets::SecretsState>,
@@ -24,7 +24,7 @@ pub struct McpServerAccess {
 
 impl McpServerAccess {
     pub fn new(
-        ssh: crate::modules::ssh::SshState,
+        ssh: labonair_ssh_transport::SshState,
         local_terminal: Arc<dyn labonair_mcp_core::LocalTerminalAccess>,
         db: labonair_persistence::Database,
         secrets: Arc<labonair_secrets::SecretsState>,

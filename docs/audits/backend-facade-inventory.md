@@ -43,7 +43,7 @@ participate in the `BackendComposition` state graph or in another backend module
 | `sftp` | session adapter and remote operations; the transport worker remains here temporarily | `shell`; internal SSH/transfer adapters | `labonair-sftp` and `labonair-transfers` integration boundaries; transfer queue state/commands now belong to the canonical transfer crate, while SFTP service receives only SSH state plus the raw event bus and legacy connection orchestration receives EventBus instead of App |
 | `shell` | removed | no active consumers outside its own tests | No canonical runtime consumer existed; future local command/background-process capability must be introduced through its owning Terminal/AI contract rather than another backend module |
 | `snippets` | SSH executor adapter | `shell`; internal backend use | `labonair-snippets` owns the store and execution contracts; the unreferenced backend DB re-export was removed, while SSH execution receives explicit SSH state and EventBus capabilities |
-| `ssh` | SSH state, transport, PTY, remote files, tunnels, config import/export | `shell`; internal Git/SFTP/snippet/MCP use | `labonair-ssh` integration boundary; PTY and remote-file adapters now receive only their required capability state, while connection/config/tunnel extraction remains |
+| `ssh-transport` | SSH state, russh transport, PTY, remote files, tunnels, config import/export | `shell`; internal Git/SFTP/snippet/MCP use | `labonair-ssh-transport` integration sibling; it implements the UI-free `labonair-ssh` contracts and owns the concrete session registry and transport state |
 | `terminal_exec` | removed | no active consumers; MCP owns its live terminal execution path | dead compatibility module and `App` state removed; MCP server remains the active owner |
 | `themes` | removed | no active backend consumers | `labonair-theme` owns the static theme and icon-theme registries; network download is intentionally not part of the current product surface |
 | `transfers` | `BackendTransferService` and event source | `shell` | `labonair-transfers` integration boundary; service receives only `TransferWorkerState`, event translation stays once at adapter edge, and the worker receives explicit SSH/EventBus/queue state |
@@ -121,7 +121,8 @@ receive an explicit `EventBus` rather than the aggregate `App`, and both
 plus `EventBus`. Their constructors remain composition-only extraction
 points while the remaining SSH and MCP server adapters are migrated.
 
-The SSH contract adapters are split by responsibility: PTY write/resize use
+The SSH contract adapters are split by responsibility inside
+`labonair-ssh-transport`: PTY write/resize use
 `BackendSshPtyService` with only `SshState`, remote command/file operations
 use `BackendSshRemoteService` with `SshState + EventBus`, and connection,
 tester, config, and tunnel contracts each have their own named adapter. The

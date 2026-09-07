@@ -1,22 +1,22 @@
 //! Backend adapters for the UI-free SFTP capability contracts.
 
 use super::connection;
-use crate::modules::ssh::sftp as remote;
 use labonair_errors::LabonairError;
 use labonair_events::EventBus;
 use labonair_sftp::{
     BoxFuture, RemoteEntry, SftpBrowserService, SftpSessionHandle, SftpSessionService,
 };
 use labonair_ssh::SshSessionId;
+use labonair_ssh_transport::sftp as remote;
 
 #[derive(Clone)]
 pub struct BackendSftpService {
-    state: crate::modules::ssh::SshState,
+    state: labonair_ssh_transport::SshState,
     events: EventBus,
 }
 
 impl BackendSftpService {
-    pub fn new(state: crate::modules::ssh::SshState, events: EventBus) -> Self {
+    pub fn new(state: labonair_ssh_transport::SshState, events: EventBus) -> Self {
         Self { state, events }
     }
 }

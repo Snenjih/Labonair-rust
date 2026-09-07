@@ -4,7 +4,7 @@
 /// and the SFTP browsing commands so both react identically to a dead
 /// connection — remove the session and let the frontend show a reconnect
 /// affordance instead of a silently stuck pane.
-pub(crate) fn is_network_error(e: &str) -> bool {
+pub fn is_network_error(e: &str) -> bool {
     let lower = e.to_lowercase();
     lower.contains("broken pipe")
         || lower.contains("connection reset")

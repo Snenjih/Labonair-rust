@@ -1,7 +1,7 @@
-use crate::modules::sftp::net_error::is_network_error;
-use crate::modules::ssh::{RushSession, SshState, TrustState};
 use labonair_errors::LabonairError;
 use labonair_events::EventBus;
+use labonair_ssh_transport::net_error::is_network_error;
+use labonair_ssh_transport::{client, RushSession, SshState, TrustState};
 use std::sync::Arc;
 
 /// Proactively pings the lazily-opened SFTP subsystem with a cheap read-only
@@ -219,9 +219,7 @@ pub async fn sftp_connect(
 
     // Resolve jump host fields (if any) — same helper the terminal path uses.
     let jump = match jump_host_id.as_deref() {
-        Some(jid) => Some(crate::modules::ssh::client::resolve_jump_host(
-            hosts_db, secrets, jid,
-        )?),
+        Some(jid) => Some(client::resolve_jump_host(hosts_db, secrets, jid)?),
         None => None,
     };
 
@@ -276,7 +274,7 @@ async fn sftp_connect_inner(
     keep_alive_tries: Option<i64>,
     default_path_sftp: Option<String>,
     password: Option<String>,
-    jump: Option<crate::modules::ssh::client::JumpHostParams>,
+    jump: Option<client::JumpHostParams>,
     existing: Option<Arc<RushSession>>,
     state: SshState,
     trust_state: TrustState,
@@ -287,7 +285,7 @@ async fn sftp_connect_inner(
         None => {
             // Steps 1-6: shared TCP + SSH + auth flow — the exact same helper
             // the terminal path (`ssh_connect_async`) uses.
-            let handle = crate::modules::ssh::client::establish_authenticated_session(
+            let handle = client::establish_authenticated_session(
                 &session_id,
                 &host_address,
                 port,

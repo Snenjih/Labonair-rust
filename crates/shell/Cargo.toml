@@ -47,6 +47,7 @@ labonair-terminal = { path = "../terminal" }
 labonair-backend = { path = "../backend" }
 labonair-persistence = { path = "../persistence" }
 labonair-ssh = { path = "../ssh" }
+labonair-ssh-transport = { path = "../ssh-transport" }
 labonair-sftp = { path = "../sftp" }
 labonair-transfers = { path = "../transfers" }
 labonair-transfers-ui = { path = "../transfers-ui" }

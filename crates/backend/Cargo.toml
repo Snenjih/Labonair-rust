@@ -13,6 +13,7 @@ labonair-persistence = { path = "../persistence" }
 labonair-snippets = { path = "../snippets" }
 labonair-git = { path = "../git" }
 labonair-ssh = { path = "../ssh" }
+labonair-ssh-transport = { path = "../ssh-transport" }
 labonair-sftp = { path = "../sftp" }
 labonair-transfers = { path = "../transfers" }
 labonair-mcp-core = { path = "../mcp-core" }

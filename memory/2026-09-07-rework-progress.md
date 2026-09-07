@@ -740,3 +740,12 @@ the backend focused on concrete transport adapters and makes the shared
 transport available without importing a backend facade. SSH, MCP, and
 Transfers still decode their own raw event names at their adapter boundaries;
 the foundation crate intentionally contains no product event vocabulary.
+
+## R06-001 SSH transport extraction
+
+The concrete SSH module was moved from `labonair-backend` into the new
+`labonair-ssh-transport` integration sibling. It now owns the russh session
+registry, authentication/connection flow, PTY and remote operations, tunnel
+state, config adapters, and SSH contract implementations. Backend Git, SFTP,
+MCP, and snippet adapters consume the transport through explicit public
+types/functions, while `labonair-ssh` remains the UI-free contract crate.

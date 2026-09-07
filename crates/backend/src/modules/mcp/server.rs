@@ -26,11 +26,11 @@ use super::{host_blocks_agent_access, McpState, SessionGrant};
 /// command lands visibly in the terminal pane the user is watching,
 /// indistinguishable from the user typing it themselves.
 async fn write_to_ssh_session(
-    ssh: &crate::modules::ssh::SshState,
+    ssh: &labonair_ssh_transport::SshState,
     session_id: &str,
     data: String,
 ) -> Result<(), String> {
-    let session = crate::get_session_arc!(ssh, session_id);
+    let session = labonair_ssh_transport::get_session_arc!(ssh, session_id);
     let write_half = {
         let guard = session.pty.lock().await;
         guard.as_ref().map(|p| p.write_half.clone())
@@ -42,7 +42,7 @@ async fn write_to_ssh_session(
 /// Writes to either an SSH or local PTY session, based on the grant's kind —
 /// the single dispatch point every action tool funnels through.
 async fn write_to_grant(
-    ssh: &crate::modules::ssh::SshState,
+    ssh: &labonair_ssh_transport::SshState,
     local_terminal: &dyn LocalTerminalAccess,
     grant: &SessionGrant,
     data: String,
@@ -271,7 +271,8 @@ impl LabonairMcpServer {
         match grant.kind {
             SessionKind::Ssh => {
                 let ssh_state = &self.access.ssh;
-                let session = crate::get_session_arc!(ssh_state, &params.session_id);
+                let session =
+                    labonair_ssh_transport::get_session_arc!(ssh_state, &params.session_id);
                 ssh_rx = Some(session.agent_tap.subscribe());
             }
             SessionKind::Local => {
@@ -367,7 +368,8 @@ impl LabonairMcpServer {
         match grant.kind {
             SessionKind::Ssh => {
                 let ssh_state = &self.access.ssh;
-                let session = crate::get_session_arc!(ssh_state, &params.session_id);
+                let session =
+                    labonair_ssh_transport::get_session_arc!(ssh_state, &params.session_id);
                 ssh_rx = Some(session.agent_tap.subscribe());
             }
             SessionKind::Local => {

@@ -26,12 +26,15 @@ pub struct SnippetRunState {
 /// contract. The panel only sees `SshCommandExecutor`; russh and session
 /// storage remain private to this adapter.
 pub struct BackendSshExecutor {
-    ssh_state: crate::modules::ssh::SshState,
+    ssh_state: labonair_ssh_transport::SshState,
     run_state: Arc<SnippetRunState>,
 }
 
 impl BackendSshExecutor {
-    pub fn new(ssh_state: crate::modules::ssh::SshState, run_state: Arc<SnippetRunState>) -> Self {
+    pub fn new(
+        ssh_state: labonair_ssh_transport::SshState,
+        run_state: Arc<SnippetRunState>,
+    ) -> Self {
         Self {
             ssh_state,
             run_state,
@@ -93,7 +96,7 @@ pub async fn snippet_run_ssh(
     run_id: String,
     session_id: String,
     command: String,
-    ssh_state: &crate::modules::ssh::SshState,
+    ssh_state: &labonair_ssh_transport::SshState,
     run_state: &Arc<SnippetRunState>,
     events: EventBus,
 ) -> Result<(), String> {
@@ -146,11 +149,11 @@ async fn run_ssh_with_sink(
     run_id: String,
     session_id: String,
     command: String,
-    ssh_state: crate::modules::ssh::SshState,
+    ssh_state: labonair_ssh_transport::SshState,
     run_state: Arc<SnippetRunState>,
     sink: SnippetRunEventSink,
 ) -> Result<(), String> {
-    let session = crate::get_session_arc!(&ssh_state, &session_id);
+    let session = labonair_ssh_transport::get_session_arc!(&ssh_state, &session_id);
     let channel = session
         .handle
         .channel_open_session()

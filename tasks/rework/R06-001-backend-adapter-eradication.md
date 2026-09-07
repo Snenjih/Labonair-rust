@@ -227,6 +227,10 @@ boundary still exists; that package must not become a second capability owner.
       `RawEvent`) out of `labonair-backend` into the UI-free
       `labonair-events` foundation crate; capability-specific event vocabulary
       remains in the owning contracts.
+- [x] Extracted the concrete SSH/russh module, session state, network-error
+      classification, and SSH contract adapters into the dedicated
+      `labonair-ssh-transport` integration sibling; the backend no longer
+      owns an SSH module.
 - [ ] Move the remaining contracts and adapters behind injected capability
       services.
 - [ ] Delete the broad `App` facade paths and remaining compatibility edges.
