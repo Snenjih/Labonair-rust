@@ -4,14 +4,11 @@ use std::path::Path;
 pub mod editor;
 pub mod mcp;
 pub mod migrate_v2;
-pub mod migrations;
 pub mod preferences;
 
 /// The shared user configuration file used by every native settings writer.
 pub const CONFIG_FILE: &str = "config.json";
 const LEGACY_CONFIG_FILE: &str = "labonair-settings.json";
-const KEY_BAR_ITEM_PLACEMENTS: &str = "barItemPlacements";
-const KEY_STATUS_BAR_ITEM_PLACEMENTS: &str = "statusBarItemPlacements";
 
 fn read_settings_from(dir: &Path) -> Map<String, Value> {
     std::fs::read_to_string(dir.join(CONFIG_FILE))

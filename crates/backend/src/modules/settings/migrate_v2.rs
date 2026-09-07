@@ -24,8 +24,8 @@
 //!   `Preferences`' own doc comment); the new `mcp` area is built from the
 //!   old `"mcp"` key, not from this mirror, since they carry the same values.
 //! * `barItemPlacements` is **not** touched here — it is exclusively
-//!   T18-006's job (`migrate_bar_item_placements`, `statusBarItemPlacements`)
-//!   and has no `SettingsContent` counterpart (documented in
+//!   Workspace chrome migration's job (`statusBarItemPlacements`) and has no
+//!   `SettingsContent` counterpart (documented in
 //!   `content_bridge.rs` too).
 //! * `barLayoutMigrated` has no `SettingsContent` counterpart either; when it
 //!   is `true` it is preserved losslessly under

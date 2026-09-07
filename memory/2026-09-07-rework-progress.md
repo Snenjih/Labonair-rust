@@ -1,5 +1,14 @@
 # Rework progress — 2026-09-07
 
+## Workspace chrome migration boundary
+
+The legacy `barItemPlacements` migration now lives in
+`labonair_workspace::status_placements`. The Workspace owner performs the
+id-remapping, backup, and idempotent conversion into
+`statusBarItemPlacements`; the backend Settings compatibility module and its
+dedicated migration file were removed. Workspace check, Clippy, full tests,
+dependency validation, queue validation, and diff checks pass.
+
 ## SSH connection event boundary
 
 The SSH transport/authentication pipeline was narrowed after the PTY and

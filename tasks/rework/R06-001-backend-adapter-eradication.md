@@ -184,6 +184,9 @@ boundary still exists; that package must not become a second capability owner.
 - [x] The binary no longer declares direct backend, filesystem, or feature
       engine dependencies; startup migration, diagnostics, and updater types
       are exposed through the shell composition boundary.
+- [x] Legacy status-bar placement migration moved into
+      `labonair_workspace::status_placements`; the backend Settings module no
+      longer owns Workspace chrome compatibility data.
 - [x] Secrets compatibility wrappers and jump-host resolution no longer take
       the aggregate `App`; they receive only their actual state dependencies.
 - [ ] Move the remaining contracts and adapters behind injected capability

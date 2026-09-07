@@ -183,7 +183,7 @@ pub(crate) fn bootstrap(
     // `statusBarItemPlacements`. Must run before the first `StatusItemRegistry`
     // build (`register_builtin_status_items` below reloads placements right
     // after registering every item).
-    match labonair_backend::modules::settings::migrations::migrate_bar_item_placements(
+    match labonair_workspace::status_placements::migrate_legacy_status_bar_placements(
         &labonair_filesystem::paths::config_dir(),
     ) {
         Ok(outcome) => tracing::info!("bar item placement migration: {outcome:?}"),

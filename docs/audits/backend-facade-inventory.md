@@ -39,7 +39,7 @@ participate in the `BackendComposition` state graph or in another backend module
 | `pty` | local PTY state, sessions, events, I/O operations | indirect through backend/MCP | terminal owner; expose a terminal service rather than `App` state |
 | `scrollback` | scrollback persistence helpers | `shell`, `workspace` | moved to `labonair-terminal::scrollback`; Workspace supplies session/retention context |
 | `secrets` | secret-state compatibility API | internal SSH/SFTP/MCP adapters | `labonair-secrets`; compatibility wrappers now accept only `SecretsState`, with no aggregate `App` parameter |
-| `settings` | legacy preferences, migrations, MCP prefs | `app`, `shell`, `workspace`; internal backend modules | Settings owns value persistence; Workspace owns live status-bar/panel layout persistence; legacy `barItemPlacements` is migration-only |
+| `settings` | legacy preferences, value migrations, MCP prefs | `shell`; internal backend migration adapters | Settings owns value persistence; Workspace owns live status-bar/panel layout and its legacy placement migration; backend compatibility remains limited to settings-file/value migration until the remaining legacy wire shape is retired |
 | `sftp` | session adapter, remote operations, transfer worker state/commands | `shell`; internal SSH/transfer adapters | `labonair-sftp` and `labonair-transfers` integration boundaries; SFTP service now receives only SSH state plus the raw event bus, and legacy connection orchestration receives EventBus instead of App |
 | `shell` | local command execution, shell sessions, background processes | no active external module import found | terminal/workspace owner; split local process service from backend facade |
 | `snippets` | snippet DB compatibility and SSH executor adapter | `shell`; internal backend use | `labonair-snippets` integration boundary; SSH execution now receives explicit SSH state and EventBus capabilities |
@@ -80,9 +80,10 @@ and focused tests prove that no external consumer remains.
 
 The live `statusBarItemPlacements` and `panelToggleVisibility` blobs now have
 their persistence implementation in `labonair-workspace::status_placements`.
-The backend Settings module retains only the shared JSON helpers needed by
-legacy migrations and value-settings adapters; it no longer owns locks or live
-layout read/write functions.
+The backend Settings module retains only the shared JSON helpers needed by the
+legacy value migrator and its settings-specific compatibility adapters; it no
+longer owns Workspace chrome migration, locks, or live layout read/write
+functions.
 
 Terminal scrollback persistence likewise lives in
 `labonair-terminal::scrollback`. The backend no longer exports a scrollback

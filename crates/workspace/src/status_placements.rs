@@ -88,6 +88,8 @@ pub fn placement_patch(side: Option<StatusSide>, hidden: Option<bool>) -> Value 
 const CONFIG_FILE: &str = "config.json";
 const STATUS_BAR_PLACEMENTS_KEY: &str = "statusBarItemPlacements";
 const PANEL_TOGGLE_VISIBILITY_KEY: &str = "panelToggleVisibility";
+const LEGACY_BAR_PLACEMENTS_KEY: &str = "barItemPlacements";
+const LEGACY_BAR_PLACEMENTS_BACKUP_KEY: &str = "barItemPlacements_legacy";
 
 static WRITE_LOCK: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
 
@@ -110,6 +112,91 @@ fn write_config_to(dir: &Path, settings: &Map<String, Value>) -> Result<(), Stri
     let json = serde_json::to_string_pretty(settings).map_err(|error| error.to_string())?;
     std::fs::write(&temp, json).map_err(|error| error.to_string())?;
     std::fs::rename(&temp, &path).map_err(|error| error.to_string())
+}
+
+/// Result of the one-time migration from the former combined titlebar/statusbar
+/// placement format into the current Workspace-owned statusbar format.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LegacyPlacementMigration {
+    AlreadyMigrated,
+    NothingToMigrate,
+    Migrated { migrated: usize, discarded: usize },
+}
+
+/// Migrate the historical `barItemPlacements` blob before the live status-item
+/// registry is built. Placement data is Workspace chrome state, so this
+/// compatibility transform belongs here rather than in the backend adapter.
+pub fn migrate_legacy_status_bar_placements(
+    dir: &Path,
+) -> Result<LegacyPlacementMigration, String> {
+    let mut settings = read_config_from(dir);
+    if settings.contains_key(STATUS_BAR_PLACEMENTS_KEY) {
+        return Ok(LegacyPlacementMigration::AlreadyMigrated);
+    }
+
+    let Some(legacy) = settings
+        .get(LEGACY_BAR_PLACEMENTS_KEY)
+        .and_then(Value::as_object)
+        .cloned()
+    else {
+        return Ok(LegacyPlacementMigration::NothingToMigrate);
+    };
+
+    let path = dir.join(CONFIG_FILE);
+    if path.exists() {
+        let _ = std::fs::copy(&path, path.with_extension("json.bak"));
+    }
+
+    let id_map = [
+        ("agentAccess", "agent-access"),
+        ("jumpHosts", "jump-hosts"),
+        ("cwdBreadcrumb", "cwd"),
+        ("previewUrl", "preview-url"),
+        ("cursorPosition", "cursor-position"),
+        ("notifications", "notifications"),
+        ("transfers", "transfers"),
+        ("updater", "updater"),
+    ];
+    let mut migrated_map = Map::new();
+    let mut migrated = 0;
+    let mut discarded = 0;
+    for (old_id, entry) in &legacy {
+        let Some((_, new_id)) = id_map.iter().find(|(old, _)| old == old_id) else {
+            tracing::debug!(old_id, "discarding obsolete status placement");
+            discarded += 1;
+            continue;
+        };
+        let Some(side) = entry
+            .get("side")
+            .and_then(Value::as_str)
+            .filter(|side| matches!(*side, "left" | "right"))
+        else {
+            discarded += 1;
+            continue;
+        };
+        migrated_map.insert(
+            (*new_id).to_string(),
+            json!({
+                "side": side,
+                "hidden": entry.get("hidden").and_then(Value::as_bool).unwrap_or(false),
+            }),
+        );
+        migrated += 1;
+    }
+
+    settings.insert(
+        STATUS_BAR_PLACEMENTS_KEY.to_string(),
+        Value::Object(migrated_map),
+    );
+    if let Some(old) = settings.remove(LEGACY_BAR_PLACEMENTS_KEY) {
+        settings.insert(LEGACY_BAR_PLACEMENTS_BACKUP_KEY.to_string(), old);
+    }
+    write_config_to(dir, &settings)?;
+    tracing::info!(migrated, discarded, "migrated legacy status placements");
+    Ok(LegacyPlacementMigration::Migrated {
+        migrated,
+        discarded,
+    })
 }
 
 /// Load current status-bar placement overrides from the workspace config.
@@ -301,6 +388,63 @@ mod tests {
         assert_eq!(loaded.get("snippets"), Some(&json!(false)));
         assert_eq!(loaded.get("ai"), Some(&json!(true)));
 
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn legacy_status_placements_are_remapped_and_backed_up() {
+        let dir = temp_config_dir("legacy-migration");
+        write_config_to(
+            &dir,
+            &serde_json::from_value(json!({
+                "barItemPlacements": {
+                    "cwdBreadcrumb": { "side": "right", "hidden": false },
+                    "jumpHosts": { "side": "left", "hidden": true },
+                    "updater": { "side": "left" },
+                    "obsolete": { "side": "right" }
+                }
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+
+        assert_eq!(
+            migrate_legacy_status_bar_placements(&dir).unwrap(),
+            LegacyPlacementMigration::Migrated {
+                migrated: 3,
+                discarded: 1,
+            }
+        );
+        let settings = read_config_from(&dir);
+        assert_eq!(
+            settings[STATUS_BAR_PLACEMENTS_KEY]["cwd"],
+            json!({ "side": "right", "hidden": false })
+        );
+        assert!(!settings.contains_key(LEGACY_BAR_PLACEMENTS_KEY));
+        assert!(settings.contains_key(LEGACY_BAR_PLACEMENTS_BACKUP_KEY));
+        assert!(dir.join("config.json.bak").exists());
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn legacy_status_migration_is_idempotent() {
+        let dir = temp_config_dir("legacy-idempotent");
+        write_config_to(
+            &dir,
+            &serde_json::from_value(json!({
+                "barItemPlacements": { "updater": { "side": "right" } }
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+
+        migrate_legacy_status_bar_placements(&dir).unwrap();
+        let first = read_config_from(&dir);
+        assert_eq!(
+            migrate_legacy_status_bar_placements(&dir).unwrap(),
+            LegacyPlacementMigration::AlreadyMigrated
+        );
+        assert_eq!(read_config_from(&dir), first);
         let _ = std::fs::remove_dir_all(dir);
     }
 }
