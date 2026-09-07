@@ -2,8 +2,8 @@
 //!
 //! Layout is runtime/session state, not a user preference. It therefore lives
 //! beside the workspace and is persisted independently from `SettingsContent`.
-//! The legacy `workspace.sidebar*`/`dockLayout` values are imported once and
-//! then removed from `config.json`.
+//! The legacy `workspace.sidebar*`/`dockLayout` and v1 `preferences` layout
+//! values are imported once and then removed from `config.json`.
 
 use std::path::{Path, PathBuf};
 
@@ -105,26 +105,38 @@ pub fn migrate_legacy_settings_file(config_dir: &Path) -> Result<bool, String> {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
         Err(error) => return Err(error.to_string()),
     };
-    let mut document: Value = serde_json::from_str(&raw).map_err(|error| error.to_string())?;
+    let mut document = jsonc_parser::parse_to_serde_value(&raw, &Default::default())
+        .map_err(|errors| format!("failed to parse config.json: {errors:?}"))?
+        .ok_or_else(|| "config.json did not contain a JSON value".to_string())?;
     let Some(root) = document.as_object_mut() else {
         return Ok(false);
     };
-    let Some(workspace) = root.get("workspace").and_then(Value::as_object) else {
+    let source_key = ["workspace", "preferences"].into_iter().find(|key| {
+        root.get(*key)
+            .and_then(Value::as_object)
+            .is_some_and(|object| {
+                LEGACY_KEYS
+                    .iter()
+                    .any(|legacy| object.contains_key(*legacy))
+            })
+    });
+    let Some(source_key) = source_key else {
         return Ok(false);
     };
-    if !LEGACY_KEYS.iter().any(|key| workspace.contains_key(*key)) {
-        return Ok(false);
-    }
+    let legacy = root
+        .get(source_key)
+        .and_then(Value::as_object)
+        .ok_or_else(|| format!("{source_key} is not an object"))?;
 
-    let snapshot = snapshot_from_legacy(workspace);
+    let snapshot = snapshot_from_legacy(legacy);
     save_to(&layout, &snapshot)?;
 
-    if let Some(workspace) = root.get_mut("workspace").and_then(Value::as_object_mut) {
+    if let Some(source) = root.get_mut(source_key).and_then(Value::as_object_mut) {
         for key in LEGACY_KEYS {
-            workspace.remove(*key);
+            source.remove(*key);
         }
-        if workspace.is_empty() {
-            root.remove("workspace");
+        if source_key == "workspace" && source.is_empty() {
+            root.remove(source_key);
         }
     }
     let updated = serde_json::to_string_pretty(&document).map_err(|error| error.to_string())?;
@@ -243,6 +255,39 @@ mod tests {
             serde_json::from_str(&std::fs::read_to_string(dir.join(CONFIG_FILE)).unwrap()).unwrap();
         assert!(migrated.get("workspace").is_none());
         assert!(!migrate_legacy_settings_file(&dir).unwrap());
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn legacy_preferences_values_migrate_before_v1_settings_conversion() {
+        let dir = temp_dir("legacy-preferences");
+        let config = serde_json::json!({
+            "preferences": {
+                "sidebarPosition": "right",
+                "sidebarWidth": 340,
+                "sidebarOpen": true,
+                "sidebarActivePanel": "explorer",
+                "terminalFontSize": 16
+            }
+        });
+        std::fs::write(
+            dir.join(CONFIG_FILE),
+            serde_json::to_string_pretty(&config).unwrap(),
+        )
+        .unwrap();
+
+        assert!(migrate_legacy_settings_file(&dir).unwrap());
+        let snapshot = load_from(&dir.join(LAYOUT_FILE)).unwrap();
+        assert_eq!(snapshot.primary_position(), DockPosition::Right);
+        assert_eq!(snapshot.docks[0].size, 340.0);
+        let migrated: Value =
+            serde_json::from_str(&std::fs::read_to_string(dir.join(CONFIG_FILE)).unwrap()).unwrap();
+        let preferences = migrated.get("preferences").unwrap();
+        assert!(!preferences
+            .as_object()
+            .unwrap()
+            .contains_key("sidebarPosition"));
+        assert_eq!(preferences["terminalFontSize"], Value::from(16));
         let _ = std::fs::remove_dir_all(dir);
     }
 }

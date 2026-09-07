@@ -4732,6 +4732,7 @@ dependencies = [
  "dirs 6.0.0",
  "gpui",
  "image",
+ "jsonc-parser",
  "labonair-ai",
  "labonair-backend",
  "labonair-background",

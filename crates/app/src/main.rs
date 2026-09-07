@@ -79,6 +79,11 @@ fn main() {
         if let Err(err) = migrate_config_file_name(&settings_dir) {
             tracing::warn!("config filename migration failed: {err}");
         }
+        match labonair_shell::migrate_legacy_workspace_layout(&settings_dir) {
+            Ok(true) => tracing::info!("migrated legacy workspace layout before Settings"),
+            Ok(false) => {}
+            Err(err) => tracing::warn!("workspace layout migration failed: {err}"),
+        }
         match migrate_settings_v1_to_v2(&settings_dir) {
             Ok(outcome) => tracing::info!("settings v1->v2 migration: {outcome:?}"),
             Err(err) => tracing::warn!("settings v1->v2 migration failed: {err}"),
@@ -89,13 +94,6 @@ fn main() {
         match sparsify_v2_settings(&settings_dir) {
             Ok(outcome) => tracing::info!("settings v2 sparsify: {outcome:?}"),
             Err(err) => tracing::warn!("settings v2 sparsify failed: {err}"),
-        }
-        match labonair_shell::migrate_legacy_workspace_layout(&settings_dir) {
-            Ok(true) => {
-                tracing::info!("migrated legacy workspace layout out of Settings")
-            }
-            Ok(false) => {}
-            Err(err) => tracing::warn!("workspace layout migration failed: {err}"),
         }
     }
 

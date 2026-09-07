@@ -17,6 +17,7 @@ uuid = { workspace = true }
 chrono = { workspace = true }
 tracing = { workspace = true }
 dirs = { workspace = true }
+jsonc-parser = { version = "0.23", features = ["serde"] }
 labonair-theme = { path = "../theme" }
 labonair-background = { path = "../background" }
 labonair-ui-kit = { path = "../ui-kit" }

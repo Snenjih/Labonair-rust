@@ -1,4 +1,4 @@
-//! `workspace` area — command palette, source control, dock / sidebar layout.
+//! `workspace` area — command palette and source control.
 
 use serde::{Deserialize, Serialize};
 
@@ -41,19 +41,6 @@ pub struct WorkspaceContent {
 
     // ── Source control ───────────────────────────────────────────────────
     pub git_status_poll_interval_ms: Option<u32>,
-
-    // ── Dock / sidebar layout reference ─────────────────────────────────
-    /// T17-002 dock layout: JSON array of `DockData` (open / size / zoom /
-    /// active / panel order per edge dock). Empty string = not yet
-    /// persisted.
-    pub dock_layout: Option<String>,
-    pub sidebar_position: Option<String>,
-    pub sidebar_open: Option<bool>,
-    pub sidebar_active_panel: Option<String>,
-    pub sidebar_right_open: Option<bool>,
-    pub sidebar_right_active_panel: Option<String>,
-    pub sidebar_width: Option<u32>,
-    pub sidebar_right_width: Option<u32>,
 }
 
 impl WorkspaceContent {
@@ -69,15 +56,6 @@ impl WorkspaceContent {
             command_palette_close_on_overlay_click: Some(true),
 
             git_status_poll_interval_ms: Some(5000),
-
-            dock_layout: Some(String::new()),
-            sidebar_position: Some("left".to_string()),
-            sidebar_open: Some(true),
-            sidebar_active_panel: Some("explorer".to_string()),
-            sidebar_right_open: Some(false),
-            sidebar_right_active_panel: Some("explorer".to_string()),
-            sidebar_width: Some(225),
-            sidebar_right_width: Some(225),
         }
     }
 }

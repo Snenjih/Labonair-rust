@@ -16,7 +16,8 @@
 //! * `hmLayout`/`hmSort`/`hmCardScale` remain outside Settings because the
 //!   Hosts capability owns its management state.
 //! * `dockLayout`/`sidebar*` (position/open/activePanel/rightOpen/
-//!   rightActivePanel/width/rightWidth) move into the `workspace` area.
+//!   rightActivePanel/width/rightWidth) move into the Workspace-owned
+//!   `workspace-layout.json` file before this Settings migration runs.
 //! * `mcpBridge*`/`mcpMaxCommandTimeoutSecs`/`mcpAutoRevokeMinutes`/
 //!   `mcpNotifyOnActivity` are a documented *mirror* of the separate old
 //!   `"mcp"` top-level key (`McpPrefs` — the authoritative source per
@@ -264,14 +265,6 @@ fn workspace_from(p: &Preferences) -> WorkspaceContent {
         command_palette_history_size: Some(p.command_palette_history_size),
         command_palette_close_on_overlay_click: Some(p.command_palette_close_on_overlay_click),
         git_status_poll_interval_ms: Some(p.git_status_poll_interval_ms),
-        dock_layout: Some(p.dock_layout.clone()),
-        sidebar_position: Some(p.sidebar_position.clone()),
-        sidebar_open: Some(p.sidebar_open),
-        sidebar_active_panel: Some(p.sidebar_active_panel.clone()),
-        sidebar_right_open: Some(p.sidebar_right_open),
-        sidebar_right_active_panel: Some(p.sidebar_right_active_panel.clone()),
-        sidebar_width: Some(p.sidebar_width),
-        sidebar_right_width: Some(p.sidebar_right_width),
     }
 }
 
@@ -416,6 +409,21 @@ const SKIPPED_PREFERENCES_FIELDS: &[&str] = &[
     "hmLayout",
     "hmSort",
     "hmCardScale",
+];
+
+/// Legacy layout values are consumed by `labonair-workspace` before this
+/// migrator runs. They remain in `Preferences` only as a wire-compatibility
+/// shape for old config files and must not re-enter `SettingsContent`.
+#[cfg_attr(not(test), allow(dead_code))]
+const WORKSPACE_LAYOUT_FIELDS: &[&str] = &[
+    "sidebarPosition",
+    "sidebarOpen",
+    "sidebarActivePanel",
+    "sidebarRightOpen",
+    "sidebarRightActivePanel",
+    "sidebarWidth",
+    "sidebarRightWidth",
+    "dockLayout",
 ];
 
 /// Preferences fields with no `SettingsContent` destination, preserved
@@ -1000,6 +1008,7 @@ mod tests {
         ];
         let mut accounted: BTreeSet<&str> = mapped.iter().copied().collect();
         accounted.extend(SKIPPED_PREFERENCES_FIELDS.iter().copied());
+        accounted.extend(WORKSPACE_LAYOUT_FIELDS.iter().copied());
         accounted.extend(UNKNOWN_PREFERENCES_FIELDS.iter().copied());
 
         let all_keys: BTreeSet<&str> = obj.keys().map(|s| s.as_str()).collect();

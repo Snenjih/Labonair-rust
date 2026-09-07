@@ -50,14 +50,15 @@ fields were removed from `AppearanceContent`; legacy v1 and already-sparsified
 v2 files migrate them to the Background-owned top-level storage. The next
 slice moved dock/sidebar runtime state behind `labonair-workspace` into the
 dedicated `workspace-layout.json` owner file. Settings UI and project scope no
-longer expose those fields; legacy v2 values are imported and removed
-idempotently. The compatibility fields remain temporarily in the typed model
-so the v1 migration can still read old files. Full check, Clippy, and tests
-pass; the AI HTTP test required one isolated unsandboxed rerun because its
-local test server cannot bind inside the sandbox. Current HEAD is the commit
-before this uncommitted slice; after commit, the next step is to remove the
-remaining typed dock/sidebar compatibility fields by moving the v1 read path
-directly into the Workspace owner. No blockers.
+longer expose those fields; legacy v1 `preferences` and v2 `workspace` values
+are imported before Settings conversion and removed idempotently. The typed
+compatibility fields and their defaults are now removed from SettingsContent.
+Focused layout, settings-content, and backend migration tests pass. Full check,
+Clippy, dependency, queue, formatting, and diff gates are green; the AI HTTP
+test required one isolated unsandboxed rerun because its local test server
+cannot bind inside the sandbox. Current HEAD is the commit before this second
+R05 slice; after commit, continue with consumer proof and removal of the next
+confirmed legacy settings group. No blockers.
 
 `R02-003` is complete. The user confirmed the native Rust shell visual state
 is acceptable, closing the final visual acceptance criterion. The project and

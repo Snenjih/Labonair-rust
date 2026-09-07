@@ -278,3 +278,12 @@ check, Clippy, dependency verification, queue validation, and diff checks pass.
 The full serial workspace suite passed except for the known AI local HTTP test
 being blocked by sandbox socket permissions; that one test passed when rerun
 outside the sandbox. The active task remains R05-001.
+
+The follow-up removed the eight dock/sidebar fields from `WorkspaceContent`,
+its shipped defaults, and the Settings model. `labonair-workspace::layout`
+now accepts both legacy v1 `preferences` and v2 `workspace` objects, so the
+app runs that migration before `migrate_settings_v1_to_v2`; the backend's
+legacy `Preferences` remains only as an input wire shape and records these
+fields in its exhaustive migration-accounting test. JSONC parsing is used for
+the legacy config read, while the owner file is written atomically as JSON.
+Focused layout, settings-content, and backend migration tests pass.
