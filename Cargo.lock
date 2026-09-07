@@ -4635,6 +4635,7 @@ dependencies = [
  "labonair-panel-git-graph",
  "labonair-panel-scm",
  "labonair-panel-snippets",
+ "labonair-persistence",
  "labonair-settings",
  "labonair-settings-ui",
  "labonair-sftp",

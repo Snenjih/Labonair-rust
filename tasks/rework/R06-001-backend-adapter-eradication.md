@@ -178,6 +178,9 @@ boundary still exists; that package must not become a second capability owner.
       delivery is an explicit EventBus capability.
 - [x] The aggregate `App::emit` convenience method and final SSH logging macro
       dependency were removed; event producers use explicit EventBus values.
+- [x] The aggregate backend `App`/`AppState` facade was removed from
+      `labonair-backend`; `BackendComposition` now lives in the shell and owns
+      only construction, capability extraction, and worker startup.
 - [x] Secrets compatibility wrappers and jump-host resolution no longer take
       the aggregate `App`; they receive only their actual state dependencies.
 - [ ] Move the remaining contracts and adapters behind injected capability

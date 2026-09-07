@@ -17,17 +17,17 @@ removal conditions.
 | Current crate | Current role | Target owner | Migration note |
 |---|---|---|---|
 | `app` | Binary/bootstrap | application composition | Keep small; remove feature logic. |
-| `backend` | Mixed filesystem, PTY, SSH, SFTP, Git transport adapters, settings, updater, MCP, and persistence wiring | split across platform services and feature modules | Highest-priority god-object boundary; Host CRUD/domain ownership has left this crate, while SSH/SFTP adapters and other compatibility surfaces remain. |
+| `backend` | PTY, SSH, SFTP, Git transport adapters, settings, updater, MCP, and persistence wiring | split across platform services and feature modules | Platform-adapter package; broad application composition state now lives in `labonair-shell`, while feature-specific adapters continue to migrate. |
 | `ai` | AI providers, sessions, tools | AI module | Keep backend-facing core; rebuild UI later. |
 | `command-palette-core` | UI-free command descriptors and registry (new migration boundary) | command-palette module | Keep metadata and provider discovery here; feature-owned behavior remains outside the palette. Initial owner providers now live in workspace, terminal, editor, hosts, theme, and settings crates. |
 | `command-palette` | Palette UI, dynamic sub-pages, and transitional duplicate shell dispatch integration | command-palette module | Consume the core registry; global-menu navigation is typed; remove static entries and the duplicate shell registry. |
 | `editor` | Editor engine | editor module | Separate core from workspace view. |
 | `filesystem` | Local file access, traversal, mutation, search, and watcher implementation | foundation/platform service | Canonical owner; backend watcher state and filesystem compatibility re-exports have been removed. |
-| `secrets` | Encrypted/plain local secret store and secret cache | foundation/platform service | Extracted from `backend`; backend keeps a compatibility adapter while SSH/Hosts/MCP migrate. |
+| `secrets` | Encrypted/plain local secret store and secret cache | foundation/platform service | Extracted from `backend`; remaining backend callers use explicit `SecretsState` adapters. |
 | `errors` | Structured error catalog and recovery hints | foundation/platform contract | Extracted from `backend`; the backend compatibility module and root re-exports were removed in R06-001's first boundary. |
 | `hosts` | Saved-host and host-group domain contract plus host store | hosts module | Models, host persistence, canonical picker snapshots, and typed SSH/SFTP requests are standalone; the shell composes one manager/window instance. Only the MCP event adapter and transport implementations remain transitional in `backend`. |
 | `persistence` | Shared SQLite connection and schema lifecycle | foundation/platform service | Extracted from the host adapter; feature-specific queries still remain in `backend` and are next to migrate. |
-| `credentials` | Credential domain, secret-backed metadata, and SSH keypair generation | credentials module | Extracted from `backend`; backend keeps App-signature adapters while callers migrate. |
+| `credentials` | Credential domain, secret-backed metadata, and SSH keypair generation | credentials module | Extracted from `backend`; the unused backend compatibility module is removed. |
 | `snippets` | Snippet domain, SQLite store, and local/SSH execution contracts | snippets module | Shared run events and the SSH executor contract are standalone; backend owns only the russh adapter. |
 | `gpui-ext` | Shared GPUI helpers | foundation | Keep dependency-free from features. |
 | `interaction-contracts` | Stable shortcut and interaction identities | foundation | Keep UI-free and below command/keymap modules; no feature state or behavior. |
@@ -139,9 +139,16 @@ The current Cargo metadata shows several transitional edges that conflict with t
 - `keymap::file::KeymapDocument` now separates authoritative raw user source
   from derived parsing/validation state, providing the lossless foundation for
   the dedicated keymap management/editor surface.
-- `backend` exposes a broad `App`, global event bus, and unrelated modules under one public crate.
+- `labonair-shell` owns the composition-only `BackendComposition` bundle. The
+  backend no longer exposes an aggregate `App`/`AppState` facade; its global
+  event bus and concrete modules are platform-adapter implementation details.
+  Shell's direct `labonair-persistence` edge is intentional: the composition
+  root initializes the shared database before injecting it into capability
+  adapters.
 - `labonair-filesystem` now owns the complete filesystem boundary. The backend no longer carries watcher state, watcher adapters, or filesystem compatibility re-exports; no filesystem event is synthesized through the global backend bus.
-- `backend` still owns the public secret API adapter even though storage now belongs to `labonair-secrets`; existing SSH/Hosts/MCP call sites still pass the backend app handle.
+- `backend` still owns explicit secret-state adapters even though storage now
+  belongs to `labonair-secrets`; SSH/SFTP/MCP call sites no longer pass an
+  aggregate application handle.
 - `backend` no longer re-exports the structured error contract; backend transport code imports `labonair-errors` directly. The stale `labonair-ai → backend` dependency was also removed because AI already consumes `labonair-filesystem` directly. System-font discovery now belongs to `labonair-theme`; the unused backend custom-font module was removed. The remaining facade exports are tracked in [`backend-facade-inventory.md`](backend-facade-inventory.md).
 - Host CRUD/domain ownership and its compatibility signatures have left
   `backend`; `labonair-hosts` now owns the store and the shell injects the one

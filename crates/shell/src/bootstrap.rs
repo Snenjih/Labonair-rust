@@ -20,7 +20,6 @@ use labonair_backend::modules::mcp::{
     mcp_set_auto_revoke_minutes, mcp_set_enabled, mcp_set_max_command_timeout_secs, mcp_set_port,
 };
 use labonair_backend::modules::settings::mcp::mcp_prefs_load;
-use labonair_backend::App as Backend;
 use labonair_hosts_ui::{open_hosts_window, HostManagerEvent, HostManagerView};
 use labonair_mcp_core::{McpEventSource, McpSessionAccessService, McpTabOperationService};
 use labonair_notifications::{notification_center, Notification, NotificationCenter};
@@ -47,6 +46,7 @@ use labonair_workspace::modal_layer::ModalLayer;
 use labonair_workspace::status_bar::StatusBar;
 
 use crate::app_shell::{AppShell, ShellPanels};
+use crate::backend::BackendComposition;
 use crate::settings_services::settings_services;
 use crate::status_items::register_builtin_status_items;
 use crate::theme::ThemeStore;
@@ -174,7 +174,7 @@ pub(crate) fn bootstrap(
     theme: Entity<ThemeStore>,
     background: Entity<BackgroundStore>,
     notifications: Entity<NotificationCenter>,
-    backend: Backend,
+    backend: BackendComposition,
     tokio: TokioHandle,
     window: &mut Window,
     cx: &mut Context<AppShell>,

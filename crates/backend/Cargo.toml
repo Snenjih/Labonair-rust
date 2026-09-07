@@ -33,7 +33,7 @@ russh-sftp = "2.3.0"
 # SQLite
 rusqlite = { version = "0.40", features = ["bundled"] }
 
-# HTTP (theme index fetch)
+# HTTP (updater manifest and artifact download)
 reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "rustls-tls"] }
 
 # PTY

@@ -134,7 +134,7 @@ pub fn pty_has_foreground_job(state: &PtyState, id: u32) -> Result<bool, String>
 
 /// Writes raw bytes into a local PTY by numeric id, byte-for-byte the same
 /// code path `pty_write` uses — called by the MCP bridge (`modules::mcp`),
-/// which only ever sees `PtyState` through `crate::App::state()`, never
+/// which only ever sees the explicitly injected `PtyState`, never
 /// as a Tauri-command invocation, so this can't just reuse `pty_write`
 /// directly (that's a `#[tauri::command]`, not a plain callable fn taking a
 /// bare `&PtyState`). `Session`'s fields stay private to this module either

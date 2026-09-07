@@ -6,8 +6,7 @@ use gpui::{
 use gpui_component::Root;
 
 mod dock_icon;
-use labonair_backend::App as Backend;
-use labonair_shell::{window_state, AppShell};
+use labonair_shell::{window_state, AppShell, BackendComposition};
 #[cfg(debug_assertions)]
 use tokio::sync::broadcast::error::RecvError;
 use tracing_subscriber::EnvFilter;
@@ -28,8 +27,8 @@ fn init_logging() {
 /// event. Capability adapters perform their own typed decoding at the feature
 /// boundary; this is purely a developer trace.
 #[cfg(debug_assertions)]
-fn spawn_event_logger(backend: &Backend) {
-    let mut rx = backend.events.subscribe();
+fn spawn_event_logger(events: labonair_backend::EventBus) {
+    let mut rx = events.subscribe();
     tokio::spawn(async move {
         loop {
             match rx.recv().await {
@@ -55,10 +54,10 @@ fn main() {
     let data_dir = dirs::data_dir()
         .unwrap_or_else(|| std::path::PathBuf::from("."))
         .join("labonair");
-    let backend = Backend::new(&data_dir).expect("failed to initialize backend state");
+    let backend = BackendComposition::new(&data_dir).expect("failed to initialize backend state");
     backend.spawn_workers();
     #[cfg(debug_assertions)]
-    spawn_event_logger(&backend);
+    spawn_event_logger(backend.events());
 
     // T19-009: one-time migration of the legacy `preferences`/`editor`/`mcp`
     // split into the flat `SettingsContent` area layout (+ `keymap.json` for

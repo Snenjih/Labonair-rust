@@ -2,7 +2,7 @@
 
 **Status:** R06-001 working inventory  
 **Date:** 2026-09-07  
-**Evidence:** `crates/backend/src/lib.rs`, `app.rs`, `events.rs`, every file under
+**Evidence:** `crates/backend/src/lib.rs`, `events.rs`, every file under
 `crates/backend/src/modules/`, Cargo metadata, and source search for
 `labonair_backend` / `labonair-backend`.
 
@@ -15,7 +15,7 @@ a concrete platform adapter with a named consumer and removal condition.
 
 | Surface | Current location | External consumers | Target boundary | R06 state |
 |---|---|---|---|---|
-| `App` / `AppState` and `AppInner` | `backend::app` | `app`, `shell`, backend adapters | application composition plus injected capability services | Broad facade remains; split is the main task |
+| `BackendComposition` | `shell::backend` | `app`, `shell` composition | application composition plus injected capability services | owns construction, worker startup, and capability extraction; no feature module receives a broad state facade |
 | `EventBus`, `EventChannel`, `RawEvent` | `backend::events` | `app`, backend transport adapters | typed capability events and explicit transport adapters | global bus remains only as a raw internal adapter source; event-source adapters receive `EventBus` directly and no longer retain `App` |
 | updater constants and operations | `backend::modules::updater` | `shell::updater`, app smoke tests | updater/application boundary | Root re-export removed; consumers use the updater module directly |
 | structured errors | formerly `backend::modules::errors` and root re-exports | no external backend import remains | `labonair-errors` | Root re-export and module removed in the first R06 slice |

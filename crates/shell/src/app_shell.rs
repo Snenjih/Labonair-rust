@@ -30,7 +30,6 @@ use gpui::{
     div, px, App, Bounds, Context, Entity, FocusHandle, Focusable, InteractiveElement, IntoElement,
     ParentElement, Pixels, Render, Styled, Task, Window, WindowBounds,
 };
-use labonair_backend::App as Backend;
 use labonair_notifications::NotificationCenter;
 use labonair_settings::Settings as _;
 use tokio::runtime::Handle as TokioHandle;
@@ -42,6 +41,7 @@ use labonair_workspace::live_bridge::WorkspaceLiveBridge;
 use labonair_workspace::modal_layer::ModalLayer;
 use labonair_workspace::status_bar::StatusBar;
 
+use crate::backend::BackendComposition;
 use crate::background::{BackgroundStore, LayerScope};
 use crate::commands::CommandDispatcher;
 use crate::modals::ShellPalette;
@@ -97,7 +97,7 @@ impl AppShell {
         theme: Entity<ThemeStore>,
         background: Entity<BackgroundStore>,
         notifications: Entity<NotificationCenter>,
-        backend: Backend,
+        backend: BackendComposition,
         tokio: TokioHandle,
         window: &mut Window,
         cx: &mut Context<Self>,

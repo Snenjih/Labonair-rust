@@ -163,7 +163,7 @@ ALLOWED = {
         "labonair-panel-ai", "labonair-terminal", "labonair-backend",
         "labonair-settings", "labonair-filesystem", "labonair-ssh",
         "labonair-sftp", "labonair-transfers", "labonair-transfers-ui",
-        "labonair-background", "labonair-mcp-core",
+        "labonair-background", "labonair-mcp-core", "labonair-persistence",
         # Provider metadata contracts are assembled here; feature behavior
         # remains in the owning crates and is not implemented by this root.
         "labonair-editor", "labonair-git", "labonair-hosts",

@@ -1568,9 +1568,24 @@ mod tests {
     use super::*;
     use crate::events::EventChannel;
 
-    fn test_app() -> crate::App {
+    struct TestCapabilities {
+        ssh: super::super::SshState,
+        trust: super::super::TrustState,
+        db: labonair_persistence::Database,
+        secrets: Arc<super::super::super::secrets::SecretsState>,
+        events: crate::EventBus,
+    }
+
+    fn test_capabilities() -> TestCapabilities {
         let dir = std::env::temp_dir().join(format!("labonair-ssh-test-{}", uuid::Uuid::new_v4()));
-        crate::App::new(&dir).expect("backend app")
+        let connection = labonair_persistence::initialize_database(dir.clone()).expect("database");
+        TestCapabilities {
+            ssh: super::super::SshState::default(),
+            trust: super::super::TrustState::default(),
+            db: labonair_persistence::Database(Arc::new(std::sync::Mutex::new(connection))),
+            secrets: Arc::new(super::super::super::secrets::SecretsState::new(dir)),
+            events: crate::EventBus::new(),
+        }
     }
 
     #[tokio::test]
@@ -1598,7 +1613,7 @@ mod tests {
 
     #[tokio::test]
     async fn connect_to_unknown_host_id_fails_cleanly() {
-        let app = test_app();
+        let app = test_capabilities();
         let on_event: EventChannel<super::super::pty::SshPtyEvent> = EventChannel::null();
         let res = ssh_connect(
             "sess-x".to_string(),

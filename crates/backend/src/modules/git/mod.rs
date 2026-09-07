@@ -2098,16 +2098,16 @@ rename_src.txt\0\
     // Drives the real public `git_*` async commands (local `GitExecutor`
     // path) that the T09-002 Source-Control branch/stash UI wires up.
 
-    fn test_app() -> crate::App {
-        let dir = std::env::temp_dir().join(format!(
-            "labonair_git_app_{}_{}",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
-        crate::App::new(&dir).expect("App::new")
+    struct TestCapabilities {
+        ssh: super::SshState,
+        events: crate::EventBus,
+    }
+
+    fn test_capabilities() -> TestCapabilities {
+        TestCapabilities {
+            ssh: super::SshState::default(),
+            events: crate::EventBus::new(),
+        }
     }
 
     #[tokio::test]
@@ -2126,7 +2126,7 @@ rename_src.txt\0\
             .output()
             .unwrap();
 
-        let app = test_app();
+        let app = test_capabilities();
         let ssh = &app.ssh;
         let p = || path.clone();
 
@@ -2301,7 +2301,7 @@ rename_src.txt\0\
             .output()
             .unwrap();
 
-        let app = test_app();
+        let app = test_capabilities();
         let ssh = &app.ssh;
 
         // Diverge `other` so checking it out would clobber the dirty file.

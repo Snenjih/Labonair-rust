@@ -1,6 +1,6 @@
 # Vergleichsbericht — Zed-Referenz vs. Labonair-rust (pure Rust)
 
-Erstellt: 2026-09-03
+Erstellt: 2026-09-03 — historischer Architektur-Baseline-Bericht
 Vergleichsobjekte:
 
 * **Zed** — `zed-refrence/zed/` (lokaler Checkout der Zed-Quellen, ~300 Crates)
@@ -11,6 +11,10 @@ Vergleichsobjekte:
 > Bericht ist **komplementär** und vergleicht ausschließlich gegen **Zed** als
 > GPUI-Referenzarchitektur. Zed ist eine IDE, Labonair ein Terminal-/DevOps-Tool
 > — verglichen werden *Bauweise und Muster*, nicht der Funktionsumfang.
+>
+> Dieser Bericht dokumentiert den Stand vom 2026-09-03. Für den aktuellen
+> Umbau sind die normativen Regeln in `docs/architecture.md` und der laufende
+> Nachweis in `docs/audits/architecture-inventory.md` maßgeblich.
 
 ---
 

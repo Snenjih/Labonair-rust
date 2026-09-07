@@ -59,6 +59,12 @@ The final production use of `App::emit` was removed from the SSH logging macro,
 and the app-state smoke test now exercises `app.events` directly. The aggregate
 facade no longer exposes an event-emission shortcut.
 
+The aggregate backend `App`/`AppState` was then moved out of
+`labonair-backend`. `labonair-shell::BackendComposition` now owns only
+application construction, capability extraction, and worker startup; the
+backend package exposes concrete platform adapters without a broad application
+state facade. Backend tests now construct only the capabilities under test.
+
 ## R06-001 backend facade inventory and error boundary
 
 Recorded the complete backend module/export and direct-consumer map in
