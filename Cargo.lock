@@ -4257,7 +4257,7 @@ dependencies = [
 name = "labonair-command-palette-core"
 version = "0.1.0"
 dependencies = [
- "labonair-keymap",
+ "labonair-interaction-contracts",
 ]
 
 [[package]]
@@ -4377,8 +4377,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "labonair-interaction-contracts"
+version = "0.1.0"
+
+[[package]]
 name = "labonair-keymap"
 version = "0.1.0"
+dependencies = [
+ "labonair-command-palette-core",
+ "labonair-interaction-contracts",
+]
 
 [[package]]
 name = "labonair-notifications"

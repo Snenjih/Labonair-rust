@@ -8,3 +8,5 @@ name = "labonair_keymap"
 path = "src/lib.rs"
 
 [dependencies]
+labonair-interaction-contracts = { path = "../interaction-contracts" }
+labonair-command-palette-core = { path = "../command-palette-core" }

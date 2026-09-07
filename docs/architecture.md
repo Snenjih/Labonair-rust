@@ -46,18 +46,19 @@ Feature modules
   keymap, notifications, command-palette, settings, ai
         ↓
 Foundation and platform services
-  ui-kit, gpui-ext, filesystem, secrets, persistence
+  ui-kit, gpui-ext, interaction-contracts, filesystem, secrets, persistence
 ```
 
 Dependencies point downward. A feature may depend on a foundation contract, but a feature must not depend on the shell. Cross-feature behavior uses a typed contract, registry, or event; it does not reach into another feature's private state.
 
+`labonair-interaction-contracts` is a lower-level UI-free identity foundation.
+It owns stable `ShortcutId` values and has no feature dependencies.
 `labonair-command-palette-core` is a contract-level registry crate even though
 it belongs to the Command Palette module. Capability crates may depend on this
 UI-free contract to contribute command metadata; they must not depend on the
-palette UI crate. The core currently consumes keymap identities, so the
-dependency direction is intentionally one-way (`command-palette-core →
-keymap`) until a future identity-contract extraction makes keymap a provider
-without a Cargo cycle.
+palette UI crate. `labonair-keymap` may depend on the command contract to
+publish keymap-owned commands, while the command contract depends only on the
+identity foundation. This one-way direction keeps the graph acyclic.
 
 ## 4. Target workspace crate map
 
@@ -66,6 +67,7 @@ without a Cargo cycle.
 | Crate | Responsibility |
 |---|---|
 | `labonair-gpui-ext` | GPUI helpers and small shared primitives. |
+| `labonair-interaction-contracts` | Stable UI-free identities shared by interactive feature modules. |
 | `labonair-ui-kit` | Buttons, inputs, lists, dropdowns, dialogs, icons, badges, disclosure, tabs, and other reusable components. |
 | `labonair-filesystem` | Local filesystem abstractions and watchers. |
 | `labonair-background` | Background-image storage, import/delete operations, decoded image cache, and GPUI background layers. |

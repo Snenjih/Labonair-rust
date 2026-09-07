@@ -18,23 +18,24 @@ The active task is `R03-001-command-palette-provider-registry.md`. Its first
 provider slice is wired: workspace, terminal, editor, hosts, themes, and
 settings now contribute command metadata from their owning crates. The shell
 assembles the providers and verifies its transitional execution adapters
-against the owner snapshots. Keymap remains blocked from direct provider
-registration until the command/shortcut identity dependency is inverted.
+against the owner snapshots. The stable `ShortcutId` identity now lives in
+`interaction-contracts`, so keymap can publish its own command provider via
+the one-way keymap → command-core edge.
 The migrated provider rows were also removed from the palette-only shell table;
 remaining shell descriptors are execution adapters checked against the owner
 snapshot. Next: migrate the remaining metadata and remove those transitional
 declarations. Workspace tabs/panes, Git, and Snippets now also provide
 owner-local metadata; the palette-only table is now gone. `Toggle Full Screen`
-is a shell-owned provider because it targets the native window directly, while
-keymap identity inversion remains open. Command-palette core now owns the
+is a shell-owned provider because it targets the native window directly.
+Command-palette core now owns the
 global palette command and Settings owns toggle-command metadata. The current
 branch is `master`.
 The legacy `settings::OpenShortcuts` keymap action is now an explicit
 compatibility alias for `zed::OpenKeymap`, accepted by validation but excluded
 from command discovery.
 The dependency verifier now explicitly allows the owner-to-command-contract
-edges and reports an acyclic graph; the one-way command-core-to-keymap edge is
-documented as intentional until identity extraction.
+edges and reports an acyclic graph. The former command-core-to-keymap edge is
+removed; the stable identity contract is now owned by `interaction-contracts`.
 Dynamic palette rows now flow through a typed `SubmenuRegistry` of immutable
 snapshots for tabs, hosts, recent hosts, themes, icon themes, editor themes,
 snippets, branches, symbols, and hidden status-bar items. Snapshot builders

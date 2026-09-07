@@ -25,6 +25,7 @@ in the normative documents linked from `docs/README.md`.
 | `credentials` | Credential domain, secret-backed metadata, and SSH keypair generation | credentials module | Extracted from `backend`; backend keeps App-signature adapters while callers migrate. |
 | `snippets` | Snippet domain, SQLite store, and local/SSH execution contracts | snippets module | Shared run events and the SSH executor contract are standalone; backend owns only the russh adapter. |
 | `gpui-ext` | Shared GPUI helpers | foundation | Keep dependency-free from features. |
+| `interaction-contracts` | Stable shortcut and interaction identities | foundation | Keep UI-free and below command/keymap modules; no feature state or behavior. |
 | `hosts-ui` | Host management UI and host-related dependencies | hosts module | Consumes host, credential, snippet, database, and secret contracts directly; operation failures publish through Notifications. |
 | `notifications-core` | UI-free notification registry and lifecycle | notifications module | New owner of retention, ordering, deduplication, read state, and structured metadata. |
 | `notifications` | GPUI notification adapter and statusbar dropdown | notifications module | Owns the statusbar notification item; shell only registers it. |
@@ -85,8 +86,9 @@ The current Cargo metadata shows several transitional edges that conflict with t
   editor, hosts, themes, and settings crates. The shell still contains
   transitional execution adapters and descriptors for those IDs; the adapter
   asserts equality against the provider snapshot so it cannot silently create
-  a second palette source. Keymap metadata remains outside this slice because
-  `command-palette-core → keymap` currently prevents a reverse dependency.
+  a second palette source. The stable shortcut identity now lives in
+  `interaction-contracts`, so keymap can publish its own command metadata
+  through the one-way keymap → command-core edge.
 - Workspace tab/pane commands, Git commands, and Snippet commands now also
   contribute owner-local provider metadata. The remaining shell palette rows
   are now absent; `Toggle Full Screen` is a shell-owned provider because it
@@ -96,9 +98,9 @@ The current Cargo metadata shows several transitional edges that conflict with t
   Settings owns its toggle-command metadata. The palette-only shell table is
   consequently removed as a separate table; all rows enter through providers.
 - The dependency verifier now explicitly allows owner crates to consume the
-  UI-free command registry contract. The one-way core-to-keymap identity edge
-  remains intentional; reversing it is tracked as a separate contract
-  extraction because it currently forms a Cargo cycle.
+  UI-free command registry contract. `interaction-contracts` owns the stable
+  shortcut identity, so the former command-core → keymap edge is removed and
+  keymap owns its `Open Keymap` provider through the reverse one-way edge.
 - `settings::OpenShortcuts` is modeled as a compatibility alias for the
   canonical `zed::OpenKeymap` action. Validation accepts it, while discovery
   excludes it from visible command rows.

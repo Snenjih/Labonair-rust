@@ -261,6 +261,7 @@ pub(crate) fn register_builtin_commands() -> CommandDispatcher {
     r.register_provider(&labonair_hosts::command_provider::HostsCommandProvider);
     r.register_provider(&labonair_theme::command_provider::ThemeCommandProvider);
     r.register_provider(&labonair_settings::command_provider::SettingsCommandProvider);
+    r.register_provider(&labonair_keymap::command_provider::KeymapCommandProvider);
     r.register_provider(&labonair_git::command_provider::GitCommandProvider);
     r.register_provider(&labonair_snippets::command_provider::SnippetsCommandProvider);
     r.register_provider(
@@ -900,9 +901,9 @@ pub(crate) fn register_builtin_commands() -> CommandDispatcher {
         command_descriptor(
             CommandId::OpenKeymapJson,
             "Open Keymap (JSON)",
-            "Application",
+            "Keymap",
             always,
-            None,
+            Some(labonair_keymap::ShortcutId::ShortcutsOpen),
             CommandIcon::Edit,
             None,
         ),

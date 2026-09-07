@@ -77,6 +77,10 @@ keymap module. The keymap system owns:
 - display formatting;
 - user overrides.
 
+Shortcut identity is defined by `labonair-interaction-contracts`, below both
+the keymap and command registries. This lets keymap publish its own command
+metadata without making the command contract depend back on keymap.
+
 The keymap system does not contain feature behavior. A feature owns the action
 it registers and supplies the stable command ID; keymap resolution only maps
 that ID to user input. The keymap editor is a keymap surface, not a Settings

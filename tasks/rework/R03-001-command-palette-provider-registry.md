@@ -94,8 +94,9 @@ owner metadata at startup; they are not a second discovery source.
 The provider slice now also covers workspace tabs and panes, Git commands, and
 snippet commands. There are no remaining palette-only shell declarations:
 `Toggle Full Screen` now has a shell-owned provider because its execution
-directly targets the native window. Keymap metadata remains the outstanding
-dependency-inversion item described above.
+directly targets the native window. The stable shortcut identity has since
+moved into `labonair-interaction-contracts`, allowing keymap to publish its
+own command metadata without a dependency cycle.
 
 The command-palette core now contributes its own global palette command, and
 Settings contributes the remaining settings-toggle metadata. The shell's
@@ -105,16 +106,11 @@ The legacy `settings::OpenShortcuts` action is now an explicit compatibility
 alias for `zed::OpenKeymap`. It is accepted by keymap validation and normalized
 for display without being registered as a discoverable command.
 
-The dependency verifier now allows these owner-to-contract edges explicitly
-and confirms the graph remains acyclic. The one-way command-core-to-keymap edge
-is documented as intentional until the identity contract is extracted.
-
-`labonair-keymap` is intentionally not made a dependency of
-`labonair-command-palette-core`: the core currently depends on `ShortcutId`
-from keymap, so adding the reverse edge creates a Cargo cycle. `Open Keymap`
-therefore remains a temporary shell adapter until the stable command/shortcut
-identity contract is extracted into a lower-level crate or the dependency is
-otherwise inverted.
+The dependency verifier now allows the owner-to-contract edges explicitly and
+confirms the graph remains acyclic. `labonair-interaction-contracts` owns the
+stable `ShortcutId` identity; keymap now depends on the command contract and
+publishes the `Open Keymap` descriptor itself. The old command-core-to-keymap
+edge is removed.
 
 The dynamic row surface now uses a typed `SubmenuRegistry` in the same
 contract crate. Tabs, hosts, recent hosts, editor/app/icon themes, snippets,

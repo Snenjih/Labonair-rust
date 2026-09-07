@@ -61,3 +61,12 @@ arrays or reading workspace/panel entities while rendering. Snapshot builders
 now live in the workspace, hosts, editor, theme, snippets, and Git provider
 modules. The shell supplies live values and registers the snapshots; status-bar
 metadata is the remaining shell-owned transitional surface.
+
+## R03-001 shortcut identity boundary
+
+The stable `ShortcutId` enum now lives in the UI-free
+`labonair-interaction-contracts` foundation crate. `labonair-keymap` re-exports
+that type, owns its defaults/resolution, and publishes a `KeymapCommandProvider`
+for `Open Keymap (JSON)`. `labonair-command-palette-core` depends only on the
+identity foundation, so keymap can depend on the command contract without a
+cycle. The shell adapter and provider metadata are equality-checked.

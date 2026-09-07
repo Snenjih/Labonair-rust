@@ -1,37 +1,12 @@
 //! UI-free keyboard-shortcut model: the rebindable [`ShortcutId`] table,
 //! user keybind overrides ([`KeybindMap`]), resolution, and conflict detection.
 
-/// Every rebindable keyboard shortcut. IDs match the reference `ShortcutId`.
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
-pub enum ShortcutId {
-    CommandPalette,
-    ShortcutsOpen,
-    TabNew,
-    TabNewPreview,
-    TabNewEditor,
-    TabClose,
-    TabNext,
-    TabPrev,
-    TabSelect1,
-    TabSelect2,
-    TabSelect3,
-    TabSelect4,
-    TabSelect5,
-    TabSelect6,
-    TabSelect7,
-    TabSelect8,
-    TabSelect9,
-    PaneSplitRight,
-    PaneSplitDown,
-    PaneClose,
-    PaneFocusNext,
-    SearchFocus,
-    SidebarToggle,
-    ViewZenMode,
-    ViewZoomIn,
-    ViewZoomOut,
-    ViewZoomReset,
-}
+pub mod command_provider;
+
+/// Shortcut identity is shared with the command registry through the
+/// UI-free interaction-contracts crate. Keymap owns the defaults and runtime
+/// resolution, not the identity type itself.
+pub use labonair_interaction_contracts::ShortcutId;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum ShortcutGroup {

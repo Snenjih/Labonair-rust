@@ -7,7 +7,7 @@
 
 use std::fmt;
 
-use labonair_keymap::ShortcutId;
+use labonair_interaction_contracts::ShortcutId;
 
 pub mod command_provider;
 
