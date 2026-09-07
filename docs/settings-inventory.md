@@ -81,8 +81,9 @@ means a runtime module, not merely serialization or the generated Settings UI.
 4. Rebuild the project whitelist from this inventory instead of maintaining a
    second unrelated list.
 
-Until those steps are complete, new Settings fields require an inventory row
-before code changes.
+All current Settings fields now have an inventory row and consumer evidence.
+New Settings fields require an inventory row, consumer, type, default, and
+scope before code changes.
 
 ## Unmodelled legacy input
 

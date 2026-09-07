@@ -5,10 +5,10 @@ They may mention API names that were valid at the time of the recorded
 change; the current API and task state are defined by the latest header and
 the normative documents under `docs/`.
 
-## Current Session: 2026-09-07 (R05-001 Settings audit active)
+## Current Session: 2026-09-07 (R06-001 Backend adapter eradication active)
 
-R03-002 Keymap, R04-001 static Themes, and R04-002 Hosts are complete and
-visually accepted. R05-001 is active with the normative field inventory in
+R03-002 Keymap, R04-001 static Themes, R04-002 Hosts, and R05-001 Settings
+reduction are complete and visually accepted. The normative field inventory is
 `docs/settings-inventory.md`.
 
 The current R05 slices removed the untyped `general.notifyOnErrors` default,
@@ -24,10 +24,11 @@ Legacy `appCornerRadius` values are converted to the current
 `cornerRadiusScale` field during migration, with the modern value taking
 precedence when both are present.
 
-Current HEAD is `7ad02f1` on `master`; the worktree is clean. Formatting,
-workspace check, Clippy, full serial workspace tests, dependency validation,
-queue validation, and diff checks pass. The next review item is
-the remaining indirect Settings values and consumer-proof review.
+Current HEAD is `45b5b26` on `master`; the worktree contains only the R05
+closure documentation and R06 task activation. Formatting, workspace check,
+Clippy, full serial workspace tests, dependency validation, queue validation,
+and diff checks pass. R06-001 is now active; its first step is an evidence-based
+inventory of the broad backend exports and their consumers.
 The General cleanup including `startupTerminalCount` is committed in
 `61abf4c`; the corner-radius normalization is committed in `c6e9890`, the
 unused Appearance values in `d596df2`, and the unwired Editor values in
@@ -35,8 +36,8 @@ unused Appearance values in `d596df2`, and the unwired Editor values in
 removed in `af6db5f`; unwired palette presentation values are removed in
 `a945ef5`; the unwired SCM poll value is removed in `8804d60`, the remaining
 unwired Editor options in `3bc4930`, dead Terminal settings/commands in
-`701b1b3`, and the dead Format-on-Save setting/command in `7ad02f1`. No
-blockers.
+`701b1b3`, and the dead Format-on-Save setting/command in `7ad02f1`. R05 is
+closed; the next task is R06-001, with no blockers.
 
 ## Historical session details: 2026-09-07
 

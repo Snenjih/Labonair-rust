@@ -3,17 +3,12 @@
 **Status:** Current implementation plan
 **Version:** 4
 
-The foundation migration is currently through `R01-009`, with the first Phase
-2 global-menu slice in `R02-001` and the workspace state/event boundary in
-`R02-002`: capability-owned registries and surfaces
-are established for transfers, command metadata, settings values,
-backgrounds, hosts, notifications, and icon-theme selection. Phase 3 is
-complete:
-remaining operation failures are retained in the statusbar notification
-registry, while actionable task dialogs remain local to the task that requires
-the user's decision. `R02-002` is complete; `R02-003` is the active task for
-persisted project identity, explicit return-to-standalone behavior, and the
-remaining project-lifecycle audit.
+The rework is through the completed R05 settings reduction. Capability-owned
+registries and surfaces are established for command metadata, settings values,
+backgrounds, hosts, notifications, and theme selection; the shell/workspace
+identity and R05 Settings audit are complete. The next implementation boundary
+is R06: remove the broad backend facade while preserving the established
+capability contracts.
 
 This roadmap replaces the historical task order. Existing completed work remains valuable, but old tasks do not override the contracts in `docs/`.
 
@@ -133,6 +128,11 @@ The bounded tasks are:
 The executable migration is
 [`R05-001-settings-audit-and-value-normalization.md`](../tasks/rework/R05-001-settings-audit-and-value-normalization.md).
 
+R05-001 is complete. Settings now contains only typed, consumer-backed values;
+legacy compatibility input remains isolated in the backend migration wire
+shape, while hosts, themes, keymaps, notifications, transfers, and layout
+state are owned by their respective capabilities.
+
 ## Phase 7 — Feature module migration
 
 - migrate terminal, editor, SSH, SFTP, explorer, Git, snippets, and AI to their ownership boundaries;
@@ -141,7 +141,7 @@ The executable migration is
 
 **Exit:** the dependency graph and source layout match the architecture contract.
 
-The first backend-removal boundary is
+The next backend-removal boundary is
 [`R06-001-backend-adapter-eradication.md`](../tasks/rework/R06-001-backend-adapter-eradication.md).
 Further terminal/editor/workspace extraction tasks are added only after that
 boundary has a concrete consumer and test seam.

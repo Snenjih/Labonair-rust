@@ -427,3 +427,13 @@ path from the command registry and shell action handling as well. Updated the
 project template and Settings inventory. Full workspace tests, check, Clippy,
 dependency, queue, formatting, and diff checks pass. Committed as `7ad02f1`;
 R05-001 remains active for the retained-setting consumer audit.
+
+## R05-001 completion
+
+The Settings audit is complete. Every remaining typed field has a current
+consumer, default, type, scope, and generated UI path; all unsupported,
+duplicated, and misplaced values were removed or migrated. Hosts, themes,
+keymaps, notifications, transfers, and workspace layout are not Settings
+categories or duplicate state owners. The complete workspace gates pass,
+including serial tests, check, Clippy, dependency verification, queue
+validation, formatting, and diff checks. R05-001 is closed; R06-001 is next.
