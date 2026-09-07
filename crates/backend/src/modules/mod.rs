@@ -7,4 +7,3 @@ pub mod shell;
 pub mod snippets;
 pub mod ssh;
 pub mod transfers;
-pub mod updater;

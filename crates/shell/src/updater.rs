@@ -2,8 +2,8 @@
 //!
 //! Port of `reference-src/src/modules/updater/` (`updaterStore.ts`,
 //! `UpdaterDialog.tsx`, `useUpdater.ts`) which drove `tauri-plugin-updater`.
-//! Tauri is gone, so the flow is reimplemented on top of
-//! [`labonair_backend::modules::updater`]:
+//! Tauri is gone, so the flow is reimplemented on top of the standalone
+//! `labonair-updater` capability crate:
 //!
 //! * check — fetch `latest.json`, compare versions (6 h auto-cadence, or
 //!   forced from the menu / settings);
@@ -20,8 +20,8 @@ use gpui::{
     div, px, ClickEvent, Context, Entity, FontWeight, InteractiveElement, IntoElement,
     ParentElement, Render, SharedString, StatefulInteractiveElement, Styled, Window,
 };
-use labonair_backend::modules::updater as backend;
-use labonair_backend::modules::updater::AvailableUpdate;
+use labonair_updater as updater;
+use labonair_updater::AvailableUpdate;
 use tokio::runtime::Handle as TokioHandle;
 
 use crate::theme::ThemeStore;
@@ -72,8 +72,8 @@ impl UpdaterView {
             theme,
             status: UpdaterStatus::Idle,
             dialog_open: false,
-            endpoint: backend::DEFAULT_UPDATE_ENDPOINT.to_string(),
-            public_key: backend::UPDATE_PUBLIC_KEY.to_string(),
+            endpoint: updater::DEFAULT_UPDATE_ENDPOINT.to_string(),
+            public_key: updater::UPDATE_PUBLIC_KEY.to_string(),
         }
     }
 
@@ -133,7 +133,7 @@ impl UpdaterView {
             }
             return;
         }
-        if !manual && !backend::should_auto_check() {
+        if !manual && !updater::should_auto_check() {
             return;
         }
 
@@ -143,14 +143,14 @@ impl UpdaterView {
         let endpoint = self.endpoint.clone();
         let task = self
             .tokio
-            .spawn(async move { backend::fetch_manifest(&endpoint).await });
+            .spawn(async move { updater::fetch_manifest(&endpoint).await });
 
         cx.spawn(async move |this, cx| {
             let result = match task.await {
                 Ok(r) => r,
                 Err(e) => Err(format!("update check crashed: {e}")),
             };
-            backend::record_check_now();
+            updater::record_check_now();
             let _ = this.update(cx, |this, cx| {
                 match result {
                     Ok(manifest) => match manifest.available() {
@@ -167,7 +167,7 @@ impl UpdaterView {
                                             "You're up to date",
                                             format!(
                                                 "Labonair {} is the latest version.",
-                                                backend::CURRENT_VERSION
+                                                updater::CURRENT_VERSION
                                             ),
                                         ),
                                         cx,
@@ -228,8 +228,8 @@ impl UpdaterView {
                             cx.notify();
                         });
                         cx.background_executor().timer(RESTART_DELAY).await;
-                        if let Some(bundle) = backend::current_app_bundle() {
-                            backend::relaunch(&bundle);
+                        if let Some(bundle) = updater::current_app_bundle() {
+                            updater::relaunch(&bundle);
                         }
                         // No bundle (dev / non-.app run) — just report.
                         let _ = this.update(cx, |this, cx| {
@@ -270,7 +270,7 @@ async fn install_flow(
     public_key: &str,
     tx: &tokio::sync::mpsc::UnboundedSender<InstallMsg>,
 ) -> Result<(), String> {
-    let bytes = backend::download_update(&update.url, |p| {
+    let bytes = updater::download_update(&update.url, |p| {
         let _ = tx.send(InstallMsg::Progress {
             downloaded: p.downloaded,
             total: p.total,
@@ -278,12 +278,12 @@ async fn install_flow(
     })
     .await?;
 
-    backend::verify_update(&bytes, &update.signature, public_key)?;
+    updater::verify_update(&bytes, &update.signature, public_key)?;
 
-    let bundle = backend::current_app_bundle()
+    let bundle = updater::current_app_bundle()
         .ok_or("not running from an installed .app bundle — cannot self-update")?;
     let bytes_moved = bytes;
-    tokio::task::spawn_blocking(move || backend::apply_macos_update(&bytes_moved, &bundle))
+    tokio::task::spawn_blocking(move || updater::apply_macos_update(&bytes_moved, &bundle))
         .await
         .map_err(|e| format!("install task crashed: {e}"))?
 }
@@ -512,7 +512,7 @@ impl UpdaterView {
 mod tests {
     use super::*;
     use gpui::{AppContext as _, TestAppContext};
-    use labonair_backend::modules::updater::AvailableUpdate;
+    use labonair_updater::AvailableUpdate;
 
     fn view(cx: &mut TestAppContext) -> (Entity<UpdaterView>, tokio::runtime::Runtime) {
         let rt = tokio::runtime::Runtime::new().unwrap();

@@ -43,6 +43,7 @@ members = [
     "crates/ai",
     "crates/theme",
     "crates/background",
+    "crates/updater",
 ]
 
 [workspace.dependencies]

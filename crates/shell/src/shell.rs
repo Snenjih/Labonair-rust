@@ -81,7 +81,7 @@ pub fn migrate_legacy_settings() {
     }
 }
 
-pub use labonair_backend::modules::updater::{UpdateManifest, CURRENT_VERSION};
+pub use labonair_updater::{UpdateManifest, CURRENT_VERSION};
 
 // --- Internal re-export shims --------------------------------------------------
 // `app_shell.rs` / `updater.rs` were moved verbatim from `crates/ui` (their

@@ -36,6 +36,9 @@ ALLOWED = {
     # Background capability owns image persistence and GPUI rendering. It
     # consumes only the filesystem platform service.
     "labonair-background": {"labonair-filesystem", "labonair-theme"},
+    # Update manifest/download/install capability; the GPUI updater view stays
+    # in shell and consumes this UI-free crate.
+    "labonair-updater": {"labonair-filesystem"},
     # Platform service — no GPUI or feature-crate deps. Feature crates may
     # consume it directly; the backend edge is transitional during migration.
     "labonair-filesystem": set(),
@@ -166,6 +169,7 @@ ALLOWED = {
         "labonair-settings", "labonair-filesystem", "labonair-ssh",
         "labonair-sftp", "labonair-transfers", "labonair-transfers-ui",
         "labonair-background", "labonair-mcp-core", "labonair-persistence",
+        "labonair-updater",
         # Provider metadata contracts are assembled here; feature behavior
         # remains in the owning crates and is not implemented by this root.
         "labonair-editor", "labonair-git", "labonair-hosts",

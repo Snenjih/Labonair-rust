@@ -17,7 +17,7 @@ a concrete platform adapter with a named consumer and removal condition.
 |---|---|---|---|---|
 | `BackendComposition` | `shell::backend` | `app`, `shell` composition | application composition plus injected capability services | owns construction, worker startup, and capability extraction; no feature module receives a broad state facade |
 | `EventBus`, `EventChannel`, `RawEvent` | `backend::events` | `app`, backend transport adapters | typed capability events and explicit transport adapters | global bus remains only as a raw internal adapter source; event-source adapters receive `EventBus` directly and no longer retain `App` |
-| updater constants and operations | `backend::modules::updater` | `shell::updater`, app smoke tests | updater/application boundary | Root re-export removed; consumers use the updater module directly |
+| updater constants and operations | `labonair-updater` | `shell::updater`, app smoke tests | updater capability plus shell UI | Moved out of the backend; the shell consumes the dedicated capability crate |
 | structured errors | formerly `backend::modules::errors` and root re-exports | no external backend import remains | `labonair-errors` | Root re-export and module removed in the first R06 slice |
 
 ## Module export and consumer map
@@ -47,7 +47,7 @@ participate in the `BackendComposition` state graph or in another backend module
 | `terminal_exec` | removed | no active consumers; MCP owns its live terminal execution path | dead compatibility module and `App` state removed; MCP server remains the active owner |
 | `themes` | removed | no active backend consumers | `labonair-theme` owns the static theme and icon-theme registries; network download is intentionally not part of the current product surface |
 | `transfers` | `BackendTransferService` and event source | `shell` | `labonair-transfers` integration boundary; service receives only `TransferWorkerState`, event translation stays once at adapter edge, and the worker receives explicit SSH/EventBus/queue state |
-| `updater` | update manifest, verification, download/install helpers | `shell::updater`, app smoke tests | updater/application boundary; root re-export removed and consumers use the updater module directly |
+| `updater` | moved out of backend | `shell::updater`, app smoke tests | `labonair-updater` owns manifest parsing, version checks, verification, download/install helpers, and check cadence; shell owns only the GPUI view |
 
 ## Direct dependency evidence
 

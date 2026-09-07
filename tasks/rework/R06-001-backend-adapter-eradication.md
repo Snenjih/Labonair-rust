@@ -199,6 +199,10 @@ boundary still exists; that package must not become a second capability owner.
 - [x] Moved the remaining pre-v2 Settings wire model and one-time config
       migration into `labonair-settings::legacy_migrations`; the backend
       Settings module and its `labonair-settings-content` dependency are gone.
+- [x] Moved the updater manifest, verification, download/install, and cadence
+      logic into the dedicated UI-free `labonair-updater` crate; the shell
+      retains only the GPUI presentation and the backend no longer owns an
+      updater module.
 - [x] Secrets compatibility wrappers and jump-host resolution no longer take
       the aggregate `App`; they receive only their actual state dependencies.
 - [ ] Move the remaining contracts and adapters behind injected capability

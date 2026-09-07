@@ -1,0 +1,18 @@
+[package]
+name = "labonair-updater"
+version = "1.0.0"
+edition = "2021"
+
+[dependencies]
+labonair-filesystem = { path = "../filesystem" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "rustls-tls"] }
+base64 = "0.22"
+minisign-verify = "0.2"
+tar = "0.4"
+flate2 = "1"
+
+[dev-dependencies]
+minisign = { version = "0.7", default-features = false }
+uuid = { version = "1", features = ["v4"] }

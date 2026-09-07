@@ -4195,12 +4195,9 @@ dependencies = [
  "libc",
  "log",
  "md5 0.7.0",
- "minisign",
- "minisign-verify",
  "openssl",
  "portable-pty",
  "rand 0.8.8",
- "reqwest",
  "rmcp",
  "rusqlite",
  "russh",
@@ -4209,7 +4206,6 @@ dependencies = [
  "serde",
  "serde_json",
  "socket2 0.5.10",
- "tar",
  "thiserror 1.0.69",
  "tokio",
  "tokio-util",
@@ -4641,6 +4637,7 @@ dependencies = [
  "labonair-transfers",
  "labonair-transfers-ui",
  "labonair-ui-kit",
+ "labonair-updater",
  "labonair-workspace",
  "rust-embed",
  "serde",
@@ -4730,6 +4727,22 @@ dependencies = [
  "gpui-component",
  "labonair-gpui-ext",
  "labonair-theme",
+]
+
+[[package]]
+name = "labonair-updater"
+version = "1.0.0"
+dependencies = [
+ "base64",
+ "flate2",
+ "labonair-filesystem",
+ "minisign",
+ "minisign-verify",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tar",
+ "uuid",
 ]
 
 [[package]]

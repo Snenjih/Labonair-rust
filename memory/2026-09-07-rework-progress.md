@@ -1,5 +1,15 @@
 # Rework progress — 2026-09-07
 
+## Updater capability boundary
+
+The updater's manifest model, version comparison, network download,
+minisign verification, macOS bundle installation, relaunch helper, and
+auto-check cadence now live in the dedicated UI-free `labonair-updater` crate.
+The shell keeps only `UpdaterView` and notification-driven presentation. The
+backend updater module and its updater-only dependencies were removed; the
+updater crate uses package version `1.0.0` so the current-version check matches
+the application package rather than the backend's historical `0.1.0` version.
+
 ## Settings migration ownership boundary
 
 The remaining pre-v2 Settings wire model and one-time `config.json` filename
