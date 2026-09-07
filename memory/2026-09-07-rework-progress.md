@@ -288,3 +288,17 @@ fields in its exhaustive migration-accounting test. JSONC parsing is used for
 the legacy config read, while the owner file is written atomically as JSON.
 Focused layout, settings-content, and backend migration tests pass.
 This removal is committed in `a474d03`; the active task remains R05-001.
+
+## R05-001 Terminal settings cleanup
+
+Removed the unsupported terminal settings from the typed model, shipped
+defaults, generated Settings UI, and v1-to-v2 Settings mapping:
+`terminalFontWeight`, `terminalLetterSpacing`, `terminalCursorBlinkInterval`,
+`terminalWordSeparator`, `terminalScrollSensitivity`,
+`terminalFastScrollModifier`, `terminalUseWebgl`, all command-composer flags,
+and all block-terminal flags. The native terminal has no consumers for these;
+theme token typography remains theme-owned rather than pretending to be a
+Settings value. The legacy backend `Preferences` wire shape stays readable and
+the exhaustive migration test accounts for the removed keys. Focused tests,
+full workspace check/Clippy/tests, dependency and queue checks are green.
+Committed as `3bcde42`; R05-001 remains active for the next consumer audit.
