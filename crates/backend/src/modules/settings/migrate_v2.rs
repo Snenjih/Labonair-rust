@@ -276,8 +276,6 @@ fn terminal_from(p: &Preferences) -> TerminalContent {
         confirm_close_terminal_tab: Some(p.confirm_close_terminal_tab),
         terminal_font_family: Some(p.terminal_font_family.clone()),
         terminal_font_size: Some(p.terminal_font_size),
-        terminal_font_weight: Some(p.terminal_font_weight.clone()),
-        terminal_letter_spacing: Some(p.terminal_letter_spacing),
         terminal_line_height: Some(p.terminal_line_height),
         terminal_scrollback: Some(p.terminal_scrollback),
         session_scrollback_lines: Some(p.session_scrollback_lines),
@@ -285,22 +283,10 @@ fn terminal_from(p: &Preferences) -> TerminalContent {
         scrollback_retention_days: Some(p.scrollback_retention_days),
         terminal_cursor_style: Some(cursor_style(p.terminal_cursor_style)),
         terminal_cursor_blink: Some(p.terminal_cursor_blink),
-        terminal_cursor_blink_interval: Some(p.terminal_cursor_blink_interval),
         terminal_copy_on_select: Some(p.terminal_copy_on_select),
         terminal_right_click_pastes: Some(p.terminal_right_click_pastes),
-        terminal_word_separator: Some(p.terminal_word_separator.clone()),
-        terminal_scroll_sensitivity: Some(p.terminal_scroll_sensitivity),
-        terminal_fast_scroll_modifier: Some(p.terminal_fast_scroll_modifier.clone()),
         terminal_show_pane_header: Some(p.terminal_show_pane_header),
         terminal_show_pane_footer: Some(p.terminal_show_pane_footer),
-        terminal_use_webgl: Some(p.terminal_use_webgl),
-        terminal_composer_enabled: Some(p.terminal_composer_enabled),
-        terminal_composer_history_popup: Some(p.terminal_composer_history_popup),
-        terminal_composer_argument_completion: Some(p.terminal_composer_argument_completion),
-        terminal_blocks_enabled: Some(p.terminal_blocks_enabled),
-        terminal_blocks_auto_collapse_on_alt_screen: Some(
-            p.terminal_blocks_auto_collapse_on_alt_screen,
-        ),
         terminal_bell: Some(p.terminal_bell),
         terminal_opacity: Some(p.terminal_opacity),
     }
@@ -424,6 +410,25 @@ const WORKSPACE_LAYOUT_FIELDS: &[&str] = &[
     "sidebarWidth",
     "sidebarRightWidth",
     "dockLayout",
+];
+
+/// Legacy terminal preferences that have no native GPUI consumer. They stay
+/// in `Preferences` only so old files can still be deserialized and are not
+/// emitted into the current typed Settings model.
+#[cfg_attr(not(test), allow(dead_code))]
+const REMOVED_TERMINAL_FIELDS: &[&str] = &[
+    "terminalFontWeight",
+    "terminalLetterSpacing",
+    "terminalCursorBlinkInterval",
+    "terminalWordSeparator",
+    "terminalScrollSensitivity",
+    "terminalFastScrollModifier",
+    "terminalUseWebgl",
+    "terminalComposerEnabled",
+    "terminalComposerHistoryPopup",
+    "terminalComposerArgumentCompletion",
+    "terminalBlocksEnabled",
+    "terminalBlocksAutoCollapseOnAltScreen",
 ];
 
 /// Preferences fields with no `SettingsContent` destination, preserved
@@ -1009,6 +1014,7 @@ mod tests {
         let mut accounted: BTreeSet<&str> = mapped.iter().copied().collect();
         accounted.extend(SKIPPED_PREFERENCES_FIELDS.iter().copied());
         accounted.extend(WORKSPACE_LAYOUT_FIELDS.iter().copied());
+        accounted.extend(REMOVED_TERMINAL_FIELDS.iter().copied());
         accounted.extend(UNKNOWN_PREFERENCES_FIELDS.iter().copied());
 
         let all_keys: BTreeSet<&str> = obj.keys().map(|s| s.as_str()).collect();

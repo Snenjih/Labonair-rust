@@ -110,3 +110,6 @@ the model. Unused values are parked in the inventory, not added speculatively.
 - [x] Remove the typed dock/sidebar compatibility fields. The app-level
       migration reads both legacy v1 `preferences` and v2 `workspace` input
       directly into the Workspace layout owner before Settings conversion.
+- [x] Remove confirmed unsupported terminal compatibility fields from the
+      typed model and generated UI, while keeping the legacy Preferences wire
+      shape readable for migration.

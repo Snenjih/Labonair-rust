@@ -403,20 +403,6 @@ pub fn all_fields() -> Vec<AnyField> {
             "Terminal font size in points."
         ),
         field!(
-            terminal.terminal_font_weight,
-            "terminalFontWeight",
-            Select(&[("normal", "Normal"), ("medium", "Medium"), ("bold", "Bold")]),
-            "Font weight",
-            "Weight of the terminal typeface."
-        ),
-        field!(
-            terminal.terminal_letter_spacing,
-            "terminalLetterSpacing",
-            Float { min_centi: -200, max_centi: 1000, step_centi: 50 },
-            "Letter spacing",
-            "Extra horizontal spacing between glyphs, in pixels."
-        ),
-        field!(
             terminal.terminal_line_height,
             "terminalLineHeight",
             Float { min_centi: 80, max_centi: 200, step_centi: 5 },
@@ -470,13 +456,6 @@ pub fn all_fields() -> Vec<AnyField> {
             "Blink the terminal cursor."
         ),
         field!(
-            terminal.terminal_cursor_blink_interval,
-            "terminalCursorBlinkInterval",
-            Int { min: 200, max: 2000, step: 50 },
-            "Cursor blink interval",
-            "How fast the terminal cursor blinks (ms)."
-        ),
-        field!(
             terminal.terminal_copy_on_select,
             "terminalCopyOnSelect",
             Switch,
@@ -491,32 +470,6 @@ pub fn all_fields() -> Vec<AnyField> {
             "Paste the clipboard on right-click instead of a context menu."
         ),
         field!(
-            terminal.terminal_word_separator,
-            "terminalWordSeparator",
-            Text,
-            "Word separators",
-            "Characters that break a word for double-click selection."
-        ),
-        field!(
-            terminal.terminal_scroll_sensitivity,
-            "terminalScrollSensitivity",
-            Int { min: 1, max: 10, step: 1 },
-            "Scroll sensitivity",
-            "Lines scrolled per wheel notch."
-        ),
-        field!(
-            terminal.terminal_fast_scroll_modifier,
-            "terminalFastScrollModifier",
-            Select(&[
-                ("none", "None"),
-                ("alt", "Alt"),
-                ("ctrl", "Ctrl"),
-                ("shift", "Shift")
-            ]),
-            "Fast-scroll modifier",
-            "Hold this key to scroll faster."
-        ),
-        field!(
             terminal.terminal_show_pane_header,
             "terminalShowPaneHeader",
             Switch,
@@ -529,48 +482,6 @@ pub fn all_fields() -> Vec<AnyField> {
             Switch,
             "Show pane footer",
             "Show a footer strip below each terminal pane."
-        ),
-        field!(
-            terminal.terminal_use_webgl,
-            "terminalUseWebgl",
-            Switch,
-            "Use WebGL renderer",
-            "Render the terminal via WebGL when the platform supports it."
-        ),
-        field!(
-            terminal.terminal_composer_enabled,
-            "terminalComposerEnabled",
-            Switch,
-            "Command composer",
-            "Show the composer input above the terminal."
-        ),
-        field!(
-            terminal.terminal_composer_history_popup,
-            "terminalComposerHistoryPopup",
-            Switch,
-            "Composer history popup",
-            "Show a history dropdown while composing."
-        ),
-        field!(
-            terminal.terminal_composer_argument_completion,
-            "terminalComposerArgumentCompletion",
-            Switch,
-            "Argument completion",
-            "Suggest command arguments in the composer."
-        ),
-        field!(
-            terminal.terminal_blocks_enabled,
-            "terminalBlocksEnabled",
-            Switch,
-            "Block terminal",
-            "Group command output into collapsible blocks."
-        ),
-        field!(
-            terminal.terminal_blocks_auto_collapse_on_alt_screen,
-            "terminalBlocksAutoCollapseOnAltScreen",
-            Switch,
-            "Auto-collapse blocks for full-screen apps",
-            "Collapse blocks when an app takes the alternate screen."
         ),
         field!(
             terminal.terminal_bell,

@@ -257,22 +257,13 @@ const TERMINAL_MAIN: &[Group] = &[
         &[
             "terminalFontFamily",
             "terminalFontSize",
-            "terminalFontWeight",
             "terminalLineHeight",
-            "terminalLetterSpacing",
         ],
     ),
-    (
-        "Cursor",
-        &[
-            "terminalCursorStyle",
-            "terminalCursorBlink",
-            "terminalCursorBlinkInterval",
-        ],
-    ),
+    ("Cursor", &["terminalCursorStyle", "terminalCursorBlink"]),
     ("Bell", &["terminalBell"]),
     ("Buffer", &["terminalScrollback"]),
-    ("Appearance", &["terminalOpacity", "terminalUseWebgl"]),
+    ("Appearance", &["terminalOpacity"]),
 ];
 
 const TERMINAL_ADVANCED: &[Group] = &[
@@ -281,26 +272,8 @@ const TERMINAL_ADVANCED: &[Group] = &[
         &["terminalShowPaneHeader", "terminalShowPaneFooter"],
     ),
     (
-        "Composer & Blocks",
-        &[
-            "terminalComposerEnabled",
-            "terminalComposerHistoryPopup",
-            "terminalComposerArgumentCompletion",
-            "terminalBlocksEnabled",
-            "terminalBlocksAutoCollapseOnAltScreen",
-        ],
-    ),
-    (
         "Input",
-        &[
-            "terminalCopyOnSelect",
-            "terminalRightClickPastes",
-            "terminalWordSeparator",
-        ],
-    ),
-    (
-        "Scrolling",
-        &["terminalScrollSensitivity", "terminalFastScrollModifier"],
+        &["terminalCopyOnSelect", "terminalRightClickPastes"],
     ),
 ];
 
@@ -531,8 +504,8 @@ mod tests {
             Some(("", "Cursor"))
         );
         assert_eq!(
-            section_label_for_field("terminal", "terminalScrollSensitivity"),
-            Some(("advanced", "Scrolling"))
+            section_label_for_field("terminal", "terminalCopyOnSelect"),
+            Some(("advanced", "Input"))
         );
         assert_eq!(section_label_for_field("terminal", "doesNotExist"), None);
     }
