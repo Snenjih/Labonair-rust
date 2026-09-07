@@ -2,7 +2,7 @@
 
 ## Status
 
-`⏳ Planned`
+`✅ Done`
 
 ## Owner
 
@@ -66,16 +66,16 @@ keys must remain visible as non-fatal warnings.
 
 ## Acceptance criteria
 
-- [ ] Known removed/migration-only keys have an explicit disposition.
-- [ ] Unknown future keys remain non-fatal warnings.
-- [ ] Migration remains idempotent and does not delete user data.
-- [ ] No unrelated module imports Settings implementation details.
-- [ ] Focused migration and schema-warning tests pass.
-- [ ] `cargo fmt --check` passes.
-- [ ] `cargo check --workspace --all-targets` passes.
-- [ ] `cargo clippy --workspace --all-targets -- -D warnings` passes.
-- [ ] `cargo test --workspace` passes.
-- [ ] `scripts/check-crate-deps.sh` and `git diff --check` pass.
+- [x] Known removed/migration-only keys have an explicit disposition.
+- [x] Unknown future keys remain non-fatal warnings.
+- [x] Migration remains idempotent and does not delete user data.
+- [x] No unrelated module imports Settings implementation details.
+- [x] Focused migration and schema-warning tests pass.
+- [x] `cargo fmt --check` passes.
+- [x] `cargo check --workspace --all-targets` passes.
+- [x] `cargo clippy --workspace --all-targets -- -D warnings` passes.
+- [x] `cargo test --workspace` passes.
+- [x] `scripts/check-crate-deps.sh` and `git diff --check` pass.
 
 ## Notes and follow-ups
 
@@ -89,5 +89,8 @@ Initial diagnosis: the observed user file is already marked
 `schemaVersion: 2`/`sparsified: true`, and `migrate_settings_v1_to_v2` returns
 early for that state. The old root keys therefore survive into
 `SettingsStore::reload_user_layer`, where the generic schema walk reports them.
-The implementation must address this post-migration v2 compatibility case
-explicitly and idempotently.
+The completed implementation addresses this post-migration v2 compatibility
+case through the single `legacy_migrations::is_known_legacy_path` boundary.
+Known migration envelopes, capability-owned state, and removed fields remain
+untouched and quiet; unknown future paths still produce warnings. Focused
+Settings tests cover both sides of the boundary.

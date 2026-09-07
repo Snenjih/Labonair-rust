@@ -138,12 +138,15 @@ a separate product decision after the core workflow is stable.
 - [x] The final status-item source audit found only typed owner registrations
       composed by `shell/src/status_items.rs`; no feature-owned statusbar
       behavior remains in the shell.
+- [x] Known legacy Settings input is classified once by the Settings owner;
+      retained migration and capability-owned paths are quiet while unknown
+      future paths remain non-fatal warnings. R07-003 records the disposition
+      and focused regression evidence.
 - [ ] A complete visual state matrix is still required for the permanent
       surfaces. The working matrix is recorded in
       [`../../docs/audits/product-surface-acceptance.md`](../../docs/audits/product-surface-acceptance.md);
       all applicable visual cells remain pending until native-bundle evidence
       is recorded.
 - [ ] Native launch confirms the Rust window exists, but macOS currently denies
-      Screen Recording to the capture runner. The launch also reports removed
-      legacy Settings keys as unknown; resolve that migration/warning
-      disposition in a bounded follow-up before closing this acceptance gate.
+      Screen Recording to the capture runner. Capture the visual matrix with
+      the native Rust bundle once Screen Recording access is available.

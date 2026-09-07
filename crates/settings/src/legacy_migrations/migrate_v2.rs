@@ -110,6 +110,86 @@ const KEY_MIGRATED_UNKNOWN: &str = "_migratedUnknown";
 const KEY_SPARSIFIED: &str = "sparsified";
 const SCHEMA_VERSION_V2: u64 = 2;
 
+/// Return whether an unknown path in `config.json` is intentionally retained
+/// for compatibility rather than being an active Settings field. This is the
+/// single classification boundary shared by migration and schema validation:
+/// expanding it requires a documented migration disposition, while a path
+/// not listed here remains a visible non-fatal schema warning.
+pub(crate) fn is_known_legacy_path(path: &[String]) -> bool {
+    match path {
+        [key] => LEGACY_TOP_LEVEL_KEYS.contains(&key.as_str()),
+        [area, key] => match area.as_str() {
+            "general" => REMOVED_GENERAL_FIELDS.contains(&key.as_str()) || key == "notifyOnErrors",
+            "appearance" => {
+                BACKGROUND_KEYS.contains(&key.as_str())
+                    || MOVED_APPEARANCE_FIELDS.contains(&key.as_str())
+                    || REMOVED_APPEARANCE_FIELDS.contains(&key.as_str())
+            }
+            "terminal" => REMOVED_TERMINAL_FIELDS.contains(&key.as_str()),
+            "editor" => {
+                REMOVED_EDITOR_FIELDS.contains(&key.as_str())
+                    || UNKNOWN_EDITOR_FIELDS.contains(&key.as_str())
+                    || EDITOR_COMPATIBILITY_FIELDS.contains(&key.as_str())
+            }
+            "fileManager" => REMOVED_FILE_MANAGER_FIELDS.contains(&key.as_str()),
+            "workspace" => {
+                WORKSPACE_LAYOUT_FIELDS.contains(&key.as_str())
+                    || REMOVED_WORKSPACE_FIELDS.contains(&key.as_str())
+                    || LEGACY_BOOKMARK_FIELDS.contains(&key.as_str())
+            }
+            _ => false,
+        },
+        _ => false,
+    }
+}
+
+/// Top-level values that are either migration envelopes or persisted by a
+/// capability other than Settings. They remain readable by their owners (or
+/// untouched for future migration) and must not become Settings warnings.
+const LEGACY_TOP_LEVEL_KEYS: &[&str] = &[
+    "_migratedUnknown",
+    "ai",
+    "backgroundImage",
+    "backgroundOpacity",
+    "backgroundBlur",
+    "backgroundTintColor",
+    "backgroundTintOpacity",
+    "barItemPlacements",
+    "barItemPlacements_legacy",
+    "hosts",
+    "hostsMigrated",
+    "keymap",
+    "mcp",
+    "panelToggleVisibility",
+    "preferences",
+    "preferences_legacy",
+    "schemaVersion",
+    "sparsified",
+    "statusBarItemPlacements",
+];
+
+/// Old editor wire keys that were merged into the current editor area during
+/// v1->v2 conversion. They are not current Settings fields.
+const EDITOR_COMPATIBILITY_FIELDS: &[&str] = &[
+    "vimMode",
+    "relativeNumber",
+    "hlsearch",
+    "incsearch",
+    "smartcase",
+];
+
+/// Bookmark settings were removed with the path-bookmarks capability. The
+/// data is intentionally not deleted from an existing user file.
+const LEGACY_BOOKMARK_FIELDS: &[&str] = &[
+    "bookmarksActionCurrentSftp",
+    "bookmarksActionCurrentTerminal",
+    "bookmarksActionNewSftp",
+    "bookmarksActionNewTerminal",
+    "bookmarksEnabled",
+    "bookmarksPrimaryClickBehavior",
+    "bookmarksShowBadge",
+];
+
 /// `SettingsContent`'s top-level area keys (its `#[serde(rename_all =
 /// "camelCase")]` field names) — the only keys [`sparsify_settings_map`]
 /// touches. Anything else in `config.json` (`schemaVersion`,

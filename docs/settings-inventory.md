@@ -91,3 +91,22 @@ field or runtime consumer existed for it. It was removed from the shipped
 default in this slice. The new `SettingsContent` test rejects any future
 untyped key in the default asset, so stale configuration cannot silently look
 supported again.
+
+## Compatibility envelope
+
+`labonair-settings` keeps a single explicit compatibility classification in
+`legacy_migrations::is_known_legacy_path`. The schema walker uses the same
+classification, so retained migration input is quiet without weakening
+forward-compatibility warnings for genuinely new keys.
+
+| Path family | Disposition | Owner / reason |
+|---|---|---|
+| `schemaVersion`, `sparsified`, `_migratedUnknown`, `preferences`, `preferences_legacy` | Ignore as migration envelope | Settings migration metadata and preserved historical input |
+| `hosts`, `hostsMigrated`, `keymap`, `ai`, `mcp` | Ignore as capability-owned legacy input | Hosts, Keymap, AI, and MCP do not belong to the Settings value tree |
+| `background*`, `statusBarItemPlacements`, `panelToggleVisibility`, `barItemPlacements*` | Ignore as owner-owned persisted state | Background and Workspace own their persistence |
+| Removed fields under `general`, `appearance`, `terminal`, `editor`, `fileManager`, and `workspace` | Ignore as retained removed input | Values remain readable for compatibility but are not active fields |
+
+This envelope does not delete or rewrite user data. Unknown paths outside the
+listed envelope remain non-fatal schema warnings. Adding a path to the
+envelope requires an inventory disposition and a focused regression test; no
+other module may special-case these Settings keys.

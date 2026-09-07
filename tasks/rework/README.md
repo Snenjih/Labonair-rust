@@ -27,7 +27,7 @@ The active sequence is:
 18. `R06-001-backend-adapter-eradication.md` — Done
 19. `R07-001-product-surface-acceptance.md` — In Progress
 20. `R07-002-owner-registered-surface-contributions.md` — Done
-21. `R07-003-settings-legacy-warning-disposition.md` — Planned
+21. `R07-003-settings-legacy-warning-disposition.md` — Done
 
 Phases 0–6 are complete. R02-001 is the first bounded Phase 2 shell task and
 also connects the already-established theme registry to its intended palette

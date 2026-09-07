@@ -26,9 +26,15 @@ Hosts command identity is now canonical `OpenHosts`; the former
 `connections::OpenHostSettings` name is compatibility-only and is covered by
 focused command/Hosts/Shell tests. The keymap runtime now also verifies that
 both the canonical action and the legacy alias resolve to `CommandId::OpenHosts`.
-remaining blockers are the legacy Settings warning classification in R07-003
-and native visual capture, which is blocked by missing Screen Recording
-permission.
+The only remaining blocker is native visual capture, which is blocked by
+missing Screen Recording permission.
+
+R07-003 is now complete: the Settings owner classifies retained migration and
+capability-owned paths through one compatibility boundary, while unknown
+future paths remain non-fatal warnings. Focused Settings tests and the full
+workspace check, Clippy, test, dependency, queue, format, and diff gates pass.
+Only the native visual state matrix remains open for R07-001; capture is still
+blocked by the runner's missing Screen Recording permission.
 
 The documentation audit also corrected the archive README so it distinguishes
 the accepted ADR directory from superseded ADRs stored below `docs/archive/`.

@@ -202,11 +202,14 @@ fn resolve<'a>(node: &'a Value, defs: &'a Map<String, Value>) -> &'a Value {
 }
 
 /// Walk `instance` alongside `schema`, collecting one warning per object key
-/// that isn't in the matching schema node's `properties` set. Nodes shaped
-/// as a map (`additionalProperties` is a schema, `properties` is absent —
-/// schemars' output for `HashMap<String, T>`/`BTreeMap<String, T>` fields)
-/// are recursed into by *value*, never flagged on their keys — those keys
-/// are user data (host ids, panel names, …), not settings fields.
+/// that isn't in the matching schema node's `properties` set. Known
+/// migration-only and capability-owned paths are filtered through the single
+/// Settings compatibility boundary in `legacy_migrations`; genuinely new
+/// paths still produce warnings. Nodes shaped as a map
+/// (`additionalProperties` is a schema, `properties` is absent — schemars'
+/// output for `HashMap<String, T>`/`BTreeMap<String, T>` fields) are recursed
+/// into by *value*, never flagged on their keys — those keys are user data
+/// (host ids, panel names, …), not settings fields.
 fn unknown_key_warnings(
     instance: &Value,
     schema: &Value,
@@ -244,6 +247,10 @@ fn walk_unknown_keys(
                     walk_unknown_keys(value, sub_schema, defs, path, raw_text, out);
                 }
                 None => {
+                    if crate::legacy_migrations::is_known_legacy_path(path) {
+                        path.pop();
+                        continue;
+                    }
                     let json_path = path.join(".");
                     let (line, col) = raw_text
                         .and_then(|text| position_for_path(text, &json_path))
@@ -346,8 +353,57 @@ mod tests {
         let instance = json!({"preferences": {}, "general": {}});
         let (errors, warnings) = validate(&instance, None);
         assert!(errors.is_empty());
-        assert_eq!(warnings.len(), 1);
-        assert_eq!(warnings[0].json_path, "preferences");
+        assert!(
+            warnings.is_empty(),
+            "known migration input is quiet: {warnings:?}"
+        );
+    }
+
+    #[test]
+    fn known_legacy_and_capability_owned_paths_are_quiet() {
+        let instance = json!({
+            "schemaVersion": 2,
+            "sparsified": true,
+            "preferences": {"removedField": true},
+            "preferences_legacy": {"anything": true},
+            "hosts": {"entries": []},
+            "ai": {"aiEnabled": true},
+            "mcp": {"bridgeEnabled": true},
+            "statusBarItemPlacements": {"cwd": {"side": "left"}},
+            "panelToggleVisibility": {"explorer": true},
+            "backgroundImage": "wallpaper.png",
+            "appearance": {"appCornerRadius": 5, "backgroundOpacity": 40},
+            "terminal": {"terminalUseWebgl": true},
+            "editor": {"vimMode": true, "tabstop": 4},
+            "fileManager": {"sftpShowHiddenFiles": true},
+            "workspace": {"bookmarksEnabled": true, "sidebarWidth": 260}
+        });
+        let (errors, warnings) = validate(&instance, None);
+        assert!(
+            errors.is_empty(),
+            "legacy values must not be schema errors: {errors:?}"
+        );
+        assert!(
+            warnings.is_empty(),
+            "known legacy paths are quiet: {warnings:?}"
+        );
+    }
+
+    #[test]
+    fn unknown_future_paths_remain_non_fatal_warnings() {
+        let instance = json!({
+            "futureArea": {"futureField": true},
+            "workspace": {"futureWorkspaceSetting": true}
+        });
+        let (errors, warnings) = validate(&instance, None);
+        assert!(errors.is_empty());
+        assert_eq!(
+            warnings
+                .iter()
+                .map(|w| w.json_path.as_str())
+                .collect::<Vec<_>>(),
+            vec!["futureArea", "workspace.futureWorkspaceSetting"]
+        );
     }
 
     #[test]

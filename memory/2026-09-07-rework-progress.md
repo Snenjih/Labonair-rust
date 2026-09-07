@@ -1036,3 +1036,10 @@ The documentation audit corrected `docs/archive/README.md`: accepted ADRs are
 under `docs/adr/`, while superseded ADRs are under `docs/archive/adr/`. The
 root `CHANGELOG.md` and `docs/RELEASE.md` describe the native Rust project and
 retain predecessor/Tauri wording only for migration and compatibility context.
+
+R07-003 is complete. `labonair-settings::legacy_migrations::is_known_legacy_path`
+is the sole compatibility classification boundary used by schema validation.
+Known migration envelopes, capability-owned state, and removed fields stay
+quiet and untouched; genuinely unknown future paths still produce non-fatal
+warnings. Focused tests cover both classes, and full workspace check, Clippy,
+tests, dependency, queue, format, and diff gates pass.

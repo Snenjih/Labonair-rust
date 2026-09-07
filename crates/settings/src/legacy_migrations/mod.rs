@@ -10,6 +10,7 @@ use std::path::Path;
 mod migrate_v2;
 mod preferences;
 
+pub(crate) use migrate_v2::is_known_legacy_path;
 pub use migrate_v2::{migrate_settings_v1_to_v2, sparsify_v2_settings};
 
 pub const CONFIG_FILE: &str = "config.json";
