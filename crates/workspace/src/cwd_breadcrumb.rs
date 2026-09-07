@@ -2,8 +2,8 @@
 //! `reference-src/src/modules/statusbar/lib/pathUtils.ts` and the
 //! `resolveProvider` seam from `CwdBreadcrumb.tsx`.
 //!
-//! The interactive rendering lives in `AppShell::render_cwd_breadcrumb`
-//! (needs `Context<AppShell>`); everything testable is here.
+//! The interactive rendering lives in the Workspace-owned statusbar view;
+//! everything testable is kept as pure helpers here.
 
 /// One breadcrumb segment.
 #[derive(Debug, Clone, PartialEq, Eq)]

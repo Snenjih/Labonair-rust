@@ -817,3 +817,9 @@ return typed `StatusItemRegistration` values; shell composition only inserts
 them into the shared registry. The transfers UI consequently depends on the
 Workspace contract for post-transfer refresh, while the dependency graph stays
 acyclic.
+
+The pure CWD breadcrumb helpers were moved from `labonair-shell` to
+`labonair-workspace::cwd_breadcrumb`. The interactive statusbar view still
+needs to move, but its path/provider model is now owned by the workspace
+module. Workspace check, dependency validation, formatting, and diff checks
+pass after the move.

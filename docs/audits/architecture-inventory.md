@@ -206,6 +206,9 @@ The current Cargo metadata shows several transitional edges that conflict with t
   Agent Access now belongs to `labonair-workspace`, and the Transfers item to
   `labonair-transfers-ui`; remaining shell status-item code is composition and
   workspace shell surfaces still awaiting owner extraction.
+- The pure CWD breadcrumb path/provider helpers now belong to
+  `labonair-workspace::cwd_breadcrumb`; only the interactive statusbar view
+  remains in the shell until the next extraction slice.
 - `shell/src/commands.rs` still maintains a second behavior registry beside
   the command-palette entries; the migration must leave one typed command
   registry and keep execution in the owning modules.

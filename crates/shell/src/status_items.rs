@@ -27,10 +27,10 @@ use labonair_transfers_ui::TransfersView;
 use labonair_ui_kit::{icon_toggle_button, IconName, Palette};
 use labonair_workspace::agent_access::AgentAccessStore;
 
-use crate::cwd_breadcrumb as bc;
 use crate::theme::ThemeStore;
 use crate::updater::{UpdaterStatus, UpdaterView};
 use crate::workspace::Workspace;
+use labonair_workspace::cwd_breadcrumb as bc;
 
 pub(crate) fn panel_toggle_icon(icon: PanelIcon) -> IconName {
     match icon {

@@ -27,6 +27,7 @@ pub mod agent_access;
 pub mod bell;
 pub mod command_provider;
 pub mod context;
+pub mod cwd_breadcrumb;
 pub mod dock;
 pub mod drag;
 pub mod layout;
