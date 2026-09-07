@@ -172,6 +172,11 @@ The acceptance launch also recorded a bounded Settings compatibility finding;
 now records how known removed keys are classified without weakening warnings
 for genuinely unknown future keys.
 
+The first post-acceptance boundary task is prepared but not started:
+[`R07-004-explorer-host-contract.md`](../tasks/rework/R07-004-explorer-host-contract.md)
+will remove the direct Explorer-to-Workspace view dependency described as B01
+in [`audits/remaining-boundaries.md`](audits/remaining-boundaries.md).
+
 ## Change and removal gates
 
 Every phase task must state its owner, canonical capability crate, affected
