@@ -1031,3 +1031,8 @@ the source, dependency, and verification evidence is complete. The visual
 state matrix remains pending because native capture lacks Screen Recording
 permission; the old Settings-key warning policy remains the bounded R07-003
 follow-up.
+
+The documentation audit corrected `docs/archive/README.md`: accepted ADRs are
+under `docs/adr/`, while superseded ADRs are under `docs/archive/adr/`. The
+root `CHANGELOG.md` and `docs/RELEASE.md` describe the native Rust project and
+retain predecessor/Tauri wording only for migration and compatibility context.

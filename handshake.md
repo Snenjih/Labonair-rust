@@ -30,6 +30,12 @@ remaining blockers are the legacy Settings warning classification in R07-003
 and native visual capture, which is blocked by missing Screen Recording
 permission.
 
+The documentation audit also corrected the archive README so it distinguishes
+the accepted ADR directory from superseded ADRs stored below `docs/archive/`.
+The root changelog and release guide are current native-project documentation;
+historical Tauri terminology is retained only where it explains migration or
+compatibility context.
+
 The final statusbar source audit found no shell-owned feature item:
 `crates/shell/src/status_items.rs` only composes typed registrations from
 Workspace, Notifications, Updater, Transfers, and the other capability
