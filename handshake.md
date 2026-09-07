@@ -70,7 +70,14 @@ module owns the command handler and receives a narrow Workspace-provided
 `TerminalCommandTarget`; the shell no longer contains this terminal adapter.
 Targeted Terminal/Workspace/Shell check, Clippy, tests, dependency, queue,
 format, and diff checks pass. The next remaining command owners are Search,
-Connections, Settings, Themes, Editor, Git, Snippets, and native shell actions.
+Connections, Themes, Editor, Git, Snippets, and native shell actions.
+
+Settings toggle command handlers were moved into
+`labonair-settings::command_provider` in `0e4e948`. Zen Mode, header/statusbar,
+editor, terminal-cursor, and Vim preference commands now mutate the canonical
+Settings store from the Settings owner; shell composition only registers the
+owner contribution. Targeted Settings/Shell check, Clippy, tests, dependency,
+queue, format, and diff checks pass.
 
 The current R05 slices removed the untyped `general.notifyOnErrors` default,
 moved Background values behind their owner, moved dock/sidebar runtime state
@@ -85,7 +92,7 @@ Legacy `appCornerRadius` values are converted to the current
 `cornerRadiusScale` field during migration, with the modern value taking
 precedence when both are present.
 
-Current HEAD is `4b0c3fe` on `master`; the worktree contains only this
+Current HEAD is `0e4e948` on `master`; the worktree contains only this
 handshake update before its commit. R06
 boundaries removed the backend error facade, removed AI's stale backend edge,
 moved system-font discovery into the Theme owner, deleted the unconsumed
