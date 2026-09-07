@@ -1,4 +1,4 @@
-//! `workspace` area — command palette and source control.
+//! `workspace` area — command-palette preferences.
 
 use serde::{Deserialize, Serialize};
 
@@ -35,9 +35,6 @@ pub struct WorkspaceContent {
     pub command_palette_position: Option<String>,
     pub command_palette_history_size: Option<u32>,
     pub command_palette_close_on_overlay_click: Option<bool>,
-
-    // ── Source control ───────────────────────────────────────────────────
-    pub git_status_poll_interval_ms: Option<u32>,
 }
 
 impl WorkspaceContent {
@@ -49,8 +46,6 @@ impl WorkspaceContent {
             command_palette_position: Some("top".to_string()),
             command_palette_history_size: Some(5),
             command_palette_close_on_overlay_click: Some(true),
-
-            git_status_poll_interval_ms: Some(5000),
         }
     }
 }

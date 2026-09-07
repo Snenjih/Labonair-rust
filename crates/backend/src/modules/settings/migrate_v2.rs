@@ -272,7 +272,6 @@ fn workspace_from(p: &Preferences) -> WorkspaceContent {
         command_palette_position: Some(p.command_palette_position.clone()),
         command_palette_history_size: Some(p.command_palette_history_size),
         command_palette_close_on_overlay_click: Some(p.command_palette_close_on_overlay_click),
-        git_status_poll_interval_ms: Some(p.git_status_poll_interval_ms),
     }
 }
 
@@ -477,7 +476,11 @@ const REMOVED_CONNECTION_FIELDS: &[&str] = &[
 
 /// Legacy palette presentation values with no native runtime consumer.
 #[cfg_attr(not(test), allow(dead_code))]
-const REMOVED_WORKSPACE_FIELDS: &[&str] = &["commandPaletteBlur", "commandPaletteAnimation"];
+const REMOVED_WORKSPACE_FIELDS: &[&str] = &[
+    "commandPaletteBlur",
+    "commandPaletteAnimation",
+    "gitStatusPollIntervalMs",
+];
 
 /// Legacy appearance value converted to the current typed scale field before
 /// Settings is written.

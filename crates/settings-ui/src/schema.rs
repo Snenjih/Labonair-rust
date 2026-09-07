@@ -687,13 +687,6 @@ pub fn all_fields() -> Vec<AnyField> {
             "Close on click-away",
             "Dismiss the palette when clicking outside the card."
         ),
-        field!(
-            workspace.git_status_poll_interval_ms,
-            "gitStatusPollIntervalMs",
-            Int { min: 500, max: 30_000, step: 500 },
-            "Status poll interval",
-            "How often to refresh git status (ms)."
-        ),
     ]
 }
 

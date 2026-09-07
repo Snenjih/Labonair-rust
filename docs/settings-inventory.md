@@ -63,7 +63,7 @@ means a runtime module, not merely serialization or the generated Settings UI.
 | `fileManager` | `sftpRemoteEditShowTransfers`, `sftpMaxRemoteFileSizeMb`, `sftpMaxConcurrentTransfers`, `sftpDefaultConflictResolution`, `sftpChunkSizeKb`, `sftpOnFolderFileError` | runtime transfer policy belongs to the SFTP/transfer owner | Remove from Settings; future owner defines its own typed policy |
 | `workspace` | `commandPaletteSearchMode`, `commandPaletteShowRecent`, `commandPaletteHistorySize`, `commandPaletteOpacity`, `commandPalettePosition`, `commandPaletteCloseOnOverlayClick` | command-palette runtime; Global | Keep as palette values, no registration state |
 | `workspace` | `commandPaletteBlur`, `commandPaletteAnimation` | no current native palette consumer | Remove; legacy input remains deserializable only |
-| `workspace` | `gitStatusPollIntervalMs` | Git panel polling; Global | Keep |
+| `workspace` | `gitStatusPollIntervalMs` | no current native SCM polling consumer | Remove; legacy input remains deserializable only |
 | `workspace` | `dockLayout`, `sidebarPosition`, `sidebarOpen`, `sidebarActivePanel`, `sidebarRightOpen`, `sidebarRightActivePanel`, `sidebarWidth`, `sidebarRightWidth` | workspace layout/session state; Runtime state | Removed from `SettingsContent`; `labonair-workspace` imports these legacy keys into `workspace-layout.json` |
 
 ## Required follow-up order
