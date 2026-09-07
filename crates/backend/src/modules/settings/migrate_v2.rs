@@ -48,6 +48,7 @@
 //! field silently falling off the table fails the test, per the task's own
 //! warning ("Mapping ergänzen, nicht den Test aufweichen").
 
+use serde::Deserialize;
 use serde_json::{Map, Value};
 use std::path::Path;
 
@@ -62,8 +63,41 @@ use labonair_settings_content::{
 };
 
 use super::preferences::{CursorStyle, Preferences, StartupTab, ThemePref};
-use super::{editor::EditorPrefs, CONFIG_FILE};
+use super::CONFIG_FILE;
 use super::{read_settings_from, write_settings_to};
+
+/// Historical standalone editor preferences used only while converting the
+/// pre-v2 `editor` object. It is deliberately private to the migrator: the
+/// running editor reads the canonical SettingsContent tree.
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+struct EditorPrefs {
+    vim_mode: bool,
+    number: bool,
+    relative_number: bool,
+    hlsearch: bool,
+    incsearch: bool,
+    smartcase: bool,
+    expandtab: bool,
+    tabstop: usize,
+    shiftwidth: usize,
+}
+
+impl Default for EditorPrefs {
+    fn default() -> Self {
+        Self {
+            vim_mode: false,
+            number: true,
+            relative_number: false,
+            hlsearch: true,
+            incsearch: true,
+            smartcase: true,
+            expandtab: true,
+            tabstop: 4,
+            shiftwidth: 4,
+        }
+    }
+}
 
 const KEY_PREFERENCES: &str = "preferences";
 const KEY_EDITOR: &str = "editor";

@@ -26,6 +26,14 @@ latent feature owners; a future implementation must enter through an AI-owned
 contract and registry. This reduces backend surface without changing any
 reachable product workflow.
 
+## Legacy editor migration boundary
+
+The old standalone editor persistence adapter and `Preferences::editor_prefs`
+projection were unreferenced by the running app and are removed. The
+historical `EditorPrefs` shape remains private inside `migrate_v2` solely to
+read old files; its original defaults are preserved so default Vim search
+values are not emitted as false user overrides.
+
 ## SSH connection event boundary
 
 The SSH transport/authentication pipeline was narrowed after the PTY and

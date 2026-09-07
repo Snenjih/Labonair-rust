@@ -720,3 +720,15 @@ dependency verifier still treated the editor as a one-edge engine crate.
 **Fix:** Added the intentional editor-to-interaction-contracts edge to
 `scripts/check_crate_deps.py`. The graph remains acyclic and the editor stays
 UI-free.
+
+## 2026-09-07 — Preserve defaults when privatizing legacy editor migration data
+
+**Bug found:** Moving the historical `EditorPrefs` wire type into the private
+Settings migrator initially used derived defaults. That changed `hlsearch`,
+`incsearch`, and `smartcase` from their legacy `true` defaults to `false`, so
+the sparsifier emitted false values as user overrides and two migration tests
+failed.
+
+**Fix:** Restored the exact legacy `Default` implementation inside
+`migrate_v2`. The standalone editor adapter was then deleted while the wire
+shape remains available only to the one-time migration.

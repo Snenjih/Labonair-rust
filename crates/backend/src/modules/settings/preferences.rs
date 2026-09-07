@@ -207,8 +207,8 @@ pub struct Preferences {
     pub editor_word_wrap: bool,
     pub editor_line_numbers: bool,
     /// PORT-ONLY: Vim `relativenumber` surfaced as a setting row (the reference
-    /// keeps it only in the internal `EditorPrefs`). Kept because
-    /// `Preferences::editor_prefs()` feeds it to the editor view.
+    /// keeps it only in the historical editor wire object). Kept so the
+    /// one-time migrator can preserve the old config shape.
     pub editor_relative_line_numbers: bool,
     pub editor_indent_with_tabs: bool,
     pub editor_format_on_save: bool,
@@ -448,24 +448,6 @@ impl Default for Preferences {
     }
 }
 
-impl Preferences {
-    /// Project the editor-relevant preferences onto the [`EditorPrefs`] the
-    /// editor view consumes, keeping the search-related Vim options
-    /// (`hlsearch` / `incsearch` / `smartcase`) at their persisted values.
-    pub fn editor_prefs(&self) -> super::editor::EditorPrefs {
-        let base = super::editor::editor_prefs_load();
-        super::editor::EditorPrefs {
-            vim_mode: self.editor_vim_mode,
-            number: self.editor_line_numbers,
-            relative_number: self.editor_relative_line_numbers,
-            expandtab: !self.editor_indent_with_tabs,
-            tabstop: self.editor_tab_size as usize,
-            shiftwidth: self.editor_tab_size as usize,
-            ..base
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::super::CONFIG_FILE;
@@ -610,25 +592,6 @@ mod tests {
         assert_eq!(json["zenModeShowHeader"], false);
         assert_eq!(json["zenModeShowStatusbar"], false);
         std::fs::remove_dir_all(&dir).ok();
-    }
-
-    #[test]
-    fn editor_prefs_projection_maps_fields() {
-        let p = Preferences {
-            editor_vim_mode: true,
-            editor_line_numbers: false,
-            editor_relative_line_numbers: true,
-            editor_indent_with_tabs: true,
-            editor_tab_size: 2,
-            ..Default::default()
-        };
-        let e = p.editor_prefs();
-        assert!(e.vim_mode);
-        assert!(!e.number);
-        assert!(e.relative_number);
-        assert!(!e.expandtab);
-        assert_eq!(e.tabstop, 2);
-        assert_eq!(e.shiftwidth, 2);
     }
 
     #[test]

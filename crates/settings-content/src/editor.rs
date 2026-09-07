@@ -1,7 +1,8 @@
 //! `editor` area. Folds together the `Preferences` "Editor" field group and
 //! the previously-separate `"editor"` settings-file key
-//! (`labonair-backend::modules::settings::editor::EditorPrefs` — `hlsearch`/
-//! `incsearch`/`smartcase`) into one typed area, per T19-001's instructions.
+//! (The old standalone editor wire object is read only by the Settings
+//! migrator; `hlsearch`/`incsearch`/`smartcase` are retained during conversion)
+//! into one typed area, per T19-001's instructions.
 
 use serde::{Deserialize, Serialize};
 
