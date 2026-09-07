@@ -14,8 +14,8 @@ searchable command list plus validation diagnostics using shared UI-kit
 primitives, and delegates raw JSONC editing through one shell callback. Both
 the titlebar and command-palette Keymap entrypoints now open the native
 window. Per-row rebinding, conflict resolution controls, and visual checks of
-the new window remain open. The current commit is not yet recorded because
-this slice is still being verified.
+the new window remain open. The current commit is `5f81e74`; the worktree was
+clean immediately after that implementation commit.
 
 `R02-003` is complete. The user confirmed the native Rust shell visual state
 is acceptable, closing the final visual acceptance criterion. The project and
