@@ -24,7 +24,7 @@ Legacy `appCornerRadius` values are converted to the current
 `cornerRadiusScale` field during migration, with the modern value taking
 precedence when both are present.
 
-Current HEAD is `7dd8917` on `master`; the worktree is clean before this
+Current HEAD is `8df4a31` on `master`; the worktree is clean before this
 handshake update. The first R06
 boundaries removed the backend error facade, removed AI's stale backend edge,
 moved system-font discovery into the Theme owner, deleted the unconsumed
@@ -88,6 +88,12 @@ the active terminal execution path. Git and snippets adapters now receive
 explicit capability state, and the aggregate `App::emit` convenience method is
 gone. R06-001 remains active; the remaining work is the final application-state
 composition cleanup and proof that no compatibility edges remain.
+The aggregate backend `App`/`AppState` facade is now removed entirely: shell owns
+`BackendComposition`, the app entrypoint uses it, and backend tests construct
+only the capabilities under test. The dependency guard explicitly documents
+the shell-to-persistence composition edge. Full workspace check, Clippy,
+tests, formatting, dependency validation, queue validation, and diff checks
+pass.
 The General cleanup including `startupTerminalCount` is committed in
 `61abf4c`; the corner-radius normalization is committed in `c6e9890`, the
 unused Appearance values in `d596df2`, and the unwired Editor values in
