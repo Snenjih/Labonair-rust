@@ -148,6 +148,13 @@ for removed persisted Settings keys (`hosts`, `hostsMigrated`,
 this is recorded in `docs/audits/product-surface-acceptance.md` as the next
 migration/warning-path follow-up.
 
+The source audit also corrected the Command Palette status: ordinary command
+handlers and status items are owner-registered, but `shell/src/actions.rs`
+still interprets dynamic submenu actions for themes, hosts, snippets, Git,
+tabs, symbols, color mode, and hidden status items. This is now explicitly
+assigned to R07-002; the acceptance matrix no longer labels those surfaces as
+fully verified.
+
 The current R05 slices removed the untyped `general.notifyOnErrors` default,
 moved Background values behind their owner, moved dock/sidebar runtime state
 to the versioned Workspace-owned `workspace-layout.json`, and removed
@@ -161,7 +168,7 @@ Legacy `appCornerRadius` values are converted to the current
 `cornerRadiusScale` field during migration, with the modern value taking
 precedence when both are present.
 
-Current HEAD is `45952f3` on `master`; the worktree contains this handshake
+Current HEAD is `c6d49b9` on `master`; the worktree contains this handshake
 update before its commit. R06
 boundaries removed the backend error facade, removed AI's stale backend edge,
 moved system-font discovery into the Theme owner, deleted the unconsumed

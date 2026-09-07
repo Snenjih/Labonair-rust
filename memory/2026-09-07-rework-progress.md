@@ -952,3 +952,9 @@ The acceptance matrix therefore remains visually pending; source and compile
 evidence must not be treated as a visual substitute. The launch also surfaced
 warnings for removed persisted Settings keys, which now require an explicit
 migration or warning-path disposition.
+
+The R07 source audit found that dynamic command-palette submenu actions are
+still interpreted centrally by `shell/src/actions.rs`, even though ordinary
+command handlers and status-item registrations are owner-owned. The finding is
+bounded in R07-002; the acceptance matrix now reports the affected surfaces as
+partial rather than verified.
