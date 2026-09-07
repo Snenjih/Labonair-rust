@@ -24,7 +24,7 @@ Legacy `appCornerRadius` values are converted to the current
 `cornerRadiusScale` field during migration, with the modern value taking
 precedence when both are present.
 
-Current HEAD is `23cda28` on `master`; the worktree is clean before this
+Current HEAD is `b15d438` on `master`; the worktree is clean before this
 handshake update. The first R06
 boundaries removed the backend error facade, removed AI's stale backend edge,
 moved system-font discovery into the Theme owner, deleted the unconsumed
@@ -64,6 +64,10 @@ The SSH transport/authentication pipeline, jump-host handshakes, host-key
 verification, and PTY reader disconnect reporting now receive only `EventBus`;
 database, secrets, trust, and session-state composition remains in the
 connection adapter.
+The former aggregate `BackendSshService` is removed; shell composition now
+injects separate connection, tester, config, and tunnel adapters, each with
+only its required capability state. R06-001 remains active; the next boundary
+is the remaining aggregate MCP server/worker state and compatibility paths.
 The General cleanup including `startupTerminalCount` is committed in
 `61abf4c`; the corner-radius normalization is committed in `c6e9890`, the
 unused Appearance values in `d596df2`, and the unwired Editor values in
