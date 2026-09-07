@@ -24,7 +24,7 @@ Legacy `appCornerRadius` values are converted to the current
 `cornerRadiusScale` field during migration, with the modern value taking
 precedence when both are present.
 
-Current HEAD is `c8611ab` on `master`; the worktree is clean before this
+Current HEAD is `01564fb` on `master`; the worktree is clean before this
 handshake update. The first R06
 boundaries removed the backend error facade, removed AI's stale backend edge,
 moved system-font discovery into the Theme owner, deleted the unconsumed
@@ -79,12 +79,19 @@ SFTP/transfer worker and other backend platform adapters.
 The concrete SFTP transfer worker is now owned by `labonair-transfers-ssh`, a
 Transfers integration sibling. Chunked transfer execution, checksum
 verification, conflicts, cancellation, and reconnect requeue behavior no
-longer live in the backend SFTP module; the backend retains only SFTP
-session/remote-operation and transfer service/event adapters. Full workspace
+longer live in the backend; the backend retains only transfer service/event
+adapters. Full workspace
 tests, Clippy, formatting, dependency validation, queue validation, and diff
 checks pass; this boundary is committed as `c8611ab`. R06-001 remains active;
 the next boundary is the remaining backend platform adapters and compatibility
 paths.
+The concrete SFTP session setup and `labonair-sftp` contract adapters are now
+owned by `labonair-sftp-ssh`, a dedicated integration sibling. The backend no
+longer declares an SFTP module; shell composition injects the new adapter
+directly. Full workspace tests, Clippy, formatting, dependency validation,
+queue validation, and diff checks pass; this boundary is committed as
+`01564fb`. R06-001 remains active; the next boundary is the remaining Git,
+MCP, snippet, and compatibility adapters.
 The broad backend `AppEvent` enum and typed-emitter helper are also gone;
 SSH and MCP adapters decode their own raw event names directly at the
 capability boundary.
