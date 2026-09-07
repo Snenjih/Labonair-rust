@@ -301,3 +301,4 @@ pub trait GitGraphService: Send + Sync {
         session_id: Option<String>,
     ) -> GitFuture<()>;
 }
+pub mod command_provider;

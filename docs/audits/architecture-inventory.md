@@ -87,6 +87,9 @@ The current Cargo metadata shows several transitional edges that conflict with t
   asserts equality against the provider snapshot so it cannot silently create
   a second palette source. Keymap metadata remains outside this slice because
   `command-palette-core → keymap` currently prevents a reverse dependency.
+- Workspace tab/pane commands, Git commands, and Snippet commands now also
+  contribute owner-local provider metadata. The remaining shell palette rows
+  are limited to view/status/debug and keymap migration adapters.
 - `keymap` is now UI-free, but the temporary GPUI adapter and some consumers
   still enter through `command-palette`; the keymap editor and stable command
   registration path are not complete.

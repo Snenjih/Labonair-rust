@@ -33,3 +33,7 @@ The migrated provider rows were removed from the palette-only shell table.
 Remaining shell descriptors are transitional execution adapters and are
 validated against owner metadata, so they cannot silently become a second
 palette discovery source.
+
+The provider migration now includes workspace tabs/panes, Git, and Snippets.
+The remaining static palette rows are restricted to view/status/debug and
+keymap adapters whose owner boundaries are still pending.

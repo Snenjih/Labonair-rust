@@ -91,6 +91,11 @@ descriptor table. Shell-side entries for commands that still need GPUI
 execution are explicitly transitional adapters and are checked against the
 owner metadata at startup; they are not a second discovery source.
 
+The provider slice now also covers workspace tabs and panes, Git commands, and
+snippet commands. The remaining palette-only shell declarations are limited
+to commands whose owner boundary is still being extracted (view/status/debug
+and keymap adapters).
+
 `labonair-keymap` is intentionally not made a dependency of
 `labonair-command-palette-core`: the core currently depends on `ShortcutId`
 from keymap, so adding the reverse edge creates a Cargo cycle. `Open Keymap`

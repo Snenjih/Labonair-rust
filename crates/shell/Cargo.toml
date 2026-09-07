@@ -34,6 +34,8 @@ labonair-panel = { path = "../panel" }
 labonair-workspace = { path = "../workspace" }
 labonair-hosts = { path = "../hosts" }
 labonair-editor = { path = "../editor" }
+labonair-git = { path = "../git" }
+labonair-snippets = { path = "../snippets" }
 labonair-settings-ui = { path = "../settings-ui" }
 labonair-panel-explorer = { path = "../panel-explorer" }
 labonair-panel-scm = { path = "../panel-scm" }

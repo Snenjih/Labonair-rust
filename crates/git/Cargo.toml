@@ -9,3 +9,4 @@ path = "src/lib.rs"
 
 [dependencies]
 serde = { workspace = true }
+labonair-command-palette-core = { path = "../command-palette-core" }

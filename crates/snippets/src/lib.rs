@@ -44,3 +44,4 @@ pub struct SnippetReorderItem {
     pub id: String,
     pub sort_order: i64,
 }
+pub mod command_provider;

@@ -4330,6 +4330,7 @@ dependencies = [
 name = "labonair-git"
 version = "0.1.0"
 dependencies = [
+ "labonair-command-palette-core",
  "serde",
 ]
 
@@ -4583,6 +4584,7 @@ dependencies = [
  "labonair-command-palette-core",
  "labonair-editor",
  "labonair-filesystem",
+ "labonair-git",
  "labonair-gpui-ext",
  "labonair-hosts",
  "labonair-keymap",
@@ -4595,6 +4597,7 @@ dependencies = [
  "labonair-settings",
  "labonair-settings-ui",
  "labonair-sftp",
+ "labonair-snippets",
  "labonair-ssh",
  "labonair-terminal",
  "labonair-theme",
@@ -4613,6 +4616,7 @@ dependencies = [
 name = "labonair-snippets"
 version = "0.1.0"
 dependencies = [
+ "labonair-command-palette-core",
  "labonair-errors",
  "labonair-persistence",
  "libc",
@@ -4705,6 +4709,7 @@ dependencies = [
  "labonair-git",
  "labonair-gpui-ext",
  "labonair-hosts-ui",
+ "labonair-keymap",
  "labonair-notifications",
  "labonair-panel",
  "labonair-panel-git-graph",

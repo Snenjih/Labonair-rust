@@ -23,7 +23,9 @@ registration until the command/shortcut identity dependency is inverted.
 The migrated provider rows were also removed from the palette-only shell table;
 remaining shell descriptors are execution adapters checked against the owner
 snapshot. Next: migrate the remaining metadata and remove those transitional
-declarations. The current branch is `master`.
+declarations. Workspace tabs/panes, Git, and Snippets now also provide
+owner-local metadata; remaining rows are view/status/debug and keymap adapters.
+The current branch is `master`.
 
 ## Current Session: 2026-09-07 (Native visual helper hardened)
 
