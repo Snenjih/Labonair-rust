@@ -31,7 +31,7 @@ participate in the `App` state graph or in another backend module.
 | `agents` | agent values, built-in/load/save helpers | none found | AI/agent owner; verify whether the current implementation is still required |
 | `credentials` | credential CRUD adapters and credential values | none found | credentials owner; callers should use `labonair-credentials` contracts |
 | `directives` | directive values and local persistence helpers | none found | AI/agent owner; remove if no current workflow needs it |
-| `fonts` | custom-font file operations and system-font discovery | `shell::settings_services` | theme/settings discovery contract; move concrete file operations out of backend |
+| `fonts` | custom-font file operations and system-font discovery | `shell::settings_services` | system-font discovery moved to `labonair-theme`; the unconsumed custom-font path and backend module were removed |
 | `fs` | filesystem re-exports and watcher command adapters | no active module import found | filesystem foundation; delete compatibility wrapper after watcher consumers are migrated |
 | `git` | Git operation functions and `BackendGitService` / graph adapter | `shell::bootstrap`, `workspace` | `labonair-git` integration adapter; keep transport implementation narrow |
 | `mcp` | MCP state, grants, server operations, host revocation callback | `shell`, `workspace`; internal PTY/secrets use | MCP/AI integration boundary; remove `App` dependency from the capability owner |

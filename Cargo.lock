@@ -4164,7 +4164,6 @@ dependencies = [
  "dirs 6.0.0",
  "futures-util",
  "keyring",
- "labonair-backend",
  "labonair-filesystem",
  "reqwest",
  "serde",
@@ -4183,7 +4182,6 @@ dependencies = [
  "base64",
  "dirs 6.0.0",
  "flate2",
- "fontdb 0.24.0",
  "globset",
  "grep-regex",
  "grep-searcher",
@@ -4685,11 +4683,13 @@ dependencies = [
 name = "labonair-theme"
 version = "0.1.0"
 dependencies = [
+ "fontdb 0.24.0",
  "gpui",
  "labonair-command-palette-core",
  "palette",
  "serde",
  "serde_json",
+ "tokio",
  "tracing",
 ]
 

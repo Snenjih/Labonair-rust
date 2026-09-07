@@ -7,14 +7,14 @@ use std::sync::Arc;
 
 use labonair_settings_ui::{ServiceFuture, SettingsServices, SystemFontService};
 
-struct BackendSystemFontService;
+struct ThemeSystemFontService;
 
-impl SystemFontService for BackendSystemFontService {
+impl SystemFontService for ThemeSystemFontService {
     fn list(&self) -> ServiceFuture<Vec<String>> {
-        Box::pin(labonair_backend::modules::fonts::fonts_list_system())
+        Box::pin(labonair_theme::list_system_fonts())
     }
 }
 
 pub(crate) fn settings_services() -> SettingsServices {
-    SettingsServices::new(Arc::new(BackendSystemFontService))
+    SettingsServices::new(Arc::new(ThemeSystemFontService))
 }

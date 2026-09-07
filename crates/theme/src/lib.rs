@@ -23,7 +23,8 @@ mod tokens;
 pub use color::{oklch, oklch_a, parse_color, to_hex, to_rgb8, transparent};
 pub use contrast::{composite_over, contrast_ratio, relative_luminance};
 pub use fonts::{
-    embedded_fonts, MONO_FONT_FALLBACKS, MONO_FONT_FAMILY, UI_FONT_FALLBACKS, UI_FONT_FAMILY,
+    embedded_fonts, list_system_fonts, MONO_FONT_FALLBACKS, MONO_FONT_FAMILY, UI_FONT_FALLBACKS,
+    UI_FONT_FAMILY,
 };
 pub use icon_theme::{
     ChevronIcons, DirectoryIcons, IconDefinition, IconThemeContent, IconThemeMeta,

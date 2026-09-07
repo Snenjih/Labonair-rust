@@ -142,7 +142,7 @@ The current Cargo metadata shows several transitional edges that conflict with t
 - `backend` exposes a broad `App`, global event bus, and unrelated modules under one public crate.
 - `backend` still owns the filesystem watcher adapter because it emits directly through the legacy app event bus; the actual watcher implementation now belongs to `labonair-filesystem`.
 - `backend` still owns the public secret API adapter even though storage now belongs to `labonair-secrets`; existing SSH/Hosts/MCP call sites still pass the backend app handle.
-- `backend` no longer re-exports the structured error contract; backend transport code imports `labonair-errors` directly. The stale `labonair-ai → backend` dependency was also removed because AI already consumes `labonair-filesystem` directly. The remaining facade exports are tracked in [`backend-facade-inventory.md`](backend-facade-inventory.md).
+- `backend` no longer re-exports the structured error contract; backend transport code imports `labonair-errors` directly. The stale `labonair-ai → backend` dependency was also removed because AI already consumes `labonair-filesystem` directly. System-font discovery now belongs to `labonair-theme`; the unused backend custom-font module was removed. The remaining facade exports are tracked in [`backend-facade-inventory.md`](backend-facade-inventory.md).
 - Host CRUD/domain ownership and its compatibility signatures have left
   `backend`; `labonair-hosts` now owns the store and the shell injects the one
   MCP revocation handler. Backend transport code still reads host records while

@@ -76,9 +76,6 @@ rmcp = { version = "2.2.0", features = ["server", "macros", "transport-streamabl
 axum = "0.8"
 schemars = "1"
 
-# Fonts
-fontdb = "0.24.0"
-
 # Platform / misc
 socket2 = "0.5"
 libc = "0.2"

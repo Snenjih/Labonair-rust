@@ -15,6 +15,12 @@ The AI crate's stale direct dependency on `labonair-backend` was removed after
 source search confirmed that `NativeHost` already uses `labonair-filesystem`
 directly. Its documentation now names the actual filesystem capability.
 
+System-font discovery moved from the unused backend `fonts` module into the
+Theme owner, which already owns bundled fonts and typography. The backend
+custom-font compatibility module and its `fontdb` dependency were removed
+because no active UI or crate consumer exists; Settings now receives the
+Theme-owned discovery service.
+
 ## Native visual verification
 
 The exact Rust bundle was opened through its absolute `.app` path. Core

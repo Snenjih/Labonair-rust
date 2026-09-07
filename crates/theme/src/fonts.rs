@@ -11,6 +11,8 @@
 //! All bundled files are SIL OFL 1.1 licensed — see `assets/fonts/`.
 
 use std::borrow::Cow;
+use std::collections::BTreeSet;
+use std::sync::OnceLock;
 
 /// UI / sans-serif family name (matches the `name` table of the IBM Plex Sans
 /// files); mirrors Zed's `.ZedSans` alias.
@@ -56,6 +58,47 @@ pub fn embedded_fonts() -> Vec<Cow<'static, [u8]>> {
     .into_iter()
     .map(Cow::Borrowed)
     .collect()
+}
+
+static SYSTEM_FONTS_CACHE: OnceLock<Vec<String>> = OnceLock::new();
+
+/// Synchronously scan installed system font families once and return stable,
+/// user-selectable names. The scan is cached because it can inspect hundreds
+/// of font files; callers that run it from an async context should use
+/// `tokio::task::spawn_blocking`.
+fn scan_system_fonts_sync() -> Vec<String> {
+    let mut db = fontdb::Database::new();
+    db.load_system_fonts();
+
+    let mut names = BTreeSet::new();
+    for face in db.faces() {
+        let Some((family, _language)) = face.families.first() else {
+            continue;
+        };
+        let family = family.trim();
+        if family.is_empty() || family.starts_with('.') {
+            continue;
+        }
+        if matches!(
+            family.to_lowercase().as_str(),
+            "serif" | "sans-serif" | "monospace" | "cursive" | "fantasy" | "system-ui"
+        ) {
+            continue;
+        }
+        names.insert(family.to_string());
+    }
+    names.into_iter().collect()
+}
+
+/// List installed system font families for the Settings font picker.
+pub async fn list_system_fonts() -> Result<Vec<String>, String> {
+    tokio::task::spawn_blocking(|| {
+        SYSTEM_FONTS_CACHE
+            .get_or_init(scan_system_fonts_sync)
+            .clone()
+    })
+    .await
+    .map_err(|error| error.to_string())
 }
 
 #[cfg(test)]

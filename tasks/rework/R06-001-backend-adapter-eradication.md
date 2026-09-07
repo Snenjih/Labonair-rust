@@ -103,6 +103,8 @@ boundary still exists; that package must not become a second capability owner.
       directly from `labonair-errors`.
 - [x] Stale `labonair-ai → labonair-backend` dependency removed; AI's native
       tool host already consumes `labonair-filesystem` directly.
+- [x] System-font discovery moved to `labonair-theme`; the unconsumed backend
+      custom-font module and dependency were removed.
 - [ ] Move the remaining contracts and adapters behind injected capability
       services.
 - [ ] Delete the broad `App` facade paths and remaining compatibility edges.

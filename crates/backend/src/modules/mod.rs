@@ -1,7 +1,6 @@
 pub mod agents;
 pub mod credentials;
 pub mod directives;
-pub mod fonts;
 pub mod fs;
 pub mod git;
 pub mod mcp;
