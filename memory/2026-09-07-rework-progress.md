@@ -1125,3 +1125,10 @@ absolute path. The validator now normalizes the executable token, and the
 retry confirmed the native Rust window before macOS denied `screencapture` for
 the missing Screen Recording permission. The audit/task log records PID 75585
 and window 76852; the visual matrix remains pending.
+
+The updater terminology audit removed current-file references to a
+"Tauri-compatible" implementation. The release manifest intentionally retains
+the predecessor's wire shape, but current docs, packaging comments, and
+updater API docs now state that this is format compatibility only and that the
+native updater has no Tauri runtime dependency. Workspace check, Clippy, and
+the full workspace tests pass; the change is committed as `b663842`.

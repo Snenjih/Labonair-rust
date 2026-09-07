@@ -51,6 +51,11 @@ and window 76852 were confirmed as the native Rust app; `screencapture` then
 failed for the genuine missing Screen Recording permission. R07-001 remains
 visually pending, with the exact evidence recorded in the acceptance audit.
 
+The current updater documentation and comments now describe `latest.json` as
+predecessor-compatible wire format only; they explicitly state that the native
+updater has no Tauri runtime dependency. `cargo check`, Clippy, and the full
+workspace test suite pass after this clarification. Commit: `b663842`.
+
 The active-code source audit found no passive toast renderer or duplicate
 operation-error surface. The Explorer clipboard strip and editor conflict
 banner are actionable decision surfaces. The AI error model was corrected in
