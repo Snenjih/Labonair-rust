@@ -78,9 +78,6 @@ use gpui::{
 use labonair_backend::modules::mcp::{
     mcp_set_session_grant, mcp_tab_op_response, SessionKind, TabOpResult,
 };
-use labonair_backend::modules::scrollback::{
-    scrollback_cleanup, scrollback_delete, scrollback_load, scrollback_save,
-};
 use labonair_backend::{App as Backend, AppEvent};
 use labonair_git::{GitGraphService, GitService};
 use labonair_sftp::{SftpBrowserService, SftpSessionService};
@@ -707,7 +704,12 @@ impl Workspace {
                 // shows its prior history above the fresh prompt (T14-002).
                 let scrollback_id = entry.filter(|_| is_local).map(|e| {
                     if let Some(ansi) = e.view.read(cx).handle().serialize_scrollback(max_lines) {
-                        let _ = scrollback_save(&e.scrollback_id, &ansi, max_bytes);
+                        let _ = labonair_terminal::scrollback::save(
+                            &labonair_filesystem::paths::data_dir(),
+                            &e.scrollback_id,
+                            &ansi,
+                            max_bytes,
+                        );
                     }
                     e.scrollback_id.clone()
                 });
@@ -741,7 +743,11 @@ impl Workspace {
     /// Remove orphaned / stale persisted scrollback files (T14-002).
     pub fn cleanup_scrollback(&self, cx: &App) {
         let retention = terminal_settings(cx).scrollback_retention_secs();
-        scrollback_cleanup(&self.known_scrollback_ids(), retention);
+        labonair_terminal::scrollback::cleanup(
+            &labonair_filesystem::paths::data_dir(),
+            &self.known_scrollback_ids(),
+            retention,
+        );
     }
 
     /// Persist the snapshot now if the `sessionRestore` preference is on;
@@ -1655,8 +1661,13 @@ impl Workspace {
         let scrollback_id = replay_scrollback_id
             .map(str::to_string)
             .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
-        let replay_scrollback = replay_scrollback_id
-            .and_then(|id| scrollback_load(id, Some(ts.scrollback_max_bytes())));
+        let replay_scrollback = replay_scrollback_id.and_then(|id| {
+            labonair_terminal::scrollback::load(
+                &labonair_filesystem::paths::data_dir(),
+                id,
+                Some(ts.scrollback_max_bytes()),
+            )
+        });
         let options = SessionOptions {
             working_directory: cwd,
             shell,
@@ -2435,7 +2446,10 @@ impl Workspace {
             self.registry.close(entry.session_id);
             // Drop this pane's persisted scrollback — a closed pane is never
             // restored (T14-002).
-            scrollback_delete(&entry.scrollback_id);
+            labonair_terminal::scrollback::delete(
+                &labonair_filesystem::paths::data_dir(),
+                &entry.scrollback_id,
+            );
         }
     }
 

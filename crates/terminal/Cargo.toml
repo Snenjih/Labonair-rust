@@ -7,9 +7,13 @@ edition = "2021"
 gpui = { workspace = true }
 labonair-theme = { path = "../theme" }
 alacritty_terminal = { workspace = true }
+flate2 = "1"
 portable-pty = { workspace = true }
 tokio = { workspace = true }
 labonair-command-palette-core = { path = "../command-palette-core" }
 
 [target.'cfg(unix)'.dependencies]
 libc = { workspace = true }
+
+[dev-dependencies]
+uuid = { workspace = true }

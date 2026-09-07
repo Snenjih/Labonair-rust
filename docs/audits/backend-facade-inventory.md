@@ -37,7 +37,7 @@ participate in the `App` state graph or in another backend module.
 | `mcp` | MCP state, grants, server operations, host revocation callback | `shell`, `workspace`; internal PTY/secrets use | MCP/AI integration boundary; remove `App` dependency from the capability owner |
 | `model_prefs` | model preference values and local load/save | none found | AI owner; verify against current AI configuration before moving |
 | `pty` | local PTY state, sessions, events, I/O operations | indirect through backend/MCP | terminal owner; expose a terminal service rather than `App` state |
-| `scrollback` | scrollback persistence helpers | `shell`, `workspace` | terminal owner; inject persistence and remove backend path |
+| `scrollback` | scrollback persistence helpers | `shell`, `workspace` | moved to `labonair-terminal::scrollback`; Workspace supplies session/retention context |
 | `secrets` | secret-state compatibility API | no external module import found | `labonair-secrets`; remove wrapper after internal adapters accept `SecretsState`/service |
 | `settings` | legacy preferences, migrations, MCP prefs | `app`, `shell`, `workspace`; internal backend modules | Settings owns value persistence; Workspace owns live status-bar/panel layout persistence; legacy `barItemPlacements` is migration-only |
 | `sftp` | session adapter, remote operations, transfer worker state/commands | `shell`; internal SSH/transfer adapters | `labonair-sftp` and `labonair-transfers` integration boundaries |
@@ -57,7 +57,7 @@ crates:
 | Crate | Why it currently imports backend | Removal seam |
 |---|---|---|
 | `labonair` | constructs `App`, emits startup events, runs legacy settings migration | composition receives concrete services and typed startup hooks |
-| `labonair-shell` | constructs `App`, builds SSH/SFTP/Git/transfer adapters, reads MCP/settings/updater/font/scrollback compatibility APIs | one composition-only adapter import per capability, with no feature state access |
+| `labonair-shell` | constructs `App`, builds SSH/SFTP/Git/transfer adapters, reads MCP/settings/updater compatibility APIs | one composition-only adapter import per capability, with no feature state access |
 | `labonair-workspace` | owns legacy event bridge, scrollback, status/panel placement persistence, MCP grants, and consumes injected Git services | injected workspace services plus workspace-owned layout/terminal contracts; Git adapter construction now stays in shell composition |
 | `labonair-ai` | no active backend usage; stale dependency declaration | removed in the R06 inventory pass |
 
@@ -79,6 +79,11 @@ their persistence implementation in `labonair-workspace::status_placements`.
 The backend Settings module retains only the shared JSON helpers needed by
 legacy migrations and value-settings adapters; it no longer owns locks or live
 layout read/write functions.
+
+Terminal scrollback persistence likewise lives in
+`labonair-terminal::scrollback`. The backend no longer exports a scrollback
+module; Workspace calls the terminal capability for save/load/delete/cleanup,
+and shell shutdown uses the same capability directly.
 
 ## Verification commands
 

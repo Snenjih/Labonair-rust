@@ -6,7 +6,6 @@ pub mod git;
 pub mod mcp;
 pub mod model_prefs;
 pub mod pty;
-pub mod scrollback;
 pub mod secrets;
 pub mod settings;
 pub mod sftp;

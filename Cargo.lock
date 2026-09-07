@@ -4671,12 +4671,14 @@ name = "labonair-terminal"
 version = "0.1.0"
 dependencies = [
  "alacritty_terminal",
+ "flate2",
  "gpui",
  "labonair-command-palette-core",
  "labonair-theme",
  "libc",
  "portable-pty",
  "tokio",
+ "uuid",
 ]
 
 [[package]]

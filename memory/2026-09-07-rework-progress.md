@@ -39,6 +39,20 @@ canonical `GitService` and `GitGraphService` contracts, and the shell builds
 the concrete backend adapters once for both Workspace and the Git panels.
 Workspace no longer imports or constructs `BackendGitService` implementations.
 
+Live status-bar placement and panel-toggle visibility persistence was moved
+from backend Settings into `labonair-workspace::status_placements`. A single
+workspace-owner async write lock serializes both blobs because they share the
+same config file; backend Settings retains only JSON helpers needed by legacy
+migrations and value-settings adapters. The affected tests and full compile,
+Clippy, and focused test gates passed.
+
+Terminal scrollback persistence was then moved from the backend module into
+`labonair-terminal::scrollback`. The terminal capability now owns compression,
+atomic writes, size limits, restore, deletion, orphan cleanup, and retention;
+Workspace and shell only call its public API. The old backend module and its
+direct consumers are gone. Focused terminal/workspace/shell/backend tests pass;
+the full workspace gates are pending after this slice.
+
 ## Native visual verification
 
 The exact Rust bundle was opened through its absolute `.app` path. Core

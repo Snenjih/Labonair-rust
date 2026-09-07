@@ -110,6 +110,9 @@ boundary still exists; that package must not become a second capability owner.
       panel-toggle persistence now belong to the Workspace chrome owner.
 - [x] Workspace no longer constructs Git or Git Graph backend adapters; the
       composition root injects the canonical `labonair-git` services.
+- [x] Moved terminal scrollback persistence out of the backend into
+      `labonair-terminal::scrollback`; Workspace now supplies only session and
+      retention context.
 - [ ] Move the remaining contracts and adapters behind injected capability
       services.
 - [ ] Delete the broad `App` facade paths and remaining compatibility edges.

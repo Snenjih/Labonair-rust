@@ -507,7 +507,11 @@ pub(crate) fn bootstrap(
                 crate::session::save_snapshot(&snapshot);
             } else {
                 crate::session::clear_snapshot();
-                labonair_backend::modules::scrollback::scrollback_cleanup(&[], None);
+                labonair_terminal::scrollback::cleanup(
+                    &labonair_filesystem::paths::data_dir(),
+                    &[],
+                    None,
+                );
             }
             true
         }

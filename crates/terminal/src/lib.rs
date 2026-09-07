@@ -17,6 +17,7 @@ pub mod input;
 pub mod palette;
 pub mod registry;
 pub mod render;
+pub mod scrollback;
 pub mod session;
 pub mod shell_integration;
 
