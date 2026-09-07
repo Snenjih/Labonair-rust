@@ -47,7 +47,7 @@ first resolver slice is implemented and the GPUI menu adapter now consumes the
 keymap-owned canonical action resolver, including the legacy keymap alias.
 The next slice is to move reload/install orchestration behind the keymap
 adapter and then build the management surface. The current commit is
-`c2bffcf`; the worktree has the in-progress loader-ownership extraction below.
+`bdb3cfb`; the worktree is clean after the loader-ownership extraction below.
 
 The keymap JSONC parser, merge/validation model, default assets, and user-file
 path now live under `labonair-keymap::file`; Settings no longer owns or imports
