@@ -12,7 +12,8 @@ fn app_state_initializes_from_a_data_dir() {
         "labonair.db should be created"
     );
 
-    app.emit("test:event", serde_json::json!({ "ok": true }))
+    app.events
+        .emit("test:event", serde_json::json!({ "ok": true }))
         .expect("emit should succeed");
 
     std::fs::remove_dir_all(&dir).ok();

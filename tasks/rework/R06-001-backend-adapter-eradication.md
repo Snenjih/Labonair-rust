@@ -176,6 +176,8 @@ boundary still exists; that package must not become a second capability owner.
       shell composition injects only SSH state and EventBus.
 - [x] The snippets SSH runner no longer accepts the aggregate `App`; event
       delivery is an explicit EventBus capability.
+- [x] The aggregate `App::emit` convenience method and final SSH logging macro
+      dependency were removed; event producers use explicit EventBus values.
 - [x] Secrets compatibility wrappers and jump-host resolution no longer take
       the aggregate `App`; they receive only their actual state dependencies.
 - [ ] Move the remaining contracts and adapters behind injected capability

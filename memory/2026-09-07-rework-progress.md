@@ -55,6 +55,10 @@ the same pass. Shell composition now injects Git's SSH/EventBus capabilities,
 and snippet event delivery receives EventBus directly; neither adapter needs the
 aggregate backend App.
 
+The final production use of `App::emit` was removed from the SSH logging macro,
+and the app-state smoke test now exercises `app.events` directly. The aggregate
+facade no longer exposes an event-emission shortcut.
+
 ## R06-001 backend facade inventory and error boundary
 
 Recorded the complete backend module/export and direct-consumer map in

@@ -139,6 +139,11 @@ reads/writes, encryption access, and service-name migration now receive only
 reach the secret store. Jump-host resolution consequently depends only on its
 database and secrets inputs.
 
+The aggregate `App::emit` convenience method was removed after the SSH logging
+macro was switched to its already-injected `EventBus`. Event producers now use
+the explicit event capability directly; the application root remains a state
+and composition container rather than an event facade.
+
 ## Verification commands
 
 ```text

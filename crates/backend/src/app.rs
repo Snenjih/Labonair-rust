@@ -6,8 +6,6 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::sync::{Arc, Mutex as StdMutex};
 
-use serde::Serialize;
-
 use crate::events::EventBus;
 use crate::modules::mcp::McpState;
 use crate::modules::pty::PtyState;
@@ -96,10 +94,5 @@ impl App {
             });
         }
         crate::modules::mcp::spawn_auto_revoke_sweeper(self.events.clone(), self.mcp.clone());
-    }
-
-    /// Emit an app-wide event (replaces `window.emit`).
-    pub fn emit<S: Serialize>(&self, name: &str, payload: S) -> Result<(), String> {
-        self.events.emit(name, payload)
     }
 }

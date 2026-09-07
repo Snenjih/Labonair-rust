@@ -4,8 +4,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 macro_rules! log_step {
-    ($app:expr, $session_id:expr, $msg:expr) => {
-        let _ = $app.emit(
+    ($events:expr, $session_id:expr, $msg:expr) => {
+        let _ = $events.emit(
             "ssh_connect_log",
             serde_json::json!({ "session_id": $session_id, "message": $msg }),
         );
