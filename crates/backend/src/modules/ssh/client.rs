@@ -1,4 +1,4 @@
-use crate::modules::errors::LabonairError;
+use labonair_errors::LabonairError;
 use std::sync::Arc;
 use std::time::Duration;
 

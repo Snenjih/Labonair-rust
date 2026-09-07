@@ -24,11 +24,11 @@ Legacy `appCornerRadius` values are converted to the current
 `cornerRadiusScale` field during migration, with the modern value taking
 precedence when both are present.
 
-Current HEAD is `45b5b26` on `master`; the worktree contains only the R05
-closure documentation and R06 task activation. Formatting, workspace check,
-Clippy, full serial workspace tests, dependency validation, queue validation,
-and diff checks pass. R06-001 is now active; its first step is an evidence-based
-inventory of the broad backend exports and their consumers.
+Current HEAD is `8424103` on `master`; the worktree contains the first R06
+backend boundary plus its inventory documentation. The workspace check passes;
+the remaining full gates are running before this slice is committed. R06-001
+is active, and the next boundary is to move one concrete adapter family behind
+its canonical capability contract.
 The General cleanup including `startupTerminalCount` is committed in
 `61abf4c`; the corner-radius normalization is committed in `c6e9890`, the
 unused Appearance values in `d596df2`, and the unwired Editor values in

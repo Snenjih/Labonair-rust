@@ -19,13 +19,14 @@ const AUTO_REVOKE_SWEEP_INTERVAL: Duration = Duration::from_secs(60);
 pub fn revoke_agent_access(
     app: &crate::App,
     event: labonair_hosts::store::HostEvent,
-) -> Result<(), crate::modules::errors::LabonairError> {
+) -> Result<(), labonair_errors::LabonairError> {
     let labonair_hosts::store::HostEvent::AgentAccessBlocked { host_id } = event;
     let expired: Vec<String> = {
-        let grants =
-            app.mcp.grants.lock().map_err(|error| {
-                crate::modules::errors::LabonairError::Internal(error.to_string())
-            })?;
+        let grants = app
+            .mcp
+            .grants
+            .lock()
+            .map_err(|error| labonair_errors::LabonairError::Internal(error.to_string()))?;
         grants
             .values()
             .filter(|grant| grant.host_id.as_deref() == Some(host_id.as_str()))
@@ -40,7 +41,7 @@ pub fn revoke_agent_access(
         .mcp
         .grants
         .lock()
-        .map_err(|error| crate::modules::errors::LabonairError::Internal(error.to_string()))?;
+        .map_err(|error| labonair_errors::LabonairError::Internal(error.to_string()))?;
     for tab_id in &expired {
         grants.remove(tab_id);
     }
@@ -48,7 +49,7 @@ pub fn revoke_agent_access(
 
     for tab_id in expired {
         app.emit_event(crate::AppEvent::McpGrantExpired { tab_id })
-            .map_err(crate::modules::errors::LabonairError::Internal)?;
+            .map_err(labonair_errors::LabonairError::Internal)?;
     }
     Ok(())
 }

@@ -1,5 +1,16 @@
 # Rework progress — 2026-09-07
 
+## R06-001 backend facade inventory and error boundary
+
+Recorded the complete backend module/export and direct-consumer map in
+`docs/audits/backend-facade-inventory.md`. The structured error contract was
+already owned by `labonair-errors`, so the backend root re-exports, the unused
+`AppResult` alias, and `backend::modules::errors` were removed. Backend SSH,
+SFTP, and MCP implementation code now imports `labonair-errors` directly. This
+is the migration pattern for the remaining facade entries: consume the
+canonical contract first, then remove the compatibility edge once source
+search and focused tests prove it has no external consumer.
+
 ## Native visual verification
 
 The exact Rust bundle was opened through its absolute `.app` path. Core

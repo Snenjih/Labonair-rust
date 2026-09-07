@@ -94,3 +94,13 @@ verifier has no broad-facade exception.
 
 The binary may retain a small platform-adapter package if a concrete platform
 boundary still exists; that package must not become a second capability owner.
+
+## Progress
+
+- [x] Export and consumer inventory recorded in
+      [`docs/audits/backend-facade-inventory.md`](../../docs/audits/backend-facade-inventory.md).
+- [x] Structured error contract removed from the backend facade and consumed
+      directly from `labonair-errors`.
+- [ ] Move the remaining contracts and adapters behind injected capability
+      services.
+- [ ] Delete the broad `App` facade paths and remaining compatibility edges.

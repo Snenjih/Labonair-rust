@@ -42,6 +42,8 @@ Normative documents are written in English because they are also engineering con
 - [`performance.md`](performance.md) and [`perf-baseline.md`](perf-baseline.md) contain measurements and performance notes.
 - [`archive/`](archive/) contains superseded architecture and design documents. Archived documents are historical references, not instructions.
 - [`audits/architecture-inventory.md`](audits/architecture-inventory.md) records the current migration baseline.
+- [`audits/backend-facade-inventory.md`](audits/backend-facade-inventory.md)
+  records the R06 symbol-level backend export and consumer map.
 
 ## Source of truth
 

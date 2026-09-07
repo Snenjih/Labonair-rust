@@ -7,6 +7,11 @@ This document records the current repository shape during the module migration.
 It is evidence for the rework; it is not a target design. The target rules are
 in the normative documents linked from `docs/README.md`.
 
+The detailed R06 backend export and consumer map is maintained in
+[`backend-facade-inventory.md`](backend-facade-inventory.md). This baseline
+keeps the crate-level graph; the detailed inventory keeps the symbol-level
+removal conditions.
+
 ## Current workspace crates
 
 | Current crate | Current role | Target owner | Migration note |
@@ -19,7 +24,7 @@ in the normative documents linked from `docs/README.md`.
 | `editor` | Editor engine | editor module | Separate core from workspace view. |
 | `filesystem` | Local file access, traversal, mutation, search, and watcher implementation | foundation/platform service | First extracted service boundary; only the legacy `AppEvent` adapter remains in `backend` temporarily. |
 | `secrets` | Encrypted/plain local secret store and secret cache | foundation/platform service | Extracted from `backend`; backend keeps a compatibility adapter while SSH/Hosts/MCP migrate. |
-| `errors` | Structured error catalog and recovery hints | foundation/platform contract | Extracted from `backend`; capability crates can consume it without importing the backend facade. |
+| `errors` | Structured error catalog and recovery hints | foundation/platform contract | Extracted from `backend`; the backend compatibility module and root re-exports were removed in R06-001's first boundary. |
 | `hosts` | Saved-host and host-group domain contract plus host store | hosts module | Models, host persistence, canonical picker snapshots, and typed SSH/SFTP requests are standalone; the shell composes one manager/window instance. Only the MCP event adapter and transport implementations remain transitional in `backend`. |
 | `persistence` | Shared SQLite connection and schema lifecycle | foundation/platform service | Extracted from the host adapter; feature-specific queries still remain in `backend` and are next to migrate. |
 | `credentials` | Credential domain, secret-backed metadata, and SSH keypair generation | credentials module | Extracted from `backend`; backend keeps App-signature adapters while callers migrate. |
@@ -137,7 +142,7 @@ The current Cargo metadata shows several transitional edges that conflict with t
 - `backend` exposes a broad `App`, global event bus, and unrelated modules under one public crate.
 - `backend` still owns the filesystem watcher adapter because it emits directly through the legacy app event bus; the actual watcher implementation now belongs to `labonair-filesystem`.
 - `backend` still owns the public secret API adapter even though storage now belongs to `labonair-secrets`; existing SSH/Hosts/MCP call sites still pass the backend app handle.
-- `backend` still re-exports the structured error contract for old internal paths, while the implementation now belongs to `labonair-errors`.
+- `backend` no longer re-exports the structured error contract; backend transport code imports `labonair-errors` directly. The remaining facade exports are tracked in [`backend-facade-inventory.md`](backend-facade-inventory.md).
 - Host CRUD/domain ownership and its compatibility signatures have left
   `backend`; `labonair-hosts` now owns the store and the shell injects the one
   MCP revocation handler. Backend transport code still reads host records while

@@ -1,6 +1,6 @@
-use crate::modules::errors::LabonairError;
 use crate::modules::sftp::net_error::is_network_error;
 use crate::modules::ssh::{RushSession, SshState, TrustState};
+use labonair_errors::LabonairError;
 use std::sync::Arc;
 
 /// Proactively pings the lazily-opened SFTP subsystem with a cheap read-only
