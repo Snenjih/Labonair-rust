@@ -1058,3 +1058,6 @@ in both Foundation and the capability section. `docs/architecture.md` and
 `docs/capabilities.md` now use exact Cargo package names and classify
 `labonair-background` only as a product capability. Every current workspace
 package is now named in the core architecture documents.
+
+The same audit corrected the Notifications sibling entry from the abbreviated
+`notifications` label to the exact package name `labonair-notifications`.

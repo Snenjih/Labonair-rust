@@ -48,6 +48,10 @@ as foundation and as a capability. The normative architecture and capability
 matrix now use exact package names and classify Backgrounds only as a product
 capability. The active architecture documents mention every workspace package.
 
+The crate-map audit also corrected the Notifications sibling entry to the exact
+Cargo package name `labonair-notifications`; the architecture tables now use
+real package names consistently.
+
 The documentation audit also corrected the archive README so it distinguishes
 the accepted ADR directory from superseded ADRs stored below `docs/archive/`.
 The root changelog and release guide are current native-project documentation;
