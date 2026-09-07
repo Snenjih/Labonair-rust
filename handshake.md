@@ -24,8 +24,10 @@ The migrated provider rows were also removed from the palette-only shell table;
 remaining shell descriptors are execution adapters checked against the owner
 snapshot. Next: migrate the remaining metadata and remove those transitional
 declarations. Workspace tabs/panes, Git, and Snippets now also provide
-owner-local metadata; remaining rows are view/status/debug and keymap adapters.
-The current branch is `master`.
+owner-local metadata; the only remaining palette-only shell row is the native
+window `Toggle Full Screen` exception, while keymap identity inversion remains
+open. Command-palette core now owns the global palette command and Settings
+owns toggle-command metadata. The current branch is `master`.
 
 ## Current Session: 2026-09-07 (Native visual helper hardened)
 

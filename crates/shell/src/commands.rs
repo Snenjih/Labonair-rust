@@ -261,6 +261,9 @@ pub(crate) fn register_builtin_commands() -> CommandDispatcher {
     r.register_provider(&labonair_settings::command_provider::SettingsCommandProvider);
     r.register_provider(&labonair_git::command_provider::GitCommandProvider);
     r.register_provider(&labonair_snippets::command_provider::SnippetsCommandProvider);
+    r.register_provider(
+        &labonair_command_palette_core::command_provider::CommandPaletteCommandProvider,
+    );
 
     // ── Tabs / layout ────────────────────────────────────────────────────
     r.register(
@@ -942,8 +945,8 @@ pub(crate) fn register_builtin_commands() -> CommandDispatcher {
     // Palette-only entries still belong to the same registry. They have no
     // shell execution closure because the palette resolves their submenu or
     // emits a typed selection event itself.
-    for descriptor in [
-        command_descriptor(
+    {
+        let descriptor = command_descriptor(
             CommandId::ToggleFullScreen,
             "Toggle Full Screen",
             "View",
@@ -951,62 +954,7 @@ pub(crate) fn register_builtin_commands() -> CommandDispatcher {
             None,
             CommandIcon::Square,
             None,
-        ),
-        command_descriptor(
-            CommandId::SwitchTab,
-            "Switch Tab…",
-            "Layout",
-            always,
-            None,
-            CommandIcon::Terminal,
-            Some(CommandSubmenu::Tabs),
-        ),
-        command_descriptor(
-            CommandId::AdjustFontSize,
-            "Adjust Font Size…",
-            "Layout",
-            &[CommandContext::Terminal, CommandContext::Editor],
-            None,
-            CommandIcon::ChevronDown,
-            Some(CommandSubmenu::Zoom),
-        ),
-        command_descriptor(
-            CommandId::ShowStatusBarItem,
-            "Statusbar: Show Hidden Item…",
-            "View",
-            always,
-            None,
-            CommandIcon::Eye,
-            Some(CommandSubmenu::StatusBarHidden),
-        ),
-        command_descriptor(
-            CommandId::ZoomIn,
-            "Zoom In",
-            "View",
-            always,
-            Some(labonair_keymap::ShortcutId::ViewZoomIn),
-            CommandIcon::Plus,
-            None,
-        ),
-        command_descriptor(
-            CommandId::ZoomOut,
-            "Zoom Out",
-            "View",
-            always,
-            Some(labonair_keymap::ShortcutId::ViewZoomOut),
-            CommandIcon::Minus,
-            None,
-        ),
-        command_descriptor(
-            CommandId::ZoomReset,
-            "Reset Zoom",
-            "View",
-            always,
-            Some(labonair_keymap::ShortcutId::ViewZoomReset),
-            CommandIcon::Refresh,
-            None,
-        ),
-    ] {
+        );
         r.register_descriptor(descriptor);
     }
 

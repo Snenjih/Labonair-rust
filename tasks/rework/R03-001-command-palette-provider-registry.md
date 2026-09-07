@@ -93,8 +93,13 @@ owner metadata at startup; they are not a second discovery source.
 
 The provider slice now also covers workspace tabs and panes, Git commands, and
 snippet commands. The remaining palette-only shell declarations are limited
-to commands whose owner boundary is still being extracted (view/status/debug
-and keymap adapters).
+to `Toggle Full Screen`, whose execution directly targets the native window
+and therefore remains a shell composition exception. Keymap metadata remains
+the outstanding dependency-inversion item described above.
+
+The command-palette core now contributes its own global palette command, and
+Settings contributes the remaining settings-toggle metadata. The shell's
+palette-only list is therefore reduced to the single native-window exception.
 
 `labonair-keymap` is intentionally not made a dependency of
 `labonair-command-palette-core`: the core currently depends on `ShortcutId`

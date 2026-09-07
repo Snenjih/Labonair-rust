@@ -58,6 +58,25 @@ impl CommandProvider for WorkspaceCommandProvider {
                 .with_contexts(&[CommandContext::Terminal, CommandContext::Editor])
                 .with_icon(CommandIcon::ChevronDown)
                 .with_submenu(CommandSubmenu::Zoom),
+            CommandDescriptor::new(CommandId::ToggleSidebar, "Toggle File Explorer", "View")
+                .with_shortcut(ShortcutId::SidebarToggle)
+                .with_icon(CommandIcon::PanelLeft),
+            CommandDescriptor::new(
+                CommandId::ShowStatusBarItem,
+                "Statusbar: Show Hidden Item…",
+                "View",
+            )
+            .with_icon(CommandIcon::Eye)
+            .with_submenu(CommandSubmenu::StatusBarHidden),
+            CommandDescriptor::new(CommandId::ZoomIn, "Zoom In", "View")
+                .with_shortcut(ShortcutId::ViewZoomIn)
+                .with_icon(CommandIcon::Plus),
+            CommandDescriptor::new(CommandId::ZoomOut, "Zoom Out", "View")
+                .with_shortcut(ShortcutId::ViewZoomOut)
+                .with_icon(CommandIcon::Minus),
+            CommandDescriptor::new(CommandId::ZoomReset, "Reset Zoom", "View")
+                .with_shortcut(ShortcutId::ViewZoomReset)
+                .with_icon(CommandIcon::Refresh),
         ];
 
         for (id, index, shortcut) in [

@@ -89,7 +89,11 @@ The current Cargo metadata shows several transitional edges that conflict with t
   `command-palette-core → keymap` currently prevents a reverse dependency.
 - Workspace tab/pane commands, Git commands, and Snippet commands now also
   contribute owner-local provider metadata. The remaining shell palette rows
-  are limited to view/status/debug and keymap migration adapters.
+  are limited to the native-window `Toggle Full Screen` composition
+  exception; keymap identity inversion remains a separate migration item.
+- The command-palette core now owns the global palette command metadata, and
+  Settings owns its toggle-command metadata. The palette-only shell table is
+  consequently reduced to the native-window exception.
 - `keymap` is now UI-free, but the temporary GPUI adapter and some consumers
   still enter through `command-palette`; the keymap editor and stable command
   registration path are not complete.

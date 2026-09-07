@@ -4497,6 +4497,7 @@ dependencies = [
  "jsonc-parser",
  "jsonschema",
  "labonair-command-palette-core",
+ "labonair-keymap",
  "labonair-settings-content",
  "labonair-settings-json",
  "labonair-settings-macros",

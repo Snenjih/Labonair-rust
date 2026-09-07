@@ -35,5 +35,10 @@ validated against owner metadata, so they cannot silently become a second
 palette discovery source.
 
 The provider migration now includes workspace tabs/panes, Git, and Snippets.
-The remaining static palette rows are restricted to view/status/debug and
-keymap adapters whose owner boundaries are still pending.
+The remaining static palette row is only the native-window `Toggle Full Screen`
+composition exception. Keymap provider registration remains blocked by the
+current command-core-to-keymap dependency cycle.
+
+The command-palette core now owns the global palette command metadata, and
+Settings owns toggle-command metadata. The static palette table is reduced to
+the native-window exception.

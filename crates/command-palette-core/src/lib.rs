@@ -9,6 +9,8 @@ use std::fmt;
 
 use labonair_keymap::ShortcutId;
 
+pub mod command_provider;
+
 /// The surface that is active in the focused tab.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 pub enum CommandContext {
