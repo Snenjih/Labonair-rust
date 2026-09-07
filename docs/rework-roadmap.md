@@ -85,8 +85,10 @@ The implementation was split into two bounded tasks after the workspace
 identity work, and both are complete:
 
 - [`R03-001-command-palette-provider-registry.md`](../tasks/rework/R03-001-command-palette-provider-registry.md)
-  removed the remaining shell-owned product command behavior and made
-  provider-owned dynamic submenus the only palette source.
+  established the provider-owned metadata and dynamic-submenu snapshot
+  contract. Ordinary command handlers moved to owner contributions; dynamic
+  submenu execution remains an explicit transitional shell adapter tracked by
+  R07-002.
 - [`R03-002-keymap-runtime-and-editor.md`](../tasks/rework/R03-002-keymap-runtime-and-editor.md)
   made the keymap a runtime command-binding capability with contexts, conflicts,
   persistence, and a dedicated editor surface.

@@ -65,6 +65,11 @@ crates contribute handlers that capture their own entities and services; the
 shell supplies only the active window/application context. It must not become
 a product facade or contain a central feature dispatch table.
 
+The current tree still has one explicitly transitional edge: dynamic
+`SubmenuAction` events are interpreted by `shell/src/actions.rs` while the
+owner callback boundary is completed. R07-002 removes that interpretation;
+new feature-specific matches must not be added there.
+
 Persisted keymap action names cross into the runtime through one canonical
 resolver (`keymap::runtime::command_for_action`). Platform adapters may map the
 resulting `CommandId` to GPUI actions, but they must not introduce a second
