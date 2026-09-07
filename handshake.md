@@ -77,6 +77,13 @@ Clippy, tests, dependency verification, queue validation, and diff checks pass.
 Commit: `0c2c634`; worktree is clean. Next: define the lossless Keymap
 management/editor contract.
 
+The palette now renders key hints from the effective `CommandId` map, with
+descriptor defaults as the fallback. The legacy `ShortcutId` map remains only
+for statusbar panel tooltips and is explicitly transitional. Focused palette,
+shell, workspace, keymap, Clippy, dependency, queue, format, and diff checks
+pass. Commit: `4e54fcc`; worktree is clean. Next: define the lossless Keymap
+management/editor contract.
+
 The Keymap module now also owns last-good user-file recovery, validation issue
 retention, and built-in/user layer composition. Shell remains only the GPUI
 binding/display adapter and the existing filesystem watcher connection. The
