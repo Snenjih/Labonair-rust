@@ -14,7 +14,9 @@ tokio = { workspace = true }
 tracing = { workspace = true }
 labonair-theme = { path = "../theme" }
 labonair-ui-kit = { path = "../ui-kit" }
+labonair-panel = { path = "../panel" }
 labonair-transfers = { path = "../transfers" }
+labonair-workspace = { path = "../workspace" }
 
 [dev-dependencies]
 gpui = { workspace = true, features = ["test-support"] }

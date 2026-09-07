@@ -40,6 +40,7 @@ pub mod search_overlay;
 pub mod session;
 pub mod ssh_event_bridge;
 pub mod status_bar;
+pub mod status_items;
 pub mod status_placements;
 pub mod syntax_theme;
 pub mod tabs;

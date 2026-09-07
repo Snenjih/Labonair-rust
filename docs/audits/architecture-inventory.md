@@ -196,11 +196,16 @@ The current Cargo metadata shows several transitional edges that conflict with t
   feature-specific behavior that belongs to owning modules. Panel contribution
   construction has moved to the panel owners; command execution and status-item
   ownership remain tracked by R07-002.
+- The dedicated Jump Hosts status item was removed. Jump-host routing remains
+  part of SSH connection configuration and execution, while host management and
+  host selection keep their canonical menu/palette entry points.
 - `shell/src/titlebar.rs` now owns only the permanent global-menu trigger and
   typed navigation events; Settings, Keymap, Themes, Icon Themes, and Hosts
   are handled by their owning surfaces through the composition root.
-- The notification statusbar item has moved into `labonair-notifications`; the
-  remaining shell status-item code is composition and other status surfaces.
+- The notification statusbar item has moved into `labonair-notifications`;
+  Agent Access now belongs to `labonair-workspace`, and the Transfers item to
+  `labonair-transfers-ui`; remaining shell status-item code is composition and
+  workspace shell surfaces still awaiting owner extraction.
 - `shell/src/commands.rs` still maintains a second behavior registry beside
   the command-palette entries; the migration must leave one typed command
   registry and keep execution in the owning modules.

@@ -52,7 +52,7 @@ product ownership boundaries:
 | Settings categories for Hosts, Themes, Icon Themes, and Shortcuts | Remove as management surfaces | Settings stores values only; each capability owns its management UI. |
 | Toast notifications | Remove | Passive messages are retained and displayed only by the notification registry and statusbar dropdown. |
 | Duplicate feature-local operation-error banners | Remove | Operation failures publish notifications; actionable dialogs and field validation remain only where a decision or correction is required. |
-| Jump-host primary menu/badge | Remove as a separate surface; keep the capability | Jump hosts remain part of SSH connection configuration and execution. |
+| Jump-host primary menu/badge | Remove as a separate surface; keep the capability | Jump hosts remain part of SSH connection configuration and execution; no dedicated statusbar item is registered. |
 | Remote theme/icon-theme downloads | Defer | Only built-in, explicitly registered themes are supported until an extension workflow has a concrete owner and user flow. |
 | Static shell-wide command tables | Remove | Commands and submenus are contributed by owning modules through the command registry. |
 | Full Zed fork or greenfield rewrite | Reject for the current migration | Continue the standalone Rust implementation and use Zed only as a clean-room reference. |

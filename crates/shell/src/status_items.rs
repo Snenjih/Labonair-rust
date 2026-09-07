@@ -1,9 +1,9 @@
-//! Concrete [`StatusItem`]s + the single registration hook (T17-003).
+//! Remaining shell-owned [`StatusItem`]s + the composition hook (T17-003).
 //!
-//! Each type here is a small self-describing status-bar view ported 1:1 from
-//! the former `AppShell::render_*_item` methods. `labonair-shell` is the only
-//! crate that names these concrete types;
-//! [`register_builtin_status_items`] is the only place that lists them.
+//! Feature modules own their status-bar contributions and expose typed
+//! registration functions. This module retains only the workspace-scoped
+//! shell surface that has not yet moved to its owner; the registration hook
+//! below composes those contributions into the shared registry.
 //!
 //! The transitional `bar_items` placement blob (`BarLoc`, the
 //! `barItemPlacements` → `statusBarItemPlacements` migrator, the right-click
@@ -23,35 +23,14 @@ use labonair_panel::{
     AnyStatusItemHandle, DockPosition, PanelIcon, StatusItem, StatusItemRegistration,
     StatusMenuEntry, StatusSide,
 };
-use labonair_transfers_ui::{TransferUiEvent, TransfersView};
+use labonair_transfers_ui::TransfersView;
 use labonair_ui_kit::{icon_toggle_button, IconName, Palette};
-use labonair_workspace::agent_access::{AgentAccessEntry, AgentAccessStore};
+use labonair_workspace::agent_access::AgentAccessStore;
 
 use crate::cwd_breadcrumb as bc;
 use crate::theme::ThemeStore;
 use crate::updater::{UpdaterStatus, UpdaterView};
 use crate::workspace::Workspace;
-
-/// A small icon-only status-bar button, built on the shared
-/// [`icon_toggle_button`] (T20-003) — these actions aren't sticky-pressed
-/// toggles, so `pressed` is always `false`, but the chrome (20px, hover
-/// bg/fg swap) is otherwise identical to the panel-toggle cluster above.
-fn simple_bar_button<T: 'static>(
-    key: &'static str,
-    icon: IconName,
-    c: Palette,
-    cx: &mut Context<T>,
-    on_click: impl Fn(&mut T, &mut Window, &mut Context<T>) + 'static,
-) -> AnyElement {
-    icon_toggle_button(key, c, icon, false)
-        // Part of the status-bar toolbar tab-group (Zed-parity Phase 5.1):
-        // reachable by Tab and by the bar's Left/Right arrow loop.
-        .tab_index(0)
-        .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
-            on_click(this, window, cx);
-        }))
-        .into_any_element()
-}
 
 pub(crate) fn panel_toggle_icon(icon: PanelIcon) -> IconName {
     match icon {
@@ -898,390 +877,15 @@ impl StatusItem for UpdaterStatusItem {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// SFTP transfers.
 // ─────────────────────────────────────────────────────────────────────────────
-
-pub struct TransfersStatusItem {
-    workspace: Entity<Workspace>,
-    transfers: Entity<TransfersView>,
-    theme: Entity<ThemeStore>,
-}
-
-impl TransfersStatusItem {
-    pub fn new(
-        workspace: Entity<Workspace>,
-        transfers: Entity<TransfersView>,
-        theme: Entity<ThemeStore>,
-        cx: &mut Context<Self>,
-    ) -> Self {
-        cx.observe(&workspace, |_, _, cx| cx.notify()).detach();
-        cx.observe(&transfers, |_, _, cx| cx.notify()).detach();
-        cx.observe(&theme, |_, _, cx| cx.notify()).detach();
-        cx.subscribe(&transfers, |this, _, event: &TransferUiEvent, cx| {
-            let TransferUiEvent::Completed {
-                session_id,
-                direction,
-            } = event;
-            this.workspace.update(cx, |workspace, cx| {
-                workspace.refresh_sftp_after_transfer(session_id, *direction, cx);
-            });
-        })
-        .detach();
-        Self {
-            workspace,
-            transfers,
-            theme,
-        }
-    }
-}
-
-impl Render for TransfersStatusItem {
-    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        self.render_status(window, cx)
-    }
-}
-
-impl StatusItem for TransfersStatusItem {
-    fn id(&self) -> &'static str {
-        "transfers"
-    }
-    fn default_side(&self) -> StatusSide {
-        StatusSide::Right
-    }
-    fn order(&self) -> i32 {
-        20
-    }
-    fn group(&self) -> u32 {
-        1
-    }
-
-    fn render_status(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
-        // Keep the item visible while retained history exists, so completed
-        // and failed jobs remain discoverable from the statusbar.
-        let (total, active, open) = {
-            let transfers = self.transfers.read(cx);
-            (
-                transfers.total_count(),
-                transfers.active_count(),
-                transfers.is_open(),
-            )
-        };
-        if total == 0 {
-            return div().into_any_element();
-        }
-        let c = Palette::from_theme(self.theme.read(cx));
-        let button = simple_bar_button(
-            "bar-transfers",
-            IconName::ArrowDownUp,
-            c,
-            cx,
-            |this, _window, cx| {
-                this.transfers
-                    .update(cx, |transfers, cx| transfers.toggle(cx));
-            },
-        );
-        div()
-            .relative()
-            .child(button)
-            .when(active > 0, |element| {
-                element.child(
-                    div()
-                        .absolute()
-                        .top(px(-2.0))
-                        .right(px(-2.0))
-                        .min_w(px(8.0))
-                        .h(px(8.0))
-                        .rounded_full()
-                        .bg(c.accent),
-                )
-            })
-            .when(open, |element| element.child(self.transfers.clone()))
-            .into_any_element()
-    }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// AI-agent access badge (MCP grants).
-// ─────────────────────────────────────────────────────────────────────────────
-
-pub struct AgentAccessStatusItem {
-    store: Entity<AgentAccessStore>,
-    workspace: Entity<Workspace>,
-    theme: Entity<ThemeStore>,
-    open: Option<Point<Pixels>>,
-    focus: gpui::FocusHandle,
-}
-
-impl AgentAccessStatusItem {
-    pub fn new(
-        store: Entity<AgentAccessStore>,
-        workspace: Entity<Workspace>,
-        theme: Entity<ThemeStore>,
-        cx: &mut Context<Self>,
-    ) -> Self {
-        cx.observe(&store, |_, _, cx| cx.notify()).detach();
-        cx.observe(&workspace, |_, _, cx| cx.notify()).detach();
-        cx.observe(&theme, |_, _, cx| cx.notify()).detach();
-        Self {
-            store,
-            workspace,
-            theme,
-            open: None,
-            focus: cx.focus_handle(),
-        }
-    }
-
-    fn render_badge(
-        &mut self,
-        entries: Vec<AgentAccessEntry>,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
-        let (fg, muted, border, accent) = {
-            let t = self.theme.read(cx);
-            (t.foreground(), t.muted_foreground(), t.border(), t.accent())
-        };
-        let count = entries.len();
-
-        let badge = div()
-            .id("agent-access-badge")
-            .track_focus(&self.focus)
-            .key_context("StatusPopover")
-            .relative()
-            .size(px(20.0))
-            .flex()
-            .items_center()
-            .justify_center()
-            .rounded_md()
-            .text_color(muted)
-            .hover(|s| s.bg(border).text_color(fg))
-            .child(IconName::Shield.svg(muted))
-            .child(
-                div()
-                    .absolute()
-                    .top(px(-2.0))
-                    .right(px(-2.0))
-                    .min_w(px(13.0))
-                    .h(px(13.0))
-                    .px(px(2.0))
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .rounded_full()
-                    .bg(accent)
-                    .text_color(fg)
-                    .text_size(px(8.0))
-                    .child(SharedString::from(count.to_string())),
-            )
-            .on_click(cx.listener(|this, ev: &ClickEvent, w, cx| {
-                if this.open.is_some() {
-                    this.open = None;
-                } else {
-                    this.open = Some(ev.position());
-                    w.focus(&this.focus);
-                }
-                cx.notify();
-            }))
-            .on_key_down(cx.listener(|this, ev: &gpui::KeyDownEvent, _w, cx| {
-                if this.open.is_some() && ev.keystroke.key == "escape" {
-                    this.open = None;
-                    cx.notify();
-                    cx.stop_propagation();
-                }
-            }));
-
-        let Some(anchor) = self.open else {
-            return div()
-                .relative()
-                .flex_shrink_0()
-                .child(badge)
-                .into_any_element();
-        };
-
-        let view = cx.entity();
-        let dismiss = {
-            let v = view.clone();
-            move |_w: &mut Window, cx: &mut App| {
-                v.update(cx, |this, cx| {
-                    this.open = None;
-                    cx.notify();
-                })
-            }
-        };
-        let content = div()
-            .flex()
-            .flex_col()
-            .child(
-                div()
-                    .px_3()
-                    .py_2()
-                    .border_b_1()
-                    .border_color(border)
-                    .text_xs()
-                    .font_weight(gpui::FontWeight::SEMIBOLD)
-                    .text_color(fg)
-                    .child("AI Agent Access"),
-            )
-            .children(entries.into_iter().map(|entry| {
-                let tab_id = entry.tab_id;
-                let session_id = entry.session_id.clone();
-                div()
-                    .flex()
-                    .items_center()
-                    .gap_2()
-                    .px_3()
-                    .py_1p5()
-                    .hover(|s| s.bg(border))
-                    .child(
-                        div()
-                            .id(SharedString::from(format!("agent-jump-{tab_id}")))
-                            .flex_1()
-                            .min_w_0()
-                            .text_xs()
-                            .text_color(fg)
-                            .truncate()
-                            .child(SharedString::from(entry.label.clone()))
-                            .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
-                                this.open = None;
-                                this.workspace
-                                    .update(cx, |w, cx| w.reveal_tab(tab_id, window, cx));
-                                cx.notify();
-                            })),
-                    )
-                    .child(
-                        div()
-                            .id(SharedString::from(format!("agent-revoke-{tab_id}")))
-                            .px_1()
-                            .rounded_sm()
-                            .text_xs()
-                            .text_color(muted)
-                            .hover(|s| s.text_color(fg))
-                            .child("\u{2715}")
-                            .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
-                                let session_id = session_id.clone();
-                                this.store.update(cx, |s, cx| {
-                                    s.set_grant(
-                                        tab_id,
-                                        session_id,
-                                        false,
-                                        String::new(),
-                                        labonair_mcp_core::SessionKind::Ssh,
-                                        None,
-                                        cx,
-                                    );
-                                });
-                                cx.notify();
-                            })),
-                    )
-            }))
-            .into_any_element();
-
-        div()
-            .relative()
-            .flex_shrink_0()
-            .child(badge)
-            .child(labonair_ui_kit::popover(
-                anchor,
-                px(300.0),
-                Palette::from_theme(self.theme.read(cx)),
-                dismiss,
-                content,
-            ))
-            .into_any_element()
-    }
-}
-
-impl Render for AgentAccessStatusItem {
-    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        self.render_status(window, cx)
-    }
-}
-
-impl StatusItem for AgentAccessStatusItem {
-    fn id(&self) -> &'static str {
-        "agent-access"
-    }
-    fn default_side(&self) -> StatusSide {
-        StatusSide::Right
-    }
-    fn order(&self) -> i32 {
-        30
-    }
-    fn group(&self) -> u32 {
-        1
-    }
-
-    fn render_status(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
-        let (enabled, entries) = {
-            let aa = self.store.read(cx);
-            (aa.bridge_enabled(), aa.entries())
-        };
-        if !enabled || entries.is_empty() {
-            return div().into_any_element();
-        }
-        self.render_badge(entries, cx)
-    }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Jump hosts — opens the command palette's Hosts page.
-// ─────────────────────────────────────────────────────────────────────────────
-
-pub struct JumpHostsStatusItem {
-    theme: Entity<ThemeStore>,
-}
-
-impl JumpHostsStatusItem {
-    pub fn new(theme: Entity<ThemeStore>, cx: &mut Context<Self>) -> Self {
-        cx.observe(&theme, |_, _, cx| cx.notify()).detach();
-        Self { theme }
-    }
-}
-
-impl Render for JumpHostsStatusItem {
-    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        self.render_status(window, cx)
-    }
-}
-
-impl StatusItem for JumpHostsStatusItem {
-    fn id(&self) -> &'static str {
-        "jump-hosts"
-    }
-    fn default_side(&self) -> StatusSide {
-        StatusSide::Right
-    }
-    fn order(&self) -> i32 {
-        50
-    }
-    fn group(&self) -> u32 {
-        1
-    }
-
-    fn render_status(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
-        let c = Palette::from_theme(self.theme.read(cx));
-        simple_bar_button(
-            "bar-jump-hosts",
-            IconName::Server,
-            c,
-            cx,
-            |_this, window, cx| {
-                window.dispatch_action(Box::new(crate::menu::OpenHostSettings), cx);
-            },
-        )
-    }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Registration — the single place that names concrete status-item types.
+// Registration — the composition boundary for status-item contributions.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Register the built-in status-bar items on the workspace's
 /// [`StatusItemRegistry`](labonair_panel::StatusItemRegistry).
 ///
-/// Mirrors [`register_builtin_panels`](crate::app_shell): the shell builds each
-/// item entity once and the registry constructor hands back a clone (an
-/// `Entity` refcount bump), so the shell can keep observing its dependencies.
-/// Adding a status item = a new type here + one array entry.
+/// Feature modules build their own contributions; the shell only composes the
+/// resulting registrations and preserves the application-level ordering.
 #[allow(clippy::too_many_arguments)]
 pub fn register_builtin_status_items(
     workspace: &Entity<Workspace>,
@@ -1321,18 +925,18 @@ pub fn register_builtin_status_items(
     let cursor = cx.new(|cx| CursorPositionStatusItem::new(workspace.clone(), theme.clone(), cx));
     let preview = cx.new(|cx| PreviewUrlStatusItem::new(workspace.clone(), theme.clone(), cx));
     let updater_item = cx.new(|cx| UpdaterStatusItem::new(updater.clone(), theme.clone(), cx));
-    let transfers = cx.new(|cx| {
-        TransfersStatusItem::new(workspace.clone(), transfers_view.clone(), theme.clone(), cx)
-    });
-    let agent = cx.new(|cx| {
-        AgentAccessStatusItem::new(agent_access.clone(), workspace.clone(), theme.clone(), cx)
-    });
-    let jump_hosts = cx.new(|cx| JumpHostsStatusItem::new(theme.clone(), cx));
-
+    let transfers =
+        labonair_transfers_ui::status_item_registration(workspace, transfers_view, theme, cx);
+    let agent = labonair_workspace::status_items::status_item_registration(
+        agent_access,
+        workspace,
+        theme,
+        cx,
+    );
     // Default right-cluster order (T18-004 point 1), each item's `order()`:
     //   cwd(10)/cursor(11)/preview(12)  — group 0, active-tab-derived text,
     //     widest first so it can collapse before anything else has to move.
-    //   transfers(20)/agent(30)/updater(40)/jump-hosts(50) —
+    //   transfers(20)/agent(30)/updater(40) —
     //     group 1, the "action" items in the order the task file lists them.
     //   notifications(100) — group 2, always visible, pinned rightmost.
     // `StatusBar::cluster` draws a divider between groups, never within one.
@@ -1345,9 +949,8 @@ pub fn register_builtin_status_items(
         reg(&cursor, cx),
         reg(&preview, cx),
         reg(&updater_item, cx),
-        reg(&transfers, cx),
-        reg(&agent, cx),
-        reg(&jump_hosts, cx),
+        transfers,
+        agent,
     ];
     workspace.update(cx, |w, _| {
         let registry = w.status_item_registry_mut();

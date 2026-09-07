@@ -200,7 +200,9 @@ ALLOWED = {
     # Transfer presentation — owns the statusbar dropdown, while lifecycle
     # state and worker contracts remain in `labonair-transfers`.
     "labonair-transfers-ui": {
-        "labonair-theme", "labonair-ui-kit", "labonair-transfers",
+        "labonair-theme", "labonair-ui-kit", "labonair-panel",
+        "labonair-transfers",
+        "labonair-workspace",
     },
 
     # Panels — rule 2 (+ §8.4: explorer/snippets/ai may pull workspace).

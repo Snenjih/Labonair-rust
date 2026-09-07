@@ -806,3 +806,14 @@ generic helper that names every concrete panel type. The Git Graph crate stays
 acyclic because it returns a contribution without importing Workspace. The
 remaining shell command-execution and status-item lists are tracked separately
 by R07-002.
+
+## R07-001 — Statusbar contribution ownership
+
+The dedicated Jump Hosts badge was removed because it duplicated the canonical
+host-selection surface without exposing useful status. Agent Access now lives
+in `labonair-workspace::status_items`, and the transfer badge plus its queue
+refresh subscription live in `labonair-transfers-ui::status_item`. Both owners
+return typed `StatusItemRegistration` values; shell composition only inserts
+them into the shared registry. The transfers UI consequently depends on the
+Workspace contract for post-transfer refresh, while the dependency graph stays
+acyclic.

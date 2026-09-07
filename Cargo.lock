@@ -4798,9 +4798,11 @@ name = "labonair-transfers-ui"
 version = "0.1.0"
 dependencies = [
  "gpui",
+ "labonair-panel",
  "labonair-theme",
  "labonair-transfers",
  "labonair-ui-kit",
+ "labonair-workspace",
  "serde_json",
  "tokio",
  "tracing",

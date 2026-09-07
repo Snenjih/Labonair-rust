@@ -91,7 +91,6 @@ pub fn status_item_label(id: &str) -> &'static str {
         "updater" => "Updater",
         "transfers" => "Transfers",
         "agent-access" => "Agent Access",
-        "jump-hosts" => "Jump Hosts",
         _ => "Status Bar Item",
     }
 }
