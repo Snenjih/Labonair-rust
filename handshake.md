@@ -115,6 +115,13 @@ shell no longer contains those cross-surface closures. Targeted
 Workspace/Shell check, Clippy, tests, dependency, queue, format, and diff
 checks pass.
 
+The Keymap management entrypoint was moved into
+`labonair-keymap-ui::command_provider` in `813b61d`. The owner receives the
+command descriptor snapshot and an injected raw-file callback, so the shell
+no longer contains the `OpenKeymapJson` execution adapter. Targeted
+Keymap-UI/Shell check, Clippy, tests, dependency, queue, format, and diff
+checks pass.
+
 The current R05 slices removed the untyped `general.notifyOnErrors` default,
 moved Background values behind their owner, moved dock/sidebar runtime state
 to the versioned Workspace-owned `workspace-layout.json`, and removed
@@ -128,7 +135,7 @@ Legacy `appCornerRadius` values are converted to the current
 `cornerRadiusScale` field during migration, with the modern value taking
 precedence when both are present.
 
-Current HEAD is `1ae2dba` on `master`; the worktree contains only this
+Current HEAD is `813b61d` on `master`; the worktree contains only this
 handshake update before its commit. R06
 boundaries removed the backend error facade, removed AI's stale backend edge,
 moved system-font discovery into the Theme owner, deleted the unconsumed
