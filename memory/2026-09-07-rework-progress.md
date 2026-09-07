@@ -42,3 +42,7 @@ current command-core-to-keymap dependency cycle.
 The command-palette core now owns the global palette command metadata, and
 Settings owns toggle-command metadata. The static palette table is reduced to
 the native-window exception.
+
+The legacy `settings::OpenShortcuts` action now resolves centrally to the
+canonical `zed::OpenKeymap` action and is accepted by keymap validation without
+being exposed as a palette command.

@@ -28,6 +28,9 @@ owner-local metadata; the only remaining palette-only shell row is the native
 window `Toggle Full Screen` exception, while keymap identity inversion remains
 open. Command-palette core now owns the global palette command and Settings
 owns toggle-command metadata. The current branch is `master`.
+The legacy `settings::OpenShortcuts` keymap action is now an explicit
+compatibility alias for `zed::OpenKeymap`, accepted by validation but excluded
+from command discovery.
 
 ## Current Session: 2026-09-07 (Native visual helper hardened)
 

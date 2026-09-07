@@ -399,7 +399,6 @@ const ACTION_NAMES: &[(CommandId, &str)] = &[
     (CommandId::ConnectSsh, "connections::Connect"),
     (CommandId::OpenSftp, "connections::OpenSftp"),
     (CommandId::OpenCommandPalette, "command_palette::Toggle"),
-    (CommandId::OpenShortcuts, "settings::OpenShortcuts"),
     (CommandId::OpenSettings, "settings::Open"),
     (CommandId::OpenProject, "workspace::OpenProject"),
     (CommandId::ReturnToStandalone, "workspace::ReturnToStandalone"),
@@ -414,6 +413,9 @@ const ACTION_NAMES: &[(CommandId, &str)] = &[
 
 impl CommandId {
     pub fn action_name(self) -> &'static str {
+        if self == Self::OpenShortcuts {
+            return "settings::OpenShortcuts";
+        }
         ACTION_NAMES
             .iter()
             .find(|(id, _)| *id == self)
@@ -426,7 +428,21 @@ impl CommandId {
             .iter()
             .find(|(_, action)| *action == name)
             .map(|(id, _)| *id)
+            .or_else(|| (name == "settings::OpenShortcuts").then_some(Self::OpenKeymapJson))
     }
+}
+
+/// Return the canonical action name for a persisted action, including legacy
+/// aliases that must remain readable but must never become palette rows.
+pub fn canonical_action_name(name: &str) -> Option<&'static str> {
+    CommandId::from_action_name(name).map(CommandId::action_name)
+}
+
+/// Names accepted while validating existing user keymaps. Compatibility names
+/// are deliberately separate from [`known_action_names`] so they cannot be
+/// presented as discoverable commands.
+pub fn compatibility_action_names() -> std::collections::BTreeSet<&'static str> {
+    ["settings::OpenShortcuts"].into_iter().collect()
 }
 
 pub fn known_action_names() -> std::collections::BTreeSet<&'static str> {
@@ -511,6 +527,20 @@ mod tests {
             assert_eq!(CommandId::from_action_name(action), Some(*id));
             assert!(!action.is_empty());
         }
+    }
+
+    #[test]
+    fn legacy_keymap_alias_resolves_to_the_canonical_action() {
+        assert_eq!(
+            CommandId::from_action_name("settings::OpenShortcuts"),
+            Some(CommandId::OpenKeymapJson)
+        );
+        assert_eq!(
+            canonical_action_name("settings::OpenShortcuts"),
+            Some("zed::OpenKeymap")
+        );
+        assert!(!known_action_names().contains("settings::OpenShortcuts"));
+        assert!(compatibility_action_names().contains("settings::OpenShortcuts"));
     }
 
     #[derive(Clone)]

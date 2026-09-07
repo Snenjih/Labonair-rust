@@ -11,7 +11,10 @@
 use std::cell::RefCell;
 
 use gpui::App;
-use labonair_command_palette::{shortcut_slug, shortcuts, KeybindDisplay, KeybindMap};
+use labonair_command_palette::{
+    canonical_action_name, compatibility_action_names, shortcut_slug, shortcuts, KeybindDisplay,
+    KeybindMap,
+};
 use labonair_settings::keymap::{
     self, merge_keymaps, parse_keymap_jsonc, validate_keymap, EffectiveBinding, KeybindSource,
     KeymapFile, Severity, ValidationIssue,
@@ -39,10 +42,12 @@ pub fn last_issues() -> Vec<ValidationIssue> {
 }
 
 fn known_actions(registry: &CommandDispatcher) -> std::collections::BTreeSet<&'static str> {
-    registry
+    let mut actions = registry
         .iter()
         .map(|descriptor| descriptor.id.action_name())
-        .collect()
+        .collect::<std::collections::BTreeSet<_>>();
+    actions.extend(compatibility_action_names());
+    actions
 }
 
 /// Parse + validate the user `keymap.json`. On success, caches it as the new
@@ -130,7 +135,10 @@ fn display_map(effective: &[EffectiveBinding], registry: &CommandDispatcher) -> 
             continue;
         };
         let action_name = cmd_id.action_name();
-        match effective.iter().find(|b| b.action == action_name) {
+        match effective
+            .iter()
+            .find(|b| canonical_action_name(&b.action) == Some(action_name))
+        {
             Some(b) if b.keystrokes != s.binding => {
                 map.insert(shortcut_slug(s.id).to_string(), b.keystrokes.clone());
             }

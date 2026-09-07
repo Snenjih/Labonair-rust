@@ -19,9 +19,9 @@ mod palette;
 
 pub use fuzzy::{match_score, SearchMode};
 pub use labonair_command_palette_core::{
-    known_action_names, toggle_pref_key, CommandContext, CommandDescriptor, CommandIcon, CommandId,
-    CommandProvider, CommandRegistry, CommandRegistryError, CommandSubmenu, SubmenuDescriptor,
-    SubmenuItem, SubmenuProvider,
+    canonical_action_name, compatibility_action_names, known_action_names, toggle_pref_key,
+    CommandContext, CommandDescriptor, CommandIcon, CommandId, CommandProvider, CommandRegistry,
+    CommandRegistryError, CommandSubmenu, SubmenuDescriptor, SubmenuItem, SubmenuProvider,
 };
 pub use labonair_keymap::{
     effective_binding, effective_keys, find_conflict, keystroke_tokens, resolve_conflict, shortcut,

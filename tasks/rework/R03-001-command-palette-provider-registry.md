@@ -101,6 +101,10 @@ The command-palette core now contributes its own global palette command, and
 Settings contributes the remaining settings-toggle metadata. The shell's
 palette-only list is therefore reduced to the single native-window exception.
 
+The legacy `settings::OpenShortcuts` action is now an explicit compatibility
+alias for `zed::OpenKeymap`. It is accepted by keymap validation and normalized
+for display without being registered as a discoverable command.
+
 `labonair-keymap` is intentionally not made a dependency of
 `labonair-command-palette-core`: the core currently depends on `ShortcutId`
 from keymap, so adding the reverse edge creates a Cargo cycle. `Open Keymap`

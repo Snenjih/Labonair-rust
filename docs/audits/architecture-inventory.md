@@ -94,6 +94,9 @@ The current Cargo metadata shows several transitional edges that conflict with t
 - The command-palette core now owns the global palette command metadata, and
   Settings owns its toggle-command metadata. The palette-only shell table is
   consequently reduced to the native-window exception.
+- `settings::OpenShortcuts` is modeled as a compatibility alias for the
+  canonical `zed::OpenKeymap` action. Validation accepts it, while discovery
+  excludes it from visible command rows.
 - `keymap` is now UI-free, but the temporary GPUI adapter and some consumers
   still enter through `command-palette`; the keymap editor and stable command
   registration path are not complete.
