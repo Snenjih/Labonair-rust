@@ -124,11 +124,12 @@ a separate product decision after the core workflow is stable.
 - [x] The Notifications dropdown now composes notification rows from the
       shared UI-kit `ListItem`; its expansion, read-state, scrolling, and
       action behavior remain owned by Notifications.
-- [ ] Dynamic palette submenu actions are not yet fully owner-executable:
-      `shell/src/actions.rs::handle_palette_event` still interprets theme,
-      host, snippet, Git, tab, symbol, color-mode, and status-item actions.
-      This is a concrete owner-contribution follow-up for R07-002, not a
-      reason to add another shell-wide dispatch table.
+- [x] Dynamic palette submenu actions now cross the typed `PaletteAction`
+      contract and are dispatched through
+      `labonair-command-palette-runtime::PaletteActionHandlerRegistry`.
+      Workspace, Hosts-UI, Themes/Settings-UI, Source Control, and Snippets
+      own their action matching; `shell/src/actions.rs` only forwards opaque
+      actions.
 - [ ] The remaining status-item and shell composition code still needs the
       final source audit and visual evidence; any genuine feature-owned residue
       must be moved through the bounded R07-002 task.

@@ -20,7 +20,7 @@ use labonair_command_palette_core::{
     CommandContext, CommandDescriptor, CommandIcon, CommandId, CommandProvider,
     CommandRegistry as PaletteCommandRegistry, CommandSubmenu,
 };
-use labonair_command_palette_runtime::CommandHandlerRegistry;
+use labonair_command_palette_runtime::{CommandHandlerRegistry, PaletteActionHandlerRegistry};
 use labonair_hosts_ui::HostManagerView;
 
 use crate::app_shell::AppShell;
@@ -46,6 +46,7 @@ pub(crate) struct CommandDispatcher {
     metadata: PaletteCommandRegistry,
     commands: Vec<Command>,
     owner_handlers: CommandHandlerRegistry,
+    palette_actions: PaletteActionHandlerRegistry,
 }
 
 /// Native-window metadata owned by the shell composition surface. This is
@@ -114,6 +115,21 @@ impl CommandDispatcher {
         id: CommandId,
     ) -> Option<labonair_command_palette_runtime::CommandHandler> {
         self.owner_handlers.handler(id)
+    }
+
+    /// Mutable assembly boundary for dynamic palette action contributions.
+    pub(crate) fn palette_action_handlers_mut(&mut self) -> &mut PaletteActionHandlerRegistry {
+        &mut self.palette_actions
+    }
+
+    /// Forward an opaque dynamic palette action to its owning contribution.
+    pub(crate) fn dispatch_palette_action(
+        &self,
+        action: &labonair_command_palette_core::PaletteAction,
+        window: &mut Window,
+        cx: &mut gpui::App,
+    ) -> bool {
+        self.palette_actions.dispatch(action, window, cx)
     }
 
     /// Every registered command. Part of the registry read API (also consumed

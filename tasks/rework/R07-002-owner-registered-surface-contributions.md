@@ -2,7 +2,7 @@
 
 ## Status
 
-`⏳ Planned`
+`✅ Done`
 
 ## Owner
 
@@ -58,6 +58,14 @@ panel layout data, and statusbar placement data must remain compatible.
 This is an ownership refactor. Command search, keybindings, panel layout,
 statusbar placement, and native-window behavior must remain unchanged.
 
+## Current implementation
+
+The typed `PaletteAction` contract and `PaletteActionHandlerRegistry` are now
+in place. Workspace, Hosts-UI, Themes/Settings-UI, Source Control, and
+Snippets contribute their dynamic action handlers; shell composition only
+assembles those contributions and forwards opaque actions. Full verification
+and the source/audit update are complete.
+
 ## Verification
 
 - Add or update focused registry/contribution tests.
@@ -65,6 +73,12 @@ statusbar placement, and native-window behavior must remain unchanged.
   [`feature-lifecycle.md`](../../docs/feature-lifecycle.md).
 - Recheck that no duplicate shell-wide command, panel, or status-item list
   remains and update the capability matrix and architecture inventory.
+
+All verification gates pass. The source audit confirms that
+`shell/src/actions.rs` forwards opaque `PaletteAction` values only, while
+Workspace, Hosts-UI, Themes/Settings-UI, Source Control, and Snippets own the
+dynamic action matching. The dependency verifier reports an acyclic graph with
+the owner-contribution edges explicitly allow-listed.
 
 ## Removal condition
 

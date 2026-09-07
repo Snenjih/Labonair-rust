@@ -8,7 +8,7 @@ use std::rc::Rc;
 use gpui::{App, Entity, Window};
 use labonair_command_palette_core::{
     CommandContext, CommandDescriptor, CommandIcon, CommandId, CommandProvider, CommandSubmenu,
-    SubmenuAction, SubmenuDescriptor, SubmenuItem, SubmenuSnapshot,
+    PaletteAction, SubmenuAction, SubmenuDescriptor, SubmenuItem, SubmenuSnapshot,
 };
 use labonair_command_palette_runtime::CommandHandlerRegistry;
 use labonair_keymap::ShortcutId;
@@ -227,6 +227,42 @@ pub fn register_handlers(registry: &mut CommandHandlerRegistry, workspace: &Enti
             cx.notify();
         });
     });
+}
+
+/// Register Workspace-owned dynamic palette actions. The palette only emits
+/// typed values; tab navigation, editor navigation, and status-item
+/// placement remain implemented by the Workspace owner.
+pub fn register_palette_action_handlers(
+    registry: &mut labonair_command_palette_runtime::PaletteActionHandlerRegistry,
+    workspace: &Entity<Workspace>,
+) {
+    let workspace_handle = workspace.clone();
+    registry
+        .register("workspace", move |action, window, cx| {
+            let PaletteAction::Submenu(action) = action else {
+                return false;
+            };
+            match action {
+                SubmenuAction::SwitchToTab(id) => {
+                    workspace_handle
+                        .update(cx, |workspace, cx| workspace.reveal_tab(*id, window, cx));
+                    true
+                }
+                SubmenuAction::GoToLine(line) => {
+                    workspace_handle.update(cx, |workspace, cx| {
+                        workspace.active_editor_goto_line(*line, cx)
+                    });
+                    true
+                }
+                SubmenuAction::ShowStatusBarItem(id) => {
+                    workspace_handle
+                        .update(cx, |workspace, cx| workspace.show_status_bar_item(id, cx));
+                    true
+                }
+                _ => false,
+            }
+        })
+        .expect("workspace palette action handler must have a unique owner");
 }
 
 pub fn zoom_submenu() -> SubmenuSnapshot {

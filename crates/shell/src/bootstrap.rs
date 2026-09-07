@@ -439,7 +439,7 @@ pub(crate) fn bootstrap(
                 shell.show_command_palette(Some(PalettePage::Hosts), window, cx);
             });
         });
-    let command_registry = crate::commands::register_builtin_commands_for(
+    let mut command_registry = crate::commands::register_builtin_commands_for(
         &workspace,
         &updater,
         &host_manager,
@@ -465,6 +465,38 @@ pub(crate) fn bootstrap(
             cx,
         )
     });
+
+    // Dynamic palette actions are contributed by their owning capabilities.
+    // The shell supplies only narrow composition callbacks for operations
+    // that cross an entity boundary (for example opening a host in the
+    // workspace). It does not decode feature-specific action variants.
+    labonair_workspace::command_provider::register_palette_action_handlers(
+        command_registry.palette_action_handlers_mut(),
+        &workspace,
+    );
+    let host_workspace = workspace.clone();
+    let open_host: labonair_hosts_ui::command_provider::HostOpenHandler =
+        Rc::new(move |request, window, cx| {
+            host_workspace.update(cx, |workspace, cx| {
+                workspace.open_host_request(request, window, cx);
+            });
+        });
+    labonair_hosts_ui::command_provider::register_palette_action_handlers(
+        command_registry.palette_action_handlers_mut(),
+        open_host,
+    );
+    labonair_settings_ui::command_provider::register_palette_action_handlers(
+        command_registry.palette_action_handlers_mut(),
+        &theme,
+    );
+    labonair_panel_scm::register_palette_action_handlers(
+        command_registry.palette_action_handlers_mut(),
+        &git_panel,
+    );
+    labonair_panel_snippets::register_palette_action_handlers(
+        command_registry.palette_action_handlers_mut(),
+        &snippets,
+    );
 
     // The AI live-bridge stays wired to the workspace (snapshot feed + command
     // drain below) even though the frontend AI panel is parked — the bridge is

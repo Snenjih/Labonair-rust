@@ -1,9 +1,10 @@
 //! UI-free command identity, descriptors, and registry.
 //!
 //! The registry is the product-level extension point for commands. Feature
-//! modules publish descriptors here and keep their execution behaviour in the
-//! composition root. This crate deliberately has no GPUI dependency: the
-//! palette view adapts descriptors to icons and visual sub-pages separately.
+//! modules publish descriptors here and keep their execution behaviour behind
+//! typed runtime contribution registries. This crate deliberately has no GPUI
+//! dependency: the palette view adapts descriptors to icons and visual
+//! sub-pages separately.
 
 use std::fmt;
 
@@ -182,6 +183,19 @@ pub enum SubmenuAction {
     SwitchBranch(String),
     GoToLine(usize),
     ShowStatusBarItem(String),
+}
+
+/// A user action emitted by a dynamic palette surface.
+///
+/// The palette owns navigation and presentation only. The action is handed to
+/// the runtime contribution registry, where the capability that owns the
+/// action performs it. Preview actions are included here because they are
+/// transient surface actions, not persisted commands.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum PaletteAction {
+    Submenu(SubmenuAction),
+    PreviewAppTheme(Option<String>),
+    PreviewIconTheme(Option<String>),
 }
 
 /// A secondary action displayed as a `Shift+Enter` row affordance.

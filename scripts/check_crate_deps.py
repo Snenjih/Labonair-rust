@@ -233,6 +233,8 @@ ALLOWED = {
         "labonair-notifications", "labonair-git",
         # transitional: editor and settings contracts are extracted in Phase 7
         "labonair-editor", "labonair-settings",
+        # owner contribution for the dynamic palette branch action
+        "labonair-command-palette-core", "labonair-command-palette-runtime",
     },
     "labonair-panel-git-graph": {
         "labonair-theme", "labonair-ui-kit", "labonair-panel",
@@ -242,6 +244,8 @@ ALLOWED = {
         "labonair-theme", "labonair-ui-kit", "labonair-panel",
         "labonair-notifications", "labonair-hosts", "labonair-snippets",
         "labonair-persistence", "labonair-workspace",
+        # owner contribution for the dynamic palette snippet action
+        "labonair-command-palette-core", "labonair-command-palette-runtime",
     },
     # [deviation] panel-ai also pulls command-palette (slash-command model)
     # and editor (composer buffer) — accepted, still no panel-* / shell edge.

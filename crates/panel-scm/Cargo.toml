@@ -18,6 +18,8 @@ labonair-editor = { path = "../editor" }
 labonair-settings = { path = "../settings" }
 labonair-notifications = { path = "../notifications" }
 labonair-git = { path = "../git" }
+labonair-command-palette-core = { path = "../command-palette-core" }
+labonair-command-palette-runtime = { path = "../command-palette-runtime" }
 
 [dev-dependencies]
 gpui = { workspace = true, features = ["test-support"] }

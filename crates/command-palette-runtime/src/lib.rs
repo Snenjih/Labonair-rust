@@ -7,7 +7,7 @@
 use std::rc::Rc;
 
 use gpui::{App, Window};
-use labonair_command_palette_core::CommandId;
+use labonair_command_palette_core::{CommandId, PaletteAction};
 
 /// A main-thread command callback. Owner crates capture only the entities and
 /// services they need; the shell supplies the active window and application.
@@ -23,6 +23,61 @@ struct Entry {
 #[derive(Clone, Default)]
 pub struct CommandHandlerRegistry {
     entries: Vec<Entry>,
+}
+
+/// A callback supplied by one capability owner for its dynamic palette
+/// actions. Returning `true` claims the action; returning `false` lets the
+/// next owner inspect it.
+pub type PaletteActionHandler = Rc<dyn Fn(&PaletteAction, &mut Window, &mut App) -> bool>;
+
+#[derive(Clone)]
+struct PaletteActionEntry {
+    owner: String,
+    handler: PaletteActionHandler,
+}
+
+/// Registry for executable dynamic-palette contributions.
+///
+/// The registry deliberately does not know about the shell or concrete
+/// feature entities. Each owner registers one narrow matcher and captures
+/// only its own entities/services. The composition root only assembles this
+/// registry and dispatches an opaque [`PaletteAction`].
+#[derive(Clone, Default)]
+pub struct PaletteActionHandlerRegistry {
+    entries: Vec<PaletteActionEntry>,
+}
+
+impl PaletteActionHandlerRegistry {
+    /// Register one owner contribution. One entry per owner keeps the
+    /// ownership boundary visible and rejects accidental duplicate assembly.
+    pub fn register(
+        &mut self,
+        owner: impl Into<String>,
+        handler: impl Fn(&PaletteAction, &mut Window, &mut App) -> bool + 'static,
+    ) -> Result<(), String> {
+        let owner = owner.into();
+        if self.entries.iter().any(|entry| entry.owner == owner) {
+            return Err(owner);
+        }
+        self.entries.push(PaletteActionEntry {
+            owner,
+            handler: Rc::new(handler),
+        });
+        Ok(())
+    }
+
+    /// Dispatch an action through owner contributions, returning whether one
+    /// owner claimed it.
+    pub fn dispatch(&self, action: &PaletteAction, window: &mut Window, cx: &mut App) -> bool {
+        self.entries
+            .iter()
+            .any(|entry| (entry.handler)(action, window, cx))
+    }
+
+    /// Owner names are useful for composition diagnostics and tests.
+    pub fn owners(&self) -> impl Iterator<Item = &str> {
+        self.entries.iter().map(|entry| entry.owner.as_str())
+    }
 }
 
 impl CommandHandlerRegistry {
@@ -73,5 +128,24 @@ mod tests {
             CommandId::NewTerminalTab
         );
         assert!(registry.handler(CommandId::NewTerminalTab).is_some());
+    }
+
+    #[test]
+    fn palette_action_owners_are_unique_and_ordered() {
+        let mut registry = PaletteActionHandlerRegistry::default();
+        registry
+            .register("unrelated", |_action, _window, _cx| false)
+            .unwrap();
+        registry
+            .register("owner", |_action, _window, _cx| true)
+            .unwrap();
+        assert_eq!(
+            registry.register("owner", |_action, _window, _cx| true),
+            Err("owner".to_string())
+        );
+        assert_eq!(
+            registry.owners().collect::<Vec<_>>(),
+            ["unrelated", "owner"]
+        );
     }
 }

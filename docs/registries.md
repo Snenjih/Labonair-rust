@@ -75,9 +75,11 @@ providers. The composition root only supplies live values and registers the
 resulting snapshots. Hidden status-bar state and labels are owned by the
 workspace status registry and use the same snapshot contract.
 
-Until R07-002 is complete, `labonair-shell::actions` is a documented
-transitional adapter for dispatching those typed submenu actions. It is not a
-second discovery registry and must not receive new feature-specific branches.
+`PaletteAction` values are dispatched by the
+`labonair-command-palette-runtime::PaletteActionHandlerRegistry`. Each owner
+registers one narrow contribution, and the shell only assembles the registry
+and forwards the active window/application context. `labonair-shell::actions`
+does not contain a feature-specific submenu dispatch table.
 
 ## Keymap registry
 

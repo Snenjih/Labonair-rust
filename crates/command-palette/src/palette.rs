@@ -8,8 +8,8 @@
 //!   that need an argument ("Switch Tab\u{2026}") push a follow-up page.
 //!
 //! Execution: the palette does not own the app state — on `Enter` it emits
-//! [`PaletteEvent`], which the host shell turns into either a GPUI action
-//! dispatch or a direct workspace call. Pref/theme-derived scalars are read
+//! [`PaletteEvent`], which the composition root forwards to the owner action
+//! registry. Pref/theme-derived scalars are read
 //! straight from the layered `labonair-settings` slices (see the "Settings
 //! reads" section below); [`PaletteWorkspace`] / [`UiTheme`] remain the
 //! generic host contracts for everything else.
@@ -32,7 +32,7 @@ use crate::fuzzy::{match_score, SearchMode};
 use crate::KeybindDisplay;
 use labonair_command_palette_core::{
     toggle_pref_key, CommandContext, CommandDescriptor, CommandIcon, CommandId, CommandSubmenu,
-    SubmenuAction, SubmenuItem, SubmenuRegistry,
+    PaletteAction, SubmenuAction, SubmenuItem, SubmenuRegistry,
 };
 use labonair_keymap::ShortcutId;
 
@@ -382,33 +382,10 @@ pub fn context_of(kind: PaletteTabKind, is_ssh: bool) -> Option<CommandContext> 
 #[derive(Clone, Debug)]
 pub enum PaletteEvent {
     Run(CommandId),
-    SwitchToTab(u64),
-    SetColorMode(ThemePreference),
-    SetEditorTheme(EditorThemeId),
-    /// Open an SSH terminal (`sftp = false`) or SFTP browser (`sftp = true`)
-    /// tab for the given host id — picked on the `Connect SSH` / `Open SFTP`
-    /// sub-pages.
-    ConnectHost {
-        host_id: String,
-        sftp: bool,
-    },
-    /// Activate a JSON app theme by id (`"default"` = built-in light/dark).
-    SetAppTheme(String),
-    /// Activate a registered icon theme by id (`"default"` = built-in).
-    SetIconTheme(String),
-    /// Live hover-preview a theme by id (`Some`) or revert (`None`) — fired as
-    /// the highlight moves across the `Themes` sub-page.
-    PreviewAppTheme(Option<String>),
-    /// Live hover-preview an icon theme by id (`Some`) or revert (`None`).
-    PreviewIconTheme(Option<String>),
-    /// Run a saved snippet by id with its default execution mode.
-    RunSnippet(String),
-    /// Check out a git branch by name.
-    SwitchBranch(String),
-    /// Jump the active editor's caret to a 0-based line (Go to Symbol).
-    GoToLine(usize),
-    /// Un-hide a status-bar item by id (T18-005).
-    ShowStatusBarItem(String),
+    /// A dynamic row or transient preview action. The palette does not
+    /// interpret this value; the composition root forwards it to the
+    /// owner-registered action registry.
+    Action(PaletteAction),
 }
 
 /// A dynamic choice rendered on a sub-page (tab, host, session, branch…).
@@ -641,8 +618,8 @@ where
         self.query.clear();
         self.pages = vec![Page::Root];
         self.selected = 0;
-        cx.emit(PaletteEvent::PreviewAppTheme(None));
-        cx.emit(PaletteEvent::PreviewIconTheme(None));
+        cx.emit(PaletteEvent::Action(PaletteAction::PreviewAppTheme(None)));
+        cx.emit(PaletteEvent::Action(PaletteAction::PreviewIconTheme(None)));
         if was_open {
             cx.emit(DismissEvent);
         }
@@ -684,21 +661,25 @@ where
         if matches!(self.page(), Page::Themes) {
             let rows = self.rows(cx);
             if let Some(RowKey::SetAppTheme(id)) = rows.get(self.selected).map(|r| r.key.clone()) {
-                cx.emit(PaletteEvent::PreviewAppTheme(Some(id)));
-                cx.emit(PaletteEvent::PreviewIconTheme(None));
+                cx.emit(PaletteEvent::Action(PaletteAction::PreviewAppTheme(Some(
+                    id,
+                ))));
+                cx.emit(PaletteEvent::Action(PaletteAction::PreviewIconTheme(None)));
                 return;
             }
         }
         if matches!(self.page(), Page::IconThemes) {
             let rows = self.rows(cx);
             if let Some(RowKey::SetIconTheme(id)) = rows.get(self.selected).map(|r| r.key.clone()) {
-                cx.emit(PaletteEvent::PreviewAppTheme(None));
-                cx.emit(PaletteEvent::PreviewIconTheme(Some(id)));
+                cx.emit(PaletteEvent::Action(PaletteAction::PreviewAppTheme(None)));
+                cx.emit(PaletteEvent::Action(PaletteAction::PreviewIconTheme(Some(
+                    id,
+                ))));
                 return;
             }
         }
-        cx.emit(PaletteEvent::PreviewAppTheme(None));
-        cx.emit(PaletteEvent::PreviewIconTheme(None));
+        cx.emit(PaletteEvent::Action(PaletteAction::PreviewAppTheme(None)));
+        cx.emit(PaletteEvent::Action(PaletteAction::PreviewIconTheme(None)));
     }
 
     fn active_context(&self, cx: &App) -> Option<CommandContext> {
@@ -938,43 +919,70 @@ where
             }
             RowKey::Tab(id) => {
                 self.close(cx);
-                cx.emit(PaletteEvent::SwitchToTab(id));
+                cx.emit(PaletteEvent::Action(PaletteAction::Submenu(
+                    SubmenuAction::SwitchToTab(id),
+                )));
             }
             RowKey::SetColorMode(p) => {
                 self.close(cx);
-                cx.emit(PaletteEvent::SetColorMode(p));
+                cx.emit(PaletteEvent::Action(PaletteAction::Submenu(
+                    SubmenuAction::SetColorMode(
+                        match p {
+                            ThemePreference::System => "system",
+                            ThemePreference::Light => "light",
+                            ThemePreference::Dark => "dark",
+                        }
+                        .to_string(),
+                    ),
+                )));
             }
             RowKey::SetEditorTheme(id) => {
                 self.close(cx);
-                cx.emit(PaletteEvent::SetEditorTheme(id));
+                cx.emit(PaletteEvent::Action(PaletteAction::Submenu(
+                    SubmenuAction::SetEditorTheme(id.slug().to_string()),
+                )));
             }
             RowKey::ConnectHost { host_id, sftp } => {
                 self.close(cx);
-                cx.emit(PaletteEvent::ConnectHost { host_id, sftp });
+                cx.emit(PaletteEvent::Action(PaletteAction::Submenu(
+                    SubmenuAction::ConnectHost { host_id, sftp },
+                )));
             }
             RowKey::SetAppTheme(id) => {
                 self.close(cx);
-                cx.emit(PaletteEvent::SetAppTheme(id));
+                cx.emit(PaletteEvent::Action(PaletteAction::Submenu(
+                    SubmenuAction::SetAppTheme(id),
+                )));
             }
             RowKey::SetIconTheme(id) => {
                 self.close(cx);
-                cx.emit(PaletteEvent::SetIconTheme(id));
+                cx.emit(PaletteEvent::Action(PaletteAction::Submenu(
+                    SubmenuAction::SetIconTheme(id),
+                )));
             }
             RowKey::RunSnippet(id) => {
                 self.close(cx);
-                cx.emit(PaletteEvent::RunSnippet(id));
+                cx.emit(PaletteEvent::Action(PaletteAction::Submenu(
+                    SubmenuAction::RunSnippet(id),
+                )));
             }
             RowKey::SwitchBranch(name) => {
                 self.close(cx);
-                cx.emit(PaletteEvent::SwitchBranch(name));
+                cx.emit(PaletteEvent::Action(PaletteAction::Submenu(
+                    SubmenuAction::SwitchBranch(name),
+                )));
             }
             RowKey::GoToLine(line) => {
                 self.close(cx);
-                cx.emit(PaletteEvent::GoToLine(line));
+                cx.emit(PaletteEvent::Action(PaletteAction::Submenu(
+                    SubmenuAction::GoToLine(line),
+                )));
             }
             RowKey::ShowStatusBarItem(id) => {
                 self.close(cx);
-                cx.emit(PaletteEvent::ShowStatusBarItem(id));
+                cx.emit(PaletteEvent::Action(PaletteAction::Submenu(
+                    SubmenuAction::ShowStatusBarItem(id),
+                )));
             }
         }
     }

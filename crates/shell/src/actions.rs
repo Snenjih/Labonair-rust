@@ -15,9 +15,7 @@ use labonair_command_palette::{
     Command as PaletteCommand, Page as PalettePage, PaletteData, PaletteEvent, PaletteWorkspace,
 };
 use labonair_command_palette_core::{CommandSubmenu, SubmenuRegistry, SubmenuSnapshot};
-use labonair_settings::{
-    EditorSettings, GeneralSettings, Settings as _, SettingsStore, ThemeSettings,
-};
+use labonair_settings::{EditorSettings, GeneralSettings, Settings as _, ThemeSettings};
 
 use labonair_workspace::search_overlay::SearchOverlay;
 
@@ -284,8 +282,9 @@ impl AppShell {
         }
     }
 
-    /// Service a single palette pick straight from the `PaletteEvent`
-    /// subscription (T17-005 — no `pending_commands` buffer / `drain`).
+    /// Forward a single palette pick to the command or dynamic-action
+    /// registry. Feature-specific behavior is contributed by the owning
+    /// module; the shell does not interpret submenu variants.
     pub(crate) fn handle_palette_event(
         &mut self,
         event: PaletteEvent,
@@ -293,88 +292,14 @@ impl AppShell {
         cx: &mut Context<Self>,
     ) {
         match event {
-            PaletteEvent::SwitchToTab(id) => {
-                self.workspace
-                    .update(cx, |w, cx| w.reveal_tab(id, window, cx));
-            }
-            // Runnable commands go through the shared registry (T17-007).
             PaletteEvent::Run(id) => self.dispatch_command(id, window, cx),
-            PaletteEvent::ConnectHost { host_id, sftp } => {
-                let request = if sftp {
-                    labonair_hosts::HostOpenRequest::sftp(host_id)
-                } else {
-                    labonair_hosts::HostOpenRequest::ssh(host_id)
-                };
-                self.workspace.update(cx, |w, cx| {
-                    w.open_host_request(request, window, cx);
-                });
-            }
-            PaletteEvent::SetAppTheme(id) => {
-                labonair_settings_ui::activate_app_theme(&id, &self.theme, cx);
-            }
-            PaletteEvent::SetIconTheme(id) => {
-                if cx.has_global::<SettingsStore>() {
-                    let persisted_id = id.clone();
-                    let _ = cx
-                        .global_mut::<SettingsStore>()
-                        .update_user_settings(move |c| {
-                            c.appearance.icon_theme = Some(persisted_id);
-                        });
+            PaletteEvent::Action(action) => {
+                if !self
+                    .command_registry
+                    .dispatch_palette_action(&action, window, cx)
+                {
+                    tracing::warn!(?action, "unhandled dynamic command-palette action");
                 }
-                let _ = self
-                    .theme
-                    .update(cx, |theme, cx| theme.set_active_icon_theme(id, cx));
-            }
-            PaletteEvent::PreviewAppTheme(id) => {
-                labonair_settings_ui::preview_app_theme(id.as_deref(), &self.theme, cx);
-            }
-            PaletteEvent::PreviewIconTheme(id) => {
-                let _ = self
-                    .theme
-                    .update(cx, |theme, cx| theme.preview_icon_theme(id.as_deref(), cx));
-            }
-            PaletteEvent::RunSnippet(id) => {
-                self.panels
-                    .snippets
-                    .update(cx, |s, cx| s.run_by_id(&id, window, cx));
-            }
-            PaletteEvent::SwitchBranch(name) => {
-                self.panels
-                    .git_panel
-                    .update(cx, |g, cx| g.checkout(name, cx));
-            }
-            PaletteEvent::GoToLine(line) => {
-                self.workspace
-                    .update(cx, |w, cx| w.active_editor_goto_line(line, cx));
-            }
-            PaletteEvent::ShowStatusBarItem(id) => {
-                self.workspace.update(cx, |w, cx| {
-                    if let Some(sid) = w.status_item_registry().get(&id).map(|r| r.id) {
-                        w.set_status_bar_placement(sid, None, Some(false), cx);
-                    }
-                });
-            }
-            PaletteEvent::SetColorMode(pref) => {
-                use labonair_settings::content::general::ThemePref;
-                let value = match pref {
-                    crate::theme::ThemePreference::System => ThemePref::System,
-                    crate::theme::ThemePreference::Light => ThemePref::Light,
-                    crate::theme::ThemePreference::Dark => ThemePref::Dark,
-                };
-                if cx.has_global::<SettingsStore>() {
-                    let _ = cx
-                        .global_mut::<SettingsStore>()
-                        .update_user_settings(|c| c.general.theme = Some(value));
-                }
-                labonair_settings_ui::apply_prefs_to_theme(&self.theme, cx);
-            }
-            PaletteEvent::SetEditorTheme(id) => {
-                if cx.has_global::<SettingsStore>() {
-                    let _ = cx.global_mut::<SettingsStore>().update_user_settings(|c| {
-                        c.editor.editor_theme = Some(id.slug().to_string())
-                    });
-                }
-                labonair_settings_ui::apply_prefs_to_theme(&self.theme, cx);
             }
         }
     }

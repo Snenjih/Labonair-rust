@@ -2129,6 +2129,15 @@ impl Workspace {
         .detach();
     }
 
+    /// Show a status-bar item selected from the dynamic command palette.
+    /// Resolution from the persisted string to the registry's stable static
+    /// id belongs to Workspace, not to the shell composition layer.
+    pub fn show_status_bar_item(&mut self, id: &str, cx: &mut Context<Self>) {
+        if let Some(item_id) = self.status_item_registry().get(id).map(|item| item.id) {
+            self.set_status_bar_placement(item_id, None, Some(false), cx);
+        }
+    }
+
     /// "Reset to default" on the Personalization settings pane (T18-007):
     /// clears every user override in the local registry immediately, then
     /// deletes the persisted `statusBarItemPlacements` blob and bumps

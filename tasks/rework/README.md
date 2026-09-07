@@ -26,7 +26,7 @@ The active sequence is:
 17. `R05-001-settings-audit-and-value-normalization.md` — Done
 18. `R06-001-backend-adapter-eradication.md` — Done
 19. `R07-001-product-surface-acceptance.md` — In Progress
-20. `R07-002-owner-registered-surface-contributions.md` — Planned
+20. `R07-002-owner-registered-surface-contributions.md` — Done
 21. `R07-003-settings-legacy-warning-disposition.md` — Planned
 
 Phases 0–6 are complete. R02-001 is the first bounded Phase 2 shell task and
@@ -34,6 +34,8 @@ also connects the already-established theme registry to its intended palette
 surface. R02-002, R02-003, R03-001, R03-002, R04-001, R04-002, R05-001, and
 R06-001 are complete. R07-001 is now active as the product-surface acceptance
 audit; it may only create bounded follow-up tasks for discrepancies and must
-not silently expand the product scope.
+not silently expand the product scope. R07-002 is complete and records the
+owner-registered dynamic palette action boundary that resolved one of those
+findings.
 
 Only the earliest task whose dependencies are complete may be started.

@@ -1014,3 +1014,10 @@ ownership boundary explicit. Focused Command, Hosts, and Shell tests pass.
 The keymap runtime was also covered by the Hosts rename: both the canonical
 `connections::OpenHosts` action and the legacy alias resolve to `CommandId::OpenHosts`.
 The focused Command-Core and Keymap suites pass.
+
+R07-002 moved dynamic command-palette action execution behind the typed,
+UI-free `PaletteAction` contract and the GPUI-facing
+`PaletteActionHandlerRegistry`. Workspace, Hosts-UI, Themes/Settings-UI,
+Source Control, and Snippets now register owner-local matchers; shell action
+handling only forwards opaque values. The full workspace tests, Clippy,
+dependency verifier, rework queue verifier, formatting, and diff checks pass.

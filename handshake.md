@@ -17,17 +17,17 @@ Settings UI audit also removed the editable `appTheme` and
 owner; focused Settings-UI tests pass. The
 Notifications dropdown rows now use the shared UI-kit `ListItem` primitive;
 focused Notifications tests and the full workspace gates pass. The
-normative palette documents now explicitly describe the remaining dynamic
-submenu dispatcher as a temporary R07-002 transition instead of claiming it
-is already fully owner-local. The
+dynamic palette action boundary is now owner-local through the typed
+`PaletteActionHandlerRegistry`; Workspace, Hosts-UI, Themes/Settings-UI,
+Source Control, and Snippets contribute their own matchers, while the shell
+only forwards opaque actions. R07-002 is complete and its full workspace
+gates pass. The
 Hosts command identity is now canonical `OpenHosts`; the former
 `connections::OpenHostSettings` name is compatibility-only and is covered by
 focused command/Hosts/Shell tests. The keymap runtime now also verifies that
 both the canonical action and the legacy alias resolve to `CommandId::OpenHosts`.
-The
-remaining blockers are unchanged: dynamic palette actions still need the
-R07-002 owner-execution migration, legacy Settings warning classification needs
-R07-003, and native visual capture is blocked by missing Screen Recording
+remaining blockers are the legacy Settings warning classification in R07-003
+and native visual capture, which is blocked by missing Screen Recording
 permission.
 
 R03-002 Keymap, R04-001 static Themes, R04-002 Hosts, and R05-001 Settings

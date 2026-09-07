@@ -159,12 +159,11 @@ and implemented only through bounded follow-up tasks.
 Remote theme downloads, marketplace behavior, and extension hosting remain
 deferred until a later product decision adds a concrete workflow and owner.
 
-The cross-module visual and workflow gate is currently active:
+The cross-module visual and workflow gate remains open:
 [`R07-001-product-surface-acceptance.md`](../tasks/rework/R07-001-product-surface-acceptance.md).
-The separately tracked owner-contribution task is
+The owner-contribution task is complete and closes the dynamic palette
+execution residue:
 [`R07-002-owner-registered-surface-contributions.md`](../tasks/rework/R07-002-owner-registered-surface-contributions.md),
-but it may only be activated after the R07-001 acceptance audit confirms the
-remaining discrepancies.
 
 The acceptance launch also recorded a bounded Settings compatibility finding:
 [`R07-003-settings-legacy-warning-disposition.md`](../tasks/rework/R07-003-settings-legacy-warning-disposition.md)

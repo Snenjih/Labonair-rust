@@ -35,6 +35,8 @@ use gpui::{
     Focusable, InteractiveElement, IntoElement, KeyDownEvent, MouseDownEvent, ParentElement,
     Pixels, Point, Render, SharedString, StatefulInteractiveElement, Styled, Window,
 };
+use labonair_command_palette_core::{PaletteAction, SubmenuAction};
+use labonair_command_palette_runtime::PaletteActionHandlerRegistry;
 use labonair_git::{Branch, CommitInfo, FileStatus, GitService, GitStatus, WorkspaceGitState};
 use labonair_panel::{ProjectDiffFile, ProjectDiffMode, ProjectDiffRequest};
 use tokio::runtime::Handle as TokioHandle;
@@ -63,6 +65,25 @@ pub fn panel_registration(
         build: Arc::new(move |_window, _cx| Arc::new(handle.clone()) as AnyPanelHandle),
     };
     registration
+}
+
+/// Register the Source Control panel's dynamic branch-switch action. Branch
+/// choice data is supplied by the panel, and checkout remains its own
+/// capability operation rather than a shell-owned callback.
+pub fn register_palette_action_handlers(
+    registry: &mut PaletteActionHandlerRegistry,
+    git_panel: &Entity<GitPanelView>,
+) {
+    let git_panel = git_panel.clone();
+    registry
+        .register("source-control", move |action, _window, cx| {
+            let PaletteAction::Submenu(SubmenuAction::SwitchBranch(name)) = action else {
+                return false;
+            };
+            git_panel.update(cx, |panel, cx| panel.checkout(name.clone(), cx));
+            true
+        })
+        .expect("source-control palette action handler must have a unique owner");
 }
 
 // Unified-diff parsing moved to `labonair-editor` in the Zed-parity Phase 4

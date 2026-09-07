@@ -4480,6 +4480,8 @@ name = "labonair-panel-scm"
 version = "0.1.0"
 dependencies = [
  "gpui",
+ "labonair-command-palette-core",
+ "labonair-command-palette-runtime",
  "labonair-editor",
  "labonair-git",
  "labonair-notifications",
@@ -4496,6 +4498,8 @@ name = "labonair-panel-snippets"
 version = "0.1.0"
 dependencies = [
  "gpui",
+ "labonair-command-palette-core",
+ "labonair-command-palette-runtime",
  "labonair-hosts",
  "labonair-notifications",
  "labonair-panel",

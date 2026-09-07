@@ -36,6 +36,8 @@ use gpui::{
     IntoElement, KeyDownEvent, MouseButton, MouseDownEvent, ParentElement, Render, SharedString,
     StatefulInteractiveElement, Styled, Window,
 };
+use labonair_command_palette_core::{PaletteAction, SubmenuAction};
+use labonair_command_palette_runtime::PaletteActionHandlerRegistry;
 use labonair_hosts::{store as host_store, Host};
 use labonair_persistence::Database;
 use labonair_snippets::{
@@ -70,6 +72,25 @@ pub fn panel_registration(
         build: Arc::new(move |_window, _cx| Arc::new(handle.clone()) as AnyPanelHandle),
     };
     registration
+}
+
+/// Register the Snippets panel's dynamic palette action. Snippet execution
+/// stays with the panel owner because it needs the panel's workspace and
+/// execution state; the shell only assembles the contribution.
+pub fn register_palette_action_handlers(
+    registry: &mut PaletteActionHandlerRegistry,
+    snippets: &Entity<SnippetsView>,
+) {
+    let snippets = snippets.clone();
+    registry
+        .register("snippets", move |action, window, cx| {
+            let PaletteAction::Submenu(SubmenuAction::RunSnippet(id)) = action else {
+                return false;
+            };
+            snippets.update(cx, |view, cx| view.run_by_id(id, window, cx));
+            true
+        })
+        .expect("snippets palette action handler must have a unique owner");
 }
 
 // ── Pure helpers: variable extraction / substitution ─────────────────────────

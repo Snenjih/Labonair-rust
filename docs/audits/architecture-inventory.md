@@ -20,7 +20,7 @@ removal conditions.
 | `backend` | Removed | none | The former broad facade and its module tree were deleted. Concrete SSH snippet execution is owned by `labonair-snippets-ssh`; transfer execution and adapters are owned by `labonair-transfers-ssh`. |
 | `ai` | AI providers, sessions, tools | AI module | Keep backend-facing core; rebuild UI later. |
 | `command-palette-core` | UI-free command descriptors and registry (new migration boundary) | command-palette module | Keep metadata and provider discovery here; feature-owned behavior remains outside the palette. Initial owner providers now live in workspace, terminal, editor, hosts, theme, and settings crates. |
-| `command-palette` | Palette UI, dynamic sub-pages, and transitional duplicate shell dispatch integration | command-palette module | Consume the core registry; global-menu navigation is typed; remove static entries and the duplicate shell registry. |
+| `command-palette` | Palette UI and dynamic sub-pages | command-palette module | Consume the core registry; global-menu navigation and owner action forwarding are typed; shell does not duplicate feature dispatch. |
 | `editor` | Editor engine | editor module | Separate core from workspace view. |
 | `filesystem` | Local file access, traversal, mutation, search, and watcher implementation | foundation/platform service | Canonical owner; backend watcher state and filesystem compatibility re-exports have been removed. |
 | `secrets` | Encrypted/plain local secret store and secret cache | foundation/platform service | Extracted from `backend`; backend and shell callers use `labonair-secrets` directly with explicit `SecretsState`. |
@@ -233,11 +233,10 @@ The current Cargo metadata shows several transitional edges that conflict with t
   now owned by the `updater-ui` sibling; shell composition only inserts the
   typed owner registration.
 - `shell/src/commands.rs` now retains only the native/debug compatibility
-  behavior registry; ordinary command execution is owner-registered. However,
-  `shell/src/actions.rs` still interprets dynamic palette submenu events for
-  themes, hosts, snippets, Git, tabs, symbols, and status items. R07-002 must
-  move those actions behind owner contributions without introducing another
-  shell-wide feature dispatch table.
+  behavior registry; ordinary command execution is owner-registered. Dynamic
+  palette actions now cross the typed `PaletteAction` runtime registry, with
+  matching and execution contributed by Workspace, Hosts-UI, Themes/Settings-UI,
+  Source Control, and Snippets. Shell actions only forward opaque values.
 - The former toast path has been removed; the statusbar is now the only
   notification presentation surface. The GPUI adapter remains until actions
   are migrated from callbacks to stable command IDs.

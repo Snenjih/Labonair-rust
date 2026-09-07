@@ -21,6 +21,8 @@ labonair-hosts = { path = "../hosts" }
 labonair-snippets = { path = "../snippets" }
 labonair-persistence = { path = "../persistence" }
 labonair-workspace = { path = "../workspace" }
+labonair-command-palette-core = { path = "../command-palette-core" }
+labonair-command-palette-runtime = { path = "../command-palette-runtime" }
 
 [dev-dependencies]
 gpui = { workspace = true, features = ["test-support"] }
