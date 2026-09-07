@@ -436,13 +436,6 @@ pub fn all_fields() -> Vec<AnyField> {
             "Use tab characters instead of spaces."
         ),
         field!(
-            editor.editor_format_on_save,
-            "editorFormatOnSave",
-            Switch,
-            "Format on save",
-            "Run the formatter when saving."
-        ),
-        field!(
             editor.editor_vim_mode,
             "vimMode",
             Switch,

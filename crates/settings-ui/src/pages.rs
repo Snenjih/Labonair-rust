@@ -252,7 +252,7 @@ const EDITOR_MAIN: &[Group] = &[
     ),
     ("Theme", &["editorTheme"]),
     ("Font", &["editorFontFamily", "editorFontSize"]),
-    ("Behaviour", &["editorFormatOnSave", "editorTabSize"]),
+    ("Behaviour", &["editorTabSize"]),
     ("Indentation", &["editorIndentWithTabs"]),
 ];
 

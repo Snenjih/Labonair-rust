@@ -17,7 +17,6 @@ pub struct EditorContent {
     pub editor_line_numbers: Option<bool>,
     pub editor_relative_line_numbers: Option<bool>,
     pub editor_indent_with_tabs: Option<bool>,
-    pub editor_format_on_save: Option<bool>,
     #[serde(rename = "vimMode")]
     pub editor_vim_mode: Option<bool>,
     /// Syntax colour scheme slug.
@@ -41,7 +40,6 @@ impl EditorContent {
             editor_line_numbers: Some(true),
             editor_relative_line_numbers: Some(false),
             editor_indent_with_tabs: Some(false),
-            editor_format_on_save: Some(false),
             editor_vim_mode: Some(false),
             editor_theme: Some("atomone".to_string()),
             vim_hlsearch: Some(true),

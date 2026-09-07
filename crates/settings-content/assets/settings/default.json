@@ -71,7 +71,6 @@
     "editorLineNumbers": true,
     "editorRelativeLineNumbers": false,
     "editorIndentWithTabs": false,
-    "editorFormatOnSave": false,
     "vimMode": false,
     // Syntax colour scheme slug; "auto" (not the default) follows the app theme.
     "editorTheme": "atomone",

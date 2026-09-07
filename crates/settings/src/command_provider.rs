@@ -56,13 +56,6 @@ impl CommandProvider for SettingsCommandProvider {
             .with_contexts(&[CommandContext::Editor])
             .with_icon(CommandIcon::Check),
             CommandDescriptor::new(
-                CommandId::ToggleFormatOnSave,
-                "Toggle: Format on Save",
-                "Settings",
-            )
-            .with_contexts(&[CommandContext::Editor])
-            .with_icon(CommandIcon::Check),
-            CommandDescriptor::new(
                 CommandId::ToggleCursorBlink,
                 "Toggle: Terminal Cursor Blink",
                 "Settings",

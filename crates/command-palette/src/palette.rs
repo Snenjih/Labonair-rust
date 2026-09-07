@@ -121,9 +121,6 @@ fn palette_toggle_state(key: &str, cx: &App) -> bool {
         "editorLineNumbers" => EditorSettings::try_get(cx)
             .map(|s| s.line_numbers())
             .unwrap_or(true),
-        "editorFormatOnSave" => EditorSettings::try_get(cx)
-            .map(|s| s.format_on_save())
-            .unwrap_or(false),
         "terminalCursorBlink" => TerminalSettings::try_get(cx)
             .map(|s| s.cursor_blink())
             .unwrap_or(true),

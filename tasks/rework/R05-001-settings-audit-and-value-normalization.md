@@ -142,3 +142,5 @@ the model. Unused values are parked in the inventory, not added speculatively.
       `newTabInheritsCwd`, `confirmCloseTerminalTab`, `terminalLineHeight`,
       `terminalShowPaneHeader`, and `terminalShowPaneFooter`) and delete their
       non-functional command-palette toggles.
+- [x] Remove `editorFormatOnSave` and its non-functional toggle command; the
+      native editor does not run a formatter on save yet.

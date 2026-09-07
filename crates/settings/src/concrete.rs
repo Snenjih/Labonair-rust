@@ -284,10 +284,6 @@ impl EditorSettings {
         self.0.editor_vim_mode.unwrap_or(false)
     }
 
-    pub fn format_on_save(&self) -> bool {
-        self.0.editor_format_on_save.unwrap_or(false)
-    }
-
     pub fn vim_hlsearch(&self) -> bool {
         self.0.vim_hlsearch.unwrap_or(true)
     }

@@ -60,7 +60,6 @@ pub const PROJECT_SETTINGS_WHITELIST: &[(&str, &[&str])] = &[
             "editorTabSize",
             "editorWordWrap",
             "editorIndentWithTabs",
-            "editorFormatOnSave",
             "editorTrimTrailingWhitespace",
             "editorInsertFinalNewline",
             "editorIndentationGuides",
@@ -181,10 +180,10 @@ mod tests {
     #[test]
     fn filter_and_parse_keeps_every_whitelisted_leaf() {
         let (content, rejected) =
-            filter_and_parse(r#"{"editor":{"editorTabSize":4,"editorFormatOnSave":true}}"#);
+            filter_and_parse(r#"{"editor":{"editorTabSize":4,"editorWordWrap":true}}"#);
         assert!(rejected.is_empty());
         assert_eq!(content.editor.editor_tab_size, Some(4));
-        assert_eq!(content.editor.editor_format_on_save, Some(true));
+        assert_eq!(content.editor.editor_word_wrap, Some(true));
     }
 
     #[test]

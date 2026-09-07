@@ -51,10 +51,6 @@ fn toggle_setting_bool(key: &str, cx: &mut App) {
             "editorLineNumbers" => {
                 c.editor.editor_line_numbers = Some(!c.editor.editor_line_numbers.unwrap_or(true));
             }
-            "editorFormatOnSave" => {
-                c.editor.editor_format_on_save =
-                    Some(!c.editor.editor_format_on_save.unwrap_or(false));
-            }
             "terminalCursorBlink" => {
                 c.terminal.terminal_cursor_blink =
                     Some(!c.terminal.terminal_cursor_blink.unwrap_or(true));

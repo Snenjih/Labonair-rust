@@ -789,13 +789,6 @@ pub(crate) fn register_builtin_commands() -> CommandDispatcher {
             CommandIcon::Check,
         ),
         (
-            CommandId::ToggleFormatOnSave,
-            "editorFormatOnSave",
-            CTX_EDITOR,
-            "Toggle: Format on Save",
-            CommandIcon::Check,
-        ),
-        (
             CommandId::ToggleCursorBlink,
             "terminalCursorBlink",
             CTX_TERMINAL,
