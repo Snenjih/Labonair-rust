@@ -121,3 +121,15 @@ the model. Unused values are parked in the inventory, not added speculatively.
       Preferences wire shape for migration.
 - [x] Remove legacy `appCornerRadius` from the typed model and UI; v1 and v2
       values migrate losslessly to the current `cornerRadiusScale` value.
+- [x] Remove Appearance layout values without native consumers:
+      `sidebarTabInfoLine`, `sidebarGroupByFolder`, `sidebarGroupSingleTabs`,
+      `badgesAlwaysVisible`, and `titlebarsIconsPosition`.
+- [x] Remove unwired Editor values (`editorAutoSave`,
+      `editorAutoSaveDelay`, `editorAutocompleteDebounceMs`, and
+      `editorMaxFileSizeMb`) while retaining their legacy wire shape.
+- [x] Remove SFTP/transfer values from the Settings model; transfer runtime
+      policy remains owned by the transfer worker and is no longer duplicated
+      in Settings.
+- [x] Remove the empty Connections Settings area and its unconsumed SSH/
+      Explorer timing values; transport and Hosts remain the future owners of
+      connection policy.

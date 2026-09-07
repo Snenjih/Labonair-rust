@@ -14,7 +14,8 @@ visually accepted. R05-001 is active with the normative field inventory in
 The current R05 slices removed the untyped `general.notifyOnErrors` default,
 moved Background values behind their owner, moved dock/sidebar runtime state
 to the versioned Workspace-owned `workspace-layout.json`, and removed
-unsupported Terminal plus unused General, Appearance, and Editor values from
+unsupported Terminal plus unused General, Appearance, Editor, File Manager,
+and Connection values from
 the typed model, defaults, generated UI, and Settings mappings. Legacy backend
 `Preferences` fields remain readable only as migration wire input; v1 and v2
 layout input is migrated before Settings conversion and removed idempotently.
@@ -22,14 +23,15 @@ Legacy `appCornerRadius` values are converted to the current
 `cornerRadiusScale` field during migration, with the modern value taking
 precedence when both are present.
 
-Current HEAD is `145966b` on `master`; the worktree is clean. Formatting,
+Current HEAD is `af6db5f` on `master`; the worktree is clean. Formatting,
 workspace check, Clippy, full serial workspace tests, dependency validation,
 queue validation, and diff checks pass. The next review item is
-the remaining indirect Appearance, Editor, File Manager, and Connection values.
+the remaining indirect Settings values and consumer-proof review.
 The General cleanup including `startupTerminalCount` is committed in
 `61abf4c`; the corner-radius normalization is committed in `c6e9890`, the
 unused Appearance values in `d596df2`, and the unwired Editor values in
-`145966b`. No blockers.
+`145966b`. The orphaned remote values and empty Connections category are
+removed in `af6db5f`. No blockers.
 
 ## Historical session details: 2026-09-07
 

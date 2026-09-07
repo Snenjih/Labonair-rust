@@ -359,3 +359,16 @@ remains readable for old files. The inventory now records them as remove-only
 compatibility input. Full workspace tests, check, Clippy, dependency, queue,
 formatting, and diff checks pass. Committed as `145966b`; R05-001 remains
 active for the File Manager and Connection audits.
+
+## R05-001 Remote settings ownership cleanup
+
+Removed all unconsumed SFTP/browser and connection timing values from the
+Settings model, shipped defaults, generated UI, and migration targets. The
+File Manager Settings area now contains only Explorer/SCM values with proven
+native consumers. The empty Connections Settings module/category and source
+file were removed; legacy Preferences fields remain migration-only input and
+are covered by exhaustive accounting. Transfer runtime policy remains in the
+existing transfer worker instead of being duplicated in Settings. Full
+workspace tests, check, Clippy, dependency, queue, formatting, and diff checks
+pass. Committed as `af6db5f`; R05-001 remains active for the remaining Review
+values and consumer tests.
