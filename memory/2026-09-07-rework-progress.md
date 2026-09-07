@@ -124,3 +124,11 @@ layer materializes them before the user override layer. This keeps shortcut
 defaults with the feature that owns the command; the shell only supplies the
 registry and platform adapter. The first migrated default is `Open Keymap
 (JSON)`, while the shipped JSONC defaults remain compatible during migration.
+
+## R03-002 keymap loading adapter
+
+Added `labonair-keymap::adapter::load`, which accepts the command registry and
+returns one immutable snapshot containing effective bindings and diagnostics.
+Known-action vocabulary, owner-default materialization, user-file recovery,
+and layer composition no longer live in the shell loader. The shell now keeps
+only GPUI installation, display-hint publication, and filesystem-watch wiring.

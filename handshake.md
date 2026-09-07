@@ -61,8 +61,13 @@ Command descriptors now own typed default bindings through
 layer before applying the user file; the shipped JSONC remains compatible while
 the remaining defaults migrate. The first migrated default is the Keymap
 entrypoint, and provider/shell descriptor equality is verified. Commit:
-`8031ed8`; worktree is clean. Next: define the Keymap adapter/editor contract
-so reload, diagnostics, and editing no longer depend on shell orchestration.
+`8031ed8`; worktree is clean.
+
+`keymap::adapter::load` now owns command-vocabulary assembly, default/user
+composition, recovery, and diagnostic snapshots. Shell keymap code only adapts
+that snapshot to GPUI and connects file-watch events. Commit: `b4988d5`;
+worktree is clean. Next: define the lossless Keymap management/editor
+contract so editing and persistence use the same module boundary.
 
 The Keymap module now also owns last-good user-file recovery, validation issue
 retention, and built-in/user layer composition. Shell remains only the GPUI
