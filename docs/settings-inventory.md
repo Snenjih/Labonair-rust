@@ -81,3 +81,11 @@ means a runtime module, not merely serialization or the generated Settings UI.
 
 Until those steps are complete, new Settings fields require an inventory row
 before code changes.
+
+## Unmodelled legacy input
+
+The previous shipped default contained `general.notifyOnErrors`, but no typed
+field or runtime consumer existed for it. It was removed from the shipped
+default in this slice. The new `SettingsContent` test rejects any future
+untyped key in the default asset, so stale configuration cannot silently look
+supported again.

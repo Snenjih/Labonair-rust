@@ -116,6 +116,29 @@ mod tests {
     }
 
     #[test]
+    fn shipped_default_json_contains_only_typed_fields() {
+        let raw = jsonc_parser::parse_to_serde_value(DEFAULT_JSON, &Default::default())
+            .expect("shipped default JSON must parse")
+            .expect("shipped default JSON must contain a value");
+        let typed = serde_json::to_value(SettingsContent::defaults()).unwrap();
+        assert_same_object_shape(&raw, &typed, "$");
+    }
+
+    fn assert_same_object_shape(raw: &serde_json::Value, typed: &serde_json::Value, path: &str) {
+        let (Some(raw), Some(typed)) = (raw.as_object(), typed.as_object()) else {
+            return;
+        };
+        assert_eq!(
+            raw.keys().collect::<Vec<_>>(),
+            typed.keys().collect::<Vec<_>>(),
+            "default JSON shape drift at {path}"
+        );
+        for (key, value) in raw {
+            assert_same_object_shape(value, &typed[key], &format!("{path}.{key}"));
+        }
+    }
+
+    #[test]
     fn every_area_hits_a_real_module() {
         for area in AREAS {
             assert!(

@@ -243,3 +243,8 @@ classifies current values to keep, duplicated state to move to Background,
 Workspace, SFTP/Transfers, or capability owners, and legacy/unsupported values
 to remove after explicit migration handling. No typed field was deleted in this
 slice; the next step is consumer proof and lossless migration design.
+
+The shipped default also contained an untyped `general.notifyOnErrors` key
+with no consumer. It was removed, and `SettingsContent` now tests the raw
+default asset's object shape against the typed default serialization so future
+untyped default drift fails immediately.

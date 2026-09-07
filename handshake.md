@@ -44,9 +44,10 @@ test. The worktree is clean before starting
 field-to-consumer/scope inventory is documented in
 `docs/settings-inventory.md`; it identifies current values to keep, duplicate
 state to move, and legacy/unsupported fields to remove. No Settings model
-field has been deleted yet; the next slice is to prove indirect consumers and
-define lossless migrations before changing the typed schema. The worktree is
-clean before the inventory slice.
+field has been deleted yet. The stale untyped `general.notifyOnErrors` default
+key was removed and a shape-drift test now guards the shipped asset. The next
+slice is to prove indirect consumers and define lossless migrations before
+changing the typed schema. The worktree is clean before the inventory slice.
 
 `R02-003` is complete. The user confirmed the native Rust shell visual state
 is acceptable, closing the final visual acceptance criterion. The project and

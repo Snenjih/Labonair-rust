@@ -17,7 +17,6 @@
     "startupTerminalCount": 1,
     "autostart": false,
     "credentialEncryption": false,
-    "notifyOnErrors": false,
     "confirmQuitWithSsh": true,
     "checkForUpdates": true,
     "sessionRestore": false

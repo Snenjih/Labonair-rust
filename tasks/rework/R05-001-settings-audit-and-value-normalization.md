@@ -98,3 +98,6 @@ the model. Unused values are parked in the inventory, not added speculatively.
 - [x] Produced [`docs/settings-inventory.md`](../../docs/settings-inventory.md)
       with the current field-to-consumer, scope, and keep/move/remove/review
       decision for all typed Settings fields.
+- [x] Removed the untyped `general.notifyOnErrors` key from the shipped
+      defaults and added a shape-drift test so future default assets cannot
+      contain values outside `SettingsContent`.
