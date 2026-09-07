@@ -1,5 +1,14 @@
 # Rework progress — 2026-09-07
 
+## Settings migration ownership boundary
+
+The remaining pre-v2 Settings wire model and one-time `config.json` filename
+and value migration now live in `labonair_settings::legacy_migrations`. The
+backend Settings module and its transitional `labonair-settings-content`
+dependency were removed. Runtime SettingsContent remains the canonical typed
+value model; the migration module is intentionally compatibility-only. The
+workspace test suite passed after this move.
+
 ## Workspace chrome migration boundary
 
 The legacy `barItemPlacements` migration now lives in

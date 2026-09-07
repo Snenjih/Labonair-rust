@@ -16,6 +16,7 @@ extern crate self as labonair_settings;
 
 pub mod command_provider;
 mod concrete;
+pub mod legacy_migrations;
 pub mod project;
 mod registry;
 pub mod schema;

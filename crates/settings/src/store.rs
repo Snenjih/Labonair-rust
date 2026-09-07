@@ -39,8 +39,8 @@ pub enum SettingsLayer {
     Default,
     /// `~/.config/labonair/config.json` (the shared settings
     /// file's top-level `SettingsContent` keys — see `docs/architecture.md`
-    /// §8.3 / `content_bridge.rs` for the still-open `editor`/`mcp` key
-    /// collision with the legacy `Preferences` bridge, resolved in T19-009).
+    /// §8.3 / `legacy_migrations` for historical `editor`/`mcp` input. Those
+    /// keys are converted before the runtime store reads the file.
     User,
     /// Platform-specific overrides (`platform_overrides`-shaped, Zed-style).
     /// No `SettingsContent` field carries this data yet — always empty until

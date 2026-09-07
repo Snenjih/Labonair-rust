@@ -230,18 +230,14 @@ ALLOWED = {
     "labonair-editor": {
         "labonair-command-palette-core", "labonair-interaction-contracts",
     },
-    # [deviation, T19-001, docs/architecture.md §8.15] labonair-backend
-    # depends on labonair-settings-content for the
-    # `impl From<&SettingsContent> for Preferences` bridge — a pure,
-    # non-UI leaf crate (no cycle: labonair-settings-content never depends
-    # back on labonair-backend).
+    # Backend contains only concrete platform adapters. Settings migrations are
+    # owned by `labonair-settings::legacy_migrations`.
     "labonair-backend": {
-        "labonair-settings-content", "labonair-filesystem", "labonair-secrets",
+        "labonair-filesystem", "labonair-secrets",
         "labonair-errors", "labonair-hosts", "labonair-persistence",
         "labonair-credentials", "labonair-snippets", "labonair-git",
         "labonair-ssh", "labonair-sftp", "labonair-transfers",
         "labonair-mcp-core",
-        "labonair-persistence",
     },
     "labonair-ai": {"labonair-filesystem"},
 

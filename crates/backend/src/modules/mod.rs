@@ -2,7 +2,6 @@ pub mod git;
 pub mod mcp;
 pub mod pty;
 pub mod secrets;
-pub mod settings;
 pub mod sftp;
 pub mod shell;
 pub mod snippets;

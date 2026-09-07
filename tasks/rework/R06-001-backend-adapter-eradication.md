@@ -196,6 +196,9 @@ boundary still exists; that package must not become a second capability owner.
 - [x] Reduced the legacy editor migration surface: `EditorPrefs` is private to
       the v1→v2 migrator, while the unused backend editor persistence adapter
       and projection API were removed.
+- [x] Moved the remaining pre-v2 Settings wire model and one-time config
+      migration into `labonair-settings::legacy_migrations`; the backend
+      Settings module and its `labonair-settings-content` dependency are gone.
 - [x] Secrets compatibility wrappers and jump-host resolution no longer take
       the aggregate `App`; they receive only their actual state dependencies.
 - [ ] Move the remaining contracts and adapters behind injected capability

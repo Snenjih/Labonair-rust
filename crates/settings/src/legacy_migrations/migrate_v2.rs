@@ -11,8 +11,8 @@
 //! * the vast majority map 1:1 by (identical) field name into the matching
 //!   `SettingsContent` area — see the `general_from`/`appearance_from`/…
 //!   builder functions below, one per area, field order mirroring
-//!   `Preferences`' own category comments (and `content_bridge.rs`'s reverse
-//!   direction, which this migration inverts).
+//!   `Preferences`' own category comments and the current SettingsContent
+//!   area definitions, which this migration targets directly.
 //! * `hmLayout`/`hmSort`/`hmCardScale` remain outside Settings because the
 //!   Hosts capability owns its management state.
 //! * `dockLayout`/`sidebar*` (position/open/activePanel/rightOpen/
@@ -25,8 +25,7 @@
 //!   old `"mcp"` key, not from this mirror, since they carry the same values.
 //! * `barItemPlacements` is **not** touched here — it is exclusively
 //!   Workspace chrome migration's job (`statusBarItemPlacements`) and has no
-//!   `SettingsContent` counterpart (documented in
-//!   `content_bridge.rs` too).
+//!   `SettingsContent` counterpart (documented in the ownership inventory).
 //! * `barLayoutMigrated` has no `SettingsContent` counterpart either; when it
 //!   is `true` it is preserved losslessly under
 //!   `_migratedUnknown.preferences.barLayoutMigrated` rather than silently
@@ -37,8 +36,8 @@
 //! `editor` area's `vimHlsearch`/`vimIncsearch`/`vimSmartcase`/
 //! `editorRelativeLineNumbers`/`vimMode` fields (the latter two are also
 //! covered by `preferences.editorRelativeLineNumbers`/`editorVimMode` — the
-//! `Preferences` value wins on conflict, mirroring `content_bridge.rs`'s
-//! "one authoritative flat model" stance). `number`/`expandtab`/`tabstop`/
+//! `Preferences` value wins on conflict because this migration has one
+//! explicit source of truth). `number`/`expandtab`/`tabstop`/
 //! `shiftwidth` have no `SettingsContent` field (Vim `:set` internals never
 //! exposed as a setting) and land in `_migratedUnknown.editor.*`.
 //!
@@ -381,8 +380,8 @@ fn file_manager_from(p: &Preferences) -> FileManagerContent {
 /// its `#[serde(rename_all = "camelCase")]` JSON key.
 #[cfg_attr(not(test), allow(dead_code))]
 const SKIPPED_PREFERENCES_FIELDS: &[&str] = &[
-    // T18-006's job (`statusBarItemPlacements`); no `SettingsContent`
-    // counterpart (see `content_bridge.rs`).
+    // Workspace chrome migration's job (`statusBarItemPlacements`); no
+    // `SettingsContent` counterpart.
     "barItemPlacements",
     // Host-manager layout is owned by the Hosts capability and is not a
     // SettingsContent value. Host data migration has its own named step.

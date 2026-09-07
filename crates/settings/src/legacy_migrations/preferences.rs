@@ -27,18 +27,6 @@ pub enum ThemePref {
     Dark,
 }
 
-impl ThemePref {
-    pub const ALL: [ThemePref; 3] = [ThemePref::System, ThemePref::Light, ThemePref::Dark];
-
-    pub fn as_str(self) -> &'static str {
-        match self {
-            ThemePref::System => "system",
-            ThemePref::Light => "light",
-            ThemePref::Dark => "dark",
-        }
-    }
-}
-
 /// What the app opens on launch (when session restore has no snapshot).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]

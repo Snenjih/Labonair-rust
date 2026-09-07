@@ -39,7 +39,7 @@ participate in the `BackendComposition` state graph or in another backend module
 | `pty` | local PTY state, sessions, events, I/O operations | indirect through backend/MCP | terminal owner; expose a terminal service rather than `App` state |
 | `scrollback` | scrollback persistence helpers | `shell`, `workspace` | moved to `labonair-terminal::scrollback`; Workspace supplies session/retention context |
 | `secrets` | secret-state compatibility API | internal SSH/SFTP/MCP adapters | `labonair-secrets`; compatibility wrappers now accept only `SecretsState`, with no aggregate `App` parameter |
-| `settings` | legacy preferences and value migrations | `shell`; internal backend migration adapters | Settings owns value persistence; Workspace owns live status-bar/panel layout and its legacy placement migration; `labonair-mcp-core` owns MCP preferences; backend compatibility remains limited to settings-file/value migration until the remaining legacy wire shape is retired |
+| `settings` | removed | no active backend consumers | `labonair-settings` owns the one-time `legacy_migrations` boundary; SettingsContent remains the canonical runtime value model |
 | `sftp` | session adapter, remote operations, transfer worker state/commands | `shell`; internal SSH/transfer adapters | `labonair-sftp` and `labonair-transfers` integration boundaries; SFTP service now receives only SSH state plus the raw event bus, and legacy connection orchestration receives EventBus instead of App |
 | `shell` | local command execution, shell sessions, background processes | no active external module import found | terminal/workspace owner; split local process service from backend facade |
 | `snippets` | snippet DB compatibility and SSH executor adapter | `shell`; internal backend use | `labonair-snippets` integration boundary; SSH execution now receives explicit SSH state and EventBus capabilities |
@@ -62,7 +62,9 @@ crates:
 
 `settings`, `settings-content`, and related crates contain historical comments
 or migration references to backend names, but they do not declare or import the
-backend crate as a runtime dependency.
+backend crate as a runtime dependency. The former backend Settings module is
+gone; `labonair_settings::legacy_migrations` is the only owner of the legacy
+pre-v2 wire migration path.
 
 `labonair-workspace` is also no longer a direct backend consumer. It owns the
 typed SSH/MCP event bridges, status/panel placement persistence, and MCP tab
@@ -80,10 +82,10 @@ and focused tests prove that no external consumer remains.
 
 The live `statusBarItemPlacements` and `panelToggleVisibility` blobs now have
 their persistence implementation in `labonair-workspace::status_placements`.
-The backend Settings module retains only the shared JSON helpers needed by the
-legacy value migrator and its settings-specific compatibility adapters; it no
-longer owns Workspace chrome migration, locks, or live layout read/write
-functions.
+The former backend Settings module is removed. The shared JSON helpers and
+legacy value migrator now live together in
+`labonair-settings::legacy_migrations`; they are not part of the runtime
+settings value API and do not provide a second persistence path.
 
 Terminal scrollback persistence likewise lives in
 `labonair-terminal::scrollback`. The backend no longer exports a scrollback

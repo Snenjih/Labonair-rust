@@ -58,9 +58,8 @@ pub fn migrate_legacy_workspace_layout(config_dir: &std::path::Path) -> Result<b
 /// entity is created. Migration ordering is a composition concern; value
 /// ownership remains in the Settings and Workspace owners.
 pub fn migrate_legacy_settings() {
-    use labonair_backend::modules::settings::{
-        migrate_config_file_name,
-        migrate_v2::{migrate_settings_v1_to_v2, sparsify_v2_settings},
+    use labonair_settings::legacy_migrations::{
+        migrate_config_file_name, migrate_settings_v1_to_v2, sparsify_v2_settings,
     };
 
     let config_dir = labonair_filesystem::paths::config_dir();
