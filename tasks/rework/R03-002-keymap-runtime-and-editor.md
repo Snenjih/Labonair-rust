@@ -162,3 +162,12 @@ UI source.
 JSONC source remains authoritative while parse and validation results are
 derived views. Invalid or unknown entries can be displayed and saved without
 being erased; runtime activation still uses the last valid layer.
+
+The first dedicated management surface is now implemented in the real
+`labonair-keymap-ui` sibling crate. It loads the document and runtime snapshot
+off the GPUI thread, renders searchable command rows and diagnostics from
+shared UI-kit primitives, and exposes raw JSONC editing through an injected
+composition callback. The titlebar and command-palette Keymap entrypoints
+now open this surface; shell remains responsible only for the callback that
+opens the existing editor tab. Per-row rebinding/conflict actions remain the
+next slice of this task.

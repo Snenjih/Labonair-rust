@@ -49,6 +49,13 @@ ALLOWED = {
     "labonair-keymap": {
         "labonair-interaction-contracts", "labonair-command-palette-core",
     },
+    # Keymap presentation is a real sibling boundary: it consumes the
+    # keymap-owned snapshot and shared UI/theme contracts, but owns no
+    # persistence, resolution, or feature execution.
+    "labonair-keymap-ui": {
+        "labonair-command-palette-core", "labonair-keymap",
+        "labonair-theme", "labonair-ui-kit",
+    },
     "labonair-command-palette-core": {"labonair-interaction-contracts"},
     # Platform service — secret storage and encryption, without GPUI or
     # feature-module dependencies.
@@ -144,6 +151,7 @@ ALLOWED = {
         "labonair-notifications", "labonair-command-palette",
         "labonair-command-palette-core",
         "labonair-keymap",
+        "labonair-keymap-ui",
         "labonair-workspace", "labonair-settings-ui", "labonair-panel",
         "labonair-panel-explorer", "labonair-panel-scm",
         "labonair-panel-git-graph", "labonair-panel-snippets",
@@ -258,6 +266,7 @@ UI_CRATES = {
     "labonair-background",
     "labonair-notifications", "labonair-command-palette",
     "labonair-workspace", "labonair-shell", "labonair-settings-ui",
+    "labonair-keymap-ui",
     "labonair-hosts-ui", "labonair-panel", "labonair-panel-explorer",
     "labonair-panel-scm", "labonair-panel-git-graph",
     "labonair-panel-snippets", "labonair-panel-ai",

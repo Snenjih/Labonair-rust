@@ -157,3 +157,13 @@ and exposes parsing/validation as derived state. Comments, unknown actions, and
 malformed edits are retained for the management/editor surface instead of
 being discarded by a parse/serialize round trip. `save_user_keymap_document`
 persists the raw source through the Keymap owner.
+
+## R03-002 management surface
+
+Added the real `labonair-keymap-ui` sibling crate. It consumes a
+`KeymapManagementSnapshot` from the UI-free keymap module, loads file state on
+the GPUI background executor, renders searchable command rows and validation
+diagnostics with `ui-kit`, and delegates raw JSONC editing back to the shell
+through one injected callback. Titlebar and palette Keymap entrypoints now
+open the dedicated native window. Per-row rebinding and conflict actions are
+still intentionally separate follow-up work.

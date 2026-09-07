@@ -4,6 +4,7 @@
 pub mod adapter;
 pub mod command_provider;
 pub mod file;
+pub mod management;
 pub mod runtime;
 
 /// Shortcut identity is shared with the command registry through the

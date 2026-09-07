@@ -37,6 +37,7 @@ members = [
     "crates/transfers",
     "crates/transfers-ui",
     "crates/keymap",
+    "crates/keymap-ui",
     "crates/backend",
     "crates/ai",
     "crates/theme",

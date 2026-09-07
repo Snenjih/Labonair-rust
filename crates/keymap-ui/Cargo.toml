@@ -1,0 +1,20 @@
+[package]
+name = "labonair-keymap-ui"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "labonair_keymap_ui"
+path = "src/keymap_ui.rs"
+
+[dependencies]
+gpui = { workspace = true }
+gpui-component = { workspace = true }
+labonair-command-palette-core = { path = "../command-palette-core" }
+labonair-keymap = { path = "../keymap" }
+labonair-theme = { path = "../theme" }
+labonair-ui-kit = { path = "../ui-kit" }
+tracing = { workspace = true }
+
+[dev-dependencies]
+gpui = { workspace = true, features = ["test-support"] }

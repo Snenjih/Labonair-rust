@@ -105,6 +105,11 @@ authoritative value and exposes parsing/validation as derived state. Saving
 must write that source unchanged; invalid or unknown entries are therefore
 diagnosed without being silently normalized away.
 
+`labonair-keymap-ui` is the keymap module's sibling presentation boundary. It
+receives a `KeymapManagementSnapshot`, provides filtering and diagnostics, and
+offers the raw JSONC editor as an explicit action. It does not read files on
+the GPUI thread, resolve commands, or maintain a second shortcut registry.
+
 The file/GPUI adapter must cross this boundary once: persisted action names are
 resolved through `keymap::runtime::command_for_action` into `CommandId`, and
 only then mapped to a concrete platform action. GPUI context predicates stay

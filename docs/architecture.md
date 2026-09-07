@@ -103,7 +103,7 @@ boundary.
 | Module | Canonical capability crate | Existing sibling crates | Ownership boundary |
 |---|---|---|---|
 | Settings | `labonair-settings` | `settings-content`, `settings-json`, `settings-macros`, `settings-ui` | Typed values, layered persistence, and value-only settings UI. |
-| Keymap | `labonair-keymap` | none yet | Binding descriptors, file data, resolution, and conflicts; no feature behavior. |
+| Keymap | `labonair-keymap` | `keymap-ui` | Binding descriptors, file data, resolution, conflicts, and a presentation adapter; no feature behavior. |
 | Command palette | `labonair-command-palette-core` | `labonair-command-palette` | UI-free command registry contract; the sibling owns GPUI search/navigation and submenu presentation. |
 | Notifications | `labonair-notifications-core` | `notifications` | Notification registry/state and its GPUI statusbar presentation. |
 | Themes | `labonair-theme` | none yet | Built-in color and icon-theme registries, preview, and selection. |

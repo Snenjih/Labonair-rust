@@ -391,6 +391,16 @@ pub fn ensure_user_keymap_file() -> Result<PathBuf, String> {
     Ok(path)
 }
 
+/// Read the lossless user document used by management surfaces. A missing
+/// file is materialized through [`ensure_user_keymap_file`], while an existing
+/// file is returned byte-for-byte so comments and invalid edits remain
+/// recoverable by the editor.
+pub fn read_user_keymap_document(known_actions: &BTreeSet<&str>) -> Result<KeymapDocument, String> {
+    let path = ensure_user_keymap_file()?;
+    let source = std::fs::read_to_string(path).map_err(|error| error.to_string())?;
+    Ok(KeymapDocument::from_source(source, known_actions))
+}
+
 /// Validation issues from the most recent user-file load.
 pub fn last_issues() -> Vec<ValidationIssue> {
     LAST_ISSUES.with(|issues| issues.borrow().clone())

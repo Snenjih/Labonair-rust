@@ -916,9 +916,18 @@ pub(crate) fn register_builtin_commands() -> CommandDispatcher {
         CommandIcon::Edit,
         None,
     );
-    r.register(keymap_descriptor, |s, window, cx| {
-        s.workspace
-            .update(cx, |w, cx| w.open_or_create_user_keymap_json(window, cx));
+    r.register(keymap_descriptor, |s, _window, cx| {
+        let descriptors = s.command_registry.descriptors();
+        let workspace = s.workspace.clone();
+        labonair_keymap_ui::open_keymap_window(
+            descriptors,
+            move |window, cx| {
+                workspace.update(cx, |workspace, cx| {
+                    workspace.open_or_create_user_keymap_json(window, cx);
+                });
+            },
+            cx,
+        );
     });
     r.register(
         command_descriptor(

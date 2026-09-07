@@ -4395,6 +4395,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "labonair-keymap-ui"
+version = "0.1.0"
+dependencies = [
+ "gpui",
+ "gpui-component",
+ "labonair-command-palette-core",
+ "labonair-keymap",
+ "labonair-theme",
+ "labonair-ui-kit",
+ "tracing",
+]
+
+[[package]]
 name = "labonair-notifications"
 version = "0.1.0"
 dependencies = [
@@ -4603,6 +4616,7 @@ dependencies = [
  "labonair-gpui-ext",
  "labonair-hosts",
  "labonair-keymap",
+ "labonair-keymap-ui",
  "labonair-notifications",
  "labonair-panel",
  "labonair-panel-explorer",

@@ -30,6 +30,7 @@ labonair-notifications = { path = "../notifications" }
 labonair-command-palette = { path = "../command-palette" }
 labonair-command-palette-core = { path = "../command-palette-core" }
 labonair-keymap = { path = "../keymap" }
+labonair-keymap-ui = { path = "../keymap-ui" }
 labonair-panel = { path = "../panel" }
 labonair-workspace = { path = "../workspace" }
 labonair-hosts = { path = "../hosts" }
