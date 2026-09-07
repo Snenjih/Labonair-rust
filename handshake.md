@@ -87,6 +87,13 @@ into the owner registration. The shell command table no longer contains
 updater behavior. Targeted Updater-UI/Shell check, Clippy, tests, dependency,
 queue, format, and diff checks pass.
 
+The Settings window entrypoint was moved into
+`labonair-settings-ui::command_provider` in `d830e99`. The Settings-UI
+owner now registers `OpenSettings`; shell composition only connects the
+contribution, while the Settings core continues to own the command metadata.
+Targeted Settings-UI/Shell check, Clippy, tests, dependency, queue, format,
+and diff checks pass.
+
 The current R05 slices removed the untyped `general.notifyOnErrors` default,
 moved Background values behind their owner, moved dock/sidebar runtime state
 to the versioned Workspace-owned `workspace-layout.json`, and removed
@@ -100,7 +107,7 @@ Legacy `appCornerRadius` values are converted to the current
 `cornerRadiusScale` field during migration, with the modern value taking
 precedence when both are present.
 
-Current HEAD is `88e2846` on `master`; the worktree contains only this
+Current HEAD is `d830e99` on `master`; the worktree contains only this
 handshake update before its commit. R06
 boundaries removed the backend error facade, removed AI's stale backend edge,
 moved system-font discovery into the Theme owner, deleted the unconsumed
