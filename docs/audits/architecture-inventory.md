@@ -115,6 +115,10 @@ The current Cargo metadata shows several transitional edges that conflict with t
 - The command-palette core now owns the global palette command metadata, and
   Settings owns its toggle-command metadata. The palette-only shell table is
   consequently removed as a separate table; all rows enter through providers.
+- The command-palette module now also owns the executable `Open Command
+  Palette` contribution. The shell injects only the modal-toggle host callback
+  during composition; it no longer stores palette behavior in its transitional
+  command table.
 - The dependency verifier now explicitly allows owner crates to consume the
   UI-free command registry contract. `interaction-contracts` owns the stable
   shortcut identity, so the former command-core → keymap edge is removed and
@@ -200,7 +204,8 @@ The current Cargo metadata shows several transitional edges that conflict with t
   Terminal `Clear Terminal`, Settings toggles, the Settings window entrypoint,
   Hosts management entrypoint, updater Check-for-Updates, Workspace panel
   surface actions, and the Keymap management entrypoint are owner-registered.
-  Remaining shell adapters are transitional until their owners move.
+  The command-palette toggle is now owner-registered as well; remaining shell
+  adapters are transitional until their owners move.
 - The dedicated Jump Hosts status item was removed. Jump-host routing remains
   part of SSH connection configuration and execution, while host management and
   host selection keep their canonical menu/palette entry points.

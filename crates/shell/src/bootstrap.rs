@@ -12,7 +12,7 @@
 //! enable, theme preference before the first render, session snapshot before
 //! the default tabs.
 
-use std::sync::Arc;
+use std::{rc::Rc, sync::Arc};
 
 use gpui::{App, AppContext, Context, Entity, PathPromptOptions, Window, WindowBounds};
 use labonair_hosts_ui::{open_hosts_window, HostManagerEvent, HostManagerView};
@@ -421,8 +421,17 @@ pub(crate) fn bootstrap(
     // Build the command metadata and behaviour registry before keymap loading:
     // default shortcut resolution must use the same descriptors that the
     // palette receives later.
-    let command_registry =
-        crate::commands::register_builtin_commands_for(&workspace, &updater, &host_manager);
+    let shell = cx.entity();
+    let palette_toggle: labonair_command_palette::command_provider::ToggleHandler =
+        Rc::new(move |window: &mut Window, app: &mut App| {
+            shell.update(app, |shell, cx| shell.toggle_command_palette(window, cx));
+        });
+    let command_registry = crate::commands::register_builtin_commands_for(
+        &workspace,
+        &updater,
+        &host_manager,
+        palette_toggle,
+    );
     crate::keymap_loader::reload_and_apply(cx, &command_registry);
     crate::keymap_loader::watch(cx, command_registry.clone());
     set_settings_deps(settings_services(), tokio.clone(), cx);

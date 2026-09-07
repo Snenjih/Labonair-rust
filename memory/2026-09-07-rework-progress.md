@@ -919,3 +919,10 @@ The two settings-file editor commands (`OpenProjectSettings` and
 well. Settings continues to own their command metadata, while Workspace owns
 the tab/file lifecycle that executes them; the shell no longer contains these
 cross-surface closures.
+
+The `OpenCommandPalette` executable contribution was then moved into
+`labonair-command-palette::command_provider`. The command-palette owner keeps
+the stable command identity and registers the handler, while shell bootstrap
+injects only a modal-toggle callback that captures the shell entity. This
+removes the palette behavior from the shell command table without creating a
+dependency from the palette UI onto the shell's modal wrapper.

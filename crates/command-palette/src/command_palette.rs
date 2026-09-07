@@ -17,6 +17,8 @@
 mod fuzzy;
 mod palette;
 
+pub mod command_provider;
+
 pub use fuzzy::{match_score, SearchMode};
 pub use labonair_command_palette_core::{
     canonical_action_name, compatibility_action_names, known_action_names, toggle_pref_key,

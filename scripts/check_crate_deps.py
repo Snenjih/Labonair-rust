@@ -129,6 +129,7 @@ ALLOWED = {
         "labonair-filesystem",
         "labonair-keymap",
         "labonair-command-palette-core",
+        "labonair-command-palette-runtime",
         # transitional: palette settings reads move behind a provider contract
         "labonair-settings",
     },

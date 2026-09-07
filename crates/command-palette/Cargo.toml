@@ -16,6 +16,7 @@ labonair-filesystem = { path = "../filesystem" }
 labonair-settings = { path = "../settings" }
 labonair-keymap = { path = "../keymap" }
 labonair-command-palette-core = { path = "../command-palette-core" }
+labonair-command-palette-runtime = { path = "../command-palette-runtime" }
 
 [dev-dependencies]
 gpui = { workspace = true, features = ["test-support"] }

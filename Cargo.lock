@@ -4189,6 +4189,7 @@ version = "0.1.0"
 dependencies = [
  "gpui",
  "labonair-command-palette-core",
+ "labonair-command-palette-runtime",
  "labonair-filesystem",
  "labonair-keymap",
  "labonair-settings",

@@ -255,7 +255,7 @@ fn command_descriptor(
 
 #[allow(dead_code)]
 pub(crate) fn register_builtin_commands() -> CommandDispatcher {
-    compose_builtin_commands(None, None, None)
+    compose_builtin_commands(None, None, None, None)
 }
 
 /// Compose the command registry with owner-provided executable handlers.
@@ -263,14 +263,21 @@ pub(crate) fn register_builtin_commands_for(
     workspace: &gpui::Entity<Workspace>,
     updater: &Entity<UpdaterView>,
     hosts: &Entity<HostManagerView>,
+    palette_toggle: labonair_command_palette::command_provider::ToggleHandler,
 ) -> CommandDispatcher {
-    compose_builtin_commands(Some(workspace), Some(updater), Some(hosts))
+    compose_builtin_commands(
+        Some(workspace),
+        Some(updater),
+        Some(hosts),
+        Some(palette_toggle),
+    )
 }
 
 fn compose_builtin_commands(
     workspace: Option<&Entity<Workspace>>,
     updater: Option<&Entity<UpdaterView>>,
     hosts: Option<&Entity<HostManagerView>>,
+    palette_toggle: Option<labonair_command_palette::command_provider::ToggleHandler>,
 ) -> CommandDispatcher {
     let mut r = CommandDispatcher::default();
     let always = ALWAYS;
@@ -295,6 +302,12 @@ fn compose_builtin_commands(
     r.register_provider(&labonair_updater_ui::command_provider::UpdaterCommandProvider);
     labonair_settings::command_provider::register_handlers(&mut r.owner_handlers);
     labonair_settings_ui::command_provider::register_handlers(&mut r.owner_handlers);
+    if let Some(palette_toggle) = palette_toggle {
+        labonair_command_palette::command_provider::register_handlers(
+            &mut r.owner_handlers,
+            palette_toggle,
+        );
+    }
     if let Some(updater) = updater {
         labonair_updater_ui::command_provider::register_handlers(&mut r.owner_handlers, updater);
     }
@@ -370,22 +383,6 @@ fn compose_builtin_commands(
             },
         );
     }
-
-    // ── Palette ────────────────────────────────────────────────────────
-    r.register(
-        command_descriptor(
-            CommandId::OpenCommandPalette,
-            "Open Command Palette",
-            "Application",
-            always,
-            Some(labonair_keymap::ShortcutId::CommandPalette),
-            CommandIcon::Command,
-            None,
-        ),
-        |s, window, cx| {
-            s.toggle_command_palette(window, cx);
-        },
-    );
 
     // ── Application ────────────────────────────────────────────────────
     // T20-004: debug-only — open the ui-kit component gallery in its own
