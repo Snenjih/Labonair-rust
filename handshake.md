@@ -69,6 +69,14 @@ that snapshot to GPUI and connects file-watch events. Commit: `b4988d5`;
 worktree is clean. Next: define the lossless Keymap management/editor
 contract so editing and persistence use the same module boundary.
 
+Owner providers now publish the migrated defaults for command palette, editor
+search, workspace navigation, Zen mode, and shell debug actions. The shell
+adapter derives matching metadata only while execution registrations remain
+transitional; provider equality checks prevent drift. Full workspace check,
+Clippy, tests, dependency verification, queue validation, and diff checks pass.
+Commit: `0c2c634`; worktree is clean. Next: define the lossless Keymap
+management/editor contract.
+
 The Keymap module now also owns last-good user-file recovery, validation issue
 retention, and built-in/user layer composition. Shell remains only the GPUI
 binding/display adapter and the existing filesystem watcher connection. The
