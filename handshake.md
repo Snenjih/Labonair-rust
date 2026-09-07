@@ -24,7 +24,7 @@ Legacy `appCornerRadius` values are converted to the current
 `cornerRadiusScale` field during migration, with the modern value taking
 precedence when both are present.
 
-Current HEAD is `f36fa39` on `master`; the worktree is clean before this
+Current HEAD is `0f51584` on `master`; the worktree is clean before this
 handshake update. The first R06
 boundaries removed the backend error facade, removed AI's stale backend edge,
 moved system-font discovery into the Theme owner, deleted the unconsumed
@@ -44,6 +44,13 @@ event bus is internal to shell-composed backend adapters. The backend
 filesystem watcher, `App::watcher` state, and filesystem compatibility module
 are now removed as well. R06-001 remains active; the next boundary is the
 remaining backend-owned platform state and compatibility adapters.
+The next boundary is now complete: local MCP terminal writes and output
+capture use the injected `LocalTerminalAccess` contract backed by the real
+`labonair-terminal::TerminalRegistry`. The obsolete `local_pty_id` grant
+address and duplicate backend `PtyState` implementation were removed. Shared
+OSC 7/133 shell-integration payloads now live in the UI-free
+`labonair-terminal-integration` crate consumed by local PTY and remote SSH
+adapters. All workspace gates pass; this is committed as `0f51584`.
 The broad backend `AppEvent` enum and typed-emitter helper are also gone;
 SSH and MCP adapters decode their own raw event names directly at the
 capability boundary.
