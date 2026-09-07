@@ -40,7 +40,8 @@ ALLOWED = {
     # separate sibling and consumes this UI-free crate.
     "labonair-updater": {"labonair-filesystem"},
     "labonair-updater-ui": {
-        "labonair-theme", "labonair-ui-kit", "labonair-notifications",
+        "labonair-theme", "labonair-ui-kit", "labonair-panel",
+        "labonair-notifications",
         "labonair-updater",
     },
     # Platform service — no GPUI or feature-crate deps. Feature crates may

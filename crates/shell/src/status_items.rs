@@ -13,103 +13,15 @@
 
 use std::sync::Arc;
 
-use gpui::{
-    div, px, AnyElement, App, AppContext, ClickEvent, Context, Entity, InteractiveElement,
-    IntoElement, ParentElement, Render, StatefulInteractiveElement, Styled, Window,
-};
-use labonair_panel::{
-    AnyStatusItemHandle, DockPosition, StatusItem, StatusItemRegistration, StatusSide,
-};
+use gpui::{App, AppContext, Entity};
+use labonair_panel::{AnyStatusItemHandle, DockPosition, StatusItem, StatusItemRegistration};
 use labonair_transfers_ui::TransfersView;
-use labonair_ui_kit::IconName;
 use labonair_workspace::agent_access::AgentAccessStore;
 
 use crate::theme::ThemeStore;
-use crate::updater::{UpdaterStatus, UpdaterView};
+use crate::updater::UpdaterView;
 use crate::workspace::Workspace;
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Auto-updater.
-// ─────────────────────────────────────────────────────────────────────────────
-
-pub struct UpdaterStatusItem {
-    updater: Entity<UpdaterView>,
-    theme: Entity<ThemeStore>,
-}
-
-impl UpdaterStatusItem {
-    pub fn new(
-        updater: Entity<UpdaterView>,
-        theme: Entity<ThemeStore>,
-        cx: &mut Context<Self>,
-    ) -> Self {
-        cx.observe(&updater, |_, _, cx| cx.notify()).detach();
-        cx.observe(&theme, |_, _, cx| cx.notify()).detach();
-        Self { updater, theme }
-    }
-}
-
-impl Render for UpdaterStatusItem {
-    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        self.render_status(window, cx)
-    }
-}
-
-impl StatusItem for UpdaterStatusItem {
-    fn id(&self) -> &'static str {
-        "updater"
-    }
-    fn default_side(&self) -> StatusSide {
-        StatusSide::Right
-    }
-    fn order(&self) -> i32 {
-        40
-    }
-    fn group(&self) -> u32 {
-        1
-    }
-
-    fn render_status(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
-        let ready = matches!(
-            self.updater.read(cx).status(),
-            UpdaterStatus::Available(_) | UpdaterStatus::Downloading { .. } | UpdaterStatus::Ready
-        );
-        if !ready {
-            return div().into_any_element();
-        }
-        let (fg, accent, border) = {
-            let t = self.theme.read(cx);
-            (t.foreground(), t.accent(), t.border())
-        };
-        div()
-            .id("bar-updater")
-            .relative()
-            .size(px(20.0))
-            .flex()
-            .items_center()
-            .justify_center()
-            .rounded_md()
-            .text_color(fg)
-            .hover(|s| s.bg(border))
-            .child(IconName::Download.svg(fg))
-            .child(
-                div()
-                    .absolute()
-                    .top(px(-1.0))
-                    .right(px(-1.0))
-                    .size(px(6.0))
-                    .rounded_full()
-                    .bg(accent),
-            )
-            .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
-                this.updater.update(cx, |u, cx| u.open_dialog(cx));
-            }))
-            .into_any_element()
-    }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// ─────────────────────────────────────────────────────────────────────────────
 // Registration — the composition boundary for status-item contributions.
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -168,7 +80,7 @@ pub fn register_builtin_status_items(
     let cursor =
         labonair_workspace::status_items::cursor_position_registration(workspace, theme, cx);
     let preview = labonair_workspace::status_items::preview_url_registration(workspace, theme, cx);
-    let updater_item = cx.new(|cx| UpdaterStatusItem::new(updater.clone(), theme.clone(), cx));
+    let updater_item = labonair_updater_ui::status_item::registration(updater, theme, cx);
     let transfers =
         labonair_transfers_ui::status_item_registration(workspace, transfers_view, theme, cx);
     let agent = labonair_workspace::status_items::status_item_registration(
@@ -192,7 +104,7 @@ pub fn register_builtin_status_items(
         cwd,
         cursor,
         preview,
-        reg(&updater_item, cx),
+        updater_item,
         transfers,
         agent,
     ];

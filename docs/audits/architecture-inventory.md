@@ -212,9 +212,9 @@ The current Cargo metadata shows several transitional edges that conflict with t
   `labonair-workspace::cwd_breadcrumb`; the interactive CWD view now lives in
   `labonair-workspace::cwd_status_item` as well. Cursor Position, Preview URL,
   and Dock panel buttons (including their move/hide menu) are also Workspace-
-  owned contributions. The remaining shell-owned statusbar surface is the
-  updater badge; its dialog/state view now comes from the `updater-ui` sibling,
-  while the badge registration itself remains a composition adapter.
+  owned contributions. The updater dialog, state view, and statusbar badge are
+  now owned by the `updater-ui` sibling; shell composition only inserts the
+  typed owner registration.
 - `shell/src/commands.rs` still maintains a second behavior registry beside
   the command-palette entries; the migration must leave one typed command
   registry and keep execution in the owning modules.

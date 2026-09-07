@@ -4850,6 +4850,7 @@ version = "0.1.0"
 dependencies = [
  "gpui",
  "labonair-notifications",
+ "labonair-panel",
  "labonair-theme",
  "labonair-ui-kit",
  "labonair-updater",

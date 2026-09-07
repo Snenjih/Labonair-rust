@@ -866,3 +866,9 @@ independent; the sibling owns the dialog, progress rendering, notification
 integration, and updater state view. Shell keeps only a compatibility module
 re-export for existing composition consumers, with no updater UI source left
 in the shell.
+
+The updater statusbar badge was then moved into the same `labonair-updater-ui`
+owner. It now owns the badge rendering, updater-state observation, click action,
+and typed `StatusItemRegistration`; shell composition only inserts the owner
+registration. The panel dependency is explicit in the updater UI crate and in
+the dependency-boundary validator.

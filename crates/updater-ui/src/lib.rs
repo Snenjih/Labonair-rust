@@ -14,6 +14,10 @@
 //! The dialog markup mirrors the reference `UpdaterDialog` states
 //! (available / downloading / ready) and its exact button labels.
 
+pub mod status_item;
+
+pub use status_item::{registration, UpdaterStatusItem};
+
 use std::time::Duration;
 
 use gpui::{
