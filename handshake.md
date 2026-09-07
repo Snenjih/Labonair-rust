@@ -64,6 +64,14 @@ badge was moved into the same owner in `c13f63b`; shell composition now only
 inserts its typed registration. Full workspace check, Clippy, tests, format,
 dependency, queue, and diff checks pass.
 
+The Terminal `ClearTerminal` executable contribution was moved into
+`labonair-terminal::command_provider` in `4b0c3fe`. The terminal
+module owns the command handler and receives a narrow Workspace-provided
+`TerminalCommandTarget`; the shell no longer contains this terminal adapter.
+Targeted Terminal/Workspace/Shell check, Clippy, tests, dependency, queue,
+format, and diff checks pass. The next remaining command owners are Search,
+Connections, Settings, Themes, Editor, Git, Snippets, and native shell actions.
+
 The current R05 slices removed the untyped `general.notifyOnErrors` default,
 moved Background values behind their owner, moved dock/sidebar runtime state
 to the versioned Workspace-owned `workspace-layout.json`, and removed
@@ -77,8 +85,8 @@ Legacy `appCornerRadius` values are converted to the current
 `cornerRadiusScale` field during migration, with the modern value taking
 precedence when both are present.
 
-Current HEAD is `c13f63b` on `master`; the worktree is clean before this
-handshake update. R06
+Current HEAD is `4b0c3fe` on `master`; the worktree contains only this
+handshake update before its commit. R06
 boundaries removed the backend error facade, removed AI's stale backend edge,
 moved system-font discovery into the Theme owner, deleted the unconsumed
 backend custom-font module, removed the dead legacy bar-placement API while
