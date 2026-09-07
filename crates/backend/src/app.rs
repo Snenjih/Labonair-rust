@@ -90,11 +90,12 @@ impl App {
     pub fn spawn_workers(&self) {
         if let Some(rx) = self.0.worker_rx.lock().unwrap().take() {
             let ssh = self.ssh.clone();
-            let app = self.clone();
+            let events = self.events.clone();
             let conflicts = self.transfer.conflicts.clone();
             let settings = self.transfer.settings.clone();
             tokio::spawn(async move {
-                crate::modules::sftp::worker::run_worker(rx, ssh, app, conflicts, settings).await;
+                crate::modules::sftp::worker::run_worker(rx, ssh, events, conflicts, settings)
+                    .await;
             });
         }
         crate::modules::mcp::spawn_auto_revoke_sweeper(self.events.clone(), self.mcp.clone());

@@ -23,6 +23,12 @@ instead of the aggregate backend App. `PtyState` is reference-counted in the
 backend so the server can share local terminal sessions without widening its
 state boundary.
 
+The SFTP transfer worker was narrowed after that. Its queue loop and all
+download/upload helpers now receive `EventBus` directly for progress, steps,
+and connection-loss reports, alongside their existing SSH, conflict, and
+settings state. `App::spawn_workers` only extracts and injects those concrete
+capabilities; the worker no longer stores or passes the aggregate App.
+
 ## R06-001 backend facade inventory and error boundary
 
 Recorded the complete backend module/export and direct-consumer map in

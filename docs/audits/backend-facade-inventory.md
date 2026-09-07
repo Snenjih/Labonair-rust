@@ -46,7 +46,7 @@ participate in the `App` state graph or in another backend module.
 | `ssh` | SSH state, transport, PTY, remote files, tunnels, config import/export | `shell`; internal Git/SFTP/snippet/MCP use | `labonair-ssh` integration boundary; PTY and remote-file adapters now receive only their required capability state, while connection/config/tunnel extraction remains |
 | `terminal_exec` | terminal execution state and command helpers | internal MCP use | MCP/terminal contract; no public `App` access |
 | `themes` | legacy theme values, import/export/download operations | none found | `labonair-theme`; static registry is canonical, legacy download path is deferred |
-| `transfers` | `BackendTransferService` and event source | `shell` | `labonair-transfers` integration boundary; service receives only `TransferWorkerState`, event translation stays once at adapter edge |
+| `transfers` | `BackendTransferService` and event source | `shell` | `labonair-transfers` integration boundary; service receives only `TransferWorkerState`, event translation stays once at adapter edge, and the worker receives explicit SSH/EventBus/queue state |
 | `updater` | update manifest, verification, download/install helpers | `shell::updater`, app smoke tests | updater/application boundary; root re-export removed and consumers use the updater module directly |
 
 ## Direct dependency evidence

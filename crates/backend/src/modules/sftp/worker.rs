@@ -1,6 +1,7 @@
 use super::net_error::is_network_error;
 use super::*;
 use crate::modules::ssh::{RushSession, SshState};
+use crate::EventBus;
 use russh_sftp::protocol::OpenFlags;
 use std::io::Read;
 use std::sync::Arc;
@@ -96,7 +97,7 @@ type JoinedJob = (String, TransferJob, Result<(), String>, CancellationToken);
 pub async fn run_worker(
     mut rx: mpsc::Receiver<WorkerMessage>,
     ssh_state: SshState,
-    app: crate::App,
+    events: EventBus,
     conflicts: ConflictMap,
     settings: Arc<TransferSettings>,
 ) {
@@ -135,7 +136,7 @@ pub async fn run_worker(
             match rx.try_recv() {
                 Ok(WorkerMessage::Enqueue(job)) => {
                     cancel_tokens.entry(job.id.clone()).or_default();
-                    emit_progress(&app, &job);
+                    emit_progress(&events, &job);
                     queue.push_back(job);
                 }
                 Ok(WorkerMessage::Cancel(id)) => {
@@ -186,12 +187,12 @@ pub async fn run_worker(
                 continue;
             }
             job.status = TransferStatus::Running;
-            emit_progress(&app, &job);
+            emit_progress(&events, &job);
 
             running_snapshots.insert(job.id.clone(), job.clone());
             let job_id = job.id.clone();
             let ssh_state_c = ssh_state.clone();
-            let app_c = app.clone();
+            let events_c = events.clone();
             let conflicts_c = conflicts.clone();
             let settings_c = settings.clone();
             let token_c = token.clone();
@@ -199,7 +200,7 @@ pub async fn run_worker(
                 let result = process_job(
                     &mut job,
                     &ssh_state_c,
-                    &app_c,
+                    &events_c,
                     &conflicts_c,
                     &token_c,
                     &settings_c,
@@ -215,7 +216,7 @@ pub async fn run_worker(
             match rx.recv().await {
                 Some(WorkerMessage::Enqueue(job)) => {
                     cancel_tokens.entry(job.id.clone()).or_default();
-                    emit_progress(&app, &job);
+                    emit_progress(&events, &job);
                     queue.push_back(job);
                 }
                 Some(WorkerMessage::Cancel(id)) => {
@@ -255,7 +256,7 @@ pub async fn run_worker(
             msg = rx.recv() => match msg {
                 Some(WorkerMessage::Enqueue(job)) => {
                     cancel_tokens.entry(job.id.clone()).or_default();
-                    emit_progress(&app, &job);
+                    emit_progress(&events, &job);
                     queue.push_back(job);
                 }
                 Some(WorkerMessage::Cancel(id)) => {
@@ -273,13 +274,13 @@ pub async fn run_worker(
                 }
                 None => {
                     while let Some(joined) = in_flight.join_next().await {
-                        finish_job(joined, &app, &ssh_state, &mut cancel_tokens, &mut running_snapshots, &mut reconnect_requeue, &mut queue);
+                        finish_job(joined, &events, &ssh_state, &mut cancel_tokens, &mut running_snapshots, &mut reconnect_requeue, &mut queue);
                     }
                     return;
                 }
             },
             Some(joined) = in_flight.join_next() => {
-                finish_job(joined, &app, &ssh_state, &mut cancel_tokens, &mut running_snapshots, &mut reconnect_requeue, &mut queue);
+                finish_job(joined, &events, &ssh_state, &mut cancel_tokens, &mut running_snapshots, &mut reconnect_requeue, &mut queue);
             }
         }
     }
@@ -309,7 +310,7 @@ fn handle_session_reconnected(
 
 fn finish_job(
     joined: Result<JoinedJob, tokio::task::JoinError>,
-    app: &crate::App,
+    events: &EventBus,
     ssh_state: &SshState,
     cancel_tokens: &mut std::collections::HashMap<String, CancellationToken>,
     running_snapshots: &mut std::collections::HashMap<String, TransferJob>,
@@ -324,7 +325,7 @@ fn finish_job(
             match result {
                 Ok(()) => {
                     job.status = TransferStatus::Completed;
-                    emit_progress(app, &job);
+                    emit_progress(events, &job);
                 }
                 Err(e) => {
                     // Detect network-level failures and notify the frontend so
@@ -334,7 +335,7 @@ fn finish_job(
                         if let Ok(mut map) = ssh_state.0.lock() {
                             map.remove(&job.session_id);
                         }
-                        let _ = app.emit(
+                        let _ = events.emit(
                             "ssh_connection_lost",
                             serde_json::json!({
                                 "session_id": job.session_id,
@@ -347,7 +348,7 @@ fn finish_job(
                     } else {
                         TransferStatus::Failed(e)
                     };
-                    emit_progress(app, &job);
+                    emit_progress(events, &job);
                 }
             }
             if requeue_for_reconnect {
@@ -364,7 +365,7 @@ fn finish_job(
                     skipped_count: 0,
                 };
                 cancel_tokens.entry(fresh.id.clone()).or_default();
-                emit_progress(app, &fresh);
+                emit_progress(events, &fresh);
                 queue.push_back(fresh);
             }
         }
@@ -379,8 +380,8 @@ fn finish_job(
     }
 }
 
-fn emit_progress(app: &crate::App, job: &TransferJob) {
-    let _ = app.emit("transfer_progress", job);
+fn emit_progress(events: &EventBus, job: &TransferJob) {
+    let _ = events.emit("transfer_progress", job);
 }
 
 fn now_ms() -> i64 {
@@ -393,8 +394,8 @@ fn now_ms() -> i64 {
 /// Emits a timestamped step for a transfer's per-job log (shown in the
 /// transfer manager popup). Mirrors the existing `log::debug!` call sites at
 /// the same granularity, just also surfaced to the frontend.
-fn emit_step(app: &crate::App, job_id: &str, message: impl Into<String>) {
-    let _ = app.emit(
+fn emit_step(events: &EventBus, job_id: &str, message: impl Into<String>) {
+    let _ = events.emit(
         "transfer_step",
         TransferStepPayload {
             job_id: job_id.to_string(),
@@ -407,7 +408,7 @@ fn emit_step(app: &crate::App, job_id: &str, message: impl Into<String>) {
 async fn process_job(
     job: &mut TransferJob,
     ssh_state: &SshState,
-    app: &crate::App,
+    events: &EventBus,
     conflicts: &ConflictMap,
     cancel_token: &CancellationToken,
     settings: &TransferSettings,
@@ -421,22 +422,22 @@ async fn process_job(
         job.dest_path
     );
     emit_step(
-        app,
+        events,
         &job.id,
         format!("Transfer started: {} → {}", job.src_path, job.dest_path),
     );
     let result = match job.direction {
         TransferDirection::Download => {
-            download_file(job, ssh_state, app, conflicts, cancel_token, settings).await
+            download_file(job, ssh_state, events, conflicts, cancel_token, settings).await
         }
         TransferDirection::Upload => {
-            upload_file(job, ssh_state, app, conflicts, cancel_token, settings).await
+            upload_file(job, ssh_state, events, conflicts, cancel_token, settings).await
         }
     };
     match &result {
         Ok(()) => {
             log::info!("[sftp] completed id={}", job.id);
-            emit_step(app, &job.id, "Transfer completed successfully");
+            emit_step(events, &job.id, "Transfer completed successfully");
         }
         Err(e) => {
             log::error!(
@@ -447,7 +448,7 @@ async fn process_job(
                 job.dest_path,
                 e
             );
-            emit_step(app, &job.id, format!("Transfer failed: {e}"));
+            emit_step(events, &job.id, format!("Transfer failed: {e}"));
         }
     }
     result
@@ -604,7 +605,7 @@ async fn walk_remote_tree(
 async fn download_file(
     job: &mut TransferJob,
     ssh_state: &SshState,
-    app: &crate::App,
+    events: &EventBus,
     conflicts: &ConflictMap,
     cancel_token: &CancellationToken,
     settings: &TransferSettings,
@@ -617,7 +618,7 @@ async fn download_file(
         job.session_id
     );
     let (session, sftp) = get_session_and_sftp(ssh_state, &job.session_id)?;
-    emit_step(app, &job.id, "SFTP session ready");
+    emit_step(events, &job.id, "SFTP session ready");
 
     log::debug!("[sftp/download] stat remote path: {}", job.src_path);
     let meta = sftp
@@ -633,13 +634,13 @@ async fn download_file(
     // *after* the atomic-create step further down had already left a stray
     // empty file behind.
     if meta.is_dir() {
-        return download_directory(job, &sftp, app, conflicts, cancel_token, settings).await;
+        return download_directory(job, &sftp, events, conflicts, cancel_token, settings).await;
     }
 
     let file_size = meta.size.unwrap_or(0);
     log::debug!("[sftp/download] remote file size={} bytes", file_size);
     emit_step(
-        app,
+        events,
         &job.id,
         format!("Opened remote file ({} bytes)", file_size),
     );
@@ -653,7 +654,7 @@ async fn download_file(
         job.dest_path
     );
     emit_step(
-        app,
+        events,
         &job.id,
         format!("Creating local file: {}", job.dest_path),
     );
@@ -667,7 +668,7 @@ async fn download_file(
         Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
             log::debug!("[sftp/download] conflict detected, waiting for resolution");
             emit_step(
-                app,
+                events,
                 &job.id,
                 "Destination already exists — waiting for conflict resolution",
             );
@@ -676,10 +677,10 @@ async fn download_file(
                     conflicts.lock().await.remove(&job.id);
                     return Err("cancelled".to_string());
                 }
-                r = ask_conflict(job, app, conflicts, settings) => r?,
+                r = ask_conflict(job, events, conflicts, settings) => r?,
             };
             emit_step(
-                app,
+                events,
                 &job.id,
                 format!("Conflict resolved: {}", resolution.resolution),
             );
@@ -765,20 +766,20 @@ async fn download_file(
             job.speed_bps = bytes_delta as f64 / (elapsed as f64 / 1000.0);
             last_bytes = job.bytes_transferred;
             last_emit = std::time::Instant::now();
-            emit_progress(app, job);
+            emit_progress(events, job);
         }
     }
     drop(local_file);
     log::debug!("[sftp/download] read {} bytes from remote", written);
     emit_step(
-        app,
+        events,
         &job.id,
         format!("Wrote {} bytes to local disk", written),
     );
 
     // --- Post-transfer verification ---
     log::debug!("[sftp/download] verifying transfer id={}", job.id);
-    emit_step(app, &job.id, "Verifying transfer (size check)");
+    emit_step(events, &job.id, "Verifying transfer (size check)");
     let local_size = tokio::fs::metadata(&job.dest_path)
         .await
         .map_err(|e| format!("verify metadata({}) failed: {e}", job.dest_path))?
@@ -789,7 +790,7 @@ async fn download_file(
         ));
     }
 
-    emit_step(app, &job.id, "Computing MD5 checksum");
+    emit_step(events, &job.id, "Computing MD5 checksum");
     let local_hash =
         compute_local_md5_async(std::path::PathBuf::from(&job.dest_path), chunk_size).await?;
     match compute_remote_md5(&session, &job.src_path).await {
@@ -800,7 +801,7 @@ async fn download_file(
                 ));
             }
             log::debug!("[sftp/download] md5 verified ok id={}", job.id);
-            emit_step(app, &job.id, "MD5 checksum verified — match");
+            emit_step(events, &job.id, "MD5 checksum verified — match");
         }
         None => {
             log::warn!(
@@ -808,7 +809,7 @@ async fn download_file(
                 job.id
             );
             emit_step(
-                app,
+                events,
                 &job.id,
                 "md5sum unavailable on remote — relying on size check only",
             );
@@ -827,13 +828,13 @@ async fn download_file(
 async fn download_directory(
     job: &mut TransferJob,
     sftp: &Arc<russh_sftp::client::SftpSession>,
-    app: &crate::App,
+    events: &EventBus,
     conflicts: &ConflictMap,
     cancel_token: &CancellationToken,
     settings: &TransferSettings,
 ) -> Result<(), String> {
     emit_step(
-        app,
+        events,
         &job.id,
         format!("Scanning remote folder: {}", job.src_path),
     );
@@ -841,7 +842,7 @@ async fn download_directory(
     let total_bytes: u64 = entries.iter().filter(|e| !e.is_dir).map(|e| e.size).sum();
     job.bytes_total = total_bytes;
     emit_step(
-        app,
+        events,
         &job.id,
         format!("Found {} entries ({} bytes)", entries.len(), total_bytes),
     );
@@ -853,7 +854,7 @@ async fn download_directory(
     let mut dest_root = job.dest_path.clone();
     if tokio::fs::metadata(&dest_root).await.is_ok() {
         emit_step(
-            app,
+            events,
             &job.id,
             "Destination already exists — waiting for conflict resolution",
         );
@@ -862,10 +863,10 @@ async fn download_directory(
                 conflicts.lock().await.remove(&job.id);
                 return Err("cancelled".to_string());
             }
-            r = ask_conflict(job, app, conflicts, settings) => r?,
+            r = ask_conflict(job, events, conflicts, settings) => r?,
         };
         emit_step(
-            app,
+            events,
             &job.id,
             format!("Conflict resolved: {}", resolution.resolution),
         );
@@ -924,7 +925,7 @@ async fn download_directory(
             continue;
         }
 
-        emit_step(app, &job.id, format!("Downloading {}", entry.rel_path));
+        emit_step(events, &job.id, format!("Downloading {}", entry.rel_path));
         let result = download_one_file(
             sftp,
             &remote_path,
@@ -936,7 +937,7 @@ async fn download_directory(
             cancel_token,
             &mut last_emit,
             &mut last_bytes,
-            app,
+            events,
         )
         .await;
 
@@ -947,7 +948,7 @@ async fn download_directory(
                     entry.rel_path
                 );
                 emit_step(
-                    app,
+                    events,
                     &job.id,
                     format!("Skipped (error): {} — {e}", entry.rel_path),
                 );
@@ -956,7 +957,7 @@ async fn download_directory(
                 return Err(e);
             } else {
                 emit_step(
-                    app,
+                    events,
                     &job.id,
                     format!("Error on {}: {e} — waiting for resolution", entry.rel_path),
                 );
@@ -965,7 +966,7 @@ async fn download_directory(
                         conflicts.lock().await.remove(&job.id);
                         return Err("cancelled".to_string());
                     }
-                    r = ask_file_error(job, app, conflicts, &entry.rel_path, &e) => r?,
+                    r = ask_file_error(job, events, conflicts, &entry.rel_path, &e) => r?,
                 };
                 match resolution.resolution.as_str() {
                     "abort" => return Err(e),
@@ -975,7 +976,7 @@ async fn download_directory(
                         }
                         job.skipped_count += 1;
                         emit_step(
-                            app,
+                            events,
                             &job.id,
                             format!("Skipped (error): {} — {e}", entry.rel_path),
                         );
@@ -988,7 +989,7 @@ async fn download_directory(
     }
 
     emit_step(
-        app,
+        events,
         &job.id,
         format!(
             "Downloaded {file_count} file{} ({written_total} bytes){}",
@@ -1020,7 +1021,7 @@ async fn download_one_file(
     cancel_token: &CancellationToken,
     last_emit: &mut std::time::Instant,
     last_bytes: &mut u64,
-    app: &crate::App,
+    events: &EventBus,
 ) -> Result<(), String> {
     if let Some(parent) = std::path::Path::new(local_path).parent() {
         tokio::fs::create_dir_all(parent)
@@ -1064,7 +1065,7 @@ async fn download_one_file(
             job.speed_bps = bytes_delta as f64 / (elapsed as f64 / 1000.0);
             *last_bytes = job.bytes_transferred;
             *last_emit = std::time::Instant::now();
-            emit_progress(app, job);
+            emit_progress(events, job);
         }
     }
     drop(local_file);
@@ -1084,7 +1085,7 @@ async fn download_one_file(
 async fn upload_file(
     job: &mut TransferJob,
     ssh_state: &SshState,
-    app: &crate::App,
+    events: &EventBus,
     conflicts: &ConflictMap,
     cancel_token: &CancellationToken,
     settings: &TransferSettings,
@@ -1103,14 +1104,14 @@ async fn upload_file(
     if local_meta.is_dir() {
         drop(local_file);
         let (_session, sftp) = get_session_and_sftp(ssh_state, &job.session_id)?;
-        emit_step(app, &job.id, "SFTP session ready");
-        return upload_directory(job, &sftp, app, conflicts, cancel_token, settings).await;
+        emit_step(events, &job.id, "SFTP session ready");
+        return upload_directory(job, &sftp, events, conflicts, cancel_token, settings).await;
     }
     let file_size = local_meta.len();
     job.bytes_total = file_size;
     log::debug!("[sftp/upload] local file size={} bytes", file_size);
     emit_step(
-        app,
+        events,
         &job.id,
         format!("Opened local file ({} bytes)", file_size),
     );
@@ -1120,7 +1121,7 @@ async fn upload_file(
         job.session_id
     );
     let (session, sftp) = get_session_and_sftp(ssh_state, &job.session_id)?;
-    emit_step(app, &job.id, "SFTP session ready");
+    emit_step(events, &job.id, "SFTP session ready");
 
     // Single atomic exclusive-create attempt — no prior `stat()` check —
     // closes the stat-then-create TOCTOU window the old code had. Any
@@ -1132,7 +1133,7 @@ async fn upload_file(
         job.dest_path
     );
     emit_step(
-        app,
+        events,
         &job.id,
         format!("Creating remote file: {}", job.dest_path),
     );
@@ -1147,7 +1148,7 @@ async fn upload_file(
         Err(_) => {
             log::debug!("[sftp/upload] conflict at dest: {}", job.dest_path);
             emit_step(
-                app,
+                events,
                 &job.id,
                 "Destination already exists — waiting for conflict resolution",
             );
@@ -1156,10 +1157,10 @@ async fn upload_file(
                     conflicts.lock().await.remove(&job.id);
                     return Err("cancelled".to_string());
                 }
-                r = ask_conflict(job, app, conflicts, settings) => r?,
+                r = ask_conflict(job, events, conflicts, settings) => r?,
             };
             emit_step(
-                app,
+                events,
                 &job.id,
                 format!("Conflict resolved: {}", resolution.resolution),
             );
@@ -1233,7 +1234,7 @@ async fn upload_file(
             job.speed_bps = bytes_delta as f64 / (elapsed as f64 / 1000.0);
             last_bytes = job.bytes_transferred;
             last_emit = std::time::Instant::now();
-            emit_progress(app, job);
+            emit_progress(events, job);
         }
     }
     // Drains pending write acks and closes the handle — without this, a
@@ -1241,11 +1242,15 @@ async fn upload_file(
     // of the upload could go unnoticed.
     remote_file.shutdown().await.map_err(|e| e.to_string())?;
     log::debug!("[sftp/upload] wrote {} bytes to remote", written);
-    emit_step(app, &job.id, format!("Wrote {} bytes to remote", written));
+    emit_step(
+        events,
+        &job.id,
+        format!("Wrote {} bytes to remote", written),
+    );
 
     // --- Post-transfer verification ---
     log::debug!("[sftp/upload] verifying transfer id={}", job.id);
-    emit_step(app, &job.id, "Verifying transfer (size check)");
+    emit_step(events, &job.id, "Verifying transfer (size check)");
     let remote_size = sftp
         .metadata(job.dest_path.clone())
         .await
@@ -1258,7 +1263,7 @@ async fn upload_file(
         ));
     }
 
-    emit_step(app, &job.id, "Computing MD5 checksum");
+    emit_step(events, &job.id, "Computing MD5 checksum");
     let local_hash =
         compute_local_md5_async(std::path::PathBuf::from(&job.src_path), chunk_size).await?;
     match compute_remote_md5(&session, &job.dest_path).await {
@@ -1269,7 +1274,7 @@ async fn upload_file(
                 ));
             }
             log::debug!("[sftp/upload] md5 verified ok id={}", job.id);
-            emit_step(app, &job.id, "MD5 checksum verified — match");
+            emit_step(events, &job.id, "MD5 checksum verified — match");
         }
         None => {
             log::warn!(
@@ -1277,7 +1282,7 @@ async fn upload_file(
                 job.id
             );
             emit_step(
-                app,
+                events,
                 &job.id,
                 "md5sum unavailable on remote — relying on size check only",
             );
@@ -1294,13 +1299,13 @@ async fn upload_file(
 async fn upload_directory(
     job: &mut TransferJob,
     sftp: &Arc<russh_sftp::client::SftpSession>,
-    app: &crate::App,
+    events: &EventBus,
     conflicts: &ConflictMap,
     cancel_token: &CancellationToken,
     settings: &TransferSettings,
 ) -> Result<(), String> {
     emit_step(
-        app,
+        events,
         &job.id,
         format!("Scanning local folder: {}", job.src_path),
     );
@@ -1309,7 +1314,7 @@ async fn upload_directory(
     let total_bytes: u64 = entries.iter().filter(|e| !e.is_dir).map(|e| e.size).sum();
     job.bytes_total = total_bytes;
     emit_step(
-        app,
+        events,
         &job.id,
         format!("Found {} entries ({} bytes)", entries.len(), total_bytes),
     );
@@ -1321,7 +1326,7 @@ async fn upload_directory(
     let mut dest_root = job.dest_path.clone();
     if sftp.metadata(dest_root.clone()).await.is_ok() {
         emit_step(
-            app,
+            events,
             &job.id,
             "Destination already exists — waiting for conflict resolution",
         );
@@ -1330,10 +1335,10 @@ async fn upload_directory(
                 conflicts.lock().await.remove(&job.id);
                 return Err("cancelled".to_string());
             }
-            r = ask_conflict(job, app, conflicts, settings) => r?,
+            r = ask_conflict(job, events, conflicts, settings) => r?,
         };
         emit_step(
-            app,
+            events,
             &job.id,
             format!("Conflict resolved: {}", resolution.resolution),
         );
@@ -1393,7 +1398,7 @@ async fn upload_directory(
             continue;
         }
 
-        emit_step(app, &job.id, format!("Uploading {}", entry.rel_path));
+        emit_step(events, &job.id, format!("Uploading {}", entry.rel_path));
         let result = upload_one_file(
             sftp,
             &local_path,
@@ -1405,7 +1410,7 @@ async fn upload_directory(
             cancel_token,
             &mut last_emit,
             &mut last_bytes,
-            app,
+            events,
         )
         .await;
 
@@ -1413,7 +1418,7 @@ async fn upload_directory(
             if skip_all_remaining || on_error_policy == "skip" {
                 log::warn!("[sftp/upload] skipping failed file {}: {e}", entry.rel_path);
                 emit_step(
-                    app,
+                    events,
                     &job.id,
                     format!("Skipped (error): {} — {e}", entry.rel_path),
                 );
@@ -1422,7 +1427,7 @@ async fn upload_directory(
                 return Err(e);
             } else {
                 emit_step(
-                    app,
+                    events,
                     &job.id,
                     format!("Error on {}: {e} — waiting for resolution", entry.rel_path),
                 );
@@ -1431,7 +1436,7 @@ async fn upload_directory(
                         conflicts.lock().await.remove(&job.id);
                         return Err("cancelled".to_string());
                     }
-                    r = ask_file_error(job, app, conflicts, &entry.rel_path, &e) => r?,
+                    r = ask_file_error(job, events, conflicts, &entry.rel_path, &e) => r?,
                 };
                 match resolution.resolution.as_str() {
                     "abort" => return Err(e),
@@ -1441,7 +1446,7 @@ async fn upload_directory(
                         }
                         job.skipped_count += 1;
                         emit_step(
-                            app,
+                            events,
                             &job.id,
                             format!("Skipped (error): {} — {e}", entry.rel_path),
                         );
@@ -1454,7 +1459,7 @@ async fn upload_directory(
     }
 
     emit_step(
-        app,
+        events,
         &job.id,
         format!(
             "Uploaded {file_count} file{} ({written_total} bytes){}",
@@ -1485,7 +1490,7 @@ async fn upload_one_file(
     cancel_token: &CancellationToken,
     last_emit: &mut std::time::Instant,
     last_bytes: &mut u64,
-    app: &crate::App,
+    events: &EventBus,
 ) -> Result<(), String> {
     let mut local_file = tokio::fs::File::open(local_path)
         .await
@@ -1523,7 +1528,7 @@ async fn upload_one_file(
             job.speed_bps = bytes_delta as f64 / (elapsed as f64 / 1000.0);
             *last_bytes = job.bytes_transferred;
             *last_emit = std::time::Instant::now();
-            emit_progress(app, job);
+            emit_progress(events, job);
         }
     }
     remote_file.shutdown().await.map_err(|e| e.to_string())?;
@@ -1544,7 +1549,7 @@ async fn upload_one_file(
 
 async fn ask_conflict(
     job: &TransferJob,
-    app: &crate::App,
+    events: &EventBus,
     conflicts: &ConflictMap,
     settings: &TransferSettings,
 ) -> Result<ConflictResolution, String> {
@@ -1564,15 +1569,16 @@ async fn ask_conflict(
         let mut map = conflicts.lock().await;
         map.insert(job.id.clone(), tx);
     }
-    app.emit(
-        "file_conflict",
-        serde_json::json!({
-            "job_id": job.id,
-            "src_path": job.src_path,
-            "dest_path": job.dest_path,
-        }),
-    )
-    .map_err(|e| e.to_string())?;
+    events
+        .emit(
+            "file_conflict",
+            serde_json::json!({
+                "job_id": job.id,
+                "src_path": job.src_path,
+                "dest_path": job.dest_path,
+            }),
+        )
+        .map_err(|e| e.to_string())?;
 
     rx.await
         .map_err(|_| "conflict resolution channel closed".to_string())
@@ -1587,7 +1593,7 @@ async fn ask_conflict(
 /// "abort" are handled inline by the caller without ever reaching here.
 async fn ask_file_error(
     job: &TransferJob,
-    app: &crate::App,
+    events: &EventBus,
     conflicts: &ConflictMap,
     rel_path: &str,
     error: &str,
@@ -1597,15 +1603,16 @@ async fn ask_file_error(
         let mut map = conflicts.lock().await;
         map.insert(job.id.clone(), tx);
     }
-    app.emit(
-        "file_error",
-        serde_json::json!({
-            "job_id": job.id,
-            "path": rel_path,
-            "error": error,
-        }),
-    )
-    .map_err(|e| e.to_string())?;
+    events
+        .emit(
+            "file_error",
+            serde_json::json!({
+                "job_id": job.id,
+                "path": rel_path,
+                "error": error,
+            }),
+        )
+        .map_err(|e| e.to_string())?;
 
     rx.await
         .map_err(|_| "file error resolution channel closed".to_string())

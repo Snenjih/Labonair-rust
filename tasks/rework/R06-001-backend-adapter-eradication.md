@@ -157,6 +157,9 @@ boundary still exists; that package must not become a second capability owner.
       `McpServerAccess` capability bundle; the MCP server no longer stores the
       aggregate backend `App`, and local PTY state is shared through an owned
       reference-counted capability state.
+- [x] The SFTP transfer worker now receives `SshState`, `EventBus`, transfer
+      conflict state, and transfer settings directly; worker progress,
+      reconnect handling, and transfer errors no longer flow through `App`.
 - [x] Secrets compatibility wrappers and jump-host resolution no longer take
       the aggregate `App`; they receive only their actual state dependencies.
 - [ ] Move the remaining contracts and adapters behind injected capability
