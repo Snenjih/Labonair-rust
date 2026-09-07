@@ -1010,3 +1010,7 @@ The Hosts command identity was renamed from `OpenHostSettings` to
 The old `connections::OpenHostSettings` action remains readable only as a
 non-discoverable keymap compatibility alias, making the Hosts/Settings
 ownership boundary explicit. Focused Command, Hosts, and Shell tests pass.
+
+The keymap runtime was also covered by the Hosts rename: both the canonical
+`connections::OpenHosts` action and the legacy alias resolve to `CommandId::OpenHosts`.
+The focused Command-Core and Keymap suites pass.

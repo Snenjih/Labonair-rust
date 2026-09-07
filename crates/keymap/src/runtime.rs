@@ -215,6 +215,18 @@ mod tests {
     }
 
     #[test]
+    fn host_settings_alias_resolves_to_the_canonical_hosts_command() {
+        assert_eq!(
+            command_for_action("connections::OpenHostSettings"),
+            Some(CommandId::OpenHosts)
+        );
+        assert_eq!(
+            command_for_action("connections::OpenHosts"),
+            Some(CommandId::OpenHosts)
+        );
+    }
+
+    #[test]
     fn owner_defaults_become_typed_runtime_bindings() {
         let mut registry = CommandRegistry::default();
         registry
