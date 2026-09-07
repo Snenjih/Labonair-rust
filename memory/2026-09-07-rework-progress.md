@@ -1070,3 +1070,9 @@ The roadmap was then reconciled with the active queue: R02-003 and R07-002 are
 described as complete, R07-003 is described as the completed compatibility
 decision, and the Settings migration wire shape is no longer attributed to the
 removed backend facade.
+
+The explicit transitional edges were converted into the ordered
+`docs/audits/remaining-boundaries.md` backlog. It identifies Explorer/Workspace
+and Workspace/Background as the next extraction candidates, separates typed
+edges that should only be narrowed when a real consumer requires it, and marks
+shell-to-integration construction as an intentional composition invariant.

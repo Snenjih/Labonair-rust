@@ -281,6 +281,11 @@ The verifier's allow-list is the machine-readable source for the exact edge
 set. Whenever an edge is added or removed, this table and the owning task must
 be updated in the same change.
 
+The ordered implementation backlog for these edges is
+[`remaining-boundaries.md`](remaining-boundaries.md). It distinguishes edges
+that should be extracted from typed contracts and composition edges that are
+correct by design.
+
 No new capability may be added to `shell` or `workspace` merely because those
 crates already have access to it. New code must first establish
 the owning capability crate and then inject or register it at composition.

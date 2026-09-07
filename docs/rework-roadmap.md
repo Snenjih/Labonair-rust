@@ -147,7 +147,9 @@ The backend-removal boundary
 [`R06-001-backend-adapter-eradication.md`](../tasks/rework/R06-001-backend-adapter-eradication.md)
 is complete. Remaining surface-contribution discrepancies are audited by
 [`R07-001-product-surface-acceptance.md`](../tasks/rework/R07-001-product-surface-acceptance.md)
-and implemented only through bounded follow-up tasks.
+and the remaining explicit dependency edges are ordered in
+[`audits/remaining-boundaries.md`](audits/remaining-boundaries.md). They are
+implemented only through bounded follow-up tasks.
 
 ## Phase 8 — Product refinement
 

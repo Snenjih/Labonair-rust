@@ -74,6 +74,12 @@ The roadmap authority audit corrected stale completion language for R02-003,
 R07-002, and R07-003, and replaced the obsolete reference to a backend-owned
 Settings migration shape with the current Settings-owned compatibility path.
 
+The remaining dependency edges are now ordered in
+`docs/audits/remaining-boundaries.md`: Explorer/Workspace and
+Workspace/Background are the next extraction candidates, typed
+Workspace/AI, Workspace/Settings, SCM, and Palette edges are review points,
+and shell-to-integration construction is explicitly retained by design.
+
 The R07-001 acceptance record now marks ownership, documentation authority,
 dependency/source agreement, verification gates, and product dispositions as
 structurally satisfied. Visual states remain pending by policy, and the legacy
