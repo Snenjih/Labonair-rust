@@ -36,7 +36,7 @@ gpui-component = "0.5.1"
 
 # Terminal
 alacritty_terminal = "0.24"
-vte = "0.13"
+vte = "0.15"
 
 # Async
 tokio = { version = "1", features = ["full"] }
