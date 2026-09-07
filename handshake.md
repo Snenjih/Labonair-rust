@@ -24,7 +24,7 @@ Legacy `appCornerRadius` values are converted to the current
 `cornerRadiusScale` field during migration, with the modern value taking
 precedence when both are present.
 
-Current HEAD is `b6ca084` on `master`; the worktree is clean before this
+Current HEAD is `e2dc273` on `master`; the worktree is clean before this
 handshake update. The first R06
 boundaries removed the backend error facade, removed AI's stale backend edge,
 moved system-font discovery into the Theme owner, deleted the unconsumed
@@ -72,6 +72,11 @@ The MCP HTTP server now uses an explicit `McpServerAccess` bundle instead of
 the aggregate `App`; it receives only SSH, local PTY, database, secrets, and
 EventBus capabilities. Local PTY state is reference-counted so it can be
 injected safely without reopening the facade.
+The SFTP transfer worker now receives SSH state, EventBus, conflict state, and
+transfer settings directly; `App::spawn_workers` is only a composition hook.
+R06-001 remains active; the remaining broad paths are the SFTP connection
+orchestration, snippets/credentials compatibility, and the legacy theme
+operations.
 The General cleanup including `startupTerminalCount` is committed in
 `61abf4c`; the corner-radius normalization is committed in `c6e9890`, the
 unused Appearance values in `d596df2`, and the unwired Editor values in
