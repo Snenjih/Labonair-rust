@@ -242,7 +242,7 @@ impl SshConnectionService for BackendSshService {
                 &app.trust,
                 &app.db,
                 &app.secrets,
-                app.clone(),
+                app.events.clone(),
                 request.connect_timeout_secs,
             )
             .await
@@ -392,7 +392,7 @@ impl SshConnectionTester for BackendSshService {
                 &refs.trust,
                 &refs.db,
                 &refs.secrets,
-                app,
+                app.events.clone(),
                 connect_timeout_secs,
             )
             .await

@@ -257,7 +257,7 @@ async fn run_tunnel_loop(
         password.as_deref(),
         None,
         &trust_state,
-        &app,
+        &app.events,
         true,
         jump,
         connect_timeout_secs,

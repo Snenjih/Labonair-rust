@@ -298,7 +298,7 @@ async fn sftp_connect_inner(
                 password.as_deref(),
                 passphrase.as_deref(),
                 &trust_state,
-                &app,
+                &app.events,
                 true, // fail fast — the sidebar Explorer has no trust-prompt UI of its own
                 jump,
                 None, // uses the default connect timeout — not wired to a setting on this path

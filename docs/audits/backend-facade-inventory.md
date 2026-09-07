@@ -123,6 +123,13 @@ broader adapter because their helper implementations currently require
 database, secrets, trust, or tunnel state; they remain the next extraction
 surface rather than being hidden behind the PTY/file adapter.
 
+The lower-level SSH connection pipeline was narrowed independently. Transport
+setup, host-key verification, authentication, jump-host handshakes, and PTY
+reader disconnect reporting now receive only `EventBus` for their event/log
+side effects. Database, secret, trust, and session-state access remains in the
+composition-facing connection adapter until those responsibilities are split
+into their own capability services.
+
 The standalone Secrets compatibility wrappers were narrowed as well. Secret
 reads/writes, encryption access, and service-name migration now receive only
 `SecretsState`; the SSH/SFTP/MCP callers no longer pass `App` merely to

@@ -145,6 +145,10 @@ boundary still exists; that package must not become a second capability owner.
 - [x] SSH PTY operations are provided by a dedicated adapter with only
       `SshState`; remote command/file operations use a dedicated adapter with
       only `SshState` plus `EventBus`.
+- [x] The SSH connection transport/authentication pipeline now receives only
+      `EventBus` for connection logs, trust notifications, and disconnect
+      events; database, secrets, and trust orchestration remain at the
+      composition adapter boundary.
 - [x] Secrets compatibility wrappers and jump-host resolution no longer take
       the aggregate `App`; they receive only their actual state dependencies.
 - [ ] Move the remaining contracts and adapters behind injected capability

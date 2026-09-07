@@ -1,3 +1,4 @@
+use crate::EventBus;
 use serde::Serialize;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -73,7 +74,7 @@ pub async fn ssh_pty_resize(
 pub async fn open_shell_channel(
     session: Arc<super::RushSession>,
     session_id: String,
-    app: crate::App,
+    events: EventBus,
     state: super::SshState,
     cols: u32,
     rows: u32,
@@ -118,7 +119,7 @@ pub async fn open_shell_channel(
 
     spawn_reader(
         read_half,
-        app,
+        events,
         session_id,
         state,
         session.shutdown.clone(),
@@ -144,7 +145,7 @@ pub async fn open_shell_channel(
 #[allow(clippy::too_many_arguments)]
 fn spawn_reader(
     mut read_half: russh::ChannelReadHalf,
-    app: crate::App,
+    events: EventBus,
     session_id: String,
     state: super::SshState,
     shutdown: Arc<AtomicBool>,
@@ -252,7 +253,7 @@ fn spawn_reader(
             if let Ok(mut map) = state.0.lock() {
                 map.remove(&session_id);
             }
-            let _ = app.emit(
+            let _ = events.emit(
                 "ssh_connection_lost",
                 serde_json::json!({
                     "session_id": session_id,

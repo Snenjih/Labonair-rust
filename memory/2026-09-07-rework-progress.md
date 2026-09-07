@@ -1,5 +1,15 @@
 # Rework progress — 2026-09-07
 
+## SSH connection event boundary
+
+The SSH transport/authentication pipeline was narrowed after the PTY and
+remote-file adapter split. `ClientHandler`, transport setup, jump-host
+handshakes, authentication, and PTY reader disconnect reporting now receive
+only `EventBus`; they no longer retain or pass the aggregate backend `App`.
+The connection adapter still owns composition of database, secret, trust, and
+session state, so those dependencies remain available only at that explicit
+boundary while the next capability splits are prepared.
+
 ## R06-001 backend facade inventory and error boundary
 
 Recorded the complete backend module/export and direct-consumer map in

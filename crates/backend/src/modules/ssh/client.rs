@@ -1,3 +1,4 @@
+use crate::EventBus;
 use labonair_errors::LabonairError;
 use std::sync::Arc;
 use std::time::Duration;
@@ -116,7 +117,7 @@ fn md5_fingerprint(key_bytes: &[u8]) -> String {
 /// for that one connection.
 pub struct ClientHandler {
     session_id: String,
-    app: crate::App,
+    events: EventBus,
     trust_state: super::TrustState,
     fail_fast_untrusted_host: bool,
     host_address: String,
@@ -136,7 +137,7 @@ impl russh::client::Handler for ClientHandler {
         &mut self,
         server_public_key: &russh::keys::PublicKey,
     ) -> Result<bool, Self::Error> {
-        log_step!(self.app, self.session_id, "Verifying host fingerprint…");
+        log_step!(self.events, self.session_id, "Verifying host fingerprint…");
 
         let key_bytes = server_public_key
             .to_bytes()
@@ -162,12 +163,12 @@ impl russh::client::Handler for ClientHandler {
 
         match status {
             KnownHostStatus::Match => {
-                log_step!(self.app, self.session_id, "Host fingerprint verified ✓");
+                log_step!(self.events, self.session_id, "Host fingerprint verified ✓");
                 Ok(true)
             }
             KnownHostStatus::Mismatch => {
                 log_step!(
-                    self.app,
+                    self.events,
                     self.session_id,
                     format!("Host key mismatch! Fingerprint: {}", fingerprint)
                 );
@@ -177,7 +178,7 @@ impl russh::client::Handler for ClientHandler {
                         self.host_address, fingerprint
                     )));
                 }
-                self.app
+                self.events
                     .emit(
                         "known_hosts_warning",
                         serde_json::json!({
@@ -200,7 +201,7 @@ impl russh::client::Handler for ClientHandler {
                     );
                 }
                 log_step!(
-                    self.app,
+                    self.events,
                     self.session_id,
                     "Host key accepted and updated in known_hosts ✓"
                 );
@@ -208,7 +209,7 @@ impl russh::client::Handler for ClientHandler {
             }
             KnownHostStatus::NotFound => {
                 log_step!(
-                    self.app,
+                    self.events,
                     self.session_id,
                     format!("Unknown host — fingerprint: {}", fingerprint)
                 );
@@ -218,7 +219,7 @@ impl russh::client::Handler for ClientHandler {
                         self.host_address, fingerprint
                     )));
                 }
-                self.app
+                self.events
                     .emit(
                         "known_hosts_warning",
                         serde_json::json!({
@@ -239,7 +240,7 @@ impl russh::client::Handler for ClientHandler {
                     );
                 }
                 log_step!(
-                    self.app,
+                    self.events,
                     self.session_id,
                     "Host trusted and added to known_hosts ✓"
                 );
@@ -291,11 +292,11 @@ pub async fn ssh_connect(
     trust_state: &super::TrustState,
     hosts_db: &labonair_persistence::Database,
     secrets: &crate::modules::secrets::SecretsState,
-    app: crate::App,
+    events: EventBus,
     connect_timeout_secs: Option<u64>,
 ) -> Result<(), LabonairError> {
     // Step 1: Fetch host from SQLite (fast, sync — do before spawn_blocking)
-    log_step!(app, session_id, "Reading host configuration…");
+    log_step!(events, session_id, "Reading host configuration…");
     let (
         host_address,
         port,
@@ -336,7 +337,7 @@ pub async fn ssh_connect(
 
     // Step 1b: Resolve credential — if the host references a credential, override auth fields.
     let (auth_method, private_key_path) = if let Some(cid) = &credential_id {
-        log_step!(app, session_id, "Resolving credential…");
+        log_step!(events, session_id, "Resolving credential…");
         let (cred_type, cred_key_path, cred_has_secret): (String, Option<String>, bool) = {
             let conn = hosts_db
                 .0
@@ -361,7 +362,11 @@ pub async fn ssh_connect(
         if password_override.is_some() {
             password_override.clone()
         } else {
-            log_step!(app, session_id, "Retrieving credentials from local store…");
+            log_step!(
+                events,
+                session_id,
+                "Retrieving credentials from local store…"
+            );
             if let Some(cid) = &credential_id {
                 crate::modules::secrets::get_password(secrets, "labonair-cred", cid)
                     .ok()
@@ -392,7 +397,7 @@ pub async fn ssh_connect(
     // Step 3: Resolve jump host fields (if any).
     let jump = match jump_host_id.as_deref() {
         Some(jid) => {
-            log_step!(app, session_id, "Resolving jump host…");
+            log_step!(events, session_id, "Resolving jump host…");
             Some(resolve_jump_host(hosts_db, secrets, jid)?)
         }
         None => None,
@@ -421,7 +426,7 @@ pub async fn ssh_connect(
         blocks,
         state_inner,
         trust_inner,
-        app.clone(),
+        events.clone(),
         on_event,
         connect_timeout_secs,
     )
@@ -468,7 +473,7 @@ pub async fn ssh_connect_quick(
     on_event: crate::events::EventChannel<super::pty::SshPtyEvent>,
     state: &super::SshState,
     trust_state: &super::TrustState,
-    app: crate::App,
+    events: EventBus,
     connect_timeout_secs: Option<u64>,
 ) -> Result<(), String> {
     let state_inner = state.clone();
@@ -495,7 +500,7 @@ pub async fn ssh_connect_quick(
         blocks,
         state_inner,
         trust_inner,
-        app,
+        events,
         on_event,
         connect_timeout_secs,
     )
@@ -600,17 +605,17 @@ pub(crate) async fn establish_authenticated_session_from_stream<R>(
     password: Option<&str>,
     passphrase: Option<&str>,
     trust_state: &super::TrustState,
-    app: &crate::App,
+    events: &EventBus,
     fail_fast_untrusted_host: bool,
     disconnect_reason: Arc<std::sync::Mutex<Option<String>>>,
 ) -> Result<Arc<russh::client::Handle<ClientHandler>>, String>
 where
     R: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
 {
-    log_step!(app, session_id, "TCP connection established.");
+    log_step!(events, session_id, "TCP connection established.");
 
     // SSH handshake
-    log_step!(app, session_id, "Starting SSH handshake…");
+    log_step!(events, session_id, "Starting SSH handshake…");
     let effective_interval = keep_alive_interval.unwrap_or(25i64) as u64;
     let effective_tries = keep_alive_tries.unwrap_or(3).max(0) as usize;
     let config = Arc::new(russh::client::Config {
@@ -621,7 +626,7 @@ where
 
     let handler = ClientHandler {
         session_id: session_id.to_string(),
-        app: app.clone(),
+        events: events.clone(),
         trust_state: trust_state.clone(),
         fail_fast_untrusted_host,
         host_address: host_address.to_string(),
@@ -632,131 +637,141 @@ where
     let mut handle = russh::client::connect_stream(config, tcp, handler)
         .await
         .map_err(|e| e.to_string())?;
-    log_step!(app, session_id, "SSH handshake complete.");
+    log_step!(events, session_id, "SSH handshake complete.");
 
     // Authentication
-    log_step!(app, session_id, "Authenticating…");
-    let authenticated =
-        if auth_method == "key" {
-            let key_path = private_key_path
-                .map(std::path::Path::new)
-                .ok_or("private_key_path not set for key auth")?;
-            if !key_path.exists() {
-                return Err(format!(
-                    "Private key file not found: {}",
-                    key_path.display()
-                ));
-            }
+    log_step!(events, session_id, "Authenticating…");
+    let authenticated = if auth_method == "key" {
+        let key_path = private_key_path
+            .map(std::path::Path::new)
+            .ok_or("private_key_path not set for key auth")?;
+        if !key_path.exists() {
+            return Err(format!(
+                "Private key file not found: {}",
+                key_path.display()
+            ));
+        }
 
-            let agent_ok = try_agent_auth(&mut handle, username, session_id, app).await;
-            if agent_ok {
-                true
-            } else {
-                let pem = std::fs::read_to_string(key_path)
-                    .map_err(|e| format!("Failed to read private key file: {e}"))?;
-                log_step!(app, session_id, "Authenticating with public key file…");
-                // `russh::keys::Error::KeyIsEncrypted` is only ever raised by the
-                // legacy OpenSSH-format and PKCS#5 ("-----BEGIN RSA PRIVATE
-                // KEY-----" with a DEK-Info header) decoders — never by the
-                // PKCS#8 path, which is what `credential_generate_keypair`
-                // actually produces (`-----BEGIN ENCRYPTED PRIVATE KEY-----`).
-                // Detect that format directly from the PEM header so a missing
-                // or wrong passphrase on one of this app's own generated keys
-                // still routes through the passphrase prompt instead of a
-                // generic auth-failed error.
-                let is_pkcs8_encrypted = pem.contains("-----BEGIN ENCRYPTED PRIVATE KEY-----");
-                match russh::keys::decode_secret_key(&pem, passphrase) {
-                    Ok(key_pair) => {
-                        let hash_alg = handle
-                            .best_supported_rsa_hash()
-                            .await
-                            .ok()
-                            .flatten()
-                            .flatten();
-                        let key =
-                            russh::keys::PrivateKeyWithHashAlg::new(Arc::new(key_pair), hash_alg);
-                        match handle.authenticate_publickey(username, key).await {
-                            Ok(res) if res.success() => true,
-                            other => {
-                                let msg = match other {
-                                    Err(e) => e.to_string(),
-                                    Ok(_) => "authentication failed".to_string(),
-                                };
-                                log_step!(app, session_id, format!("Key auth failed: {}", msg));
-                                app.emit("auth_required", serde_json::json!({
+        let agent_ok = try_agent_auth(&mut handle, username, session_id, events).await;
+        if agent_ok {
+            true
+        } else {
+            let pem = std::fs::read_to_string(key_path)
+                .map_err(|e| format!("Failed to read private key file: {e}"))?;
+            log_step!(events, session_id, "Authenticating with public key file…");
+            // `russh::keys::Error::KeyIsEncrypted` is only ever raised by the
+            // legacy OpenSSH-format and PKCS#5 ("-----BEGIN RSA PRIVATE
+            // KEY-----" with a DEK-Info header) decoders — never by the
+            // PKCS#8 path, which is what `credential_generate_keypair`
+            // actually produces (`-----BEGIN ENCRYPTED PRIVATE KEY-----`).
+            // Detect that format directly from the PEM header so a missing
+            // or wrong passphrase on one of this app's own generated keys
+            // still routes through the passphrase prompt instead of a
+            // generic auth-failed error.
+            let is_pkcs8_encrypted = pem.contains("-----BEGIN ENCRYPTED PRIVATE KEY-----");
+            match russh::keys::decode_secret_key(&pem, passphrase) {
+                Ok(key_pair) => {
+                    let hash_alg = handle
+                        .best_supported_rsa_hash()
+                        .await
+                        .ok()
+                        .flatten()
+                        .flatten();
+                    let key = russh::keys::PrivateKeyWithHashAlg::new(Arc::new(key_pair), hash_alg);
+                    match handle.authenticate_publickey(username, key).await {
+                        Ok(res) if res.success() => true,
+                        other => {
+                            let msg = match other {
+                                Err(e) => e.to_string(),
+                                Ok(_) => "authentication failed".to_string(),
+                            };
+                            log_step!(events, session_id, format!("Key auth failed: {}", msg));
+                            events.emit("auth_required", serde_json::json!({
                                 "session_id": session_id, "prompt_message": msg, "is_2fa": false
                             })).map_err(|e| e.to_string())?;
-                                return Err(format!("authentication failed: {}", msg));
-                            }
+                            return Err(format!("authentication failed: {}", msg));
                         }
                     }
-                    // The key is encrypted and no passphrase was supplied — prompt
-                    // for one instead of surfacing a generic auth failure. If a
-                    // passphrase WAS supplied and is simply wrong, russh reports
-                    // this the same way (it can't distinguish "wrong passphrase"
-                    // from "encrypted, no passphrase given" at decode time), so
-                    // it also lands here — the frontend re-prompts either way.
-                    // The PKCS#8-encrypted case (see `is_pkcs8_encrypted` above)
-                    // gets the same treatment for any decode failure, since it
-                    // never surfaces as `KeyIsEncrypted` at all.
-                    Err(russh::keys::Error::KeyIsEncrypted) => {
-                        log_step!(app, session_id, "Key is passphrase-protected, prompting…");
-                        app.emit(
+                }
+                // The key is encrypted and no passphrase was supplied — prompt
+                // for one instead of surfacing a generic auth failure. If a
+                // passphrase WAS supplied and is simply wrong, russh reports
+                // this the same way (it can't distinguish "wrong passphrase"
+                // from "encrypted, no passphrase given" at decode time), so
+                // it also lands here — the frontend re-prompts either way.
+                // The PKCS#8-encrypted case (see `is_pkcs8_encrypted` above)
+                // gets the same treatment for any decode failure, since it
+                // never surfaces as `KeyIsEncrypted` at all.
+                Err(russh::keys::Error::KeyIsEncrypted) => {
+                    log_step!(
+                        events,
+                        session_id,
+                        "Key is passphrase-protected, prompting…"
+                    );
+                    events
+                        .emit(
                             "passphrase_required",
                             serde_json::json!({ "session_id": session_id }),
                         )
                         .map_err(|e| e.to_string())?;
-                        return Err("passphrase_required".to_string());
-                    }
-                    Err(e) if is_pkcs8_encrypted => {
-                        log_step!(app, session_id, "Key is passphrase-protected, prompting…");
-                        let _ = e; // decode failure on an encrypted PKCS#8 key means missing/wrong passphrase
-                        app.emit(
+                    return Err("passphrase_required".to_string());
+                }
+                Err(e) if is_pkcs8_encrypted => {
+                    log_step!(
+                        events,
+                        session_id,
+                        "Key is passphrase-protected, prompting…"
+                    );
+                    let _ = e; // decode failure on an encrypted PKCS#8 key means missing/wrong passphrase
+                    events
+                        .emit(
                             "passphrase_required",
                             serde_json::json!({ "session_id": session_id }),
                         )
                         .map_err(|e| e.to_string())?;
-                        return Err("passphrase_required".to_string());
-                    }
-                    Err(e) => {
-                        let msg = e.to_string();
-                        log_step!(app, session_id, format!("Key auth failed: {}", msg));
-                        app.emit(
+                    return Err("passphrase_required".to_string());
+                }
+                Err(e) => {
+                    let msg = e.to_string();
+                    log_step!(events, session_id, format!("Key auth failed: {}", msg));
+                    events
+                        .emit(
                             "auth_required",
                             serde_json::json!({
                                 "session_id": session_id, "prompt_message": msg, "is_2fa": false
                             }),
                         )
                         .map_err(|e| e.to_string())?;
-                        return Err(format!("authentication failed: {}", msg));
-                    }
+                    return Err(format!("authentication failed: {}", msg));
                 }
             }
-        } else {
-            let pw = password.unwrap_or("");
-            match handle.authenticate_password(username, pw).await {
-                Ok(res) if res.success() => true,
-                other => {
-                    let msg = match other {
-                        Err(e) => e.to_string(),
-                        Ok(_) => "authentication failed".to_string(),
-                    };
-                    log_step!(app, session_id, format!("Password auth failed: {}", msg));
-                    app.emit(
+        }
+    } else {
+        let pw = password.unwrap_or("");
+        match handle.authenticate_password(username, pw).await {
+            Ok(res) if res.success() => true,
+            other => {
+                let msg = match other {
+                    Err(e) => e.to_string(),
+                    Ok(_) => "authentication failed".to_string(),
+                };
+                log_step!(events, session_id, format!("Password auth failed: {}", msg));
+                events
+                    .emit(
                         "auth_required",
                         serde_json::json!({
                             "session_id": session_id, "prompt_message": msg, "is_2fa": false
                         }),
                     )
                     .map_err(|e| e.to_string())?;
-                    return Err(format!("authentication failed: {}", msg));
-                }
+                return Err(format!("authentication failed: {}", msg));
             }
-        };
+        }
+    };
 
     if !authenticated {
-        log_step!(app, session_id, "Authentication failed.");
-        app.emit(
+        log_step!(events, session_id, "Authentication failed.");
+        events.emit(
             "auth_required",
             serde_json::json!({
                 "session_id": session_id, "prompt_message": "Authentication failed", "is_2fa": false
@@ -766,7 +781,7 @@ where
         return Err("not authenticated".to_string());
     }
 
-    log_step!(app, session_id, "Authenticated ✓");
+    log_step!(events, session_id, "Authenticated ✓");
     Ok(Arc::new(handle))
 }
 
@@ -885,7 +900,7 @@ async fn connect_transport_maybe_via_jump(
     port: i64,
     jump: Option<&JumpHostParams>,
     trust_state: &super::TrustState,
-    app: &crate::App,
+    events: &EventBus,
     connect_timeout_secs: u64,
 ) -> Result<Box<dyn AsyncStream>, String> {
     let Some(jh) = jump else {
@@ -909,7 +924,7 @@ async fn connect_transport_maybe_via_jump(
         host_address,
         port,
         trust_state,
-        app,
+        events,
         connect_timeout_secs,
     )
     .await?;
@@ -934,13 +949,13 @@ pub(crate) async fn establish_authenticated_session(
     password: Option<&str>,
     passphrase: Option<&str>,
     trust_state: &super::TrustState,
-    app: &crate::App,
+    events: &EventBus,
     fail_fast_untrusted_host: bool,
     jump: Option<JumpHostParams>,
     connect_timeout_secs: Option<u64>,
 ) -> Result<Arc<russh::client::Handle<ClientHandler>>, String> {
     log_step!(
-        app,
+        events,
         session_id,
         format!("TCP connecting to {}:{}…", host_address, port)
     );
@@ -950,7 +965,7 @@ pub(crate) async fn establish_authenticated_session(
         port,
         jump.as_ref(),
         trust_state,
-        app,
+        events,
         connect_timeout_secs.unwrap_or(10),
     )
     .await?;
@@ -971,7 +986,7 @@ pub(crate) async fn establish_authenticated_session(
         password,
         passphrase,
         trust_state,
-        app,
+        events,
         fail_fast_untrusted_host,
         Arc::new(std::sync::Mutex::new(None)),
     )
@@ -1027,7 +1042,7 @@ pub async fn ssh_test_connection(
     trust_state: &super::TrustState,
     hosts_db: &labonair_persistence::Database,
     secrets: &crate::modules::secrets::SecretsState,
-    app: crate::App,
+    events: EventBus,
     connect_timeout_secs: Option<u64>,
 ) -> Result<TestConnectionResult, LabonairError> {
     // Step 1: fetch host configuration (same shape as `ssh_connect`'s step 1).
@@ -1135,7 +1150,7 @@ pub async fn ssh_test_connection(
             port,
             jump.as_ref(),
             trust_state,
-            &app,
+            &events,
             timeout,
         )
         .await?;
@@ -1152,7 +1167,7 @@ pub async fn ssh_test_connection(
             password.as_deref(),
             passphrase.as_deref(),
             trust_state,
-            &app,
+            &events,
             true, // fail_fast_untrusted_host — never waits on, or auto-accepts, a trust dialog
             Arc::new(std::sync::Mutex::new(None)),
         )
@@ -1208,7 +1223,7 @@ async fn ssh_connect_async(
     blocks: bool,
     state: super::SshState,
     trust_state: super::TrustState,
-    app: crate::App,
+    events: EventBus,
     on_event: crate::events::EventChannel<super::pty::SshPtyEvent>,
     connect_timeout_secs: Option<u64>,
 ) -> Result<(), String> {
@@ -1220,7 +1235,7 @@ async fn ssh_connect_async(
         port,
         jump.as_ref(),
         &trust_state,
-        &app,
+        &events,
         connect_timeout_secs.unwrap_or(10),
     )
     .await?;
@@ -1239,7 +1254,7 @@ async fn ssh_connect_async(
         password.as_deref(),
         passphrase.as_deref(),
         &trust_state,
-        &app,
+        &events,
         false,
         disconnect_reason.clone(),
     )
@@ -1264,11 +1279,11 @@ async fn ssh_connect_async(
         map.insert(session_id.clone(), session.clone());
     }
 
-    log_step!(app, session_id, "Opening shell channel…");
+    log_step!(events, session_id, "Opening shell channel…");
     if let Err(e) = super::pty::open_shell_channel(
         session,
         session_id.clone(),
-        app.clone(),
+        events.clone(),
         state.clone(),
         initial_cols,
         initial_rows,
@@ -1284,12 +1299,13 @@ async fn ssh_connect_async(
         return Err(format!("failed to open shell channel: {e}"));
     }
 
-    log_step!(app, session_id, "Session established ✓");
-    app.emit(
-        "session_established",
-        serde_json::json!({ "session_id": session_id, "default_path_ssh": default_path_ssh }),
-    )
-    .map_err(|e| e.to_string())?;
+    log_step!(events, session_id, "Session established ✓");
+    events
+        .emit(
+            "session_established",
+            serde_json::json!({ "session_id": session_id, "default_path_ssh": default_path_ssh }),
+        )
+        .map_err(|e| e.to_string())?;
 
     Ok(())
 }
@@ -1318,11 +1334,11 @@ async fn connect_via_jump(
     target_host: &str,
     target_port: i64,
     trust_state: &super::TrustState,
-    app: &crate::App,
+    events: &EventBus,
     connect_timeout_secs: u64,
 ) -> Result<russh::ChannelStream<russh::client::Msg>, String> {
     log_step!(
-        app,
+        events,
         session_id,
         format!(
             "Connecting to jump host {}:{}…",
@@ -1348,7 +1364,7 @@ async fn connect_via_jump(
         jump_password,
         None,
         trust_state,
-        app,
+        events,
         // Always fail-fast on an untrusted/mismatched jump-host key, regardless
         // of the main hop's own trust-dialog policy: the frontend's trust
         // dialog only ever listens for the *main* session_id's
@@ -1364,7 +1380,7 @@ async fn connect_via_jump(
     .map_err(|e| format!("Jump host authentication failed: {}", e))?;
 
     log_step!(
-        app,
+        events,
         session_id,
         format!(
             "Jump host authenticated. Opening tunnel to {}:{}…",
@@ -1382,7 +1398,7 @@ async fn connect_via_jump(
             )
         })?;
 
-    log_step!(app, session_id, "Jump tunnel established ✓");
+    log_step!(events, session_id, "Jump tunnel established ✓");
 
     Ok(channel.into_stream())
 }
@@ -1457,7 +1473,7 @@ async fn try_agent_auth(
     handle: &mut russh::client::Handle<ClientHandler>,
     username: &str,
     session_id: &str,
-    app: &crate::App,
+    events: &EventBus,
 ) -> bool {
     if std::env::var("SSH_AUTH_SOCK").is_err() {
         return false;
@@ -1489,7 +1505,7 @@ async fn try_agent_auth(
             .await
         {
             if res.success() {
-                log_step!(app, session_id, "Authenticated via ssh-agent ✓");
+                log_step!(events, session_id, "Authenticated via ssh-agent ✓");
                 return true;
             }
         }
@@ -1502,7 +1518,7 @@ async fn try_agent_auth(
     _handle: &mut russh::client::Handle<ClientHandler>,
     _username: &str,
     _session_id: &str,
-    _app: &crate::App,
+    _events: &EventBus,
 ) -> bool {
     false
 }
@@ -1597,7 +1613,7 @@ mod tests {
             &app.trust,
             &app.db,
             &app.secrets,
-            app.clone(),
+            app.events.clone(),
             Some(1),
         )
         .await;
