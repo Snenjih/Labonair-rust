@@ -98,6 +98,12 @@ active PTY/terminal and AI tool paths are unchanged. Full check, Clippy,
 workspace tests, formatting, dependency validation, queue validation, and diff
 checks pass. This cleanup is committed as `75039c4`; R06-001 remains active
 with SSH/SFTP and other remaining concrete adapters as the next area.
+The backend Secrets compatibility wrapper is now removed as well. Shell
+composition and SSH/SFTP/MCP adapters use `labonair-secrets::SecretsState` and
+its canonical operations directly; the storage format and lifecycle are
+unchanged. Full check, Clippy, workspace tests, formatting, dependency
+validation, queue validation, and diff checks pass. This boundary is committed
+as `e1d8b85`; R06-001 remains active with the real SSH/SFTP/PTY adapters next.
 
 SSH, MCP, and Transfer event-source adapters now retain only `EventBus`, not
 the aggregate `App` handle.
