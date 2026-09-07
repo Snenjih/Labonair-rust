@@ -80,7 +80,7 @@ The current Cargo metadata shows several transitional edges that conflict with t
 - `hosts-ui` no longer depends on Settings or the backend facade; Workspace
   injects its database, secret state, and the narrow MCP-revocation callback.
   Its notification contract migration is still open.
-- `command-palette` depends on backend even though the palette should receive dynamic data through providers.
+- `command-palette` still depends on backend even though the palette should receive dynamic data through providers; the runtime snapshot registry now makes that handoff explicit and is the removal seam for this edge.
 - Initial command metadata providers now live in the owning workspace, terminal,
   editor, hosts, themes, and settings crates. The shell still contains
   transitional execution adapters and descriptors for those IDs; the adapter
@@ -102,6 +102,11 @@ The current Cargo metadata shows several transitional edges that conflict with t
 - `settings::OpenShortcuts` is modeled as a compatibility alias for the
   canonical `zed::OpenKeymap` action. Validation accepts it, while discovery
   excludes it from visible command rows.
+- Dynamic palette pages now consume a typed `SubmenuRegistry` of immutable
+  snapshots for tabs, hosts, recent hosts, themes, icon themes, editor themes,
+  snippets, branches, symbols, and hidden status-bar items. The shell currently
+  composes those snapshots from owner APIs; moving those snapshot builders into
+  the owning capability crates is the remaining extraction step.
 - `keymap` is now UI-free, but the temporary GPUI adapter and some consumers
   still enter through `command-palette`; the keymap editor and stable command
   registration path are not complete.

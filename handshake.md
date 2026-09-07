@@ -5,7 +5,7 @@ They may mention API names that were valid at the time of the recorded
 change; the current API and task state are defined by the latest header and
 the normative documents under `docs/`.
 
-## Current Session: 2026-09-07 (R02-003 complete; command provider registry active)
+## Current Session: 2026-09-07 (R02-003 complete; dynamic submenu registry active)
 
 `R02-003` is complete. The user confirmed the native Rust shell visual state
 is acceptable, closing the final visual acceptance criterion. The project and
@@ -35,6 +35,13 @@ from command discovery.
 The dependency verifier now explicitly allows the owner-to-command-contract
 edges and reports an acyclic graph; the one-way command-core-to-keymap edge is
 documented as intentional until identity extraction.
+Dynamic palette rows now flow through a typed `SubmenuRegistry` of immutable
+snapshots for tabs, hosts, recent hosts, themes, icon themes, editor themes,
+snippets, branches, symbols, and hidden status-bar items. The shell currently
+composes those snapshots from owner APIs; extracting those builders into the
+owning modules is the next implementation slice. Current commit is `0c5e6e5`
+plus the uncommitted submenu work; the worktree is intentionally not yet
+clean until this slice is committed.
 
 ## Current Session: 2026-09-07 (Native visual helper hardened)
 

@@ -51,3 +51,12 @@ being exposed as a palette command.
 The dependency verifier was updated for the intentional owner-to-command
 contract edges and passes with an acyclic graph. The command-core-to-keymap
 edge remains one-way by design until shortcut identity extraction.
+
+## R03-001 dynamic submenu registry
+
+`labonair-command-palette-core` now provides a typed `SubmenuRegistry`,
+`SubmenuSnapshot`, and `SubmenuAction` contract. The palette consumes registry
+snapshots for all dynamic pages instead of maintaining separate `PaletteData`
+arrays or reading workspace/panel entities while rendering. The shell
+composition root currently builds the snapshots from owner APIs; the remaining
+step is to move each snapshot builder behind its capability provider.

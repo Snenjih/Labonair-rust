@@ -21,7 +21,8 @@ pub use fuzzy::{match_score, SearchMode};
 pub use labonair_command_palette_core::{
     canonical_action_name, compatibility_action_names, known_action_names, toggle_pref_key,
     CommandContext, CommandDescriptor, CommandIcon, CommandId, CommandProvider, CommandRegistry,
-    CommandRegistryError, CommandSubmenu, SubmenuDescriptor, SubmenuItem, SubmenuProvider,
+    CommandRegistryError, CommandSubmenu, SubmenuAction, SubmenuDescriptor, SubmenuItem,
+    SubmenuProvider, SubmenuRegistry, SubmenuSecondary, SubmenuSnapshot,
 };
 pub use labonair_keymap::{
     effective_binding, effective_keys, find_conflict, keystroke_tokens, resolve_conflict, shortcut,
@@ -36,6 +37,6 @@ pub struct KeybindDisplay(pub KeybindMap);
 
 impl gpui::Global for KeybindDisplay {}
 pub use palette::{
-    context_of, Command, CommandPalette, Page, PaletteChoice, PaletteData, PaletteEvent,
-    PaletteTabKind, PaletteTabRow, PaletteWorkspace,
+    context_of, Command, CommandPalette, Page, PaletteData, PaletteEvent, PaletteTabKind,
+    PaletteTabRow, PaletteWorkspace,
 };

@@ -12,10 +12,14 @@
 
 use gpui::{App, Context, Window};
 use labonair_command_palette::{
-    Command as PaletteCommand, Page as PalettePage, PaletteChoice, PaletteData, PaletteEvent,
+    Command as PaletteCommand, Page as PalettePage, PaletteData, PaletteEvent, PaletteWorkspace,
+};
+use labonair_command_palette_core::{
+    CommandSubmenu, SubmenuAction, SubmenuDescriptor, SubmenuItem, SubmenuRegistry,
+    SubmenuSecondary, SubmenuSnapshot,
 };
 use labonair_panel::DockPosition;
-use labonair_settings::{Settings as _, SettingsStore, ThemeSettings};
+use labonair_settings::{EditorSettings, Settings as _, SettingsStore, ThemeSettings};
 
 use labonair_workspace::search_overlay::SearchOverlay;
 
@@ -69,6 +73,35 @@ fn toggle_setting_bool(key: &str, cx: &mut App) {
             }
             _ => {}
         });
+}
+
+fn register_submenu(
+    registry: &mut SubmenuRegistry,
+    id: &str,
+    title: &str,
+    submenu: CommandSubmenu,
+    items: Vec<SubmenuItem>,
+) {
+    registry
+        .register(SubmenuSnapshot {
+            descriptor: SubmenuDescriptor::new(id, title, submenu),
+            items,
+        })
+        .expect("built-in submenu ids must be unique");
+}
+
+fn editor_theme_label(id: labonair_theme::EditorThemeId) -> String {
+    id.slug()
+        .split('-')
+        .map(|word| {
+            let mut chars = word.chars();
+            match chars.next() {
+                Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+                None => String::new(),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 impl AppShell {
@@ -234,37 +267,95 @@ impl AppShell {
 
     // ── Palette event handler ────────────────────────────────────────────
 
-    /// Snapshot the panel-sourced dynamic choices the command palette renders
-    /// on its sub-pages. Pref/theme scalars (`color_mode`, `editor_theme`,
-    /// `font_size`, toggle bools) are **not** here — the palette reads those
-    /// directly via `PalettePrefs` (T17-007). What remains cannot be pulled by
-    /// the palette crate itself without a dependency cycle.
+    /// Compose immutable dynamic submenu snapshots from the owning
+    /// capabilities. The palette receives this registry and only renders or
+    /// forwards its typed actions; it does not read feature entities.
     fn build_palette_data(&self, cx: &App) -> PaletteData {
+        let mut submenus = SubmenuRegistry::default();
+
+        let tabs = self
+            .workspace
+            .read(cx)
+            .palette_tab_rows(cx)
+            .into_iter()
+            .map(|tab| SubmenuItem {
+                id: tab.id.to_string(),
+                title: tab.label,
+                subtitle: Some(tab.kind_title),
+                active: false,
+                action: SubmenuAction::SwitchToTab(tab.id),
+                secondary: None,
+            })
+            .collect();
+        register_submenu(
+            &mut submenus,
+            "tabs",
+            "Open Tabs",
+            CommandSubmenu::Tabs,
+            tabs,
+        );
+
         let hosts = self
             .workspace
             .read(cx)
             .known_hosts(cx)
             .into_iter()
-            .map(|(id, name)| PaletteChoice {
-                id,
+            .map(|(id, name)| SubmenuItem {
+                id: id.clone(),
                 title: name,
                 subtitle: None,
                 active: false,
+                action: SubmenuAction::ConnectHost {
+                    host_id: id.clone(),
+                    sftp: false,
+                },
+                secondary: Some(SubmenuSecondary {
+                    label: "Open SFTP".to_string(),
+                    action: SubmenuAction::ConnectHost {
+                        host_id: id,
+                        sftp: true,
+                    },
+                }),
             })
             .collect();
+        register_submenu(
+            &mut submenus,
+            "hosts",
+            "Hosts",
+            CommandSubmenu::Hosts,
+            hosts,
+        );
 
         let recent_hosts = self
             .workspace
             .read(cx)
             .recent_hosts(cx, 5)
             .into_iter()
-            .map(|(id, name, _address)| PaletteChoice {
-                id,
+            .map(|(id, name, _address)| SubmenuItem {
+                id: id.clone(),
                 title: name,
                 subtitle: None,
                 active: false,
+                action: SubmenuAction::ConnectHost {
+                    host_id: id.clone(),
+                    sftp: false,
+                },
+                secondary: Some(SubmenuSecondary {
+                    label: "Open SFTP".to_string(),
+                    action: SubmenuAction::ConnectHost {
+                        host_id: id,
+                        sftp: true,
+                    },
+                }),
             })
             .collect();
+        register_submenu(
+            &mut submenus,
+            "recent-hosts",
+            "Recent Hosts",
+            CommandSubmenu::RecentHosts,
+            recent_hosts,
+        );
 
         let app_theme = ThemeSettings::try_get(cx)
             .map(|s| s.app_theme().to_string())
@@ -274,6 +365,9 @@ impl AppShell {
         } else {
             app_theme.as_str()
         };
+        let active_editor_theme = EditorSettings::try_get(cx)
+            .and_then(|settings| labonair_theme::EditorThemeId::from_slug(settings.editor_theme()))
+            .unwrap_or_default();
 
         let snippets = self
             .panels
@@ -281,13 +375,22 @@ impl AppShell {
             .read(cx)
             .snippet_choices()
             .into_iter()
-            .map(|(id, name, mode)| PaletteChoice {
-                id,
+            .map(|(id, name, mode)| SubmenuItem {
+                id: id.clone(),
                 title: name,
                 subtitle: Some(mode),
                 active: false,
+                action: SubmenuAction::RunSnippet(id.clone()),
+                secondary: None,
             })
             .collect();
+        register_submenu(
+            &mut submenus,
+            "snippets",
+            "Snippets",
+            CommandSubmenu::Snippets,
+            snippets,
+        );
 
         let git_branches = self
             .panels
@@ -295,36 +398,63 @@ impl AppShell {
             .read(cx)
             .branch_choices()
             .into_iter()
-            .map(|(name, current, remote)| PaletteChoice {
-                active: current,
-                subtitle: remote.then(|| "remote".to_string()),
+            .map(|(name, current, remote)| SubmenuItem {
                 id: name.clone(),
-                title: name,
+                title: name.clone(),
+                subtitle: remote.then(|| "remote".to_string()),
+                active: current,
+                action: SubmenuAction::SwitchBranch(name),
+                secondary: None,
             })
             .collect();
+        register_submenu(
+            &mut submenus,
+            "git-branches",
+            "Branches",
+            CommandSubmenu::GitBranches,
+            git_branches,
+        );
 
         let symbols = self
             .workspace
             .read(cx)
             .active_editor_symbols(cx)
             .into_iter()
-            .map(|s| PaletteChoice {
+            .map(|s| SubmenuItem {
                 id: s.line.to_string(),
                 title: s.name,
                 subtitle: Some(format!("{}  ·  line {}", s.kind.label(), s.line + 1)),
                 active: false,
+                action: SubmenuAction::GoToLine(s.line),
+                secondary: None,
             })
             .collect();
+        register_submenu(
+            &mut submenus,
+            "outline",
+            "Symbols",
+            CommandSubmenu::Outline,
+            symbols,
+        );
 
         let app_themes = labonair_settings_ui::theme_choices()
             .into_iter()
-            .map(|(id, name)| PaletteChoice {
+            .map(|(id, name)| SubmenuItem {
                 active: id == active_theme_id,
+                action: SubmenuAction::SetAppTheme(id.clone()),
                 id,
                 title: name,
                 subtitle: None,
+                secondary: None,
             })
             .collect();
+        register_submenu(
+            &mut submenus,
+            "app-themes",
+            "App Themes",
+            CommandSubmenu::Themes,
+            app_themes,
+        );
 
         let active_icon_theme_id = ThemeSettings::try_get(cx)
             .map(|s| s.icon_theme().to_string())
@@ -339,13 +469,22 @@ impl AppShell {
             .read(cx)
             .list_icon_themes()
             .into_iter()
-            .map(|theme| PaletteChoice {
+            .map(|theme| SubmenuItem {
                 active: theme.id == active_icon_theme_id,
+                action: SubmenuAction::SetIconTheme(theme.id.clone()),
                 id: theme.id,
                 title: theme.name,
                 subtitle: theme.builtin.then(|| "built-in".to_string()),
+                secondary: None,
             })
             .collect();
+        register_submenu(
+            &mut submenus,
+            "icon-themes",
+            "Icon Themes",
+            CommandSubmenu::IconThemes,
+            icon_themes,
+        );
 
         let status_bar_hidden = {
             let ws = self.workspace.read(cx);
@@ -353,14 +492,42 @@ impl AppShell {
             registry
                 .iter()
                 .filter(|r| registry.is_hidden(r.id))
-                .map(|r| PaletteChoice {
+                .map(|r| SubmenuItem {
                     id: r.id.to_string(),
                     title: crate::status_items::status_item_label(r.id).to_string(),
                     subtitle: None,
                     active: false,
+                    action: SubmenuAction::ShowStatusBarItem(r.id.to_string()),
+                    secondary: None,
                 })
                 .collect()
         };
+        register_submenu(
+            &mut submenus,
+            "status-bar-hidden",
+            "Hidden Status Bar Items",
+            CommandSubmenu::StatusBarHidden,
+            status_bar_hidden,
+        );
+
+        let editor_themes = labonair_theme::EditorThemeId::ALL
+            .into_iter()
+            .map(|id| SubmenuItem {
+                id: id.slug().to_string(),
+                title: editor_theme_label(id),
+                subtitle: None,
+                active: active_editor_theme == id,
+                action: SubmenuAction::SetEditorTheme(id.slug().to_string()),
+                secondary: None,
+            })
+            .collect();
+        register_submenu(
+            &mut submenus,
+            "editor-themes",
+            "Editor Themes",
+            CommandSubmenu::EditorTheme,
+            editor_themes,
+        );
 
         PaletteData {
             commands: self
@@ -369,14 +536,7 @@ impl AppShell {
                 .into_iter()
                 .map(PaletteCommand::from_descriptor)
                 .collect(),
-            hosts,
-            recent_hosts,
-            snippets,
-            git_branches,
-            symbols,
-            app_themes,
-            icon_themes,
-            status_bar_hidden,
+            submenus,
         }
     }
 

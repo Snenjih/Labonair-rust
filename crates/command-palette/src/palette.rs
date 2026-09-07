@@ -33,6 +33,7 @@ use crate::fuzzy::{match_score, SearchMode};
 use crate::KeybindDisplay;
 use labonair_command_palette_core::{
     toggle_pref_key, CommandContext, CommandDescriptor, CommandIcon, CommandId, CommandSubmenu,
+    SubmenuAction, SubmenuItem, SubmenuRegistry,
 };
 use labonair_keymap::{effective_keys, KeybindMap, ShortcutId};
 
@@ -101,12 +102,6 @@ fn palette_color_mode(cx: &App) -> ThemePreference {
         Some(ThemePref::Dark) => ThemePreference::Dark,
         _ => ThemePreference::System,
     }
-}
-
-fn palette_editor_theme(cx: &App) -> EditorThemeId {
-    EditorSettings::try_get(cx)
-        .and_then(|s| EditorThemeId::from_slug(s.editor_theme()))
-        .unwrap_or_default()
 }
 
 fn palette_terminal_font_size(cx: &App) -> u32 {
@@ -321,6 +316,7 @@ fn icon_for(icon: CommandIcon) -> IconName {
 fn page_for(page: CommandSubmenu) -> Page {
     match page {
         CommandSubmenu::Tabs => Page::Tabs,
+        CommandSubmenu::RecentHosts => Page::Hosts,
         CommandSubmenu::Zoom => Page::Zoom,
         CommandSubmenu::ColorMode => Page::ColorMode,
         CommandSubmenu::EditorTheme => Page::EditorTheme,
@@ -424,19 +420,11 @@ pub enum PaletteEvent {
 }
 
 /// A dynamic choice rendered on a sub-page (tab, host, session, branch…).
-#[derive(Clone, Debug, Default)]
-pub struct PaletteChoice {
-    pub id: String,
-    pub title: String,
-    pub subtitle: Option<String>,
-    pub active: bool,
-}
-
 /// Live application state the palette needs for its dynamic sub-pages and
-/// `rightLabel` states. The host rebuilds this each render and hands it over
-/// via [`CommandPalette::set_data`]. Domains not wired yet (hosts, snippets,
-/// AI sessions, git branches, editor outline) stay empty until their block
-/// lands — the pages exist and render a clean empty state meanwhile.
+/// `rightLabel` states. The host builds this once when the palette opens and
+/// hands it over via [`CommandPalette::set_data`]. Volatile domain lists are
+/// immutable snapshots in [`SubmenuRegistry`]; the palette does not read
+/// feature entities or assemble feature-specific rows.
 ///
 /// Slimmed in T17-007: the pref/theme-derived scalars (`color_mode`,
 /// `editor_theme`, `font_size`, the toggle bools) are read straight from the
@@ -450,19 +438,9 @@ pub struct PaletteData {
     /// Snapshot of the composition-root command registry. The palette never
     /// constructs this list itself.
     pub commands: Vec<Command>,
-    pub hosts: Vec<PaletteChoice>,
-    /// Most-recently-connected hosts (host pre-sorts by `last_connected_at`,
-    /// caps at 5) — shown as quick-connect rows at the palette root.
-    pub recent_hosts: Vec<PaletteChoice>,
-    pub snippets: Vec<PaletteChoice>,
-    pub git_branches: Vec<PaletteChoice>,
-    pub symbols: Vec<PaletteChoice>,
-    pub app_themes: Vec<PaletteChoice>,
-    /// Registered icon themes supplied by the theme capability.
-    pub icon_themes: Vec<PaletteChoice>,
-    /// Status-bar items the user has hidden via the right-click menu
-    /// (T18-005) — the `StatusBarHidden` page's "click to show again" list.
-    pub status_bar_hidden: Vec<PaletteChoice>,
+    /// Runtime-backed submenu snapshots supplied by the owning capabilities.
+    /// The palette never rebuilds feature-specific lists itself.
+    pub submenus: SubmenuRegistry,
 }
 
 /// Persisted "recently used" command ids (mirrors the reference
@@ -526,7 +504,7 @@ enum RowKey {
 /// row whose primary action is "Open SSH").
 #[derive(Clone)]
 struct SecondaryAction {
-    label: &'static str,
+    label: String,
     key: RowKey,
 }
 
@@ -541,6 +519,25 @@ struct PaletteRow {
     keys: Vec<String>,
     right_label: Option<String>,
     has_sub: bool,
+}
+
+fn row_key_for_action(action: &SubmenuAction) -> RowKey {
+    match action {
+        SubmenuAction::SwitchToTab(id) => RowKey::Tab(*id),
+        SubmenuAction::ConnectHost { host_id, sftp } => RowKey::ConnectHost {
+            host_id: host_id.clone(),
+            sftp: *sftp,
+        },
+        SubmenuAction::SetEditorTheme(id) => EditorThemeId::from_slug(id)
+            .map(RowKey::SetEditorTheme)
+            .unwrap_or(RowKey::Noop),
+        SubmenuAction::SetAppTheme(id) => RowKey::SetAppTheme(id.clone()),
+        SubmenuAction::SetIconTheme(id) => RowKey::SetIconTheme(id.clone()),
+        SubmenuAction::RunSnippet(id) => RowKey::RunSnippet(id.clone()),
+        SubmenuAction::SwitchBranch(name) => RowKey::SwitchBranch(name.clone()),
+        SubmenuAction::GoToLine(line) => RowKey::GoToLine(*line),
+        SubmenuAction::ShowStatusBarItem(id) => RowKey::ShowStatusBarItem(id.clone()),
+    }
 }
 
 /// The backdrop fill for the palette overlay. The reference paints every
@@ -721,17 +718,23 @@ where
         recent::save(&self.recent);
     }
 
-    /// Rows for a dynamic list of choices, filtered by the current query.
-    fn choice_rows(
+    /// Rows for a registry-owned dynamic submenu, filtered by the current
+    /// query. The palette only maps typed actions to presentation events.
+    fn submenu_rows(
         &self,
-        choices: &[PaletteChoice],
+        submenu: CommandSubmenu,
         section: &str,
         icon: IconName,
         mode: SearchMode,
         empty_hint: &str,
-        key_for: fn(&PaletteChoice) -> RowKey,
     ) -> Vec<PaletteRow> {
-        if choices.is_empty() {
+        let items = self
+            .data
+            .submenus
+            .get(submenu)
+            .map(|snapshot| snapshot.items.as_slice())
+            .unwrap_or(&[]);
+        if items.is_empty() {
             return vec![PaletteRow {
                 key: RowKey::Noop,
                 secondary: None,
@@ -744,7 +747,7 @@ where
                 has_sub: false,
             }];
         }
-        let mut scored: Vec<(i64, usize, &PaletteChoice)> = choices
+        let mut scored: Vec<(i64, usize, &SubmenuItem)> = items
             .iter()
             .enumerate()
             .filter_map(|(i, c)| {
@@ -756,65 +759,12 @@ where
         scored
             .into_iter()
             .map(|(_, _, c)| PaletteRow {
-                key: key_for(c),
-                secondary: None,
-                icon: Some(icon),
-                title: c.title.clone(),
-                subtitle: c.subtitle.clone(),
-                section: section.to_string(),
-                keys: vec![],
-                right_label: c.active.then(|| "active".to_string()),
-                has_sub: false,
-            })
-            .collect()
-    }
-
-    /// Host rows for the `Hosts` page and the root quick-connect section:
-    /// primary action opens an SSH terminal, `Shift+Enter` opens SFTP. Port of
-    /// `reference-src/src/modules/command-palette/hooks/useHostCommands.ts`.
-    fn host_rows(
-        &self,
-        hosts: &[PaletteChoice],
-        section: &str,
-        mode: SearchMode,
-    ) -> Vec<PaletteRow> {
-        if hosts.is_empty() {
-            return vec![PaletteRow {
-                key: RowKey::Noop,
-                secondary: None,
-                icon: None,
-                title: "No hosts configured yet".to_string(),
-                subtitle: None,
-                section: section.to_string(),
-                keys: vec![],
-                right_label: None,
-                has_sub: false,
-            }];
-        }
-        let mut scored: Vec<(i64, usize, &PaletteChoice)> = hosts
-            .iter()
-            .enumerate()
-            .filter_map(|(i, c)| {
-                let hay = format!("{} {}", c.title, c.subtitle.as_deref().unwrap_or(""));
-                match_score(mode, &hay, &self.query).map(|s| (s, i, c))
-            })
-            .collect();
-        scored.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.cmp(&b.1)));
-        scored
-            .into_iter()
-            .map(|(_, _, c)| PaletteRow {
-                key: RowKey::ConnectHost {
-                    host_id: c.id.clone(),
-                    sftp: false,
-                },
-                secondary: Some(SecondaryAction {
-                    label: "Open SFTP",
-                    key: RowKey::ConnectHost {
-                        host_id: c.id.clone(),
-                        sftp: true,
-                    },
+                key: row_key_for_action(&c.action),
+                secondary: c.secondary.as_ref().map(|secondary| SecondaryAction {
+                    label: secondary.label.clone(),
+                    key: row_key_for_action(&secondary.action),
                 }),
-                icon: Some(IconName::Server),
+                icon: Some(icon),
                 title: c.title.clone(),
                 subtitle: c.subtitle.clone(),
                 section: section.to_string(),
@@ -868,31 +818,29 @@ where
                             }
                         })
                         .collect();
-                if !self.data.recent_hosts.is_empty() {
-                    root.extend(self.host_rows(&self.data.recent_hosts, "Hosts", mode));
+                if self
+                    .data
+                    .submenus
+                    .get(CommandSubmenu::RecentHosts)
+                    .is_some_and(|snapshot| !snapshot.items.is_empty())
+                {
+                    root.extend(self.submenu_rows(
+                        CommandSubmenu::RecentHosts,
+                        "Hosts",
+                        IconName::Server,
+                        mode,
+                        "No hosts configured yet",
+                    ));
                 }
                 root
             }
-            Page::Tabs => {
-                let q = self.query.trim().to_lowercase();
-                self.workspace
-                    .read(cx)
-                    .palette_tab_rows(cx)
-                    .into_iter()
-                    .filter(|t| q.is_empty() || t.label.to_lowercase().contains(&q))
-                    .map(|t| PaletteRow {
-                        key: RowKey::Tab(t.id),
-                        secondary: None,
-                        icon: Some(IconName::Terminal),
-                        title: t.label,
-                        subtitle: Some(t.kind_title),
-                        section: "Open Tabs".to_string(),
-                        keys: vec![],
-                        right_label: None,
-                        has_sub: false,
-                    })
-                    .collect()
-            }
+            Page::Tabs => self.submenu_rows(
+                CommandSubmenu::Tabs,
+                "Open Tabs",
+                IconName::Terminal,
+                mode,
+                "No tabs open",
+            ),
             Page::Zoom => [
                 (
                     CommandId::ZoomIn,
@@ -943,74 +891,61 @@ where
                 has_sub: false,
             })
             .collect(),
-            Page::EditorTheme => EditorThemeId::ALL
-                .into_iter()
-                .map(|id| (id, editor_theme_label(id)))
-                .filter(|(_, label)| match_score(mode, label, &self.query).is_some())
-                .map(|(id, label)| PaletteRow {
-                    key: RowKey::SetEditorTheme(id),
-                    secondary: None,
-                    icon: Some(IconName::Sparkles),
-                    title: label,
-                    subtitle: None,
-                    section: "Editor Themes".to_string(),
-                    keys: vec![],
-                    right_label: (palette_editor_theme(cx) == id).then(|| "active".to_string()),
-                    has_sub: false,
-                })
-                .collect(),
-            Page::Themes => self.choice_rows(
-                &self.data.app_themes,
+            Page::EditorTheme => self.submenu_rows(
+                CommandSubmenu::EditorTheme,
+                "Editor Themes",
+                IconName::Sparkles,
+                mode,
+                "No editor themes installed yet",
+            ),
+            Page::Themes => self.submenu_rows(
+                CommandSubmenu::Themes,
                 "App Themes",
                 IconName::Sparkles,
                 mode,
                 "No themes installed yet",
-                |c| RowKey::SetAppTheme(c.id.clone()),
             ),
-            Page::IconThemes => self.choice_rows(
-                &self.data.icon_themes,
+            Page::IconThemes => self.submenu_rows(
+                CommandSubmenu::IconThemes,
                 "Icon Themes",
                 IconName::Palette,
                 mode,
                 "No icon themes installed yet",
-                |c| RowKey::SetIconTheme(c.id.clone()),
             ),
-            Page::Hosts => self.host_rows(&self.data.hosts, "Hosts", mode),
-            Page::Snippets => self.choice_rows(
-                &self.data.snippets,
+            Page::Hosts => self.submenu_rows(
+                CommandSubmenu::Hosts,
+                "Hosts",
+                IconName::Server,
+                mode,
+                "No hosts configured yet",
+            ),
+            Page::Snippets => self.submenu_rows(
+                CommandSubmenu::Snippets,
                 "Snippets",
                 IconName::Command,
                 mode,
                 "No snippets saved yet",
-                |c| RowKey::RunSnippet(c.id.clone()),
             ),
-            Page::Outline => self.choice_rows(
-                &self.data.symbols,
+            Page::Outline => self.submenu_rows(
+                CommandSubmenu::Outline,
                 "Symbols",
                 IconName::FileCode,
                 mode,
                 "No symbols found",
-                |c| {
-                    c.id.parse::<usize>()
-                        .map(RowKey::GoToLine)
-                        .unwrap_or(RowKey::Noop)
-                },
             ),
-            Page::GitBranches => self.choice_rows(
-                &self.data.git_branches,
+            Page::GitBranches => self.submenu_rows(
+                CommandSubmenu::GitBranches,
                 "Branches",
                 IconName::GitBranch,
                 mode,
                 "No repository detected",
-                |c| RowKey::SwitchBranch(c.id.clone()),
             ),
-            Page::StatusBarHidden => self.choice_rows(
-                &self.data.status_bar_hidden,
+            Page::StatusBarHidden => self.submenu_rows(
+                CommandSubmenu::StatusBarHidden,
                 "Hidden Status Bar Items",
                 IconName::Eye,
                 mode,
                 "No hidden status-bar items",
-                |c| RowKey::ShowStatusBarItem(c.id.clone()),
             ),
         }
     }
@@ -1160,6 +1095,7 @@ where
 }
 
 /// Human label for an editor-theme slug (e.g. `github-dark` → "Github Dark").
+#[cfg(test)]
 fn editor_theme_label(id: EditorThemeId) -> String {
     id.slug()
         .split('-')
@@ -1446,7 +1382,7 @@ where
             .child(keybinding_hint("select", ["\u{21b5}"], c));
         if let Some(sec) = rows.get(selected).and_then(|r| r.secondary.as_ref()) {
             hints = hints.child(keybinding_hint(
-                SharedString::from(sec.label),
+                SharedString::from(sec.label.clone()),
                 ["\u{21e7}\u{21b5}"],
                 c,
             ));

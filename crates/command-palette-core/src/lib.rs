@@ -138,6 +138,7 @@ pub enum CommandIcon {
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 pub enum CommandSubmenu {
     Tabs,
+    RecentHosts,
     Zoom,
     ColorMode,
     EditorTheme,
@@ -155,36 +156,107 @@ pub enum CommandSubmenu {
 pub struct SubmenuDescriptor {
     pub id: String,
     pub title: String,
+    pub submenu: CommandSubmenu,
 }
 
 impl SubmenuDescriptor {
-    pub fn new(id: impl Into<String>, title: impl Into<String>) -> Self {
+    pub fn new(id: impl Into<String>, title: impl Into<String>, submenu: CommandSubmenu) -> Self {
         Self {
             id: id.into(),
             title: title.into(),
+            submenu,
         }
     }
 }
 
-/// One immutable row returned by a dynamic submenu provider. The action type
-/// belongs to the provider, so selecting a host/theme/tab cannot be reduced
-/// to an untyped string inside the palette.
+/// Typed actions emitted by dynamic submenu rows. The palette renders these
+/// values and forwards the selected value to the shell; it never interprets
+/// feature state or performs the action itself.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct SubmenuItem<Action> {
+pub enum SubmenuAction {
+    SwitchToTab(u64),
+    ConnectHost { host_id: String, sftp: bool },
+    SetEditorTheme(String),
+    SetAppTheme(String),
+    SetIconTheme(String),
+    RunSnippet(String),
+    SwitchBranch(String),
+    GoToLine(usize),
+    ShowStatusBarItem(String),
+}
+
+/// A secondary action displayed as a `Shift+Enter` row affordance.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SubmenuSecondary {
+    pub label: String,
+    pub action: SubmenuAction,
+}
+
+/// One immutable row returned by a dynamic submenu provider. Feature values
+/// remain behind the typed [`SubmenuAction`] contract rather than becoming
+/// shell-owned strings.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SubmenuItem {
     pub id: String,
     pub title: String,
     pub subtitle: Option<String>,
-    pub action: Action,
+    pub active: bool,
+    pub action: SubmenuAction,
+    pub secondary: Option<SubmenuSecondary>,
 }
 
-/// Module-owned source for a dynamic submenu. The provider controls loading,
-/// snapshots, and typed selection payloads; the palette only renders and
-/// navigates the returned rows.
-pub trait SubmenuProvider {
-    type Action: Clone;
+/// A complete immutable submenu snapshot published by an owning module.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SubmenuSnapshot {
+    pub descriptor: SubmenuDescriptor,
+    pub items: Vec<SubmenuItem>,
+}
 
-    fn descriptor(&self) -> SubmenuDescriptor;
-    fn snapshot(&self) -> Vec<SubmenuItem<Self::Action>>;
+/// Module-owned source for a dynamic submenu. The provider controls loading
+/// and snapshots; the palette only renders and navigates the returned rows.
+pub trait SubmenuProvider {
+    fn snapshot(&self) -> SubmenuSnapshot;
+}
+
+/// Registry of all runtime-backed submenu rows. It is deliberately separate
+/// from [`CommandRegistry`]: commands describe the root palette, while this
+/// registry owns the volatile rows shown after a command opens a submenu.
+#[derive(Clone, Debug, Default)]
+pub struct SubmenuRegistry {
+    snapshots: Vec<SubmenuSnapshot>,
+}
+
+impl SubmenuRegistry {
+    pub fn register(&mut self, snapshot: SubmenuSnapshot) -> Result<(), CommandRegistryError> {
+        if self
+            .snapshots
+            .iter()
+            .any(|prior| prior.descriptor.id == snapshot.descriptor.id)
+        {
+            return Err(CommandRegistryError::DuplicateSubmenu(
+                snapshot.descriptor.id,
+            ));
+        }
+        self.snapshots.push(snapshot);
+        Ok(())
+    }
+
+    pub fn register_provider<P: SubmenuProvider>(
+        &mut self,
+        provider: &P,
+    ) -> Result<(), CommandRegistryError> {
+        self.register(provider.snapshot())
+    }
+
+    pub fn snapshot(&self) -> Vec<SubmenuSnapshot> {
+        self.snapshots.clone()
+    }
+
+    pub fn get(&self, submenu: CommandSubmenu) -> Option<&SubmenuSnapshot> {
+        self.snapshots
+            .iter()
+            .find(|snapshot| snapshot.descriptor.submenu == submenu)
+    }
 }
 
 /// Metadata published by an owning module for one command.
@@ -258,12 +330,14 @@ pub trait CommandProvider {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum CommandRegistryError {
     DuplicateId(CommandId),
+    DuplicateSubmenu(String),
 }
 
 impl fmt::Display for CommandRegistryError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::DuplicateId(id) => write!(f, "command {id:?} was registered more than once"),
+            Self::DuplicateSubmenu(id) => write!(f, "submenu {id:?} was registered more than once"),
         }
     }
 }
@@ -546,32 +620,47 @@ mod tests {
     #[derive(Clone)]
     struct TestSubmenu;
 
-    #[derive(Clone, Debug, PartialEq, Eq)]
-    enum TestAction {
-        Select,
-    }
-
     impl SubmenuProvider for TestSubmenu {
-        type Action = TestAction;
-
-        fn descriptor(&self) -> SubmenuDescriptor {
-            SubmenuDescriptor::new("test.items", "Test Items")
-        }
-
-        fn snapshot(&self) -> Vec<SubmenuItem<Self::Action>> {
-            vec![SubmenuItem {
-                id: "one".to_string(),
-                title: "One".to_string(),
-                subtitle: None,
-                action: TestAction::Select,
-            }]
+        fn snapshot(&self) -> SubmenuSnapshot {
+            SubmenuSnapshot {
+                descriptor: SubmenuDescriptor::new(
+                    "test.items",
+                    "Test Items",
+                    CommandSubmenu::Tabs,
+                ),
+                items: vec![SubmenuItem {
+                    id: "one".to_string(),
+                    title: "One".to_string(),
+                    subtitle: None,
+                    active: false,
+                    action: SubmenuAction::SwitchToTab(1),
+                    secondary: None,
+                }],
+            }
         }
     }
 
     #[test]
     fn submenu_provider_returns_typed_immutable_rows() {
         let provider = TestSubmenu;
-        assert_eq!(provider.descriptor().id, "test.items");
-        assert_eq!(provider.snapshot()[0].action, TestAction::Select);
+        assert_eq!(provider.snapshot().descriptor.id, "test.items");
+        assert_eq!(
+            provider.snapshot().items[0].action,
+            SubmenuAction::SwitchToTab(1)
+        );
+    }
+
+    #[test]
+    fn submenu_registry_rejects_duplicate_ids() {
+        let mut registry = SubmenuRegistry::default();
+        registry
+            .register_provider(&TestSubmenu)
+            .expect("first submenu registration");
+        assert_eq!(
+            registry.register_provider(&TestSubmenu),
+            Err(CommandRegistryError::DuplicateSubmenu(
+                "test.items".to_string()
+            ))
+        );
     }
 }

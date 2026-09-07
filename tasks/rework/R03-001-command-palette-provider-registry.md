@@ -116,6 +116,13 @@ therefore remains a temporary shell adapter until the stable command/shortcut
 identity contract is extracted into a lower-level crate or the dependency is
 otherwise inverted.
 
+The dynamic row surface now uses a typed `SubmenuRegistry` in the same
+contract crate. Tabs, hosts, recent hosts, editor/app/icon themes, snippets,
+branches, symbols, and hidden status-bar items are handed to the palette as
+immutable snapshots with typed primary/secondary actions. The shell is still
+the temporary composition adapter for these snapshots; moving each builder
+into its owning capability is the remaining provider-extraction step.
+
 ## Acceptance criteria
 
 - [ ] One typed registry/provider surface is the only source of palette rows.

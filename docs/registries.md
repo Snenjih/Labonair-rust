@@ -58,9 +58,11 @@ is namespaced and opaque to the view, and execution is resolved by the owning
 module after selection.
 
 Submenus are registered providers. Dynamic entries such as hosts, themes, and
-tabs are supplied by providers that expose an immutable snapshot and a typed
-action. The provider owns loading, filtering data, and execution; the palette
-only owns the common picker interaction.
+tabs are supplied as immutable snapshots with typed primary and secondary
+actions. The capability owns loading and action semantics; the palette owns
+only common filtering, focus, preview, and picker interaction. The current
+composition root is the temporary snapshot adapter while each capability's
+runtime provider is extracted behind this contract.
 
 ## Keymap registry
 
