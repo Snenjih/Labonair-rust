@@ -758,3 +758,10 @@ chunked upload/download, checksums, conflict handling, cancellation, and
 reconnect requeue behavior; `labonair-transfers` remains the UI-free
 lifecycle/queue contract while the backend retains only service/event
 translation.
+
+## R06-001 SFTP adapter extraction
+
+The concrete SFTP session setup and `labonair-sftp` contract adapters moved
+from `labonair-backend` into `labonair-sftp-ssh`. The new integration sibling
+receives SSH state and the raw EventBus explicitly and owns the SFTP session
+lifecycle boundary; the UI-free SFTP crate remains contracts-only.

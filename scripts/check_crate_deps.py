@@ -47,6 +47,13 @@ ALLOWED = {
     "labonair-ssh": {"labonair-errors"},
     # UI-free SFTP contracts may use opaque SSH session ids only.
     "labonair-sftp": {"labonair-errors", "labonair-ssh"},
+    # Concrete SFTP session and contract adapters; transport details stay in
+    # this integration sibling rather than in the backend facade.
+    "labonair-sftp-ssh": {
+        "labonair-errors", "labonair-events", "labonair-persistence",
+        "labonair-secrets", "labonair-sftp", "labonair-ssh",
+        "labonair-ssh-transport",
+    },
     # UI-free transfer lifecycle, event, and worker contracts.
     "labonair-transfers": set(),
     # Concrete SFTP transfer execution; this integration sibling keeps the
@@ -177,7 +184,8 @@ ALLOWED = {
         "labonair-events",
         "labonair-settings", "labonair-filesystem", "labonair-ssh",
         "labonair-ssh-transport",
-        "labonair-sftp", "labonair-transfers", "labonair-transfers-ui",
+        "labonair-sftp", "labonair-sftp-ssh", "labonair-transfers",
+        "labonair-transfers-ui",
         "labonair-transfers-ssh",
         "labonair-background", "labonair-mcp-core", "labonair-persistence",
         "labonair-updater",

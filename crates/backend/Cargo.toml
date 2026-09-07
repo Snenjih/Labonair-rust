@@ -14,14 +14,11 @@ labonair-snippets = { path = "../snippets" }
 labonair-git = { path = "../git" }
 labonair-ssh = { path = "../ssh" }
 labonair-ssh-transport = { path = "../ssh-transport" }
-labonair-sftp = { path = "../sftp" }
 labonair-transfers = { path = "../transfers" }
 labonair-mcp-core = { path = "../mcp-core" }
 
 # SSH / SFTP — versions taken 1:1 from reference-src/src-tauri/Cargo.toml
 russh = { version = "0.62.2", default-features = false, features = ["ring", "flate2", "rsa"] }
-russh-sftp = "2.3.0"
-
 # Git runs via the `git` CLI (std::process / tokio::process) — no git2/libgit2.
 
 # SQLite

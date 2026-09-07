@@ -120,7 +120,7 @@ boundary.
 | Terminal | `labonair-terminal` | PTY sessions, terminal engine, renderer, and terminal commands. Sibling `labonair-terminal-integration` owns shared shell protocol payloads. |
 | Editor | `labonair-editor` | Buffers, syntax, editing behavior, and editor commands. |
 | SSH | `labonair-ssh` | SSH contracts plus the `labonair-ssh-transport` integration sibling for russh transport, authentication, tunnels, and jump-host execution. |
-| SFTP | `labonair-sftp` | Remote filesystem browsing and SFTP operations. |
+| SFTP | `labonair-sftp` | Remote filesystem browsing and SFTP contracts; the `labonair-sftp-ssh` integration sibling owns concrete session setup and adapters. |
 | Hosts | `labonair-hosts` | Saved host definitions, recent hosts, import/export, and host management. Transport adapters remain capability-owned. |
 | Credentials | `labonair-credentials` | Credential metadata, secret references, and generated SSH key material. |
 | Transfers | `labonair-transfers` | Transfer queue, progress, cancellation, conflict resolution, and lifecycle history. The `labonair-transfers-ssh` integration sibling owns concrete SFTP execution. |
@@ -136,6 +136,9 @@ session handle and remote-browser contracts. `labonair-ssh-transport` owns the
 concrete russh implementation and its contract adapters; workspace and feature
 views consume injected traits. `labonair-backend` no longer owns the SSH
 transport module.
+The `labonair-sftp-ssh` integration sibling owns concrete SFTP session setup
+and the `labonair-sftp` service adapters; it receives SSH state and the raw
+event transport explicitly.
 Transfers remain a separate capability and are not part of the SFTP browser
 contract.
 

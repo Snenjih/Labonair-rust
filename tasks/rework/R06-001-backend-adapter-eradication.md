@@ -156,6 +156,9 @@ boundary still exists; that package must not become a second capability owner.
 - [x] The concrete SFTP transfer worker was extracted into the dedicated
       `labonair-transfers-ssh` integration sibling; backend SFTP retains only
       session/remote-operation and transfer service/event translation.
+- [x] The concrete SFTP session and contract adapters were extracted into the
+      dedicated `labonair-sftp-ssh` integration sibling; the backend no longer
+      owns an SFTP module.
 - [x] MCP server control and HTTP tool execution now use an explicit
       `McpServerAccess` capability bundle; the MCP server no longer stores the
       aggregate backend `App`, and local PTY state is shared through an owned

@@ -1,0 +1,22 @@
+[package]
+name = "labonair-sftp-ssh"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "labonair_sftp_ssh"
+path = "src/lib.rs"
+
+[dependencies]
+labonair-errors = { path = "../errors" }
+labonair-events = { path = "../events" }
+labonair-persistence = { path = "../persistence" }
+labonair-secrets = { path = "../secrets" }
+labonair-sftp = { path = "../sftp" }
+labonair-ssh = { path = "../ssh" }
+labonair-ssh-transport = { path = "../ssh-transport" }
+rusqlite = { version = "0.40", features = ["bundled"] }
+russh-sftp = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+

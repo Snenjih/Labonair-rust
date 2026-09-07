@@ -4188,7 +4188,6 @@ dependencies = [
  "labonair-mcp-core",
  "labonair-persistence",
  "labonair-secrets",
- "labonair-sftp",
  "labonair-snippets",
  "labonair-ssh",
  "labonair-ssh-transport",
@@ -4201,7 +4200,6 @@ dependencies = [
  "rmcp",
  "rusqlite",
  "russh",
- "russh-sftp",
  "schemars 1.2.2",
  "serde",
  "serde_json",
@@ -4610,6 +4608,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "labonair-sftp-ssh"
+version = "0.1.0"
+dependencies = [
+ "labonair-errors",
+ "labonair-events",
+ "labonair-persistence",
+ "labonair-secrets",
+ "labonair-sftp",
+ "labonair-ssh",
+ "labonair-ssh-transport",
+ "rusqlite",
+ "russh-sftp",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "labonair-shell"
 version = "0.1.0"
 dependencies = [
@@ -4641,6 +4656,7 @@ dependencies = [
  "labonair-settings",
  "labonair-settings-ui",
  "labonair-sftp",
+ "labonair-sftp-ssh",
  "labonair-snippets",
  "labonair-ssh",
  "labonair-ssh-transport",

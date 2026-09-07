@@ -1,6 +1,6 @@
 //! Backend adapters for the UI-free SFTP capability contracts.
 
-use super::connection;
+use crate::connection;
 use labonair_errors::LabonairError;
 use labonair_events::EventBus;
 use labonair_sftp::{

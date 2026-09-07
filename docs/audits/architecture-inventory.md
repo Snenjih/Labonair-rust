@@ -17,7 +17,7 @@ removal conditions.
 | Current crate | Current role | Target owner | Migration note |
 |---|---|---|---|
 | `app` | Binary/bootstrap | application composition | Keep small; remove feature logic. |
-| `backend` | SFTP, Git, MCP, snippet, and transfer platform adapters | split across platform services and feature modules | Platform-adapter package; SSH transport now lives in `labonair-ssh-transport`, concrete transfer execution in `labonair-transfers-ssh`, while broad application composition state, Settings migrations, and updater capability logic no longer live here. |
+| `backend` | Git, MCP, snippet, and transfer service/event adapters | split across platform services and feature modules | Platform-adapter package; SSH transport now lives in `labonair-ssh-transport`, SFTP session/contract adapters in `labonair-sftp-ssh`, and concrete transfer execution in `labonair-transfers-ssh`; broad application composition state, Settings migrations, and updater capability logic no longer live here. |
 | `ai` | AI providers, sessions, tools | AI module | Keep backend-facing core; rebuild UI later. |
 | `command-palette-core` | UI-free command descriptors and registry (new migration boundary) | command-palette module | Keep metadata and provider discovery here; feature-owned behavior remains outside the palette. Initial owner providers now live in workspace, terminal, editor, hosts, theme, and settings crates. |
 | `command-palette` | Palette UI, dynamic sub-pages, and transitional duplicate shell dispatch integration | command-palette module | Consume the core registry; global-menu navigation is typed; remove static entries and the duplicate shell registry. |
@@ -27,6 +27,7 @@ removal conditions.
 | `errors` | Structured error catalog and recovery hints | foundation/platform contract | Extracted from `backend`; the backend compatibility module and root re-exports were removed in R06-001's first boundary. |
 | `events` | UI-free in-process adapter event transport | foundation/platform contract | Extracted from `backend`; it carries raw adapter events only, while typed event vocabulary remains in the owning capability contracts. |
 | `ssh-transport` | Concrete russh SSH implementation and contract adapters | SSH module | Extracted from `backend`; `labonair-ssh` remains the UI-free contract crate, while this sibling owns sessions, PTY, authentication, tunnels, and remote operations. |
+| `sftp-ssh` | Concrete russh-sftp session setup and SFTP contract adapters | SFTP module | Dedicated integration sibling extracted from the backend; receives SSH state and EventBus explicitly and owns the SFTP session lifecycle boundary. |
 | `hosts` | Saved-host and host-group domain contract plus host store | hosts module | Models, host persistence, canonical picker snapshots, and typed SSH/SFTP requests are standalone; the shell composes one manager/window instance. Only the MCP event adapter and transport implementations remain transitional in `backend`. |
 | `persistence` | Shared SQLite connection and schema lifecycle | foundation/platform service | Extracted from the host adapter; feature-specific queries still remain in `backend` and are next to migrate. |
 | `credentials` | Credential domain, secret-backed metadata, and SSH keypair generation | credentials module | Extracted from `backend`; the unused backend compatibility module is removed. |
