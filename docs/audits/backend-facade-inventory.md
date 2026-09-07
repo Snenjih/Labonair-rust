@@ -28,14 +28,14 @@ participate in the `BackendComposition` state graph or in another backend module
 
 | Backend module | Public surface | Current external consumers | Intended owner / disposition |
 |---|---|---|---|
-| `agents` | agent values, built-in/load/save helpers | none found | AI/agent owner; verify whether the current implementation is still required |
+| `agents` | removed | no active consumers | removed as an unreferenced backend copy; the AI owner must add a canonical contract before this capability is reintroduced |
 | `credentials` | removed | no active backend consumers | `labonair-credentials` is the canonical owner; active Hosts UI callers use it directly |
-| `directives` | directive values and local persistence helpers | none found | AI/agent owner; remove if no current workflow needs it |
+| `directives` | removed | no active consumers | removed as an unreferenced backend copy; reintroduce only behind an AI-owned contract when a real UI/workflow consumer exists |
 | `fonts` | custom-font file operations and system-font discovery | `shell::settings_services` | system-font discovery moved to `labonair-theme`; the unconsumed custom-font path and backend module were removed |
 | `fs` | removed | no active consumers | filesystem foundation owns paths, operations, and watchers; backend compatibility module and dead watcher adapter removed |
 | `git` | Git operation functions and `BackendGitService` / graph adapter | `shell::bootstrap`, `workspace` | `labonair-git` integration adapter; service and operation functions now receive only SSH state plus EventBus |
 | `mcp` | MCP state, grants, server operations, host revocation callback | `shell`, `workspace`; internal PTY/secrets use | `labonair-mcp-core` owns UI-free grant and tab-operation contracts; grant/revoke adapter receives only MCP state/database/events, while server state is supplied by shell composition |
-| `model_prefs` | model preference values and local load/save | none found | AI owner; verify against current AI configuration before moving |
+| `model_prefs` | removed | no active consumers | removed as an unreferenced backend copy; model selection state remains an AI-owned concern when its UI contract is defined |
 | `pty` | local PTY state, sessions, events, I/O operations | indirect through backend/MCP | terminal owner; expose a terminal service rather than `App` state |
 | `scrollback` | scrollback persistence helpers | `shell`, `workspace` | moved to `labonair-terminal::scrollback`; Workspace supplies session/retention context |
 | `secrets` | secret-state compatibility API | internal SSH/SFTP/MCP adapters | `labonair-secrets`; compatibility wrappers now accept only `SecretsState`, with no aggregate `App` parameter |

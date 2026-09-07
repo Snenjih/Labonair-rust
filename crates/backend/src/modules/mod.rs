@@ -1,8 +1,5 @@
-pub mod agents;
-pub mod directives;
 pub mod git;
 pub mod mcp;
-pub mod model_prefs;
 pub mod pty;
 pub mod secrets;
 pub mod settings;

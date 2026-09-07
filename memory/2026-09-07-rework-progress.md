@@ -18,6 +18,14 @@ longer owns MCP preference persistence. Focused MCP/backend tests, Workspace
 check, and Clippy pass; the full workspace test gate remains part of the final
 slice verification.
 
+## Unreferenced backend module cleanup
+
+The backend copies of `agents`, `directives`, and `model_prefs` had no active
+consumers outside their own unit tests. They were removed rather than kept as
+latent feature owners; a future implementation must enter through an AI-owned
+contract and registry. This reduces backend surface without changing any
+reachable product workflow.
+
 ## SSH connection event boundary
 
 The SSH transport/authentication pipeline was narrowed after the PTY and
