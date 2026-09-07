@@ -9,6 +9,8 @@
 //! `labonair-workspace` or `labonair-panel`; opening an SSH/SFTP tab happens
 //! via [`HostManagerEvent`] emitted to the caller, not a direct call.
 
+pub mod command_provider;
+
 pub(crate) mod theme {
     pub use labonair_theme::store::*;
 }

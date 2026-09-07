@@ -421,7 +421,8 @@ pub(crate) fn bootstrap(
     // Build the command metadata and behaviour registry before keymap loading:
     // default shortcut resolution must use the same descriptors that the
     // palette receives later.
-    let command_registry = crate::commands::register_builtin_commands_for(&workspace, &updater);
+    let command_registry =
+        crate::commands::register_builtin_commands_for(&workspace, &updater, &host_manager);
     crate::keymap_loader::reload_and_apply(cx, &command_registry);
     crate::keymap_loader::watch(cx, command_registry.clone());
     set_settings_deps(settings_services(), tokio.clone(), cx);

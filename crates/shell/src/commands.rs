@@ -22,7 +22,7 @@ use labonair_command_palette_core::{
     CommandRegistry as PaletteCommandRegistry, CommandSubmenu,
 };
 use labonair_command_palette_runtime::CommandHandlerRegistry;
-use labonair_hosts_ui::open_hosts_window;
+use labonair_hosts_ui::HostManagerView;
 
 use crate::app_shell::AppShell;
 use crate::menu;
@@ -269,20 +269,22 @@ fn command_descriptor(
 
 #[allow(dead_code)]
 pub(crate) fn register_builtin_commands() -> CommandDispatcher {
-    compose_builtin_commands(None, None)
+    compose_builtin_commands(None, None, None)
 }
 
 /// Compose the command registry with owner-provided executable handlers.
 pub(crate) fn register_builtin_commands_for(
     workspace: &gpui::Entity<Workspace>,
     updater: &Entity<UpdaterView>,
+    hosts: &Entity<HostManagerView>,
 ) -> CommandDispatcher {
-    compose_builtin_commands(Some(workspace), Some(updater))
+    compose_builtin_commands(Some(workspace), Some(updater), Some(hosts))
 }
 
 fn compose_builtin_commands(
     workspace: Option<&Entity<Workspace>>,
     updater: Option<&Entity<UpdaterView>>,
+    hosts: Option<&Entity<HostManagerView>>,
 ) -> CommandDispatcher {
     let mut r = CommandDispatcher::default();
     let always = ALWAYS;
@@ -309,6 +311,9 @@ fn compose_builtin_commands(
     labonair_settings_ui::command_provider::register_handlers(&mut r.owner_handlers);
     if let Some(updater) = updater {
         labonair_updater_ui::command_provider::register_handlers(&mut r.owner_handlers, updater);
+    }
+    if let Some(hosts) = hosts {
+        labonair_hosts_ui::command_provider::register_handlers(&mut r.owner_handlers, hosts);
     }
     if let Some(workspace) = workspace {
         labonair_workspace::command_provider::register_handlers(&mut r.owner_handlers, workspace);
@@ -339,20 +344,6 @@ fn compose_builtin_commands(
     // (`Enter` = SSH, `Shift+Enter` = SFTP). Host management is no longer a
     // Hosts capability surface; this command opens its canonical selection
     // page and does not create a Settings category.
-    r.register(
-        command_descriptor(
-            CommandId::OpenHostSettings,
-            "Open Hosts",
-            "Connections",
-            always,
-            None,
-            CommandIcon::Server,
-            None,
-        ),
-        |s, _window, cx| {
-            open_hosts_window(s.panels.hosts.clone(), cx);
-        },
-    );
     for (id, title, icon) in [
         (CommandId::NewSshTab, "New SSH Tab", CommandIcon::Terminal),
         (CommandId::NewSftpTab, "New SFTP Tab", CommandIcon::Folder),

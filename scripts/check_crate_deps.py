@@ -257,7 +257,8 @@ ALLOWED = {
         "labonair-theme", "labonair-ui-kit", "labonair-notifications",
         "labonair-hosts", "labonair-credentials", "labonair-persistence",
         "labonair-secrets", "labonair-snippets", "labonair-ssh",
-        "labonair-errors",
+        "labonair-errors", "labonair-command-palette-core",
+        "labonair-command-palette-runtime",
     },
 
     # Engines — rule 4: no UI dep.

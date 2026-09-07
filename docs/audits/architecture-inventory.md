@@ -198,8 +198,9 @@ The current Cargo metadata shows several transitional edges that conflict with t
   crates contribute executable handlers; Workspace tab, pane, focus, and
   project-lifecycle behavior has now been removed from the shell table. The
   Terminal `Clear Terminal`, Settings toggles, the Settings window entrypoint,
-  and the updater Check-for-Updates action are owner-registered. Remaining
-  shell adapters are transitional until their owners move.
+  Hosts management entrypoint, and the updater Check-for-Updates action are
+  owner-registered. Remaining shell adapters are transitional until their
+  owners move.
 - The dedicated Jump Hosts status item was removed. Jump-host routing remains
   part of SSH connection configuration and execution, while host management and
   host selection keep their canonical menu/palette entry points.

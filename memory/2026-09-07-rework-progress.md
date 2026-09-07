@@ -896,3 +896,8 @@ The Settings window entrypoint was then moved into
 `labonair-settings-ui::command_provider`. The sibling owns the executable
 `OpenSettings` handler, while the metadata remains in the Settings command
 provider; shell composition only connects the two owner contributions.
+
+The Hosts management entrypoint was then moved into
+`labonair-hosts-ui::command_provider`. Its handler receives the existing
+`HostManagerView` entity from bootstrap and opens the canonical Hosts window;
+the shell no longer carries that command behavior.

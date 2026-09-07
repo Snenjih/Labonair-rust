@@ -754,3 +754,12 @@ server code still use `rusqlite::params!` directly.
 
 **Fix:** Declare `rusqlite` in the MCP integration crate. The backend no
 longer needs that dependency after the MCP module extraction.
+
+## 2026-09-07 — Pass all owner entities when composing commands
+
+**Bug found:** Extending `compose_builtin_commands` with an optional Hosts
+entity left the no-context test helper calling it with only the existing
+workspace and updater arguments. Rust reported a missing third argument.
+
+**Fix:** Pass `None` for Hosts in the metadata-only composition path. The
+runtime bootstrap path supplies the real `HostManagerView` entity.
