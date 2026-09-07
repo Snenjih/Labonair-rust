@@ -24,7 +24,7 @@ Legacy `appCornerRadius` values are converted to the current
 `cornerRadiusScale` field during migration, with the modern value taking
 precedence when both are present.
 
-Current HEAD is `b62cd5f` on `master`; the worktree is clean before this
+Current HEAD is `0bd3811` on `master`; the worktree is clean before this
 handshake update. The first R06
 boundaries removed the backend error facade, removed AI's stale backend edge,
 moved system-font discovery into the Theme owner, deleted the unconsumed
@@ -117,6 +117,14 @@ Clippy, workspace tests, formatting, dependency validation, queue validation,
 and diff checks pass; this boundary is committed as `b62cd5f`.
 R07-001 is now the active next task: audit the coherent product surface and
 record only bounded follow-up work for any remaining discrepancy.
+
+The first R07 audit slice moved panel contribution construction into the four
+owning panel crates. Shell composition now only collects their typed
+`PanelRegistration` values and inserts them into the Workspace registry; the
+Git Graph crate remains acyclic. The full workspace test and Clippy checks pass
+after this slice, committed as `0bd3811`. The remaining shell-owned command
+execution and status-item contribution lists are tracked by the planned
+`R07-002-owner-registered-surface-contributions` task.
 
 The broad backend `AppEvent` enum and typed-emitter helper are also gone;
 SSH and MCP adapters decode their own raw event names directly at the
