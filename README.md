@@ -15,12 +15,15 @@ The active architecture and rework sequence are documented in [`docs/`](docs/):
 - [`docs/design-system.md`](docs/design-system.md) — UI consistency rules
 - [`docs/repository-layout.md`](docs/repository-layout.md) — canonical repository and crate placement
 - [`docs/feature-lifecycle.md`](docs/feature-lifecycle.md) — required feature change workflow
+- [`docs/documentation-governance.md`](docs/documentation-governance.md) — documentation ownership and authority rules
 - [`docs/rework-roadmap.md`](docs/rework-roadmap.md) — implementation sequence
 - [`docs/capabilities.md`](docs/capabilities.md) — ownership and migration matrix
 - [`docs/settings.md`](docs/settings.md) — value-only settings boundary
 - [`docs/workspace-model.md`](docs/workspace-model.md) — project and standalone workflows
 
-The old task tree remains for historical traceability. New work must follow the rework roadmap and not the historical queue.
+The historical task tree and original roadmap are preserved under
+[`tasks/archive/`](tasks/archive/) for traceability. New work must follow the
+rework roadmap and [`tasks/rework/`](tasks/rework/), never the historical queue.
 
 The architectural invariant is simple: one product capability, one owning
 module, and one canonical capability crate. A module may split into sibling

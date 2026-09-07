@@ -17,6 +17,7 @@ the migration is complete.
 - [`design-system.md`](design-system.md) — visual language and reusable UI component rules.
 - [`repository-layout.md`](repository-layout.md) — canonical crate, source, and documentation placement.
 - [`feature-lifecycle.md`](feature-lifecycle.md) — required boundary-first workflow for feature changes.
+- [`documentation-governance.md`](documentation-governance.md) — document ownership, authority, archive, and change rules.
 - [`workspace-model.md`](workspace-model.md) — project and standalone workspaces.
 - [`settings.md`](settings.md) — the boundary of the settings system.
 - [`settings-guidelines.md`](settings-guidelines.md) — normative Settings UI
@@ -33,7 +34,7 @@ The executable task queue derived from the roadmap is
 [`../tasks/rework/README.md`](../tasks/rework/README.md). The historical
 `tasks/archive/` tree and original roadmap are retained for traceability only.
 
-Normative documents are written in English because they are also engineering contracts. `ideas/` contains proposals only; an idea becomes binding only after it is incorporated here or accepted in an ADR.
+Normative documents are written in English because they are also engineering contracts. `ideas/` contains proposals only; an idea becomes binding only after it is incorporated here or accepted in an ADR. The document classes and maintenance rules are defined in [`documentation-governance.md`](documentation-governance.md).
 
 ## Supporting documents
 
