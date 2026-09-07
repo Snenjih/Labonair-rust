@@ -1,6 +1,7 @@
 # Workspace Model
 
 **Status:** Normative
+**Version:** 1
 
 ## Workspace types
 

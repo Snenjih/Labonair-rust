@@ -1,6 +1,7 @@
 # Settings Field Inventory
 
 **Status:** Normative for R05-001  
+**Version:** 1
 **Owner:** `labonair-settings-content` (values), `labonair-settings` (layers and persistence), `labonair-settings-ui` (value editor)  
 **Last reviewed:** 2026-09-07
 

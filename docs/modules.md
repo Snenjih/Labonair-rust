@@ -1,6 +1,7 @@
 # Module and Crate Rules
 
 **Status:** Normative
+**Version:** 1
 
 ## 1. Ownership rule
 

@@ -1,6 +1,7 @@
 # Registry Contracts
 
 **Status:** Normative
+**Version:** 1
 
 Registries are the extension mechanism for a capability that has multiple
 providers or consumers and therefore needs discovery. A registry owns

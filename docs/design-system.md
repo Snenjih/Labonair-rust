@@ -1,6 +1,7 @@
 # Labonair Design System
 
 **Status:** Normative
+**Version:** 1
 
 ## Visual objective
 

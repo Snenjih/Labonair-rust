@@ -1,6 +1,7 @@
 # Feature Lifecycle
 
 **Status:** Normative
+**Version:** 1
 
 This is the required workflow for adding, redesigning, deferring, or removing
 a Labonair capability. It turns a product idea into one owned, testable,

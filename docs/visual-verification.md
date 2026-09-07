@@ -1,6 +1,7 @@
 # Native Visual Verification
 
 **Status:** Normative
+**Version:** 1
 
 Visual checks must prove that the native Rust application was rendered. A
 successful process launch or a screenshot of a window with the display name

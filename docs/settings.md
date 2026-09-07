@@ -1,6 +1,7 @@
 # Settings Contract
 
 **Status:** Normative
+**Version:** 1
 
 ## What settings are
 

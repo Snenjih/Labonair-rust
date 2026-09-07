@@ -1,6 +1,7 @@
 # Settings UI Guidelines
 
 **Status:** Normative
+**Version:** 1
 **Related:** [`settings.md`](settings.md), [`design-system.md`](design-system.md)
 
 These rules define how the Settings surface may evolve. Settings is a value

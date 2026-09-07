@@ -1,6 +1,7 @@
 # Repository Layout
 
 **Status:** Normative
+**Version:** 1
 
 This document defines where product code, contracts, documentation, and
 migration work belong. It is a structural rule, not a description of every
