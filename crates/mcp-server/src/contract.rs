@@ -1,4 +1,5 @@
-//! Backend adapter for the UI-free MCP session-access contract.
+//! Adapter from the concrete MCP server state to the UI-free session-access
+//! contract.
 
 use labonair_events::{EventBus, RawEvent};
 use labonair_mcp_core::{
@@ -9,22 +10,22 @@ use serde::Deserialize;
 
 use super::{mcp_set_session_grant, mcp_tab_op_response};
 
-/// Bridges aggregate backend MCP state to the narrow service consumed by the
-/// workspace's agent-access mirror. Construction stays in the shell; the
-/// workspace never receives the backend application just to grant a tab.
+/// Bridges MCP server state to the narrow service consumed by the workspace's
+/// agent-access mirror. Construction stays in the shell; the workspace never
+/// receives the concrete server state just to grant a tab.
 #[derive(Clone)]
-pub struct BackendMcpSessionAccess {
+pub struct McpSessionAccessAdapter {
     state: super::McpState,
     hosts_db: labonair_persistence::Database,
 }
 
-impl BackendMcpSessionAccess {
+impl McpSessionAccessAdapter {
     pub fn new(state: super::McpState, hosts_db: labonair_persistence::Database) -> Self {
         Self { state, hosts_db }
     }
 }
 
-impl McpSessionAccessService for BackendMcpSessionAccess {
+impl McpSessionAccessService for McpSessionAccessAdapter {
     fn set_session_grant(&self, request: SessionGrantRequest) -> BoxFuture<'_, Result<(), String>> {
         let state = self.state.clone();
         let hosts_db = self.hosts_db.clone();
@@ -44,7 +45,7 @@ impl McpSessionAccessService for BackendMcpSessionAccess {
     }
 }
 
-impl McpTabOperationService for BackendMcpSessionAccess {
+impl McpTabOperationService for McpSessionAccessAdapter {
     fn respond_tab_operation(
         &self,
         request_id: String,
@@ -55,20 +56,20 @@ impl McpTabOperationService for BackendMcpSessionAccess {
     }
 }
 
-/// Shell-composed adapter that translates legacy backend events into the
+/// Shell-composed adapter that translates raw MCP events into the
 /// narrow MCP event contract consumed by Workspace.
 #[derive(Clone)]
-pub struct BackendMcpEventSource {
+pub struct McpEventSourceAdapter {
     events: EventBus,
 }
 
-impl BackendMcpEventSource {
+impl McpEventSourceAdapter {
     pub fn new(events: EventBus) -> Self {
         Self { events }
     }
 }
 
-struct BackendMcpEventReceiver {
+struct McpEventReceiverAdapter {
     receiver: tokio::sync::broadcast::Receiver<RawEvent>,
 }
 
@@ -141,7 +142,7 @@ fn decode_mcp_event(raw: &RawEvent) -> Option<McpEvent> {
     }
 }
 
-impl McpEventReceiver for BackendMcpEventReceiver {
+impl McpEventReceiver for McpEventReceiverAdapter {
     fn recv<'a>(&'a mut self) -> BoxFuture<'a, Option<McpEvent>> {
         Box::pin(async move {
             loop {
@@ -162,9 +163,9 @@ impl McpEventReceiver for BackendMcpEventReceiver {
     }
 }
 
-impl McpEventSource for BackendMcpEventSource {
+impl McpEventSource for McpEventSourceAdapter {
     fn subscribe(&self) -> Box<dyn McpEventReceiver> {
-        Box::new(BackendMcpEventReceiver {
+        Box::new(McpEventReceiverAdapter {
             receiver: self.events.subscribe(),
         })
     }

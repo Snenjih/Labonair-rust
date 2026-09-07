@@ -4173,41 +4173,14 @@ dependencies = [
 name = "labonair-backend"
 version = "0.1.0"
 dependencies = [
- "axum",
- "dirs 6.0.0",
- "flate2",
- "globset",
- "grep-regex",
- "grep-searcher",
- "ignore",
- "labonair-errors",
  "labonair-events",
- "labonair-filesystem",
- "labonair-hosts",
- "labonair-mcp-core",
- "labonair-persistence",
- "labonair-secrets",
  "labonair-snippets",
- "labonair-ssh",
  "labonair-ssh-transport",
- "labonair-terminal-integration",
  "labonair-transfers",
- "libc",
- "log",
- "openssl",
- "rand 0.8.8",
- "rmcp",
- "rusqlite",
  "russh",
- "schemars 1.2.2",
- "serde",
  "serde_json",
- "socket2 0.5.10",
- "thiserror 1.0.69",
  "tokio",
- "tokio-util",
  "uuid",
- "vte 0.15.0",
 ]
 
 [[package]]
@@ -4423,6 +4396,31 @@ dependencies = [
  "schemars 1.2.2",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "labonair-mcp-server"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "labonair-errors",
+ "labonair-events",
+ "labonair-hosts",
+ "labonair-mcp-core",
+ "labonair-persistence",
+ "labonair-secrets",
+ "labonair-ssh-transport",
+ "log",
+ "rand 0.8.8",
+ "rmcp",
+ "rusqlite",
+ "schemars 1.2.2",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tokio-util",
+ "uuid",
+ "vte 0.15.0",
 ]
 
 [[package]]
@@ -4657,6 +4655,7 @@ dependencies = [
  "labonair-keymap",
  "labonair-keymap-ui",
  "labonair-mcp-core",
+ "labonair-mcp-server",
  "labonair-notifications",
  "labonair-panel",
  "labonair-panel-explorer",

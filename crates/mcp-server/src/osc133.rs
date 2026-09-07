@@ -40,7 +40,7 @@ impl Perform for Performer {
 }
 
 /// Streaming OSC-133 boundary + plain-text capture for a command injected by
-/// the MCP bridge (`modules::mcp`). Feeds raw PTY chunks through a `vte`
+/// the MCP bridge. Feeds raw PTY chunks through a `vte`
 /// parser so cursor-movement/color escape sequences never pollute the
 /// captured text, while an OSC 133 `D` marker signals the command has
 /// finished. Takes raw bytes rather than `&str` — `vte::Parser::advance`

@@ -59,7 +59,7 @@ pub struct RushSession {
     /// string instead of the actual cause.
     pub disconnect_reason: Arc<Mutex<Option<String>>>,
     /// Secondary, best-effort fan-out of every PTY output chunk the reader
-    /// task in `ssh/pty.rs` sees — read by the MCP bridge (`modules::mcp`) to
+    /// task in `ssh/pty.rs` sees — read by the MCP bridge to
     /// capture a command's output/exit code (via the OSC 133 markers already
     /// emitted by the shell-integration bootstrap) without disturbing the
     /// single-consumer `Channel<SshPtyEvent>` the visible terminal pane owns.

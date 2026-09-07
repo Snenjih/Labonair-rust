@@ -4,61 +4,21 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-labonair-filesystem = { path = "../filesystem" }
-labonair-secrets = { path = "../secrets" }
-labonair-errors = { path = "../errors" }
 labonair-events = { path = "../events" }
-labonair-hosts = { path = "../hosts" }
-labonair-persistence = { path = "../persistence" }
 labonair-snippets = { path = "../snippets" }
-labonair-ssh = { path = "../ssh" }
 labonair-ssh-transport = { path = "../ssh-transport" }
 labonair-transfers = { path = "../transfers" }
-labonair-mcp-core = { path = "../mcp-core" }
 
 # SSH / SFTP — versions taken 1:1 from reference-src/src-tauri/Cargo.toml
 russh = { version = "0.62.2", default-features = false, features = ["ring", "flate2", "rsa"] }
 # Git runs via the `git` CLI (std::process / tokio::process) — no git2/libgit2.
 
-# SQLite
-rusqlite = { version = "0.40", features = ["bundled"] }
-
 # Async
 tokio = { version = "1", features = ["full"] }
-tokio-util = "0.7"
 
 # Serialization
-serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
-# Errors / logging
-thiserror = "1"
-log = "0.4"
-
-# Crypto / hashing
-rand = { version = "0.8", features = ["getrandom"] }
-openssl = { version = "0.10", features = ["vendored"] }
-labonair-terminal-integration = { path = "../terminal-integration" }
-
-# Filesystem search
-ignore = "0.4"
-grep-regex = "0.1"
-grep-searcher = "0.1"
-globset = "0.4"
-flate2 = "1"
-
-# Terminal parsing (OSC 133 capture)
-vte = "0.15"
-
-# MCP bridge
-rmcp = { version = "2.2.0", features = ["server", "macros", "transport-streamable-http-server"] }
-axum = "0.8"
-schemars = "1"
-
-# Platform / misc
-socket2 = "0.5"
-libc = "0.2"
-dirs = "6"
 uuid = { version = "1", features = ["v4"] }
 
 [dev-dependencies]

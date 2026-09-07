@@ -93,7 +93,7 @@ and are never lost through a deserialize/serialize round trip.
 | `labonair-secrets` | Keychain and secret references. |
 | `labonair-persistence` | Cloneable shared SQLite connection and schema lifecycle; feature modules own stores and queries. |
 | `labonair-panel` | UI-free panel, dock, and status-item contracts used by workspace-owned surfaces. |
-| `labonair-mcp-core` | UI-free MCP session/grant, tab-operation, and persisted bridge-preference contracts shared by the agent-access host and its injected bridge adapter. |
+| `labonair-mcp-core` | UI-free MCP session/grant, tab-operation, and persisted bridge-preference contracts shared by the agent-access host and the injected `labonair-mcp-server` adapter. |
 | `labonair-terminal-integration` | UI-free OSC 7/133 shell-integration payloads shared by local PTY and remote SSH adapters. |
 
 ### Capability modules and crates
@@ -127,7 +127,7 @@ boundary.
 | Git | `labonair-git` | Git contracts and source-control behavior; `labonair-git-transport` owns local/remote CLI execution and contract adapters, while sibling panel crates provide Git views. |
 | Explorer | `labonair-panel-explorer` | Local file navigation UI over filesystem contracts. |
 | Snippets | `labonair-snippets` | Snippet storage, execution contracts, and snippet behavior; sibling panel crate provides the view. |
-| AI | `labonair-ai` | Providers, sessions, context, tools, and future UI. MCP host contracts live in `labonair-mcp-core`. |
+| AI | `labonair-ai` | Providers, sessions, context, tools, and future UI. MCP host contracts live in `labonair-mcp-core`; the concrete HTTP bridge lives in `labonair-mcp-server`. |
 
 The first transport split is intentionally contract-first:
 `labonair-ssh` owns UI-free SSH session, PTY, trust, remote-command, tunnel,

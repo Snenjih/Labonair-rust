@@ -187,7 +187,8 @@ ALLOWED = {
         "labonair-sftp", "labonair-sftp-ssh", "labonair-transfers",
         "labonair-transfers-ui",
         "labonair-transfers-ssh",
-        "labonair-background", "labonair-mcp-core", "labonair-persistence",
+        "labonair-background", "labonair-mcp-core", "labonair-mcp-server",
+        "labonair-persistence",
         "labonair-updater",
         # Provider metadata contracts are assembled here; feature behavior
         # remains in the owning crates and is not implemented by this root.
@@ -266,18 +267,20 @@ ALLOWED = {
     "labonair-git-transport": {
         "labonair-events", "labonair-git", "labonair-ssh-transport",
     },
+    # Concrete MCP HTTP server, grants, event adapters, and PTY bridge.
+    "labonair-mcp-server": {
+        "labonair-errors", "labonair-events", "labonair-hosts",
+        "labonair-mcp-core", "labonair-persistence", "labonair-secrets",
+        "labonair-ssh-transport",
+    },
     "labonair-editor": {
         "labonair-command-palette-core", "labonair-interaction-contracts",
     },
     # Backend contains only concrete platform adapters. Settings migrations are
     # owned by `labonair-settings::legacy_migrations`.
     "labonair-backend": {
-        "labonair-filesystem", "labonair-secrets",
-        "labonair-errors", "labonair-events", "labonair-hosts", "labonair-persistence",
-        "labonair-credentials", "labonair-snippets", "labonair-git",
-        "labonair-ssh", "labonair-sftp", "labonair-transfers",
-        "labonair-mcp-core", "labonair-terminal-integration",
-        "labonair-ssh-transport",
+        "labonair-events", "labonair-snippets", "labonair-ssh-transport",
+        "labonair-transfers",
     },
     "labonair-ai": {"labonair-filesystem"},
 

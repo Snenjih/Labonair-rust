@@ -60,6 +60,7 @@ labonair-filesystem = { path = "../filesystem" }
 # `gpui::KeyBinding`s / live fs-watch.
 labonair-settings = { path = "../settings" }
 labonair-mcp-core = { path = "../mcp-core" }
+labonair-mcp-server = { path = "../mcp-server" }
 labonair-updater = { path = "../updater" }
 labonair-secrets = { path = "../secrets" }
 labonair-events = { path = "../events" }

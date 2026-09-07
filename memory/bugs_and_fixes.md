@@ -745,3 +745,12 @@ the branches had incompatible result types.
 boundary. The command loop now consumes both transports through the same
 `Result<Vec<u8>, String>` shape without knowing either receiver
 implementation.
+
+## 2026-09-07 — Add direct SQLite dependency to MCP server integration
+
+**Bug found:** After moving the concrete MCP server from `labonair-backend`,
+the new `labonair-mcp-server` crate failed to compile because its state and
+server code still use `rusqlite::params!` directly.
+
+**Fix:** Declare `rusqlite` in the MCP integration crate. The backend no
+longer needs that dependency after the MCP module extraction.

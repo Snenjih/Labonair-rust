@@ -159,7 +159,7 @@ impl SshEventSink for WorkspaceSshEventSink {
     }
 }
 
-/// A tab-lifecycle request from the MCP bridge (`modules::mcp::server`), queued
+/// A tab-lifecycle request from the MCP bridge (`labonair-mcp-server`), queued
 /// off the event bus and drained in `render` where a `&mut Window` is available
 /// — the bridge itself cannot touch tab state (tabs are pure UI), so it emits a
 /// request event and waits on a `oneshot` for [`mcp_tab_op_response`].
@@ -2790,7 +2790,7 @@ impl Workspace {
     }
 
     /// Push a completed [`TabOpResult`] back to a pending MCP `open_tab` /
-    /// `close_tab` tool call waiting on its `oneshot` in `modules::mcp::server`.
+    /// `close_tab` tool call waiting on its `oneshot` in `labonair-mcp-server`.
     fn respond_mcp_tab_op(&self, request_id: String, result: TabOpResult) {
         let mcp_tab_operations = self.mcp_tab_operations.clone();
         self.tokio.spawn(async move {
@@ -2876,7 +2876,7 @@ impl Workspace {
         });
     }
 
-    /// Handle an MCP `close_tab` request: close the SSH tab whose backend
+    /// Handle an MCP `close_tab` request: close the SSH tab whose transport
     /// session matches `session_id` (its grant is revoked by `retire_tab`).
     fn mcp_close_tab(
         &mut self,

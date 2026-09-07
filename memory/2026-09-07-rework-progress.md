@@ -772,3 +772,11 @@ The concrete local/remote Git CLI executor and Git contract adapters moved
 from `labonair-backend` into `labonair-git-transport`. The integration sibling
 receives SSH state and EventBus explicitly; `labonair-git` remains the
 implementation-free capability contract.
+
+## R06-001 MCP server extraction
+
+The concrete MCP HTTP server, grant state, PTY bridge, host revocation, and
+MCP service/event adapters moved from `labonair-backend` into
+`labonair-mcp-server`. The shell now composes this integration sibling with
+explicit SSH, local-terminal, database, secrets, and EventBus capabilities;
+`labonair-mcp-core` remains contracts-only.

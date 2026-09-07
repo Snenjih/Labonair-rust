@@ -9,9 +9,9 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::sync::{Arc, Mutex as StdMutex};
 
-use labonair_backend::modules::mcp::McpState;
 use labonair_backend::modules::snippets::exec::SnippetRunState;
 use labonair_events::EventBus;
+use labonair_mcp_server::McpState;
 use labonair_persistence::Database;
 use labonair_secrets::SecretsState;
 use labonair_ssh_transport::tunnels::TunnelState;
@@ -109,9 +109,6 @@ impl BackendComposition {
                     .await;
             });
         }
-        labonair_backend::modules::mcp::spawn_auto_revoke_sweeper(
-            self.events.clone(),
-            self.mcp.clone(),
-        );
+        labonair_mcp_server::spawn_auto_revoke_sweeper(self.events.clone(), self.mcp.clone());
     }
 }

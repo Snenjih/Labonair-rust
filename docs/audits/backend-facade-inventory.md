@@ -34,7 +34,7 @@ participate in the `BackendComposition` state graph or in another backend module
 | `fonts` | custom-font file operations and system-font discovery | `shell::settings_services` | system-font discovery moved to `labonair-theme`; the unconsumed custom-font path and backend module were removed |
 | `fs` | removed | no active consumers | filesystem foundation owns paths, operations, and watchers; backend compatibility module and dead watcher adapter removed |
 | `git` | removed from backend | none | `labonair-git-transport` owns `GitTransportService` / graph adapter and Git operation functions; services receive only SSH state plus EventBus |
-| `mcp` | MCP state, grants, server operations, host revocation callback | `shell`, `workspace`; internal PTY/secrets use | `labonair-mcp-core` owns UI-free grant and tab-operation contracts; grant/revoke adapter receives only MCP state/database/events, while server state is supplied by shell composition |
+| `mcp` | removed from backend | none | `labonair-mcp-server` owns concrete MCP state, grants, server operations, host revocation, and contract/event adapters; shell composition supplies explicit capabilities |
 | `model_prefs` | removed | no active consumers | removed as an unreferenced backend copy; model selection state remains an AI-owned concern when its UI contract is defined |
 | `pty` | local PTY state, sessions, events, I/O operations | indirect through backend/MCP | terminal owner; expose a terminal service rather than `App` state |
 | `scrollback` | scrollback persistence helpers | `shell`, `workspace` | moved to `labonair-terminal::scrollback`; Workspace supplies session/retention context |
@@ -95,12 +95,12 @@ and shell shutdown uses the same capability directly.
 The stable MCP session/grant values, tab-operation result, and service
 contracts now live in `labonair-mcp-core`. `AgentAccessStore` and Workspace
 consume only injected contracts and no longer call MCP implementation
-functions directly. The backend adapter is constructed by shell composition
-and remains the explicit bridge to aggregate MCP implementation state. The
-raw adapter event transport lives in `labonair-events`; shell composition
-owns the instance and backend adapters translate only their own events into
-typed capability contracts. Workspace receives typed `SshConnectionEvent` and
-`McpEvent` values through injected sources and has no direct backend dependency.
+functions directly. The concrete server and its adapters are constructed by
+shell composition from `labonair-mcp-server`. The raw adapter event transport
+lives in `labonair-events`; integration adapters translate only their own
+events into typed capability contracts. Workspace receives typed
+`SshConnectionEvent` and `McpEvent` values through injected sources and has no
+direct backend dependency.
 
 The dead backend filesystem watcher and `App::watcher` state were removed after
 source search confirmed that active Explorer and Settings consumers already use
@@ -108,18 +108,19 @@ source search confirmed that active Explorer and Settings consumers already use
 filesystem paths directly, so there is no remaining `backend::modules::fs`
 compatibility layer.
 
-The MCP grant adapter was narrowed as well: `BackendMcpSessionAccess` receives
+The MCP grant adapter was narrowed as well: `McpSessionAccessAdapter` receives
 only `McpState` and the shared `Database`, while host-block revocation receives
 `McpState` plus `EventBus`. The MCP server's token, listener, and terminal-tool
 integration now receives an explicit `McpServerAccess` bundle containing only
 SSH state, local PTY state, database, secrets, and EventBus. The server and its
-control functions no longer retain or accept the aggregate `App`.
+control functions now live in `labonair-mcp-server` and no longer retain or
+accept the aggregate `App`.
 
 The Git operation surface was narrowed next. All Git operation functions now
 receive an explicit `EventBus` rather than the aggregate `App`, and both
-`BackendGitService` and `BackendGitGraphService` retain only `SshState`
-plus `EventBus`. Their constructors remain composition-only extraction
-points while the remaining SSH and MCP server adapters are migrated.
+transport services retain only `SshState` plus `EventBus`. Their constructors
+remain composition-only extraction points while the remaining MCP and snippet
+adapters are migrated.
 
 The SSH contract adapters are split by responsibility inside
 `labonair-ssh-transport`: PTY write/resize use

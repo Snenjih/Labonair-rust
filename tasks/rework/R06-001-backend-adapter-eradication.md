@@ -119,8 +119,8 @@ boundary still exists; that package must not become a second capability owner.
       adapter.
 - [x] Moved Workspace MCP grant revocation, grant creation, and tab-operation
       responses behind the injected `McpSessionAccessService` and
-      `McpTabOperationService` contracts; only aggregate MCP server state and
-      the legacy event bus remain inside the backend adapter.
+      `McpTabOperationService` contracts; the concrete server remains isolated
+      in `labonair-mcp-server` and only its contracts cross into Workspace.
 - [x] Replaced Workspace's direct global event-bus subscription with injected
       typed `SshEventSource` and `McpEventSource` contracts; backend event
       decoding now stays inside shell-composed adapters.
@@ -139,7 +139,8 @@ boundary still exists; that package must not become a second capability owner.
       reporting instead of receiving the aggregate `App`.
 - [x] The MCP grant/session adapter now receives only `McpState` and
       `Database`; host-block revocation receives explicit MCP state and
-      `EventBus`, while the MCP server remains a separate App-bound adapter.
+      `EventBus`, while the concrete MCP server is a separate integration
+      adapter.
 - [x] The Git operation surface now receives explicit `EventBus` values, and
       both Git service adapters retain only `SshState` plus `EventBus`.
 - [x] SSH PTY operations are provided by a dedicated adapter with only
@@ -162,6 +163,9 @@ boundary still exists; that package must not become a second capability owner.
 - [x] The concrete Git CLI/SSH executor and Git contract adapters were
       extracted into the dedicated `labonair-git-transport` integration
       sibling; the backend no longer owns a Git module.
+- [x] The concrete MCP server, state, PTY bridge, and contract/event adapters
+      were extracted into the dedicated `labonair-mcp-server` integration
+      sibling; the backend no longer owns an MCP module.
 - [x] MCP server control and HTTP tool execution now use an explicit
       `McpServerAccess` capability bundle; the MCP server no longer stores the
       aggregate backend `App`, and local PTY state is shared through an owned

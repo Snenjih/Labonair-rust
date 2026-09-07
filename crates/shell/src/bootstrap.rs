@@ -15,13 +15,13 @@
 use std::sync::Arc;
 
 use gpui::{App, AppContext, Context, Entity, PathPromptOptions, Window, WindowBounds};
-use labonair_backend::modules::mcp::contract::{BackendMcpEventSource, BackendMcpSessionAccess};
-use labonair_backend::modules::mcp::{
-    mcp_set_auto_revoke_minutes, mcp_set_enabled, mcp_set_max_command_timeout_secs, mcp_set_port,
-};
 use labonair_hosts_ui::{open_hosts_window, HostManagerEvent, HostManagerView};
 use labonair_mcp_core::{
     preferences::McpPreferences, McpEventSource, McpSessionAccessService, McpTabOperationService,
+};
+use labonair_mcp_server::contract::{McpEventSourceAdapter, McpSessionAccessAdapter};
+use labonair_mcp_server::{
+    mcp_set_auto_revoke_minutes, mcp_set_enabled, mcp_set_max_command_timeout_secs, mcp_set_port,
 };
 use labonair_notifications::{notification_center, Notification, NotificationCenter};
 use labonair_sftp::{SftpBrowserService, SftpSessionService};
@@ -196,13 +196,13 @@ pub(crate) fn bootstrap(
 
     let registry = Arc::new(TerminalRegistry::new());
     let local_terminal_access = Arc::new(TerminalRegistryAccess::new(registry.clone()));
-    let backend_mcp = Arc::new(BackendMcpSessionAccess::new(
+    let mcp_access = Arc::new(McpSessionAccessAdapter::new(
         backend.mcp.clone(),
         backend.db.clone(),
     ));
-    let agent_access_service: Arc<dyn McpSessionAccessService> = backend_mcp.clone();
-    let mcp_tab_operations: Arc<dyn McpTabOperationService> = backend_mcp;
-    let mcp_server_access = labonair_backend::modules::mcp::McpServerAccess::new(
+    let agent_access_service: Arc<dyn McpSessionAccessService> = mcp_access.clone();
+    let mcp_tab_operations: Arc<dyn McpTabOperationService> = mcp_access;
+    let mcp_server_access = labonair_mcp_server::McpServerAccess::new(
         backend.ssh.clone(),
         local_terminal_access,
         backend.db.clone(),
@@ -288,12 +288,12 @@ pub(crate) fn bootstrap(
         labonair_ssh_transport::contract::BackendSshEventSource::new(backend.events.clone()),
     );
     let mcp_event_source: Arc<dyn McpEventSource> =
-        Arc::new(BackendMcpEventSource::new(backend.events.clone()));
+        Arc::new(McpEventSourceAdapter::new(backend.events.clone()));
     let host_manager = {
         let mcp_state_for_host_events = backend.mcp.clone();
         let events_for_host_events = backend.events.clone();
         let host_event_handler = Arc::new(move |event| {
-            labonair_backend::modules::mcp::revoke_agent_access(
+            labonair_mcp_server::revoke_agent_access(
                 &mcp_state_for_host_events,
                 &events_for_host_events,
                 event,
