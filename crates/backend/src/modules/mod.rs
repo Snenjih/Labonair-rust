@@ -1,5 +1,4 @@
 pub mod agents;
-pub mod credentials;
 pub mod directives;
 pub mod git;
 pub mod mcp;

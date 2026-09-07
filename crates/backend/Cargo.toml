@@ -17,7 +17,6 @@ labonair-secrets = { path = "../secrets" }
 labonair-errors = { path = "../errors" }
 labonair-hosts = { path = "../hosts" }
 labonair-persistence = { path = "../persistence" }
-labonair-credentials = { path = "../credentials" }
 labonair-snippets = { path = "../snippets" }
 labonair-git = { path = "../git" }
 labonair-ssh = { path = "../ssh" }

@@ -34,6 +34,11 @@ health check, subsystem initialization, and session-established reporting use
 an explicit `EventBus`; the SFTP connect path no longer stores or passes the
 aggregate backend App merely for event emission.
 
+The backend Credentials compatibility module was then removed completely. It
+had no active consumers, while Hosts UI already calls the canonical
+`labonair-credentials` crate directly; the backend dependency and module export
+are gone.
+
 ## R06-001 backend facade inventory and error boundary
 
 Recorded the complete backend module/export and direct-consumer map in
