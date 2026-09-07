@@ -169,6 +169,9 @@ boundary still exists; that package must not become a second capability owner.
 - [x] The unused backend Themes compatibility module, bundled duplicate theme
       asset, and legacy theme dependency surface were removed; static theme
       and icon-theme registries remain owned by `labonair-theme`.
+- [x] The unreferenced `terminal_exec` compatibility module and its aggregate
+      `App` state were removed; active MCP terminal execution remains owned by
+      the MCP server capability.
 - [x] Secrets compatibility wrappers and jump-host resolution no longer take
       the aggregate `App`; they receive only their actual state dependencies.
 - [ ] Move the remaining contracts and adapters behind injected capability

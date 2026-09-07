@@ -10,6 +10,5 @@ pub mod sftp;
 pub mod shell;
 pub mod snippets;
 pub mod ssh;
-pub mod terminal_exec;
 pub mod transfers;
 pub mod updater;

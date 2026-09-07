@@ -45,6 +45,11 @@ theme and icon-theme registries, and the old network download/import surface
 had no active consumers and conflicted with the current fixed-catalog product
 direction.
 
+The backend `terminal_exec` module was then removed after repository-wide source
+search found no active callers. MCP already owns the live terminal execution
+implementation, so retaining the duplicate module only kept an unnecessary
+`App`-bound state and compatibility surface alive.
+
 ## R06-001 backend facade inventory and error boundary
 
 Recorded the complete backend module/export and direct-consumer map in

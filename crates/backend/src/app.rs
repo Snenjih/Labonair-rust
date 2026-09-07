@@ -17,7 +17,6 @@ use crate::modules::shell::ShellState;
 use crate::modules::snippets::exec::SnippetRunState;
 use crate::modules::ssh::tunnels::TunnelState;
 use crate::modules::ssh::{SshState, TrustState};
-use crate::modules::terminal_exec::TerminalExecState;
 use labonair_persistence::Database;
 
 pub struct AppInner {
@@ -30,7 +29,6 @@ pub struct AppInner {
     pub pty: Arc<PtyState>,
     pub shell: ShellState,
     pub snippet_run: Arc<SnippetRunState>,
-    pub terminal_exec: TerminalExecState,
     pub mcp: McpState,
     pub transfer: TransferWorkerState,
     worker_rx: StdMutex<Option<tokio::sync::mpsc::Receiver<WorkerMessage>>>,
@@ -78,7 +76,6 @@ impl App {
             pty: Arc::new(PtyState::default()),
             shell: ShellState::default(),
             snippet_run: Arc::new(SnippetRunState::default()),
-            terminal_exec: TerminalExecState::default(),
             mcp: McpState::default(),
             transfer,
             worker_rx: StdMutex::new(Some(rx)),
