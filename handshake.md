@@ -38,7 +38,7 @@ definitions stay in the Hosts store and secrets stay in the secret store.
 Focused tests pass. Remaining for R04-002: backend host/transport adapter
 cleanup and visual review of empty, filtered, invalid, and connection-pending
 states. Full repository gates pass. The implementation/documentation commit is
-`98e01b4`; the worktree is clean.
+`79c0f4c`; the worktree is clean before the handshake-only follow-up.
 
 `R02-003` is complete. The user confirmed the native Rust shell visual state
 is acceptable, closing the final visual acceptance criterion. The project and
