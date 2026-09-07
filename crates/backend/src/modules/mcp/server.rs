@@ -16,7 +16,9 @@ use serde::{Deserialize, Serialize};
 use tokio_util::sync::CancellationToken;
 
 use super::osc133::Osc133Capture;
-use super::{host_blocks_agent_access, McpState, SessionGrant, SessionKind, TabOpResult};
+use labonair_mcp_core::{SessionKind, TabOpResult};
+
+use super::{host_blocks_agent_access, McpState, SessionGrant};
 
 /// Writes `data` into the live interactive PTY of an SSH `session_id`,
 /// byte-for-byte the same code path `ssh::pty::ssh_pty_write` uses — the

@@ -15,12 +15,14 @@
 use std::sync::Arc;
 
 use gpui::{App, AppContext, Context, Entity, PathPromptOptions, Window, WindowBounds};
+use labonair_backend::modules::mcp::contract::BackendMcpSessionAccess;
 use labonair_backend::modules::mcp::{
     mcp_set_auto_revoke_minutes, mcp_set_enabled, mcp_set_max_command_timeout_secs, mcp_set_port,
 };
 use labonair_backend::modules::settings::mcp::mcp_prefs_load;
 use labonair_backend::App as Backend;
 use labonair_hosts_ui::{open_hosts_window, HostManagerEvent, HostManagerView};
+use labonair_mcp_core::McpSessionAccessService;
 use labonair_notifications::{notification_center, Notification, NotificationCenter};
 use labonair_sftp::{SftpBrowserService, SftpSessionService};
 use labonair_ssh::{
@@ -190,7 +192,9 @@ pub(crate) fn bootstrap(
 
     cx.observe(&background, |_, _, cx| cx.notify()).detach();
 
-    let agent_access = cx.new(|_| AgentAccessStore::new(backend.clone(), tokio.clone()));
+    let agent_access_service: Arc<dyn McpSessionAccessService> =
+        Arc::new(BackendMcpSessionAccess::new(backend.clone()));
+    let agent_access = cx.new(|_| AgentAccessStore::new(agent_access_service, tokio.clone()));
 
     // The Rust `McpState` boots with no persistence of its own — mirror the
     // saved preferences into it once at startup. Port/timeout/auto-revoke first

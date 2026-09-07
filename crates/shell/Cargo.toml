@@ -54,6 +54,7 @@ labonair-filesystem = { path = "../filesystem" }
 # only crate that can actually turn a merged `keymap.json` into real
 # `gpui::KeyBinding`s / live fs-watch.
 labonair-settings = { path = "../settings" }
+labonair-mcp-core = { path = "../mcp-core" }
 
 [dev-dependencies]
 gpui = { workspace = true, features = ["test-support"] }

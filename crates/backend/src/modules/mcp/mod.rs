@@ -1,3 +1,4 @@
+pub mod contract;
 pub mod osc133;
 pub mod server;
 
@@ -5,6 +6,8 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU16, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
+
+use labonair_mcp_core::{SessionKind, TabOpResult};
 
 pub(crate) const MCP_SERVICE: &str = "labonair-mcp";
 pub(crate) const MCP_TOKEN_ACCOUNT: &str = "bearer-token";
@@ -54,29 +57,6 @@ pub fn revoke_agent_access(
     Ok(())
 }
 
-/// Which underlying terminal backend a grant targets — SSH tabs are resolved
-/// through `SshState`/`session_id`; local tabs have no string-keyed Rust
-/// session at all (see `pty::PtyState`, keyed by `u32`), so `local_pty_id`
-/// carries the numeric id the frontend's `terminalSessionRegistry` looked up
-/// for this tab.
-#[derive(
-    Clone,
-    Copy,
-    Debug,
-    Default,
-    PartialEq,
-    Eq,
-    serde::Serialize,
-    serde::Deserialize,
-    schemars::JsonSchema,
-)]
-#[serde(rename_all = "snake_case")]
-pub enum SessionKind {
-    #[default]
-    Ssh,
-    Local,
-}
-
 /// One granted (or previously-granted) tab, keyed by the frontend's numeric
 /// tab id (stringified) in `McpState::grants` — deliberately *not* keyed by
 /// `session_id`, since an SSH tab can rebind to a new `session_id` across a
@@ -95,19 +75,6 @@ pub struct SessionGrant {
     /// Agent Access" flag live at tool-execution time, not just at grant
     /// time (see `host_blocks_agent_access`).
     pub host_id: Option<String>,
-}
-
-/// Outcome the frontend reports back for a pending `open_tab`/`close_tab`
-/// request via `mcp_tab_op_response` (see `server.rs`'s `open_tab`/`close_tab`
-/// tools, which emit `mcp_open_tab_request`/`mcp_close_tab_request` and await
-/// this on a oneshot channel — same request/response shape as the existing
-/// `TrustState`/`wait_for_trust` host-key-confirmation flow in `ssh/client.rs`).
-#[derive(Clone, Debug, Default, serde::Deserialize)]
-pub struct TabOpResult {
-    pub ok: bool,
-    pub session_id: Option<String>,
-    pub tab_id: Option<String>,
-    pub error: Option<String>,
 }
 
 #[derive(Clone)]

@@ -60,6 +60,16 @@ tests now import `AvailableUpdate` and the updater contracts from
 `backend::modules::updater`, leaving the backend root for composition/events
 only. The affected checks passed and this cleanup is committed as `8cdf216`.
 
+The MCP boundary now has a real UI-free contract crate,
+`labonair-mcp-core`, for `SessionKind`, `TabOpResult`,
+`SessionGrantRequest`, and `McpSessionAccessService`. The backend implements
+that contract through `BackendMcpSessionAccess`, while shell composition
+injects it into `AgentAccessStore`; the Workspace agent-access mirror no
+longer stores or imports `labonair_backend::App`. The MCP server still owns
+the aggregate bridge state, so the remaining R06 work is its tab-operation and
+event-bus extraction. Full workspace check, Clippy, tests, dependency, queue,
+format, and diff gates passed for this boundary.
+
 ## Native visual verification
 
 The exact Rust bundle was opened through its absolute `.app` path. Core

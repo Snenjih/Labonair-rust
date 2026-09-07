@@ -113,6 +113,9 @@ boundary still exists; that package must not become a second capability owner.
 - [x] Moved terminal scrollback persistence out of the backend into
       `labonair-terminal::scrollback`; Workspace now supplies only session and
       retention context.
+- [x] Established `labonair-mcp-core` for stable MCP session/grant contracts
+      and injected it into the Workspace agent-access mirror; the concrete
+      bridge remains an explicit shell-constructed backend adapter.
 - [ ] Move the remaining contracts and adapters behind injected capability
       services.
 - [ ] Delete the broad `App` facade paths and remaining compatibility edges.

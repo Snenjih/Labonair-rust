@@ -6,6 +6,7 @@ members = [
     "crates/ui-kit",
     "crates/notifications",
     "crates/notifications-core",
+    "crates/mcp-core",
     "crates/command-palette",
     "crates/command-palette-core",
     "crates/interaction-contracts",

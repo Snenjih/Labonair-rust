@@ -4191,6 +4191,7 @@ dependencies = [
  "labonair-filesystem",
  "labonair-git",
  "labonair-hosts",
+ "labonair-mcp-core",
  "labonair-persistence",
  "labonair-secrets",
  "labonair-settings-content",
@@ -4409,6 +4410,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "labonair-mcp-core"
+version = "0.1.0"
+dependencies = [
+ "schemars 1.2.2",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "labonair-notifications"
 version = "0.1.0"
 dependencies = [
@@ -4619,6 +4629,7 @@ dependencies = [
  "labonair-hosts-ui",
  "labonair-keymap",
  "labonair-keymap-ui",
+ "labonair-mcp-core",
  "labonair-notifications",
  "labonair-panel",
  "labonair-panel-explorer",
@@ -4747,6 +4758,7 @@ dependencies = [
  "labonair-hosts",
  "labonair-hosts-ui",
  "labonair-keymap",
+ "labonair-mcp-core",
  "labonair-notifications",
  "labonair-panel",
  "labonair-panel-git-graph",

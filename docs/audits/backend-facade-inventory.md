@@ -34,7 +34,7 @@ participate in the `App` state graph or in another backend module.
 | `fonts` | custom-font file operations and system-font discovery | `shell::settings_services` | system-font discovery moved to `labonair-theme`; the unconsumed custom-font path and backend module were removed |
 | `fs` | filesystem re-exports and watcher command adapters | no active module import found | filesystem foundation; delete compatibility wrapper after watcher consumers are migrated |
 | `git` | Git operation functions and `BackendGitService` / graph adapter | `shell::bootstrap`, `workspace` | `labonair-git` integration adapter; keep transport implementation narrow |
-| `mcp` | MCP state, grants, server operations, host revocation callback | `shell`, `workspace`; internal PTY/secrets use | MCP/AI integration boundary; remove `App` dependency from the capability owner |
+| `mcp` | MCP state, grants, server operations, host revocation callback | `shell`, `workspace`; internal PTY/secrets use | `labonair-mcp-core` owns UI-free grant contracts; backend remains the injected bridge adapter and still needs App extraction |
 | `model_prefs` | model preference values and local load/save | none found | AI owner; verify against current AI configuration before moving |
 | `pty` | local PTY state, sessions, events, I/O operations | indirect through backend/MCP | terminal owner; expose a terminal service rather than `App` state |
 | `scrollback` | scrollback persistence helpers | `shell`, `workspace` | moved to `labonair-terminal::scrollback`; Workspace supplies session/retention context |
@@ -58,7 +58,7 @@ crates:
 |---|---|---|
 | `labonair` | constructs `App`, emits startup events, runs legacy settings migration | composition receives concrete services and typed startup hooks |
 | `labonair-shell` | constructs `App`, builds SSH/SFTP/Git/transfer adapters, reads MCP/settings/updater compatibility APIs | one composition-only adapter import per capability, with no feature state access |
-| `labonair-workspace` | owns legacy event bridge, scrollback, status/panel placement persistence, MCP grants, and consumes injected Git services | injected workspace services plus workspace-owned layout/terminal contracts; Git adapter construction now stays in shell composition |
+| `labonair-workspace` | owns legacy event bridge, status/panel placement persistence, MCP tab orchestration, and consumes injected Git/MCP grant services | injected workspace services plus workspace-owned layout/terminal contracts; remaining MCP tab/event paths still use the aggregate backend |
 | `labonair-ai` | no active backend usage; stale dependency declaration | removed in the R06 inventory pass |
 
 `settings`, `settings-content`, and related crates contain historical comments
@@ -84,6 +84,12 @@ Terminal scrollback persistence likewise lives in
 `labonair-terminal::scrollback`. The backend no longer exports a scrollback
 module; Workspace calls the terminal capability for save/load/delete/cleanup,
 and shell shutdown uses the same capability directly.
+
+The stable MCP session/grant values and the agent-access service contract now
+live in `labonair-mcp-core`. `AgentAccessStore` consumes only that injected
+contract and no longer stores or imports the aggregate backend app. The backend
+adapter is constructed by shell composition and is the remaining owner of the
+MCP implementation state.
 
 ## Verification commands
 

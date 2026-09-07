@@ -2,8 +2,7 @@
 //! (T11-006).
 //!
 //! Port of the reference `src/modules/tabs/store/agentAccessStore.ts`. The
-//! authoritative grant map lives in the Rust `McpState`
-//! (`labonair_backend::modules::mcp`); this store mirrors it so the tab
+//! authoritative grant map lives in the MCP capability; this store mirrors it so the tab
 //! context-menu checkbox and the header badge can read grant state
 //! synchronously without round-tripping through the backend on every render.
 //!
@@ -12,12 +11,12 @@
 //! tab the user granted access to.
 
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 use gpui::Context;
 use tokio::runtime::Handle as TokioHandle;
 
-use labonair_backend::modules::mcp::{mcp_set_session_grant, SessionKind};
-use labonair_backend::App as Backend;
+use labonair_mcp_core::{McpSessionAccessService, SessionGrantRequest, SessionKind};
 
 use labonair_notifications::{notification_center, Notification};
 
@@ -36,23 +35,23 @@ pub struct AgentAccessStore {
     entries: BTreeMap<u64, AgentAccessEntry>,
     bridge_enabled: bool,
     notify_on_activity: bool,
-    backend: Backend,
+    mcp_access: Arc<dyn McpSessionAccessService>,
     tokio: TokioHandle,
 }
 
 impl AgentAccessStore {
-    pub fn new(backend: Backend, tokio: TokioHandle) -> Self {
+    pub fn new(mcp_access: Arc<dyn McpSessionAccessService>, tokio: TokioHandle) -> Self {
         Self {
             entries: BTreeMap::new(),
             bridge_enabled: false,
             notify_on_activity: false,
-            backend,
+            mcp_access,
             tokio,
         }
     }
 
     /// Mirror the persisted preferences (called once at startup, after they
-    /// have been pushed to `McpState`).
+    /// have been pushed to the MCP capability).
     pub fn hydrate(
         &mut self,
         bridge_enabled: bool,
@@ -108,11 +107,11 @@ impl AgentAccessStore {
         self.entries.values().cloned().collect()
     }
 
-    /// Grant or revoke agent access for one tab: pushes the change to the Rust
-    /// bridge (`mcp_set_session_grant`) and mirrors it locally. The local
+    /// Grant or revoke agent access for one tab: pushes the change to the
+    /// injected MCP service and mirrors it locally. The local
     /// mirror is applied optimistically and rolled back with an error
     /// notification if
-    /// the backend rejects the grant (e.g. the host has "Block AI Agent
+    /// the service rejects the grant (e.g. the host has "Block AI Agent
     /// Access" set).
     #[allow(clippy::too_many_arguments)]
     pub fn set_grant(
@@ -126,21 +125,21 @@ impl AgentAccessStore {
         local_pty_id: Option<u32>,
         cx: &mut Context<Self>,
     ) {
-        let app = self.backend.clone();
-        let (sid, lbl, hid) = (session_id.clone(), label.clone(), host_id.clone());
+        let mcp_access = self.mcp_access.clone();
+        let session_id_for_service = session_id.clone();
+        let label_for_service = label.clone();
         let task = self.tokio.spawn(async move {
-            mcp_set_session_grant(
-                tab_id.to_string(),
-                sid,
-                granted,
-                lbl,
-                kind,
-                local_pty_id,
-                hid,
-                app.clone(),
-                &app.mcp,
-            )
-            .await
+            mcp_access
+                .set_session_grant(SessionGrantRequest {
+                    tab_id: tab_id.to_string(),
+                    session_id: session_id_for_service,
+                    granted,
+                    label: label_for_service,
+                    kind,
+                    local_pty_id,
+                    host_id,
+                })
+                .await
         });
 
         if granted {
@@ -210,12 +209,23 @@ mod tests {
     use super::*;
     use gpui::{AppContext, TestAppContext};
 
+    #[derive(Clone, Default)]
+    struct NoopMcpAccess;
+
+    impl McpSessionAccessService for NoopMcpAccess {
+        fn set_session_grant(
+            &self,
+            _request: SessionGrantRequest,
+        ) -> labonair_mcp_core::BoxFuture<'_, Result<(), String>> {
+            Box::pin(async { Ok(()) })
+        }
+    }
+
     fn store(cx: &mut TestAppContext) -> (gpui::Entity<AgentAccessStore>, tokio::runtime::Runtime) {
         let rt = tokio::runtime::Runtime::new().unwrap();
-        let dir = std::env::temp_dir().join(format!("labonair-aa-{}", uuid::Uuid::new_v4()));
-        let backend = Backend::new(&dir).unwrap();
         let handle = rt.handle().clone();
-        let entity = cx.update(|cx| cx.new(|_| AgentAccessStore::new(backend, handle)));
+        let service: Arc<dyn McpSessionAccessService> = Arc::new(NoopMcpAccess);
+        let entity = cx.update(|cx| cx.new(|_| AgentAccessStore::new(service, handle)));
         (entity, rt)
     }
 

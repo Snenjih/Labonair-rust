@@ -75,11 +75,10 @@ use gpui::{
     IntoElement, KeyDownEvent, MouseButton, MouseDownEvent, ParentElement, Render, SharedString,
     StatefulInteractiveElement, Styled, Task, Window,
 };
-use labonair_backend::modules::mcp::{
-    mcp_set_session_grant, mcp_tab_op_response, SessionKind, TabOpResult,
-};
+use labonair_backend::modules::mcp::{mcp_set_session_grant, mcp_tab_op_response};
 use labonair_backend::{App as Backend, AppEvent};
 use labonair_git::{GitGraphService, GitService};
+use labonair_mcp_core::{SessionKind, TabOpResult};
 use labonair_sftp::{SftpBrowserService, SftpSessionService};
 use labonair_ssh::{
     SshConnectRequest, SshConnectionService, SshEventSink, SshPtyService, SshRemoteCommandService,

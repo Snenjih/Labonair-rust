@@ -1164,7 +1164,7 @@ impl AgentAccessStatusItem {
                                         session_id,
                                         false,
                                         String::new(),
-                                        labonair_backend::modules::mcp::SessionKind::Ssh,
+                                        labonair_mcp_core::SessionKind::Ssh,
                                         None,
                                         None,
                                         cx,

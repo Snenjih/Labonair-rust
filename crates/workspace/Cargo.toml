@@ -41,6 +41,7 @@ labonair-transfers = { path = "../transfers" }
 labonair-ai = { path = "../ai" }
 labonair-settings = { path = "../settings" }
 labonair-settings-json = { version = "0.1.0", path = "../settings-json" }
+labonair-mcp-core = { path = "../mcp-core" }
 
 [dev-dependencies]
 gpui = { workspace = true, features = ["test-support"] }

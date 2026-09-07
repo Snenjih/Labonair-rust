@@ -64,6 +64,9 @@ ALLOWED = {
     # UI-free notification lifecycle and metadata. This is the only owner of
     # retention, ordering, deduplication, and read state.
     "labonair-notifications-core": set(),
+    # UI-free MCP session/grant contracts. The bridge implementation remains
+    # an injected backend adapter while workspace consumes only this boundary.
+    "labonair-mcp-core": set(),
     # Cross-cutting structured error contract. It contains no workspace
     # dependencies and is shared by capability services during migration.
     "labonair-errors": set(),
@@ -139,7 +142,7 @@ ALLOWED = {
         "labonair-ai", "labonair-settings", "labonair-settings-json",
         "labonair-filesystem",
         "labonair-ssh", "labonair-sftp", "labonair-transfers",
-        "labonair-background",
+        "labonair-background", "labonair-mcp-core",
         "labonair-command-palette-core", "labonair-keymap",
     },
     # rule 3: the only crate that knows every concrete panel type — it also
@@ -160,7 +163,7 @@ ALLOWED = {
         "labonair-panel-ai", "labonair-terminal", "labonair-backend",
         "labonair-settings", "labonair-filesystem", "labonair-ssh",
         "labonair-sftp", "labonair-transfers", "labonair-transfers-ui",
-        "labonair-background",
+        "labonair-background", "labonair-mcp-core",
         # Provider metadata contracts are assembled here; feature behavior
         # remains in the owning crates and is not implemented by this root.
         "labonair-editor", "labonair-git", "labonair-hosts",
@@ -235,9 +238,10 @@ ALLOWED = {
         "labonair-errors", "labonair-hosts", "labonair-persistence",
         "labonair-credentials", "labonair-snippets", "labonair-git",
         "labonair-ssh", "labonair-sftp", "labonair-transfers",
+        "labonair-mcp-core",
         "labonair-persistence",
     },
-    "labonair-ai": {"labonair-backend", "labonair-filesystem"},
+    "labonair-ai": {"labonair-filesystem"},
 
     # Settings track (T19-001) — pure data model, no GPUI/UI/backend deps.
     "labonair-settings-content": {"labonair-settings-macros"},

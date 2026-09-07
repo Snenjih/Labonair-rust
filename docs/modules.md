@@ -26,7 +26,9 @@ product capabilities.
 
 ## 2. When to create a module
 
-Create a module when a capability has its own user intent, lifecycle, state, or persistence. Examples are SSH, SFTP, transfers, themes, backgrounds, hosts, and notifications.
+Create a module when a capability has its own user intent, lifecycle, state, or
+persistence. Examples are SSH, SFTP, transfers, themes, backgrounds, hosts,
+notifications, and the MCP agent bridge.
 
 Do not create a module for a visual primitive or a one-line helper. Those belong to foundation crates.
 
