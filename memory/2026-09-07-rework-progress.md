@@ -1117,3 +1117,11 @@ The generated `docs/assets/crate-graph.dot` and `.svg` are now versioned and
 linked from `docs/audits/architecture-inventory.md`, so the 52-crate/219-edge
 current snapshot can be reviewed independently of the normative target graph.
 Dependency, queue, and diff checks pass; this is committed as `a9c248a`.
+
+The native visual retry exposed a false negative in `scripts/screenshot.sh`:
+the correct `cargo run -p labonair` process was reported by `ps` as the
+relative path `target/debug/labonair`, while the validator accepted only an
+absolute path. The validator now normalizes the executable token, and the
+retry confirmed the native Rust window before macOS denied `screencapture` for
+the missing Screen Recording permission. The audit/task log records PID 75585
+and window 76852; the visual matrix remains pending.

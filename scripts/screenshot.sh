@@ -33,8 +33,17 @@ fi
 # A caller-provided PID is still validated. This prevents an accidental
 # screenshot of an unrelated process (especially the legacy Tauri app) from
 # being accepted as Labonair evidence.
-RUST_COMMAND=$(ps -p "$RUST_PID" -o command= 2>/dev/null | sed 's/[[:space:]]*$//' || true)
-case "$RUST_COMMAND" in
+RUST_COMMAND=$(ps -p "$RUST_PID" -o command= 2>/dev/null | \
+    sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' || true)
+# `cargo run` can expose the executable relative to its working directory,
+# while a packaged launch normally reports an absolute path. Normalize only
+# the executable token; arguments are not part of the identity check.
+RUST_COMMAND_PATH="${RUST_COMMAND%%[[:space:]]*}"
+case "$RUST_COMMAND_PATH" in
+    /*) ;;
+    *) RUST_COMMAND_PATH="$REPO_ROOT/$RUST_COMMAND_PATH" ;;
+esac
+case "$RUST_COMMAND_PATH" in
     "$RUST_BINARY"|"$RUST_BUNDLE_BINARY") ;;
     *)
         echo "PID $RUST_PID is not the native Rust Labonair executable: ${RUST_COMMAND:-process unavailable}" >&2

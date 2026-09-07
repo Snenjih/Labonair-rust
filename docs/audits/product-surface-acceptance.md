@@ -77,6 +77,7 @@ accepted composition-only rationale.
 | Date | Native process | Window | Result | Follow-up |
 |---|---|---|---|---|
 | 2026-09-07 | `/Users/niklas/Developer/active/Labonair/Labonair-rust/target/debug/labonair` (PID 54142) | 76849 | The native window was found, but macOS denied `screencapture` because Screen Recording permission is unavailable to the runner. No screenshot was accepted as evidence. | Grant Screen Recording permission to the runner or capture the same matrix manually; keep all visual cells pending until then. |
+| 2026-09-07 | `/Users/niklas/Developer/active/Labonair/Labonair-rust/target/debug/labonair` (PID 75585) | 76852 | The corrected screenshot validator normalized Cargo's relative process path, confirmed the native Rust window, and reached `screencapture`; macOS again denied capture because Screen Recording permission is unavailable. No screenshot was accepted as evidence. | Grant Screen Recording permission to the runner or capture the same matrix manually; keep all visual cells pending until then. |
 
 The same native launch emitted warnings for legacy persisted keys that are no
 longer part of the typed Settings model, including `hosts`, `hostsMigrated`,

@@ -150,3 +150,6 @@ a separate product decision after the core workflow is stable.
 - [ ] Native launch confirms the Rust window exists, but macOS currently denies
       Screen Recording to the capture runner. Capture the visual matrix with
       the native Rust bundle once Screen Recording access is available.
+- [x] The PID validator accepts both absolute packaged paths and the relative
+      executable path reported by `cargo run -p labonair`; the retry reached the
+      correct native window before macOS denied the capture.

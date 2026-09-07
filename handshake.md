@@ -44,6 +44,13 @@ SVG outputs are now committed under `docs/assets/` and linked from the current
 architecture inventory, making the 52-crate/219-edge snapshot reviewable. The
 dependency verifier and queue checks pass; this is committed as `a9c248a`.
 
+The native visual retry found and fixed a false negative in
+`scripts/screenshot.sh`: `cargo run -p labonair` reports the correct executable
+as a relative path, which is now normalized before PID validation. PID 75585
+and window 76852 were confirmed as the native Rust app; `screencapture` then
+failed for the genuine missing Screen Recording permission. R07-001 remains
+visually pending, with the exact evidence recorded in the acceptance audit.
+
 The active-code source audit found no passive toast renderer or duplicate
 operation-error surface. The Explorer clipboard strip and editor conflict
 banner are actionable decision surfaces. The AI error model was corrected in

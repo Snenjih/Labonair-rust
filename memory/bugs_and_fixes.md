@@ -815,3 +815,15 @@ window was found by PID, but `screencapture` returned a permission denial.
 **Disposition:** Keep the R07-001 visual matrix pending and record the exact
 process/window evidence. A future visual acceptance run needs Screen Recording
 permission for the runner; no screenshot of another application may be used.
+
+## 2026-09-07 — Screenshot validator rejected `cargo run` process path
+
+**Bug:** `scripts/screenshot.sh` compared the absolute repository binary path
+only. `cargo run -p labonair` exposed the same native executable as the
+relative command `target/debug/labonair`, so the validator rejected the
+correct PID before it could inspect the window.
+
+**Fix:** Normalize the executable token from `ps` against the repository root
+before comparing it with the approved debug and packaged Rust binary paths.
+The retry confirmed the correct native window and reached `screencapture`; the
+remaining failure is the genuine macOS Screen Recording permission denial.
