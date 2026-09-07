@@ -63,8 +63,8 @@ actions. The capability owns loading and action semantics; the palette owns
 only common filtering, focus, preview, and picker interaction. Snapshot
 builders now live in the workspace, hosts, editor, theme, snippets, and Git
 providers. The composition root only supplies live values and registers the
-resulting snapshots; status-bar metadata remains a shell-owned transitional
-surface.
+resulting snapshots. Hidden status-bar state and labels are owned by the
+workspace status registry and use the same snapshot contract.
 
 ## Keymap registry
 

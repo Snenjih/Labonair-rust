@@ -14,11 +14,11 @@ use gpui::{App, Context, Window};
 use labonair_command_palette::{
     Command as PaletteCommand, Page as PalettePage, PaletteData, PaletteEvent, PaletteWorkspace,
 };
-use labonair_command_palette_core::{
-    CommandSubmenu, SubmenuAction, SubmenuDescriptor, SubmenuItem, SubmenuRegistry, SubmenuSnapshot,
-};
+use labonair_command_palette_core::{CommandSubmenu, SubmenuRegistry, SubmenuSnapshot};
 use labonair_panel::DockPosition;
-use labonair_settings::{EditorSettings, Settings as _, SettingsStore, ThemeSettings};
+use labonair_settings::{
+    EditorSettings, GeneralSettings, Settings as _, SettingsStore, ThemeSettings,
+};
 
 use labonair_workspace::search_overlay::SearchOverlay;
 
@@ -72,21 +72,6 @@ fn toggle_setting_bool(key: &str, cx: &mut App) {
             }
             _ => {}
         });
-}
-
-fn register_submenu(
-    registry: &mut SubmenuRegistry,
-    id: &str,
-    title: &str,
-    submenu: CommandSubmenu,
-    items: Vec<SubmenuItem>,
-) {
-    registry
-        .register(SubmenuSnapshot {
-            descriptor: SubmenuDescriptor::new(id, title, submenu),
-            items,
-        })
-        .expect("built-in submenu ids must be unique");
 }
 
 fn register_snapshot(registry: &mut SubmenuRegistry, snapshot: SubmenuSnapshot) {
@@ -264,6 +249,29 @@ impl AppShell {
     fn build_palette_data(&self, cx: &App) -> PaletteData {
         let mut submenus = SubmenuRegistry::default();
 
+        register_snapshot(
+            &mut submenus,
+            labonair_workspace::command_provider::zoom_submenu(),
+        );
+        register_snapshot(
+            &mut submenus,
+            labonair_theme::command_provider::color_mode_submenu(
+                GeneralSettings::try_get(cx)
+                    .map(|settings| match settings.theme_pref() {
+                        labonair_settings::content::general::ThemePref::Light => {
+                            labonair_theme::ThemePreference::Light
+                        }
+                        labonair_settings::content::general::ThemePref::Dark => {
+                            labonair_theme::ThemePreference::Dark
+                        }
+                        labonair_settings::content::general::ThemePref::System => {
+                            labonair_theme::ThemePreference::System
+                        }
+                    })
+                    .unwrap_or(labonair_theme::ThemePreference::System),
+            ),
+        );
+
         let tabs = labonair_workspace::command_provider::tabs_submenu(
             self.workspace
                 .read(cx)
@@ -361,29 +369,10 @@ impl AppShell {
         );
         register_snapshot(&mut submenus, icon_themes);
 
-        let status_bar_hidden = {
-            let ws = self.workspace.read(cx);
-            let registry = ws.status_item_registry();
-            registry
-                .iter()
-                .filter(|r| registry.is_hidden(r.id))
-                .map(|r| SubmenuItem {
-                    id: r.id.to_string(),
-                    title: crate::status_items::status_item_label(r.id).to_string(),
-                    subtitle: None,
-                    active: false,
-                    action: SubmenuAction::ShowStatusBarItem(r.id.to_string()),
-                    secondary: None,
-                })
-                .collect()
-        };
-        register_submenu(
-            &mut submenus,
-            "status-bar-hidden",
-            "Hidden Status Bar Items",
-            CommandSubmenu::StatusBarHidden,
-            status_bar_hidden,
+        let status_bar_hidden = labonair_workspace::command_provider::hidden_status_items_submenu(
+            self.workspace.read(cx).hidden_status_bar_items(),
         );
+        register_snapshot(&mut submenus, status_bar_hidden);
 
         let editor_themes = labonair_theme::command_provider::editor_themes_submenu(
             labonair_theme::EditorThemeId::ALL

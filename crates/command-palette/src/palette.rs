@@ -23,8 +23,7 @@ use gpui::{
 
 use labonair_settings::content::workspace::PaletteSearchMode as ContentSearchMode;
 use labonair_settings::{
-    EditorSettings, GeneralSettings, Settings as _, TerminalSettings, ThemeSettings,
-    WorkspaceSettings,
+    EditorSettings, Settings as _, TerminalSettings, ThemeSettings, WorkspaceSettings,
 };
 use labonair_theme::{EditorThemeId, ThemePreference};
 use labonair_ui_kit::{kbd, keybinding_hint, IconName, Palette, UiTheme};
@@ -93,15 +92,6 @@ fn palette_close_on_overlay_click(cx: &App) -> bool {
     WorkspaceSettings::try_get(cx)
         .map(|s| s.command_palette_close_on_overlay_click())
         .unwrap_or(true)
-}
-
-fn palette_color_mode(cx: &App) -> ThemePreference {
-    use labonair_settings::content::general::ThemePref;
-    match GeneralSettings::try_get(cx).map(|s| s.theme_pref()) {
-        Some(ThemePref::Light) => ThemePreference::Light,
-        Some(ThemePref::Dark) => ThemePreference::Dark,
-        _ => ThemePreference::System,
-    }
 }
 
 fn palette_terminal_font_size(cx: &App) -> u32 {
@@ -523,10 +513,17 @@ struct PaletteRow {
 
 fn row_key_for_action(action: &SubmenuAction) -> RowKey {
     match action {
+        SubmenuAction::RunCommand(id) => RowKey::Command(*id),
         SubmenuAction::SwitchToTab(id) => RowKey::Tab(*id),
         SubmenuAction::ConnectHost { host_id, sftp } => RowKey::ConnectHost {
             host_id: host_id.clone(),
             sftp: *sftp,
+        },
+        SubmenuAction::SetColorMode(mode) => match mode.as_str() {
+            "dark" => RowKey::SetColorMode(ThemePreference::Dark),
+            "light" => RowKey::SetColorMode(ThemePreference::Light),
+            "system" => RowKey::SetColorMode(ThemePreference::System),
+            _ => RowKey::Noop,
         },
         SubmenuAction::SetEditorTheme(id) => EditorThemeId::from_slug(id)
             .map(RowKey::SetEditorTheme)
@@ -841,56 +838,20 @@ where
                 mode,
                 "No tabs open",
             ),
-            Page::Zoom => [
-                (
-                    CommandId::ZoomIn,
-                    "Increase Font Size",
-                    ShortcutId::ViewZoomIn,
-                ),
-                (
-                    CommandId::ZoomOut,
-                    "Decrease Font Size",
-                    ShortcutId::ViewZoomOut,
-                ),
-                (
-                    CommandId::ZoomReset,
-                    "Reset Font Size",
-                    ShortcutId::ViewZoomReset,
-                ),
-            ]
-            .into_iter()
-            .filter(|(_, title, _)| match_score(mode, title, &self.query).is_some())
-            .map(|(id, title, sc)| PaletteRow {
-                key: RowKey::Command(id),
-                secondary: None,
-                icon: Some(IconName::ArrowDownUp),
-                title: title.to_string(),
-                subtitle: Some(format!("{}px", palette_terminal_font_size(cx))),
-                section: "Font Size".to_string(),
-                keys: effective_keys(sc, &overrides),
-                right_label: None,
-                has_sub: false,
-            })
-            .collect(),
-            Page::ColorMode => [
-                (ThemePreference::Dark, "Dark Mode"),
-                (ThemePreference::Light, "Light Mode"),
-                (ThemePreference::System, "System (Auto)"),
-            ]
-            .into_iter()
-            .filter(|(_, title)| match_score(mode, title, &self.query).is_some())
-            .map(|(pref, title)| PaletteRow {
-                key: RowKey::SetColorMode(pref),
-                secondary: None,
-                icon: Some(IconName::Refresh),
-                title: title.to_string(),
-                subtitle: None,
-                section: "Color Mode".to_string(),
-                keys: vec![],
-                right_label: (palette_color_mode(cx) == pref).then(|| "active".to_string()),
-                has_sub: false,
-            })
-            .collect(),
+            Page::Zoom => self.submenu_rows(
+                CommandSubmenu::Zoom,
+                "Font Size",
+                IconName::ArrowDownUp,
+                mode,
+                "No font-size actions available",
+            ),
+            Page::ColorMode => self.submenu_rows(
+                CommandSubmenu::ColorMode,
+                "Color Mode",
+                IconName::Refresh,
+                mode,
+                "No color modes available",
+            ),
             Page::EditorTheme => self.submenu_rows(
                 CommandSubmenu::EditorTheme,
                 "Editor Themes",

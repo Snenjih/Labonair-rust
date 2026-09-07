@@ -2066,6 +2066,22 @@ impl Workspace {
         &mut self.status_item_registry
     }
 
+    /// Hidden status-bar items exposed to owner registries such as the
+    /// command palette. The workspace owns visibility state and labels; the
+    /// shell only composes the resulting snapshot.
+    pub fn hidden_status_bar_items(&self) -> Vec<(String, String)> {
+        self.status_item_registry
+            .iter()
+            .filter(|registration| self.status_item_registry.is_hidden(registration.id))
+            .map(|registration| {
+                (
+                    registration.id.to_string(),
+                    crate::command_provider::status_item_label(registration.id).to_string(),
+                )
+            })
+            .collect()
+    }
+
     /// Re-reads the persisted `statusBarItemPlacements` blob from disk and
     /// applies it to the [`StatusItemRegistry`](labonair_panel::StatusItemRegistry)
     /// overrides (T18-005). Called once at startup and whenever another

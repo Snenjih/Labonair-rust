@@ -15,6 +15,27 @@ use labonair_keymap::ShortcutId;
 #[derive(Clone, Copy, Debug, Default)]
 pub struct WorkspaceCommandProvider;
 
+pub fn zoom_submenu() -> SubmenuSnapshot {
+    SubmenuSnapshot {
+        descriptor: SubmenuDescriptor::new("zoom", "Font Size", CommandSubmenu::Zoom),
+        items: [
+            (CommandId::ZoomIn, "Increase Font Size"),
+            (CommandId::ZoomOut, "Decrease Font Size"),
+            (CommandId::ZoomReset, "Reset Font Size"),
+        ]
+        .into_iter()
+        .map(|(id, title)| SubmenuItem {
+            id: id.action_name().to_string(),
+            title: title.to_string(),
+            subtitle: None,
+            active: false,
+            action: SubmenuAction::RunCommand(id),
+            secondary: None,
+        })
+        .collect(),
+    }
+}
+
 /// Build the workspace-owned open-tab snapshot without exposing workspace
 /// entities to the palette UI.
 pub fn tabs_submenu(rows: impl IntoIterator<Item = (u64, String, String)>) -> SubmenuSnapshot {
@@ -31,6 +52,47 @@ pub fn tabs_submenu(rows: impl IntoIterator<Item = (u64, String, String)>) -> Su
                 secondary: None,
             })
             .collect(),
+    }
+}
+
+pub fn hidden_status_items_submenu(
+    rows: impl IntoIterator<Item = (String, String)>,
+) -> SubmenuSnapshot {
+    SubmenuSnapshot {
+        descriptor: SubmenuDescriptor::new(
+            "status-bar-hidden",
+            "Hidden Status Bar Items",
+            CommandSubmenu::StatusBarHidden,
+        ),
+        items: rows
+            .into_iter()
+            .map(|(id, title)| SubmenuItem {
+                action: SubmenuAction::ShowStatusBarItem(id.clone()),
+                id,
+                title,
+                subtitle: None,
+                active: false,
+                secondary: None,
+            })
+            .collect(),
+    }
+}
+
+/// User-facing labels for the workspace status-bar registry.
+pub fn status_item_label(id: &str) -> &'static str {
+    match id {
+        "dock-buttons-left" => "Left Dock Buttons",
+        "dock-buttons-right" => "Right Dock Buttons",
+        "dock-buttons-bottom" => "Bottom Dock Buttons",
+        "notifications" => "Notifications",
+        "cwd" => "CWD Breadcrumb",
+        "cursor-position" => "Cursor Position",
+        "preview-url" => "Preview URL",
+        "updater" => "Updater",
+        "transfers" => "Transfers",
+        "agent-access" => "Agent Access",
+        "jump-hosts" => "Jump Hosts",
+        _ => "Status Bar Item",
     }
 }
 

@@ -2,7 +2,7 @@
 
 ## Status
 
-`🔄 In Progress`
+`✅ Done`
 
 ## Owner
 
@@ -118,21 +118,21 @@ branches, symbols, and hidden status-bar items are handed to the palette as
 immutable snapshots with typed primary/secondary actions. Snapshot builders
 now live in the workspace, hosts, editor, theme, snippets, and Git provider
 modules. The shell only supplies live values and registers the resulting
-snapshots; status-bar metadata remains the one shell-owned transitional
-surface in this slice.
+snapshots. Hidden status-bar state and labels are owned by the workspace status
+registry as well.
 
 ## Acceptance criteria
 
-- [ ] One typed registry/provider surface is the only source of palette rows.
-- [ ] Owning modules register commands without editing palette internals.
-- [ ] Dynamic submenus provide immutable searchable snapshots and typed
+- [x] One typed registry/provider surface is the only source of palette rows.
+- [x] Owning modules register commands without editing palette internals.
+- [x] Dynamic submenus provide immutable searchable snapshots and typed
       primary/secondary actions.
-- [ ] Command execution does not move feature state into the palette or shell.
-- [ ] Stable action IDs and compatibility aliases are covered by tests.
-- [ ] Shared palette controls use `labonair-ui-kit`.
-- [ ] No new toast or duplicate inline error surface exists.
-- [ ] Focused tests and all repository verification gates pass.
-- [ ] Normal, empty, focused, filtered, and long-list palette states are
+- [x] Command execution does not move feature state into the palette or shell.
+- [x] Stable action IDs and compatibility aliases are covered by tests.
+- [x] Shared palette controls use `labonair-ui-kit`.
+- [x] No new toast or duplicate inline error surface exists.
+- [x] Focused tests and all repository verification gates pass.
+- [x] Normal, empty, focused, filtered, and long-list palette states are
       visually checked.
 
 ## Removal condition

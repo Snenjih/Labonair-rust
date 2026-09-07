@@ -59,8 +59,9 @@ edge remains one-way by design until shortcut identity extraction.
 snapshots for all dynamic pages instead of maintaining separate `PaletteData`
 arrays or reading workspace/panel entities while rendering. Snapshot builders
 now live in the workspace, hosts, editor, theme, snippets, and Git provider
-modules. The shell supplies live values and registers the snapshots; status-bar
-metadata is the remaining shell-owned transitional surface.
+modules. The shell supplies live values and registers the snapshots. Hidden
+status-bar state and labels are now owned by the workspace status registry as
+well.
 
 ## R03-001 shortcut identity boundary
 
@@ -70,3 +71,11 @@ that type, owns its defaults/resolution, and publishes a `KeymapCommandProvider`
 for `Open Keymap (JSON)`. `labonair-command-palette-core` depends only on the
 identity foundation, so keymap can depend on the command contract without a
 cycle. The shell adapter and provider metadata are equality-checked.
+
+## R03-001 completion
+
+Zoom and Color Mode are now owner snapshots too, so no palette submenu page
+constructs its own rows. Hidden status-bar state and labels are composed by the
+workspace owner. `R03-001-command-palette-provider-registry` is complete after
+full workspace tests, Clippy, formatting, dependency verification, and the
+user's visual confirmation. `R03-002-keymap-runtime-and-editor` is next.

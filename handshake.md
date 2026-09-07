@@ -5,7 +5,7 @@ They may mention API names that were valid at the time of the recorded
 change; the current API and task state are defined by the latest header and
 the normative documents under `docs/`.
 
-## Current Session: 2026-09-07 (R02-003 complete; dynamic submenu registry active)
+## Current Session: 2026-09-07 (R03-001 complete; keymap runtime active)
 
 `R02-003` is complete. The user confirmed the native Rust shell visual state
 is acceptable, closing the final visual acceptance criterion. The project and
@@ -14,7 +14,7 @@ implemented through the typed `WorkspaceTransition` contract; cwd changes do
 not mutate project identity. The worktree is clean before starting the next
 task.
 
-The active task is `R03-001-command-palette-provider-registry.md`. Its first
+`R03-001-command-palette-provider-registry.md` is complete. Its first
 provider slice is wired: workspace, terminal, editor, hosts, themes, and
 settings now contribute command metadata from their owning crates. The shell
 assembles the providers and verifies its transitional execution adapters
@@ -41,8 +41,12 @@ snapshots for tabs, hosts, recent hosts, themes, icon themes, editor themes,
 snippets, branches, symbols, and hidden status-bar items. Snapshot builders
 now live in the workspace, hosts, editor, theme, snippets, and Git provider
 modules; the shell only supplies live values and registers the snapshots.
-Status-bar metadata remains a shell-owned transitional surface. The current
-commit is `9325278`; the worktree is clean.
+Hidden status-bar state and labels are owned by the workspace status registry
+as well. The current task is now `R03-002-keymap-runtime-and-editor.md`; the
+next work is to build the keymap runtime and management surface on the shared
+identity contract. The current commit is pending after the task-status update;
+the worktree is intentionally not yet clean until this checkpoint is
+committed.
 
 ## Current Session: 2026-09-07 (Native visual helper hardened)
 

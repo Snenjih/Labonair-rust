@@ -109,7 +109,8 @@ The current Cargo metadata shows several transitional edges that conflict with t
   snippets, branches, symbols, and hidden status-bar items. Snapshot builders
   now live in the workspace, hosts, editor, theme, snippets, and Git provider
   modules; the shell only supplies live values and registers the snapshots.
-  Status-bar metadata remains a documented shell-owned transitional surface.
+  Hidden status-bar state and labels are now owned by the workspace status
+  registry as well.
 - `keymap` is now UI-free, but the temporary GPUI adapter and some consumers
   still enter through `command-palette`; the keymap editor and stable command
   registration path are not complete.

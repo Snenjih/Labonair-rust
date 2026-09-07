@@ -6,9 +6,31 @@ use labonair_command_palette_core::{
 };
 
 use crate::EditorThemeId;
+use crate::ThemePreference;
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct ThemeCommandProvider;
+
+pub fn color_mode_submenu(active: ThemePreference) -> SubmenuSnapshot {
+    SubmenuSnapshot {
+        descriptor: SubmenuDescriptor::new("color-mode", "Color Mode", CommandSubmenu::ColorMode),
+        items: [
+            (ThemePreference::Dark, "dark", "Dark Mode"),
+            (ThemePreference::Light, "light", "Light Mode"),
+            (ThemePreference::System, "system", "System (Auto)"),
+        ]
+        .into_iter()
+        .map(|(mode, id, title)| SubmenuItem {
+            id: id.to_string(),
+            title: title.to_string(),
+            subtitle: None,
+            active: mode == active,
+            action: SubmenuAction::SetColorMode(id.to_string()),
+            secondary: None,
+        })
+        .collect(),
+    }
+}
 
 pub fn editor_themes_submenu(
     rows: impl IntoIterator<Item = (EditorThemeId, bool)>,

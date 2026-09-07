@@ -1279,26 +1279,6 @@ impl StatusItem for JumpHostsStatusItem {
 // Registration — the single place that names concrete status-item types.
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Human-readable label for a [`StatusItem::id`] (T18-005) — used by the
-/// command palette's "Statusbar: Show Hidden Item…" page and could grow into
-/// the personalization page's row titles (T18-007).
-pub fn status_item_label(id: &str) -> &'static str {
-    match id {
-        "dock-buttons-left" => "Left Dock Buttons",
-        "dock-buttons-right" => "Right Dock Buttons",
-        "dock-buttons-bottom" => "Bottom Dock Buttons",
-        "notifications" => "Notifications",
-        "cwd" => "CWD Breadcrumb",
-        "cursor-position" => "Cursor Position",
-        "preview-url" => "Preview URL",
-        "updater" => "Updater",
-        "transfers" => "Transfers",
-        "agent-access" => "Agent Access",
-        "jump-hosts" => "Jump Hosts",
-        _ => "Status Bar Item",
-    }
-}
-
 /// Register the built-in status-bar items on the workspace's
 /// [`StatusItemRegistry`](labonair_panel::StatusItemRegistry).
 ///

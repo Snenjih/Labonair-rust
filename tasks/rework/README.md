@@ -19,8 +19,8 @@ The active sequence is:
 10. `R02-001-global-menu-and-theme-entrypoints.md` — Done
 11. `R02-002-shell-composition-and-standalone-workspaces.md` — Done
 12. `R02-003-project-entry-and-workspace-transitions.md` — Done
-13. `R03-001-command-palette-provider-registry.md` — In Progress
-14. `R03-002-keymap-runtime-and-editor.md` — Planned
+13. `R03-001-command-palette-provider-registry.md` — Done
+14. `R03-002-keymap-runtime-and-editor.md` — In Progress
 15. `R04-001-static-theme-registries-and-preview.md` — Planned
 16. `R04-002-host-management-and-connection-pickers.md` — Planned
 17. `R05-001-settings-audit-and-value-normalization.md` — Planned
@@ -29,8 +29,8 @@ The active sequence is:
 
 Phase 3 is complete. R02-001 is the first bounded Phase 2 shell task and also
 connects the already-established theme registry to its intended palette
-surface. R02-002 and R02-003 are complete; R03-001 is now the active task for
-making command discovery provider-owned. Later keymap and surface migrations
-remain blocked on their own task contracts.
+surface. R02-002, R02-003, and R03-001 are complete; R03-002 is now active for
+making keyboard navigation a module-owned runtime. Later surface migrations
+continue after that contract is established.
 
 Only the earliest task whose dependencies are complete may be started.

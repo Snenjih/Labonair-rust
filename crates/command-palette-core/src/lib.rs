@@ -174,8 +174,10 @@ impl SubmenuDescriptor {
 /// feature state or performs the action itself.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SubmenuAction {
+    RunCommand(CommandId),
     SwitchToTab(u64),
     ConnectHost { host_id: String, sftp: bool },
+    SetColorMode(String),
     SetEditorTheme(String),
     SetAppTheme(String),
     SetIconTheme(String),
