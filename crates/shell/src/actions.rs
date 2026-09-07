@@ -15,7 +15,6 @@ use labonair_command_palette::{
     Command as PaletteCommand, Page as PalettePage, PaletteData, PaletteEvent, PaletteWorkspace,
 };
 use labonair_command_palette_core::{CommandSubmenu, SubmenuRegistry, SubmenuSnapshot};
-use labonair_panel::DockPosition;
 use labonair_settings::{
     EditorSettings, GeneralSettings, Settings as _, SettingsStore, ThemeSettings,
 };
@@ -63,41 +62,6 @@ impl AppShell {
     }
 
     // ── Helper methods the command closures call ──────────────────────────
-
-    /// The primary edge as a [`DockPosition`] (per `sidebarPosition`).
-    pub(crate) fn primary_dock(&self, cx: &App) -> DockPosition {
-        self.workspace.read(cx).primary_dock()
-    }
-
-    /// `Cmd+B` — toggle the primary dock open/closed.
-    pub(crate) fn toggle_sidebar(&mut self, cx: &mut Context<Self>) {
-        let pos = self.primary_dock(cx);
-        self.workspace.update(cx, |w, cx| {
-            w.dock_mut(pos).toggle_open();
-            w.persist_docks(cx);
-        });
-        cx.notify();
-    }
-
-    /// "show me X" — never closes the dock (palette / menu intent).
-    pub(crate) fn open_panel(&mut self, name: &str, cx: &mut Context<Self>) {
-        self.workspace.update(cx, |w, cx| w.open_panel(name, cx));
-        cx.notify();
-    }
-
-    /// Move a panel to another dock (T17-002 API).
-    pub(crate) fn move_panel(&mut self, name: &str, to: DockPosition, cx: &mut Context<Self>) {
-        let moved = self.workspace.update(cx, |w, cx| {
-            let moved = w.move_panel(name, to, cx);
-            if moved {
-                w.persist_docks(cx);
-            }
-            moved
-        });
-        if moved {
-            cx.notify();
-        }
-    }
 
     /// Toggle the command palette through the modal layer (T17-005).
     pub(crate) fn toggle_command_palette(&mut self, window: &mut Window, cx: &mut Context<Self>) {

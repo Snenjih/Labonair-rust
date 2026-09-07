@@ -150,6 +150,57 @@ pub fn register_handlers(registry: &mut CommandHandlerRegistry, workspace: &Enti
             workspace.apply_transition(WorkspaceTransition::ReturnToStandalone, cx);
         });
     });
+
+    let workspace_handle = workspace.clone();
+    register!(CommandId::ToggleSidebar, move |_window, cx| {
+        workspace_handle.update(cx, |workspace, cx| {
+            let position = workspace.primary_dock();
+            workspace.dock_mut(position).toggle_open();
+            workspace.persist_docks(cx);
+            cx.notify();
+        });
+    });
+
+    let workspace_handle = workspace.clone();
+    register!(CommandId::OpenSnippetsPanel, move |_window, cx| {
+        workspace_handle.update(cx, |workspace, cx| workspace.open_panel("snippets", cx));
+    });
+
+    let workspace_handle = workspace.clone();
+    register!(CommandId::FocusSourceControl, move |_window, cx| {
+        workspace_handle.update(cx, |workspace, cx| {
+            workspace.open_panel("source-control", cx)
+        });
+    });
+
+    let workspace_handle = workspace.clone();
+    register!(CommandId::OpenGitGraph, move |_window, cx| {
+        workspace_handle.update(cx, |workspace, cx| workspace.open_git_graph_tab(cx));
+    });
+
+    let workspace_handle = workspace.clone();
+    register!(CommandId::DebugCyclePanelDock, move |_window, cx| {
+        workspace_handle.update(cx, |workspace, cx| {
+            let position = workspace.primary_dock();
+            let Some(name) = workspace.dock(position).active_name().map(str::to_owned) else {
+                return;
+            };
+            if workspace.move_panel(&name, position.next(), cx) {
+                workspace.persist_docks(cx);
+            }
+        });
+    });
+
+    let workspace_handle = workspace.clone();
+    register!(CommandId::DebugToggleDockZoom, move |_window, cx| {
+        workspace_handle.update(cx, |workspace, cx| {
+            let position = workspace.primary_dock();
+            let zoomed = workspace.dock(position).is_zoomed();
+            workspace.dock_mut(position).set_zoomed(!zoomed);
+            workspace.persist_docks(cx);
+            cx.notify();
+        });
+    });
 }
 
 pub fn zoom_submenu() -> SubmenuSnapshot {
@@ -307,6 +358,20 @@ impl CommandProvider for WorkspaceCommandProvider {
                 .with_shortcut(ShortcutId::ViewZoomReset)
                 .with_default_binding("cmd-0", None)
                 .with_icon(CommandIcon::Refresh),
+            CommandDescriptor::new(
+                CommandId::DebugCyclePanelDock,
+                "Debug: Cycle Panel Dock",
+                "Application",
+            )
+            .with_default_binding("cmd-alt-shift-m", None)
+            .with_icon(CommandIcon::PanelLeft),
+            CommandDescriptor::new(
+                CommandId::DebugToggleDockZoom,
+                "Debug: Toggle Dock Zoom",
+                "Application",
+            )
+            .with_default_binding("cmd-alt-shift-z", None)
+            .with_icon(CommandIcon::Square),
         ];
 
         for (id, index, shortcut) in [

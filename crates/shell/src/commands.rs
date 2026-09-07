@@ -60,20 +60,6 @@ impl CommandProvider for ShellCommandProvider {
         vec![
             CommandDescriptor::new(CommandId::ToggleFullScreen, "Toggle Full Screen", "View")
                 .with_icon(CommandIcon::Square),
-            CommandDescriptor::new(
-                CommandId::DebugCyclePanelDock,
-                "Debug: Cycle Panel Dock",
-                "Application",
-            )
-            .with_default_binding("cmd-alt-shift-m", None)
-            .with_icon(CommandIcon::PanelLeft),
-            CommandDescriptor::new(
-                CommandId::DebugToggleDockZoom,
-                "Debug: Toggle Dock Zoom",
-                "Application",
-            )
-            .with_default_binding("cmd-alt-shift-z", None)
-            .with_icon(CommandIcon::Square),
         ]
     }
 }
@@ -373,112 +359,6 @@ fn compose_builtin_commands(
             },
         );
     }
-
-    // ── View / sidebar ─────────────────────────────────────────────────
-    r.register(
-        command_descriptor(
-            CommandId::ToggleSidebar,
-            "Toggle File Explorer",
-            "View",
-            always,
-            Some(labonair_keymap::ShortcutId::SidebarToggle),
-            CommandIcon::PanelLeft,
-            None,
-        ),
-        |s, _window, cx| {
-            s.toggle_sidebar(cx);
-        },
-    );
-    r.register(
-        command_descriptor(
-            CommandId::DebugCyclePanelDock,
-            "Debug: Cycle Panel Dock",
-            "Application",
-            always,
-            None,
-            CommandIcon::PanelLeft,
-            None,
-        )
-        .with_default_binding("cmd-alt-shift-m", None),
-        |s, _window, cx| {
-            let pos = s.primary_dock(cx);
-            let Some(name) = s
-                .workspace
-                .read(cx)
-                .dock(pos)
-                .active_name()
-                .map(str::to_owned)
-            else {
-                return;
-            };
-            s.move_panel(&name, pos.next(), cx);
-        },
-    );
-    r.register(
-        command_descriptor(
-            CommandId::DebugToggleDockZoom,
-            "Debug: Toggle Dock Zoom",
-            "Application",
-            always,
-            None,
-            CommandIcon::Square,
-            None,
-        )
-        .with_default_binding("cmd-alt-shift-z", None),
-        |s, _window, cx| {
-            let pos = s.primary_dock(cx);
-            s.workspace.update(cx, |w, cx| {
-                let z = w.dock(pos).is_zoomed();
-                w.dock_mut(pos).set_zoomed(!z);
-                w.persist_docks(cx);
-            });
-            cx.notify();
-        },
-    );
-
-    // ── Snippets / source control ──────────────────────────────────────
-    r.register(
-        command_descriptor(
-            CommandId::OpenSnippetsPanel,
-            "Open Snippets Panel",
-            "Snippets",
-            always,
-            None,
-            CommandIcon::Command,
-            None,
-        ),
-        |s, _window, cx| {
-            s.open_panel("snippets", cx);
-        },
-    );
-    r.register(
-        command_descriptor(
-            CommandId::OpenGitGraph,
-            "Open Git Graph",
-            "Source Control",
-            always,
-            None,
-            CommandIcon::GitBranch,
-            None,
-        ),
-        |s, _window, cx| {
-            s.workspace.update(cx, |w, cx| w.open_git_graph_tab(cx));
-        },
-    );
-    r.register(
-        command_descriptor(
-            CommandId::FocusSourceControl,
-            "Focus Source Control",
-            "Source Control",
-            always,
-            None,
-            CommandIcon::GitBranch,
-            None,
-        ),
-        |s, _window, cx| {
-            s.open_panel("source-control", cx);
-        },
-    );
 
     // ── Palette ────────────────────────────────────────────────────────
     r.register(

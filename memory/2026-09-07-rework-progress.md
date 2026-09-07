@@ -901,3 +901,9 @@ The Hosts management entrypoint was then moved into
 `labonair-hosts-ui::command_provider`. Its handler receives the existing
 `HostManagerView` entity from bootstrap and opens the canonical Hosts window;
 the shell no longer carries that command behavior.
+
+Workspace surface commands were then moved into
+`labonair-workspace::command_provider`: sidebar toggling, dock cycling/zoom,
+Snippets and Source Control panel focus, and Git Graph tab opening. Their
+handlers operate on the Workspace entity directly, so the shell no longer
+contains layout/panel orchestration closures or helper methods for them.
