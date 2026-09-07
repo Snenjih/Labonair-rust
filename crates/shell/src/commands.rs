@@ -255,7 +255,7 @@ fn command_descriptor(
 
 #[allow(dead_code)]
 pub(crate) fn register_builtin_commands() -> CommandDispatcher {
-    compose_builtin_commands(None, None, None, None)
+    compose_builtin_commands(None, None, None, None, None)
 }
 
 /// Compose the command registry with owner-provided executable handlers.
@@ -264,12 +264,14 @@ pub(crate) fn register_builtin_commands_for(
     updater: &Entity<UpdaterView>,
     hosts: &Entity<HostManagerView>,
     palette_toggle: labonair_command_palette::command_provider::ToggleHandler,
+    search_toggle: labonair_workspace::command_provider::SearchToggleHandler,
 ) -> CommandDispatcher {
     compose_builtin_commands(
         Some(workspace),
         Some(updater),
         Some(hosts),
         Some(palette_toggle),
+        Some(search_toggle),
     )
 }
 
@@ -278,6 +280,7 @@ fn compose_builtin_commands(
     updater: Option<&Entity<UpdaterView>>,
     hosts: Option<&Entity<HostManagerView>>,
     palette_toggle: Option<labonair_command_palette::command_provider::ToggleHandler>,
+    search_toggle: Option<labonair_workspace::command_provider::SearchToggleHandler>,
 ) -> CommandDispatcher {
     let mut r = CommandDispatcher::default();
     let always = ALWAYS;
@@ -308,6 +311,12 @@ fn compose_builtin_commands(
             palette_toggle,
         );
     }
+    if let Some(search_toggle) = search_toggle {
+        labonair_workspace::command_provider::register_search_handler(
+            &mut r.owner_handlers,
+            search_toggle,
+        );
+    }
     if let Some(updater) = updater {
         labonair_updater_ui::command_provider::register_handlers(&mut r.owner_handlers, updater);
     }
@@ -332,22 +341,6 @@ fn compose_builtin_commands(
             }),
         );
     }
-
-    // ── Search ──────────────────────────────────────────────────────────
-    r.register(
-        command_descriptor(
-            CommandId::Find,
-            "Find in Current Pane",
-            "Search",
-            always,
-            Some(labonair_keymap::ShortcutId::SearchFocus),
-            CommandIcon::Search,
-            None,
-        ),
-        |s, window, cx| {
-            s.toggle_search_overlay(window, cx);
-        },
-    );
 
     // ── Connections ─────────────────────────────────────────────────────
     // Connecting is exclusively the command palette's Hosts page

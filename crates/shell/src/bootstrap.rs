@@ -422,15 +422,22 @@ pub(crate) fn bootstrap(
     // default shortcut resolution must use the same descriptors that the
     // palette receives later.
     let shell = cx.entity();
+    let search_shell = shell.clone();
+    let search_toggle: labonair_workspace::command_provider::SearchToggleHandler =
+        Rc::new(move |window: &mut Window, app: &mut App| {
+            search_shell.update(app, |shell, cx| shell.toggle_search_overlay(window, cx));
+        });
+    let palette_shell = shell;
     let palette_toggle: labonair_command_palette::command_provider::ToggleHandler =
         Rc::new(move |window: &mut Window, app: &mut App| {
-            shell.update(app, |shell, cx| shell.toggle_command_palette(window, cx));
+            palette_shell.update(app, |shell, cx| shell.toggle_command_palette(window, cx));
         });
     let command_registry = crate::commands::register_builtin_commands_for(
         &workspace,
         &updater,
         &host_manager,
         palette_toggle,
+        search_toggle,
     );
     crate::keymap_loader::reload_and_apply(cx, &command_registry);
     crate::keymap_loader::watch(cx, command_registry.clone());

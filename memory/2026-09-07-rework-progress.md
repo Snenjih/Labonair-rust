@@ -926,3 +926,9 @@ the stable command identity and registers the handler, while shell bootstrap
 injects only a modal-toggle callback that captures the shell entity. This
 removes the palette behavior from the shell command table without creating a
 dependency from the palette UI onto the shell's modal wrapper.
+
+The `Find` executable contribution was then moved into
+`labonair-workspace::command_provider`. Workspace owns the search command and
+the shell injects only the callback that toggles the shared search overlay.
+This keeps the overlay lifecycle compatible with the shell's global modal
+composition while removing the search behavior from the shell command table.

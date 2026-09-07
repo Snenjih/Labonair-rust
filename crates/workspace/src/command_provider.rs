@@ -5,7 +5,7 @@
 
 use std::rc::Rc;
 
-use gpui::Entity;
+use gpui::{App, Entity, Window};
 use labonair_command_palette_core::{
     CommandContext, CommandDescriptor, CommandIcon, CommandId, CommandProvider, CommandSubmenu,
     SubmenuAction, SubmenuDescriptor, SubmenuItem, SubmenuSnapshot,
@@ -20,6 +20,18 @@ use crate::Workspace;
 /// Stable command metadata contributed by the workspace capability.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct WorkspaceCommandProvider;
+
+/// Host operation used to present or dismiss the workspace search overlay.
+pub type SearchToggleHandler = Rc<dyn Fn(&mut Window, &mut App)>;
+
+/// Register the executable search contribution owned by Workspace.
+pub fn register_search_handler(registry: &mut CommandHandlerRegistry, toggle: SearchToggleHandler) {
+    registry
+        .register(CommandId::Find, move |window, cx| {
+            toggle(window, cx);
+        })
+        .expect("workspace search handler must have a unique id");
+}
 
 struct WorkspaceTerminalCommandTarget(Entity<Workspace>);
 
