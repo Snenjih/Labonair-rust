@@ -53,7 +53,7 @@ The completed bounded implementation is
 [`R02-002-shell-composition-and-standalone-workspaces.md`](../tasks/rework/R02-002-shell-composition-and-standalone-workspaces.md):
 it narrowed one remaining shell/workspace behavior slice and verified empty,
 project, and standalone workspace transitions.
-The active following task is
+The follow-up implementation is also complete:
 [`R02-003-project-entry-and-workspace-transitions.md`](../tasks/rework/R02-003-project-entry-and-workspace-transitions.md):
 it completes session identity persistence, explicit return-to-standalone
 behavior, and the removal audit for cwd-based project inference.
@@ -86,9 +86,9 @@ identity work, and both are complete:
 
 - [`R03-001-command-palette-provider-registry.md`](../tasks/rework/R03-001-command-palette-provider-registry.md)
   established the provider-owned metadata and dynamic-submenu snapshot
-  contract. Ordinary command handlers moved to owner contributions; dynamic
-  submenu execution remains an explicit transitional shell adapter tracked by
-  R07-002.
+  contract. Ordinary command handlers and dynamic submenu execution now use
+  owner contributions; R07-002 completed the final typed action-handler
+  boundary, so the shell only forwards opaque actions.
 - [`R03-002-keymap-runtime-and-editor.md`](../tasks/rework/R03-002-keymap-runtime-and-editor.md)
   made the keymap a runtime command-binding capability with contexts, conflicts,
   persistence, and a dedicated editor surface.
@@ -131,7 +131,7 @@ The executable migration is
 [`R05-001-settings-audit-and-value-normalization.md`](../tasks/rework/R05-001-settings-audit-and-value-normalization.md).
 
 R05-001 is complete. Settings now contains only typed, consumer-backed values;
-legacy compatibility input remains isolated in the backend migration wire
+legacy compatibility input remains isolated in the Settings migration wire
 shape, while hosts, themes, keymaps, notifications, transfers, and layout
 state are owned by their respective capabilities.
 
@@ -163,11 +163,11 @@ The cross-module visual and workflow gate remains open:
 [`R07-001-product-surface-acceptance.md`](../tasks/rework/R07-001-product-surface-acceptance.md).
 The owner-contribution task is complete and closes the dynamic palette
 execution residue:
-[`R07-002-owner-registered-surface-contributions.md`](../tasks/rework/R07-002-owner-registered-surface-contributions.md),
+[`R07-002-owner-registered-surface-contributions.md`](../tasks/rework/R07-002-owner-registered-surface-contributions.md).
 
-The acceptance launch also recorded a bounded Settings compatibility finding:
+The acceptance launch also recorded a bounded Settings compatibility finding;
 [`R07-003-settings-legacy-warning-disposition.md`](../tasks/rework/R07-003-settings-legacy-warning-disposition.md)
-will decide how known removed keys are classified without weakening warnings
+now records how known removed keys are classified without weakening warnings
 for genuinely unknown future keys.
 
 ## Change and removal gates

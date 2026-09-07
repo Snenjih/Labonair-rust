@@ -67,7 +67,12 @@ The final statusbar source audit found no shell-owned feature item:
 `crates/shell/src/status_items.rs` only composes typed registrations from
 Workspace, Notifications, Updater, Transfers, and the other capability
 owners. R07-001's structural ownership findings are therefore complete; its
-remaining work is the visual matrix and the R07-003 compatibility decision.
+remaining work is only the native visual state matrix. R07-003's compatibility
+decision is complete and recorded in the Settings owner.
+
+The roadmap authority audit corrected stale completion language for R02-003,
+R07-002, and R07-003, and replaced the obsolete reference to a backend-owned
+Settings migration shape with the current Settings-owned compatibility path.
 
 The R07-001 acceptance record now marks ownership, documentation authority,
 dependency/source agreement, verification gates, and product dispositions as

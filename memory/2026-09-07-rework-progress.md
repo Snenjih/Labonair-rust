@@ -1065,3 +1065,8 @@ The same audit corrected the Notifications sibling entry from the abbreviated
 The package-reference audit found the hypothetical `labonair-theme-ui` example
 in `docs/repository-layout.md`; it now uses the generic
 `labonair-<capability>-ui` placeholder instead of an untracked package name.
+
+The roadmap was then reconciled with the active queue: R02-003 and R07-002 are
+described as complete, R07-003 is described as the completed compatibility
+decision, and the Settings migration wire shape is no longer attributed to the
+removed backend facade.
