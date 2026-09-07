@@ -2,6 +2,7 @@
 //! user keybind overrides ([`KeybindMap`]), resolution, and conflict detection.
 
 pub mod command_provider;
+pub mod runtime;
 
 /// Shortcut identity is shared with the command registry through the
 /// UI-free interaction-contracts crate. Keymap owns the defaults and runtime

@@ -43,8 +43,10 @@ now live in the workspace, hosts, editor, theme, snippets, and Git provider
 modules; the shell only supplies live values and registers the snapshots.
 Hidden status-bar state and labels are owned by the workspace status registry
 as well. The current task is now `R03-002-keymap-runtime-and-editor.md`; the
-next work is to build the keymap runtime and management surface on the shared
-identity contract. The current commit is `0e5477c`; the worktree is clean.
+next work is to integrate the new UI-free `keymap::runtime` resolver with the
+existing file and GPUI adapters, then build the management surface. The
+current commit is pending after this runtime slice; the worktree is
+intentionally not yet clean until it is committed.
 
 ## Current Session: 2026-09-07 (Native visual helper hardened)
 

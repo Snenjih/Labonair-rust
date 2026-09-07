@@ -79,3 +79,11 @@ constructs its own rows. Hidden status-bar state and labels are composed by the
 workspace owner. `R03-001-command-palette-provider-registry` is complete after
 full workspace tests, Clippy, formatting, dependency verification, and the
 user's visual confirmation. `R03-002-keymap-runtime-and-editor` is next.
+
+## R03-002 resolver slice
+
+`labonair-keymap::runtime` now provides a GPUI-/file-format-free resolver for
+typed `CommandId` bindings. Global and active-context precedence, equal-level
+last-write-wins replacement, normalized keystroke identity, and stable first
+appearance ordering are covered by tests. The existing settings parser and
+shell GPUI adapter still need to consume this resolver in the next slice.

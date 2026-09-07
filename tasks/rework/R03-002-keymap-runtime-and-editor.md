@@ -83,6 +83,15 @@ and resolve through one context-aware keymap runtime.
    verify persistence fixtures, malformed-file notifications, and visual
    focused/filtered/conflict states.
 
+## Progress
+
+The keymap module now owns a UI-free deterministic resolver in
+`keymap::runtime`. It accepts typed `CommandId` bindings, applies global and
+active-context precedence, replaces later declarations at equal precedence,
+and preserves first-seen keystroke order. Existing file parsing and GPUI
+installation remain adapters around this contract; integrating them is the
+next slice.
+
 ## Acceptance criteria
 
 - [ ] A new action can register a stable command ID and default binding without
