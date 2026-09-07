@@ -24,7 +24,7 @@ Legacy `appCornerRadius` values are converted to the current
 `cornerRadiusScale` field during migration, with the modern value taking
 precedence when both are present.
 
-Current HEAD is `39b61bd` on `master`; the worktree is clean before this
+Current HEAD is `080a93c` on `master`; the worktree is clean before this
 handshake update. The first R06
 boundaries removed the backend error facade, removed AI's stale backend edge,
 moved system-font discovery into the Theme owner, deleted the unconsumed
@@ -58,6 +58,11 @@ The legacy combined status-bar placement migration is now owned by
 was deleted, and the Workspace owner preserves its remapping, backup, and
 idempotency behavior. Full check, Clippy, workspace tests, dependency check,
 queue check, and diff check pass.
+MCP bridge preferences are now owned by
+`labonair_mcp_core::preferences` with explicit path-based load/save methods;
+shell composition supplies the config directory and the backend Settings MCP
+module was deleted. Full workspace tests, Clippy, dependency, queue, and diff
+checks pass.
 SSH, MCP, and Transfer event-source adapters now retain only `EventBus`, not
 the aggregate `App` handle.
 The Transfer service adapter now retains only `TransferWorkerState` as well.
