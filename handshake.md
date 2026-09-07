@@ -59,8 +59,10 @@ formatting, and diff checks pass.
 
 The GPUI updater view was moved into `labonair-updater-ui` in `a41b7eb`.
 `labonair-updater` remains UI-free, while the new sibling owns the dialog,
-progress UI, notifications, and updater state view. Shell keeps only the
-compatibility re-export and the remaining statusbar badge composition.
+progress UI, notifications, and updater state view. The updater statusbar
+badge was moved into the same owner in `c13f63b`; shell composition now only
+inserts its typed registration. Full workspace check, Clippy, tests, format,
+dependency, queue, and diff checks pass.
 
 The current R05 slices removed the untyped `general.notifyOnErrors` default,
 moved Background values behind their owner, moved dock/sidebar runtime state
@@ -75,7 +77,7 @@ Legacy `appCornerRadius` values are converted to the current
 `cornerRadiusScale` field during migration, with the modern value taking
 precedence when both are present.
 
-Current HEAD is `a41b7eb` on `master`; the worktree is clean before this
+Current HEAD is `c13f63b` on `master`; the worktree is clean before this
 handshake update. R06
 boundaries removed the backend error facade, removed AI's stale backend edge,
 moved system-font discovery into the Theme owner, deleted the unconsumed
