@@ -81,6 +81,16 @@ SettingsContent remains the canonical value model. Full workspace check,
 Clippy, tests, formatting, dependency validation, queue validation, and diff
 checks pass. This boundary is committed as `f36fa39`; R06-001 remains active
 with the remaining concrete backend adapters as the next cleanup area.
+The updater capability has now been extracted as `labonair-updater`.
+Manifest parsing, version comparison, network download, signature
+verification, macOS bundle installation, relaunch, and auto-check cadence are
+owned by that UI-free crate; the shell keeps only `UpdaterView`. Its `1.0.0`
+package version also makes the compiled current-version check match the app
+package instead of the backend's historical `0.1.0`. Full check, Clippy,
+workspace tests, formatting, dependency validation, queue validation, and diff
+checks pass. This extraction is committed as `844729a`; R06-001 remains
+active and the next cleanup area is the remaining SSH/SFTP platform adapters.
+
 SSH, MCP, and Transfer event-source adapters now retain only `EventBus`, not
 the aggregate `App` handle.
 The Transfer service adapter now retains only `TransferWorkerState` as well.
