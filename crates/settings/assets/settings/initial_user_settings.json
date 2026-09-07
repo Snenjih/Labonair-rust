@@ -9,8 +9,7 @@
 {
   // "general": {
   //   "theme": "system",
-  //   "defaultStartupTab": "terminal",
-  //   "startupTerminalCount": 1
+  //   "defaultStartupTab": "terminal"
   // },
 
   // "appearance": {

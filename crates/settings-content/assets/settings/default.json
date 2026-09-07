@@ -14,7 +14,6 @@
     // "terminal" opens one local terminal on launch; "empty" starts on the
     // empty-workspace surface.
     "defaultStartupTab": "empty",
-    "startupTerminalCount": 1,
     "checkForUpdates": true,
     "sessionRestore": false
   },

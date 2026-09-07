@@ -165,13 +165,6 @@ pub fn all_fields() -> Vec<AnyField> {
             "What opens on launch when there is no session to restore."
         ),
         field!(
-            general.startup_terminal_count,
-            "startupTerminalCount",
-            Int { min: 1, max: 3, step: 1 },
-            "Startup terminal count",
-            "How many terminals open on launch."
-        ),
-        field!(
             general.check_for_updates,
             "checkForUpdates",
             Switch,

@@ -164,7 +164,6 @@ fn general_from(p: &Preferences) -> GeneralContent {
         theme: Some(theme_pref(p.theme)),
         restore_window_state: Some(p.restore_window_state),
         default_startup_tab: Some(startup_tab(p.default_startup_tab)),
-        startup_terminal_count: Some(p.startup_terminal_count),
         check_for_updates: Some(p.check_for_updates),
         session_restore: Some(p.session_restore),
     }
@@ -431,8 +430,12 @@ const REMOVED_TERMINAL_FIELDS: &[&str] = &[
 /// Legacy general preferences with no native runtime consumer. They remain
 /// readable in the backend wire shape solely for old configuration files.
 #[cfg_attr(not(test), allow(dead_code))]
-const REMOVED_GENERAL_FIELDS: &[&str] =
-    &["autostart", "credentialEncryption", "confirmQuitWithSsh"];
+const REMOVED_GENERAL_FIELDS: &[&str] = &[
+    "startupTerminalCount",
+    "autostart",
+    "credentialEncryption",
+    "confirmQuitWithSsh",
+];
 
 /// Preferences fields with no `SettingsContent` destination, preserved
 /// losslessly under `_migratedUnknown.preferences.*` instead of a mapped

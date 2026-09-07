@@ -42,12 +42,7 @@ const INITIAL_PROJECT_SETTINGS: &str =
 pub const PROJECT_SETTINGS_WHITELIST: &[(&str, &[&str])] = &[
     (
         "general",
-        &[
-            "defaultStartupTab",
-            "startupTerminalCount",
-            "sessionRestore",
-            "restoreWindowState",
-        ],
+        &["defaultStartupTab", "sessionRestore", "restoreWindowState"],
     ),
     (
         "workspace",
@@ -183,7 +178,7 @@ mod tests {
             content.general.default_startup_tab,
             Some(labonair_settings_content::general::StartupTab::Terminal)
         );
-        assert_eq!(content.general.startup_terminal_count, None);
+        assert_eq!(content.general.restore_window_state, None);
         assert_eq!(rejected, vec!["general.autostart".to_string()]);
     }
 

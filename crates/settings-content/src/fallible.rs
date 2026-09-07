@@ -73,13 +73,13 @@ mod tests {
     fn broken_field_defaults_but_other_areas_survive() {
         let json = r#"{
             "terminal": { "terminalFontSize": "not-a-number" },
-            "general": { "startupTerminalCount": 2 }
+            "general": { "restoreWindowState": false }
         }"#;
         let (content, errors) = parse(json);
         assert_eq!(errors.len(), 1);
         assert_eq!(errors[0].area, "terminal");
         assert_eq!(content.terminal, Default::default());
-        assert_eq!(content.general.startup_terminal_count, Some(2));
+        assert_eq!(content.general.restore_window_state, Some(false));
     }
 
     #[test]

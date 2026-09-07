@@ -14,8 +14,7 @@
   // "general": {
   //   // "terminal" opens one local terminal on launch; "empty" starts on
   //   // the empty-workspace surface.
-  //   "defaultStartupTab": "terminal",
-  //   "startupTerminalCount": 1
+  //   "defaultStartupTab": "terminal"
   // },
 
   // "editor": {

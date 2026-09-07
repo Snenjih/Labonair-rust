@@ -116,3 +116,6 @@ the model. Unused values are parked in the inventory, not added speculatively.
 - [x] Remove the unused general autostart, credential-encryption, and
       SSH-quit-confirmation values from the typed model and generated UI while
       retaining the legacy wire shape for old files.
+- [x] Remove the unused `startupTerminalCount` value from the typed model,
+      generated UI, project whitelist, and defaults while retaining the legacy
+      Preferences wire shape for migration.

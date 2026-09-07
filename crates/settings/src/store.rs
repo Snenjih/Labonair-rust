@@ -809,7 +809,7 @@ mod tests {
         let path = tmp_path();
         std::fs::write(
             &path,
-            r#"{"terminal":{"terminalFontSize":"nope"},"general":{"startupTerminalCount":2}}"#,
+            r#"{"terminal":{"terminalFontSize":"nope"},"general":{"restoreWindowState":false}}"#,
         )
         .unwrap();
         let mut store = SettingsStore::new(path);
@@ -817,7 +817,7 @@ mod tests {
         assert_eq!(store.parse_errors().len(), 1);
         assert_eq!(store.parse_errors()[0].area, "terminal");
         assert_eq!(store.merged().terminal.terminal_font_size, Some(15)); // default
-        assert_eq!(store.merged().general.startup_terminal_count, Some(2));
+        assert!(!store.merged().general.restore_window_state.unwrap());
     }
 
     #[test]
@@ -903,12 +903,12 @@ mod tests {
         store.reload_user_layer();
 
         store
-            .update_user_settings(|c| c.general.startup_terminal_count = Some(3))
+            .update_user_settings(|c| c.general.restore_window_state = Some(false))
             .unwrap();
 
         let mut reloaded = SettingsStore::new(path);
         reloaded.reload_user_layer();
-        assert_eq!(reloaded.merged().general.startup_terminal_count, Some(3));
+        assert!(!reloaded.merged().general.restore_window_state.unwrap());
     }
 
     /// T19-005 Akzeptanzkriterium: invalid JSON in the file blocks GUI
@@ -1031,20 +1031,20 @@ mod tests {
     fn project_layer_wins_over_user_for_a_whitelisted_key() {
         let mut store = SettingsStore::new(tmp_path());
         store
-            .update_user(|c| c.general.startup_terminal_count = Some(2))
+            .update_user(|c| c.general.restore_window_state = Some(false))
             .unwrap();
-        assert_eq!(store.merged().general.startup_terminal_count, Some(2));
+        assert!(!store.merged().general.restore_window_state.unwrap());
 
         let root = tmp_project_root();
         std::fs::create_dir_all(root.join(".labonair")).unwrap();
         std::fs::write(
             root.join(".labonair/settings.json"),
-            r#"{"general":{"startupTerminalCount":3}}"#,
+            r#"{"general":{"restoreWindowState":false}}"#,
         )
         .unwrap();
 
         assert!(store.set_active_project_root(Some(root)));
-        assert_eq!(store.merged().general.startup_terminal_count, Some(3));
+        assert!(!store.merged().general.restore_window_state.unwrap());
         assert!(store.project_rejected_keys().is_empty());
     }
 
@@ -1072,7 +1072,7 @@ mod tests {
         std::fs::create_dir_all(root.join(".labonair")).unwrap();
         std::fs::write(
             root.join(".labonair/settings.json"),
-            r#"{"general":{"startupTerminalCount":"no"}}"#,
+            r#"{"general":{"restoreWindowState":"no"}}"#,
         )
         .unwrap();
 
@@ -1080,7 +1080,7 @@ mod tests {
         assert_eq!(store.project_schema_errors().len(), 1);
         assert_eq!(
             store.project_schema_errors()[0].json_path,
-            "general.startupTerminalCount"
+            "general.restoreWindowState"
         );
     }
 
@@ -1091,19 +1091,19 @@ mod tests {
         std::fs::create_dir_all(root_a.join(".labonair")).unwrap();
         std::fs::write(
             root_a.join(".labonair/settings.json"),
-            r#"{"general":{"startupTerminalCount":3}}"#,
+            r#"{"general":{"restoreWindowState":false}}"#,
         )
         .unwrap();
         let root_b = tmp_project_root();
 
         store.set_active_project_root(Some(root_a));
-        assert_eq!(store.merged().general.startup_terminal_count, Some(3));
+        assert!(!store.merged().general.restore_window_state.unwrap());
         let gen_after_a = store.project_watch_generation();
 
         store.set_active_project_root(Some(root_b));
         assert_eq!(
-            store.merged().general.startup_terminal_count,
-            SettingsContent::defaults().general.startup_terminal_count,
+            store.merged().general.restore_window_state,
+            SettingsContent::defaults().general.restore_window_state,
             "switching roots must drop the previous root's layer"
         );
         assert!(store.project_watch_generation() > gen_after_a);
@@ -1119,8 +1119,8 @@ mod tests {
 
         store.set_active_project_root(None);
         assert_eq!(
-            store.merged().general.startup_terminal_count,
-            SettingsContent::defaults().general.startup_terminal_count
+            store.merged().general.restore_window_state,
+            SettingsContent::defaults().general.restore_window_state
         );
         assert!(store
             .raw
@@ -1132,12 +1132,12 @@ mod tests {
     fn no_project_file_means_exactly_user_behavior() {
         let mut store = SettingsStore::new(tmp_path());
         store
-            .update_user(|c| c.general.startup_terminal_count = Some(2))
+            .update_user(|c| c.general.restore_window_state = Some(false))
             .unwrap();
 
         let root = tmp_project_root(); // no .labonair dir at all
         store.set_active_project_root(Some(root));
-        assert_eq!(store.merged().general.startup_terminal_count, Some(2));
+        assert!(!store.merged().general.restore_window_state.unwrap());
         assert!(store.project_rejected_keys().is_empty());
     }
 
