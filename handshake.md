@@ -24,14 +24,16 @@ Legacy `appCornerRadius` values are converted to the current
 `cornerRadiusScale` field during migration, with the modern value taking
 precedence when both are present.
 
-Current HEAD is `b45d211` on `master`; the worktree is clean. The first R06
+Current HEAD is `3426d94` on `master`; the worktree is clean. The first R06
 boundaries removed the backend error facade, removed AI's stale backend edge,
 moved system-font discovery into the Theme owner, deleted the unconsumed
 backend custom-font module, removed the dead legacy bar-placement API while
 preserving its migration input, moved live status/panel layout persistence to
 Workspace, moved scrollback persistence to Terminal, and removed the updater
 root re-export. Workspace check, Clippy, full workspace tests, formatting,
-dependency validation, queue validation, and diff checks pass.
+dependency validation, queue validation, and diff checks pass. The MCP
+session/grant contract now lives in `labonair-mcp-core`, and AgentAccessStore
+receives it through injection instead of storing the aggregate backend App.
 R06-001 remains active; the next boundary is to move a remaining
 workspace-facing adapter behind its canonical capability contract.
 The General cleanup including `startupTerminalCount` is committed in
