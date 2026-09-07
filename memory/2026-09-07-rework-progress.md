@@ -25,6 +25,11 @@ The full workspace test suite passed after the Theme migration (including the
 172 backend, 70 Theme, and 22 Settings UI tests); formatting, Clippy, check,
 dependency, queue, and diff gates are also green. Current HEAD is `5406c1f`.
 
+The legacy `barItemPlacements` data remains readable only inside the one-time
+settings migration. Its unused backend read/write API and `App` lock were
+removed, along with the obsolete unit test; current status-bar placement APIs
+remain unchanged for the live workspace surface.
+
 ## Native visual verification
 
 The exact Rust bundle was opened through its absolute `.app` path. Core

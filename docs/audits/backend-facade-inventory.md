@@ -39,7 +39,7 @@ participate in the `App` state graph or in another backend module.
 | `pty` | local PTY state, sessions, events, I/O operations | indirect through backend/MCP | terminal owner; expose a terminal service rather than `App` state |
 | `scrollback` | scrollback persistence helpers | `shell`, `workspace` | terminal owner; inject persistence and remove backend path |
 | `secrets` | secret-state compatibility API | no external module import found | `labonair-secrets`; remove wrapper after internal adapters accept `SecretsState`/service |
-| `settings` | legacy preferences, migrations, placement persistence, MCP prefs | `app`, `shell`, `workspace`; internal backend modules | settings/layout owners; keep only explicit migration or placement adapters |
+| `settings` | legacy preferences, migrations, status placement persistence, MCP prefs | `app`, `shell`, `workspace`; internal backend modules | settings/layout owners; legacy `barItemPlacements` is migration-only and its dead read/write facade was removed |
 | `sftp` | session adapter, remote operations, transfer worker state/commands | `shell`; internal SSH/transfer adapters | `labonair-sftp` and `labonair-transfers` integration boundaries |
 | `shell` | local command execution, shell sessions, background processes | no active external module import found | terminal/workspace owner; split local process service from backend facade |
 | `snippets` | snippet DB compatibility and SSH executor adapter | `shell`; internal backend use | `labonair-snippets` integration boundary |
