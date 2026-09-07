@@ -475,7 +475,7 @@ pub async fn git_is_repo(
     sftp_state: &SshState,
     app: crate::App,
 ) -> Result<bool, String> {
-    let executor = resolve_executor(path, session_id, sftp_state.clone(), app);
+    let executor = resolve_executor(path, session_id, sftp_state.clone(), app.events.clone());
     match executor.run(&["rev-parse", "--git-dir"]).await {
         Ok(_) => Ok(true),
         Err(e) if e == GIT_NOT_INSTALLED || is_network_error(&e) => Err(e),
