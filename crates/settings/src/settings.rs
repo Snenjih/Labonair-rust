@@ -16,7 +16,6 @@ extern crate self as labonair_settings;
 
 pub mod command_provider;
 mod concrete;
-pub mod keymap;
 pub mod project;
 mod registry;
 pub mod schema;
@@ -28,7 +27,6 @@ pub use concrete::{
     EditorSettings, ExplorerSettings, GeneralSettings, ScmSettings, TerminalSettings,
     ThemeSettings, WorkspaceSettings,
 };
-pub use keymap::{ensure_user_keymap_file, user_keymap_path};
 pub use project::{ensure_project_settings_file, PROJECT_SETTINGS_WHITELIST};
 pub use registry::{register_all, RegisteredSetting};
 pub use schema::{description_for_path, json_schema, SettingsValidationError};

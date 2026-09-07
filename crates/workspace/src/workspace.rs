@@ -1079,7 +1079,7 @@ impl Workspace {
     /// `~/.config/labonair/keymap.json` and open it as an editor tab, same
     /// pattern as [`Self::open_or_create_user_settings_json`].
     pub fn open_or_create_user_keymap_json(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let path = match labonair_settings::ensure_user_keymap_file() {
+        let path = match labonair_keymap::file::ensure_user_keymap_file() {
             Ok(path) => path,
             Err(err) => {
                 labonair_notifications::notify_err::<()>("Keymap", Err(err), cx);

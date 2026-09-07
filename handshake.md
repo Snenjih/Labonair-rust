@@ -47,7 +47,14 @@ first resolver slice is implemented and the GPUI menu adapter now consumes the
 keymap-owned canonical action resolver, including the legacy keymap alias.
 The next slice is to move reload/install orchestration behind the keymap
 adapter and then build the management surface. The current commit is
-`360bece`; the worktree is clean.
+`360bece`; the worktree has the in-progress file-ownership extraction below.
+
+The keymap JSONC parser, merge/validation model, default assets, and user-file
+path now live under `labonair-keymap::file`; Settings no longer owns or imports
+Keymap. Shell/workspace consumers use the Keymap crate directly, and the
+dependency verifier remains acyclic. The isolated Settings watcher rename test
+passes with filesystem access outside the sandbox. Next: move reload/install
+orchestration behind a Keymap adapter and then build the management surface.
 
 ## Current Session: 2026-09-07 (Native visual helper hardened)
 

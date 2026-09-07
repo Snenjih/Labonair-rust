@@ -44,7 +44,7 @@ ALLOWED = {
     "labonair-sftp": {"labonair-errors", "labonair-ssh"},
     # UI-free transfer lifecycle, event, and worker contracts.
     "labonair-transfers": set(),
-    # UI-free shortcut identities, defaults, persistence keys, and conflict
+    # UI-free shortcut identities, keymap file data/defaults, and conflict
     # resolution. GPUI publication remains in the palette/shell adapters.
     "labonair-keymap": {
         "labonair-interaction-contracts", "labonair-command-palette-core",
@@ -246,7 +246,7 @@ ALLOWED = {
     "labonair-settings": {
         "labonair-settings-content", "labonair-settings-macros",
         "labonair-settings-json",
-        "labonair-command-palette-core", "labonair-keymap",
+        "labonair-command-palette-core", "labonair-interaction-contracts",
     },
 }
 

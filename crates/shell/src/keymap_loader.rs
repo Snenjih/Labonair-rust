@@ -15,8 +15,9 @@ use labonair_command_palette::{
     canonical_action_name, compatibility_action_names, shortcut_slug, shortcuts, KeybindDisplay,
     KeybindMap,
 };
-use labonair_settings::keymap::{
-    self, merge_keymaps, parse_keymap_jsonc, validate_keymap, EffectiveBinding, KeybindSource,
+use labonair_keymap::file;
+use labonair_keymap::file::{
+    merge_keymaps, parse_keymap_jsonc, validate_keymap, EffectiveBinding, KeybindSource,
     KeymapFile, Severity, ValidationIssue,
 };
 
@@ -55,7 +56,7 @@ fn known_actions(registry: &CommandDispatcher) -> std::collections::BTreeSet<&'s
 /// last-good file and records the issue. Missing file = an empty (valid)
 /// keymap, not an error.
 fn load_user_keymap(registry: &CommandDispatcher) -> KeymapFile {
-    let path = keymap::user_keymap_path();
+    let path = file::user_keymap_path();
     let Ok(text) = std::fs::read_to_string(&path) else {
         LAST_ISSUES.with(|c| c.borrow_mut().clear());
         LAST_GOOD_USER.with(|c| *c.borrow_mut() = KeymapFile::default());
@@ -102,7 +103,7 @@ fn load_user_keymap(registry: &CommandDispatcher) -> KeymapFile {
 /// only warns and falls back to an empty keymap rather than panicking the
 /// running app.
 fn load_default_keymap() -> KeymapFile {
-    match parse_keymap_jsonc(keymap::default_asset()) {
+    match parse_keymap_jsonc(file::default_asset()) {
         Ok(file) => file,
         Err(e) => {
             tracing::error!(error = %e, "shipped default keymap failed to parse");
@@ -162,7 +163,7 @@ pub(crate) fn reload_and_apply(cx: &mut App, registry: &CommandDispatcher) {
 /// Start the live fs-watch on `keymap.json` (T19-008 Anweisung #6). Call once
 /// at startup, after the first [`reload_and_apply`].
 pub(crate) fn watch(cx: &App, registry: CommandDispatcher) {
-    labonair_settings::watch_file(cx, keymap::user_keymap_path(), move |cx| {
+    labonair_settings::watch_file(cx, file::user_keymap_path(), move |cx| {
         reload_and_apply(cx, &registry);
     });
 }

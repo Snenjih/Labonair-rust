@@ -39,7 +39,7 @@ in the normative documents linked from `docs/README.md`.
 | `settings-json` | JSON editing | settings module | Keep as persistence adapter. |
 | `settings-macros` | Settings derives | settings module | Keep implementation detail. |
 | `settings-ui` | Settings views and generated fields | settings module | Value-only generated UI; receives only the system-font discovery contract. |
-| `keymap` | UI-free keymap values, resolution, and conflict handling | keymap module | Extracted from command-palette; management UI and shell integration remain to migrate. |
+| `keymap` | UI-free keymap values, JSONC file format, default assets, resolution, and conflict handling | keymap module | File parser and default assets now belong to Keymap; management UI and shell orchestration remain to migrate. |
 | `shell` | App shell, menus, commands, status items, updater | application composition + shell surface | Reduce to registration and composition. |
 | `terminal` | Terminal engine and renderer support | terminal module | Split engine from GPUI view when useful. |
 | `theme` | Runtime theme, fonts, and built-in color/icon registries | themes module | Keep one Themes owner; app and icon palette pickers now use separate registry-backed pages with transactional preview; remote downloads remain deferred. |

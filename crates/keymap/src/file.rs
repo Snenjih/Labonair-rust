@@ -301,10 +301,15 @@ pub fn default_asset() -> &'static str {
     }
 }
 
-/// Where the user's `keymap.json` lives — a sibling of
-/// [`crate::user_settings_path`] (`~/.config/labonair/keymap.json`).
+/// Where the user's `keymap.json` lives (`~/.config/labonair/keymap.json`).
 pub fn user_keymap_path() -> PathBuf {
-    crate::user_settings_path().with_file_name("keymap.json")
+    #[cfg(not(target_os = "windows"))]
+    let base = dirs::home_dir()
+        .expect("cannot resolve home dir")
+        .join(".config");
+    #[cfg(target_os = "windows")]
+    let base = dirs::config_dir().expect("cannot resolve config dir");
+    base.join("labonair").join("keymap.json")
 }
 
 /// Create the user `keymap.json` with an empty-array scaffold if it doesn't
@@ -313,6 +318,9 @@ pub fn user_keymap_path() -> PathBuf {
 /// [`crate::ensure_user_settings_file`].
 pub fn ensure_user_keymap_file() -> Result<PathBuf, String> {
     let path = user_keymap_path();
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
     if !path.exists() {
         let scaffold = "// User keybindings — overrides the built-in default keymap.\n\
              // See docs/settings-guidelines.md. Example:\n\

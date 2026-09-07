@@ -72,6 +72,7 @@ Every command-capable action may register a keybinding descriptor with the
 keymap module. The keymap system owns:
 
 - keymap file loading and persistence;
+- the versioned JSONC document shape and built-in default assets;
 - contexts and precedence;
 - conflict detection;
 - display formatting;

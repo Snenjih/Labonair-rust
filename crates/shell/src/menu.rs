@@ -28,8 +28,8 @@ use gpui::{
 use std::rc::Rc;
 
 use labonair_command_palette_core::CommandId;
+use labonair_keymap::file::EffectiveBinding;
 use labonair_notifications::{notification_center, Notification};
-use labonair_settings::keymap::EffectiveBinding;
 
 actions!(
     labonair,
@@ -382,12 +382,11 @@ mod tests {
     /// `bindings_from_keymap` must never panic.
     #[test]
     fn default_keymap_bindings_load() {
-        let default = labonair_settings::keymap::parse_keymap_jsonc(
-            labonair_settings::keymap::default_asset(),
-        )
-        .unwrap();
-        let effective = labonair_settings::keymap::merge_keymaps(&[(
-            labonair_settings::keymap::KeybindSource::Default,
+        let default =
+            labonair_keymap::file::parse_keymap_jsonc(labonair_keymap::file::default_asset())
+                .unwrap();
+        let effective = labonair_keymap::file::merge_keymaps(&[(
+            labonair_keymap::file::KeybindSource::Default,
             &default,
         )]);
         let loaded = bindings_from_keymap(&effective);
@@ -400,12 +399,12 @@ mod tests {
 
     #[test]
     fn unresolvable_action_is_skipped_not_panicking() {
-        let file = labonair_settings::keymap::parse_keymap_jsonc(
+        let file = labonair_keymap::file::parse_keymap_jsonc(
             r#"[{ "bindings": { "cmd-shift-y": "bogus::DoesNotExist" } }]"#,
         )
         .unwrap();
-        let effective = labonair_settings::keymap::merge_keymaps(&[(
-            labonair_settings::keymap::KeybindSource::User,
+        let effective = labonair_keymap::file::merge_keymaps(&[(
+            labonair_keymap::file::KeybindSource::User,
             &file,
         )]);
         assert!(bindings_from_keymap(&effective).is_empty());

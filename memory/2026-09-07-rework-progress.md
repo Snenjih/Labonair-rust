@@ -96,3 +96,13 @@ Persisted action names now cross into the GPUI menu adapter through
 adapter selects a concrete GPUI action. This removes the shell's duplicate
 string alias table while preserving the legacy `settings::OpenShortcuts` alias
 and rich GPUI context predicates. Commit: `360bece`.
+
+## R03-002 keymap file ownership
+
+Moved the complete JSONC keymap file contract from `labonair-settings::keymap`
+to `labonair-keymap::file`: parsing, layered merge, validation, default
+platform assets, user path, and scaffold creation. Settings now remains a
+values-only module and no longer depends on Keymap; Shell and Workspace use
+Keymap directly. The dependency verifier is still acyclic. The existing
+Settings rename-watcher test passes outside the sandbox. This extraction is
+the basis for moving reload/install orchestration behind the Keymap boundary.

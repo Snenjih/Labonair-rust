@@ -96,6 +96,9 @@ one owner and cannot drift between adapters. Rich GPUI context predicates stay
 in the adapter while portable contexts remain typed in the runtime. The next
 slice is to replace the shell-owned keymap reload/install entry point with a
 keymap-owned adapter and expose diagnostics through the notification contract.
+The JSONC parser, default assets, merge model, validation, and user-file path
+have now moved from `labonair-settings` into `labonair-keymap::file`; Settings
+no longer owns or imports the keymap module.
 
 ## Acceptance criteria
 

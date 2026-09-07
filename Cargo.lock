@@ -4384,8 +4384,12 @@ version = "0.1.0"
 name = "labonair-keymap"
 version = "0.1.0"
 dependencies = [
+ "dirs 6.0.0",
+ "gpui",
+ "jsonc-parser",
  "labonair-command-palette-core",
  "labonair-interaction-contracts",
+ "serde_json",
 ]
 
 [[package]]
@@ -4505,7 +4509,7 @@ dependencies = [
  "jsonc-parser",
  "jsonschema",
  "labonair-command-palette-core",
- "labonair-keymap",
+ "labonair-interaction-contracts",
  "labonair-settings-content",
  "labonair-settings-json",
  "labonair-settings-macros",

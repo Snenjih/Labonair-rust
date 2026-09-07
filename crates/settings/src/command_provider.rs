@@ -3,7 +3,7 @@
 use labonair_command_palette_core::{
     CommandContext, CommandDescriptor, CommandIcon, CommandId, CommandProvider,
 };
-use labonair_keymap::ShortcutId;
+use labonair_interaction_contracts::ShortcutId;
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct SettingsCommandProvider;

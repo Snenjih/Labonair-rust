@@ -286,7 +286,7 @@ pub struct Preferences {
     pub mcp_auto_revoke_minutes: u32,
     pub mcp_notify_on_activity: bool,
     // Keyboard shortcuts moved off this blob in T19-008 — they now live in
-    // their own `keymap.json` (`labonair_settings::keymap`), not here.
+    // their own `keymap.json` (`labonair_keymap::file`), not here.
 }
 
 impl Default for Preferences {
