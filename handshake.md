@@ -36,6 +36,11 @@ Workspace, Notifications, Updater, Transfers, and the other capability
 owners. R07-001's structural ownership findings are therefore complete; its
 remaining work is the visual matrix and the R07-003 compatibility decision.
 
+The R07-001 acceptance record now marks ownership, documentation authority,
+dependency/source agreement, verification gates, and product dispositions as
+structurally satisfied. Visual states remain pending by policy, and the legacy
+Settings warning path remains explicitly delegated to R07-003.
+
 R03-002 Keymap, R04-001 static Themes, R04-002 Hosts, and R05-001 Settings
 reduction are complete and visually accepted. The normative field inventory is
 `docs/settings-inventory.md`.

@@ -1025,3 +1025,9 @@ dependency verifier, rework queue verifier, formatting, and diff checks pass.
 The follow-up statusbar audit found that `shell/src/status_items.rs` is only a
 composition hook: every permanent item is supplied by a typed capability
 registration, and no feature-owned status behavior remains in the shell.
+
+R07-001's structural acceptance criteria are now recorded as satisfied where
+the source, dependency, and verification evidence is complete. The visual
+state matrix remains pending because native capture lacks Screen Recording
+permission; the old Settings-key warning policy remains the bounded R07-003
+follow-up.

@@ -74,16 +74,21 @@ to introduce new features.
 
 ## Acceptance criteria
 
-- [ ] Every capability has one owner, one canonical crate, one entry point,
-      and one documented persistence/notification story.
-- [ ] No stale document presents an archived task or report as current
-      authority.
-- [ ] Dependency graph, source layout, and inventory agree.
-- [ ] All repository verification gates pass.
+- [x] Every capability has one owner, one canonical crate, one entry point,
+      and one documented persistence/notification story in the capability
+      matrix and registry contracts; remaining implementation gaps are marked
+      explicitly as partial or pending.
+- [x] No normative document presents an archived task or report as current
+      authority; `docs/README.md` and `tasks/rework/README.md` define the
+      current documentation and implementation sources.
+- [x] Dependency graph, source layout, and inventory agree; the dependency
+      verifier reports an acyclic graph with no untracked boundary violations.
+- [x] All repository verification gates pass on the current tree.
 - [ ] Normal, narrow, focused, empty, loading, error, long-list, and overlay
       states are visually checked for each permanent surface.
-- [ ] Any remaining product idea is explicitly keep, redesign, defer, or
-      remove; none remains an implicit obligation.
+- [x] Any remaining product idea is explicitly keep, redesign, defer, or
+      remove in the capability matrix and product dispositions; none remains
+      an implicit obligation.
 
 ## Removal condition
 
