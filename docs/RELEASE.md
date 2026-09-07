@@ -112,15 +112,15 @@ release workflow stays a per-OS switch.
 
 **Decision — custom minimal updater, not Sparkle.** Sparkle would need an
 `objc2`/framework binding or a Swift shim plus its own signed-appcast tooling;
-the app already publishes a Tauri-shaped `latest.json` (T15-004) and Tauri's
-updater used **minisign** signatures. Reusing that format keeps the release
-pipeline unchanged and avoids a second signing system, so the port reimplements
-the same four steps natively (this is also the approach Zed's auto-updater
-takes).
+the predecessor already publishes a compatible `latest.json` (T15-004) and
+its updater used **minisign** signatures. Reusing that wire format keeps the
+release pipeline unchanged and avoids a second signing system, so the native
+updater reimplements the same four steps without any Tauri runtime dependency.
 
 `labonair-updater` (`crates/updater/`):
 
-- **Manifest** — Tauri-compatible `latest.json` at `DEFAULT_UPDATE_ENDPOINT`
+- **Manifest** — predecessor-compatible `latest.json` at
+  `DEFAULT_UPDATE_ENDPOINT`
   (`…/releases/latest/download/latest.json`). Shape: `{ version, notes,
   pub_date, platforms: { "<os>-<arch>": { url, signature } } }`. `signature` is
   the base64 of the whole `.minisig` file.

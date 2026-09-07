@@ -42,7 +42,7 @@ versions follow [SemVer](https://semver.org/).
     entitlements), `.dmg` creation and `notarytool` notarization.
   - `packaging/macos/` — `Info.plist` template, `Labonair.entitlements`,
     app icon.
-  - `labonair-updater` — Tauri-compatible `latest.json` manifest types,
+  - `labonair-updater` — predecessor-compatible `latest.json` manifest types,
     platform target key, and a dependency-free `SemVer` version check
     (`UpdateManifest::available()`). Endpoint:
     `github.com/Snenjih/Labonair-rust/releases/latest/download/latest.json`.

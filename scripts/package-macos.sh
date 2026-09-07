@@ -21,7 +21,8 @@
 #   LABONAIR_UPDATER_KEY_PASSWORD  password for that key (empty for none).
 #
 # Auto-update artifacts (always produced): a `<name>.app.tar.gz` tarball of the
-# finished bundle and a Tauri-compatible `latest.json` manifest next to the dmg.
+# finished bundle and a legacy-compatible `latest.json` manifest next to the
+# dmg. The native updater has no Tauri runtime dependency.
 # The `signature` field is filled from `<tarball>.minisig` when the key is set,
 # and left empty otherwise (the in-app updater then refuses the update — safe).
 #

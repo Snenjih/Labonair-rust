@@ -79,7 +79,7 @@ pub struct UpdatePlatform {
     pub signature: String,
 }
 
-/// The `latest.json` update manifest (Tauri-compatible shape).
+/// The `latest.json` update manifest using the predecessor-compatible shape.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct UpdateManifest {
     /// Version string of the release, e.g. `"1.2.0"` or `"v1.2.0"`.
