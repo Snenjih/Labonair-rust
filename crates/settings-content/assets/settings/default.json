@@ -43,11 +43,6 @@
     "uiDensity": "default",
     // Multiplier on the active theme's corner-radius scale (1.0 = unchanged).
     "cornerRadiusScale": 1.0,
-    "backgroundImage": "",
-    "backgroundOpacity": 30,
-    "backgroundBlur": 0,
-    "backgroundTintColor": "#000000",
-    "backgroundTintOpacity": 0,
     // "titlebar" or "sidebar".
     "tabsLocation": "titlebar",
     "sidebarTabInfoLine": [],

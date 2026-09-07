@@ -238,16 +238,6 @@ const APPEARANCE_GROUPS: &[Group] = &[
             "sidebarTabInfoLine",
         ],
     ),
-    (
-        "Background",
-        &[
-            "backgroundImage",
-            "backgroundOpacity",
-            "backgroundBlur",
-            "backgroundTintColor",
-            "backgroundTintOpacity",
-        ],
-    ),
     ("Zen Mode", &["zenModeShowHeader", "zenModeShowStatusbar"]),
     ("Active Theme", &["appTheme", "themeVariantOverrides"]),
 ];

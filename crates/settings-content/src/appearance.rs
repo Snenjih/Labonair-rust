@@ -37,12 +37,6 @@ pub struct AppearanceContent {
     /// Corner-radius multiplier applied to the active theme's radius scale
     /// (`1.0` = unchanged) (T20-007).
     pub corner_radius_scale: Option<f32>,
-    /// Background image filename (empty = none).
-    pub background_image: Option<String>,
-    pub background_opacity: Option<u32>,
-    pub background_blur: Option<u32>,
-    pub background_tint_color: Option<String>,
-    pub background_tint_opacity: Option<u32>,
     /// `"titlebar"` | `"sidebar"`.
     pub tabs_location: Option<String>,
     /// Up to two of `path`/`connection`/`host`/`uptime`/`transfer`/`busy`.
@@ -74,11 +68,6 @@ impl AppearanceContent {
             buffer_line_height: Some(1.618),
             ui_density: Some("default".to_string()),
             corner_radius_scale: Some(1.0),
-            background_image: Some(String::new()),
-            background_opacity: Some(30),
-            background_blur: Some(0),
-            background_tint_color: Some("#000000".to_string()),
-            background_tint_opacity: Some(0),
             tabs_location: Some("titlebar".to_string()),
             sidebar_tab_info_line: Some(Vec::new()),
             sidebar_group_by_folder: Some(false),

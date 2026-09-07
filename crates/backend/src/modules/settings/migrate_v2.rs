@@ -182,11 +182,6 @@ fn appearance_from(p: &Preferences) -> AppearanceContent {
         app_font_family: Some(p.app_font_family.clone()),
         reduce_motion: Some(p.reduce_motion),
         app_corner_radius: Some(p.app_corner_radius),
-        background_image: Some(p.background_image.clone()),
-        background_opacity: Some(p.background_opacity),
-        background_blur: Some(p.background_blur),
-        background_tint_color: Some(p.background_tint_color.clone()),
-        background_tint_opacity: Some(p.background_tint_opacity),
         tabs_location: Some(p.tabs_location.clone()),
         sidebar_tab_info_line: Some(p.sidebar_tab_info_line.clone()),
         sidebar_group_by_folder: Some(p.sidebar_group_by_folder),
@@ -199,6 +194,63 @@ fn appearance_from(p: &Preferences) -> AppearanceContent {
         // they resolve to their `AppearanceContent::defaults()` on read.
         ..AppearanceContent::default()
     }
+}
+
+const BACKGROUND_KEYS: &[&str] = &[
+    "backgroundImage",
+    "backgroundOpacity",
+    "backgroundBlur",
+    "backgroundTintColor",
+    "backgroundTintOpacity",
+];
+
+/// Persist background values in the top-level shape consumed by
+/// `labonair-background`. Background rendering and image storage already have
+/// their own owner; keeping these keys nested under `appearance` would create
+/// a second source of truth.
+fn insert_background_values(settings: &mut Map<String, Value>, p: &Preferences) {
+    settings.insert(
+        "backgroundImage".into(),
+        Value::String(p.background_image.clone()),
+    );
+    settings.insert(
+        "backgroundOpacity".into(),
+        Value::from(p.background_opacity),
+    );
+    settings.insert("backgroundBlur".into(), Value::from(p.background_blur));
+    settings.insert(
+        "backgroundTintColor".into(),
+        Value::String(p.background_tint_color.clone()),
+    );
+    settings.insert(
+        "backgroundTintOpacity".into(),
+        Value::from(p.background_tint_opacity),
+    );
+}
+
+/// Move background values emitted by earlier v2 versions out of the Settings
+/// appearance object. Existing top-level values win, making this safe to run
+/// repeatedly after a user has already edited the Background-owned file.
+fn move_background_values_to_owner(settings: &mut Map<String, Value>) -> usize {
+    let mut moved = Vec::new();
+    if let Some(appearance) = settings
+        .get_mut("appearance")
+        .and_then(Value::as_object_mut)
+    {
+        for key in BACKGROUND_KEYS {
+            if let Some(value) = appearance.remove(*key) {
+                moved.push((*key, value));
+            }
+        }
+    }
+    let mut changed = 0;
+    for (key, value) in moved {
+        if !settings.contains_key(key) {
+            settings.insert(key.to_string(), value);
+        }
+        changed += 1;
+    }
+    changed
 }
 
 fn workspace_from(p: &Preferences) -> WorkspaceContent {
@@ -476,7 +528,17 @@ pub fn sparsify_v2_settings(dir: &Path) -> Result<SparsifyOutcome, String> {
     if settings.get(KEY_SCHEMA_VERSION).and_then(Value::as_u64) != Some(SCHEMA_VERSION_V2) {
         return Ok(SparsifyOutcome::NotV2);
     }
-    if settings.get(KEY_SPARSIFIED).and_then(Value::as_bool) == Some(true) {
+    let background_migration_needed = settings
+        .get("appearance")
+        .and_then(Value::as_object)
+        .is_some_and(|appearance| {
+            BACKGROUND_KEYS
+                .iter()
+                .any(|key| appearance.contains_key(*key))
+        });
+    if settings.get(KEY_SPARSIFIED).and_then(Value::as_bool) == Some(true)
+        && !background_migration_needed
+    {
         return Ok(SparsifyOutcome::AlreadySparse);
     }
 
@@ -485,7 +547,8 @@ pub fn sparsify_v2_settings(dir: &Path) -> Result<SparsifyOutcome, String> {
         let _ = std::fs::copy(&path, path.with_extension("json.bak"));
     }
 
-    let removed = sparsify_settings_map(&mut settings);
+    let moved_background = move_background_values_to_owner(&mut settings);
+    let removed = moved_background + sparsify_settings_map(&mut settings);
     settings.insert(KEY_SPARSIFIED.to_string(), Value::Bool(true));
     write_settings_to(dir, &settings)?;
 
@@ -574,6 +637,7 @@ pub fn migrate_settings_v1_to_v2(dir: &Path) -> Result<SettingsV2Outcome, String
     for (key, value) in areas {
         settings.insert((*key).to_string(), value.clone());
     }
+    insert_background_values(&mut settings, &prefs);
 
     // `_migratedUnknown` — fields with no `SettingsContent` destination,
     // preserved losslessly rather than dropped. Only written when it has real
@@ -948,6 +1012,62 @@ mod tests {
             all_keys, accounted,
             "every Preferences field must be mapped, skipped, or listed as unknown"
         );
+    }
+
+    #[test]
+    fn v1_background_values_are_migrated_to_the_background_owner() {
+        let dir = tmp("background-v1");
+        let mut prefs = serde_json::to_value(Preferences::default()).unwrap();
+        prefs["backgroundImage"] = Value::from("wallpaper.png");
+        prefs["backgroundOpacity"] = Value::from(45);
+        std::fs::write(
+            dir.join(CONFIG_FILE),
+            serde_json::to_string_pretty(&serde_json::json!({ "preferences": prefs })).unwrap(),
+        )
+        .unwrap();
+
+        migrate_settings_v1_to_v2(&dir).unwrap();
+        let after = read_settings_from(&dir);
+        assert_eq!(after["backgroundImage"], Value::from("wallpaper.png"));
+        assert_eq!(after["backgroundOpacity"], Value::from(45));
+        assert!(after
+            .get("appearance")
+            .and_then(Value::as_object)
+            .is_none_or(|appearance| !appearance.contains_key("backgroundImage")));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn v2_background_values_move_even_when_already_sparsified() {
+        let dir = tmp("background-v2");
+        let mut appearance = Map::new();
+        appearance.insert("backgroundImage".into(), Value::from("wallpaper.png"));
+        appearance.insert("backgroundOpacity".into(), Value::from(45));
+        let doc = serde_json::json!({
+            "schemaVersion": 2,
+            "sparsified": true,
+            "appearance": appearance,
+        });
+        std::fs::write(
+            dir.join(CONFIG_FILE),
+            serde_json::to_string_pretty(&doc).unwrap(),
+        )
+        .unwrap();
+
+        assert!(matches!(
+            sparsify_v2_settings(&dir).unwrap(),
+            SparsifyOutcome::Sparsified { .. }
+        ));
+        let after = read_settings_from(&dir);
+        assert_eq!(after["backgroundImage"], Value::from("wallpaper.png"));
+        assert_eq!(after["backgroundOpacity"], Value::from(45));
+        assert!(after
+            .get("appearance")
+            .and_then(Value::as_object)
+            .is_none_or(|appearance| !appearance.contains_key("backgroundImage")));
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

@@ -304,41 +304,6 @@ pub fn all_fields() -> Vec<AnyField> {
             "Line-height multiplier for editor and terminal text."
         ),
         field!(
-            appearance.background_image,
-            "backgroundImage",
-            Text,
-            "Background image",
-            "Filename of the background image (empty = none)."
-        ),
-        field!(
-            appearance.background_opacity,
-            "backgroundOpacity",
-            Int { min: 0, max: 100, step: 5 },
-            "Background opacity",
-            "Opacity of the background image (%)."
-        ),
-        field!(
-            appearance.background_blur,
-            "backgroundBlur",
-            Int { min: 0, max: 40, step: 1 },
-            "Background blur",
-            "Backdrop blur applied to the background image (px)."
-        ),
-        field!(
-            appearance.background_tint_color,
-            "backgroundTintColor",
-            Text,
-            "Background tint color",
-            "Hex color overlaid on the background image."
-        ),
-        field!(
-            appearance.background_tint_opacity,
-            "backgroundTintOpacity",
-            Int { min: 0, max: 100, step: 5 },
-            "Background tint opacity",
-            "Opacity of the background tint overlay (%)."
-        ),
-        field!(
             appearance.tabs_location,
             "tabsLocation",
             Select(&[("titlebar", "Titlebar"), ("sidebar", "Sidebar")]),

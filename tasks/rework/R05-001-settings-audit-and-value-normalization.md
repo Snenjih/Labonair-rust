@@ -101,3 +101,6 @@ the model. Unused values are parked in the inventory, not added speculatively.
 - [x] Removed the untyped `general.notifyOnErrors` key from the shipped
       defaults and added a shape-drift test so future default assets cannot
       contain values outside `SettingsContent`.
+- [x] Moved the five duplicated Background values out of `AppearanceContent`
+      and into the existing Background-owned top-level storage path, including
+      migrations for legacy v1 and already-sparsified v2 files.

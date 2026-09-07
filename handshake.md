@@ -5,7 +5,7 @@ They may mention API names that were valid at the time of the recorded
 change; the current API and task state are defined by the latest header and
 the normative documents under `docs/`.
 
-## Current Session: 2026-09-07 (R04-002 complete; R05-001 next)
+## Current Session: 2026-09-07 (R05-001 Settings audit active)
 
 The dedicated Keymap management surface is now a real `labonair-keymap-ui`
 sibling crate. `labonair-keymap` exposes the immutable management snapshot and
@@ -43,11 +43,14 @@ test. The worktree is clean before starting
 `R05-001-settings-audit-and-value-normalization.md` is now active. The first
 field-to-consumer/scope inventory is documented in
 `docs/settings-inventory.md`; it identifies current values to keep, duplicate
-state to move, and legacy/unsupported fields to remove. No Settings model
-field has been deleted yet. The stale untyped `general.notifyOnErrors` default
-key was removed and a shape-drift test now guards the shipped asset. The next
-slice is to prove indirect consumers and define lossless migrations before
-changing the typed schema. The worktree is clean before the inventory slice.
+state to move, and legacy/unsupported fields to remove. The stale untyped
+`general.notifyOnErrors` default key was removed and a
+shape-drift test now guards the shipped asset. The five duplicated Background
+fields were removed from `AppearanceContent`; legacy v1 and already-sparsified
+v2 files migrate them to the Background-owned top-level storage. The next
+slice is to prove indirect consumers and define lossless migrations for the
+remaining duplicate/runtime-state fields. The worktree is clean before the
+next Settings slice.
 
 `R02-003` is complete. The user confirmed the native Rust shell visual state
 is acceptable, closing the final visual acceptance criterion. The project and
