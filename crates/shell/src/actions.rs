@@ -339,7 +339,7 @@ impl AppShell {
         register_snapshot(&mut submenus, symbols);
 
         let app_themes = labonair_theme::command_provider::app_themes_submenu(
-            labonair_settings_ui::theme_choices()
+            labonair_theme::command_provider::app_theme_choices()
                 .into_iter()
                 .map(|(id, name)| (id.clone(), name, id == active_theme_id)),
         );
@@ -354,16 +354,14 @@ impl AppShell {
             active_icon_theme_id.as_str()
         };
         let icon_themes = labonair_theme::command_provider::icon_themes_submenu(
-            self.theme
-                .read(cx)
-                .list_icon_themes()
+            labonair_theme::command_provider::icon_theme_choices()
                 .into_iter()
-                .map(|theme| {
+                .map(|(id, name)| {
                     (
-                        theme.id.clone(),
-                        theme.name,
-                        theme.builtin.then(|| "built-in".to_string()),
-                        theme.id == active_icon_theme_id,
+                        id.clone(),
+                        name,
+                        Some("built-in".to_string()),
+                        id == active_icon_theme_id,
                     )
                 }),
         );

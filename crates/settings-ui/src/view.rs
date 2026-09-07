@@ -40,14 +40,6 @@ pub(crate) struct EditState {
     pub(crate) numeric: bool,
 }
 
-/// One row in the command-palette theme list (built-in default + user themes).
-pub(crate) struct ThemeEntry {
-    /// Filename stem — `"default"` for the built-in.
-    pub(crate) id: String,
-    /// Display name from the theme file.
-    pub(crate) name: String,
-}
-
 /// Which layer supplies a field's effective value, for the origin badge
 /// (`docs/settings-guidelines.md` rule 5). A thin display-only mirror of
 /// `labonair_settings::SettingsLayer` — kept separate so this crate never has

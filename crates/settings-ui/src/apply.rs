@@ -1,26 +1,17 @@
 //! Pure helpers shared by the Settings UI and command palette: the
-//! `Preferences` -> `ThemeStore` bridge (`apply_prefs_to_theme`) and the user
-//! theme-file scan primitives. Split out of the old
+//! `Preferences` -> `ThemeStore` bridge (`apply_prefs_to_theme`) and the
+//! built-in theme catalog adapter. Split out of the old
 //! `crates/ui/src/settings.rs` monolith in T16-007 (mechanical move — no logic
 //! change).
 
-#[cfg(test)]
-use std::fs;
-use std::path::{Path, PathBuf};
-
 use gpui::{App, Entity};
 
-use labonair_filesystem::paths::config_dir;
 use labonair_settings::content::general::ThemePref;
 use labonair_settings::{
     EditorSettings, GeneralSettings, Settings as _, SettingsStore, TerminalSettings, ThemeSettings,
 };
-#[cfg(test)]
-use labonair_theme::ThemeFile;
 use labonair_theme::ThemePreference;
-use labonair_theme::{IconThemeRegistry, ThemeMetrics, ThemeRegistry, ThemeStore, UiDensity};
-
-use crate::view::ThemeEntry;
+use labonair_theme::{ThemeMetrics, ThemeStore, UiDensity};
 
 /// Build the [`FontOverrides`] snapshot from the typography-relevant settings
 /// slices. A blank family / zero size means "keep the theme default".
@@ -98,11 +89,9 @@ pub fn apply_prefs_to_theme(theme: &Entity<ThemeStore>, cx: &mut App) {
         theme.update(cx, |t, cx| t.set_editor_theme(id, cx));
     }
 
-    // Rescan the user themes directory into the registry, then activate the
-    // persisted id (`""` / `"default"` → built-in light/dark).
-    theme.update(cx, |t, cx| {
-        t.reload_user_themes(&themes_dir(), cx);
-    });
+    // Activate the persisted built-in theme id (`""` / `"default"` follows
+    // the light/dark preference). Theme catalogs are intentionally static for
+    // the current product surface; extension/download support is deferred.
     let app_theme = appearance
         .as_ref()
         .map(|s| s.app_theme().to_string())
@@ -127,11 +116,8 @@ pub fn apply_prefs_to_theme(theme: &Entity<ThemeStore>, cx: &mut App) {
         .unwrap_or_default();
     apply_stored_theme_variant(&variant_overrides, theme, cx);
 
-    // Icon theme (T20-006): rescan the user icon-themes directory, then
-    // activate the persisted id (`""` / `"default"` → built-in glyph set).
-    theme.update(cx, |t, cx| {
-        t.reload_user_icon_themes(&icon_themes_dir(), cx);
-    });
+    // Icon theme (`""` / `"default"` → built-in glyph set). The initial
+    // catalog is embedded and deterministic.
     let icon_theme = appearance
         .as_ref()
         .map(|s| s.icon_theme().to_string())
@@ -149,52 +135,6 @@ pub fn apply_prefs_to_theme(theme: &Entity<ThemeStore>, cx: &mut App) {
             let _ = t.set_active_icon_theme("default", cx);
         });
     }
-}
-
-/// Rescan the user themes directory into the live [`ThemeStore`] registry and
-/// re-resolve the active theme (+ its persisted variant). Called on startup by
-/// [`apply_prefs_to_theme`] and by `labonair-shell`'s fs-watch on the themes
-/// folder (T20-005 live-reload).
-pub fn reload_theme_registry(theme: &Entity<ThemeStore>, cx: &mut App) {
-    theme.update(cx, |t, cx| {
-        t.reload_user_themes(&themes_dir(), cx);
-    });
-    let overrides = ThemeSettings::try_get(cx)
-        .map(|s| s.theme_variant_overrides())
-        .unwrap_or_default();
-    apply_stored_theme_variant(&overrides, theme, cx);
-}
-
-/// The user themes directory (`<config_dir>/labonair/themes`).
-pub fn user_themes_dir() -> PathBuf {
-    themes_dir()
-}
-
-/// The user icon-themes directory (`<config_dir>/labonair/icon_themes`).
-pub fn user_icon_themes_dir() -> PathBuf {
-    icon_themes_dir()
-}
-
-pub(crate) fn icon_themes_dir() -> PathBuf {
-    config_dir().join("icon_themes")
-}
-
-/// Rescan the user icon-themes directory into the live [`ThemeStore`] registry
-/// and re-resolve the active icon theme. Called on startup by
-/// [`apply_prefs_to_theme`] and by `labonair-shell`'s fs-watch on the folder
-/// (T20-006 live-reload).
-pub fn reload_icon_theme_registry(theme: &Entity<ThemeStore>, cx: &mut App) {
-    theme.update(cx, |t, cx| {
-        t.reload_user_icon_themes(&icon_themes_dir(), cx);
-    });
-}
-
-/// `(id, display name)` for every installed icon theme (built-in `"default"`
-/// first).
-pub fn icon_theme_choices() -> Vec<(String, String)> {
-    let mut reg = IconThemeRegistry::builtin();
-    reg.load_user_icon_themes(&icon_themes_dir());
-    reg.list().into_iter().map(|m| (m.id, m.name)).collect()
 }
 
 /// Re-apply the persisted `themeVariantOverrides[family][mode]` selection to the
@@ -223,19 +163,6 @@ pub(crate) fn apply_stored_theme_variant(
     theme.update(cx, |t, cx| t.set_registry_variant(key, cx));
 }
 
-pub(crate) fn themes_dir() -> PathBuf {
-    config_dir().join("themes")
-}
-
-/// `(id, display name)` for every installed theme (built-in `"default"` first),
-/// for the command palette's "Change App Theme…" sub-page.
-pub fn theme_choices() -> Vec<(String, String)> {
-    scan_themes(&themes_dir())
-        .into_iter()
-        .map(|e| (e.id, e.name))
-        .collect()
-}
-
 /// Live hover-preview of a theme by id (`Some`) or revert (`None`) — no
 /// persistence. Used by the command palette's Themes sub-page.
 pub fn preview_app_theme(id: Option<&str>, theme: &Entity<ThemeStore>, cx: &mut App) {
@@ -245,7 +172,7 @@ pub fn preview_app_theme(id: Option<&str>, theme: &Entity<ThemeStore>, cx: &mut 
     }
 }
 
-/// Activate a JSON app theme by id (`"default"` = built-in), persist the
+/// Activate a built-in app theme by id (`"default"` = follows system), persist the
 /// selection, and re-apply its stored variant. Used by the palette.
 pub fn activate_app_theme(id: &str, theme: &Entity<ThemeStore>, cx: &mut App) {
     let id_owned = id.to_string();
@@ -256,65 +183,6 @@ pub fn activate_app_theme(id: &str, theme: &Entity<ThemeStore>, cx: &mut App) {
             .update_user_settings(move |c| c.appearance.app_theme = Some(id_owned));
     }
     apply_prefs_to_theme(theme, cx);
-}
-
-/// The selectable theme list (T20-005): the built-in "Labonair" entry (id
-/// `"default"`, follows the system light/dark preference) first, then one entry
-/// per user registry variant — `id = "<file stem>/<variant name>"`,
-/// `name = "<family> — <variant>"`.
-pub(crate) fn scan_themes(dir: &Path) -> Vec<ThemeEntry> {
-    let mut reg = ThemeRegistry::builtin();
-    reg.load_user_themes(dir);
-    let mut entries = vec![ThemeEntry {
-        id: "default".to_string(),
-        name: "Labonair".to_string(),
-    }];
-    for meta in reg.list().into_iter().filter(|m| !m.builtin) {
-        entries.push(ThemeEntry {
-            id: meta.id(),
-            name: format!("{} \u{2014} {}", meta.family, meta.variant_name),
-        });
-    }
-    entries
-}
-
-#[cfg(test)]
-pub(crate) fn read_theme_file_in(dir: &Path, id: &str) -> Result<ThemeFile, String> {
-    let raw = fs::read_to_string(dir.join(format!("{id}.json"))).map_err(|e| e.to_string())?;
-    ThemeFile::from_json(&raw)
-}
-
-#[cfg(test)]
-pub(crate) fn save_theme_file_in(dir: &Path, id: &str, raw: &str) -> Result<(), String> {
-    fs::create_dir_all(dir).map_err(|e| e.to_string())?;
-    fs::write(dir.join(format!("{id}.json")), raw).map_err(|e| e.to_string())
-}
-
-#[cfg(test)]
-pub(crate) fn delete_theme_in(dir: &Path, id: &str) -> Result<(), String> {
-    if id == "default" {
-        return Err("the built-in theme cannot be deleted".to_string());
-    }
-    fs::remove_file(dir.join(format!("{id}.json"))).map_err(|e| e.to_string())
-}
-
-#[cfg(test)]
-pub(crate) fn slugify(name: &str) -> String {
-    let s: String = name
-        .to_lowercase()
-        .chars()
-        .map(|c| if c.is_alphanumeric() { c } else { '-' })
-        .collect();
-    let s = s
-        .split('-')
-        .filter(|p| !p.is_empty())
-        .collect::<Vec<_>>()
-        .join("-");
-    if s.is_empty() {
-        "theme".to_string()
-    } else {
-        s
-    }
 }
 
 pub(crate) fn char_of(ks: &gpui::Keystroke) -> Option<String> {

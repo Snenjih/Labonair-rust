@@ -5,7 +5,7 @@ They may mention API names that were valid at the time of the recorded
 change; the current API and task state are defined by the latest header and
 the normative documents under `docs/`.
 
-## Current Session: 2026-09-07 (R03-002 keymap runtime integration active)
+## Current Session: 2026-09-07 (R04-002 hosts owner active)
 
 The dedicated Keymap management surface is now a real `labonair-keymap-ui`
 sibling crate. `labonair-keymap` exposes the immutable management snapshot and
@@ -16,10 +16,14 @@ validation, same-context conflict detection, explicit unbind, and lossless
 append-only persistence. Keymap diagnostics and load/save failures publish
 through the retained notification registry instead of a duplicate passive
 error banner. Both the titlebar and command-palette Keymap entrypoints open
-the native window. The current worktree contains this verified slice and is
-ready for the next R03-002 runtime migration step. The implementation commit
-is `4fb095d`; the final focused visual check of rebind/conflict/malformed
-states remains open.
+the native window. R03-002 is complete; the implementation commit is
+`4fb095d`, followed by the documentation commit `1878c06`. The user
+confirmed the native visual state. R04-001 is complete: the runtime now uses
+only the embedded color/icon catalogs, Settings no longer owns theme
+management, shell no longer watches theme directories, and the palette gets
+its choices directly from `labonair-theme`. The user confirmed the visual
+state and the full verification gates pass. R04-002 is the next active task
+for the single Hosts owner and SSH/SFTP picker flow.
 
 `R02-003` is complete. The user confirmed the native Rust shell visual state
 is acceptable, closing the final visual acceptance criterion. The project and

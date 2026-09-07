@@ -121,8 +121,9 @@ pub struct ThemeStore {
     editor_theme: EditorThemeId,
     /// Runtime typography overrides from settings (T13-003).
     font_overrides: FontOverrides,
-    /// The theme family/variant registry (T20-005): the embedded built-in plus
-    /// whatever valid `*.json` files the user themes directory holds.
+    /// The theme family/variant registry (T20-005): the embedded built-in
+    /// catalog. File loading remains an extension adapter and is not invoked
+    /// by the current product workflow.
     registry: ThemeRegistry,
     /// The active registry family name (`None` = the built-in light/dark). When
     /// set it is resolved through [`ThemeRegistry::resolve_family_variant`] into
@@ -131,8 +132,9 @@ pub struct ThemeStore {
     active_family: Option<String>,
     /// Per-mode variant override for `active_family` (e.g. Catppuccin "Mocha").
     registry_variant: Option<String>,
-    /// The icon-theme registry (T20-006): the embedded built-in plus whatever
-    /// valid `*.json` files the user icon-themes directory holds.
+    /// The icon-theme registry (T20-006): the embedded built-in catalog. File
+    /// loading remains an extension adapter and is not invoked by the current
+    /// product workflow.
     icon_registry: IconThemeRegistry,
     /// Active icon-theme id (`"default"` = the built-in "Labonair" set). Resolved
     /// through [`IconThemeRegistry::get`] on every access by [`Self::icon_theme`].

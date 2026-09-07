@@ -170,10 +170,35 @@ now implemented with GPUI keystroke validation, same-context conflict
 detection, explicit unbind, and lossless append-only JSONC overrides. Keymap
 diagnostics and load/save failures publish through the retained notifications
 registry; the view no longer renders a duplicate passive error banner. The
-final focused visual check of these new editor states remains open.
+user confirmed the native visual state.
 
 The keymap runtime canonicalizer now handles multi-step chords by normalizing
 each keystroke independently while preserving chord order. This is important
 because the file layer already treats a chord as a space-separated sequence;
 single-keystroke normalization would otherwise fail to detect equivalent
 chords.
+
+## R03-002 completion
+
+Full workspace check, Clippy, tests, formatting, dependency verification,
+queue validation, and diff checks pass. R03-002 is complete; R04-001 is the
+next active task.
+
+## R04-001 static catalog slice
+
+The runtime theme path now exposes only the embedded deterministic color and
+icon catalogs. Settings no longer scans or edits theme files, shell startup no
+longer watches theme directories, and the palette receives built-in choices
+directly from `labonair-theme` while keeping preview/commit/cancel behavior.
+Theme file loaders remain isolated extension adapters for a later product
+decision and are not invoked by the supported workflow.
+
+The first post-change full workspace test pass had one unrelated concurrent
+backend Git test fail with SQLite `database is locked`; rerunning that exact
+test with one test thread passed. Treat this as test-environment contention,
+not a Theme change regression, and keep the isolated rerun in the verification
+record.
+
+R04-001 is complete. The user confirmed the native visual state. The next
+active queue task is R04-002, which establishes the single Hosts owner and
+SSH/SFTP picker flow.

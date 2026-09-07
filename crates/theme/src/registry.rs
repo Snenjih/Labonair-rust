@@ -2,10 +2,10 @@
 //!
 //! Where [`crate::import`] models the *single imported custom theme* of the
 //! T02-003 era, this module turns that into a **registry**: multiple theme
-//! *families*, each with one or more named light/dark variants, loaded from
-//! embedded JSON (the built-in "Labonair" family) plus the user's
-//! `<config_dir>/labonair/themes/*.json`, listed as metadata and resolved to a
-//! renderable [`Theme`] by id at runtime.
+//! *families*, each with one or more named light/dark variants. The supported
+//! product catalog currently contains only the embedded JSON built-in
+//! "Labonair" family; the file loader remains an isolated extension boundary
+//! for a later theme-package decision.
 //!
 //! # JSON format ([`ThemeFamilyContent`])
 //!
@@ -240,8 +240,9 @@ struct RegisteredFamily {
     builtin: bool,
 }
 
-/// A set of theme families: the embedded built-in plus whatever valid `*.json`
-/// files were found in the user themes directory.
+/// A set of theme families. The runtime starts with the embedded built-in;
+/// optional file loading is retained as a future extension adapter and is not
+/// part of the current product workflow.
 pub struct ThemeRegistry {
     families: Vec<RegisteredFamily>,
 }
@@ -270,6 +271,8 @@ impl ThemeRegistry {
     }
 
     /// Replace the non-built-in families with everything valid in `dir`.
+    ///
+    /// This is an extension adapter, not part of the current static catalog.
     /// Malformed / unreadable files are skipped and returned as warnings; the
     /// registry is never left empty (the built-in family always remains).
     pub fn load_user_themes(&mut self, dir: &Path) -> Vec<String> {

@@ -22,9 +22,8 @@ mod window;
 mod tests;
 
 pub use apply::{
-    activate_app_theme, apply_prefs_to_theme, apply_theme_metrics, icon_theme_choices,
-    preview_app_theme, reload_icon_theme_registry, reload_theme_registry, theme_choices,
-    theme_metrics_from_settings, user_icon_themes_dir, user_themes_dir,
+    activate_app_theme, apply_prefs_to_theme, apply_theme_metrics, preview_app_theme,
+    theme_metrics_from_settings,
 };
 pub use services::{ServiceFuture, SettingsServices, SystemFontService};
 pub use view::SettingsView;

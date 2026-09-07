@@ -263,8 +263,8 @@ struct RegisteredIconTheme {
     builtin: bool,
 }
 
-/// The embedded built-in icon theme plus whatever valid `*.json` files were
-/// found in the user icon-themes directory. Never empty.
+/// The embedded built-in icon theme. Optional file loading remains available
+/// as a future extension adapter, but the current product catalog is static.
 pub struct IconThemeRegistry {
     themes: Vec<RegisteredIconTheme>,
 }
@@ -293,6 +293,8 @@ impl IconThemeRegistry {
     }
 
     /// Replace the non-built-in themes with everything valid in `dir`.
+    ///
+    /// This is an extension adapter, not part of the current static catalog.
     /// Accepts both a bare [`IconThemeContent`] and a Zed-style *family*
     /// (`{ "name", "author", "themes": [ … ] }`). Malformed / unreadable files
     /// are skipped and returned as warnings; the built-in theme always remains.

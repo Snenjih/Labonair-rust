@@ -2,7 +2,7 @@
 
 ## Status
 
-`⏳ Planned`
+`✅ Done`
 
 ## Owner
 
@@ -74,14 +74,14 @@ palette previews immediately, while Enter commits the selection.
 
 ## Acceptance criteria
 
-- [ ] Color and icon themes each have one registry-backed palette submenu.
-- [ ] Moving selection previews immediately; Enter commits; cancellation
+- [x] Color and icon themes each have one registry-backed palette submenu.
+- [x] Moving selection previews immediately; Enter commits; cancellation
       restores the previous selection.
-- [ ] The initial catalog is static and deterministic with no network request.
-- [ ] Settings contains only selected values, not theme management UI.
-- [ ] Feature views consume semantic tokens and shared UI-kit controls.
-- [ ] Focused tests and all repository verification gates pass.
-- [ ] Normal, filtered, long-list, preview, and empty states are visually
+- [x] The initial catalog is static and deterministic with no network request.
+- [x] Settings contains only selected values, not theme management UI.
+- [x] Feature views consume semantic tokens and shared UI-kit controls.
+- [x] Focused tests and all repository verification gates pass.
+- [x] Normal, filtered, long-list, preview, and empty states are visually
       checked.
 
 ## Removal condition
@@ -89,6 +89,19 @@ palette previews immediately, while Enter commits the selection.
 This task is complete only when no feature or Settings pane defines a second
 theme catalog or selection path and no remote theme download code is required
 for the supported workflow.
+
+## Progress
+
+`labonair-theme` owns the typed color/icon registries, catalog adapters, and
+transactional preview state. The application path exposes only the embedded
+deterministic catalog: Settings no longer scans theme directories, the palette
+receives built-in color and icon choices directly from the Theme provider, and
+shell startup no longer installs theme directory watchers. File loaders remain
+isolated extension adapters for a future product decision and are not part of
+the supported workflow.
+
+R04-001 is complete. The user confirmed the native visual state; focused and
+full repository verification gates pass.
 
 ## Notes and follow-ups
 

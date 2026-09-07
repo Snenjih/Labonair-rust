@@ -126,59 +126,6 @@ mod cases {
         assert_eq!(content.terminal.terminal_font_size, Some(15));
     }
 
-    const SAMPLE_THEME: &str = r##"{
-        "name": "Sample",
-        "variants": {
-            "dark":  { "mode": "dark",  "colors": { "primary": "#ff0000" } },
-            "light": { "mode": "light", "colors": { "primary": "#0000ff" } }
-        }
-    }"##;
-
-    fn tmp() -> std::path::PathBuf {
-        let d = std::env::temp_dir().join(format!("labonair-themes-{}", uuid::Uuid::new_v4()));
-        std::fs::create_dir_all(&d).unwrap();
-        d
-    }
-
-    #[test]
-    fn slugify_makes_filesystem_safe_names() {
-        assert_eq!(slugify("Tokyo Night!!"), "tokyo-night");
-        assert_eq!(slugify("  "), "theme");
-        assert_eq!(slugify("Ayu_Mirage"), "ayu-mirage");
-    }
-
-    #[test]
-    fn scan_themes_lists_valid_user_themes_and_skips_junk() {
-        let dir = tmp();
-        std::fs::write(dir.join("good.json"), SAMPLE_THEME).unwrap();
-        std::fs::write(dir.join("broken.json"), "{ not json").unwrap();
-        std::fs::write(dir.join("notes.txt"), "ignore me").unwrap();
-        std::fs::write(dir.join("default.json"), SAMPLE_THEME).unwrap();
-
-        let list = scan_themes(&dir);
-        assert_eq!(list[0].id, "default");
-        let ids: Vec<&str> = list.iter().map(|t| t.id.as_str()).collect();
-        assert_eq!(ids, vec!["default", "good/dark", "good/light"]);
-        assert_eq!(list[1].name, "Sample \u{2014} dark");
-
-        std::fs::remove_dir_all(&dir).ok();
-    }
-
-    #[test]
-    fn save_read_and_delete_theme_roundtrip() {
-        let dir = tmp();
-        save_theme_file_in(&dir, "mine", SAMPLE_THEME).unwrap();
-        let file = read_theme_file_in(&dir, "mine").unwrap();
-        assert_eq!(file.name, "Sample");
-
-        assert!(delete_theme_in(&dir, "default").is_err());
-        delete_theme_in(&dir, "mine").unwrap();
-        assert!(read_theme_file_in(&dir, "mine").is_err());
-        assert_eq!(scan_themes(&dir).len(), 1);
-
-        std::fs::remove_dir_all(&dir).ok();
-    }
-
     #[test]
     fn capability_management_categories_are_not_registered() {
         for removed in ["themes", "hosts", "shortcuts"] {

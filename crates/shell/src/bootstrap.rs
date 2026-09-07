@@ -374,15 +374,6 @@ pub(crate) fn bootstrap(
     // `SettingsStore` (`SettingsView`'s generated field grid writes straight
     // to it) and the `SettingsStore` observer below.
     labonair_settings_ui::apply_prefs_to_theme(&theme, cx);
-    // T20-005: live-reload the theme registry when the user themes folder
-    // changes on disk — a dropped/edited/removed `*.json` re-resolves the
-    // active theme with no restart.
-    {
-        let theme_w = theme.clone();
-        labonair_settings::watch_dir(cx, labonair_settings_ui::user_themes_dir(), move |cx| {
-            labonair_settings_ui::reload_theme_registry(&theme_w, cx);
-        });
-    }
     // T20-007: re-derive the `ThemeMetrics` (font scales / UI density /
     // corner-radius scale / reduce-motion) whenever the layered settings
     // change. Generated `appearance` fields write straight to `SettingsStore`,
@@ -394,17 +385,6 @@ pub(crate) fn bootstrap(
             labonair_settings_ui::apply_theme_metrics(&theme_m, cx);
         })
         .detach();
-    }
-    // T20-006: same live-reload for the user icon-themes folder.
-    {
-        let theme_w = theme.clone();
-        labonair_settings::watch_dir(
-            cx,
-            labonair_settings_ui::user_icon_themes_dir(),
-            move |cx| {
-                labonair_settings_ui::reload_icon_theme_registry(&theme_w, cx);
-            },
-        );
     }
     // `keymap.json` (T19-008): load + merge + bind, publish the display
     // global, then live-watch the file so an edit takes effect with no

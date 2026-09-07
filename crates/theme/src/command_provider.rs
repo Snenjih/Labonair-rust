@@ -6,10 +6,32 @@ use labonair_command_palette_core::{
 };
 
 use crate::EditorThemeId;
-use crate::ThemePreference;
+use crate::{IconThemeRegistry, ThemePreference, ThemeRegistry};
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct ThemeCommandProvider;
+
+/// Return the deterministic color-theme catalog owned by `labonair-theme`.
+/// The family-level `default` entry follows the system light/dark mode.
+pub fn app_theme_choices() -> Vec<(String, String)> {
+    let mut choices = vec![("default".to_string(), "Labonair (System)".to_string())];
+    choices.extend(
+        ThemeRegistry::builtin()
+            .list()
+            .into_iter()
+            .map(|meta| (meta.id(), meta.variant_name)),
+    );
+    choices
+}
+
+/// Return the deterministic icon-theme catalog owned by `labonair-theme`.
+pub fn icon_theme_choices() -> Vec<(String, String)> {
+    IconThemeRegistry::builtin()
+        .list()
+        .into_iter()
+        .map(|meta| (meta.id, meta.name))
+        .collect()
+}
 
 pub fn color_mode_submenu(active: ThemePreference) -> SubmenuSnapshot {
     SubmenuSnapshot {
@@ -127,5 +149,29 @@ impl CommandProvider for ThemeCommandProvider {
                 .with_icon(CommandIcon::Sparkles)
                 .with_submenu(CommandSubmenu::EditorTheme),
         ]
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{app_theme_choices, icon_theme_choices};
+
+    #[test]
+    fn app_theme_choices_are_static_and_include_embedded_variants() {
+        let choices = app_theme_choices();
+        assert_eq!(
+            choices[0],
+            ("default".to_string(), "Labonair (System)".to_string())
+        );
+        assert!(choices.iter().any(|(id, _)| id == "default/Labonair Light"));
+        assert!(choices.iter().any(|(id, _)| id == "default/Labonair Dark"));
+    }
+
+    #[test]
+    fn icon_theme_choices_are_static_and_builtin_only() {
+        assert_eq!(
+            icon_theme_choices(),
+            vec![("default".to_string(), "Labonair".to_string())]
+        );
     }
 }
