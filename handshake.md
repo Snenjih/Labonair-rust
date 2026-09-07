@@ -44,9 +44,7 @@ modules; the shell only supplies live values and registers the snapshots.
 Hidden status-bar state and labels are owned by the workspace status registry
 as well. The current task is now `R03-002-keymap-runtime-and-editor.md`; the
 next work is to build the keymap runtime and management surface on the shared
-identity contract. The current commit is pending after the task-status update;
-the worktree is intentionally not yet clean until this checkpoint is
-committed.
+identity contract. The current commit is `0e5477c`; the worktree is clean.
 
 ## Current Session: 2026-09-07 (Native visual helper hardened)
 
