@@ -273,7 +273,7 @@ pub(crate) fn bootstrap(
         labonair_backend::modules::sftp::contract::BackendSftpService::new(backend.clone()),
     );
     let transfer_service: Arc<dyn TransferService> = Arc::new(
-        labonair_backend::modules::transfers::BackendTransferService::new(backend.clone()),
+        labonair_backend::modules::transfers::BackendTransferService::new(backend.transfer.clone()),
     );
     let transfer_events: Arc<dyn TransferEventSource> = Arc::new(
         labonair_backend::modules::transfers::BackendTransferEventSource::new(

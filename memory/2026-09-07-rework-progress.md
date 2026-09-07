@@ -93,6 +93,11 @@ instead of retaining the aggregate backend `App`. This keeps raw event
 transport available at the composition boundary without widening the adapter's
 state dependency.
 
+`BackendTransferService` was narrowed in the same way: it now receives only
+`TransferWorkerState`, while `BackendTransferEventSource` continues to receive
+only `EventBus`. Shell composition remains the sole place that reads those
+fields from the aggregate during migration.
+
 ## Native visual verification
 
 The exact Rust bundle was opened through its absolute `.app` path. Core

@@ -132,6 +132,8 @@ boundary still exists; that package must not become a second capability owner.
       into the canonical capability contracts.
 - [x] Event-source adapters for SSH, MCP, and Transfers now receive only the
       shared raw `EventBus`; they no longer retain the aggregate `App` handle.
+- [x] The Transfer service adapter now receives only `TransferWorkerState`
+      instead of retaining the aggregate `App` handle.
 - [ ] Move the remaining contracts and adapters behind injected capability
       services.
 - [ ] Delete the broad `App` facade paths and remaining compatibility edges.

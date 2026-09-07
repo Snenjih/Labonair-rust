@@ -1,6 +1,6 @@
 //! Backend adapters for the transfer capability.
 
-use crate::{App, EventBus, RawEvent};
+use crate::{EventBus, RawEvent};
 use labonair_transfers::{
     BoxFuture, TransferEvent, TransferEventError, TransferEventReceiver, TransferEventSource,
     TransferRequest, TransferResolution, TransferService,
@@ -9,18 +9,18 @@ use tokio::sync::broadcast;
 
 #[derive(Clone)]
 pub struct BackendTransferService {
-    app: App,
+    worker: crate::modules::sftp::TransferWorkerState,
 }
 
 impl BackendTransferService {
-    pub fn new(app: App) -> Self {
-        Self { app }
+    pub fn new(worker: crate::modules::sftp::TransferWorkerState) -> Self {
+        Self { worker }
     }
 }
 
 impl TransferService for BackendTransferService {
     fn enqueue<'a>(&'a self, request: TransferRequest) -> BoxFuture<'a, Result<String, String>> {
-        let worker = self.app.transfer.clone();
+        let worker = self.worker.clone();
         Box::pin(async move {
             crate::modules::sftp::commands::enqueue_transfer(
                 request.session_id,
@@ -34,7 +34,7 @@ impl TransferService for BackendTransferService {
     }
 
     fn cancel<'a>(&'a self, job_id: String) -> BoxFuture<'a, Result<(), String>> {
-        let worker = self.app.transfer.clone();
+        let worker = self.worker.clone();
         Box::pin(
             async move { crate::modules::sftp::commands::cancel_transfer(job_id, &worker).await },
         )
@@ -45,7 +45,7 @@ impl TransferService for BackendTransferService {
         job_id: String,
         resolution: TransferResolution,
     ) -> BoxFuture<'a, Result<(), String>> {
-        let worker = self.app.transfer.clone();
+        let worker = self.worker.clone();
         Box::pin(async move {
             let (resolution, new_name) = resolution.worker_parts();
             crate::modules::sftp::commands::resolve_conflict(
