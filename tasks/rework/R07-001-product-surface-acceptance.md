@@ -36,6 +36,7 @@ to introduce new features.
   `docs/repository-layout.md`, and `docs/feature-lifecycle.md`.
 - Evidence sources: capability matrix, architecture inventory, active task
   queue, dependency verifier, focused tests, and visual captures.
+- Working evidence matrix: [`../../docs/audits/product-surface-acceptance.md`](../../docs/audits/product-surface-acceptance.md)
 - Each discrepancy becomes a bounded follow-up task; it is not silently
   accepted as a target statement.
 
@@ -111,5 +112,7 @@ a separate product decision after the core workflow is stable.
       final source audit and visual evidence; any genuine feature-owned residue
       must be moved through the bounded R07-002 task.
 - [ ] A complete visual state matrix is still required for the permanent
-      surfaces. Existing spot checks are not sufficient evidence for the R07
-      acceptance gate.
+      surfaces. The working matrix is recorded in
+      [`../../docs/audits/product-surface-acceptance.md`](../../docs/audits/product-surface-acceptance.md);
+      all applicable visual cells remain pending until native-bundle evidence
+      is recorded.

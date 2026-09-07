@@ -25,6 +25,8 @@ the migration is complete.
   field-to-consumer, scope, and keep/move/remove/review decisions.
 - [`visual-verification.md`](visual-verification.md) — exact native-bundle and
   PID-scoped rules for rendered UI checks.
+- [`audits/product-surface-acceptance.md`](audits/product-surface-acceptance.md)
+  — R07 evidence matrix for ownership and required visual states.
 - [`rework-roadmap.md`](rework-roadmap.md) — the current implementation sequence.
 
 The executable task queue derived from the roadmap is
