@@ -46,3 +46,7 @@ the native-window exception.
 The legacy `settings::OpenShortcuts` action now resolves centrally to the
 canonical `zed::OpenKeymap` action and is accepted by keymap validation without
 being exposed as a palette command.
+
+The dependency verifier was updated for the intentional owner-to-command
+contract edges and passes with an acyclic graph. The command-core-to-keymap
+edge remains one-way by design until shortcut identity extraction.

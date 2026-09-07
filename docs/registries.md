@@ -29,6 +29,12 @@ services, but it must not become a second registry owner or maintain a
 parallel list of entries. IDs are stable and duplicate registration is an
 error.
 
+The command registry contract is intentionally UI-free. Capability crates may
+depend on `labonair-command-palette-core` to publish metadata, while the
+palette UI depends on the contract and only renders its snapshots. The current
+shortcut identity dependency points from the command core to keymap; reversing
+that edge requires a separate shared identity-contract migration.
+
 ## Command registry
 
 The command-palette module owns one command registry. Feature modules register

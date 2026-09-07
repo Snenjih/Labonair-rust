@@ -105,6 +105,10 @@ The legacy `settings::OpenShortcuts` action is now an explicit compatibility
 alias for `zed::OpenKeymap`. It is accepted by keymap validation and normalized
 for display without being registered as a discoverable command.
 
+The dependency verifier now allows these owner-to-contract edges explicitly
+and confirms the graph remains acyclic. The one-way command-core-to-keymap edge
+is documented as intentional until the identity contract is extracted.
+
 `labonair-keymap` is intentionally not made a dependency of
 `labonair-command-palette-core`: the core currently depends on `ShortcutId`
 from keymap, so adding the reverse edge creates a Cargo cycle. `Open Keymap`

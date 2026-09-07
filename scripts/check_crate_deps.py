@@ -25,8 +25,9 @@ ALLOWED = {
     "labonair-gpui-ext": set(),
     # rule 5: only gpui, gpui-component, theme, gpui-ext.
     "labonair-ui-kit": {"labonair-theme", "labonair-gpui-ext"},
-    # extended theme crate — a leaf token crate, no workspace deps.
-    "labonair-theme": set(),
+    # Theme metadata also contributes palette commands through the shared
+    # command contract; it does not depend on the palette UI.
+    "labonair-theme": {"labonair-command-palette-core"},
     # Background capability owns image persistence and GPUI rendering. It
     # consumes only the filesystem platform service.
     "labonair-background": {"labonair-filesystem", "labonair-theme"},
@@ -57,20 +58,24 @@ ALLOWED = {
     # writes and MCP side effects remain transitional backend adapters.
     "labonair-hosts": {
         "labonair-errors", "labonair-persistence", "labonair-secrets",
+        "labonair-command-palette-core",
     },
     # Shared SQLite lifecycle only. Feature stores own their queries and
     # domain models; this crate must remain UI- and backend-free.
     "labonair-persistence": set(),
     # UI-free Git value types and capability contracts. Implementations stay
     # in backend adapters and are injected by the composition root.
-    "labonair-git": set(),
+    "labonair-git": {"labonair-command-palette-core"},
     # Credential capability: metadata, secret references, and key material.
     "labonair-credentials": {
         "labonair-persistence", "labonair-secrets",
     },
     # Snippet domain, SQLite store, and execution contracts. Transport
     # implementations are injected by the composition root.
-    "labonair-snippets": {"labonair-errors", "labonair-persistence"},
+    "labonair-snippets": {
+        "labonair-errors", "labonair-persistence",
+        "labonair-command-palette-core",
+    },
     "labonair-notifications": {
         "labonair-notifications-core",
         "labonair-panel", "labonair-theme", "labonair-ui-kit",
@@ -121,6 +126,7 @@ ALLOWED = {
         "labonair-filesystem",
         "labonair-ssh", "labonair-sftp", "labonair-transfers",
         "labonair-background",
+        "labonair-command-palette-core", "labonair-keymap",
     },
     # rule 3: the only crate that knows every concrete panel type — it also
     # touches the `labonair-panel` contracts crate to register them (T17-001).
@@ -140,6 +146,10 @@ ALLOWED = {
         "labonair-settings", "labonair-filesystem", "labonair-ssh",
         "labonair-sftp", "labonair-transfers", "labonair-transfers-ui",
         "labonair-background",
+        # Provider metadata contracts are assembled here; feature behavior
+        # remains in the owning crates and is not implemented by this root.
+        "labonair-editor", "labonair-git", "labonair-hosts",
+        "labonair-snippets",
     },
 
     # Transfer presentation — owns the statusbar dropdown, while lifecycle
@@ -198,8 +208,8 @@ ALLOWED = {
     # [deviation] labonair-terminal pulls labonair-theme (leaf token crate)
     # for its ANSI palette; a deeper engine/renderer split is future work
     # (see docs/perf-baseline.md). It must reach nothing else.
-    "labonair-terminal": {"labonair-theme"},
-    "labonair-editor": set(),
+    "labonair-terminal": {"labonair-theme", "labonair-command-palette-core"},
+    "labonair-editor": {"labonair-command-palette-core"},
     # [deviation, T19-001, docs/architecture.md §8.15] labonair-backend
     # depends on labonair-settings-content for the
     # `impl From<&SettingsContent> for Preferences` bridge — a pure,
@@ -231,6 +241,7 @@ ALLOWED = {
     "labonair-settings": {
         "labonair-settings-content", "labonair-settings-macros",
         "labonair-settings-json",
+        "labonair-command-palette-core", "labonair-keymap",
     },
 }
 

@@ -51,6 +51,14 @@ Foundation and platform services
 
 Dependencies point downward. A feature may depend on a foundation contract, but a feature must not depend on the shell. Cross-feature behavior uses a typed contract, registry, or event; it does not reach into another feature's private state.
 
+`labonair-command-palette-core` is a contract-level registry crate even though
+it belongs to the Command Palette module. Capability crates may depend on this
+UI-free contract to contribute command metadata; they must not depend on the
+palette UI crate. The core currently consumes keymap identities, so the
+dependency direction is intentionally one-way (`command-palette-core →
+keymap`) until a future identity-contract extraction makes keymap a provider
+without a Cargo cycle.
+
 ## 4. Target workspace crate map
 
 ### Foundation

@@ -31,6 +31,9 @@ owns toggle-command metadata. The current branch is `master`.
 The legacy `settings::OpenShortcuts` keymap action is now an explicit
 compatibility alias for `zed::OpenKeymap`, accepted by validation but excluded
 from command discovery.
+The dependency verifier now explicitly allows the owner-to-command-contract
+edges and reports an acyclic graph; the one-way command-core-to-keymap edge is
+documented as intentional until identity extraction.
 
 ## Current Session: 2026-09-07 (Native visual helper hardened)
 
