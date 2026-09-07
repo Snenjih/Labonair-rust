@@ -62,6 +62,18 @@ removal conditions.
 | `transfers-ssh` | Concrete SFTP transfer worker and russh/russh-sftp execution adapter | transfers module | Dedicated integration sibling extracted from the backend; owns chunking, checksums, conflicts, cancellation, and reconnect requeue behavior. |
 | `transfers-ui` | Statusbar-anchored transfer queue and resolution dialogs | transfers module | New canonical transfer presentation; uses only typed transfer contracts and shared UI primitives. |
 
+## Generated current dependency graph
+
+The following graph is generated from `cargo metadata` and describes the
+current workspace, not the target architecture. Regenerate it with
+[`scripts/gen-crate-graph.sh`](../../scripts/gen-crate-graph.sh); the source and
+rendered artifact are committed so architecture reviews can inspect the exact
+snapshot used by this inventory.
+
+![Current Labonair crate dependency graph](../assets/crate-graph.svg)
+
+Source: [`crate-graph.dot`](../assets/crate-graph.dot).
+
 ## Current boundary ledger
 
 The current Cargo metadata contains the following explicit boundary edges. They
