@@ -192,7 +192,7 @@ ALLOWED = {
         "labonair-workspace", "labonair-settings-ui", "labonair-panel",
         "labonair-panel-explorer", "labonair-panel-scm",
         "labonair-panel-git-graph", "labonair-panel-snippets",
-        "labonair-panel-ai", "labonair-terminal",
+        "labonair-terminal",
         "labonair-events",
         "labonair-settings", "labonair-filesystem", "labonair-ssh",
         "labonair-ssh-transport",
@@ -247,14 +247,6 @@ ALLOWED = {
         # owner contribution for the dynamic palette snippet action
         "labonair-command-palette-core", "labonair-command-palette-runtime",
     },
-    # [deviation] panel-ai also pulls command-palette (slash-command model)
-    # and editor (composer buffer) — accepted, still no panel-* / shell edge.
-    "labonair-panel-ai": {
-        "labonair-theme", "labonair-ui-kit", "labonair-panel",
-        "labonair-command-palette", "labonair-editor",
-        "labonair-ai", "labonair-workspace",
-    },
-
     # Host access — rule 9: not a panel crate; no workspace / shell / panel*.
     # [deviation] also pulls notifications for user-visible feedback.
     # Host definitions stay in the Hosts-owned store; Settings is deliberately
@@ -334,12 +326,11 @@ UI_CRATES = {
     "labonair-keymap-ui",
     "labonair-hosts-ui", "labonair-panel", "labonair-panel-explorer",
     "labonair-panel-scm", "labonair-panel-git-graph",
-    "labonair-panel-snippets", "labonair-panel-ai",
+    "labonair-panel-snippets",
 }
 PANEL_CRATES = {
     "labonair-panel-explorer", "labonair-panel-scm",
     "labonair-panel-git-graph", "labonair-panel-snippets",
-    "labonair-panel-ai",
 }
 
 # ---------------------------------------------------------------------------
@@ -408,7 +399,7 @@ for name in sorted(graph):
 #    labonair-workspace (§8.4: workspace owns that tab-view entity, acyclic) —
 #    that indirection is sanctioned. What is forbidden: a *direct* panel→panel
 #    edge (API coupling, rule 2) and reaching labonair-shell by any path
-#    (§3 warning: "panel-ai must not, via workspace, land back at shell").
+#    (§3 warning: a panel must not, via workspace, land back at shell).
 for name in sorted(PANEL_CRATES & ws_members):
     if "labonair-shell" in reaches(name):
         errors.append(

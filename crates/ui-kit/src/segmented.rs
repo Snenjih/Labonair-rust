@@ -11,8 +11,8 @@
 //!
 //! Replaces hand-rolled theme picker controls and the theme variant picker.
 //! The ModelPicker's
-//! All/Favorites/Recent strip (`crates/panel-ai/src/panel_ai.rs`) is the same
-//! shape and moves over in T20-002.
+//! All/Favorites/Recent model-picker strip is the same shape and can reuse
+//! this primitive when that surface is introduced.
 //!
 //! ```ignore
 //! segmented_control("theme-tabs", c, selected_key)

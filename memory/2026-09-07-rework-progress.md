@@ -1043,3 +1043,11 @@ Known migration envelopes, capability-owned state, and removed fields stay
 quiet and untouched; genuinely unknown future paths still produce non-fatal
 warnings. Focused tests cover both classes, and full workspace check, Clippy,
 tests, dependency, queue, format, and diff gates pass.
+
+The architecture inventory was then reconciled with the current Cargo graph.
+Completed ownership moves are no longer described as open structural
+violations; the remaining public-contract and transitional edges are listed
+explicitly with removal conditions. Active dependency-checker and UI-kit
+documentation references to the removed `panel-ai` crate were deleted. The
+dependency and queue verifiers pass with 52 workspace crates and 219 internal
+edges.

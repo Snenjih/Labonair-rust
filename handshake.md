@@ -36,6 +36,12 @@ workspace check, Clippy, test, dependency, queue, format, and diff gates pass.
 Only the native visual state matrix remains open for R07-001; capture is still
 blocked by the runner's missing Screen Recording permission.
 
+The architecture inventory was refreshed against the current 52-crate graph:
+it now records the actual public-contract and transitional edges rather than
+describing completed migrations as open violations. Obsolete `panel-ai`
+allow-list and UI-kit comment references were removed from active tooling and
+component documentation. Dependency and queue validation remain green.
+
 The documentation audit also corrected the archive README so it distinguishes
 the accepted ADR directory from superseded ADRs stored below `docs/archive/`.
 The root changelog and release guide are current native-project documentation;

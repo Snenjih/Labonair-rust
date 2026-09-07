@@ -7,7 +7,7 @@
 //!
 //! Replaces the `div().h(px(1.0)).bg(border)` / `div().w(px(1.0)).bg(border)`
 //! one-offs hand-rolled across `crates/shell/src/titlebar.rs`,
-//! `crates/panel-ai/src/panel_ai.rs` (`MdBlock::Rule`),
+//! feature markdown renderers (`MdBlock::Rule`),
 //! `crates/workspace/src/views/preview.rs` (`MdBlock::Rule`) and
 //! `crates/workspace/src/views/sftp.rs` (the pane splitter).
 //!

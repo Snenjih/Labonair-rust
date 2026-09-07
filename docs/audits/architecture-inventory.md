@@ -1,7 +1,7 @@
 # Architecture Inventory — Reset Baseline
 
 **Status:** Working migration inventory
-**Date:** 2026-09-06
+**Date:** 2026-09-07
 
 This document records the current repository shape during the module migration.
 It is evidence for the rework; it is not a target design. The target rules are
@@ -51,7 +51,7 @@ removal conditions.
 | `settings-macros` | Settings derives | settings module | Keep implementation detail. |
 | `settings-ui` | Settings views and generated fields | settings module | Value-only generated UI; receives only the system-font discovery contract. |
 | `keymap` | UI-free keymap values, JSONC file format, default assets, resolution, and conflict handling | keymap module | File parser, default assets, lossless document, and management model belong to Keymap; GPUI presentation and keymap-owned diagnostics are isolated in `keymap-ui`, while shell retains only platform installation/watch wiring. |
-| `shell` | App shell, menus, native actions, and composition | application composition + shell surface | Feature command/status contributions are owner-registered; reduce remaining shell adapters to composition and native-window actions. |
+| `shell` | App shell, menus, native actions, and composition | application composition + shell surface | Feature command/status contributions are owner-registered; remaining adapters are limited to composition and native-window actions. |
 | `terminal` | Terminal engine and renderer support | terminal module | Split engine from GPUI view when useful. |
 | `theme` | Runtime theme, fonts, and built-in color/icon registries | themes module | Keep one Themes owner; app and icon palette pickers now use separate registry-backed pages with transactional preview; the current catalog is embedded and deterministic, while file/remote extensions remain deferred. |
 | `ui-kit` | Shared UI primitives | foundation | Enforce as the only source of shared controls. |
@@ -62,9 +62,11 @@ removal conditions.
 | `transfers-ssh` | Concrete SFTP transfer worker and russh/russh-sftp execution adapter | transfers module | Dedicated integration sibling extracted from the backend; owns chunking, checksums, conflicts, cancellation, and reconnect requeue behavior. |
 | `transfers-ui` | Statusbar-anchored transfer queue and resolution dialogs | transfers module | New canonical transfer presentation; uses only typed transfer contracts and shared UI primitives. |
 
-## Current structural violations
+## Current boundary ledger
 
-The current Cargo metadata shows several transitional edges that conflict with the new rules:
+The current Cargo metadata contains the following explicit boundary edges. They
+are either composition-approved public-contract edges or named transitional
+edges; the dependency verifier rejects every unlisted edge.
 
 - `workspace` depends directly on AI, command palette, hosts UI, notifications, settings, SFTP capability contracts, and feature views; transfer lifecycle state and adapter event transport are no longer direct responsibilities.
 - Workspace identity/activity now has one UI-free owner in `workspace/context.rs`
@@ -76,8 +78,8 @@ The current Cargo metadata shows several transitional edges that conflict with t
   only standalone workspaces fall back to terminal cwd. Root precedence is
   centralized in `Workspace::filesystem_root` / `Workspace::git_root`, with
   pure resolver tests owned by `workspace/context.rs`; the shell only consumes
-  those contracts. Remaining feature-view dependencies are still transitional
-  and are not hidden by this state model. Session snapshots now persist the
+  those contracts. Remaining feature-view dependencies are listed in the
+  boundary table below and are not hidden by this state model. Session snapshots now persist the
   explicit workspace identity, with missing identity fields normalized to
   Standalone for backward compatibility. Identity mutation is now centralized
   behind the typed `WorkspaceTransition` contract; project-picker selection,
@@ -96,15 +98,14 @@ The current Cargo metadata shows several transitional edges that conflict with t
   contracts, and the narrow MCP-revocation callback, then opens the manager
   through the Hosts-owned native window. Workspace retains only the injected
   capability handle needed for connection/session orchestration. Its
-  notification contract migration is still open.
-- `command-palette` no longer depends on a backend facade. Dynamic data is
-  supplied through the runtime snapshot registry and owner-local providers;
-  remaining shell dispatch duplication is a separate cleanup item.
+  notification publication uses the retained Notifications contract.
+- `command-palette` no longer depends on a backend facade. Dynamic data and
+  action execution are supplied through owner-local registries; shell action
+  handling only forwards opaque typed actions.
 - Initial command metadata providers now live in the owning workspace, terminal,
-  editor, hosts, themes, and settings crates. The shell still contains
-  transitional execution adapters and descriptors for those IDs; the adapter
-  asserts equality against the provider snapshot so it cannot silently create
-  a second palette source. The stable shortcut identity now lives in
+  editor, hosts, themes, and settings crates. The shell retains only native
+  window/debug command registration and composition callbacks; it does not
+  provide feature rows. The stable shortcut identity now lives in
   `interaction-contracts`, so keymap can publish its own command metadata
   through the one-way keymap → command-core edge.
 - Workspace tab/pane commands, Git commands, and Snippet commands now also
@@ -140,10 +141,9 @@ The current Cargo metadata shows several transitional edges that conflict with t
   modules; the shell only supplies live values and registers the snapshots.
   Hidden status-bar state and labels are now owned by the workspace status
   registry as well.
-- `keymap` now owns the UI-free file contract, last-good recovery, and runtime
-  resolution. The shell retains only the temporary GPUI installation and
-  filesystem-watcher adapter; the keymap editor and stable command
-  registration path are not complete.
+- `keymap` now owns the UI-free file contract, last-good recovery, runtime
+  resolution, and management surface contract. The shell retains only the
+  GPUI installation and filesystem-watcher adapter.
 - Command descriptors now carry owner-contributed default bindings. Keymap
   materializes those typed defaults into its default layer before applying the
   user file, so new feature defaults do not require a shell-owned shortcut
@@ -203,17 +203,15 @@ The current Cargo metadata shows several transitional edges that conflict with t
   same Git contracts by injection instead of constructing adapters internally.
 - `panel-scm` and workspace Project Diff consume `labonair-git`; source-control
   execution is supplied by `labonair-git-transport`.
-- `shell/src/status_items.rs` still contains workspace-shell status behavior
-  that belongs in owner modules. Panel contribution construction has moved to
-  panel owners. The new `labonair-command-palette-runtime` bridge lets owner
-  crates contribute executable handlers; Workspace tab, pane, focus, and
-  project-lifecycle behavior has now been removed from the shell table. The
-  Terminal `Clear Terminal`, Settings toggles, the Settings window entrypoint,
-  Hosts management entrypoint, updater Check-for-Updates, Workspace panel
-  surface actions, and the Keymap management entrypoint are owner-registered.
-  The command-palette toggle, Workspace search, and Hosts picker commands are
-  now owner-registered as well; remaining shell adapters are transitional until
-  their owners move.
+- `shell/src/status_items.rs` is now a composition hook only. Panel
+  contribution construction has moved to panel owners. The
+  `labonair-command-palette-runtime` bridge lets owner crates contribute
+  executable handlers; Workspace tab, pane, focus, and project-lifecycle
+  behavior has been removed from the shell table. The Terminal `Clear
+  Terminal`, Settings toggles, Settings window entrypoint, Hosts management
+  entrypoint, updater Check-for-Updates, Workspace panel actions, Keymap
+  management entrypoint, palette toggle, Workspace search, and Hosts picker
+  commands are owner-registered.
 - The dedicated Jump Hosts status item was removed. Jump-host routing remains
   part of SSH connection configuration and execution, while host management and
   host selection keep their canonical menu/palette entry points.
@@ -262,8 +260,8 @@ controls rather than passive error reporting:
 These controls may show the details needed to make the decision, but they must
 not also emit a duplicate passive notification for the same interaction.
 
-The dependency verifier allows only explicit transitional edges while these
-boundaries are extracted. They are deliberately visible in the allow-list and
+The dependency verifier allows only explicit edges while these boundaries are
+reviewed. Transitional edges are deliberately visible in the allow-list and
 must not be treated as target architecture.
 
 The allow-list also contains the following explicitly tracked migration
@@ -271,13 +269,13 @@ families. These are not target dependencies; each has a removal condition:
 
 | Transitional edge family | Temporary reason | Removal condition |
 |---|---|---|
-| `workspace → background` | Workspace and the app shell render the background layer while the capability is being separated from workspace ownership. | Move background settings synchronization and any remaining background actions behind the dedicated background capability contract. |
-| `workspace → ai`, `workspace → settings` | Workspace still hosts the AI live bridge and consumes a few transitional settings values. Typed SSH/MCP event sources, Git, SFTP, and transfer access are injected. | AI context and remaining settings consumers move behind narrow capability contracts; workspace keeps orchestration only. |
-| `panel-explorer → workspace`, `panel-explorer → settings` | Explorer still reuses workspace drag/preview contracts and a legacy settings read. | Drag/drop and preview contracts move to foundation/owning modules and explorer receives a settings capability. |
-| `panel-scm → editor`, `panel-scm → settings` | SCM reuses unified diff helpers and one legacy presentation preference. | Diff contracts are shared by the Git module and the preference is provided through a narrow settings contract. |
-| `panel-ai → editor`, `panel-ai → workspace` | AI UI is parked while the workspace/editor context bridge is redesigned. | AI consumes AI, editor-context, and workspace-session contracts without facade access. |
-| `command-palette → settings`, `command-palette → filesystem` | Palette still contains legacy action dispatch and settings/file providers. | All entries are registered by owning modules through provider contracts. |
-| `application composition → integration siblings` | The shell must construct concrete platform integrations so feature modules can remain contract-only. | Keep construction and registration in `labonair-shell`; do not expose a replacement aggregate facade. |
+| `workspace → background` | Workspace currently mounts the Background entity as part of window composition. | Replace the entity edge with a narrow background presentation contract when the remaining view boundary is extracted. |
+| `workspace → ai`, `workspace → settings` | Workspace hosts the AI live bridge and consumes typed settings values for workspace-owned behavior. | Keep orchestration in Workspace; move AI context and any remaining direct implementation access behind narrow contracts. |
+| `panel-explorer → workspace` | Explorer uses Workspace's open-file/open-terminal/open-preview host callbacks and shared drag/preview shims. | Introduce an Explorer host contract and move shared drag/preview values below both modules. |
+| `panel-explorer → settings` | Explorer consumes the public typed `ExplorerSettings` value contract. | Keep only the typed public settings contract; no Settings implementation details or management UI may cross the edge. |
+| `panel-scm → editor`, `panel-scm → settings` | SCM reuses the public unified-diff contract and typed SCM presentation settings. | Keep public contracts; extract only if a future shared diff/settings contract has a real second consumer. |
+| `command-palette → settings`, `command-palette → filesystem` | Palette reads its typed presentation values, persists palette preferences, and owns recent-command storage. | Replace only implementation-level access with narrow contracts if the palette surface needs another host; retain capability ownership and avoid a second registry. |
+| `shell composition → integration siblings` | The shell constructs concrete platform integrations so feature modules remain contract-only. | Keep construction and registration in `labonair-shell`; never expose a replacement aggregate facade. |
 
 The verifier's allow-list is the machine-readable source for the exact edge
 set. Whenever an edge is added or removed, this table and the owning task must

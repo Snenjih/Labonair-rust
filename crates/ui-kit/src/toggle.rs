@@ -8,8 +8,8 @@
 //!
 //! Replaces the statusbar panel-toggle cluster
 //! (`crates/shell/src/status_items.rs::PanelTogglesStatusItem`) and the
-//! AI/Shell composer toggle (`crates/panel-ai/src/panel_ai.rs`), which each
-//! rebuilt the pressed/hover pair by hand.
+//! feature composer toggles, which previously rebuilt the pressed/hover pair
+//! by hand.
 //!
 //! Unlike [`crate::button`] this is *stateful in appearance only* — the caller
 //! still owns the `pressed` flag and flips it in `on_click`.
