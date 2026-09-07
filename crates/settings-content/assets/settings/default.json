@@ -39,11 +39,6 @@
     "cornerRadiusScale": 1.0,
     // "titlebar" or "sidebar".
     "tabsLocation": "titlebar",
-    "sidebarTabInfoLine": [],
-    "sidebarGroupByFolder": false,
-    "sidebarGroupSingleTabs": false,
-    "badgesAlwaysVisible": true,
-    "titlebarsIconsPosition": "auto",
     "zenModeShowHeader": true,
     "zenModeShowStatusbar": true
   },

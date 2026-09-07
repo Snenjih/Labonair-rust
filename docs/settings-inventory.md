@@ -45,7 +45,7 @@ means a runtime module, not merely serialization or the generated Settings UI.
 | `appearance` | `backgroundImage`, `backgroundOpacity`, `backgroundBlur`, `backgroundTintColor`, `backgroundTintOpacity` | `labonair-background` store; Global | Removed from Settings model; values migrate to the Background owner |
 | `appearance` | `appCornerRadius` | superseded by `cornerRadiusScale`; no current consumer | Remove; legacy values migrate to `cornerRadiusScale` |
 | `appearance` | `tabsLocation`, `zenModeShowHeader`, `zenModeShowStatusbar` | shell/workspace presentation; Global | Keep pending direct consumer tests |
-| `appearance` | `sidebarTabInfoLine`, `sidebarGroupByFolder`, `sidebarGroupSingleTabs`, `badgesAlwaysVisible`, `titlebarsIconsPosition` | no current native consumer; titlebar position is legacy | Review; remove unsupported fields |
+| `appearance` | `sidebarTabInfoLine`, `sidebarGroupByFolder`, `sidebarGroupSingleTabs`, `badgesAlwaysVisible`, `titlebarsIconsPosition` | no current native consumer; titlebar position is legacy | Remove; legacy input remains deserializable only |
 | `terminal` | `terminalShell`, `terminalDefaultPath`, `newTabInheritsCwd`, `confirmCloseTerminalTab` | terminal/workspace tab creation and close flow; Global + safe Project values | Keep |
 | `terminal` | `terminalFontFamily`, `terminalFontSize`, `terminalLineHeight`, `terminalScrollback`, `terminalCursorStyle`, `terminalCursorBlink`, `terminalCopyOnSelect`, `terminalRightClickPastes`, `terminalBell`, `terminalOpacity` | terminal renderer/settings adapter; Global + safe Project values | Keep |
 | `terminal` | `sessionScrollbackLines`, `scrollbackMaxSizeMb`, `scrollbackRetentionDays` | scrollback persistence/cleanup; Global | Keep |

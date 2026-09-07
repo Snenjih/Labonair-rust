@@ -180,11 +180,6 @@ fn appearance_from(p: &Preferences) -> AppearanceContent {
         reduce_motion: Some(p.reduce_motion),
         corner_radius_scale: Some(p.app_corner_radius as f32 / 5.0),
         tabs_location: Some(p.tabs_location.clone()),
-        sidebar_tab_info_line: Some(p.sidebar_tab_info_line.clone()),
-        sidebar_group_by_folder: Some(p.sidebar_group_by_folder),
-        sidebar_group_single_tabs: Some(p.sidebar_group_single_tabs),
-        badges_always_visible: Some(p.badges_always_visible),
-        titlebars_icons_position: Some(p.titlebars_icons_position.clone()),
         zen_mode_show_header: Some(p.zen_mode_show_header),
         zen_mode_show_statusbar: Some(p.zen_mode_show_statusbar),
         // T20-007 `theme_settings` fields have no legacy `Preferences` key —
@@ -455,6 +450,17 @@ const REMOVED_GENERAL_FIELDS: &[&str] = &[
     "autostart",
     "credentialEncryption",
     "confirmQuitWithSsh",
+];
+
+/// Legacy appearance preferences with no native GPUI consumer. They remain
+/// readable in the backend wire shape solely for old configuration files.
+#[cfg_attr(not(test), allow(dead_code))]
+const REMOVED_APPEARANCE_FIELDS: &[&str] = &[
+    "sidebarTabInfoLine",
+    "sidebarGroupByFolder",
+    "sidebarGroupSingleTabs",
+    "badgesAlwaysVisible",
+    "titlebarsIconsPosition",
 ];
 
 /// Legacy appearance value converted to the current typed scale field before
@@ -1052,6 +1058,7 @@ mod tests {
         accounted.extend(WORKSPACE_LAYOUT_FIELDS.iter().copied());
         accounted.extend(REMOVED_TERMINAL_FIELDS.iter().copied());
         accounted.extend(REMOVED_GENERAL_FIELDS.iter().copied());
+        accounted.extend(REMOVED_APPEARANCE_FIELDS.iter().copied());
         accounted.extend(MOVED_APPEARANCE_FIELDS.iter().copied());
         accounted.extend(UNKNOWN_PREFERENCES_FIELDS.iter().copied());
 

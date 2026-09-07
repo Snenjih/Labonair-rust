@@ -276,41 +276,6 @@ pub fn all_fields() -> Vec<AnyField> {
             "Where the tab strip lives."
         ),
         field!(
-            appearance.sidebar_tab_info_line,
-            "sidebarTabInfoLine",
-            Json,
-            "Sidebar tab info line",
-            "Up to two info badges shown on each sidebar tab."
-        ),
-        field!(
-            appearance.sidebar_group_by_folder,
-            "sidebarGroupByFolder",
-            Switch,
-            "Group sidebar tabs by folder",
-            "Group tabs that share a working directory."
-        ),
-        field!(
-            appearance.sidebar_group_single_tabs,
-            "sidebarGroupSingleTabs",
-            Switch,
-            "Group single tabs too",
-            "Also show a group header for a lone tab."
-        ),
-        field!(
-            appearance.badges_always_visible,
-            "badgesAlwaysVisible",
-            Switch,
-            "Always show badges",
-            "Keep count badges visible even at zero."
-        ),
-        field!(
-            appearance.titlebars_icons_position,
-            "titlebarsIconsPosition",
-            Select(&[("auto", "Auto"), ("left", "Left"), ("right", "Right")]),
-            "Titlebar icon position",
-            "Legacy titlebar traffic-light / icon alignment."
-        ),
-        field!(
             appearance.zen_mode_show_header,
             "zenModeShowHeader",
             Switch,

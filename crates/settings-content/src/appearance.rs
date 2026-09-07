@@ -35,13 +35,6 @@ pub struct AppearanceContent {
     pub corner_radius_scale: Option<f32>,
     /// `"titlebar"` | `"sidebar"`.
     pub tabs_location: Option<String>,
-    /// Up to two of `path`/`connection`/`host`/`uptime`/`transfer`/`busy`.
-    pub sidebar_tab_info_line: Option<Vec<String>>,
-    pub sidebar_group_by_folder: Option<bool>,
-    pub sidebar_group_single_tabs: Option<bool>,
-    pub badges_always_visible: Option<bool>,
-    /// Legacy titlebar icon side (`"auto"` | `"left"` | `"right"`).
-    pub titlebars_icons_position: Option<String>,
     /// Zen mode: show the window header bar.
     pub zen_mode_show_header: Option<bool>,
     /// Zen mode: show the bottom status bar.
@@ -64,11 +57,6 @@ impl AppearanceContent {
             ui_density: Some("default".to_string()),
             corner_radius_scale: Some(1.0),
             tabs_location: Some("titlebar".to_string()),
-            sidebar_tab_info_line: Some(Vec::new()),
-            sidebar_group_by_folder: Some(false),
-            sidebar_group_single_tabs: Some(false),
-            badges_always_visible: Some(true),
-            titlebars_icons_position: Some("auto".to_string()),
             zen_mode_show_header: Some(true),
             zen_mode_show_statusbar: Some(true),
         }

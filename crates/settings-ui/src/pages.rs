@@ -221,17 +221,7 @@ const APPEARANCE_GROUPS: &[Group] = &[
         "Density & Motion",
         &["uiDensity", "cornerRadiusScale", "reduceMotion"],
     ),
-    (
-        "Layout",
-        &[
-            "tabsLocation",
-            "sidebarGroupByFolder",
-            "sidebarGroupSingleTabs",
-            "badgesAlwaysVisible",
-            "titlebarsIconsPosition",
-            "sidebarTabInfoLine",
-        ],
-    ),
+    ("Layout", &["tabsLocation"]),
     ("Zen Mode", &["zenModeShowHeader", "zenModeShowStatusbar"]),
     ("Active Theme", &["appTheme", "themeVariantOverrides"]),
 ];
