@@ -99,6 +99,13 @@ keymap-owned adapter and expose diagnostics through the notification contract.
 The JSONC parser, default assets, merge model, validation, and user-file path
 have now moved from `labonair-settings` into `labonair-keymap::file`; Settings
 no longer owns or imports the keymap module.
+Last-good user-file recovery, validation issue retention, and default/user
+layer composition now also live in `labonair-keymap::file`. The shell's
+remaining keymap loader only supplies the command vocabulary, installs GPUI
+bindings, publishes display hints, and connects the existing filesystem
+watcher. The next slice is to replace that remaining reload/install
+orchestration with an explicit Keymap adapter contract before implementing the
+editor surface.
 
 ## Acceptance criteria
 

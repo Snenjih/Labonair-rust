@@ -111,8 +111,9 @@ The current Cargo metadata shows several transitional edges that conflict with t
   modules; the shell only supplies live values and registers the snapshots.
   Hidden status-bar state and labels are now owned by the workspace status
   registry as well.
-- `keymap` is now UI-free, but the temporary GPUI adapter and some consumers
-  still enter through `command-palette`; the keymap editor and stable command
+- `keymap` now owns the UI-free file contract, last-good recovery, and runtime
+  resolution. The shell retains only the temporary GPUI installation and
+  filesystem-watcher adapter; the keymap editor and stable command
   registration path are not complete.
 - `backend` exposes a broad `App`, global event bus, and unrelated modules under one public crate.
 - `backend` still owns the filesystem watcher adapter because it emits directly through the legacy app event bus; the actual watcher implementation now belongs to `labonair-filesystem`.

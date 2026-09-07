@@ -106,3 +106,12 @@ values-only module and no longer depends on Keymap; Shell and Workspace use
 Keymap directly. The dependency verifier is still acyclic. The existing
 Settings rename-watcher test passes outside the sandbox. This extraction is
 the basis for moving reload/install orchestration behind the Keymap boundary.
+
+## R03-002 keymap load ownership
+
+Moved last-good user-file recovery, validation issue retention, default/user
+layer composition, and shipped-default parsing into `labonair-keymap::file`.
+The shell loader now only supplies the current command vocabulary, connects the
+existing watcher, installs GPUI bindings, and publishes display hints. This
+keeps file semantics and recovery in Keymap while leaving platform input in a
+thin adapter. Commit: `c2bffcf`.

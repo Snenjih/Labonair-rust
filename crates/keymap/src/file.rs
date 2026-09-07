@@ -23,8 +23,17 @@
 //! space-joined to `gpui::KeyBinding::new`/`load`, which already splits it.
 
 use serde_json::Value;
+use std::cell::RefCell;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::PathBuf;
+
+thread_local! {
+    /// Last valid user document, retained when a later edit is malformed or
+    /// structurally invalid. The keymap module owns this recovery state so
+    /// adapters cannot accidentally restore platform defaults on a bad edit.
+    static LAST_GOOD_USER: RefCell<KeymapFile> = RefCell::new(KeymapFile::default());
+    static LAST_ISSUES: RefCell<Vec<ValidationIssue>> = const { RefCell::new(Vec::new()) };
+}
 
 /// One `{ context, bindings }` block in a keymap.json array.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -330,6 +339,73 @@ pub fn ensure_user_keymap_file() -> Result<PathBuf, String> {
         std::fs::write(&path, scaffold).map_err(|e| e.to_string())?;
     }
     Ok(path)
+}
+
+/// Validation issues from the most recent user-file load.
+pub fn last_issues() -> Vec<ValidationIssue> {
+    LAST_ISSUES.with(|issues| issues.borrow().clone())
+}
+
+/// Load, validate, and merge the built-in and user keymap layers. A malformed
+/// user file keeps the previous valid user document while exposing its
+/// diagnostics to the presentation adapter. The caller supplies the current
+/// command vocabulary; the keymap module does not depend on feature registries.
+pub fn effective_bindings(known_actions: &BTreeSet<&'static str>) -> Vec<EffectiveBinding> {
+    let default = match parse_keymap_jsonc(default_asset()) {
+        Ok(file) => file,
+        Err(error) => {
+            tracing::error!(error = %error, "shipped default keymap failed to parse");
+            KeymapFile::default()
+        }
+    };
+    let user = load_user_keymap(known_actions);
+    merge_keymaps(&[
+        (KeybindSource::Default, &default),
+        (KeybindSource::User, &user),
+    ])
+}
+
+fn load_user_keymap(known_actions: &BTreeSet<&'static str>) -> KeymapFile {
+    let path = user_keymap_path();
+    let Ok(text) = std::fs::read_to_string(&path) else {
+        LAST_ISSUES.with(|issues| issues.borrow_mut().clear());
+        LAST_GOOD_USER.with(|file| *file.borrow_mut() = KeymapFile::default());
+        return KeymapFile::default();
+    };
+
+    match parse_keymap_jsonc(&text) {
+        Ok(file) => {
+            let issues = validate_keymap(&file, known_actions, &text);
+            let has_errors = issues.iter().any(|issue| issue.severity == Severity::Error);
+            if has_errors {
+                tracing::warn!(
+                    path = %path.display(),
+                    "keymap.json has validation errors — keeping the last good keymap"
+                );
+                LAST_ISSUES.with(|current| *current.borrow_mut() = issues);
+                LAST_GOOD_USER.with(|previous| previous.borrow().clone())
+            } else {
+                LAST_ISSUES.with(|current| *current.borrow_mut() = issues);
+                LAST_GOOD_USER.with(|previous| *previous.borrow_mut() = file.clone());
+                file
+            }
+        }
+        Err(error) => {
+            tracing::warn!(
+                path = %path.display(),
+                error = %error,
+                "keymap.json is not valid JSON/JSONC — keeping the last good keymap"
+            );
+            LAST_ISSUES.with(|current| {
+                *current.borrow_mut() = vec![ValidationIssue {
+                    message: error.message,
+                    line: error.line,
+                    severity: Severity::Error,
+                }]
+            });
+            LAST_GOOD_USER.with(|previous| previous.borrow().clone())
+        }
+    }
 }
 
 #[cfg(test)]

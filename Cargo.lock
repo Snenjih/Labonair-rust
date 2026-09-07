@@ -4390,6 +4390,7 @@ dependencies = [
  "labonair-command-palette-core",
  "labonair-interaction-contracts",
  "serde_json",
+ "tracing",
 ]
 
 [[package]]

@@ -13,6 +13,7 @@ labonair-command-palette-core = { path = "../command-palette-core" }
 serde_json = { workspace = true }
 jsonc-parser = { version = "0.23", features = ["serde"] }
 dirs = { workspace = true }
+tracing = { workspace = true }
 
 [dev-dependencies]
 gpui = { workspace = true, features = ["test-support"] }
