@@ -22,8 +22,9 @@ Settings conversion and removed idempotently.
 Current HEAD is `ab62467` on `master`; the worktree is clean. Formatting,
 workspace check, Clippy, full serial workspace tests, dependency validation,
 queue validation, and diff checks pass. The next review item is
-`startupTerminalCount`, followed by the remaining indirect Appearance, Editor,
-File Manager, and Connection values. No blockers.
+the remaining indirect Appearance, Editor, File Manager, and Connection values.
+The General cleanup including `startupTerminalCount` is committed in
+`61abf4c`. No blockers.
 
 ## Historical session details: 2026-09-07
 

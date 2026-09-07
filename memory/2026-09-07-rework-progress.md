@@ -314,3 +314,12 @@ initial project template and affected parser/whitelist tests. Full workspace
 tests, check, Clippy, dependency, queue, formatting, and diff checks pass.
 Committed as `bca66ed`. `startupTerminalCount` is intentionally still under
 review rather than removed speculatively.
+
+The follow-up removed `startupTerminalCount` as well: the native workspace
+opens one terminal from the startup-tab decision, and no current runtime
+consumer uses a configurable count. The field was removed from the typed
+model, defaults, generated UI, project whitelist, templates, and migration
+mapping; legacy Preferences remains readable as compatibility input. Affected
+parser, project-layer, and store tests were redirected to the retained
+`restoreWindowState` value. Full workspace tests and all repository gates pass.
+Committed as `61abf4c`; R05-001 remains active for the next inventory group.
