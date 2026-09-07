@@ -7,12 +7,32 @@
 
 use labonair_command_palette_core::{
     CommandContext, CommandDescriptor, CommandIcon, CommandId, CommandProvider, CommandSubmenu,
+    SubmenuAction, SubmenuDescriptor, SubmenuItem, SubmenuSnapshot,
 };
 use labonair_keymap::ShortcutId;
 
 /// Stable command metadata contributed by the workspace capability.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct WorkspaceCommandProvider;
+
+/// Build the workspace-owned open-tab snapshot without exposing workspace
+/// entities to the palette UI.
+pub fn tabs_submenu(rows: impl IntoIterator<Item = (u64, String, String)>) -> SubmenuSnapshot {
+    SubmenuSnapshot {
+        descriptor: SubmenuDescriptor::new("tabs", "Open Tabs", CommandSubmenu::Tabs),
+        items: rows
+            .into_iter()
+            .map(|(id, title, kind)| SubmenuItem {
+                id: id.to_string(),
+                title,
+                subtitle: Some(kind),
+                active: false,
+                action: SubmenuAction::SwitchToTab(id),
+                secondary: None,
+            })
+            .collect(),
+    }
+}
 
 impl CommandProvider for WorkspaceCommandProvider {
     fn commands(&self) -> Vec<CommandDescriptor> {

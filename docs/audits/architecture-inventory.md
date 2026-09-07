@@ -104,9 +104,10 @@ The current Cargo metadata shows several transitional edges that conflict with t
   excludes it from visible command rows.
 - Dynamic palette pages now consume a typed `SubmenuRegistry` of immutable
   snapshots for tabs, hosts, recent hosts, themes, icon themes, editor themes,
-  snippets, branches, symbols, and hidden status-bar items. The shell currently
-  composes those snapshots from owner APIs; moving those snapshot builders into
-  the owning capability crates is the remaining extraction step.
+  snippets, branches, symbols, and hidden status-bar items. Snapshot builders
+  now live in the workspace, hosts, editor, theme, snippets, and Git provider
+  modules; the shell only supplies live values and registers the snapshots.
+  Status-bar metadata remains a documented shell-owned transitional surface.
 - `keymap` is now UI-free, but the temporary GPUI adapter and some consumers
   still enter through `command-palette`; the keymap editor and stable command
   registration path are not complete.

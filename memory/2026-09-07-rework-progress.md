@@ -57,6 +57,7 @@ edge remains one-way by design until shortcut identity extraction.
 `labonair-command-palette-core` now provides a typed `SubmenuRegistry`,
 `SubmenuSnapshot`, and `SubmenuAction` contract. The palette consumes registry
 snapshots for all dynamic pages instead of maintaining separate `PaletteData`
-arrays or reading workspace/panel entities while rendering. The shell
-composition root currently builds the snapshots from owner APIs; the remaining
-step is to move each snapshot builder behind its capability provider.
+arrays or reading workspace/panel entities while rendering. Snapshot builders
+now live in the workspace, hosts, editor, theme, snippets, and Git provider
+modules. The shell supplies live values and registers the snapshots; status-bar
+metadata is the remaining shell-owned transitional surface.

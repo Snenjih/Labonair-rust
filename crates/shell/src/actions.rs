@@ -15,8 +15,7 @@ use labonair_command_palette::{
     Command as PaletteCommand, Page as PalettePage, PaletteData, PaletteEvent, PaletteWorkspace,
 };
 use labonair_command_palette_core::{
-    CommandSubmenu, SubmenuAction, SubmenuDescriptor, SubmenuItem, SubmenuRegistry,
-    SubmenuSecondary, SubmenuSnapshot,
+    CommandSubmenu, SubmenuAction, SubmenuDescriptor, SubmenuItem, SubmenuRegistry, SubmenuSnapshot,
 };
 use labonair_panel::DockPosition;
 use labonair_settings::{EditorSettings, Settings as _, SettingsStore, ThemeSettings};
@@ -90,18 +89,10 @@ fn register_submenu(
         .expect("built-in submenu ids must be unique");
 }
 
-fn editor_theme_label(id: labonair_theme::EditorThemeId) -> String {
-    id.slug()
-        .split('-')
-        .map(|word| {
-            let mut chars = word.chars();
-            match chars.next() {
-                Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
-                None => String::new(),
-            }
-        })
-        .collect::<Vec<_>>()
-        .join(" ")
+fn register_snapshot(registry: &mut SubmenuRegistry, snapshot: SubmenuSnapshot) {
+    registry
+        .register(snapshot)
+        .expect("built-in submenu ids must be unique");
 }
 
 impl AppShell {
@@ -273,89 +264,34 @@ impl AppShell {
     fn build_palette_data(&self, cx: &App) -> PaletteData {
         let mut submenus = SubmenuRegistry::default();
 
-        let tabs = self
-            .workspace
-            .read(cx)
-            .palette_tab_rows(cx)
-            .into_iter()
-            .map(|tab| SubmenuItem {
-                id: tab.id.to_string(),
-                title: tab.label,
-                subtitle: Some(tab.kind_title),
-                active: false,
-                action: SubmenuAction::SwitchToTab(tab.id),
-                secondary: None,
-            })
-            .collect();
-        register_submenu(
-            &mut submenus,
-            "tabs",
-            "Open Tabs",
-            CommandSubmenu::Tabs,
-            tabs,
+        let tabs = labonair_workspace::command_provider::tabs_submenu(
+            self.workspace
+                .read(cx)
+                .palette_tab_rows(cx)
+                .into_iter()
+                .map(|tab| (tab.id, tab.label, tab.kind_title)),
         );
+        register_snapshot(&mut submenus, tabs);
 
-        let hosts = self
-            .workspace
-            .read(cx)
-            .known_hosts(cx)
-            .into_iter()
-            .map(|(id, name)| SubmenuItem {
-                id: id.clone(),
-                title: name,
-                subtitle: None,
-                active: false,
-                action: SubmenuAction::ConnectHost {
-                    host_id: id.clone(),
-                    sftp: false,
-                },
-                secondary: Some(SubmenuSecondary {
-                    label: "Open SFTP".to_string(),
-                    action: SubmenuAction::ConnectHost {
-                        host_id: id,
-                        sftp: true,
-                    },
-                }),
-            })
-            .collect();
-        register_submenu(
-            &mut submenus,
+        let hosts = labonair_hosts::command_provider::host_submenu(
             "hosts",
             "Hosts",
             CommandSubmenu::Hosts,
-            hosts,
+            self.workspace.read(cx).known_hosts(cx),
         );
+        register_snapshot(&mut submenus, hosts);
 
-        let recent_hosts = self
-            .workspace
-            .read(cx)
-            .recent_hosts(cx, 5)
-            .into_iter()
-            .map(|(id, name, _address)| SubmenuItem {
-                id: id.clone(),
-                title: name,
-                subtitle: None,
-                active: false,
-                action: SubmenuAction::ConnectHost {
-                    host_id: id.clone(),
-                    sftp: false,
-                },
-                secondary: Some(SubmenuSecondary {
-                    label: "Open SFTP".to_string(),
-                    action: SubmenuAction::ConnectHost {
-                        host_id: id,
-                        sftp: true,
-                    },
-                }),
-            })
-            .collect();
-        register_submenu(
-            &mut submenus,
+        let recent_hosts = labonair_hosts::command_provider::host_submenu(
             "recent-hosts",
             "Recent Hosts",
             CommandSubmenu::RecentHosts,
-            recent_hosts,
+            self.workspace
+                .read(cx)
+                .recent_hosts(cx, 5)
+                .into_iter()
+                .map(|(id, name, _address)| (id, name)),
         );
+        register_snapshot(&mut submenus, recent_hosts);
 
         let app_theme = ThemeSettings::try_get(cx)
             .map(|s| s.app_theme().to_string())
@@ -369,92 +305,37 @@ impl AppShell {
             .and_then(|settings| labonair_theme::EditorThemeId::from_slug(settings.editor_theme()))
             .unwrap_or_default();
 
-        let snippets = self
-            .panels
-            .snippets
-            .read(cx)
-            .snippet_choices()
-            .into_iter()
-            .map(|(id, name, mode)| SubmenuItem {
-                id: id.clone(),
-                title: name,
-                subtitle: Some(mode),
-                active: false,
-                action: SubmenuAction::RunSnippet(id.clone()),
-                secondary: None,
-            })
-            .collect();
-        register_submenu(
-            &mut submenus,
-            "snippets",
-            "Snippets",
-            CommandSubmenu::Snippets,
-            snippets,
+        let snippets = labonair_snippets::command_provider::snippets_submenu(
+            self.panels.snippets.read(cx).snippet_choices(),
         );
+        register_snapshot(&mut submenus, snippets);
 
-        let git_branches = self
-            .panels
-            .git_panel
-            .read(cx)
-            .branch_choices()
-            .into_iter()
-            .map(|(name, current, remote)| SubmenuItem {
-                id: name.clone(),
-                title: name.clone(),
-                subtitle: remote.then(|| "remote".to_string()),
-                active: current,
-                action: SubmenuAction::SwitchBranch(name),
-                secondary: None,
-            })
-            .collect();
-        register_submenu(
-            &mut submenus,
-            "git-branches",
-            "Branches",
-            CommandSubmenu::GitBranches,
-            git_branches,
+        let git_branches = labonair_git::command_provider::branches_submenu(
+            self.panels.git_panel.read(cx).branch_choices(),
         );
+        register_snapshot(&mut submenus, git_branches);
 
-        let symbols = self
-            .workspace
-            .read(cx)
-            .active_editor_symbols(cx)
-            .into_iter()
-            .map(|s| SubmenuItem {
-                id: s.line.to_string(),
-                title: s.name,
-                subtitle: Some(format!("{}  ·  line {}", s.kind.label(), s.line + 1)),
-                active: false,
-                action: SubmenuAction::GoToLine(s.line),
-                secondary: None,
-            })
-            .collect();
-        register_submenu(
-            &mut submenus,
-            "outline",
-            "Symbols",
-            CommandSubmenu::Outline,
-            symbols,
+        let symbols = labonair_editor::command_provider::outline_submenu(
+            self.workspace
+                .read(cx)
+                .active_editor_symbols(cx)
+                .into_iter()
+                .map(|s| {
+                    (
+                        s.line,
+                        s.name,
+                        format!("{}  ·  line {}", s.kind.label(), s.line + 1),
+                    )
+                }),
         );
+        register_snapshot(&mut submenus, symbols);
 
-        let app_themes = labonair_settings_ui::theme_choices()
-            .into_iter()
-            .map(|(id, name)| SubmenuItem {
-                active: id == active_theme_id,
-                action: SubmenuAction::SetAppTheme(id.clone()),
-                id,
-                title: name,
-                subtitle: None,
-                secondary: None,
-            })
-            .collect();
-        register_submenu(
-            &mut submenus,
-            "app-themes",
-            "App Themes",
-            CommandSubmenu::Themes,
-            app_themes,
+        let app_themes = labonair_theme::command_provider::app_themes_submenu(
+            labonair_settings_ui::theme_choices()
+                .into_iter()
+                .map(|(id, name)| (id.clone(), name, id == active_theme_id)),
         );
+        register_snapshot(&mut submenus, app_themes);
 
         let active_icon_theme_id = ThemeSettings::try_get(cx)
             .map(|s| s.icon_theme().to_string())
@@ -464,27 +345,21 @@ impl AppShell {
         } else {
             active_icon_theme_id.as_str()
         };
-        let icon_themes = self
-            .theme
-            .read(cx)
-            .list_icon_themes()
-            .into_iter()
-            .map(|theme| SubmenuItem {
-                active: theme.id == active_icon_theme_id,
-                action: SubmenuAction::SetIconTheme(theme.id.clone()),
-                id: theme.id,
-                title: theme.name,
-                subtitle: theme.builtin.then(|| "built-in".to_string()),
-                secondary: None,
-            })
-            .collect();
-        register_submenu(
-            &mut submenus,
-            "icon-themes",
-            "Icon Themes",
-            CommandSubmenu::IconThemes,
-            icon_themes,
+        let icon_themes = labonair_theme::command_provider::icon_themes_submenu(
+            self.theme
+                .read(cx)
+                .list_icon_themes()
+                .into_iter()
+                .map(|theme| {
+                    (
+                        theme.id.clone(),
+                        theme.name,
+                        theme.builtin.then(|| "built-in".to_string()),
+                        theme.id == active_icon_theme_id,
+                    )
+                }),
         );
+        register_snapshot(&mut submenus, icon_themes);
 
         let status_bar_hidden = {
             let ws = self.workspace.read(cx);
@@ -510,24 +385,12 @@ impl AppShell {
             status_bar_hidden,
         );
 
-        let editor_themes = labonair_theme::EditorThemeId::ALL
-            .into_iter()
-            .map(|id| SubmenuItem {
-                id: id.slug().to_string(),
-                title: editor_theme_label(id),
-                subtitle: None,
-                active: active_editor_theme == id,
-                action: SubmenuAction::SetEditorTheme(id.slug().to_string()),
-                secondary: None,
-            })
-            .collect();
-        register_submenu(
-            &mut submenus,
-            "editor-themes",
-            "Editor Themes",
-            CommandSubmenu::EditorTheme,
-            editor_themes,
+        let editor_themes = labonair_theme::command_provider::editor_themes_submenu(
+            labonair_theme::EditorThemeId::ALL
+                .into_iter()
+                .map(|id| (id, active_editor_theme == id)),
         );
+        register_snapshot(&mut submenus, editor_themes);
 
         PaletteData {
             commands: self

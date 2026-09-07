@@ -2,10 +2,91 @@
 
 use labonair_command_palette_core::{
     CommandContext, CommandDescriptor, CommandIcon, CommandId, CommandProvider, CommandSubmenu,
+    SubmenuAction, SubmenuDescriptor, SubmenuItem, SubmenuSnapshot,
 };
+
+use crate::EditorThemeId;
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct ThemeCommandProvider;
+
+pub fn editor_themes_submenu(
+    rows: impl IntoIterator<Item = (EditorThemeId, bool)>,
+) -> SubmenuSnapshot {
+    SubmenuSnapshot {
+        descriptor: SubmenuDescriptor::new(
+            "editor-themes",
+            "Editor Themes",
+            CommandSubmenu::EditorTheme,
+        ),
+        items: rows
+            .into_iter()
+            .map(|(id, active)| SubmenuItem {
+                id: id.slug().to_string(),
+                title: theme_label(id.slug()),
+                subtitle: None,
+                active,
+                action: SubmenuAction::SetEditorTheme(id.slug().to_string()),
+                secondary: None,
+            })
+            .collect(),
+    }
+}
+
+pub fn app_themes_submenu(
+    rows: impl IntoIterator<Item = (String, String, bool)>,
+) -> SubmenuSnapshot {
+    SubmenuSnapshot {
+        descriptor: SubmenuDescriptor::new("app-themes", "App Themes", CommandSubmenu::Themes),
+        items: rows
+            .into_iter()
+            .map(|(id, title, active)| SubmenuItem {
+                action: SubmenuAction::SetAppTheme(id.clone()),
+                id,
+                title,
+                subtitle: None,
+                active,
+                secondary: None,
+            })
+            .collect(),
+    }
+}
+
+pub fn icon_themes_submenu(
+    rows: impl IntoIterator<Item = (String, String, Option<String>, bool)>,
+) -> SubmenuSnapshot {
+    SubmenuSnapshot {
+        descriptor: SubmenuDescriptor::new(
+            "icon-themes",
+            "Icon Themes",
+            CommandSubmenu::IconThemes,
+        ),
+        items: rows
+            .into_iter()
+            .map(|(id, title, subtitle, active)| SubmenuItem {
+                action: SubmenuAction::SetIconTheme(id.clone()),
+                id,
+                title,
+                subtitle,
+                active,
+                secondary: None,
+            })
+            .collect(),
+    }
+}
+
+fn theme_label(slug: &str) -> String {
+    slug.split('-')
+        .map(|word| {
+            let mut chars = word.chars();
+            match chars.next() {
+                Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+                None => String::new(),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
 
 impl CommandProvider for ThemeCommandProvider {
     fn commands(&self) -> Vec<CommandDescriptor> {

@@ -119,9 +119,11 @@ otherwise inverted.
 The dynamic row surface now uses a typed `SubmenuRegistry` in the same
 contract crate. Tabs, hosts, recent hosts, editor/app/icon themes, snippets,
 branches, symbols, and hidden status-bar items are handed to the palette as
-immutable snapshots with typed primary/secondary actions. The shell is still
-the temporary composition adapter for these snapshots; moving each builder
-into its owning capability is the remaining provider-extraction step.
+immutable snapshots with typed primary/secondary actions. Snapshot builders
+now live in the workspace, hosts, editor, theme, snippets, and Git provider
+modules. The shell only supplies live values and registers the resulting
+snapshots; status-bar metadata remains the one shell-owned transitional
+surface in this slice.
 
 ## Acceptance criteria
 

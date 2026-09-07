@@ -37,10 +37,12 @@ edges and reports an acyclic graph; the one-way command-core-to-keymap edge is
 documented as intentional until identity extraction.
 Dynamic palette rows now flow through a typed `SubmenuRegistry` of immutable
 snapshots for tabs, hosts, recent hosts, themes, icon themes, editor themes,
-snippets, branches, symbols, and hidden status-bar items. The shell currently
-composes those snapshots from owner APIs; extracting those builders into the
-owning modules is the next implementation slice. The current commit is
-`0932697`; the worktree is clean.
+snippets, branches, symbols, and hidden status-bar items. Snapshot builders
+now live in the workspace, hosts, editor, theme, snippets, and Git provider
+modules; the shell only supplies live values and registers the snapshots.
+Status-bar metadata remains a shell-owned transitional surface. The current
+commit is `0932697` plus the uncommitted provider extraction; the worktree is
+intentionally not yet clean until this slice is committed.
 
 ## Current Session: 2026-09-07 (Native visual helper hardened)
 

@@ -60,9 +60,11 @@ module after selection.
 Submenus are registered providers. Dynamic entries such as hosts, themes, and
 tabs are supplied as immutable snapshots with typed primary and secondary
 actions. The capability owns loading and action semantics; the palette owns
-only common filtering, focus, preview, and picker interaction. The current
-composition root is the temporary snapshot adapter while each capability's
-runtime provider is extracted behind this contract.
+only common filtering, focus, preview, and picker interaction. Snapshot
+builders now live in the workspace, hosts, editor, theme, snippets, and Git
+providers. The composition root only supplies live values and registers the
+resulting snapshots; status-bar metadata remains a shell-owned transitional
+surface.
 
 ## Keymap registry
 
