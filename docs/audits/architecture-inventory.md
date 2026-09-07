@@ -209,11 +209,11 @@ The current Cargo metadata shows several transitional edges that conflict with t
   `labonair-transfers-ui`; remaining shell status-item code is composition and
   workspace shell surfaces still awaiting owner extraction.
 - The pure CWD breadcrumb path/provider helpers now belong to
-  `labonair-workspace::cwd_breadcrumb`; only the interactive statusbar view
-  remains in the shell until the next extraction slice. Cursor Position and
-  Preview URL are now also Workspace-owned statusbar contributions. Dock panel
-  buttons and their move/hide menu now live in
-  `labonair-workspace::dock_status_item` as well.
+  `labonair-workspace::cwd_breadcrumb`; the interactive CWD view now lives in
+  `labonair-workspace::cwd_status_item` as well. Cursor Position, Preview URL,
+  and Dock panel buttons (including their move/hide menu) are also Workspace-
+  owned contributions. The remaining shell-owned statusbar surface is the
+  updater badge.
 - `shell/src/commands.rs` still maintains a second behavior registry beside
   the command-palette entries; the migration must leave one typed command
   registry and keep execution in the owning modules.

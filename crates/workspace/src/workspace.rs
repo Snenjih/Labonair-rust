@@ -28,6 +28,7 @@ pub mod bell;
 pub mod command_provider;
 pub mod context;
 pub mod cwd_breadcrumb;
+pub mod cwd_status_item;
 pub mod dock;
 pub mod dock_status_item;
 pub mod drag;

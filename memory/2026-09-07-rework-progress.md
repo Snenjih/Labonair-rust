@@ -853,3 +853,9 @@ That owner now contains the panel icon/title mapping, dock move/hide menu,
 statusbar rendering, and typed contribution constructor. Shell composition
 only requests the three edge registrations. The Workspace/Shell checks and
 tests, dependency validation, formatting, and diff checks pass.
+
+The interactive CWD breadcrumb status item was then moved into
+`labonair-workspace::cwd_status_item`. It owns directory loading, breadcrumb
+rendering, subdirectory actions, and its status-menu contribution; shell
+composition now requests only its typed registration. Workspace/Shell Clippy
+and tests, dependency validation, formatting, and diff checks pass.
