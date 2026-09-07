@@ -84,3 +84,10 @@ The R07-001 native launch on 2026-09-07 reported removed keys such as
 values as unknown. This task must first confirm whether those warnings come
 from user-file migration input or the active Settings validation path before
 choosing the smallest compatible fix.
+
+Initial diagnosis: the observed user file is already marked
+`schemaVersion: 2`/`sparsified: true`, and `migrate_settings_v1_to_v2` returns
+early for that state. The old root keys therefore survive into
+`SettingsStore::reload_user_layer`, where the generic schema walk reports them.
+The implementation must address this post-migration v2 compatibility case
+explicitly and idempotently.

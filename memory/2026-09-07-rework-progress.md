@@ -974,3 +974,8 @@ Active GitHub labeler/release metadata and dependency-checker comments were
 also aligned with the current crate graph. Removed `crates/backend/**` and
 `crates/ui/**` path rules are gone, while current terminal, remote, Git, AI,
 host, snippet, and UI-kit crates are covered.
+
+The legacy Settings warning was traced to the real user file being marked
+`schemaVersion: 2` and `sparsified: true`: the one-time V1-to-V2 migration
+returns early, leaving old root keys for the generic schema walk to report.
+R07-003 now records this post-migration compatibility case explicitly.

@@ -80,7 +80,9 @@ accepted composition-only rationale.
 
 The same native launch emitted warnings for legacy persisted keys that are no
 longer part of the typed Settings model, including `hosts`, `hostsMigrated`,
-`statusBarItemPlacements`, and several removed workspace/bookmark values. This
-is a migration/audit finding, not visual evidence: the next settings cleanup
-must decide whether these keys are intentionally ignored, migrated, or removed
-from the warning path.
+`statusBarItemPlacements`, and several removed workspace/bookmark values. The
+observed file is already marked `schemaVersion: 2` and `sparsified: true`, so
+the V1-to-V2 migration returns early and does not revisit those old root keys;
+the later schema walk then reports them. This is a migration/audit finding,
+not visual evidence: R07-003 must define an idempotent cleanup/classification
+step without weakening warnings for genuinely unknown future keys.

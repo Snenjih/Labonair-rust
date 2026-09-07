@@ -174,6 +174,11 @@ to the current capability crates, the obsolete Backend changelog category is
 gone, and the dependency checker no longer carries a dead backend engine
 entry. Queue, dependency, backend-absence, and diff checks remain green.
 
+The Settings warning diagnosis is now concrete: the observed user config is
+already `schemaVersion: 2`/`sparsified: true`, so V1-to-V2 migration exits
+before cleaning old root keys and the subsequent schema walk warns about them.
+R07-003 records the required idempotent post-migration disposition.
+
 The current R05 slices removed the untyped `general.notifyOnErrors` default,
 moved Background values behind their owner, moved dock/sidebar runtime state
 to the versioned Workspace-owned `workspace-layout.json`, and removed
