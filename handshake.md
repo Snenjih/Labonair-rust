@@ -84,6 +84,13 @@ shell, workspace, keymap, Clippy, dependency, queue, format, and diff checks
 pass. Commit: `4e54fcc`; worktree is clean. Next: define the lossless Keymap
 management/editor contract.
 
+The remaining active UI hint consumers (panel tooltips and tab context-menu)
+now also read the effective `CommandId` map. `ShortcutId` remains exported only
+for migration compatibility; no active UI uses it as a binding source. The
+focused palette/shell/workspace tests and Clippy pass. Commit: `b36a031`;
+worktree is clean. Next: define the lossless Keymap management/editor
+contract.
+
 The Keymap module now also owns last-good user-file recovery, validation issue
 retention, and built-in/user layer composition. Shell remains only the GPUI
 binding/display adapter and the existing filesystem watcher connection. The
