@@ -1103,3 +1103,11 @@ material. Explicit `Version: 1` metadata was added to the design, module,
 registry, repository-layout, lifecycle, settings, workspace, and visual-
 verification contracts. The metadata, queue, diff, and clean-worktree checks
 pass; this is committed as `0b0a507`.
+
+The project-control audit found stale Tauri-era workflow metadata outside the
+normative docs: a Tauri VS Code extension recommendation, pnpm/src-tauri PR
+checks, a nonexistent panel-ai label path, DevTools instructions, Windows
+issue options, and links to the predecessor repository. Active GitHub issue/
+PR templates, labeler config, and VS Code recommendations now match the native
+Rust/GPUI macOS/Linux project. All active GitHub YAML files parse successfully;
+the diff is clean and the change is committed as `ca02de7`.

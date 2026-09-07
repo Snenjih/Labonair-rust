@@ -31,6 +31,14 @@ workspace contracts, and visual verification now carry explicit versions. The
 metadata check, queue check, diff check, and clean-worktree check pass. Latest
 documentation commit: `0b0a507`.
 
+Project-control metadata was audited next. The VS Code recommendation no
+longer includes the Tauri extension; the pull-request and issue templates now
+use native Rust/GPUI checks and the supported macOS/Linux targets; stale
+`panel-ai`, DevTools, `pnpm`, `src-tauri`, and old-repository references were
+removed from active automation. YAML parsing and diff checks pass. This is
+committed as `ca02de7`. The next active task remains R07-001, with R07-004
+prepared but not started.
+
 The active-code source audit found no passive toast renderer or duplicate
 operation-error surface. The Explorer clipboard strip and editor conflict
 banner are actionable decision surfaces. The AI error model was corrected in
