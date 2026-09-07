@@ -21,6 +21,8 @@ the migration is complete.
 - [`settings.md`](settings.md) — the boundary of the settings system.
 - [`settings-guidelines.md`](settings-guidelines.md) — normative Settings UI
   navigation and field rules.
+- [`settings-inventory.md`](settings-inventory.md) — normative R05-001
+  field-to-consumer, scope, and keep/move/remove/review decisions.
 - [`visual-verification.md`](visual-verification.md) — exact native-bundle and
   PID-scoped rules for rendered UI checks.
 - [`rework-roadmap.md`](rework-roadmap.md) — the current implementation sequence.

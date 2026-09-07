@@ -234,3 +234,12 @@ empty, filtered, invalid, and connection-pending review. The canonical
 picker-ordering test passes, and the full workspace verification gates remain
 green. R04-002 is complete; `R05-001-settings-audit-and-value-normalization`
 is next.
+
+## R05-001 settings inventory
+
+R05-001 is active. Added `docs/settings-inventory.md` as the normative
+field-to-consumer and scope inventory for all 138 typed Settings fields. It
+classifies current values to keep, duplicated state to move to Background,
+Workspace, SFTP/Transfers, or capability owners, and legacy/unsupported values
+to remove after explicit migration handling. No typed field was deleted in this
+slice; the next step is consumer proof and lossless migration design.

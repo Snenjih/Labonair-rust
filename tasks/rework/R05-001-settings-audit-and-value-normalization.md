@@ -2,7 +2,7 @@
 
 ## Status
 
-`⏳ Planned`
+`🔄 In Progress`
 
 ## Owner
 
@@ -92,3 +92,9 @@ state or duplicate runtime source of truth.
 
 New settings fields require a consumer and a scope before they can be added to
 the model. Unused values are parked in the inventory, not added speculatively.
+
+## Progress
+
+- [x] Produced [`docs/settings-inventory.md`](../../docs/settings-inventory.md)
+      with the current field-to-consumer, scope, and keep/move/remove/review
+      decision for all typed Settings fields.

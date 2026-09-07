@@ -40,7 +40,13 @@ Hosts CRUD compatibility module and generic `HostsDb` alias are removed; only
 the explicitly tracked MCP integration and transport adapters remain. The
 latest implementation commit is `e8381dd` plus the canonical picker-ordering
 test. The worktree is clean before starting
-`R05-001-settings-audit-and-value-normalization.md`.
+`R05-001-settings-audit-and-value-normalization.md` is now active. The first
+field-to-consumer/scope inventory is documented in
+`docs/settings-inventory.md`; it identifies current values to keep, duplicate
+state to move, and legacy/unsupported fields to remove. No Settings model
+field has been deleted yet; the next slice is to prove indirect consumers and
+define lossless migrations before changing the typed schema. The worktree is
+clean before the inventory slice.
 
 `R02-003` is complete. The user confirmed the native Rust shell visual state
 is acceptable, closing the final visual acceptance criterion. The project and
