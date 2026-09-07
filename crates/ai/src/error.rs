@@ -2,11 +2,12 @@
 
 use thiserror::Error;
 
-/// Every failure the provider layer can surface. `Display` strings are meant to
-/// be shown to the user directly (Settings → AI, chat error banner).
+/// Every failure the provider layer can surface. `Display` strings are concise
+/// enough for notification details or a future actionable AI surface; callers
+/// decide how the error is presented.
 #[derive(Debug, Clone, Error, PartialEq, Eq)]
 pub enum AiError {
-    #[error("No API key configured for {0}. Open Settings → AI to add one.")]
+    #[error("No API key configured for {0}. Configure an API key for this provider.")]
     MissingKey(String),
 
     #[error("Authentication failed for {provider} — check the API key. ({detail})")]
@@ -33,7 +34,9 @@ pub enum AiError {
     #[error("Unknown model reference: {0}")]
     UnknownModel(String),
 
-    #[error("No provider instance configured for {0}. Add one in Settings → AI.")]
+    #[error(
+        "No provider instance configured for {0}. Configure this provider before sending requests."
+    )]
     NoInstance(String),
 
     #[error("The response stream was cancelled.")]

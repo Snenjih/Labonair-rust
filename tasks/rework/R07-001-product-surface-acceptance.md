@@ -108,6 +108,13 @@ a separate product decision after the core workflow is stable.
   registry. The shell command table retains only the native Fullscreen
   action and the debug-only component gallery, which are composition/native
   concerns rather than product capability behavior.
+- [x] The active source audit found no passive toast renderer or duplicate
+      operation-error surface. The Explorer clipboard strip and editor conflict
+      banner are actionable decision surfaces, not passive error reporting;
+      operational failures are published to the notification registry.
+- [x] The AI error model no longer embeds a removed Settings → AI route or a
+      chat-error-banner assumption; callers choose the notification or future
+      actionable surface at the capability boundary.
 - [ ] Dynamic palette submenu actions are not yet fully owner-executable:
       `shell/src/actions.rs::handle_palette_event` still interprets theme,
       host, snippet, Git, tab, symbol, color-mode, and status-item actions.

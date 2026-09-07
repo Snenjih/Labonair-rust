@@ -979,3 +979,9 @@ The legacy Settings warning was traced to the real user file being marked
 `schemaVersion: 2` and `sparsified: true`: the one-time V1-to-V2 migration
 returns early, leaving old root keys for the generic schema walk to report.
 R07-003 now records this post-migration compatibility case explicitly.
+
+The active source audit found no passive toast renderer or duplicate
+operation-error surface. The Explorer clipboard strip and editor conflict
+banner are actionable decision surfaces. The AI error model was updated to
+avoid embedding the removed Settings → AI route or a chat-error-banner
+assumption; focused `labonair-ai` tests pass.

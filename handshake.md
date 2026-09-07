@@ -7,6 +7,16 @@ the normative documents under `docs/`.
 
 ## Current Session: 2026-09-07 (R07-001 Product surface acceptance active)
 
+The active-code source audit found no passive toast renderer or duplicate
+operation-error surface. The Explorer clipboard strip and editor conflict
+banner are actionable decision surfaces. The AI error model was corrected in
+the current working tree so it no longer points to the removed Settings → AI
+route or assumes a chat error banner; focused `labonair-ai` tests pass. The
+remaining blockers are unchanged: dynamic palette actions still need the
+R07-002 owner-execution migration, legacy Settings warning classification needs
+R07-003, and native visual capture is blocked by missing Screen Recording
+permission.
+
 R03-002 Keymap, R04-001 static Themes, R04-002 Hosts, and R05-001 Settings
 reduction are complete and visually accepted. The normative field inventory is
 `docs/settings-inventory.md`.
