@@ -58,7 +58,9 @@ Clippy, dependency, queue, formatting, and diff gates are green; the AI HTTP
 test required one isolated unsandboxed rerun because its local test server
 cannot bind inside the sandbox. Current HEAD is `a474d03` on `master`; continue
 with consumer proof and removal of the next confirmed legacy settings group.
-The terminal cleanup is committed in `3bcde42`; no blockers.
+The terminal cleanup is committed in `3bcde42`, and the unused General values
+are committed in `bca66ed`. `startupTerminalCount` remains under review because
+its product behavior still needs an explicit decision. No blockers.
 
 `R02-003` is complete. The user confirmed the native Rust shell visual state
 is acceptable, closing the final visual acceptance criterion. The project and

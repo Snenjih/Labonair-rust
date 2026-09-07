@@ -302,3 +302,15 @@ Settings value. The legacy backend `Preferences` wire shape stays readable and
 the exhaustive migration test accounts for the removed keys. Focused tests,
 full workspace check/Clippy/tests, dependency and queue checks are green.
 Committed as `3bcde42`; R05-001 remains active for the next consumer audit.
+
+## R05-001 General settings cleanup
+
+Removed `autostart`, `credentialEncryption`, and `confirmQuitWithSsh` from
+`GeneralContent`, shipped defaults, generated UI, and the Settings migration.
+No native startup, credential, or quit-flow consumer exists for these values;
+the legacy `Preferences` wire shape remains readable and the exhaustive
+migration test records them as removed compatibility input. Updated the
+initial project template and affected parser/whitelist tests. Full workspace
+tests, check, Clippy, dependency, queue, formatting, and diff checks pass.
+Committed as `bca66ed`. `startupTerminalCount` is intentionally still under
+review rather than removed speculatively.
