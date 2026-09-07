@@ -403,20 +403,8 @@ pub(crate) fn bootstrap(
         });
     })
     .detach();
-    // `keymap.json` (T19-008): load + merge + bind, publish the display
-    // global, then live-watch the file so an edit takes effect with no
-    // restart. Must run after the theme/prefs wiring above so a startup
-    // banner (if the shipped default asset somehow fails to parse) has a
-    // notification center to post into.
-    // Build the command metadata and behaviour registry before keymap loading:
-    // default shortcut resolution must use the same descriptors that the
-    // palette receives later.
-    let command_registry = crate::commands::register_builtin_commands_for(&workspace);
-    crate::keymap_loader::reload_and_apply(cx, &command_registry);
-    crate::keymap_loader::watch(cx, command_registry.clone());
-    set_settings_deps(settings_services(), tokio.clone(), cx);
-    // Auto-updater (T15-005). Kicks a quiet background check at startup when the
-    // `checkForUpdates` preference is on (6 h backoff inside the store).
+    // Auto-updater (T15-005). Create its owner entity before composing the
+    // command registry so its command handler can be registered at startup.
     let updater = cx.new(|cx| UpdaterView::new(tokio.clone(), theme.clone(), cx));
     if GeneralSettings::try_get(cx)
         .map(|s| s.check_for_updates())
@@ -425,6 +413,18 @@ pub(crate) fn bootstrap(
         updater.update(cx, |u, cx| u.run_check(false, cx));
     }
 
+    // `keymap.json` (T19-008): load + merge + bind, publish the display
+    // global, then live-watch the file so an edit takes effect with no
+    // restart. Must run after the theme/prefs wiring above so a startup
+    // banner (if the shipped default asset somehow fails to parse) has a
+    // notification center to post into.
+    // Build the command metadata and behaviour registry before keymap loading:
+    // default shortcut resolution must use the same descriptors that the
+    // palette receives later.
+    let command_registry = crate::commands::register_builtin_commands_for(&workspace, &updater);
+    crate::keymap_loader::reload_and_apply(cx, &command_registry);
+    crate::keymap_loader::watch(cx, command_registry.clone());
+    set_settings_deps(settings_services(), tokio.clone(), cx);
     let snippets = cx.new(|cx| {
         let ssh_executor =
             std::sync::Arc::new(labonair_snippets_ssh::exec::SshSnippetExecutor::new(

@@ -14,6 +14,7 @@
 //! The dialog markup mirrors the reference `UpdaterDialog` states
 //! (available / downloading / ready) and its exact button labels.
 
+pub mod command_provider;
 pub mod status_item;
 
 pub use status_item::{registration, UpdaterStatusItem};

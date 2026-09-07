@@ -15,6 +15,8 @@ labonair-ui-kit = { path = "../ui-kit" }
 labonair-panel = { path = "../panel" }
 labonair-notifications = { path = "../notifications" }
 labonair-updater = { path = "../updater" }
+labonair-command-palette-core = { path = "../command-palette-core" }
+labonair-command-palette-runtime = { path = "../command-palette-runtime" }
 
 [dev-dependencies]
 gpui = { workspace = true, features = ["test-support"] }

@@ -884,3 +884,10 @@ Settings toggle commands were then moved out of the shell table as well.
 `labonair-settings::command_provider` now owns the Zen Mode, chrome, editor,
 terminal-cursor, and Vim preference handlers. The shell only registers this
 owner contribution; Settings remains the single writer for these values.
+
+The updater `CheckForUpdates` command was then moved into
+`labonair-updater-ui::command_provider`. Its metadata and executable handler
+are owned by the updater UI sibling and receive the existing `UpdaterView`
+entity from bootstrap. The shell command table no longer contains updater
+behavior; the updater entity is created before keymap/command composition so
+owner handlers are available from the first registry snapshot.

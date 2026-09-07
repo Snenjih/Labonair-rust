@@ -15,7 +15,7 @@
 
 use std::rc::Rc;
 
-use gpui::{Context, Div, InteractiveElement, Window};
+use gpui::{Context, Div, Entity, InteractiveElement, Window};
 use labonair_command_palette::Page as PalettePage;
 use labonair_command_palette_core::{
     CommandContext, CommandDescriptor, CommandIcon, CommandId, CommandProvider,
@@ -27,6 +27,7 @@ use labonair_settings_ui::open_settings_window;
 
 use crate::app_shell::AppShell;
 use crate::menu;
+use crate::updater::UpdaterView;
 use crate::workspace::Workspace;
 
 /// The behaviour half of a command: run against the app root. Boxed so the
@@ -269,17 +270,21 @@ fn command_descriptor(
 
 #[allow(dead_code)]
 pub(crate) fn register_builtin_commands() -> CommandDispatcher {
-    compose_builtin_commands(None)
+    compose_builtin_commands(None, None)
 }
 
 /// Compose the command registry with owner-provided executable handlers.
 pub(crate) fn register_builtin_commands_for(
     workspace: &gpui::Entity<Workspace>,
+    updater: &Entity<UpdaterView>,
 ) -> CommandDispatcher {
-    compose_builtin_commands(Some(workspace))
+    compose_builtin_commands(Some(workspace), Some(updater))
 }
 
-fn compose_builtin_commands(workspace: Option<&gpui::Entity<Workspace>>) -> CommandDispatcher {
+fn compose_builtin_commands(
+    workspace: Option<&Entity<Workspace>>,
+    updater: Option<&Entity<UpdaterView>>,
+) -> CommandDispatcher {
     let mut r = CommandDispatcher::default();
     let always = ALWAYS;
 
@@ -300,7 +305,11 @@ fn compose_builtin_commands(workspace: Option<&gpui::Entity<Workspace>>) -> Comm
         &labonair_command_palette_core::command_provider::CommandPaletteCommandProvider,
     );
     r.register_provider(&ShellCommandProvider);
+    r.register_provider(&labonair_updater_ui::command_provider::UpdaterCommandProvider);
     labonair_settings::command_provider::register_handlers(&mut r.owner_handlers);
+    if let Some(updater) = updater {
+        labonair_updater_ui::command_provider::register_handlers(&mut r.owner_handlers, updater);
+    }
     if let Some(workspace) = workspace {
         labonair_workspace::command_provider::register_handlers(&mut r.owner_handlers, workspace);
         labonair_terminal::command_provider::register_handlers(

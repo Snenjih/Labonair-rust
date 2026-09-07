@@ -51,7 +51,7 @@ removal conditions.
 | `settings-macros` | Settings derives | settings module | Keep implementation detail. |
 | `settings-ui` | Settings views and generated fields | settings module | Value-only generated UI; receives only the system-font discovery contract. |
 | `keymap` | UI-free keymap values, JSONC file format, default assets, resolution, and conflict handling | keymap module | File parser, default assets, lossless document, and management model belong to Keymap; GPUI presentation and keymap-owned diagnostics are isolated in `keymap-ui`, while shell retains only platform installation/watch wiring. |
-| `shell` | App shell, menus, commands, status items, updater | application composition + shell surface | Reduce to registration and composition. |
+| `shell` | App shell, menus, native actions, and composition | application composition + shell surface | Feature command/status contributions are owner-registered; reduce remaining shell adapters to composition and native-window actions. |
 | `terminal` | Terminal engine and renderer support | terminal module | Split engine from GPUI view when useful. |
 | `theme` | Runtime theme, fonts, and built-in color/icon registries | themes module | Keep one Themes owner; app and icon palette pickers now use separate registry-backed pages with transactional preview; the current catalog is embedded and deterministic, while file/remote extensions remain deferred. |
 | `ui-kit` | Shared UI primitives | foundation | Enforce as the only source of shared controls. |
@@ -198,7 +198,8 @@ The current Cargo metadata shows several transitional edges that conflict with t
   crates contribute executable handlers; Workspace tab, pane, focus, and
   project-lifecycle behavior has now been removed from the shell table. The
   Terminal `Clear Terminal` and Settings toggle handlers are also
-  owner-registered; remaining shell adapters are transitional until their
+  owner-registered; the updater Check-for-Updates action is now owner-
+  registered as well. Remaining shell adapters are transitional until their
   owners move.
 - The dedicated Jump Hosts status item was removed. Jump-host routing remains
   part of SSH connection configuration and execution, while host management and
@@ -208,8 +209,8 @@ The current Cargo metadata shows several transitional edges that conflict with t
   are handled by their owning surfaces through the composition root.
 - The notification statusbar item has moved into `labonair-notifications`;
   Agent Access now belongs to `labonair-workspace`, and the Transfers item to
-  `labonair-transfers-ui`; remaining shell status-item code is composition and
-  workspace shell surfaces still awaiting owner extraction.
+  `labonair-transfers-ui`; all permanent feature status items now expose owner
+  registrations, and the remaining shell status-item code is composition.
 - The pure CWD breadcrumb path/provider helpers now belong to
   `labonair-workspace::cwd_breadcrumb`; the interactive CWD view now lives in
   `labonair-workspace::cwd_status_item` as well. Cursor Position, Preview URL,

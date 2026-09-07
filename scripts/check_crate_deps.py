@@ -42,7 +42,8 @@ ALLOWED = {
     "labonair-updater-ui": {
         "labonair-theme", "labonair-ui-kit", "labonair-panel",
         "labonair-notifications",
-        "labonair-updater",
+        "labonair-updater", "labonair-command-palette-core",
+        "labonair-command-palette-runtime",
     },
     # Platform service — no GPUI or feature-crate deps. Feature crates may
     # consume it directly; the backend edge is transitional during migration.
