@@ -201,4 +201,5 @@ record.
 
 R04-001 is complete. The user confirmed the native visual state. The next
 active queue task is R04-002, which establishes the single Hosts owner and
-SSH/SFTP picker flow.
+SSH/SFTP picker flow. The combined implementation/documentation commit is
+`20bff4b`.

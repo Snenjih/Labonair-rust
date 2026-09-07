@@ -23,7 +23,8 @@ only the embedded color/icon catalogs, Settings no longer owns theme
 management, shell no longer watches theme directories, and the palette gets
 its choices directly from `labonair-theme`. The user confirmed the visual
 state and the full verification gates pass. R04-002 is the next active task
-for the single Hosts owner and SSH/SFTP picker flow.
+for the single Hosts owner and SSH/SFTP picker flow. The combined
+implementation/documentation commit is `20bff4b`.
 
 `R02-003` is complete. The user confirmed the native Rust shell visual state
 is acceptable, closing the final visual acceptance criterion. The project and
