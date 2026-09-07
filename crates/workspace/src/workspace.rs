@@ -2062,7 +2062,7 @@ impl Workspace {
     /// overrides (T18-005). Called once at startup and whenever another
     /// window bumps [`status_placements::StatusBarLayoutTick`].
     pub fn reload_status_bar_placements(&mut self) {
-        let blob = labonair_backend::modules::settings::status_bar_item_placements_load();
+        let blob = status_placements::status_bar_item_placements_load();
         let overrides = status_placements::overrides_from_blob(&blob);
         self.status_item_registry.set_overrides(overrides);
     }
@@ -2070,7 +2070,7 @@ impl Workspace {
     /// The right-click "move left/right" / "hide" action on a status-bar item
     /// (T18-005): applies the change to the local registry immediately (so
     /// this window's `StatusBar` re-renders without waiting on the write),
-    /// then persists it through the backend's atomic read-merge-write and, on
+    /// then persists it through the workspace owner's atomic read-merge-write and, on
     /// completion, bumps [`status_placements::StatusBarLayoutTick`] so every
     /// *other* window's `StatusBar` reloads the blob and picks up the change
     /// too. The tick bump is deliberately deferred until after the write
@@ -2088,15 +2088,9 @@ impl Workspace {
         cx.notify();
 
         let patch = status_placements::placement_patch(side, hidden);
-        let backend = self.backend.clone();
         let item_id = id.to_string();
         let jh = self.tokio.spawn(async move {
-            labonair_backend::modules::settings::settings_set_status_bar_placement(
-                &backend.status_bar_lock,
-                item_id,
-                patch,
-            )
-            .await
+            status_placements::set_status_bar_item_placement(item_id, patch).await
         });
         cx.spawn(async move |_this, cx| {
             let _ = jh.await;
@@ -2119,13 +2113,9 @@ impl Workspace {
         self.status_item_registry.set_overrides(HashMap::new());
         cx.notify();
 
-        let backend = self.backend.clone();
-        let jh = self.tokio.spawn(async move {
-            labonair_backend::modules::settings::settings_clear_status_bar_placements(
-                &backend.status_bar_lock,
-            )
-            .await
-        });
+        let jh = self
+            .tokio
+            .spawn(async move { status_placements::clear_status_bar_item_placements().await });
         cx.spawn(async move |_this, cx| {
             let _ = jh.await;
             let _ = cx.update(|app| {
@@ -2142,7 +2132,7 @@ impl Workspace {
     /// panel's dock position or whether it can still be opened from the
     /// command palette.
     pub fn panel_toggle_visible(name: &str) -> bool {
-        labonair_backend::modules::settings::panel_toggle_visibility_load()
+        status_placements::panel_toggle_visibility_load()
             .get(name)
             .and_then(serde_json::Value::as_bool)
             .unwrap_or(true)
@@ -2151,7 +2141,7 @@ impl Workspace {
     /// The single write path for panel-toggle visibility (T18-007): both the
     /// status bar's own "Hide from toggle bar" right-click action and the
     /// Personalization settings pane's per-panel switch call this. Persists
-    /// through the backend's atomic read-merge-write and bumps
+    /// through the workspace owner's atomic read-merge-write and bumps
     /// [`status_placements::StatusBarLayoutTick`] so every window's panel
     /// toggle cluster (which observes that global) re-reads the blob and
     /// reflects the change live.
@@ -2161,15 +2151,9 @@ impl Workspace {
         visible: bool,
         cx: &mut Context<Self>,
     ) {
-        let backend = self.backend.clone();
         let panel_name = name.clone();
         let jh = self.tokio.spawn(async move {
-            labonair_backend::modules::settings::settings_set_panel_toggle_visibility(
-                &backend.panel_toggle_visibility_lock,
-                panel_name,
-                visible,
-            )
-            .await
+            status_placements::set_panel_toggle_visibility(panel_name, visible).await
         });
         cx.spawn(async move |_this, cx| {
             let _ = jh.await;

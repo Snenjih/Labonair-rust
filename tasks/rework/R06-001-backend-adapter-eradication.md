@@ -106,7 +106,8 @@ boundary still exists; that package must not become a second capability owner.
 - [x] System-font discovery moved to `labonair-theme`; the unconsumed backend
       custom-font module and dependency were removed.
 - [x] Removed the dead `barItemPlacements` backend read/write facade while
-      preserving its migration-only input path and the live status-bar API.
+      preserving its migration-only input path. Live status-bar placement and
+      panel-toggle persistence now belong to the Workspace chrome owner.
 - [x] Workspace no longer constructs Git or Git Graph backend adapters; the
       composition root injects the canonical `labonair-git` services.
 - [ ] Move the remaining contracts and adapters behind injected capability

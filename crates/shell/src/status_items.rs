@@ -144,7 +144,7 @@ impl DockPanelButtons {
 
     /// Re-reads the persisted `panelToggleVisibility` blob.
     fn reload_hidden(&mut self) {
-        self.hidden = labonair_backend::modules::settings::panel_toggle_visibility_load()
+        self.hidden = labonair_workspace::status_placements::panel_toggle_visibility_load()
             .into_iter()
             .filter(|(_, v)| !v.as_bool().unwrap_or(true))
             .map(|(k, _)| SharedString::from(k))

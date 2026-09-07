@@ -39,7 +39,7 @@ participate in the `App` state graph or in another backend module.
 | `pty` | local PTY state, sessions, events, I/O operations | indirect through backend/MCP | terminal owner; expose a terminal service rather than `App` state |
 | `scrollback` | scrollback persistence helpers | `shell`, `workspace` | terminal owner; inject persistence and remove backend path |
 | `secrets` | secret-state compatibility API | no external module import found | `labonair-secrets`; remove wrapper after internal adapters accept `SecretsState`/service |
-| `settings` | legacy preferences, migrations, status placement persistence, MCP prefs | `app`, `shell`, `workspace`; internal backend modules | settings/layout owners; legacy `barItemPlacements` is migration-only and its dead read/write facade was removed |
+| `settings` | legacy preferences, migrations, MCP prefs | `app`, `shell`, `workspace`; internal backend modules | Settings owns value persistence; Workspace owns live status-bar/panel layout persistence; legacy `barItemPlacements` is migration-only |
 | `sftp` | session adapter, remote operations, transfer worker state/commands | `shell`; internal SSH/transfer adapters | `labonair-sftp` and `labonair-transfers` integration boundaries |
 | `shell` | local command execution, shell sessions, background processes | no active external module import found | terminal/workspace owner; split local process service from backend facade |
 | `snippets` | snippet DB compatibility and SSH executor adapter | `shell`; internal backend use | `labonair-snippets` integration boundary |
@@ -58,7 +58,7 @@ crates:
 |---|---|---|
 | `labonair` | constructs `App`, emits startup events, runs legacy settings migration | composition receives concrete services and typed startup hooks |
 | `labonair-shell` | constructs `App`, builds SSH/SFTP/Git/transfer adapters, reads MCP/settings/updater/font/scrollback compatibility APIs | one composition-only adapter import per capability, with no feature state access |
-| `labonair-workspace` | owns legacy event bridge, scrollback, placement persistence, MCP grants, and consumes injected Git services | injected workspace services plus workspace-owned layout/terminal contracts; Git adapter construction now stays in shell composition |
+| `labonair-workspace` | owns legacy event bridge, scrollback, status/panel placement persistence, MCP grants, and consumes injected Git services | injected workspace services plus workspace-owned layout/terminal contracts; Git adapter construction now stays in shell composition |
 | `labonair-ai` | no active backend usage; stale dependency declaration | removed in the R06 inventory pass |
 
 `settings`, `settings-content`, and related crates contain historical comments
@@ -73,6 +73,12 @@ error re-exports, and the unused `AppResult` alias are gone. This establishes
 the migration pattern for the remaining entries: move or consume the canonical
 contract first, then delete the backend compatibility path once source search
 and focused tests prove that no external consumer remains.
+
+The live `statusBarItemPlacements` and `panelToggleVisibility` blobs now have
+their persistence implementation in `labonair-workspace::status_placements`.
+The backend Settings module retains only the shared JSON helpers needed by
+legacy migrations and value-settings adapters; it no longer owns locks or live
+layout read/write functions.
 
 ## Verification commands
 
