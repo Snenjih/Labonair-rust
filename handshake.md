@@ -24,7 +24,7 @@ Legacy `appCornerRadius` values are converted to the current
 `cornerRadiusScale` field during migration, with the modern value taking
 precedence when both are present.
 
-Current HEAD is `efbb3c2` on `master`; the worktree is clean before this
+Current HEAD is `638bc16` on `master`; the worktree is clean before this
 handshake update. The first R06
 boundaries removed the backend error facade, removed AI's stale backend edge,
 moved system-font discovery into the Theme owner, deleted the unconsumed
@@ -99,6 +99,14 @@ while `labonair-git` remains contracts-only. Full workspace tests, Clippy,
 formatting, dependency validation, queue validation, and diff checks pass;
 this boundary is committed as `efbb3c2`. R06-001 remains active; the next
 boundary is the remaining MCP, snippet, and compatibility adapters.
+The concrete MCP HTTP server, grant state, PTY bridge, and service/event
+adapters are now owned by `labonair-mcp-server`. `labonair-backend` no longer
+owns an MCP module; shell composition supplies explicit SSH, local-terminal,
+database, secrets, and EventBus capabilities, while `labonair-mcp-core` remains
+contracts-only. Full workspace tests, Clippy, formatting, dependency
+validation, queue validation, and diff checks pass; this boundary is committed
+as `638bc16`. R06-001 remains active; the next boundary is the remaining
+snippet and transfer service adapters plus compatibility cleanup.
 The broad backend `AppEvent` enum and typed-emitter helper are also gone;
 SSH and MCP adapters decode their own raw event names directly at the
 capability boundary.
