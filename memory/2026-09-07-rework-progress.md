@@ -389,3 +389,18 @@ no native SCM code consumes it. Legacy Preferences remains readable and the
 exhaustive migration accounting covers the compatibility key. Check, Clippy,
 and focused Settings/content/UI/backend tests pass. Committed as `8804d60`;
 R05-001 remains active for final retained-setting consumer tests.
+
+## R05-001 Editor consumer audit
+
+The consumer audit found eight additional Editor values that existed only in
+the typed model, Settings UI, and migration: `editorLineHeight`,
+`editorTrimTrailingWhitespace`, `editorInsertFinalNewline`,
+`editorBracketMatching`, `editorShowCursorPosition`,
+`editorShowSelectionStats`, `editorShowOutline`, and
+`editorIndentationGuides`. They were removed from the current model and UI;
+the legacy Preferences wire shape and exhaustive migration accounting remain
+for compatibility. The Settings search test was updated to assert a valid
+multi-area query after removing the stale cursor-position expectation. Full
+workspace tests, check, Clippy, dependency, queue, formatting, and diff checks
+pass. Committed as `3bc4930`; R05-001 remains active for the final retained
+value proof.
