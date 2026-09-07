@@ -24,7 +24,7 @@ Legacy `appCornerRadius` values are converted to the current
 `cornerRadiusScale` field during migration, with the modern value taking
 precedence when both are present.
 
-Current HEAD is `01564fb` on `master`; the worktree is clean before this
+Current HEAD is `efbb3c2` on `master`; the worktree is clean before this
 handshake update. The first R06
 boundaries removed the backend error facade, removed AI's stale backend edge,
 moved system-font discovery into the Theme owner, deleted the unconsumed
@@ -92,6 +92,13 @@ directly. Full workspace tests, Clippy, formatting, dependency validation,
 queue validation, and diff checks pass; this boundary is committed as
 `01564fb`. R06-001 remains active; the next boundary is the remaining Git,
 MCP, snippet, and compatibility adapters.
+The concrete local/remote Git CLI executor, parsers, and Git contract adapters
+are now owned by `labonair-git-transport`. `labonair-backend` no longer owns a
+Git module; shell composition injects the renamed transport services directly,
+while `labonair-git` remains contracts-only. Full workspace tests, Clippy,
+formatting, dependency validation, queue validation, and diff checks pass;
+this boundary is committed as `efbb3c2`. R06-001 remains active; the next
+boundary is the remaining MCP, snippet, and compatibility adapters.
 The broad backend `AppEvent` enum and typed-emitter helper are also gone;
 SSH and MCP adapters decode their own raw event names directly at the
 capability boundary.
