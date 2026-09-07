@@ -141,3 +141,8 @@ Command descriptors now carry typed owner defaults through
 file layer before applying the user file; the shipped JSONC remains a
 compatibility layer while the remaining defaults migrate. The provider and
 shell adapter are equality-checked so their command metadata cannot diverge.
+
+`keymap::adapter::load` now returns an immutable module-owned snapshot of
+effective bindings and diagnostics from the command registry. Shell retains
+only GPUI installation, display-hint publication, and file-watch wiring; the
+next slice is the lossless keymap management/editor contract.

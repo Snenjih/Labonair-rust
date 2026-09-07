@@ -1,6 +1,7 @@
 //! UI-free keyboard-shortcut model: the rebindable [`ShortcutId`] table,
 //! user keybind overrides ([`KeybindMap`]), resolution, and conflict detection.
 
+pub mod adapter;
 pub mod command_provider;
 pub mod file;
 pub mod runtime;

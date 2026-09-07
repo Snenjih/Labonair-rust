@@ -94,6 +94,12 @@ it registers and supplies the stable command ID; keymap resolution only maps
 that ID to user input. The keymap editor is a keymap surface, not a Settings
 category.
 
+`keymap::adapter::load` is the module-owned loading boundary. It accepts the
+command registry, builds the known-action vocabulary and owner-default layer,
+and returns one immutable snapshot containing effective bindings and current
+diagnostics. A platform shell may install that snapshot into GPUI, but it must
+not reimplement loading, validation, recovery, or layer composition.
+
 The file/GPUI adapter must cross this boundary once: persisted action names are
 resolved through `keymap::runtime::command_for_action` into `CommandId`, and
 only then mapped to a concrete platform action. GPUI context predicates stay

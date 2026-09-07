@@ -3,15 +3,13 @@
 //! `KeybindDisplay` GPUI global the command palette and panel-toggle
 //! tooltips read to show effective bindings.
 //!
-//! This is the one place in the app that bridges `labonair-settings::keymap`
-//! (pure, decoupled from `CommandId`) with `labonair-command-palette`
-//! (`CommandId`, `ShortcutId`) and `labonair-shell::menu` (concrete `Action`
-//! types) — the shell is the only crate allowed to see all three.
+//! The keymap module owns loading, merging, validation and recovery. This file
+//! only adapts its immutable snapshot to GPUI bindings, display hints, and the
+//! existing filesystem watcher.
 
 use gpui::App;
 use labonair_command_palette::{
-    canonical_action_name, compatibility_action_names, shortcut_slug, shortcuts, KeybindDisplay,
-    KeybindMap,
+    canonical_action_name, shortcut_slug, shortcuts, KeybindDisplay, KeybindMap,
 };
 use labonair_keymap::file::{self, EffectiveBinding, ValidationIssue};
 
@@ -24,20 +22,11 @@ pub fn last_issues() -> Vec<ValidationIssue> {
     file::last_issues()
 }
 
-fn known_actions(registry: &CommandDispatcher) -> std::collections::BTreeSet<&'static str> {
-    let mut actions = registry
-        .iter()
-        .map(|descriptor| descriptor.id.action_name())
-        .collect::<std::collections::BTreeSet<_>>();
-    actions.extend(compatibility_action_names());
-    actions
-}
-
 /// The merged effective keymap: shipped defaults, then the user's
 /// `keymap.json` (or the last known-good snapshot of it) on top.
+#[cfg(test)]
 pub(crate) fn effective_bindings(registry: &CommandDispatcher) -> Vec<EffectiveBinding> {
-    let owner_defaults = labonair_keymap::runtime::defaults_from_descriptors(registry.iter());
-    file::effective_bindings_with_defaults(&known_actions(registry), &owner_defaults)
+    labonair_keymap::adapter::load_descriptors(registry.iter()).effective_bindings
 }
 
 /// Derive the `ShortcutId`-keyed display map ([`KeybindDisplay`]) the command
@@ -72,7 +61,8 @@ fn display_map(effective: &[EffectiveBinding], registry: &CommandDispatcher) -> 
 /// Load, merge, bind and publish the display global — the single entry point
 /// called at startup and on live-reload.
 pub(crate) fn reload_and_apply(cx: &mut App, registry: &CommandDispatcher) {
-    let effective = effective_bindings(registry);
+    let snapshot = labonair_keymap::adapter::load_descriptors(registry.iter());
+    let effective = snapshot.effective_bindings;
     crate::menu::apply_keymap(cx, &effective);
     cx.set_global(KeybindDisplay(display_map(&effective, registry)));
 }

@@ -70,6 +70,9 @@ Command owners also publish their default bindings on the command descriptor.
 The keymap module converts those typed defaults into the default resolution
 layer, then applies the user keymap as the override layer. The composition root
 registers providers but does not maintain a feature-wide default-shortcut table.
+The module-owned `keymap::adapter::load` boundary returns the resulting
+immutable snapshot, including diagnostics; the shell only installs it into
+GPUI and connects file-watch events.
 
 ## 4. Target workspace crate map
 

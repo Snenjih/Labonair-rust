@@ -1,11 +1,10 @@
 //! `keymap.json` — parsing, layered merging and validation (T19-008).
 //!
-//! Pure data/logic, decoupled from `labonair-command-palette`'s `CommandId`
+//! Pure data/logic, decoupled from the palette view's `CommandId`
 //! on purpose (see `docs/architecture.md`'s crate-graph rule: this crate must
-//! not depend on the palette crate). Callers that *do* know the action
-//! vocabulary (`labonair-shell`, `labonair-settings-ui`) supply the set of
-//! valid action names to [`validate_keymap`] and turn the resulting
-//! [`EffectiveBinding`]s into real `gpui::KeyBinding`s themselves.
+//! not depend on the palette UI crate). The module-owned [`crate::adapter`]
+//! supplies the command vocabulary and owner defaults; platform adapters turn
+//! the resulting [`EffectiveBinding`]s into real `gpui::KeyBinding`s.
 //!
 //! File shape (a JSONC array of blocks):
 //! ```jsonc
