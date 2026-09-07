@@ -239,8 +239,8 @@ families. These are not target dependencies; each has a removal condition:
 | `workspace → ai`, `workspace → settings` | Workspace still hosts the AI live bridge and consumes a few transitional settings values. Typed SSH/MCP event sources, Git, SFTP, and transfer access are injected. | AI context and remaining settings consumers move behind narrow capability contracts; workspace keeps orchestration only. |
 | `panel-explorer → workspace`, `panel-explorer → settings` | Explorer still reuses workspace drag/preview contracts and a legacy settings read. | Drag/drop and preview contracts move to foundation/owning modules and explorer receives a settings capability. |
 | `panel-scm → editor`, `panel-scm → settings` | SCM reuses unified diff helpers and one legacy presentation preference. | Diff contracts are shared by the Git module and the preference is provided through a narrow settings contract. |
-| `panel-ai → backend`, `panel-ai → editor`, `panel-ai → workspace` | AI UI is parked while the workspace/editor context bridge is redesigned. | AI consumes AI, editor-context, and workspace-session contracts without facade access. |
-| `command-palette → backend`, `command-palette → settings`, `command-palette → filesystem` | Palette still contains legacy action dispatch and settings/file providers. | All entries are registered by owning modules through provider contracts. |
+| `panel-ai → editor`, `panel-ai → workspace` | AI UI is parked while the workspace/editor context bridge is redesigned. | AI consumes AI, editor-context, and workspace-session contracts without facade access. |
+| `command-palette → settings`, `command-palette → filesystem` | Palette still contains legacy action dispatch and settings/file providers. | All entries are registered by owning modules through provider contracts. |
 | `application composition → integration siblings` | The shell must construct concrete platform integrations so feature modules can remain contract-only. | Keep construction and registration in `labonair-shell`; do not expose a replacement aggregate facade. |
 
 The verifier's allow-list is the machine-readable source for the exact edge

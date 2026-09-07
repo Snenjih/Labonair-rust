@@ -1,6 +1,6 @@
 //! App-wide error catalog (T15-002).
 //!
-//! [`LabonairError`] is the single structured error type the backend surfaces
+//! [`LabonairError`] is the single structured error type application modules surface
 //! to the UI layer. Every variant carries a human-readable detail string and,
 //! through [`LabonairError::category`], [`LabonairError::user_message`] and
 //! [`LabonairError::recovery`], maps to:

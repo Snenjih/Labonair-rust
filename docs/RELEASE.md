@@ -12,7 +12,7 @@ The version lives in **`crates/app/Cargo.toml`** (`[package] version`). Every
 other place derives from it:
 
 - the binary exposes it as `CARGO_PKG_VERSION`
-  (`labonair_backend::CURRENT_VERSION`),
+  (`env!("CARGO_PKG_VERSION")` in the binary),
 - `scripts/package-macos.sh` reads it into `CFBundleShortVersionString`,
 - `CFBundleVersion` is set to the commit count (`git rev-list --count HEAD`).
 
@@ -118,7 +118,7 @@ pipeline unchanged and avoids a second signing system, so the port reimplements
 the same four steps natively (this is also the approach Zed's auto-updater
 takes).
 
-`labonair_backend::updater` (`crates/backend/src/modules/updater/`):
+`labonair-updater` (`crates/updater/`):
 
 - **Manifest** — Tauri-compatible `latest.json` at `DEFAULT_UPDATE_ENDPOINT`
   (`…/releases/latest/download/latest.json`). Shape: `{ version, notes,
@@ -146,7 +146,7 @@ app menu and command palette. Failures go through the notification system.
 
 1. Generate a minisign keypair once: `minisign -G -p updater.pub -s updater.key`.
 2. Put the **public** key's second line into
-   `crates/backend/src/modules/updater/install.rs::UPDATE_PUBLIC_KEY`.
+   `crates/updater/src/install.rs::UPDATE_PUBLIC_KEY`.
 3. Store the **secret** key + its password as the CI secrets
    `LABONAIR_UPDATER_PRIVATE_KEY` / `LABONAIR_UPDATER_KEY_PASSWORD`.
 

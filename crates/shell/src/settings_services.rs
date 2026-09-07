@@ -1,7 +1,7 @@
 //! Composition adapters for the small imperative services used by Settings UI.
 //!
 //! Settings UI owns value rendering and persistence. The composition layer
-//! supplies platform discovery services without exposing the backend facade.
+//! supplies platform discovery services without exposing application state.
 
 use std::sync::Arc;
 

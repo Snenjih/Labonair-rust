@@ -141,10 +141,11 @@ state are owned by their respective capabilities.
 
 **Exit:** the dependency graph and source layout match the architecture contract.
 
-The next backend-removal boundary is
-[`R06-001-backend-adapter-eradication.md`](../tasks/rework/R06-001-backend-adapter-eradication.md).
-Further terminal/editor/workspace extraction tasks are added only after that
-boundary has a concrete consumer and test seam.
+The backend-removal boundary
+[`R06-001-backend-adapter-eradication.md`](../tasks/rework/R06-001-backend-adapter-eradication.md)
+is complete. Remaining surface-contribution discrepancies are audited by
+[`R07-001-product-surface-acceptance.md`](../tasks/rework/R07-001-product-surface-acceptance.md)
+and implemented only through bounded follow-up tasks.
 
 ## Phase 8 — Product refinement
 
@@ -158,6 +159,9 @@ deferred until a later product decision adds a concrete workflow and owner.
 
 The cross-module visual and workflow gate is
 [`R07-001-product-surface-acceptance.md`](../tasks/rework/R07-001-product-surface-acceptance.md).
+Its first bounded follow-up is
+[`R07-002-owner-registered-surface-contributions.md`](../tasks/rework/R07-002-owner-registered-surface-contributions.md),
+which removes the remaining shell-owned feature contribution tables.
 
 ## Change and removal gates
 

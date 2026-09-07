@@ -2,7 +2,7 @@
 //!
 //! Persistence, transport, and UI are intentionally outside this crate. This
 //! keeps the host contract reusable by host management, SSH, SFTP, snippets,
-//! and command-palette providers without importing the application backend.
+//! and command-palette providers without importing application composition.
 
 pub mod command_provider;
 pub mod store;

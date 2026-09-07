@@ -174,9 +174,9 @@ immutable `TransferSnapshot` values to the UI.
 
 `TransferService` is the action contract for enqueue, cancellation, and
 conflict/file-error resolution. `TransferEventSource` is the read-only event
-boundary. The backend's raw legacy event bus is translated once by its
-capability adapter; no workspace or statusbar code decodes raw event names. The
-statusbar-hosted `labonair-transfers-ui` view is the canonical presentation
+boundary. The raw adapter event bus is translated once by
+`labonair-transfers-ssh`; no workspace or statusbar code decodes raw event
+names. The statusbar-hosted `labonair-transfers-ui` view is the canonical presentation
 surface and emits only a typed completion signal for the SFTP pane refresh.
 Transfer history is intentionally in-memory for this migration; durable
 history requires a separate persistence decision and schema task.
