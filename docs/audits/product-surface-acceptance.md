@@ -71,3 +71,16 @@ condition, and a capture or reproducible inspection note in the task/handshake.
 The matrix is complete only when every applicable state is verified and every
 `Partial` structural row has either a documented removal condition or an
 accepted composition-only rationale.
+
+## Native inspection log
+
+| Date | Native process | Window | Result | Follow-up |
+|---|---|---|---|---|
+| 2026-09-07 | `/Users/niklas/Developer/active/Labonair/Labonair-rust/target/debug/labonair` (PID 54142) | 76849 | The native window was found, but macOS denied `screencapture` because Screen Recording permission is unavailable to the runner. No screenshot was accepted as evidence. | Grant Screen Recording permission to the runner or capture the same matrix manually; keep all visual cells pending until then. |
+
+The same native launch emitted warnings for legacy persisted keys that are no
+longer part of the typed Settings model, including `hosts`, `hostsMigrated`,
+`statusBarItemPlacements`, and several removed workspace/bookmark values. This
+is a migration/audit finding, not visual evidence: the next settings cleanup
+must decide whether these keys are intentionally ignored, migrated, or removed
+from the warning path.

@@ -116,3 +116,7 @@ a separate product decision after the core workflow is stable.
       [`../../docs/audits/product-surface-acceptance.md`](../../docs/audits/product-surface-acceptance.md);
       all applicable visual cells remain pending until native-bundle evidence
       is recorded.
+- [ ] Native launch confirms the Rust window exists, but macOS currently denies
+      Screen Recording to the capture runner. The launch also reports removed
+      legacy Settings keys as unknown; resolve that migration/warning
+      disposition in a bounded follow-up before closing this acceptance gate.

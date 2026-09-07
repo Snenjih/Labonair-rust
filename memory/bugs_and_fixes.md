@@ -806,3 +806,12 @@ registration boundary, because the extension trait was not imported there.
 **Fix:** Imported GPUI's `AppContext` in the Notifications status-item module.
 The shell no longer needs that construction helper or the corresponding
 status-item trait imports.
+
+## 2026-09-07 — Native screenshot capture denied by macOS
+
+**Observation:** The native Rust executable started successfully and its
+window was found by PID, but `screencapture` returned a permission denial.
+
+**Disposition:** Keep the R07-001 visual matrix pending and record the exact
+process/window evidence. A future visual acceptance run needs Screen Recording
+permission for the runner; no screenshot of another application may be used.

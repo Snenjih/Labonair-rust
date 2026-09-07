@@ -943,3 +943,12 @@ The notification statusbar registration was then moved into
 `labonair-notifications`. The owner now constructs its own
 `StatusItemRegistration`; shell status composition only collects that typed
 registration alongside the other owner contributions.
+
+## R07-001 native visual evidence boundary
+
+The native Rust binary starts successfully and exposes a native window, but the
+macOS runner cannot capture it because Screen Recording permission is denied.
+The acceptance matrix therefore remains visually pending; source and compile
+evidence must not be treated as a visual substitute. The launch also surfaced
+warnings for removed persisted Settings keys, which now require an explicit
+migration or warning-path disposition.

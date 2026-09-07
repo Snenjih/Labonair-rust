@@ -164,6 +164,11 @@ The separately tracked owner-contribution task is
 but it may only be activated after the R07-001 acceptance audit confirms the
 remaining discrepancies.
 
+The acceptance launch also recorded a bounded Settings compatibility finding:
+[`R07-003-settings-legacy-warning-disposition.md`](../tasks/rework/R07-003-settings-legacy-warning-disposition.md)
+will decide how known removed keys are classified without weakening warnings
+for genuinely unknown future keys.
+
 ## Change and removal gates
 
 Every phase task must state its owner, canonical capability crate, affected

@@ -139,6 +139,15 @@ in `77cd159` at `docs/audits/product-surface-acceptance.md`; it records the
 owner/entry-point evidence and keeps every applicable visual state explicitly
 pending until a native-bundle inspection is recorded.
 
+The native Rust binary was then launched with an absolute path for R07-001
+visual acceptance (PID 54142; native window 76849). The window was found, but
+macOS denied screenshot capture because Screen Recording is unavailable to the
+runner, so the visual matrix remains pending. The same launch exposed warnings
+for removed persisted Settings keys (`hosts`, `hostsMigrated`,
+`statusBarItemPlacements`, workspace bookmark values, and related legacy input);
+this is recorded in `docs/audits/product-surface-acceptance.md` as the next
+migration/warning-path follow-up.
+
 The current R05 slices removed the untyped `general.notifyOnErrors` default,
 moved Background values behind their owner, moved dock/sidebar runtime state
 to the versioned Workspace-owned `workspace-layout.json`, and removed
@@ -152,7 +161,7 @@ Legacy `appCornerRadius` values are converted to the current
 `cornerRadiusScale` field during migration, with the modern value taking
 precedence when both are present.
 
-Current HEAD is `77cd159` on `master`; the worktree contains this handshake
+Current HEAD is `45952f3` on `master`; the worktree contains this handshake
 update before its commit. R06
 boundaries removed the backend error facade, removed AI's stale backend edge,
 moved system-font discovery into the Theme owner, deleted the unconsumed
