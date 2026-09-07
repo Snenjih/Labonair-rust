@@ -27,6 +27,19 @@ jobs:
       - name: Check crate dependency graph
         run: scripts/check-crate-deps.sh
 
+  documentation:
+    name: Documentation authority and links
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check documentation governance
+        run: python3 scripts/check_documentation.py
+
+      - name: Check active rework queue
+        run: python3 scripts/check_rework_queue.py
+
   macos:
     name: macOS (fmt · check · clippy · test)
     runs-on: macos-latest

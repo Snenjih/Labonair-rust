@@ -85,6 +85,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace --no-fail-fast
 cargo metadata --format-version 1 --no-deps | python3 scripts/check_crate_deps.py
 python3 scripts/check_rework_queue.py
+python3 scripts/check_documentation.py
 git diff --check
 ```
 

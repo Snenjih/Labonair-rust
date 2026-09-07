@@ -5,6 +5,19 @@ They may mention API names that were valid at the time of the recorded
 change; the current API and task state are defined by the latest header and
 the normative documents under `docs/`.
 
+## Current Session: 2026-09-07 (Documentation governance check)
+
+Added `scripts/check_documentation.py` and wired it into CI, the pull-request
+checklist, `AGENTS.md`, and the feature lifecycle contract. The checker
+validates all current normative documents, local Markdown links in the active
+documentation/task areas, and stale predecessor markers in repository control
+metadata. It passes together with the active queue check. The active task is
+still R07-001; the remaining implementation backlog is B01 Explorer →
+Workspace, B02 Workspace → Background, and later typed-boundary reviews B03–B06.
+Native visual acceptance remains pending because the capture runner lacks
+macOS Screen Recording permission. The worktree contains this documentation
+slice and is ready for verification/commit.
+
 ## Current Session: 2026-09-07 (R07-001 Product surface acceptance active)
 
 The full workspace verification was re-run after the task-tree consolidation:

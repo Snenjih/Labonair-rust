@@ -22,6 +22,7 @@ Examples: feat(terminal): add split panes / fix(explorer): close button alignmen
 - [ ] `cargo test --workspace --no-fail-fast` clean
 - [ ] Manual smoke-test of the affected feature in the native Rust app
 - [ ] `scripts/check-crate-deps.sh` clean when dependencies changed
+- [ ] `python3 scripts/check_documentation.py` clean when documentation or control metadata changed
 - [ ] `python3 scripts/check_rework_queue.py` clean when the active queue changed
 
 ## Screenshots / GIFs

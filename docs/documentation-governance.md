@@ -61,7 +61,11 @@ Before changing code or product behavior:
    module boundary.
 5. Record a compatibility path with an explicit removal condition, or remove
    it in the same change.
-6. Run the repository and dependency checks required by `AGENTS.md`.
+6. Run the repository and dependency checks required by `AGENTS.md`. For
+   documentation or repository-control changes, also run
+   `python3 scripts/check_documentation.py`; it validates normative metadata,
+   current local Markdown links, and stale predecessor markers in automation
+   configuration.
 
 For a new feature, the active task must state its user workflow, entry point,
 owner, contracts, registry contributions, settings, persistence, notification

@@ -1,5 +1,15 @@
 # Rework progress — 2026-09-07
 
+## Documentation governance automation
+
+`scripts/check_documentation.py` now validates the 13 current normative
+documents, local Markdown links in the active documentation/task areas, and
+stale predecessor markers in `.github` and `.vscode`. CI, the PR checklist,
+`AGENTS.md`, and the feature lifecycle contract invoke the check. Normative
+status values may include a qualifier such as `Normative target architecture`;
+the checker therefore validates the `Normative` prefix rather than requiring
+an exact status string.
+
 ## Secrets ownership boundary
 
 The backend Secrets compatibility wrapper is removed. Shell composition and

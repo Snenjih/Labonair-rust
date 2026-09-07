@@ -4,6 +4,15 @@ Older entries preserve the state of the code when each issue was recorded.
 When an API was later renamed or removed, the current implementation and
 normative documentation take precedence over the historical symbol name.
 
+## 2026-09-07 — Normative status metadata may be qualified
+
+**Finding:** The documentation governance checker initially required the
+exact value `Normative`, but current contracts intentionally use qualified
+values such as `Normative target architecture` and `Normative ownership map`.
+
+**Resolution:** The checker accepts a `Normative` prefix while still rejecting
+supporting, working, or missing status metadata.
+
 ## 2026-09-06 — Keep project-settings loading out of render
 
 **Finding:** `Workspace::render` synchronized the project-settings layer. Even
