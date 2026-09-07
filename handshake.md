@@ -23,7 +23,7 @@ Legacy `appCornerRadius` values are converted to the current
 `cornerRadiusScale` field during migration, with the modern value taking
 precedence when both are present.
 
-Current HEAD is `a945ef5` on `master`; the worktree is clean. Formatting,
+Current HEAD is `8804d60` on `master`; the worktree is clean. Formatting,
 workspace check, Clippy, full serial workspace tests, dependency validation,
 queue validation, and diff checks pass. The next review item is
 the remaining indirect Settings values and consumer-proof review.
@@ -32,7 +32,7 @@ The General cleanup including `startupTerminalCount` is committed in
 unused Appearance values in `d596df2`, and the unwired Editor values in
 `145966b`. The orphaned remote values and empty Connections category are
 removed in `af6db5f`; unwired palette presentation values are removed in
-`a945ef5`. No blockers.
+`a945ef5`; the unwired SCM poll value is removed in `8804d60`. No blockers.
 
 ## Historical session details: 2026-09-07
 

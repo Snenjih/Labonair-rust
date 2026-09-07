@@ -380,3 +380,12 @@ the native palette has no consumers for them. Legacy Preferences remains
 deserializable and exhaustive migration accounting covers both keys. Focused
 Settings/content/UI/backend tests and the workspace check passed. Committed as
 `a945ef5`; R05-001 remains active for the final retained-value consumer audit.
+
+## R05-001 SCM settings cleanup
+
+Removed `gitStatusPollIntervalMs` from the Workspace settings model, defaults,
+generated UI, project configuration surface, and v1 migration target because
+no native SCM code consumes it. Legacy Preferences remains readable and the
+exhaustive migration accounting covers the compatibility key. Check, Clippy,
+and focused Settings/content/UI/backend tests pass. Committed as `8804d60`;
+R05-001 remains active for final retained-setting consumer tests.
