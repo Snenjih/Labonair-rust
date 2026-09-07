@@ -37,6 +37,15 @@ pub struct KeymapManagementSnapshot {
     pub issues: Vec<ValidationIssue>,
 }
 
+/// A conflict found against an already-effective binding.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BindingConflict {
+    pub command: CommandId,
+    pub title: String,
+    pub keystrokes: String,
+    pub context: Option<String>,
+}
+
 impl KeymapManagementSnapshot {
     /// Return rows whose command title, section, action name, or binding
     /// contains `query`, preserving registry order for stable keyboard use.
@@ -63,6 +72,34 @@ impl KeymapManagementSnapshot {
                     || metadata.contains(&query)
             })
             .collect()
+    }
+
+    /// Find the effective binding using `candidate` in the same portable
+    /// context. Bindings for the command currently being edited are ignored,
+    /// allowing a command to expose more than one deliberate key chord.
+    pub fn conflict(
+        &self,
+        command: CommandId,
+        context: Option<&str>,
+        candidate: &str,
+    ) -> Option<BindingConflict> {
+        let candidate = crate::normalize_keystrokes(candidate);
+        self.rows.iter().find_map(|row| {
+            if row.command == command {
+                return None;
+            }
+            row.effective_bindings.iter().find_map(|binding| {
+                let same_context =
+                    binding.context.as_deref().unwrap_or("").trim() == context.unwrap_or("").trim();
+                (same_context && crate::normalize_keystrokes(&binding.keystrokes) == candidate)
+                    .then(|| BindingConflict {
+                        command: row.command,
+                        title: row.title.clone(),
+                        keystrokes: binding.keystrokes.clone(),
+                        context: binding.context.clone(),
+                    })
+            })
+        })
     }
 }
 
@@ -157,6 +194,34 @@ mod tests {
         assert_eq!(snapshot.rows[0].command, CommandId::Find);
         assert_eq!(snapshot.rows[0].effective_bindings.len(), 1);
         assert_eq!(snapshot.search("cmd-f").len(), 1);
+        assert_eq!(
+            snapshot.conflict(CommandId::OpenSettings, Some("Editor"), "shift-cmd-f"),
+            None
+        );
+    }
+
+    #[test]
+    fn conflict_finds_another_command_in_the_same_context() {
+        let first = CommandDescriptor::new(CommandId::Find, "Find", "Search")
+            .with_default_binding("cmd-f", Some(CommandContext::Editor));
+        let second = CommandDescriptor::new(CommandId::OpenSettings, "Settings", "Application");
+        let runtime = KeymapSnapshot {
+            effective_bindings: vec![EffectiveBinding {
+                keystrokes: "cmd-f".into(),
+                action: CommandId::Find.action_name().into(),
+                context: Some("Editor".into()),
+                source: KeybindSource::Default,
+            }],
+            issues: Vec::new(),
+        };
+        let snapshot = snapshot([&first, &second], &runtime, document());
+
+        let conflict = snapshot
+            .conflict(CommandId::OpenSettings, Some("Editor"), "cmd-f")
+            .expect("same-context binding must conflict");
+        assert_eq!(conflict.command, CommandId::Find);
+        assert_eq!(conflict.title, "Find");
+        assert_eq!(conflict.context.as_deref(), Some("Editor"));
     }
 
     #[test]

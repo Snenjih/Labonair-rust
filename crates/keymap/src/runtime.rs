@@ -6,7 +6,7 @@ use labonair_command_palette_core::{
     CommandContext, CommandDescriptor, CommandId, CommandRegistry,
 };
 
-use crate::normalize;
+use crate::normalize_keystrokes;
 
 /// Resolve a persisted action name, including migration aliases, at the
 /// keymap boundary. Consumers should use the typed command identity from the
@@ -116,7 +116,7 @@ pub fn resolve(
             continue;
         };
 
-        let key = normalize(&binding.keystrokes);
+        let key = normalize_keystrokes(&binding.keystrokes);
         let resolved = ResolvedBinding {
             keystrokes: binding.keystrokes,
             command: binding.command,
@@ -183,6 +183,21 @@ mod tests {
 
         assert_eq!(resolved.len(), 1);
         assert_eq!(resolved[0].keystrokes, "cmd-shift-d");
+        assert_eq!(resolved[0].command, CommandId::OpenCommandPalette);
+    }
+
+    #[test]
+    fn normalized_chords_compare_each_keystroke_without_reordering_the_chord() {
+        let resolved = resolve(
+            [
+                KeymapBinding::global("shift-cmd-k cmd-s", CommandId::Find),
+                KeymapBinding::global("cmd-shift-k cmd-s", CommandId::OpenCommandPalette),
+            ],
+            None,
+        );
+
+        assert_eq!(resolved.len(), 1);
+        assert_eq!(resolved[0].keystrokes, "cmd-shift-k cmd-s");
         assert_eq!(resolved[0].command, CommandId::OpenCommandPalette);
     }
 

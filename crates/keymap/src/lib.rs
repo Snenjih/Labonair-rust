@@ -103,7 +103,16 @@ pub enum Conflict {
 
 /// Canonicalise a keystroke string so equivalent bindings compare equal
 /// regardless of modifier order (`"shift-cmd-d"` == `"cmd-shift-d"`).
-fn normalize(binding: &str) -> String {
+/// Chords are canonicalised one keystroke at a time and retain their order.
+pub fn normalize_keystrokes(binding: &str) -> String {
+    binding
+        .split_whitespace()
+        .map(normalize_single_keystroke)
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn normalize_single_keystroke(binding: &str) -> String {
     let mut parts: Vec<&str> = binding.split('-').filter(|s| !s.is_empty()).collect();
     // Trailing "" from a literal "cmd--" (minus key) — restore it.
     let key = if binding.ends_with("--") {
@@ -133,9 +142,9 @@ fn normalize(binding: &str) -> String {
 /// shortcut. `exclude` is the shortcut being rebound (skipped in the scan).
 /// Port of `conflictDetector.ts::findConflict`.
 pub fn find_conflict(binding: &str, exclude: Option<ShortcutId>) -> Option<Conflict> {
-    let n = normalize(binding);
+    let n = normalize_keystrokes(binding);
     for (b, label) in RESERVED_ACCELERATORS {
-        if normalize(b) == n {
+        if normalize_keystrokes(b) == n {
             return Some(Conflict::Reserved(label));
         }
     }
@@ -143,7 +152,7 @@ pub fn find_conflict(binding: &str, exclude: Option<ShortcutId>) -> Option<Confl
         if Some(s.id) == exclude {
             continue;
         }
-        if normalize(s.binding) == n {
+        if normalize_keystrokes(s.binding) == n {
             return Some(Conflict::Shortcut(s.id));
         }
     }
@@ -259,9 +268,9 @@ pub fn resolve_conflict(
     exclude: Option<ShortcutId>,
     overrides: &KeybindMap,
 ) -> Option<Conflict> {
-    let n = normalize(binding);
+    let n = normalize_keystrokes(binding);
     for (b, label) in RESERVED_ACCELERATORS {
-        if normalize(b) == n {
+        if normalize_keystrokes(b) == n {
             return Some(Conflict::Reserved(label));
         }
     }
@@ -270,7 +279,7 @@ pub fn resolve_conflict(
             continue;
         }
         if let Some(eff) = effective_binding(s.id, overrides) {
-            if normalize(&eff) == n {
+            if normalize_keystrokes(&eff) == n {
                 return Some(Conflict::Shortcut(s.id));
             }
         }

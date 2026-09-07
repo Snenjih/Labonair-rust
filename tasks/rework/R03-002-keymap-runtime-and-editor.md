@@ -170,4 +170,8 @@ shared UI-kit primitives, and exposes raw JSONC editing through an injected
 composition callback. The titlebar and command-palette Keymap entrypoints
 now open this surface; shell remains responsible only for the callback that
 opens the existing editor tab. Per-row rebinding/conflict actions remain the
-next slice of this task.
+next slice of this task. Each row now has an inline rebind editor with GPUI
+keystroke validation, same-context conflict detection, explicit unbind, and a
+lossless JSONC append-only override writer. Keymap diagnostics and load/save
+failures are published through the app-wide retained notification registry;
+the management view does not render a duplicate passive error banner.

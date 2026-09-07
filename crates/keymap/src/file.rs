@@ -118,6 +118,75 @@ pub fn save_user_keymap_document(source: &str) -> Result<PathBuf, String> {
     Ok(path)
 }
 
+/// Append one user override block while preserving the existing JSONC source.
+/// Existing bindings for the same command/context are explicitly unbound
+/// before the replacement is added, so a default or earlier user binding does
+/// not remain active. The operation refuses malformed top-level documents;
+/// those must be repaired in the raw editor first.
+pub fn append_user_binding_override(
+    source: &str,
+    context: Option<&str>,
+    old_bindings: &[String],
+    action: &str,
+    replacement: Option<&str>,
+) -> Result<String, String> {
+    let parsed = parse_keymap_jsonc(source)
+        .map_err(|error| format!("cannot add a binding while keymap.json is invalid: {error}"))?;
+    let Some(close) = source.rfind(']') else {
+        return Err("keymap.json must be a top-level array".to_string());
+    };
+    if !source[close + 1..].trim().is_empty() {
+        return Err("keymap.json has content after its top-level array".to_string());
+    }
+
+    let mut bindings = Vec::<(String, Option<String>)>::new();
+    for old in old_bindings {
+        if replacement.is_some_and(|new| normalize_chord(old) == normalize_chord(new)) {
+            continue;
+        }
+        bindings.push((old.clone(), None));
+    }
+    if let Some(new) = replacement {
+        bindings.push((new.to_string(), Some(action.to_string())));
+    }
+    if bindings.is_empty() {
+        return Ok(source.to_string());
+    }
+
+    let context_json = context.map_or_else(
+        || "".to_string(),
+        |value| {
+            format!(
+                "\"context\": {}, ",
+                serde_json::to_string(value).unwrap_or_default()
+            )
+        },
+    );
+    let binding_json = bindings
+        .iter()
+        .map(|(keystrokes, value)| {
+            let key = serde_json::to_string(keystrokes).unwrap_or_default();
+            let value = value
+                .as_deref()
+                .map(|value| serde_json::to_string(value).unwrap_or_default())
+                .unwrap_or_else(|| "null".to_string());
+            format!("{key}: {value}")
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    let block = format!("{{ {context_json}\"bindings\": {{ {binding_json} }} }}");
+    let separator = if parsed.0.is_empty() { "" } else { "," };
+    let mut updated = String::with_capacity(source.len() + block.len() + 8);
+    updated.push_str(&source[..close]);
+    updated.push_str(separator);
+    updated.push('\n');
+    updated.push_str("  ");
+    updated.push_str(&block);
+    updated.push('\n');
+    updated.push_str(&source[close..]);
+    Ok(updated)
+}
+
 impl std::fmt::Display for KeymapParseError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "line {}: {}", self.line, self.message)
@@ -689,5 +758,47 @@ mod tests {
             issues.iter().all(|i| i.severity != Severity::Error),
             "default keymap has validation errors: {issues:?}"
         );
+    }
+
+    #[test]
+    fn append_user_binding_override_preserves_source_and_writes_unbind_then_replacement() {
+        let source = "// Keep this comment.\n[{\"bindings\": {\"cmd-f\": \"search::Toggle\"}}]\n";
+        let updated = append_user_binding_override(
+            source,
+            Some("Editor"),
+            &["cmd-f".to_string()],
+            "search::ToggleGlobal",
+            Some("cmd-g"),
+        )
+        .expect("valid source should accept a binding override");
+
+        assert!(updated.starts_with("// Keep this comment."));
+        assert!(updated.contains("\"cmd-f\": null"));
+        assert!(updated.contains("\"cmd-g\": \"search::ToggleGlobal\""));
+        assert!(parse_keymap_jsonc(&updated).is_ok());
+    }
+
+    #[test]
+    fn append_user_binding_override_rejects_malformed_source_and_supports_unbind() {
+        let error = append_user_binding_override(
+            "[{\"bindings\": {\"cmd-f\": }}]",
+            None,
+            &["cmd-f".to_string()],
+            "search::Toggle",
+            None,
+        )
+        .expect_err("malformed source must be repaired in the raw editor first");
+        assert!(error.contains("invalid"));
+
+        let updated = append_user_binding_override(
+            "[]",
+            None,
+            &["cmd-f".to_string()],
+            "search::Toggle",
+            None,
+        )
+        .expect("an empty valid document can receive an unbind override");
+        assert!(updated.contains("\"cmd-f\": null"));
+        assert!(parse_keymap_jsonc(&updated).is_ok());
     }
 }

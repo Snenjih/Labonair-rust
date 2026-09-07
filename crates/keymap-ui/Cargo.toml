@@ -12,6 +12,7 @@ gpui = { workspace = true }
 gpui-component = { workspace = true }
 labonair-command-palette-core = { path = "../command-palette-core" }
 labonair-keymap = { path = "../keymap" }
+labonair-notifications = { path = "../notifications" }
 labonair-theme = { path = "../theme" }
 labonair-ui-kit = { path = "../ui-kit" }
 tracing = { workspace = true }

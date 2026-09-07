@@ -166,4 +166,14 @@ the GPUI background executor, renders searchable command rows and validation
 diagnostics with `ui-kit`, and delegates raw JSONC editing back to the shell
 through one injected callback. Titlebar and palette Keymap entrypoints now
 open the dedicated native window. Per-row rebinding and conflict actions are
-still intentionally separate follow-up work.
+now implemented with GPUI keystroke validation, same-context conflict
+detection, explicit unbind, and lossless append-only JSONC overrides. Keymap
+diagnostics and load/save failures publish through the retained notifications
+registry; the view no longer renders a duplicate passive error banner. The
+final focused visual check of these new editor states remains open.
+
+The keymap runtime canonicalizer now handles multi-step chords by normalizing
+each keystroke independently while preserving chord order. This is important
+because the file layer already treats a chord as a space-separated sequence;
+single-keystroke normalization would otherwise fail to detect equivalent
+chords.

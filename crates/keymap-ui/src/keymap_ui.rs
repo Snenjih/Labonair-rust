@@ -15,6 +15,7 @@ use gpui_component::Root;
 
 use labonair_command_palette_core::CommandDescriptor;
 use labonair_keymap::{adapter, file, management, management::KeymapManagementSnapshot};
+use labonair_notifications::{notification_center, Notification};
 use labonair_theme::{theme_store, ThemeStore};
 use labonair_ui_kit::{
     button, field_input, kbd_row, ButtonSize, ButtonVariant, InputEvent, InputState, ListItem,
@@ -26,12 +27,34 @@ type OpenRawCallback = Box<dyn FnMut(&mut Window, &mut App) + 'static>;
 /// The management window's view state.
 pub struct KeymapManagementView {
     theme: Entity<ThemeStore>,
+    descriptors: Vec<CommandDescriptor>,
     input: Entity<InputState>,
     snapshot: Option<KeymapManagementSnapshot>,
     load_error: Option<String>,
     open_raw: Option<OpenRawCallback>,
+    editing: Option<EditingBinding>,
+    edit_input: Option<Entity<InputState>>,
+    edit_error: Option<String>,
+    saving: bool,
+    diagnostic_key: Option<String>,
     focus: FocusHandle,
     _input_subscription: Subscription,
+    _edit_subscription: Option<Subscription>,
+}
+
+struct EditingBinding {
+    command: labonair_command_palette_core::CommandId,
+    title: String,
+    context: Option<String>,
+    old_bindings: Vec<String>,
+}
+
+struct BindingEditRequest {
+    command: labonair_command_palette_core::CommandId,
+    title: String,
+    context: Option<String>,
+    old_bindings: Vec<String>,
+    initial: String,
 }
 
 impl Focusable for KeymapManagementView {
@@ -55,16 +78,28 @@ impl KeymapManagementView {
             }
         });
 
-        let view = Self {
+        let mut view = Self {
             theme,
+            descriptors,
             input,
             snapshot: None,
             load_error: None,
             open_raw: Some(open_raw),
+            editing: None,
+            edit_input: None,
+            edit_error: None,
+            saving: false,
+            diagnostic_key: None,
             focus: cx.focus_handle(),
             _input_subscription: input_subscription,
+            _edit_subscription: None,
         };
+        view.load_snapshot(cx);
+        view
+    }
 
+    fn load_snapshot(&mut self, cx: &mut Context<Self>) {
+        let descriptors = self.descriptors.clone();
         let load = cx.background_executor().spawn(async move {
             let known_actions = management::known_actions(descriptors.iter());
             let document = file::read_user_keymap_document(&known_actions)?;
@@ -75,6 +110,7 @@ impl KeymapManagementView {
         cx.spawn(async move |_, cx| match load.await {
             Ok(snapshot) => {
                 let _ = entity.update(cx, |view, cx| {
+                    view.publish_diagnostics(&snapshot, cx);
                     view.snapshot = Some(snapshot);
                     view.load_error = None;
                     cx.notify();
@@ -82,70 +118,410 @@ impl KeymapManagementView {
             }
             Err(error) => {
                 let _ = entity.update(cx, |view, cx| {
+                    view.publish_error(
+                        "Keymap could not be loaded",
+                        "The active keymap was not changed.",
+                        error.clone(),
+                        cx,
+                    );
                     view.load_error = Some(error);
                     cx.notify();
                 });
             }
         })
         .detach();
-
-        view
     }
 
-    fn open_raw_document(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if let Some(callback) = self.open_raw.as_mut() {
-            callback(window, cx);
-        }
-    }
-
-    fn render_diagnostics(
+    fn publish_error(
         &self,
-        snapshot: &KeymapManagementSnapshot,
-        palette: Palette,
-    ) -> Option<gpui::AnyElement> {
+        title: &'static str,
+        summary: &'static str,
+        details: String,
+        cx: &mut Context<Self>,
+    ) {
+        if !cx.has_global::<labonair_notifications::GlobalNotificationCenter>() {
+            return;
+        }
+        notification_center(cx).update(cx, |center, cx| {
+            center.push(
+                Notification::error(title, summary)
+                    .details(details.clone())
+                    .dedupe_key(format!("keymap:{title}:{details}")),
+                cx,
+            );
+        });
+    }
+
+    fn publish_diagnostics(&mut self, snapshot: &KeymapManagementSnapshot, cx: &mut Context<Self>) {
         if snapshot.issues.is_empty() {
-            return None;
+            self.diagnostic_key = None;
+            return;
+        }
+
+        let details = snapshot
+            .issues
+            .iter()
+            .map(|issue| format!("line {}: {}", issue.line, issue.message))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let key = format!("keymap-diagnostics:{details}");
+        if self.diagnostic_key.as_deref() == Some(key.as_str()) {
+            return;
         }
         let error_count = snapshot
             .issues
             .iter()
             .filter(|issue| matches!(issue.severity, file::Severity::Error))
             .count();
-        let warning_count = snapshot.issues.len() - error_count;
-        Some(
-            div()
-                .mx(px(16.0))
-                .mb(px(10.0))
-                .px(px(12.0))
-                .py(px(9.0))
-                .rounded(px(6.0))
-                .border_1()
-                .border_color(if error_count > 0 { palette.error } else { palette.border })
-                .bg(palette.muted_bg)
-                .text_size(px(11.0))
-                .text_color(if error_count > 0 { palette.error } else { palette.muted })
-                .child(SharedString::from(format!(
-                    "{} error(s), {} warning(s) in keymap.json. Open the raw document to inspect the original text.",
-                    error_count, warning_count
-                )))
-                .into_any_element(),
-        )
+        let summary = format!(
+            "{} error(s), {} warning(s) found in keymap.json.",
+            error_count,
+            snapshot.issues.len() - error_count
+        );
+        if !cx.has_global::<labonair_notifications::GlobalNotificationCenter>() {
+            return;
+        }
+        self.diagnostic_key = Some(key.clone());
+        notification_center(cx).update(cx, |center, cx| {
+            let notification = if error_count > 0 {
+                Notification::error("Keymap diagnostics", summary)
+            } else {
+                Notification::warning("Keymap diagnostics", summary)
+            };
+            center.push(notification.details(details).dedupe_key(key), cx);
+        });
     }
 
-    fn render_row(&self, row: &management::KeymapCommandRow, palette: Palette) -> impl IntoElement {
-        let keys = row
-            .effective_bindings
-            .first()
-            .map(|binding| labonair_keymap::keystroke_tokens(&binding.keystrokes))
-            .unwrap_or_default();
-        let binding_label = if keys.is_empty() {
+    fn begin_edit(
+        &mut self,
+        request: BindingEditRequest,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let input = cx.new(|cx| {
+            InputState::new(window, cx)
+                .placeholder("Keystroke, e.g. cmd-shift-p")
+                .default_value(request.initial)
+        });
+        let subscription = cx.subscribe(&input, |this, _, event: &InputEvent, cx| {
+            if matches!(event, InputEvent::PressEnter { secondary: false }) {
+                this.commit_edit(cx);
+            }
+        });
+        input.update(cx, |state, cx| state.focus(window, cx));
+        self.editing = Some(EditingBinding {
+            command: request.command,
+            title: request.title,
+            context: request.context,
+            old_bindings: request.old_bindings,
+        });
+        self.edit_input = Some(input);
+        self.edit_error = None;
+        self.saving = false;
+        self._edit_subscription = Some(subscription);
+        cx.notify();
+    }
+
+    fn cancel_edit(&mut self, cx: &mut Context<Self>) {
+        self.editing = None;
+        self.edit_input = None;
+        self.edit_error = None;
+        self._edit_subscription = None;
+        self.saving = false;
+        cx.notify();
+    }
+
+    fn commit_edit(&mut self, cx: &mut Context<Self>) {
+        if self.saving {
+            return;
+        }
+        let (Some(editing), Some(input), Some(snapshot)) =
+            (&self.editing, &self.edit_input, &self.snapshot)
+        else {
+            return;
+        };
+        let candidate = input.read(cx).value().trim().to_string();
+        if !candidate.is_empty() {
+            for token in candidate.split_whitespace() {
+                if let Err(error) = gpui::Keystroke::parse(token) {
+                    self.edit_error = Some(format!("Invalid keystroke `{token}`: {error:?}"));
+                    cx.notify();
+                    return;
+                }
+            }
+            if let Some(conflict) =
+                snapshot.conflict(editing.command, editing.context.as_deref(), &candidate)
+            {
+                self.edit_error = Some(format!(
+                    "Conflicts with `{}` in {}.",
+                    conflict.title,
+                    conflict.context.as_deref().unwrap_or("Global")
+                ));
+                cx.notify();
+                return;
+            }
+        }
+
+        let source = snapshot.document.source.clone();
+        let context = editing.context.clone();
+        let old_bindings = editing.old_bindings.clone();
+        let action = editing.command.action_name().to_string();
+        let replacement = (!candidate.is_empty()).then_some(candidate);
+        let updated = match file::append_user_binding_override(
+            &source,
+            context.as_deref(),
+            &old_bindings,
+            &action,
+            replacement.as_deref(),
+        ) {
+            Ok(updated) => updated,
+            Err(error) => {
+                self.edit_error = Some(error);
+                cx.notify();
+                return;
+            }
+        };
+
+        self.saving = true;
+        self.edit_error = None;
+        let save = cx
+            .background_executor()
+            .spawn(async move { file::save_user_keymap_document(&updated) });
+        let entity = cx.entity().downgrade();
+        cx.spawn(async move |_, cx| match save.await {
+            Ok(_) => {
+                let _ = entity.update(cx, |view, cx| {
+                    view.editing = None;
+                    view.edit_input = None;
+                    view._edit_subscription = None;
+                    view.saving = false;
+                    view.load_snapshot(cx);
+                    cx.notify();
+                });
+            }
+            Err(error) => {
+                let _ = entity.update(cx, |view, cx| {
+                    view.saving = false;
+                    view.edit_error = Some(format!("Could not save keymap.json: {error}"));
+                    view.publish_error(
+                        "Could not save keymap.json",
+                        "The keyboard binding was not saved.",
+                        error,
+                        cx,
+                    );
+                    cx.notify();
+                });
+            }
+        })
+        .detach();
+    }
+
+    fn render_editor(&self, palette: Palette, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
+        let (Some(editing), Some(input)) = (&self.editing, &self.edit_input) else {
+            return None;
+        };
+        let context = editing.context.as_deref().unwrap_or("Global");
+        let mut card = div()
+            .mx(px(16.0))
+            .mb(px(10.0))
+            .p(px(12.0))
+            .rounded(px(6.0))
+            .border_1()
+            .border_color(if self.edit_error.is_some() {
+                palette.error
+            } else {
+                palette.border
+            })
+            .bg(palette.card)
+            .child(
+                div()
+                    .mb(px(8.0))
+                    .text_size(px(11.0))
+                    .text_color(palette.muted)
+                    .child(SharedString::from(format!(
+                        "Editing {} · {}",
+                        editing.title, context
+                    ))),
+            )
+            .child(
+                div()
+                    .h(px(32.0))
+                    .border_1()
+                    .border_color(palette.border)
+                    .rounded(px(5.0))
+                    .child(field_input(input)),
+            );
+        if let Some(error) = &self.edit_error {
+            card = card.child(
+                div()
+                    .mt(px(7.0))
+                    .text_size(px(10.0))
+                    .text_color(palette.error)
+                    .child(SharedString::from(error.clone())),
+            );
+        }
+        card = card.child(
             div()
-                .text_size(px(10.0))
-                .text_color(palette.muted)
-                .child("Unbound")
-                .into_any_element()
+                .mt(px(8.0))
+                .flex()
+                .items_center()
+                .gap(px(6.0))
+                .child(
+                    button(
+                        "keymap-save-binding",
+                        palette,
+                        ButtonVariant::Default,
+                        ButtonSize::Xs,
+                    )
+                    .child(if self.saving { "Saving…" } else { "Save" })
+                    .on_click(cx.listener(
+                        |this, _: &ClickEvent, _window, cx| {
+                            this.commit_edit(cx);
+                        },
+                    )),
+                )
+                .child(
+                    button(
+                        "keymap-unbind-binding",
+                        palette,
+                        ButtonVariant::Outline,
+                        ButtonSize::Xs,
+                    )
+                    .child("Unbind")
+                    .on_click(cx.listener(
+                        |this, _: &ClickEvent, window, cx| {
+                            if let Some(input) = this.edit_input.clone() {
+                                input.update(cx, |state, input_cx| {
+                                    state.set_value("", window, input_cx)
+                                });
+                            }
+                            this.commit_edit(cx);
+                        },
+                    )),
+                )
+                .child(
+                    button(
+                        "keymap-cancel-binding",
+                        palette,
+                        ButtonVariant::Ghost,
+                        ButtonSize::Xs,
+                    )
+                    .child("Cancel")
+                    .on_click(cx.listener(
+                        |this, _: &ClickEvent, _window, cx| {
+                            this.cancel_edit(cx);
+                        },
+                    )),
+                ),
+        );
+        Some(card.into_any_element())
+    }
+
+    fn binding_edit_button(
+        &self,
+        row: &management::KeymapCommandRow,
+        index: usize,
+        palette: Palette,
+        cx: &mut Context<Self>,
+    ) -> gpui::AnyElement {
+        let binding = &row.effective_bindings[index];
+        let command = row.command;
+        let title = row.title.clone();
+        let context = binding.context.clone();
+        let initial = binding.keystrokes.clone();
+        let old_bindings = row
+            .effective_bindings
+            .iter()
+            .filter(|candidate| candidate.context == binding.context)
+            .map(|candidate| candidate.keystrokes.clone())
+            .collect::<Vec<_>>();
+        button(
+            (row.command.action_name(), index),
+            palette,
+            ButtonVariant::Ghost,
+            ButtonSize::Xs,
+        )
+        .child(kbd_row(
+            labonair_keymap::keystroke_tokens(&binding.keystrokes),
+            palette,
+        ))
+        .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
+            this.begin_edit(
+                BindingEditRequest {
+                    command,
+                    title: title.clone(),
+                    context: context.clone(),
+                    old_bindings: old_bindings.clone(),
+                    initial: initial.clone(),
+                },
+                window,
+                cx,
+            );
+        }))
+        .into_any_element()
+    }
+
+    fn unbound_edit_button(
+        &self,
+        row: &management::KeymapCommandRow,
+        palette: Palette,
+        cx: &mut Context<Self>,
+    ) -> gpui::AnyElement {
+        let command = row.command;
+        let title = row.title.clone();
+        let (context, old_bindings) = row
+            .default_bindings
+            .first()
+            .map(|binding| {
+                (
+                    binding.context.map(|context| format!("{context:?}")),
+                    Vec::new(),
+                )
+            })
+            .unwrap_or((None, Vec::new()));
+        button(
+            row.command.action_name(),
+            palette,
+            ButtonVariant::Outline,
+            ButtonSize::Xs,
+        )
+        .child("Unbound · Edit")
+        .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
+            this.begin_edit(
+                BindingEditRequest {
+                    command,
+                    title: title.clone(),
+                    context: context.clone(),
+                    old_bindings: old_bindings.clone(),
+                    initial: String::new(),
+                },
+                window,
+                cx,
+            );
+        }))
+        .into_any_element()
+    }
+
+    fn render_row(
+        &self,
+        row: &management::KeymapCommandRow,
+        palette: Palette,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let binding_label = if row.effective_bindings.is_empty() {
+            self.unbound_edit_button(row, palette, cx)
         } else {
-            kbd_row(keys, palette).into_any_element()
+            div()
+                .flex()
+                .items_center()
+                .gap(px(4.0))
+                .children(
+                    row.effective_bindings
+                        .iter()
+                        .enumerate()
+                        .map(|(index, _)| self.binding_edit_button(row, index, palette, cx)),
+                )
+                .into_any_element()
         };
         let context = if row.contexts.is_empty() {
             "Global".to_string()
@@ -184,6 +560,12 @@ impl KeymapManagementView {
         )
         .trailing(binding_label)
     }
+
+    fn open_raw_document(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(callback) = self.open_raw.as_mut() {
+            callback(window, cx);
+        }
+    }
 }
 
 impl Render for KeymapManagementView {
@@ -192,15 +574,8 @@ impl Render for KeymapManagementView {
         let query = self.input.read(cx).value().to_string();
         let mut body = div().flex().flex_col().flex_1().min_h_0();
 
-        if let Some(error) = &self.load_error {
-            body = body.child(
-                div()
-                    .p(px(24.0))
-                    .text_color(palette.error)
-                    .child(SharedString::from(error.clone())),
-            );
-        } else if let Some(snapshot) = &self.snapshot {
-            body = body.children(self.render_diagnostics(snapshot, palette));
+        if let Some(snapshot) = &self.snapshot {
+            body = body.children(self.render_editor(palette, cx));
             let rows = snapshot.search(&query);
             if rows.is_empty() {
                 body = body.child(
@@ -235,11 +610,11 @@ impl Render for KeymapManagementView {
                         );
                         section = Some(row.section.clone());
                     }
-                    list = list.child(self.render_row(row, palette));
+                    list = list.child(self.render_row(row, palette, cx));
                 }
                 body = body.child(list);
             }
-        } else {
+        } else if self.load_error.is_none() {
             body = body.child(
                 div()
                     .flex()

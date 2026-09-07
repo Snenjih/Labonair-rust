@@ -10,12 +10,15 @@ the normative documents under `docs/`.
 The dedicated Keymap management surface is now a real `labonair-keymap-ui`
 sibling crate. `labonair-keymap` exposes the immutable management snapshot and
 lossless document contract; the UI loads them off the GPUI thread, renders a
-searchable command list plus validation diagnostics using shared UI-kit
-primitives, and delegates raw JSONC editing through one shell callback. Both
-the titlebar and command-palette Keymap entrypoints now open the native
-window. Per-row rebinding, conflict resolution controls, and visual checks of
-the new window remain open. The current commit is `5f81e74`; the worktree was
-clean immediately after that implementation commit.
+searchable command list, and delegates raw JSONC editing through one shell
+callback. Each binding row now supports inline rebind, GPUI keystroke
+validation, same-context conflict detection, explicit unbind, and lossless
+append-only persistence. Keymap diagnostics and load/save failures publish
+through the retained notification registry instead of a duplicate passive
+error banner. Both the titlebar and command-palette Keymap entrypoints open
+the native window. The current worktree contains this verified slice and is
+ready for the next R03-002 runtime migration step; the final focused visual
+check of rebind/conflict/malformed states remains open.
 
 `R02-003` is complete. The user confirmed the native Rust shell visual state
 is acceptable, closing the final visual acceptance criterion. The project and

@@ -54,6 +54,7 @@ ALLOWED = {
     # persistence, resolution, or feature execution.
     "labonair-keymap-ui": {
         "labonair-command-palette-core", "labonair-keymap",
+        "labonair-notifications",
         "labonair-theme", "labonair-ui-kit",
     },
     "labonair-command-palette-core": {"labonair-interaction-contracts"},
