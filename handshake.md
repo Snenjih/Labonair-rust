@@ -41,7 +41,7 @@ snippets, branches, symbols, and hidden status-bar items. Snapshot builders
 now live in the workspace, hosts, editor, theme, snippets, and Git provider
 modules; the shell only supplies live values and registers the snapshots.
 Status-bar metadata remains a shell-owned transitional surface. The current
-commit is `04a0663`; the worktree is clean.
+commit is `1ff4fa5`; the worktree is clean.
 
 ## Current Session: 2026-09-07 (Native visual helper hardened)
 
