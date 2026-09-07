@@ -172,6 +172,10 @@ boundary still exists; that package must not become a second capability owner.
 - [x] The unreferenced `terminal_exec` compatibility module and its aggregate
       `App` state were removed; active MCP terminal execution remains owned by
       the MCP server capability.
+- [x] The Git service and graph adapters no longer accept the aggregate `App`;
+      shell composition injects only SSH state and EventBus.
+- [x] The snippets SSH runner no longer accepts the aggregate `App`; event
+      delivery is an explicit EventBus capability.
 - [x] Secrets compatibility wrappers and jump-host resolution no longer take
       the aggregate `App`; they receive only their actual state dependencies.
 - [ ] Move the remaining contracts and adapters behind injected capability

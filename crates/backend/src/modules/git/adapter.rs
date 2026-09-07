@@ -22,20 +22,14 @@ pub struct BackendGitService {
 }
 
 impl BackendGitService {
-    pub fn new(app: crate::App) -> Self {
-        Self {
-            ssh_state: app.ssh.clone(),
-            events: app.events.clone(),
-        }
+    pub fn new(ssh_state: SshState, events: EventBus) -> Self {
+        Self { ssh_state, events }
     }
 }
 
 impl BackendGitGraphService {
-    pub fn new(app: crate::App) -> Self {
-        Self {
-            ssh_state: app.ssh.clone(),
-            events: app.events.clone(),
-        }
+    pub fn new(ssh_state: SshState, events: EventBus) -> Self {
+        Self { ssh_state, events }
     }
 }
 

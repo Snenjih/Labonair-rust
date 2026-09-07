@@ -332,12 +332,16 @@ pub(crate) fn bootstrap(
             backend.events.clone(),
         ),
     );
-    let git_service: Arc<dyn labonair_git::GitService> = Arc::new(
-        labonair_backend::modules::git::BackendGitService::new(backend.clone()),
-    );
-    let git_graph_service: Arc<dyn labonair_git::GitGraphService> = Arc::new(
-        labonair_backend::modules::git::BackendGitGraphService::new(backend.clone()),
-    );
+    let git_service: Arc<dyn labonair_git::GitService> =
+        Arc::new(labonair_backend::modules::git::BackendGitService::new(
+            backend.ssh.clone(),
+            backend.events.clone(),
+        ));
+    let git_graph_service: Arc<dyn labonair_git::GitGraphService> =
+        Arc::new(labonair_backend::modules::git::BackendGitGraphService::new(
+            backend.ssh.clone(),
+            backend.events.clone(),
+        ));
     let transfers = cx.new(|cx| {
         TransfersView::new(
             transfer_service.clone(),

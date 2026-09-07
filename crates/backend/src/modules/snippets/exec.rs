@@ -5,6 +5,8 @@ use labonair_snippets::exec::{
     ExecutionFuture, OutputStream, SnippetRunEvent, SnippetRunEventSink, SshCommandExecutor,
 };
 
+use crate::EventBus;
+
 /// Tracks in-flight snippet runs so `snippet_run_cancel` can reach back into
 /// them — SSH runs by the split-off write half of their exec channel (same
 /// `Arc<ChannelWriteHalf<..>>`, no-lock-needed shape as `ssh::PtyChannelState`,
@@ -88,21 +90,20 @@ pub async fn snippet_run_cancel(run_id: String, state: &SnippetRunState) -> Resu
 /// Requires an active SSH session (opened via ssh_connect). Uses a fresh exec
 /// channel so it does not disturb the interactive PTY.
 pub async fn snippet_run_ssh(
-    app: crate::App,
     run_id: String,
     session_id: String,
     command: String,
     ssh_state: &crate::modules::ssh::SshState,
     run_state: &Arc<SnippetRunState>,
+    events: EventBus,
 ) -> Result<(), String> {
-    let app_for_events = app.clone();
     let sink: SnippetRunEventSink = Arc::new(move |event| match event {
         SnippetRunEvent::Output {
             run_id,
             data,
             stream,
         } => {
-            let _ = app_for_events.emit(
+            let _ = events.emit(
                 "snippet_run_output",
                 serde_json::json!({
                     "runId": run_id,
@@ -119,7 +120,7 @@ pub async fn snippet_run_ssh(
             exit_code,
             cancelled,
         } => {
-            let _ = app_for_events.emit(
+            let _ = events.emit(
                 "snippet_run_done",
                 serde_json::json!({
                     "runId": run_id,

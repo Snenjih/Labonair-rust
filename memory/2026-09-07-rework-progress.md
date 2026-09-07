@@ -50,6 +50,11 @@ search found no active callers. MCP already owns the live terminal execution
 implementation, so retaining the duplicate module only kept an unnecessary
 `App`-bound state and compatibility surface alive.
 
+The remaining Git service constructors and snippets SSH runner were narrowed in
+the same pass. Shell composition now injects Git's SSH/EventBus capabilities,
+and snippet event delivery receives EventBus directly; neither adapter needs the
+aggregate backend App.
+
 ## R06-001 backend facade inventory and error boundary
 
 Recorded the complete backend module/export and direct-consumer map in

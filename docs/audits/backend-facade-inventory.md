@@ -42,7 +42,7 @@ participate in the `App` state graph or in another backend module.
 | `settings` | legacy preferences, migrations, MCP prefs | `app`, `shell`, `workspace`; internal backend modules | Settings owns value persistence; Workspace owns live status-bar/panel layout persistence; legacy `barItemPlacements` is migration-only |
 | `sftp` | session adapter, remote operations, transfer worker state/commands | `shell`; internal SSH/transfer adapters | `labonair-sftp` and `labonair-transfers` integration boundaries; SFTP service now receives only SSH state plus the raw event bus, and legacy connection orchestration receives EventBus instead of App |
 | `shell` | local command execution, shell sessions, background processes | no active external module import found | terminal/workspace owner; split local process service from backend facade |
-| `snippets` | snippet DB compatibility and SSH executor adapter | `shell`; internal backend use | `labonair-snippets` integration boundary |
+| `snippets` | snippet DB compatibility and SSH executor adapter | `shell`; internal backend use | `labonair-snippets` integration boundary; SSH execution now receives explicit SSH state and EventBus capabilities |
 | `ssh` | SSH state, transport, PTY, remote files, tunnels, config import/export | `shell`; internal Git/SFTP/snippet/MCP use | `labonair-ssh` integration boundary; PTY and remote-file adapters now receive only their required capability state, while connection/config/tunnel extraction remains |
 | `terminal_exec` | removed | no active consumers; MCP owns its live terminal execution path | dead compatibility module and `App` state removed; MCP server remains the active owner |
 | `themes` | removed | no active backend consumers | `labonair-theme` owns the static theme and icon-theme registries; network download is intentionally not part of the current product surface |
@@ -57,7 +57,7 @@ crates:
 | Crate | Why it currently imports backend | Removal seam |
 |---|---|---|
 | `labonair` | constructs `App`, emits startup events, runs legacy settings migration | composition receives concrete services and typed startup hooks |
-| `labonair-shell` | constructs `App`, builds SSH/SFTP/Git/transfer adapters, reads MCP/settings/updater compatibility APIs | one composition-only adapter import per capability, with no feature state access |
+| `labonair-shell` | constructs `App`, builds SSH/SFTP/Git/transfer adapters, reads MCP/settings/updater compatibility APIs | one composition-only adapter import per capability, with no feature state access; Git adapters receive explicit SSH/EventBus capabilities |
 | `labonair-ai` | no active backend usage; stale dependency declaration | removed in the R06 inventory pass |
 
 `settings`, `settings-content`, and related crates contain historical comments
