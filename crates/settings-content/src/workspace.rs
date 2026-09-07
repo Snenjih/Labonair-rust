@@ -30,12 +30,9 @@ pub struct WorkspaceContent {
     // ── Command palette ─────────────────────────────────────────────────
     pub command_palette_search_mode: Option<PaletteSearchMode>,
     pub command_palette_show_recent: Option<bool>,
-    pub command_palette_blur: Option<u32>,
     pub command_palette_opacity: Option<u32>,
     /// `"top"` | `"high"` | `"center"`.
     pub command_palette_position: Option<String>,
-    /// `"fast"` | `"normal"` | `"slow"` | `"none"`.
-    pub command_palette_animation: Option<String>,
     pub command_palette_history_size: Option<u32>,
     pub command_palette_close_on_overlay_click: Option<bool>,
 
@@ -48,10 +45,8 @@ impl WorkspaceContent {
         Self {
             command_palette_search_mode: Some(PaletteSearchMode::Contains),
             command_palette_show_recent: Some(true),
-            command_palette_blur: Some(4),
             command_palette_opacity: Some(95),
             command_palette_position: Some("top".to_string()),
-            command_palette_animation: Some("normal".to_string()),
             command_palette_history_size: Some(5),
             command_palette_close_on_overlay_click: Some(true),
 

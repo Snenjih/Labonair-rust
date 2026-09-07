@@ -656,13 +656,6 @@ pub fn all_fields() -> Vec<AnyField> {
             "Surface recently-run commands first."
         ),
         field!(
-            workspace.command_palette_blur,
-            "commandPaletteBlur",
-            Int { min: 0, max: 20, step: 1 },
-            "Background blur",
-            "Backdrop blur behind the palette (px)."
-        ),
-        field!(
             workspace.command_palette_opacity,
             "commandPaletteOpacity",
             Int { min: 35, max: 100, step: 1 },
@@ -679,18 +672,6 @@ pub fn all_fields() -> Vec<AnyField> {
             ]),
             "Position",
             "Where the palette opens vertically."
-        ),
-        field!(
-            workspace.command_palette_animation,
-            "commandPaletteAnimation",
-            Select(&[
-                ("fast", "Fast"),
-                ("normal", "Normal"),
-                ("slow", "Slow"),
-                ("none", "None")
-            ]),
-            "Animation speed",
-            "Open/close animation speed."
         ),
         field!(
             workspace.command_palette_history_size,

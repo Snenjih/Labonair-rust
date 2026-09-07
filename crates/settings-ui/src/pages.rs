@@ -318,10 +318,8 @@ const WORKSPACE_GROUPS: &[Group] = &[
     (
         "Command Palette",
         &[
-            "commandPaletteBlur",
             "commandPaletteOpacity",
             "commandPalettePosition",
-            "commandPaletteAnimation",
             "commandPaletteShowRecent",
             "commandPaletteHistorySize",
             "commandPaletteSearchMode",

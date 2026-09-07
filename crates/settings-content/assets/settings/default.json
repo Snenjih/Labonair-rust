@@ -108,12 +108,9 @@
   "workspace": {
     "commandPaletteSearchMode": "contains",
     "commandPaletteShowRecent": true,
-    "commandPaletteBlur": 4,
     "commandPaletteOpacity": 95,
     // "top" | "high" | "center".
     "commandPalettePosition": "top",
-    // "fast" | "normal" | "slow" | "none".
-    "commandPaletteAnimation": "normal",
     "commandPaletteHistorySize": 5,
     "commandPaletteCloseOnOverlayClick": true,
     "gitStatusPollIntervalMs": 5000

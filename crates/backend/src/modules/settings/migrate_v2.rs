@@ -268,10 +268,8 @@ fn workspace_from(p: &Preferences) -> WorkspaceContent {
     WorkspaceContent {
         command_palette_search_mode: Some(palette_search_mode(p.command_palette_search_mode)),
         command_palette_show_recent: Some(p.command_palette_show_recent),
-        command_palette_blur: Some(p.command_palette_blur),
         command_palette_opacity: Some(p.command_palette_opacity),
         command_palette_position: Some(p.command_palette_position.clone()),
-        command_palette_animation: Some(p.command_palette_animation.clone()),
         command_palette_history_size: Some(p.command_palette_history_size),
         command_palette_close_on_overlay_click: Some(p.command_palette_close_on_overlay_click),
         git_status_poll_interval_ms: Some(p.git_status_poll_interval_ms),
@@ -476,6 +474,10 @@ const REMOVED_CONNECTION_FIELDS: &[&str] = &[
     "explorerMaxIdleSessions",
     "explorerMaxCachedRemoteScopes",
 ];
+
+/// Legacy palette presentation values with no native runtime consumer.
+#[cfg_attr(not(test), allow(dead_code))]
+const REMOVED_WORKSPACE_FIELDS: &[&str] = &["commandPaletteBlur", "commandPaletteAnimation"];
 
 /// Legacy appearance value converted to the current typed scale field before
 /// Settings is written.
@@ -1072,6 +1074,7 @@ mod tests {
         accounted.extend(REMOVED_EDITOR_FIELDS.iter().copied());
         accounted.extend(REMOVED_FILE_MANAGER_FIELDS.iter().copied());
         accounted.extend(REMOVED_CONNECTION_FIELDS.iter().copied());
+        accounted.extend(REMOVED_WORKSPACE_FIELDS.iter().copied());
         accounted.extend(MOVED_APPEARANCE_FIELDS.iter().copied());
         accounted.extend(UNKNOWN_PREFERENCES_FIELDS.iter().copied());
 
