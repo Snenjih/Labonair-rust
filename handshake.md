@@ -127,8 +127,14 @@ into `labonair-command-palette::command_provider` in `289b027`. The shell now
 injects only a modal-toggle callback during bootstrap; palette behavior is no
 longer stored in the shell's transitional command table. Full workspace check,
 Clippy, tests, dependency validation, queue validation, and diff checks pass.
-The next command-ownership boundaries are Search and Connections, followed by
-the remaining editor/theme/Git/snippet adapters and native shell actions.
+Search and the four connection-entry commands were then moved into the
+Workspace and Hosts-UI owner contributions in `9dcf143` and `e2b3d8f`. The
+notification statusbar registration was moved into its Notifications owner in
+`1ccc3ec`, so shell status composition now only collects typed registrations.
+The full workspace gates pass. The remaining shell command registrations are
+the native Fullscreen action and debug-only component gallery; the active R07
+work now focuses on final documentation consistency, transition-audit
+evidence, and the visual state matrix.
 
 The current R05 slices removed the untyped `general.notifyOnErrors` default,
 moved Background values behind their owner, moved dock/sidebar runtime state
@@ -143,7 +149,7 @@ Legacy `appCornerRadius` values are converted to the current
 `cornerRadiusScale` field during migration, with the modern value taking
 precedence when both are present.
 
-Current HEAD is `289b027` on `master`; the worktree contains this handshake
+Current HEAD is `b89ca09` on `master`; the worktree contains this handshake
 update before its commit. R06
 boundaries removed the backend error facade, removed AI's stale backend edge,
 moved system-font discovery into the Theme owner, deleted the unconsumed
