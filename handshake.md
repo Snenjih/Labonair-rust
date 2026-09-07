@@ -17,8 +17,9 @@ append-only persistence. Keymap diagnostics and load/save failures publish
 through the retained notification registry instead of a duplicate passive
 error banner. Both the titlebar and command-palette Keymap entrypoints open
 the native window. The current worktree contains this verified slice and is
-ready for the next R03-002 runtime migration step; the final focused visual
-check of rebind/conflict/malformed states remains open.
+ready for the next R03-002 runtime migration step. The implementation commit
+is `4fb095d`; the final focused visual check of rebind/conflict/malformed
+states remains open.
 
 `R02-003` is complete. The user confirmed the native Rust shell visual state
 is acceptable, closing the final visual acceptance criterion. The project and
