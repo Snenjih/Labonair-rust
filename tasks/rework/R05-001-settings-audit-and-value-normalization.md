@@ -104,3 +104,8 @@ the model. Unused values are parked in the inventory, not added speculatively.
 - [x] Moved the five duplicated Background values out of `AppearanceContent`
       and into the existing Background-owned top-level storage path, including
       migrations for legacy v1 and already-sparsified v2 files.
+- [x] Moved dock/sidebar runtime persistence behind the Workspace owner in
+      `workspace-layout.json`; Settings UI and project scope no longer expose
+      those fields, and legacy values are imported and removed idempotently.
+- [ ] Remove the remaining typed dock/sidebar compatibility fields after the
+      v1 migration reads them directly into the Workspace layout owner.

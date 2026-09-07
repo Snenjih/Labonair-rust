@@ -5,7 +5,7 @@ They may mention API names that were valid at the time of the recorded
 change; the current API and task state are defined by the latest header and
 the normative documents under `docs/`.
 
-## Current Session: 2026-09-07 (R05-001 Settings audit active)
+## Current Session: 2026-09-07 (R05-001 Settings audit active — Workspace layout owner)
 
 The dedicated Keymap management surface is now a real `labonair-keymap-ui`
 sibling crate. `labonair-keymap` exposes the immutable management snapshot and
@@ -48,11 +48,16 @@ state to move, and legacy/unsupported fields to remove. The stale untyped
 shape-drift test now guards the shipped asset. The five duplicated Background
 fields were removed from `AppearanceContent`; legacy v1 and already-sparsified
 v2 files migrate them to the Background-owned top-level storage. The next
-slice is to prove indirect consumers and define lossless migrations for the
-remaining duplicate/runtime-state fields. The worktree is clean before the
-next Settings slice. Current HEAD is `af7167f`; the worktree is clean and there
-are no blockers. Next: prove remaining indirect consumers and design the
-lossless migration for workspace runtime-state fields.
+slice moved dock/sidebar runtime state behind `labonair-workspace` into the
+dedicated `workspace-layout.json` owner file. Settings UI and project scope no
+longer expose those fields; legacy v2 values are imported and removed
+idempotently. The compatibility fields remain temporarily in the typed model
+so the v1 migration can still read old files. Full check, Clippy, and tests
+pass; the AI HTTP test required one isolated unsandboxed rerun because its
+local test server cannot bind inside the sandbox. Current HEAD is the commit
+before this uncommitted slice; after commit, the next step is to remove the
+remaining typed dock/sidebar compatibility fields by moving the v1 read path
+directly into the Workspace owner. No blockers.
 
 `R02-003` is complete. The user confirmed the native Rust shell visual state
 is acceptable, closing the final visual acceptance criterion. The project and

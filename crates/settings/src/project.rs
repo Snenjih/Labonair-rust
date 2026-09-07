@@ -52,14 +52,6 @@ pub const PROJECT_SETTINGS_WHITELIST: &[(&str, &[&str])] = &[
     (
         "workspace",
         &[
-            "dockLayout",
-            "sidebarPosition",
-            "sidebarOpen",
-            "sidebarActivePanel",
-            "sidebarRightOpen",
-            "sidebarRightActivePanel",
-            "sidebarWidth",
-            "sidebarRightWidth",
             "commandPaletteSearchMode",
             "commandPaletteShowRecent",
             "commandPalettePosition",

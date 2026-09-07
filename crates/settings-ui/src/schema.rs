@@ -1074,62 +1074,6 @@ pub fn all_fields() -> Vec<AnyField> {
             "Status poll interval",
             "How often to refresh git status (ms)."
         ),
-        field!(
-            workspace.dock_layout,
-            "dockLayout",
-            Json,
-            "Dock layout",
-            "Internal persisted dock/panel layout snapshot."
-        ),
-        field!(
-            workspace.sidebar_position,
-            "sidebarPosition",
-            Select(&[("left", "Left"), ("right", "Right")]),
-            "Sidebar position",
-            "Which edge the primary sidebar docks to."
-        ),
-        field!(
-            workspace.sidebar_open,
-            "sidebarOpen",
-            Switch,
-            "Sidebar open",
-            "Whether the primary sidebar is open."
-        ),
-        field!(
-            workspace.sidebar_active_panel,
-            "sidebarActivePanel",
-            Text,
-            "Sidebar active panel",
-            "Which panel is active in the primary sidebar."
-        ),
-        field!(
-            workspace.sidebar_right_open,
-            "sidebarRightOpen",
-            Switch,
-            "Right sidebar open",
-            "Whether the secondary (right) sidebar is open."
-        ),
-        field!(
-            workspace.sidebar_right_active_panel,
-            "sidebarRightActivePanel",
-            Text,
-            "Right sidebar active panel",
-            "Which panel is active in the secondary sidebar."
-        ),
-        field!(
-            workspace.sidebar_width,
-            "sidebarWidth",
-            Int { min: 100, max: 500, step: 10 },
-            "Sidebar width",
-            "Width of the primary sidebar in pixels."
-        ),
-        field!(
-            workspace.sidebar_right_width,
-            "sidebarRightWidth",
-            Int { min: 100, max: 500, step: 10 },
-            "Right sidebar width",
-            "Width of the secondary sidebar in pixels."
-        ),
     ]
 }
 

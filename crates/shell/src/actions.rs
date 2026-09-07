@@ -114,7 +114,7 @@ impl AppShell {
 
     /// The primary edge as a [`DockPosition`] (per `sidebarPosition`).
     pub(crate) fn primary_dock(&self, cx: &App) -> DockPosition {
-        self.workspace.read(cx).primary_dock(cx)
+        self.workspace.read(cx).primary_dock()
     }
 
     /// `Cmd+B` — toggle the primary dock open/closed.

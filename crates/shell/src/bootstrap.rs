@@ -37,10 +37,9 @@ use labonair_panel_explorer::ExplorerView;
 use labonair_panel_git_graph::GitGraphView;
 use labonair_panel_scm::{GitPanelView, ScmEvent};
 use labonair_panel_snippets::SnippetsView;
-use labonair_settings::{GeneralSettings, Settings as _, WorkspaceSettings};
+use labonair_settings::{GeneralSettings, Settings as _};
 use labonair_settings_ui::set_settings_deps;
 use labonair_workspace::agent_access::AgentAccessStore;
-use labonair_workspace::dock::DockData;
 use labonair_workspace::live_bridge::{LiveSnapshot, WorkspaceLiveBridge};
 use labonair_workspace::modal_layer::ModalLayer;
 use labonair_workspace::status_bar::StatusBar;
@@ -166,46 +165,6 @@ fn register_builtin_panels(
             registry.register(registration);
         }
     });
-}
-
-/// Build the persisted [`DockData`] array from the legacy `sidebar_*`
-/// settings (T17-002 first-run migration).
-fn migrate_dock_layout(p: &labonair_settings::WorkspaceSettings) -> String {
-    // "ai" is parked (frontend AI removed pending redesign) — treat any saved
-    // reference to it like the other retired panel names.
-    let migrate_name = |raw: &str, fallback: &str| match raw {
-        "hosts" | "tabs" | "ai" | "" => fallback.to_string(),
-        other => other.to_string(),
-    };
-    let docks = [
-        DockData {
-            position: "left".to_string(),
-            open: p.sidebar_open(),
-            size: p.sidebar_width() as f32,
-            zoomed: false,
-            active_panel: Some(migrate_name(p.sidebar_active_panel(), "explorer")),
-            panel_order: Vec::new(),
-        },
-        DockData {
-            // The right dock hosted the AI panel; with AI parked it starts
-            // empty. The user can move any panel here from the left dock.
-            position: "right".to_string(),
-            open: false,
-            size: p.sidebar_right_width() as f32,
-            zoomed: false,
-            active_panel: None,
-            panel_order: Vec::new(),
-        },
-        DockData {
-            position: "bottom".to_string(),
-            open: false,
-            size: 320.0,
-            zoomed: false,
-            active_panel: None,
-            panel_order: Vec::new(),
-        },
-    ];
-    serde_json::to_string(&docks).unwrap_or_default()
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -560,26 +519,12 @@ pub(crate) fn bootstrap(
     // The registry must be populated before the docks are built from it.
     register_builtin_panels(&workspace, &explorer, &git_panel, &git_graph, &snippets, cx);
 
-    // Build the three docks from the registry + the persisted layout (falling
-    // back to a migration of the legacy `sidebar_*` settings).
-    let workspace_settings = WorkspaceSettings::try_get(cx).cloned();
-    let dock_layout = match &workspace_settings {
-        Some(s) if !s.dock_layout().trim().is_empty() => s.dock_layout().to_string(),
-        Some(s) => migrate_dock_layout(s),
-        None => String::new(),
-    };
-    workspace.update(cx, |w, cx| w.init_docks(&dock_layout, window, cx));
-
-    // Dock-layout persistence lives on the `Workspace` now (T17-003); the shell
-    // only supplies the write path into the layered `SettingsStore`.
-    workspace.update(cx, |w, _| {
-        w.set_dock_persist_hook(move |json, cx| {
-            if cx.has_global::<labonair_settings::SettingsStore>() {
-                let _ = cx
-                    .global_mut::<labonair_settings::SettingsStore>()
-                    .update_user_settings(|c| c.workspace.dock_layout = Some(json));
-            }
-        });
+    // Build the three docks from the workspace-owned layout file. The app
+    // startup migration has already moved legacy Settings values there.
+    let layout = labonair_workspace::layout::load();
+    workspace.update(cx, |w, cx| {
+        w.set_primary_dock(layout.primary_position());
+        w.init_docks(&layout.docks_json(), window, cx);
     });
 
     // Populate the status-bar item registry, then build the `StatusBar` view.

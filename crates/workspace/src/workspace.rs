@@ -30,6 +30,7 @@ pub mod command_provider;
 pub mod context;
 pub mod dock;
 pub mod drag;
+pub mod layout;
 pub mod live_bridge;
 pub mod markdown;
 pub mod modal_layer;
@@ -116,7 +117,7 @@ use labonair_hosts_ui::{ActiveTunnelRow, HostManagerView, HostStatus};
 use labonair_panel_git_graph::GitGraphView;
 use labonair_settings::content::general::StartupTab;
 use labonair_settings::content::terminal::CursorStyle as PrefCursorStyle;
-use labonair_settings::{GeneralSettings, Settings as _, TerminalSettings, WorkspaceSettings};
+use labonair_settings::{GeneralSettings, Settings as _, TerminalSettings};
 use labonair_ui_kit::{
     context_menu, h_stack, indicator, ButtonSize, ButtonVariant, IconName, IndicatorSize, MenuItem,
     Palette,
@@ -328,10 +329,6 @@ enum PendingOpen {
     },
 }
 
-/// Persists the serialized dock layout (installed by the shell — see
-/// [`Workspace::set_dock_persist_hook`]).
-type DockPersistHook = Arc<dyn Fn(String, &mut App) + Send + Sync>;
-
 /// Events emitted by the workspace for actions owned by another surface.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum WorkspaceEvent {
@@ -375,13 +372,10 @@ pub struct Workspace {
     /// `labonair_shell::register_builtin_status_items`. The `StatusBar`
     /// component reads it instead of a hard-coded `render_bar_item` match.
     status_item_registry: labonair_panel::StatusItemRegistry,
-    /// Set once by the shell: persists the serialized `[DockData; 3]` layout
-    /// (the shell writes it into the layered `SettingsStore`, which this
-    /// crate cannot depend on — hence the callback indirection). T17-003
-    /// moved this off `AppShell`.
-    dock_persist_hook: Option<DockPersistHook>,
     /// Debounce for [`Workspace::persist_docks`].
     last_dock_save: Option<std::time::Instant>,
+    /// Primary dock edge used when a panel has no current membership.
+    primary_dock_position: labonair_panel::DockPosition,
     /// The three edge docks (T17-002). Empty at construction; populated by
     /// [`Workspace::init_docks`] once the shell has registered the builtin
     /// panels. Replaces the shell's former ad-hoc `left_slot`/`right_slot`.
@@ -557,9 +551,9 @@ impl Workspace {
             project_diff: None,
             panel_registry: labonair_panel::PanelRegistry::new(),
             status_item_registry: labonair_panel::StatusItemRegistry::new(),
-            dock_persist_hook: None,
             context: context::WorkspaceContext::standalone(),
             last_dock_save: None,
+            primary_dock_position: labonair_panel::DockPosition::Left,
             left_dock: crate::dock::Dock::new(labonair_panel::DockPosition::Left),
             right_dock: crate::dock::Dock::new(labonair_panel::DockPosition::Right),
             bottom_dock: crate::dock::Dock::new(labonair_panel::DockPosition::Bottom),
@@ -2185,33 +2179,21 @@ impl Workspace {
         .detach();
     }
 
-    /// Install the shell's dock-layout persistence callback (see
-    /// [`Workspace::dock_persist_hook`]).
-    pub fn set_dock_persist_hook(
-        &mut self,
-        hook: impl Fn(String, &mut App) + Send + Sync + 'static,
-    ) {
-        self.dock_persist_hook = Some(Arc::new(hook));
+    /// Set the primary edge restored from the workspace-owned layout file.
+    pub fn set_primary_dock(&mut self, position: labonair_panel::DockPosition) {
+        self.primary_dock_position = position;
     }
 
-    /// The "primary" edge per the `sidebarPosition` setting
-    /// ([`WorkspaceSettings`]).
-    pub fn primary_dock(&self, cx: &App) -> labonair_panel::DockPosition {
-        let right = WorkspaceSettings::try_get(cx)
-            .map(|s| s.sidebar_position() == "right")
-            .unwrap_or(false);
-        if right {
-            labonair_panel::DockPosition::Right
-        } else {
-            labonair_panel::DockPosition::Left
-        }
+    /// The primary edge restored from workspace layout state.
+    pub fn primary_dock(&self) -> labonair_panel::DockPosition {
+        self.primary_dock_position
     }
 
     /// Which dock hosts `name` — live membership, falling back to the primary
     /// edge when the panel is somehow unregistered.
-    pub fn dock_for_panel(&self, name: &str, cx: &App) -> labonair_panel::DockPosition {
+    pub fn dock_for_panel(&self, name: &str) -> labonair_panel::DockPosition {
         self.dock_of_panel(name)
-            .unwrap_or_else(|| self.primary_dock(cx))
+            .unwrap_or_else(|| self.primary_dock())
     }
 
     /// Whether `name` is the active panel of an open dock.
@@ -2224,7 +2206,7 @@ impl Workspace {
     /// Status-bar-toggle intent: open + activate `name`, or close its dock if it
     /// is already the active panel there. Persists the layout.
     pub fn select_panel(&mut self, name: &str, cx: &mut Context<Self>) {
-        let pos = self.dock_for_panel(name, cx);
+        let pos = self.dock_for_panel(name);
         self.dock_mut(pos).toggle_panel(name);
         self.persist_docks(cx);
         cx.notify();
@@ -2232,7 +2214,7 @@ impl Workspace {
 
     /// "show me X" — never closes the dock (palette / menu intent).
     pub fn open_panel(&mut self, name: &str, cx: &mut Context<Self>) {
-        let pos = self.dock_for_panel(name, cx);
+        let pos = self.dock_for_panel(name);
         {
             let dock = self.dock_mut(pos);
             dock.activate_panel(name);
@@ -2242,8 +2224,8 @@ impl Workspace {
         cx.notify();
     }
 
-    /// Debounced write of the full `[DockData; 3]` layout through the shell's
-    /// persistence hook (mirrors the reference `onLayoutChanged` 300ms persist).
+    /// Debounced write of the full dock layout through the workspace-owned
+    /// persistence file (mirrors the reference `onLayoutChanged` 300ms persist).
     pub fn persist_docks(&mut self, cx: &mut Context<Self>) {
         let now = std::time::Instant::now();
         if let Some(last) = self.last_dock_save {
@@ -2252,12 +2234,10 @@ impl Workspace {
             }
         }
         self.last_dock_save = Some(now);
-        let Some(hook) = self.dock_persist_hook.clone() else {
-            return;
-        };
         let data: Vec<crate::dock::DockData> = self.docks().iter().map(|d| d.to_data()).collect();
-        let json = serde_json::to_string(&data).unwrap_or_default();
-        hook(json, cx);
+        let snapshot = crate::layout::WorkspaceLayoutSnapshot::new(self.primary_dock(), data);
+        crate::layout::save(&snapshot);
+        let _ = cx;
     }
 
     /// One of the three edge docks (T17-002).

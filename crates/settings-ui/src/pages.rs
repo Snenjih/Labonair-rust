@@ -439,19 +439,6 @@ const WORKSPACE_GROUPS: &[Group] = &[
         ],
     ),
     ("Source Control", &["gitStatusPollIntervalMs"]),
-    (
-        "Layout",
-        &[
-            "sidebarPosition",
-            "sidebarOpen",
-            "sidebarActivePanel",
-            "sidebarRightOpen",
-            "sidebarRightActivePanel",
-            "sidebarWidth",
-            "sidebarRightWidth",
-            "dockLayout",
-        ],
-    ),
 ];
 
 #[cfg(test)]

@@ -44,6 +44,13 @@ pub use labonair_background::init as init_background;
 pub use labonair_notifications::init as init_notifications;
 pub use labonair_theme::{init_fonts, init_theme};
 
+/// Run the one-time import of legacy Settings layout values into the
+/// workspace-owned layout file. The app bootstrap exposes this through the
+/// shell so the entrypoint does not need a direct dependency on Workspace.
+pub fn migrate_legacy_workspace_layout(config_dir: &std::path::Path) -> Result<bool, String> {
+    labonair_workspace::layout::migrate_legacy_settings_file(config_dir)
+}
+
 // --- Internal re-export shims --------------------------------------------------
 // `app_shell.rs` / `updater.rs` were moved verbatim from `crates/ui` (their
 // diet is T17-006). These `crate::…` paths kept resolving there through

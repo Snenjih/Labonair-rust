@@ -353,35 +353,6 @@ impl WorkspaceSettings {
         &self.0
     }
 
-    // ── Dock / sidebar ──────────────────────────────────────────────────
-    /// `"left"` | `"right"` — which edge hosts the primary sidebar.
-    pub fn sidebar_position(&self) -> &str {
-        self.0.sidebar_position.as_deref().unwrap_or("left")
-    }
-
-    /// Persisted dock layout JSON (empty = not yet persisted).
-    pub fn dock_layout(&self) -> &str {
-        self.0.dock_layout.as_deref().unwrap_or("")
-    }
-
-    /// Legacy pre-dock-persistence fallback (`bootstrap::migrate_dock_layout`)
-    /// reads these four once, only when `dock_layout` is still empty.
-    pub fn sidebar_open(&self) -> bool {
-        self.0.sidebar_open.unwrap_or(true)
-    }
-
-    pub fn sidebar_active_panel(&self) -> &str {
-        self.0.sidebar_active_panel.as_deref().unwrap_or("explorer")
-    }
-
-    pub fn sidebar_width(&self) -> u32 {
-        self.0.sidebar_width.unwrap_or(225)
-    }
-
-    pub fn sidebar_right_width(&self) -> u32 {
-        self.0.sidebar_right_width.unwrap_or(225)
-    }
-
     // ── Command palette ─────────────────────────────────────────────────
     pub fn command_palette_search_mode(&self) -> PaletteSearchMode {
         self.0

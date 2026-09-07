@@ -145,6 +145,14 @@ The current repository does not yet match every ownership boundary in this
 map. The migration is tracked in [`rework-roadmap.md`](rework-roadmap.md), and
 the observed state is recorded in [`audits/architecture-inventory.md`](audits/architecture-inventory.md).
 
+Workspace chrome state is persisted by `labonair-workspace` in the dedicated
+`workspace-layout.json` file. Dock membership, open/closed state, active panel,
+size, zoom, and the primary dock edge are runtime layout state; they are not
+`SettingsContent` values and must not be project settings. The workspace owner
+imports legacy `workspace.sidebar*` and `workspace.dockLayout` values once,
+then removes those keys from `config.json`. Session/tab contents remain owned
+by the workspace session snapshot and are not folded into this layout file.
+
 The titlebar is a shell surface, not a feature owner. Its single global-menu
 button publishes `TitlebarEvent` intent. The composition root connects that
 intent to Settings, the keymap file surface, the Hosts management surface, or a Command Palette page. The
@@ -192,6 +200,11 @@ Use the smallest communication mechanism that fits:
 Stringly typed global events, arbitrary global mutable state, and cross-module entity mutation are prohibited for new code.
 
 The application event bus is a transport boundary, not a business-logic layer. Each module translates external events into its own typed state changes. User-visible messages are forwarded to the notification center.
+
+Persistent state follows the same ownership rule as runtime behavior: the
+owner writes its own file or store through a narrow persistence boundary. The
+composition root may order migrations and provide services, but it must not
+serialize a feature's private state into Settings as a shortcut.
 
 ## 7. Dependency rules
 

@@ -261,3 +261,20 @@ serial workspace tests, dependency verification, queue validation, formatting,
 and diff checks pass. Next R05 slice: prove the remaining indirect consumers
 and move workspace layout/runtime state out of Settings with a lossless
 migration.
+
+## R05-001 Workspace layout ownership
+
+Dock/sidebar runtime state now has an explicit `labonair-workspace::layout`
+owner and is persisted as versioned `workspace-layout.json`. Workspace startup
+loads that snapshot directly; dock persistence no longer calls back into the
+shell or writes `SettingsStore`. Settings UI and project whitelisting no longer
+expose layout state. The app runs an idempotent migration that imports legacy
+v2 `workspace.sidebar*`/`dockLayout` values, writes the owner file atomically,
+and removes the migrated keys from `config.json`. The old typed fields remain
+temporarily as migration compatibility input and are the next cleanup target.
+
+The layout module has round-trip and legacy-removal tests. Formatting, workspace
+check, Clippy, dependency verification, queue validation, and diff checks pass.
+The full serial workspace suite passed except for the known AI local HTTP test
+being blocked by sandbox socket permissions; that one test passed when rerun
+outside the sandbox. The active task remains R05-001.

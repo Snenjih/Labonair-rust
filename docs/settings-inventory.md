@@ -66,14 +66,16 @@ means a runtime module, not merely serialization or the generated Settings UI.
 | `workspace` | `commandPaletteSearchMode`, `commandPaletteShowRecent`, `commandPaletteHistorySize`, `commandPaletteOpacity`, `commandPalettePosition`, `commandPaletteCloseOnOverlayClick` | command-palette runtime; Global | Keep as palette values, no registration state |
 | `workspace` | `commandPaletteBlur`, `commandPaletteAnimation` | palette rendering policy; GPUI consumer must be confirmed | Review |
 | `workspace` | `gitStatusPollIntervalMs` | Git panel polling; Global | Keep |
-| `workspace` | `dockLayout`, `sidebarPosition`, `sidebarOpen`, `sidebarActivePanel`, `sidebarRightOpen`, `sidebarRightActivePanel`, `sidebarWidth`, `sidebarRightWidth` | workspace layout/session state; Runtime state | Move to workspace layout/session owner |
+| `workspace` | `dockLayout`, `sidebarPosition`, `sidebarOpen`, `sidebarActivePanel`, `sidebarRightOpen`, `sidebarRightActivePanel`, `sidebarWidth`, `sidebarRightWidth` | workspace layout/session state; Runtime state | Move to `labonair-workspace`'s `workspace-layout.json`; compatibility fields remain migration-only until the final model removal |
 
 ## Required follow-up order
 
 1. Add focused consumer tests for every **Keep**/**Review** field whose runtime
    owner is currently indirect.
 2. Move Background and workspace layout state behind their owning module
-   contracts, preserving existing user data with explicit migrations.
+   contracts, preserving existing user data with explicit migrations. The
+   workspace layout file is now the active owner; typed compatibility fields
+   are the remaining cleanup.
 3. Remove confirmed legacy/unsupported fields from the typed model and UI;
    retain unknown legacy JSON according to the migration policy.
 4. Rebuild the project whitelist from this inventory instead of maintaining a

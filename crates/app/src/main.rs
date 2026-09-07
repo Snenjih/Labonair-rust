@@ -90,6 +90,13 @@ fn main() {
             Ok(outcome) => tracing::info!("settings v2 sparsify: {outcome:?}"),
             Err(err) => tracing::warn!("settings v2 sparsify failed: {err}"),
         }
+        match labonair_shell::migrate_legacy_workspace_layout(&settings_dir) {
+            Ok(true) => {
+                tracing::info!("migrated legacy workspace layout out of Settings")
+            }
+            Ok(false) => {}
+            Err(err) => tracing::warn!("workspace layout migration failed: {err}"),
+        }
     }
 
     drop(guard);

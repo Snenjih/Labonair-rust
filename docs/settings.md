@@ -37,6 +37,13 @@ hosts module; neither becomes a Settings category merely because it is saved
 to disk. MCP preferences and statusbar/panel layout follow the same rule and
 are loaded by their owning capabilities.
 
+Workspace dock and sidebar state is persisted by `labonair-workspace` in
+`workspace-layout.json`. The legacy `workspace.sidebar*` and `workspace.dockLayout`
+keys are migration input only; they are not editable Settings fields and must
+not be added to the project-settings whitelist. Layout migration runs after
+the v1/v2 Settings migration and is idempotent: a valid workspace layout file
+is never overwritten.
+
 ## Settings categories
 
 The initial categories are intentionally small:
