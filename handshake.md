@@ -26,6 +26,15 @@ The pure CWD breadcrumb path/provider helpers were subsequently moved to
 statusbar view is the next owner extraction. Workspace check, tests,
 dependency-boundary validation, and formatting remain green.
 
+The command ownership boundary has started in `ca562a8`: the new
+`labonair-command-palette-runtime` crate carries GPUI-facing owner handlers,
+and Workspace registers its tab/pane/focus/project handlers without importing
+the shell. Shell composition suppresses duplicate legacy behavior for those
+IDs while the remaining command table is migrated owner by owner. The latest
+targeted Clippy, tests, dependency validation, formatting, and diff checks
+pass. The next boundary is the interactive workspace statusbar views and then
+the remaining terminal/editor/host/theme/settings command handlers.
+
 The current R05 slices removed the untyped `general.notifyOnErrors` default,
 moved Background values behind their owner, moved dock/sidebar runtime state
 to the versioned Workspace-owned `workspace-layout.json`, and removed
@@ -39,7 +48,7 @@ Legacy `appCornerRadius` values are converted to the current
 `cornerRadiusScale` field during migration, with the modern value taking
 precedence when both are present.
 
-Current HEAD is `f282c88` on `master`; the worktree is clean before this
+Current HEAD is `ca562a8` on `master`; the worktree is clean before this
 handshake update. R06
 boundaries removed the backend error facade, removed AI's stale backend edge,
 moved system-font discovery into the Theme owner, deleted the unconsumed
