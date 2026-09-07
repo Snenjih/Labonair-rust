@@ -46,6 +46,11 @@ Cursor Position and Preview URL statusbar views were moved to
 their typed registrations instead of constructing them. The remaining
 interactive statusbar owners are CWD, dock controls, and updater.
 
+Dock panel buttons and their move/hide menu were moved into
+`labonair-workspace::dock_status_item` in `945027b`; shell composition now
+requests the three typed edge registrations. The remaining interactive
+statusbar owner extraction is CWD and updater.
+
 The current R05 slices removed the untyped `general.notifyOnErrors` default,
 moved Background values behind their owner, moved dock/sidebar runtime state
 to the versioned Workspace-owned `workspace-layout.json`, and removed
@@ -59,7 +64,7 @@ Legacy `appCornerRadius` values are converted to the current
 `cornerRadiusScale` field during migration, with the modern value taking
 precedence when both are present.
 
-Current HEAD is `3fd6b38` on `master`; the worktree is clean before this
+Current HEAD is `945027b` on `master`; the worktree is clean before this
 handshake update. R06
 boundaries removed the backend error facade, removed AI's stale backend edge,
 moved system-font discovery into the Theme owner, deleted the unconsumed
