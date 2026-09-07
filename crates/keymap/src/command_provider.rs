@@ -15,6 +15,7 @@ impl CommandProvider for KeymapCommandProvider {
         vec![
             CommandDescriptor::new(CommandId::OpenKeymapJson, "Open Keymap (JSON)", "Keymap")
                 .with_shortcut(ShortcutId::ShortcutsOpen)
+                .with_default_binding("cmd-shift-/", None)
                 .with_icon(CommandIcon::Edit),
         ]
     }

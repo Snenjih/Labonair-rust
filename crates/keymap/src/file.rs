@@ -351,6 +351,17 @@ pub fn last_issues() -> Vec<ValidationIssue> {
 /// diagnostics to the presentation adapter. The caller supplies the current
 /// command vocabulary; the keymap module does not depend on feature registries.
 pub fn effective_bindings(known_actions: &BTreeSet<&'static str>) -> Vec<EffectiveBinding> {
+    effective_bindings_with_defaults(known_actions, &[])
+}
+
+/// Load the effective file bindings while incorporating defaults contributed
+/// by owner command providers. The built-in JSON remains a migration-stable
+/// compatibility layer; provider defaults are applied after it and before the
+/// user layer.
+pub fn effective_bindings_with_defaults(
+    known_actions: &BTreeSet<&'static str>,
+    owner_defaults: &[crate::runtime::KeymapBinding],
+) -> Vec<EffectiveBinding> {
     let default = match parse_keymap_jsonc(default_asset()) {
         Ok(file) => file,
         Err(error) => {
@@ -358,11 +369,31 @@ pub fn effective_bindings(known_actions: &BTreeSet<&'static str>) -> Vec<Effecti
             KeymapFile::default()
         }
     };
+    let owner_default_file = owner_defaults_file(owner_defaults);
     let user = load_user_keymap(known_actions);
     merge_keymaps(&[
         (KeybindSource::Default, &default),
+        (KeybindSource::Default, &owner_default_file),
         (KeybindSource::User, &user),
     ])
+}
+
+fn owner_defaults_file(bindings: &[crate::runtime::KeymapBinding]) -> KeymapFile {
+    KeymapFile(
+        bindings
+            .iter()
+            .map(|binding| KeymapBlock {
+                context: binding
+                    .context
+                    .map(crate::runtime::context_name)
+                    .map(str::to_string),
+                bindings: vec![(
+                    binding.keystrokes.clone(),
+                    Some(binding.command.action_name().to_string()),
+                )],
+            })
+            .collect(),
+    )
 }
 
 fn load_user_keymap(known_actions: &BTreeSet<&'static str>) -> KeymapFile {
@@ -547,6 +578,18 @@ mod tests {
     fn missing_or_empty_document_is_an_empty_keymap() {
         assert_eq!(parse_keymap_jsonc("").unwrap(), KeymapFile::default());
         assert_eq!(parse_keymap_jsonc("[]").unwrap(), KeymapFile::default());
+    }
+
+    #[test]
+    fn owner_defaults_materialize_as_a_default_file_layer() {
+        let file = owner_defaults_file(&[crate::runtime::KeymapBinding::in_context(
+            "cmd-f",
+            labonair_command_palette_core::CommandId::Find,
+            labonair_command_palette_core::CommandContext::Editor,
+        )]);
+
+        assert_eq!(file.0[0].context.as_deref(), Some("Editor"));
+        assert_eq!(file.0[0].bindings[0].1.as_deref(), Some("search::Toggle"));
     }
 
     #[test]

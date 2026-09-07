@@ -57,6 +57,13 @@ require editing a palette-owned list of every feature command. The stable ID
 is namespaced and opaque to the view, and execution is resolved by the owning
 module after selection.
 
+Default bindings follow the same ownership rule. A provider attaches defaults
+to its `CommandDescriptor` with `with_default_binding`; the keymap module
+materializes those typed descriptors into its built-in default layer. The
+shipped JSONC asset remains a compatibility layer during migration and the
+user keymap remains the override layer. Adding a command or changing its
+default therefore does not require editing a shell-owned keymap table.
+
 Submenus are registered providers. Dynamic entries such as hosts, themes, and
 tabs are supplied as immutable snapshots with typed primary and secondary
 actions. The capability owns loading and action semantics; the palette owns

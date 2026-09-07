@@ -897,21 +897,20 @@ pub(crate) fn register_builtin_commands() -> CommandDispatcher {
                 .update(cx, |w, cx| w.open_or_create_user_settings_json(window, cx));
         },
     );
-    r.register(
-        command_descriptor(
-            CommandId::OpenKeymapJson,
-            "Open Keymap (JSON)",
-            "Keymap",
-            always,
-            Some(labonair_keymap::ShortcutId::ShortcutsOpen),
-            CommandIcon::Edit,
-            None,
-        ),
-        |s, window, cx| {
-            s.workspace
-                .update(cx, |w, cx| w.open_or_create_user_keymap_json(window, cx));
-        },
-    );
+    let keymap_descriptor = command_descriptor(
+        CommandId::OpenKeymapJson,
+        "Open Keymap (JSON)",
+        "Keymap",
+        always,
+        Some(labonair_keymap::ShortcutId::ShortcutsOpen),
+        CommandIcon::Edit,
+        None,
+    )
+    .with_default_binding("cmd-shift-/", None);
+    r.register(keymap_descriptor, |s, window, cx| {
+        s.workspace
+            .update(cx, |w, cx| w.open_or_create_user_keymap_json(window, cx));
+    });
     r.register(
         command_descriptor(
             CommandId::CheckForUpdates,

@@ -66,6 +66,11 @@ resulting `CommandId` to GPUI actions, but they must not introduce a second
 string alias table. Rich GPUI context predicates remain an adapter concern;
 portable keymap resolution uses typed command contexts.
 
+Command owners also publish their default bindings on the command descriptor.
+The keymap module converts those typed defaults into the default resolution
+layer, then applies the user keymap as the override layer. The composition root
+registers providers but does not maintain a feature-wide default-shortcut table.
+
 ## 4. Target workspace crate map
 
 ### Foundation

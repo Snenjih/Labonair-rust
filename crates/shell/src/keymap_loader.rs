@@ -36,7 +36,8 @@ fn known_actions(registry: &CommandDispatcher) -> std::collections::BTreeSet<&'s
 /// The merged effective keymap: shipped defaults, then the user's
 /// `keymap.json` (or the last known-good snapshot of it) on top.
 pub(crate) fn effective_bindings(registry: &CommandDispatcher) -> Vec<EffectiveBinding> {
-    file::effective_bindings(&known_actions(registry))
+    let owner_defaults = labonair_keymap::runtime::defaults_from_descriptors(registry.iter());
+    file::effective_bindings_with_defaults(&known_actions(registry), &owner_defaults)
 }
 
 /// Derive the `ShortcutId`-keyed display map ([`KeybindDisplay`]) the command
@@ -101,9 +102,12 @@ mod tests {
             .iter()
             .flat_map(|b| b.bindings.iter())
             .filter_map(|(_, a)| a.as_deref())
+            .filter_map(canonical_action_name)
             .collect();
-        let effective_actions: std::collections::BTreeSet<&str> =
-            effective.iter().map(|b| b.action.as_str()).collect();
+        let effective_actions: std::collections::BTreeSet<&str> = effective
+            .iter()
+            .filter_map(|binding| canonical_action_name(&binding.action))
+            .collect();
         for action in default_actions {
             assert!(
                 effective_actions.contains(action),

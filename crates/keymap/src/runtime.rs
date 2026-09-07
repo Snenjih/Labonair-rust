@@ -2,7 +2,9 @@
 
 use std::collections::HashMap;
 
-use labonair_command_palette_core::{CommandContext, CommandId};
+use labonair_command_palette_core::{
+    CommandContext, CommandDescriptor, CommandId, CommandRegistry,
+};
 
 use crate::normalize;
 
@@ -11,6 +13,46 @@ use crate::normalize;
 /// result instead of maintaining their own string tables.
 pub fn command_for_action(name: &str) -> Option<CommandId> {
     CommandId::from_action_name(name)
+}
+
+/// Stable textual names for portable command contexts when a default binding
+/// is materialized into the JSONC-compatible file layer.
+pub fn context_name(context: CommandContext) -> &'static str {
+    match context {
+        CommandContext::Terminal => "Terminal",
+        CommandContext::Editor => "Editor",
+        CommandContext::Sftp => "Sftp",
+        CommandContext::Home => "Home",
+        CommandContext::SshTerminal => "SshTerminal",
+    }
+}
+
+/// Convert owner-contributed command defaults into the runtime's binding
+/// values. The keymap owns precedence and user overrides, while feature
+/// modules own which commands exist and which defaults they publish.
+pub fn defaults_from_registry(registry: &CommandRegistry) -> Vec<KeymapBinding> {
+    defaults_from_descriptors(registry.iter())
+}
+
+/// Convert descriptors from a composition-layer registry into typed defaults.
+/// Accepting an iterator keeps the keymap independent from the concrete
+/// dispatcher that assembles feature commands.
+pub fn defaults_from_descriptors<'a>(
+    descriptors: impl IntoIterator<Item = &'a CommandDescriptor>,
+) -> Vec<KeymapBinding> {
+    descriptors
+        .into_iter()
+        .flat_map(|descriptor| {
+            descriptor
+                .default_bindings
+                .iter()
+                .map(move |binding| KeymapBinding {
+                    keystrokes: binding.keystrokes.clone(),
+                    command: descriptor.id,
+                    context: binding.context,
+                })
+        })
+        .collect()
 }
 
 /// One validated binding supplied by a keymap layer.
@@ -155,5 +197,29 @@ mod tests {
             Some(CommandId::OpenKeymapJson)
         );
         assert_eq!(command_for_action("unknown::Action"), None);
+    }
+
+    #[test]
+    fn owner_defaults_become_typed_runtime_bindings() {
+        let mut registry = CommandRegistry::default();
+        registry
+            .register(
+                labonair_command_palette_core::CommandDescriptor::new(
+                    CommandId::Find,
+                    "Find",
+                    "Search",
+                )
+                .with_default_binding("cmd-f", Some(CommandContext::Editor)),
+            )
+            .unwrap();
+
+        assert_eq!(
+            defaults_from_registry(&registry),
+            vec![KeymapBinding::in_context(
+                "cmd-f",
+                CommandId::Find,
+                CommandContext::Editor,
+            )]
+        );
     }
 }

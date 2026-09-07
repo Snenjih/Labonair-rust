@@ -214,6 +214,15 @@ pub struct SubmenuSnapshot {
     pub items: Vec<SubmenuItem>,
 }
 
+/// A default keybinding contributed by the command owner. User overrides and
+/// conflict resolution remain owned by `labonair-keymap`; this value only
+/// carries registration metadata across the UI-free command contract.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DefaultBinding {
+    pub keystrokes: String,
+    pub context: Option<CommandContext>,
+}
+
 /// Module-owned source for a dynamic submenu. The provider controls loading
 /// and snapshots; the palette only renders and navigates the returned rows.
 pub trait SubmenuProvider {
@@ -272,6 +281,7 @@ pub struct CommandDescriptor {
     pub shortcut: Option<ShortcutId>,
     pub icon: CommandIcon,
     pub submenu: Option<CommandSubmenu>,
+    pub default_bindings: Vec<DefaultBinding>,
 }
 
 impl CommandDescriptor {
@@ -285,6 +295,7 @@ impl CommandDescriptor {
             shortcut: None,
             icon: CommandIcon::Command,
             submenu: None,
+            default_bindings: Vec::new(),
         }
     }
 
@@ -310,6 +321,18 @@ impl CommandDescriptor {
 
     pub fn with_submenu(mut self, submenu: CommandSubmenu) -> Self {
         self.submenu = Some(submenu);
+        self
+    }
+
+    pub fn with_default_binding(
+        mut self,
+        keystrokes: impl Into<String>,
+        context: Option<CommandContext>,
+    ) -> Self {
+        self.default_bindings.push(DefaultBinding {
+            keystrokes: keystrokes.into(),
+            context,
+        });
         self
     }
 

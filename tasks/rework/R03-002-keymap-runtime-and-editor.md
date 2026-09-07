@@ -135,3 +135,9 @@ surface is no longer reachable except through explicit data migration.
 Theme, host, transfer, and workspace modules remain responsible for their
 commands. They contribute metadata and handlers; they do not move behavior
 into the keymap runtime.
+
+Command descriptors now carry typed owner defaults through
+`with_default_binding`. Keymap materializes those contributions as a default
+file layer before applying the user file; the shipped JSONC remains a
+compatibility layer while the remaining defaults migrate. The provider and
+shell adapter are equality-checked so their command metadata cannot diverge.

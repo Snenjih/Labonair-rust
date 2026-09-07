@@ -115,3 +115,12 @@ The shell loader now only supplies the current command vocabulary, connects the
 existing watcher, installs GPUI bindings, and publishes display hints. This
 keeps file semantics and recovery in Keymap while leaving platform input in a
 thin adapter. Commit: `c2bffcf`.
+
+## R03-002 owner default bindings
+
+`CommandDescriptor` now owns optional typed default bindings. The keymap
+runtime converts provider descriptors into `KeymapBinding` values and the file
+layer materializes them before the user override layer. This keeps shortcut
+defaults with the feature that owns the command; the shell only supplies the
+registry and platform adapter. The first migrated default is `Open Keymap
+(JSON)`, while the shipped JSONC defaults remain compatible during migration.
