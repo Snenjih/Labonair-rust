@@ -20,6 +20,9 @@ focused Notifications tests and the full workspace gates pass. The
 normative palette documents now explicitly describe the remaining dynamic
 submenu dispatcher as a temporary R07-002 transition instead of claiming it
 is already fully owner-local. The
+Hosts command identity is now canonical `OpenHosts`; the former
+`connections::OpenHostSettings` name is compatibility-only and is covered by
+focused command/Hosts/Shell tests. The
 remaining blockers are unchanged: dynamic palette actions still need the
 R07-002 owner-execution migration, legacy Settings warning classification needs
 R07-003, and native visual capture is blocked by missing Screen Recording

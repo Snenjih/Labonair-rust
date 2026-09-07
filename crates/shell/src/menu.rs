@@ -79,7 +79,7 @@ actions!(
         SplitPaneDown,
         Find,
         // ── Connections ───────────────────────────────────────────────────
-        OpenHostSettings,
+        OpenHosts,
         NewSshConnection,
         NewQuickSsh,
         // ── Window ────────────────────────────────────────────────────────
@@ -204,7 +204,7 @@ fn action_for(name: &str) -> Option<Box<dyn Action>> {
         CommandId::ZoomOut => Box::new(ZoomOut),
         CommandId::ZoomReset => Box::new(ResetZoom),
         CommandId::ToggleFullScreen => Box::new(ToggleFullScreen),
-        CommandId::OpenHostSettings => Box::new(OpenHostSettings),
+        CommandId::OpenHosts => Box::new(OpenHosts),
         CommandId::NewSshConnection => Box::new(NewSshConnection),
         CommandId::NewQuickSsh => Box::new(NewQuickSsh),
         CommandId::OpenSettings => Box::new(OpenSettings),
@@ -340,7 +340,7 @@ fn app_menus() -> Vec<Menu> {
         Menu {
             name: "Connections".into(),
             items: vec![
-                MenuItem::action("Open Hosts", OpenHostSettings),
+                MenuItem::action("Open Hosts", OpenHosts),
                 MenuItem::separator(),
                 MenuItem::action("New SSH Connection\u{2026}", NewSshConnection),
                 MenuItem::action("New Quick SSH\u{2026}", NewQuickSsh),
@@ -369,7 +369,7 @@ fn dock_menu() -> Vec<MenuItem> {
         MenuItem::action("New Terminal Tab", NewTerminalTab),
         MenuItem::action("New SSH Connection\u{2026}", NewSshConnection),
         MenuItem::separator(),
-        MenuItem::action("Open Hosts", OpenHostSettings),
+        MenuItem::action("Open Hosts", OpenHosts),
     ]
 }
 

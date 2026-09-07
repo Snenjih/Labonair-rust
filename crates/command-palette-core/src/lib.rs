@@ -49,7 +49,7 @@ pub enum CommandId {
     OpenSnippetsPanel,
     OpenGitGraph,
     FocusSourceControl,
-    OpenHostSettings,
+    OpenHosts,
     ClearTerminal,
     OpenShortcuts,
     OpenSettings,
@@ -486,7 +486,7 @@ const ACTION_NAMES: &[(CommandId, &str)] = &[
     (CommandId::OpenGitGraph, "git::OpenGraph"),
     (CommandId::FocusSourceControl, "git::FocusSourceControl"),
     (CommandId::GitSwitchBranch, "git::SwitchBranch"),
-    (CommandId::OpenHostSettings, "connections::OpenHostSettings"),
+    (CommandId::OpenHosts, "connections::OpenHosts"),
     (CommandId::NewSshConnection, "connections::NewSshConnection"),
     (CommandId::NewQuickSsh, "connections::NewQuickSsh"),
     (CommandId::ConnectSsh, "connections::Connect"),
@@ -522,6 +522,7 @@ impl CommandId {
             .find(|(_, action)| *action == name)
             .map(|(id, _)| *id)
             .or_else(|| (name == "settings::OpenShortcuts").then_some(Self::OpenKeymapJson))
+            .or_else(|| (name == "connections::OpenHostSettings").then_some(Self::OpenHosts))
     }
 }
 
@@ -535,7 +536,9 @@ pub fn canonical_action_name(name: &str) -> Option<&'static str> {
 /// are deliberately separate from [`known_action_names`] so they cannot be
 /// presented as discoverable commands.
 pub fn compatibility_action_names() -> std::collections::BTreeSet<&'static str> {
-    ["settings::OpenShortcuts"].into_iter().collect()
+    ["settings::OpenShortcuts", "connections::OpenHostSettings"]
+        .into_iter()
+        .collect()
 }
 
 pub fn known_action_names() -> std::collections::BTreeSet<&'static str> {
@@ -631,6 +634,20 @@ mod tests {
         );
         assert!(!known_action_names().contains("settings::OpenShortcuts"));
         assert!(compatibility_action_names().contains("settings::OpenShortcuts"));
+    }
+
+    #[test]
+    fn legacy_host_settings_alias_resolves_to_open_hosts() {
+        assert_eq!(
+            CommandId::from_action_name("connections::OpenHostSettings"),
+            Some(CommandId::OpenHosts)
+        );
+        assert_eq!(
+            canonical_action_name("connections::OpenHostSettings"),
+            Some("connections::OpenHosts")
+        );
+        assert!(!known_action_names().contains("connections::OpenHostSettings"));
+        assert!(compatibility_action_names().contains("connections::OpenHostSettings"));
     }
 
     #[derive(Clone)]

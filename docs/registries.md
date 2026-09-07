@@ -133,6 +133,10 @@ migration alias for existing user keymap files and resolves to the canonical
 native menu surface, or Settings page. New actions must use the keymap/command
 contracts rather than the legacy name.
 
+The former `connections::OpenHostSettings` action is handled the same way: it
+is accepted only as a compatibility alias for the canonical
+`connections::OpenHosts` command. Hosts management is not a Settings action.
+
 ## Theme registries
 
 The themes module owns separate color-theme and icon-theme registries. Each

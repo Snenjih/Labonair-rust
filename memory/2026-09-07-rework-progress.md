@@ -1004,3 +1004,9 @@ described dynamic palette execution as already fully owner-local, while
 `shell/src/actions.rs` still dispatches typed submenu events as a temporary
 composition adapter. The current contracts now state that transition
 explicitly and point to R07-002; no new shell feature branches are permitted.
+
+The Hosts command identity was renamed from `OpenHostSettings` to
+`OpenHosts` across the active command, Hosts-UI, and native menu contracts.
+The old `connections::OpenHostSettings` action remains readable only as a
+non-discoverable keymap compatibility alias, making the Hosts/Settings
+ownership boundary explicit. Focused Command, Hosts, and Shell tests pass.

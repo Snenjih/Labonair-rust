@@ -183,7 +183,7 @@ pub(crate) fn attach_action_handlers(
     on!(menu::NewSftpTab => CommandId::NewSftpTab);
     on!(menu::NewSshConnection => CommandId::NewSshConnection);
     on!(menu::NewQuickSsh => CommandId::NewQuickSsh);
-    on!(menu::OpenHostSettings => CommandId::OpenHostSettings);
+    on!(menu::OpenHosts => CommandId::OpenHosts);
     on!(menu::Save => CommandId::Save);
     on!(menu::CloseTab => CommandId::CloseTab);
     on!(menu::NextTab => CommandId::NextTab);

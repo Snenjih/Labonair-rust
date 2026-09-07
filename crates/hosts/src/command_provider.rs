@@ -46,7 +46,7 @@ pub fn host_submenu(
 impl CommandProvider for HostsCommandProvider {
     fn commands(&self) -> Vec<CommandDescriptor> {
         vec![
-            CommandDescriptor::new(CommandId::OpenHostSettings, "Open Hosts", "Connections")
+            CommandDescriptor::new(CommandId::OpenHosts, "Open Hosts", "Connections")
                 .with_icon(CommandIcon::Server),
             CommandDescriptor::new(CommandId::NewSshTab, "New SSH Tab", "Connections")
                 .with_icon(CommandIcon::Terminal)

@@ -15,7 +15,7 @@ pub type HostPickerHandler = Rc<dyn Fn(&mut Window, &mut App)>;
 pub fn register_handlers(registry: &mut CommandHandlerRegistry, hosts: &Entity<HostManagerView>) {
     let hosts = hosts.clone();
     registry
-        .register(CommandId::OpenHostSettings, move |_window, cx: &mut App| {
+        .register(CommandId::OpenHosts, move |_window, cx: &mut App| {
             super::open_hosts_window(hosts.clone(), cx);
         })
         .expect("hosts UI command handler must have a unique id");

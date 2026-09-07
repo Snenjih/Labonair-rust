@@ -118,6 +118,9 @@ a separate product decision after the core workflow is stable.
 - [x] Theme registry selections remain persistable values, but `appTheme` and
       `themeVariantOverrides` are no longer registered as editable Settings
       fields; theme management now has only the Themes palette surface.
+- [x] Hosts management uses the canonical `OpenHosts` command identity;
+      `connections::OpenHostSettings` remains readable only as a keymap
+      compatibility alias and is not discoverable.
 - [x] The Notifications dropdown now composes notification rows from the
       shared UI-kit `ListItem`; its expansion, read-state, scrolling, and
       action behavior remain owned by Notifications.
