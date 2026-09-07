@@ -48,6 +48,7 @@ use labonair_workspace::status_bar::StatusBar;
 
 use crate::app_shell::{AppShell, ShellPanels};
 use crate::backend::BackendComposition;
+use crate::local_terminal_access::TerminalRegistryAccess;
 use crate::settings_services::settings_services;
 use crate::status_items::register_builtin_status_items;
 use crate::theme::ThemeStore;
@@ -193,6 +194,8 @@ pub(crate) fn bootstrap(
 
     cx.observe(&background, |_, _, cx| cx.notify()).detach();
 
+    let registry = Arc::new(TerminalRegistry::new());
+    let local_terminal_access = Arc::new(TerminalRegistryAccess::new(registry.clone()));
     let backend_mcp = Arc::new(BackendMcpSessionAccess::new(
         backend.mcp.clone(),
         backend.db.clone(),
@@ -201,7 +204,7 @@ pub(crate) fn bootstrap(
     let mcp_tab_operations: Arc<dyn McpTabOperationService> = backend_mcp;
     let mcp_server_access = labonair_backend::modules::mcp::McpServerAccess::new(
         backend.ssh.clone(),
-        backend.pty.clone(),
+        local_terminal_access,
         backend.db.clone(),
         backend.secrets.clone(),
         backend.events.clone(),
@@ -230,7 +233,6 @@ pub(crate) fn bootstrap(
         });
     }
 
-    let registry = Arc::new(TerminalRegistry::new());
     // Session restore (T14-001): load the previous snapshot up-front so the
     // workspace can replay it instead of opening the default tabs.
     let session_snapshot = GeneralSettings::try_get(cx)

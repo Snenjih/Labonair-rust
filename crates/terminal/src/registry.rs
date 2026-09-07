@@ -107,6 +107,15 @@ impl SessionBackend {
             SessionBackend::Remote(_) => None,
         }
     }
+
+    fn subscribe_agent_output(&self) -> Result<tokio::sync::broadcast::Receiver<Vec<u8>>, String> {
+        match self {
+            SessionBackend::Local(session) => Ok(session.subscribe_agent_output()),
+            SessionBackend::Remote(_) => {
+                Err("agent output subscription is only available for local sessions".to_string())
+            }
+        }
+    }
 }
 
 /// Opaque, process-unique identifier for a local terminal session. Starts at 1
@@ -149,6 +158,15 @@ impl SessionHandle {
     /// Write user input bytes to the shell.
     pub fn write(&self, bytes: &[u8]) -> Result<(), String> {
         self.slot.session.lock().unwrap().write(bytes)
+    }
+
+    /// Subscribe to raw output from this session without disturbing the
+    /// terminal renderer. Remote sessions are intentionally not exposed here;
+    /// SSH has its own transport-owned observation path.
+    pub fn subscribe_agent_output(
+        &self,
+    ) -> Result<tokio::sync::broadcast::Receiver<Vec<u8>>, String> {
+        self.slot.session.lock().unwrap().subscribe_agent_output()
     }
 
     /// Resize the emulator grid and the underlying PTY.

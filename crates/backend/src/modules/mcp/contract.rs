@@ -34,7 +34,6 @@ impl McpSessionAccessService for BackendMcpSessionAccess {
                 request.granted,
                 request.label,
                 request.kind,
-                request.local_pty_id,
                 request.host_id,
                 &hosts_db,
                 &state,

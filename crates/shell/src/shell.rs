@@ -22,6 +22,7 @@ pub mod bootstrap;
 pub mod commands;
 pub mod cwd_breadcrumb;
 pub mod keymap_loader;
+mod local_terminal_access;
 pub mod menu;
 pub mod modals;
 mod settings_services;

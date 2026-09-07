@@ -1166,7 +1166,6 @@ impl AgentAccessStatusItem {
                                         String::new(),
                                         labonair_mcp_core::SessionKind::Ssh,
                                         None,
-                                        None,
                                         cx,
                                     );
                                 });

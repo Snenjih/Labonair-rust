@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 use tokio_util::sync::CancellationToken;
 
 use super::osc133::Osc133Capture;
-use labonair_mcp_core::{SessionKind, TabOpResult};
+use labonair_mcp_core::{LocalTerminalAccess, SessionKind, TabOpResult};
 
 use super::{host_blocks_agent_access, McpState, SessionGrant};
 
@@ -42,18 +42,13 @@ async fn write_to_ssh_session(
 /// the single dispatch point every action tool funnels through.
 async fn write_to_grant(
     ssh: &crate::modules::ssh::SshState,
-    pty: &crate::modules::pty::PtyState,
+    local_terminal: &dyn LocalTerminalAccess,
     grant: &SessionGrant,
     data: String,
 ) -> Result<(), String> {
     match grant.kind {
         SessionKind::Ssh => write_to_ssh_session(ssh, &grant.session_id, data).await,
-        SessionKind::Local => {
-            let pty_id = grant
-                .local_pty_id
-                .ok_or_else(|| "grant missing local pty id".to_string())?;
-            crate::modules::pty::write_raw(pty, pty_id, &data)
-        }
+        SessionKind::Local => local_terminal.write(&grant.session_id, data),
     }
 }
 
@@ -279,17 +274,13 @@ impl LabonairMcpServer {
                 ssh_rx = Some(session.agent_tap.subscribe());
             }
             SessionKind::Local => {
-                let pty_id = grant
-                    .local_pty_id
-                    .ok_or_else(|| "grant missing local pty id".to_string())?;
-                let pty_state = &self.access.pty;
-                local_rx = Some(crate::modules::pty::subscribe_agent_tap(pty_state, pty_id)?);
+                local_rx = Some(self.access.local_terminal.subscribe(&grant.session_id)?);
             }
         }
 
         write_to_grant(
             &self.access.ssh,
-            &self.access.pty,
+            self.access.local_terminal.as_ref(),
             &grant,
             format!("{}\n", params.command),
         )
@@ -317,7 +308,10 @@ impl LabonairMcpServer {
             }
             let recv = async {
                 if let Some(rx) = ssh_rx.as_mut() {
-                    rx.recv().await.map(|s| s.into_bytes())
+                    rx.recv()
+                        .await
+                        .map(|s| s.into_bytes())
+                        .map_err(|error| error.to_string())
                 } else if let Some(rx) = local_rx.as_mut() {
                     rx.recv().await
                 } else {
@@ -376,11 +370,7 @@ impl LabonairMcpServer {
                 ssh_rx = Some(session.agent_tap.subscribe());
             }
             SessionKind::Local => {
-                let pty_id = grant
-                    .local_pty_id
-                    .ok_or_else(|| "grant missing local pty id".to_string())?;
-                let pty_state = &self.access.pty;
-                local_rx = Some(crate::modules::pty::subscribe_agent_tap(pty_state, pty_id)?);
+                local_rx = Some(self.access.local_terminal.subscribe(&grant.session_id)?);
             }
         }
 
@@ -394,7 +384,10 @@ impl LabonairMcpServer {
             }
             let recv = async {
                 if let Some(rx) = ssh_rx.as_mut() {
-                    rx.recv().await.map(|s| s.into_bytes())
+                    rx.recv()
+                        .await
+                        .map(|s| s.into_bytes())
+                        .map_err(|error| error.to_string())
                 } else if let Some(rx) = local_rx.as_mut() {
                     rx.recv().await
                 } else {
@@ -428,7 +421,7 @@ impl LabonairMcpServer {
         self.mcp_state.touch(&grant.tab_id);
         write_to_grant(
             &self.access.ssh,
-            &self.access.pty,
+            self.access.local_terminal.as_ref(),
             &grant,
             params.data.clone(),
         )

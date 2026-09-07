@@ -147,6 +147,13 @@ The current Cargo metadata shows several transitional edges that conflict with t
   root initializes the shared database before injecting it into capability
   adapters.
 - `labonair-filesystem` now owns the complete filesystem boundary. The backend no longer carries watcher state, watcher adapters, or filesystem compatibility re-exports; no filesystem event is synthesized through the global backend bus.
+- Local MCP terminal observation and writes now use the injected
+  `labonair_mcp_core::LocalTerminalAccess` contract backed by the real
+  `labonair-terminal::TerminalRegistry`. The obsolete backend `PtyState`,
+  `local_pty_id` grant address, and duplicate local PTY implementation are
+  removed. Shared OSC 7/133 payloads live in the UI-free
+  `labonair-terminal-integration` protocol crate, so the backend does not
+  depend on the GPUI terminal engine.
 - `backend` still owns explicit secret-state adapters even though storage now
   belongs to `labonair-secrets`; SSH/SFTP/MCP call sites no longer pass an
   aggregate application handle.

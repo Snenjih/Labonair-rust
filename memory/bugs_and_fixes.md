@@ -733,3 +733,15 @@ failed.
 **Fix:** Restored the exact legacy `Default` implementation inside
 `migrate_v2`. The standalone editor adapter was then deleted while the wire
 shape remains available only to the one-time migration.
+
+## 2026-09-07 — Normalize injected terminal receiver errors
+
+**Bug found:** The MCP command-capture loop combines SSH broadcast receivers
+and the injected local-terminal receiver in one async branch. SSH returned a
+`broadcast::RecvError` while the capability contract returned `String`, so
+the branches had incompatible result types.
+
+**Fix:** Convert the SSH receiver error to `String` at the MCP adapter
+boundary. The command loop now consumes both transports through the same
+`Result<Vec<u8>, String>` shape without knowing either receiver
+implementation.

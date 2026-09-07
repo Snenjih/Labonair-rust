@@ -93,6 +93,7 @@ and are never lost through a deserialize/serialize round trip.
 | `labonair-persistence` | Cloneable shared SQLite connection and schema lifecycle; feature modules own stores and queries. |
 | `labonair-panel` | UI-free panel, dock, and status-item contracts used by workspace-owned surfaces. |
 | `labonair-mcp-core` | UI-free MCP session/grant, tab-operation, and persisted bridge-preference contracts shared by the agent-access host and its injected bridge adapter. |
+| `labonair-terminal-integration` | UI-free OSC 7/133 shell-integration payloads shared by local PTY and remote SSH adapters. |
 
 ### Capability modules and crates
 
@@ -115,7 +116,7 @@ boundary.
 
 | Module | Canonical capability crate | Responsibility |
 |---|---|---|
-| Terminal | `labonair-terminal` | PTY sessions, terminal engine, renderer, and terminal commands. |
+| Terminal | `labonair-terminal` | PTY sessions, terminal engine, renderer, and terminal commands. Sibling `labonair-terminal-integration` owns shared shell protocol payloads. |
 | Editor | `labonair-editor` | Buffers, syntax, editing behavior, and editor commands. |
 | SSH | `labonair-ssh` | SSH transport, authentication, tunnels, and jump-host execution. |
 | SFTP | `labonair-sftp` | Remote filesystem browsing and SFTP operations. |

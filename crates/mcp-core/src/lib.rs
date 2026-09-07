@@ -9,6 +9,20 @@ use std::pin::Pin;
 
 pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
+/// Receives raw output from one local terminal session without exposing the
+/// terminal implementation to the MCP bridge.
+pub trait LocalTerminalOutputReceiver: Send {
+    fn recv<'a>(&'a mut self) -> BoxFuture<'a, Result<Vec<u8>, String>>;
+}
+
+/// Narrow local-terminal capability used by MCP tools. The shell composes an
+/// adapter from the application's terminal registry; the MCP crate does not
+/// own or discover terminal sessions.
+pub trait LocalTerminalAccess: Send + Sync {
+    fn write(&self, session_id: &str, data: String) -> Result<(), String>;
+    fn subscribe(&self, session_id: &str) -> Result<Box<dyn LocalTerminalOutputReceiver>, String>;
+}
+
 pub mod preferences;
 
 /// Which terminal target a grant addresses.
@@ -47,7 +61,6 @@ pub struct SessionGrantRequest {
     pub granted: bool,
     pub label: String,
     pub kind: SessionKind,
-    pub local_pty_id: Option<u32>,
     pub host_id: Option<String>,
 }
 

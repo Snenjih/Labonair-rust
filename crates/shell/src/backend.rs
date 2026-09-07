@@ -11,7 +11,6 @@ use std::sync::{Arc, Mutex as StdMutex};
 
 use labonair_backend::events::EventBus;
 use labonair_backend::modules::mcp::McpState;
-use labonair_backend::modules::pty::PtyState;
 use labonair_backend::modules::sftp::{
     ConflictMap, TransferSettings, TransferWorkerState, WorkerMessage,
 };
@@ -28,7 +27,6 @@ pub struct BackendCompositionInner {
     pub(crate) ssh: SshState,
     pub(crate) trust: TrustState,
     pub(crate) tunnels: TunnelState,
-    pub(crate) pty: Arc<PtyState>,
     pub(crate) snippet_run: Arc<SnippetRunState>,
     pub(crate) mcp: McpState,
     pub(crate) transfer: TransferWorkerState,
@@ -70,7 +68,6 @@ impl BackendComposition {
             ssh: SshState::default(),
             trust: TrustState::default(),
             tunnels: TunnelState::default(),
-            pty: Arc::new(PtyState::default()),
             snippet_run: Arc::new(SnippetRunState::default()),
             mcp: McpState::default(),
             transfer,

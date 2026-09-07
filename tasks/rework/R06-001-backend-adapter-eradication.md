@@ -210,7 +210,14 @@ boundary still exists; that package must not become a second capability owner.
       shell composition now use the canonical `labonair-secrets` state and
       operations directly.
 - [x] SSH secret access and jump-host resolution no longer take the aggregate
-      `App`; they receive only their actual state dependencies.
+  `App`; they receive only their actual state dependencies.
+- [x] Local MCP terminal access now uses an injected `LocalTerminalAccess`
+  capability backed by the real `labonair-terminal::TerminalRegistry`; the
+  obsolete `local_pty_id` grant field and duplicate backend PTY implementation
+  were removed.
+- [x] Shared OSC 7/133 shell-integration payloads moved into the UI-free
+  `labonair-terminal-integration` protocol crate, consumed by both local PTY
+  and remote SSH adapters.
 - [ ] Move the remaining contracts and adapters behind injected capability
       services.
 - [ ] Delete the broad `App` facade paths and remaining compatibility edges.

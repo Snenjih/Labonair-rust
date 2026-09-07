@@ -71,6 +71,7 @@ pub struct TerminalSession {
     dimensions: TermDimensions,
     shell_pid: Option<u32>,
     reader_thread: Option<JoinHandle<()>>,
+    agent_tap: tokio::sync::broadcast::Sender<Vec<u8>>,
 }
 
 impl TerminalSession {
@@ -163,6 +164,8 @@ impl TerminalSession {
             }
         }
 
+        let (agent_tap, _) = tokio::sync::broadcast::channel(256);
+        let reader_agent_tap = agent_tap.clone();
         let reader_thread = {
             let emulator = Arc::clone(&emulator);
             let writer = Arc::clone(&writer);
@@ -175,6 +178,7 @@ impl TerminalSession {
                         match reader.read(&mut buf) {
                             Ok(0) => break,
                             Ok(n) => {
+                                let _ = reader_agent_tap.send(buf[..n].to_vec());
                                 let mut guard = match emulator.lock() {
                                     Ok(g) => g,
                                     Err(_) => break,
@@ -224,6 +228,7 @@ impl TerminalSession {
             dimensions,
             shell_pid,
             reader_thread: Some(reader_thread),
+            agent_tap,
         })
     }
 
@@ -280,6 +285,12 @@ impl TerminalSession {
         let mut writer = self.writer.lock().map_err(|_| "pty writer poisoned")?;
         writer.write_all(bytes).map_err(|e| e.to_string())?;
         writer.flush().map_err(|e| e.to_string())
+    }
+
+    /// Subscribe to raw output without consuming the stream used by the
+    /// visible terminal renderer. This is an agent/MCP observation path only.
+    pub fn subscribe_agent_output(&self) -> tokio::sync::broadcast::Receiver<Vec<u8>> {
+        self.agent_tap.subscribe()
     }
 
     /// Resize both the emulator grid and the underlying PTY.

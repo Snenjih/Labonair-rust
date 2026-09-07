@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 gpui = { workspace = true }
 labonair-theme = { path = "../theme" }
+labonair-terminal-integration = { path = "../terminal-integration" }
 alacritty_terminal = { workspace = true }
 flate2 = "1"
 portable-pty = { workspace = true }

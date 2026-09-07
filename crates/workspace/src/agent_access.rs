@@ -24,8 +24,8 @@ use labonair_notifications::{notification_center, Notification};
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AgentAccessEntry {
     pub tab_id: u64,
-    /// Backend session id (the SSH `ssh_id` UUID for SSH tabs, empty for
-    /// local tabs which are addressed by `local_pty_id` instead).
+    /// Backend session id (the SSH `ssh_id` UUID for SSH tabs or the numeric
+    /// terminal-registry id for local tabs).
     pub session_id: String,
     pub label: String,
 }
@@ -122,7 +122,6 @@ impl AgentAccessStore {
         label: String,
         kind: SessionKind,
         host_id: Option<String>,
-        local_pty_id: Option<u32>,
         cx: &mut Context<Self>,
     ) {
         let mcp_access = self.mcp_access.clone();
@@ -136,7 +135,6 @@ impl AgentAccessStore {
                     granted,
                     label: label_for_service,
                     kind,
-                    local_pty_id,
                     host_id,
                 })
                 .await

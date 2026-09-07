@@ -24,6 +24,7 @@ members = [
     "crates/panel-snippets",
     "crates/shell",
     "crates/terminal",
+    "crates/terminal-integration",
     "crates/editor",
     "crates/filesystem",
     "crates/secrets",

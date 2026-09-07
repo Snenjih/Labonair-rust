@@ -1,0 +1,8 @@
+[package]
+name = "labonair-terminal-integration"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "labonair_terminal_integration"
+path = "src/lib.rs"

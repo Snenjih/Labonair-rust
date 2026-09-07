@@ -22,11 +22,7 @@ use std::path::{Path, PathBuf};
 
 use portable_pty::CommandBuilder;
 
-pub(crate) const ZSHENV: &str = include_str!("scripts/zshenv.zsh");
-pub(crate) const ZPROFILE: &str = include_str!("scripts/zprofile.zsh");
-pub(crate) const ZLOGIN: &str = include_str!("scripts/zlogin.zsh");
-pub(crate) const ZSHRC: &str = include_str!("scripts/zshrc.zsh");
-pub(crate) const BASHRC: &str = include_str!("scripts/bashrc.bash");
+pub use labonair_terminal_integration::{BASHRC, ZLOGIN, ZPROFILE, ZSHENV, ZSHRC};
 
 /// The shell family we can install integration for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

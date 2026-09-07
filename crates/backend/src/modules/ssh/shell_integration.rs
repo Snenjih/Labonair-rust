@@ -18,7 +18,7 @@
 // no integration, mirroring `Shell::Other` locally: cwd then falls back to
 // whatever `useExplorerTarget` already had (host default / static root)
 // instead of following `cd`.
-use crate::modules::pty::shell_init::{BASHRC, ZLOGIN, ZPROFILE, ZSHENV, ZSHRC};
+use labonair_terminal_integration::{BASHRC, ZLOGIN, ZPROFILE, ZSHENV, ZSHRC};
 
 const HEREDOC_DELIM: &str = "LABONAIR_EOF";
 

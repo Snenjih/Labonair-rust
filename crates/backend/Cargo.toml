@@ -25,9 +25,6 @@ russh-sftp = "2.3.0"
 # SQLite
 rusqlite = { version = "0.40", features = ["bundled"] }
 
-# PTY
-portable-pty = "0.9"
-
 # Async
 tokio = { version = "1", features = ["full"] }
 tokio-util = "0.7"
@@ -44,7 +41,7 @@ log = "0.4"
 rand = { version = "0.8", features = ["getrandom"] }
 md5 = "0.7"
 openssl = { version = "0.10", features = ["vendored"] }
-base64 = "0.22"
+labonair-terminal-integration = { path = "../terminal-integration" }
 
 # Filesystem search
 ignore = "0.4"

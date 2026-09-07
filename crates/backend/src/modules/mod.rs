@@ -1,6 +1,5 @@
 pub mod git;
 pub mod mcp;
-pub mod pty;
 pub mod sftp;
 pub mod snippets;
 pub mod ssh;

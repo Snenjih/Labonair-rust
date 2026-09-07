@@ -704,3 +704,19 @@ keymaps, notifications, transfers, and workspace layout are not Settings
 categories or duplicate state owners. The complete workspace gates pass,
 including serial tests, check, Clippy, dependency verification, queue
 validation, formatting, and diff checks. R05-001 is closed; R06-001 is next.
+
+## R06-001 local terminal capability boundary
+
+The old backend `PtyState` was a second local PTY implementation. It was not
+the session registry used by Workspace, and local MCP grants were therefore
+stored with a stale numeric `local_pty_id` address while Workspace always
+created sessions in `labonair-terminal::TerminalRegistry`.
+
+The MCP core now exposes `LocalTerminalAccess` and a raw-output receiver
+contract. Shell composition adapts the real terminal registry into that
+contract; MCP writes and output capture use the same local session id as the
+visible terminal. The duplicate backend PTY module and obsolete grant field
+were deleted. Shared OSC 7/133 shell scripts were moved to the UI-free
+`labonair-terminal-integration` crate and are consumed by both local and SSH
+adapters. Workspace compile, Clippy, tests, dependency, queue, format, and
+diff gates pass.

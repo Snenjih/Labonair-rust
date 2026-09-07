@@ -4174,7 +4174,6 @@ name = "labonair-backend"
 version = "0.1.0"
 dependencies = [
  "axum",
- "base64",
  "dirs 6.0.0",
  "flate2",
  "globset",
@@ -4191,12 +4190,12 @@ dependencies = [
  "labonair-sftp",
  "labonair-snippets",
  "labonair-ssh",
+ "labonair-terminal-integration",
  "labonair-transfers",
  "libc",
  "log",
  "md5 0.7.0",
  "openssl",
- "portable-pty",
  "rand 0.8.8",
  "rmcp",
  "rusqlite",
@@ -4678,12 +4677,17 @@ dependencies = [
  "flate2",
  "gpui",
  "labonair-command-palette-core",
+ "labonair-terminal-integration",
  "labonair-theme",
  "libc",
  "portable-pty",
  "tokio",
  "uuid",
 ]
+
+[[package]]
+name = "labonair-terminal-integration"
+version = "0.1.0"
 
 [[package]]
 name = "labonair-theme"

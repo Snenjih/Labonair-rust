@@ -228,9 +228,13 @@ ALLOWED = {
 
     # Engines — rule 4: no UI dep.
     # [deviation] labonair-terminal pulls labonair-theme (leaf token crate)
-    # for its ANSI palette; a deeper engine/renderer split is future work
-    # (see docs/perf-baseline.md). It must reach nothing else.
-    "labonair-terminal": {"labonair-theme", "labonair-command-palette-core"},
+    # for its ANSI palette; shell-integration payloads stay in a UI-free
+    # protocol crate shared with the remote SSH adapter.
+    "labonair-terminal-integration": set(),
+    "labonair-terminal": {
+        "labonair-theme", "labonair-command-palette-core",
+        "labonair-terminal-integration",
+    },
     "labonair-editor": {
         "labonair-command-palette-core", "labonair-interaction-contracts",
     },
@@ -241,7 +245,7 @@ ALLOWED = {
         "labonair-errors", "labonair-hosts", "labonair-persistence",
         "labonair-credentials", "labonair-snippets", "labonair-git",
         "labonair-ssh", "labonair-sftp", "labonair-transfers",
-        "labonair-mcp-core",
+        "labonair-mcp-core", "labonair-terminal-integration",
     },
     "labonair-ai": {"labonair-filesystem"},
 

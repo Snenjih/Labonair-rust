@@ -163,9 +163,9 @@ impl SshEventSink for WorkspaceSshEventSink {
 /// off the event bus and drained in `render` where a `&mut Window` is available
 /// — the bridge itself cannot touch tab state (tabs are pure UI), so it emits a
 /// request event and waits on a `oneshot` for [`mcp_tab_op_response`].
-/// `(session_id, label, kind, host_id, local_pty_id)` for a tab that can be
+/// `(session_id, label, kind, host_id)` for a tab that can be
 /// granted MCP agent access — see [`Workspace::mcp_grant_target`].
-type McpGrantTarget = (String, String, SessionKind, Option<String>, Option<u32>);
+type McpGrantTarget = (String, String, SessionKind, Option<String>);
 
 enum McpTabOp {
     Open {
@@ -2478,7 +2478,6 @@ impl Workspace {
                     String::new(),
                     SessionKind::Ssh,
                     None,
-                    None,
                     cx,
                 );
             });
@@ -2545,7 +2544,6 @@ impl Workspace {
                             granted: false,
                             label: String::new(),
                             kind: SessionKind::Ssh,
-                            local_pty_id: None,
                             host_id: None,
                         })
                         .await;
@@ -2856,7 +2854,6 @@ impl Workspace {
                     granted: true,
                     label,
                     kind: SessionKind::Ssh,
-                    local_pty_id: None,
                     host_id: Some(host_id),
                 })
                 .await
@@ -4688,7 +4685,7 @@ impl Workspace {
                     }
                 }),
         );
-        if let Some((session_id, label, gkind, host_id, pty)) = grant_target {
+        if let Some((session_id, label, gkind, host_id)) = grant_target {
             items.push(MenuItem::separator());
             items.push(
                 MenuItem::new("mcp-grant", "Grant AI Agent Access")
@@ -4709,7 +4706,6 @@ impl Workspace {
                                         label,
                                         gkind,
                                         host_id,
-                                        pty,
                                         cx,
                                     );
                                 });
@@ -4751,18 +4747,11 @@ impl Workspace {
                 label,
                 SessionKind::Ssh,
                 Some(ssh.host_id.clone()),
-                None,
             ));
         }
         if tab.kind == TabKind::Workspace {
             if let Some(sid) = tab.data.session_id {
-                return Some((
-                    String::new(),
-                    label,
-                    SessionKind::Local,
-                    None,
-                    Some(sid as u32),
-                ));
+                return Some((sid.to_string(), label, SessionKind::Local, None));
             }
         }
         None

@@ -15,7 +15,7 @@ use labonair_mcp_core::{SessionKind, TabOpResult};
 #[derive(Clone)]
 pub struct McpServerAccess {
     pub(crate) ssh: crate::modules::ssh::SshState,
-    pub(crate) pty: Arc<crate::modules::pty::PtyState>,
+    pub(crate) local_terminal: Arc<dyn labonair_mcp_core::LocalTerminalAccess>,
     pub(crate) db: labonair_persistence::Database,
     pub(crate) secrets: Arc<labonair_secrets::SecretsState>,
     pub(crate) events: crate::EventBus,
@@ -24,14 +24,14 @@ pub struct McpServerAccess {
 impl McpServerAccess {
     pub fn new(
         ssh: crate::modules::ssh::SshState,
-        pty: Arc<crate::modules::pty::PtyState>,
+        local_terminal: Arc<dyn labonair_mcp_core::LocalTerminalAccess>,
         db: labonair_persistence::Database,
         secrets: Arc<labonair_secrets::SecretsState>,
         events: crate::EventBus,
     ) -> Self {
         Self {
             ssh,
-            pty,
+            local_terminal,
             db,
             secrets,
             events,
@@ -100,7 +100,6 @@ pub struct SessionGrant {
     pub granted: bool,
     pub label: String,
     pub kind: SessionKind,
-    pub local_pty_id: Option<u32>,
     /// `Some` only for SSH grants — used to re-check the host's "Block AI
     /// Agent Access" flag live at tool-execution time, not just at grant
     /// time (see `host_blocks_agent_access`).
@@ -322,7 +321,6 @@ pub async fn mcp_set_session_grant(
     granted: bool,
     label: String,
     kind: SessionKind,
-    local_pty_id: Option<u32>,
     host_id: Option<String>,
     hosts_db: &labonair_persistence::Database,
     state: &McpState,
@@ -342,7 +340,6 @@ pub async fn mcp_set_session_grant(
                 granted,
                 label,
                 kind,
-                local_pty_id,
                 host_id,
             },
         );
