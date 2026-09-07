@@ -337,3 +337,14 @@ as active rather than pending removal from Settings. Full workspace tests,
 check, Clippy, dependency, queue, formatting, and diff checks pass.
 Committed as `c6e9890`; R05-001 remains active for the next indirect Appearance
 field audit.
+
+## R05-001 Appearance layout cleanup
+
+Removed the five Appearance values with no native runtime consumer:
+`sidebarTabInfoLine`, `sidebarGroupByFolder`, `sidebarGroupSingleTabs`,
+`badgesAlwaysVisible`, and `titlebarsIconsPosition`. They are gone from the
+typed model, defaults, generated Settings UI, and v1 migration target while
+the legacy Preferences wire shape remains readable for old files. The
+inventory now records them as remove-only compatibility input. Full workspace
+tests, check, Clippy, dependency, queue, formatting, and diff checks pass.
+Committed as `d596df2`; R05-001 remains active for indirect consumer proof.
