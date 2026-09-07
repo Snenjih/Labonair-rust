@@ -51,7 +51,7 @@ pub fn revoke_agent_access(
     drop(grants);
 
     for tab_id in expired {
-        app.emit_event(crate::AppEvent::McpGrantExpired { tab_id })
+        app.emit("mcp_grant_expired", serde_json::json!({ "tab_id": tab_id }))
             .map_err(labonair_errors::LabonairError::Internal)?;
     }
     Ok(())

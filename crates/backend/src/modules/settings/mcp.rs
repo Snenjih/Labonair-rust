@@ -11,7 +11,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::modules::fs::paths::config_dir;
+use labonair_filesystem::paths::config_dir;
 
 use super::CONFIG_FILE;
 const KEY: &str = "mcp";

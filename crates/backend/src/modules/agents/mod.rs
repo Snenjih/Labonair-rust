@@ -8,7 +8,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::modules::fs::paths::config_dir;
+use labonair_filesystem::paths::config_dir;
 
 const AGENTS_FILE: &str = "labonair-agents.json";
 

@@ -5,7 +5,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::modules::fs::paths::config_dir;
+use labonair_filesystem::paths::config_dir;
 
 const FILE: &str = "labonair-model-prefs.json";
 const RECENT_CAP: usize = 8;

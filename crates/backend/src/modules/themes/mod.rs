@@ -76,7 +76,7 @@ fn is_protected(id: &str) -> bool {
 }
 
 fn themes_dir(_app: &crate::App) -> Result<PathBuf, String> {
-    let dir = crate::modules::fs::paths::config_dir().join("themes");
+    let dir = labonair_filesystem::paths::config_dir().join("themes");
     if !dir.exists() {
         std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     }

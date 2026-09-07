@@ -22,7 +22,7 @@ removal conditions.
 | `command-palette-core` | UI-free command descriptors and registry (new migration boundary) | command-palette module | Keep metadata and provider discovery here; feature-owned behavior remains outside the palette. Initial owner providers now live in workspace, terminal, editor, hosts, theme, and settings crates. |
 | `command-palette` | Palette UI, dynamic sub-pages, and transitional duplicate shell dispatch integration | command-palette module | Consume the core registry; global-menu navigation is typed; remove static entries and the duplicate shell registry. |
 | `editor` | Editor engine | editor module | Separate core from workspace view. |
-| `filesystem` | Local file access, traversal, mutation, search, and watcher implementation | foundation/platform service | First extracted service boundary; only the legacy `AppEvent` adapter remains in `backend` temporarily. |
+| `filesystem` | Local file access, traversal, mutation, search, and watcher implementation | foundation/platform service | Canonical owner; backend watcher state and filesystem compatibility re-exports have been removed. |
 | `secrets` | Encrypted/plain local secret store and secret cache | foundation/platform service | Extracted from `backend`; backend keeps a compatibility adapter while SSH/Hosts/MCP migrate. |
 | `errors` | Structured error catalog and recovery hints | foundation/platform contract | Extracted from `backend`; the backend compatibility module and root re-exports were removed in R06-001's first boundary. |
 | `hosts` | Saved-host and host-group domain contract plus host store | hosts module | Models, host persistence, canonical picker snapshots, and typed SSH/SFTP requests are standalone; the shell composes one manager/window instance. Only the MCP event adapter and transport implementations remain transitional in `backend`. |
@@ -140,7 +140,7 @@ The current Cargo metadata shows several transitional edges that conflict with t
   from derived parsing/validation state, providing the lossless foundation for
   the dedicated keymap management/editor surface.
 - `backend` exposes a broad `App`, global event bus, and unrelated modules under one public crate.
-- `backend` still owns the filesystem watcher adapter because it emits directly through the legacy app event bus; the actual watcher implementation now belongs to `labonair-filesystem`.
+- `labonair-filesystem` now owns the complete filesystem boundary. The backend no longer carries watcher state, watcher adapters, or filesystem compatibility re-exports; no filesystem event is synthesized through the global backend bus.
 - `backend` still owns the public secret API adapter even though storage now belongs to `labonair-secrets`; existing SSH/Hosts/MCP call sites still pass the backend app handle.
 - `backend` no longer re-exports the structured error contract; backend transport code imports `labonair-errors` directly. The stale `labonair-ai → backend` dependency was also removed because AI already consumes `labonair-filesystem` directly. System-font discovery now belongs to `labonair-theme`; the unused backend custom-font module was removed. The remaining facade exports are tracked in [`backend-facade-inventory.md`](backend-facade-inventory.md).
 - Host CRUD/domain ownership and its compatibility signatures have left

@@ -32,7 +32,7 @@ participate in the `App` state graph or in another backend module.
 | `credentials` | credential CRUD adapters and credential values | none found | credentials owner; callers should use `labonair-credentials` contracts |
 | `directives` | directive values and local persistence helpers | none found | AI/agent owner; remove if no current workflow needs it |
 | `fonts` | custom-font file operations and system-font discovery | `shell::settings_services` | system-font discovery moved to `labonair-theme`; the unconsumed custom-font path and backend module were removed |
-| `fs` | filesystem re-exports and watcher command adapters | no active module import found | filesystem foundation; delete compatibility wrapper after watcher consumers are migrated |
+| `fs` | removed | no active consumers | filesystem foundation owns paths, operations, and watchers; backend compatibility module and dead watcher adapter removed |
 | `git` | Git operation functions and `BackendGitService` / graph adapter | `shell::bootstrap`, `workspace` | `labonair-git` integration adapter; keep transport implementation narrow |
 | `mcp` | MCP state, grants, server operations, host revocation callback | `shell`, `workspace`; internal PTY/secrets use | `labonair-mcp-core` owns UI-free grant and tab-operation contracts; backend remains the injected bridge adapter for aggregate server state and still needs App extraction |
 | `model_prefs` | model preference values and local load/save | none found | AI owner; verify against current AI configuration before moving |
@@ -97,6 +97,12 @@ and remains the explicit bridge to aggregate MCP implementation state. The
 legacy global event bus stays inside shell-composed adapters; Workspace
 receives typed `SshConnectionEvent` and `McpEvent` values through injected
 sources and has no direct backend dependency.
+
+The dead backend filesystem watcher and `App::watcher` state were removed after
+source search confirmed that active Explorer and Settings consumers already use
+`labonair-filesystem` directly. Backend feature modules now import the canonical
+filesystem paths directly, so there is no remaining `backend::modules::fs`
+compatibility layer.
 
 ## Verification commands
 

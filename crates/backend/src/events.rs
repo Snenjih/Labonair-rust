@@ -5,13 +5,9 @@
 //! streaming sink (the old `ipc::Channel<T>`). The GPUI UI layer supplies the
 //! concrete sinks.
 //!
-//! Two layers sit on the bus:
 //! * [`RawEvent`] — the wire form actually carried by the broadcast channel: a
-//!   name plus a JSON payload. Every ported backend call site emits this via
-//!   `App::emit("name", payload)`, unchanged from the mechanical Tauri strip.
-//! * [`AppEvent`] — a typed enum over the well-known backend → UI events. New
-//!   code can emit it with [`EventBus::emit_event`] and subscribers can recover
-//!   it from a [`RawEvent`] with [`AppEvent::from_raw`] (`T01-004`).
+//!   name plus a JSON payload. Capability owners expose typed event sources at
+//!   their boundaries; this bus remains only as a legacy backend adapter.
 
 use std::sync::Arc;
 
@@ -58,30 +54,10 @@ impl EventBus {
         });
         Ok(())
     }
-
-    /// Emit a typed [`AppEvent`]. Serializes to the same flat `(name, payload)`
-    /// wire form the equivalent string call sites use, so typed and string
-    /// emitters interoperate on one channel.
-    pub fn emit_event(&self, event: AppEvent) -> Result<(), String> {
-        let name = event.event_name();
-        // Externally-tagged: `{ "variant": { ..fields } }` — unwrap to the flat
-        // field object so the payload matches the string call sites' shape.
-        let payload = serde_json::to_value(&event)
-            .map_err(|e| e.to_string())?
-            .as_object()
-            .and_then(|m| m.values().next().cloned())
-            .unwrap_or(serde_json::Value::Null);
-        let _ = self.tx.send(RawEvent {
-            name: name.to_string(),
-            payload,
-        });
-        Ok(())
-    }
 }
 
-/// Typed backend → UI events. On the wire each variant is emitted as a flat
-/// field object under its [`event_name`](AppEvent::event_name) — the same shape
-/// the equivalent string call sites already emit; the name carries the
+/// Typed backend → UI events decoded by capability-owned adapters. The legacy
+/// bus carries each event as a flat field object; the name carries the
 /// discriminant, exactly as Tauri's event name did.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -137,11 +113,6 @@ pub enum AppEvent {
         message: String,
     },
 
-    // Filesystem
-    DirChanged {
-        path: String,
-    },
-
     // Native menus
     MenuActivated {
         action: String,
@@ -180,29 +151,6 @@ pub enum AppEvent {
 }
 
 impl AppEvent {
-    /// The bus event name for this variant — matches the string the equivalent
-    /// pre-existing call site emits.
-    pub fn event_name(&self) -> &'static str {
-        match self {
-            AppEvent::TransferProgress { .. } => "transfer_progress",
-            AppEvent::TransferCompleted { .. } => "transfer_completed",
-            AppEvent::FileConflict { .. } => "file_conflict",
-            AppEvent::SshSessionEstablished { .. } => "session_established",
-            AppEvent::SshAuthRequired { .. } => "auth_required",
-            AppEvent::SshPassphraseRequired { .. } => "passphrase_required",
-            AppEvent::SshKnownHostsWarning { .. } => "known_hosts_warning",
-            AppEvent::SshConnectionLost { .. } => "ssh_connection_lost",
-            AppEvent::SshConnectLog { .. } => "ssh_connect_log",
-            AppEvent::DirChanged { .. } => "fs:dir-changed",
-            AppEvent::MenuActivated { .. } => "menu:activated",
-            AppEvent::McpOpenTabRequest { .. } => "mcp_open_tab_request",
-            AppEvent::McpCloseTabRequest { .. } => "mcp_close_tab_request",
-            AppEvent::McpGrantExpired { .. } => "mcp_grant_expired",
-            AppEvent::McpServerError { .. } => "mcp_server_error",
-            AppEvent::McpActivity { .. } => "mcp_activity",
-        }
-    }
-
     /// Recover a typed event from a raw bus event, or `None` if the name is not
     /// a known typed variant or the payload does not fit it.
     pub fn from_raw(raw: &RawEvent) -> Option<Self> {
@@ -220,7 +168,6 @@ impl AppEvent {
             "known_hosts_warning" => "ssh_known_hosts_warning",
             "ssh_connection_lost" => "ssh_connection_lost",
             "ssh_connect_log" => "ssh_connect_log",
-            "fs:dir-changed" => "dir_changed",
             "menu:activated" => "menu_activated",
             "mcp_open_tab_request" => "mcp_open_tab_request",
             "mcp_close_tab_request" => "mcp_close_tab_request",
@@ -268,24 +215,6 @@ impl<T> EventChannel<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[tokio::test]
-    async fn typed_emit_round_trips_through_from_raw() {
-        let bus = EventBus::new();
-        let mut rx = bus.subscribe();
-
-        bus.emit_event(AppEvent::DirChanged {
-            path: "/tmp/x".into(),
-        })
-        .unwrap();
-
-        let raw = rx.recv().await.unwrap();
-        assert_eq!(raw.name, "fs:dir-changed");
-        match AppEvent::from_raw(&raw) {
-            Some(AppEvent::DirChanged { path }) => assert_eq!(path, "/tmp/x"),
-            other => panic!("unexpected decode: {other:?}"),
-        }
-    }
 
     #[test]
     fn from_raw_decodes_string_call_site_payload_with_extra_fields() {

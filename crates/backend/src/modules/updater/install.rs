@@ -236,13 +236,13 @@ fn last_check_path(dir: &Path) -> PathBuf {
 
 /// Record "an update check ran now" so [`should_auto_check`] backs off.
 pub fn record_check_now() {
-    record_check_now_in(&crate::modules::fs::paths::config_dir());
+    record_check_now_in(&labonair_filesystem::paths::config_dir());
 }
 
 /// Should the app run a background update check? `true` when there is no record
 /// or the last one is older than [`CHECK_INTERVAL`].
 pub fn should_auto_check() -> bool {
-    should_auto_check_in(&crate::modules::fs::paths::config_dir())
+    should_auto_check_in(&labonair_filesystem::paths::config_dir())
 }
 
 pub(crate) fn record_check_now_in(dir: &Path) {

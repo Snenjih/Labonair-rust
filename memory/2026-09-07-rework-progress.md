@@ -79,6 +79,13 @@ an internal source of the shell-composed backend adapters. Full workspace
 check, Clippy, tests, dependency, queue, format, and diff gates passed for
 this boundary.
 
+The unconsumed backend filesystem watcher and `App::watcher` state were removed.
+Backend modules now import `labonair-filesystem::paths` directly, and the
+backend filesystem compatibility module was deleted. The unproduced
+`fs:dir-changed` typed event and the unused global typed-emitter helper were
+removed as well; MCP grant revocation keeps its existing legacy wire event
+through `App::emit` until the remaining backend adapter is extracted.
+
 ## Native visual verification
 
 The exact Rust bundle was opened through its absolute `.app` path. Core

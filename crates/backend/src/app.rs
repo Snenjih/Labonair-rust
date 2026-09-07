@@ -8,8 +8,7 @@ use std::sync::{Arc, Mutex as StdMutex};
 
 use serde::Serialize;
 
-use crate::events::{AppEvent, EventBus};
-use crate::modules::fs::watcher::WatcherState;
+use crate::events::EventBus;
 use crate::modules::mcp::McpState;
 use crate::modules::pty::PtyState;
 use crate::modules::secrets::SecretsState;
@@ -32,7 +31,6 @@ pub struct AppInner {
     pub shell: ShellState,
     pub snippet_run: Arc<SnippetRunState>,
     pub terminal_exec: TerminalExecState,
-    pub watcher: WatcherState,
     pub mcp: McpState,
     pub transfer: TransferWorkerState,
     worker_rx: StdMutex<Option<tokio::sync::mpsc::Receiver<WorkerMessage>>>,
@@ -81,7 +79,6 @@ impl App {
             shell: ShellState::default(),
             snippet_run: Arc::new(SnippetRunState::default()),
             terminal_exec: TerminalExecState::default(),
-            watcher: WatcherState::default(),
             mcp: McpState::default(),
             transfer,
             worker_rx: StdMutex::new(Some(rx)),
@@ -106,10 +103,5 @@ impl App {
     /// Emit an app-wide event (replaces `window.emit`).
     pub fn emit<S: Serialize>(&self, name: &str, payload: S) -> Result<(), String> {
         self.events.emit(name, payload)
-    }
-
-    /// Emit a typed app-wide event.
-    pub fn emit_event(&self, event: AppEvent) -> Result<(), String> {
-        self.events.emit_event(event)
     }
 }

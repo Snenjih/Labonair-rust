@@ -6,7 +6,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::modules::fs::paths::config_dir;
+use labonair_filesystem::paths::config_dir;
 
 const DIRECTIVES_FILE: &str = "labonair-directives.json";
 

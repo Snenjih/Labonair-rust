@@ -124,6 +124,9 @@ boundary still exists; that package must not become a second capability owner.
 - [x] Replaced Workspace's direct global event-bus subscription with injected
       typed `SshEventSource` and `McpEventSource` contracts; backend event
       decoding now stays inside shell-composed adapters.
+- [x] Removed the unconsumed backend filesystem watcher, `App::watcher` state,
+      and `backend::modules::fs` compatibility layer; filesystem paths and
+      watcher ownership now stay in `labonair-filesystem`.
 - [ ] Move the remaining contracts and adapters behind injected capability
       services.
 - [ ] Delete the broad `App` facade paths and remaining compatibility edges.
