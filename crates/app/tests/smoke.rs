@@ -12,7 +12,7 @@
 
 use std::time::{Duration, Instant};
 
-use labonair_backend::{UpdateManifest, CURRENT_VERSION};
+use labonair_backend::modules::updater::{UpdateManifest, CURRENT_VERSION};
 use labonair_terminal::{SessionOptions, TermDimensions, TerminalColors, TerminalSession};
 
 #[test]

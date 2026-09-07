@@ -9,9 +9,3 @@ pub mod modules;
 
 pub use app::{App, AppState};
 pub use events::{AppEvent, EventBus, EventChannel, RawEvent};
-pub use modules::updater::{
-    apply_macos_update, current_app_bundle, download_update, fetch_manifest, manifest_update,
-    record_check_now, relaunch, should_auto_check, verify_update, AvailableUpdate,
-    DownloadProgress, SemVer, UpdateManifest, UpdatePlatform, CHECK_INTERVAL, CURRENT_VERSION,
-    DEFAULT_UPDATE_ENDPOINT, UPDATE_PUBLIC_KEY, UPDATE_TARGET,
-};

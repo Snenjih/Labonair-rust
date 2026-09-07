@@ -17,7 +17,7 @@ a concrete platform adapter with a named consumer and removal condition.
 |---|---|---|---|---|
 | `App` / `AppState` and `AppInner` | `backend::app` | `app`, `shell`, `workspace`, backend adapters | application composition plus injected capability services | Broad facade remains; split is the main task |
 | `AppEvent`, `EventBus`, `EventChannel`, `RawEvent` | `backend::events` | `app`, `workspace::backend_event_bridge`, SSH/SFTP/transfer adapters | typed capability events and explicit transport adapters | Legacy global bus remains transitional |
-| updater constants and operations | `backend::modules::updater` | `shell::updater` | updater/application boundary | Narrow enough to migrate independently |
+| updater constants and operations | `backend::modules::updater` | `shell::updater`, app smoke tests | updater/application boundary | Root re-export removed; consumers use the updater module directly |
 | structured errors | formerly `backend::modules::errors` and root re-exports | no external backend import remains | `labonair-errors` | Root re-export and module removed in the first R06 slice |
 
 ## Module export and consumer map

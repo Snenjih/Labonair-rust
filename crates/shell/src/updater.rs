@@ -21,7 +21,7 @@ use gpui::{
     ParentElement, Render, SharedString, StatefulInteractiveElement, Styled, Window,
 };
 use labonair_backend::modules::updater as backend;
-use labonair_backend::AvailableUpdate;
+use labonair_backend::modules::updater::AvailableUpdate;
 use tokio::runtime::Handle as TokioHandle;
 
 use crate::theme::ThemeStore;
@@ -512,7 +512,7 @@ impl UpdaterView {
 mod tests {
     use super::*;
     use gpui::{AppContext as _, TestAppContext};
-    use labonair_backend::AvailableUpdate;
+    use labonair_backend::modules::updater::AvailableUpdate;
 
     fn view(cx: &mut TestAppContext) -> (Entity<UpdaterView>, tokio::runtime::Runtime) {
         let rt = tokio::runtime::Runtime::new().unwrap();
