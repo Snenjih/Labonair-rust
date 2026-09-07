@@ -60,6 +60,12 @@ palette UI crate. `labonair-keymap` may depend on the command contract to
 publish keymap-owned commands, while the command contract depends only on the
 identity foundation. This one-way direction keeps the graph acyclic.
 
+Persisted keymap action names cross into the runtime through one canonical
+resolver (`keymap::runtime::command_for_action`). Platform adapters may map the
+resulting `CommandId` to GPUI actions, but they must not introduce a second
+string alias table. Rich GPUI context predicates remain an adapter concern;
+portable keymap resolution uses typed command contexts.
+
 ## 4. Target workspace crate map
 
 ### Foundation

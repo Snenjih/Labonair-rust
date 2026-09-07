@@ -6,6 +6,13 @@ use labonair_command_palette_core::{CommandContext, CommandId};
 
 use crate::normalize;
 
+/// Resolve a persisted action name, including migration aliases, at the
+/// keymap boundary. Consumers should use the typed command identity from the
+/// result instead of maintaining their own string tables.
+pub fn command_for_action(name: &str) -> Option<CommandId> {
+    CommandId::from_action_name(name)
+}
+
 /// One validated binding supplied by a keymap layer.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct KeymapBinding {
@@ -135,5 +142,18 @@ mod tests {
         assert_eq!(resolved.len(), 1);
         assert_eq!(resolved[0].keystrokes, "cmd-shift-d");
         assert_eq!(resolved[0].command, CommandId::OpenCommandPalette);
+    }
+
+    #[test]
+    fn action_aliases_resolve_before_runtime_adapters() {
+        assert_eq!(
+            command_for_action("settings::OpenShortcuts"),
+            Some(CommandId::OpenKeymapJson)
+        );
+        assert_eq!(
+            command_for_action("zed::OpenKeymap"),
+            Some(CommandId::OpenKeymapJson)
+        );
+        assert_eq!(command_for_action("unknown::Action"), None);
     }
 }

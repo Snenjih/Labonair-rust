@@ -27,6 +27,7 @@ use gpui::{
 };
 use std::rc::Rc;
 
+use labonair_command_palette_core::CommandId;
 use labonair_notifications::{notification_center, Notification};
 use labonair_settings::keymap::EffectiveBinding;
 
@@ -171,49 +172,47 @@ fn fixed_bindings() -> Vec<KeyBinding> {
 /// no concrete `Action` type (e.g. a palette-only sub-page navigator) — the
 /// caller skips + logs those instead of failing the whole keymap.
 fn action_for(name: &str) -> Option<Box<dyn Action>> {
-    Some(match name {
-        "command_palette::Toggle" => Box::new(CommandPalette),
-        // Preserve the legacy action name for existing keymap files while
-        // routing it to the canonical keymap-file surface.
-        "settings::OpenShortcuts" => Box::new(OpenKeymapJson),
-        "zed::OpenKeymap" => Box::new(OpenKeymapJson),
-        "tab::NewTerminal" => Box::new(NewTerminalTab),
-        "tab::NewPreview" => Box::new(NewPreviewTab),
-        "tab::NewEditor" => Box::new(NewEditorTab),
-        "tab::NewSsh" => Box::new(NewSshTab),
-        "tab::NewSftp" => Box::new(NewSftpTab),
-        "tab::Close" => Box::new(CloseTab),
-        "tab::Next" => Box::new(NextTab),
-        "tab::Prev" => Box::new(PrevTab),
-        "tab::Select1" => Box::new(SelectTab1),
-        "tab::Select2" => Box::new(SelectTab2),
-        "tab::Select3" => Box::new(SelectTab3),
-        "tab::Select4" => Box::new(SelectTab4),
-        "tab::Select5" => Box::new(SelectTab5),
-        "tab::Select6" => Box::new(SelectTab6),
-        "tab::Select7" => Box::new(SelectTab7),
-        "tab::Select8" => Box::new(SelectTab8),
-        "tab::Select9" => Box::new(SelectTab9),
-        "pane::SplitRight" => Box::new(SplitPaneRight),
-        "pane::SplitDown" => Box::new(SplitPaneDown),
-        "pane::Close" => Box::new(ClosePane),
-        "pane::FocusNext" => Box::new(FocusNextPane),
-        "search::Toggle" => Box::new(Find),
-        "sidebar::Toggle" => Box::new(ToggleSidebar),
-        "view::ToggleZenMode" => Box::new(ToggleZenMode),
-        "view::ZoomIn" => Box::new(ZoomIn),
-        "view::ZoomOut" => Box::new(ZoomOut),
-        "view::ZoomReset" => Box::new(ResetZoom),
-        "view::ToggleFullScreen" => Box::new(ToggleFullScreen),
-        "connections::OpenHostSettings" => Box::new(OpenHostSettings),
-        "connections::NewSshConnection" => Box::new(NewSshConnection),
-        "connections::NewQuickSsh" => Box::new(NewQuickSsh),
-        "settings::Open" => Box::new(OpenSettings),
-        "workspace::OpenProject" => Box::new(OpenProject),
-        "workspace::ReturnToStandalone" => Box::new(ReturnToStandalone),
-        "app::CheckForUpdates" => Box::new(CheckForUpdates),
-        "debug::CyclePanelDock" => Box::new(DebugCyclePanelDock),
-        "debug::ToggleDockZoom" => Box::new(DebugToggleDockZoom),
+    let command = labonair_keymap::runtime::command_for_action(name)?;
+    Some(match command {
+        CommandId::OpenCommandPalette => Box::new(CommandPalette),
+        CommandId::OpenKeymapJson => Box::new(OpenKeymapJson),
+        CommandId::NewTerminalTab => Box::new(NewTerminalTab),
+        CommandId::NewPreviewTab => Box::new(NewPreviewTab),
+        CommandId::NewEditorTab => Box::new(NewEditorTab),
+        CommandId::NewSshTab => Box::new(NewSshTab),
+        CommandId::NewSftpTab => Box::new(NewSftpTab),
+        CommandId::CloseTab => Box::new(CloseTab),
+        CommandId::NextTab => Box::new(NextTab),
+        CommandId::PrevTab => Box::new(PrevTab),
+        CommandId::SelectTab1 => Box::new(SelectTab1),
+        CommandId::SelectTab2 => Box::new(SelectTab2),
+        CommandId::SelectTab3 => Box::new(SelectTab3),
+        CommandId::SelectTab4 => Box::new(SelectTab4),
+        CommandId::SelectTab5 => Box::new(SelectTab5),
+        CommandId::SelectTab6 => Box::new(SelectTab6),
+        CommandId::SelectTab7 => Box::new(SelectTab7),
+        CommandId::SelectTab8 => Box::new(SelectTab8),
+        CommandId::SelectTab9 => Box::new(SelectTab9),
+        CommandId::SplitRight => Box::new(SplitPaneRight),
+        CommandId::SplitDown => Box::new(SplitPaneDown),
+        CommandId::ClosePane => Box::new(ClosePane),
+        CommandId::FocusNextPane => Box::new(FocusNextPane),
+        CommandId::Find => Box::new(Find),
+        CommandId::ToggleSidebar => Box::new(ToggleSidebar),
+        CommandId::ToggleZenMode => Box::new(ToggleZenMode),
+        CommandId::ZoomIn => Box::new(ZoomIn),
+        CommandId::ZoomOut => Box::new(ZoomOut),
+        CommandId::ZoomReset => Box::new(ResetZoom),
+        CommandId::ToggleFullScreen => Box::new(ToggleFullScreen),
+        CommandId::OpenHostSettings => Box::new(OpenHostSettings),
+        CommandId::NewSshConnection => Box::new(NewSshConnection),
+        CommandId::NewQuickSsh => Box::new(NewQuickSsh),
+        CommandId::OpenSettings => Box::new(OpenSettings),
+        CommandId::OpenProject => Box::new(OpenProject),
+        CommandId::ReturnToStandalone => Box::new(ReturnToStandalone),
+        CommandId::CheckForUpdates => Box::new(CheckForUpdates),
+        CommandId::DebugCyclePanelDock => Box::new(DebugCyclePanelDock),
+        CommandId::DebugToggleDockZoom => Box::new(DebugToggleDockZoom),
         _ => return None,
     })
 }

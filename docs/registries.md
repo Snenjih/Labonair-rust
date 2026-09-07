@@ -31,9 +31,9 @@ error.
 
 The command registry contract is intentionally UI-free. Capability crates may
 depend on `labonair-command-palette-core` to publish metadata, while the
-palette UI depends on the contract and only renders its snapshots. The current
-shortcut identity dependency points from the command core to keymap; reversing
-that edge requires a separate shared identity-contract migration.
+palette UI depends on the contract and only renders its snapshots. Stable
+shortcut identities live in `labonair-interaction-contracts`, so the command
+core and keymap runtime can depend on the same foundation without a cycle.
 
 ## Command registry
 
@@ -85,6 +85,12 @@ The keymap system does not contain feature behavior. A feature owns the action
 it registers and supplies the stable command ID; keymap resolution only maps
 that ID to user input. The keymap editor is a keymap surface, not a Settings
 category.
+
+The file/GPUI adapter must cross this boundary once: persisted action names are
+resolved through `keymap::runtime::command_for_action` into `CommandId`, and
+only then mapped to a concrete platform action. GPUI context predicates stay
+in the adapter because they are richer than the keymap runtime's portable
+context identifiers; the adapter must not duplicate action-name aliases.
 
 The legacy action name `settings::OpenShortcuts` is accepted only as a
 migration alias for existing user keymap files and resolves to the canonical
