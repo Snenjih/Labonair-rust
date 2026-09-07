@@ -908,6 +908,12 @@ Snippets and Source Control panel focus, and Git Graph tab opening. Their
 handlers operate on the Workspace entity directly, so the shell no longer
 contains layout/panel orchestration closures or helper methods for them.
 
+The Keymap management entrypoint was then moved into
+`labonair-keymap-ui::command_provider`. The owner receives a stable descriptor
+snapshot and an injected raw-file callback, owns the Keymap window action, and
+does not depend on Workspace or Shell. The shell no longer contains the
+`OpenKeymapJson` execution adapter.
+
 The two settings-file editor commands (`OpenProjectSettings` and
 `OpenSettingsJson`) were then moved to the Workspace handler contribution as
 well. Settings continues to own their command metadata, while Workspace owns

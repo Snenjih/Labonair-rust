@@ -763,3 +763,24 @@ workspace and updater arguments. Rust reported a missing third argument.
 
 **Fix:** Pass `None` for Hosts in the metadata-only composition path. The
 runtime bootstrap path supplies the real `HostManagerView` entity.
+
+## 2026-09-07 — Name the injected keymap raw-file callback type
+
+**Bug found:** Clippy rejected the new Keymap-UI command registration because
+the `Rc<dyn Fn(&mut Window, &mut App)>` parameter triggered
+`clippy::type_complexity` under the repository's `-D warnings` policy.
+
+**Fix:** Introduced the public `OpenRawHandler` type alias in the Keymap-UI
+command provider and used it at the registration boundary.
+
+## 2026-09-07 — Update the metadata-only command registry test
+
+**Bug found:** After moving Workspace-owned command handlers out of the shell
+table, the shell test still expected `run_for` to return handlers for
+`OpenProject` and `ReturnToStandalone`. The test helper intentionally builds
+metadata without a live Workspace entity, so that expectation described the
+removed compatibility path.
+
+**Fix:** Assert that the metadata-only registry has no shell fallback for
+those commands. Runtime bootstrap supplies the owner handlers through the
+Workspace entity registration.

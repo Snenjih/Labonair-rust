@@ -11,6 +11,7 @@ path = "src/keymap_ui.rs"
 gpui = { workspace = true }
 gpui-component = { workspace = true }
 labonair-command-palette-core = { path = "../command-palette-core" }
+labonair-command-palette-runtime = { path = "../command-palette-runtime" }
 labonair-keymap = { path = "../keymap" }
 labonair-notifications = { path = "../notifications" }
 labonair-theme = { path = "../theme" }

@@ -5,6 +5,8 @@
 //! supplies the one composition callback that opens the raw JSONC document.
 //! No command execution, file parsing, or feature state belongs here.
 
+pub mod command_provider;
+
 use gpui::{
     div, point, px, size, App, AppContext, Bounds, ClickEvent, Context, Entity, FocusHandle,
     Focusable, InteractiveElement, IntoElement, ParentElement, Render, SharedString,

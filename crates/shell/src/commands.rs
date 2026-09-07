@@ -307,6 +307,17 @@ fn compose_builtin_commands(
             &mut r.owner_handlers,
             labonair_workspace::command_provider::terminal_command_target(workspace),
         );
+        let descriptors = r.descriptors();
+        let workspace = workspace.clone();
+        labonair_keymap_ui::command_provider::register_handlers(
+            &mut r.owner_handlers,
+            descriptors,
+            Rc::new(move |window, cx| {
+                workspace.update(cx, |workspace, cx| {
+                    workspace.open_or_create_user_keymap_json(window, cx);
+                });
+            }),
+        );
     }
 
     // ── Search ──────────────────────────────────────────────────────────
@@ -377,76 +388,6 @@ fn compose_builtin_commands(
     );
 
     // ── Application ────────────────────────────────────────────────────
-    r.register(
-        command_descriptor(
-            CommandId::OpenProject,
-            "Open Project…",
-            "Workspace",
-            always,
-            None,
-            CommandIcon::Folder,
-            None,
-        ),
-        |s, _window, cx| {
-            s.workspace.update(cx, |w, cx| w.request_open_project(cx));
-        },
-    );
-    r.register(
-        command_descriptor(
-            CommandId::ReturnToStandalone,
-            "Return to Standalone",
-            "Workspace",
-            always,
-            None,
-            CommandIcon::Folder,
-            None,
-        ),
-        |s, _window, cx| {
-            s.workspace.update(cx, |w, cx| {
-                w.apply_transition(
-                    labonair_workspace::context::WorkspaceTransition::ReturnToStandalone,
-                    cx,
-                );
-            });
-        },
-    );
-    let keymap_descriptor = command_descriptor(
-        CommandId::OpenKeymapJson,
-        "Open Keymap (JSON)",
-        "Keymap",
-        always,
-        Some(labonair_keymap::ShortcutId::ShortcutsOpen),
-        CommandIcon::Edit,
-        None,
-    );
-    r.register(keymap_descriptor, |s, _window, cx| {
-        let descriptors = s.command_registry.descriptors();
-        let workspace = s.workspace.clone();
-        labonair_keymap_ui::open_keymap_window(
-            descriptors,
-            move |window, cx| {
-                workspace.update(cx, |workspace, cx| {
-                    workspace.open_or_create_user_keymap_json(window, cx);
-                });
-            },
-            cx,
-        );
-    });
-    r.register(
-        command_descriptor(
-            CommandId::CheckForUpdates,
-            "Check for Updates…",
-            "Application",
-            always,
-            None,
-            CommandIcon::Download,
-            None,
-        ),
-        |s, _window, cx| {
-            s.panels.updater.update(cx, |u, cx| u.run_check(true, cx));
-        },
-    );
-
     // T20-004: debug-only — open the ui-kit component gallery in its own
     // window. The palette row (`Debug: Open Component Gallery`) and the
     // `gallery.rs` view are both compiled out of release builds too.
@@ -532,7 +473,10 @@ mod tests {
 
         assert_eq!(open.id.action_name(), "workspace::OpenProject");
         assert_eq!(standalone.id.action_name(), "workspace::ReturnToStandalone");
-        assert!(r.run_for(CommandId::OpenProject).is_some());
-        assert!(r.run_for(CommandId::ReturnToStandalone).is_some());
+        // These behaviors are supplied by Workspace when the runtime
+        // composition path has a live entity; the metadata-only helper must
+        // not recreate a shell-owned fallback.
+        assert!(r.run_for(CommandId::OpenProject).is_none());
+        assert!(r.run_for(CommandId::ReturnToStandalone).is_none());
     }
 }

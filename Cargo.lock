@@ -4378,6 +4378,7 @@ dependencies = [
  "gpui",
  "gpui-component",
  "labonair-command-palette-core",
+ "labonair-command-palette-runtime",
  "labonair-keymap",
  "labonair-notifications",
  "labonair-theme",
