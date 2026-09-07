@@ -5,7 +5,7 @@ They may mention API names that were valid at the time of the recorded
 change; the current API and task state are defined by the latest header and
 the normative documents under `docs/`.
 
-## Current Session: 2026-09-07 (R06-001 Backend adapter eradication active)
+## Current Session: 2026-09-07 (R07-001 Product surface acceptance active)
 
 R03-002 Keymap, R04-001 static Themes, R04-002 Hosts, and R05-001 Settings
 reduction are complete and visually accepted. The normative field inventory is
@@ -24,7 +24,7 @@ Legacy `appCornerRadius` values are converted to the current
 `cornerRadiusScale` field during migration, with the modern value taking
 precedence when both are present.
 
-Current HEAD is `638bc16` on `master`; the worktree is clean before this
+Current HEAD is `b62cd5f` on `master`; the worktree is clean before this
 handshake update. The first R06
 boundaries removed the backend error facade, removed AI's stale backend edge,
 moved system-font discovery into the Theme owner, deleted the unconsumed
@@ -107,6 +107,17 @@ contracts-only. Full workspace tests, Clippy, formatting, dependency
 validation, queue validation, and diff checks pass; this boundary is committed
 as `638bc16`. R06-001 remains active; the next boundary is the remaining
 snippet and transfer service adapters plus compatibility cleanup.
+R06-001 is complete. The remaining concrete SSH snippet executor and transfer
+service/event adapters are now owned by `labonair-snippets-ssh` and
+`labonair-transfers-ssh`. The former `labonair-backend` package, module tree,
+workspace member, and shell dependency were removed. The shell composition root
+is now `labonair-shell::composition::AppComposition`; it constructs and wires
+named integrations without exposing a replacement feature facade. Full check,
+Clippy, workspace tests, formatting, dependency validation, queue validation,
+and diff checks pass; this boundary is committed as `b62cd5f`.
+R07-001 is now the active next task: audit the coherent product surface and
+record only bounded follow-up work for any remaining discrepancy.
+
 The broad backend `AppEvent` enum and typed-emitter helper are also gone;
 SSH and MCP adapters decode their own raw event names directly at the
 capability boundary.

@@ -22,15 +22,16 @@ The active sequence is:
 13. `R03-001-command-palette-provider-registry.md` — Done
 14. `R03-002-keymap-runtime-and-editor.md` — Done
 15. `R04-001-static-theme-registries-and-preview.md` — Done
-16. `R04-002-host-management-and-connection-pickers.md` — In Progress
-17. `R05-001-settings-audit-and-value-normalization.md` — Planned
-18. `R06-001-backend-adapter-eradication.md` — Planned
-19. `R07-001-product-surface-acceptance.md` — Planned
+16. `R04-002-host-management-and-connection-pickers.md` — Done
+17. `R05-001-settings-audit-and-value-normalization.md` — Done
+18. `R06-001-backend-adapter-eradication.md` — Done
+19. `R07-001-product-surface-acceptance.md` — In Progress
 
-Phase 3 is complete. R02-001 is the first bounded Phase 2 shell task and also
-connects the already-established theme registry to its intended palette
-surface. R02-002, R02-003, R03-001, R03-002, and R04-001 are complete; R04-002
-is now active for one canonical Hosts owner and the SSH/SFTP picker flow.
-Later surface migrations continue after that contract is established.
+Phases 0–6 are complete. R02-001 is the first bounded Phase 2 shell task and
+also connects the already-established theme registry to its intended palette
+surface. R02-002, R02-003, R03-001, R03-002, R04-001, R04-002, R05-001, and
+R06-001 are complete. R07-001 is now active as the product-surface acceptance
+audit; it may only create bounded follow-up tasks for discrepancies and must
+not silently expand the product scope.
 
 Only the earliest task whose dependencies are complete may be started.
