@@ -265,6 +265,12 @@ pub(crate) fn bootstrap(
     let transfer_events: Arc<dyn TransferEventSource> = Arc::new(
         labonair_backend::modules::transfers::BackendTransferEventSource::new(backend.clone()),
     );
+    let git_service: Arc<dyn labonair_git::GitService> = Arc::new(
+        labonair_backend::modules::git::BackendGitService::new(backend.clone()),
+    );
+    let git_graph_service: Arc<dyn labonair_git::GitGraphService> = Arc::new(
+        labonair_backend::modules::git::BackendGitGraphService::new(backend.clone()),
+    );
     let transfers = cx.new(|cx| {
         TransfersView::new(
             transfer_service.clone(),
@@ -287,6 +293,8 @@ pub(crate) fn bootstrap(
             ssh_tunnel_service.clone(),
             sftp_session_service.clone(),
             sftp_browser_service.clone(),
+            git_service.clone(),
+            git_graph_service.clone(),
             transfer_service,
             tokio.clone(),
             agent_access.clone(),
@@ -313,9 +321,6 @@ pub(crate) fn bootstrap(
     // bindings in `render` in sync with the active tab.
     cx.observe(&workspace, |_, _, cx| cx.notify()).detach();
 
-    let git_service = Arc::new(labonair_backend::modules::git::BackendGitService::new(
-        backend.clone(),
-    ));
     let git_panel =
         cx.new(|cx| GitPanelView::new(git_service.clone(), tokio.clone(), theme.clone(), cx));
     // Source Control → workspace Project Diff (Zed-parity Phase 4, §12.6). The
@@ -333,16 +338,8 @@ pub(crate) fn bootstrap(
     )
     .detach();
 
-    let git_graph = cx.new(|cx| {
-        GitGraphView::new(
-            Arc::new(labonair_backend::modules::git::BackendGitGraphService::new(
-                backend.clone(),
-            )),
-            tokio.clone(),
-            theme.clone(),
-            cx,
-        )
-    });
+    let git_graph =
+        cx.new(|cx| GitGraphView::new(git_graph_service, tokio.clone(), theme.clone(), cx));
     // The workspace renders the Git Graph as a `TabKind::GitGraph` tab — share
     // this single entity so the app-shell keeps feeding it the active CWD.
     workspace.update(cx, |w, _cx| w.set_git_graph(git_graph.clone()));

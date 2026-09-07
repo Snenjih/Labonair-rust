@@ -157,7 +157,7 @@ The current Cargo metadata shows several transitional edges that conflict with t
 - `panel-snippets` no longer depends on `labonair-backend`; its database and SSH execution capabilities are injected from the composition root.
 - `panel-explorer` no longer declares or imports `labonair-backend`; filesystem
   access already uses `labonair-filesystem` directly.
-- `panel-git-graph` no longer depends on `labonair-backend`; its graph contract and commit values live in `labonair-git` and the backend supplies an adapter.
+- `panel-git-graph` no longer depends on `labonair-backend`; its graph contract and commit values live in `labonair-git` and the backend supplies an adapter. Workspace now receives the same Git contracts by injection instead of constructing adapters internally.
 - `panel-scm` and workspace Project Diff no longer depend on `labonair-backend`; source-control values and operations live in `labonair-git`, with the backend supplying the execution adapter.
 - `shell/src/commands.rs`, `shell/src/status_items.rs`, and workspace views still contain feature-specific behavior that belongs to owning modules.
 - `shell/src/titlebar.rs` now owns only the permanent global-menu trigger and

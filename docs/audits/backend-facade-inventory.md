@@ -58,7 +58,7 @@ crates:
 |---|---|---|
 | `labonair` | constructs `App`, emits startup events, runs legacy settings migration | composition receives concrete services and typed startup hooks |
 | `labonair-shell` | constructs `App`, builds SSH/SFTP/Git/transfer adapters, reads MCP/settings/updater/font/scrollback compatibility APIs | one composition-only adapter import per capability, with no feature state access |
-| `labonair-workspace` | owns legacy event bridge, scrollback, placement persistence, MCP grants, and direct Git adapter construction | injected workspace services plus workspace-owned layout/terminal contracts |
+| `labonair-workspace` | owns legacy event bridge, scrollback, placement persistence, MCP grants, and consumes injected Git services | injected workspace services plus workspace-owned layout/terminal contracts; Git adapter construction now stays in shell composition |
 | `labonair-ai` | no active backend usage; stale dependency declaration | removed in the R06 inventory pass |
 
 `settings`, `settings-content`, and related crates contain historical comments

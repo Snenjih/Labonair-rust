@@ -34,6 +34,11 @@ The affected backend/workspace/shell tests and all repository gates passed
 after the bar-placement removal. Current HEAD is `fc68c23`; the worktree is
 clean and R06-001 remains active.
 
+Workspace Git ownership was tightened: `Workspace::new` now receives the
+canonical `GitService` and `GitGraphService` contracts, and the shell builds
+the concrete backend adapters once for both Workspace and the Git panels.
+Workspace no longer imports or constructs `BackendGitService` implementations.
+
 ## Native visual verification
 
 The exact Rust bundle was opened through its absolute `.app` path. Core

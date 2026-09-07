@@ -82,7 +82,7 @@ use labonair_backend::modules::scrollback::{
     scrollback_cleanup, scrollback_delete, scrollback_load, scrollback_save,
 };
 use labonair_backend::{App as Backend, AppEvent};
-use labonair_git::GitService;
+use labonair_git::{GitGraphService, GitService};
 use labonair_sftp::{SftpBrowserService, SftpSessionService};
 use labonair_ssh::{
     SshConnectRequest, SshConnectionService, SshEventSink, SshPtyService, SshRemoteCommandService,
@@ -414,6 +414,7 @@ pub struct Workspace {
     sftp_session: Arc<dyn SftpSessionService>,
     sftp_browser: Arc<dyn SftpBrowserService>,
     git: Arc<dyn GitService>,
+    git_graph_service: Arc<dyn GitGraphService>,
     tokio: TokioHandle,
     host_manager: Entity<HostManagerView>,
     /// Live SSH terminal tabs, keyed by registry session id.
@@ -480,6 +481,8 @@ impl Workspace {
         ssh_tunnels: Arc<dyn SshTunnelService>,
         sftp_session: Arc<dyn SftpSessionService>,
         sftp_browser: Arc<dyn SftpBrowserService>,
+        git: Arc<dyn GitService>,
+        git_graph_service: Arc<dyn GitGraphService>,
         transfer_service: Arc<dyn TransferService>,
         tokio: TokioHandle,
         agent_access: Entity<AgentAccessStore>,
@@ -570,9 +573,8 @@ impl Workspace {
             focus_handle: cx.focus_handle(),
             _meta_sync: meta_sync,
             _session_save: session_save,
-            git: Arc::new(labonair_backend::modules::git::BackendGitService::new(
-                backend.clone(),
-            )),
+            git,
+            git_graph_service,
             backend,
             ssh,
             ssh_pty,
@@ -2350,9 +2352,7 @@ impl Workspace {
         if self.git_graph.is_none() {
             let view = cx.new(|cx| {
                 GitGraphView::new(
-                    Arc::new(labonair_backend::modules::git::BackendGitGraphService::new(
-                        self.backend.clone(),
-                    )),
+                    self.git_graph_service.clone(),
                     self.tokio.clone(),
                     self.theme.clone(),
                     cx,
