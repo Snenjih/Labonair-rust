@@ -30,6 +30,12 @@ remaining blockers are the legacy Settings warning classification in R07-003
 and native visual capture, which is blocked by missing Screen Recording
 permission.
 
+The final statusbar source audit found no shell-owned feature item:
+`crates/shell/src/status_items.rs` only composes typed registrations from
+Workspace, Notifications, Updater, Transfers, and the other capability
+owners. R07-001's structural ownership findings are therefore complete; its
+remaining work is the visual matrix and the R07-003 compatibility decision.
+
 R03-002 Keymap, R04-001 static Themes, R04-002 Hosts, and R05-001 Settings
 reduction are complete and visually accepted. The normative field inventory is
 `docs/settings-inventory.md`.

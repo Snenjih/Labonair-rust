@@ -1,9 +1,8 @@
-//! Remaining shell-owned [`StatusItem`]s + the composition hook (T17-003).
+//! Statusbar composition hook (T17-003).
 //!
 //! Feature modules own their status-bar contributions and expose typed
-//! registration functions. This module retains only the workspace-scoped
-//! shell surface that has not yet moved to its owner; the registration hook
-//! below composes those contributions into the shared registry.
+//! registration functions. This module only composes those contributions into
+//! the shared workspace registry; it does not own a feature status item.
 //!
 //! The transitional `bar_items` placement blob (`BarLoc`, the
 //! `barItemPlacements` → `statusBarItemPlacements` migrator, the right-click

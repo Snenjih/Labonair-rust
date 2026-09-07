@@ -130,9 +130,9 @@ a separate product decision after the core workflow is stable.
       Workspace, Hosts-UI, Themes/Settings-UI, Source Control, and Snippets
       own their action matching; `shell/src/actions.rs` only forwards opaque
       actions.
-- [ ] The remaining status-item and shell composition code still needs the
-      final source audit and visual evidence; any genuine feature-owned residue
-      must be moved through the bounded R07-002 task.
+- [x] The final status-item source audit found only typed owner registrations
+      composed by `shell/src/status_items.rs`; no feature-owned statusbar
+      behavior remains in the shell.
 - [ ] A complete visual state matrix is still required for the permanent
       surfaces. The working matrix is recorded in
       [`../../docs/audits/product-surface-acceptance.md`](../../docs/audits/product-surface-acceptance.md);

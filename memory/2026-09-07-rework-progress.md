@@ -1021,3 +1021,7 @@ UI-free `PaletteAction` contract and the GPUI-facing
 Source Control, and Snippets now register owner-local matchers; shell action
 handling only forwards opaque values. The full workspace tests, Clippy,
 dependency verifier, rework queue verifier, formatting, and diff checks pass.
+
+The follow-up statusbar audit found that `shell/src/status_items.rs` is only a
+composition hook: every permanent item is supplied by a typed capability
+registration, and no feature-owned status behavior remains in the shell.
