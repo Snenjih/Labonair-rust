@@ -145,7 +145,10 @@ The current Cargo metadata shows several transitional edges that conflict with t
 - `backend` still owns only the transitional russh snippet-execution adapter and
   exposes a compatibility database re-export; snippet models, persistence,
   run events, and execution contracts now belong to `labonair-snippets`.
-- `backend` still exposes the shared database under the compatibility name `HostsDb`; connection/schema lifecycle now belongs to `labonair-persistence`.
+- `backend` now consumes the shared `labonair-persistence::Database` directly;
+  the former `HostsDb` compatibility alias and backend Hosts module are gone.
+  SSH/SFTP transport adapters still query host records through that foundation
+  database and remain tracked migration work.
 - `panel-snippets` no longer depends on `labonair-backend`; its database and SSH execution capabilities are injected from the composition root.
 - `panel-explorer` no longer declares or imports `labonair-backend`; filesystem
   access already uses `labonair-filesystem` directly.
