@@ -39,9 +39,9 @@ Focused tests pass. The backend Hosts CRUD compatibility module and generic
 `HostsDb` alias are now removed; only the explicitly tracked MCP integration
 and transport adapters remain. Remaining for R04-002 is the visual review of
 empty, filtered, invalid, and connection-pending states. Full repository gates
-pass. The implementation/documentation commit is
-`79c0f4c`. A follow-up slice is currently removing the remaining backend Hosts
-compatibility module; its gates are being rerun before commit.
+pass. The backend Hosts adapter-removal commit is `e8381dd`; the worktree is
+clean before the final handshake-only update. R04-002 remains active only for
+the explicit visual state review.
 
 `R02-003` is complete. The user confirmed the native Rust shell visual state
 is acceptable, closing the final visual acceptance criterion. The project and
