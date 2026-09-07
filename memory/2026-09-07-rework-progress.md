@@ -964,3 +964,8 @@ and `docs/capabilities.md`: normative contracts are authoritative, audits
 describe current gaps, reports/archive are historical, and `tasks/rework/` is
 the sole active queue. The Command Palette row now reflects the remaining
 dynamic submenu execution gap.
+
+The backend facade had already been removed from the tracked workspace, but
+empty filesystem remnants under `crates/backend/` still made the documented
+absence check fail. Those empty directories were removed; the dependency
+verifier and absence check now agree with the source tree.

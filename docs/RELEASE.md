@@ -137,7 +137,7 @@ takes).
   atomically swaps the running `.app` bundle (moves the old one aside, rolls
   back on failure); `relaunch()` re-opens it via `open` and exits.
 
-UI: `crates/shell/src/updater.rs` (`UpdaterView`) — the native GPUI dialog
+UI: `crates/updater-ui/src/` (`UpdaterView`) — the native GPUI dialog
 (available / downloading / ready), auto-check at startup when the
 `checkForUpdates` preference is on, and a **Check for Updates…** entry in the
 app menu and command palette. Failures go through the notification system.

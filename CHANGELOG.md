@@ -7,8 +7,9 @@ versions follow [SemVer](https://semver.org/).
 ## [Unreleased]
 
 ### Removed
-- **Path-bookmarks feature (T12-003) — removed wholesale.** Deleted the backend
-  model + `bookmarks.json` persistence (`labonair_backend::modules::bookmarks`),
+- **Path-bookmarks feature (T12-003) — removed wholesale.** Deleted the
+  model + `bookmarks.json` persistence (the former backend compatibility
+  module),
   the `BookmarksView` overlay + `BookmarkEvent` (`labonair-panel-explorer`), the
   bookmarks statusbar item, the `bookmarks::Open` command / `Cmd+Shift+O`
   (`Ctrl+Shift+O`) binding, the Explorer "Bookmark Path" context-menu entry, and
@@ -41,14 +42,15 @@ versions follow [SemVer](https://semver.org/).
     entitlements), `.dmg` creation and `notarytool` notarization.
   - `packaging/macos/` — `Info.plist` template, `Labonair.entitlements`,
     app icon.
-  - `labonair_backend::updater` — Tauri-compatible `latest.json` manifest
-    types, platform target key, and a dependency-free `SemVer` version check
+  - `labonair-updater` — Tauri-compatible `latest.json` manifest types,
+    platform target key, and a dependency-free `SemVer` version check
     (`UpdateManifest::available()`). Endpoint:
     `github.com/Snenjih/Labonair-rust/releases/latest/download/latest.json`.
     (Download/verify/apply + UI is T15-005.)
   - `scripts/smoke-test.sh` + `crates/app/tests/smoke.rs` — end-to-end release
-    verification: build bundle, structurally validate it, then exercise
-    backend init, a real PTY shell round-trip, and the update check.
+    verification: build bundle, structurally validate it, then exercise native
+    application initialization, a real PTY shell round-trip, and the update
+    check.
   - `docs/RELEASE.md` — build/sign/notarize procedure, artifacts, Linux
     perspective, known limitations vs. the original app.
   - `docs/LICENSES.md` — full dependency-tree license audit (result: clear;

@@ -4,7 +4,7 @@
 #   1. build the macOS .app bundle,
 #   2. structurally verify it (binary, Info.plist, icon, version),
 #   3. run the core-functionality smoke test against the release code
-#      (`cargo test -p labonair --test smoke`: backend init, PTY shell round-trip,
+#      (`cargo test -p labonair --test smoke`: native app init, PTY shell round-trip,
 #       update-manifest check).
 #
 # Note: launching the GUI itself needs a logged-in window server and a working

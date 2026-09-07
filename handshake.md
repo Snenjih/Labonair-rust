@@ -163,6 +163,12 @@ started as an alternate implementation plan. The capability matrix also now
 records the remaining dynamic-palette action gap instead of overstating its
 completion.
 
+The documentation/tooling audit also removed empty remnants under
+`crates/backend/`, corrected current updater and smoke-test references, and
+verified that the documented backend absence check now passes. These changes
+are documentation/cleanup only; no historical report or archived task was
+rewritten.
+
 The current R05 slices removed the untyped `general.notifyOnErrors` default,
 moved Background values behind their owner, moved dock/sidebar runtime state
 to the versioned Workspace-owned `workspace-layout.json`, and removed
@@ -176,7 +182,7 @@ Legacy `appCornerRadius` values are converted to the current
 `cornerRadiusScale` field during migration, with the modern value taking
 precedence when both are present.
 
-Current HEAD is `97b521d` on `master`; the worktree contains this handshake
+Current HEAD is `90bbddf` on `master`; the worktree contains this handshake
 update before its commit. R06
 boundaries removed the backend error facade, removed AI's stale backend edge,
 moved system-font discovery into the Theme owner, deleted the unconsumed
