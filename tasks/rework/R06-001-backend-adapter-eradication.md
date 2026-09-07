@@ -160,6 +160,9 @@ boundary still exists; that package must not become a second capability owner.
 - [x] The SFTP transfer worker now receives `SshState`, `EventBus`, transfer
       conflict state, and transfer settings directly; worker progress,
       reconnect handling, and transfer errors no longer flow through `App`.
+- [x] The legacy SFTP connection orchestration now receives `EventBus` rather
+      than `App`; health checks, SFTP setup logs, session-established events,
+      and connection-loss events use the explicit event capability.
 - [x] Secrets compatibility wrappers and jump-host resolution no longer take
       the aggregate `App`; they receive only their actual state dependencies.
 - [ ] Move the remaining contracts and adapters behind injected capability

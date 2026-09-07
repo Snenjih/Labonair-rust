@@ -29,6 +29,11 @@ and connection-loss reports, alongside their existing SSH, conflict, and
 settings state. `App::spawn_workers` only extracts and injects those concrete
 capabilities; the worker no longer stores or passes the aggregate App.
 
+The legacy SFTP connection orchestration now follows the same boundary. Its
+health check, subsystem initialization, and session-established reporting use
+an explicit `EventBus`; the SFTP connect path no longer stores or passes the
+aggregate backend App merely for event emission.
+
 ## R06-001 backend facade inventory and error boundary
 
 Recorded the complete backend module/export and direct-consumer map in

@@ -1,5 +1,6 @@
 use crate::modules::sftp::net_error::is_network_error;
 use crate::modules::ssh::{RushSession, SshState, TrustState};
+use crate::EventBus;
 use labonair_errors::LabonairError;
 use std::sync::Arc;
 
@@ -31,7 +32,7 @@ use std::sync::Arc;
 fn spawn_sftp_health_check(
     session_id: String,
     state: SshState,
-    app: crate::App,
+    events: EventBus,
     keep_alive_interval: Option<i64>,
     owning_session: Arc<RushSession>,
 ) {
@@ -73,7 +74,7 @@ fn spawn_sftp_health_check(
                         false
                     };
                     if removed {
-                        let _ = app.emit(
+                        let _ = events.emit(
                             "ssh_connection_lost",
                             serde_json::json!({ "session_id": session_id, "reason": msg }),
                         );
@@ -105,7 +106,7 @@ pub async fn sftp_connect(
     trust_state: &TrustState,
     hosts_db: &labonair_persistence::Database,
     secrets: &crate::modules::secrets::SecretsState,
-    app: crate::App,
+    events: EventBus,
 ) -> Result<(), LabonairError> {
     // Idempotent: a session already live under this session_id whose SFTP
     // subsystem is already open is left alone instead of dialing a second
@@ -240,7 +241,7 @@ pub async fn sftp_connect(
         existing,
         state.clone(),
         trust_state.clone(),
-        app.clone(),
+        events.clone(),
     )
     .await;
 
@@ -279,7 +280,7 @@ async fn sftp_connect_inner(
     existing: Option<Arc<RushSession>>,
     state: SshState,
     trust_state: TrustState,
-    app: crate::App,
+    events: EventBus,
 ) -> Result<(), String> {
     let session = match existing {
         Some(session) => session,
@@ -298,7 +299,7 @@ async fn sftp_connect_inner(
                 password.as_deref(),
                 passphrase.as_deref(),
                 &trust_state,
-                &app.events,
+                &events,
                 true, // fail fast — the sidebar Explorer has no trust-prompt UI of its own
                 jump,
                 None, // uses the default connect timeout — not wired to a setting on this path
@@ -327,8 +328,7 @@ async fn sftp_connect_inner(
     // is left uninitialized so a later `sftp_connect` retries just this step
     // against the already-authenticated handle instead of reconnecting from
     // scratch.
-    let app_handle = app.clone();
-    let _ = app_handle.emit(
+    let _ = events.emit(
         "ssh_connect_log",
         serde_json::json!({
             "session_id": session_id, "message": "Initialising SFTP subsystem…"
@@ -352,7 +352,7 @@ async fn sftp_connect_inner(
             Ok::<_, String>(Arc::new(sftp))
         })
         .await?;
-    let _ = app_handle.emit(
+    let _ = events.emit(
         "ssh_connect_log",
         serde_json::json!({
             "session_id": session_id, "message": "SFTP ready ✓"
@@ -366,16 +366,17 @@ async fn sftp_connect_inner(
     spawn_sftp_health_check(
         session_id.clone(),
         state.clone(),
-        app.clone(),
+        events.clone(),
         keep_alive_interval,
         session.clone(),
     );
 
-    app.emit(
-        "session_established",
-        serde_json::json!({ "session_id": session_id, "default_path_sftp": default_path_sftp }),
-    )
-    .map_err(|e| e.to_string())?;
+    events
+        .emit(
+            "session_established",
+            serde_json::json!({ "session_id": session_id, "default_path_sftp": default_path_sftp }),
+        )
+        .map_err(|e| e.to_string())?;
 
     Ok(())
 }
