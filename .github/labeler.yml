@@ -40,7 +40,6 @@ ai:
       - "crates/ai/**"
       - "crates/mcp-core/**"
       - "crates/mcp-server/**"
-      - "crates/panel-ai/**"
 
 ssh/sftp:
   - changed-files:

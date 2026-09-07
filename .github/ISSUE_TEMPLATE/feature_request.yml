@@ -7,7 +7,7 @@ body:
       value: |
         Thanks for the idea! A short conversation here saves everyone time before any code is written.
 
-        Labonair is intentionally focused on being the best remote workspace for sysadmins and backend developers — not every idea will make it in. A "no" is not a judgment of the idea.
+        Labonair is intentionally focused on being a fast, keyboard-first Dev-Op workspace for local and remote work — not every idea will make it in. A "no" is not a judgment of the idea.
 
   - type: dropdown
     id: area

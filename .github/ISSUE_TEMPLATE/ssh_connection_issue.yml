@@ -7,7 +7,7 @@ body:
       value: |
         SSH connection problems have many causes. The fields below help us narrow it down quickly.
 
-        **Tip:** Launch Labonair from a terminal (`/Applications/Labonair.app/Contents/MacOS/Labonair`) to see raw stderr output from the Rust SSH layer.
+        **Tip:** Launch the native Rust app from a terminal with `cargo run -p labonair` to see raw stderr output from the SSH layer.
 
   - type: input
     id: version
@@ -25,7 +25,6 @@ body:
         - macOS (Apple Silicon)
         - macOS (Intel)
         - Linux
-        - Windows
     validations:
       required: true
 
@@ -110,7 +109,7 @@ body:
     id: logs
     attributes:
       label: Logs / stderr output
-      description: Paste any output from stderr or the Labonair DevTools console (⌘⌥I).
+      description: Paste any relevant output from the native Rust process stderr.
 
   - type: checkboxes
     id: checks

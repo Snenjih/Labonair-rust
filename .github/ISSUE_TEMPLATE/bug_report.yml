@@ -7,7 +7,7 @@ body:
       value: |
         Thanks for taking the time to report a bug. Please fill in the fields below — it makes triage much faster.
 
-        For **security issues**, do NOT open an issue. See [SECURITY.md](https://github.com/Snenjih/Labonair/blob/main/SECURITY.md).
+        For **security issues**, do NOT open an issue. Use a private security advisory instead.
 
   - type: input
     id: version
@@ -26,7 +26,6 @@ body:
         - macOS (Apple Silicon)
         - macOS (Intel)
         - Linux
-        - Windows
     validations:
       required: true
 
@@ -34,7 +33,7 @@ body:
     id: os-version
     attributes:
       label: OS version
-      placeholder: "macOS 15.4 / Ubuntu 24.04 / Windows 11 24H2"
+      placeholder: "macOS 15.4 / Ubuntu 24.04"
     validations:
       required: true
 
@@ -90,7 +89,7 @@ body:
       label: Logs / screenshots
       description: |
         If applicable, paste relevant logs or attach screenshots / screen recordings.
-        Launch Labonair from a terminal to see stderr output, or open the DevTools console (macOS: ⌘⌥I).
+        Launch the native Rust binary from a terminal to capture stderr output.
 
   - type: checkboxes
     id: checks

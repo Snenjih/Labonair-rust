@@ -27,7 +27,6 @@ body:
         - macOS (Apple Silicon)
         - macOS (Intel)
         - Linux
-        - Windows
     validations:
       required: true
 
@@ -110,7 +109,7 @@ body:
       label: stderr / console output
       description: |
         If you launched Labonair from a terminal, paste any output printed before the crash.
-        DevTools console (⌘⌥I) output is also helpful if the renderer was involved.
+        Native stderr output is also helpful when the crash occurred during startup or an active operation.
       render: text
 
   - type: checkboxes

@@ -23,7 +23,6 @@ body:
         - macOS (Apple Silicon)
         - macOS (Intel)
         - Linux
-        - Windows
     validations:
       required: true
 
@@ -80,7 +79,7 @@ body:
     attributes:
       label: Profiling data / screenshots
       description: |
-        Activity Monitor CPU/memory screenshot, DevTools Performance trace, or `cargo flamegraph` output — attach whatever you have.
+        Activity Monitor CPU/memory screenshot, native logs, or `cargo flamegraph` output — attach whatever you have.
 
   - type: dropdown
     id: build
@@ -88,7 +87,8 @@ body:
       label: Reproducible in
       options:
         - Release build only
-        - Dev build (`pnpm tauri dev`) only
+        - Debug native Rust build only
+        - Release native Rust build only
         - Both
         - Not sure
     validations:
