@@ -136,15 +136,6 @@ impl CommandDispatcher {
     pub(crate) fn descriptors(&self) -> Vec<CommandDescriptor> {
         self.metadata.snapshot()
     }
-
-    /// Resolve the default shortcut through the same registry used by the
-    /// palette, rather than a second shortcut-to-command table.
-    pub(crate) fn command_for_shortcut(
-        &self,
-        shortcut: labonair_keymap::ShortcutId,
-    ) -> Option<CommandId> {
-        self.metadata.command_for_shortcut(shortcut)
-    }
 }
 
 impl AppShell {
