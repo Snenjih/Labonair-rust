@@ -91,6 +91,10 @@ focused palette/shell/workspace tests and Clippy pass. Commit: `b36a031`;
 worktree is clean. Next: define the lossless Keymap management/editor
 contract.
 
+The obsolete shell `command_for_shortcut` adapter was removed after the final
+UI migration. Commit: `5b2918d`; worktree is clean. Next: define the lossless
+Keymap management/editor contract.
+
 The Keymap module now also owns last-good user-file recovery, validation issue
 retention, and built-in/user layer composition. Shell remains only the GPUI
 binding/display adapter and the existing filesystem watcher connection. The
