@@ -24,7 +24,7 @@ Legacy `appCornerRadius` values are converted to the current
 `cornerRadiusScale` field during migration, with the modern value taking
 precedence when both are present.
 
-Current HEAD is `d681296` on `master`; the worktree is clean before this
+Current HEAD is `7dd8917` on `master`; the worktree is clean before this
 handshake update. The first R06
 boundaries removed the backend error facade, removed AI's stale backend edge,
 moved system-font discovery into the Theme owner, deleted the unconsumed
@@ -80,10 +80,14 @@ operations.
 The legacy SFTP connection orchestration now receives `EventBus` directly for
 health checks, subsystem setup logs, session-established events, and
 connection-loss reporting; it no longer carries the aggregate `App`.
-The unused backend Credentials compatibility module and dependency are removed;
-active credential consumers use `labonair-credentials` directly. R06-001
-remains active; the remaining broad paths are SFTP/SSH compatibility edges,
-legacy theme operations, and the final application-composition cleanup.
+The unused backend Credentials and Themes compatibility modules, duplicate
+bundled theme asset, and their dead dependency surfaces are removed; active
+consumers use `labonair-credentials` and `labonair-theme` directly. The dead
+`terminal_exec` module and its App state are removed because MCP already owns
+the active terminal execution path. Git and snippets adapters now receive
+explicit capability state, and the aggregate `App::emit` convenience method is
+gone. R06-001 remains active; the remaining work is the final application-state
+composition cleanup and proof that no compatibility edges remain.
 The General cleanup including `startupTerminalCount` is committed in
 `61abf4c`; the corner-radius normalization is committed in `c6e9890`, the
 unused Appearance values in `d596df2`, and the unwired Editor values in
