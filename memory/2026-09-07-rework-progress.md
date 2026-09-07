@@ -372,3 +372,11 @@ existing transfer worker instead of being duplicated in Settings. Full
 workspace tests, check, Clippy, dependency, queue, formatting, and diff checks
 pass. Committed as `af6db5f`; R05-001 remains active for the remaining Review
 values and consumer tests.
+## R05-001 Command Palette settings cleanup
+
+Removed `commandPaletteBlur` and `commandPaletteAnimation` from the typed
+Workspace settings, defaults, generated UI, and v1 migration target because
+the native palette has no consumers for them. Legacy Preferences remains
+deserializable and exhaustive migration accounting covers both keys. Focused
+Settings/content/UI/backend tests and the workspace check passed. Committed as
+`a945ef5`; R05-001 remains active for the final retained-value consumer audit.

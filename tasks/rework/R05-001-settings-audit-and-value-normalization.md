@@ -133,3 +133,6 @@ the model. Unused values are parked in the inventory, not added speculatively.
 - [x] Remove the empty Connections Settings area and its unconsumed SSH/
       Explorer timing values; transport and Hosts remain the future owners of
       connection policy.
+- [x] Remove unwired Command Palette presentation values
+      (`commandPaletteBlur` and `commandPaletteAnimation`) from the Settings
+      model and generated UI while retaining legacy input readability.
