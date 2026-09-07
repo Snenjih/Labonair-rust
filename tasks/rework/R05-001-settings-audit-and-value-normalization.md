@@ -138,3 +138,7 @@ the model. Unused values are parked in the inventory, not added speculatively.
       model and generated UI while retaining legacy input readability.
 - [x] Remove the unwired `gitStatusPollIntervalMs` value; SCM polling is not
       currently configurable and the legacy wire field remains readable.
+- [x] Remove terminal values without native consumers (`terminalDefaultPath`,
+      `newTabInheritsCwd`, `confirmCloseTerminalTab`, `terminalLineHeight`,
+      `terminalShowPaneHeader`, and `terminalShowPaneFooter`) and delete their
+      non-functional command-palette toggles.

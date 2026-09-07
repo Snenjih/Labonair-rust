@@ -15,7 +15,8 @@ The current R05 slices removed the untyped `general.notifyOnErrors` default,
 moved Background values behind their owner, moved dock/sidebar runtime state
 to the versioned Workspace-owned `workspace-layout.json`, and removed
 unsupported Terminal plus unused General, Appearance, Editor, File Manager,
-and Connection values, plus unwired Command Palette presentation values, from
+and Connection values, plus unwired Command Palette/SCM presentation values,
+from
 the typed model, defaults, generated UI, and Settings mappings. Legacy backend
 `Preferences` fields remain readable only as migration wire input; v1 and v2
 layout input is migrated before Settings conversion and removed idempotently.
@@ -23,7 +24,7 @@ Legacy `appCornerRadius` values are converted to the current
 `cornerRadiusScale` field during migration, with the modern value taking
 precedence when both are present.
 
-Current HEAD is `3bc4930` on `master`; the worktree is clean. Formatting,
+Current HEAD is `701b1b3` on `master`; the worktree is clean. Formatting,
 workspace check, Clippy, full serial workspace tests, dependency validation,
 queue validation, and diff checks pass. The next review item is
 the remaining indirect Settings values and consumer-proof review.
@@ -32,8 +33,9 @@ The General cleanup including `startupTerminalCount` is committed in
 unused Appearance values in `d596df2`, and the unwired Editor values in
 `145966b`. The orphaned remote values and empty Connections category are
 removed in `af6db5f`; unwired palette presentation values are removed in
-`a945ef5`; the unwired SCM poll value is removed in `8804d60`, and the
-remaining unwired Editor options are removed in `3bc4930`. No blockers.
+`a945ef5`; the unwired SCM poll value is removed in `8804d60`, the remaining
+unwired Editor options in `3bc4930`, and dead Terminal settings/commands in
+`701b1b3`. No blockers.
 
 ## Historical session details: 2026-09-07
 

@@ -390,6 +390,19 @@ exhaustive migration accounting covers the compatibility key. Check, Clippy,
 and focused Settings/content/UI/backend tests pass. Committed as `8804d60`;
 R05-001 remains active for final retained-setting consumer tests.
 
+## R05-001 Terminal consumer cleanup
+
+Removed six Terminal settings with no native consumer:
+`terminalDefaultPath`, `newTabInheritsCwd`, `confirmCloseTerminalTab`,
+`terminalLineHeight`, `terminalShowPaneHeader`, and
+`terminalShowPaneFooter`. They are gone from the typed model, defaults,
+generated UI, and migration targets. The two non-functional pane toggle
+commands were removed from the command-palette core, Settings provider, shell
+registration, and toggle execution path; the theme-owned terminal line-height
+token remains intact. Full workspace tests, check, Clippy, dependency, queue,
+formatting, and diff checks pass. Committed as `701b1b3`; R05-001 remains
+active for final retained-setting consumer proof.
+
 ## R05-001 Editor consumer audit
 
 The consumer audit found eight additional Editor values that existed only in
