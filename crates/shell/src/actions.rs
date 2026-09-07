@@ -26,42 +26,6 @@ use crate::app_shell::AppShell;
 use crate::menu;
 use crate::modals::{CommandPaletteModal, UpdaterModal};
 
-/// Flip one boolean leaf across the layered [`SettingsStore`], keyed by its
-/// local key — the vocabulary `crate::commands::register_builtin_commands`'
-/// zen-mode/settings toggle table uses. Covers exactly the settings wired
-/// through [`AppShell::toggle_zen_pref`]; a key outside this list is a no-op.
-fn toggle_setting_bool(key: &str, cx: &mut App) {
-    if !cx.has_global::<SettingsStore>() {
-        return;
-    }
-    let _ = cx
-        .global_mut::<SettingsStore>()
-        .update_user_settings(|c| match key {
-            "zenModeShowHeader" => {
-                c.appearance.zen_mode_show_header =
-                    Some(!c.appearance.zen_mode_show_header.unwrap_or(true));
-            }
-            "zenModeShowStatusbar" => {
-                c.appearance.zen_mode_show_statusbar =
-                    Some(!c.appearance.zen_mode_show_statusbar.unwrap_or(true));
-            }
-            "editorWordWrap" => {
-                c.editor.editor_word_wrap = Some(!c.editor.editor_word_wrap.unwrap_or(false));
-            }
-            "editorLineNumbers" => {
-                c.editor.editor_line_numbers = Some(!c.editor.editor_line_numbers.unwrap_or(true));
-            }
-            "terminalCursorBlink" => {
-                c.terminal.terminal_cursor_blink =
-                    Some(!c.terminal.terminal_cursor_blink.unwrap_or(true));
-            }
-            "vimMode" => {
-                c.editor.editor_vim_mode = Some(!c.editor.editor_vim_mode.unwrap_or(false));
-            }
-            _ => {}
-        });
-}
-
 fn register_snapshot(registry: &mut SubmenuRegistry, snapshot: SubmenuSnapshot) {
     registry
         .register(snapshot)
@@ -185,24 +149,6 @@ impl AppShell {
                 SearchOverlay::new(workspace, theme, window, cx)
             });
         });
-    }
-
-    /// `view.zenMode`: both bars visible → hide both, otherwise show both.
-    pub(crate) fn toggle_zen_mode(&mut self, cx: &mut Context<Self>) {
-        let (show_header, show_statusbar) = ThemeSettings::try_get(cx)
-            .map(|s| (s.zen_mode_show_header(), s.zen_mode_show_statusbar()))
-            .unwrap_or((true, true));
-        let next = !(show_header || show_statusbar);
-        if cx.has_global::<SettingsStore>() {
-            let _ = cx.global_mut::<SettingsStore>().update_user_settings(|c| {
-                c.appearance.zen_mode_show_header = Some(next);
-                c.appearance.zen_mode_show_statusbar = Some(next);
-            });
-        }
-    }
-
-    pub(crate) fn toggle_zen_pref(&mut self, key: &str, cx: &mut Context<Self>) {
-        toggle_setting_bool(key, cx);
     }
 
     // ── Modal-layer mirrors (driven from `render`) ────────────────────────

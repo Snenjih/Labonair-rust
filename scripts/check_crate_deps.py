@@ -311,7 +311,8 @@ ALLOWED = {
     "labonair-settings": {
         "labonair-settings-content", "labonair-settings-macros",
         "labonair-settings-json",
-        "labonair-command-palette-core", "labonair-interaction-contracts",
+        "labonair-command-palette-core", "labonair-command-palette-runtime",
+        "labonair-interaction-contracts",
     },
 }
 

@@ -879,3 +879,8 @@ and accepts a narrow `TerminalCommandTarget`; Workspace provides the adapter
 for its active-pane operation. This keeps terminal command ownership local
 without introducing a terminal-to-workspace dependency or a second dispatch
 table.
+
+Settings toggle commands were then moved out of the shell table as well.
+`labonair-settings::command_provider` now owns the Zen Mode, chrome, editor,
+terminal-cursor, and Vim preference handlers. The shell only registers this
+owner contribution; Settings remains the single writer for these values.

@@ -241,8 +241,6 @@ pub(crate) fn attach_action_handlers(
 /// `r.register(...)` line here (plus, only if it needs a keystroke / menu item,
 /// a `menu::` action + a line in [`attach_action_handlers`]).
 const ALWAYS: &[CommandContext] = &[];
-const CTX_EDITOR: &[CommandContext] = &[CommandContext::Editor];
-const CTX_TERMINAL: &[CommandContext] = &[CommandContext::Terminal];
 
 #[allow(clippy::too_many_arguments)]
 fn command_descriptor(
@@ -302,6 +300,7 @@ fn compose_builtin_commands(workspace: Option<&gpui::Entity<Workspace>>) -> Comm
         &labonair_command_palette_core::command_provider::CommandPaletteCommandProvider,
     );
     r.register_provider(&ShellCommandProvider);
+    labonair_settings::command_provider::register_handlers(&mut r.owner_handlers);
     if let Some(workspace) = workspace {
         labonair_workspace::command_provider::register_handlers(&mut r.owner_handlers, workspace);
         labonair_terminal::command_provider::register_handlers(
@@ -496,71 +495,6 @@ fn compose_builtin_commands(workspace: Option<&gpui::Entity<Workspace>>) -> Comm
             s.toggle_command_palette(window, cx);
         },
     );
-
-    // ── Zen-mode / settings toggles ────────────────────────────────────
-    r.register(
-        command_descriptor(
-            CommandId::ToggleZenMode,
-            "Toggle: Zen Mode",
-            "Settings",
-            always,
-            Some(labonair_keymap::ShortcutId::ViewZenMode),
-            CommandIcon::Eye,
-            None,
-        ),
-        |s, _window, cx| {
-            s.toggle_zen_mode(cx);
-        },
-    );
-    for (id, key, ctx, title, icon) in [
-        (
-            CommandId::ToggleZenModeHeader,
-            "zenModeShowHeader",
-            ALWAYS,
-            "Toggle: Show Header Bar",
-            CommandIcon::Eye,
-        ),
-        (
-            CommandId::ToggleZenModeStatusbar,
-            "zenModeShowStatusbar",
-            ALWAYS,
-            "Toggle: Show Status Bar",
-            CommandIcon::Eye,
-        ),
-        (
-            CommandId::ToggleEditorWordWrap,
-            "editorWordWrap",
-            CTX_EDITOR,
-            "Toggle: Editor Word Wrap",
-            CommandIcon::ChevronDown,
-        ),
-        (
-            CommandId::ToggleLineNumbers,
-            "editorLineNumbers",
-            CTX_EDITOR,
-            "Toggle: Line Numbers",
-            CommandIcon::Check,
-        ),
-        (
-            CommandId::ToggleCursorBlink,
-            "terminalCursorBlink",
-            CTX_TERMINAL,
-            "Toggle: Terminal Cursor Blink",
-            CommandIcon::Eye,
-        ),
-        (
-            CommandId::ToggleVimMode,
-            "vimMode",
-            ALWAYS,
-            "Toggle: Vim Mode",
-            CommandIcon::Check,
-        ),
-    ] {
-        r.register(
-            command_descriptor(id, title, "Settings", ctx, None, icon, None),
-            move |s, _window, cx| s.toggle_zen_pref(key, cx),
-        );
-    }
 
     // ── Application ────────────────────────────────────────────────────
     r.register(

@@ -4534,6 +4534,7 @@ dependencies = [
  "jsonc-parser",
  "jsonschema",
  "labonair-command-palette-core",
+ "labonair-command-palette-runtime",
  "labonair-interaction-contracts",
  "labonair-settings-content",
  "labonair-settings-json",

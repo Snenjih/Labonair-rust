@@ -38,6 +38,7 @@ dirs = { workspace = true }
 tracing = { workspace = true }
 log = "0.4"
 labonair-command-palette-core = { path = "../command-palette-core" }
+labonair-command-palette-runtime = { path = "../command-palette-runtime" }
 labonair-interaction-contracts = { path = "../interaction-contracts" }
 jsonschema = { version = "0.53.0", default-features = false }
 schemars = "0.8"
