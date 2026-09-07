@@ -62,15 +62,22 @@ only. The affected checks passed and this cleanup is committed as `8cdf216`.
 
 The MCP boundary now has a real UI-free contract crate,
 `labonair-mcp-core`, for `SessionKind`, `TabOpResult`,
-`SessionGrantRequest`, `McpSessionAccessService`, and
-`McpTabOperationService`. The backend implements those contracts through
-`BackendMcpSessionAccess`, while shell composition injects them into
-`AgentAccessStore` and Workspace. Workspace grant revocation, grant creation,
-and tab-operation responses no longer call backend MCP functions directly;
-grant failures are returned as failed tab-operation results. The MCP server
-still owns aggregate bridge state, and the legacy global event bus remains the
-next extraction boundary. Focused check, Clippy, and tests passed for this
-slice; repository-wide gates are run before commit.
+`SessionGrantRequest`, `McpSessionAccessService`,
+`McpTabOperationService`, `McpEvent`, and `McpEventSource`. The backend
+implements those contracts through explicit adapters, while shell composition
+injects them into `AgentAccessStore` and Workspace. Workspace grant lifecycle,
+tab-operation responses, and MCP event handling no longer call backend MCP
+functions or subscribe to the aggregate event bus directly; grant failures are
+returned as failed tab-operation results.
+
+The SSH boundary now follows the same pattern: `labonair-ssh` owns typed
+`SshConnectionEvent`, `SshEventReceiver`, and `SshEventSource` contracts, the
+backend translates its legacy events in `BackendSshEventSource`, and Workspace
+receives only typed connection events through `SshEventBridge`. The Workspace
+crate no longer declares `labonair-backend`; the remaining global event bus is
+an internal source of the shell-composed backend adapters. Full workspace
+check, Clippy, tests, dependency, queue, format, and diff gates passed for
+this boundary.
 
 ## Native visual verification
 

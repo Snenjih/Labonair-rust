@@ -137,7 +137,7 @@ ALLOWED = {
         "labonair-notifications", "labonair-command-palette",
         "labonair-panel", "labonair-panel-git-graph", "labonair-hosts-ui",
         "labonair-hosts",
-        "labonair-terminal", "labonair-editor", "labonair-backend",
+        "labonair-terminal", "labonair-editor",
         "labonair-git",
         "labonair-ai", "labonair-settings", "labonair-settings-json",
         "labonair-filesystem",

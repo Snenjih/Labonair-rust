@@ -5,9 +5,9 @@ use crate::{App, EventChannel};
 use labonair_errors::LabonairError;
 use labonair_ssh::{
     ActiveTunnel, BoxFuture, ImportConflict, SharedSshEventSink, SshConfigEntry, SshConfigService,
-    SshConnectRequest, SshConnectionService, SshConnectionTester, SshPtyService,
-    SshRemoteCommandService, SshRemoteFileService, SshSessionEvent, SshSessionId, SshTestResult,
-    SshTunnelService,
+    SshConnectRequest, SshConnectionEvent, SshConnectionService, SshConnectionTester,
+    SshEventReceiver, SshEventSource, SshPtyService, SshRemoteCommandService, SshRemoteFileService,
+    SshSessionEvent, SshSessionId, SshTestResult, SshTunnelService,
 };
 
 #[derive(Clone)]
@@ -18,6 +18,94 @@ pub struct BackendSshService {
 impl BackendSshService {
     pub fn new(app: App) -> Self {
         Self { app }
+    }
+}
+
+/// Shell-composed adapter that translates the legacy backend event stream into
+/// the narrow SSH connection-event contract.
+#[derive(Clone)]
+pub struct BackendSshEventSource {
+    app: App,
+}
+
+impl BackendSshEventSource {
+    pub fn new(app: App) -> Self {
+        Self { app }
+    }
+}
+
+struct BackendSshEventReceiver {
+    receiver: tokio::sync::broadcast::Receiver<crate::RawEvent>,
+}
+
+impl SshEventReceiver for BackendSshEventReceiver {
+    fn recv<'a>(&'a mut self) -> BoxFuture<'a, Option<SshConnectionEvent>> {
+        Box::pin(async move {
+            loop {
+                match self.receiver.recv().await {
+                    Ok(raw) => {
+                        let event = crate::AppEvent::from_raw(&raw).and_then(|event| match event {
+                            crate::AppEvent::SshConnectLog {
+                                session_id,
+                                message,
+                            } => Some(SshConnectionEvent::ConnectLog {
+                                session_id,
+                                message,
+                            }),
+                            crate::AppEvent::SshKnownHostsWarning {
+                                session_id,
+                                fingerprint,
+                                host,
+                                is_mismatch,
+                            } => Some(SshConnectionEvent::KnownHostsWarning {
+                                session_id,
+                                fingerprint,
+                                host,
+                                is_mismatch,
+                            }),
+                            crate::AppEvent::SshAuthRequired {
+                                session_id,
+                                prompt_message,
+                                is_2fa,
+                            } => Some(SshConnectionEvent::AuthRequired {
+                                session_id,
+                                prompt_message,
+                                is_2fa,
+                            }),
+                            crate::AppEvent::SshPassphraseRequired { session_id } => {
+                                Some(SshConnectionEvent::PassphraseRequired { session_id })
+                            }
+                            crate::AppEvent::SshSessionEstablished {
+                                session_id,
+                                default_path,
+                            } => Some(SshConnectionEvent::SessionEstablished {
+                                session_id,
+                                default_path,
+                            }),
+                            crate::AppEvent::SshConnectionLost { session_id } => {
+                                Some(SshConnectionEvent::ConnectionLost { session_id })
+                            }
+                            _ => None,
+                        });
+                        if event.is_some() {
+                            return event;
+                        }
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {
+                        log::warn!("SSH event source lagged; resyncing ({skipped} events)");
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => return None,
+                }
+            }
+        })
+    }
+}
+
+impl SshEventSource for BackendSshEventSource {
+    fn subscribe(&self) -> Box<dyn SshEventReceiver> {
+        Box::new(BackendSshEventReceiver {
+            receiver: self.app.events.subscribe(),
+        })
     }
 }
 

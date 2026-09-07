@@ -142,6 +142,12 @@ latter owns the queue dropdown and resolution dialogs. The backend exposes a
 temporary worker adapter, while SFTP only submits typed transfer requests.
 The statusbar owns the trigger/anchor, but not transfer state.
 
+SSH connection lifecycle and MCP bridge events follow the same contract-first
+rule. `labonair-ssh` and `labonair-mcp-core` expose typed event sources and
+receivers; shell composition supplies the backend translation adapters, and
+Workspace owns only the GPUI bridges and feature reaction. No Workspace code
+subscribes to the backend's legacy global event bus.
+
 The current repository does not yet match every ownership boundary in this
 map. The migration is tracked in [`rework-roadmap.md`](rework-roadmap.md), and
 the observed state is recorded in [`audits/architecture-inventory.md`](audits/architecture-inventory.md).

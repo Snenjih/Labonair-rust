@@ -49,6 +49,54 @@ pub trait SshEventSink: Send + Sync {
 
 pub type SharedSshEventSink = Arc<dyn SshEventSink>;
 
+/// Connection-lifecycle events consumed by the SSH surface.
+///
+/// These events are deliberately separate from PTY output: the connection
+/// flow owns authentication, host trust, progress, and disconnect state, while
+/// the terminal session owns streamed bytes through [`SshSessionEvent`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SshConnectionEvent {
+    ConnectLog {
+        session_id: String,
+        message: String,
+    },
+    KnownHostsWarning {
+        session_id: String,
+        fingerprint: String,
+        host: String,
+        is_mismatch: bool,
+    },
+    AuthRequired {
+        session_id: String,
+        prompt_message: String,
+        is_2fa: bool,
+    },
+    PassphraseRequired {
+        session_id: String,
+    },
+    SessionEstablished {
+        session_id: String,
+        default_path: Option<String>,
+    },
+    ConnectionLost {
+        session_id: String,
+    },
+}
+
+/// Asynchronous receiver for typed SSH connection events.
+pub trait SshEventReceiver: Send {
+    fn recv<'a>(&'a mut self) -> BoxFuture<'a, Option<SshConnectionEvent>>;
+}
+
+/// Source of SSH connection-lifecycle events.
+///
+/// The application shell injects this at composition time. Implementations
+/// may translate a platform event stream, but consumers never depend on the
+/// transport's global event bus or aggregate application state.
+pub trait SshEventSource: Send + Sync {
+    fn subscribe(&self) -> Box<dyn SshEventReceiver>;
+}
+
 #[derive(Debug, Clone)]
 pub struct SshConnectRequest {
     pub session_id: SshSessionId,
@@ -225,5 +273,22 @@ mod tests {
     #[test]
     fn config_conflict_defaults_to_skip() {
         assert_eq!(ImportConflict::default(), ImportConflict::Skip);
+    }
+
+    #[test]
+    fn connection_events_keep_authentication_payloads_typed() {
+        let event = SshConnectionEvent::AuthRequired {
+            session_id: "session-1".to_string(),
+            prompt_message: "Password".to_string(),
+            is_2fa: false,
+        };
+        assert_eq!(
+            event,
+            SshConnectionEvent::AuthRequired {
+                session_id: "session-1".to_string(),
+                prompt_message: "Password".to_string(),
+                is_2fa: false,
+            }
+        );
     }
 }

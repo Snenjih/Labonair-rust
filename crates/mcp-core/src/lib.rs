@@ -63,6 +63,42 @@ pub trait McpTabOperationService: Send + Sync {
     ) -> BoxFuture<'_, Result<(), String>>;
 }
 
+/// Events emitted by the MCP bridge and consumed by the application UI.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum McpEvent {
+    OpenTabRequest {
+        request_id: String,
+        path: Option<String>,
+        host_id: Option<String>,
+    },
+    CloseTabRequest {
+        request_id: String,
+        session_id: Option<String>,
+    },
+    GrantExpired {
+        tab_id: String,
+    },
+    ServerError {
+        message: String,
+    },
+    Activity {
+        label: String,
+        action: String,
+        detail: String,
+    },
+}
+
+/// Asynchronous receiver for typed MCP bridge events.
+pub trait McpEventReceiver: Send {
+    fn recv<'a>(&'a mut self) -> BoxFuture<'a, Option<McpEvent>>;
+}
+
+/// Source of MCP bridge events. Implementations are composed at the shell
+/// boundary; consumers never subscribe to aggregate application state.
+pub trait McpEventSource: Send + Sync {
+    fn subscribe(&self) -> Box<dyn McpEventReceiver>;
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

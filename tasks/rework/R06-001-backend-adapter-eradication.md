@@ -119,8 +119,11 @@ boundary still exists; that package must not become a second capability owner.
       adapter.
 - [x] Moved Workspace MCP grant revocation, grant creation, and tab-operation
       responses behind the injected `McpSessionAccessService` and
-      `McpTabOperationService` contracts; only the legacy event-bus bridge and
-      aggregate MCP server state remain backend-coupled.
+      `McpTabOperationService` contracts; only aggregate MCP server state and
+      the legacy event bus remain inside the backend adapter.
+- [x] Replaced Workspace's direct global event-bus subscription with injected
+      typed `SshEventSource` and `McpEventSource` contracts; backend event
+      decoding now stays inside shell-composed adapters.
 - [ ] Move the remaining contracts and adapters behind injected capability
       services.
 - [ ] Delete the broad `App` facade paths and remaining compatibility edges.

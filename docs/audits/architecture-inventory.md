@@ -58,7 +58,7 @@ removal conditions.
 
 The current Cargo metadata shows several transitional edges that conflict with the new rules:
 
-- `workspace` depends directly on AI, backend, command palette, hosts UI, notifications, settings, SFTP capability contracts, and feature views; transfer lifecycle state is no longer one of those responsibilities.
+- `workspace` depends directly on AI, command palette, hosts UI, notifications, settings, SFTP capability contracts, and feature views; transfer lifecycle state and the backend event bus are no longer direct responsibilities.
 - Workspace identity/activity now has one UI-free owner in `workspace/context.rs`
   (`WorkspaceIdentity` + `WorkspaceState`). The previous Hosts shell callback
   was removed; cross-surface Hosts navigation and the project-picker request
@@ -203,7 +203,7 @@ families. These are not target dependencies; each has a removal condition:
 | Transitional edge family | Temporary reason | Removal condition |
 |---|---|---|
 | `workspace → background` | Workspace and the app shell render the background layer while the capability is being separated from workspace ownership. | Move background settings synchronization and any remaining background actions behind the dedicated background capability contract. |
-| `workspace → backend`, `workspace → ai`, `workspace → settings` | Workspace still hosts session bridges and remaining legacy adapters. Live status-bar/panel layout persistence is now owned by Workspace; SSH/SFTP and transfer access are injected. | Settings providers and remaining session adapters are injected capabilities; workspace keeps orchestration only. |
+| `workspace → ai`, `workspace → settings` | Workspace still hosts the AI live bridge and consumes a few transitional settings values. Typed SSH/MCP event sources, Git, SFTP, and transfer access are injected. | AI context and remaining settings consumers move behind narrow capability contracts; workspace keeps orchestration only. |
 | `panel-explorer → workspace`, `panel-explorer → settings` | Explorer still reuses workspace drag/preview contracts and a legacy settings read. | Drag/drop and preview contracts move to foundation/owning modules and explorer receives a settings capability. |
 | `panel-scm → editor`, `panel-scm → settings` | SCM reuses unified diff helpers and one legacy presentation preference. | Diff contracts are shared by the Git module and the preference is provided through a narrow settings contract. |
 | `panel-ai → backend`, `panel-ai → editor`, `panel-ai → workspace` | AI UI is parked while the workspace/editor context bridge is redesigned. | AI consumes AI, editor-context, and workspace-session contracts without facade access. |

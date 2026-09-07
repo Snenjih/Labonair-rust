@@ -15,8 +15,8 @@ a concrete platform adapter with a named consumer and removal condition.
 
 | Surface | Current location | External consumers | Target boundary | R06 state |
 |---|---|---|---|---|
-| `App` / `AppState` and `AppInner` | `backend::app` | `app`, `shell`, `workspace`, backend adapters | application composition plus injected capability services | Broad facade remains; split is the main task |
-| `AppEvent`, `EventBus`, `EventChannel`, `RawEvent` | `backend::events` | `app`, `workspace::backend_event_bridge`, SSH/SFTP/transfer adapters | typed capability events and explicit transport adapters | Legacy global bus remains transitional |
+| `App` / `AppState` and `AppInner` | `backend::app` | `app`, `shell`, backend adapters | application composition plus injected capability services | Broad facade remains; split is the main task |
+| `AppEvent`, `EventBus`, `EventChannel`, `RawEvent` | `backend::events` | `app`, backend transport adapters | typed capability events and explicit transport adapters | Workspace no longer subscribes directly; global bus remains an internal adapter source |
 | updater constants and operations | `backend::modules::updater` | `shell::updater`, app smoke tests | updater/application boundary | Root re-export removed; consumers use the updater module directly |
 | structured errors | formerly `backend::modules::errors` and root re-exports | no external backend import remains | `labonair-errors` | Root re-export and module removed in the first R06 slice |
 
@@ -58,12 +58,16 @@ crates:
 |---|---|---|
 | `labonair` | constructs `App`, emits startup events, runs legacy settings migration | composition receives concrete services and typed startup hooks |
 | `labonair-shell` | constructs `App`, builds SSH/SFTP/Git/transfer adapters, reads MCP/settings/updater compatibility APIs | one composition-only adapter import per capability, with no feature state access |
-| `labonair-workspace` | owns legacy event bridge, status/panel placement persistence, MCP tab orchestration, and consumes injected Git/MCP services | injected workspace services plus workspace-owned layout/terminal contracts; the remaining backend edge is the legacy global event bridge |
 | `labonair-ai` | no active backend usage; stale dependency declaration | removed in the R06 inventory pass |
 
 `settings`, `settings-content`, and related crates contain historical comments
 or migration references to backend names, but they do not declare or import the
 backend crate as a runtime dependency.
+
+`labonair-workspace` is also no longer a direct backend consumer. It owns the
+typed SSH/MCP event bridges, status/panel placement persistence, and MCP tab
+orchestration while receiving all transport and event sources through injected
+capability contracts.
 
 ## First completed boundary
 
@@ -89,8 +93,10 @@ The stable MCP session/grant values, tab-operation result, and service
 contracts now live in `labonair-mcp-core`. `AgentAccessStore` and Workspace
 consume only injected contracts and no longer call MCP implementation
 functions directly. The backend adapter is constructed by shell composition
-and remains the explicit bridge to aggregate MCP implementation state; the
-legacy global event bus is the remaining Workspace transport edge.
+and remains the explicit bridge to aggregate MCP implementation state. The
+legacy global event bus stays inside shell-composed adapters; Workspace
+receives typed `SshConnectionEvent` and `McpEvent` values through injected
+sources and has no direct backend dependency.
 
 ## Verification commands
 

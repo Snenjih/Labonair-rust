@@ -33,7 +33,6 @@ labonair-hosts = { path = "../hosts" }
 labonair-terminal = { path = "../terminal" }
 labonair-editor = { path = "../editor" }
 labonair-git = { path = "../git" }
-labonair-backend = { path = "../backend" }
 labonair-filesystem = { path = "../filesystem" }
 labonair-ssh = { path = "../ssh" }
 labonair-sftp = { path = "../sftp" }

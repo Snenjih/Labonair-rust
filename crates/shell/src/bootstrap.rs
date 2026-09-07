@@ -15,18 +15,18 @@
 use std::sync::Arc;
 
 use gpui::{App, AppContext, Context, Entity, PathPromptOptions, Window, WindowBounds};
-use labonair_backend::modules::mcp::contract::BackendMcpSessionAccess;
+use labonair_backend::modules::mcp::contract::{BackendMcpEventSource, BackendMcpSessionAccess};
 use labonair_backend::modules::mcp::{
     mcp_set_auto_revoke_minutes, mcp_set_enabled, mcp_set_max_command_timeout_secs, mcp_set_port,
 };
 use labonair_backend::modules::settings::mcp::mcp_prefs_load;
 use labonair_backend::App as Backend;
 use labonair_hosts_ui::{open_hosts_window, HostManagerEvent, HostManagerView};
-use labonair_mcp_core::{McpSessionAccessService, McpTabOperationService};
+use labonair_mcp_core::{McpEventSource, McpSessionAccessService, McpTabOperationService};
 use labonair_notifications::{notification_center, Notification, NotificationCenter};
 use labonair_sftp::{SftpBrowserService, SftpSessionService};
 use labonair_ssh::{
-    SshConfigService, SshConnectionService, SshConnectionTester, SshPtyService,
+    SshConfigService, SshConnectionService, SshConnectionTester, SshEventSource, SshPtyService,
     SshRemoteCommandService, SshRemoteFileService, SshTunnelService,
 };
 use labonair_terminal::TerminalRegistry;
@@ -240,6 +240,11 @@ pub(crate) fn bootstrap(
         Arc::new(labonair_backend::modules::ssh::contract::BackendSshService::new(backend.clone()));
     let ssh_config: Arc<dyn SshConfigService> =
         Arc::new(labonair_backend::modules::ssh::contract::BackendSshService::new(backend.clone()));
+    let ssh_event_source: Arc<dyn SshEventSource> = Arc::new(
+        labonair_backend::modules::ssh::contract::BackendSshEventSource::new(backend.clone()),
+    );
+    let mcp_event_source: Arc<dyn McpEventSource> =
+        Arc::new(BackendMcpEventSource::new(backend.clone()));
     let host_manager = {
         let app_for_host_events = backend.clone();
         let host_event_handler = Arc::new(move |event| {
@@ -291,7 +296,6 @@ pub(crate) fn bootstrap(
             registry,
             theme.clone(),
             background.clone(),
-            backend.clone(),
             ssh_service.clone(),
             ssh_pty_service.clone(),
             ssh_remote_service.clone(),
@@ -301,6 +305,8 @@ pub(crate) fn bootstrap(
             sftp_browser_service.clone(),
             git_service.clone(),
             git_graph_service.clone(),
+            ssh_event_source,
+            mcp_event_source,
             agent_access_service,
             mcp_tab_operations,
             transfer_service,

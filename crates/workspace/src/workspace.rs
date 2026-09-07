@@ -24,7 +24,6 @@
 //! forwards transfer requests from SFTP views to the injected service.
 
 pub mod agent_access;
-pub mod backend_event_bridge;
 pub mod bell;
 pub mod command_provider;
 pub mod context;
@@ -33,11 +32,13 @@ pub mod drag;
 pub mod layout;
 pub mod live_bridge;
 pub mod markdown;
+pub mod mcp_event_bridge;
 pub mod modal_layer;
 pub mod pane;
 pub mod pane_group;
 pub mod search_overlay;
 pub mod session;
+pub mod ssh_event_bridge;
 pub mod status_bar;
 pub mod status_placements;
 pub mod syntax_theme;
@@ -67,7 +68,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crate::agent_access::AgentAccessStore;
-use crate::backend_event_bridge::BackendEventBridge;
+use crate::mcp_event_bridge::McpEventBridge;
+use crate::ssh_event_bridge::SshEventBridge;
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, point, px, relative, Animation, AnimationExt, App, AppContext, ClickEvent, Context,
@@ -75,15 +77,16 @@ use gpui::{
     IntoElement, KeyDownEvent, MouseButton, MouseDownEvent, ParentElement, Render, SharedString,
     StatefulInteractiveElement, Styled, Task, Window,
 };
-use labonair_backend::{App as Backend, AppEvent};
 use labonair_git::{GitGraphService, GitService};
 use labonair_mcp_core::{
-    McpSessionAccessService, McpTabOperationService, SessionGrantRequest, SessionKind, TabOpResult,
+    McpEvent, McpEventSource, McpSessionAccessService, McpTabOperationService, SessionGrantRequest,
+    SessionKind, TabOpResult,
 };
 use labonair_sftp::{SftpBrowserService, SftpSessionService};
 use labonair_ssh::{
-    SshConnectRequest, SshConnectionService, SshEventSink, SshPtyService, SshRemoteCommandService,
-    SshRemoteFileService, SshSessionEvent, SshSessionId, SshTunnelService,
+    SshConnectRequest, SshConnectionEvent, SshConnectionService, SshEventSink, SshEventSource,
+    SshPtyService, SshRemoteCommandService, SshRemoteFileService, SshSessionEvent, SshSessionId,
+    SshTunnelService,
 };
 use labonair_terminal::{
     RemoteFeed, RemoteResizer, RemoteWriter, SessionHandle, SessionId, SessionOptions,
@@ -429,11 +432,12 @@ pub struct Workspace {
     ssh_connection: Entity<ConnectionStatusStore>,
     /// Tab ids the loading screen asked to close (needs `&mut Window`).
     pending_tab_close: Vec<u64>,
-    /// Backend event bus → UI bridge (T17-008): decodes `AppEvent` /
-    /// SSH events off `backend.events` on the GPUI foreground and pushes them
-    /// straight into this entity — event-driven, no poll drain. Transfer
-    /// events have their own capability-owned bridge.
-    _backend_event_bridge: Entity<BackendEventBridge>,
+    /// Injected SSH connection-event source → UI bridge (T17-008). The source
+    /// owns transport translation; Workspace receives typed events only.
+    _ssh_event_bridge: Entity<SshEventBridge>,
+    /// Injected MCP event source → UI bridge. MCP requests and activity are
+    /// delivered separately from the SSH connection lifecycle.
+    _mcp_event_bridge: Entity<McpEventBridge>,
     /// Periodic tunnel-liveness refresh (state poll, not event-driven).
     _ssh_poll: Task<()>,
     /// Periodic session-snapshot writer (T14-001) — covers force-quit; the
@@ -471,7 +475,6 @@ impl Workspace {
         registry: Arc<TerminalRegistry>,
         theme: Entity<ThemeStore>,
         background: Entity<BackgroundStore>,
-        backend: Backend,
         ssh: Arc<dyn SshConnectionService>,
         ssh_pty: Arc<dyn SshPtyService>,
         ssh_remote: Arc<dyn SshRemoteCommandService>,
@@ -481,6 +484,8 @@ impl Workspace {
         sftp_browser: Arc<dyn SftpBrowserService>,
         git: Arc<dyn GitService>,
         git_graph_service: Arc<dyn GitGraphService>,
+        ssh_event_source: Arc<dyn SshEventSource>,
+        mcp_event_source: Arc<dyn McpEventSource>,
         mcp_access: Arc<dyn McpSessionAccessService>,
         mcp_tab_operations: Arc<dyn McpTabOperationService>,
         transfer_service: Arc<dyn TransferService>,
@@ -511,13 +516,15 @@ impl Workspace {
 
         cx.observe(&host_manager, |_, _, cx| cx.notify()).detach();
 
-        // Backend event bus → UI (T17-008): one foreground subscription that
-        // decodes each raw event and pushes it straight into this entity. No
-        // `tokio::spawn` + `mpsc` + poll-drain hop.
-        let backend_event_bridge = {
+        // SSH connection events → UI (T17-008): one injected source and one
+        // foreground bridge. No backend event bus reaches Workspace.
+        let ssh_event_bridge = {
             let workspace = cx.entity().downgrade();
-            let backend = backend.clone();
-            cx.new(|cx| BackendEventBridge::new(backend, workspace, cx))
+            cx.new(|cx| SshEventBridge::new(ssh_event_source, workspace, cx))
+        };
+        let mcp_event_bridge = {
+            let workspace = cx.entity().downgrade();
+            cx.new(|cx| McpEventBridge::new(mcp_event_source, workspace, cx))
         };
 
         let ssh_poll = cx.spawn(async move |this, cx| loop {
@@ -593,7 +600,8 @@ impl Workspace {
             prompt_shown: false,
             ssh_connection: cx.new(|_| ConnectionStatusStore::new()),
             pending_tab_close: Vec::new(),
-            _backend_event_bridge: backend_event_bridge,
+            _ssh_event_bridge: ssh_event_bridge,
+            _mcp_event_bridge: mcp_event_bridge,
             _ssh_poll: ssh_poll,
             transfer_service,
             pending_mcp: Vec::new(),
@@ -3134,16 +3142,16 @@ impl Workspace {
         self.spawn_ssh_connect(ssh_id.to_string(), host_id, passphrase, password, feed, cx);
     }
 
-    pub(crate) fn handle_ssh_event(&mut self, ev: AppEvent, cx: &mut Context<Self>) {
+    pub(crate) fn handle_ssh_event(&mut self, ev: SshConnectionEvent, cx: &mut Context<Self>) {
         match ev {
-            AppEvent::SshConnectLog {
+            SshConnectionEvent::ConnectLog {
                 session_id,
                 message,
             } => {
                 self.ssh_connection
                     .update(cx, |s, cx| s.push_log(&session_id, &message, cx));
             }
-            AppEvent::SshKnownHostsWarning {
+            SshConnectionEvent::KnownHostsWarning {
                 session_id,
                 fingerprint,
                 host,
@@ -3155,7 +3163,7 @@ impl Workspace {
                 let _ = (host, fingerprint, is_mismatch);
                 self.ssh_prompt = Some(SshPrompt::Trust { ssh_id: session_id });
             }
-            AppEvent::SshAuthRequired {
+            SshConnectionEvent::AuthRequired {
                 session_id,
                 prompt_message,
                 is_2fa,
@@ -3168,7 +3176,7 @@ impl Workspace {
                     buffer: String::new(),
                 });
             }
-            AppEvent::SshPassphraseRequired { session_id } => {
+            SshConnectionEvent::PassphraseRequired { session_id } => {
                 self.ssh_connection
                     .update(cx, |s, cx| s.set_passphrase(&session_id, cx));
                 self.ssh_prompt = Some(SshPrompt::Passphrase {
@@ -3176,7 +3184,7 @@ impl Workspace {
                     buffer: String::new(),
                 });
             }
-            AppEvent::SshSessionEstablished { session_id, .. } => {
+            SshConnectionEvent::SessionEstablished { session_id, .. } => {
                 self.ssh_connection.update(cx, |s, cx| {
                     s.set_state(&session_id, ConnectionState::Connected, cx)
                 });
@@ -3205,7 +3213,7 @@ impl Workspace {
                     }
                 }
             }
-            AppEvent::SshConnectionLost { session_id } => {
+            SshConnectionEvent::ConnectionLost { session_id } => {
                 let known = self.ssh_connection.read(cx).get(&session_id).is_some();
                 if let Some(host) =
                     self.ssh_tabs
@@ -3253,7 +3261,13 @@ impl Workspace {
                     });
                 }
             }
-            AppEvent::McpOpenTabRequest {
+        }
+        cx.notify();
+    }
+
+    pub(crate) fn handle_mcp_event(&mut self, ev: McpEvent, cx: &mut Context<Self>) {
+        match ev {
+            McpEvent::OpenTabRequest {
                 request_id,
                 host_id,
                 ..
@@ -3271,7 +3285,7 @@ impl Workspace {
                     },
                 ),
             },
-            AppEvent::McpCloseTabRequest {
+            McpEvent::CloseTabRequest {
                 request_id,
                 session_id,
             } => match session_id {
@@ -3288,7 +3302,7 @@ impl Workspace {
                     },
                 ),
             },
-            AppEvent::McpServerError { message } => {
+            McpEvent::ServerError { message } => {
                 let center = labonair_notifications::notification_center(cx);
                 center.update(cx, |c, cx| {
                     c.push_action_result(
@@ -3300,7 +3314,7 @@ impl Workspace {
                     );
                 });
             }
-            AppEvent::McpGrantExpired { tab_id } => {
+            McpEvent::GrantExpired { tab_id } => {
                 // Auto-revoke sweep or a host's "Block AI Agent Access" flag
                 // being switched on: Rust already dropped the grant, clear the
                 // local mirror so the badge / context-menu checkbox catch up.
@@ -3308,7 +3322,7 @@ impl Workspace {
                     self.agent_access.update(cx, |s, cx| s.clear_local(id, cx));
                 }
             }
-            AppEvent::McpActivity {
+            McpEvent::Activity {
                 label,
                 action,
                 detail,
@@ -3327,7 +3341,6 @@ impl Workspace {
                     });
                 }
             }
-            _ => {}
         }
         cx.notify();
     }

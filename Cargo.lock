@@ -4747,7 +4747,6 @@ dependencies = [
  "image",
  "jsonc-parser",
  "labonair-ai",
- "labonair-backend",
  "labonair-background",
  "labonair-command-palette",
  "labonair-command-palette-core",
