@@ -26,6 +26,12 @@ pub struct EventBus {
     tx: tokio::sync::broadcast::Sender<RawEvent>,
 }
 
+impl From<crate::App> for EventBus {
+    fn from(app: crate::App) -> Self {
+        app.events.clone()
+    }
+}
+
 impl Default for EventBus {
     fn default() -> Self {
         Self::new()

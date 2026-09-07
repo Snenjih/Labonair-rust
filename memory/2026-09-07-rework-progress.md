@@ -110,6 +110,12 @@ uses explicit MCP state plus `EventBus`, and the auto-revoke sweeper emits
 through `EventBus` directly. Token storage, listener startup, and MCP terminal
 tool execution remain the separate App-bound server boundary.
 
+The Git remote executor was narrowed next: `GitExecutor::Remote` now stores
+only `SshState` and `EventBus`. Existing public helper functions still accept
+the aggregate at their transitional boundary, where `resolve_executor` turns
+it into the raw event bus; this is the next seam for removing App from the Git
+operation surface without changing the canonical `labonair-git` contracts.
+
 ## Native visual verification
 
 The exact Rust bundle was opened through its absolute `.app` path. Core

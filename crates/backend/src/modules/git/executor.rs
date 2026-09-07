@@ -1,6 +1,7 @@
 use crate::modules::sftp::net_error::is_network_error;
 use crate::modules::ssh::shell::shell_quote;
 use crate::modules::ssh::SshState;
+use crate::EventBus;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::sync::Arc;
@@ -26,7 +27,7 @@ pub(crate) enum GitExecutor {
         session_id: String,
         cwd: String,
         ssh_state: SshState,
-        app: crate::App,
+        events: EventBus,
     },
 }
 
@@ -34,14 +35,14 @@ pub(crate) fn resolve_executor(
     path: String,
     session_id: Option<String>,
     ssh_state: SshState,
-    app: crate::App,
+    events: impl Into<EventBus>,
 ) -> GitExecutor {
     match session_id {
         Some(session_id) => GitExecutor::Remote {
             session_id,
             cwd: path,
             ssh_state,
-            app,
+            events: events.into(),
         },
         None => GitExecutor::Local { cwd: path },
     }
@@ -143,10 +144,10 @@ impl GitExecutor {
                 session_id,
                 cwd,
                 ssh_state,
-                app,
+                events,
             } => {
                 let script = format!("cd {} && {}", shell_quote(cwd), script);
-                run_remote_script(ssh_state, app, session_id, &script)
+                run_remote_script(ssh_state, events, session_id, &script)
                     .await
                     .map(|(stdout, _stderr, exit_code)| (stdout, exit_code))
             }
@@ -172,7 +173,7 @@ impl GitExecutor {
                 session_id,
                 cwd,
                 ssh_state,
-                app,
+                events,
             } => {
                 let quoted_args: String = args
                     .iter()
@@ -182,9 +183,14 @@ impl GitExecutor {
                 let cwd_quoted = shell_quote(cwd);
                 let script =
                     format!("LC_ALL=C GIT_TERMINAL_PROMPT=0 git -C {cwd_quoted} {quoted_args}");
-                let (_stdout, stderr, exit_code) =
-                    run_remote_script_with_stdin(ssh_state, app, session_id, &script, &stdin_bytes)
-                        .await?;
+                let (_stdout, stderr, exit_code) = run_remote_script_with_stdin(
+                    ssh_state,
+                    events,
+                    session_id,
+                    &script,
+                    &stdin_bytes,
+                )
+                .await?;
                 if exit_code == 0 {
                     Ok(())
                 } else {
@@ -200,7 +206,7 @@ impl GitExecutor {
             session_id,
             cwd,
             ssh_state,
-            app,
+            events,
         } = self
         else {
             unreachable!("exec_remote_args called on Local executor");
@@ -216,7 +222,7 @@ impl GitExecutor {
         };
 
         let run = |script: String| async move {
-            run_remote_script(ssh_state, app, session_id, &script).await
+            run_remote_script(ssh_state, events, session_id, &script).await
         };
 
         let result = run(build_script("git")).await?;
@@ -438,12 +444,12 @@ fn run_local_script(script: &str, cwd: &str) -> Result<(Vec<u8>, i32), String> {
 /// path so every surface reacts the same way to a dropped connection.
 async fn run_remote_script(
     ssh_state: &SshState,
-    app: &crate::App,
+    events: &EventBus,
     session_id: &str,
     script: &str,
 ) -> Result<(Vec<u8>, Vec<u8>, i32), String> {
     let emit_connection_lost = |reason: &str| {
-        let _ = app.emit(
+        let _ = events.emit(
             "ssh_connection_lost",
             serde_json::json!({ "session_id": session_id, "reason": reason }),
         );
@@ -548,13 +554,13 @@ async fn run_remote_script(
 /// `run_remote_script`.
 async fn run_remote_script_with_stdin(
     ssh_state: &SshState,
-    app: &crate::App,
+    events: &EventBus,
     session_id: &str,
     script: &str,
     stdin_bytes: &[u8],
 ) -> Result<(Vec<u8>, Vec<u8>, i32), String> {
     let emit_connection_lost = |reason: &str| {
-        let _ = app.emit(
+        let _ = events.emit(
             "ssh_connection_lost",
             serde_json::json!({ "session_id": session_id, "reason": reason }),
         );

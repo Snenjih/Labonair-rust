@@ -33,7 +33,7 @@ participate in the `App` state graph or in another backend module.
 | `directives` | directive values and local persistence helpers | none found | AI/agent owner; remove if no current workflow needs it |
 | `fonts` | custom-font file operations and system-font discovery | `shell::settings_services` | system-font discovery moved to `labonair-theme`; the unconsumed custom-font path and backend module were removed |
 | `fs` | removed | no active consumers | filesystem foundation owns paths, operations, and watchers; backend compatibility module and dead watcher adapter removed |
-| `git` | Git operation functions and `BackendGitService` / graph adapter | `shell::bootstrap`, `workspace` | `labonair-git` integration adapter; keep transport implementation narrow |
+| `git` | Git operation functions and `BackendGitService` / graph adapter | `shell::bootstrap`, `workspace` | `labonair-git` integration adapter; remote executor now stores only SSH state plus EventBus, while public helper signatures remain transitional |
 | `mcp` | MCP state, grants, server operations, host revocation callback | `shell`, `workspace`; internal PTY/secrets use | `labonair-mcp-core` owns UI-free grant and tab-operation contracts; grant/revoke adapter receives only MCP state/database/events, while aggregate server state still needs App extraction |
 | `model_prefs` | model preference values and local load/save | none found | AI owner; verify against current AI configuration before moving |
 | `pty` | local PTY state, sessions, events, I/O operations | indirect through backend/MCP | terminal owner; expose a terminal service rather than `App` state |

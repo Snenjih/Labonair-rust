@@ -140,6 +140,8 @@ boundary still exists; that package must not become a second capability owner.
 - [x] The MCP grant/session adapter now receives only `McpState` and
       `Database`; host-block revocation receives explicit MCP state and
       `EventBus`, while the MCP server remains a separate App-bound adapter.
+- [x] The Git remote executor now stores only `SshState` and `EventBus`; the
+      older helper signatures remain as a documented transitional call edge.
 - [ ] Move the remaining contracts and adapters behind injected capability
       services.
 - [ ] Delete the broad `App` facade paths and remaining compatibility edges.
