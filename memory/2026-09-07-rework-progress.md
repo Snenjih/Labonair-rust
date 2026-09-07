@@ -417,3 +417,13 @@ multi-area query after removing the stale cursor-position expectation. Full
 workspace tests, check, Clippy, dependency, queue, formatting, and diff checks
 pass. Committed as `3bc4930`; R05-001 remains active for the final retained
 value proof.
+
+## R05-001 Format-on-save cleanup
+
+Removed `editorFormatOnSave` from the typed Editor settings, defaults, project
+whitelist, generated UI, and migration target because the native editor does
+not implement formatting on save. Removed its Settings/command-palette toggle
+path from the command registry and shell action handling as well. Updated the
+project template and Settings inventory. Full workspace tests, check, Clippy,
+dependency, queue, formatting, and diff checks pass. Committed as `7ad02f1`;
+R05-001 remains active for the retained-setting consumer audit.
