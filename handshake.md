@@ -7,6 +7,23 @@ the normative documents under `docs/`.
 
 ## Current Session: 2026-09-07 (R07-001 Product surface acceptance active)
 
+The full workspace verification was re-run after the task-tree consolidation:
+`cargo test --workspace --no-fail-fast` passed. The documentation layer now
+has a normative `docs/documentation-governance.md` defining authority and
+placement for contracts, ADRs, audits, reports, ideas, active tasks, archives,
+and memory. README links now point explicitly to `tasks/archive/` and
+`tasks/rework/`. The capability matrix was corrected so
+`labonair-panel-explorer` is the canonical Explorer capability/UI crate rather
+than incorrectly naming Filesystem contracts as its owner.
+
+The B01 follow-up is now prepared as planned task
+`tasks/rework/R07-004-explorer-host-contract.md`; it is not active while
+R07-001's native visual matrix remains pending. The latest commits are
+`5508e0e`, `3759267`, `73cd87e`, and `0d05265`. The worktree is clean. Next:
+obtain native visual evidence for R07-001, then activate R07-004 and remove
+the direct Explorer-to-Workspace view dependency. No old Tauri application was
+used.
+
 The active-code source audit found no passive toast renderer or duplicate
 operation-error surface. The Explorer clipboard strip and editor conflict
 banner are actionable decision surfaces. The AI error model was corrected in

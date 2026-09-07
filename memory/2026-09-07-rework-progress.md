@@ -1081,3 +1081,18 @@ The historical task tree was consolidated under `tasks/archive/`: the former
 root `tasks/ROADMAP.md` and all `tasks/phase-*` directories were moved there,
 with root and historical links updated. `tasks/rework/` remains the sole active
 queue, and the versioned Markdown link audit passes after the move.
+
+The documentation layer gained the normative `docs/documentation-governance.md`
+contract. It defines authority and placement for current contracts, ADRs,
+audits, reports, ideas, active tasks, archives, and memory, plus the required
+change and evidence protocol. README links now name the archived and active
+task trees explicitly. The capability matrix was corrected so
+`labonair-panel-explorer` is the canonical Explorer capability/UI crate; the
+Filesystem crate is a supporting foundation dependency, not the Explorer
+owner.
+
+The known B01 boundary was made executable as the planned
+`tasks/rework/R07-004-explorer-host-contract.md` task. It remains intentionally
+planned until R07-001's native visual acceptance gate is complete. Full
+workspace tests pass after the documentation changes, and the latest commits
+are `73cd87e`, `3759267`, and `5508e0e`; the worktree is clean.
