@@ -11,6 +11,10 @@ is the migration pattern for the remaining facade entries: consume the
 canonical contract first, then remove the compatibility edge once source
 search and focused tests prove it has no external consumer.
 
+The AI crate's stale direct dependency on `labonair-backend` was removed after
+source search confirmed that `NativeHost` already uses `labonair-filesystem`
+directly. Its documentation now names the actual filesystem capability.
+
 ## Native visual verification
 
 The exact Rust bundle was opened through its absolute `.app` path. Core

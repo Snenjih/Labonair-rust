@@ -1,7 +1,7 @@
-//! [`ToolHost`] — the filesystem + shell backend the AI tools run against
-//! (T11-004). The default [`NativeHost`] delegates to `labonair-backend`'s
-//! in-process FS helpers and runs shell commands via `std::process::Command`
-//! with a timeout, off any UI thread.
+//! [`ToolHost`] — the filesystem + shell services the AI tools run against
+//! (T11-004). The default [`NativeHost`] delegates to the standalone
+//! `labonair-filesystem` service and runs shell commands via
+//! `std::process::Command` with a timeout, off any UI thread.
 
 use std::collections::BTreeMap;
 use std::io::Read;
@@ -67,7 +67,7 @@ pub trait ToolHost: Send + Sync {
 /// Largest file the read tool will return (matches the reference `AI_READ_CAP`).
 pub const AI_READ_CAP: usize = 200 * 1024;
 
-/// Production [`ToolHost`] backed by `labonair-backend`.
+/// Production [`ToolHost`] backed by the filesystem capability.
 #[derive(Default)]
 pub struct NativeHost;
 

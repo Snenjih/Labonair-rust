@@ -101,6 +101,8 @@ boundary still exists; that package must not become a second capability owner.
       [`docs/audits/backend-facade-inventory.md`](../../docs/audits/backend-facade-inventory.md).
 - [x] Structured error contract removed from the backend facade and consumed
       directly from `labonair-errors`.
+- [x] Stale `labonair-ai → labonair-backend` dependency removed; AI's native
+      tool host already consumes `labonair-filesystem` directly.
 - [ ] Move the remaining contracts and adapters behind injected capability
       services.
 - [ ] Delete the broad `App` facade paths and remaining compatibility edges.
