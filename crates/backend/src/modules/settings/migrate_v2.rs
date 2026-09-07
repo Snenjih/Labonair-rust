@@ -178,7 +178,7 @@ fn appearance_from(p: &Preferences) -> AppearanceContent {
         app_line_height: Some(p.app_line_height),
         app_font_family: Some(p.app_font_family.clone()),
         reduce_motion: Some(p.reduce_motion),
-        app_corner_radius: Some(p.app_corner_radius),
+        corner_radius_scale: Some(p.app_corner_radius as f32 / 5.0),
         tabs_location: Some(p.tabs_location.clone()),
         sidebar_tab_info_line: Some(p.sidebar_tab_info_line.clone()),
         sidebar_group_by_folder: Some(p.sidebar_group_by_folder),
@@ -200,6 +200,26 @@ const BACKGROUND_KEYS: &[&str] = &[
     "backgroundTintColor",
     "backgroundTintOpacity",
 ];
+
+/// Convert the pre-T20-007 pixel radius to the current scale value. The
+/// explicit modern scale wins when both keys are present.
+fn move_legacy_corner_radius(settings: &mut Map<String, Value>) -> usize {
+    let Some(appearance) = settings
+        .get_mut("appearance")
+        .and_then(Value::as_object_mut)
+    else {
+        return 0;
+    };
+    let Some(legacy) = appearance.remove("appCornerRadius") else {
+        return 0;
+    };
+    if !appearance.contains_key("cornerRadiusScale") {
+        if let Some(px) = legacy.as_f64() {
+            appearance.insert("cornerRadiusScale".into(), Value::from(px / 5.0));
+        }
+    }
+    1
+}
 
 /// Persist background values in the top-level shape consumed by
 /// `labonair-background`. Background rendering and image storage already have
@@ -437,6 +457,11 @@ const REMOVED_GENERAL_FIELDS: &[&str] = &[
     "confirmQuitWithSsh",
 ];
 
+/// Legacy appearance value converted to the current typed scale field before
+/// Settings is written.
+#[cfg_attr(not(test), allow(dead_code))]
+const MOVED_APPEARANCE_FIELDS: &[&str] = &["appCornerRadius"];
+
 /// Preferences fields with no `SettingsContent` destination, preserved
 /// losslessly under `_migratedUnknown.preferences.*` instead of a mapped
 /// area field.
@@ -555,8 +580,13 @@ pub fn sparsify_v2_settings(dir: &Path) -> Result<SparsifyOutcome, String> {
                 .iter()
                 .any(|key| appearance.contains_key(*key))
         });
+    let corner_radius_migration_needed = settings
+        .get("appearance")
+        .and_then(Value::as_object)
+        .is_some_and(|appearance| appearance.contains_key("appCornerRadius"));
     if settings.get(KEY_SPARSIFIED).and_then(Value::as_bool) == Some(true)
         && !background_migration_needed
+        && !corner_radius_migration_needed
     {
         return Ok(SparsifyOutcome::AlreadySparse);
     }
@@ -567,7 +597,8 @@ pub fn sparsify_v2_settings(dir: &Path) -> Result<SparsifyOutcome, String> {
     }
 
     let moved_background = move_background_values_to_owner(&mut settings);
-    let removed = moved_background + sparsify_settings_map(&mut settings);
+    let moved_corner_radius = move_legacy_corner_radius(&mut settings);
+    let removed = moved_background + moved_corner_radius + sparsify_settings_map(&mut settings);
     settings.insert(KEY_SPARSIFIED.to_string(), Value::Bool(true));
     write_settings_to(dir, &settings)?;
 
@@ -893,7 +924,6 @@ mod tests {
             "appLineHeight",
             "appFontFamily",
             "reduceMotion",
-            "appCornerRadius",
             "backgroundImage",
             "backgroundOpacity",
             "backgroundBlur",
@@ -1022,6 +1052,7 @@ mod tests {
         accounted.extend(WORKSPACE_LAYOUT_FIELDS.iter().copied());
         accounted.extend(REMOVED_TERMINAL_FIELDS.iter().copied());
         accounted.extend(REMOVED_GENERAL_FIELDS.iter().copied());
+        accounted.extend(MOVED_APPEARANCE_FIELDS.iter().copied());
         accounted.extend(UNKNOWN_PREFERENCES_FIELDS.iter().copied());
 
         let all_keys: BTreeSet<&str> = obj.keys().map(|s| s.as_str()).collect();
@@ -1042,6 +1073,7 @@ mod tests {
         let mut prefs = serde_json::to_value(Preferences::default()).unwrap();
         prefs["backgroundImage"] = Value::from("wallpaper.png");
         prefs["backgroundOpacity"] = Value::from(45);
+        prefs["appCornerRadius"] = Value::from(10);
         std::fs::write(
             dir.join(CONFIG_FILE),
             serde_json::to_string_pretty(&serde_json::json!({ "preferences": prefs })).unwrap(),
@@ -1052,6 +1084,7 @@ mod tests {
         let after = read_settings_from(&dir);
         assert_eq!(after["backgroundImage"], Value::from("wallpaper.png"));
         assert_eq!(after["backgroundOpacity"], Value::from(45));
+        assert_eq!(after["appearance"]["cornerRadiusScale"], Value::from(2.0));
         assert!(after
             .get("appearance")
             .and_then(Value::as_object)
@@ -1090,6 +1123,33 @@ mod tests {
             .is_none_or(|appearance| !appearance.contains_key("backgroundImage")));
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn legacy_corner_radius_becomes_the_current_scale() {
+        let dir = tmp("corner-radius-v2");
+        let doc = serde_json::json!({
+            "schemaVersion": 2,
+            "sparsified": true,
+            "appearance": { "appCornerRadius": 10 }
+        });
+        std::fs::write(
+            dir.join(CONFIG_FILE),
+            serde_json::to_string_pretty(&doc).unwrap(),
+        )
+        .unwrap();
+
+        assert!(matches!(
+            sparsify_v2_settings(&dir).unwrap(),
+            SparsifyOutcome::Sparsified { .. }
+        ));
+        let after = read_settings_from(&dir);
+        assert_eq!(after["appearance"]["cornerRadiusScale"], Value::from(2.0));
+        assert!(!after["appearance"]
+            .as_object()
+            .unwrap()
+            .contains_key("appCornerRadius"));
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]

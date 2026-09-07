@@ -21,10 +21,6 @@ pub struct AppearanceContent {
     /// UI font family (full CSS stack; empty = system default).
     pub app_font_family: Option<String>,
     pub reduce_motion: Option<bool>,
-    /// Legacy corner-radius base, in px (T20-007: superseded by
-    /// `corner_radius_scale`; kept so old settings files keep parsing and a
-    /// non-default value still migrates to a scale).
-    pub app_corner_radius: Option<u32>,
     /// Editor/terminal text font family (empty = the theme's own mono family).
     pub buffer_font_family: Option<String>,
     /// Editor/terminal text font size, px (T20-007 `theme_settings` layer).
@@ -62,7 +58,6 @@ impl AppearanceContent {
             app_line_height: Some(1.5),
             app_font_family: Some("\"IBM Plex Sans\", sans-serif".to_string()),
             reduce_motion: Some(false),
-            app_corner_radius: Some(5),
             buffer_font_family: Some(String::new()),
             buffer_font_size: Some(15),
             buffer_line_height: Some(1.618),

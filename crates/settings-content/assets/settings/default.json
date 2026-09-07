@@ -28,8 +28,6 @@
     "appLineHeight": 1.5,
     "appFontFamily": "\"IBM Plex Sans\", sans-serif",
     "reduceMotion": false,
-    // Legacy corner-radius base in px — superseded by "cornerRadiusScale".
-    "appCornerRadius": 5,
     // Editor/terminal text (T20-007 theme_settings layer). Empty family = the
     // theme's own mono font.
     "bufferFontFamily": "",

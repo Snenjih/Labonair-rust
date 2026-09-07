@@ -222,13 +222,6 @@ pub fn all_fields() -> Vec<AnyField> {
             "Minimise animations and transitions."
         ),
         field!(
-            appearance.app_corner_radius,
-            "appCornerRadius",
-            Int { min: 0, max: 20, step: 1 },
-            "Corner radius (legacy)",
-            "Legacy corner-radius base in px — superseded by \u{201c}Corner radius scale\u{201d}."
-        ),
-        field!(
             appearance.ui_density,
             "uiDensity",
             Select(&[

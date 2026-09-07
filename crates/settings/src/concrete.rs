@@ -72,17 +72,6 @@ impl Settings for ThemeSettings {
     fn from_settings(content: &SettingsContent) -> Self {
         let mut merged = AppearanceContent::defaults();
         merged.merge_from(&content.appearance);
-        // T20-007 read-time migration: a pre-T20-007 file that set the legacy
-        // `appCornerRadius` (px) but never `cornerRadiusScale` keeps its
-        // rounding — px ÷ 5 (the historical default base) becomes the scale.
-        // The legacy key itself is left in place.
-        if content.appearance.corner_radius_scale.is_none() {
-            if let Some(px) = content.appearance.app_corner_radius {
-                if px != 5 {
-                    merged.corner_radius_scale = Some(px as f32 / 5.0);
-                }
-            }
-        }
         Self(merged)
     }
 }
@@ -166,8 +155,8 @@ impl ThemeSettings {
         self.0.ui_density.as_deref().unwrap_or("default")
     }
 
-    /// Corner-radius multiplier (`1.0` = unchanged). The legacy `appCornerRadius`
-    /// fallback is resolved once in [`ThemeSettings::from_settings`].
+    /// Corner-radius multiplier (`1.0` = unchanged). Legacy pixel values are
+    /// converted during the versioned settings migration.
     pub fn corner_radius_scale(&self) -> f32 {
         self.0.corner_radius_scale.unwrap_or(1.0)
     }
@@ -462,28 +451,13 @@ mod tests {
     }
 
     #[test]
-    fn theme_settings_metric_accessors_and_legacy_corner_radius_migration() {
+    fn theme_settings_metric_accessors() {
         // Fresh defaults: unit scale, default density, Zed-style 16/15px fonts.
         let base = ThemeSettings::from_settings(&SettingsContent::default());
         assert_eq!(base.corner_radius_scale(), 1.0);
         assert_eq!(base.ui_density(), "default");
         assert_eq!(base.ui_font_size(), 16.0);
         assert_eq!(base.buffer_font_size(), 15.0);
-
-        // Pre-T20-007 file: only the legacy px key set → migrates to a scale.
-        let mut legacy = SettingsContent::default();
-        legacy.appearance.app_corner_radius = Some(10);
-        let migrated = ThemeSettings::from_settings(&legacy);
-        assert_eq!(migrated.corner_radius_scale(), 2.0);
-
-        // An explicit new-style scale always wins over the legacy key.
-        let mut both = SettingsContent::default();
-        both.appearance.app_corner_radius = Some(10);
-        both.appearance.corner_radius_scale = Some(0.5);
-        assert_eq!(
-            ThemeSettings::from_settings(&both).corner_radius_scale(),
-            0.5
-        );
     }
 
     #[test]

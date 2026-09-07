@@ -42,8 +42,8 @@ means a runtime module, not merely serialization or the generated Settings UI.
 | `general` | `checkForUpdates` | updater launch policy; Global | Keep |
 | `appearance` | `appTheme`, `iconTheme`, `themeVariantOverrides` | theme registry selection persistence; Global; capability-owned registry | Keep as values, no management page |
 | `appearance` | `appFontFamily`, `appFontSize`, `appLineHeight`, `bufferFontFamily`, `bufferFontSize`, `bufferLineHeight`, `uiDensity`, `cornerRadiusScale`, `reduceMotion` | theme metrics/font pipeline; Global | Keep |
-| `appearance` | `backgroundImage`, `backgroundOpacity`, `backgroundBlur`, `backgroundTintColor`, `backgroundTintOpacity` | duplicated by `labonair-background` store | Move to Background owner, then remove Settings duplicates |
-| `appearance` | `appCornerRadius` | superseded by `cornerRadiusScale`; read-time compatibility only | Migration-only, then Remove |
+| `appearance` | `backgroundImage`, `backgroundOpacity`, `backgroundBlur`, `backgroundTintColor`, `backgroundTintOpacity` | `labonair-background` store; Global | Removed from Settings model; values migrate to the Background owner |
+| `appearance` | `appCornerRadius` | superseded by `cornerRadiusScale`; no current consumer | Remove; legacy values migrate to `cornerRadiusScale` |
 | `appearance` | `tabsLocation`, `zenModeShowHeader`, `zenModeShowStatusbar` | shell/workspace presentation; Global | Keep pending direct consumer tests |
 | `appearance` | `sidebarTabInfoLine`, `sidebarGroupByFolder`, `sidebarGroupSingleTabs`, `badgesAlwaysVisible`, `titlebarsIconsPosition` | no current native consumer; titlebar position is legacy | Review; remove unsupported fields |
 | `terminal` | `terminalShell`, `terminalDefaultPath`, `newTabInheritsCwd`, `confirmCloseTerminalTab` | terminal/workspace tab creation and close flow; Global + safe Project values | Keep |

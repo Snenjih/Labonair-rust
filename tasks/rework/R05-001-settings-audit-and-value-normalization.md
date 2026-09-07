@@ -119,3 +119,5 @@ the model. Unused values are parked in the inventory, not added speculatively.
 - [x] Remove the unused `startupTerminalCount` value from the typed model,
       generated UI, project whitelist, and defaults while retaining the legacy
       Preferences wire shape for migration.
+- [x] Remove legacy `appCornerRadius` from the typed model and UI; v1 and v2
+      values migrate losslessly to the current `cornerRadiusScale` value.

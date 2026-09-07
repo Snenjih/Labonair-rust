@@ -224,7 +224,6 @@ const APPEARANCE_GROUPS: &[Group] = &[
     (
         "Layout",
         &[
-            "appCornerRadius",
             "tabsLocation",
             "sidebarGroupByFolder",
             "sidebarGroupSingleTabs",
