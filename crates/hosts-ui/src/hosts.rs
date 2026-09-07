@@ -4075,6 +4075,34 @@ mod tests {
     }
 
     #[gpui::test]
+    fn picker_rows_are_canonical_and_recent_rows_keep_owner_order(cx: &mut TestAppContext) {
+        let (_rt, view) = make(cx);
+        cx.update(|cx| {
+            view.update(cx, |v, _cx| {
+                let mut recent = host_stub("recent", "Recent");
+                recent.last_connected_at = Some(20);
+                recent.host_address = "recent.example".into();
+                recent.username = "deploy".into();
+
+                let mut older = host_stub("older", "Older");
+                older.last_connected_at = Some(10);
+                older.host_address = "older.example".into();
+
+                v.hosts = vec![older, recent];
+
+                assert_eq!(v.picker_rows()[1].subtitle, "deploy@recent.example:22");
+                assert_eq!(
+                    v.recent_picker_rows(2)
+                        .into_iter()
+                        .map(|row| row.id)
+                        .collect::<Vec<_>>(),
+                    vec!["recent", "older"]
+                );
+            });
+        });
+    }
+
+    #[gpui::test]
     fn host_form_prefills_from_an_existing_host(cx: &mut TestAppContext) {
         let (_rt, _view) = make(cx);
         let host = Host {

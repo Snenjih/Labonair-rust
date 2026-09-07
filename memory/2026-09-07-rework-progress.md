@@ -225,4 +225,12 @@ adapters use that foundation type and Host CRUD remains in
 `labonair-hosts::store`. The MCP grant-revocation callback was moved to the MCP
 module as the one explicitly tracked host integration. Focused compilation,
 full tests, Clippy, dependency, queue, formatting, and diff checks remain
-green. R04-002 still needs the explicit visual state review before completion.
+green. The task remained active only until the user's visual confirmation.
+
+## R04-002 completion
+
+The user confirmed the Hosts management and picker visual states, closing the
+empty, filtered, invalid, and connection-pending review. The canonical
+picker-ordering test passes, and the full workspace verification gates remain
+green. R04-002 is complete; `R05-001-settings-audit-and-value-normalization`
+is next.

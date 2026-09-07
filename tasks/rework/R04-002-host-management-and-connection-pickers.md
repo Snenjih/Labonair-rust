@@ -2,7 +2,7 @@
 
 ## Status
 
-`🔄 In Progress`
+`✅ Done`
 
 ## Owner
 
@@ -105,7 +105,7 @@ Shift+Enter opening SFTP, while jump hosts remain part of SSH configuration.
       `HostsDb` alias. Persistence initialization now uses the foundation
       database contract directly; only the explicitly tracked MCP integration
       and transport adapters remain in backend.
-- [ ] Perform
+- [x] Perform
       the visual state review for empty, filtered, invalid, and pending flows.
 
 ## Removal condition

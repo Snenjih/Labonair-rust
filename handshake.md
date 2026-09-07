@@ -5,7 +5,7 @@ They may mention API names that were valid at the time of the recorded
 change; the current API and task state are defined by the latest header and
 the normative documents under `docs/`.
 
-## Current Session: 2026-09-07 (R04-002 hosts owner active)
+## Current Session: 2026-09-07 (R04-002 complete; R05-001 next)
 
 The dedicated Keymap management surface is now a real `labonair-keymap-ui`
 sibling crate. `labonair-keymap` exposes the immutable management snapshot and
@@ -26,7 +26,7 @@ state and the full verification gates pass. R04-002 is the next active task
 for the single Hosts owner and SSH/SFTP picker flow. The combined
 implementation/documentation commit is `20bff4b`.
 
-R04-002 is now in its Hosts-owner implementation slice.
+R04-002 is complete after the user confirmed the Hosts visual states.
 `labonair-hosts` defines typed `HostOpenRequest`/`HostOpenMode` values and
 canonical immutable `HostPickerRow` data. The shell composes one
 `HostManagerView`; the Hosts UI opens it in a dedicated native window from the
@@ -35,13 +35,12 @@ palette consumes owner snapshots and maps Enter to SSH and Shift+Enter to SFTP
 at the shell boundary. The obsolete SQLite-hosts-to-Settings migration,
 marker, Settings host model, and startup projection were removed, so host
 definitions stay in the Hosts store and secrets stay in the secret store.
-Focused tests pass. The backend Hosts CRUD compatibility module and generic
-`HostsDb` alias are now removed; only the explicitly tracked MCP integration
-and transport adapters remain. Remaining for R04-002 is the visual review of
-empty, filtered, invalid, and connection-pending states. Full repository gates
-pass. The backend Hosts adapter-removal commit is `e8381dd`; the worktree is
-clean before the final handshake-only update. R04-002 remains active only for
-the explicit visual state review.
+Focused tests and the full workspace verification gates pass. The backend
+Hosts CRUD compatibility module and generic `HostsDb` alias are removed; only
+the explicitly tracked MCP integration and transport adapters remain. The
+latest implementation commit is `e8381dd` plus the canonical picker-ordering
+test. The worktree is clean before starting
+`R05-001-settings-audit-and-value-normalization.md`.
 
 `R02-003` is complete. The user confirmed the native Rust shell visual state
 is acceptable, closing the final visual acceptance criterion. The project and
