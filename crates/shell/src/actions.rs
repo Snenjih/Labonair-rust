@@ -59,14 +59,6 @@ fn toggle_setting_bool(key: &str, cx: &mut App) {
                 c.terminal.terminal_cursor_blink =
                     Some(!c.terminal.terminal_cursor_blink.unwrap_or(true));
             }
-            "terminalShowPaneHeader" => {
-                c.terminal.terminal_show_pane_header =
-                    Some(!c.terminal.terminal_show_pane_header.unwrap_or(false));
-            }
-            "terminalShowPaneFooter" => {
-                c.terminal.terminal_show_pane_footer =
-                    Some(!c.terminal.terminal_show_pane_footer.unwrap_or(false));
-            }
             "vimMode" => {
                 c.editor.editor_vim_mode = Some(!c.editor.editor_vim_mode.unwrap_or(false));
             }

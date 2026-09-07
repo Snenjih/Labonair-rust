@@ -866,7 +866,7 @@ impl ThemeStore {
         self.theme().typography.terminal_font_size
     }
 
-    /// Terminal line-height multiple (`preferencesStore.terminalLineHeight`).
+    /// Terminal line-height multiple from the active theme typography tokens.
     pub fn terminal_line_height(&self) -> f32 {
         self.theme().typography.terminal_line_height
     }

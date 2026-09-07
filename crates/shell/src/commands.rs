@@ -803,20 +803,6 @@ pub(crate) fn register_builtin_commands() -> CommandDispatcher {
             CommandIcon::Eye,
         ),
         (
-            CommandId::TogglePaneHeader,
-            "terminalShowPaneHeader",
-            CTX_TERMINAL,
-            "Toggle: Terminal Pane Header",
-            CommandIcon::PanelTop,
-        ),
-        (
-            CommandId::TogglePaneFooter,
-            "terminalShowPaneFooter",
-            CTX_TERMINAL,
-            "Toggle: Terminal Pane Footer",
-            CommandIcon::PanelBottom,
-        ),
-        (
             CommandId::ToggleVimMode,
             "vimMode",
             ALWAYS,

@@ -69,20 +69,6 @@ impl CommandProvider for SettingsCommandProvider {
             )
             .with_contexts(&[CommandContext::Terminal])
             .with_icon(CommandIcon::Eye),
-            CommandDescriptor::new(
-                CommandId::TogglePaneHeader,
-                "Toggle: Terminal Pane Header",
-                "Settings",
-            )
-            .with_contexts(&[CommandContext::Terminal])
-            .with_icon(CommandIcon::PanelTop),
-            CommandDescriptor::new(
-                CommandId::TogglePaneFooter,
-                "Toggle: Terminal Pane Footer",
-                "Settings",
-            )
-            .with_contexts(&[CommandContext::Terminal])
-            .with_icon(CommandIcon::PanelBottom),
             CommandDescriptor::new(CommandId::ToggleVimMode, "Toggle: Vim Mode", "Settings")
                 .with_icon(CommandIcon::Check),
         ];

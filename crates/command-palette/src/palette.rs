@@ -127,12 +127,6 @@ fn palette_toggle_state(key: &str, cx: &App) -> bool {
         "terminalCursorBlink" => TerminalSettings::try_get(cx)
             .map(|s| s.cursor_blink())
             .unwrap_or(true),
-        "terminalShowPaneHeader" => TerminalSettings::try_get(cx)
-            .map(|s| s.show_pane_header())
-            .unwrap_or(false),
-        "terminalShowPaneFooter" => TerminalSettings::try_get(cx)
-            .map(|s| s.show_pane_footer())
-            .unwrap_or(false),
         "vimMode" => EditorSettings::try_get(cx)
             .map(|s| s.vim_mode())
             .unwrap_or(false),

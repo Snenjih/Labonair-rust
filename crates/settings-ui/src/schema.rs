@@ -298,27 +298,6 @@ pub fn all_fields() -> Vec<AnyField> {
             "Program to launch (empty = system default)."
         ),
         field!(
-            terminal.terminal_default_path,
-            "terminalDefaultPath",
-            Text,
-            "Default working directory",
-            "Directory new terminals start in (empty = home)."
-        ),
-        field!(
-            terminal.new_tab_inherits_cwd,
-            "newTabInheritsCwd",
-            Switch,
-            "New tab inherits directory",
-            "Open new terminal tabs in the current tab's directory."
-        ),
-        field!(
-            terminal.confirm_close_terminal_tab,
-            "confirmCloseTerminalTab",
-            Switch,
-            "Confirm before closing a terminal tab",
-            "Ask for confirmation when closing a terminal tab."
-        ),
-        field!(
             terminal.terminal_font_family,
             "terminalFontFamily",
             FontFamily,
@@ -331,13 +310,6 @@ pub fn all_fields() -> Vec<AnyField> {
             Int { min: 8, max: 32, step: 1 },
             "Font size",
             "Terminal font size in points."
-        ),
-        field!(
-            terminal.terminal_line_height,
-            "terminalLineHeight",
-            Float { min_centi: 80, max_centi: 200, step_centi: 5 },
-            "Line height",
-            "Terminal line height multiplier."
         ),
         field!(
             terminal.terminal_scrollback,
@@ -398,20 +370,6 @@ pub fn all_fields() -> Vec<AnyField> {
             Switch,
             "Right-click pastes",
             "Paste the clipboard on right-click instead of a context menu."
-        ),
-        field!(
-            terminal.terminal_show_pane_header,
-            "terminalShowPaneHeader",
-            Switch,
-            "Show pane headers",
-            "Show a header strip above each terminal pane."
-        ),
-        field!(
-            terminal.terminal_show_pane_footer,
-            "terminalShowPaneFooter",
-            Switch,
-            "Show pane footer",
-            "Show a footer strip below each terminal pane."
         ),
         field!(
             terminal.terminal_bell,

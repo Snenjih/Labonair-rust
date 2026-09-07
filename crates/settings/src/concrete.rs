@@ -220,14 +220,6 @@ impl TerminalSettings {
         self.0.terminal_cursor_blink.unwrap_or(true)
     }
 
-    pub fn show_pane_header(&self) -> bool {
-        self.0.terminal_show_pane_header.unwrap_or(false)
-    }
-
-    pub fn show_pane_footer(&self) -> bool {
-        self.0.terminal_show_pane_footer.unwrap_or(false)
-    }
-
     /// Ring the terminal bell on the BEL control character.
     pub fn bell(&self) -> bool {
         self.0.terminal_bell.unwrap_or(false)

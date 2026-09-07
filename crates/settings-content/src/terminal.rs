@@ -27,12 +27,8 @@ impl MergeFrom for CursorStyle {
 #[serde(default, rename_all = "camelCase")]
 pub struct TerminalContent {
     pub terminal_shell: Option<String>,
-    pub terminal_default_path: Option<String>,
-    pub new_tab_inherits_cwd: Option<bool>,
-    pub confirm_close_terminal_tab: Option<bool>,
     pub terminal_font_family: Option<String>,
     pub terminal_font_size: Option<u32>,
-    pub terminal_line_height: Option<f32>,
     pub terminal_scrollback: Option<u32>,
     /// Rows of scrollback persisted per pane on quit and replayed on the next
     /// launch. `0` = persist everything the buffer holds.
@@ -46,8 +42,6 @@ pub struct TerminalContent {
     pub terminal_cursor_blink: Option<bool>,
     pub terminal_copy_on_select: Option<bool>,
     pub terminal_right_click_pastes: Option<bool>,
-    pub terminal_show_pane_header: Option<bool>,
-    pub terminal_show_pane_footer: Option<bool>,
     pub terminal_bell: Option<bool>,
     /// Terminal background opacity in percent (100 = fully opaque).
     pub terminal_opacity: Option<u32>,
@@ -58,12 +52,8 @@ impl TerminalContent {
         let mono = "\"Lilex\", SFMono-Regular, Menlo, monospace".to_string();
         Self {
             terminal_shell: Some(String::new()),
-            terminal_default_path: Some(String::new()),
-            new_tab_inherits_cwd: Some(true),
-            confirm_close_terminal_tab: Some(false),
             terminal_font_family: Some(mono),
             terminal_font_size: Some(15),
-            terminal_line_height: Some(1.05),
             terminal_scrollback: Some(5_000),
             session_scrollback_lines: Some(1_000),
             scrollback_max_size_mb: Some(10),
@@ -72,8 +62,6 @@ impl TerminalContent {
             terminal_cursor_blink: Some(true),
             terminal_copy_on_select: Some(false),
             terminal_right_click_pastes: Some(false),
-            terminal_show_pane_header: Some(false),
-            terminal_show_pane_footer: Some(false),
             terminal_bell: Some(false),
             terminal_opacity: Some(100),
         }

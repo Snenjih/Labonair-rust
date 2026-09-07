@@ -46,11 +46,11 @@ means a runtime module, not merely serialization or the generated Settings UI.
 | `appearance` | `appCornerRadius` | superseded by `cornerRadiusScale`; no current consumer | Remove; legacy values migrate to `cornerRadiusScale` |
 | `appearance` | `tabsLocation`, `zenModeShowHeader`, `zenModeShowStatusbar` | shell/workspace presentation; Global | Keep pending direct consumer tests |
 | `appearance` | `sidebarTabInfoLine`, `sidebarGroupByFolder`, `sidebarGroupSingleTabs`, `badgesAlwaysVisible`, `titlebarsIconsPosition` | no current native consumer; titlebar position is legacy | Remove; legacy input remains deserializable only |
-| `terminal` | `terminalShell`, `terminalDefaultPath`, `newTabInheritsCwd`, `confirmCloseTerminalTab` | terminal/workspace tab creation and close flow; Global + safe Project values | Keep |
+| `terminal` | `terminalShell` | terminal/workspace launch; Global + safe Project values | Keep |
 | `terminal` | `terminalFontFamily`, `terminalFontSize`, `terminalLineHeight`, `terminalScrollback`, `terminalCursorStyle`, `terminalCursorBlink`, `terminalCopyOnSelect`, `terminalRightClickPastes`, `terminalBell`, `terminalOpacity` | terminal renderer/settings adapter; Global + safe Project values | Keep |
 | `terminal` | `sessionScrollbackLines`, `scrollbackMaxSizeMb`, `scrollbackRetentionDays` | scrollback persistence/cleanup; Global | Keep |
 | `terminal` | `terminalFontWeight`, `terminalLetterSpacing`, `terminalCursorBlinkInterval`, `terminalWordSeparator`, `terminalScrollSensitivity`, `terminalFastScrollModifier` | no current Settings consumer; theme typography values are theme-owned | Remove; legacy input remains deserializable only |
-| `terminal` | `terminalShowPaneHeader`, `terminalShowPaneFooter` | terminal view presentation; Global | Keep |
+| `terminal` | `terminalDefaultPath`, `newTabInheritsCwd`, `confirmCloseTerminalTab`, `terminalLineHeight`, `terminalShowPaneHeader`, `terminalShowPaneFooter` | no current native terminal consumer | Remove; legacy input remains deserializable only |
 | `terminal` | `terminalUseWebgl` | impossible in native GPUI terminal path; legacy WebView option | Remove; legacy input remains deserializable only |
 | `terminal` | `terminalComposerEnabled`, `terminalComposerHistoryPopup`, `terminalComposerArgumentCompletion`, `terminalBlocksEnabled`, `terminalBlocksAutoCollapseOnAltScreen` | no supported native workflow or consumer | Remove; legacy input remains deserializable only |
 | `editor` | `editorFontFamily`, `editorFontSize`, `editorLineHeight`, `editorTabSize`, `editorWordWrap`, `editorLineNumbers`, `editorRelativeLineNumbers`, `editorIndentWithTabs` | native editor settings adapter; Global + Project where whitelisted | Keep |

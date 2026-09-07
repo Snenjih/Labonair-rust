@@ -46,12 +46,8 @@
   "terminal": {
     // Empty = the user's login shell.
     "terminalShell": "",
-    "terminalDefaultPath": "",
-    "newTabInheritsCwd": true,
-    "confirmCloseTerminalTab": false,
     "terminalFontFamily": "\"Lilex\", SFMono-Regular, Menlo, monospace",
     "terminalFontSize": 15,
-    "terminalLineHeight": 1.05,
     "terminalScrollback": 5000,
     // Rows of scrollback replayed on the next launch; 0 = persist all.
     "sessionScrollbackLines": 1000,
@@ -62,8 +58,6 @@
     "terminalCursorBlink": true,
     "terminalCopyOnSelect": false,
     "terminalRightClickPastes": false,
-    "terminalShowPaneHeader": false,
-    "terminalShowPaneFooter": false,
     "terminalBell": false,
     // Whole-pane background opacity in percent; 100 = fully opaque.
     "terminalOpacity": 100

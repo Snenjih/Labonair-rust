@@ -226,39 +226,18 @@ const APPEARANCE_GROUPS: &[Group] = &[
 ];
 
 const TERMINAL_MAIN: &[Group] = &[
-    (
-        "Shell",
-        &[
-            "terminalShell",
-            "terminalDefaultPath",
-            "newTabInheritsCwd",
-            "confirmCloseTerminalTab",
-        ],
-    ),
-    (
-        "Font",
-        &[
-            "terminalFontFamily",
-            "terminalFontSize",
-            "terminalLineHeight",
-        ],
-    ),
+    ("Shell", &["terminalShell"]),
+    ("Font", &["terminalFontFamily", "terminalFontSize"]),
     ("Cursor", &["terminalCursorStyle", "terminalCursorBlink"]),
     ("Bell", &["terminalBell"]),
     ("Buffer", &["terminalScrollback"]),
     ("Appearance", &["terminalOpacity"]),
 ];
 
-const TERMINAL_ADVANCED: &[Group] = &[
-    (
-        "Layout",
-        &["terminalShowPaneHeader", "terminalShowPaneFooter"],
-    ),
-    (
-        "Input",
-        &["terminalCopyOnSelect", "terminalRightClickPastes"],
-    ),
-];
+const TERMINAL_ADVANCED: &[Group] = &[(
+    "Input",
+    &["terminalCopyOnSelect", "terminalRightClickPastes"],
+)];
 
 const EDITOR_MAIN: &[Group] = &[
     (

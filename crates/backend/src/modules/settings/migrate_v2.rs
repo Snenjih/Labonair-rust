@@ -278,12 +278,8 @@ fn workspace_from(p: &Preferences) -> WorkspaceContent {
 fn terminal_from(p: &Preferences) -> TerminalContent {
     TerminalContent {
         terminal_shell: Some(p.terminal_shell.clone()),
-        terminal_default_path: Some(p.terminal_default_path.clone()),
-        new_tab_inherits_cwd: Some(p.new_tab_inherits_cwd),
-        confirm_close_terminal_tab: Some(p.confirm_close_terminal_tab),
         terminal_font_family: Some(p.terminal_font_family.clone()),
         terminal_font_size: Some(p.terminal_font_size),
-        terminal_line_height: Some(p.terminal_line_height),
         terminal_scrollback: Some(p.terminal_scrollback),
         session_scrollback_lines: Some(p.session_scrollback_lines),
         scrollback_max_size_mb: Some(p.scrollback_max_size_mb),
@@ -292,8 +288,6 @@ fn terminal_from(p: &Preferences) -> TerminalContent {
         terminal_cursor_blink: Some(p.terminal_cursor_blink),
         terminal_copy_on_select: Some(p.terminal_copy_on_select),
         terminal_right_click_pastes: Some(p.terminal_right_click_pastes),
-        terminal_show_pane_header: Some(p.terminal_show_pane_header),
-        terminal_show_pane_footer: Some(p.terminal_show_pane_footer),
         terminal_bell: Some(p.terminal_bell),
         terminal_opacity: Some(p.terminal_opacity),
     }
@@ -384,6 +378,12 @@ const WORKSPACE_LAYOUT_FIELDS: &[&str] = &[
 /// emitted into the current typed Settings model.
 #[cfg_attr(not(test), allow(dead_code))]
 const REMOVED_TERMINAL_FIELDS: &[&str] = &[
+    "terminalDefaultPath",
+    "newTabInheritsCwd",
+    "confirmCloseTerminalTab",
+    "terminalLineHeight",
+    "terminalShowPaneHeader",
+    "terminalShowPaneFooter",
     "terminalFontWeight",
     "terminalLetterSpacing",
     "terminalCursorBlinkInterval",
