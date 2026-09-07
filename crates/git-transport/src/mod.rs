@@ -7,7 +7,7 @@ use labonair_ssh_transport::net_error::is_network_error;
 use labonair_ssh_transport::shell::shell_quote;
 use labonair_ssh_transport::SshState;
 
-pub use adapter::{BackendGitGraphService, BackendGitService};
+pub use adapter::{GitGraphTransportService, GitTransportService};
 pub use labonair_git::{
     Branch, CommitInfo, CommitResult, FileDiffStat, FileStatus, GitStatus, StashEntry,
     SubmoduleState, SubmoduleStatus, SubmoduleSyncState, WorkspaceGitState,

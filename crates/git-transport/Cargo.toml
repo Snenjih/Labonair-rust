@@ -1,0 +1,17 @@
+[package]
+name = "labonair-git-transport"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "labonair_git_transport"
+path = "src/mod.rs"
+
+[dependencies]
+labonair-events = { path = "../events" }
+labonair-git = { path = "../git" }
+labonair-ssh-transport = { path = "../ssh-transport" }
+russh = { version = "0.62.2", default-features = false, features = ["ring", "flate2", "rsa"] }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+

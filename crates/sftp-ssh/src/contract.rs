@@ -10,18 +10,18 @@ use labonair_ssh::SshSessionId;
 use labonair_ssh_transport::sftp as remote;
 
 #[derive(Clone)]
-pub struct BackendSftpService {
+pub struct SftpTransportService {
     state: labonair_ssh_transport::SshState,
     events: EventBus,
 }
 
-impl BackendSftpService {
+impl SftpTransportService {
     pub fn new(state: labonair_ssh_transport::SshState, events: EventBus) -> Self {
         Self { state, events }
     }
 }
 
-impl SftpSessionService for BackendSftpService {
+impl SftpSessionService for SftpTransportService {
     fn open<'a>(
         &'a self,
         ssh_session: SshSessionId,
@@ -43,7 +43,7 @@ impl SftpSessionService for BackendSftpService {
     }
 }
 
-impl SftpBrowserService for BackendSftpService {
+impl SftpBrowserService for SftpTransportService {
     fn read_dir<'a>(
         &'a self,
         session: SftpSessionHandle,

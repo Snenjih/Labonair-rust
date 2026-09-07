@@ -765,3 +765,10 @@ The concrete SFTP session setup and `labonair-sftp` contract adapters moved
 from `labonair-backend` into `labonair-sftp-ssh`. The new integration sibling
 receives SSH state and the raw EventBus explicitly and owns the SFTP session
 lifecycle boundary; the UI-free SFTP crate remains contracts-only.
+
+## R06-001 Git adapter extraction
+
+The concrete local/remote Git CLI executor and Git contract adapters moved
+from `labonair-backend` into `labonair-git-transport`. The integration sibling
+receives SSH state and EventBus explicitly; `labonair-git` remains the
+implementation-free capability contract.

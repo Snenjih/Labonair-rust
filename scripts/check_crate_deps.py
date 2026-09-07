@@ -191,7 +191,8 @@ ALLOWED = {
         "labonair-updater",
         # Provider metadata contracts are assembled here; feature behavior
         # remains in the owning crates and is not implemented by this root.
-        "labonair-editor", "labonair-git", "labonair-hosts",
+        "labonair-editor", "labonair-git", "labonair-git-transport",
+        "labonair-hosts",
         "labonair-hosts-ui", "labonair-snippets", "labonair-secrets",
     },
 
@@ -260,6 +261,10 @@ ALLOWED = {
         "labonair-errors", "labonair-events", "labonair-filesystem",
         "labonair-persistence", "labonair-secrets", "labonair-ssh",
         "labonair-terminal-integration",
+    },
+    # Concrete local/remote Git CLI execution and Git contract adapters.
+    "labonair-git-transport": {
+        "labonair-events", "labonair-git", "labonair-ssh-transport",
     },
     "labonair-editor": {
         "labonair-command-palette-core", "labonair-interaction-contracts",

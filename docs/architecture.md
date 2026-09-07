@@ -124,7 +124,7 @@ boundary.
 | Hosts | `labonair-hosts` | Saved host definitions, recent hosts, import/export, and host management. Transport adapters remain capability-owned. |
 | Credentials | `labonair-credentials` | Credential metadata, secret references, and generated SSH key material. |
 | Transfers | `labonair-transfers` | Transfer queue, progress, cancellation, conflict resolution, and lifecycle history. The `labonair-transfers-ssh` integration sibling owns concrete SFTP execution. |
-| Git | `labonair-git` | Git contracts and source-control behavior; sibling panel crates provide Git views. |
+| Git | `labonair-git` | Git contracts and source-control behavior; `labonair-git-transport` owns local/remote CLI execution and contract adapters, while sibling panel crates provide Git views. |
 | Explorer | `labonair-panel-explorer` | Local file navigation UI over filesystem contracts. |
 | Snippets | `labonair-snippets` | Snippet storage, execution contracts, and snippet behavior; sibling panel crate provides the view. |
 | AI | `labonair-ai` | Providers, sessions, context, tools, and future UI. MCP host contracts live in `labonair-mcp-core`. |

@@ -314,12 +314,12 @@ pub(crate) fn bootstrap(
         })
     };
     let sftp_session_service: Arc<dyn SftpSessionService> =
-        Arc::new(labonair_sftp_ssh::contract::BackendSftpService::new(
+        Arc::new(labonair_sftp_ssh::contract::SftpTransportService::new(
             backend.ssh.clone(),
             backend.events.clone(),
         ));
     let sftp_browser_service: Arc<dyn SftpBrowserService> =
-        Arc::new(labonair_sftp_ssh::contract::BackendSftpService::new(
+        Arc::new(labonair_sftp_ssh::contract::SftpTransportService::new(
             backend.ssh.clone(),
             backend.events.clone(),
         ));
@@ -332,12 +332,12 @@ pub(crate) fn bootstrap(
         ),
     );
     let git_service: Arc<dyn labonair_git::GitService> =
-        Arc::new(labonair_backend::modules::git::BackendGitService::new(
+        Arc::new(labonair_git_transport::GitTransportService::new(
             backend.ssh.clone(),
             backend.events.clone(),
         ));
     let git_graph_service: Arc<dyn labonair_git::GitGraphService> =
-        Arc::new(labonair_backend::modules::git::BackendGitGraphService::new(
+        Arc::new(labonair_git_transport::GitGraphTransportService::new(
             backend.ssh.clone(),
             backend.events.clone(),
         ));

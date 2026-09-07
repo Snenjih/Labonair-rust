@@ -9,31 +9,31 @@ use super::CommitInfo;
 
 /// Binds the existing Git executor and SSH session registry to the narrow
 /// contract consumed by the commit graph view.
-pub struct BackendGitGraphService {
+pub struct GitGraphTransportService {
     ssh_state: SshState,
     events: EventBus,
 }
 
 /// Full source-control adapter. The UI receives this capability at the
 /// composition root and never needs the backend facade or SSH executor.
-pub struct BackendGitService {
+pub struct GitTransportService {
     ssh_state: SshState,
     events: EventBus,
 }
 
-impl BackendGitService {
+impl GitTransportService {
     pub fn new(ssh_state: SshState, events: EventBus) -> Self {
         Self { ssh_state, events }
     }
 }
 
-impl BackendGitGraphService {
+impl GitGraphTransportService {
     pub fn new(ssh_state: SshState, events: EventBus) -> Self {
         Self { ssh_state, events }
     }
 }
 
-impl GitGraphService for BackendGitGraphService {
+impl GitGraphService for GitGraphTransportService {
     fn is_repo(&self, path: String, session_id: Option<String>) -> GitFuture<bool> {
         let ssh_state = self.ssh_state.clone();
         let events = self.events.clone();
@@ -149,7 +149,7 @@ impl GitGraphService for BackendGitGraphService {
     }
 }
 
-impl GitService for BackendGitService {
+impl GitService for GitTransportService {
     fn is_repo(&self, path: String, session_id: Option<String>) -> GitFuture<bool> {
         let ssh_state = self.ssh_state.clone();
         let events = self.events.clone();

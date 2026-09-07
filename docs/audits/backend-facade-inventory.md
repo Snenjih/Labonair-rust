@@ -33,7 +33,7 @@ participate in the `BackendComposition` state graph or in another backend module
 | `directives` | removed | no active consumers | removed as an unreferenced backend copy; reintroduce only behind an AI-owned contract when a real UI/workflow consumer exists |
 | `fonts` | custom-font file operations and system-font discovery | `shell::settings_services` | system-font discovery moved to `labonair-theme`; the unconsumed custom-font path and backend module were removed |
 | `fs` | removed | no active consumers | filesystem foundation owns paths, operations, and watchers; backend compatibility module and dead watcher adapter removed |
-| `git` | Git operation functions and `BackendGitService` / graph adapter | `shell::bootstrap`, `workspace` | `labonair-git` integration adapter; service and operation functions now receive only SSH state plus EventBus |
+| `git` | removed from backend | none | `labonair-git-transport` owns `GitTransportService` / graph adapter and Git operation functions; services receive only SSH state plus EventBus |
 | `mcp` | MCP state, grants, server operations, host revocation callback | `shell`, `workspace`; internal PTY/secrets use | `labonair-mcp-core` owns UI-free grant and tab-operation contracts; grant/revoke adapter receives only MCP state/database/events, while server state is supplied by shell composition |
 | `model_prefs` | removed | no active consumers | removed as an unreferenced backend copy; model selection state remains an AI-owned concern when its UI contract is defined |
 | `pty` | local PTY state, sessions, events, I/O operations | indirect through backend/MCP | terminal owner; expose a terminal service rather than `App` state |

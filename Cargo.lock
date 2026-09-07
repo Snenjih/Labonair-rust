@@ -4183,7 +4183,6 @@ dependencies = [
  "labonair-errors",
  "labonair-events",
  "labonair-filesystem",
- "labonair-git",
  "labonair-hosts",
  "labonair-mcp-core",
  "labonair-persistence",
@@ -4328,6 +4327,18 @@ version = "0.1.0"
 dependencies = [
  "labonair-command-palette-core",
  "serde",
+]
+
+[[package]]
+name = "labonair-git-transport"
+version = "0.1.0"
+dependencies = [
+ "labonair-events",
+ "labonair-git",
+ "labonair-ssh-transport",
+ "russh",
+ "serde_json",
+ "tokio",
 ]
 
 [[package]]
@@ -4639,6 +4650,7 @@ dependencies = [
  "labonair-events",
  "labonair-filesystem",
  "labonair-git",
+ "labonair-git-transport",
  "labonair-gpui-ext",
  "labonair-hosts",
  "labonair-hosts-ui",

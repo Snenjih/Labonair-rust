@@ -35,6 +35,7 @@ members = [
     "crates/credentials",
     "crates/snippets",
     "crates/git",
+    "crates/git-transport",
     "crates/ssh",
     "crates/ssh-transport",
     "crates/sftp",
