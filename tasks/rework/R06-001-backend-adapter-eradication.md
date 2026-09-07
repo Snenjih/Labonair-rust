@@ -166,6 +166,9 @@ boundary still exists; that package must not become a second capability owner.
 - [x] The unused backend Credentials compatibility module and dependency were
       removed; active credential consumers already use `labonair-credentials`
       directly.
+- [x] The unused backend Themes compatibility module, bundled duplicate theme
+      asset, and legacy theme dependency surface were removed; static theme
+      and icon-theme registries remain owned by `labonair-theme`.
 - [x] Secrets compatibility wrappers and jump-host resolution no longer take
       the aggregate `App`; they receive only their actual state dependencies.
 - [ ] Move the remaining contracts and adapters behind injected capability

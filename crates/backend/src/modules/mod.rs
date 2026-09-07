@@ -11,6 +11,5 @@ pub mod shell;
 pub mod snippets;
 pub mod ssh;
 pub mod terminal_exec;
-pub mod themes;
 pub mod transfers;
 pub mod updater;

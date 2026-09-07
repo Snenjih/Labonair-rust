@@ -39,6 +39,12 @@ had no active consumers, while Hosts UI already calls the canonical
 `labonair-credentials` crate directly; the backend dependency and module export
 are gone.
 
+The unused backend Themes compatibility module and duplicate bundled asset were
+removed as well. The canonical `labonair-theme` crate already owns the static
+theme and icon-theme registries, and the old network download/import surface
+had no active consumers and conflicted with the current fixed-catalog product
+direction.
+
 ## R06-001 backend facade inventory and error boundary
 
 Recorded the complete backend module/export and direct-consumer map in
