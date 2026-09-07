@@ -24,6 +24,13 @@ obtain native visual evidence for R07-001, then activate R07-004 and remove
 the direct Explorer-to-Workspace view dependency. No old Tauri application was
 used.
 
+The governance audit also found that several current normative documents had
+no version metadata. `docs/design-system.md`, `docs/modules.md`,
+`docs/registries.md`, `docs/repository-layout.md`, the lifecycle/settings/
+workspace contracts, and visual verification now carry explicit versions. The
+metadata check, queue check, diff check, and clean-worktree check pass. Latest
+documentation commit: `0b0a507`.
+
 The active-code source audit found no passive toast renderer or duplicate
 operation-error surface. The Explorer clipboard strip and editor conflict
 banner are actionable decision surfaces. The AI error model was corrected in

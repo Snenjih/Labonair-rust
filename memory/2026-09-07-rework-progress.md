@@ -1096,3 +1096,10 @@ The known B01 boundary was made executable as the planned
 planned until R07-001's native visual acceptance gate is complete. Full
 workspace tests pass after the documentation changes, and the latest commits
 are `73cd87e`, `3759267`, and `5508e0e`; the worktree is clean.
+
+The documentation governance audit found that current normative contracts
+without a version marker could not be distinguished reliably from stale
+material. Explicit `Version: 1` metadata was added to the design, module,
+registry, repository-layout, lifecycle, settings, workspace, and visual-
+verification contracts. The metadata, queue, diff, and clean-worktree checks
+pass; this is committed as `0b0a507`.
