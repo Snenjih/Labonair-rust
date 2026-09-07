@@ -218,6 +218,11 @@ boundary still exists; that package must not become a second capability owner.
 - [x] Shared OSC 7/133 shell-integration payloads moved into the UI-free
   `labonair-terminal-integration` protocol crate, consumed by both local PTY
   and remote SSH adapters.
+- [x] Removed the unreferenced backend Snippet-store re-export; the canonical
+  `labonair-snippets` store remains the only persistence owner.
+- [x] Moved transfer queue state and command dispatch out of the SFTP module
+  into the canonical `labonair-transfers` crate and its backend adapter;
+  unreferenced SFTP settings and reconnect command wrappers were removed.
 - [ ] Move the remaining contracts and adapters behind injected capability
       services.
 - [ ] Delete the broad `App` facade paths and remaining compatibility edges.

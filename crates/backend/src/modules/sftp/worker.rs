@@ -1,11 +1,15 @@
 use super::net_error::is_network_error;
-use super::*;
 use crate::modules::ssh::{RushSession, SshState};
 use crate::EventBus;
+use labonair_transfers::{
+    ConflictMap, ConflictResolution, TransferDirection, TransferJob, TransferSettings,
+    TransferStatus, TransferStepPayload, WorkerMessage,
+};
 use russh_sftp::protocol::OpenFlags;
 use std::io::Read;
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
 fn compute_local_md5(path: &std::path::Path, chunk_size: usize) -> Result<String, String> {

@@ -720,3 +720,14 @@ were deleted. Shared OSC 7/133 shell scripts were moved to the UI-free
 `labonair-terminal-integration` crate and are consumed by both local and SSH
 adapters. Workspace compile, Clippy, tests, dependency, queue, format, and
 diff gates pass.
+
+## R06-001 transfer/SFTP ownership cleanup
+
+The SFTP module contained queue operations and worker state even though the
+product model treats transfers as a separate capability. Queue state and
+command dispatch now live in the canonical `labonair-transfers` crate and are
+consumed by the backend transfer adapter, which implements
+`labonair-transfers::TransferService`. The unreferenced SFTP
+settings and reconnect wrappers were removed; the transport worker remains
+temporarily under the backend SFTP adapter because it still depends on the
+concrete SSH/SFTP session implementation.

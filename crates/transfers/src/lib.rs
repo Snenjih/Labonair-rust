@@ -7,8 +7,12 @@
 //! allowed here.
 
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
+use std::sync::atomic::AtomicUsize;
+use std::sync::Arc;
+use tokio::sync::{mpsc, oneshot, Mutex};
 
 pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
@@ -103,6 +107,61 @@ pub trait TransferService: Send + Sync {
         job_id: String,
         resolution: TransferResolution,
     ) -> BoxFuture<'a, Result<(), String>>;
+}
+
+/// Messages sent to a transport-backed transfer worker.
+#[derive(Debug)]
+pub enum WorkerMessage {
+    Enqueue(TransferJob),
+    Cancel(String),
+    ResolveConflict {
+        job_id: String,
+        resolution: String,
+        new_name: Option<String>,
+    },
+    SessionReconnected(String),
+}
+
+pub type ConflictMap = Arc<Mutex<HashMap<String, oneshot::Sender<ConflictResolution>>>>;
+
+#[derive(Debug)]
+pub struct ConflictResolution {
+    pub resolution: String,
+    pub new_name: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct TransferStepPayload {
+    pub job_id: String,
+    pub ts: i64,
+    pub message: String,
+}
+
+/// Shared queue state owned by Transfers and consumed by its transport
+/// adapter. The concrete worker remains free to depend on SSH/SFTP internals.
+#[derive(Clone)]
+pub struct TransferWorkerState {
+    pub sender: mpsc::Sender<WorkerMessage>,
+    pub conflicts: ConflictMap,
+    pub settings: Arc<TransferSettings>,
+}
+
+pub struct TransferSettings {
+    pub max_concurrent: AtomicUsize,
+    pub chunk_size: AtomicUsize,
+    pub default_conflict_resolution: std::sync::Mutex<String>,
+    pub on_folder_file_error: std::sync::Mutex<String>,
+}
+
+impl Default for TransferSettings {
+    fn default() -> Self {
+        Self {
+            max_concurrent: AtomicUsize::new(2),
+            chunk_size: AtomicUsize::new(65536),
+            default_conflict_resolution: std::sync::Mutex::new("ask".to_string()),
+            on_folder_file_error: std::sync::Mutex::new("ask".to_string()),
+        }
+    }
 }
 
 /// Error returned by a typed transfer event stream.

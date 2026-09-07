@@ -2,18 +2,19 @@
 
 use crate::{EventBus, RawEvent};
 use labonair_transfers::{
-    BoxFuture, TransferEvent, TransferEventError, TransferEventReceiver, TransferEventSource,
-    TransferRequest, TransferResolution, TransferService,
+    BoxFuture, ConflictResolution, TransferEvent, TransferEventError, TransferEventReceiver,
+    TransferEventSource, TransferJob, TransferRequest, TransferResolution, TransferService,
+    TransferStatus, TransferWorkerState, WorkerMessage,
 };
 use tokio::sync::broadcast;
 
 #[derive(Clone)]
 pub struct BackendTransferService {
-    worker: crate::modules::sftp::TransferWorkerState,
+    worker: TransferWorkerState,
 }
 
 impl BackendTransferService {
-    pub fn new(worker: crate::modules::sftp::TransferWorkerState) -> Self {
+    pub fn new(worker: TransferWorkerState) -> Self {
         Self { worker }
     }
 }
@@ -22,22 +23,37 @@ impl TransferService for BackendTransferService {
     fn enqueue<'a>(&'a self, request: TransferRequest) -> BoxFuture<'a, Result<String, String>> {
         let worker = self.worker.clone();
         Box::pin(async move {
-            crate::modules::sftp::commands::enqueue_transfer(
-                request.session_id,
-                request.src_path,
-                request.dest_path,
-                request.direction.as_str().to_string(),
-                &worker,
-            )
-            .await
+            let id = uuid::Uuid::new_v4().to_string();
+            let job = TransferJob {
+                id: id.clone(),
+                session_id: request.session_id,
+                src_path: request.src_path,
+                dest_path: request.dest_path,
+                direction: request.direction,
+                status: TransferStatus::Queued,
+                bytes_total: 0,
+                bytes_transferred: 0,
+                speed_bps: 0.0,
+                skipped_count: 0,
+            };
+            worker
+                .sender
+                .send(WorkerMessage::Enqueue(job))
+                .await
+                .map_err(|error| error.to_string())?;
+            Ok(id)
         })
     }
 
     fn cancel<'a>(&'a self, job_id: String) -> BoxFuture<'a, Result<(), String>> {
         let worker = self.worker.clone();
-        Box::pin(
-            async move { crate::modules::sftp::commands::cancel_transfer(job_id, &worker).await },
-        )
+        Box::pin(async move {
+            worker
+                .sender
+                .send(WorkerMessage::Cancel(job_id))
+                .await
+                .map_err(|error| error.to_string())
+        })
     }
 
     fn resolve<'a>(
@@ -48,13 +64,14 @@ impl TransferService for BackendTransferService {
         let worker = self.worker.clone();
         Box::pin(async move {
             let (resolution, new_name) = resolution.worker_parts();
-            crate::modules::sftp::commands::resolve_conflict(
-                job_id,
-                resolution.to_string(),
-                new_name.map(str::to_string),
-                &worker,
-            )
-            .await
+            let mut map = worker.conflicts.lock().await;
+            if let Some(tx) = map.remove(&job_id) {
+                let _ = tx.send(ConflictResolution {
+                    resolution: resolution.to_string(),
+                    new_name: new_name.map(str::to_string),
+                });
+            }
+            Ok(())
         })
     }
 }
