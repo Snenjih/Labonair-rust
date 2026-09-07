@@ -9,6 +9,36 @@ use std::time::{Duration, Instant};
 
 use labonair_mcp_core::{SessionKind, TabOpResult};
 
+/// Explicit capability access required by the MCP HTTP server. This is built
+/// at the composition boundary so MCP tools do not retain the aggregate
+/// backend `App` just to reach terminal, SSH, persistence, secrets, or events.
+#[derive(Clone)]
+pub struct McpServerAccess {
+    pub(crate) ssh: crate::modules::ssh::SshState,
+    pub(crate) pty: Arc<crate::modules::pty::PtyState>,
+    pub(crate) db: labonair_persistence::Database,
+    pub(crate) secrets: Arc<crate::modules::secrets::SecretsState>,
+    pub(crate) events: crate::EventBus,
+}
+
+impl McpServerAccess {
+    pub fn new(
+        ssh: crate::modules::ssh::SshState,
+        pty: Arc<crate::modules::pty::PtyState>,
+        db: labonair_persistence::Database,
+        secrets: Arc<crate::modules::secrets::SecretsState>,
+        events: crate::EventBus,
+    ) -> Self {
+        Self {
+            ssh,
+            pty,
+            db,
+            secrets,
+            events,
+        }
+    }
+}
+
 pub(crate) const MCP_SERVICE: &str = "labonair-mcp";
 pub(crate) const MCP_TOKEN_ACCOUNT: &str = "bearer-token";
 
@@ -205,19 +235,18 @@ pub async fn mcp_get_status(
 /// not just refuse new connections. Idempotent either way.
 pub async fn mcp_set_enabled(
     enabled: bool,
-    app: crate::App,
+    access: McpServerAccess,
     state: &McpState,
-    secrets: &crate::modules::secrets::SecretsState,
 ) -> Result<McpStatus, String> {
     if enabled {
         let existing =
-            crate::modules::secrets::get_password(secrets, MCP_SERVICE, MCP_TOKEN_ACCOUNT)?;
+            crate::modules::secrets::get_password(&access.secrets, MCP_SERVICE, MCP_TOKEN_ACCOUNT)?;
         let token = match existing {
             Some(t) => t,
             None => {
                 let t = generate_token();
                 crate::modules::secrets::store_password(
-                    secrets,
+                    &access.secrets,
                     MCP_SERVICE,
                     MCP_TOKEN_ACCOUNT,
                     &t,
@@ -226,7 +255,7 @@ pub async fn mcp_set_enabled(
             }
         };
         state.enabled.store(true, Ordering::Relaxed);
-        server::ensure_started(app.clone(), state.clone(), token.clone());
+        server::ensure_started(access, state.clone(), token.clone());
         Ok(build_status(state, Some(token)))
     } else {
         state.enabled.store(false, Ordering::Relaxed);
@@ -240,14 +269,18 @@ pub async fn mcp_set_enabled(
 /// `claude mcp add` setup) and, if the bridge is currently enabled, restarts
 /// the listener so the new token takes effect immediately.
 pub async fn mcp_regenerate_token(
-    app: crate::App,
+    access: McpServerAccess,
     state: &McpState,
-    secrets: &crate::modules::secrets::SecretsState,
 ) -> Result<McpStatus, String> {
     let token = generate_token();
-    crate::modules::secrets::store_password(secrets, MCP_SERVICE, MCP_TOKEN_ACCOUNT, &token)?;
+    crate::modules::secrets::store_password(
+        &access.secrets,
+        MCP_SERVICE,
+        MCP_TOKEN_ACCOUNT,
+        &token,
+    )?;
     if state.enabled.load(Ordering::Relaxed) {
-        server::ensure_started(app.clone(), state.clone(), token.clone());
+        server::ensure_started(access, state.clone(), token.clone());
     }
     Ok(build_status(state, Some(token)))
 }
@@ -257,15 +290,15 @@ pub async fn mcp_regenerate_token(
 /// separate disable/enable cycle.
 pub async fn mcp_set_port(
     port: u16,
-    app: crate::App,
+    access: McpServerAccess,
     state: &McpState,
-    secrets: &crate::modules::secrets::SecretsState,
 ) -> Result<McpStatus, String> {
     state.port.store(port, Ordering::Relaxed);
     if state.enabled.load(Ordering::Relaxed) {
-        let token = crate::modules::secrets::get_password(secrets, MCP_SERVICE, MCP_TOKEN_ACCOUNT)?
-            .unwrap_or_default();
-        server::ensure_started(app.clone(), state.clone(), token.clone());
+        let token =
+            crate::modules::secrets::get_password(&access.secrets, MCP_SERVICE, MCP_TOKEN_ACCOUNT)?
+                .unwrap_or_default();
+        server::ensure_started(access, state.clone(), token.clone());
         return Ok(build_status(state, Some(token)));
     }
     Ok(build_status(state, None))

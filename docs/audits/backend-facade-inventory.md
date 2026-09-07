@@ -107,7 +107,9 @@ compatibility layer.
 The MCP grant adapter was narrowed as well: `BackendMcpSessionAccess` receives
 only `McpState` and the shared `Database`, while host-block revocation receives
 `McpState` plus `EventBus`. The MCP server's token, listener, and terminal-tool
-integration remain a separate App-boundary extraction.
+integration now receives an explicit `McpServerAccess` bundle containing only
+SSH state, local PTY state, database, secrets, and EventBus. The server and its
+control functions no longer retain or accept the aggregate `App`.
 
 The Git operation surface was narrowed next. All Git operation functions now
 receive an explicit `EventBus` rather than the aggregate `App`, and both

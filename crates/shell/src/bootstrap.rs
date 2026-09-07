@@ -198,6 +198,13 @@ pub(crate) fn bootstrap(
     ));
     let agent_access_service: Arc<dyn McpSessionAccessService> = backend_mcp.clone();
     let mcp_tab_operations: Arc<dyn McpTabOperationService> = backend_mcp;
+    let mcp_server_access = labonair_backend::modules::mcp::McpServerAccess::new(
+        backend.ssh.clone(),
+        backend.pty.clone(),
+        backend.db.clone(),
+        backend.secrets.clone(),
+        backend.events.clone(),
+    );
     let agent_access =
         cx.new(|_| AgentAccessStore::new(agent_access_service.clone(), tokio.clone()));
 
@@ -209,14 +216,15 @@ pub(crate) fn bootstrap(
         agent_access.update(cx, |s, cx| {
             s.hydrate(prefs.bridge_enabled, prefs.notify_on_activity, cx)
         });
-        let app = backend.clone();
+        let mcp_server_access = mcp_server_access.clone();
+        let mcp_state = backend.mcp.clone();
         tokio.spawn(async move {
-            let _ = mcp_set_port(prefs.bridge_port, app.clone(), &app.mcp, &app.secrets).await;
+            let _ = mcp_set_port(prefs.bridge_port, mcp_server_access.clone(), &mcp_state).await;
             let _ =
-                mcp_set_max_command_timeout_secs(prefs.max_command_timeout_secs, &app.mcp).await;
-            let _ = mcp_set_auto_revoke_minutes(prefs.auto_revoke_minutes, &app.mcp).await;
+                mcp_set_max_command_timeout_secs(prefs.max_command_timeout_secs, &mcp_state).await;
+            let _ = mcp_set_auto_revoke_minutes(prefs.auto_revoke_minutes, &mcp_state).await;
             if prefs.bridge_enabled {
-                let _ = mcp_set_enabled(true, app.clone(), &app.mcp, &app.secrets).await;
+                let _ = mcp_set_enabled(true, mcp_server_access, &mcp_state).await;
             }
         });
     }

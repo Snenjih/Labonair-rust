@@ -25,12 +25,11 @@ use super::{host_blocks_agent_access, McpState, SessionGrant};
 /// command lands visibly in the terminal pane the user is watching,
 /// indistinguishable from the user typing it themselves.
 async fn write_to_ssh_session(
-    app: &crate::App,
+    ssh: &crate::modules::ssh::SshState,
     session_id: &str,
     data: String,
 ) -> Result<(), String> {
-    let state = &app.ssh;
-    let session = crate::get_session_arc!(state, session_id);
+    let session = crate::get_session_arc!(ssh, session_id);
     let write_half = {
         let guard = session.pty.lock().await;
         guard.as_ref().map(|p| p.write_half.clone())
@@ -42,18 +41,18 @@ async fn write_to_ssh_session(
 /// Writes to either an SSH or local PTY session, based on the grant's kind —
 /// the single dispatch point every action tool funnels through.
 async fn write_to_grant(
-    app: &crate::App,
+    ssh: &crate::modules::ssh::SshState,
+    pty: &crate::modules::pty::PtyState,
     grant: &SessionGrant,
     data: String,
 ) -> Result<(), String> {
     match grant.kind {
-        SessionKind::Ssh => write_to_ssh_session(app, &grant.session_id, data).await,
+        SessionKind::Ssh => write_to_ssh_session(ssh, &grant.session_id, data).await,
         SessionKind::Local => {
             let pty_id = grant
                 .local_pty_id
                 .ok_or_else(|| "grant missing local pty id".to_string())?;
-            let state = &app.pty;
-            crate::modules::pty::write_raw(state, pty_id, &data)
+            crate::modules::pty::write_raw(pty, pty_id, &data)
         }
     }
 }
@@ -66,8 +65,11 @@ async fn write_to_grant(
 /// indistinguishable here from an unencrypted key (both report `has_secret
 /// == false`/no stored secret); either way, no stored secret means this
 /// function refuses rather than risk hanging on a prompt nobody can answer.
-async fn require_non_interactive_auth(app: &crate::App, host_id: &str) -> Result<(), String> {
-    let hosts_db = &app.db;
+async fn require_non_interactive_auth(
+    hosts_db: &labonair_persistence::Database,
+    secrets: &crate::modules::secrets::SecretsState,
+    host_id: &str,
+) -> Result<(), String> {
     let (auth_method, credential_id): (String, Option<String>) = {
         let conn = hosts_db.0.lock().map_err(|e| e.to_string())?;
         conn.query_row(
@@ -94,7 +96,6 @@ async fn require_non_interactive_auth(app: &crate::App, host_id: &str) -> Result
         return Ok(());
     }
 
-    let secrets = &app.secrets;
     let (service, account): (&str, &str) = match credential_id.as_deref() {
         Some(cid) => ("labonair-cred", cid),
         None => ("labonair-app", host_id),
@@ -116,9 +117,12 @@ async fn require_non_interactive_auth(app: &crate::App, host_id: &str) -> Result
 /// itself (already handled by the caller via `grant_for_session`, which only
 /// returns `granted: true` entries) and, for SSH grants, the host's "Block AI
 /// Agent Access" flag being toggled on *after* the tab was granted.
-fn ensure_grant_still_authorized(app: &crate::App, grant: &SessionGrant) -> Result<(), String> {
+fn ensure_grant_still_authorized(
+    hosts_db: &labonair_persistence::Database,
+    grant: &SessionGrant,
+) -> Result<(), String> {
     if let Some(host_id) = &grant.host_id {
-        if host_blocks_agent_access(&app.db, host_id)? {
+        if host_blocks_agent_access(hosts_db, host_id)? {
             return Err("this host now has AI agent access blocked in its settings".to_string());
         }
     }
@@ -130,8 +134,8 @@ fn ensure_grant_still_authorized(app: &crate::App, grant: &SessionGrant) -> Resu
 /// `mcpNotifyOnActivity` preference, whether to actually surface a
 /// notification; see `useMcpTabBridge.ts`). Only called for the four
 /// *action* tools (not `list_sessions`/`read_output`, which are passive).
-fn emit_activity(app: &crate::App, grant: &SessionGrant, action: &str, detail: String) {
-    let _ = app.emit(
+fn emit_activity(events: &crate::EventBus, grant: &SessionGrant, action: &str, detail: String) {
+    let _ = events.emit(
         "mcp_activity",
         serde_json::json!({ "label": grant.label, "action": action, "detail": detail }),
     );
@@ -210,15 +214,15 @@ struct CloseTabParams {
 #[derive(Clone)]
 pub struct LabonairMcpServer {
     tool_router: ToolRouter<Self>,
-    app: crate::App,
+    access: super::McpServerAccess,
     mcp_state: McpState,
 }
 
 impl LabonairMcpServer {
-    fn new(app: crate::App, mcp_state: McpState) -> Self {
+    fn new(access: super::McpServerAccess, mcp_state: McpState) -> Self {
         Self {
             tool_router: Self::tool_router(),
-            app,
+            access,
             mcp_state,
         }
     }
@@ -260,7 +264,7 @@ impl LabonairMcpServer {
             .ok_or_else(|| {
                 "session not granted — call list_sessions to see currently granted tabs".to_string()
             })?;
-        ensure_grant_still_authorized(&self.app, &grant)?;
+        ensure_grant_still_authorized(&self.access.db, &grant)?;
 
         let lock = self.mcp_state.lock_for(&params.session_id);
         let _guard = lock.lock().await;
@@ -270,7 +274,7 @@ impl LabonairMcpServer {
         let mut local_rx = None;
         match grant.kind {
             SessionKind::Ssh => {
-                let ssh_state = &self.app.ssh;
+                let ssh_state = &self.access.ssh;
                 let session = crate::get_session_arc!(ssh_state, &params.session_id);
                 ssh_rx = Some(session.agent_tap.subscribe());
             }
@@ -278,13 +282,24 @@ impl LabonairMcpServer {
                 let pty_id = grant
                     .local_pty_id
                     .ok_or_else(|| "grant missing local pty id".to_string())?;
-                let pty_state = &self.app.pty;
+                let pty_state = &self.access.pty;
                 local_rx = Some(crate::modules::pty::subscribe_agent_tap(pty_state, pty_id)?);
             }
         }
 
-        write_to_grant(&self.app, &grant, format!("{}\n", params.command)).await?;
-        emit_activity(&self.app, &grant, "run_command", params.command.clone());
+        write_to_grant(
+            &self.access.ssh,
+            &self.access.pty,
+            &grant,
+            format!("{}\n", params.command),
+        )
+        .await?;
+        emit_activity(
+            &self.access.events,
+            &grant,
+            "run_command",
+            params.command.clone(),
+        );
 
         let requested = params.timeout_ms.unwrap_or(30_000);
         let capped = requested.min(self.mcp_state.max_command_timeout_ms());
@@ -349,14 +364,14 @@ impl LabonairMcpServer {
             .ok_or_else(|| {
                 "session not granted — call list_sessions to see currently granted tabs".to_string()
             })?;
-        ensure_grant_still_authorized(&self.app, &grant)?;
+        ensure_grant_still_authorized(&self.access.db, &grant)?;
         self.mcp_state.touch(&grant.tab_id);
 
         let mut ssh_rx = None;
         let mut local_rx = None;
         match grant.kind {
             SessionKind::Ssh => {
-                let ssh_state = &self.app.ssh;
+                let ssh_state = &self.access.ssh;
                 let session = crate::get_session_arc!(ssh_state, &params.session_id);
                 ssh_rx = Some(session.agent_tap.subscribe());
             }
@@ -364,7 +379,7 @@ impl LabonairMcpServer {
                 let pty_id = grant
                     .local_pty_id
                     .ok_or_else(|| "grant missing local pty id".to_string())?;
-                let pty_state = &self.app.pty;
+                let pty_state = &self.access.pty;
                 local_rx = Some(crate::modules::pty::subscribe_agent_tap(pty_state, pty_id)?);
             }
         }
@@ -409,10 +424,16 @@ impl LabonairMcpServer {
             .ok_or_else(|| {
                 "session not granted — call list_sessions to see currently granted tabs".to_string()
             })?;
-        ensure_grant_still_authorized(&self.app, &grant)?;
+        ensure_grant_still_authorized(&self.access.db, &grant)?;
         self.mcp_state.touch(&grant.tab_id);
-        write_to_grant(&self.app, &grant, params.data.clone()).await?;
-        emit_activity(&self.app, &grant, "send_keys", params.data);
+        write_to_grant(
+            &self.access.ssh,
+            &self.access.pty,
+            &grant,
+            params.data.clone(),
+        )
+        .await?;
+        emit_activity(&self.access.events, &grant, "send_keys", params.data);
         Ok("sent".to_string())
     }
 
@@ -423,10 +444,11 @@ impl LabonairMcpServer {
         &self,
         Parameters(params): Parameters<OpenTabParams>,
     ) -> Result<Json<OpenTabResult>, String> {
-        if host_blocks_agent_access(&self.app.db, &params.host_id)? {
+        if host_blocks_agent_access(&self.access.db, &params.host_id)? {
             return Err("this host has AI agent access blocked in its settings".to_string());
         }
-        require_non_interactive_auth(&self.app, &params.host_id).await?;
+        require_non_interactive_auth(&self.access.db, &self.access.secrets, &params.host_id)
+            .await?;
 
         let request_id = uuid::Uuid::new_v4().to_string();
         let (tx, rx) = tokio::sync::oneshot::channel::<TabOpResult>();
@@ -438,7 +460,8 @@ impl LabonairMcpServer {
                 .map_err(|e| e.to_string())?;
             map.insert(request_id.clone(), tx);
         }
-        self.app
+        self.access
+            .events
             .emit(
                 "mcp_open_tab_request",
                 serde_json::json!({ "request_id": request_id, "host_id": params.host_id }),
@@ -467,7 +490,7 @@ impl LabonairMcpServer {
         let tab_id = result.tab_id.ok_or("missing tab_id in response")?;
         let session_id = result.session_id.ok_or("missing session_id in response")?;
         emit_activity(
-            &self.app,
+            &self.access.events,
             &SessionGrant {
                 tab_id: tab_id.clone(),
                 label: format!("host {}", params.host_id),
@@ -503,7 +526,8 @@ impl LabonairMcpServer {
                 .map_err(|e| e.to_string())?;
             map.insert(request_id.clone(), tx);
         }
-        self.app
+        self.access
+            .events
             .emit(
                 "mcp_close_tab_request",
                 serde_json::json!({ "request_id": request_id, "session_id": params.session_id }),
@@ -526,7 +550,12 @@ impl LabonairMcpServer {
                 .error
                 .unwrap_or_else(|| "failed to close tab".to_string()));
         }
-        emit_activity(&self.app, &grant, "close_tab", grant.label.clone());
+        emit_activity(
+            &self.access.events,
+            &grant,
+            "close_tab",
+            grant.label.clone(),
+        );
         Ok("closed".to_string())
     }
 }
@@ -546,7 +575,7 @@ impl ServerHandler for LabonairMcpServer {
 /// port is already in use by something else), flips `McpState.enabled` back
 /// to `false` and emits `mcp_server_error` — previously this silently left
 /// `enabled` stuck `true` with no listener actually running.
-pub fn ensure_started(app: crate::App, mcp_state: McpState, token: String) {
+pub fn ensure_started(access: super::McpServerAccess, mcp_state: McpState, token: String) {
     stop(&mcp_state);
 
     let ct = CancellationToken::new();
@@ -559,7 +588,7 @@ pub fn ensure_started(app: crate::App, mcp_state: McpState, token: String) {
     let token = Arc::new(token);
 
     tokio::spawn(async move {
-        let factory_app = app.clone();
+        let factory_access = access.clone();
         let factory_state = mcp_state.clone();
         let server_ct = ct.child_token();
 
@@ -567,7 +596,7 @@ pub fn ensure_started(app: crate::App, mcp_state: McpState, token: String) {
             StreamableHttpService::new(
                 move || {
                     Ok(LabonairMcpServer::new(
-                        factory_app.clone(),
+                        factory_access.clone(),
                         factory_state.clone(),
                     ))
                 },
@@ -605,7 +634,7 @@ pub fn ensure_started(app: crate::App, mcp_state: McpState, token: String) {
             Err(e) => {
                 log::error!("mcp: failed to bind 127.0.0.1:{port}: {e}");
                 mcp_state.enabled.store(false, Ordering::Relaxed);
-                let _ = app.emit(
+                let _ = access.events.emit(
                     "mcp_server_error",
                     serde_json::json!({ "message": format!("Failed to start on port {port}: {e}") }),
                 );

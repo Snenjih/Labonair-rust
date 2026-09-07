@@ -16,6 +16,13 @@ adapters constructed in shell composition; each adapter stores only the state
 required by its contract. Tunnel startup also receives `EventBus` directly,
 so its asynchronous connection loop no longer carries the aggregate `App`.
 
+The MCP HTTP server was narrowed next. `McpServerAccess` explicitly carries
+only SSH state, local PTY state, database, secrets, and EventBus; server tools,
+auth checks, activity events, and tab-operation requests use that bundle
+instead of the aggregate backend App. `PtyState` is reference-counted in the
+backend so the server can share local terminal sessions without widening its
+state boundary.
+
 ## R06-001 backend facade inventory and error boundary
 
 Recorded the complete backend module/export and direct-consumer map in

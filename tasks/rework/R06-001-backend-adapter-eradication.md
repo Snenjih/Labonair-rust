@@ -153,6 +153,10 @@ boundary still exists; that package must not become a second capability owner.
       connection, connection-test, config, and tunnel adapters; each stores
       only the state required by its contract and no SSH contract is backed by
       `BackendSshService` anymore.
+- [x] MCP server control and HTTP tool execution now use an explicit
+      `McpServerAccess` capability bundle; the MCP server no longer stores the
+      aggregate backend `App`, and local PTY state is shared through an owned
+      reference-counted capability state.
 - [x] Secrets compatibility wrappers and jump-host resolution no longer take
       the aggregate `App`; they receive only their actual state dependencies.
 - [ ] Move the remaining contracts and adapters behind injected capability
