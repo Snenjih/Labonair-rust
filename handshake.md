@@ -134,7 +134,10 @@ notification statusbar registration was moved into its Notifications owner in
 The full workspace gates pass. The remaining shell command registrations are
 the native Fullscreen action and debug-only component gallery; the active R07
 work now focuses on final documentation consistency, transition-audit
-evidence, and the visual state matrix.
+evidence, and the visual state matrix. A dedicated acceptance matrix was added
+in `77cd159` at `docs/audits/product-surface-acceptance.md`; it records the
+owner/entry-point evidence and keeps every applicable visual state explicitly
+pending until a native-bundle inspection is recorded.
 
 The current R05 slices removed the untyped `general.notifyOnErrors` default,
 moved Background values behind their owner, moved dock/sidebar runtime state
@@ -149,7 +152,7 @@ Legacy `appCornerRadius` values are converted to the current
 `cornerRadiusScale` field during migration, with the modern value taking
 precedence when both are present.
 
-Current HEAD is `b89ca09` on `master`; the worktree contains this handshake
+Current HEAD is `77cd159` on `master`; the worktree contains this handshake
 update before its commit. R06
 boundaries removed the backend error facade, removed AI's stale backend edge,
 moved system-font discovery into the Theme owner, deleted the unconsumed
