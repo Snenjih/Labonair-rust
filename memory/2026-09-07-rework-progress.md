@@ -50,8 +50,15 @@ Terminal scrollback persistence was then moved from the backend module into
 `labonair-terminal::scrollback`. The terminal capability now owns compression,
 atomic writes, size limits, restore, deletion, orphan cleanup, and retention;
 Workspace and shell only call its public API. The old backend module and its
-direct consumers are gone. Focused terminal/workspace/shell/backend tests pass;
-the full workspace gates are pending after this slice.
+direct consumers are gone. To preserve the target dependency graph, the data
+directory is passed as an explicit path context by Workspace and shell rather
+than making the terminal crate depend on Filesystem. Focused and full workspace
+gates passed; the slice is committed as `534ccd5`.
+
+The updater's broad backend-root re-export was removed as well. Shell and app
+tests now import `AvailableUpdate` and the updater contracts from
+`backend::modules::updater`, leaving the backend root for composition/events
+only. The affected checks passed and this cleanup is committed as `8cdf216`.
 
 ## Native visual verification
 
