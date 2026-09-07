@@ -95,6 +95,14 @@ The obsolete shell `command_for_shortcut` adapter was removed after the final
 UI migration. Commit: `5b2918d`; worktree is clean. Next: define the lossless
 Keymap management/editor contract.
 
+`keymap::file::KeymapDocument` now keeps raw JSONC source authoritative while
+parse and validation remain derived state. Comments, unknown actions, and
+malformed edits can therefore be displayed and saved without being erased;
+runtime activation still uses the last valid layer. Focused Keymap/Palette/
+Shell tests, Clippy, dependency, queue, format, and diff checks pass. Commit:
+`2f608f4`; worktree is clean. Next: build the dedicated Keymap management UI
+on this contract.
+
 The Keymap module now also owns last-good user-file recovery, validation issue
 retention, and built-in/user layer composition. Shell remains only the GPUI
 binding/display adapter and the existing filesystem watcher connection. The
