@@ -9,6 +9,7 @@ use labonair_ssh::{
     SshEventReceiver, SshEventSource, SshPtyService, SshRemoteCommandService, SshRemoteFileService,
     SshSessionEvent, SshSessionId, SshTestResult, SshTunnelService,
 };
+use serde::Deserialize;
 
 #[derive(Clone)]
 pub struct BackendSshService {
@@ -38,55 +39,86 @@ struct BackendSshEventReceiver {
     receiver: tokio::sync::broadcast::Receiver<crate::RawEvent>,
 }
 
+#[derive(Deserialize)]
+struct ConnectLogPayload {
+    session_id: String,
+    message: String,
+}
+
+#[derive(Deserialize)]
+struct KnownHostsWarningPayload {
+    session_id: String,
+    fingerprint: String,
+    host: String,
+    is_mismatch: bool,
+}
+
+#[derive(Deserialize)]
+struct AuthRequiredPayload {
+    session_id: String,
+    prompt_message: String,
+    is_2fa: bool,
+}
+
+#[derive(Deserialize)]
+struct SessionPayload {
+    session_id: String,
+    #[serde(default)]
+    default_path: Option<String>,
+}
+
+fn decode_connection_event(raw: &crate::RawEvent) -> Option<SshConnectionEvent> {
+    match raw.name.as_str() {
+        "ssh_connect_log" => serde_json::from_value::<ConnectLogPayload>(raw.payload.clone())
+            .ok()
+            .map(|payload| SshConnectionEvent::ConnectLog {
+                session_id: payload.session_id,
+                message: payload.message,
+            }),
+        "known_hosts_warning" => {
+            serde_json::from_value::<KnownHostsWarningPayload>(raw.payload.clone())
+                .ok()
+                .map(|payload| SshConnectionEvent::KnownHostsWarning {
+                    session_id: payload.session_id,
+                    fingerprint: payload.fingerprint,
+                    host: payload.host,
+                    is_mismatch: payload.is_mismatch,
+                })
+        }
+        "auth_required" => serde_json::from_value::<AuthRequiredPayload>(raw.payload.clone())
+            .ok()
+            .map(|payload| SshConnectionEvent::AuthRequired {
+                session_id: payload.session_id,
+                prompt_message: payload.prompt_message,
+                is_2fa: payload.is_2fa,
+            }),
+        "passphrase_required" => serde_json::from_value::<SessionPayload>(raw.payload.clone())
+            .ok()
+            .map(|payload| SshConnectionEvent::PassphraseRequired {
+                session_id: payload.session_id,
+            }),
+        "session_established" => serde_json::from_value::<SessionPayload>(raw.payload.clone())
+            .ok()
+            .map(|payload| SshConnectionEvent::SessionEstablished {
+                session_id: payload.session_id,
+                default_path: payload.default_path,
+            }),
+        "ssh_connection_lost" => serde_json::from_value::<SessionPayload>(raw.payload.clone())
+            .ok()
+            .map(|payload| SshConnectionEvent::ConnectionLost {
+                session_id: payload.session_id,
+            }),
+        _ => None,
+    }
+}
+
 impl SshEventReceiver for BackendSshEventReceiver {
     fn recv<'a>(&'a mut self) -> BoxFuture<'a, Option<SshConnectionEvent>> {
         Box::pin(async move {
             loop {
                 match self.receiver.recv().await {
                     Ok(raw) => {
-                        let event = crate::AppEvent::from_raw(&raw).and_then(|event| match event {
-                            crate::AppEvent::SshConnectLog {
-                                session_id,
-                                message,
-                            } => Some(SshConnectionEvent::ConnectLog {
-                                session_id,
-                                message,
-                            }),
-                            crate::AppEvent::SshKnownHostsWarning {
-                                session_id,
-                                fingerprint,
-                                host,
-                                is_mismatch,
-                            } => Some(SshConnectionEvent::KnownHostsWarning {
-                                session_id,
-                                fingerprint,
-                                host,
-                                is_mismatch,
-                            }),
-                            crate::AppEvent::SshAuthRequired {
-                                session_id,
-                                prompt_message,
-                                is_2fa,
-                            } => Some(SshConnectionEvent::AuthRequired {
-                                session_id,
-                                prompt_message,
-                                is_2fa,
-                            }),
-                            crate::AppEvent::SshPassphraseRequired { session_id } => {
-                                Some(SshConnectionEvent::PassphraseRequired { session_id })
-                            }
-                            crate::AppEvent::SshSessionEstablished {
-                                session_id,
-                                default_path,
-                            } => Some(SshConnectionEvent::SessionEstablished {
-                                session_id,
-                                default_path,
-                            }),
-                            crate::AppEvent::SshConnectionLost { session_id } => {
-                                Some(SshConnectionEvent::ConnectionLost { session_id })
-                            }
-                            _ => None,
-                        });
+                        let event = decode_connection_event(&raw);
                         if event.is_some() {
                             return event;
                         }

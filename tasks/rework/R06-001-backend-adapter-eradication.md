@@ -127,6 +127,9 @@ boundary still exists; that package must not become a second capability owner.
 - [x] Removed the unconsumed backend filesystem watcher, `App::watcher` state,
       and `backend::modules::fs` compatibility layer; filesystem paths and
       watcher ownership now stay in `labonair-filesystem`.
+- [x] Removed the broad backend `AppEvent` enum and typed-emitter helper;
+      SSH and MCP adapters now decode only their own raw event names directly
+      into the canonical capability contracts.
 - [ ] Move the remaining contracts and adapters behind injected capability
       services.
 - [ ] Delete the broad `App` facade paths and remaining compatibility edges.

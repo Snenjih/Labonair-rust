@@ -8,4 +8,4 @@ pub mod events;
 pub mod modules;
 
 pub use app::{App, AppState};
-pub use events::{AppEvent, EventBus, EventChannel, RawEvent};
+pub use events::{EventBus, EventChannel, RawEvent};

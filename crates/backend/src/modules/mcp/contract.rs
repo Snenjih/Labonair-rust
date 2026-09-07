@@ -4,6 +4,7 @@ use labonair_mcp_core::{
     BoxFuture, McpEvent, McpEventReceiver, McpEventSource, McpSessionAccessService,
     McpTabOperationService, SessionGrantRequest, TabOpResult,
 };
+use serde::Deserialize;
 
 use super::{mcp_set_session_grant, mcp_tab_op_response};
 
@@ -69,46 +70,82 @@ struct BackendMcpEventReceiver {
     receiver: tokio::sync::broadcast::Receiver<crate::RawEvent>,
 }
 
+#[derive(Deserialize)]
+struct OpenTabPayload {
+    request_id: String,
+    #[serde(default)]
+    path: Option<String>,
+    #[serde(default)]
+    host_id: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct CloseTabPayload {
+    request_id: String,
+    #[serde(default)]
+    session_id: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct TabIdPayload {
+    tab_id: String,
+}
+
+#[derive(Deserialize)]
+struct ServerErrorPayload {
+    message: String,
+}
+
+#[derive(Deserialize)]
+struct ActivityPayload {
+    label: String,
+    action: String,
+    detail: String,
+}
+
+fn decode_mcp_event(raw: &crate::RawEvent) -> Option<McpEvent> {
+    match raw.name.as_str() {
+        "mcp_open_tab_request" => serde_json::from_value::<OpenTabPayload>(raw.payload.clone())
+            .ok()
+            .map(|payload| McpEvent::OpenTabRequest {
+                request_id: payload.request_id,
+                path: payload.path,
+                host_id: payload.host_id,
+            }),
+        "mcp_close_tab_request" => serde_json::from_value::<CloseTabPayload>(raw.payload.clone())
+            .ok()
+            .map(|payload| McpEvent::CloseTabRequest {
+                request_id: payload.request_id,
+                session_id: payload.session_id,
+            }),
+        "mcp_grant_expired" => serde_json::from_value::<TabIdPayload>(raw.payload.clone())
+            .ok()
+            .map(|payload| McpEvent::GrantExpired {
+                tab_id: payload.tab_id,
+            }),
+        "mcp_server_error" => serde_json::from_value::<ServerErrorPayload>(raw.payload.clone())
+            .ok()
+            .map(|payload| McpEvent::ServerError {
+                message: payload.message,
+            }),
+        "mcp_activity" => serde_json::from_value::<ActivityPayload>(raw.payload.clone())
+            .ok()
+            .map(|payload| McpEvent::Activity {
+                label: payload.label,
+                action: payload.action,
+                detail: payload.detail,
+            }),
+        _ => None,
+    }
+}
+
 impl McpEventReceiver for BackendMcpEventReceiver {
     fn recv<'a>(&'a mut self) -> BoxFuture<'a, Option<McpEvent>> {
         Box::pin(async move {
             loop {
                 match self.receiver.recv().await {
                     Ok(raw) => {
-                        let event = crate::AppEvent::from_raw(&raw).and_then(|event| match event {
-                            crate::AppEvent::McpOpenTabRequest {
-                                request_id,
-                                path,
-                                host_id,
-                            } => Some(McpEvent::OpenTabRequest {
-                                request_id,
-                                path,
-                                host_id,
-                            }),
-                            crate::AppEvent::McpCloseTabRequest {
-                                request_id,
-                                session_id,
-                            } => Some(McpEvent::CloseTabRequest {
-                                request_id,
-                                session_id,
-                            }),
-                            crate::AppEvent::McpGrantExpired { tab_id } => {
-                                Some(McpEvent::GrantExpired { tab_id })
-                            }
-                            crate::AppEvent::McpServerError { message } => {
-                                Some(McpEvent::ServerError { message })
-                            }
-                            crate::AppEvent::McpActivity {
-                                label,
-                                action,
-                                detail,
-                            } => Some(McpEvent::Activity {
-                                label,
-                                action,
-                                detail,
-                            }),
-                            _ => None,
-                        });
+                        let event = decode_mcp_event(&raw);
                         if event.is_some() {
                             return event;
                         }

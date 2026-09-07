@@ -7,8 +7,6 @@ use gpui_component::Root;
 
 mod dock_icon;
 use labonair_backend::App as Backend;
-#[cfg(debug_assertions)]
-use labonair_backend::AppEvent;
 use labonair_shell::{window_state, AppShell};
 #[cfg(debug_assertions)]
 use tokio::sync::broadcast::error::RecvError;
@@ -26,20 +24,18 @@ fn init_logging() {
         .init();
 }
 
-/// Debug-only: subscribes to the backend event bus and logs every event,
-/// decoding the typed [`AppEvent`] form where possible. The real UI routing
-/// lives in `labonair_workspace::backend_event_bridge::BackendEventBridge`
-/// (T17-008); this is purely a developer trace.
+/// Debug-only: subscribes to the legacy backend event bus and logs every raw
+/// event. Capability adapters perform their own typed decoding at the feature
+/// boundary; this is purely a developer trace.
 #[cfg(debug_assertions)]
 fn spawn_event_logger(backend: &Backend) {
     let mut rx = backend.events.subscribe();
     tokio::spawn(async move {
         loop {
             match rx.recv().await {
-                Ok(raw) => match AppEvent::from_raw(&raw) {
-                    Some(event) => tracing::debug!(?event, "backend event"),
-                    None => tracing::trace!(name = %raw.name, "backend event (untyped)"),
-                },
+                Ok(raw) => {
+                    tracing::debug!(name = %raw.name, payload = ?raw.payload, "backend event")
+                }
                 Err(RecvError::Lagged(skipped)) => {
                     tracing::warn!(skipped, "event bus subscriber lagged");
                 }

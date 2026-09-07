@@ -82,9 +82,11 @@ this boundary.
 The unconsumed backend filesystem watcher and `App::watcher` state were removed.
 Backend modules now import `labonair-filesystem::paths` directly, and the
 backend filesystem compatibility module was deleted. The unproduced
-`fs:dir-changed` typed event and the unused global typed-emitter helper were
-removed as well; MCP grant revocation keeps its existing legacy wire event
-through `App::emit` until the remaining backend adapter is extracted.
+`fs:dir-changed` typed event and the broad global `AppEvent` decoder were
+removed as well. SSH and MCP adapters now decode only their own raw event names
+directly into their canonical contracts; MCP grant revocation keeps its
+existing legacy wire event through `App::emit` until the remaining backend
+adapter is extracted.
 
 ## Native visual verification
 
