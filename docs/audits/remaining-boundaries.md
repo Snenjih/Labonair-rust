@@ -14,6 +14,7 @@ queue contains a bounded task for it.
 
 | Decision | Meaning |
 |---|---|
+| **Done** | The edge has been removed; the row records the resolving task and evidence. |
 | **Extract next** | The current edge represents feature-view or state coupling that should be removed after the acceptance gate. |
 | **Narrow when needed** | The edge is currently typed and legitimate, but should become narrower only when a concrete second consumer or implementation boundary exists. |
 | **Retain by design** | The edge is an intentional composition or public-contract edge and is not a violation to remove. |
@@ -22,7 +23,7 @@ queue contains a bounded task for it.
 
 | ID | Current edge | Evidence | Decision | Target outcome / removal condition |
 |---|---|---|---|---|
-| B01 | `panel-explorer → workspace` | `crates/panel-explorer/src/panel_explorer.rs` stores `Entity<Workspace>` and calls Workspace open-file, open-terminal, and preview callbacks; drag/preview types are re-exported from Workspace. | **Extract next** | Define an Explorer host contract for those intents, move shared drag/preview values below both modules, inject the host at composition, and delete the direct Workspace dependency. Planned task: [`R07-004`](../../tasks/rework/R07-004-explorer-host-contract.md). |
+| B01 | ~~`panel-explorer → workspace`~~ | **Resolved (R07-004).** `crates/panel-explorer/src/panel_explorer.rs` now holds a `labonair_explorer_host::ExplorerHost` (four injected callbacks) instead of `Entity<Workspace>`; `DraggedPaths` / `quote_paths` / `shell_quote` / `is_previewable` / `PREVIEW_EXTENSIONS` moved to the leaf `labonair-explorer-host` crate consumed by both `panel-explorer` and `workspace`. The shell builds the Workspace-backed `ExplorerHost` and re-notifies the panel on active-editor changes. The direct `panel-explorer → workspace` edge is gone from Cargo metadata and the verifier allow-list. | **Done** | Native Explorer visual-state recording rolls into the R07-001 visual matrix. |
 | B02 | `workspace → background` | `crates/workspace/src/workspace.rs` and `views/terminal.rs` hold `Entity<BackgroundStore>` to mount the background layer. | **Extract next** | Introduce a narrow background presentation capability at the view boundary, then remove the Workspace dependency on the Background entity/store. Background persistence and rendering remain owned by Backgrounds. |
 | B03 | `workspace → ai` | `crates/workspace/src/live_bridge.rs` implements the AI live bridge and Workspace owns the GPUI reaction path. | **Narrow when needed** | Keep Workspace orchestration, but move AI-specific context and lifecycle details behind a typed AI bridge contract when the AI UI/core boundary is actively rebuilt. No AI state belongs in shell or generic Workspace state. |
 | B04 | `workspace → settings` | Workspace and its editor/terminal views read typed `SettingsStore` values for behavior and presentation. | **Narrow when needed** | Retain typed settings value access; replace only implementation-level global access with a narrow capability snapshot when a concrete consumer boundary exists. Settings remains a value owner, not a Workspace feature owner. |
@@ -33,8 +34,10 @@ queue contains a bounded task for it.
 ## Execution order
 
 1. Complete the native visual acceptance in `R07-001`.
-2. Create one bounded task for B01 and complete its contract, adapter,
-   consumer, dependency, and visual checks before starting B02.
+2. B01 (`panel-explorer → workspace`) is resolved by `R07-004`: the contract,
+   adapter, consumer migration, dependency removal, and focused tests have
+   landed. Only the native Explorer visual-state recording is outstanding and
+   folds into the R07-001 visual matrix.
 3. Create B02 only after its presentation contract is demonstrated by the
    current Background consumer; do not split a crate merely to make the graph
    look symmetrical.

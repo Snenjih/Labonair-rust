@@ -5,6 +5,46 @@ They may mention API names that were valid at the time of the recorded
 change; the current API and task state are defined by the latest header and
 the normative documents under `docs/`.
 
+## Current Session: 2026-09-07 (R07-004 Explorer host contract — structural migration)
+
+macOS Screen Recording permission is now available to the capture runner
+(`scripts/screenshot.sh` succeeded against the native `target/debug/labonair`
+PID launched by absolute path — note the helper still rejects a `./`-relative
+invocation because `$REPO_ROOT/./target/...` does not string-match
+`$REPO_ROOT/target/...`). Per explicit direction, the full R07-001 visual
+matrix capture was deferred and the B01 boundary work was done instead.
+
+Boundary B01 (`panel-explorer → workspace`) is resolved:
+
+- new leaf crate `crates/explorer-host` (`labonair-explorer-host`, dep: `gpui`
+  only): `ExplorerHost` with four injected callbacks (open-file, open-terminal,
+  open-preview, active-file-path) plus the `DraggedPaths` / `shell_quote` /
+  `quote_paths` / `is_previewable` / `PREVIEW_EXTENSIONS` value types moved
+  down from `labonair-workspace`;
+- `labonair-panel-explorer` dropped its `labonair-workspace` dependency and the
+  `mod workspace` / `mod preview` shims; `ExplorerView` stores an
+  `ExplorerHost`; `on_workspace_changed` became public
+  `notify_active_file_changed`, driven by the composition root;
+- `labonair-workspace` deleted `src/drag.rs`; `views/terminal.rs` and
+  `views/preview.rs` re-import the shared values from `labonair-explorer-host`;
+- `crates/shell/src/bootstrap.rs` builds the Workspace-backed `ExplorerHost`
+  and calls `notify_active_file_changed` inside the existing workspace observer;
+- `scripts/check_crate_deps.py` + the architecture inventory, remaining-boundary
+  backlog (B01 → Done), capability matrix, roadmap, and the R07-004 task record
+  were updated in the same change.
+
+All gates pass: `cargo fmt --all -- --check`, `cargo check --workspace
+--all-targets`, `cargo clippy --workspace --all-targets -- -D warnings`,
+`cargo test --workspace --no-fail-fast` (0 failures), `scripts/check-crate-deps.sh`
+(53 crates, 221 edges, acyclic), `python3 scripts/check_documentation.py`,
+`python3 scripts/check_rework_queue.py`, `git diff --check`.
+
+R07-004 stays `Planned` (not `Done`) and R07-001 stays `In Progress`: both
+await the native visual-state matrix, which was deprioritised this session.
+Next: capture the R07-001 visual matrix (Screen Recording now works), then
+formally close R07-004 and start B02 (`workspace → background`). No old Tauri
+application was used.
+
 ## Current Session: 2026-09-07 (Documentation governance check)
 
 Added `scripts/check_documentation.py` and wired it into CI, the pull-request

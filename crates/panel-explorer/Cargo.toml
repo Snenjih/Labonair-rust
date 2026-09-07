@@ -17,7 +17,7 @@ labonair-ui-kit = { path = "../ui-kit" }
 labonair-panel = { path = "../panel" }
 labonair-notifications = { path = "../notifications" }
 labonair-filesystem = { path = "../filesystem" }
-labonair-workspace = { path = "../workspace" }
+labonair-explorer-host = { path = "../explorer-host" }
 labonair-settings = { path = "../settings" }
 
 [dev-dependencies]

@@ -152,6 +152,11 @@ ALLOWED = {
     # Workspace track --------------------------------------------------
     # rule 1: contracts crate — NO workspace-track dep at all.
     "labonair-panel": {"labonair-gpui-ext"},
+    # R07-004: narrow Explorer host contract plus the drag/preview value types
+    # shared by the Explorer panel and the terminal/preview views. A leaf —
+    # only `gpui` (external) — so both `panel-explorer` and `workspace` can
+    # depend on it without either depending on the other.
+    "labonair-explorer-host": set(),
     # rule 3 + §8.4: workspace owns the tab-view entities, so it pulls
     # hosts-ui and panel-git-graph (acyclic — neither depends back on it).
     # T19-002: ThemeSettings/TerminalSettings real consumers
@@ -170,7 +175,7 @@ ALLOWED = {
         "labonair-terminal", "labonair-editor",
         "labonair-git",
         "labonair-ai", "labonair-settings", "labonair-settings-json",
-        "labonair-filesystem",
+        "labonair-filesystem", "labonair-explorer-host",
         "labonair-ssh", "labonair-sftp", "labonair-transfers",
         "labonair-background", "labonair-mcp-core",
         "labonair-command-palette-core", "labonair-keymap",
@@ -190,6 +195,7 @@ ALLOWED = {
         "labonair-keymap",
         "labonair-keymap-ui",
         "labonair-workspace", "labonair-settings-ui", "labonair-panel",
+        "labonair-explorer-host",
         "labonair-panel-explorer", "labonair-panel-scm",
         "labonair-panel-git-graph", "labonair-panel-snippets",
         "labonair-terminal",
@@ -218,12 +224,14 @@ ALLOWED = {
         "labonair-workspace",
     },
 
-    # Panels — rule 2 (+ §8.4: explorer/snippets/ai may pull workspace).
+    # Panels — rule 2 (+ §8.4: snippets/ai may pull workspace).
     # Each panel crate depends on `labonair-panel` to `impl Panel` (T17-001);
     # the contracts crate is a leaf (only gpui / gpui-ext), so no cycle.
+    # R07-004: explorer no longer depends on `labonair-workspace`; it reaches
+    # the workspace only through the injected `labonair-explorer-host` contract.
     "labonair-panel-explorer": {
         "labonair-theme", "labonair-ui-kit", "labonair-panel",
-        "labonair-notifications", "labonair-workspace",
+        "labonair-notifications", "labonair-explorer-host",
         # transitional: settings reads move behind a feature settings contract
         "labonair-settings",
         "labonair-filesystem",

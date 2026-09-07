@@ -13,6 +13,7 @@ members = [
     "crates/command-palette-runtime",
     "crates/interaction-contracts",
     "crates/panel",
+    "crates/explorer-host",
     "crates/workspace",
     "crates/settings-ui",
     "crates/settings",

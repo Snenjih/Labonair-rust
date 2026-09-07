@@ -4,6 +4,13 @@
 
 `⏳ Planned`
 
+> Structural migration landed ahead of formal activation (see
+> [Notes and follow-ups](#notes-and-follow-ups)). The direct
+> `panel-explorer → workspace` edge is removed, the `ExplorerHost` contract and
+> Workspace adapter are in place, and every code/dependency/test gate passes.
+> The task stays `Planned` (not `Done`) only because its native Explorer
+> visual-state evidence folds into the still-open R07-001 visual matrix.
+
 ## Owner
 
 - Module: Explorer with the Workspace composition boundary
@@ -82,19 +89,33 @@ than storing or calling a Workspace entity directly.
 
 ## Acceptance criteria
 
-- [ ] Explorer has no direct Workspace entity or private-state dependency.
-- [ ] The host contract is UI-free, narrow, and owned by the Explorer boundary.
-- [ ] Workspace fulfills the contract only through composition injection.
-- [ ] Existing commands, persistence, notifications, and user behavior remain
-      compatible.
-- [ ] Shared controls continue to come from `labonair-ui-kit`.
-- [ ] Focused tests pass.
-- [ ] `cargo fmt --all -- --check` passes.
-- [ ] `cargo check --workspace --all-targets` passes.
-- [ ] `cargo clippy --workspace --all-targets -- -D warnings` passes.
-- [ ] `cargo test --workspace --no-fail-fast` passes.
-- [ ] `scripts/check-crate-deps.sh` and `git diff --check` pass.
-- [ ] The Explorer visual states are recorded with native evidence.
+- [x] Explorer has no direct Workspace entity or private-state dependency.
+      `ExplorerView` holds a `labonair_explorer_host::ExplorerHost` (four
+      injected callbacks); the `pub(crate) mod workspace` / `mod preview`
+      shims and the `labonair-workspace` dependency are gone.
+- [x] The host contract is UI-free, narrow, and owned by the Explorer boundary.
+      `labonair-explorer-host` is a leaf crate (only `gpui`) that carries the
+      four intents plus the `DraggedPaths` / `is_previewable` values shared
+      with the terminal and preview views.
+- [x] Workspace fulfills the contract only through composition injection.
+      `crates/shell/src/bootstrap.rs` builds the Workspace-backed `ExplorerHost`
+      and re-notifies the panel on active-editor changes.
+- [x] Existing commands, persistence, notifications, and user behavior remain
+      compatible. No command IDs, keymaps, settings, or persistence formats
+      changed; the open/preview/terminal call sites forward to the same
+      Workspace methods.
+- [x] Shared controls continue to come from `labonair-ui-kit` (unchanged).
+- [x] Focused tests pass. `labonair-explorer-host` adds unit coverage for the
+      moved value types and a `gpui::test` for `ExplorerHost` dispatch.
+- [x] `cargo fmt --all -- --check` passes.
+- [x] `cargo check --workspace --all-targets` passes.
+- [x] `cargo clippy --workspace --all-targets -- -D warnings` passes.
+- [x] `cargo test --workspace --no-fail-fast` passes.
+- [x] `scripts/check-crate-deps.sh` and `git diff --check` pass; the
+      `panel-explorer → workspace` allow-list entry is replaced by
+      `panel-explorer → explorer-host`.
+- [ ] The Explorer visual states are recorded with native evidence. Deferred
+      into the R07-001 visual matrix.
 
 ## Removal condition
 
@@ -105,7 +126,27 @@ pass.
 
 ## Notes and follow-ups
 
-This task is intentionally planned while R07-001 remains active; it must not
-be marked in progress until the product-surface acceptance gate is complete.
-The next boundary after this one is B02 (`workspace → background`) only after
-this task has been completed and re-evaluated.
+This task was originally sequenced to start only after R07-001's visual
+acceptance gate. On explicit direction to prioritise the boundary work over
+the visual-matrix capture, the structural migration was implemented and
+verified early:
+
+- new crate `crates/explorer-host` (`labonair-explorer-host`): `ExplorerHost`
+  (open-file / open-terminal / open-preview / active-file-path callbacks),
+  plus `DraggedPaths` / `shell_quote` / `quote_paths` / `is_previewable` /
+  `PREVIEW_EXTENSIONS` moved down from `labonair-workspace`;
+- `labonair-panel-explorer`: dropped `labonair-workspace`; `ExplorerView` holds
+  an `ExplorerHost`; `on_workspace_changed` → public
+  `notify_active_file_changed` driven by the composition root;
+- `labonair-workspace`: deleted `src/drag.rs`; `views/terminal.rs` and
+  `views/preview.rs` re-import the shared values from `labonair-explorer-host`;
+- `crates/shell/src/bootstrap.rs`: constructs the Workspace-backed
+  `ExplorerHost` and folds an `e.notify_active_file_changed(cx)` call into the
+  existing workspace observer;
+- `scripts/check_crate_deps.py`, `docs/audits/architecture-inventory.md`,
+  `docs/audits/remaining-boundaries.md` (B01 → **Done**), `docs/capabilities.md`,
+  and `docs/rework-roadmap.md` updated in the same change.
+
+Remaining before this task is marked `Done`: record the native Explorer visual
+states, which is the same capture effort blocked in R07-001. The next boundary
+after this one is B02 (`workspace → background`).

@@ -172,10 +172,16 @@ The acceptance launch also recorded a bounded Settings compatibility finding;
 now records how known removed keys are classified without weakening warnings
 for genuinely unknown future keys.
 
-The first post-acceptance boundary task is prepared but not started:
-[`R07-004-explorer-host-contract.md`](../tasks/rework/R07-004-explorer-host-contract.md)
-will remove the direct Explorer-to-Workspace view dependency described as B01
-in [`audits/remaining-boundaries.md`](audits/remaining-boundaries.md).
+The first post-acceptance boundary task,
+[`R07-004-explorer-host-contract.md`](../tasks/rework/R07-004-explorer-host-contract.md),
+has landed its structural migration: the direct Explorer-to-Workspace view
+dependency (B01 in
+[`audits/remaining-boundaries.md`](audits/remaining-boundaries.md)) is removed.
+`labonair-panel-explorer` now reaches the workspace only through the injected
+`labonair-explorer-host::ExplorerHost` contract, and the shared drag/preview
+value types live in the new leaf `labonair-explorer-host` crate. All code,
+dependency, and test gates pass; the native Explorer visual-state recording is
+the only remaining item and folds into the R07-001 visual matrix.
 
 ## Change and removal gates
 

@@ -29,19 +29,11 @@
 //!   port.
 
 // Crate root (T16-008): this file is the `labonair-panel-explorer` lib root.
-// The `theme` / `workspace` / `preview` shims keep the pre-split `crate::…`
-// paths resolving against their new home crates.
+// The `theme` shim keeps the pre-split `crate::…` paths resolving against its
+// new home crate.
 
 pub(crate) mod theme {
     pub use labonair_theme::store::*;
-}
-
-pub(crate) mod workspace {
-    pub use labonair_workspace::Workspace;
-}
-
-pub(crate) mod preview {
-    pub use labonair_workspace::views::preview::*;
 }
 
 use std::collections::{HashMap, HashSet};
@@ -63,7 +55,7 @@ use notify_debouncer_mini::{new_debouncer, Debouncer};
 use labonair_filesystem::{mutate, tree};
 
 use crate::theme::ThemeStore;
-use crate::workspace::Workspace;
+use labonair_explorer_host::ExplorerHost;
 use labonair_notifications::{notification_center, Notification};
 use labonair_ui_kit::{
     button, chevron_icon_path, context_menu, icon_for_path, svg_path, tree_row, ButtonSize,
@@ -83,11 +75,11 @@ const DRAIN_INTERVAL: Duration = Duration::from_millis(400);
 const SEARCH_MAX_DEPTH: usize = 8;
 const SEARCH_MAX_VISITS: usize = 4000;
 
-/// `DraggedPaths` / `shell_quote` / `quote_paths` moved to
-/// `labonair_workspace::drag` in T16-006 (so `views::terminal` can accept
-/// explorer-row drops without `labonair-workspace` depending on `labonair-ui`).
+/// `DraggedPaths` / `shell_quote` / `quote_paths` live in the shared
+/// `labonair-explorer-host` value crate (R07-004) so the terminal view can
+/// accept explorer-row drops without either module depending on the other.
 /// Re-exported here so `crate::explorer::DraggedPaths` keeps resolving.
-pub use labonair_workspace::drag::{quote_paths, shell_quote, DraggedPaths};
+pub use labonair_explorer_host::{quote_paths, shell_quote, DraggedPaths};
 
 /// Build the Explorer contribution for the workspace-owned panel registry.
 pub fn panel_registration(
@@ -729,7 +721,10 @@ fn git_tint(ch: char, c: &Colors) -> Hsla {
 
 pub struct ExplorerView {
     theme: Entity<ThemeStore>,
-    workspace: Entity<Workspace>,
+    /// Narrow open-file / open-terminal / open-preview / active-file contract.
+    /// The composition root wires it to the active workspace; this view never
+    /// holds the workspace entity (R07-004).
+    host: ExplorerHost,
     model: TreeModel,
     selection: Vec<PathBuf>,
     clipboard: Option<Clipboard>,
@@ -774,15 +769,11 @@ pub struct ExplorerView {
 }
 
 impl ExplorerView {
-    pub fn new(
-        theme: Entity<ThemeStore>,
-        workspace: Entity<Workspace>,
-        cx: &mut Context<Self>,
-    ) -> Self {
+    pub fn new(theme: Entity<ThemeStore>, host: ExplorerHost, cx: &mut Context<Self>) -> Self {
         cx.observe(&theme, |_, _, cx| cx.notify()).detach();
-        // Phase 3.5: follow the workspace's active editor for auto-reveal.
-        cx.observe(&workspace, |this, _, cx| this.on_workspace_changed(cx))
-            .detach();
+        // Phase 3.5: auto-reveal follows the host's active editor. The
+        // composition root re-notifies this view when that changes, since the
+        // view no longer observes the workspace entity directly (R07-004).
 
         let drain = cx.spawn(async move |view, cx| loop {
             cx.background_executor().timer(DRAIN_INTERVAL).await;
@@ -796,7 +787,7 @@ impl ExplorerView {
 
         Self {
             theme,
-            workspace,
+            host,
             model: TreeModel::default(),
             selection: Vec::new(),
             clipboard: None,
@@ -858,8 +849,9 @@ impl ExplorerView {
             .unwrap_or_else(|| ExplorerSettings::from_settings(&Default::default()))
     }
 
-    /// The workspace's active editor changed — re-evaluate auto-reveal.
-    fn on_workspace_changed(&mut self, cx: &mut Context<Self>) {
+    /// The host's active editor changed — re-evaluate auto-reveal. Called by
+    /// the composition root, which observes the workspace on this view's behalf.
+    pub fn notify_active_file_changed(&mut self, cx: &mut Context<Self>) {
         self.reveal_active_file(cx);
     }
 
@@ -876,11 +868,7 @@ impl ExplorerView {
         let Some(root) = self.model.root.clone() else {
             return;
         };
-        let path = self
-            .workspace
-            .read(cx)
-            .active_file_path(cx)
-            .map(PathBuf::from);
+        let path = self.host.active_file_path(cx).map(PathBuf::from);
         let Some(path) = path.filter(|p| p.starts_with(&root)) else {
             if self.active_file.take().is_some() {
                 cx.notify();
@@ -1489,24 +1477,20 @@ impl ExplorerView {
     fn open_in_terminal(&mut self, dir: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
         self.context_menu = None;
         let cwd = dir.to_string_lossy().to_string();
-        self.workspace.update(cx, |w, cx| {
-            w.new_terminal_tab_in(Some(cwd), window, cx);
-        });
+        self.host.open_terminal_in(cwd, window, cx);
         cx.notify();
     }
 
     fn open_in_preview(&mut self, path: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
         self.context_menu = None;
         let target = path.to_string_lossy().to_string();
-        self.workspace
-            .update(cx, |w, cx| w.open_preview(target, window, cx));
+        self.host.open_preview(target, window, cx);
         cx.notify();
     }
 
     fn open_file(&mut self, path: &Path, peek: bool, window: &mut Window, cx: &mut Context<Self>) {
         let path = path.to_string_lossy().to_string();
-        self.workspace
-            .update(cx, |w, cx| w.open_file(path, peek, window, cx));
+        self.host.open_file(path, peek, window, cx);
         cx.notify();
     }
 
@@ -2195,7 +2179,8 @@ impl ExplorerView {
             .file_name()
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_default();
-        let can_preview = !is_dir && crate::preview::is_previewable(&target.to_string_lossy());
+        let can_preview =
+            !is_dir && labonair_explorer_host::is_previewable(&target.to_string_lossy());
         let has_clip = self.clipboard.is_some();
         let rel = self
             .root()

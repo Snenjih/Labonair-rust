@@ -4,6 +4,35 @@ Older entries preserve the state of the code when each issue was recorded.
 When an API was later renamed or removed, the current implementation and
 normative documentation take precedence over the historical symbol name.
 
+## 2026-09-07 — `scripts/screenshot.sh` rejects a `./`-relative launch
+
+**Finding:** The helper validates the target PID's command path by prefixing a
+non-absolute path with `$REPO_ROOT/` and string-comparing it to
+`$REPO_ROOT/target/debug/labonair`. Launching the binary as
+`./target/debug/labonair` yields `ps` command `./target/debug/labonair`, which
+becomes `$REPO_ROOT/./target/debug/labonair` — the embedded `/./` fails the
+exact match and the capture is refused as "not the native Rust executable".
+
+**Workaround:** launch the native app by its absolute path
+(`/Users/.../target/debug/labonair`) or via `cargo run -p labonair`; both
+produce a command token the validator normalizes. macOS Screen Recording
+permission for the runner is otherwise in place as of this date — captures
+succeed once the PID check passes.
+
+## 2026-09-07 — Explorer no longer holds `Entity<Workspace>` (R07-004)
+
+**Change:** `labonair-panel-explorer` used to store the workspace entity and
+call `Workspace::{open_file,new_terminal_tab_in,open_preview,active_file_path}`
+plus re-export `labonair_workspace::drag`. It now holds a
+`labonair_explorer_host::ExplorerHost` (four `Rc<dyn Fn>` callbacks) built by
+the shell. Auto-reveal lost its `cx.observe(&workspace)`; the composition root
+calls the new public `ExplorerView::notify_active_file_changed` from the
+existing workspace observer instead. `DraggedPaths` / `quote_paths` /
+`shell_quote` / `is_previewable` / `PREVIEW_EXTENSIONS` moved from
+`labonair-workspace` to the new leaf crate `labonair-explorer-host`;
+`workspace/src/drag.rs` is deleted and `views/{terminal,preview}.rs` import
+from `labonair-explorer-host`.
+
 ## 2026-09-07 — Normative status metadata may be qualified
 
 **Finding:** The documentation governance checker initially required the

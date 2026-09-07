@@ -31,7 +31,6 @@ pub mod cwd_breadcrumb;
 pub mod cwd_status_item;
 pub mod dock;
 pub mod dock_status_item;
-pub mod drag;
 pub mod layout;
 pub mod live_bridge;
 pub mod markdown;

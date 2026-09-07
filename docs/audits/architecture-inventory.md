@@ -41,7 +41,8 @@ removal conditions.
 | `notifications-core` | UI-free notification registry and lifecycle | notifications module | New owner of retention, ordering, deduplication, read state, and structured metadata. |
 | `notifications` | GPUI notification adapter and statusbar dropdown | notifications module | Owns the statusbar notification item; shell only registers it. |
 | `panel` | Panel/status contracts | workspace foundation | Keep contracts-only. |
-| `panel-explorer` | Explorer panel | explorer module | Remove workspace dependency through contracts. |
+| `explorer-host` | Explorer host contract plus the drag/preview value types shared with the terminal and preview views | explorer module | Leaf (only `gpui`); lets `panel-explorer` and `workspace` interoperate without either depending on the other (R07-004). |
+| `panel-explorer` | Explorer panel | explorer module | Workspace dependency removed (R07-004): opens files/terminals/previews and reads the active file through the injected `labonair-explorer-host::ExplorerHost` contract. |
 | `panel-git-graph` | Git graph panel | git module | Consumes `labonair-git::GitGraphService`; the `labonair-git-transport` implementation is injected at composition. |
 | `panel-scm` | Source-control panel | git module | Consumes `labonair-git::GitService`; backend implementation is injected at composition. |
 | `panel-snippets` | Snippet panel and execution UI | snippets module | Receives `Database` and execution contracts; has no backend-facade dependency. |
@@ -102,9 +103,12 @@ edges; the dependency verifier rejects every unlisted edge.
 - `settings-ui` depends on settings values, theme/UI primitives, notifications,
   command-palette fuzzy matching, and filesystem paths; it no longer depends on
   a workspace-owned background store, backend, Hosts UI, or panel contracts.
-- `panel-explorer` still depends on workspace for drag/preview shims, but its
-  obsolete backend dependency has been removed; those remaining UI contracts
-  are a later extraction boundary.
+- `panel-explorer` no longer depends on `workspace` (R07-004). Its open-file,
+  open-terminal, open-preview, and active-file intents cross the injected
+  `labonair-explorer-host::ExplorerHost` contract; the shared `DraggedPaths` /
+  `quote_paths` / `is_previewable` value types now live in the leaf
+  `labonair-explorer-host` crate that both `panel-explorer` and `workspace`
+  consume.
 - `hosts-ui` no longer depends on Settings or the backend facade; the shell
   composes one `HostManagerView`, injects its database, secret state, transport
   contracts, and the narrow MCP-revocation callback, then opens the manager
@@ -283,7 +287,7 @@ families. These are not target dependencies; each has a removal condition:
 |---|---|---|
 | `workspace → background` | Workspace currently mounts the Background entity as part of window composition. | Replace the entity edge with a narrow background presentation contract when the remaining view boundary is extracted. |
 | `workspace → ai`, `workspace → settings` | Workspace hosts the AI live bridge and consumes typed settings values for workspace-owned behavior. | Keep orchestration in Workspace; move AI context and any remaining direct implementation access behind narrow contracts. |
-| `panel-explorer → workspace` | Explorer uses Workspace's open-file/open-terminal/open-preview host callbacks and shared drag/preview shims. | Introduce an Explorer host contract and move shared drag/preview values below both modules. |
+| `panel-explorer → explorer-host`, `workspace → explorer-host` | Explorer's open-file/open-terminal/open-preview/active-file intents and the `DraggedPaths` / `is_previewable` value types shared with the terminal and preview views. | Retain by design (R07-004): `explorer-host` is a leaf contract crate that breaks the `panel-explorer ↔ workspace` coupling; the shell injects the Workspace-backed `ExplorerHost`. |
 | `panel-explorer → settings` | Explorer consumes the public typed `ExplorerSettings` value contract. | Keep only the typed public settings contract; no Settings implementation details or management UI may cross the edge. |
 | `panel-scm → editor`, `panel-scm → settings` | SCM reuses the public unified-diff contract and typed SCM presentation settings. | Keep public contracts; extract only if a future shared diff/settings contract has a real second consumer. |
 | `command-palette → settings`, `command-palette → filesystem` | Palette reads its typed presentation values, persists palette preferences, and owns recent-command storage. | Replace only implementation-level access with narrow contracts if the palette surface needs another host; retain capability ownership and avoid a second registry. |

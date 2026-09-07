@@ -1,5 +1,18 @@
 # Rework progress — 2026-09-07
 
+## R07-004 — Explorer host contract (B01 boundary)
+
+`panel-explorer → workspace` is removed. New leaf crate
+`labonair-explorer-host` owns the narrow `ExplorerHost` contract (open-file,
+open-terminal, open-preview, active-file-path) and the drag/preview value
+types (`DraggedPaths`, `shell_quote`, `quote_paths`, `is_previewable`,
+`PREVIEW_EXTENSIONS`) previously in `labonair-workspace`. `ExplorerView` holds
+an `ExplorerHost` instead of `Entity<Workspace>`; the shell builds the
+Workspace-backed host and re-notifies the panel on active-editor changes via
+the new public `notify_active_file_changed`. 53 crates / 221 edges, all gates
+green. R07-004 stays `Planned` and R07-001 stays `In Progress` — both only
+await the native visual-state matrix, which was deprioritised this session.
+
 ## Documentation governance automation
 
 `scripts/check_documentation.py` now validates the 13 current normative

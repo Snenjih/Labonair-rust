@@ -30,17 +30,9 @@ use labonair_ui_kit::{button, divider, Axis, ButtonSize, ButtonVariant, Palette}
 use crate::markdown::{parse_markdown, Inline, MdBlock};
 use crate::theme::ThemeStore;
 
-/// Extensions the reference explorer offers "Open in Preview" for, plus the
-/// text/markdown kinds this native pane can additionally render.
-pub const PREVIEW_EXTENSIONS: &[&str] = &[
-    "html", "htm", "png", "jpg", "jpeg", "gif", "webp", "svg", "pdf", "bmp", "ico", "md",
-    "markdown", "txt", "text",
-];
-
-/// Whether `path` is something the preview tab knows how to open.
-pub fn is_previewable(path: &str) -> bool {
-    ext_of(path).is_some_and(|e| PREVIEW_EXTENSIONS.contains(&e.as_str()))
-}
+/// The previewable-extension list and predicate are shared with the Explorer
+/// panel through the `labonair-explorer-host` value crate.
+pub use labonair_explorer_host::{is_previewable, PREVIEW_EXTENSIONS};
 
 fn ext_of(target: &str) -> Option<String> {
     let path = match target.split_once("://") {
