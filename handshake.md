@@ -24,7 +24,7 @@ Legacy `appCornerRadius` values are converted to the current
 `cornerRadiusScale` field during migration, with the modern value taking
 precedence when both are present.
 
-Current HEAD is `080a93c` on `master`; the worktree is clean before this
+Current HEAD is `afa530b` on `master`; the worktree is clean before this
 handshake update. The first R06
 boundaries removed the backend error facade, removed AI's stale backend edge,
 moved system-font discovery into the Theme owner, deleted the unconsumed
@@ -63,6 +63,11 @@ MCP bridge preferences are now owned by
 shell composition supplies the config directory and the backend Settings MCP
 module was deleted. Full workspace tests, Clippy, dependency, queue, and diff
 checks pass.
+The unreferenced backend copies of agents, directives, and model preferences
+were deleted after repository-wide consumer search; no reachable workflow was
+changed, and future versions must add these capabilities through their owning
+AI contracts rather than restoring backend modules. Full workspace tests,
+Clippy, dependency, queue, and diff checks pass.
 SSH, MCP, and Transfer event-source adapters now retain only `EventBus`, not
 the aggregate `App` handle.
 The Transfer service adapter now retains only `TransferWorkerState` as well.
