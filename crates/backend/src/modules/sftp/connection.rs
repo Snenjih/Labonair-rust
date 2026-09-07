@@ -1,7 +1,7 @@
 use crate::modules::sftp::net_error::is_network_error;
 use crate::modules::ssh::{RushSession, SshState, TrustState};
-use crate::EventBus;
 use labonair_errors::LabonairError;
+use labonair_events::EventBus;
 use std::sync::Arc;
 
 /// Proactively pings the lazily-opened SFTP subsystem with a cheap read-only
@@ -390,7 +390,7 @@ async fn sftp_connect_inner(
 pub async fn sftp_open_session(
     session_id: String,
     state: &SshState,
-    events: crate::EventBus,
+    events: EventBus,
 ) -> Result<(), LabonairError> {
     let session = {
         let map = state

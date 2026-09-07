@@ -1,6 +1,6 @@
 use super::net_error::is_network_error;
 use crate::modules::ssh::{RushSession, SshState};
-use crate::EventBus;
+use labonair_events::EventBus;
 use labonair_transfers::{
     ConflictMap, ConflictResolution, TransferDirection, TransferJob, TransferSettings,
     TransferStatus, TransferStepPayload, WorkerMessage,

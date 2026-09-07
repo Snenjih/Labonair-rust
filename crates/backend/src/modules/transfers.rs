@@ -1,6 +1,6 @@
 //! Backend adapters for the transfer capability.
 
-use crate::{EventBus, RawEvent};
+use labonair_events::{EventBus, RawEvent};
 use labonair_transfers::{
     BoxFuture, ConflictResolution, TransferEvent, TransferEventError, TransferEventReceiver,
     TransferEventSource, TransferJob, TransferRequest, TransferResolution, TransferService,

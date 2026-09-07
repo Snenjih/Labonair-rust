@@ -221,8 +221,12 @@ boundary still exists; that package must not become a second capability owner.
 - [x] Removed the unreferenced backend Snippet-store re-export; the canonical
   `labonair-snippets` store remains the only persistence owner.
 - [x] Moved transfer queue state and command dispatch out of the SFTP module
-  into the canonical `labonair-transfers` crate and its backend adapter;
-  unreferenced SFTP settings and reconnect command wrappers were removed.
+      into the canonical `labonair-transfers` crate and its backend adapter;
+      unreferenced SFTP settings and reconnect command wrappers were removed.
+- [x] Moved the raw adapter event transport (`EventBus`, `EventChannel`, and
+      `RawEvent`) out of `labonair-backend` into the UI-free
+      `labonair-events` foundation crate; capability-specific event vocabulary
+      remains in the owning contracts.
 - [ ] Move the remaining contracts and adapters behind injected capability
       services.
 - [ ] Delete the broad `App` facade paths and remaining compatibility edges.

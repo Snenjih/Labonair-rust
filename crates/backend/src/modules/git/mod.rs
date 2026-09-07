@@ -4,8 +4,8 @@ mod executor;
 use crate::modules::sftp::net_error::is_network_error;
 use crate::modules::ssh::shell::shell_quote;
 use crate::modules::ssh::SshState;
-use crate::EventBus;
 use executor::{resolve_executor, GitExecutor, GIT_NOT_INSTALLED};
+use labonair_events::EventBus;
 
 pub use adapter::{BackendGitGraphService, BackendGitService};
 pub use labonair_git::{
@@ -2100,13 +2100,13 @@ rename_src.txt\0\
 
     struct TestCapabilities {
         ssh: super::SshState,
-        events: crate::EventBus,
+        events: EventBus,
     }
 
     fn test_capabilities() -> TestCapabilities {
         TestCapabilities {
             ssh: super::SshState::default(),
-            events: crate::EventBus::new(),
+            events: EventBus::new(),
         }
     }
 

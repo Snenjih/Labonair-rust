@@ -7,6 +7,7 @@ edition = "2021"
 labonair-filesystem = { path = "../filesystem" }
 labonair-secrets = { path = "../secrets" }
 labonair-errors = { path = "../errors" }
+labonair-events = { path = "../events" }
 labonair-hosts = { path = "../hosts" }
 labonair-persistence = { path = "../persistence" }
 labonair-snippets = { path = "../snippets" }

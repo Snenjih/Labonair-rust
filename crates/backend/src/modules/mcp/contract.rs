@@ -1,5 +1,6 @@
 //! Backend adapter for the UI-free MCP session-access contract.
 
+use labonair_events::{EventBus, RawEvent};
 use labonair_mcp_core::{
     BoxFuture, McpEvent, McpEventReceiver, McpEventSource, McpSessionAccessService,
     McpTabOperationService, SessionGrantRequest, TabOpResult,
@@ -58,17 +59,17 @@ impl McpTabOperationService for BackendMcpSessionAccess {
 /// narrow MCP event contract consumed by Workspace.
 #[derive(Clone)]
 pub struct BackendMcpEventSource {
-    events: crate::EventBus,
+    events: EventBus,
 }
 
 impl BackendMcpEventSource {
-    pub fn new(events: crate::EventBus) -> Self {
+    pub fn new(events: EventBus) -> Self {
         Self { events }
     }
 }
 
 struct BackendMcpEventReceiver {
-    receiver: tokio::sync::broadcast::Receiver<crate::RawEvent>,
+    receiver: tokio::sync::broadcast::Receiver<RawEvent>,
 }
 
 #[derive(Deserialize)]
@@ -104,7 +105,7 @@ struct ActivityPayload {
     detail: String,
 }
 
-fn decode_mcp_event(raw: &crate::RawEvent) -> Option<McpEvent> {
+fn decode_mcp_event(raw: &RawEvent) -> Option<McpEvent> {
     match raw.name.as_str() {
         "mcp_open_tab_request" => serde_json::from_value::<OpenTabPayload>(raw.payload.clone())
             .ok()

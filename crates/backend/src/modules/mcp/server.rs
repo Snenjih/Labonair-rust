@@ -2,6 +2,7 @@ use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::Duration;
 
+use labonair_events::EventBus;
 use rmcp::{
     handler::server::{router::tool::ToolRouter, wrapper::Parameters},
     model::{ServerCapabilities, ServerInfo},
@@ -129,7 +130,7 @@ fn ensure_grant_still_authorized(
 /// `mcpNotifyOnActivity` preference, whether to actually surface a
 /// notification; see `useMcpTabBridge.ts`). Only called for the four
 /// *action* tools (not `list_sessions`/`read_output`, which are passive).
-fn emit_activity(events: &crate::EventBus, grant: &SessionGrant, action: &str, detail: String) {
+fn emit_activity(events: &EventBus, grant: &SessionGrant, action: &str, detail: String) {
     let _ = events.emit(
         "mcp_activity",
         serde_json::json!({ "label": grant.label, "action": action, "detail": detail }),

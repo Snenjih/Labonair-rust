@@ -89,6 +89,7 @@ and are never lost through a deserialize/serialize round trip.
 | `labonair-filesystem` | Local filesystem abstractions and watchers. |
 | `labonair-background` | Background-image storage, import/delete operations, decoded image cache, and GPUI background layers. |
 | `labonair-errors` | Structured, UI-free domain error contract and recovery metadata. |
+| `labonair-events` | UI-free in-process transport primitives for adapter-level events; it owns no product event vocabulary or application state. |
 | `labonair-secrets` | Keychain and secret references. |
 | `labonair-persistence` | Cloneable shared SQLite connection and schema lifecycle; feature modules own stores and queries. |
 | `labonair-panel` | UI-free panel, dock, and status-item contracts used by workspace-owned surfaces. |
@@ -136,6 +137,12 @@ both through adapters; workspace and feature views consume injected traits.
 Transfers remain a separate capability and are not part of the SFTP browser
 contract.
 
+`labonair-events` is a foundation transport only. It replaces the former
+backend-local event primitive, while SSH, MCP, and Transfers translate raw
+adapter events into their own typed contracts at the boundary. Product code
+must not add feature semantics or a second global event registry to this
+crate.
+
 The transfer capability is now split into `labonair-transfers` and
 `labonair-transfers-ui`. The former owns the UI-free job values, typed worker
 contracts, event translation boundary, and retained lifecycle registry. The
@@ -147,7 +154,8 @@ SSH connection lifecycle and MCP bridge events follow the same contract-first
 rule. `labonair-ssh` and `labonair-mcp-core` expose typed event sources and
 receivers; shell composition supplies the backend translation adapters, and
 Workspace owns only the GPUI bridges and feature reaction. No Workspace code
-subscribes to the backend's legacy global event bus.
+subscribes to a transport adapter directly; the shared raw transport is owned
+by `labonair-events` and remains hidden behind the composition boundary.
 
 The current repository does not yet match every ownership boundary in this
 map. The migration is tracked in [`rework-roadmap.md`](rework-roadmap.md), and

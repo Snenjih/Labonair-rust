@@ -1,7 +1,7 @@
 use crate::modules::sftp::net_error::is_network_error;
 use crate::modules::ssh::shell::shell_quote;
 use crate::modules::ssh::SshState;
-use crate::EventBus;
+use labonair_events::EventBus;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::sync::Arc;

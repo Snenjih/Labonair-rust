@@ -7,6 +7,7 @@ use std::sync::atomic::{AtomicBool, AtomicU16, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use labonair_events::EventBus;
 use labonair_mcp_core::{SessionKind, TabOpResult};
 
 /// Explicit capability access required by the MCP HTTP server. This is built
@@ -18,7 +19,7 @@ pub struct McpServerAccess {
     pub(crate) local_terminal: Arc<dyn labonair_mcp_core::LocalTerminalAccess>,
     pub(crate) db: labonair_persistence::Database,
     pub(crate) secrets: Arc<labonair_secrets::SecretsState>,
-    pub(crate) events: crate::EventBus,
+    pub(crate) events: EventBus,
 }
 
 impl McpServerAccess {
@@ -27,7 +28,7 @@ impl McpServerAccess {
         local_terminal: Arc<dyn labonair_mcp_core::LocalTerminalAccess>,
         db: labonair_persistence::Database,
         secrets: Arc<labonair_secrets::SecretsState>,
-        events: crate::EventBus,
+        events: EventBus,
     ) -> Self {
         Self {
             ssh,
@@ -51,7 +52,7 @@ const AUTO_REVOKE_SWEEP_INTERVAL: Duration = Duration::from_secs(60);
 /// persistence and lifecycle remain entirely inside `labonair-hosts`.
 pub fn revoke_agent_access(
     state: &McpState,
-    events: &crate::EventBus,
+    events: &EventBus,
     event: labonair_hosts::store::HostEvent,
 ) -> Result<(), labonair_errors::LabonairError> {
     let labonair_hosts::store::HostEvent::AgentAccessBlocked { host_id } = event;
@@ -379,7 +380,7 @@ pub async fn mcp_tab_op_response(
 /// timestamp is older than the configured window and notifies the frontend
 /// via `mcp_grant_expired` so its local mirror (badge, context-menu checkbox)
 /// clears without waiting for the user to notice.
-pub fn spawn_auto_revoke_sweeper(events: crate::EventBus, state: McpState) {
+pub fn spawn_auto_revoke_sweeper(events: EventBus, state: McpState) {
     tokio::spawn(async move {
         loop {
             tokio::time::sleep(AUTO_REVOKE_SWEEP_INTERVAL).await;

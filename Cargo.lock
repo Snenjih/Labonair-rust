@@ -4181,6 +4181,7 @@ dependencies = [
  "grep-searcher",
  "ignore",
  "labonair-errors",
+ "labonair-events",
  "labonair-filesystem",
  "labonair-git",
  "labonair-hosts",
@@ -4295,6 +4296,15 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 1.0.69",
+]
+
+[[package]]
+name = "labonair-events"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tokio",
 ]
 
 [[package]]
@@ -4611,6 +4621,7 @@ dependencies = [
  "labonair-command-palette",
  "labonair-command-palette-core",
  "labonair-editor",
+ "labonair-events",
  "labonair-filesystem",
  "labonair-git",
  "labonair-gpui-ext",

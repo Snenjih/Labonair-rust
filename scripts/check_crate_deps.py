@@ -75,6 +75,9 @@ ALLOWED = {
     # Cross-cutting structured error contract. It contains no workspace
     # dependencies and is shared by capability services during migration.
     "labonair-errors": set(),
+    # UI-free adapter transport only. Product event vocabulary belongs to the
+    # owning capability contracts, not to this foundation crate.
+    "labonair-events": set(),
     # Hosts owns domain models plus capability-local query code. Secret-bearing
     # writes and MCP side effects remain transitional backend adapters.
     "labonair-hosts": {
@@ -166,6 +169,7 @@ ALLOWED = {
         "labonair-panel-explorer", "labonair-panel-scm",
         "labonair-panel-git-graph", "labonair-panel-snippets",
         "labonair-panel-ai", "labonair-terminal", "labonair-backend",
+        "labonair-events",
         "labonair-settings", "labonair-filesystem", "labonair-ssh",
         "labonair-sftp", "labonair-transfers", "labonair-transfers-ui",
         "labonair-background", "labonair-mcp-core", "labonair-persistence",
@@ -242,7 +246,7 @@ ALLOWED = {
     # owned by `labonair-settings::legacy_migrations`.
     "labonair-backend": {
         "labonair-filesystem", "labonair-secrets",
-        "labonair-errors", "labonair-hosts", "labonair-persistence",
+        "labonair-errors", "labonair-events", "labonair-hosts", "labonair-persistence",
         "labonair-credentials", "labonair-snippets", "labonair-git",
         "labonair-ssh", "labonair-sftp", "labonair-transfers",
         "labonair-mcp-core", "labonair-terminal-integration",

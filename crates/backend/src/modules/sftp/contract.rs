@@ -2,8 +2,8 @@
 
 use super::connection;
 use crate::modules::ssh::sftp as remote;
-use crate::EventBus;
 use labonair_errors::LabonairError;
+use labonair_events::EventBus;
 use labonair_sftp::{
     BoxFuture, RemoteEntry, SftpBrowserService, SftpSessionHandle, SftpSessionService,
 };

@@ -2,6 +2,7 @@ use crate::modules::sftp::net_error::is_network_error;
 use crate::modules::ssh::shell::shell_quote;
 use crate::modules::ssh::SshState;
 use labonair_errors::LabonairError;
+use labonair_events::EventBus;
 use labonair_filesystem::file::ReadResult;
 use russh_sftp::protocol::OpenFlags;
 use std::sync::Arc;
@@ -19,7 +20,7 @@ const MAX_REMOTE_READ_BYTES: u64 = 5 * 1024 * 1024;
 /// reacts the same way to a dropped connection instead of just showing a
 /// one-off error notification.
 fn handle_sftp_error(
-    events: &crate::EventBus,
+    events: &EventBus,
     state: &SshState,
     session_id: &str,
     e: String,
@@ -153,7 +154,7 @@ pub async fn sftp_read_dir(
     session_id: String,
     path: String,
     state: &SshState,
-    events: crate::EventBus,
+    events: EventBus,
 ) -> Result<Vec<FileNode>, LabonairError> {
     log::debug!("[SFTP] sftp_read_dir: tab={} path={}", session_id, path);
     async {
@@ -209,7 +210,7 @@ pub async fn sftp_read_dir_page(
     limit: Option<usize>,
     show_hidden: Option<bool>,
     state: &SshState,
-    events: crate::EventBus,
+    events: EventBus,
 ) -> Result<SftpReadDirPage, LabonairError> {
     let offset = offset.unwrap_or(0);
     let limit = limit.unwrap_or(DEFAULT_PAGE_LIMIT);
@@ -237,7 +238,7 @@ pub async fn sftp_rename(
     old_path: String,
     new_path: String,
     state: &SshState,
-    events: crate::EventBus,
+    events: EventBus,
 ) -> Result<(), LabonairError> {
     async {
         let sftp = get_sftp_session_arc(state, &session_id)?;
@@ -253,7 +254,7 @@ pub async fn sftp_delete(
     session_id: String,
     paths: Vec<String>,
     state: &SshState,
-    events: crate::EventBus,
+    events: EventBus,
 ) -> Result<(), LabonairError> {
     async {
         let sftp = get_sftp_session_arc(state, &session_id)?;
@@ -309,7 +310,7 @@ pub async fn sftp_mkdir(
     path: String,
     recursive: Option<bool>,
     state: &SshState,
-    events: crate::EventBus,
+    events: EventBus,
 ) -> Result<(), LabonairError> {
     let recursive = recursive.unwrap_or(false);
     async {
@@ -352,7 +353,7 @@ pub async fn sftp_create_file(
     session_id: String,
     path: String,
     state: &SshState,
-    events: crate::EventBus,
+    events: EventBus,
 ) -> Result<(), LabonairError> {
     async {
         let sftp = get_sftp_session_arc(state, &session_id)?;
@@ -374,7 +375,7 @@ pub async fn sftp_chmod(
     path: String,
     permissions: u32,
     state: &SshState,
-    events: crate::EventBus,
+    events: EventBus,
 ) -> Result<(), LabonairError> {
     async {
         let sftp = get_sftp_session_arc(state, &session_id)?;
@@ -396,7 +397,7 @@ pub async fn prepare_remote_edit(
     remote_path: String,
     max_bytes: Option<u64>,
     state: &SshState,
-    events: crate::EventBus,
+    events: EventBus,
 ) -> Result<String, LabonairError> {
     let limit = max_bytes.unwrap_or(MAX_REMOTE_READ_BYTES);
     let file_data = async {
@@ -485,7 +486,7 @@ pub async fn save_remote_edit(
     remote_path: String,
     local_temp_path: String,
     state: &SshState,
-    events: crate::EventBus,
+    events: EventBus,
 ) -> Result<(), LabonairError> {
     let canonical =
         validate_remote_edit_temp_path(&local_temp_path).map_err(LabonairError::Internal)?;
@@ -532,7 +533,7 @@ pub async fn sftp_read_file_content(
     remote_path: String,
     max_bytes: Option<u64>,
     state: &SshState,
-    events: crate::EventBus,
+    events: EventBus,
 ) -> Result<ReadResult, LabonairError> {
     let limit = max_bytes.unwrap_or(MAX_REMOTE_READ_BYTES);
     async {
@@ -577,7 +578,7 @@ pub async fn sftp_calculate_size(
     session_id: String,
     path: String,
     state: &SshState,
-    events: crate::EventBus,
+    events: EventBus,
 ) -> Result<String, LabonairError> {
     async {
         let session = crate::get_session_arc!(state, &session_id);
@@ -623,7 +624,7 @@ pub async fn sftp_chown(
     owner: String,
     group: String,
     state: &SshState,
-    events: crate::EventBus,
+    events: EventBus,
 ) -> Result<(), LabonairError> {
     let spec = match (owner.is_empty(), group.is_empty()) {
         (true, true) => return Ok(()),
@@ -678,7 +679,7 @@ pub async fn sftp_deep_search(
     start_path: String,
     query: String,
     state: &SshState,
-    events: crate::EventBus,
+    events: EventBus,
 ) -> Result<Vec<String>, LabonairError> {
     async {
         let session = crate::get_session_arc!(state, &session_id);

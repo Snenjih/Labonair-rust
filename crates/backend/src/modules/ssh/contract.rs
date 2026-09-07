@@ -1,8 +1,8 @@
 //! Backend adapters for the UI-free SSH capability contracts.
 
 use super::{client, config_parser, pty, sftp as remote, tunnels};
-use crate::{EventBus, EventChannel};
 use labonair_errors::LabonairError;
+use labonair_events::{EventBus, EventChannel, RawEvent};
 use labonair_ssh::{
     ActiveTunnel, BoxFuture, ImportConflict, SharedSshEventSink, SshConfigEntry, SshConfigService,
     SshConnectRequest, SshConnectionEvent, SshConnectionService, SshConnectionTester,
@@ -142,7 +142,7 @@ impl BackendSshEventSource {
 }
 
 struct BackendSshEventReceiver {
-    receiver: tokio::sync::broadcast::Receiver<crate::RawEvent>,
+    receiver: tokio::sync::broadcast::Receiver<RawEvent>,
 }
 
 #[derive(Deserialize)]
@@ -173,7 +173,7 @@ struct SessionPayload {
     default_path: Option<String>,
 }
 
-fn decode_connection_event(raw: &crate::RawEvent) -> Option<SshConnectionEvent> {
+fn decode_connection_event(raw: &RawEvent) -> Option<SshConnectionEvent> {
     match raw.name.as_str() {
         "ssh_connect_log" => serde_json::from_value::<ConnectLogPayload>(raw.payload.clone())
             .ok()

@@ -731,3 +731,12 @@ consumed by the backend transfer adapter, which implements
 settings and reconnect wrappers were removed; the transport worker remains
 temporarily under the backend SFTP adapter because it still depends on the
 concrete SSH/SFTP session implementation.
+
+## R06-001 adapter event transport extraction
+
+The raw `EventBus`, `EventChannel`, and `RawEvent` primitives were moved from
+the backend into the UI-free `labonair-events` foundation crate. This keeps
+the backend focused on concrete transport adapters and makes the shared
+transport available without importing a backend facade. SSH, MCP, and
+Transfers still decode their own raw event names at their adapter boundaries;
+the foundation crate intentionally contains no product event vocabulary.

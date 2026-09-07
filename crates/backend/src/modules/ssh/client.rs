@@ -1,5 +1,5 @@
-use crate::EventBus;
 use labonair_errors::LabonairError;
+use labonair_events::{EventBus, EventChannel};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -287,7 +287,7 @@ pub async fn ssh_connect(
     initial_cols: Option<u32>,
     initial_rows: Option<u32>,
     blocks: bool,
-    on_event: crate::events::EventChannel<super::pty::SshPtyEvent>,
+    on_event: EventChannel<super::pty::SshPtyEvent>,
     state: &super::SshState,
     trust_state: &super::TrustState,
     hosts_db: &labonair_persistence::Database,
@@ -470,7 +470,7 @@ pub async fn ssh_connect_quick(
     initial_cols: Option<u32>,
     initial_rows: Option<u32>,
     blocks: bool,
-    on_event: crate::events::EventChannel<super::pty::SshPtyEvent>,
+    on_event: EventChannel<super::pty::SshPtyEvent>,
     state: &super::SshState,
     trust_state: &super::TrustState,
     events: EventBus,
@@ -1224,7 +1224,7 @@ async fn ssh_connect_async(
     state: super::SshState,
     trust_state: super::TrustState,
     events: EventBus,
-    on_event: crate::events::EventChannel<super::pty::SshPtyEvent>,
+    on_event: EventChannel<super::pty::SshPtyEvent>,
     connect_timeout_secs: Option<u64>,
 ) -> Result<(), String> {
     // Establish the transport stream — either a direct TCP connection or a
@@ -1566,14 +1566,14 @@ pub async fn ssh_disconnect(session_id: String, state: &super::SshState) -> Resu
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::events::EventChannel;
+    use labonair_events::EventChannel;
 
     struct TestCapabilities {
         ssh: super::super::SshState,
         trust: super::super::TrustState,
         db: labonair_persistence::Database,
         secrets: Arc<labonair_secrets::SecretsState>,
-        events: crate::EventBus,
+        events: EventBus,
     }
 
     fn test_capabilities() -> TestCapabilities {
@@ -1584,7 +1584,7 @@ mod tests {
             trust: super::super::TrustState::default(),
             db: labonair_persistence::Database(Arc::new(std::sync::Mutex::new(connection))),
             secrets: Arc::new(labonair_secrets::SecretsState::new(dir)),
-            events: crate::EventBus::new(),
+            events: EventBus::new(),
         }
     }
 

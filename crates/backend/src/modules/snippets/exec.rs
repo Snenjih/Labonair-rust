@@ -5,7 +5,7 @@ use labonair_snippets::exec::{
     ExecutionFuture, OutputStream, SnippetRunEvent, SnippetRunEventSink, SshCommandExecutor,
 };
 
-use crate::EventBus;
+use labonair_events::EventBus;
 
 /// Tracks in-flight snippet runs so `snippet_run_cancel` can reach back into
 /// them — SSH runs by the split-off write half of their exec channel (same

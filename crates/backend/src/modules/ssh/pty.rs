@@ -1,4 +1,4 @@
-use crate::EventBus;
+use labonair_events::{EventBus, EventChannel};
 use serde::Serialize;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 const SSH_BATCH_BYTES: usize = 16 * 1024;
 const SSH_BATCH_MS: Duration = Duration::from_millis(4);
 
-/// Event sent through the per-session `crate::events::EventChannel<SshPtyEvent>` established by
+/// Event sent through the per-session `EventChannel<SshPtyEvent>` established by
 /// `ssh_connect`/`ssh_connect_quick`. Point-to-point delivery — replaces the
 /// old global `ssh_pty_output` broadcast event, which fanned out to every
 /// mounted SSH terminal pane regardless of which session the data belonged to
@@ -79,7 +79,7 @@ pub async fn open_shell_channel(
     cols: u32,
     rows: u32,
     blocks: bool,
-    on_event: crate::events::EventChannel<SshPtyEvent>,
+    on_event: EventChannel<SshPtyEvent>,
 ) -> Result<(), String> {
     let channel = session
         .handle
@@ -150,7 +150,7 @@ fn spawn_reader(
     state: super::SshState,
     shutdown: Arc<AtomicBool>,
     disconnect_reason_slot: Arc<Mutex<Option<String>>>,
-    on_event: crate::events::EventChannel<SshPtyEvent>,
+    on_event: EventChannel<SshPtyEvent>,
     agent_tap: tokio::sync::broadcast::Sender<String>,
 ) {
     tokio::spawn(async move {
@@ -317,7 +317,7 @@ fn flush_carry(carry: &mut Vec<u8>) -> Option<String> {
 /// Sends a data chunk through the per-session channel. Returns `false` if the
 /// channel is closed (frontend unmounted/suspended-and-torn-down) — the caller
 /// treats that as a clean, silent exit, not an `ssh_connection_lost` event.
-fn send_ssh_output(channel: &crate::events::EventChannel<SshPtyEvent>, data: String) -> bool {
+fn send_ssh_output(channel: &EventChannel<SshPtyEvent>, data: String) -> bool {
     match channel.send(SshPtyEvent::Data { data }) {
         Ok(()) => true,
         Err(e) => {

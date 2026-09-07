@@ -25,6 +25,7 @@ removal conditions.
 | `filesystem` | Local file access, traversal, mutation, search, and watcher implementation | foundation/platform service | Canonical owner; backend watcher state and filesystem compatibility re-exports have been removed. |
 | `secrets` | Encrypted/plain local secret store and secret cache | foundation/platform service | Extracted from `backend`; backend and shell callers use `labonair-secrets` directly with explicit `SecretsState`. |
 | `errors` | Structured error catalog and recovery hints | foundation/platform contract | Extracted from `backend`; the backend compatibility module and root re-exports were removed in R06-001's first boundary. |
+| `events` | UI-free in-process adapter event transport | foundation/platform contract | Extracted from `backend`; it carries raw adapter events only, while typed event vocabulary remains in the owning capability contracts. |
 | `hosts` | Saved-host and host-group domain contract plus host store | hosts module | Models, host persistence, canonical picker snapshots, and typed SSH/SFTP requests are standalone; the shell composes one manager/window instance. Only the MCP event adapter and transport implementations remain transitional in `backend`. |
 | `persistence` | Shared SQLite connection and schema lifecycle | foundation/platform service | Extracted from the host adapter; feature-specific queries still remain in `backend` and are next to migrate. |
 | `credentials` | Credential domain, secret-backed metadata, and SSH keypair generation | credentials module | Extracted from `backend`; the unused backend compatibility module is removed. |
@@ -59,7 +60,7 @@ removal conditions.
 
 The current Cargo metadata shows several transitional edges that conflict with the new rules:
 
-- `workspace` depends directly on AI, command palette, hosts UI, notifications, settings, SFTP capability contracts, and feature views; transfer lifecycle state and the backend event bus are no longer direct responsibilities.
+- `workspace` depends directly on AI, command palette, hosts UI, notifications, settings, SFTP capability contracts, and feature views; transfer lifecycle state and adapter event transport are no longer direct responsibilities.
 - Workspace identity/activity now has one UI-free owner in `workspace/context.rs`
   (`WorkspaceIdentity` + `WorkspaceState`). The previous Hosts shell callback
   was removed; cross-surface Hosts navigation and the project-picker request
@@ -162,8 +163,8 @@ The current Cargo metadata shows several transitional edges that conflict with t
   `backend`; `labonair-hosts` now owns the store and the shell injects the one
   MCP revocation handler. Backend transport code still reads host records while
   SSH/SFTP adapters are migrated to narrower capability services.
-- `backend` still owns only the transitional russh snippet-execution adapter and
-  exposes a compatibility database re-export; snippet models, persistence,
+- `backend` still owns only the transitional russh snippet-execution adapter;
+  snippet models, persistence,
   run events, and execution contracts now belong to `labonair-snippets`.
 - `backend` now consumes the shared `labonair-persistence::Database` directly;
   the former `HostsDb` compatibility alias and backend Hosts module are gone.
@@ -245,7 +246,7 @@ These are migration findings, not reasons to perform a destructive rewrite. Each
    `labonair-notifications-core` now owns the UI-free registry; the GPUI
    adapter and statusbar dropdown consume retained records.
 4. Split command/keymap registries from the palette view.
-5. Move transfers to their own module and statusbar owner. The typed registry, worker adapter, and statusbar UI are now in place; raw event compatibility remains only at the backend boundary.
+5. Move transfers to their own module and statusbar owner. The typed registry, worker adapter, and statusbar UI are now in place; raw adapter transport lives in `labonair-events` while compatibility decoding remains at the backend boundary.
 6. Move hosts and SSH ownership out of Settings/workspace.
 7. Move terminal/editor/SFTP views to their owning modules.
 8. Remove compatibility edges and enforce the target graph.

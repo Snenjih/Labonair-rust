@@ -1,0 +1,13 @@
+[package]
+name = "labonair-events"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "labonair_events"
+path = "src/lib.rs"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }

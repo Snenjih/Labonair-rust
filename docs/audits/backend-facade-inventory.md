@@ -2,7 +2,7 @@
 
 **Status:** R06-001 working inventory  
 **Date:** 2026-09-07  
-**Evidence:** `crates/backend/src/lib.rs`, `events.rs`, every file under
+**Evidence:** `crates/backend/src/lib.rs`, `crates/events/src/lib.rs`, every file under
 `crates/backend/src/modules/`, Cargo metadata, and source search for
 `labonair_backend` / `labonair-backend`.
 
@@ -16,7 +16,7 @@ a concrete platform adapter with a named consumer and removal condition.
 | Surface | Current location | External consumers | Target boundary | R06 state |
 |---|---|---|---|---|
 | `BackendComposition` | `shell::backend` | `app`, `shell` composition | application composition plus injected capability services | owns construction, worker startup, and capability extraction; no feature module receives a broad state facade |
-| `EventBus`, `EventChannel`, `RawEvent` | `backend::events` | `app`, backend transport adapters | typed capability events and explicit transport adapters | global bus remains only as a raw internal adapter source; event-source adapters receive `EventBus` directly and no longer retain `App` |
+| `EventBus`, `EventChannel`, `RawEvent` | `labonair-events` | shell composition and backend transport adapters | UI-free adapter transport; typed capability events remain in their owning contracts | moved out of `backend`; the transport crate owns no product state, while event-source adapters receive it only at the composition boundary |
 | updater constants and operations | `labonair-updater` | `shell::updater`, app smoke tests | updater capability plus shell UI | Moved out of the backend; the shell consumes the dedicated capability crate |
 | structured errors | formerly `backend::modules::errors` and root re-exports | no external backend import remains | `labonair-errors` | Root re-export and module removed in the first R06 slice |
 
@@ -97,9 +97,10 @@ contracts now live in `labonair-mcp-core`. `AgentAccessStore` and Workspace
 consume only injected contracts and no longer call MCP implementation
 functions directly. The backend adapter is constructed by shell composition
 and remains the explicit bridge to aggregate MCP implementation state. The
-legacy global event bus stays inside shell-composed adapters; Workspace
-receives typed `SshConnectionEvent` and `McpEvent` values through injected
-sources and has no direct backend dependency.
+raw adapter event transport lives in `labonair-events`; shell composition
+owns the instance and backend adapters translate only their own events into
+typed capability contracts. Workspace receives typed `SshConnectionEvent` and
+`McpEvent` values through injected sources and has no direct backend dependency.
 
 The dead backend filesystem watcher and `App::watcher` state were removed after
 source search confirmed that active Explorer and Settings consumers already use

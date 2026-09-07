@@ -29,6 +29,7 @@ members = [
     "crates/filesystem",
     "crates/secrets",
     "crates/errors",
+    "crates/events",
     "crates/persistence",
     "crates/hosts",
     "crates/credentials",
