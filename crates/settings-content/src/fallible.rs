@@ -93,11 +93,11 @@ mod tests {
     fn accepts_jsonc_comments() {
         let json = r#"{
             // this is a user comment
-            "general": { "autostart": true }
+            "general": { "restoreWindowState": false }
         }"#;
         let (content, errors) = parse(json);
         assert!(errors.is_empty());
-        assert_eq!(content.general.autostart, Some(true));
+        assert_eq!(content.general.restore_window_state, Some(false));
     }
 
     #[test]
@@ -106,11 +106,11 @@ mod tests {
             r#"{
                 "hosts": { "entries": [{ "name": "legacy" }] },
                 "keymap": { "baseKeymap": "vscode" },
-                "general": { "autostart": true }
+                "general": { "restoreWindowState": false }
             }"#,
         );
         assert!(errors.is_empty());
-        assert_eq!(content.general.autostart, Some(true));
+        assert_eq!(content.general.restore_window_state, Some(false));
         let serialized = serde_json::to_value(content).unwrap();
         assert!(serialized.get("hosts").is_none());
         assert!(serialized.get("keymap").is_none());

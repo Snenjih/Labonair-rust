@@ -165,9 +165,6 @@ fn general_from(p: &Preferences) -> GeneralContent {
         restore_window_state: Some(p.restore_window_state),
         default_startup_tab: Some(startup_tab(p.default_startup_tab)),
         startup_terminal_count: Some(p.startup_terminal_count),
-        autostart: Some(p.autostart),
-        credential_encryption: Some(p.credential_encryption),
-        confirm_quit_with_ssh: Some(p.confirm_quit_with_ssh),
         check_for_updates: Some(p.check_for_updates),
         session_restore: Some(p.session_restore),
     }
@@ -430,6 +427,12 @@ const REMOVED_TERMINAL_FIELDS: &[&str] = &[
     "terminalBlocksEnabled",
     "terminalBlocksAutoCollapseOnAltScreen",
 ];
+
+/// Legacy general preferences with no native runtime consumer. They remain
+/// readable in the backend wire shape solely for old configuration files.
+#[cfg_attr(not(test), allow(dead_code))]
+const REMOVED_GENERAL_FIELDS: &[&str] =
+    &["autostart", "credentialEncryption", "confirmQuitWithSsh"];
 
 /// Preferences fields with no `SettingsContent` destination, preserved
 /// losslessly under `_migratedUnknown.preferences.*` instead of a mapped
@@ -1015,6 +1018,7 @@ mod tests {
         accounted.extend(SKIPPED_PREFERENCES_FIELDS.iter().copied());
         accounted.extend(WORKSPACE_LAYOUT_FIELDS.iter().copied());
         accounted.extend(REMOVED_TERMINAL_FIELDS.iter().copied());
+        accounted.extend(REMOVED_GENERAL_FIELDS.iter().copied());
         accounted.extend(UNKNOWN_PREFERENCES_FIELDS.iter().copied());
 
         let all_keys: BTreeSet<&str> = obj.keys().map(|s| s.as_str()).collect();

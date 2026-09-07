@@ -172,27 +172,6 @@ pub fn all_fields() -> Vec<AnyField> {
             "How many terminals open on launch."
         ),
         field!(
-            general.autostart,
-            "autostart",
-            Switch,
-            "Launch at login",
-            "Start Labonair automatically when you log in."
-        ),
-        field!(
-            general.credential_encryption,
-            "credentialEncryption",
-            Switch,
-            "Encrypt stored credentials",
-            "Encrypt saved credentials at rest with an OS-backed key."
-        ),
-        field!(
-            general.confirm_quit_with_ssh,
-            "confirmQuitWithSsh",
-            Switch,
-            "Confirm quit with SSH",
-            "Ask before quitting with active SSH sessions."
-        ),
-        field!(
             general.check_for_updates,
             "checkForUpdates",
             Switch,

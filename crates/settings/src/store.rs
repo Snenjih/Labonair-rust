@@ -134,7 +134,7 @@ pub struct SettingsStore {
     /// anmelden" (Anweisung #3) is implemented without needing a cancel
     /// handle across the GPUI task boundary.
     project_watch_generation: u64,
-    /// Dotted keys (`"mcp"`, `"general.credentialEncryption"`, …) the last
+    /// Dotted keys (`"mcp"`, `"general.autostart"`, …) the last
     /// project-layer (re)load dropped for not being on
     /// `project::PROJECT_SETTINGS_WHITELIST`. `SettingsStore::get`ers use
     /// this to report rejections to the user (T19-004+); a freshly (re)set
@@ -454,7 +454,7 @@ impl SettingsStore {
     }
 
     /// Dotted whitelist-rejected keys from the last project-layer (re)load
-    /// (`"mcp"`, `"general.credentialEncryption"`, …) — empty if the current
+    /// (`"mcp"`, `"general.autostart"`, …) — empty if the current
     /// project file (or no project root / no file) has no rejections.
     pub fn project_rejected_keys(&self) -> &[String] {
         &self.project_rejected

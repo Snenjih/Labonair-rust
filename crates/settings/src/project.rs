@@ -133,7 +133,7 @@ fn filter_json(value: serde_json::Value) -> (serde_json::Value, Vec<String>) {
 /// nothing to whitelist-reject if nothing parsed).
 ///
 /// Returns the content plus every dropped key: whitelist rejections
-/// (`"mcp"`, `"general.credentialEncryption"`, …) and per-area parse
+/// (`"mcp"`, `"general.autostart"`, …) and per-area parse
 /// failures on what *was* allowed through (`"editor (parse error)"`).
 pub fn filter_and_parse(raw: &str) -> (SettingsContent, Vec<String>) {
     let value = match jsonc_parser::parse_to_serde_value(raw, &Default::default()) {
@@ -177,15 +177,14 @@ mod tests {
 
     #[test]
     fn filter_and_parse_drops_a_forbidden_leaf_but_keeps_allowed_siblings() {
-        let (content, rejected) = filter_and_parse(
-            r#"{"general":{"defaultStartupTab":"terminal","credentialEncryption":true}}"#,
-        );
+        let (content, rejected) =
+            filter_and_parse(r#"{"general":{"defaultStartupTab":"terminal","autostart":true}}"#);
         assert_eq!(
             content.general.default_startup_tab,
             Some(labonair_settings_content::general::StartupTab::Terminal)
         );
-        assert_eq!(content.general.credential_encryption, None);
-        assert_eq!(rejected, vec!["general.credentialEncryption".to_string()]);
+        assert_eq!(content.general.startup_terminal_count, None);
+        assert_eq!(rejected, vec!["general.autostart".to_string()]);
     }
 
     #[test]

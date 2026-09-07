@@ -191,10 +191,7 @@ fn groups_for(area_key: &str) -> &'static [Group] {
 
 const GENERAL_GROUPS: &[Group] = &[
     ("Appearance", &["theme"]),
-    (
-        "Startup",
-        &["defaultStartupTab", "startupTerminalCount", "autostart"],
-    ),
+    ("Startup", &["defaultStartupTab", "startupTerminalCount"]),
     (
         "Session Restore",
         &[
@@ -205,8 +202,6 @@ const GENERAL_GROUPS: &[Group] = &[
         ],
     ),
     ("Window", &["restoreWindowState"]),
-    ("Security", &["credentialEncryption"]),
-    ("Quit", &["confirmQuitWithSsh"]),
     ("Updates", &["checkForUpdates"]),
 ];
 

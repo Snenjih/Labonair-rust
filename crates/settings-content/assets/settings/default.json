@@ -15,9 +15,6 @@
     // empty-workspace surface.
     "defaultStartupTab": "empty",
     "startupTerminalCount": 1,
-    "autostart": false,
-    "credentialEncryption": false,
-    "confirmQuitWithSsh": true,
     "checkForUpdates": true,
     "sessionRestore": false
   },

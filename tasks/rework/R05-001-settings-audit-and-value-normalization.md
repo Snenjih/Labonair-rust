@@ -113,3 +113,6 @@ the model. Unused values are parked in the inventory, not added speculatively.
 - [x] Remove confirmed unsupported terminal compatibility fields from the
       typed model and generated UI, while keeping the legacy Preferences wire
       shape readable for migration.
+- [x] Remove the unused general autostart, credential-encryption, and
+      SSH-quit-confirmation values from the typed model and generated UI while
+      retaining the legacy wire shape for old files.

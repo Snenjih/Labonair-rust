@@ -38,7 +38,8 @@ means a runtime module, not merely serialization or the generated Settings UI.
 |---|---|---|---|
 | `general` | `theme` | `labonair-theme` color-mode preference; Global | Keep |
 | `general` | `restoreWindowState`, `defaultStartupTab`, `sessionRestore` | shell/workspace launch and session restore; Global + Project where whitelisted | Keep |
-| `general` | `startupTerminalCount`, `autostart`, `credentialEncryption`, `confirmQuitWithSsh` | No current native runtime consumer found | Review, then Remove unless a consumer is added |
+| `general` | `startupTerminalCount` | no current native runtime consumer found | Review; remove unless a consumer is added |
+| `general` | `autostart`, `credentialEncryption`, `confirmQuitWithSsh` | no current native runtime consumer or supported workflow | Remove; legacy input remains deserializable only |
 | `general` | `checkForUpdates` | updater launch policy; Global | Keep |
 | `appearance` | `appTheme`, `iconTheme`, `themeVariantOverrides` | theme registry selection persistence; Global; capability-owned registry | Keep as values, no management page |
 | `appearance` | `appFontFamily`, `appFontSize`, `appLineHeight`, `bufferFontFamily`, `bufferFontSize`, `bufferLineHeight`, `uiDensity`, `cornerRadiusScale`, `reduceMotion` | theme metrics/font pipeline; Global | Keep |
