@@ -5,7 +5,27 @@ They may mention API names that were valid at the time of the recorded
 change; the current API and task state are defined by the latest header and
 the normative documents under `docs/`.
 
-## Current Session: 2026-09-07 (R05-001 Settings audit active — Workspace layout owner)
+## Current Session: 2026-09-07 (R05-001 Settings audit active)
+
+R03-002 Keymap, R04-001 static Themes, and R04-002 Hosts are complete and
+visually accepted. R05-001 is active with the normative field inventory in
+`docs/settings-inventory.md`.
+
+The current R05 slices removed the untyped `general.notifyOnErrors` default,
+moved Background values behind their owner, moved dock/sidebar runtime state
+to the versioned Workspace-owned `workspace-layout.json`, and removed
+unsupported Terminal plus unused General values from the typed model, defaults,
+generated UI, and Settings mappings. Legacy backend `Preferences` fields remain
+readable only as migration wire input; v1 and v2 layout input is migrated before
+Settings conversion and removed idempotently.
+
+Current HEAD is `ab62467` on `master`; the worktree is clean. Formatting,
+workspace check, Clippy, full serial workspace tests, dependency validation,
+queue validation, and diff checks pass. The next review item is
+`startupTerminalCount`, followed by the remaining indirect Appearance, Editor,
+File Manager, and Connection values. No blockers.
+
+## Historical session details: 2026-09-07
 
 The dedicated Keymap management surface is now a real `labonair-keymap-ui`
 sibling crate. `labonair-keymap` exposes the immutable management snapshot and
