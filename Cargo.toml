@@ -39,6 +39,7 @@ members = [
     "crates/ssh-transport",
     "crates/sftp",
     "crates/transfers",
+    "crates/transfers-ssh",
     "crates/transfers-ui",
     "crates/keymap",
     "crates/keymap-ui",

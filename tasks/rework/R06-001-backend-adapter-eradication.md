@@ -153,6 +153,9 @@ boundary still exists; that package must not become a second capability owner.
       connection, connection-test, config, and tunnel adapters; each stores
       only the state required by its contract and no SSH contract is backed by
       `BackendSshService` anymore.
+- [x] The concrete SFTP transfer worker was extracted into the dedicated
+      `labonair-transfers-ssh` integration sibling; backend SFTP retains only
+      session/remote-operation and transfer service/event translation.
 - [x] MCP server control and HTTP tool execution now use an explicit
       `McpServerAccess` capability bundle; the MCP server no longer stores the
       aggregate backend `App`, and local PTY state is shared through an owned

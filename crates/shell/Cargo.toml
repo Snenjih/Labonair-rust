@@ -50,6 +50,7 @@ labonair-ssh = { path = "../ssh" }
 labonair-ssh-transport = { path = "../ssh-transport" }
 labonair-sftp = { path = "../sftp" }
 labonair-transfers = { path = "../transfers" }
+labonair-transfers-ssh = { path = "../transfers-ssh" }
 labonair-transfers-ui = { path = "../transfers-ui" }
 labonair-filesystem = { path = "../filesystem" }
 # T19-008: the shell owns the concrete `menu::` GPUI Actions, so it is the

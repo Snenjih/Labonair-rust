@@ -4196,7 +4196,6 @@ dependencies = [
  "labonair-transfers",
  "libc",
  "log",
- "md5 0.7.0",
  "openssl",
  "rand 0.8.8",
  "rmcp",
@@ -4648,6 +4647,7 @@ dependencies = [
  "labonair-terminal",
  "labonair-theme",
  "labonair-transfers",
+ "labonair-transfers-ssh",
  "labonair-transfers-ui",
  "labonair-ui-kit",
  "labonair-updater",
@@ -4748,6 +4748,24 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+]
+
+[[package]]
+name = "labonair-transfers-ssh"
+version = "0.1.0"
+dependencies = [
+ "dirs 6.0.0",
+ "labonair-events",
+ "labonair-ssh-transport",
+ "labonair-transfers",
+ "log",
+ "md5 0.7.0",
+ "russh",
+ "russh-sftp",
+ "serde_json",
+ "tokio",
+ "tokio-util",
+ "uuid",
 ]
 
 [[package]]

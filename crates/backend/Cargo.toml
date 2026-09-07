@@ -41,7 +41,6 @@ log = "0.4"
 
 # Crypto / hashing
 rand = { version = "0.8", features = ["getrandom"] }
-md5 = "0.7"
 openssl = { version = "0.10", features = ["vendored"] }
 labonair-terminal-integration = { path = "../terminal-integration" }
 

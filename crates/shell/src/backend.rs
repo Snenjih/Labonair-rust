@@ -105,10 +105,8 @@ impl BackendComposition {
             let conflicts = self.transfer.conflicts.clone();
             let settings = self.transfer.settings.clone();
             tokio::spawn(async move {
-                labonair_backend::modules::sftp::worker::run_worker(
-                    receiver, ssh, events, conflicts, settings,
-                )
-                .await;
+                labonair_transfers_ssh::run_worker(receiver, ssh, events, conflicts, settings)
+                    .await;
             });
         }
         labonair_backend::modules::mcp::spawn_auto_revoke_sweeper(

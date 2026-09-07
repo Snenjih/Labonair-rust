@@ -17,7 +17,7 @@ removal conditions.
 | Current crate | Current role | Target owner | Migration note |
 |---|---|---|---|
 | `app` | Binary/bootstrap | application composition | Keep small; remove feature logic. |
-| `backend` | SFTP, Git, MCP, snippet, and transfer platform adapters | split across platform services and feature modules | Platform-adapter package; SSH transport now lives in `labonair-ssh-transport`, while broad application composition state, Settings migrations, and updater capability logic no longer live here. |
+| `backend` | SFTP, Git, MCP, snippet, and transfer platform adapters | split across platform services and feature modules | Platform-adapter package; SSH transport now lives in `labonair-ssh-transport`, concrete transfer execution in `labonair-transfers-ssh`, while broad application composition state, Settings migrations, and updater capability logic no longer live here. |
 | `ai` | AI providers, sessions, tools | AI module | Keep backend-facing core; rebuild UI later. |
 | `command-palette-core` | UI-free command descriptors and registry (new migration boundary) | command-palette module | Keep metadata and provider discovery here; feature-owned behavior remains outside the palette. Initial owner providers now live in workspace, terminal, editor, hosts, theme, and settings crates. |
 | `command-palette` | Palette UI, dynamic sub-pages, and transitional duplicate shell dispatch integration | command-palette module | Consume the core registry; global-menu navigation is typed; remove static entries and the duplicate shell registry. |
@@ -54,7 +54,8 @@ removal conditions.
 | `workspace` | Workspace, tabs, panes, docks, views, and compatibility bridges | workspace plus tool modules | Transfer lifecycle/UI moved to `labonair-transfers` / `labonair-transfers-ui`; Workspace only submits requests and refreshes SFTP panes. |
 | `background` | Background image storage and GPUI layer | backgrounds module | `BackgroundStore`, image import/delete, persistence, and rendering now live in `labonair-background`; no longer workspace-owned. |
 | `updater` | Update manifest, download/verification/install logic | updater module | Shell retains only the GPUI updater view; capability logic is isolated in `labonair-updater` and no longer backend-owned. |
-| `transfers` | Typed transfer values, lifecycle registry, and service/event contracts | transfers module | New UI-free owner; backend worker adapter remains transitional. |
+| `transfers` | Typed transfer values, lifecycle registry, and service/event contracts | transfers module | UI-free owner; concrete SFTP execution is supplied by the `transfers-ssh` integration sibling. |
+| `transfers-ssh` | Concrete SFTP transfer worker and russh/russh-sftp execution adapter | transfers module | Dedicated integration sibling extracted from the backend; owns chunking, checksums, conflicts, cancellation, and reconnect requeue behavior. |
 | `transfers-ui` | Statusbar-anchored transfer queue and resolution dialogs | transfers module | New canonical transfer presentation; uses only typed transfer contracts and shared UI primitives. |
 
 ## Current structural violations
@@ -247,7 +248,7 @@ These are migration findings, not reasons to perform a destructive rewrite. Each
    `labonair-notifications-core` now owns the UI-free registry; the GPUI
    adapter and statusbar dropdown consume retained records.
 4. Split command/keymap registries from the palette view.
-5. Move transfers to their own module and statusbar owner. The typed registry, worker adapter, and statusbar UI are now in place; raw adapter transport lives in `labonair-events` while compatibility decoding remains at the backend boundary.
+5. Move transfers to their own module and statusbar owner. The typed registry, concrete worker integration, and statusbar UI are now in place; raw adapter transport lives in `labonair-events` while compatibility decoding remains at the backend boundary.
 6. Move hosts and SSH ownership out of Settings/workspace.
 7. Move terminal/editor/SFTP views to their owning modules.
 8. Remove compatibility edges and enforce the target graph.

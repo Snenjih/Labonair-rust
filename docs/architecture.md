@@ -123,7 +123,7 @@ boundary.
 | SFTP | `labonair-sftp` | Remote filesystem browsing and SFTP operations. |
 | Hosts | `labonair-hosts` | Saved host definitions, recent hosts, import/export, and host management. Transport adapters remain capability-owned. |
 | Credentials | `labonair-credentials` | Credential metadata, secret references, and generated SSH key material. |
-| Transfers | `labonair-transfers` | Transfer queue, progress, cancellation, conflict resolution, and lifecycle history. Retry is a follow-up contract when supported by the worker. |
+| Transfers | `labonair-transfers` | Transfer queue, progress, cancellation, conflict resolution, and lifecycle history. The `labonair-transfers-ssh` integration sibling owns concrete SFTP execution. |
 | Git | `labonair-git` | Git contracts and source-control behavior; sibling panel crates provide Git views. |
 | Explorer | `labonair-panel-explorer` | Local file navigation UI over filesystem contracts. |
 | Snippets | `labonair-snippets` | Snippet storage, execution contracts, and snippet behavior; sibling panel crate provides the view. |
@@ -148,9 +148,12 @@ crate.
 The transfer capability is now split into `labonair-transfers` and
 `labonair-transfers-ui`. The former owns the UI-free job values, typed worker
 contracts, event translation boundary, and retained lifecycle registry. The
-latter owns the queue dropdown and resolution dialogs. The backend exposes a
-temporary worker adapter, while SFTP only submits typed transfer requests.
-The statusbar owns the trigger/anchor, but not transfer state.
+latter owns the queue dropdown and resolution dialogs. The
+`labonair-transfers-ssh` integration sibling owns the concrete SFTP worker,
+including execution, checksums, conflicts, cancellation, and reconnect
+requeue behavior. The backend and SFTP capability only translate services and
+submit typed transfer requests. The statusbar owns the trigger/anchor, but not
+transfer state.
 
 SSH connection lifecycle and MCP bridge events follow the same contract-first
 rule. `labonair-ssh` and `labonair-mcp-core` expose typed event sources and

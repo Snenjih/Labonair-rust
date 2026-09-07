@@ -1,0 +1,22 @@
+[package]
+name = "labonair-transfers-ssh"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "labonair_transfers_ssh"
+path = "src/lib.rs"
+
+[dependencies]
+labonair-events = { path = "../events" }
+labonair-ssh-transport = { path = "../ssh-transport" }
+labonair-transfers = { path = "../transfers" }
+russh = { version = "0.62.2", default-features = false, features = ["ring", "flate2", "rsa"] }
+russh-sftp = { workspace = true }
+tokio = { workspace = true }
+tokio-util = "0.7"
+dirs = { workspace = true }
+log = "0.4"
+md5 = "0.7"
+serde_json = { workspace = true }
+uuid = { workspace = true }

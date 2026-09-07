@@ -49,6 +49,11 @@ ALLOWED = {
     "labonair-sftp": {"labonair-errors", "labonair-ssh"},
     # UI-free transfer lifecycle, event, and worker contracts.
     "labonair-transfers": set(),
+    # Concrete SFTP transfer execution; this integration sibling keeps the
+    # russh worker out of both the backend facade and the UI-free contracts.
+    "labonair-transfers-ssh": {
+        "labonair-events", "labonair-ssh-transport", "labonair-transfers",
+    },
     # UI-free shortcut identities, keymap file data/defaults, and conflict
     # resolution. GPUI publication remains in the palette/shell adapters.
     "labonair-keymap": {
@@ -173,6 +178,7 @@ ALLOWED = {
         "labonair-settings", "labonair-filesystem", "labonair-ssh",
         "labonair-ssh-transport",
         "labonair-sftp", "labonair-transfers", "labonair-transfers-ui",
+        "labonair-transfers-ssh",
         "labonair-background", "labonair-mcp-core", "labonair-persistence",
         "labonair-updater",
         # Provider metadata contracts are assembled here; feature behavior

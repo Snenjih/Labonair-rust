@@ -1,6 +1,5 @@
 pub mod connection;
 pub mod contract;
-pub mod worker;
 
 // `state.rs` (the old dedicated `SftpState`/`SftpSession`/`SftpSessionInner`
 // types, backed by the previous synchronous SSH library) is deleted per the

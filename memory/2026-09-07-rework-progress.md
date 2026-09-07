@@ -749,3 +749,12 @@ registry, authentication/connection flow, PTY and remote operations, tunnel
 state, config adapters, and SSH contract implementations. Backend Git, SFTP,
 MCP, and snippet adapters consume the transport through explicit public
 types/functions, while `labonair-ssh` remains the UI-free contract crate.
+
+## R06-001 transfer worker extraction
+
+The concrete SFTP transfer worker moved from `labonair-backend` into
+`labonair-transfers-ssh`, a Transfers-owned integration sibling. It owns
+chunked upload/download, checksums, conflict handling, cancellation, and
+reconnect requeue behavior; `labonair-transfers` remains the UI-free
+lifecycle/queue contract while the backend retains only service/event
+translation.
