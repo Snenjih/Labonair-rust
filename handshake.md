@@ -24,7 +24,7 @@ Legacy `appCornerRadius` values are converted to the current
 `cornerRadiusScale` field during migration, with the modern value taking
 precedence when both are present.
 
-Current HEAD is `8df4a31` on `master`; the worktree is clean before this
+Current HEAD is `405a1c3` on `master`; the worktree is clean before this
 handshake update. The first R06
 boundaries removed the backend error facade, removed AI's stale backend edge,
 moved system-font discovery into the Theme owner, deleted the unconsumed
@@ -47,6 +47,12 @@ remaining backend-owned platform state and compatibility adapters.
 The broad backend `AppEvent` enum and typed-emitter helper are also gone;
 SSH and MCP adapters decode their own raw event names directly at the
 capability boundary.
+The application bootstrap is now thin: shell owns the legacy settings
+migration, Settings initialization, and debug event tracing, while the binary
+only constructs `BackendComposition`, starts workers, and launches the shell.
+The app has no direct runtime backend/feature dependencies; terminal and theme
+edges remain only as smoke-test dev dependencies. The full workspace tests,
+dependency boundary check, queue check, and diff check pass after this slice.
 SSH, MCP, and Transfer event-source adapters now retain only `EventBus`, not
 the aggregate `App` handle.
 The Transfer service adapter now retains only `TransferWorkerState` as well.
