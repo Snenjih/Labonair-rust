@@ -992,3 +992,9 @@ theme management from Settings. Those generated rows and their obsolete JSON
 fallback control were removed; the values remain in the typed model only for
 the Themes owner's persistence/preview pipeline. Focused Settings-UI tests
 pass.
+
+The UI-kit audit found that the Notifications dropdown still hand-built each
+notification row with a styled `div`. It now uses the shared `ListItem`
+primitive while keeping expandable details, read-state updates, scrolling, and
+notification actions in the Notifications owner. Focused and full workspace
+verification pass.

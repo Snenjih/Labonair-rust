@@ -13,7 +13,7 @@ use gpui::{
 };
 use labonair_panel::{AnyStatusItemHandle, StatusItem, StatusItemRegistration, StatusSide};
 use labonair_theme::store::ThemeStore;
-use labonair_ui_kit::{icon_toggle_button, ButtonSize, ButtonVariant, IconName, Palette};
+use labonair_ui_kit::{icon_toggle_button, ButtonSize, ButtonVariant, IconName, ListItem, Palette};
 
 use crate::NotificationCenter;
 
@@ -189,36 +189,21 @@ impl StatusItem for NotificationsStatusItem {
                         let id = snapshot.id;
                         let expanded = self.expanded.contains(&id);
                         let row_view = view.clone();
-                        let mut row = div()
-                            .id(SharedString::from(format!("bar-notification-{id}")))
+                        let mut message = div()
                             .flex()
                             .flex_col()
+                            .flex_1()
                             .gap_0p5()
-                            .px_3()
-                            .py_1p5()
-                            .border_b_1()
-                            .border_color(border)
-                            .hover(|style| style.bg(border))
-                            .on_click(move |_: &ClickEvent, _window, cx| {
-                                row_view.update(cx, |item, cx| {
-                                    if !item.expanded.insert(id) {
-                                        item.expanded.remove(&id);
-                                    }
-                                    item.center
-                                        .update(cx, |center, cx| center.mark_read(id, cx));
-                                    cx.notify();
-                                });
-                            })
-                            .child(div().text_xs().text_color(fg).child(snapshot.title.clone()))
+                            .child(div().text_xs().text_color(fg).child(snapshot.title))
                             .child(
                                 div()
                                     .text_size(px(11.0))
                                     .text_color(muted)
-                                    .child(snapshot.body.clone()),
+                                    .child(snapshot.body),
                             );
                         if expanded {
                             if let Some(details) = snapshot.details.clone() {
-                                row = row.child(
+                                message = message.child(
                                     div()
                                         .pt_1()
                                         .text_size(px(11.0))
@@ -226,28 +211,47 @@ impl StatusItem for NotificationsStatusItem {
                                         .child(details),
                                 );
                             }
+                        }
+                        let mut row = ListItem::new(
+                            SharedString::from(format!("bar-notification-{id}")),
+                            fg,
+                            muted,
+                            border,
+                        )
+                        .on_click(move |_: &ClickEvent, _window, cx| {
+                            row_view.update(cx, |item, cx| {
+                                if !item.expanded.insert(id) {
+                                    item.expanded.remove(&id);
+                                }
+                                item.center
+                                    .update(cx, |center, cx| center.mark_read(id, cx));
+                                cx.notify();
+                            });
+                        })
+                        .extra(move |row| row.border_b_1().border_color(border))
+                        .child(message);
+                        if expanded {
                             if let Some(label) = snapshot.action_label.clone() {
                                 let action_view = view.clone();
-                                row = row.child(
-                                    labonair_ui_kit::button_no_hover(
-                                        SharedString::from(format!("bar-notification-action-{id}")),
-                                        palette,
-                                        ButtonVariant::Ghost,
-                                        ButtonSize::Xs,
-                                    )
-                                    .text_color(accent)
-                                    .child(label)
-                                    .on_click(
-                                        move |_: &ClickEvent, window, cx| {
-                                            action_view.update(cx, |item, cx| {
-                                                item.center.update(cx, |center, cx| {
-                                                    center.trigger_action(id, window, cx);
-                                                });
+                                let action = labonair_ui_kit::button_no_hover(
+                                    SharedString::from(format!("bar-notification-action-{id}")),
+                                    palette,
+                                    ButtonVariant::Ghost,
+                                    ButtonSize::Xs,
+                                )
+                                .text_color(accent)
+                                .child(label)
+                                .on_click(
+                                    move |_: &ClickEvent, window, cx| {
+                                        action_view.update(cx, |item, cx| {
+                                            item.center.update(cx, |center, cx| {
+                                                center.trigger_action(id, window, cx);
                                             });
-                                            cx.stop_propagation();
-                                        },
-                                    ),
+                                        });
+                                        cx.stop_propagation();
+                                    },
                                 );
+                                row = row.trailing(action);
                             }
                         }
                         row
