@@ -17,6 +17,9 @@ Settings UI audit also removed the editable `appTheme` and
 owner; focused Settings-UI tests pass. The
 Notifications dropdown rows now use the shared UI-kit `ListItem` primitive;
 focused Notifications tests and the full workspace gates pass. The
+normative palette documents now explicitly describe the remaining dynamic
+submenu dispatcher as a temporary R07-002 transition instead of claiming it
+is already fully owner-local. The
 remaining blockers are unchanged: dynamic palette actions still need the
 R07-002 owner-execution migration, legacy Settings warning classification needs
 R07-003, and native visual capture is blocked by missing Screen Recording

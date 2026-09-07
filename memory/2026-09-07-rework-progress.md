@@ -998,3 +998,9 @@ notification row with a styled `div`. It now uses the shared `ListItem`
 primitive while keeping expandable details, read-state updates, scrolling, and
 notification actions in the Notifications owner. Focused and full workspace
 verification pass.
+
+The documentation audit found that the normative architecture and roadmap
+described dynamic palette execution as already fully owner-local, while
+`shell/src/actions.rs` still dispatches typed submenu events as a temporary
+composition adapter. The current contracts now state that transition
+explicitly and point to R07-002; no new shell feature branches are permitted.
