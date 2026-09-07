@@ -78,11 +78,11 @@ Commit: `0c2c634`; worktree is clean. Next: define the lossless Keymap
 management/editor contract.
 
 The palette now renders key hints from the effective `CommandId` map, with
-descriptor defaults as the fallback. The legacy `ShortcutId` map remains only
-for statusbar panel tooltips and is explicitly transitional. Focused palette,
-shell, workspace, keymap, Clippy, dependency, queue, format, and diff checks
-pass. Commit: `4e54fcc`; worktree is clean. Next: define the lossless Keymap
-management/editor contract.
+descriptor defaults as the fallback. At that point the legacy `ShortcutId` map
+remained only for statusbar panel tooltips and was explicitly transitional.
+Focused palette, shell, workspace, keymap, Clippy, dependency, queue, format,
+and diff checks pass. Commit: `4e54fcc`; worktree is clean. Next: define the
+lossless Keymap management/editor contract.
 
 The remaining active UI hint consumers (panel tooltips and tab context-menu)
 now also read the effective `CommandId` map. `ShortcutId` remains exported only
