@@ -958,3 +958,9 @@ still interpreted centrally by `shell/src/actions.rs`, even though ordinary
 command handlers and status-item registrations are owner-owned. The finding is
 bounded in R07-002; the acceptance matrix now reports the affected surfaces as
 partial rather than verified.
+
+The documentation hierarchy was rechecked and made explicit in `AGENTS.md`
+and `docs/capabilities.md`: normative contracts are authoritative, audits
+describe current gaps, reports/archive are historical, and `tasks/rework/` is
+the sole active queue. The Command Palette row now reflects the remaining
+dynamic submenu execution gap.

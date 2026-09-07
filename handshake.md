@@ -155,6 +155,14 @@ tabs, symbols, color mode, and hidden status items. This is now explicitly
 assigned to R07-002; the acceptance matrix no longer labels those surfaces as
 fully verified.
 
+The documentation hierarchy was audited: `docs/` remains the normative source,
+`docs/audits/` records unfinished evidence, `docs/reports/` and `docs/archive/`
+are explicitly non-authoritative, and `tasks/rework/` is the only active queue.
+`AGENTS.md` now states that historical `tasks/phase-*` records must not be
+started as an alternate implementation plan. The capability matrix also now
+records the remaining dynamic-palette action gap instead of overstating its
+completion.
+
 The current R05 slices removed the untyped `general.notifyOnErrors` default,
 moved Background values behind their owner, moved dock/sidebar runtime state
 to the versioned Workspace-owned `workspace-layout.json`, and removed
@@ -168,7 +176,7 @@ Legacy `appCornerRadius` values are converted to the current
 `cornerRadiusScale` field during migration, with the modern value taking
 precedence when both are present.
 
-Current HEAD is `c6d49b9` on `master`; the worktree contains this handshake
+Current HEAD is `97b521d` on `master`; the worktree contains this handshake
 update before its commit. R06
 boundaries removed the backend error facade, removed AI's stale backend edge,
 moved system-font discovery into the Theme owner, deleted the unconsumed
