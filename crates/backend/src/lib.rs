@@ -1,7 +1,7 @@
-//! Labonair backend: SSH, SFTP, Git, filesystem, PTY, hosts, credentials,
-//! snippets, secrets, themes, fonts, backgrounds, scrollback, terminal exec and
-//! the MCP bridge. Ported in-process from `reference-src/src-tauri/src/modules/`
-//! with all Tauri command/state/event wrappers stripped (see [`app`], [`events`]).
+//! Native platform adapters and composition state for capabilities that have
+//! not yet completed their extraction. Capability contracts live in their
+//! canonical crates; the application root is the only intended constructor of
+//! this package's aggregate state.
 
 pub mod app;
 pub mod events;

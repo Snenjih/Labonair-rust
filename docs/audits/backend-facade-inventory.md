@@ -47,7 +47,7 @@ participate in the `App` state graph or in another backend module.
 | `terminal_exec` | terminal execution state and command helpers | internal MCP use | MCP/terminal contract; no public `App` access |
 | `themes` | legacy theme values, import/export/download operations | none found | `labonair-theme`; static registry is canonical, legacy download path is deferred |
 | `transfers` | `BackendTransferService` and event source | `shell` | `labonair-transfers` integration boundary; event translation stays once at adapter edge |
-| `updater` | update manifest, verification, download/install helpers | `shell::updater`, root re-export | updater/application boundary; remove unrelated root re-export after shell imports the module directly |
+| `updater` | update manifest, verification, download/install helpers | `shell::updater`, app smoke tests | updater/application boundary; root re-export removed and consumers use the updater module directly |
 
 ## Direct dependency evidence
 
