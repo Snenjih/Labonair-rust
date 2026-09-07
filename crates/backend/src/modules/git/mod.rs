@@ -4,6 +4,7 @@ mod executor;
 use crate::modules::sftp::net_error::is_network_error;
 use crate::modules::ssh::shell::shell_quote;
 use crate::modules::ssh::SshState;
+use crate::EventBus;
 use executor::{resolve_executor, GitExecutor, GIT_NOT_INSTALLED};
 
 pub use adapter::{BackendGitGraphService, BackendGitService};
@@ -473,9 +474,9 @@ pub async fn git_is_repo(
     path: String,
     session_id: Option<String>,
     sftp_state: &SshState,
-    app: crate::App,
+    events: EventBus,
 ) -> Result<bool, String> {
-    let executor = resolve_executor(path, session_id, sftp_state.clone(), app.events.clone());
+    let executor = resolve_executor(path, session_id, sftp_state.clone(), events.clone());
     match executor.run(&["rev-parse", "--git-dir"]).await {
         Ok(_) => Ok(true),
         Err(e) if e == GIT_NOT_INSTALLED || is_network_error(&e) => Err(e),
@@ -488,9 +489,9 @@ pub async fn git_get_repo_root(
     path: String,
     session_id: Option<String>,
     sftp_state: &SshState,
-    app: crate::App,
+    events: EventBus,
 ) -> Result<String, String> {
-    let executor = resolve_executor(path, session_id, sftp_state.clone(), app);
+    let executor = resolve_executor(path, session_id, sftp_state.clone(), events.clone());
     executor.run(&["rev-parse", "--show-toplevel"]).await
 }
 
@@ -499,9 +500,9 @@ pub async fn git_get_status(
     path: String,
     session_id: Option<String>,
     sftp_state: &SshState,
-    app: crate::App,
+    events: EventBus,
 ) -> Result<GitStatus, String> {
-    let executor = resolve_executor(path, session_id, sftp_state.clone(), app);
+    let executor = resolve_executor(path, session_id, sftp_state.clone(), events.clone());
     let script = format!(
         "git status --porcelain=v2 -z\nprintf '\\x1d'\ngit rev-list --count --left-right '@{{upstream}}...HEAD' 2>/dev/null\nprintf '\\x1d'\n{STATE_FLAGS_SCRIPT}"
     );
@@ -540,9 +541,9 @@ pub async fn git_get_current_branch(
     path: String,
     session_id: Option<String>,
     sftp_state: &SshState,
-    app: crate::App,
+    events: EventBus,
 ) -> Result<String, String> {
-    let executor = resolve_executor(path, session_id, sftp_state.clone(), app);
+    let executor = resolve_executor(path, session_id, sftp_state.clone(), events.clone());
     let branch = executor.run(&["branch", "--show-current"]).await?;
     if branch.is_empty() {
         let hash = executor.run(&["rev-parse", "--short", "HEAD"]).await?;
@@ -557,9 +558,9 @@ pub async fn git_get_branches(
     path: String,
     session_id: Option<String>,
     sftp_state: &SshState,
-    app: crate::App,
+    events: EventBus,
 ) -> Result<Vec<Branch>, String> {
-    let executor = resolve_executor(path, session_id, sftp_state.clone(), app);
+    let executor = resolve_executor(path, session_id, sftp_state.clone(), events.clone());
     let output = executor
         .run(&["branch", "-a", &format!("--format={BRANCH_FORMAT}")])
         .await?;
@@ -582,10 +583,10 @@ pub async fn git_get_diff(
     is_untracked: Option<bool>,
     session_id: Option<String>,
     sftp_state: &SshState,
-    app: crate::App,
+    events: EventBus,
 ) -> Result<String, String> {
     const MAX_DIFF_BYTES: usize = 200 * 1024;
-    let executor = resolve_executor(path, session_id, sftp_state.clone(), app);
+    let executor = resolve_executor(path, session_id, sftp_state.clone(), events.clone());
 
     let stdout = if is_untracked.unwrap_or(false) {
         let mut args: Vec<&str> = vec!["diff", "--no-index"];
@@ -628,9 +629,9 @@ pub async fn git_stage_file(
     file: String,
     session_id: Option<String>,
     sftp_state: &SshState,
-    app: crate::App,
+    events: EventBus,
 ) -> Result<(), String> {
-    let executor = resolve_executor(path, session_id, sftp_state.clone(), app);
+    let executor = resolve_executor(path, session_id, sftp_state.clone(), events.clone());
     executor.run(&["add", "--", &file]).await.map(|_| ())
 }
 
@@ -640,9 +641,9 @@ pub async fn git_unstage_file(
     file: String,
     session_id: Option<String>,
     sftp_state: &SshState,
-    app: crate::App,
+    events: EventBus,
 ) -> Result<(), String> {
-    let executor = resolve_executor(path, session_id, sftp_state.clone(), app);
+    let executor = resolve_executor(path, session_id, sftp_state.clone(), events.clone());
     executor
         .run(&["restore", "--staged", "--", &file])
         .await
@@ -654,9 +655,9 @@ pub async fn git_stage_all(
     path: String,
     session_id: Option<String>,
     sftp_state: &SshState,
-    app: crate::App,
+    events: EventBus,
 ) -> Result<(), String> {
-    let executor = resolve_executor(path, session_id, sftp_state.clone(), app);
+    let executor = resolve_executor(path, session_id, sftp_state.clone(), events.clone());
     executor.run(&["add", "-A"]).await.map(|_| ())
 }
 
@@ -666,9 +667,9 @@ pub async fn git_unstage_all(
     path: String,
     session_id: Option<String>,
     sftp_state: &SshState,
-    app: crate::App,
+    events: EventBus,
 ) -> Result<(), String> {
-    let executor = resolve_executor(path, session_id, sftp_state.clone(), app);
+    let executor = resolve_executor(path, session_id, sftp_state.clone(), events.clone());
     match executor.run(&["reset", "HEAD"]).await {
         Ok(_) => Ok(()),
         Err(_) => executor
@@ -688,9 +689,9 @@ pub async fn git_stage_hunk(
     hunk_patch_text: String,
     session_id: Option<String>,
     sftp_state: &SshState,
-    app: crate::App,
+    events: EventBus,
 ) -> Result<(), String> {
-    let executor = resolve_executor(path, session_id, sftp_state.clone(), app);
+    let executor = resolve_executor(path, session_id, sftp_state.clone(), events.clone());
     apply_hunk_patch(&executor, &file, hunk_patch_text, false).await
 }
 
@@ -702,9 +703,9 @@ pub async fn git_unstage_hunk(
     hunk_patch_text: String,
     session_id: Option<String>,
     sftp_state: &SshState,
-    app: crate::App,
+    events: EventBus,
 ) -> Result<(), String> {
-    let executor = resolve_executor(path, session_id, sftp_state.clone(), app);
+    let executor = resolve_executor(path, session_id, sftp_state.clone(), events.clone());
     apply_hunk_patch(&executor, &file, hunk_patch_text, true).await
 }
 
@@ -749,9 +750,9 @@ pub async fn git_discard_file(
     file: String,
     session_id: Option<String>,
     sftp_state: &SshState,
-    app: crate::App,
+    events: EventBus,
 ) -> Result<(), String> {
-    let executor = resolve_executor(path, session_id, sftp_state.clone(), app);
+    let executor = resolve_executor(path, session_id, sftp_state.clone(), events.clone());
     executor.run(&["restore", "--", &file]).await.map(|_| ())
 }
 
@@ -761,9 +762,9 @@ pub async fn git_discard_all(
     path: String,
     session_id: Option<String>,
     sftp_state: &SshState,
-    app: crate::App,
+    events: EventBus,
 ) -> Result<(), String> {
-    let executor = resolve_executor(path, session_id, sftp_state.clone(), app);
+    let executor = resolve_executor(path, session_id, sftp_state.clone(), events.clone());
     executor
         .run(&["checkout", "HEAD", "--", "."])
         .await
@@ -777,9 +778,9 @@ pub async fn git_clean_untracked(
     path: String,
     session_id: Option<String>,
     sftp_state: &SshState,
-    app: crate::App,
+    events: EventBus,
 ) -> Result<(), String> {
-    let executor = resolve_executor(path, session_id, sftp_state.clone(), app);
+    let executor = resolve_executor(path, session_id, sftp_state.clone(), events.clone());
     executor.run(&["clean", "-fd"]).await.map(|_| ())
 }
 
@@ -790,9 +791,9 @@ pub async fn git_commit(
     amend: bool,
     session_id: Option<String>,
     sftp_state: &SshState,
-    app: crate::App,
+    events: EventBus,
 ) -> Result<CommitResult, String> {
-    let executor = resolve_executor(path, session_id, sftp_state.clone(), app);
+    let executor = resolve_executor(path, session_id, sftp_state.clone(), events.clone());
 
     let mut args: Vec<&str> = vec!["commit"];
     if amend {
@@ -817,9 +818,9 @@ pub async fn git_push(
     branch: Option<String>,
     session_id: Option<String>,
     sftp_state: &SshState,
-    app: crate::App,
+    events: EventBus,
 ) -> Result<String, String> {
-    let executor = resolve_executor(path, session_id, sftp_state.clone(), app);
+    let executor = resolve_executor(path, session_id, sftp_state.clone(), events.clone());
     let remote_str = remote.unwrap_or_else(|| "origin".to_string());
     let mut args: Vec<&str> = vec!["push", &remote_str];
     if let Some(ref b) = branch {
@@ -833,9 +834,9 @@ pub async fn git_pull(
     path: String,
     session_id: Option<String>,
     sftp_state: &SshState,
-    app: crate::App,
+    events: EventBus,
 ) -> Result<String, String> {
-    let executor = resolve_executor(path, session_id, sftp_state.clone(), app);
+    let executor = resolve_executor(path, session_id, sftp_state.clone(), events.clone());
     executor.run_merged(&["pull"]).await
 }
 
@@ -844,9 +845,9 @@ pub async fn git_fetch(
     path: String,
     session_id: Option<String>,
     sftp_state: &SshState,
-    app: crate::App,
+    events: EventBus,
 ) -> Result<String, String> {
-    let executor = resolve_executor(path, session_id, sftp_state.clone(), app);
+    let executor = resolve_executor(path, session_id, sftp_state.clone(), events.clone());
     executor.run_merged(&["fetch", "--all"]).await
 }
 
@@ -855,9 +856,9 @@ pub async fn git_abort(
     path: String,
     session_id: Option<String>,
     sftp_state: &SshState,
-    app: crate::App,
+    events: EventBus,
 ) -> Result<(), String> {
-    let executor = resolve_executor(path, session_id, sftp_state.clone(), app);
+    let executor = resolve_executor(path, session_id, sftp_state.clone(), events.clone());
     let (raw, _exit) = executor.run_shell_script(STATE_FLAGS_SCRIPT).await?;
     let flags_str = String::from_utf8_lossy(&raw).into_owned();
     let (merge, rebase, cherry) = parse_state_flags(&flags_str);
@@ -880,9 +881,9 @@ pub async fn git_continue(
     path: String,
     session_id: Option<String>,
     sftp_state: &SshState,
-    app: crate::App,
+    events: EventBus,
 ) -> Result<(), String> {
-    let executor = resolve_executor(path, session_id, sftp_state.clone(), app);
+    let executor = resolve_executor(path, session_id, sftp_state.clone(), events.clone());
     let (raw, _exit) = executor.run_shell_script(STATE_FLAGS_SCRIPT).await?;
     let flags_str = String::from_utf8_lossy(&raw).into_owned();
     let (merge, rebase, cherry) = parse_state_flags(&flags_str);
@@ -910,7 +911,7 @@ pub async fn git_get_log(
     session_id: Option<String>,
     skip: Option<usize>,
     sftp_state: &SshState,
-    app: crate::App,
+    events: EventBus,
 ) -> Result<Vec<CommitInfo>, String> {
     // Remote page size defaults lower than local's 500 — a single exec must
     // finish within the session's existing 15s timeout, and remote round-trip
@@ -920,7 +921,7 @@ pub async fn git_get_log(
     let skip_str = skip.map(|s| s.to_string());
     let format = "--format=%x1e%H%x00%P%x00%an%x00%ae%x00%at%x00%s%x00%D".to_string();
 
-    let executor = resolve_executor(path, session_id, sftp_state.clone(), app);
+    let executor = resolve_executor(path, session_id, sftp_state.clone(), events.clone());
 
     let mut args: Vec<&str> = vec!["log"];
     if all_branches {
@@ -1008,9 +1009,9 @@ pub async fn git_get_commit_detail(
     hash: String,
     session_id: Option<String>,
     sftp_state: &SshState,
-    app: crate::App,
+    events: EventBus,
 ) -> Result<String, String> {
-    let executor = resolve_executor(path, session_id, sftp_state.clone(), app);
+    let executor = resolve_executor(path, session_id, sftp_state.clone(), events.clone());
     executor
         .run(&["show", "--stat", "--format=%B", &hash])
         .await
@@ -1022,9 +1023,9 @@ pub async fn git_get_commit_numstat(
     hash: String,
     session_id: Option<String>,
     sftp_state: &SshState,
-    app: crate::App,
+    events: EventBus,
 ) -> Result<String, String> {
-    let executor = resolve_executor(path, session_id, sftp_state.clone(), app);
+    let executor = resolve_executor(path, session_id, sftp_state.clone(), events.clone());
     executor
         .run(&["show", "--numstat", "--format=", &hash])
         .await
@@ -1036,9 +1037,9 @@ pub async fn git_get_remote_url(
     remote: Option<String>,
     session_id: Option<String>,
     sftp_state: &SshState,
-    app: crate::App,
+    events: EventBus,
 ) -> Result<String, String> {
-    let executor = resolve_executor(path, session_id, sftp_state.clone(), app);
+    let executor = resolve_executor(path, session_id, sftp_state.clone(), events.clone());
     let r = remote.unwrap_or_else(|| "origin".to_string());
     executor.run(&["remote", "get-url", &r]).await
 }
@@ -1050,9 +1051,9 @@ pub async fn git_checkout_branch(
     branch: String,
     session_id: Option<String>,
     sftp_state: &SshState,
-    app: crate::App,
+    events: EventBus,
 ) -> Result<(), String> {
-    let executor = resolve_executor(path, session_id, sftp_state.clone(), app);
+    let executor = resolve_executor(path, session_id, sftp_state.clone(), events.clone());
     executor.run(&["checkout", &branch]).await.map(|_| ())
 }
 
@@ -1063,9 +1064,9 @@ pub async fn git_create_branch(
     checkout: bool,
     session_id: Option<String>,
     sftp_state: &SshState,
-    app: crate::App,
+    events: EventBus,
 ) -> Result<(), String> {
-    let executor = resolve_executor(path, session_id, sftp_state.clone(), app);
+    let executor = resolve_executor(path, session_id, sftp_state.clone(), events.clone());
     let mut args: Vec<&str> = if checkout {
         vec!["checkout", "-b", &name]
     } else {
@@ -1083,9 +1084,9 @@ pub async fn git_delete_branch(
     force: bool,
     session_id: Option<String>,
     sftp_state: &SshState,
-    app: crate::App,
+    events: EventBus,
 ) -> Result<(), String> {
-    let executor = resolve_executor(path, session_id, sftp_state.clone(), app);
+    let executor = resolve_executor(path, session_id, sftp_state.clone(), events.clone());
     let flag = if force { "-D" } else { "-d" };
     executor.run(&["branch", flag, &name]).await.map(|_| ())
 }
@@ -1096,9 +1097,9 @@ pub async fn git_rename_branch(
     new_name: String,
     session_id: Option<String>,
     sftp_state: &SshState,
-    app: crate::App,
+    events: EventBus,
 ) -> Result<(), String> {
-    let executor = resolve_executor(path, session_id, sftp_state.clone(), app);
+    let executor = resolve_executor(path, session_id, sftp_state.clone(), events.clone());
     executor
         .run(&["branch", "-m", &old_name, &new_name])
         .await
@@ -1133,9 +1134,9 @@ pub async fn git_stash_push(
     include_untracked: Option<bool>,
     session_id: Option<String>,
     sftp_state: &SshState,
-    app: crate::App,
+    events: EventBus,
 ) -> Result<(), String> {
-    let executor = resolve_executor(path, session_id, sftp_state.clone(), app);
+    let executor = resolve_executor(path, session_id, sftp_state.clone(), events.clone());
     let mut args: Vec<&str> = vec!["stash", "push"];
     if include_untracked.unwrap_or(true) {
         args.push("--include-untracked");
@@ -1151,9 +1152,9 @@ pub async fn git_stash_list(
     path: String,
     session_id: Option<String>,
     sftp_state: &SshState,
-    app: crate::App,
+    events: EventBus,
 ) -> Result<Vec<StashEntry>, String> {
-    let executor = resolve_executor(path, session_id, sftp_state.clone(), app);
+    let executor = resolve_executor(path, session_id, sftp_state.clone(), events.clone());
     let output = executor
         .run(&["stash", "list", &format!("--format={STASH_FORMAT}")])
         .await?;
@@ -1165,9 +1166,9 @@ pub async fn git_stash_pop(
     hash: String,
     session_id: Option<String>,
     sftp_state: &SshState,
-    app: crate::App,
+    events: EventBus,
 ) -> Result<(), String> {
-    let executor = resolve_executor(path, session_id, sftp_state.clone(), app);
+    let executor = resolve_executor(path, session_id, sftp_state.clone(), events.clone());
     let idx = find_stash_index_by_hash(&executor, &hash).await?;
     executor
         .run(&["stash", "pop", &format!("stash@{{{}}}", idx)])
@@ -1180,9 +1181,9 @@ pub async fn git_stash_apply(
     hash: String,
     session_id: Option<String>,
     sftp_state: &SshState,
-    app: crate::App,
+    events: EventBus,
 ) -> Result<(), String> {
-    let executor = resolve_executor(path, session_id, sftp_state.clone(), app);
+    let executor = resolve_executor(path, session_id, sftp_state.clone(), events.clone());
     let idx = find_stash_index_by_hash(&executor, &hash).await?;
     executor
         .run(&["stash", "apply", &format!("stash@{{{}}}", idx)])
@@ -1195,9 +1196,9 @@ pub async fn git_stash_drop(
     hash: String,
     session_id: Option<String>,
     sftp_state: &SshState,
-    app: crate::App,
+    events: EventBus,
 ) -> Result<(), String> {
-    let executor = resolve_executor(path, session_id, sftp_state.clone(), app);
+    let executor = resolve_executor(path, session_id, sftp_state.clone(), events.clone());
     let idx = find_stash_index_by_hash(&executor, &hash).await?;
     executor
         .run(&["stash", "drop", &format!("stash@{{{}}}", idx)])
@@ -1212,10 +1213,10 @@ pub async fn git_get_commit_diff(
     hash: String,
     session_id: Option<String>,
     sftp_state: &SshState,
-    app: crate::App,
+    events: EventBus,
 ) -> Result<String, String> {
     const MAX_DIFF_BYTES: usize = 200 * 1024;
-    let executor = resolve_executor(path, session_id, sftp_state.clone(), app);
+    let executor = resolve_executor(path, session_id, sftp_state.clone(), events.clone());
     let stdout = executor
         .run_raw(&["show", "--format=", "--patch", &hash])
         .await?;
@@ -1228,9 +1229,9 @@ pub async fn git_push_force_with_lease(
     branch: Option<String>,
     session_id: Option<String>,
     sftp_state: &SshState,
-    app: crate::App,
+    events: EventBus,
 ) -> Result<String, String> {
-    let executor = resolve_executor(path, session_id, sftp_state.clone(), app);
+    let executor = resolve_executor(path, session_id, sftp_state.clone(), events.clone());
     let remote_str = remote.unwrap_or_else(|| "origin".to_string());
     let mut args: Vec<&str> = vec!["push", "--force-with-lease", &remote_str];
     if let Some(ref b) = branch {
@@ -1245,9 +1246,9 @@ pub async fn git_push_set_upstream(
     branch: String,
     session_id: Option<String>,
     sftp_state: &SshState,
-    app: crate::App,
+    events: EventBus,
 ) -> Result<String, String> {
-    let executor = resolve_executor(path, session_id, sftp_state.clone(), app);
+    let executor = resolve_executor(path, session_id, sftp_state.clone(), events.clone());
     executor
         .run_merged(&["push", "--set-upstream", &remote, &branch])
         .await
@@ -1260,9 +1261,9 @@ pub async fn git_cherry_pick(
     hash: String,
     session_id: Option<String>,
     sftp_state: &SshState,
-    app: crate::App,
+    events: EventBus,
 ) -> Result<(), String> {
-    let executor = resolve_executor(path, session_id, sftp_state.clone(), app);
+    let executor = resolve_executor(path, session_id, sftp_state.clone(), events.clone());
     executor.run(&["cherry-pick", &hash]).await.map(|_| ())
 }
 
@@ -1272,9 +1273,9 @@ pub async fn git_get_tags(
     path: String,
     session_id: Option<String>,
     sftp_state: &SshState,
-    app: crate::App,
+    events: EventBus,
 ) -> Result<Vec<String>, String> {
-    let executor = resolve_executor(path, session_id, sftp_state.clone(), app);
+    let executor = resolve_executor(path, session_id, sftp_state.clone(), events.clone());
     let output = executor.run(&["tag", "--sort=-version:refname"]).await?;
     Ok(parse_tags(&output))
 }
@@ -1286,9 +1287,9 @@ pub async fn git_create_tag(
     hash: Option<String>,
     session_id: Option<String>,
     sftp_state: &SshState,
-    app: crate::App,
+    events: EventBus,
 ) -> Result<(), String> {
-    let executor = resolve_executor(path, session_id, sftp_state.clone(), app);
+    let executor = resolve_executor(path, session_id, sftp_state.clone(), events.clone());
     let mut args: Vec<&str> = vec!["tag"];
     if let Some(ref msg) = message {
         args.push("-a");
@@ -1312,9 +1313,9 @@ pub async fn git_delete_tag(
     name: String,
     session_id: Option<String>,
     sftp_state: &SshState,
-    app: crate::App,
+    events: EventBus,
 ) -> Result<(), String> {
-    let executor = resolve_executor(path, session_id, sftp_state.clone(), app);
+    let executor = resolve_executor(path, session_id, sftp_state.clone(), events.clone());
     executor.run(&["tag", "-d", &name]).await.map(|_| ())
 }
 
@@ -1324,9 +1325,9 @@ pub async fn git_push_tag(
     remote: Option<String>,
     session_id: Option<String>,
     sftp_state: &SshState,
-    app: crate::App,
+    events: EventBus,
 ) -> Result<String, String> {
-    let executor = resolve_executor(path, session_id, sftp_state.clone(), app);
+    let executor = resolve_executor(path, session_id, sftp_state.clone(), events.clone());
     let remote_str = remote.unwrap_or_else(|| "origin".to_string());
     executor.run_merged(&["push", &remote_str, &name]).await
 }
@@ -1337,9 +1338,9 @@ pub async fn git_get_diff_stats(
     path: String,
     session_id: Option<String>,
     sftp_state: &SshState,
-    app: crate::App,
+    events: EventBus,
 ) -> Result<Vec<FileDiffStat>, String> {
-    let executor = resolve_executor(path, session_id, sftp_state.clone(), app);
+    let executor = resolve_executor(path, session_id, sftp_state.clone(), events.clone());
     let staged_out = executor
         .run(&["diff", "--cached", "--numstat"])
         .await
@@ -1359,9 +1360,9 @@ pub async fn git_get_workspace_state(
     path: String,
     session_id: Option<String>,
     sftp_state: &SshState,
-    app: crate::App,
+    events: EventBus,
 ) -> Result<WorkspaceGitState, String> {
-    let executor = resolve_executor(path, session_id, sftp_state.clone(), app);
+    let executor = resolve_executor(path, session_id, sftp_state.clone(), events.clone());
 
     let script = format!(
         "git status --porcelain=v2 -z\n\
@@ -1513,7 +1514,7 @@ pub async fn git_add_to_gitignore(
     file: String,
     session_id: Option<String>,
     sftp_state: &SshState,
-    app: crate::App,
+    events: EventBus,
 ) -> Result<(), String> {
     let safe_file = file.replace(['\n', '\r', '\0'], "");
     if safe_file.is_empty() {
@@ -1553,7 +1554,7 @@ pub async fn git_add_to_gitignore(
     }
 
     let script = build_gitignore_append_script(".gitignore", &entry, &[&entry, &safe_file]);
-    let executor = resolve_executor(path, session_id, sftp_state.clone(), app);
+    let executor = resolve_executor(path, session_id, sftp_state.clone(), events.clone());
     let (_, exit_code) = executor.run_shell_script(&script).await?;
     if exit_code != 0 {
         return Err(format!(
@@ -1568,7 +1569,7 @@ pub async fn git_add_to_exclude(
     file: String,
     session_id: Option<String>,
     sftp_state: &SshState,
-    app: crate::App,
+    events: EventBus,
 ) -> Result<(), String> {
     let safe_file = file.replace(['\n', '\r', '\0'], "");
     if safe_file.is_empty() {
@@ -1602,7 +1603,7 @@ pub async fn git_add_to_exclude(
     }
 
     let script = build_gitignore_append_script(".git/info/exclude", &entry, &[&entry]);
-    let executor = resolve_executor(path, session_id, sftp_state.clone(), app);
+    let executor = resolve_executor(path, session_id, sftp_state.clone(), events.clone());
     let (_, exit_code) = executor.run_shell_script(&script).await?;
     if exit_code != 0 {
         return Err(format!(
@@ -1619,9 +1620,9 @@ pub async fn git_init(
     path: String,
     session_id: Option<String>,
     sftp_state: &SshState,
-    app: crate::App,
+    events: EventBus,
 ) -> Result<(), String> {
-    let executor = resolve_executor(path, session_id, sftp_state.clone(), app);
+    let executor = resolve_executor(path, session_id, sftp_state.clone(), events.clone());
     executor.run(&["init"]).await.map(|_| ())
 }
 
@@ -2130,21 +2131,29 @@ rename_src.txt\0\
         let p = || path.clone();
 
         // ── branches: create (no checkout), list, checkout, rename, delete ──
-        git_create_branch(p(), "feature".into(), None, false, None, ssh, app.clone())
-            .await
-            .expect("create branch");
-        let branches = git_get_branches(p(), None, ssh, app.clone())
+        git_create_branch(
+            p(),
+            "feature".into(),
+            None,
+            false,
+            None,
+            ssh,
+            app.events.clone(),
+        )
+        .await
+        .expect("create branch");
+        let branches = git_get_branches(p(), None, ssh, app.events.clone())
             .await
             .expect("list branches");
         let local: Vec<&Branch> = branches.iter().filter(|b| !b.is_remote).collect();
         assert!(local.iter().any(|b| b.name == "feature"));
         assert!(local.iter().any(|b| b.is_current && b.name != "feature"));
 
-        git_checkout_branch(p(), "feature".into(), None, ssh, app.clone())
+        git_checkout_branch(p(), "feature".into(), None, ssh, app.events.clone())
             .await
             .expect("checkout");
         assert_eq!(
-            git_get_current_branch(p(), None, ssh, app.clone())
+            git_get_current_branch(p(), None, ssh, app.events.clone())
                 .await
                 .unwrap(),
             "feature"
@@ -2156,12 +2165,12 @@ rename_src.txt\0\
             "feat2".into(),
             None,
             ssh,
-            app.clone(),
+            app.events.clone(),
         )
         .await
         .expect("rename");
         assert_eq!(
-            git_get_current_branch(p(), None, ssh, app.clone())
+            git_get_current_branch(p(), None, ssh, app.events.clone())
                 .await
                 .unwrap(),
             "feat2"
@@ -2169,7 +2178,7 @@ rename_src.txt\0\
 
         // Can't delete the current branch.
         assert!(
-            git_delete_branch(p(), "feat2".into(), false, None, ssh, app.clone())
+            git_delete_branch(p(), "feat2".into(), false, None, ssh, app.events.clone())
                 .await
                 .is_err()
         );
@@ -2178,10 +2187,10 @@ rename_src.txt\0\
             .find(|b| b.is_current && !b.is_remote)
             .map(|b| b.name.clone())
             .unwrap();
-        git_checkout_branch(p(), default_branch.clone(), None, ssh, app.clone())
+        git_checkout_branch(p(), default_branch.clone(), None, ssh, app.events.clone())
             .await
             .unwrap();
-        git_delete_branch(p(), "feat2".into(), false, None, ssh, app.clone())
+        git_delete_branch(p(), "feat2".into(), false, None, ssh, app.events.clone())
             .await
             .expect("delete merged branch");
 
@@ -2193,32 +2202,43 @@ rename_src.txt\0\
             None,
             None,
             ssh,
-            app.clone(),
+            app.events.clone(),
         )
         .await
         .expect("create tag");
-        let tags = git_get_tags(p(), None, ssh, app.clone()).await.unwrap();
+        let tags = git_get_tags(p(), None, ssh, app.events.clone())
+            .await
+            .unwrap();
         assert_eq!(tags, vec!["v1.0.0".to_string()]);
-        git_delete_tag(p(), "v1.0.0".into(), None, ssh, app.clone())
+        git_delete_tag(p(), "v1.0.0".into(), None, ssh, app.events.clone())
             .await
             .expect("delete tag");
-        assert!(git_get_tags(p(), None, ssh, app.clone())
+        assert!(git_get_tags(p(), None, ssh, app.events.clone())
             .await
             .unwrap()
             .is_empty());
 
         // ── stash: push, list, apply (kept), pop (removed), then drop ──
         write_file(&dir, "a.txt", "changed\n");
-        git_stash_push(p(), Some("wip".into()), Some(false), None, ssh, app.clone())
-            .await
-            .expect("stash push");
+        git_stash_push(
+            p(),
+            Some("wip".into()),
+            Some(false),
+            None,
+            ssh,
+            app.events.clone(),
+        )
+        .await
+        .expect("stash push");
         assert_eq!(std::fs::read_to_string(dir.join("a.txt")).unwrap(), "one\n");
-        let stashes = git_stash_list(p(), None, ssh, app.clone()).await.unwrap();
+        let stashes = git_stash_list(p(), None, ssh, app.events.clone())
+            .await
+            .unwrap();
         assert_eq!(stashes.len(), 1);
         assert_eq!(stashes[0].message, "wip");
         let hash = stashes[0].hash.clone();
 
-        git_stash_apply(p(), hash.clone(), None, ssh, app.clone())
+        git_stash_apply(p(), hash.clone(), None, ssh, app.events.clone())
             .await
             .expect("stash apply");
         assert_eq!(
@@ -2226,7 +2246,7 @@ rename_src.txt\0\
             "changed\n"
         );
         assert_eq!(
-            git_stash_list(p(), None, ssh, app.clone())
+            git_stash_list(p(), None, ssh, app.events.clone())
                 .await
                 .unwrap()
                 .len(),
@@ -2236,26 +2256,28 @@ rename_src.txt\0\
 
         // Reset the worktree so pop applies cleanly, then pop removes it.
         std::fs::write(dir.join("a.txt"), "one\n").unwrap();
-        git_stash_pop(p(), hash.clone(), None, ssh, app.clone())
+        git_stash_pop(p(), hash.clone(), None, ssh, app.events.clone())
             .await
             .expect("stash pop");
-        assert!(git_stash_list(p(), None, ssh, app.clone())
+        assert!(git_stash_list(p(), None, ssh, app.events.clone())
             .await
             .unwrap()
             .is_empty());
 
         // A second stash we drop directly.
         write_file(&dir, "a.txt", "again\n");
-        git_stash_push(p(), None, Some(false), None, ssh, app.clone())
+        git_stash_push(p(), None, Some(false), None, ssh, app.events.clone())
             .await
             .unwrap();
-        let h2 = git_stash_list(p(), None, ssh, app.clone()).await.unwrap()[0]
+        let h2 = git_stash_list(p(), None, ssh, app.events.clone())
+            .await
+            .unwrap()[0]
             .hash
             .clone();
-        git_stash_drop(p(), h2, None, ssh, app.clone())
+        git_stash_drop(p(), h2, None, ssh, app.events.clone())
             .await
             .expect("stash drop");
-        assert!(git_stash_list(p(), None, ssh, app.clone())
+        assert!(git_stash_list(p(), None, ssh, app.events.clone())
             .await
             .unwrap()
             .is_empty());
@@ -2290,7 +2312,7 @@ rename_src.txt\0\
             true,
             None,
             ssh,
-            app.clone(),
+            app.events.clone(),
         )
         .await
         .unwrap();
@@ -2300,20 +2322,20 @@ rename_src.txt\0\
             .current_dir(&dir)
             .output()
             .unwrap();
-        let default_branch = git_get_branches(path.clone(), None, ssh, app.clone())
+        let default_branch = git_get_branches(path.clone(), None, ssh, app.events.clone())
             .await
             .unwrap()
             .into_iter()
             .find(|b| !b.is_remote && b.name != "other")
             .map(|b| b.name)
             .unwrap();
-        git_checkout_branch(path.clone(), default_branch, None, ssh, app.clone())
+        git_checkout_branch(path.clone(), default_branch, None, ssh, app.events.clone())
             .await
             .unwrap();
 
         // Uncommitted change that conflicts with `other`.
         write_file(&dir, "a.txt", "dirty-local\n");
-        let err = git_checkout_branch(path.clone(), "other".into(), None, ssh, app.clone())
+        let err = git_checkout_branch(path.clone(), "other".into(), None, ssh, app.events.clone())
             .await
             .expect_err("checkout should be rejected");
         assert!(

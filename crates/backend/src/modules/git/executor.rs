@@ -35,14 +35,14 @@ pub(crate) fn resolve_executor(
     path: String,
     session_id: Option<String>,
     ssh_state: SshState,
-    events: impl Into<EventBus>,
+    events: EventBus,
 ) -> GitExecutor {
     match session_id {
         Some(session_id) => GitExecutor::Remote {
             session_id,
             cwd: path,
             ssh_state,
-            events: events.into(),
+            events,
         },
         None => GitExecutor::Local { cwd: path },
     }
