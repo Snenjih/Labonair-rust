@@ -255,3 +255,9 @@ exist in `AppearanceContent` or the Settings UI. The migration moves those
 legacy appearance values to the top-level keys already consumed by
 `labonair-background`, including files stamped `sparsified: true`; existing
 values are preserved and covered by two migration tests.
+
+The Background move is committed in `af7167f`. Full workspace check, Clippy,
+serial workspace tests, dependency verification, queue validation, formatting,
+and diff checks pass. Next R05 slice: prove the remaining indirect consumers
+and move workspace layout/runtime state out of Settings with a lossless
+migration.

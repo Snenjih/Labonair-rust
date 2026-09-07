@@ -38,7 +38,7 @@ definitions stay in the Hosts store and secrets stay in the secret store.
 Focused tests and the full workspace verification gates pass. The backend
 Hosts CRUD compatibility module and generic `HostsDb` alias are removed; only
 the explicitly tracked MCP integration and transport adapters remain. The
-latest implementation commit is `e8381dd` plus the canonical picker-ordering
+latest Hosts implementation commit is `e8381dd` plus the canonical picker-ordering
 test. The worktree is clean before starting
 `R05-001-settings-audit-and-value-normalization.md` is now active. The first
 field-to-consumer/scope inventory is documented in
@@ -50,7 +50,9 @@ fields were removed from `AppearanceContent`; legacy v1 and already-sparsified
 v2 files migrate them to the Background-owned top-level storage. The next
 slice is to prove indirect consumers and define lossless migrations for the
 remaining duplicate/runtime-state fields. The worktree is clean before the
-next Settings slice.
+next Settings slice. Current HEAD is `af7167f`; the worktree is clean and there
+are no blockers. Next: prove remaining indirect consumers and design the
+lossless migration for workspace runtime-state fields.
 
 `R02-003` is complete. The user confirmed the native Rust shell visual state
 is acceptable, closing the final visual acceptance criterion. The project and
