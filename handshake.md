@@ -100,6 +100,14 @@ existing `HostManagerView` into the owner registration, so the shell command
 table no longer opens the Hosts window directly. Targeted Hosts-UI/Shell
 check, Clippy, tests, dependency, queue, format, and diff checks pass.
 
+Workspace surface command handlers were moved into
+`labonair-workspace::command_provider` in `f7c643e`. Sidebar toggling,
+dock cycling/zoom, Snippets and Source Control panel focus, and Git Graph tab
+opening now operate through the Workspace owner entity; the shell no longer
+contains those layout/panel closures or helper methods. Targeted
+Workspace/Shell check, Clippy, tests, dependency, queue, format, and diff
+checks pass.
+
 The current R05 slices removed the untyped `general.notifyOnErrors` default,
 moved Background values behind their owner, moved dock/sidebar runtime state
 to the versioned Workspace-owned `workspace-layout.json`, and removed
@@ -113,7 +121,7 @@ Legacy `appCornerRadius` values are converted to the current
 `cornerRadiusScale` field during migration, with the modern value taking
 precedence when both are present.
 
-Current HEAD is `2f60906` on `master`; the worktree contains only this
+Current HEAD is `f7c643e` on `master`; the worktree contains only this
 handshake update before its commit. R06
 boundaries removed the backend error facade, removed AI's stale backend edge,
 moved system-font discovery into the Theme owner, deleted the unconsumed
