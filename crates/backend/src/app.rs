@@ -97,7 +97,7 @@ impl App {
                 crate::modules::sftp::worker::run_worker(rx, ssh, app, conflicts, settings).await;
             });
         }
-        crate::modules::mcp::spawn_auto_revoke_sweeper(self.clone(), self.mcp.clone());
+        crate::modules::mcp::spawn_auto_revoke_sweeper(self.events.clone(), self.mcp.clone());
     }
 
     /// Emit an app-wide event (replaces `window.emit`).

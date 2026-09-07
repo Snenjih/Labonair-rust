@@ -20,13 +20,13 @@ const AUTO_REVOKE_SWEEP_INTERVAL: Duration = Duration::from_secs(60);
 /// This is the only host-specific integration retained by the backend; host
 /// persistence and lifecycle remain entirely inside `labonair-hosts`.
 pub fn revoke_agent_access(
-    app: &crate::App,
+    state: &McpState,
+    events: &crate::EventBus,
     event: labonair_hosts::store::HostEvent,
 ) -> Result<(), labonair_errors::LabonairError> {
     let labonair_hosts::store::HostEvent::AgentAccessBlocked { host_id } = event;
     let expired: Vec<String> = {
-        let grants = app
-            .mcp
+        let grants = state
             .grants
             .lock()
             .map_err(|error| labonair_errors::LabonairError::Internal(error.to_string()))?;
@@ -40,8 +40,7 @@ pub fn revoke_agent_access(
         return Ok(());
     }
 
-    let mut grants = app
-        .mcp
+    let mut grants = state
         .grants
         .lock()
         .map_err(|error| labonair_errors::LabonairError::Internal(error.to_string()))?;
@@ -51,7 +50,8 @@ pub fn revoke_agent_access(
     drop(grants);
 
     for tab_id in expired {
-        app.emit("mcp_grant_expired", serde_json::json!({ "tab_id": tab_id }))
+        events
+            .emit("mcp_grant_expired", serde_json::json!({ "tab_id": tab_id }))
             .map_err(labonair_errors::LabonairError::Internal)?;
     }
     Ok(())
@@ -148,8 +148,10 @@ impl McpState {
 /// host/DB error is treated as "not blocked" — a host that no longer exists
 /// has bigger problems than this check, and the SSH session lookup itself
 /// will fail right after with a clearer error.
-pub(crate) fn host_blocks_agent_access(app: &crate::App, host_id: &str) -> Result<bool, String> {
-    let hosts_db = &app.db;
+pub(crate) fn host_blocks_agent_access(
+    hosts_db: &labonair_persistence::Database,
+    host_id: &str,
+) -> Result<bool, String> {
     let conn = hosts_db.0.lock().map_err(|e| e.to_string())?;
     let blocked: i64 = conn
         .query_row(
@@ -298,12 +300,12 @@ pub async fn mcp_set_session_grant(
     kind: SessionKind,
     local_pty_id: Option<u32>,
     host_id: Option<String>,
-    app: crate::App,
+    hosts_db: &labonair_persistence::Database,
     state: &McpState,
 ) -> Result<(), String> {
     if granted {
         if let Some(hid) = &host_id {
-            if host_blocks_agent_access(&app, hid)? {
+            if host_blocks_agent_access(hosts_db, hid)? {
                 return Err("this host has AI agent access blocked in its settings".to_string());
             }
         }
@@ -356,7 +358,7 @@ pub async fn mcp_tab_op_response(
 /// timestamp is older than the configured window and notifies the frontend
 /// via `mcp_grant_expired` so its local mirror (badge, context-menu checkbox)
 /// clears without waiting for the user to notice.
-pub fn spawn_auto_revoke_sweeper(app: crate::App, state: McpState) {
+pub fn spawn_auto_revoke_sweeper(events: crate::EventBus, state: McpState) {
     tokio::spawn(async move {
         loop {
             tokio::time::sleep(AUTO_REVOKE_SWEEP_INTERVAL).await;
@@ -386,7 +388,7 @@ pub fn spawn_auto_revoke_sweeper(app: crate::App, state: McpState) {
                 }
             }
             for tab_id in expired {
-                let _ = app.emit("mcp_grant_expired", serde_json::json!({ "tab_id": tab_id }));
+                let _ = events.emit("mcp_grant_expired", serde_json::json!({ "tab_id": tab_id }));
             }
         }
     });

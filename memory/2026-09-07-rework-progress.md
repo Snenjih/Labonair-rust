@@ -104,6 +104,12 @@ same event bus for network-loss reporting. Authentication and host lookup stay
 on the separate SSH connection service path. Focused Backend and Shell tests,
 formatting, dependency, queue, and diff checks passed.
 
+The MCP grant/session boundary was narrowed next. `BackendMcpSessionAccess`
+now receives only `McpState` and the shared `Database`; host-block revocation
+uses explicit MCP state plus `EventBus`, and the auto-revoke sweeper emits
+through `EventBus` directly. Token storage, listener startup, and MCP terminal
+tool execution remain the separate App-bound server boundary.
+
 ## Native visual verification
 
 The exact Rust bundle was opened through its absolute `.app` path. Core

@@ -13,18 +13,20 @@ use super::{mcp_set_session_grant, mcp_tab_op_response};
 /// workspace never receives the backend application just to grant a tab.
 #[derive(Clone)]
 pub struct BackendMcpSessionAccess {
-    app: crate::App,
+    state: super::McpState,
+    hosts_db: labonair_persistence::Database,
 }
 
 impl BackendMcpSessionAccess {
-    pub fn new(app: crate::App) -> Self {
-        Self { app }
+    pub fn new(state: super::McpState, hosts_db: labonair_persistence::Database) -> Self {
+        Self { state, hosts_db }
     }
 }
 
 impl McpSessionAccessService for BackendMcpSessionAccess {
     fn set_session_grant(&self, request: SessionGrantRequest) -> BoxFuture<'_, Result<(), String>> {
-        let app = self.app.clone();
+        let state = self.state.clone();
+        let hosts_db = self.hosts_db.clone();
         Box::pin(async move {
             mcp_set_session_grant(
                 request.tab_id,
@@ -34,8 +36,8 @@ impl McpSessionAccessService for BackendMcpSessionAccess {
                 request.kind,
                 request.local_pty_id,
                 request.host_id,
-                app.clone(),
-                &app.mcp,
+                &hosts_db,
+                &state,
             )
             .await
         })
@@ -48,8 +50,8 @@ impl McpTabOperationService for BackendMcpSessionAccess {
         request_id: String,
         result: TabOpResult,
     ) -> BoxFuture<'_, Result<(), String>> {
-        let app = self.app.clone();
-        Box::pin(async move { mcp_tab_op_response(request_id, result, &app.mcp).await })
+        let state = self.state.clone();
+        Box::pin(async move { mcp_tab_op_response(request_id, result, &state).await })
     }
 }
 

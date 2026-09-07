@@ -119,7 +119,7 @@ async fn require_non_interactive_auth(app: &crate::App, host_id: &str) -> Result
 /// Agent Access" flag being toggled on *after* the tab was granted.
 fn ensure_grant_still_authorized(app: &crate::App, grant: &SessionGrant) -> Result<(), String> {
     if let Some(host_id) = &grant.host_id {
-        if host_blocks_agent_access(app, host_id)? {
+        if host_blocks_agent_access(&app.db, host_id)? {
             return Err("this host now has AI agent access blocked in its settings".to_string());
         }
     }
@@ -424,7 +424,7 @@ impl LabonairMcpServer {
         &self,
         Parameters(params): Parameters<OpenTabParams>,
     ) -> Result<Json<OpenTabResult>, String> {
-        if host_blocks_agent_access(&self.app, &params.host_id)? {
+        if host_blocks_agent_access(&self.app.db, &params.host_id)? {
             return Err("this host has AI agent access blocked in its settings".to_string());
         }
         require_non_interactive_auth(&self.app, &params.host_id).await?;

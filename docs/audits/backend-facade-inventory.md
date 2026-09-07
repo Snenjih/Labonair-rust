@@ -34,7 +34,7 @@ participate in the `App` state graph or in another backend module.
 | `fonts` | custom-font file operations and system-font discovery | `shell::settings_services` | system-font discovery moved to `labonair-theme`; the unconsumed custom-font path and backend module were removed |
 | `fs` | removed | no active consumers | filesystem foundation owns paths, operations, and watchers; backend compatibility module and dead watcher adapter removed |
 | `git` | Git operation functions and `BackendGitService` / graph adapter | `shell::bootstrap`, `workspace` | `labonair-git` integration adapter; keep transport implementation narrow |
-| `mcp` | MCP state, grants, server operations, host revocation callback | `shell`, `workspace`; internal PTY/secrets use | `labonair-mcp-core` owns UI-free grant and tab-operation contracts; backend remains the injected bridge adapter for aggregate server state and still needs App extraction |
+| `mcp` | MCP state, grants, server operations, host revocation callback | `shell`, `workspace`; internal PTY/secrets use | `labonair-mcp-core` owns UI-free grant and tab-operation contracts; grant/revoke adapter receives only MCP state/database/events, while aggregate server state still needs App extraction |
 | `model_prefs` | model preference values and local load/save | none found | AI owner; verify against current AI configuration before moving |
 | `pty` | local PTY state, sessions, events, I/O operations | indirect through backend/MCP | terminal owner; expose a terminal service rather than `App` state |
 | `scrollback` | scrollback persistence helpers | `shell`, `workspace` | moved to `labonair-terminal::scrollback`; Workspace supplies session/retention context |
@@ -103,6 +103,11 @@ source search confirmed that active Explorer and Settings consumers already use
 `labonair-filesystem` directly. Backend feature modules now import the canonical
 filesystem paths directly, so there is no remaining `backend::modules::fs`
 compatibility layer.
+
+The MCP grant adapter was narrowed as well: `BackendMcpSessionAccess` receives
+only `McpState` and the shared `Database`, while host-block revocation receives
+`McpState` plus `EventBus`. The MCP server's token, listener, and terminal-tool
+integration remain a separate App-boundary extraction.
 
 ## Verification commands
 

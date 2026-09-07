@@ -192,7 +192,10 @@ pub(crate) fn bootstrap(
 
     cx.observe(&background, |_, _, cx| cx.notify()).detach();
 
-    let backend_mcp = Arc::new(BackendMcpSessionAccess::new(backend.clone()));
+    let backend_mcp = Arc::new(BackendMcpSessionAccess::new(
+        backend.mcp.clone(),
+        backend.db.clone(),
+    ));
     let agent_access_service: Arc<dyn McpSessionAccessService> = backend_mcp.clone();
     let mcp_tab_operations: Arc<dyn McpTabOperationService> = backend_mcp;
     let agent_access =
@@ -248,9 +251,14 @@ pub(crate) fn bootstrap(
     let mcp_event_source: Arc<dyn McpEventSource> =
         Arc::new(BackendMcpEventSource::new(backend.events.clone()));
     let host_manager = {
-        let app_for_host_events = backend.clone();
+        let mcp_state_for_host_events = backend.mcp.clone();
+        let events_for_host_events = backend.events.clone();
         let host_event_handler = Arc::new(move |event| {
-            labonair_backend::modules::mcp::revoke_agent_access(&app_for_host_events, event)
+            labonair_backend::modules::mcp::revoke_agent_access(
+                &mcp_state_for_host_events,
+                &events_for_host_events,
+                event,
+            )
         });
         cx.new(|cx| {
             HostManagerView::new(
