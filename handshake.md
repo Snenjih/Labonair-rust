@@ -39,9 +39,8 @@ Dynamic palette rows now flow through a typed `SubmenuRegistry` of immutable
 snapshots for tabs, hosts, recent hosts, themes, icon themes, editor themes,
 snippets, branches, symbols, and hidden status-bar items. The shell currently
 composes those snapshots from owner APIs; extracting those builders into the
-owning modules is the next implementation slice. Current commit is `0c5e6e5`
-plus the uncommitted submenu work; the worktree is intentionally not yet
-clean until this slice is committed.
+owning modules is the next implementation slice. The current commit is
+`0932697`; the worktree is clean.
 
 ## Current Session: 2026-09-07 (Native visual helper hardened)
 
