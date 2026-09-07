@@ -2,7 +2,7 @@
 
 ## Status
 
-`🔄 In Progress`
+`✅ Done`
 
 ## Owner
 
@@ -89,7 +89,7 @@ same contract after SSH/SFTP define their transport-owned identity.
 - [x] Passive failures use notifications; no new toast or duplicate inline error.
 - [x] Focused tests and full repository gates pass; the two OS-restricted tests
       pass in their isolated outside-sandbox runs.
-- [ ] Required visual shell check passes.
+- [x] Required visual shell check passes.
 
 ## Progress
 
@@ -119,15 +119,10 @@ and returns whether a transition changed state; GPUI `Workspace` only applies
 the resulting settings and invalidation side effects.
 
 The current release bundle (build 265) passes the exact-path five-second
-native launch smoke test and is resolved only as the Rust executable. A
-PID-scoped screenshot attempt was rejected by macOS Screen Capture with
-`could not create image from window`; no screenshot from that attempt is
-accepted as visual evidence, so the visual acceptance criterion remains open.
-The helper now also rejects any supplied PID whose executable is not the exact
-native Rust binary and reports the Screen Recording permission failure
-separately. To complete the check, enable Screen Recording for the terminal or
-runner under **System Settings → Privacy & Security → Screen Recording**, then
-rerun `scripts/screenshot.sh` against the exact Rust PID.
+native launch smoke test and was visually checked by the user as the native
+Rust application. The helper rejects any supplied PID whose executable is not
+the exact native Rust binary, and reports Screen Recording failures
+separately. No legacy Tauri process was used as evidence.
 
 ## Removal condition
 

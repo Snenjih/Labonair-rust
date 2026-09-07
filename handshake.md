@@ -5,6 +5,20 @@ They may mention API names that were valid at the time of the recorded
 change; the current API and task state are defined by the latest header and
 the normative documents under `docs/`.
 
+## Current Session: 2026-09-07 (R02-003 complete; command provider registry active)
+
+`R02-003` is complete. The user confirmed the native Rust shell visual state
+is acceptable, closing the final visual acceptance criterion. The project and
+standalone lifecycle is explicit, persisted through session snapshots, and
+implemented through the typed `WorkspaceTransition` contract; cwd changes do
+not mutate project identity. The worktree is clean before starting the next
+task.
+
+The active task is `R03-001-command-palette-provider-registry.md`. Next work
+is to make command discovery provider-owned through one typed registry,
+remove duplicate shell/palette declarations, and preserve stable action IDs
+and documented compatibility aliases. The current branch is `master`.
+
 ## Current Session: 2026-09-07 (Native visual helper hardened)
 
 `R02-003` remains active. The native visual helper now validates every
