@@ -52,6 +52,11 @@ The crate-map audit also corrected the Notifications sibling entry to the exact
 Cargo package name `labonair-notifications`; the architecture tables now use
 real package names consistently.
 
+The machine-readable package-reference audit also removed the hypothetical
+`labonair-theme-ui` name from the repository-layout example. Future siblings
+now use a generic placeholder, so unknown package checks do not confuse an
+example with an existing crate.
+
 The documentation audit also corrected the archive README so it distinguishes
 the accepted ADR directory from superseded ADRs stored below `docs/archive/`.
 The root changelog and release guide are current native-project documentation;

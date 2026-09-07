@@ -1061,3 +1061,7 @@ package is now named in the core architecture documents.
 
 The same audit corrected the Notifications sibling entry from the abbreviated
 `notifications` label to the exact package name `labonair-notifications`.
+
+The package-reference audit found the hypothetical `labonair-theme-ui` example
+in `docs/repository-layout.md`; it now uses the generic
+`labonair-<capability>-ui` placeholder instead of an untracked package name.

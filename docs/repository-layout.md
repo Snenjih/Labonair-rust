@@ -35,8 +35,9 @@ dependencies.
 
 Every product capability has one canonical crate under `crates/`. The crate
 owns the capability even when it is later split into siblings. For example,
-`themes` may contain `labonair-theme` and a future `labonair-theme-ui`, but
-there is still one Themes owner and one public capability contract.
+`themes` may contain `labonair-theme` and a future
+`labonair-<capability>-ui` sibling, but there is still one Themes owner and one
+public capability contract.
 
 Create a sibling crate only for a real boundary: UI versus UI-free logic,
 independent persistence, platform integration, or a stable contract consumed
@@ -103,4 +104,3 @@ a sibling boundary is justified.
 When a document changes an ownership or dependency rule, update the relevant
 normative contract, capability matrix, migration task, and inventory in the
 same change.
-
