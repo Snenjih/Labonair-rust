@@ -19,7 +19,7 @@ const MAX_REMOTE_READ_BYTES: u64 = 5 * 1024 * 1024;
 /// reacts the same way to a dropped connection instead of just showing a
 /// one-off error notification.
 fn handle_sftp_error(
-    app: &crate::App,
+    events: &crate::EventBus,
     state: &SshState,
     session_id: &str,
     e: String,
@@ -28,7 +28,7 @@ fn handle_sftp_error(
         if let Ok(mut map) = state.0.lock() {
             map.remove(session_id);
         }
-        let _ = app.emit(
+        let _ = events.emit(
             "ssh_connection_lost",
             serde_json::json!({ "session_id": session_id, "reason": e }),
         );
@@ -153,7 +153,7 @@ pub async fn sftp_read_dir(
     session_id: String,
     path: String,
     state: &SshState,
-    app: crate::App,
+    events: crate::EventBus,
 ) -> Result<Vec<FileNode>, LabonairError> {
     log::debug!("[SFTP] sftp_read_dir: tab={} path={}", session_id, path);
     async {
@@ -163,7 +163,7 @@ pub async fn sftp_read_dir(
         Ok(files)
     }
     .await
-    .map_err(|e| handle_sftp_error(&app, state, &session_id, e))
+    .map_err(|e| handle_sftp_error(&events, state, &session_id, e))
 }
 
 /// Default page size for `sftp_read_dir_page` — large enough that ordinary
@@ -209,7 +209,7 @@ pub async fn sftp_read_dir_page(
     limit: Option<usize>,
     show_hidden: Option<bool>,
     state: &SshState,
-    app: crate::App,
+    events: crate::EventBus,
 ) -> Result<SftpReadDirPage, LabonairError> {
     let offset = offset.unwrap_or(0);
     let limit = limit.unwrap_or(DEFAULT_PAGE_LIMIT);
@@ -229,7 +229,7 @@ pub async fn sftp_read_dir_page(
         Ok(paginate_entries(files, offset, limit))
     }
     .await
-    .map_err(|e| handle_sftp_error(&app, state, &session_id, e))
+    .map_err(|e| handle_sftp_error(&events, state, &session_id, e))
 }
 
 pub async fn sftp_rename(
@@ -237,7 +237,7 @@ pub async fn sftp_rename(
     old_path: String,
     new_path: String,
     state: &SshState,
-    app: crate::App,
+    events: crate::EventBus,
 ) -> Result<(), LabonairError> {
     async {
         let sftp = get_sftp_session_arc(state, &session_id)?;
@@ -246,14 +246,14 @@ pub async fn sftp_rename(
             .map_err(|e| e.to_string())
     }
     .await
-    .map_err(|e| handle_sftp_error(&app, state, &session_id, e))
+    .map_err(|e| handle_sftp_error(&events, state, &session_id, e))
 }
 
 pub async fn sftp_delete(
     session_id: String,
     paths: Vec<String>,
     state: &SshState,
-    app: crate::App,
+    events: crate::EventBus,
 ) -> Result<(), LabonairError> {
     async {
         let sftp = get_sftp_session_arc(state, &session_id)?;
@@ -270,7 +270,7 @@ pub async fn sftp_delete(
         Ok(())
     }
     .await
-    .map_err(|e| handle_sftp_error(&app, state, &session_id, e))
+    .map_err(|e| handle_sftp_error(&events, state, &session_id, e))
 }
 
 /// Splits an absolute (or relative) POSIX path into its ordered ancestor
@@ -309,7 +309,7 @@ pub async fn sftp_mkdir(
     path: String,
     recursive: Option<bool>,
     state: &SshState,
-    app: crate::App,
+    events: crate::EventBus,
 ) -> Result<(), LabonairError> {
     let recursive = recursive.unwrap_or(false);
     async {
@@ -337,7 +337,7 @@ pub async fn sftp_mkdir(
         Ok(())
     }
     .await
-    .map_err(|e| handle_sftp_error(&app, state, &session_id, e))
+    .map_err(|e| handle_sftp_error(&events, state, &session_id, e))
 }
 
 /// Creates a new empty file. Fails if the file already exists — matches
@@ -352,7 +352,7 @@ pub async fn sftp_create_file(
     session_id: String,
     path: String,
     state: &SshState,
-    app: crate::App,
+    events: crate::EventBus,
 ) -> Result<(), LabonairError> {
     async {
         let sftp = get_sftp_session_arc(state, &session_id)?;
@@ -366,7 +366,7 @@ pub async fn sftp_create_file(
         file.shutdown().await.map_err(|e| e.to_string())
     }
     .await
-    .map_err(|e| handle_sftp_error(&app, state, &session_id, e))
+    .map_err(|e| handle_sftp_error(&events, state, &session_id, e))
 }
 
 pub async fn sftp_chmod(
@@ -374,7 +374,7 @@ pub async fn sftp_chmod(
     path: String,
     permissions: u32,
     state: &SshState,
-    app: crate::App,
+    events: crate::EventBus,
 ) -> Result<(), LabonairError> {
     async {
         let sftp = get_sftp_session_arc(state, &session_id)?;
@@ -388,7 +388,7 @@ pub async fn sftp_chmod(
             .map_err(|e| e.to_string())
     }
     .await
-    .map_err(|e| handle_sftp_error(&app, state, &session_id, e))
+    .map_err(|e| handle_sftp_error(&events, state, &session_id, e))
 }
 
 pub async fn prepare_remote_edit(
@@ -396,7 +396,7 @@ pub async fn prepare_remote_edit(
     remote_path: String,
     max_bytes: Option<u64>,
     state: &SshState,
-    app: crate::App,
+    events: crate::EventBus,
 ) -> Result<String, LabonairError> {
     let limit = max_bytes.unwrap_or(MAX_REMOTE_READ_BYTES);
     let file_data = async {
@@ -424,7 +424,7 @@ pub async fn prepare_remote_edit(
         Ok::<_, String>(buf)
     }
     .await
-    .map_err(|e| handle_sftp_error(&app, state, &session_id, e))?;
+    .map_err(|e| handle_sftp_error(&events, state, &session_id, e))?;
 
     let temp_dir = std::env::temp_dir().join("labonair_remote_edits");
     std::fs::create_dir_all(&temp_dir).map_err(|e| LabonairError::Internal(e.to_string()))?;
@@ -485,7 +485,7 @@ pub async fn save_remote_edit(
     remote_path: String,
     local_temp_path: String,
     state: &SshState,
-    app: crate::App,
+    events: crate::EventBus,
 ) -> Result<(), LabonairError> {
     let canonical =
         validate_remote_edit_temp_path(&local_temp_path).map_err(LabonairError::Internal)?;
@@ -508,7 +508,7 @@ pub async fn save_remote_edit(
         remote_file.shutdown().await.map_err(|e| e.to_string())
     }
     .await
-    .map_err(|e| handle_sftp_error(&app, state, &session_id, e))
+    .map_err(|e| handle_sftp_error(&events, state, &session_id, e))
 }
 
 /// Best-effort deletion of a `prepare_remote_edit` temp file, called when the
@@ -532,7 +532,7 @@ pub async fn sftp_read_file_content(
     remote_path: String,
     max_bytes: Option<u64>,
     state: &SshState,
-    app: crate::App,
+    events: crate::EventBus,
 ) -> Result<ReadResult, LabonairError> {
     let limit = max_bytes.unwrap_or(MAX_REMOTE_READ_BYTES);
     async {
@@ -569,7 +569,7 @@ pub async fn sftp_read_file_content(
         }
     }
     .await
-    .map_err(|e| handle_sftp_error(&app, state, &session_id, e))
+    .map_err(|e| handle_sftp_error(&events, state, &session_id, e))
 }
 
 /// Run `du -sh '<path>'` on the remote server and return the human-readable size.
@@ -577,7 +577,7 @@ pub async fn sftp_calculate_size(
     session_id: String,
     path: String,
     state: &SshState,
-    app: crate::App,
+    events: crate::EventBus,
 ) -> Result<String, LabonairError> {
     async {
         let session = crate::get_session_arc!(state, &session_id);
@@ -613,7 +613,7 @@ pub async fn sftp_calculate_size(
         Ok(stdout.split_whitespace().next().unwrap_or("?").to_string())
     }
     .await
-    .map_err(|e| handle_sftp_error(&app, state, &session_id, e))
+    .map_err(|e| handle_sftp_error(&events, state, &session_id, e))
 }
 
 /// Execute `chown owner:group '<path>'` on the remote server.
@@ -623,7 +623,7 @@ pub async fn sftp_chown(
     owner: String,
     group: String,
     state: &SshState,
-    app: crate::App,
+    events: crate::EventBus,
 ) -> Result<(), LabonairError> {
     let spec = match (owner.is_empty(), group.is_empty()) {
         (true, true) => return Ok(()),
@@ -668,7 +668,7 @@ pub async fn sftp_chown(
         Ok(())
     }
     .await
-    .map_err(|e| handle_sftp_error(&app, state, &session_id, e))
+    .map_err(|e| handle_sftp_error(&events, state, &session_id, e))
 }
 
 /// Run `find <start_path> -iname '*<query>*' -maxdepth 5` on the remote server.
@@ -678,7 +678,7 @@ pub async fn sftp_deep_search(
     start_path: String,
     query: String,
     state: &SshState,
-    app: crate::App,
+    events: crate::EventBus,
 ) -> Result<Vec<String>, LabonairError> {
     async {
         let session = crate::get_session_arc!(state, &session_id);
@@ -718,7 +718,7 @@ pub async fn sftp_deep_search(
             .collect())
     }
     .await
-    .map_err(|e| handle_sftp_error(&app, state, &session_id, e))
+    .map_err(|e| handle_sftp_error(&events, state, &session_id, e))
 }
 
 #[cfg(test)]

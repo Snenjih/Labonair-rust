@@ -134,6 +134,9 @@ boundary still exists; that package must not become a second capability owner.
       shared raw `EventBus`; they no longer retain the aggregate `App` handle.
 - [x] The Transfer service adapter now receives only `TransferWorkerState`
       instead of retaining the aggregate `App` handle.
+- [x] The SFTP service adapter now receives only `SshState` and `EventBus`;
+      remote SFTP operations use the event bus directly for connection-loss
+      reporting instead of receiving the aggregate `App`.
 - [ ] Move the remaining contracts and adapters behind injected capability
       services.
 - [ ] Delete the broad `App` facade paths and remaining compatibility edges.

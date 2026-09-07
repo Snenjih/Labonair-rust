@@ -389,7 +389,7 @@ async fn sftp_connect_inner(
 pub async fn sftp_open_session(
     session_id: String,
     state: &SshState,
-    app: crate::App,
+    events: crate::EventBus,
 ) -> Result<(), LabonairError> {
     let session = {
         let map = state
@@ -419,7 +419,7 @@ pub async fn sftp_open_session(
         })
         .await
         .map_err(LabonairError::classify)?;
-    let _ = app.emit(
+    let _ = events.emit(
         "sftp_ready",
         serde_json::json!({ "session_id": session_id }),
     );

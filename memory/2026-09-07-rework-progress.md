@@ -98,6 +98,12 @@ state dependency.
 only `EventBus`. Shell composition remains the sole place that reads those
 fields from the aggregate during migration.
 
+The SFTP service boundary was narrowed next. `BackendSftpService` now receives
+only the shared `SshState` and `EventBus`; its remote operation helpers use the
+same event bus for network-loss reporting. Authentication and host lookup stay
+on the separate SSH connection service path. Focused Backend and Shell tests,
+formatting, dependency, queue, and diff checks passed.
+
 ## Native visual verification
 
 The exact Rust bundle was opened through its absolute `.app` path. Core

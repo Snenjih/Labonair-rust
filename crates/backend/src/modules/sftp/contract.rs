@@ -2,7 +2,7 @@
 
 use super::connection;
 use crate::modules::ssh::sftp as remote;
-use crate::App;
+use crate::EventBus;
 use labonair_errors::LabonairError;
 use labonair_sftp::{
     BoxFuture, RemoteEntry, SftpBrowserService, SftpSessionHandle, SftpSessionService,
@@ -11,12 +11,13 @@ use labonair_ssh::SshSessionId;
 
 #[derive(Clone)]
 pub struct BackendSftpService {
-    app: App,
+    state: crate::modules::ssh::SshState,
+    events: EventBus,
 }
 
 impl BackendSftpService {
-    pub fn new(app: App) -> Self {
-        Self { app }
+    pub fn new(state: crate::modules::ssh::SshState, events: EventBus) -> Self {
+        Self { state, events }
     }
 }
 
@@ -25,16 +26,16 @@ impl SftpSessionService for BackendSftpService {
         &'a self,
         ssh_session: SshSessionId,
     ) -> BoxFuture<'a, Result<SftpSessionHandle, LabonairError>> {
-        let app = self.app.clone();
+        let state = self.state.clone();
+        let events = self.events.clone();
         Box::pin(async move {
-            let state = app.ssh.clone();
-            connection::sftp_open_session(ssh_session.clone().into(), &state, app).await?;
+            connection::sftp_open_session(ssh_session.clone().into(), &state, events).await?;
             Ok(SftpSessionHandle::from_ssh_session(ssh_session))
         })
     }
 
     fn close<'a>(&'a self, session: SftpSessionHandle) -> BoxFuture<'a, Result<(), String>> {
-        let state = self.app.ssh.clone();
+        let state = self.state.clone();
         Box::pin(async move {
             connection::sftp_disconnect(session.as_str().to_string(), &state)
                 .map_err(|error| error.to_string())
@@ -48,10 +49,10 @@ impl SftpBrowserService for BackendSftpService {
         session: SftpSessionHandle,
         path: String,
     ) -> BoxFuture<'a, Result<Vec<RemoteEntry>, LabonairError>> {
-        let app = self.app.clone();
+        let state = self.state.clone();
+        let events = self.events.clone();
         Box::pin(async move {
-            let state = app.ssh.clone();
-            remote::sftp_read_dir(session.as_str().to_string(), path, &state, app)
+            remote::sftp_read_dir(session.as_str().to_string(), path, &state, events)
                 .await
                 .map(|entries| {
                     entries
@@ -77,15 +78,15 @@ impl SftpBrowserService for BackendSftpService {
         old_path: String,
         new_path: String,
     ) -> BoxFuture<'a, Result<(), LabonairError>> {
-        let app = self.app.clone();
+        let state = self.state.clone();
+        let events = self.events.clone();
         Box::pin(async move {
-            let state = app.ssh.clone();
             remote::sftp_rename(
                 session.as_str().to_string(),
                 old_path,
                 new_path,
                 &state,
-                app,
+                events,
             )
             .await
         })
@@ -96,10 +97,10 @@ impl SftpBrowserService for BackendSftpService {
         session: SftpSessionHandle,
         paths: Vec<String>,
     ) -> BoxFuture<'a, Result<(), LabonairError>> {
-        let app = self.app.clone();
+        let state = self.state.clone();
+        let events = self.events.clone();
         Box::pin(async move {
-            let state = app.ssh.clone();
-            remote::sftp_delete(session.as_str().to_string(), paths, &state, app).await
+            remote::sftp_delete(session.as_str().to_string(), paths, &state, events).await
         })
     }
 
@@ -109,15 +110,15 @@ impl SftpBrowserService for BackendSftpService {
         path: String,
         recursive: bool,
     ) -> BoxFuture<'a, Result<(), LabonairError>> {
-        let app = self.app.clone();
+        let state = self.state.clone();
+        let events = self.events.clone();
         Box::pin(async move {
-            let state = app.ssh.clone();
             remote::sftp_mkdir(
                 session.as_str().to_string(),
                 path,
                 Some(recursive),
                 &state,
-                app,
+                events,
             )
             .await
         })
@@ -128,10 +129,10 @@ impl SftpBrowserService for BackendSftpService {
         session: SftpSessionHandle,
         path: String,
     ) -> BoxFuture<'a, Result<(), LabonairError>> {
-        let app = self.app.clone();
+        let state = self.state.clone();
+        let events = self.events.clone();
         Box::pin(async move {
-            let state = app.ssh.clone();
-            remote::sftp_create_file(session.as_str().to_string(), path, &state, app).await
+            remote::sftp_create_file(session.as_str().to_string(), path, &state, events).await
         })
     }
 
@@ -141,10 +142,10 @@ impl SftpBrowserService for BackendSftpService {
         path: String,
         mode: u32,
     ) -> BoxFuture<'a, Result<(), LabonairError>> {
-        let app = self.app.clone();
+        let state = self.state.clone();
+        let events = self.events.clone();
         Box::pin(async move {
-            let state = app.ssh.clone();
-            remote::sftp_chmod(session.as_str().to_string(), path, mode, &state, app).await
+            remote::sftp_chmod(session.as_str().to_string(), path, mode, &state, events).await
         })
     }
 }

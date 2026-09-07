@@ -270,9 +270,16 @@ impl SshRemoteCommandService for BackendSshService {
         let app = self.app.clone();
         Box::pin(async move {
             let state = app.ssh.clone();
-            remote::sftp_chown(session_id.into(), path, owner, group, &state, app)
-                .await
-                .map_err(|error| error.to_string())
+            remote::sftp_chown(
+                session_id.into(),
+                path,
+                owner,
+                group,
+                &state,
+                app.events.clone(),
+            )
+            .await
+            .map_err(|error| error.to_string())
         })
     }
 
@@ -284,7 +291,7 @@ impl SshRemoteCommandService for BackendSshService {
         let app = self.app.clone();
         Box::pin(async move {
             let state = app.ssh.clone();
-            remote::sftp_calculate_size(session_id.into(), path, &state, app)
+            remote::sftp_calculate_size(session_id.into(), path, &state, app.events.clone())
                 .await
                 .map_err(|error| error.to_string())
         })
@@ -301,9 +308,15 @@ impl SshRemoteFileService for BackendSshService {
         let app = self.app.clone();
         Box::pin(async move {
             let state = app.ssh.clone();
-            remote::prepare_remote_edit(session_id.into(), remote_path, max_bytes, &state, app)
-                .await
-                .map_err(|error| error.to_string())
+            remote::prepare_remote_edit(
+                session_id.into(),
+                remote_path,
+                max_bytes,
+                &state,
+                app.events.clone(),
+            )
+            .await
+            .map_err(|error| error.to_string())
         })
     }
 
@@ -316,9 +329,15 @@ impl SshRemoteFileService for BackendSshService {
         let app = self.app.clone();
         Box::pin(async move {
             let state = app.ssh.clone();
-            remote::save_remote_edit(session_id.into(), remote_path, local_temp_path, &state, app)
-                .await
-                .map_err(|error| error.to_string())
+            remote::save_remote_edit(
+                session_id.into(),
+                remote_path,
+                local_temp_path,
+                &state,
+                app.events.clone(),
+            )
+            .await
+            .map_err(|error| error.to_string())
         })
     }
 

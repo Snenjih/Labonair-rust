@@ -267,10 +267,16 @@ pub(crate) fn bootstrap(
         })
     };
     let sftp_session_service: Arc<dyn SftpSessionService> = Arc::new(
-        labonair_backend::modules::sftp::contract::BackendSftpService::new(backend.clone()),
+        labonair_backend::modules::sftp::contract::BackendSftpService::new(
+            backend.ssh.clone(),
+            backend.events.clone(),
+        ),
     );
     let sftp_browser_service: Arc<dyn SftpBrowserService> = Arc::new(
-        labonair_backend::modules::sftp::contract::BackendSftpService::new(backend.clone()),
+        labonair_backend::modules::sftp::contract::BackendSftpService::new(
+            backend.ssh.clone(),
+            backend.events.clone(),
+        ),
     );
     let transfer_service: Arc<dyn TransferService> = Arc::new(
         labonair_backend::modules::transfers::BackendTransferService::new(backend.transfer.clone()),
