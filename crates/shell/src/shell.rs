@@ -44,6 +44,7 @@ pub use updater::{UpdaterStatus, UpdaterView};
 // notification center), so no bootstrap logic changed with the crate split.
 pub use labonair_background::init as init_background;
 pub use labonair_notifications::init as init_notifications;
+pub use labonair_settings::init as init_settings;
 pub use labonair_theme::{init_fonts, init_theme};
 
 /// Run the one-time import of legacy Settings layout values into the
@@ -52,6 +53,36 @@ pub use labonair_theme::{init_fonts, init_theme};
 pub fn migrate_legacy_workspace_layout(config_dir: &std::path::Path) -> Result<bool, String> {
     labonair_workspace::layout::migrate_legacy_settings_file(config_dir)
 }
+
+/// Runs the one-time settings migrations before the first native Settings
+/// entity is created. Migration ordering is a composition concern; value
+/// ownership remains in the Settings and Workspace owners.
+pub fn migrate_legacy_settings() {
+    use labonair_backend::modules::settings::{
+        migrate_config_file_name,
+        migrate_v2::{migrate_settings_v1_to_v2, sparsify_v2_settings},
+    };
+
+    let config_dir = labonair_filesystem::paths::config_dir();
+    if let Err(error) = migrate_config_file_name(&config_dir) {
+        tracing::warn!("config filename migration failed: {error}");
+    }
+    match migrate_legacy_workspace_layout(&config_dir) {
+        Ok(true) => tracing::info!("migrated legacy workspace layout before Settings"),
+        Ok(false) => {}
+        Err(error) => tracing::warn!("workspace layout migration failed: {error}"),
+    }
+    match migrate_settings_v1_to_v2(&config_dir) {
+        Ok(outcome) => tracing::info!("settings v1->v2 migration: {outcome:?}"),
+        Err(error) => tracing::warn!("settings v1->v2 migration failed: {error}"),
+    }
+    match sparsify_v2_settings(&config_dir) {
+        Ok(outcome) => tracing::info!("settings v2 sparsify: {outcome:?}"),
+        Err(error) => tracing::warn!("settings v2 sparsify failed: {error}"),
+    }
+}
+
+pub use labonair_backend::modules::updater::{UpdateManifest, CURRENT_VERSION};
 
 // --- Internal re-export shims --------------------------------------------------
 // `app_shell.rs` / `updater.rs` were moved verbatim from `crates/ui` (their

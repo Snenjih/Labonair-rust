@@ -83,6 +83,25 @@ impl BackendComposition {
         self.events.clone()
     }
 
+    /// Starts the development-only raw event trace at the composition root.
+    #[cfg(debug_assertions)]
+    pub fn spawn_event_logger(&self) {
+        let mut receiver = self.events.subscribe();
+        tokio::spawn(async move {
+            loop {
+                match receiver.recv().await {
+                    Ok(raw) => {
+                        tracing::debug!(name = %raw.name, payload = ?raw.payload, "backend event")
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {
+                        tracing::warn!(skipped, "event bus subscriber lagged");
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                }
+            }
+        });
+    }
+
     /// Starts the concrete background workers once at the composition root.
     pub fn spawn_workers(&self) {
         if let Some(receiver) = self.0.worker_rx.lock().unwrap().take() {

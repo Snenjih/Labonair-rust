@@ -15,9 +15,11 @@ meta = json.load(sys.stdin)
 ALLOWED = {
     # bin — depends on the shell + the engines it boots (rule 3 consumer side).
     "labonair": {
-        "labonair-shell", "labonair-terminal", "labonair-editor",
-        "labonair-backend", "labonair-ai", "labonair-theme",
-        "labonair-settings", "labonair-filesystem",
+        "labonair-shell",
+        # Smoke tests exercise the terminal engine and theme conversion
+        # directly; these are dev-dependency edges, not runtime bootstrap
+        # ownership.
+        "labonair-terminal", "labonair-theme",
     },
 
     # Foundation ------------------------------------------------------------

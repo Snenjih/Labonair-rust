@@ -7,8 +7,6 @@ use gpui_component::Root;
 
 mod dock_icon;
 use labonair_shell::{window_state, AppShell, BackendComposition};
-#[cfg(debug_assertions)]
-use tokio::sync::broadcast::error::RecvError;
 use tracing_subscriber::EnvFilter;
 
 /// `tracing` logging: default-off for noisy deps, `debug` for our crates, all
@@ -21,27 +19,6 @@ fn init_logging() {
         .with_ansi(true)
         .with_target(true)
         .init();
-}
-
-/// Debug-only: subscribes to the legacy backend event bus and logs every raw
-/// event. Capability adapters perform their own typed decoding at the feature
-/// boundary; this is purely a developer trace.
-#[cfg(debug_assertions)]
-fn spawn_event_logger(events: labonair_backend::EventBus) {
-    let mut rx = events.subscribe();
-    tokio::spawn(async move {
-        loop {
-            match rx.recv().await {
-                Ok(raw) => {
-                    tracing::debug!(name = %raw.name, payload = ?raw.payload, "backend event")
-                }
-                Err(RecvError::Lagged(skipped)) => {
-                    tracing::warn!(skipped, "event bus subscriber lagged");
-                }
-                Err(RecvError::Closed) => break,
-            }
-        }
-    });
 }
 
 fn main() {
@@ -57,40 +34,13 @@ fn main() {
     let backend = BackendComposition::new(&data_dir).expect("failed to initialize backend state");
     backend.spawn_workers();
     #[cfg(debug_assertions)]
-    spawn_event_logger(backend.events());
+    backend.spawn_event_logger();
 
     // T19-009: one-time migration of the legacy `preferences`/`editor`/`mcp`
     // split into the flat `SettingsContent` area layout (+ `keymap.json` for
     // keybind overrides). Hosts remain owned by their SQLite registry; no
     // host definitions are projected into Settings.
-    {
-        use labonair_backend::modules::settings::{
-            migrate_config_file_name,
-            migrate_v2::{migrate_settings_v1_to_v2, sparsify_v2_settings},
-        };
-        use labonair_filesystem::paths::config_dir;
-
-        let settings_dir = config_dir();
-        if let Err(err) = migrate_config_file_name(&settings_dir) {
-            tracing::warn!("config filename migration failed: {err}");
-        }
-        match labonair_shell::migrate_legacy_workspace_layout(&settings_dir) {
-            Ok(true) => tracing::info!("migrated legacy workspace layout before Settings"),
-            Ok(false) => {}
-            Err(err) => tracing::warn!("workspace layout migration failed: {err}"),
-        }
-        match migrate_settings_v1_to_v2(&settings_dir) {
-            Ok(outcome) => tracing::info!("settings v1->v2 migration: {outcome:?}"),
-            Err(err) => tracing::warn!("settings v1->v2 migration failed: {err}"),
-        }
-        // One-time cleanup of config.json files migrated before the migrator
-        // learned to emit only overrides (every area spelled out at its
-        // default). No-ops once `sparsified: true` is stamped.
-        match sparsify_v2_settings(&settings_dir) {
-            Ok(outcome) => tracing::info!("settings v2 sparsify: {outcome:?}"),
-            Err(err) => tracing::warn!("settings v2 sparsify failed: {err}"),
-        }
-    }
+    labonair_shell::migrate_legacy_settings();
 
     drop(guard);
     // Keep the runtime (and its background workers) alive for the process.
@@ -109,7 +59,7 @@ fn main() {
             // the first render, before gpui-component so nothing built below
             // can race a `XSettings::get(cx)` call against an unpopulated
             // store.
-            labonair_settings::init(cx);
+            labonair_shell::init_settings(cx);
             gpui_component::init(cx);
             let bounds = window_state::load()
                 .unwrap_or_else(|| Bounds::centered(None, size(px(1200.0), px(800.0)), cx));

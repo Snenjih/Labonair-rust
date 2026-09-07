@@ -24,7 +24,7 @@ a concrete platform adapter with a named consumer and removal condition.
 
 The export count is based on public declarations in the module source. “Internal
 only” means no non-backend crate currently imports that module; it still may
-participate in the `App` state graph or in another backend module.
+participate in the `BackendComposition` state graph or in another backend module.
 
 | Backend module | Public surface | Current external consumers | Intended owner / disposition |
 |---|---|---|---|
@@ -34,7 +34,7 @@ participate in the `App` state graph or in another backend module.
 | `fonts` | custom-font file operations and system-font discovery | `shell::settings_services` | system-font discovery moved to `labonair-theme`; the unconsumed custom-font path and backend module were removed |
 | `fs` | removed | no active consumers | filesystem foundation owns paths, operations, and watchers; backend compatibility module and dead watcher adapter removed |
 | `git` | Git operation functions and `BackendGitService` / graph adapter | `shell::bootstrap`, `workspace` | `labonair-git` integration adapter; service and operation functions now receive only SSH state plus EventBus |
-| `mcp` | MCP state, grants, server operations, host revocation callback | `shell`, `workspace`; internal PTY/secrets use | `labonair-mcp-core` owns UI-free grant and tab-operation contracts; grant/revoke adapter receives only MCP state/database/events, while aggregate server state still needs App extraction |
+| `mcp` | MCP state, grants, server operations, host revocation callback | `shell`, `workspace`; internal PTY/secrets use | `labonair-mcp-core` owns UI-free grant and tab-operation contracts; grant/revoke adapter receives only MCP state/database/events, while server state is supplied by shell composition |
 | `model_prefs` | model preference values and local load/save | none found | AI owner; verify against current AI configuration before moving |
 | `pty` | local PTY state, sessions, events, I/O operations | indirect through backend/MCP | terminal owner; expose a terminal service rather than `App` state |
 | `scrollback` | scrollback persistence helpers | `shell`, `workspace` | moved to `labonair-terminal::scrollback`; Workspace supplies session/retention context |
@@ -56,8 +56,8 @@ crates:
 
 | Crate | Why it currently imports backend | Removal seam |
 |---|---|---|
-| `labonair` | constructs `App`, emits startup events, runs legacy settings migration | composition receives concrete services and typed startup hooks |
-| `labonair-shell` | constructs `App`, builds SSH/SFTP/Git/transfer adapters, reads MCP/settings/updater compatibility APIs | one composition-only adapter import per capability, with no feature state access; Git adapters receive explicit SSH/EventBus capabilities |
+| `labonair` | invokes shell-owned composition and startup hooks | no direct runtime backend dependency; terminal/theme edges are smoke-test-only dev dependencies and the app entrypoint remains thin |
+| `labonair-shell` | constructs `BackendComposition`, builds SSH/SFTP/Git/transfer adapters, reads MCP/settings/updater compatibility APIs | one composition-only adapter import per capability, with no feature state access; Git adapters receive explicit SSH/EventBus capabilities |
 | `labonair-ai` | no active backend usage; stale dependency declaration | removed in the R06 inventory pass |
 
 `settings`, `settings-content`, and related crates contain historical comments

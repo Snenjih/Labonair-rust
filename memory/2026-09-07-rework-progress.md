@@ -65,6 +65,11 @@ application construction, capability extraction, and worker startup; the
 backend package exposes concrete platform adapters without a broad application
 state facade. Backend tests now construct only the capabilities under test.
 
+The binary bootstrap was narrowed one step further: shell composition now owns
+settings migration, development event diagnostics, and updater type exposure.
+The `labonair` package no longer declares direct backend, filesystem, or feature
+engine dependencies, leaving it as a thin native process entrypoint.
+
 ## R06-001 backend facade inventory and error boundary
 
 Recorded the complete backend module/export and direct-consumer map in

@@ -99,7 +99,9 @@ Beide nutzen dasselbe GPUI-Fundament: `Entity<T>`, `Context<T>`, `cx.observe` /
   `Vec<…>`-Puffer geschrieben und erst im nächsten `render` mit `&mut Window`
   abgearbeitet. Das ist ein **Workaround**, weil die Subscriptions ohne
   `Window` aufgesetzt sind.
-* Backend = `labonair_backend::App`, per `.clone()` überall reingereicht;
+* In diesem historischen Snapshot war Backend = `labonair_backend::App`, per
+  `.clone()` überall reingereicht; die aktuelle Composition-Struktur ist in den
+  normativen Rework-Dokumenten beschrieben.
   Tokio-Runtime wird mit `std::mem::forget(runtime)` am Leben gehalten
   (`main.rs:61`).
 * Es gibt einen Broadcast-Event-Bus (`backend.events`, `AppEvent::from_raw`),
