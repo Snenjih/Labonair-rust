@@ -61,6 +61,20 @@ impl CommandProvider for ShellCommandProvider {
         vec![
             CommandDescriptor::new(CommandId::ToggleFullScreen, "Toggle Full Screen", "View")
                 .with_icon(CommandIcon::Square),
+            CommandDescriptor::new(
+                CommandId::DebugCyclePanelDock,
+                "Debug: Cycle Panel Dock",
+                "Application",
+            )
+            .with_default_binding("cmd-alt-shift-m", None)
+            .with_icon(CommandIcon::PanelLeft),
+            CommandDescriptor::new(
+                CommandId::DebugToggleDockZoom,
+                "Debug: Toggle Dock Zoom",
+                "Application",
+            )
+            .with_default_binding("cmd-alt-shift-z", None)
+            .with_icon(CommandIcon::Square),
         ]
     }
 }
@@ -240,6 +254,9 @@ fn command_descriptor(
         .with_icon(icon);
     if let Some(shortcut) = shortcut {
         descriptor = descriptor.with_shortcut(shortcut);
+        let context = contexts.first().copied().filter(|_| contexts.len() == 1);
+        descriptor =
+            descriptor.with_default_binding(labonair_keymap::shortcut(shortcut).binding, context);
     }
     if let Some(submenu) = submenu {
         descriptor = descriptor.with_submenu(submenu);
@@ -406,7 +423,7 @@ pub(crate) fn register_builtin_commands() -> CommandDispatcher {
             "Focus Next Pane",
             "Layout",
             always,
-            None,
+            Some(labonair_keymap::ShortcutId::PaneFocusNext),
             CommandIcon::ChevronRight,
             None,
         ),
@@ -637,7 +654,8 @@ pub(crate) fn register_builtin_commands() -> CommandDispatcher {
             None,
             CommandIcon::PanelLeft,
             None,
-        ),
+        )
+        .with_default_binding("cmd-alt-shift-m", None),
         |s, _window, cx| {
             let pos = s.primary_dock(cx);
             let Some(name) = s
@@ -661,7 +679,8 @@ pub(crate) fn register_builtin_commands() -> CommandDispatcher {
             None,
             CommandIcon::Square,
             None,
-        ),
+        )
+        .with_default_binding("cmd-alt-shift-z", None),
         |s, _window, cx| {
             let pos = s.primary_dock(cx);
             s.workspace.update(cx, |w, cx| {
@@ -905,8 +924,7 @@ pub(crate) fn register_builtin_commands() -> CommandDispatcher {
         Some(labonair_keymap::ShortcutId::ShortcutsOpen),
         CommandIcon::Edit,
         None,
-    )
-    .with_default_binding("cmd-shift-/", None);
+    );
     r.register(keymap_descriptor, |s, window, cx| {
         s.workspace
             .update(cx, |w, cx| w.open_or_create_user_keymap_json(window, cx));

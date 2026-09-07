@@ -146,3 +146,9 @@ shell adapter are equality-checked so their command metadata cannot diverge.
 effective bindings and diagnostics from the command registry. Shell retains
 only GPUI installation, display-hint publication, and file-watch wiring; the
 next slice is the lossless keymap management/editor contract.
+
+The first owner-default migration is now broad enough to cover command palette,
+editor search, workspace tabs/panes/sidebar/zoom, settings Zen mode, and the
+shell's debug actions. The shell adapter derives matching metadata only while
+the transitional execution registrations remain; provider equality tests catch
+drift.

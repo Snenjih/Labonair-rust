@@ -699,3 +699,24 @@ immediate user decision; passive list/card error text was removed.
 test require OS listener/file-event permissions. They failed inside the
 sandbox with `Operation not permitted` / a missing rename event and passed
 when rerun individually with those permissions enabled.
+
+## 2026-09-07 — Avoid eager indexing when deriving optional contexts
+
+**Bug found:** The shell command adapter used
+`(contexts.len() == 1).then_some(contexts[0])`. `bool::then_some` evaluates
+its argument eagerly, so global commands with an empty context slice panicked
+even though the condition was false.
+
+**Fix:** Use `first().copied().filter(...)` so an empty context list remains a
+valid global command. The command-provider equality tests caught the issue
+before the change was accepted.
+
+## 2026-09-07 — Register identity dependencies in the boundary verifier
+
+**Bug found:** Moving the editor's `SearchFocus` identity into its owner
+provider added a direct dependency on `labonair-interaction-contracts`, but the
+dependency verifier still treated the editor as a one-edge engine crate.
+
+**Fix:** Added the intentional editor-to-interaction-contracts edge to
+`scripts/check_crate_deps.py`. The graph remains acyclic and the editor stays
+UI-free.

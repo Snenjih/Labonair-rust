@@ -109,17 +109,21 @@ impl CommandProvider for WorkspaceCommandProvider {
             .with_icon(CommandIcon::Folder),
             CommandDescriptor::new(CommandId::NewTerminalTab, "New Terminal Tab", "Layout")
                 .with_shortcut(ShortcutId::TabNew)
+                .with_default_binding("cmd-t", None)
                 .with_icon(CommandIcon::Terminal),
             CommandDescriptor::new(CommandId::NewEditorTab, "New Editor Tab", "Layout")
                 .with_shortcut(ShortcutId::TabNewEditor)
+                .with_default_binding("cmd-e", None)
                 .with_icon(CommandIcon::File),
             CommandDescriptor::new(CommandId::NewPreviewTab, "New Preview Tab", "Layout")
                 .with_shortcut(ShortcutId::TabNewPreview)
+                .with_default_binding("cmd-shift-p", None)
                 .with_icon(CommandIcon::File),
             CommandDescriptor::new(CommandId::Save, "Save", "Tab Actions")
                 .with_icon(CommandIcon::Edit),
             CommandDescriptor::new(CommandId::CloseTab, "Close Current Tab", "Tab Actions")
                 .with_shortcut(ShortcutId::TabClose)
+                .with_default_binding("cmd-w", None)
                 .with_icon(CommandIcon::Close),
             CommandDescriptor::new(CommandId::DuplicateTab, "Duplicate Tab", "Layout")
                 .with_icon(CommandIcon::Copy),
@@ -127,11 +131,15 @@ impl CommandProvider for WorkspaceCommandProvider {
                 .with_icon(CommandIcon::Close),
             CommandDescriptor::new(CommandId::NextTab, "Next Tab", "Tab Actions")
                 .with_shortcut(ShortcutId::TabNext)
+                .with_default_binding("ctrl-tab", None)
                 .with_icon(CommandIcon::ChevronRight),
             CommandDescriptor::new(CommandId::PrevTab, "Previous Tab", "Tab Actions")
                 .with_shortcut(ShortcutId::TabPrev)
+                .with_default_binding("ctrl-shift-tab", None)
                 .with_icon(CommandIcon::ChevronRight),
             CommandDescriptor::new(CommandId::FocusNextPane, "Focus Next Pane", "Layout")
+                .with_shortcut(ShortcutId::PaneFocusNext)
+                .with_default_binding("cmd-]", None)
                 .with_icon(CommandIcon::ChevronRight),
             CommandDescriptor::new(CommandId::SwitchTab, "Switch Tab…", "Layout")
                 .with_icon(CommandIcon::Terminal)
@@ -142,6 +150,7 @@ impl CommandProvider for WorkspaceCommandProvider {
                 .with_submenu(CommandSubmenu::Zoom),
             CommandDescriptor::new(CommandId::ToggleSidebar, "Toggle File Explorer", "View")
                 .with_shortcut(ShortcutId::SidebarToggle)
+                .with_default_binding("cmd-b", None)
                 .with_icon(CommandIcon::PanelLeft),
             CommandDescriptor::new(
                 CommandId::ShowStatusBarItem,
@@ -152,12 +161,15 @@ impl CommandProvider for WorkspaceCommandProvider {
             .with_submenu(CommandSubmenu::StatusBarHidden),
             CommandDescriptor::new(CommandId::ZoomIn, "Zoom In", "View")
                 .with_shortcut(ShortcutId::ViewZoomIn)
+                .with_default_binding("cmd-=", None)
                 .with_icon(CommandIcon::Plus),
             CommandDescriptor::new(CommandId::ZoomOut, "Zoom Out", "View")
                 .with_shortcut(ShortcutId::ViewZoomOut)
+                .with_default_binding("cmd--", None)
                 .with_icon(CommandIcon::Minus),
             CommandDescriptor::new(CommandId::ZoomReset, "Reset Zoom", "View")
                 .with_shortcut(ShortcutId::ViewZoomReset)
+                .with_default_binding("cmd-0", None)
                 .with_icon(CommandIcon::Refresh),
         ];
 
@@ -175,6 +187,7 @@ impl CommandProvider for WorkspaceCommandProvider {
             commands.push(
                 CommandDescriptor::new(id, format!("Select Tab {index}"), "Tab Actions")
                     .with_shortcut(shortcut)
+                    .with_default_binding(format!("cmd-{index}"), None)
                     .with_icon(CommandIcon::Terminal),
             );
         }
@@ -183,14 +196,17 @@ impl CommandProvider for WorkspaceCommandProvider {
             CommandDescriptor::new(CommandId::SplitRight, "Split Pane Right", "Layout")
                 .with_contexts(&[CommandContext::Terminal])
                 .with_shortcut(ShortcutId::PaneSplitRight)
+                .with_default_binding("cmd-d", Some(CommandContext::Terminal))
                 .with_icon(CommandIcon::ChevronRight),
             CommandDescriptor::new(CommandId::SplitDown, "Split Pane Down", "Layout")
                 .with_contexts(&[CommandContext::Terminal])
                 .with_shortcut(ShortcutId::PaneSplitDown)
+                .with_default_binding("cmd-shift-d", Some(CommandContext::Terminal))
                 .with_icon(CommandIcon::ChevronDown),
             CommandDescriptor::new(CommandId::ClosePane, "Close Active Pane", "Layout")
                 .with_contexts(&[CommandContext::Terminal])
                 .with_shortcut(ShortcutId::PaneClose)
+                .with_default_binding("cmd-shift-w", Some(CommandContext::Terminal))
                 .with_icon(CommandIcon::Close),
         ]);
 

@@ -4,6 +4,7 @@ use labonair_command_palette_core::{
     CommandContext, CommandDescriptor, CommandIcon, CommandId, CommandProvider, CommandSubmenu,
     SubmenuAction, SubmenuDescriptor, SubmenuItem, SubmenuSnapshot,
 };
+use labonair_interaction_contracts::ShortcutId;
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct EditorCommandProvider;
@@ -28,6 +29,10 @@ pub fn outline_submenu(rows: impl IntoIterator<Item = (usize, String, String)>) 
 impl CommandProvider for EditorCommandProvider {
     fn commands(&self) -> Vec<CommandDescriptor> {
         vec![
+            CommandDescriptor::new(CommandId::Find, "Find in Current Pane", "Search")
+                .with_shortcut(ShortcutId::SearchFocus)
+                .with_default_binding("cmd-f", None)
+                .with_icon(CommandIcon::Search),
             CommandDescriptor::new(CommandId::FormatDocument, "Format Document", "Editor")
                 .with_contexts(&[CommandContext::Editor])
                 .with_icon(CommandIcon::Edit),

@@ -132,3 +132,13 @@ returns one immutable snapshot containing effective bindings and diagnostics.
 Known-action vocabulary, owner-default materialization, user-file recovery,
 and layer composition no longer live in the shell loader. The shell now keeps
 only GPUI installation, display-hint publication, and filesystem-watch wiring.
+
+## R03-002 owner default migration
+
+Migrated the existing default bindings into their owning command providers for
+palette opening, editor search, workspace tabs/panes/sidebar/zoom, settings Zen
+mode, and shell debug actions. The shell execution adapter derives matching
+descriptor metadata only during the migration, while provider equality checks
+prevent the two snapshots from drifting. Adding the editor provider's stable
+shortcut identity required the allowed foundation edge from `labonair-editor`
+to `labonair-interaction-contracts`.

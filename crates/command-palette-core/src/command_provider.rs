@@ -14,6 +14,7 @@ impl CommandProvider for CommandPaletteCommandProvider {
             "Application",
         )
         .with_shortcut(ShortcutId::CommandPalette)
+        .with_default_binding("cmd-p", None)
         .with_icon(CommandIcon::Command)]
     }
 }

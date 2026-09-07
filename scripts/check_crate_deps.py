@@ -214,7 +214,9 @@ ALLOWED = {
     # for its ANSI palette; a deeper engine/renderer split is future work
     # (see docs/perf-baseline.md). It must reach nothing else.
     "labonair-terminal": {"labonair-theme", "labonair-command-palette-core"},
-    "labonair-editor": {"labonair-command-palette-core"},
+    "labonair-editor": {
+        "labonair-command-palette-core", "labonair-interaction-contracts",
+    },
     # [deviation, T19-001, docs/architecture.md §8.15] labonair-backend
     # depends on labonair-settings-content for the
     # `impl From<&SettingsContent> for Preferences` bridge — a pure,

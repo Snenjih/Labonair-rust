@@ -4279,6 +4279,7 @@ name = "labonair-editor"
 version = "0.1.0"
 dependencies = [
  "labonair-command-palette-core",
+ "labonair-interaction-contracts",
  "tree-sitter",
  "tree-sitter-bash",
  "tree-sitter-c",
