@@ -1,7 +1,6 @@
 //! Live fs-watch on the `User` settings layer (T19-002 Anweisung #6).
 //!
-//! Same crates + debounce pattern as
-//! `labonair_backend::modules::fs::watcher`: `notify_debouncer_mini` runs its
+//! Same crates + debounce pattern as `labonair-filesystem`: the debouncer runs its
 //! callback on its own background thread — it must never touch GPUI directly
 //! (Warnung: "niemals den Store vom Tokio-Thread mutieren"). The callback
 //! only flips an `AtomicBool`; a `cx.spawn`ed foreground task polls that flag

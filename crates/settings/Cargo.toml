@@ -28,7 +28,7 @@ serde_json = { workspace = true }
 # `default.json` uses (mirrors `labonair-settings-content::fallible`).
 jsonc-parser = { version = "0.23", features = ["serde"] }
 # Live fs-watch on the user settings file (same crates + debounce pattern as
-# `labonair-backend::modules::fs::watcher`).
+# `labonair-filesystem`).
 notify = "6"
 notify-debouncer-mini = "0.4"
 # Compile-time `Settings` registration (`#[derive(RegisterSetting)]` +
