@@ -42,6 +42,12 @@ describing completed migrations as open violations. Obsolete `panel-ai`
 allow-list and UI-kit comment references were removed from active tooling and
 component documentation. Dependency and queue validation remain green.
 
+The follow-up crate-map audit found that the Settings and Keymap sibling crates
+were documented with shortened names, and `labonair-background` was listed both
+as foundation and as a capability. The normative architecture and capability
+matrix now use exact package names and classify Backgrounds only as a product
+capability. The active architecture documents mention every workspace package.
+
 The documentation audit also corrected the archive README so it distinguishes
 the accepted ADR directory from superseded ADRs stored below `docs/archive/`.
 The root changelog and release guide are current native-project documentation;

@@ -99,7 +99,6 @@ and are never lost through a deserialize/serialize round trip.
 | `labonair-interaction-contracts` | Stable UI-free identities shared by interactive feature modules. |
 | `labonair-ui-kit` | Buttons, inputs, lists, dropdowns, dialogs, icons, badges, disclosure, tabs, and other reusable components. |
 | `labonair-filesystem` | Local filesystem abstractions and watchers. |
-| `labonair-background` | Background-image storage, import/delete operations, decoded image cache, and GPUI background layers. |
 | `labonair-errors` | Structured, UI-free domain error contract and recovery metadata. |
 | `labonair-events` | UI-free in-process transport primitives for adapter-level events; it owns no product event vocabulary or application state. |
 | `labonair-secrets` | Keychain and secret references. |
@@ -117,8 +116,8 @@ boundary.
 
 | Module | Canonical capability crate | Existing sibling crates | Ownership boundary |
 |---|---|---|---|
-| Settings | `labonair-settings` | `settings-content`, `settings-json`, `settings-macros`, `settings-ui` | Typed values, layered persistence, and value-only settings UI. |
-| Keymap | `labonair-keymap` | `keymap-ui` | Binding descriptors, file data, resolution, conflicts, and a presentation adapter; no feature behavior. |
+| Settings | `labonair-settings` | `labonair-settings-content`, `labonair-settings-json`, `labonair-settings-macros`, `labonair-settings-ui` | Typed values, layered persistence, and value-only settings UI. |
+| Keymap | `labonair-keymap` | `labonair-keymap-ui` | Binding descriptors, file data, resolution, conflicts, and a presentation adapter; no feature behavior. |
 | Command palette | `labonair-command-palette-core` | `labonair-command-palette`, `labonair-command-palette-runtime` | UI-free command registry contract; the UI sibling owns search/navigation and submenu presentation, while the runtime sibling carries owner-provided GPUI handlers. |
 | Notifications | `labonair-notifications-core` | `notifications` | Notification registry/state and its GPUI statusbar presentation. |
 | Themes | `labonair-theme` | none yet | Built-in color and icon-theme registries, preview, and selection. |

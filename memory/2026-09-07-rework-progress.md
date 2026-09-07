@@ -1051,3 +1051,10 @@ explicitly with removal conditions. Active dependency-checker and UI-kit
 documentation references to the removed `panel-ai` crate were deleted. The
 dependency and queue verifiers pass with 52 workspace crates and 219 internal
 edges.
+
+A package-coverage audit then found three exact-name documentation gaps:
+Settings and Keymap sibling crates were abbreviated, and Backgrounds appeared
+in both Foundation and the capability section. `docs/architecture.md` and
+`docs/capabilities.md` now use exact Cargo package names and classify
+`labonair-background` only as a product capability. Every current workspace
+package is now named in the core architecture documents.
