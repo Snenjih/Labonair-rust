@@ -21,6 +21,11 @@ next R07 boundary is the remaining shell-owned CWD/cursor/preview/dock/updater
 surfaces, followed by the command execution registry and the visual state
 matrix.
 
+The pure CWD breadcrumb path/provider helpers were subsequently moved to
+`labonair-workspace::cwd_breadcrumb` in `f282c88`; the interactive CWD
+statusbar view is the next owner extraction. Workspace check, tests,
+dependency-boundary validation, and formatting remain green.
+
 The current R05 slices removed the untyped `general.notifyOnErrors` default,
 moved Background values behind their owner, moved dock/sidebar runtime state
 to the versioned Workspace-owned `workspace-layout.json`, and removed
@@ -34,7 +39,7 @@ Legacy `appCornerRadius` values are converted to the current
 `cornerRadiusScale` field during migration, with the modern value taking
 precedence when both are present.
 
-Current HEAD is `19b20e4` on `master`; the worktree is clean before this
+Current HEAD is `f282c88` on `master`; the worktree is clean before this
 handshake update. R06
 boundaries removed the backend error facade, removed AI's stale backend edge,
 moved system-font discovery into the Theme owner, deleted the unconsumed
