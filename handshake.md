@@ -17,14 +17,17 @@ to the versioned Workspace-owned `workspace-layout.json`, and removed
 unsupported Terminal plus unused General values from the typed model, defaults,
 generated UI, and Settings mappings. Legacy backend `Preferences` fields remain
 readable only as migration wire input; v1 and v2 layout input is migrated before
-Settings conversion and removed idempotently.
+Settings conversion and removed idempotently. Legacy `appCornerRadius` values
+are converted to the current `cornerRadiusScale` field during migration, with
+the modern value taking precedence when both are present.
 
-Current HEAD is `ab62467` on `master`; the worktree is clean. Formatting,
+Current HEAD is `c6e9890` on `master`; the worktree is clean. Formatting,
 workspace check, Clippy, full serial workspace tests, dependency validation,
 queue validation, and diff checks pass. The next review item is
 the remaining indirect Appearance, Editor, File Manager, and Connection values.
 The General cleanup including `startupTerminalCount` is committed in
-`61abf4c`. No blockers.
+`61abf4c`; the corner-radius normalization is committed in `c6e9890`. No
+blockers.
 
 ## Historical session details: 2026-09-07
 

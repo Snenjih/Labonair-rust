@@ -323,3 +323,17 @@ mapping; legacy Preferences remains readable as compatibility input. Affected
 parser, project-layer, and store tests were redirected to the retained
 `restoreWindowState` value. Full workspace tests and all repository gates pass.
 Committed as `61abf4c`; R05-001 remains active for the next inventory group.
+
+## R05-001 Appearance radius normalization
+
+Removed the obsolete `appCornerRadius` field from `AppearanceContent`, shipped
+defaults, generated Settings UI, and the Settings runtime accessor. Legacy v1
+and already-sparsified v2 values are converted from historical pixel units to
+the current `cornerRadiusScale` value during migration; an explicit modern
+scale wins when both keys are present. The legacy Preferences field remains
+deserializable as migration-only input, and migration accounting plus v1/v2
+fixtures cover the conversion. The inventory now records the Background owner
+as active rather than pending removal from Settings. Full workspace tests,
+check, Clippy, dependency, queue, formatting, and diff checks pass.
+Committed as `c6e9890`; R05-001 remains active for the next indirect Appearance
+field audit.
