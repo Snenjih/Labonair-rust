@@ -5,7 +5,7 @@ They may mention API names that were valid at the time of the recorded
 change; the current API and task state are defined by the latest header and
 the normative documents under `docs/`.
 
-## Current Session: 2026-09-07 (R03-001 complete; keymap runtime active)
+## Current Session: 2026-09-07 (R03-002 keymap runtime integration active)
 
 `R02-003` is complete. The user confirmed the native Rust shell visual state
 is acceptable, closing the final visual acceptance criterion. The project and
@@ -42,10 +42,12 @@ snippets, branches, symbols, and hidden status-bar items. Snapshot builders
 now live in the workspace, hosts, editor, theme, snippets, and Git provider
 modules; the shell only supplies live values and registers the snapshots.
 Hidden status-bar state and labels are owned by the workspace status registry
-as well. The current task is now `R03-002-keymap-runtime-and-editor.md`; the
-next work is to integrate the new UI-free `keymap::runtime` resolver with the
-existing file and GPUI adapters, then build the management surface. The
-current commit is `e1efb6d`; the worktree is clean.
+as well. The current task is now `R03-002-keymap-runtime-and-editor.md`. The
+first resolver slice is implemented and the GPUI menu adapter now consumes the
+keymap-owned canonical action resolver, including the legacy keymap alias.
+The next slice is to move reload/install orchestration behind the keymap
+adapter and then build the management surface. The current commit is
+`360bece`; the worktree is clean.
 
 ## Current Session: 2026-09-07 (Native visual helper hardened)
 

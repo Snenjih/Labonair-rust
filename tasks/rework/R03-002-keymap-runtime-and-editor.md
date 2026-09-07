@@ -89,8 +89,13 @@ The keymap module now owns a UI-free deterministic resolver in
 `keymap::runtime`. It accepts typed `CommandId` bindings, applies global and
 active-context precedence, replaces later declarations at equal precedence,
 and preserves first-seen keystroke order. Existing file parsing and GPUI
-installation remain adapters around this contract; integrating them is the
-next slice.
+installation remain adapters around this contract. The GPUI menu adapter now
+resolves persisted action names through `keymap::runtime::command_for_action`
+before mapping typed IDs to concrete actions; migration aliases therefore have
+one owner and cannot drift between adapters. Rich GPUI context predicates stay
+in the adapter while portable contexts remain typed in the runtime. The next
+slice is to replace the shell-owned keymap reload/install entry point with a
+keymap-owned adapter and expose diagnostics through the notification contract.
 
 ## Acceptance criteria
 

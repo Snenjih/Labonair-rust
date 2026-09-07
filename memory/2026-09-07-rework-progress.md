@@ -85,5 +85,14 @@ user's visual confirmation. `R03-002-keymap-runtime-and-editor` is next.
 `labonair-keymap::runtime` now provides a GPUI-/file-format-free resolver for
 typed `CommandId` bindings. Global and active-context precedence, equal-level
 last-write-wins replacement, normalized keystroke identity, and stable first
-appearance ordering are covered by tests. The existing settings parser and
-shell GPUI adapter still need to consume this resolver in the next slice.
+appearance ordering are covered by tests. The existing settings parser remains
+the lossless file adapter, while the GPUI menu adapter now consumes the
+keymap-owned canonical action resolver before selecting concrete actions.
+
+## R03-002 adapter integration
+
+Persisted action names now cross into the GPUI menu adapter through
+`keymap::runtime::command_for_action`, producing a typed `CommandId` before the
+adapter selects a concrete GPUI action. This removes the shell's duplicate
+string alias table while preserving the legacy `settings::OpenShortcuts` alias
+and rich GPUI context predicates. Commit: `360bece`.
