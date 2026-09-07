@@ -784,3 +784,15 @@ removed compatibility path.
 **Fix:** Assert that the metadata-only registry has no shell fallback for
 those commands. Runtime bootstrap supplies the owner handlers through the
 Workspace entity registration.
+
+## 2026-09-07 — Pass the new Hosts picker callback through composition
+
+**Build failure:** After moving the connection command registrations into
+Hosts-UI, the metadata-only shell composition helper still supplied the old
+number of optional owner callbacks. Rust reported the missing final argument
+for the Hosts picker handler.
+
+**Fix:** Added the explicit `None` to the metadata-only path and passed the
+typed Hosts picker callback from bootstrap in the runtime path. The callback
+only opens the existing canonical palette page; host selection and transport
+intent remain owned by Hosts-UI and its typed picker snapshots.

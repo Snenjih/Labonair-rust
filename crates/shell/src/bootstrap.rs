@@ -34,7 +34,7 @@ use labonair_transfers::{TransferEventSource, TransferService};
 use labonair_transfers_ui::TransfersView;
 use tokio::runtime::Handle as TokioHandle;
 
-use labonair_command_palette::{CommandPalette, PaletteEvent};
+use labonair_command_palette::{CommandPalette, Page as PalettePage, PaletteEvent};
 use labonair_panel_explorer::ExplorerView;
 use labonair_panel_git_graph::GitGraphView;
 use labonair_panel_scm::{GitPanelView, ScmEvent};
@@ -428,9 +428,16 @@ pub(crate) fn bootstrap(
             search_shell.update(app, |shell, cx| shell.toggle_search_overlay(window, cx));
         });
     let palette_shell = shell;
+    let host_picker_shell = palette_shell.clone();
     let palette_toggle: labonair_command_palette::command_provider::ToggleHandler =
         Rc::new(move |window: &mut Window, app: &mut App| {
             palette_shell.update(app, |shell, cx| shell.toggle_command_palette(window, cx));
+        });
+    let host_picker: labonair_hosts_ui::command_provider::HostPickerHandler =
+        Rc::new(move |window: &mut Window, app: &mut App| {
+            host_picker_shell.update(app, |shell, cx| {
+                shell.show_command_palette(Some(PalettePage::Hosts), window, cx);
+            });
         });
     let command_registry = crate::commands::register_builtin_commands_for(
         &workspace,
@@ -438,6 +445,7 @@ pub(crate) fn bootstrap(
         &host_manager,
         palette_toggle,
         search_toggle,
+        host_picker,
     );
     crate::keymap_loader::reload_and_apply(cx, &command_registry);
     crate::keymap_loader::watch(cx, command_registry.clone());

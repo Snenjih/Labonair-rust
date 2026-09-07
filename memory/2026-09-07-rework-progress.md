@@ -932,3 +932,9 @@ The `Find` executable contribution was then moved into
 the shell injects only the callback that toggles the shared search overlay.
 This keeps the overlay lifecycle compatible with the shell's global modal
 composition while removing the search behavior from the shell command table.
+
+The four connection entry commands (`NewSshTab`, `NewSftpTab`, `NewQuickSsh`,
+and `NewSshConnection`) were then moved into
+`labonair-hosts-ui::command_provider`. Hosts-UI owns their registration; the
+shell injects only the callback that opens the Hosts command-palette page, where
+the row's primary action is SSH and its `Shift+Enter` secondary action is SFTP.

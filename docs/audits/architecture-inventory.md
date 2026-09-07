@@ -123,6 +123,9 @@ The current Cargo metadata shows several transitional edges that conflict with t
   injects only the search-overlay host callback, so the search behavior remains
   with the Workspace surface without coupling the Workspace crate to the shell
   modal composition.
+- Hosts-UI now owns the executable connection command contributions. The shell
+  injects only the callback that opens the canonical Hosts picker; SSH/SFTP
+  intent remains represented by the picker row's primary and secondary actions.
 - The dependency verifier now explicitly allows owner crates to consume the
   UI-free command registry contract. `interaction-contracts` owns the stable
   shortcut identity, so the former command-core → keymap edge is removed and
@@ -208,8 +211,9 @@ The current Cargo metadata shows several transitional edges that conflict with t
   Terminal `Clear Terminal`, Settings toggles, the Settings window entrypoint,
   Hosts management entrypoint, updater Check-for-Updates, Workspace panel
   surface actions, and the Keymap management entrypoint are owner-registered.
-  The command-palette toggle and Workspace search are now owner-registered as
-  well; remaining shell adapters are transitional until their owners move.
+  The command-palette toggle, Workspace search, and Hosts picker commands are
+  now owner-registered as well; remaining shell adapters are transitional until
+  their owners move.
 - The dedicated Jump Hosts status item was removed. Jump-host routing remains
   part of SSH connection configuration and execution, while host management and
   host selection keep their canonical menu/palette entry points.

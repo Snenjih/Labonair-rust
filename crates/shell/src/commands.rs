@@ -16,7 +16,6 @@
 use std::rc::Rc;
 
 use gpui::{Context, Div, Entity, InteractiveElement, Window};
-use labonair_command_palette::Page as PalettePage;
 use labonair_command_palette_core::{
     CommandContext, CommandDescriptor, CommandIcon, CommandId, CommandProvider,
     CommandRegistry as PaletteCommandRegistry, CommandSubmenu,
@@ -255,7 +254,7 @@ fn command_descriptor(
 
 #[allow(dead_code)]
 pub(crate) fn register_builtin_commands() -> CommandDispatcher {
-    compose_builtin_commands(None, None, None, None, None)
+    compose_builtin_commands(None, None, None, None, None, None)
 }
 
 /// Compose the command registry with owner-provided executable handlers.
@@ -265,6 +264,7 @@ pub(crate) fn register_builtin_commands_for(
     hosts: &Entity<HostManagerView>,
     palette_toggle: labonair_command_palette::command_provider::ToggleHandler,
     search_toggle: labonair_workspace::command_provider::SearchToggleHandler,
+    host_picker: labonair_hosts_ui::command_provider::HostPickerHandler,
 ) -> CommandDispatcher {
     compose_builtin_commands(
         Some(workspace),
@@ -272,6 +272,7 @@ pub(crate) fn register_builtin_commands_for(
         Some(hosts),
         Some(palette_toggle),
         Some(search_toggle),
+        Some(host_picker),
     )
 }
 
@@ -281,6 +282,7 @@ fn compose_builtin_commands(
     hosts: Option<&Entity<HostManagerView>>,
     palette_toggle: Option<labonair_command_palette::command_provider::ToggleHandler>,
     search_toggle: Option<labonair_workspace::command_provider::SearchToggleHandler>,
+    host_picker: Option<labonair_hosts_ui::command_provider::HostPickerHandler>,
 ) -> CommandDispatcher {
     let mut r = CommandDispatcher::default();
     let always = ALWAYS;
@@ -317,6 +319,12 @@ fn compose_builtin_commands(
             search_toggle,
         );
     }
+    if let Some(host_picker) = host_picker {
+        labonair_hosts_ui::command_provider::register_picker_handlers(
+            &mut r.owner_handlers,
+            host_picker,
+        );
+    }
     if let Some(updater) = updater {
         labonair_updater_ui::command_provider::register_handlers(&mut r.owner_handlers, updater);
     }
@@ -339,41 +347,6 @@ fn compose_builtin_commands(
                     workspace.open_or_create_user_keymap_json(window, cx);
                 });
             }),
-        );
-    }
-
-    // ── Connections ─────────────────────────────────────────────────────
-    // Connecting is exclusively the command palette's Hosts page
-    // (`Enter` = SSH, `Shift+Enter` = SFTP). Host management is no longer a
-    // Hosts capability surface; this command opens its canonical selection
-    // page and does not create a Settings category.
-    for (id, title, icon) in [
-        (CommandId::NewSshTab, "New SSH Tab", CommandIcon::Terminal),
-        (CommandId::NewSftpTab, "New SFTP Tab", CommandIcon::Folder),
-        (
-            CommandId::NewQuickSsh,
-            "New Quick SSH",
-            CommandIcon::Terminal,
-        ),
-        (
-            CommandId::NewSshConnection,
-            "New SSH Connection",
-            CommandIcon::Terminal,
-        ),
-    ] {
-        r.register(
-            command_descriptor(
-                id,
-                title,
-                "Connections",
-                always,
-                None,
-                icon,
-                Some(CommandSubmenu::Hosts),
-            ),
-            |s, window, cx| {
-                s.show_command_palette(Some(PalettePage::Hosts), window, cx);
-            },
         );
     }
 
