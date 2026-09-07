@@ -94,6 +94,12 @@ contribution, while the Settings core continues to own the command metadata.
 Targeted Settings-UI/Shell check, Clippy, tests, dependency, queue, format,
 and diff checks pass.
 
+The Hosts management entrypoint was moved into
+`labonair-hosts-ui::command_provider` in `2f60906`. Bootstrap injects the
+existing `HostManagerView` into the owner registration, so the shell command
+table no longer opens the Hosts window directly. Targeted Hosts-UI/Shell
+check, Clippy, tests, dependency, queue, format, and diff checks pass.
+
 The current R05 slices removed the untyped `general.notifyOnErrors` default,
 moved Background values behind their owner, moved dock/sidebar runtime state
 to the versioned Workspace-owned `workspace-layout.json`, and removed
@@ -107,7 +113,7 @@ Legacy `appCornerRadius` values are converted to the current
 `cornerRadiusScale` field during migration, with the modern value taking
 precedence when both are present.
 
-Current HEAD is `d830e99` on `master`; the worktree contains only this
+Current HEAD is `2f60906` on `master`; the worktree contains only this
 handshake update before its commit. R06
 boundaries removed the backend error facade, removed AI's stale backend edge,
 moved system-font discovery into the Theme owner, deleted the unconsumed
