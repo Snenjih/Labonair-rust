@@ -80,6 +80,11 @@ Workspace/Background are the next extraction candidates, typed
 Workspace/AI, Workspace/Settings, SCM, and Palette edges are review points,
 and shell-to-integration construction is explicitly retained by design.
 
+The historical task structure was then normalized: the old roadmap and all
+`phase-*` task directories now live under `tasks/archive/`, while
+`tasks/rework/` is the only active queue. Historical cross-references were
+updated and the complete versioned Markdown link audit passes.
+
 The R07-001 acceptance record now marks ownership, documentation authority,
 dependency/source agreement, verification gates, and product dispositions as
 structurally satisfied. Visual states remain pending by policy, and the legacy
@@ -236,7 +241,7 @@ fully verified.
 The documentation hierarchy was audited: `docs/` remains the normative source,
 `docs/audits/` records unfinished evidence, `docs/reports/` and `docs/archive/`
 are explicitly non-authoritative, and `tasks/rework/` is the only active queue.
-`AGENTS.md` now states that historical `tasks/phase-*` records must not be
+`AGENTS.md` now states that historical `tasks/archive/phase-*` records must not be
 started as an alternate implementation plan. The capability matrix also now
 records the remaining dynamic-palette action gap instead of overstating its
 completion.
@@ -1168,7 +1173,7 @@ changes are ready to commit. No source blockers.
 
 User-requested overhaul is active. The normative documentation now defines
 Labonair as a modular Dev-Op workspace for project and standalone workflows.
-Added `docs/{product,architecture,modules,registries,design-system,workspace-model,settings,rework-roadmap}.md`, an architecture inventory under `docs/audits/`, and reports/archive indexes. Replaced the old root `AGENTS.md`, `CLAUDE.md`, `README.md`, and `tasks/ROADMAP.md` instructions with the v2 contracts. Moved superseded architecture/idea documents to `docs/archive/` and `ideas/archive/`, and moved historical reports to `docs/reports/`. Marked the stale in-progress render task and Hosts-in-Settings task as historical.
+Added `docs/{product,architecture,modules,registries,design-system,workspace-model,settings,rework-roadmap}.md`, an architecture inventory under `docs/audits/`, and reports/archive indexes. Replaced the old root `AGENTS.md`, `CLAUDE.md`, `README.md`, and `tasks/archive/ROADMAP.md` instructions with the v2 contracts. Moved superseded architecture/idea documents to `docs/archive/` and `ideas/archive/`, and moved historical reports to `docs/reports/`. Marked the stale in-progress render task and Hosts-in-Settings task as historical.
 
 The target crate graph is documented but not yet implemented. The live
 dependency verifier was updated to allow only the four explicitly documented
@@ -1264,7 +1269,7 @@ now only matches doc-comment prose (no live code).
 — see the next commit right after this file is saved. Nothing left running;
 the 3-block settings rework is complete.
 
-**Next:** resume the normal roadmap (`tasks/ROADMAP.md`) — the next task after
+**Next:** resume the normal roadmap (`tasks/archive/ROADMAP.md`) — the next task after
 the settings-guidelines work is whatever `T19-*`/`T20-*` file is still
 `🔲 Todo` in phase order.
 
@@ -1974,7 +1979,7 @@ change of either.
   `labonair-theme` gains **no** new dependency.
 - **Not `cargo run`-verified** (headless) — live density/font/radius/motion
   visual check open (same accepted gap as T20-002..006).
-- **Next task: first task of Phase 20** (`tasks/phase-20-perf-signoff/`) —
+- **Next task: first task of Phase 20** (`tasks/archive/phase-20-perf-signoff/`) —
   T21-001 (render-path profiling & frame hygiene). Phase 19 (UI-Kit &
   Theme-System) is now complete.
 
@@ -2037,7 +2042,7 @@ switchable with fs-watch live-reload, mirroring the T20-005 theme registry.
 - **Not `cargo run`-verified** (headless) — user visual check of live icon-
   theme switching / broken-file-ignored is open (same accepted gap as
   T20-002..005).
-- **Next task: T20-007** (`theme_settings` layer; `tasks/phase-19-ui-kit/`).
+- **Next task: T20-007** (`theme_settings` layer; `tasks/archive/phase-19-ui-kit/`).
 
 ## Previous Session: 2026-09-05 (T20-005 — ThemeRegistry + JSON theme families)
 
@@ -2105,7 +2110,7 @@ with fs-watch live-reload.
   `scripts/check-crate-deps.sh` (24 crates, acyclic) — all green.
 - **Not `cargo run`-verified** (headless) — user visual check of live theme
   switching / System-appearance variant pick / broken-file-ignored is open.
-- **Next task: T20-006** (Icon-Themes — JSON, switchable; `tasks/phase-19-ui-kit/`).
+- **Next task: T20-006** (Icon-Themes — JSON, switchable; `tasks/archive/phase-19-ui-kit/`).
 
 ## Previous Session: 2026-09-05 (T20-004 — Component Gallery / debug window)
 
@@ -2153,7 +2158,7 @@ System/Light/Dark switch.
 - **Screenshots gap** (task instr. 7 / one acceptance box): no PR workflow
   and no headless GPUI screenshot path — same accepted gap as T20-002/003.
 - **Next task: T20-005** (`ThemeRegistry` + JSON theme families,
-  `tasks/phase-19-ui-kit/`). When it lands, extend the gallery's theme
+  `tasks/archive/phase-19-ui-kit/`). When it lands, extend the gallery's theme
   switch to list every registered family (already noted in the header text).
 
 ## Previous Session: 2026-09-05 (T20-003 — View-Migration Wave 2: Hosts, Snippets, AI, SFTP, Git-Graph, Settings-UI)
@@ -2197,7 +2202,7 @@ buttons, and `3c4bcc1` the final close-out audit.
   applicable here — there is no PR workflow in play this session (direct
   commits to `master`, per repo convention) and no way to capture GPUI
   screenshots headlessly; same gap existed and was accepted for T20-002.
-- **Next task: T20-004** (Component-Gallery, `tasks/phase-19-ui-kit/`).
+- **Next task: T20-004** (Component-Gallery, `tasks/archive/phase-19-ui-kit/`).
 
 ## Previous Session: 2026-09-05 (T20-002 — View-Migration Wave 1: Explorer, SCM, Editor, Terminal)
 
@@ -2247,7 +2252,7 @@ no behavior change, `cargo test --workspace` green throughout.
   no other hand-rolled button/list/menu/field markup exists in the view's
   chrome (the "shell exited" strip is a passive one-line status note, not a
   button/list/menu, so it was left as a plain `div()`).
-- **Next task: T20-003** (View-Migration Wave 2, `tasks/phase-19-ui-kit/`).
+- **Next task: T20-003** (View-Migration Wave 2, `tasks/archive/phase-19-ui-kit/`).
 
 ## Previous Session: 2026-09-05 (T20-001 — `ui-kit` primitive set, first task of Phase 19)
 
@@ -2366,7 +2371,7 @@ preview.rs}}`, `crates/command-palette/src/palette.rs`,
 `zed-refrence/zed` submodule-pointer change was left unstaged on purpose.
 
 **Next**: `T20-002` — View-Migration Welle 1
-(`tasks/phase-19-ui-kit/T20-002-view-migration-wave-1.md`). No blockers.
+(`tasks/archive/phase-19-ui-kit/T20-002-view-migration-wave-1.md`). No blockers.
 
 ## Previous Session: 2026-09-04 (T19-010 — Settings › Hosts, final task of Phase 18)
 
@@ -2485,7 +2490,7 @@ hosts_ui.rs,Cargo.toml}`, `crates/settings-ui/Cargo.toml`,
 `crates/command-palette/src/palette.rs`, `scripts/check_crate_deps.py`.
 
 **Next**: `T20-001` — starts **Phase 19 "UI-Kit"**, a new task-numbering
-phase (`tasks/phase-19-ui-kit/T20-001-ui-kit-primitive-set.md`). No
+phase (`tasks/archive/phase-19-ui-kit/T20-001-ui-kit-primitive-set.md`). No
 blockers.
 
 ## Previous Session: 2026-09-04 (T19-009 — settings migrator: preferences/editor/mcp → SettingsContent, keybinds → keymap.json, SQLite hosts → hosts.entries)
@@ -2610,7 +2615,7 @@ the SQLite-backed hosts (`backend::modules::hosts`) into `hosts.entries`.
   `crates/backend/src/modules/settings/migrate_v2.rs`;
   `crates/backend/src/modules/settings/mod.rs` (module registration);
   `crates/app/src/main.rs` (migration call sites before
-  `labonair_settings::init`); `tasks/phase-18-settings-core/T19-009-settings-migrator.md`
+  `labonair_settings::init`); `tasks/archive/phase-18-settings-core/T19-009-settings-migrator.md`
   (status + acceptance-criteria checkboxes); this file.
 - **Next**: T19-010 (Settings › Hosts page) — note `crates/hosts-ui` already
   exists (from T16-008's panel-crate split, the existing Host-Manager panel
@@ -2830,7 +2835,7 @@ pulse — matching the task's Zed-inspired design (`settings_ui.rs`'s
 `zed-refrence/zed` submodule-pointer change (pre-existing, not touched).
 
 **Next:** T19-008 (keymap as a file with contexts) —
-`tasks/phase-18-settings-core/T19-008-keymap-file-with-contexts.md`.
+`tasks/archive/phase-18-settings-core/T19-008-keymap-file-with-contexts.md`.
 
 **Blockers:** none. The `scroll_to_item` limitation above is a pre-existing
 gap worth flagging to whoever picks up scroll-precision work, but does not
@@ -2945,7 +2950,7 @@ Branch: `master`, working tree has this session's changes staged for commit
 this entry lands, `feat(settings): T19-006 json schema generation`).
 
 **Next: T19-007** (Globale Settings-Suche) —
-`tasks/phase-18-settings-core/T19-007-global-settings-search.md`. No known
+`tasks/archive/phase-18-settings-core/T19-007-global-settings-search.md`. No known
 blockers.
 
 ## Last Session: 2026-09-04 (T19-005 — raw `settings.json` editor, comment-preserving)
@@ -3041,7 +3046,7 @@ Branch: `master`, working tree has this session's changes staged for commit
 this entry lands, `feat(settings): T19-005 raw json settings editor`).
 
 **Next: T19-006** (JSON-Schema-Generierung) —
-`tasks/phase-18-settings-core/T19-006-json-schema-generation.md`. No known
+`tasks/archive/phase-18-settings-core/T19-006-json-schema-generation.md`. No known
 blockers.
 
 ## Last Session: 2026-09-04 (T19-004 — generated settings UI: `SettingField` registry + disclosure/scroll-spy/sub-page/custom-top-level navigation)
@@ -3361,7 +3366,7 @@ workspace crates, 94 internal edges, acyclic).
 
 ### Next task
 **T19-003** (project/folder settings,
-`tasks/phase-18-settings-core/T19-003-project-folder-settings.md`) — its own
+`tasks/archive/phase-18-settings-core/T19-003-project-folder-settings.md`) — its own
 `## Abhängigkeiten` lists only T19-002, now done. (T19-004 also only needs
 T19-002 + already-done tasks, but T19-003 is the lower-numbered one and
 nothing blocks it from going first.)
@@ -3415,7 +3420,7 @@ members. Both are leaves — no GPUI/UI/`labonair-backend` deps.
 
 ### Next task
 **T19-002** (`SettingsStore` + layered merge + `Settings` trait,
-`tasks/phase-18-settings-core/T19-002-settings-store-layered-merge.md`) — its
+`tasks/archive/phase-18-settings-core/T19-002-settings-store-layered-merge.md`) — its
 own `## Abhängigkeiten` lists only T19-001, now done.
 
 ---
@@ -3437,7 +3442,7 @@ task, no code changes.
   blanket exemption).
 - `CLAUDE.md`: added Critical Rule 9 ("Settings-Design-Kontrakt einhalten"),
   pointing at the new doc. Rules 1–8 left untouched.
-- `docs/architecture.md` §8.3 and `tasks/ROADMAP.md` (Phase-18 table listing
+- `docs/architecture.md` §8.3 and `tasks/archive/ROADMAP.md` (Phase-18 table listing
   T19-000 first, Erfolgskriterium 25's `docs/settings-guidelines.md`
   half-sentence) already referenced this contract from earlier planning —
   verified both match what was written, no further edits needed there.
@@ -3450,12 +3455,12 @@ task, no code changes.
 `cargo clippy --workspace --all-targets -- -D warnings` ✅ · `cargo test
 --workspace` ✅. No code touched — `git diff --stat` for the commit shows
 only `.md` files (`CLAUDE.md`, `docs/settings-guidelines.md`,
-`tasks/phase-18-settings-core/T19-000-settings-design-contract.md`).
+`tasks/archive/phase-18-settings-core/T19-000-settings-design-contract.md`).
 
 ### Next task
 **T19-001** (`labonair-settings-content` — typisierter Baum + `MergeFrom`,
 `hosts` als eigener Top-Level-Bereich), file:
-`tasks/phase-18-settings-core/T19-001-settings-content-tree.md`. Its
+`tasks/archive/phase-18-settings-core/T19-001-settings-content-tree.md`. Its
 dependencies (T16-001, T16-007, T19-000) are all Done. Note: T19-002
 (`SettingsStore` + layer merge) depends on T19-001, not directly on T19-000 —
 so T19-001 is next in strict roadmap order, not T19-002.
@@ -3470,7 +3475,7 @@ not committed here.
 **T18-007 done.** Phase 17 is now complete (T18-001..T18-007 all Done).
 
 ### Part A — Philosophy is now normative
-- `tasks/ROADMAP.md` "## Vision": added the four numbered principles from
+- `tasks/archive/ROADMAP.md` "## Vision": added the four numbered principles from
   `bericht-architektur-rework-roadmap.md` §1 (simple fixed structure /
   personalization is first-class / modularity in code = modularity in
   product / measurable performance) inline, alongside the pre-existing
@@ -3546,7 +3551,7 @@ Branch `master`, working tree clean after this session's commit. Phase 17
 (T18-001..T18-007) fully done.
 
 ### Next
-**T19-000** (`tasks/phase-18-settings-core/T19-000-settings-design-contract.md`)
+**T19-000** (`tasks/archive/phase-18-settings-core/T19-000-settings-design-contract.md`)
 — first task of Phase 18 (Settings-System Zed-Style). No known blockers.
 
 ## Last Session: 2026-09-04 (T18-006 — Migrator `barItemPlacements` → `statusBarItemPlacements`)
@@ -3628,7 +3633,7 @@ data, not just the temp-dir unit tests).
 
 ### Next
 - **T18-007** — Philosophie verankern + Personalisierungs-Settings-Seite
-  (`tasks/phase-17-layout/T18-007-philosophy-and-personalization-page.md`),
+  (`tasks/archive/phase-17-layout/T18-007-philosophy-and-personalization-page.md`),
   deps: T18-005 (done), T18-003 (done).
 
 ---
@@ -3725,7 +3730,7 @@ item (except the fixed-left panel toggles) → "Move left" / "Move right" /
 
 ### Next
 - **T18-006** — Migrator `barItemPlacements` → `statusBarItemPlacements`
-  (`tasks/phase-17-layout/T18-006-bar-item-placements-migrator.md`) — now that
+  (`tasks/archive/phase-17-layout/T18-006-bar-item-placements-migrator.md`) — now that
   the old blob-parsing code (`BarItemId`/`BarLoc`) is gone from
   `labonair-workspace`, this task's framing needs a quick re-read before
   starting: it may reduce to "read the legacy `barItemPlacements` JSON keys
@@ -3755,7 +3760,7 @@ item (except the fixed-left panel toggles) → "Move left" / "Move right" /
 - Branch `master`, committing now. No blockers.
 
 ### Next
-- **T18-005** — Statusbar-Item-Personalisierung (`tasks/phase-17-layout/T18-005-statusbar-item-personalization.md`).
+- **T18-005** — Statusbar-Item-Personalisierung (`tasks/archive/phase-17-layout/T18-005-statusbar-item-personalization.md`).
 
 ---
 
@@ -3808,7 +3813,7 @@ the remaining pieces from the task file.
 
 ### Next
 - **T18-004** — Statusbar rechts: Info-Dropdowns
-  (`tasks/phase-17-layout/T18-004-statusbar-right-info-dropdowns.md`).
+  (`tasks/archive/phase-17-layout/T18-004-statusbar-right-info-dropdowns.md`).
 
 ---
 
@@ -3884,7 +3889,7 @@ on explicit user request: full real scrollback search for terminals (not
 
 ### Next
 - **T18-003** — Statusbar links: Panel-Steuerung
-  (`tasks/phase-17-layout/T18-003-statusbar-left-panel-controls.md`).
+  (`tasks/archive/phase-17-layout/T18-003-statusbar-left-panel-controls.md`).
 
 ---
 
@@ -3945,7 +3950,7 @@ its final look + file-drop.
 - Branch `master`, committing now. No blockers.
 
 ### Next
-- **T18-002** — Suche als Overlay (`tasks/phase-17-layout/T18-002-search-overlay.md`):
+- **T18-002** — Suche als Overlay (`tasks/archive/phase-17-layout/T18-002-search-overlay.md`):
   move the provisional titlebar search into a dedicated overlay, then delete
   `render_search` + the `search_*` fields from `Titlebar`.
 
@@ -4359,8 +4364,8 @@ full session persistence with backward compat.
 - Branch `master`, committed (see `git log`). No blockers.
 
 ### Next
-- **T17-005** — next earliest unstarted task (see `tasks/ROADMAP.md` /
-  `tasks/phase-*`).
+- **T17-005** — next earliest unstarted task (see `tasks/archive/ROADMAP.md` /
+  `tasks/archive/phase-*`).
 
 ---
 
@@ -4534,7 +4539,7 @@ one panel each) with a real three-dock model owned by the `Workspace`.
   `docs/adr/0001-crate-decomposition.md`, `bericht-workflow-rework.md`,
   `zed-refrence/`.
 - **Next task: T17-003** (`StatusItem` trait & registry,
-  `tasks/phase-16-registries/`).
+  `tasks/archive/phase-16-registries/`).
 
 ## Last Session: 2026-09-04 (T17-001 — `Panel` trait & `PanelRegistry` wired · **Phase 16 started**)
 
@@ -4654,7 +4659,7 @@ tooling, CI enforcement, docs and a baseline.
   (modified by another session — NOT staged), `bericht-*.md`, `zed-refrence/`.
 
 ### Next Task
-**T17-001** — `tasks/phase-16-registries/T17-001-panel-trait-and-registry.md`
+**T17-001** — `tasks/archive/phase-16-registries/T17-001-panel-trait-and-registry.md`
 (`Panel` trait + `PanelRegistry` wiring). Its dep (T16-008 panel crates) is Done.
 
 ### Blockers
@@ -4725,7 +4730,7 @@ T17-006).
 ### State / Next
 - Branch `master`, committed (see trailer). Working tree still carries the
   parallel planning session's untracked `bericht-*.md` / `zed-refrence/` /
-  `tasks/phase-1*/` and modified `tasks/ROADMAP.md` / `docs/adr/0001` — left
+  `tasks/archive/phase-1*/` and modified `tasks/archive/ROADMAP.md` / `docs/adr/0001` — left
   untouched, not staged.
 - Disk: ~7.6 G free after this task (parallel session also building). `cargo
   clean` was run at task start per coordinator instructions.
@@ -4936,7 +4941,7 @@ host-access rework.
   forces a full from-scratch rebuild.
 
 ### What's Next
-- **T16-008** `tasks/phase-15-crate-split/T16-008-split-panel-crates.md` —
+- **T16-008** `tasks/archive/phase-15-crate-split/T16-008-split-panel-crates.md` —
   ausgliedern der Panel-Crates (+ `labonair-hosts-ui`).
 
 ### Blockers
@@ -5027,7 +5032,7 @@ relocate `ThemeStore` into `labonair-theme`.
   `rm -rf target/debug/incremental` before the next heavy task.
 
 ### What's Next
-- **T16-007** `tasks/phase-15-crate-split/T16-007-extract-settings-ui-crate.md`
+- **T16-007** `tasks/archive/phase-15-crate-split/T16-007-extract-settings-ui-crate.md`
   — extract `labonair-settings-ui`.
 
 ### Blockers
@@ -5053,7 +5058,7 @@ Architektur-Rework integriert. T16-006 lief währenddessen → alles konzeptione
    Design-Kontrakt (`docs/settings-guidelines.md`, T19-000), Kategorie→Abschnitt-
    Disclosure-Navigation, erstklassiger Pfad für Custom-Top-Level-Kategorien.
 
-**Geändert:** `docs/architecture.md` (neuer §8 „Deviations"), `tasks/ROADMAP.md`
+**Geändert:** `docs/architecture.md` (neuer §8 „Deviations"), `tasks/archive/ROADMAP.md`
 (Tabellen 15–18 + Workflow-Rework-Abschnitt + Erfolgskriterium 27), `T16-007`,
 `T16-008`, `T17-001`, `T17-004`, `T17-006`, `T18-001`, `T18-003`, `T19-001`,
 `T19-004`, `T19-009`.
@@ -5127,7 +5132,7 @@ existing code migrated, no behaviour change.**
   Reclaimed space afterwards with `rm -rf target/debug/incremental`.
 
 ### What's Next
-- **T16-006** `tasks/phase-15-crate-split/T16-006-extract-workspace-crate.md`
+- **T16-006** `tasks/archive/phase-15-crate-split/T16-006-extract-workspace-crate.md`
   — extract `labonair-workspace`.
 
 ### Blockers
@@ -5209,7 +5214,7 @@ Fourth code task of the architecture rework. **Move + proper decoupling
   the moved unit tests + full workspace compile.
 
 ### What's Next
-- **T16-005** `tasks/phase-15-crate-split/T16-005-panel-contracts-crate.md`
+- **T16-005** `tasks/archive/phase-15-crate-split/T16-005-panel-contracts-crate.md`
   — `labonair-panel` contracts crate.
 
 ### Blockers
@@ -5275,7 +5280,7 @@ zero behaviour change.**
   `-D warnings` failure.
 
 ### What's Next
-- **T16-004** `tasks/phase-15-crate-split/T16-004-extract-command-palette-crate.md`
+- **T16-004** `tasks/archive/phase-15-crate-split/T16-004-extract-command-palette-crate.md`
   — extract `crates/ui/src/command_palette.rs` into `labonair-command-palette`.
   Dependencies (T16-002, T16-003) now satisfied.
 
@@ -5348,7 +5353,7 @@ behaviour change.** Rust toolchain is now installed on the VPS
   (transitive dep of `gpui-component`) — does not fail `-D warnings`.
 
 ### What's Next
-- **T16-003** `tasks/phase-15-crate-split/T16-003-extract-notifications-crate.md`
+- **T16-003** `tasks/archive/phase-15-crate-split/T16-003-extract-notifications-crate.md`
   — extract `crates/ui/src/notifications.rs` into `labonair-notifications`.
   Dependency (T16-002) now satisfied.
 
@@ -5388,11 +5393,11 @@ no `crates/` change.**
   one-time migration cost).
 - **`CLAUDE.md`** — the "## Architecture" section now points to both new docs as
   the authoritative target architecture.
-- **`tasks/ROADMAP.md`** — "## Vision" gained a philosophy paragraph (parity is
+- **`tasks/archive/ROADMAP.md`** — "## Vision" gained a philosophy paragraph (parity is
   now the *minimum*, not the goal). The phases 15–21 section + rework success
   criteria 22–26 (present as an uncommitted change) are committed with this task.
 - This commit also stages the previously-untracked task dirs
-  `tasks/phase-15-crate-split/` … `tasks/phase-21-gpui-decision/`, plus the two
+  `tasks/archive/phase-15-crate-split/` … `tasks/archive/phase-21-gpui-decision/`, plus the two
   new planning reports `bericht-architektur-rework-roadmap.md` and
   `vergleichsbericht-zed-vs-rust.md`. `zed-refrence/` left untracked (local Zed
   checkout for API spelunking).
@@ -5408,7 +5413,7 @@ no `crates/` change.**
   phases 15–21 with every task id; CLAUDE.md references `docs/architecture.md`).
 
 ### What's Next
-- **T16-002** `tasks/phase-15-crate-split/T16-002-gpui-ext-and-ui-kit-skeleton.md`
+- **T16-002** `tasks/archive/phase-15-crate-split/T16-002-gpui-ext-and-ui-kit-skeleton.md`
   — extract `crates/ui/src/components/*` into `labonair-ui-kit`, create the
   `labonair-gpui-ext` prelude crate, re-export, re-point all call sites.
   Deps (T16-001) satisfied. **Needs a Rust toolchain to verify.**
@@ -6684,9 +6689,9 @@ Feature-parity audit **Block A — Fundament (P0)** (`vergleichsbericht-subagent
   **not ours** — left untouched, excluded from the commit.
 
 ### What's Next
-- All roadmap tasks (`tasks/phase-*`) are ✅ Done. Only remaining item is the
+- All roadmap tasks (`tasks/archive/phase-*`) are ✅ Done. Only remaining item is the
   **manual `cargo run` acceptance round** (T15-006 template) by the user.
-  `tasks/phase-14-testing/T15-001-feinschliff-catalog.md` is a living design
+  `tasks/archive/phase-14-testing/T15-001-feinschliff-catalog.md` is a living design
   doc without a Status header, not a blocking task.
 
 ### Blockers / notes for next session
@@ -6805,7 +6810,7 @@ Feature-parity audit **Block A — Fundament (P0)** (`vergleichsbericht-subagent
 - **T15-006 ✅ Done.** Full module inventory of the pure-Rust port against
   `reference-src/` (every `src/modules/` + `src-tauri/src/modules/` folder + the
   ~150 `generate_handler!` commands). Result checklist + deviation list written
-  into `tasks/phase-14-testing/T15-006-feature-parity-acceptance.md`.
+  into `tasks/archive/phase-14-testing/T15-006-feature-parity-acceptance.md`.
   - **Findings:** the port is functionally complete for every backend module
     (ssh/sftp/git/fs/pty/hosts/credentials/snippets/secrets/themes/backgrounds/
     scrollback/settings/shell/terminal_exec/mcp/fonts/errors/menu_sync/dock_menu/
@@ -6830,12 +6835,12 @@ Feature-parity audit **Block A — Fundament (P0)** (`vergleichsbericht-subagent
   - **Version bumped:** `crates/app/Cargo.toml` `0.1.0` → **`1.0.0`** (first
     feature-complete release; single source for packaging/updater/smoke-test).
   - **Remaining gaps → follow-up task files created (all non-core):**
-    - `tasks/phase-11-snippets-palette/T12-003-path-bookmarks.md` — `bookmarks/`
+    - `tasks/archive/phase-11-snippets-palette/T12-003-path-bookmarks.md` — `bookmarks/`
       module (local/remote dir bookmarks, `Cmd+Shift+O`) not ported.
-    - `tasks/phase-12-settings/T13-005-remaining-shortcut-handlers.md` —
+    - `tasks/archive/phase-12-settings/T13-005-remaining-shortcut-handlers.md` —
       `tab.selectTab1..9`, `pane.focusNext`, `view.zenMode` (+ zen prefs) have
       no dispatch (deferred & signed off in T13-004).
-    - `tasks/phase-05-editor/T06-005-soft-wrap-and-terminal-bell.md` — editor
+    - `tasks/archive/phase-05-editor/T06-005-soft-wrap-and-terminal-bell.md` — editor
       `editor_word_wrap` has no renderer effect; `terminal_bell` is a stored
       pref with no audible beep.
     - ROADMAP.md updated with the 3 new task rows.
@@ -7071,7 +7076,7 @@ Feature-parity audit **Block A — Fundament (P0)** (`vergleichsbericht-subagent
     - **D6** — `community_theme_partial_import_round_trips_visually` test in
       `theme.rs`: partial community theme applies only its tokens, rest stay
       on default, survives export → re-import with no RGB drift.
-  - **`tasks/phase-14-testing/T15-001-feinschliff-catalog.md`** — deferred
+  - **`tasks/archive/phase-14-testing/T15-001-feinschliff-catalog.md`** — deferred
     section rewritten to "resolved in T15-003" with per-item status.
 - Verify: `cargo fmt --all --check`, `cargo check --workspace`,
   `cargo clippy --workspace --all-targets -- -D warnings`,
@@ -7161,14 +7166,14 @@ Feature-parity audit **Block A — Fundament (P0)** (`vergleichsbericht-subagent
     `Notification::error().action(…)`) and SSH reconnect affordance already
     exist and already produce readable messages.
 - **Next task:** T15-003 — Cross-platform & performance optimization
-  (`tasks/phase-14-testing/T15-003-cross-platform-performance.md`).
+  (`tasks/archive/phase-14-testing/T15-003-cross-platform-performance.md`).
 
 ## Prev Session: 2026-09-02 (T15-001 — Visual parity verification / design polish)
 
 ### What Was Done
 - **T15-001 ✅ Done.** Static visual-parity audit of the GPUI port against the
   frozen `reference-src/` design spec + first round of polish fixes.
-  - **New `tasks/phase-14-testing/T15-001-feinschliff-catalog.md`** — living
+  - **New `tasks/archive/phase-14-testing/T15-001-feinschliff-catalog.md`** — living
     checklist. Findings: theme tokens (colors, radii, shadows, animation,
     typography) are already a verified 1:1 port of `globals.css` (`theme` crate
     tests confirm). Editor syntax palettes + git-graph lane colors are
@@ -7204,7 +7209,7 @@ Feature-parity audit **Block A — Fundament (P0)** (`vergleichsbericht-subagent
   `reference-src/` source (Tailwind classes + `globals.css`), which is the
   repo's designated authority.
 - **Next task:** T15-002 — Fehlerbehandlung & Robustheit (app-weit)
-  (`tasks/phase-14-testing/T15-002-error-handling-robustness.md`).
+  (`tasks/archive/phase-14-testing/T15-002-error-handling-robustness.md`).
 
 ## Prev Session: 2026-09-02 (T14-002 — Scrollback persistence)
 
@@ -7321,7 +7326,7 @@ Feature-parity audit **Block A — Fundament (P0)** (`vergleichsbericht-subagent
   - `restore_session` runs inside `Workspace::new`; `connect_host` /
     `open_sftp` there spawn async tasks — fine, non-blocking.
 - **Next task:** Phase 13 is complete. Next is **Phase 14 — Testing & Polish**,
-  starting with **T15-001** — Visual parity (`tasks/phase-14-testing/`).
+  starting with **T15-001** — Visual parity (`tasks/archive/phase-14-testing/`).
 
 ### (previous) T13-004 — Shortcut configuration
 
@@ -7373,7 +7378,7 @@ Feature-parity audit **Block A — Fundament (P0)** (`vergleichsbericht-subagent
   menu action. Live key-capture shows the final chord only (no incremental
   modifier preview). No cross-window keybind-changed event bus (single
   window; `apply_keybinds` is called directly).
-- **Next task:** first unstarted task after phase-12 — check `tasks/ROADMAP.md`
+- **Next task:** first unstarted task after phase-12 — check `tasks/archive/ROADMAP.md`
   (Phase 13: Session-Persistence & Scrollback).
 
 ### (previous) T13-003 — Terminal & Editor settings
@@ -7533,7 +7538,7 @@ Feature-parity audit **Block A — Fundament (P0)** (`vergleichsbericht-subagent
 - Branch `master`, committed. Pre-existing unrelated `CLAUDE.md` working-tree
   edit deliberately left untouched / uncommitted.
 - **Next: T13-002 — Appearance & Theme settings**
-  (`tasks/phase-12-settings/T13-002-appearance-theme-settings.md`). Then
+  (`tasks/archive/phase-12-settings/T13-002-appearance-theme-settings.md`). Then
   T13-003 (wires Terminal/Editor to actually consume `PreferencesStore` — only
   `theme` is wired so far) and T13-004 (shortcut config).
 
@@ -7609,7 +7614,7 @@ Feature-parity audit **Block A — Fundament (P0)** (`vergleichsbericht-subagent
 ### State / Next
 - Branch `master`, committed. Pre-existing unrelated `CLAUDE.md` working-tree
   edit deliberately left untouched / uncommitted.
-- **Next: T12-003** (or next unstarted task in `tasks/phase-11-snippets-palette/`
+- **Next: T12-003** (or next unstarted task in `tasks/archive/phase-11-snippets-palette/`
   / then phase-12). Check ROADMAP.
 
 ### Notes / Quirks (T12-002)
@@ -7672,7 +7677,7 @@ Feature-parity audit **Block A — Fundament (P0)** (`vergleichsbericht-subagent
 - Branch `master`, committed. Pre-existing unrelated `CLAUDE.md` working-tree
   edit deliberately left untouched / uncommitted.
 - **Next: T12-002 — Command-Palette**
-  (`tasks/phase-11-snippets-palette/T12-002-command-palette.md`).
+  (`tasks/archive/phase-11-snippets-palette/T12-002-command-palette.md`).
 
 ### Notes / Quirks (T12-001)
 - The reference `substituteSnippetVariables` does **no** escaping/quoting — it
@@ -7770,7 +7775,7 @@ Feature-parity audit **Block A — Fundament (P0)** (`vergleichsbericht-subagent
 - Branch `master`, committed. Pre-existing unrelated `CLAUDE.md` working-tree
   edit deliberately left untouched / uncommitted.
 - **Phase 10 (AI-Chat) is complete.** Next: **T12-001 — Befehl-Snippets-System**
-  (`tasks/phase-11-snippets-palette/T12-001-snippets-system.md`).
+  (`tasks/archive/phase-11-snippets-palette/T12-001-snippets-system.md`).
 
 ### Notes / Quirks (T11-006)
 - Grant enforcement is **server-side** (T11-005 backend). `AgentAccessStore` is
@@ -7834,7 +7839,7 @@ Feature-parity audit **Block A — Fundament (P0)** (`vergleichsbericht-subagent
 - Branch `master`, committed. Pre-existing unrelated `CLAUDE.md` working-tree
   edit deliberately left untouched / uncommitted.
 - **Next: T11-006 — MCP-Bridge UI & Grants**
-  (`tasks/phase-10-ai-chat/T11-006-mcp-bridge-ui-grants.md`) — Settings→AI Agent
+  (`tasks/archive/phase-10-ai-chat/T11-006-mcp-bridge-ui-grants.md`) — Settings→AI Agent
   Bridge pane (enable/port/token/timeout/auto-revoke), the tab context-menu
   "Grant AI Agent Access" toggle + header badge, the `mcpNotifyOnActivity`
   preference that consumes `McpActivity`, and the local-tab grant path
@@ -7929,7 +7934,7 @@ Feature-parity audit **Block A — Fundament (P0)** (`vergleichsbericht-subagent
 - Branch `master`, committed. Pre-existing unrelated `CLAUDE.md` working-tree
   edit deliberately left uncommitted / untouched.
 - **Next: T11-005 — MCP-Bridge-Server**
-  (`tasks/phase-10-ai-chat/T11-005-mcp-bridge-server.md`).
+  (`tasks/archive/phase-10-ai-chat/T11-005-mcp-bridge-server.md`).
 
 ### Notes / Quirks (T11-004)
 - **No real workspace-backed `LiveBridge` yet.** The trait is `Send + Sync`
@@ -8009,7 +8014,7 @@ Feature-parity audit **Block A — Fundament (P0)** (`vergleichsbericht-subagent
 - Branch `master`, committed. Pre-existing unrelated `CLAUDE.md` working-tree
   edit deliberately left uncommitted / untouched.
 - **Next: T11-004 — Agent/Tool-System und Live-Bridge**
-  (`tasks/phase-10-ai-chat/T11-004-agent-tool-system.md`) — the actual
+  (`tasks/archive/phase-10-ai-chat/T11-004-agent-tool-system.md`) — the actual
   tool-execution loop behind the approval cards.
 
 ### Notes / Quirks (T11-003)
@@ -8084,7 +8089,7 @@ Feature-parity audit **Block A — Fundament (P0)** (`vergleichsbericht-subagent
 - Branch `master`, committed. Pre-existing unrelated `CLAUDE.md` working-tree
   edit deliberately left uncommitted / untouched.
 - **Next: T11-003 — Chat UI & streaming markdown**
-  (`tasks/phase-10-ai-chat/T11-003-chat-ui-markdown.md`). Build the GPUI chat
+  (`tasks/archive/phase-10-ai-chat/T11-003-chat-ui-markdown.md`). Build the GPUI chat
   panel/view rendering off `AiChatStore`; wire it + a Settings→AI provider pane
   into `Workspace`. T11-004 is the agent/tool execution loop.
 
@@ -8159,7 +8164,7 @@ Feature-parity audit **Block A — Fundament (P0)** (`vergleichsbericht-subagent
 - Branch `master`, committed. Pre-existing unrelated `CLAUDE.md` working-tree
   edit deliberately left uncommitted / untouched.
 - **Next: T11-002 — Chat store & session management**
-  (`tasks/phase-10-ai-chat/T11-002-chat-store-sessions.md`). Builds the session
+  (`tasks/archive/phase-10-ai-chat/T11-002-chat-store-sessions.md`). Builds the session
   history / persistence layer on top of this crate; T11-003 is the chat UI,
   T11-004 the agent/tool loop.
 
@@ -8254,7 +8259,7 @@ Feature-parity audit **Block A — Fundament (P0)** (`vergleichsbericht-subagent
   edit deliberately left uncommitted / untouched.
 - Phase 9 (Git-Graph) is now complete. **Next: Phase 10 — AI-Chat-System**,
   first task **T11-001** (AI-Provider-Integration, Multi-Provider BYOK),
-  `tasks/phase-10-ai-chat/`.
+  `tasks/archive/phase-10-ai-chat/`.
 
 ### Notes / Quirks (T10-001)
 - The `TabKind::GitGraph` / `TabKind::CommitDiff` tab variants exist in
@@ -8329,7 +8334,7 @@ Feature-parity audit **Block A — Fundament (P0)** (`vergleichsbericht-subagent
 
 ### State / Next
 - Branch: `master`. Next task: **first not-done task after T09-002** — check
-  `tasks/ROADMAP.md` (phase 09 Git-Graph is referenced as follow-up).
+  `tasks/archive/ROADMAP.md` (phase 09 Git-Graph is referenced as follow-up).
 - Note: pre-existing uncommitted `CLAUDE.md` edit (not ours) left untouched.
 
 ---
@@ -8424,7 +8429,7 @@ Feature-parity audit **Block A — Fundament (P0)** (`vergleichsbericht-subagent
   edit deliberately left uncommitted / untouched.
 
 ### Next
-- **T09-002 — Branch management & stash** (`tasks/phase-08-git-ui/
+- **T09-002 — Branch management & stash** (`tasks/archive/phase-08-git-ui/
   T09-002-branch-stash.md`): branch dropdown/switch/create/delete/rename +
   stash push/list/pop/apply/drop UI. Backend fns already exist
   (`git_checkout_branch`, `git_create_branch`, `git_stash_*`, …). Hook the
@@ -8489,8 +8494,8 @@ Feature-parity audit **Block A — Fundament (P0)** (`vergleichsbericht-subagent
   edit deliberately left uncommitted / untouched.
 
 ### Next
-- **Phase 8 — Git UI & Source Control** (`tasks/phase-08-*`, first task
-  T09-001 or the lowest-numbered pending — check `tasks/ROADMAP.md`).
+- **Phase 8 — Git UI & Source Control** (`tasks/archive/phase-08-*`, first task
+  T09-001 or the lowest-numbered pending — check `tasks/archive/ROADMAP.md`).
   Phase 7 (SFTP) is now complete.
 
 ### Notes / Quirks (T08-002)
@@ -8572,7 +8577,7 @@ Feature-parity audit **Block A — Fundament (P0)** (`vergleichsbericht-subagent
   edit deliberately left uncommitted / untouched.
 
 ### Next
-- **T08-002** — SFTP transfers (upload/download/queue) (`tasks/phase-07-sftp/
+- **T08-002** — SFTP transfers (upload/download/queue) (`tasks/archive/phase-07-sftp/
   T08-002-sftp-transfers.md`). Backend transfer worker (`sftp/worker.rs`,
   `sftp/commands.rs::enqueue_transfer` etc.) already exists — this is the
   queue UI + drag-between-panes + context-menu "Download to…/Upload here…".
@@ -8642,7 +8647,7 @@ Feature-parity audit **Block A — Fundament (P0)** (`vergleichsbericht-subagent
   edit deliberately left uncommitted / untouched.
 
 ### Next
-- **T08-001** — SFTP-Dateibrowser (`tasks/phase-07-sftp/`). Deps T07-001,
+- **T08-001** — SFTP-Dateibrowser (`tasks/archive/phase-07-sftp/`). Deps T07-001,
   T04-001/2, T05-001 (all done).
 
 ### Notes / Quirks (T07-003)
@@ -8714,7 +8719,7 @@ Feature-parity audit **Block A — Fundament (P0)** (`vergleichsbericht-subagent
   edit deliberately left uncommitted / untouched.
 
 ### Next
-- **T07-003** — SSH config import/export (`tasks/phase-06-ssh-ui/
+- **T07-003** — SSH config import/export (`tasks/archive/phase-06-ssh-ui/
   T07-003-ssh-config-import-export.md`). Dep: T07-001 (done). Backend
   `ssh/config_parser.rs` already exists.
 
@@ -8796,7 +8801,7 @@ Feature-parity audit **Block A — Fundament (P0)** (`vergleichsbericht-subagent
   edit deliberately left uncommitted / untouched.
 
 ### Next
-- **T07-002** — Jump-Hosts & Tunnel (`tasks/phase-06-ssh-ui/T07-002-*`). Dep:
+- **T07-002** — Jump-Hosts & Tunnel (`tasks/archive/phase-06-ssh-ui/T07-002-*`). Dep:
   T07-001 (done). Backend `ssh/tunnels.rs` + jump-host resolution in
   `ssh_connect` already exist; this is largely UI (host-form jump-host picker,
   tunnel editor) + wiring.
@@ -8864,8 +8869,8 @@ Feature-parity audit **Block A — Fundament (P0)** (`vergleichsbericht-subagent
   edit deliberately left uncommitted / untouched.
 
 ### Next
-- **T06-005** (or next lowest-numbered pending in `tasks/phase-05-editor/`;
-  T06-001..004 all Done) — check `tasks/ROADMAP.md`.
+- **T06-005** (or next lowest-numbered pending in `tasks/archive/phase-05-editor/`;
+  T06-001..004 all Done) — check `tasks/archive/ROADMAP.md`.
 
 ### Notes / Quirks (T06-004)
 - Diff body renders every hunk row directly (no virtualization). Hunks
@@ -8935,7 +8940,7 @@ Feature-parity audit **Block A — Fundament (P0)** (`vergleichsbericht-subagent
   edit deliberately left uncommitted / untouched.
 
 ### Next
-- **T06-004** — Diff view (`tasks/phase-05-editor/T06-004-diff-view.md`).
+- **T06-004** — Diff view (`tasks/archive/phase-05-editor/T06-004-diff-view.md`).
 
 ### Notes / Quirks (T06-003)
 - No Phase 12 settings UI yet: vim mode is toggled only via the persisted
@@ -9014,7 +9019,7 @@ Feature-parity audit **Block A — Fundament (P0)** (`vergleichsbericht-subagent
   edit deliberately left uncommitted / untouched.
 
 ### Next
-- **T06-003** — Vim mode (`tasks/phase-05-editor/T06-003-vim-mode.md`). Dep: T06-001.
+- **T06-003** — Vim mode (`tasks/archive/phase-05-editor/T06-003-vim-mode.md`). Dep: T06-001.
 
 ### Notes / Quirks
 - Grammar crates export their highlights query under **inconsistent names**:
@@ -9194,7 +9199,7 @@ Feature-parity audit **Block A — Fundament (P0)** (`vergleichsbericht-subagent
 - `reference-src/` untouched. **Phase 04: T05-001 + T05-002 done.**
 
 ### What's Next
-- Next roadmap task after T05-002 (see `tasks/ROADMAP.md`) — Phase 04 is
+- Next roadmap task after T05-002 (see `tasks/archive/ROADMAP.md`) — Phase 04 is
   complete if T05-002 is its last task; otherwise the next `T05-*`. Likely
   Phase 05 (Editor) T06-001.
 
@@ -9281,7 +9286,7 @@ Feature-parity audit **Block A — Fundament (P0)** (`vergleichsbericht-subagent
 - `reference-src/` untouched. **Phase 04: T05-001 done, T05-002 next.**
 
 ### What's Next
-- **T05-002** (`tasks/phase-04-explorer/T05-002-drag-drop-actions.md`) —
+- **T05-002** (`tasks/archive/phase-04-explorer/T05-002-drag-drop-actions.md`) —
   drag-and-drop + advanced file actions (chmod/chown, copy/cut/paste, OS drop).
   Dep: T05-001 (done).
 
@@ -9369,7 +9374,7 @@ Feature-parity audit **Block A — Fundament (P0)** (`vergleichsbericht-subagent
 - `reference-src/` untouched. **Phase 03 complete** (T04-001..005 all done).
 
 ### What's Next
-- **Phase 04 — File-Explorer: T05-001** (`tasks/phase-04-explorer/T05-001-*`) —
+- **Phase 04 — File-Explorer: T05-001** (`tasks/archive/phase-04-explorer/T05-001-*`) —
   Dateibaum & Explorer-Grundlagen. Dep: T04-002 (done). No blockers.
 
 ---
@@ -9441,7 +9446,7 @@ Feature-parity audit **Block A — Fundament (P0)** (`vergleichsbericht-subagent
 - `reference-src/` untouched.
 
 ### What's Next
-- **T04-005 — Native macOS menus** (`tasks/phase-03-tabs-workspace/T04-005-native-macos-menus.md`).
+- **T04-005 — Native macOS menus** (`tasks/archive/phase-03-tabs-workspace/T04-005-native-macos-menus.md`).
   Dep: T04-003 (done). No blockers.
 
 ---
@@ -9466,7 +9471,7 @@ Feature-parity audit **Block A — Fundament (P0)** (`vergleichsbericht-subagent
 - **Verified:** `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace` (all 14 suites green; ui unchanged at 31 — no new unit tests, the feature is view/window wiring), `cargo build --bin labonair` — all green. Not visually run — user should `cargo run` and check: header + sidebar rail + tabs + statusbar all render; ☰ / `Cmd-B` toggle sidebar; rail icons switch panel; drag sidebar edge to resize; `Cmd-F` opens header search, typing scrolls/highlights a match in the active terminal, `Esc` closes it; statusbar breadcrumb tracks `cd`; resize/move the window, quit, relaunch → geometry restored.
 
 ### What's Next
-- **T04-004 — Notifications & Toasts** (`tasks/phase-03-tabs-workspace/T04-004-notifications-toasts.md`). No blockers.
+- **T04-004 — Notifications & Toasts** (`tasks/archive/phase-03-tabs-workspace/T04-004-notifications-toasts.md`). No blockers.
 
 ---
 
@@ -9495,7 +9500,7 @@ Feature-parity audit **Block A — Fundament (P0)** (`vergleichsbericht-subagent
 - `TabData.session_id` is still set by `open_workspace` for the initial pane (label/compat); teardown now goes through the layout's leaf list, so multi-pane tabs fully clean up.
 
 ### What's Next
-- **T04-003** `tasks/phase-03-tabs-workspace/T04-003-app-shell-window-chrome.md` — app shell & window chrome. Dep: T04-002 (done).
+- **T04-003** `tasks/archive/phase-03-tabs-workspace/T04-003-app-shell-window-chrome.md` — app shell & window chrome. Dep: T04-002 (done).
 
 ---
 
@@ -9533,7 +9538,7 @@ Feature-parity audit **Block A — Fundament (P0)** (`vergleichsbericht-subagent
 - Editor/Sftp/Git/etc. tab kinds render a placeholder; their content + interactive creation come with their phases.
 
 ### What's Next
-- **T04-002** `tasks/phase-03-tabs-workspace/T04-002-split-pane-layout-workspace.md` — split-pane layout & workspace (`PaneNode` tree, multiple sessions per tab). Dep: T04-001 (done).
+- **T04-002** `tasks/archive/phase-03-tabs-workspace/T04-002-split-pane-layout-workspace.md` — split-pane layout & workspace (`PaneNode` tree, multiple sessions per tab). Dep: T04-001 (done).
 
 ### Blockers
 - None.
@@ -9575,7 +9580,7 @@ Feature-parity audit **Block A — Fundament (P0)** (`vergleichsbericht-subagent
 - Blur uses `image::imageops::blur` (true Gaussian, O(n·r)) applied once at load — not GPUI (no blur filter exists in 0.2.2).
 
 ### What's Next
-- **T04-001** `tasks/phase-03-tabs-workspace/T04-001-*` — Tab-Leiste & Tab-Verwaltung (wires the T03-005 `TerminalRegistry` into the UI).
+- **T04-001** `tasks/archive/phase-03-tabs-workspace/T04-001-*` — Tab-Leiste & Tab-Verwaltung (wires the T03-005 `TerminalRegistry` into the UI).
 
 ### Blockers
 - None.
@@ -9602,7 +9607,7 @@ Feature-parity audit **Block A — Fundament (P0)** (`vergleichsbericht-subagent
 - `reference-src/` untouched.
 
 ### What's Next
-- **T04-001** `tasks/phase-03-tabs-workspace/T04-001-*` — Tab-Leiste & Tab-Verwaltung. This is where the registry gets wired into the UI (replace the direct `TerminalSession` in `crates/ui/src/terminal.rs`).
+- **T04-001** `tasks/archive/phase-03-tabs-workspace/T04-001-*` — Tab-Leiste & Tab-Verwaltung. This is where the registry gets wired into the UI (replace the direct `TerminalSession` in `crates/ui/src/terminal.rs`).
 - **T02-006** (terminal background images) also still unblocked.
 
 ### Blockers
@@ -9635,7 +9640,7 @@ Feature-parity audit **Block A — Fundament (P0)** (`vergleichsbericht-subagent
 - OSC 633 (VS Code shell integration) is not parsed — the reference scripts only emit 7 + 133, so there is no path that needs it.
 
 ### What's Next
-- **T03-005** `tasks/phase-02-terminal/T03-005-local-pty-sessions.md` — local PTY sessions & multi-tab terminal. Deps: T03-001–004 (all done).
+- **T03-005** `tasks/archive/phase-02-terminal/T03-005-local-pty-sessions.md` — local PTY sessions & multi-tab terminal. Deps: T03-001–004 (all done).
 - **T02-006** (terminal background images) also still unblocked.
 
 ### Blockers
@@ -9675,7 +9680,7 @@ Feature-parity audit **Block A — Fundament (P0)** (`vergleichsbericht-subagent
 - Numeric keypad application mode (DECKPAM) is tracked in `ModeState.app_keypad` but GPUI doesn't distinguish keypad keys, so no keypad-specific sequences are emitted.
 
 ### What's Next
-- **T03-004** `tasks/phase-02-terminal/T03-004-shell-integration-cwd.md` — OSC 133 shell integration + CWD tracking. Deps: T03-002 (done).
+- **T03-004** `tasks/archive/phase-02-terminal/T03-004-shell-integration-cwd.md` — OSC 133 shell integration + CWD tracking. Deps: T03-002 (done).
 - **T02-006** (terminal background images) also unblocked.
 
 ### Blockers
@@ -9716,7 +9721,7 @@ Feature-parity audit **Block A — Fundament (P0)** (`vergleichsbericht-subagent
 - Wide/CJK cells: the engine already drops `WIDE_CHAR_SPACER` cells; the wide glyph occupies one run cell but is positioned for a single column (double-width advance handled by GPUI text shaping, not by the cell grid). Verify under T03-003/T15-001.
 
 ### What's Next
-- **T03-003** `tasks/phase-02-terminal/T03-003-keyboard-mouse-mapping.md` — full keyboard + mouse mapping (modifiers, mouse reporting, drag selection, copy/paste, bracketed paste). Deps: T03-002 (done).
+- **T03-003** `tasks/archive/phase-02-terminal/T03-003-keyboard-mouse-mapping.md` — full keyboard + mouse mapping (modifiers, mouse reporting, drag selection, copy/paste, bracketed paste). Deps: T03-002 (done).
 - **T02-006** (terminal background images) is now unblocked (needed the renderer element).
 
 ### Blockers
@@ -9747,7 +9752,7 @@ Feature-parity audit **Block A — Fundament (P0)** (`vergleichsbericht-subagent
 - `reference-src/` untouched.
 
 ### What's Next
-- **T03-002** `tasks/phase-02-terminal/T03-002-gpui-terminal-renderer.md` — GPUI cell renderer consuming `engine::RenderableScreen`. Deps: T03-001 (done) + T02-004 (done).
+- **T03-002** `tasks/archive/phase-02-terminal/T03-002-gpui-terminal-renderer.md` — GPUI cell renderer consuming `engine::RenderableScreen`. Deps: T03-001 (done) + T02-004 (done).
 - **T02-006** (terminal background images) is still pending and now only blocked on the renderer element from T03-002.
 
 ### Blockers
@@ -9773,7 +9778,7 @@ Feature-parity audit **Block A — Fundament (P0)** (`vergleichsbericht-subagent
 - `reference-src/` untouched.
 
 ### What's Next
-- **T02-006** `tasks/phase-01-theme/T02-006-terminal-background-images.md` — terminal background images. Deps: T02-002 (done) + Phase 2 (terminal engine, not yet started) — **may be blocked** until Phase 02 exists; check the task file's dependencies before starting.
+- **T02-006** `tasks/archive/phase-01-theme/T02-006-terminal-background-images.md` — terminal background images. Deps: T02-002 (done) + Phase 2 (terminal engine, not yet started) — **may be blocked** until Phase 02 exists; check the task file's dependencies before starting.
 
 ### Blockers
 - T02-006 lists a "Phase 2" dependency — the terminal engine (T03-*) does not exist yet. Next session must check whether T02-006 can proceed or whether Phase 02 comes first.
@@ -9801,7 +9806,7 @@ Feature-parity audit **Block A — Fundament (P0)** (`vergleichsbericht-subagent
 - `reference-src/` untouched.
 
 ### What's Next
-- **T02-005** `tasks/phase-01-theme/T02-005-font-loading.md` — font handling / bundling (GPUI). Dep (T01-001) satisfied.
+- **T02-005** `tasks/archive/phase-01-theme/T02-005-font-loading.md` — font handling / bundling (GPUI). Dep (T01-001) satisfied.
 - Phase 02 (T03-001) will consume `TerminalColors` when it integrates alacritty_terminal.
 
 ### Blockers
@@ -9835,7 +9840,7 @@ Feature-parity audit **Block A — Fundament (P0)** (`vergleichsbericht-subagent
 - `reference-src/` untouched.
 
 ### What's Next
-- **T02-004** `tasks/phase-01-theme/T02-004-terminal-palette.md` — integrate the terminal ANSI palette into the theme. Deps (T02-001) satisfied.
+- **T02-004** `tasks/archive/phase-01-theme/T02-004-terminal-palette.md` — integrate the terminal ANSI palette into the theme. Deps (T02-001) satisfied.
 - Later: **T13-002** must wire `import_theme_file` / `active_theme_file` / backend `themes_*` into the Appearance settings pane (the deferred criterion 7 of T02-003).
 
 ### Blockers
@@ -9863,7 +9868,7 @@ Feature-parity audit **Block A — Fundament (P0)** (`vergleichsbericht-subagent
 - `reference-src/` untouched.
 
 ### What's Next
-- **T02-003** `tasks/phase-01-theme/T02-003-theme-import-export.md` — theme import/export for user themes. Deps (T02-001, T02-002) satisfied.
+- **T02-003** `tasks/archive/phase-01-theme/T02-003-theme-import-export.md` — theme import/export for user themes. Deps (T02-001, T02-002) satisfied.
 
 ### Blockers
 - None.
@@ -9887,7 +9892,7 @@ Feature-parity audit **Block A — Fundament (P0)** (`vergleichsbericht-subagent
 - `reference-src/` untouched.
 
 ### What's Next
-- **T02-002** `tasks/phase-01-theme/T02-002-theme-provider-store.md` — runtime theme provider + store (GPUI global). Deps (T02-001) satisfied.
+- **T02-002** `tasks/archive/phase-01-theme/T02-002-theme-provider-store.md` — runtime theme provider + store (GPUI global). Deps (T02-001) satisfied.
 
 ### Blockers
 - None.
@@ -9911,7 +9916,7 @@ Feature-parity audit **Block A — Fundament (P0)** (`vergleichsbericht-subagent
 - `reference-src/` untouched.
 
 ### What's Next
-- **Phase 00 complete.** Next is **T02-001** `tasks/phase-01-theme/T02-001-*.md` — extract design tokens from `reference-src/src/styles/globals.css`. Dep (T01-001) satisfied.
+- **Phase 00 complete.** Next is **T02-001** `tasks/archive/phase-01-theme/T02-001-*.md` — extract design tokens from `reference-src/src/styles/globals.css`. Dep (T01-001) satisfied.
 
 ### Blockers
 - None.
@@ -9937,7 +9942,7 @@ Feature-parity audit **Block A — Fundament (P0)** (`vergleichsbericht-subagent
 - `reference-src/` untouched.
 
 ### What's Next
-- **T01-005** `tasks/phase-00-setup/T01-005-ci-pipeline.md` — GitHub Actions: cargo check/clippy/test/fmt on macOS. Deps (T01-001) satisfied. Last task in phase 00.
+- **T01-005** `tasks/archive/phase-00-setup/T01-005-ci-pipeline.md` — GitHub Actions: cargo check/clippy/test/fmt on macOS. Deps (T01-001) satisfied. Last task in phase 00.
 
 ### Blockers
 - None.
@@ -9958,7 +9963,7 @@ Feature-parity audit **Block A — Fundament (P0)** (`vergleichsbericht-subagent
 - `reference-src/` untouched.
 
 ### What's Next
-- **T01-004** `tasks/phase-00-setup/T01-004-event-system.md` — typed event routing/logging on top of `crate::events`. Deps (T01-001, T01-002) satisfied.
+- **T01-004** `tasks/archive/phase-00-setup/T01-004-event-system.md` — typed event routing/logging on top of `crate::events`. Deps (T01-001, T01-002) satisfied.
 - Then T01-005 (CI).
 
 ### Blockers
@@ -9982,7 +9987,7 @@ Feature-parity audit **Block A — Fundament (P0)** (`vergleichsbericht-subagent
 - `reference-src/` untouched.
 
 ### What's Next
-- **T01-003** `tasks/phase-00-setup/T01-003-reference-symlink.md` — verify `reference-src/` is intact + write project README/.gitignore notes. Deps (T01-001) satisfied.
+- **T01-003** `tasks/archive/phase-00-setup/T01-003-reference-symlink.md` — verify `reference-src/` is intact + write project README/.gitignore notes. Deps (T01-001) satisfied.
 - Then T01-004 (event system — build typed routing on top of `crate::events`), T01-005 (CI).
 
 ### Blockers
@@ -10005,7 +10010,7 @@ Feature-parity audit **Block A — Fundament (P0)** (`vergleichsbericht-subagent
 - Working GPUI window. `reference-src/` untouched.
 
 ### What's Next
-- **T01-002** `tasks/phase-00-setup/T01-002-extract-backend-logic.md` — port backend modules from `reference-src/src-tauri/src/modules/` into `crates/backend/`, stripping Tauri/IPC. Deps (T01-001) satisfied.
+- **T01-002** `tasks/archive/phase-00-setup/T01-002-extract-backend-logic.md` — port backend modules from `reference-src/src-tauri/src/modules/` into `crates/backend/`, stripping Tauri/IPC. Deps (T01-001) satisfied.
 
 ### Blockers
 - None.
@@ -10035,7 +10040,7 @@ Feature-parity audit **Block A — Fundament (P0)** (`vergleichsbericht-subagent
 - Roadmap now has **55 task files** across 15 phases + expanded ROADMAP.md.
 
 ### What's Next
-1. Execute **`tasks/phase-00-setup/T01-001-setup-cargo-workspace.md`** per the Next Task Protocol: scaffold the cargo workspace (7 crates), empty GPUI window, `cargo check`/`clippy`/`run` green → mark `✅ Done` → update handshake → commit.
+1. Execute **`tasks/archive/phase-00-setup/T01-001-setup-cargo-workspace.md`** per the Next Task Protocol: scaffold the cargo workspace (7 crates), empty GPUI window, `cargo check`/`clippy`/`run` green → mark `✅ Done` → update handshake → commit.
 2. Then T01-002 (extract backend from `reference-src/`) → T01-003 (verify reference-src + README) → T01-004 (events/logging) → T01-005 (CI).
 
 ### Blockers
@@ -10046,7 +10051,7 @@ Feature-parity audit **Block A — Fundament (P0)** (`vergleichsbericht-subagent
 ## Session: 2026-08-31 (Roadmap complete + repo created + CLAUDE.md Next Task Protocol)
 
 ### What Was Done
-- **Roadmap built out fully.** `tasks/ROADMAP.md` defines the 15-phase port (Setup → Theme → Terminal → Tabs → Explorer → Editor → SSH → SFTP → Git → Git-Graph → AI → Snippets/Palette → Settings → Session → Testing/Polish). 43 task files exist under `tasks/phase-*/` (each is instruction-only: context, goal, instructions, acceptance criteria, notes, warnings — no code). Naming: `T{NN}-{OOO}.md` where NN = phase 01–15, OOO = task number (files currently use the sequential scheme, e.g. `T01-001-setup-cargo-workspace.md`, `T13-001-settings-preferences.md`, `T15-004-packaging-release.md`). Next Task Protocol in CLAUDE.md consumes these in order.
+- **Roadmap built out fully.** `tasks/archive/ROADMAP.md` defines the 15-phase port (Setup → Theme → Terminal → Tabs → Explorer → Editor → SSH → SFTP → Git → Git-Graph → AI → Snippets/Palette → Settings → Session → Testing/Polish). 43 task files exist under `tasks/archive/phase-*/` (each is instruction-only: context, goal, instructions, acceptance criteria, notes, warnings — no code). Naming: `T{NN}-{OOO}.md` where NN = phase 01–15, OOO = task number (files currently use the sequential scheme, e.g. `T01-001-setup-cargo-workspace.md`, `T13-001-settings-preferences.md`, `T15-004-packaging-release.md`). Next Task Protocol in CLAUDE.md consumes these in order.
 - **Initial commit** `ead881a` committed the full repo (including the copied original source, kept as reference).
 - **GitHub repo created & linked**: `gh repo create Labonair-rust --public --source=. --remote=origin --push` → remote `origin` set, `master` tracked to `origin/master`, URL https://github.com/Snenjih/Labonair-rust
 - **CLAUDE.md rewritten** for the port (was stale Tauri/web content). Now documents: Rust/GPUI commands (`cargo check/build/run/clippy/test/fmt`), the single-binary GPUI architecture, Critical Rules (no web tech, reference-only original, GPU API must be source-verified), **Next Task Protocol** (the core task-by-task workflow), session start/end protocols, bug-memory rule, reference usage, language protocol.

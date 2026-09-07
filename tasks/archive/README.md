@@ -1,4 +1,9 @@
-# Task Registry
+# Archived Task Registry
+
+All content in this directory is historical. It includes the original
+`ROADMAP.md`, the superseded `phase-*` task sequence, and the earlier
+`TASK_*` records. These files are retained for traceability only and must not
+be used as an implementation queue; new work belongs in `../rework/`.
 
 ## Phase 1 — Rebranding & Foundation
 

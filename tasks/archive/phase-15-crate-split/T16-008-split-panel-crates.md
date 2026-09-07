@@ -14,7 +14,7 @@ Die fünf Seiten-Panel-Views aus `crates/ui` in je einen eigenen Crate lösen:
 `labonair-panel-explorer`, `-panel-scm`, `-panel-git-graph`,
 `-panel-snippets`, `-panel-ai`. **Plus** die Host-Manager-View in ein eigenes,
 **kein-Panel**-Crate `labonair-hosts-ui` (siehe
-[`docs/architecture.md §8.1`](../../docs/architecture.md) — der Host-Manager
+[`docs/architecture.md §8.1`](../../../docs/architecture.md) — der Host-Manager
 ist weder Tab noch Dock-Panel mehr; die Verbindungs-Oberfläche liefert die
 Command-Palette, die Verwaltung zieht in T19-010 in die Settings). In dieser
 Task: reiner Move + Kompilierbarkeit. Das `impl Panel` für die fünf Panels

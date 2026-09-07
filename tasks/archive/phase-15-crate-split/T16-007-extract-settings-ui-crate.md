@@ -19,7 +19,7 @@ Der Zed-Style-Umbau (generierte UI, JSON-Editor) passiert in Phase 18
 **Zusatz-Scope (Thema 2 — Command-Palette-Host-Zugang).** T16-004 hat
 `labonair-command-palette` schon extrahiert und ist `✅ Done`; die dort noch
 fehlende Fähigkeit für den Host-Workflow (siehe
-[`docs/architecture.md §8.1`](../../docs/architecture.md)) wird hier
+[`docs/architecture.md §8.1`](../../../docs/architecture.md)) wird hier
 nachgezogen, weil T16-004 nicht mehr geändert werden soll und T16-006 gerade
 läuft. Rein additiv, keine bestehende Palette-Semantik brechen. Siehe
 Abschnitt **„Zusatz: Palette-Host-Seite"** unten.

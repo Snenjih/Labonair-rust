@@ -53,7 +53,7 @@ markieren.
    auf den neuen Crate-Graphen bzw. auf `docs/architecture.md` verweisen);
    Critical Rules ggf. um die in T18-007 ergänzte Regel 8 konsolidieren
    (falls noch nicht drin). Sparsam — nur Fakten, die sich geändert haben.
-3. **`tasks/ROADMAP.md`**: die Phasen 15–21 als abgeschlossen markieren
+3. **`tasks/archive/ROADMAP.md`**: die Phasen 15–21 als abgeschlossen markieren
    (Statusspalte), „Erfolgskriterien" um die Rework-Kriterien ergänzen
    (Modularität/Personalisierung/Layout-Vertrag), Verweis auf `docs/signoff-*`.
 4. **`handshake.md`** konsolidieren: die vielen Rework-Session-Einträge zu
@@ -75,7 +75,7 @@ markieren.
       Rezept.
 - [ ] `CLAUDE.md` „## Architecture" stimmt mit der Realität überein (oder
       verweist sauber auf `docs/architecture.md`).
-- [ ] `tasks/ROADMAP.md`: Phasen 15–21 als erledigt markiert; Erfolgskriterien
+- [ ] `tasks/archive/ROADMAP.md`: Phasen 15–21 als erledigt markiert; Erfolgskriterien
       ergänzt.
 - [ ] `handshake.md` ist auf einen konsolidierten Rework-Abschluss-Block +
       „was als Nächstes" reduziert.

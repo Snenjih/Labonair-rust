@@ -30,7 +30,7 @@ Tasks (T16-002 … T22-001) referenzieren dieses Dokument als Wahrheit.
   `settings_ui/`, `settings_json/`, `settings_macros/`, `theme/`, `ui/`,
   `component/`, je Panel ein Crate (`project_panel`, `outline_panel`,
   `git_ui`, …).
-- Bestehende Doku-Konventionen: `docs/` existiert bereits; `tasks/ROADMAP.md`
+- Bestehende Doku-Konventionen: `docs/` existiert bereits; `tasks/archive/ROADMAP.md`
   ist die Roadmap-Wahrheit; `CLAUDE.md` (Repo-Root) enthält die Critical Rules.
 
 ## Anweisungen zur Umsetzung
@@ -82,7 +82,7 @@ Tasks (T16-002 … T22-001) referenzieren dieses Dokument als Wahrheit.
    (Status quo lassen; nur `settings` herauslösen; Feature-Ordner statt
    Crates), Konsequenzen (mehr `Cargo.toml`, klarere APIs, schnellere
    Inkremental-Builds im geänderten Crate, Migrationsaufwand).
-3. **`tasks/ROADMAP.md` erweitern**: neuer Abschnitt „## Architektur-Rework
+3. **`tasks/archive/ROADMAP.md` erweitern**: neuer Abschnitt „## Architektur-Rework
    (Phasen 15–21)" mit den Phasen-Tabellen aus Bericht §3 (Task-ID, Titel,
    Abhängigkeit). Den „## Vision"-Abschnitt um einen Absatz zur neuen
    Philosophie ergänzen (Parität = Minimum, nicht Ziel).
@@ -101,7 +101,7 @@ Tasks (T16-002 … T22-001) referenzieren dieses Dokument als Wahrheit.
       Activity-Rail, Titlebar-Bar-Items).
 - [ ] `docs/adr/0001-crate-decomposition.md` existiert im Standard-ADR-Format
       (Kontext / Entscheidung / Alternativen / Konsequenzen).
-- [ ] `tasks/ROADMAP.md` listet die Phasen 15–21 mit allen Task-IDs.
+- [ ] `tasks/archive/ROADMAP.md` listet die Phasen 15–21 mit allen Task-IDs.
 - [ ] `CLAUDE.md` verweist auf `docs/architecture.md`.
 - [ ] Gates grün: `cargo fmt --check`, `cargo check --workspace --all-targets`,
       `cargo clippy --workspace --all-targets -- -D warnings`,

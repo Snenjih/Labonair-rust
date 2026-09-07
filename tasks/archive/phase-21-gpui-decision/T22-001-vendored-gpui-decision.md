@@ -64,7 +64,7 @@ ein konkretes geplantes Feature es erzwingt.
    („B nur wenn Feature X priorisiert wird UND `gpui-component`-Ersatz in
    Phase 19 zu ≥80 % steht").
 6. **Kein Merge von Vendoring in dieser Task** — wenn die Empfehlung B/C ist,
-   ein separates, klar abgegrenztes Folgeticket `tasks/phase-22-*/T23-001`
+   ein separates, klar abgegrenztes Folgeticket `tasks/archive/phase-22-*/T23-001`
    anlegen (mit dem Prototyp-Branch als Ausgangspunkt). Wenn A: die
    Workarounds als kleine Tickets festhalten und den Punkt schließen.
 7. **`docs/architecture.md`** (Abschnitt „Performance-Leitplanken" / neuer
@@ -104,4 +104,4 @@ ein konkretes geplantes Feature es erzwingt.
   und alle Contributor-Builds beeinflussen.
 
 ## Weiterführende Tasks
-- (bedingt) `tasks/phase-22-gpui-vendor/T23-001-*` — nur wenn ADR-Empfehlung B/C.
+- (bedingt) `tasks/archive/phase-22-gpui-vendor/T23-001-*` — nur wenn ADR-Empfehlung B/C.

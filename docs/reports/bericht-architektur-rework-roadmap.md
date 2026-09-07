@@ -7,7 +7,7 @@
 Erstellt: 2026-09-03
 Grundlage: `vergleichsbericht-zed-vs-rust.md` (Zed-Referenz vs. `crates/`)
 Status: **Planungsbericht** — noch keine Implementierung. Nach Freigabe werden
-daraus die Task-Dateien unter `tasks/phase-15..21/` geschrieben.
+daraus die Task-Dateien unter `tasks/archive/phase-15..21/` geschrieben.
 
 Nutzer-Entscheidungen (in diese Roadmap eingearbeitet):
 
@@ -49,7 +49,7 @@ Konkret bindend für alle Tasks dieses Reworks:
    `cx.notify` ohne Zustandsänderung; Startup- und Build-Zeit werden vor/nach
    dem Rework dokumentiert.
 
-Diese Philosophie ersetzt in `tasks/ROADMAP.md` (Abschnitt „Vision") die reine
+Diese Philosophie ersetzt in `tasks/archive/ROADMAP.md` (Abschnitt „Vision") die reine
 Parität-Formulierung — Parität bleibt Pflicht, ist aber ab hier das *Minimum*,
 nicht das Ziel.
 
@@ -173,7 +173,7 @@ Nummerierung folgt dem Bestand: Phase `NN` → Tasks `T{NN+1}-{OOO}`.
 Jede Phase endet mit grünen Gates (`cargo fmt --check`, `check`,
 `clippy -D warnings`, `test`) und `handshake.md`-Update.
 
-### Phase 15 — Crate-Zerlegung & Fundament  ·  `tasks/phase-15-crate-split/`  ·  **P0-1**
+### Phase 15 — Crate-Zerlegung & Fundament  ·  `tasks/archive/phase-15-crate-split/`  ·  **P0-1**
 
 Ziel: den `ui`-Monolithen (48k Z., `settings.rs` 5 957, `workspace.rs` 4 076,
 `app_shell.rs` 2 983) in fokussierte Crates zerlegen. **Reine Moves, null
@@ -192,7 +192,7 @@ Verhaltensänderung**, Gate grün nach jedem Crate.
 | **T16-009** | `labonair-shell` + `labonair-app` schlank | `AppShell` → `shell`-Crate; `crates/ui` wird Rest-Fassade oder entfällt; `app` nur noch Bootstrap | T16-006, T16-007, T16-008 |
 | **T16-010** | Build-Hygiene + Baseline | per-Crate-clippy in CI, Crate-Graph azyklisch prüfen (`cargo-depgraph`), `cargo check`-Zeit als Baseline dokumentieren | T16-009 |
 
-### Phase 16 — Root-Objekt & Registries  ·  `tasks/phase-16-registries/`  ·  **P0-2, P3**
+### Phase 16 — Root-Objekt & Registries  ·  `tasks/archive/phase-16-registries/`  ·  **P0-2, P3**
 
 Ziel: God-Object → Registries + dünne Shell; Dock-System mit mehreren Panels je
 Dock + Bottom-Dock; Overlay-Ebenen.
@@ -208,7 +208,7 @@ Dock + Bottom-Dock; Overlay-Ebenen.
 | **T17-007** | `CommandRegistry` | `.on_action`-Kette → registrierte Command-Handler; Palette + Keymap teilen die Registry | T17-005 |
 | **T17-008** | `AppEvent`-Bus entscheiden | an `cx.subscribe`-Brücke hängen (Backend→UI-Events) **oder** streichen — Entscheidung + Umsetzung | T17-006 |
 
-### Phase 17 — Neues Layout & Statusbar-Personalisierung  ·  `tasks/phase-17-layout/`  ·  **Philosophie + Layout-Vertrag**
+### Phase 17 — Neues Layout & Statusbar-Personalisierung  ·  `tasks/archive/phase-17-layout/`  ·  **Philosophie + Layout-Vertrag**
 
 Ziel: den Layout-Vertrag (§2.3) umsetzen.
 
@@ -222,7 +222,7 @@ Ziel: den Layout-Vertrag (§2.3) umsetzen.
 | **T18-006** | Migrator `barItemPlacements` | altes Schema (Titlebar+Statusbar) → `statusBarItemPlacements`; Titlebar-Items auf Statusbar-Default abbilden; einmalig, idempotent | T18-005 |
 | **T18-007** | Philosophie + Personalisierungs-Seite | Philosophie in `ROADMAP.md` + `CLAUDE.md` verankern; Settings-Seite „Personalisierung": Statusbar-Layout + Panel-Sichtbarkeit editierbar (spiegelt RMB-Menü) | T18-005 |
 
-### Phase 18 — Settings-System Zed-Style  ·  `tasks/phase-18-settings-core/`  ·  **P0-3, P1**
+### Phase 18 — Settings-System Zed-Style  ·  `tasks/archive/phase-18-settings-core/`  ·  **P0-3, P1**
 
 Ziel: typisierter Merge-Baum + generierte UI + JSON-Editor + Keymap-Datei +
 Projekt-Settings. Die parallele `FIELDS`-Tabelle verschwindet.
@@ -239,7 +239,7 @@ Projekt-Settings. Die parallele `FIELDS`-Tabelle verschwindet.
 | **T19-008** | Keymap als Datei | `keymap.json` mit Kontexten + Chords; Loader/Validator (reduzierter Port `keymap_file.rs`); `enum ShortcutId` nur noch Default-Quelle | T17-007 |
 | **T19-009** | Settings-Migrator | `labonair-settings.json` (`preferences`/`editor`/`mcp`) → `SettingsContent`; Keybind-Overrides → `keymap.json`; einmalig, Backup | T19-004, T19-008 |
 
-### Phase 19 — UI-Kit & Theme-System  ·  `tasks/phase-19-ui-kit/`  ·  **P2 + Theme**
+### Phase 19 — UI-Kit & Theme-System  ·  `tasks/archive/phase-19-ui-kit/`  ·  **P2 + Theme**
 
 Ziel: ein Primitive-Set, überall genutzt; Theme/Icon-Registry.
 
@@ -253,7 +253,7 @@ Ziel: ein Primitive-Set, überall genutzt; Theme/Icon-Registry.
 | **T20-006** | Icon-Themes | `IconName` + `file_icon`-Map → JSON-Icon-Theme, umschaltbar (Port `file_icons`/`icon_theme`) | T20-005 |
 | **T20-007** | `theme_settings`-Layer | UI-Dichte / Font-Skalen / Corner-Radius als Theme-Overrides statt Einzel-Prefs; an Settings-Baum anbinden | T20-005, T19-002 |
 
-### Phase 20 — Performance & Modularitäts-Abnahme  ·  `tasks/phase-20-perf-signoff/`
+### Phase 20 — Performance & Modularitäts-Abnahme  ·  `tasks/archive/phase-20-perf-signoff/`
 
 | Task | Titel | Kern-Ziel | Abh. |
 |---|---|---|---|
@@ -263,7 +263,7 @@ Ziel: ein Primitive-Set, überall genutzt; Theme/Icon-Registry.
 | **T21-004** | Modularitäts-/Personalisierungs-Abnahme | Checkliste gegen die Philosophie (Panels frei anordbar, Statusbar-Items L/R, Themes/Keymap als Datei, Projekt-Settings greifen) + Regressions-Durchlauf Parität vs. `reference-src` | alle Rework-Phasen |
 | **T21-005** | Architektur-Doku | `docs/architecture.md` finalisieren (Crate-Graph, Registries, Layout-Vertrag, Settings-Schichten); `handshake.md` konsolidieren | T21-004 |
 
-### Phase 21 — Decision-Gate  ·  `tasks/phase-21-gpui-decision/`  ·  **P4**
+### Phase 21 — Decision-Gate  ·  `tasks/archive/phase-21-gpui-decision/`  ·  **P4**
 
 | Task | Titel | Kern-Ziel | Abh. |
 |---|---|---|---|
@@ -349,8 +349,8 @@ Ziel: ein Primitive-Set, überall genutzt; Theme/Icon-Registry.
 
 Nach deiner Freigabe dieses Berichts:
 
-1. `tasks/ROADMAP.md` um die Phasen 15–21 + die neue Philosophie erweitern.
-2. Die Task-Dateien `tasks/phase-15-*/T16-*.md` … `tasks/phase-21-*/T22-001.md`
+1. `tasks/archive/ROADMAP.md` um die Phasen 15–21 + die neue Philosophie erweitern.
+2. Die Task-Dateien `tasks/archive/phase-15-*/T16-*.md` … `tasks/archive/phase-21-*/T22-001.md`
    im bestehenden Format anlegen (`## Status` = `📋 Geplant`, `## Ziel`,
    `## Kontext` mit Zed-Datei-Pointern aus §2.4, `## Anweisungen`,
    `## Akzeptanzkriterien`, `## Warnungen`).

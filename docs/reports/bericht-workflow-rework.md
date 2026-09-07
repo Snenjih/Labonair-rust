@@ -134,7 +134,7 @@ Tauri-Drift-Problem.
 | `T19-004` | erweitert | Disclosure-Navigation + Scroll-Spy + `SubPageLink` + Custom-Top-Level-Pfad |
 | `T19-009` | erweitert | SQLite-Hosts → `hosts.entries` + Keychain |
 | `T19-010` | **neu** | Settings › Hosts; `TabKind::Hosts` endgültig weg |
-| `tasks/ROADMAP.md` | geändert | Tabellen 15–18, Workflow-Rework-Abschnitt, Erfolgskriterium 27 |
+| `tasks/archive/ROADMAP.md` | geändert | Tabellen 15–18, Workflow-Rework-Abschnitt, Erfolgskriterium 27 |
 
 Kein bereits gebauter Code wird zurückgebaut — alles sind Task-Text-Schärfungen
 vor der Umsetzung.

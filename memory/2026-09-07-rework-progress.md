@@ -1076,3 +1076,8 @@ The explicit transitional edges were converted into the ordered
 and Workspace/Background as the next extraction candidates, separates typed
 edges that should only be narrowed when a real consumer requires it, and marks
 shell-to-integration construction as an intentional composition invariant.
+
+The historical task tree was consolidated under `tasks/archive/`: the former
+root `tasks/ROADMAP.md` and all `tasks/phase-*` directories were moved there,
+with root and historical links updated. `tasks/rework/` remains the sole active
+queue, and the versioned Markdown link audit passes after the move.

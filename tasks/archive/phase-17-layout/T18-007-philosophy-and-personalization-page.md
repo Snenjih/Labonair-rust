@@ -19,7 +19,7 @@ Panel-Sichtbarkeit — als überblickbares GUI.
 ## Kontext
 - Philosophie-Text: `bericht-architektur-rework-roadmap.md` §1 + T16-001
   (`docs/architecture.md`).
-- `tasks/ROADMAP.md` — Abschnitt „## Vision" + „## Erfolgskriterien".
+- `tasks/archive/ROADMAP.md` — Abschnitt „## Vision" + „## Erfolgskriterien".
 - `CLAUDE.md` (Repo-Root) — „# Labonair-rust — CLAUDE.md" Kopf,
   „## Critical Rules".
 - Settings-UI: `labonair-settings-ui` (nach T16-007). Die generische
@@ -30,7 +30,7 @@ Panel-Sichtbarkeit — als überblickbares GUI.
 
 ## Anweisungen zur Umsetzung
 ### Teil A — Philosophie verankern
-1. **`tasks/ROADMAP.md`**: „## Vision" um einen Absatz ergänzen — die vier
+1. **`tasks/archive/ROADMAP.md`**: „## Vision" um einen Absatz ergänzen — die vier
    Prinzipien aus Bericht §1 (kurz), plus den Satz „Feature-Parität ist das
    Minimum, nicht das Ziel". Den Rework als Phasen 15–21 in der Phasen-
    Übersicht listen (falls T16-001 das nicht schon vollständig getan hat —

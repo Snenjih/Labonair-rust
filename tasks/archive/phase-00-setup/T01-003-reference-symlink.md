@@ -56,7 +56,7 @@ Backend-Logik. Niemals editieren, niemals extern verlinken.
 Volle Feature-Parität — alles was Labonair heute kann, läuft am Ende in purem Rust.
 
 ## Status
-Siehe [tasks/ROADMAP.md](./tasks/ROADMAP.md) und [handshake.md](./handshake.md).
+Siehe [tasks/archive/ROADMAP.md](../ROADMAP.md) und [handshake.md](../../../handshake.md).
 
 ## Entwicklung
     cargo run      # App starten

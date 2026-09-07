@@ -17,7 +17,7 @@ Workspace darf **null** Tabs halten und zeigt dann eine leere Fläche
 entfernt; der Host-Manager bleibt vorerst als **normaler, schließbarer**
 on-demand-Tab erreichbar, bis T19-010 die Verwaltung in die Settings zieht.
 
-Grundlage: [`docs/architecture.md §8.2`](../../docs/architecture.md).
+Grundlage: [`docs/architecture.md §8.2`](../../../docs/architecture.md).
 Die visuelle Ausgestaltung der Empty-Surface + das `＋▾`-Menü macht T18-001 —
 diese Task liefert die **Zustands-/Logik-Seite** und einen minimalen Platzhalter.
 
@@ -145,7 +145,7 @@ diese Task liefert die **Zustands-/Logik-Seite** und einen minimalen Platzhalter
 - `StartupTab::HostManager` → `StartupTab::Empty` (`#[default]`),
   `#[serde(alias = "host-manager")]` migriert den Altwert. Settings-UI-Select
   `["terminal", "empty"]`.
-- Abweichung Test-Harness: `docs/architecture.md §8.12`.
+- Abweichung Test-Harness: [`docs/architecture.md §8.12`](../../../docs/architecture.md).
 
 ## Warnungen
 - ⚠️ Viele Nicht-Workspace-Crates (shell, panels, command-palette, live-bridge,

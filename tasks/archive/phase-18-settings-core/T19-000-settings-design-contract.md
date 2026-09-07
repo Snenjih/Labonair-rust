@@ -77,7 +77,7 @@ gegen die T19-001–T19-010 implementieren.
    > Details + Abweichungs-Prozess: `docs/settings-guidelines.md`.
 3. **`docs/architecture.md §8.3`** — auf `docs/settings-guidelines.md`
    verweisen (kurz, nicht duplizieren).
-4. **`tasks/ROADMAP.md`** — in der Phase-18-Tabelle T19-000 als erste Zeile
+4. **`tasks/archive/ROADMAP.md`** — in der Phase-18-Tabelle T19-000 als erste Zeile
    führen; im Rework-Erfolgskriterium 25 einen Halbsatz „…gemäß
    `docs/settings-guidelines.md`" ergänzen.
 5. **`handshake.md`** — Eintrag, dass der Kontrakt ab jetzt normativ ist.

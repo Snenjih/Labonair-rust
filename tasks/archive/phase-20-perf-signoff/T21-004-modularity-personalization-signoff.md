@@ -20,7 +20,7 @@ Umbau verloren gegangen).
   Modularität für Personalisierung.
 - Layout-Vertrag: Titlebar (Tabs + 1 Button), Workspace, Statusbar
   (Panel-Steuerung / Info-Dropdowns), Side Panels, Overlays.
-- Parität-Referenz: `reference-src/src/modules/*` + `tasks/ROADMAP.md`
+- Parität-Referenz: `reference-src/src/modules/*` + `tasks/archive/ROADMAP.md`
   „Erfolgskriterien" 1–21 + die frühere `T15-006`-Checkliste.
 - Vergleichsberichte `vergleichsbericht-subagent-1..4.md` (Port vs.
   reference-src) — die dort gelisteten Lücken auf „durch den Rework
