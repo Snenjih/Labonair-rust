@@ -24,7 +24,7 @@ Legacy `appCornerRadius` values are converted to the current
 `cornerRadiusScale` field during migration, with the modern value taking
 precedence when both are present.
 
-Current HEAD is `ac013e2` on `master`; the worktree is clean before this
+Current HEAD is `5dbaf5d` on `master`; the worktree is clean before this
 handshake update. The first R06
 boundaries removed the backend error facade, removed AI's stale backend edge,
 moved system-font discovery into the Theme owner, deleted the unconsumed
@@ -60,6 +60,14 @@ removed. Full workspace tests, Clippy, formatting, dependency validation,
 queue validation, and diff checks pass; this boundary is committed as
 `ac013e2`. R06-001 remains active; the next boundary is the remaining
 transport adapter extraction and injected capability cleanup.
+The raw adapter event transport is now owned by the new UI-free
+`labonair-events` foundation crate. `EventBus`, `EventChannel`, and `RawEvent`
+were removed from `labonair-backend`; SSH, MCP, and Transfers import the
+transport directly and retain ownership of their typed event decoding. Full
+workspace tests, Clippy, formatting, dependency validation, queue validation,
+and diff checks pass; this boundary is committed as `5dbaf5d`. R06-001 remains
+active; the next boundary is the remaining transport adapter extraction and
+injected capability cleanup.
 The broad backend `AppEvent` enum and typed-emitter helper are also gone;
 SSH and MCP adapters decode their own raw event names directly at the
 capability boundary.
