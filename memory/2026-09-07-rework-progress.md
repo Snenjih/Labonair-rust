@@ -216,3 +216,13 @@ from startup and migration code, along with the Settings host model and
 credential-ref compatibility helper. Focused Hosts/UI/Workspace/Shell tests
 pass. The task remains active for backend adapter cleanup and visual state
 review.
+
+## R04-002 backend host-adapter removal
+
+Removed `backend::modules::hosts` entirely. The backend now initializes the
+generic `labonair-persistence::Database` directly, while SSH/SFTP transport
+adapters use that foundation type and Host CRUD remains in
+`labonair-hosts::store`. The MCP grant-revocation callback was moved to the MCP
+module as the one explicitly tracked host integration. Focused compilation,
+full tests, Clippy, dependency, queue, formatting, and diff checks remain
+green. R04-002 still needs the explicit visual state review before completion.

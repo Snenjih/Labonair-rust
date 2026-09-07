@@ -12,7 +12,7 @@ in the normative documents linked from `docs/README.md`.
 | Current crate | Current role | Target owner | Migration note |
 |---|---|---|---|
 | `app` | Binary/bootstrap | application composition | Keep small; remove feature logic. |
-| `backend` | Mixed filesystem, PTY, SSH, SFTP, Git, hosts, settings, updater, MCP, persistence | split across platform services and feature modules | Highest-priority god-object boundary; SSH/SFTP contracts and adapters now isolate transport consumers. |
+| `backend` | Mixed filesystem, PTY, SSH, SFTP, Git transport adapters, settings, updater, MCP, and persistence wiring | split across platform services and feature modules | Highest-priority god-object boundary; Host CRUD/domain ownership has left this crate, while SSH/SFTP adapters and other compatibility surfaces remain. |
 | `ai` | AI providers, sessions, tools | AI module | Keep backend-facing core; rebuild UI later. |
 | `command-palette-core` | UI-free command descriptors and registry (new migration boundary) | command-palette module | Keep metadata and provider discovery here; feature-owned behavior remains outside the palette. Initial owner providers now live in workspace, terminal, editor, hosts, theme, and settings crates. |
 | `command-palette` | Palette UI, dynamic sub-pages, and transitional duplicate shell dispatch integration | command-palette module | Consume the core registry; global-menu navigation is typed; remove static entries and the duplicate shell registry. |
@@ -138,7 +138,10 @@ The current Cargo metadata shows several transitional edges that conflict with t
 - `backend` still owns the filesystem watcher adapter because it emits directly through the legacy app event bus; the actual watcher implementation now belongs to `labonair-filesystem`.
 - `backend` still owns the public secret API adapter even though storage now belongs to `labonair-secrets`; existing SSH/Hosts/MCP call sites still pass the backend app handle.
 - `backend` still re-exports the structured error contract for old internal paths, while the implementation now belongs to `labonair-errors`.
-- `backend` still exposes compatibility signatures for host and credential operations and owns the MCP event adapter for remaining consumers; host and credential models/persistence now belong to their capability crates.
+- Host CRUD/domain ownership and its compatibility signatures have left
+  `backend`; `labonair-hosts` now owns the store and the shell injects the one
+  MCP revocation handler. Backend transport code still reads host records while
+  SSH/SFTP adapters are migrated to narrower capability services.
 - `backend` still owns only the transitional russh snippet-execution adapter and
   exposes a compatibility database re-export; snippet models, persistence,
   run events, and execution contracts now belong to `labonair-snippets`.

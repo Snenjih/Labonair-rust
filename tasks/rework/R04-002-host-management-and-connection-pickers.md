@@ -101,7 +101,11 @@ Shift+Enter opening SFTP, while jump hosts remain part of SSH configuration.
 - [x] Removed the obsolete SQLite-hosts-to-Settings projection, migration
       marker, and Settings host model. Host definitions remain in the
       Hosts-owned store and secrets remain in the secret store.
-- [ ] Finish the remaining backend host/transport adapter cleanup and perform
+- [x] Removed the backend Hosts CRUD compatibility module and generic
+      `HostsDb` alias. Persistence initialization now uses the foundation
+      database contract directly; only the explicitly tracked MCP integration
+      and transport adapters remain in backend.
+- [ ] Perform
       the visual state review for empty, filtered, invalid, and pending flows.
 
 ## Removal condition

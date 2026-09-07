@@ -289,7 +289,7 @@ pub async fn ssh_connect(
     on_event: crate::events::EventChannel<super::pty::SshPtyEvent>,
     state: &super::SshState,
     trust_state: &super::TrustState,
-    hosts_db: &crate::modules::hosts::HostsDb,
+    hosts_db: &labonair_persistence::Database,
     secrets: &crate::modules::secrets::SecretsState,
     app: crate::App,
     connect_timeout_secs: Option<u64>,
@@ -790,7 +790,7 @@ pub(crate) struct JumpHostParams {
 /// here, so chained jump hosts remain unsupported, matching the behavior
 /// this was extracted from.
 pub(crate) fn resolve_jump_host(
-    hosts_db: &crate::modules::hosts::HostsDb,
+    hosts_db: &labonair_persistence::Database,
     secrets: &crate::modules::secrets::SecretsState,
     app: &crate::App,
     jump_host_id: &str,
@@ -1026,7 +1026,7 @@ pub async fn ssh_test_connection(
     passphrase: Option<String>,
     password_override: Option<String>,
     trust_state: &super::TrustState,
-    hosts_db: &crate::modules::hosts::HostsDb,
+    hosts_db: &labonair_persistence::Database,
     secrets: &crate::modules::secrets::SecretsState,
     app: crate::App,
     connect_timeout_secs: Option<u64>,

@@ -10,7 +10,6 @@ use serde::Serialize;
 
 use crate::events::{AppEvent, EventBus};
 use crate::modules::fs::watcher::WatcherState;
-use crate::modules::hosts::{self, HostsDb};
 use crate::modules::mcp::McpState;
 use crate::modules::pty::PtyState;
 use crate::modules::secrets::SecretsState;
@@ -23,10 +22,11 @@ use crate::modules::snippets::exec::SnippetRunState;
 use crate::modules::ssh::tunnels::TunnelState;
 use crate::modules::ssh::{SshState, TrustState};
 use crate::modules::terminal_exec::TerminalExecState;
+use labonair_persistence::Database;
 
 pub struct AppInner {
     pub events: EventBus,
-    pub db: HostsDb,
+    pub db: Database,
     pub secrets: Arc<SecretsState>,
     pub ssh: SshState,
     pub trust: TrustState,
@@ -64,8 +64,8 @@ impl App {
     /// [`App::spawn_workers`] from inside a tokio runtime for that.
     pub fn new(data_dir: &Path) -> Result<App, String> {
         std::fs::create_dir_all(data_dir).map_err(|e| e.to_string())?;
-        let conn = hosts::db::initialize_db(data_dir.to_path_buf())?;
-        let db = HostsDb(std::sync::Arc::new(std::sync::Mutex::new(conn)));
+        let conn = labonair_persistence::initialize_database(data_dir.to_path_buf())?;
+        let db = Database(std::sync::Arc::new(std::sync::Mutex::new(conn)));
 
         let (tx, rx) = tokio::sync::mpsc::channel::<WorkerMessage>(100);
         let conflicts: ConflictMap = Arc::new(tokio::sync::Mutex::new(HashMap::new()));

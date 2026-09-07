@@ -13,6 +13,46 @@ const DEFAULT_PORT: u16 = 47823;
 const DEFAULT_MAX_COMMAND_TIMEOUT_MS: u64 = 300_000;
 const AUTO_REVOKE_SWEEP_INTERVAL: Duration = Duration::from_secs(60);
 
+/// Revoke MCP grants when the Hosts capability blocks agent access for a host.
+/// This is the only host-specific integration retained by the backend; host
+/// persistence and lifecycle remain entirely inside `labonair-hosts`.
+pub fn revoke_agent_access(
+    app: &crate::App,
+    event: labonair_hosts::store::HostEvent,
+) -> Result<(), crate::modules::errors::LabonairError> {
+    let labonair_hosts::store::HostEvent::AgentAccessBlocked { host_id } = event;
+    let expired: Vec<String> = {
+        let grants =
+            app.mcp.grants.lock().map_err(|error| {
+                crate::modules::errors::LabonairError::Internal(error.to_string())
+            })?;
+        grants
+            .values()
+            .filter(|grant| grant.host_id.as_deref() == Some(host_id.as_str()))
+            .map(|grant| grant.tab_id.clone())
+            .collect()
+    };
+    if expired.is_empty() {
+        return Ok(());
+    }
+
+    let mut grants = app
+        .mcp
+        .grants
+        .lock()
+        .map_err(|error| crate::modules::errors::LabonairError::Internal(error.to_string()))?;
+    for tab_id in &expired {
+        grants.remove(tab_id);
+    }
+    drop(grants);
+
+    for tab_id in expired {
+        app.emit_event(crate::AppEvent::McpGrantExpired { tab_id })
+            .map_err(crate::modules::errors::LabonairError::Internal)?;
+    }
+    Ok(())
+}
+
 /// Which underlying terminal backend a grant targets — SSH tabs are resolved
 /// through `SshState`/`session_id`; local tabs have no string-keyed Rust
 /// session at all (see `pty::PtyState`, keyed by `u32`), so `local_pty_id`

@@ -118,7 +118,7 @@ async fn handle_connection(
 pub async fn ssh_start_tunnels(
     host_id: String,
     tunnel_state: &TunnelState,
-    hosts_db: &crate::modules::hosts::HostsDb,
+    hosts_db: &labonair_persistence::Database,
     secrets: &crate::modules::secrets::SecretsState,
     trust_state: &super::TrustState,
     app: crate::App,

@@ -5,7 +5,6 @@ pub mod errors;
 pub mod fonts;
 pub mod fs;
 pub mod git;
-pub mod hosts;
 pub mod mcp;
 pub mod model_prefs;
 pub mod pty;

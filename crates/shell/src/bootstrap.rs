@@ -278,7 +278,7 @@ pub(crate) fn bootstrap(
     let host_manager = {
         let app_for_host_events = backend.clone();
         let host_event_handler = Arc::new(move |event| {
-            labonair_backend::modules::hosts::db::revoke_agent_access(&app_for_host_events, event)
+            labonair_backend::modules::mcp::revoke_agent_access(&app_for_host_events, event)
         });
         cx.new(|cx| {
             HostManagerView::new(

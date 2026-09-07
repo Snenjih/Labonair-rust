@@ -4,19 +4,19 @@
 //! capability crate. These wrappers preserve the old App-based API while
 //! callers migrate to the typed capability boundary.
 
-use crate::modules::hosts::HostsDb;
 use crate::modules::secrets::SecretsState;
+use labonair_persistence::Database;
 
 pub use labonair_credentials::{Credential, GenerateKeypairResult, HostRef};
 
-pub async fn credentials_get_all(db: &HostsDb) -> Result<Vec<Credential>, String> {
+pub async fn credentials_get_all(db: &Database) -> Result<Vec<Credential>, String> {
     labonair_credentials::credentials_get_all(db).await
 }
 
 #[allow(clippy::too_many_arguments)]
 pub async fn credentials_create(
     _app: crate::App,
-    db: &HostsDb,
+    db: &Database,
     secrets: &SecretsState,
     name: String,
     cred_type: String,
@@ -34,7 +34,7 @@ pub async fn credentials_create(
 #[allow(clippy::too_many_arguments)]
 pub async fn credentials_update(
     _app: crate::App,
-    db: &HostsDb,
+    db: &Database,
     secrets: &SecretsState,
     id: String,
     name: Option<String>,
@@ -52,7 +52,7 @@ pub async fn credentials_update(
 
 pub async fn credentials_delete(
     _app: crate::App,
-    db: &HostsDb,
+    db: &Database,
     secrets: &SecretsState,
     id: String,
 ) -> Result<(), String> {
@@ -60,13 +60,16 @@ pub async fn credentials_delete(
     labonair_credentials::credentials_delete(db, secrets, &data_dir, id).await
 }
 
-pub async fn credentials_get_hosts_using(db: &HostsDb, id: String) -> Result<Vec<HostRef>, String> {
+pub async fn credentials_get_hosts_using(
+    db: &Database,
+    id: String,
+) -> Result<Vec<HostRef>, String> {
     labonair_credentials::credentials_get_hosts_using(db, id).await
 }
 
 pub async fn credential_generate_keypair(
     _app: crate::App,
-    db: &HostsDb,
+    db: &Database,
     secrets: &SecretsState,
     cred_id: String,
     key_type: String,

@@ -1,9 +1,9 @@
 //! Host queries that do not require application composition.
 //!
 //! Connection lifecycle belongs to `labonair-persistence`; this module owns
-//! host-specific reads, ordering, and group mutations. Secret-bearing writes
-//! and MCP side effects remain behind the backend compatibility adapter until
-//! their capability contracts are migrated.
+//! host-specific reads, writes, ordering, and group mutations. Secret-bearing
+//! values use the injected secret store, while external side effects are
+//! reported through the narrow [`HostEventHandler`] contract.
 
 use crate::{Group, Host, ReorderItem};
 use labonair_errors::LabonairError;

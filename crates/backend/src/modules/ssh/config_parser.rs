@@ -147,7 +147,7 @@ pub enum ImportConflict {
 pub async fn import_ssh_config_entries(
     entries: Vec<SshConfigEntry>,
     conflict: ImportConflict,
-    hosts_db: &crate::modules::hosts::HostsDb,
+    hosts_db: &labonair_persistence::Database,
 ) -> Result<Vec<String>, String> {
     use uuid::Uuid;
     let now = std::time::SystemTime::now()
@@ -351,7 +351,7 @@ struct ExportHostRow {
 /// safe to embed in a `~/.ssh/config`-style file.
 pub async fn export_ssh_config(
     host_ids: Vec<String>,
-    hosts_db: &crate::modules::hosts::HostsDb,
+    hosts_db: &labonair_persistence::Database,
 ) -> Result<String, String> {
     let (all_hosts, credentials): (
         std::collections::HashMap<String, ExportHostRow>,
@@ -451,7 +451,7 @@ pub async fn export_ssh_config(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::modules::hosts::HostsDb;
+    use labonair_persistence::Database;
     use rusqlite::Connection;
 
     const SAMPLE: &str = r#"
@@ -481,7 +481,7 @@ Match host db
 Include ~/.ssh/config.d/*
 "#;
 
-    fn mk_db() -> HostsDb {
+    fn mk_db() -> Database {
         let conn = Connection::open_in_memory().unwrap();
         conn.execute_batch(
             "CREATE TABLE hosts (
@@ -504,13 +504,13 @@ Include ~/.ssh/config.d/*
             );",
         )
         .unwrap();
-        HostsDb(std::sync::Arc::new(std::sync::Mutex::new(conn)))
+        Database(std::sync::Arc::new(std::sync::Mutex::new(conn)))
     }
 
     /// (name, host_address, port, auth_method, private_key_path, jump_host_id)
     type Row = (String, String, i64, String, Option<String>, Option<String>);
 
-    fn names(db: &HostsDb) -> Vec<Row> {
+    fn names(db: &Database) -> Vec<Row> {
         let conn = db.0.lock().unwrap();
         let mut stmt = conn
             .prepare(

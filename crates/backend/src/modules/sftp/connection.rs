@@ -103,7 +103,7 @@ pub async fn sftp_connect(
     password_override: Option<String>,
     state: &SshState,
     trust_state: &TrustState,
-    hosts_db: &crate::modules::hosts::HostsDb,
+    hosts_db: &labonair_persistence::Database,
     secrets: &crate::modules::secrets::SecretsState,
     app: crate::App,
 ) -> Result<(), LabonairError> {

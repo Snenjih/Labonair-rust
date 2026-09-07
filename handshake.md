@@ -35,10 +35,13 @@ palette consumes owner snapshots and maps Enter to SSH and Shift+Enter to SFTP
 at the shell boundary. The obsolete SQLite-hosts-to-Settings migration,
 marker, Settings host model, and startup projection were removed, so host
 definitions stay in the Hosts store and secrets stay in the secret store.
-Focused tests pass. Remaining for R04-002: backend host/transport adapter
-cleanup and visual review of empty, filtered, invalid, and connection-pending
-states. Full repository gates pass. The implementation/documentation commit is
-`79c0f4c`; the worktree is clean before the handshake-only follow-up.
+Focused tests pass. The backend Hosts CRUD compatibility module and generic
+`HostsDb` alias are now removed; only the explicitly tracked MCP integration
+and transport adapters remain. Remaining for R04-002 is the visual review of
+empty, filtered, invalid, and connection-pending states. Full repository gates
+pass. The implementation/documentation commit is
+`79c0f4c`. A follow-up slice is currently removing the remaining backend Hosts
+compatibility module; its gates are being rerun before commit.
 
 `R02-003` is complete. The user confirmed the native Rust shell visual state
 is acceptable, closing the final visual acceptance criterion. The project and
