@@ -203,6 +203,9 @@ boundary still exists; that package must not become a second capability owner.
       logic into the dedicated UI-free `labonair-updater` crate; the shell
       retains only the GPUI presentation and the backend no longer owns an
       updater module.
+- [x] Removed the unreferenced backend `shell` compatibility module, including
+      one-shot commands, persistent agent shells, and background-process state;
+      no active crate used this duplicate execution path.
 - [x] Secrets compatibility wrappers and jump-host resolution no longer take
       the aggregate `App`; they receive only their actual state dependencies.
 - [ ] Move the remaining contracts and adapters behind injected capability

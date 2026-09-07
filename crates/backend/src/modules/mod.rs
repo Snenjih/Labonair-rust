@@ -3,7 +3,6 @@ pub mod mcp;
 pub mod pty;
 pub mod secrets;
 pub mod sftp;
-pub mod shell;
 pub mod snippets;
 pub mod ssh;
 pub mod transfers;

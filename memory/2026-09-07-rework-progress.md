@@ -1,5 +1,14 @@
 # Rework progress — 2026-09-07
 
+## Unreferenced backend shell cleanup
+
+The backend `shell` module was removed after repository-wide source search
+found no active consumer beyond its own unit tests. It duplicated local
+one-shot command, persistent agent-shell, and background-process execution
+state without a live product owner. The running PTY/terminal and AI tool paths
+remain unchanged; any future shared command execution must enter through an
+explicit Terminal/AI capability contract.
+
 ## Updater capability boundary
 
 The updater's manifest model, version comparison, network download,

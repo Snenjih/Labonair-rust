@@ -1614,7 +1614,7 @@ pub async fn git_add_to_exclude(
 }
 
 /// Initializes a new repository at `path` (local or remote). Replaces the
-/// old direct `shell_run_command("git init", ...)` bypass in
+/// old direct command-runner `git init` bypass in
 /// `NoRepoState.tsx`, which only ever ran locally regardless of target.
 pub async fn git_init(
     path: String,
