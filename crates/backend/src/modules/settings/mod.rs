@@ -2,7 +2,6 @@ use serde_json::{Map, Value};
 use std::path::Path;
 
 pub mod editor;
-pub mod mcp;
 pub mod migrate_v2;
 pub mod preferences;
 

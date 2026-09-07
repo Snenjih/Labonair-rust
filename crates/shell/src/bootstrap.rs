@@ -19,9 +19,10 @@ use labonair_backend::modules::mcp::contract::{BackendMcpEventSource, BackendMcp
 use labonair_backend::modules::mcp::{
     mcp_set_auto_revoke_minutes, mcp_set_enabled, mcp_set_max_command_timeout_secs, mcp_set_port,
 };
-use labonair_backend::modules::settings::mcp::mcp_prefs_load;
 use labonair_hosts_ui::{open_hosts_window, HostManagerEvent, HostManagerView};
-use labonair_mcp_core::{McpEventSource, McpSessionAccessService, McpTabOperationService};
+use labonair_mcp_core::{
+    preferences::McpPreferences, McpEventSource, McpSessionAccessService, McpTabOperationService,
+};
 use labonair_notifications::{notification_center, Notification, NotificationCenter};
 use labonair_sftp::{SftpBrowserService, SftpSessionService};
 use labonair_ssh::{
@@ -212,7 +213,7 @@ pub(crate) fn bootstrap(
     // saved preferences into it once at startup. Port/timeout/auto-revoke first
     // so the listener, if enabled, comes up on the right port.
     {
-        let prefs = mcp_prefs_load();
+        let prefs = McpPreferences::load_from(&labonair_filesystem::paths::config_dir());
         agent_access.update(cx, |s, cx| {
             s.hydrate(prefs.bridge_enabled, prefs.notify_on_activity, cx)
         });

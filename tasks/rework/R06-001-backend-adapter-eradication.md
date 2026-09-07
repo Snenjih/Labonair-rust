@@ -187,6 +187,9 @@ boundary still exists; that package must not become a second capability owner.
 - [x] Legacy status-bar placement migration moved into
       `labonair_workspace::status_placements`; the backend Settings module no
       longer owns Workspace chrome compatibility data.
+- [x] MCP bridge preferences moved into
+      `labonair_mcp_core::preferences`; the backend Settings module no longer
+      owns MCP persistence or its wire model.
 - [x] Secrets compatibility wrappers and jump-host resolution no longer take
       the aggregate `App`; they receive only their actual state dependencies.
 - [ ] Move the remaining contracts and adapters behind injected capability

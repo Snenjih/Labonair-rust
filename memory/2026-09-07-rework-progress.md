@@ -9,6 +9,15 @@ id-remapping, backup, and idempotent conversion into
 dedicated migration file were removed. Workspace check, Clippy, full tests,
 dependency validation, queue validation, and diff checks pass.
 
+## MCP preferences ownership boundary
+
+MCP bridge preferences now live in `labonair_mcp_core::preferences` as a
+UI-free wire model with explicit `load_from`/`save_to` path boundaries. Shell
+composition supplies the config directory; the backend Settings module no
+longer owns MCP preference persistence. Focused MCP/backend tests, Workspace
+check, and Clippy pass; the full workspace test gate remains part of the final
+slice verification.
+
 ## SSH connection event boundary
 
 The SSH transport/authentication pipeline was narrowed after the PTY and

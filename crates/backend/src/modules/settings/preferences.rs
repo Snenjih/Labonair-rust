@@ -277,8 +277,8 @@ pub struct Preferences {
     pub git_status_poll_interval_ms: u32,
 
     // ── AI Agent Bridge (MCP) mirror ─────────────────────────────────────
-    /// Mirrors of `settings::mcp::McpPrefs`, kept here so the value roundtrips
-    /// and the global search can address it. `settings::mcp` remains the
+    /// Mirrors of `mcp_core::preferences::McpPreferences`, kept here so the value roundtrips
+    /// and the global search can address it. `mcp-core` remains the
     /// authoritative store the bridge reads.
     pub mcp_bridge_enabled: bool,
     pub mcp_bridge_port: u32,

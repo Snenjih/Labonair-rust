@@ -92,7 +92,7 @@ and are never lost through a deserialize/serialize round trip.
 | `labonair-secrets` | Keychain and secret references. |
 | `labonair-persistence` | Cloneable shared SQLite connection and schema lifecycle; feature modules own stores and queries. |
 | `labonair-panel` | UI-free panel, dock, and status-item contracts used by workspace-owned surfaces. |
-| `labonair-mcp-core` | UI-free MCP session/grant and tab-operation contracts shared by the agent-access host and its injected bridge adapter. |
+| `labonair-mcp-core` | UI-free MCP session/grant, tab-operation, and persisted bridge-preference contracts shared by the agent-access host and its injected bridge adapter. |
 
 ### Capability modules and crates
 

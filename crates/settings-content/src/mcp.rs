@@ -1,5 +1,5 @@
 //! `mcp` area — the AI Agent Bridge, today's `"mcp"` settings-file key
-//! (`labonair-backend::modules::settings::mcp::McpPrefs`).
+//! (`labonair_mcp_core::preferences::McpPreferences`).
 
 use serde::{Deserialize, Serialize};
 

@@ -20,7 +20,7 @@
 //!   `workspace-layout.json` file before this Settings migration runs.
 //! * `mcpBridge*`/`mcpMaxCommandTimeoutSecs`/`mcpAutoRevokeMinutes`/
 //!   `mcpNotifyOnActivity` are a documented *mirror* of the separate old
-//!   `"mcp"` top-level key (`McpPrefs` — the authoritative source per
+//!   `"mcp"` top-level key (`McpPreferences` — the authoritative source per
 //!   `Preferences`' own doc comment); the new `mcp` area is built from the
 //!   old `"mcp"` key, not from this mirror, since they carry the same values.
 //! * `barItemPlacements` is **not** touched here — it is exclusively
