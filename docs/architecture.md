@@ -73,6 +73,9 @@ registers providers but does not maintain a feature-wide default-shortcut table.
 The module-owned `keymap::adapter::load` boundary returns the resulting
 immutable snapshot, including diagnostics; the shell only installs it into
 GPUI and connects file-watch events.
+The editor contract keeps raw JSONC source separate from its parsed view, so
+comments, unknown commands, and malformed edits remain available for recovery
+and are never lost through a deserialize/serialize round trip.
 
 ## 4. Target workspace crate map
 

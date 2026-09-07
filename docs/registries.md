@@ -100,6 +100,11 @@ and returns one immutable snapshot containing effective bindings and current
 diagnostics. A platform shell may install that snapshot into GPUI, but it must
 not reimplement loading, validation, recovery, or layer composition.
 
+The editor-facing `KeymapDocument` keeps the original user source as the
+authoritative value and exposes parsing/validation as derived state. Saving
+must write that source unchanged; invalid or unknown entries are therefore
+diagnosed without being silently normalized away.
+
 The file/GPUI adapter must cross this boundary once: persisted action names are
 resolved through `keymap::runtime::command_for_action` into `CommandId`, and
 only then mapped to a concrete platform action. GPUI context predicates stay

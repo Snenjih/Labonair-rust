@@ -60,11 +60,62 @@ pub enum KeybindSource {
     User,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct KeymapParseError {
     pub message: String,
     /// 1-based line number, best-effort.
     pub line: usize,
+}
+
+/// Lossless user document used by the keymap management/editor surface.
+///
+/// `source` is authoritative for editing and persistence. Parsing and
+/// validation are derived views; neither may replace the source text, so
+/// comments, unknown actions, and malformed content remain recoverable.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct KeymapDocument {
+    pub source: String,
+    pub parsed: Result<KeymapFile, KeymapParseError>,
+    pub issues: Vec<ValidationIssue>,
+}
+
+impl KeymapDocument {
+    /// Build a document from source text without discarding it on failure.
+    pub fn from_source(source: impl Into<String>, known_actions: &BTreeSet<&str>) -> Self {
+        let source = source.into();
+        let parsed = parse_keymap_jsonc(&source);
+        let issues = match &parsed {
+            Ok(file) => validate_keymap(file, known_actions, &source),
+            Err(error) => vec![ValidationIssue {
+                message: error.message.clone(),
+                line: error.line,
+                severity: Severity::Error,
+            }],
+        };
+        Self {
+            source,
+            parsed,
+            issues,
+        }
+    }
+
+    /// Whether this document can safely become the active user layer.
+    pub fn is_valid(&self) -> bool {
+        self.parsed.is_ok()
+            && self
+                .issues
+                .iter()
+                .all(|issue| issue.severity != Severity::Error)
+    }
+}
+
+/// Persist the user's raw keymap source without formatting or normalizing it.
+/// The caller may intentionally save an invalid document while editing; the
+/// runtime will keep using its last valid layer until the next valid reload.
+pub fn save_user_keymap_document(source: &str) -> Result<PathBuf, String> {
+    let path = ensure_user_keymap_file()?;
+    std::fs::write(&path, source).map_err(|error| error.to_string())?;
+    Ok(path)
 }
 
 impl std::fmt::Display for KeymapParseError {
@@ -252,7 +303,7 @@ pub enum Severity {
     Warning,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ValidationIssue {
     pub message: String,
     pub line: usize,
@@ -403,19 +454,22 @@ fn load_user_keymap(known_actions: &BTreeSet<&'static str>) -> KeymapFile {
         return KeymapFile::default();
     };
 
-    match parse_keymap_jsonc(&text) {
+    let document = KeymapDocument::from_source(text, known_actions);
+    match document.parsed {
         Ok(file) => {
-            let issues = validate_keymap(&file, known_actions, &text);
-            let has_errors = issues.iter().any(|issue| issue.severity == Severity::Error);
+            let has_errors = document
+                .issues
+                .iter()
+                .any(|issue| issue.severity == Severity::Error);
             if has_errors {
                 tracing::warn!(
                     path = %path.display(),
                     "keymap.json has validation errors — keeping the last good keymap"
                 );
-                LAST_ISSUES.with(|current| *current.borrow_mut() = issues);
+                LAST_ISSUES.with(|current| *current.borrow_mut() = document.issues);
                 LAST_GOOD_USER.with(|previous| previous.borrow().clone())
             } else {
-                LAST_ISSUES.with(|current| *current.borrow_mut() = issues);
+                LAST_ISSUES.with(|current| *current.borrow_mut() = document.issues);
                 LAST_GOOD_USER.with(|previous| *previous.borrow_mut() = file.clone());
                 file
             }
@@ -426,13 +480,7 @@ fn load_user_keymap(known_actions: &BTreeSet<&'static str>) -> KeymapFile {
                 error = %error,
                 "keymap.json is not valid JSON/JSONC — keeping the last good keymap"
             );
-            LAST_ISSUES.with(|current| {
-                *current.borrow_mut() = vec![ValidationIssue {
-                    message: error.message,
-                    line: error.line,
-                    severity: Severity::Error,
-                }]
-            });
+            LAST_ISSUES.with(|current| *current.borrow_mut() = document.issues);
             LAST_GOOD_USER.with(|previous| previous.borrow().clone())
         }
     }
@@ -577,6 +625,31 @@ mod tests {
     fn missing_or_empty_document_is_an_empty_keymap() {
         assert_eq!(parse_keymap_jsonc("").unwrap(), KeymapFile::default());
         assert_eq!(parse_keymap_jsonc("[]").unwrap(), KeymapFile::default());
+    }
+
+    #[test]
+    fn document_preserves_comments_and_unknown_actions() {
+        let source = "// Keep this comment.\n[{\"bindings\": {\"cmd-x\": \"future::Action\"}}]\n";
+        let known: BTreeSet<&str> = BTreeSet::new();
+        let document = KeymapDocument::from_source(source, &known);
+
+        assert_eq!(document.source, source);
+        assert!(document.parsed.is_ok());
+        assert!(!document.is_valid());
+        assert_eq!(document.issues[0].severity, Severity::Error);
+        assert_eq!(document.issues[0].line, 2);
+    }
+
+    #[test]
+    fn document_preserves_malformed_source_for_editor_recovery() {
+        let source = "[{\"bindings\": {\"cmd-x\": }}]";
+        let known: BTreeSet<&str> = BTreeSet::new();
+        let document = KeymapDocument::from_source(source, &known);
+
+        assert_eq!(document.source, source);
+        assert!(document.parsed.is_err());
+        assert!(!document.is_valid());
+        assert_eq!(document.issues[0].severity, Severity::Error);
     }
 
     #[test]

@@ -149,3 +149,11 @@ Changed the palette, panel tooltips, and tab context-menu key-hint lookups to
 use the effective keymap by `CommandId`, with descriptor defaults as the
 test/bootstrap fallback. The old `ShortcutId` table is no longer an active UI
 source and remains exported only for migration compatibility.
+
+## R03-002 lossless editor document
+
+Added `keymap::file::KeymapDocument`, which keeps raw JSONC source authoritative
+and exposes parsing/validation as derived state. Comments, unknown actions, and
+malformed edits are retained for the management/editor surface instead of
+being discarded by a parse/serialize round trip. `save_user_keymap_document`
+persists the raw source through the Keymap owner.

@@ -157,3 +157,8 @@ The palette, panel tooltips, and tab context-menu hints now render from the
 effective `CommandId` map rather than the legacy `ShortcutId` table. The old
 table remains exported only for migration compatibility and is not an active
 UI source.
+
+`keymap::file::KeymapDocument` now provides the lossless editor contract: raw
+JSONC source remains authoritative while parse and validation results are
+derived views. Invalid or unknown entries can be displayed and saved without
+being erased; runtime activation still uses the last valid layer.
