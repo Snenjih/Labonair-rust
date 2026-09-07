@@ -45,8 +45,7 @@ Hidden status-bar state and labels are owned by the workspace status registry
 as well. The current task is now `R03-002-keymap-runtime-and-editor.md`; the
 next work is to integrate the new UI-free `keymap::runtime` resolver with the
 existing file and GPUI adapters, then build the management surface. The
-current commit is pending after this runtime slice; the worktree is
-intentionally not yet clean until it is committed.
+current commit is `e1efb6d`; the worktree is clean.
 
 ## Current Session: 2026-09-07 (Native visual helper hardened)
 
