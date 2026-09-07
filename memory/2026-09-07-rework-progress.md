@@ -834,3 +834,10 @@ legacy adapters; an owner handler suppresses the duplicate legacy behavior at
 runtime. The old shell table is still present and must be deleted incrementally
 after the remaining owners (terminal, editor, hosts, themes, settings, and
 shell-native actions) receive equivalent contributions.
+
+The Workspace command migration then removed the shell registrations for tab
+creation/selection, pane splitting/closing, focus navigation, save/close/
+duplicate tab operations, and project lifecycle. Their metadata remains in the
+Workspace provider, while executable callbacks come from the Workspace handler
+contribution. The shell command table now retains only unmigrated feature
+adapters and native-window wiring.

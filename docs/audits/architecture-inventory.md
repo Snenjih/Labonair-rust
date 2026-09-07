@@ -195,8 +195,9 @@ The current Cargo metadata shows several transitional edges that conflict with t
 - `shell/src/status_items.rs` still contains workspace-shell status behavior
   that belongs in owner modules. Panel contribution construction has moved to
   panel owners. The new `labonair-command-palette-runtime` bridge lets owner
-  crates contribute executable handlers; the old shell behavior table remains
-  transitional until the handlers are removed from `shell/src/commands.rs`.
+  crates contribute executable handlers; Workspace tab, pane, focus, and
+  project-lifecycle behavior has now been removed from the shell table. The
+  remaining shell command adapters are transitional until their owners move.
 - The dedicated Jump Hosts status item was removed. Jump-host routing remains
   part of SSH connection configuration and execution, while host management and
   host selection keep their canonical menu/palette entry points.
