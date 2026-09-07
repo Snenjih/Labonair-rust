@@ -18,15 +18,17 @@
 
 ## Goal
 
-Remove the remaining shell-owned feature contribution tables. Capability
-modules must register their command execution and status items through typed
-owner APIs; `labonair-shell` may only assemble those contributions and connect
-the native window actions that have no capability owner. Panel contributions
-already follow this boundary and are included as the reference pattern.
+Close any owner-contribution residue discovered by the R07-001 acceptance
+audit. Capability modules must register their command execution and status
+items through typed owner APIs; `labonair-shell` may only assemble those
+contributions and connect native/debug actions that have no capability owner.
+Panel contributions and all currently migrated product commands/status items
+already follow this boundary and are the reference pattern.
 
 ## Scope
 
-- In scope: `shell/src/commands.rs`, shell status-item registration, owner
+- In scope: any remaining feature-owned residue in
+  `shell/src/commands.rs` or shell status-item registration, owner
   contribution APIs, command execution callbacks, and dependency/documentation
   evidence.
 - Out of scope: redesigning command behavior, adding new commands, changing

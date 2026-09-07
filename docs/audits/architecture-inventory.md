@@ -294,13 +294,21 @@ These are migration findings, not reasons to perform a destructive rewrite. Each
 1. Introduce stable IDs, typed domain events, and narrow service traits.
 2. Extract platform services and capability contracts from the former backend without changing user behavior. The filesystem service, secret store, error contract, host domain contract, and shared database lifecycle are now standalone.
 3. Split notification state from presentation and replace toast rendering.
-   `labonair-notifications-core` now owns the UI-free registry; the GPUI
-   adapter and statusbar dropdown consume retained records.
-4. Split command/keymap registries from the palette view.
-5. Move transfers to their own module and statusbar owner. The typed registry, concrete worker integration, and statusbar UI are now in place; raw adapter transport lives in `labonair-events` while decoding remains in `labonair-transfers-ssh`.
-6. Move hosts and SSH ownership out of Settings/workspace.
-7. Move terminal/editor/SFTP views to their owning modules.
-8. Remove compatibility edges and enforce the target graph.
+  `labonair-notifications-core` now owns the UI-free registry; the GPUI
+  adapter and statusbar dropdown consume retained records.
+4. Split command/keymap registries from the palette view. Command metadata,
+   owner handlers, dynamic submenus, and keymap runtime are now established;
+   the shell retains only documented native/debug compatibility actions.
+5. Move transfers to their own module and statusbar owner. The typed registry,
+   concrete worker integration, and statusbar UI are now in place; raw adapter
+   transport lives in `labonair-events` while decoding remains in
+   `labonair-transfers-ssh`.
+6. Move hosts and SSH ownership out of Settings/workspace. The Hosts manager,
+   picker, and connection entry contributions are now owner-owned.
+7. Move terminal/editor/SFTP views to their owning modules. Remaining view
+   extraction and visual acceptance are tracked in R07.
+8. Remove compatibility edges and enforce the target graph; the remaining
+   documented compatibility adapters are reviewed by the R07 acceptance gate.
 
 ## Evidence commands
 
