@@ -229,8 +229,15 @@ pub(crate) fn bootstrap(
         .unwrap_or(false)
         .then(crate::session::load_snapshot)
         .flatten();
-    let ssh_service: Arc<dyn SshConnectionService> =
-        Arc::new(labonair_backend::modules::ssh::contract::BackendSshService::new(backend.clone()));
+    let ssh_service: Arc<dyn SshConnectionService> = Arc::new(
+        labonair_backend::modules::ssh::contract::BackendSshConnectionService::new(
+            backend.ssh.clone(),
+            backend.trust.clone(),
+            backend.db.clone(),
+            backend.secrets.clone(),
+            backend.events.clone(),
+        ),
+    );
     let ssh_pty_service: Arc<dyn SshPtyService> = Arc::new(
         labonair_backend::modules::ssh::contract::BackendSshPtyService::new(backend.ssh.clone()),
     );
@@ -246,12 +253,26 @@ pub(crate) fn bootstrap(
             backend.events.clone(),
         ),
     );
-    let ssh_tunnel_service: Arc<dyn SshTunnelService> =
-        Arc::new(labonair_backend::modules::ssh::contract::BackendSshService::new(backend.clone()));
-    let ssh_tester: Arc<dyn SshConnectionTester> =
-        Arc::new(labonair_backend::modules::ssh::contract::BackendSshService::new(backend.clone()));
-    let ssh_config: Arc<dyn SshConfigService> =
-        Arc::new(labonair_backend::modules::ssh::contract::BackendSshService::new(backend.clone()));
+    let ssh_tunnel_service: Arc<dyn SshTunnelService> = Arc::new(
+        labonair_backend::modules::ssh::contract::BackendSshTunnelService::new(
+            backend.tunnels.clone(),
+            backend.db.clone(),
+            backend.secrets.clone(),
+            backend.trust.clone(),
+            backend.events.clone(),
+        ),
+    );
+    let ssh_tester: Arc<dyn SshConnectionTester> = Arc::new(
+        labonair_backend::modules::ssh::contract::BackendSshConnectionTester::new(
+            backend.trust.clone(),
+            backend.db.clone(),
+            backend.secrets.clone(),
+            backend.events.clone(),
+        ),
+    );
+    let ssh_config: Arc<dyn SshConfigService> = Arc::new(
+        labonair_backend::modules::ssh::contract::BackendSshConfigService::new(backend.db.clone()),
+    );
     let ssh_event_source: Arc<dyn SshEventSource> = Arc::new(
         labonair_backend::modules::ssh::contract::BackendSshEventSource::new(
             backend.events.clone(),

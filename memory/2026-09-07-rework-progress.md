@@ -10,6 +10,12 @@ The connection adapter still owns composition of database, secret, trust, and
 session state, so those dependencies remain available only at that explicit
 boundary while the next capability splits are prepared.
 
+The former aggregate `BackendSshService` was then removed. Connection,
+connection-test, SSH-config, and tunnel contracts now use separately named
+adapters constructed in shell composition; each adapter stores only the state
+required by its contract. Tunnel startup also receives `EventBus` directly,
+so its asynchronous connection loop no longer carries the aggregate `App`.
+
 ## R06-001 backend facade inventory and error boundary
 
 Recorded the complete backend module/export and direct-consumer map in

@@ -1,7 +1,7 @@
 //! Backend adapters for the UI-free SSH capability contracts.
 
 use super::{client, config_parser, pty, sftp as remote, tunnels};
-use crate::{App, EventBus, EventChannel};
+use crate::{EventBus, EventChannel};
 use labonair_errors::LabonairError;
 use labonair_ssh::{
     ActiveTunnel, BoxFuture, ImportConflict, SharedSshEventSink, SshConfigEntry, SshConfigService,
@@ -12,13 +12,91 @@ use labonair_ssh::{
 use serde::Deserialize;
 
 #[derive(Clone)]
-pub struct BackendSshService {
-    app: App,
+pub struct BackendSshConnectionService {
+    state: super::SshState,
+    trust: super::TrustState,
+    hosts_db: labonair_persistence::Database,
+    secrets: std::sync::Arc<super::super::secrets::SecretsState>,
+    events: EventBus,
 }
 
-impl BackendSshService {
-    pub fn new(app: App) -> Self {
-        Self { app }
+impl BackendSshConnectionService {
+    pub fn new(
+        state: super::SshState,
+        trust: super::TrustState,
+        hosts_db: labonair_persistence::Database,
+        secrets: std::sync::Arc<super::super::secrets::SecretsState>,
+        events: EventBus,
+    ) -> Self {
+        Self {
+            state,
+            trust,
+            hosts_db,
+            secrets,
+            events,
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct BackendSshConnectionTester {
+    trust: super::TrustState,
+    hosts_db: labonair_persistence::Database,
+    secrets: std::sync::Arc<super::super::secrets::SecretsState>,
+    events: EventBus,
+}
+
+impl BackendSshConnectionTester {
+    pub fn new(
+        trust: super::TrustState,
+        hosts_db: labonair_persistence::Database,
+        secrets: std::sync::Arc<super::super::secrets::SecretsState>,
+        events: EventBus,
+    ) -> Self {
+        Self {
+            trust,
+            hosts_db,
+            secrets,
+            events,
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct BackendSshConfigService {
+    hosts_db: labonair_persistence::Database,
+}
+
+impl BackendSshConfigService {
+    pub fn new(hosts_db: labonair_persistence::Database) -> Self {
+        Self { hosts_db }
+    }
+}
+
+#[derive(Clone)]
+pub struct BackendSshTunnelService {
+    tunnel_state: tunnels::TunnelState,
+    hosts_db: labonair_persistence::Database,
+    secrets: std::sync::Arc<super::super::secrets::SecretsState>,
+    trust: super::TrustState,
+    events: EventBus,
+}
+
+impl BackendSshTunnelService {
+    pub fn new(
+        tunnel_state: tunnels::TunnelState,
+        hosts_db: labonair_persistence::Database,
+        secrets: std::sync::Arc<super::super::secrets::SecretsState>,
+        trust: super::TrustState,
+        events: EventBus,
+    ) -> Self {
+        Self {
+            tunnel_state,
+            hosts_db,
+            secrets,
+            trust,
+            events,
+        }
     }
 }
 
@@ -217,13 +295,17 @@ impl From<ImportConflict> for config_parser::ImportConflict {
     }
 }
 
-impl SshConnectionService for BackendSshService {
+impl SshConnectionService for BackendSshConnectionService {
     fn connect<'a>(
         &'a self,
         request: SshConnectRequest,
         events: SharedSshEventSink,
     ) -> BoxFuture<'a, Result<(), LabonairError>> {
-        let app = self.app.clone();
+        let state = self.state.clone();
+        let trust = self.trust.clone();
+        let hosts_db = self.hosts_db.clone();
+        let secrets = self.secrets.clone();
+        let event_bus = self.events.clone();
         Box::pin(async move {
             let session_id = request.session_id.into();
             let on_event = EventChannel::new(move |event: pty::SshPtyEvent| match event {
@@ -238,11 +320,11 @@ impl SshConnectionService for BackendSshService {
                 request.initial_rows,
                 request.blocks,
                 on_event,
-                &app.ssh,
-                &app.trust,
-                &app.db,
-                &app.secrets,
-                app.events.clone(),
+                &state,
+                &trust,
+                &hosts_db,
+                &secrets,
+                event_bus,
                 request.connect_timeout_secs,
             )
             .await
@@ -250,8 +332,8 @@ impl SshConnectionService for BackendSshService {
     }
 
     fn disconnect<'a>(&'a self, session_id: SshSessionId) -> BoxFuture<'a, Result<(), String>> {
-        let app = self.app.clone();
-        Box::pin(async move { client::ssh_disconnect(session_id.into(), &app.ssh).await })
+        let state = self.state.clone();
+        Box::pin(async move { client::ssh_disconnect(session_id.into(), &state).await })
     }
 
     fn trust_host<'a>(
@@ -259,10 +341,8 @@ impl SshConnectionService for BackendSshService {
         session_id: SshSessionId,
         accepted: bool,
     ) -> BoxFuture<'a, Result<(), String>> {
-        let app = self.app.clone();
-        Box::pin(
-            async move { client::ssh_trust_host(session_id.into(), accepted, &app.trust).await },
-        )
+        let trust = self.trust.clone();
+        Box::pin(async move { client::ssh_trust_host(session_id.into(), accepted, &trust).await })
     }
 }
 
@@ -374,7 +454,7 @@ impl SshRemoteFileService for BackendSshRemoteService {
     }
 }
 
-impl SshConnectionTester for BackendSshService {
+impl SshConnectionTester for BackendSshConnectionTester {
     fn test<'a>(
         &'a self,
         host_id: String,
@@ -382,17 +462,19 @@ impl SshConnectionTester for BackendSshService {
         password_override: Option<String>,
         connect_timeout_secs: Option<u64>,
     ) -> BoxFuture<'a, Result<SshTestResult, LabonairError>> {
-        let app = self.app.clone();
+        let trust = self.trust.clone();
+        let hosts_db = self.hosts_db.clone();
+        let secrets = self.secrets.clone();
+        let events = self.events.clone();
         Box::pin(async move {
-            let refs = app.clone();
             client::ssh_test_connection(
                 host_id,
                 passphrase,
                 password_override,
-                &refs.trust,
-                &refs.db,
-                &refs.secrets,
-                app.events.clone(),
+                &trust,
+                &hosts_db,
+                &secrets,
+                events,
                 connect_timeout_secs,
             )
             .await
@@ -409,7 +491,7 @@ impl SshConnectionTester for BackendSshService {
     }
 }
 
-impl SshConfigService for BackendSshService {
+impl SshConfigService for BackendSshConfigService {
     fn parse<'a>(&'a self) -> BoxFuture<'a, Result<Vec<SshConfigEntry>, String>> {
         Box::pin(async move {
             config_parser::parse_ssh_config_cmd()
@@ -423,16 +505,16 @@ impl SshConfigService for BackendSshService {
         entries: Vec<SshConfigEntry>,
         conflict: ImportConflict,
     ) -> BoxFuture<'a, Result<Vec<String>, String>> {
-        let app = self.app.clone();
+        let hosts_db = self.hosts_db.clone();
         Box::pin(async move {
             let entries = entries.into_iter().map(Into::into).collect();
-            config_parser::import_ssh_config_entries(entries, conflict.into(), &app.db).await
+            config_parser::import_ssh_config_entries(entries, conflict.into(), &hosts_db).await
         })
     }
 
     fn export<'a>(&'a self, host_ids: Vec<String>) -> BoxFuture<'a, Result<String, String>> {
-        let app = self.app.clone();
-        Box::pin(async move { config_parser::export_ssh_config(host_ids, &app.db).await })
+        let hosts_db = self.hosts_db.clone();
+        Box::pin(async move { config_parser::export_ssh_config(host_ids, &hosts_db).await })
     }
 
     fn write_export<'a>(
@@ -444,18 +526,21 @@ impl SshConfigService for BackendSshService {
     }
 }
 
-impl SshTunnelService for BackendSshService {
+impl SshTunnelService for BackendSshTunnelService {
     fn start<'a>(&'a self, host_id: String) -> BoxFuture<'a, Result<(), String>> {
-        let app = self.app.clone();
+        let tunnel_state = self.tunnel_state.clone();
+        let hosts_db = self.hosts_db.clone();
+        let secrets = self.secrets.clone();
+        let trust = self.trust.clone();
+        let events = self.events.clone();
         Box::pin(async move {
-            let refs = app.clone();
             tunnels::ssh_start_tunnels(
                 host_id,
-                &refs.tunnels,
-                &refs.db,
-                &refs.secrets,
-                &refs.trust,
-                app,
+                &tunnel_state,
+                &hosts_db,
+                &secrets,
+                &trust,
+                events,
                 None,
             )
             .await
@@ -463,12 +548,12 @@ impl SshTunnelService for BackendSshService {
     }
 
     fn stop<'a>(&'a self, host_id: String) -> BoxFuture<'a, Result<(), String>> {
-        let state = tunnels::TunnelState(self.app.tunnels.0.clone());
-        Box::pin(async move { tunnels::ssh_stop_tunnels(host_id, &state).await })
+        let tunnel_state = self.tunnel_state.clone();
+        Box::pin(async move { tunnels::ssh_stop_tunnels(host_id, &tunnel_state).await })
     }
 
     fn active(&self) -> Vec<ActiveTunnel> {
-        tunnels::active_tunnels(&self.app.tunnels)
+        tunnels::active_tunnels(&self.tunnel_state)
             .into_iter()
             .map(|tunnel| ActiveTunnel {
                 host_id: tunnel.host_id,

@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
+use crate::EventBus;
 use serde::{Deserialize, Serialize};
 use tokio::net::TcpListener;
 use tokio_util::sync::CancellationToken;
@@ -67,6 +68,7 @@ pub fn active_tunnels(state: &TunnelState) -> Vec<ActiveTunnel> {
     out
 }
 
+#[derive(Clone)]
 pub struct TunnelState(pub Arc<Mutex<HashMap<String, TunnelEntry>>>);
 
 impl Default for TunnelState {
@@ -121,7 +123,7 @@ pub async fn ssh_start_tunnels(
     hosts_db: &labonair_persistence::Database,
     secrets: &crate::modules::secrets::SecretsState,
     trust_state: &super::TrustState,
-    app: crate::App,
+    events: EventBus,
     connect_timeout_secs: Option<u64>,
 ) -> Result<(), String> {
     // If tunnel already running for this host, just increment the ref count.
@@ -196,7 +198,7 @@ pub async fn ssh_start_tunnels(
     let host_id_clone = host_id.clone();
     let state_arc = tunnel_state.0.clone();
     let trust_inner = trust_state.clone();
-    let app_clone = app.clone();
+    let events_clone = events.clone();
 
     tokio::spawn(run_tunnel_loop(
         host_address,
@@ -211,7 +213,7 @@ pub async fn ssh_start_tunnels(
         host_id_clone,
         state_arc,
         trust_inner,
-        app_clone,
+        events_clone,
         connect_timeout_secs,
     ));
 
@@ -240,7 +242,7 @@ async fn run_tunnel_loop(
     host_id: String,
     tunnel_state: TunnelMap,
     trust_state: super::TrustState,
-    app: crate::App,
+    events: EventBus,
     connect_timeout_secs: Option<u64>,
 ) {
     let session_id = format!("tunnel_{host_id}");
@@ -257,7 +259,7 @@ async fn run_tunnel_loop(
         password.as_deref(),
         None,
         &trust_state,
-        &app.events,
+        &events,
         true,
         jump,
         connect_timeout_secs,

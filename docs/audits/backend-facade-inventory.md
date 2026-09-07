@@ -115,13 +115,14 @@ receive an explicit `EventBus` rather than the aggregate `App`, and both
 plus `EventBus`. Their constructors remain composition-only extraction
 points while the remaining SSH and MCP server adapters are migrated.
 
-The SSH contract adapter was split by responsibility: PTY write/resize now
-use `BackendSshPtyService` with only `SshState`, and remote command/file
-operations use `BackendSshRemoteService` with `SshState + EventBus`.
-Connection, trust, config, tester, and tunnel operations still share the
-broader adapter because their helper implementations currently require
-database, secrets, trust, or tunnel state; they remain the next extraction
-surface rather than being hidden behind the PTY/file adapter.
+The SSH contract adapters are split by responsibility: PTY write/resize use
+`BackendSshPtyService` with only `SshState`, remote command/file operations
+use `BackendSshRemoteService` with `SshState + EventBus`, and connection,
+tester, config, and tunnel contracts each have their own named adapter. The
+connection adapter owns the explicit database/secrets/trust/session inputs;
+the tester owns its read-only connection inputs, config owns the host database,
+and tunnels own tunnel state plus their connection inputs. No SSH contract is
+backed by the former aggregate `BackendSshService` anymore.
 
 The lower-level SSH connection pipeline was narrowed independently. Transport
 setup, host-key verification, authentication, jump-host handshakes, and PTY

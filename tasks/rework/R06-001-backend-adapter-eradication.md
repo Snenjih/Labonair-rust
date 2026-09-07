@@ -149,6 +149,10 @@ boundary still exists; that package must not become a second capability owner.
       `EventBus` for connection logs, trust notifications, and disconnect
       events; database, secrets, and trust orchestration remain at the
       composition adapter boundary.
+- [x] The former aggregate SSH adapter was split into separately injected
+      connection, connection-test, config, and tunnel adapters; each stores
+      only the state required by its contract and no SSH contract is backed by
+      `BackendSshService` anymore.
 - [x] Secrets compatibility wrappers and jump-host resolution no longer take
       the aggregate `App`; they receive only their actual state dependencies.
 - [ ] Move the remaining contracts and adapters behind injected capability
