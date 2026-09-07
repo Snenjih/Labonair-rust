@@ -1111,3 +1111,9 @@ issue options, and links to the predecessor repository. Active GitHub issue/
 PR templates, labeler config, and VS Code recommendations now match the native
 Rust/GPUI macOS/Linux project. All active GitHub YAML files parse successfully;
 the diff is clean and the change is committed as `ca02de7`.
+
+The current crate-graph generator was then run against live `cargo metadata`.
+The generated `docs/assets/crate-graph.dot` and `.svg` are now versioned and
+linked from `docs/audits/architecture-inventory.md`, so the 52-crate/219-edge
+current snapshot can be reviewed independently of the normative target graph.
+Dependency, queue, and diff checks pass; this is committed as `a9c248a`.

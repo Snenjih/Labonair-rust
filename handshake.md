@@ -39,6 +39,11 @@ removed from active automation. YAML parsing and diff checks pass. This is
 committed as `ca02de7`. The next active task remains R07-001, with R07-004
 prepared but not started.
 
+The live crate-graph generator was run against `cargo metadata`. Its DOT and
+SVG outputs are now committed under `docs/assets/` and linked from the current
+architecture inventory, making the 52-crate/219-edge snapshot reviewable. The
+dependency verifier and queue checks pass; this is committed as `a9c248a`.
+
 The active-code source audit found no passive toast renderer or duplicate
 operation-error surface. The Explorer clipboard strip and editor conflict
 banner are actionable decision surfaces. The AI error model was corrected in
