@@ -72,6 +72,11 @@ Before implementation, identify the owning module, canonical user entry point, p
 
 During implementation, keep feature logic inside its owner, route user messages through the notification center, and avoid shell-wide conditionals.
 
+The only active architecture-rework queue is `tasks/rework/`. Follow its
+README in dependency order and work only on the earliest incomplete task;
+`tasks/phase-*` and `tasks/archive/` are historical records, not an alternate
+implementation queue.
+
 For every new feature or migration, follow [`docs/feature-lifecycle.md`](docs/feature-lifecycle.md) and record the owner, canonical capability
 crate, public contract, user entry point, registry contributions, settings,
 persistence, notifications, and UI-kit components before coding. Add the
