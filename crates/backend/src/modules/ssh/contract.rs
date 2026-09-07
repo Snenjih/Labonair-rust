@@ -1,7 +1,7 @@
 //! Backend adapters for the UI-free SSH capability contracts.
 
 use super::{client, config_parser, pty, sftp as remote, tunnels};
-use crate::{App, EventChannel};
+use crate::{App, EventBus, EventChannel};
 use labonair_errors::LabonairError;
 use labonair_ssh::{
     ActiveTunnel, BoxFuture, ImportConflict, SharedSshEventSink, SshConfigEntry, SshConfigService,
@@ -26,12 +26,12 @@ impl BackendSshService {
 /// the narrow SSH connection-event contract.
 #[derive(Clone)]
 pub struct BackendSshEventSource {
-    app: App,
+    events: EventBus,
 }
 
 impl BackendSshEventSource {
-    pub fn new(app: App) -> Self {
-        Self { app }
+    pub fn new(events: EventBus) -> Self {
+        Self { events }
     }
 }
 
@@ -136,7 +136,7 @@ impl SshEventReceiver for BackendSshEventReceiver {
 impl SshEventSource for BackendSshEventSource {
     fn subscribe(&self) -> Box<dyn SshEventReceiver> {
         Box::new(BackendSshEventReceiver {
-            receiver: self.app.events.subscribe(),
+            receiver: self.events.subscribe(),
         })
     }
 }

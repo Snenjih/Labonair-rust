@@ -130,6 +130,8 @@ boundary still exists; that package must not become a second capability owner.
 - [x] Removed the broad backend `AppEvent` enum and typed-emitter helper;
       SSH and MCP adapters now decode only their own raw event names directly
       into the canonical capability contracts.
+- [x] Event-source adapters for SSH, MCP, and Transfers now receive only the
+      shared raw `EventBus`; they no longer retain the aggregate `App` handle.
 - [ ] Move the remaining contracts and adapters behind injected capability
       services.
 - [ ] Delete the broad `App` facade paths and remaining compatibility edges.

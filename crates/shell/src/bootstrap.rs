@@ -241,10 +241,12 @@ pub(crate) fn bootstrap(
     let ssh_config: Arc<dyn SshConfigService> =
         Arc::new(labonair_backend::modules::ssh::contract::BackendSshService::new(backend.clone()));
     let ssh_event_source: Arc<dyn SshEventSource> = Arc::new(
-        labonair_backend::modules::ssh::contract::BackendSshEventSource::new(backend.clone()),
+        labonair_backend::modules::ssh::contract::BackendSshEventSource::new(
+            backend.events.clone(),
+        ),
     );
     let mcp_event_source: Arc<dyn McpEventSource> =
-        Arc::new(BackendMcpEventSource::new(backend.clone()));
+        Arc::new(BackendMcpEventSource::new(backend.events.clone()));
     let host_manager = {
         let app_for_host_events = backend.clone();
         let host_event_handler = Arc::new(move |event| {
@@ -274,7 +276,9 @@ pub(crate) fn bootstrap(
         labonair_backend::modules::transfers::BackendTransferService::new(backend.clone()),
     );
     let transfer_events: Arc<dyn TransferEventSource> = Arc::new(
-        labonair_backend::modules::transfers::BackendTransferEventSource::new(backend.clone()),
+        labonair_backend::modules::transfers::BackendTransferEventSource::new(
+            backend.events.clone(),
+        ),
     );
     let git_service: Arc<dyn labonair_git::GitService> = Arc::new(
         labonair_backend::modules::git::BackendGitService::new(backend.clone()),

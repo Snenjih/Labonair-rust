@@ -57,12 +57,12 @@ impl McpTabOperationService for BackendMcpSessionAccess {
 /// narrow MCP event contract consumed by Workspace.
 #[derive(Clone)]
 pub struct BackendMcpEventSource {
-    app: crate::App,
+    events: crate::EventBus,
 }
 
 impl BackendMcpEventSource {
-    pub fn new(app: crate::App) -> Self {
-        Self { app }
+    pub fn new(events: crate::EventBus) -> Self {
+        Self { events }
     }
 }
 
@@ -163,7 +163,7 @@ impl McpEventReceiver for BackendMcpEventReceiver {
 impl McpEventSource for BackendMcpEventSource {
     fn subscribe(&self) -> Box<dyn McpEventReceiver> {
         Box::new(BackendMcpEventReceiver {
-            receiver: self.app.events.subscribe(),
+            receiver: self.events.subscribe(),
         })
     }
 }

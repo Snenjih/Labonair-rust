@@ -88,6 +88,11 @@ directly into their canonical contracts; MCP grant revocation keeps its
 existing legacy wire event through `App::emit` until the remaining backend
 adapter is extracted.
 
+SSH, MCP, and Transfer event-source adapters now receive `EventBus` directly
+instead of retaining the aggregate backend `App`. This keeps raw event
+transport available at the composition boundary without widening the adapter's
+state dependency.
+
 ## Native visual verification
 
 The exact Rust bundle was opened through its absolute `.app` path. Core

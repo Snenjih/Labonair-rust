@@ -16,7 +16,7 @@ a concrete platform adapter with a named consumer and removal condition.
 | Surface | Current location | External consumers | Target boundary | R06 state |
 |---|---|---|---|---|
 | `App` / `AppState` and `AppInner` | `backend::app` | `app`, `shell`, backend adapters | application composition plus injected capability services | Broad facade remains; split is the main task |
-| `EventBus`, `EventChannel`, `RawEvent` | `backend::events` | `app`, backend transport adapters | typed capability events and explicit transport adapters | global bus remains only as a raw internal adapter source; the broad `AppEvent` enum was removed |
+| `EventBus`, `EventChannel`, `RawEvent` | `backend::events` | `app`, backend transport adapters | typed capability events and explicit transport adapters | global bus remains only as a raw internal adapter source; event-source adapters receive `EventBus` directly and no longer retain `App` |
 | updater constants and operations | `backend::modules::updater` | `shell::updater`, app smoke tests | updater/application boundary | Root re-export removed; consumers use the updater module directly |
 | structured errors | formerly `backend::modules::errors` and root re-exports | no external backend import remains | `labonair-errors` | Root re-export and module removed in the first R06 slice |
 

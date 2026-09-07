@@ -64,10 +64,8 @@ pub struct BackendTransferEventSource {
 }
 
 impl BackendTransferEventSource {
-    pub fn new(app: App) -> Self {
-        Self {
-            events: app.events.clone(),
-        }
+    pub fn new(events: EventBus) -> Self {
+        Self { events }
     }
 }
 
