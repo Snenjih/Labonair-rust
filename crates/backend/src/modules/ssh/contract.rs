@@ -22,6 +22,34 @@ impl BackendSshService {
     }
 }
 
+/// Narrow adapter for PTY I/O. It deliberately owns only the SSH session
+/// registry because writing and resizing an existing session do not require
+/// host, trust, database, or secret state.
+#[derive(Clone)]
+pub struct BackendSshPtyService {
+    state: super::SshState,
+}
+
+impl BackendSshPtyService {
+    pub fn new(state: super::SshState) -> Self {
+        Self { state }
+    }
+}
+
+/// Narrow adapter for remote file operations that need connection-loss
+/// reporting. It does not retain the aggregate backend App.
+#[derive(Clone)]
+pub struct BackendSshRemoteService {
+    state: super::SshState,
+    events: EventBus,
+}
+
+impl BackendSshRemoteService {
+    pub fn new(state: super::SshState, events: EventBus) -> Self {
+        Self { state, events }
+    }
+}
+
 /// Shell-composed adapter that translates the legacy backend event stream into
 /// the narrow SSH connection-event contract.
 #[derive(Clone)]
@@ -238,13 +266,13 @@ impl SshConnectionService for BackendSshService {
     }
 }
 
-impl SshPtyService for BackendSshService {
+impl SshPtyService for BackendSshPtyService {
     fn write<'a>(
         &'a self,
         session_id: SshSessionId,
         data: String,
     ) -> BoxFuture<'a, Result<(), String>> {
-        let state = self.app.ssh.clone();
+        let state = self.state.clone();
         Box::pin(async move { pty::ssh_pty_write(session_id.into(), data, &state).await })
     }
 
@@ -254,12 +282,12 @@ impl SshPtyService for BackendSshService {
         cols: u32,
         rows: u32,
     ) -> BoxFuture<'a, Result<(), String>> {
-        let state = self.app.ssh.clone();
+        let state = self.state.clone();
         Box::pin(async move { pty::ssh_pty_resize(session_id.into(), cols, rows, &state).await })
     }
 }
 
-impl SshRemoteCommandService for BackendSshService {
+impl SshRemoteCommandService for BackendSshRemoteService {
     fn chown<'a>(
         &'a self,
         session_id: SshSessionId,
@@ -267,19 +295,12 @@ impl SshRemoteCommandService for BackendSshService {
         owner: String,
         group: String,
     ) -> BoxFuture<'a, Result<(), String>> {
-        let app = self.app.clone();
+        let state = self.state.clone();
+        let events = self.events.clone();
         Box::pin(async move {
-            let state = app.ssh.clone();
-            remote::sftp_chown(
-                session_id.into(),
-                path,
-                owner,
-                group,
-                &state,
-                app.events.clone(),
-            )
-            .await
-            .map_err(|error| error.to_string())
+            remote::sftp_chown(session_id.into(), path, owner, group, &state, events)
+                .await
+                .map_err(|error| error.to_string())
         })
     }
 
@@ -288,32 +309,32 @@ impl SshRemoteCommandService for BackendSshService {
         session_id: SshSessionId,
         path: String,
     ) -> BoxFuture<'a, Result<String, String>> {
-        let app = self.app.clone();
+        let state = self.state.clone();
+        let events = self.events.clone();
         Box::pin(async move {
-            let state = app.ssh.clone();
-            remote::sftp_calculate_size(session_id.into(), path, &state, app.events.clone())
+            remote::sftp_calculate_size(session_id.into(), path, &state, events)
                 .await
                 .map_err(|error| error.to_string())
         })
     }
 }
 
-impl SshRemoteFileService for BackendSshService {
+impl SshRemoteFileService for BackendSshRemoteService {
     fn prepare_remote_edit<'a>(
         &'a self,
         session_id: SshSessionId,
         remote_path: String,
         max_bytes: Option<u64>,
     ) -> BoxFuture<'a, Result<String, String>> {
-        let app = self.app.clone();
+        let state = self.state.clone();
+        let events = self.events.clone();
         Box::pin(async move {
-            let state = app.ssh.clone();
             remote::prepare_remote_edit(
                 session_id.into(),
                 remote_path,
                 max_bytes,
                 &state,
-                app.events.clone(),
+                events.clone(),
             )
             .await
             .map_err(|error| error.to_string())
@@ -326,15 +347,15 @@ impl SshRemoteFileService for BackendSshService {
         remote_path: String,
         local_temp_path: String,
     ) -> BoxFuture<'a, Result<(), String>> {
-        let app = self.app.clone();
+        let state = self.state.clone();
+        let events = self.events.clone();
         Box::pin(async move {
-            let state = app.ssh.clone();
             remote::save_remote_edit(
                 session_id.into(),
                 remote_path,
                 local_temp_path,
                 &state,
-                app.events.clone(),
+                events,
             )
             .await
             .map_err(|error| error.to_string())

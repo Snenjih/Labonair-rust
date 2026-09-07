@@ -43,7 +43,7 @@ participate in the `App` state graph or in another backend module.
 | `sftp` | session adapter, remote operations, transfer worker state/commands | `shell`; internal SSH/transfer adapters | `labonair-sftp` and `labonair-transfers` integration boundaries; SFTP service now receives only SSH state plus the raw event bus |
 | `shell` | local command execution, shell sessions, background processes | no active external module import found | terminal/workspace owner; split local process service from backend facade |
 | `snippets` | snippet DB compatibility and SSH executor adapter | `shell`; internal backend use | `labonair-snippets` integration boundary |
-| `ssh` | SSH state, transport, PTY, remote files, tunnels, config import/export | `shell`; internal Git/SFTP/snippet/MCP use | `labonair-ssh` integration boundary; inject narrow services |
+| `ssh` | SSH state, transport, PTY, remote files, tunnels, config import/export | `shell`; internal Git/SFTP/snippet/MCP use | `labonair-ssh` integration boundary; PTY and remote-file adapters now receive only their required capability state, while connection/config/tunnel extraction remains |
 | `terminal_exec` | terminal execution state and command helpers | internal MCP use | MCP/terminal contract; no public `App` access |
 | `themes` | legacy theme values, import/export/download operations | none found | `labonair-theme`; static registry is canonical, legacy download path is deferred |
 | `transfers` | `BackendTransferService` and event source | `shell` | `labonair-transfers` integration boundary; service receives only `TransferWorkerState`, event translation stays once at adapter edge |
@@ -114,6 +114,14 @@ receive an explicit `EventBus` rather than the aggregate `App`, and both
 `BackendGitService` and `BackendGitGraphService` retain only `SshState`
 plus `EventBus`. Their constructors remain composition-only extraction
 points while the remaining SSH and MCP server adapters are migrated.
+
+The SSH contract adapter was split by responsibility: PTY write/resize now
+use `BackendSshPtyService` with only `SshState`, and remote command/file
+operations use `BackendSshRemoteService` with `SshState + EventBus`.
+Connection, trust, config, tester, and tunnel operations still share the
+broader adapter because their helper implementations currently require
+database, secrets, trust, or tunnel state; they remain the next extraction
+surface rather than being hidden behind the PTY/file adapter.
 
 ## Verification commands
 

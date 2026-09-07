@@ -142,6 +142,9 @@ boundary still exists; that package must not become a second capability owner.
       `EventBus`, while the MCP server remains a separate App-bound adapter.
 - [x] The Git operation surface now receives explicit `EventBus` values, and
       both Git service adapters retain only `SshState` plus `EventBus`.
+- [x] SSH PTY operations are provided by a dedicated adapter with only
+      `SshState); remote command/file operations use a dedicated adapter with
+      only `SshState` plus `EventBus`.
 - [ ] Move the remaining contracts and adapters behind injected capability
       services.
 - [ ] Delete the broad `App` facade paths and remaining compatibility edges.

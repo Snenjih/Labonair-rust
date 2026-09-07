@@ -116,6 +116,12 @@ explicit `EventBus` as well. `BackendGitService` and
 `BackendGitGraphService` retain only those two capability states, so the
 aggregate App is no longer part of the Git operation surface.
 
+The SSH adapter was split by capability next. PTY write/resize now use
+`BackendSshPtyService` with only `SshState`; remote command/file operations
+use `BackendSshRemoteService` with `SshState + EventBus`. Connection,
+trust, config, tester, and tunnel operations remain in the broader adapter
+until their database/secrets/trust/tunnel dependencies are extracted.
+
 ## Native visual verification
 
 The exact Rust bundle was opened through its absolute `.app` path. Core

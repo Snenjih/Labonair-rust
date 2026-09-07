@@ -231,12 +231,21 @@ pub(crate) fn bootstrap(
         .flatten();
     let ssh_service: Arc<dyn SshConnectionService> =
         Arc::new(labonair_backend::modules::ssh::contract::BackendSshService::new(backend.clone()));
-    let ssh_pty_service: Arc<dyn SshPtyService> =
-        Arc::new(labonair_backend::modules::ssh::contract::BackendSshService::new(backend.clone()));
-    let ssh_remote_service: Arc<dyn SshRemoteCommandService> =
-        Arc::new(labonair_backend::modules::ssh::contract::BackendSshService::new(backend.clone()));
-    let ssh_remote_file_service: Arc<dyn SshRemoteFileService> =
-        Arc::new(labonair_backend::modules::ssh::contract::BackendSshService::new(backend.clone()));
+    let ssh_pty_service: Arc<dyn SshPtyService> = Arc::new(
+        labonair_backend::modules::ssh::contract::BackendSshPtyService::new(backend.ssh.clone()),
+    );
+    let ssh_remote_service: Arc<dyn SshRemoteCommandService> = Arc::new(
+        labonair_backend::modules::ssh::contract::BackendSshRemoteService::new(
+            backend.ssh.clone(),
+            backend.events.clone(),
+        ),
+    );
+    let ssh_remote_file_service: Arc<dyn SshRemoteFileService> = Arc::new(
+        labonair_backend::modules::ssh::contract::BackendSshRemoteService::new(
+            backend.ssh.clone(),
+            backend.events.clone(),
+        ),
+    );
     let ssh_tunnel_service: Arc<dyn SshTunnelService> =
         Arc::new(labonair_backend::modules::ssh::contract::BackendSshService::new(backend.clone()));
     let ssh_tester: Arc<dyn SshConnectionTester> =
