@@ -24,7 +24,7 @@ Legacy `appCornerRadius` values are converted to the current
 `cornerRadiusScale` field during migration, with the modern value taking
 precedence when both are present.
 
-Current HEAD is `91c35e0` on `master`; the worktree is clean. The first R06
+Current HEAD is `617e022` on `master`; the worktree is clean. The first R06
 boundaries removed the backend error facade, removed AI's stale backend edge,
 moved system-font discovery into the Theme owner, deleted the unconsumed
 backend custom-font module, removed the dead legacy bar-placement API while
@@ -55,6 +55,8 @@ The Git operation surface now receives explicit `EventBus` values, and both
 Git service adapters retain only `SshState` plus `EventBus`.
 SSH PTY operations now use a dedicated `SshState` adapter, and remote
 command/file operations use a dedicated `SshState + EventBus` adapter.
+Secrets compatibility wrappers and jump-host resolution now receive only
+their actual state dependencies and no longer require the aggregate `App`.
 The MCP grant/session adapter now retains only `McpState` and `Database`; host
 revocation and auto-revoke use explicit state plus `EventBus`.
 The General cleanup including `startupTerminalCount` is committed in
