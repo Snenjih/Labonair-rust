@@ -348,3 +348,14 @@ the legacy Preferences wire shape remains readable for old files. The
 inventory now records them as remove-only compatibility input. Full workspace
 tests, check, Clippy, dependency, queue, formatting, and diff checks pass.
 Committed as `d596df2`; R05-001 remains active for indirect consumer proof.
+
+## R05-001 Editor audit cleanup
+
+Removed the four Editor values with no current native editor consumer:
+`editorAutoSave`, `editorAutoSaveDelay`, `editorAutocompleteDebounceMs`, and
+`editorMaxFileSizeMb`. They are gone from the typed model, defaults, generated
+Settings UI, and v1 migration target while the legacy Preferences wire shape
+remains readable for old files. The inventory now records them as remove-only
+compatibility input. Full workspace tests, check, Clippy, dependency, queue,
+formatting, and diff checks pass. Committed as `145966b`; R05-001 remains
+active for the File Manager and Connection audits.
