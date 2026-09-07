@@ -24,7 +24,7 @@ Legacy `appCornerRadius` values are converted to the current
 `cornerRadiusScale` field during migration, with the modern value taking
 precedence when both are present.
 
-Current HEAD is `afa530b` on `master`; the worktree is clean before this
+Current HEAD is `94fac70` on `master`; the worktree is clean before this
 handshake update. The first R06
 boundaries removed the backend error facade, removed AI's stale backend edge,
 moved system-font discovery into the Theme owner, deleted the unconsumed
@@ -68,6 +68,12 @@ were deleted after repository-wide consumer search; no reachable workflow was
 changed, and future versions must add these capabilities through their owning
 AI contracts rather than restoring backend modules. Full workspace tests,
 Clippy, dependency, queue, and diff checks pass.
+The legacy standalone EditorPrefs persistence adapter and
+`Preferences::editor_prefs` projection were also removed. `EditorPrefs` now
+exists only as a private wire shape inside the v1→v2 migrator, with the exact
+historical defaults preserved so sparsification does not create false user
+overrides. Full workspace tests, Clippy, dependency, queue, and diff checks
+pass after correcting this migration default regression.
 SSH, MCP, and Transfer event-source adapters now retain only `EventBus`, not
 the aggregate `App` handle.
 The Transfer service adapter now retains only `TransferWorkerState` as well.
