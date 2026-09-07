@@ -122,6 +122,14 @@ no longer contains the `OpenKeymapJson` execution adapter. Targeted
 Keymap-UI/Shell check, Clippy, tests, dependency, queue, format, and diff
 checks pass.
 
+The command-palette `OpenCommandPalette` executable contribution was moved
+into `labonair-command-palette::command_provider` in `289b027`. The shell now
+injects only a modal-toggle callback during bootstrap; palette behavior is no
+longer stored in the shell's transitional command table. Full workspace check,
+Clippy, tests, dependency validation, queue validation, and diff checks pass.
+The next command-ownership boundaries are Search and Connections, followed by
+the remaining editor/theme/Git/snippet adapters and native shell actions.
+
 The current R05 slices removed the untyped `general.notifyOnErrors` default,
 moved Background values behind their owner, moved dock/sidebar runtime state
 to the versioned Workspace-owned `workspace-layout.json`, and removed
@@ -135,8 +143,8 @@ Legacy `appCornerRadius` values are converted to the current
 `cornerRadiusScale` field during migration, with the modern value taking
 precedence when both are present.
 
-Current HEAD is `813b61d` on `master`; the worktree contains only this
-handshake update before its commit. R06
+Current HEAD is `289b027` on `master`; the worktree contains this handshake
+update before its commit. R06
 boundaries removed the backend error facade, removed AI's stale backend edge,
 moved system-font discovery into the Theme owner, deleted the unconsumed
 backend custom-font module, removed the dead legacy bar-placement API while
