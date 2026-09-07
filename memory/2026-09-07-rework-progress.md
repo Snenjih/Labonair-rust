@@ -847,3 +847,9 @@ Cursor Position and Preview URL statusbar views were moved into
 composition no longer constructs these views directly; their rendering still
 uses the existing Workspace active-tab query contract. Targeted Clippy, tests,
 dependency validation, formatting, and diff checks pass.
+
+Dock panel buttons were moved into `labonair-workspace::dock_status_item`.
+That owner now contains the panel icon/title mapping, dock move/hide menu,
+statusbar rendering, and typed contribution constructor. Shell composition
+only requests the three edge registrations. The Workspace/Shell checks and
+tests, dependency validation, formatting, and diff checks pass.
