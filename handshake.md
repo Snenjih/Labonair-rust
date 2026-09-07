@@ -24,7 +24,7 @@ Legacy `appCornerRadius` values are converted to the current
 `cornerRadiusScale` field during migration, with the modern value taking
 precedence when both are present.
 
-Current HEAD is `0f51584` on `master`; the worktree is clean before this
+Current HEAD is `ac013e2` on `master`; the worktree is clean before this
 handshake update. The first R06
 boundaries removed the backend error facade, removed AI's stale backend edge,
 moved system-font discovery into the Theme owner, deleted the unconsumed
@@ -51,6 +51,15 @@ address and duplicate backend `PtyState` implementation were removed. Shared
 OSC 7/133 shell-integration payloads now live in the UI-free
 `labonair-terminal-integration` crate consumed by local PTY and remote SSH
 adapters. All workspace gates pass; this is committed as `0f51584`.
+Transfer queue state, conflict coordination, worker settings, and worker
+messages now belong to `labonair-transfers`; the backend transfer adapter
+implements the service, while the concrete SSH/SFTP worker remains a
+temporary transport adapter under the backend SFTP module. The unreferenced
+SFTP command/settings/reconnect wrappers and backend Snippet DB re-export were
+removed. Full workspace tests, Clippy, formatting, dependency validation,
+queue validation, and diff checks pass; this boundary is committed as
+`ac013e2`. R06-001 remains active; the next boundary is the remaining
+transport adapter extraction and injected capability cleanup.
 The broad backend `AppEvent` enum and typed-emitter helper are also gone;
 SSH and MCP adapters decode their own raw event names directly at the
 capability boundary.
