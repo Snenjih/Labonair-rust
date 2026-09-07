@@ -21,6 +21,10 @@ custom-font compatibility module and its `fontdb` dependency were removed
 because no active UI or crate consumer exists; Settings now receives the
 Theme-owned discovery service.
 
+The full workspace test suite passed after the Theme migration (including the
+172 backend, 70 Theme, and 22 Settings UI tests); formatting, Clippy, check,
+dependency, queue, and diff gates are also green. Current HEAD is `5406c1f`.
+
 ## Native visual verification
 
 The exact Rust bundle was opened through its absolute `.app` path. Core

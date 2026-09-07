@@ -24,11 +24,13 @@ Legacy `appCornerRadius` values are converted to the current
 `cornerRadiusScale` field during migration, with the modern value taking
 precedence when both are present.
 
-Current HEAD is `8424103` on `master`; the worktree contains the first R06
-backend boundary plus its inventory documentation. The workspace check passes;
-the remaining full gates are running before this slice is committed. R06-001
-is active, and the next boundary is to move one concrete adapter family behind
-its canonical capability contract.
+Current HEAD is `5406c1f` on `master`; the worktree is clean. The first R06
+boundaries removed the backend error facade, removed AI's stale backend edge,
+and moved system-font discovery into the Theme owner while deleting the
+unconsumed backend custom-font module. Workspace check, Clippy, full workspace
+tests, formatting, dependency validation, queue validation, and diff checks
+pass. R06-001 remains active; the next boundary is to move a remaining
+workspace-facing adapter behind its canonical capability contract.
 The General cleanup including `startupTerminalCount` is committed in
 `61abf4c`; the corner-radius normalization is committed in `c6e9890`, the
 unused Appearance values in `d596df2`, and the unwired Editor values in
