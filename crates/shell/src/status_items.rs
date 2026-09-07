@@ -288,7 +288,7 @@ impl StatusItem for DockPanelButtons {
         let c = Palette::from_theme(self.theme.read(cx));
         let keybind_overrides = cx
             .try_global::<labonair_command_palette::KeybindDisplay>()
-            .map(|g| g.0.clone())
+            .map(|g| g.legacy.clone())
             .unwrap_or_default();
 
         let mut panels: Vec<(SharedString, IconName, bool)> = {

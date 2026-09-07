@@ -142,3 +142,11 @@ descriptor metadata only during the migration, while provider equality checks
 prevent the two snapshots from drifting. Adding the editor provider's stable
 shortcut identity required the allowed foundation edge from `labonair-editor`
 to `labonair-interaction-contracts`.
+
+## R03-002 command-keyed display path
+
+Changed the palette's active key-hint lookup to use the effective keymap by
+`CommandId`, with descriptor defaults as the test/bootstrap fallback. The old
+`ShortcutId` map remains only for statusbar panel tooltips and is documented as
+a temporary compatibility path. This removes the legacy shortcut table from
+the palette's active rendering source.

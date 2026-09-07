@@ -34,7 +34,7 @@ use labonair_command_palette_core::{
     toggle_pref_key, CommandContext, CommandDescriptor, CommandIcon, CommandId, CommandSubmenu,
     SubmenuAction, SubmenuItem, SubmenuRegistry,
 };
-use labonair_keymap::{effective_keys, KeybindMap, ShortcutId};
+use labonair_keymap::{keystroke_tokens, ShortcutId};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Settings reads (T-block3: the palette reads its slice of the layered
@@ -100,9 +100,9 @@ fn palette_terminal_font_size(cx: &App) -> u32 {
         .unwrap_or(15)
 }
 
-fn palette_keybind_overrides(cx: &App) -> KeybindMap {
+fn palette_keybind_display(cx: &App) -> KeybindDisplay {
     cx.try_global::<KeybindDisplay>()
-        .map(|d| d.0.clone())
+        .cloned()
         .unwrap_or_default()
 }
 
@@ -250,6 +250,9 @@ pub struct Command {
     pub contexts: Vec<CommandContext>,
     /// Right-aligned shortcut hint, if the command has a bound shortcut.
     pub shortcut: Option<ShortcutId>,
+    /// First owner-contributed default binding, used before the shell has
+    /// published a runtime snapshot (for example in isolated palette tests).
+    pub default_binding: Option<String>,
     /// Leading icon (reference renders a Hugeicons glyph on every row).
     pub icon: IconName,
     /// If set, picking this row navigates to a sub-page instead of running.
@@ -266,10 +269,24 @@ impl Command {
             aliases: descriptor.aliases,
             contexts: descriptor.contexts,
             shortcut: descriptor.shortcut,
+            default_binding: descriptor
+                .default_bindings
+                .first()
+                .map(|binding| binding.keystrokes.clone()),
             icon: icon_for(descriptor.icon),
             sub_page: descriptor.submenu.map(page_for),
         }
     }
+}
+
+fn command_key_tokens(command: &Command, display: &KeybindDisplay) -> Vec<String> {
+    let binding = match display.by_command.get(&command.id) {
+        Some(binding) => binding.clone(),
+        None => command.default_binding.clone(),
+    };
+    binding
+        .map(|binding| keystroke_tokens(&binding))
+        .unwrap_or_default()
 }
 
 fn icon_for(icon: CommandIcon) -> IconName {
@@ -774,7 +791,7 @@ where
 
     fn rows(&self, cx: &App) -> Vec<PaletteRow> {
         let mode = self.search_mode(cx);
-        let overrides = palette_keybind_overrides(cx);
+        let display = palette_keybind_display(cx);
         match self.page() {
             Page::Root => {
                 let ctx = self.active_context(cx);
@@ -806,10 +823,7 @@ where
                                 title: c.title.to_string(),
                                 subtitle,
                                 section: c.section.to_string(),
-                                keys: c
-                                    .shortcut
-                                    .map(|s| effective_keys(s, &overrides))
-                                    .unwrap_or_default(),
+                                keys: command_key_tokens(c, &display),
                                 right_label,
                                 has_sub: c.sub_page.is_some(),
                             }
@@ -1124,7 +1138,7 @@ where
         let mut rows = Vec::new();
         if page == Page::Root && self.query.is_empty() && show_recent && !self.recent.is_empty() {
             let ctx = self.active_context(cx);
-            let overrides = palette_keybind_overrides(cx);
+            let display = palette_keybind_display(cx);
             let avail: std::collections::HashSet<CommandId> = available(&self.data.commands, ctx)
                 .into_iter()
                 .map(|c| c.id)
@@ -1143,10 +1157,7 @@ where
                     title: c.title.to_string(),
                     subtitle: None,
                     section: "Recently Used".to_string(),
-                    keys: c
-                        .shortcut
-                        .map(|s| effective_keys(s, &overrides))
-                        .unwrap_or_default(),
+                    keys: command_key_tokens(c, &display),
                     right_label: None,
                     has_sub: c.sub_page.is_some(),
                 });

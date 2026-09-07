@@ -29,14 +29,16 @@ pub(crate) fn effective_bindings(registry: &CommandDispatcher) -> Vec<EffectiveB
     labonair_keymap::adapter::load_descriptors(registry.iter()).effective_bindings
 }
 
-/// Derive the `ShortcutId`-keyed display map ([`KeybindDisplay`]) the command
-/// palette and panel-toggle tooltips render: absent =
-/// "runs on the `SHORTCUTS` table default", `Some(keystrokes)` = overridden,
-/// `Some("")` = explicitly unbound. Context-agnostic by design (T19-008's
-/// documented scope reduction — the display picks the first effective
-/// binding for the command regardless of context).
-fn display_map(effective: &[EffectiveBinding], registry: &CommandDispatcher) -> KeybindMap {
-    let mut map = KeybindMap::new();
+/// Derive the command-keyed display snapshot used by the palette, plus the
+/// temporary `ShortcutId` compatibility map still consumed by panel-toggle
+/// tooltips. The command map is context-agnostic by design: it picks the first
+/// effective binding for each command.
+fn display_map(effective: &[EffectiveBinding], registry: &CommandDispatcher) -> KeybindDisplay {
+    let mut legacy = KeybindMap::new();
+    let mut by_command = registry
+        .iter()
+        .map(|descriptor| (descriptor.id, None))
+        .collect::<std::collections::HashMap<_, _>>();
     for s in shortcuts() {
         let Some(cmd_id) = registry.command_for_shortcut(s.id) else {
             continue;
@@ -47,15 +49,24 @@ fn display_map(effective: &[EffectiveBinding], registry: &CommandDispatcher) -> 
             .find(|b| canonical_action_name(&b.action) == Some(action_name))
         {
             Some(b) if b.keystrokes != s.binding => {
-                map.insert(shortcut_slug(s.id).to_string(), b.keystrokes.clone());
+                legacy.insert(shortcut_slug(s.id).to_string(), b.keystrokes.clone());
             }
             Some(_) => {}
             None => {
-                map.insert(shortcut_slug(s.id).to_string(), String::new());
+                legacy.insert(shortcut_slug(s.id).to_string(), String::new());
             }
         }
     }
-    map
+    for binding in effective {
+        if let Some(command) = labonair_keymap::runtime::command_for_action(&binding.action) {
+            by_command.entry(command).and_modify(|current| {
+                if current.is_none() {
+                    *current = Some(binding.keystrokes.clone());
+                }
+            });
+        }
+    }
+    KeybindDisplay { by_command, legacy }
 }
 
 /// Load, merge, bind and publish the display global — the single entry point
@@ -64,7 +75,7 @@ pub(crate) fn reload_and_apply(cx: &mut App, registry: &CommandDispatcher) {
     let snapshot = labonair_keymap::adapter::load_descriptors(registry.iter());
     let effective = snapshot.effective_bindings;
     crate::menu::apply_keymap(cx, &effective);
-    cx.set_global(KeybindDisplay(display_map(&effective, registry)));
+    cx.set_global(display_map(&effective, registry));
 }
 
 /// Start the live fs-watch on `keymap.json` (T19-008 Anweisung #6). Call once
@@ -113,6 +124,8 @@ mod tests {
         let map = display_map(&effective, &registry);
         // `TabNew`'s default (`cmd-t`) is unchanged in a clean environment,
         // so it must not appear as an "override" in the display map.
-        assert!(!map.contains_key(shortcut_slug(labonair_command_palette::ShortcutId::TabNew)));
+        assert!(!map
+            .legacy
+            .contains_key(shortcut_slug(labonair_command_palette::ShortcutId::TabNew)));
     }
 }

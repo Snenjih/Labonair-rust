@@ -10,8 +10,8 @@
 //! Layout:
 //! * [`fuzzy`] — the `SearchMode` matcher (`match_score`), also used by the AI
 //!   composer's `@`-file picker and the settings search.
-//! * `labonair-keymap` — the rebindable [`ShortcutId`] table, [`KeybindMap`] user
-//!   overrides and conflict detection.
+//! * `labonair-keymap` — the keymap runtime, user overrides and conflict
+//!   detection.
 //! * [`palette`] — the command-palette presentation adapter and view.
 
 mod fuzzy;
@@ -33,7 +33,13 @@ pub use labonair_keymap::{
 /// GPUI-facing publication of the effective keymap. The keymap domain stays
 /// UI-free; this wrapper is an adapter consumed by palette/statusbar views.
 #[derive(Debug, Clone, Default)]
-pub struct KeybindDisplay(pub KeybindMap);
+pub struct KeybindDisplay {
+    /// Canonical display lookup keyed by the command identity.
+    pub by_command: std::collections::HashMap<CommandId, Option<String>>,
+    /// Temporary compatibility map for statusbar components still keyed by
+    /// `ShortcutId`.
+    pub legacy: KeybindMap,
+}
 
 impl gpui::Global for KeybindDisplay {}
 pub use palette::{

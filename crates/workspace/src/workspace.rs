@@ -4695,7 +4695,7 @@ impl Workspace {
             .map(|g| {
                 labonair_command_palette::effective_keys(
                     labonair_command_palette::ShortcutId::TabClose,
-                    &g.0,
+                    &g.legacy,
                 )
             })
             .unwrap_or_default();
