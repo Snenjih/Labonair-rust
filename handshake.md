@@ -11,6 +11,16 @@ R03-002 Keymap, R04-001 static Themes, R04-002 Hosts, and R05-001 Settings
 reduction are complete and visually accepted. The normative field inventory is
 `docs/settings-inventory.md`.
 
+R07 statusbar ownership is now committed as `19b20e4`: the dedicated Jump
+Hosts badge was removed, Agent Access moved to
+`labonair-workspace::status_items`, and Transfers moved to
+`labonair-transfers-ui::status_item`. Shell composition consumes typed
+registrations for those owners. Targeted Clippy, formatting,
+dependency-boundary validation, queue validation, and diff checks pass. The
+next R07 boundary is the remaining shell-owned CWD/cursor/preview/dock/updater
+surfaces, followed by the command execution registry and the visual state
+matrix.
+
 The current R05 slices removed the untyped `general.notifyOnErrors` default,
 moved Background values behind their owner, moved dock/sidebar runtime state
 to the versioned Workspace-owned `workspace-layout.json`, and removed
@@ -24,8 +34,8 @@ Legacy `appCornerRadius` values are converted to the current
 `cornerRadiusScale` field during migration, with the modern value taking
 precedence when both are present.
 
-Current HEAD is `0bd3811` on `master`; the worktree is clean before this
-handshake update. The first R06
+Current HEAD is `19b20e4` on `master`; the worktree is clean before this
+handshake update. R06
 boundaries removed the backend error facade, removed AI's stale backend edge,
 moved system-font discovery into the Theme owner, deleted the unconsumed
 backend custom-font module, removed the dead legacy bar-placement API while
