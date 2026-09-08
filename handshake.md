@@ -5,6 +5,58 @@ They may mention API names that were valid at the time of the recorded
 change; the current API and task state are defined by the latest header and
 the normative documents under `docs/`.
 
+## Current Session: 2026-09-08 (Follow-up audit `your-task-2.md` — R08 series)
+
+Working the module-boundary / product-surface follow-up audit
+(`your-task-2.md`) as bounded R08-series tasks. Every finding's evidence was
+re-verified against current source first; all of it held.
+
+Verification suite is green after each commit (`cargo fmt`, `cargo check
+--workspace --all-targets`, `cargo clippy --workspace --all-targets -D
+warnings`, `cargo test --workspace --no-fail-fast` — 109 test binaries, 0
+failures — `scripts/check-crate-deps.sh`, `python3
+scripts/check_rework_queue.py`, `python3 scripts/check_documentation.py`,
+`git diff --check`).
+
+Queue discipline note: `R07-001` stays the single `🔄 In Progress` task (it is
+blocked on the user-owned native visual matrix). The R08 tasks were taken
+`⏳ Planned → ✅ Done` without an intermediate in-progress phase so the
+"exactly one in-progress" checker stays satisfied while work proceeds.
+
+Landed so far:
+
+- **P0.2 — task/doc reconciliation** (`c587a83`): ticked the verified
+  non-visual acceptance criteria on R01-004, R03-002, R04-002, R05-001,
+  R06-001 with inline evidence; residual items (inert `ShortcutId` surface,
+  backend-name cleanups) carry explicit P1.6 / P2.4 / P2.5 pointers; visual
+  criteria delegated to R07-001. Fixed the `settings-inventory.md`
+  consumer-evidence contradiction and added a dated addendum to
+  `rework-roadmap.md` recording that the follow-up audit supersedes the
+  earlier "no violation large enough to act on" conclusion for these edges.
+- **R08-001 / P1.4** (`62dbda5`): removed `transfers-ui → workspace`. The
+  statusbar item emits only `TransferUiEvent::Completed`; `bootstrap`
+  subscribes and drives the SFTP pane refresh. New pure `completion_event`
+  helper + test.
+- **R08-002 / P1.7** (`1bf27e1`): removed the no-op `Zoom In/Out/Reset`,
+  `Adjust Font Size…`, and `Format Document` commands from the palette,
+  native menu, and default keymap (`CommandId` / `CommandSubmenu` / palette
+  `Page` variants, `ACTION_NAMES` rows, `zoom_submenu`, `cmd-=/-/0` default
+  bindings, and the `view.zoom*` v2-migration slug aliases all gone).
+- **R08-003 / P1.3** (`6aec9f3`): removed `panel-snippets → workspace` via a
+  new leaf crate `labonair-snippets-host` (`SnippetExecutionHost`, four
+  injected callbacks + `disconnected()`), mirroring `labonair-explorer-host`.
+  `bootstrap` builds it from the active Workspace.
+- **R08-004 / P2.1** (`6107cf8`): the titlebar `⋯` menu, the Notifications /
+  Agent Access statusbar dropdowns, and the Settings select/font dropdowns
+  now anchor to their trigger's rendered bounds (measured by a `canvas`
+  probe) instead of the click position, per `docs/design-system.md`. (The
+  tab / new-tab menu part of P2.1 was already in `caad6ad`.)
+
+Next: R08-005 (P1.5, Theme-management policy out of `settings-ui`), then
+P2.4 (`AppComposition` `Deref`), P1.6 (delete the inert `ShortcutId` /
+`SHORTCUTS` model), P1.1 (`ui-kit → theme`), P1.2 (`workspace → hosts-ui`),
+and the P2.5 / P2.6 dispositions. `crates/*/target` is regenerable.
+
 ## Current Session: 2026-09-07 (Post-B02 audit — Steps 4–7 of the rework prompt)
 
 Still the same session, per "complete everything in the task": audited the
