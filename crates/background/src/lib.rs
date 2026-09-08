@@ -35,6 +35,12 @@ pub use storage::{
 };
 pub use storage::{background_read_data_url, BackgroundFit, BackgroundTarget};
 
+/// The presentation contract Workspace/Terminal consume instead of this
+/// crate: `LayerScope` plus the injected [`BackgroundHost`] built by
+/// [`host`]. Keeping this crate the sole owner of image storage, decoding,
+/// and rendering policy while `workspace` never depends on it (B02).
+pub use labonair_background_host::{BackgroundHost, BackgroundPulse, LayerScope};
+
 /// Longest edge (px) an imported image is kept at; larger images are
 /// downscaled once at load time so a 6000px wallpaper doesn't cost a huge GPU
 /// texture for a dimmed background.
@@ -44,15 +50,6 @@ const MAX_DIM: u32 = 2560;
 /// wallpaper never exceeds 50% and text stays legible (reference:
 /// `BG_OPACITY_RENDER_FACTOR`).
 const OPACITY_RENDER_FACTOR: f32 = 0.5;
-
-/// Which surface is asking for a background layer.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum LayerScope {
-    /// The whole app window.
-    App,
-    /// The terminal surface only.
-    Terminal,
-}
 
 /// Central background-image state. Created once at startup, stored as a GPUI
 /// entity and exposed app-wide via [`GlobalBackground`].
@@ -367,6 +364,22 @@ pub fn init(cx: &mut gpui::App) -> Entity<BackgroundStore> {
 /// The [`BackgroundStore`] entity from the global. Panics if [`init`] hasn't run.
 pub fn background_store(cx: &gpui::App) -> Entity<BackgroundStore> {
     cx.global::<GlobalBackground>().0.clone()
+}
+
+/// Build the narrow [`BackgroundHost`] presentation capability for `store`.
+/// The composition root injects the result into Workspace/Terminal instead of
+/// the concrete store, so those crates never depend on `labonair-background`.
+pub fn host(store: &Entity<BackgroundStore>, cx: &mut gpui::App) -> BackgroundHost {
+    let pulse = cx.new(|_| BackgroundPulse);
+    cx.observe(store, {
+        let pulse = pulse.clone();
+        move |_, cx| {
+            pulse.update(cx, |_, cx| cx.notify());
+        }
+    })
+    .detach();
+    let store = store.clone();
+    BackgroundHost::new(pulse, move |cx, scope| store.read(cx).layer(scope))
 }
 
 #[cfg(test)]

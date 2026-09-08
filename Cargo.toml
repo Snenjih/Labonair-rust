@@ -14,6 +14,7 @@ members = [
     "crates/interaction-contracts",
     "crates/panel",
     "crates/explorer-host",
+    "crates/background-host",
     "crates/workspace",
     "crates/settings-ui",
     "crates/settings",

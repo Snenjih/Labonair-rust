@@ -58,6 +58,7 @@ removal conditions.
 | `ui-kit` | Shared UI primitives | foundation | Enforce as the only source of shared controls. |
 | `workspace` | Workspace, tabs, panes, docks, views, and compatibility bridges | workspace plus tool modules | Transfer lifecycle/UI moved to `labonair-transfers` / `labonair-transfers-ui`; Workspace only submits requests and refreshes SFTP panes. |
 | `background` | Background image storage and GPUI layer | backgrounds module | `BackgroundStore`, image import/delete, persistence, and rendering now live in `labonair-background`; no longer workspace-owned. |
+| `background-host` | Background presentation contract (`LayerScope`, `BackgroundHost`, `BackgroundPulse`) | backgrounds module | Leaf (only `gpui`); lets `labonair-workspace` render the background layer without depending on `labonair-background`'s image storage/import/decoding (R07-005 / B02). |
 | `updater` | Update manifest, download/verification/install logic | updater module | GPUI presentation is isolated in the `updater-ui` sibling; capability logic remains in `labonair-updater` and is no longer backend-owned. |
 | `transfers` | Typed transfer values, lifecycle registry, and service/event contracts | transfers module | UI-free owner; concrete SFTP execution is supplied by the `transfers-ssh` integration sibling. |
 | `transfers-ssh` | Concrete SFTP transfer worker and russh/russh-sftp execution adapter | transfers module | Dedicated integration sibling extracted from the backend; owns chunking, checksums, conflicts, cancellation, and reconnect requeue behavior. |
@@ -285,7 +286,7 @@ families. These are not target dependencies; each has a removal condition:
 
 | Transitional edge family | Temporary reason | Removal condition |
 |---|---|---|
-| `workspace → background` | Workspace currently mounts the Background entity as part of window composition. | Replace the entity edge with a narrow background presentation contract when the remaining view boundary is extracted. |
+| `workspace → background-host` | Workspace/Terminal render the background layer through the injected `BackgroundHost` contract; `labonair-shell` builds it from the concrete `BackgroundStore` at composition. | Retain by design (R07-005): `background-host` is a leaf contract crate that breaks the `workspace ↔ background` coupling, mirroring the Explorer host pattern. |
 | `workspace → ai`, `workspace → settings` | Workspace hosts the AI live bridge and consumes typed settings values for workspace-owned behavior. | Keep orchestration in Workspace; move AI context and any remaining direct implementation access behind narrow contracts. |
 | `panel-explorer → explorer-host`, `workspace → explorer-host` | Explorer's open-file/open-terminal/open-preview/active-file intents and the `DraggedPaths` / `is_previewable` value types shared with the terminal and preview views. | Retain by design (R07-004): `explorer-host` is a leaf contract crate that breaks the `panel-explorer ↔ workspace` coupling; the shell injects the Workspace-backed `ExplorerHost`. |
 | `panel-explorer → settings` | Explorer consumes the public typed `ExplorerSettings` value contract. | Keep only the typed public settings contract; no Settings implementation details or management UI may cross the edge. |

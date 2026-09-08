@@ -183,6 +183,16 @@ value types live in the new leaf `labonair-explorer-host` crate. All code,
 dependency, and test gates pass; the native Explorer visual-state recording is
 the only remaining item and folds into the R07-001 visual matrix.
 
+The second boundary task,
+[`R07-005-background-presentation-boundary.md`](../tasks/rework/R07-005-background-presentation-boundary.md),
+has landed the same way for B02: `labonair-workspace` no longer depends on
+`labonair-background`. `Workspace` and `TerminalView` render through the
+injected `labonair-background-host::BackgroundHost` contract (a layer
+callback plus a `BackgroundPulse` repaint entity); `labonair-background`
+keeps sole ownership of image storage, import/delete, persistence, decoding,
+and rendering policy. All gates pass; only the native background-layer
+visual-state recording remains, again folding into the R07-001 visual matrix.
+
 ## Change and removal gates
 
 Every phase task must state its owner, canonical capability crate, affected

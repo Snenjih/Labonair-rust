@@ -1,5 +1,19 @@
 # Rework progress — 2026-09-07
 
+## R07-005 — Background presentation boundary (B02 boundary)
+
+`workspace → background` is removed, mirroring R07-004's pattern exactly. New
+leaf crate `labonair-background-host` owns `LayerScope`, `BackgroundPulse`
+(zero-sized repaint marker entity), and `BackgroundHost` (layer-rendering
+callback + pulse). `labonair-background` adds `host(&Entity<BackgroundStore>,
+&mut App) -> BackgroundHost`, wiring the pulse via `cx.observe`; it keeps sole
+ownership of image storage, import/delete, persistence, decoding, and
+rendering policy. `Workspace`/`TerminalView` hold a `BackgroundHost` instead
+of `Entity<BackgroundStore>`; the shell builds the host once in
+`bootstrap.rs` and injects it into `Workspace::new`. 54 crates / 222 edges,
+all gates green. R07-005 stays `Planned` for the same reason as R07-004 —
+both await the deprioritised R07-001 visual matrix.
+
 ## R07-004 — Explorer host contract (B01 boundary)
 
 `panel-explorer → workspace` is removed. New leaf crate

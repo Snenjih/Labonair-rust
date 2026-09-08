@@ -16,6 +16,7 @@ serde_json = { workspace = true }
 uuid = { workspace = true }
 labonair-filesystem = { path = "../filesystem" }
 labonair-theme = { path = "../theme" }
+labonair-background-host = { path = "../background-host" }
 
 [dev-dependencies]
 gpui = { workspace = true, features = ["test-support"] }

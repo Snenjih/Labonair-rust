@@ -34,8 +34,17 @@ ALLOWED = {
     # command contract; it does not depend on the palette UI.
     "labonair-theme": {"labonair-command-palette-core"},
     # Background capability owns image persistence and GPUI rendering. It
-    # consumes only the filesystem platform service.
-    "labonair-background": {"labonair-filesystem", "labonair-theme"},
+    # consumes only the filesystem platform service, theme, and its own
+    # presentation-contract leaf (B02: `LayerScope` + the injected
+    # `BackgroundHost` built by `host()`).
+    "labonair-background": {
+        "labonair-filesystem", "labonair-theme", "labonair-background-host",
+    },
+    # B02: narrow background presentation contract (`LayerScope` +
+    # `BackgroundHost`). A leaf — only `gpui` (external) — so `workspace` can
+    # render the background layer without depending on `labonair-background`'s
+    # image storage/import/decoding.
+    "labonair-background-host": set(),
     # Update manifest/download/install capability; its GPUI presentation is a
     # separate sibling and consumes this UI-free crate.
     "labonair-updater": {"labonair-filesystem"},
@@ -177,7 +186,7 @@ ALLOWED = {
         "labonair-ai", "labonair-settings", "labonair-settings-json",
         "labonair-filesystem", "labonair-explorer-host",
         "labonair-ssh", "labonair-sftp", "labonair-transfers",
-        "labonair-background", "labonair-mcp-core",
+        "labonair-background-host", "labonair-mcp-core",
         "labonair-command-palette-core", "labonair-keymap",
         "labonair-command-palette-runtime",
     },

@@ -24,7 +24,7 @@ queue contains a bounded task for it.
 | ID | Current edge | Evidence | Decision | Target outcome / removal condition |
 |---|---|---|---|---|
 | B01 | ~~`panel-explorer → workspace`~~ | **Resolved (R07-004).** `crates/panel-explorer/src/panel_explorer.rs` now holds a `labonair_explorer_host::ExplorerHost` (four injected callbacks) instead of `Entity<Workspace>`; `DraggedPaths` / `quote_paths` / `shell_quote` / `is_previewable` / `PREVIEW_EXTENSIONS` moved to the leaf `labonair-explorer-host` crate consumed by both `panel-explorer` and `workspace`. The shell builds the Workspace-backed `ExplorerHost` and re-notifies the panel on active-editor changes. The direct `panel-explorer → workspace` edge is gone from Cargo metadata and the verifier allow-list. | **Done** | Native Explorer visual-state recording rolls into the R07-001 visual matrix. |
-| B02 | `workspace → background` | `crates/workspace/src/workspace.rs` and `views/terminal.rs` hold `Entity<BackgroundStore>` to mount the background layer. | **Extract next** | Introduce a narrow background presentation capability at the view boundary, then remove the Workspace dependency on the Background entity/store. Background persistence and rendering remain owned by Backgrounds. |
+| B02 | ~~`workspace → background`~~ | **Resolved (R07-005).** `crates/workspace/src/workspace.rs` and `views/terminal.rs` now hold a `labonair_background_host::BackgroundHost` (a layer-rendering callback plus a `BackgroundPulse` repaint entity) instead of `Entity<BackgroundStore>`. `labonair-background::host()` builds the host from the concrete store and wires the pulse to `cx.observe`; the shell injects it at composition. The direct `workspace → background` edge is gone from Cargo metadata and the verifier allow-list. | **Done** | Native background-layer visual-state recording rolls into the R07-001 visual matrix. |
 | B03 | `workspace → ai` | `crates/workspace/src/live_bridge.rs` implements the AI live bridge and Workspace owns the GPUI reaction path. | **Narrow when needed** | Keep Workspace orchestration, but move AI-specific context and lifecycle details behind a typed AI bridge contract when the AI UI/core boundary is actively rebuilt. No AI state belongs in shell or generic Workspace state. |
 | B04 | `workspace → settings` | Workspace and its editor/terminal views read typed `SettingsStore` values for behavior and presentation. | **Narrow when needed** | Retain typed settings value access; replace only implementation-level global access with a narrow capability snapshot when a concrete consumer boundary exists. Settings remains a value owner, not a Workspace feature owner. |
 | B05 | `panel-scm → editor`, `panel-scm → settings` | SCM consumes the public unified-diff contract and typed SCM presentation settings. | **Narrow when needed** | Keep the public contracts. Extract a shared diff or preference contract only after a real second non-SCM consumer requires it; there is no benefit in creating a facade now. |
@@ -38,9 +38,12 @@ queue contains a bounded task for it.
    adapter, consumer migration, dependency removal, and focused tests have
    landed. Only the native Explorer visual-state recording is outstanding and
    folds into the R07-001 visual matrix.
-3. Create B02 only after its presentation contract is demonstrated by the
-   current Background consumer; do not split a crate merely to make the graph
-   look symmetrical.
+3. B02 (`workspace → background`) is resolved by `R07-005`, mirroring B01's
+   `labonair-explorer-host` pattern: the `labonair-background-host` contract,
+   the `BackgroundHost` composition adapter, consumer migration, dependency
+   removal, and focused tests have landed. Only the native background-layer
+   visual-state recording is outstanding and folds into the R07-001 visual
+   matrix.
 4. Re-evaluate B03–B06 at the beginning of the next feature rebuild. They are
    review points, not automatic extraction mandates.
 5. Keep B07 as a permanent composition invariant and do not replace it with a

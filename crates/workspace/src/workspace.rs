@@ -111,7 +111,7 @@ use crate::views::editor::{EditorEvent, EditorView};
 use crate::views::preview::PreviewView;
 use crate::views::sftp::{SftpEvent, SftpView};
 use crate::views::terminal::TerminalView;
-use labonair_background::BackgroundStore;
+use labonair_background_host::BackgroundHost;
 use labonair_hosts::{HostOpenMode, HostOpenRequest, HostPickerRow};
 use labonair_hosts_ui::ssh_connection::{
     ConnStage, ConnectionKind, ConnectionState, ConnectionStatusStore, StageStatus,
@@ -347,7 +347,7 @@ pub struct Workspace {
     registry: Arc<TerminalRegistry>,
     tabs: Entity<TabStore>,
     theme: Entity<ThemeStore>,
-    background: Entity<BackgroundStore>,
+    background: BackgroundHost,
     /// Split-pane tree per `Workspace` tab id — survives tab switches so the
     /// layout is never lost.
     layouts: HashMap<u64, WorkspaceLayout>,
@@ -477,7 +477,7 @@ impl Workspace {
     pub fn new(
         registry: Arc<TerminalRegistry>,
         theme: Entity<ThemeStore>,
-        background: Entity<BackgroundStore>,
+        background: BackgroundHost,
         ssh: Arc<dyn SshConnectionService>,
         ssh_pty: Arc<dyn SshPtyService>,
         ssh_remote: Arc<dyn SshRemoteCommandService>,
@@ -508,7 +508,8 @@ impl Workspace {
         })
         .detach();
         cx.observe(&theme, |_, _, cx| cx.notify()).detach();
-        cx.observe(&background, |_, _, cx| cx.notify()).detach();
+        cx.observe(background.pulse(), |_, _, cx| cx.notify())
+            .detach();
 
         let meta_sync = cx.spawn(async move |this, cx| loop {
             cx.background_executor().timer(META_SYNC_INTERVAL).await;

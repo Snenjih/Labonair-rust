@@ -4,6 +4,20 @@ Older entries preserve the state of the code when each issue was recorded.
 When an API was later renamed or removed, the current implementation and
 normative documentation take precedence over the historical symbol name.
 
+## 2026-09-07 — Background presentation moved behind `BackgroundHost` (R07-005)
+
+**Change:** `labonair-workspace` (`Workspace` and `TerminalView`) used to hold
+`Entity<BackgroundStore>` directly and call `.read(cx).layer(scope)` plus
+`cx.observe(&background, ...)`. It now holds a
+`labonair_background_host::BackgroundHost` — a `Rc<dyn Fn(&App, LayerScope) ->
+Option<AnyElement>>` layer callback plus an `Entity<BackgroundPulse>` (a
+zero-sized entity `labonair-background::host()` bumps via `cx.observe` on the
+real store whenever it notifies). Call sites become
+`self.background.layer(cx, scope)` and `cx.observe(background.pulse(), ...)`.
+`LayerScope` itself moved to the new `labonair-background-host` leaf crate;
+`labonair-background` re-exports it so existing call sites (`BackgroundStore::layer`,
+`app_shell.rs`'s `LayerScope::App`) keep compiling unchanged.
+
 ## 2026-09-07 — `scripts/screenshot.sh` rejects a `./`-relative launch
 
 **Finding:** The helper validates the target PID's command path by prefixing a

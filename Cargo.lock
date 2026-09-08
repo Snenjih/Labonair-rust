@@ -4176,11 +4176,19 @@ dependencies = [
  "base64",
  "gpui",
  "image",
+ "labonair-background-host",
  "labonair-filesystem",
  "labonair-theme",
  "serde",
  "serde_json",
  "uuid",
+]
+
+[[package]]
+name = "labonair-background-host"
+version = "0.1.0"
+dependencies = [
+ "gpui",
 ]
 
 [[package]]
@@ -4889,7 +4897,7 @@ dependencies = [
  "image",
  "jsonc-parser",
  "labonair-ai",
- "labonair-background",
+ "labonair-background-host",
  "labonair-command-palette",
  "labonair-command-palette-core",
  "labonair-command-palette-runtime",

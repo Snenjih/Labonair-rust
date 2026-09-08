@@ -5,6 +5,46 @@ They may mention API names that were valid at the time of the recorded
 change; the current API and task state are defined by the latest header and
 the normative documents under `docs/`.
 
+## Current Session: 2026-09-07 (R07-005 Background presentation boundary — structural migration)
+
+Continuing the same session, on explicit direction to complete the remaining
+rework backlog: boundary B02 (`workspace → background`) is resolved the same
+way B01 was.
+
+- new leaf crate `crates/background-host` (`labonair-background-host`, dep:
+  `gpui` only): `LayerScope` (moved from `labonair-background`),
+  `BackgroundPulse` (a zero-sized repaint-notification entity), and
+  `BackgroundHost` (a layer-rendering callback plus the pulse entity);
+- `labonair-background` re-exports `LayerScope`/`BackgroundHost`/`BackgroundPulse`
+  and adds `pub fn host(&Entity<BackgroundStore>, &mut App) -> BackgroundHost`,
+  which wires the pulse to `cx.observe` on the concrete store — Backgrounds
+  keeps sole ownership of image storage, import/delete, persistence, decoding,
+  and rendering policy (`BackgroundStore::layer` is unchanged);
+- `labonair-workspace`: `Workspace` and `TerminalView` hold a `BackgroundHost`
+  instead of `Entity<BackgroundStore>`; both `cx.observe` calls retarget
+  `background.pulse()`, and the terminal overlay call becomes
+  `self.background.layer(cx, LayerScope::Terminal)`;
+- `crates/shell/src/bootstrap.rs` builds `labonair_background::host(&background, cx)`
+  once and passes it into `Workspace::new`; `AppShell`'s own app-wide overlay
+  is untouched (shell is allowed to depend on `labonair-background` directly);
+- new task record `tasks/rework/R07-005-background-presentation-boundary.md`
+  (mirrors R07-004's "landed early, Planned pending visual matrix" shape);
+  `scripts/check_crate_deps.py`, architecture inventory, remaining-boundary
+  backlog (B02 → Done), capability matrix, and roadmap updated in the same
+  change.
+
+All gates pass: `cargo fmt --all -- --check`, `cargo check --workspace
+--all-targets`, `cargo clippy --workspace --all-targets -- -D warnings`,
+`cargo test --workspace --no-fail-fast` (0 failures), `scripts/check-crate-deps.sh`
+(54 crates, 222 edges, acyclic), `python3 scripts/check_documentation.py`,
+`python3 scripts/check_rework_queue.py`, `git diff --check`.
+
+R07-005 stays `Planned` and R07-001 stays `In Progress` for the same reason as
+R07-004: both await the native visual-state matrix, deprioritised this
+session per explicit direction. Next: B03–B06 review (Step 7), the Keymap
+platform-boundary audit (Step 4), and the Workspace/Terminal/Editor ownership
+audit (Step 5) — see `your-rework-task.md` for the full remaining sequence.
+
 ## Current Session: 2026-09-07 (R07-004 Explorer host contract — structural migration)
 
 macOS Screen Recording permission is now available to the capture runner

@@ -19,7 +19,7 @@ tracing = { workspace = true }
 dirs = { workspace = true }
 jsonc-parser = { version = "0.23", features = ["serde"] }
 labonair-theme = { path = "../theme" }
-labonair-background = { path = "../background" }
+labonair-background-host = { path = "../background-host" }
 labonair-ui-kit = { path = "../ui-kit" }
 labonair-gpui-ext = { path = "../gpui-ext" }
 labonair-notifications = { path = "../notifications" }

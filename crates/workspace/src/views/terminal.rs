@@ -39,7 +39,7 @@ use labonair_terminal::{
 };
 
 use crate::theme::ThemeStore;
-use labonair_background::{BackgroundStore, LayerScope};
+use labonair_background_host::{BackgroundHost, LayerScope};
 use labonair_explorer_host::{quote_paths, DraggedPaths};
 use labonair_settings::Settings as _;
 use labonair_ui_kit::{context_menu, IconName, MenuItem, Palette};
@@ -57,7 +57,7 @@ const POLL_INTERVAL: Duration = Duration::from_millis(16);
 /// [`TerminalRegistry`]: labonair_terminal::TerminalRegistry
 pub struct TerminalView {
     theme: Entity<ThemeStore>,
-    background: Entity<BackgroundStore>,
+    background: BackgroundHost,
     focus_handle: FocusHandle,
     /// Handle to this tab's session in the registry.
     handle: SessionHandle,
@@ -83,7 +83,7 @@ impl TerminalView {
     pub fn new(
         handle: SessionHandle,
         theme: Entity<ThemeStore>,
-        background: Entity<BackgroundStore>,
+        background: BackgroundHost,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -99,7 +99,8 @@ impl TerminalView {
         .detach();
 
         // Repaint when the background image / settings change.
-        cx.observe(&background, |_, _, cx| cx.notify()).detach();
+        cx.observe(background.pulse(), |_, _, cx| cx.notify())
+            .detach();
 
         let poll = cx.spawn(async move |view, cx| loop {
             cx.background_executor().timer(POLL_INTERVAL).await;
@@ -347,7 +348,7 @@ impl Render for TerminalView {
 
         // Background image overlay (only when the target is Terminal-only;
         // App/Both is painted window-wide by the app root instead).
-        let background_layer = self.background.read(cx).layer(LayerScope::Terminal);
+        let background_layer = self.background.layer(cx, LayerScope::Terminal);
 
         let runs = batch_runs(&screen);
         let bold_font = {

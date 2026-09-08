@@ -311,11 +311,15 @@ pub(crate) fn bootstrap(
             cx,
         )
     });
+    // Workspace/Terminal render a background layer but must not depend on
+    // `labonair-background` for image storage/import/decoding (B02): inject
+    // the narrow presentation capability instead of the concrete store.
+    let background_host = labonair_background::host(&background, cx);
     let workspace = cx.new(|cx| {
         Workspace::new(
             registry,
             theme.clone(),
-            background.clone(),
+            background_host,
             ssh_service.clone(),
             ssh_pty_service.clone(),
             ssh_remote_service.clone(),

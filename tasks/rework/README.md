@@ -29,6 +29,7 @@ The active sequence is:
 20. `R07-002-owner-registered-surface-contributions.md` — Done
 21. `R07-003-settings-legacy-warning-disposition.md` — Done
 22. `R07-004-explorer-host-contract.md` — Planned (structural migration landed early; visual evidence folds into R07-001)
+23. `R07-005-background-presentation-boundary.md` — Planned (structural migration landed early; visual evidence folds into R07-001)
 
 Phases 0–6 are complete. R02-001 is the first bounded Phase 2 shell task and
 also connects the already-established theme registry to its intended palette
@@ -45,5 +46,11 @@ removed `panel-explorer → workspace` edge, the Workspace adapter, and all
 code/dependency/test gates) has landed early. It stays `Planned` rather than
 `Done` only because its native Explorer visual-state evidence folds into
 R07-001's still-open visual acceptance matrix.
+
+R07-005 is the follow-up for boundary B02. Its structural migration (the
+`labonair-background-host` contract crate, the removed `workspace → background`
+edge, the `BackgroundHost` adapter, and all code/dependency/test gates) has
+also landed early, for the same reason and with the same `Planned` status
+pending the R07-001 visual matrix.
 
 Only the earliest task whose dependencies are complete may be started.
