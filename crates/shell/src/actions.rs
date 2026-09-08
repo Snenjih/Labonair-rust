@@ -147,10 +147,6 @@ impl AppShell {
 
         register_snapshot(
             &mut submenus,
-            labonair_workspace::command_provider::zoom_submenu(),
-        );
-        register_snapshot(
-            &mut submenus,
             labonair_theme::command_provider::color_mode_submenu(
                 GeneralSettings::try_get(cx)
                     .map(|settings| match settings.theme_pref() {

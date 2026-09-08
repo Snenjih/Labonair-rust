@@ -33,9 +33,6 @@ impl CommandProvider for EditorCommandProvider {
                 .with_shortcut(ShortcutId::SearchFocus)
                 .with_default_binding("cmd-f", None)
                 .with_icon(CommandIcon::Search),
-            CommandDescriptor::new(CommandId::FormatDocument, "Format Document", "Editor")
-                .with_contexts(&[CommandContext::Editor])
-                .with_icon(CommandIcon::Edit),
             CommandDescriptor::new(CommandId::GoToSymbol, "Go to Symbol…", "Editor")
                 .with_contexts(&[CommandContext::Editor])
                 .with_icon(CommandIcon::FileCode)

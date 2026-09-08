@@ -265,27 +265,6 @@ pub fn register_palette_action_handlers(
         .expect("workspace palette action handler must have a unique owner");
 }
 
-pub fn zoom_submenu() -> SubmenuSnapshot {
-    SubmenuSnapshot {
-        descriptor: SubmenuDescriptor::new("zoom", "Font Size", CommandSubmenu::Zoom),
-        items: [
-            (CommandId::ZoomIn, "Increase Font Size"),
-            (CommandId::ZoomOut, "Decrease Font Size"),
-            (CommandId::ZoomReset, "Reset Font Size"),
-        ]
-        .into_iter()
-        .map(|(id, title)| SubmenuItem {
-            id: id.action_name().to_string(),
-            title: title.to_string(),
-            subtitle: None,
-            active: false,
-            action: SubmenuAction::RunCommand(id),
-            secondary: None,
-        })
-        .collect(),
-    }
-}
-
 /// Build the workspace-owned open-tab snapshot without exposing workspace
 /// entities to the palette UI.
 pub fn tabs_submenu(rows: impl IntoIterator<Item = (u64, String, String)>) -> SubmenuSnapshot {
@@ -393,10 +372,6 @@ impl CommandProvider for WorkspaceCommandProvider {
             CommandDescriptor::new(CommandId::SwitchTab, "Switch Tab…", "Layout")
                 .with_icon(CommandIcon::Terminal)
                 .with_submenu(CommandSubmenu::Tabs),
-            CommandDescriptor::new(CommandId::AdjustFontSize, "Adjust Font Size…", "Layout")
-                .with_contexts(&[CommandContext::Terminal, CommandContext::Editor])
-                .with_icon(CommandIcon::ChevronDown)
-                .with_submenu(CommandSubmenu::Zoom),
             CommandDescriptor::new(CommandId::ToggleSidebar, "Toggle File Explorer", "View")
                 .with_shortcut(ShortcutId::SidebarToggle)
                 .with_default_binding("cmd-b", None)
@@ -408,18 +383,6 @@ impl CommandProvider for WorkspaceCommandProvider {
             )
             .with_icon(CommandIcon::Eye)
             .with_submenu(CommandSubmenu::StatusBarHidden),
-            CommandDescriptor::new(CommandId::ZoomIn, "Zoom In", "View")
-                .with_shortcut(ShortcutId::ViewZoomIn)
-                .with_default_binding("cmd-=", None)
-                .with_icon(CommandIcon::Plus),
-            CommandDescriptor::new(CommandId::ZoomOut, "Zoom Out", "View")
-                .with_shortcut(ShortcutId::ViewZoomOut)
-                .with_default_binding("cmd--", None)
-                .with_icon(CommandIcon::Minus),
-            CommandDescriptor::new(CommandId::ZoomReset, "Reset Zoom", "View")
-                .with_shortcut(ShortcutId::ViewZoomReset)
-                .with_default_binding("cmd-0", None)
-                .with_icon(CommandIcon::Refresh),
             CommandDescriptor::new(
                 CommandId::DebugCyclePanelDock,
                 "Debug: Cycle Panel Dock",

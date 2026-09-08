@@ -18,7 +18,7 @@
 //! on their own — no explicit `set_menus` re-sync needed.
 //!
 //! Items for features that don't exist yet (SSH, SFTP, AI, editor, host
-//! manager, zoom) have no handler and therefore render disabled, per the task
+//! manager) have no handler and therefore render disabled, per the task
 //! note; their phase wires a handler in and they light up.
 
 use gpui::{
@@ -54,9 +54,6 @@ actions!(
         SelectAll,
         // ── View ──────────────────────────────────────────────────────────
         ToggleSidebar,
-        ZoomIn,
-        ZoomOut,
-        ResetZoom,
         ToggleFullScreen,
         ToggleZenMode,
         // Temporary T17-002 dock debug shortcuts (no menu entry).
@@ -200,9 +197,6 @@ fn action_for(name: &str) -> Option<Box<dyn Action>> {
         CommandId::Find => Box::new(Find),
         CommandId::ToggleSidebar => Box::new(ToggleSidebar),
         CommandId::ToggleZenMode => Box::new(ToggleZenMode),
-        CommandId::ZoomIn => Box::new(ZoomIn),
-        CommandId::ZoomOut => Box::new(ZoomOut),
-        CommandId::ZoomReset => Box::new(ResetZoom),
         CommandId::ToggleFullScreen => Box::new(ToggleFullScreen),
         CommandId::OpenHosts => Box::new(OpenHosts),
         CommandId::NewSshConnection => Box::new(NewSshConnection),
@@ -320,10 +314,6 @@ fn app_menus() -> Vec<Menu> {
             name: "View".into(),
             items: vec![
                 MenuItem::action("Toggle Sidebar", ToggleSidebar),
-                MenuItem::separator(),
-                MenuItem::action("Zoom In", ZoomIn),
-                MenuItem::action("Zoom Out", ZoomOut),
-                MenuItem::action("Reset Zoom", ResetZoom),
                 MenuItem::separator(),
                 MenuItem::action("Toggle Full Screen", ToggleFullScreen),
             ],

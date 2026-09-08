@@ -887,14 +887,15 @@ pub fn migrate_settings_v1_to_v2(dir: &Path) -> Result<SettingsV2Outcome, String
 // Keybinds -> keymap.json
 // ─────────────────────────────────────────────────────────────────────────
 
-/// Old `ShortcutId` slug -> new `CommandId::action_name()` string. Kept as a
+/// Old shortcut slug -> new `CommandId::action_name()` string. Kept as a
 /// self-contained string table (rather than importing `CommandId` itself)
 /// because the settings migration layer must not depend on
 /// `labonair-command-palette` (that edge already runs the other way — see
 /// `scripts/check_crate_deps.py`).
-/// Verified 1:1 against `crates/command-palette/src/keybind.rs`'s
-/// `shortcut_slug` and `crates/command-palette/src/palette.rs`'s
-/// `ACTION_NAMES` (T17-007/T19-008).
+/// Verified against `labonair_command_palette_core`'s `ACTION_NAMES`
+/// (T17-007/T19-008). Slugs for actions dropped from the current product
+/// surface (e.g. the removed font-zoom commands, R08-002) are omitted so the
+/// old binding is silently discarded rather than migrated to a dead action.
 const SLUG_TO_ACTION: &[(&str, &str)] = &[
     ("command.palette", "command_palette::Toggle"),
     ("shortcuts.open", "settings::OpenShortcuts"),
@@ -920,9 +921,6 @@ const SLUG_TO_ACTION: &[(&str, &str)] = &[
     ("search.focus", "search::Toggle"),
     ("sidebar.toggle", "sidebar::Toggle"),
     ("view.zenMode", "view::ToggleZenMode"),
-    ("view.zoomIn", "view::ZoomIn"),
-    ("view.zoomOut", "view::ZoomOut"),
-    ("view.zoomReset", "view::ZoomReset"),
 ];
 
 /// Writes `keymap.json` from `preferences.keybinds` overrides
@@ -1024,7 +1022,7 @@ mod tests {
         prefs["barLayoutMigrated"] = Value::from(true);
         prefs["keybinds"] = serde_json::json!({
             "tab.new": "cmd-t",
-            "view.zoomIn": "",
+            "sidebar.toggle": "",
             "unknown.slug": "cmd-9",
         });
         serde_json::json!({
@@ -1364,7 +1362,7 @@ mod tests {
         assert_eq!(block["bindings"]["cmd-t"], Value::from("tab::NewTerminal"));
         // Unbind (old empty-string override) -> null, keyed by a placeholder
         // since there is no keystroke to key it by.
-        assert_eq!(block["bindings"]["unbind:view::ZoomIn"], Value::Null);
+        assert_eq!(block["bindings"]["unbind:sidebar::Toggle"], Value::Null);
         // Unknown slug silently dropped, not migrated.
         assert!(!keymap_text.contains("unknown.slug"));
 

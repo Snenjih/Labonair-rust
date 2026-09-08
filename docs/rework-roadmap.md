@@ -288,7 +288,10 @@ Confirmed against current source:
   bounds (P2.1).
 
 These are being worked as bounded follow-up tasks (R08-series) in the order
-recorded in `tasks/rework/README.md`. Task/acceptance status in R01-004,
+recorded in `tasks/rework/README.md`. Resolved so far: R08-001 (P1.4,
+transfers-ui → workspace edge removed); R08-002 (P1.7, the no-op Zoom
+In/Out/Reset, Adjust Font Size, and Format Document affordances were removed
+from the palette, native menu, and default keymap). Task/acceptance status in R01-004,
 R03-002, R04-002, R05-001, and R06-001 was reconciled the same day: their
 non-visual acceptance criteria are ticked with evidence, residual items carry
 an explicit follow-up pointer, and visual criteria are delegated to the

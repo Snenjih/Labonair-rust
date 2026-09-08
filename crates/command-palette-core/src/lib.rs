@@ -44,9 +44,6 @@ pub enum CommandId {
     Find,
     ToggleSidebar,
     ToggleFullScreen,
-    ZoomIn,
-    ZoomOut,
-    ZoomReset,
     OpenSnippetsPanel,
     OpenGitGraph,
     FocusSourceControl,
@@ -59,11 +56,9 @@ pub enum CommandId {
     OpenProjectSettings,
     OpenSettingsJson,
     CheckForUpdates,
-    FormatDocument,
     ToggleZenModeHeader,
     ToggleZenModeStatusbar,
     ToggleZenMode,
-    AdjustFontSize,
     ConnectSsh,
     OpenSftp,
     ChangeAppTheme,
@@ -137,7 +132,6 @@ pub enum CommandIcon {
 pub enum CommandSubmenu {
     Tabs,
     RecentHosts,
-    Zoom,
     ColorMode,
     EditorTheme,
     Themes,
@@ -477,10 +471,6 @@ const ACTION_NAMES: &[(CommandId, &str)] = &[
     (CommandId::Find, "search::Toggle"),
     (CommandId::ToggleSidebar, "sidebar::Toggle"),
     (CommandId::ToggleFullScreen, "view::ToggleFullScreen"),
-    (CommandId::ZoomIn, "view::ZoomIn"),
-    (CommandId::ZoomOut, "view::ZoomOut"),
-    (CommandId::ZoomReset, "view::ZoomReset"),
-    (CommandId::AdjustFontSize, "view::AdjustFontSize"),
     (CommandId::ChangeAppTheme, "view::ChangeAppTheme"),
     (CommandId::ChangeIconTheme, "view::ChangeIconTheme"),
     (CommandId::ChangeColorMode, "view::ChangeColorMode"),
@@ -491,7 +481,6 @@ const ACTION_NAMES: &[(CommandId, &str)] = &[
     (CommandId::ShowStatusBarItem, "view::ShowStatusBarItem"),
     (CommandId::ToggleEditorWordWrap, "editor::ToggleWordWrap"),
     (CommandId::ToggleLineNumbers, "editor::ToggleLineNumbers"),
-    (CommandId::FormatDocument, "editor::FormatDocument"),
     (CommandId::GoToSymbol, "editor::GoToSymbol"),
     (CommandId::ToggleVimMode, "editor::ToggleVimMode"),
     (CommandId::ToggleCursorBlink, "terminal::ToggleCursorBlink"),
@@ -596,10 +585,10 @@ mod tests {
             .expect("register find");
         registry
             .register(
-                CommandDescriptor::new(CommandId::FormatDocument, "Format", "Editor")
+                CommandDescriptor::new(CommandId::GoToSymbol, "Go to Symbol", "Editor")
                     .with_contexts(&[CommandContext::Editor]),
             )
-            .expect("register format");
+            .expect("register editor command");
 
         let commands = registry.available(Some(CommandContext::Editor));
         assert_eq!(commands.len(), 2);

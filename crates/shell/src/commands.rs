@@ -154,9 +154,8 @@ impl CommandDispatcher {
 
 impl AppShell {
     /// Run the command bound to `id`. No-op for ids with no behaviour of their
-    /// own — the palette sub-page navigators (`SwitchTab`, `ConnectSsh`, …) and
-    /// the not-yet-wired `ZoomIn` / `FormatDocument`
-    /// placeholders, all of which were no-op action dispatches before T17-007.
+    /// own — the palette sub-page navigators (`SwitchTab`, `ConnectSsh`, …),
+    /// which were no-op action dispatches before T17-007.
     pub(crate) fn dispatch_command(
         &mut self,
         id: CommandId,
@@ -429,9 +428,10 @@ mod tests {
     }
 
     #[test]
-    fn unregistered_ids_resolve_to_no_run() {
+    fn navigator_ids_resolve_to_no_run() {
+        // Sub-page navigators carry no executable handler — the palette
+        // forwards them as navigation, not a command run.
         let r = register_builtin_commands();
-        assert!(r.run_for(CommandId::ZoomIn).is_none());
         assert!(r.run_for(CommandId::SwitchTab).is_none());
         assert!(r.run_for(CommandId::OpenShortcuts).is_none());
     }

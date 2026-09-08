@@ -94,12 +94,6 @@ fn palette_close_on_overlay_click(cx: &App) -> bool {
         .unwrap_or(true)
 }
 
-fn palette_terminal_font_size(cx: &App) -> u32 {
-    TerminalSettings::try_get(cx)
-        .map(|s| s.font_size())
-        .unwrap_or(15)
-}
-
 fn palette_keybind_display(cx: &App) -> KeybindDisplay {
     cx.try_global::<KeybindDisplay>()
         .cloned()
@@ -179,7 +173,6 @@ pub trait PaletteWorkspace {
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 pub enum Page {
     Root,
-    Zoom,
     Tabs,
     ColorMode,
     EditorTheme,
@@ -197,7 +190,6 @@ impl Page {
     pub fn placeholder(self) -> &'static str {
         match self {
             Page::Root => "Search commands\u{2026}",
-            Page::Zoom => "Adjust font size\u{2026}",
             Page::Tabs => "Search open tabs\u{2026}",
             Page::ColorMode => "Search color modes\u{2026}",
             Page::EditorTheme => "Search editor themes\u{2026}",
@@ -215,7 +207,6 @@ impl Page {
     pub fn label(self) -> &'static str {
         match self {
             Page::Root => "Commands",
-            Page::Zoom => "Font Size",
             Page::Tabs => "Open Tabs",
             Page::ColorMode => "Color Mode",
             Page::EditorTheme => "Editor Theme",
@@ -309,7 +300,6 @@ fn page_for(page: CommandSubmenu) -> Page {
     match page {
         CommandSubmenu::Tabs => Page::Tabs,
         CommandSubmenu::RecentHosts => Page::Hosts,
-        CommandSubmenu::Zoom => Page::Zoom,
         CommandSubmenu::ColorMode => Page::ColorMode,
         CommandSubmenu::EditorTheme => Page::EditorTheme,
         CommandSubmenu::Themes => Page::Themes,
@@ -761,7 +751,6 @@ where
         match self.page() {
             Page::Root => {
                 let ctx = self.active_context(cx);
-                let font_size = palette_terminal_font_size(cx);
                 let tab_count = self.workspace.read(cx).palette_tab_rows(cx).len();
                 let mut root: Vec<PaletteRow> =
                     search_mode(&self.data.commands, &self.query, ctx, mode)
@@ -775,7 +764,6 @@ where
                                 }
                             });
                             let subtitle = match c.id {
-                                CommandId::AdjustFontSize => Some(format!("{font_size}px")),
                                 CommandId::SwitchTab => Some(format!("{tab_count} open")),
                                 _ => None,
                             };
@@ -817,13 +805,6 @@ where
                 IconName::Terminal,
                 mode,
                 "No tabs open",
-            ),
-            Page::Zoom => self.submenu_rows(
-                CommandSubmenu::Zoom,
-                "Font Size",
-                IconName::ArrowDownUp,
-                mode,
-                "No font-size actions available",
             ),
             Page::ColorMode => self.submenu_rows(
                 CommandSubmenu::ColorMode,
@@ -1465,7 +1446,7 @@ mod tests {
                     .with_shortcut(ShortcutId::PaneSplitRight),
             ),
             Command::from_descriptor(
-                CommandDescriptor::new(CommandId::FormatDocument, "Format Document", "Editor")
+                CommandDescriptor::new(CommandId::GoToSymbol, "Go to Symbol", "Editor")
                     .with_contexts(&[CommandContext::Editor]),
             ),
         ]
@@ -1481,7 +1462,7 @@ mod tests {
         let term = available(&commands, Some(CommandContext::Terminal));
         assert!(term.iter().any(|c| c.id == CommandId::SplitRight));
         let editor = available(&commands, Some(CommandContext::Editor));
-        assert!(editor.iter().any(|c| c.id == CommandId::FormatDocument));
+        assert!(editor.iter().any(|c| c.id == CommandId::GoToSymbol));
 
         let hits = search_mode(
             &commands,
@@ -1567,7 +1548,6 @@ mod tests {
     fn all_pages_have_distinct_labels() {
         let pages = [
             Page::Root,
-            Page::Zoom,
             Page::Tabs,
             Page::ColorMode,
             Page::EditorTheme,
