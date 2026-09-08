@@ -53,6 +53,7 @@ members = [
     "crates/keymap-ui",
     "crates/ai",
     "crates/theme",
+    "crates/theme-ui",
     "crates/background",
     "crates/updater",
     "crates/updater-ui",

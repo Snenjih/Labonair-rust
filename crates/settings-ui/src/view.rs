@@ -619,10 +619,12 @@ impl SettingsView {
     }
 
     /// Re-derive the [`ThemeStore`] state (color mode, fonts, metrics, active
-    /// theme + variant, icon theme) from the layered settings.
+    /// theme + variant, icon theme) from the layered settings. The policy is
+    /// owned by `labonair-theme-ui`; the Settings UI only asks for the refresh
+    /// after it writes a value.
     pub(crate) fn sync_theme_from_prefs(&mut self, cx: &mut Context<Self>) {
         let theme = self.theme.clone();
-        apply_prefs_to_theme(&theme, cx);
+        labonair_theme_ui::apply_prefs_to_theme(&theme, cx);
     }
 
     pub(crate) fn toggle_bool(&mut self, field: &AnyField, cx: &mut Context<Self>) {

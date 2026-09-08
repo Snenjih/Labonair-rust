@@ -22,10 +22,6 @@ mod window;
 #[cfg(test)]
 mod tests;
 
-pub use apply::{
-    activate_app_theme, apply_prefs_to_theme, apply_theme_metrics, preview_app_theme,
-    theme_metrics_from_settings,
-};
 pub use services::{ServiceFuture, SettingsServices, SystemFontService};
 pub use view::SettingsView;
 pub use window::{open_settings_window, set_settings_deps};

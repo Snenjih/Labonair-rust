@@ -55,7 +55,8 @@ removal conditions.
 | `keymap` | UI-free keymap values, JSONC file format, default assets, resolution, and conflict handling | keymap module | File parser, default assets, lossless document, and management model belong to Keymap; GPUI presentation and keymap-owned diagnostics are isolated in `keymap-ui`, while shell retains only platform installation/watch wiring. |
 | `shell` | App shell, menus, native actions, and composition | application composition + shell surface | Feature command/status contributions are owner-registered; remaining adapters are limited to composition and native-window actions. |
 | `terminal` | Terminal engine and renderer support | terminal module | Split engine from GPUI view when useful. |
-| `theme` | Runtime theme, fonts, and built-in color/icon registries | themes module | Keep one Themes owner; app and icon palette pickers now use separate registry-backed pages with transactional preview; the current catalog is embedded and deterministic, while file/remote extensions remain deferred. |
+| `theme` | Runtime theme, fonts, and built-in color/icon registries | themes module | Keep one Themes owner; app and icon palette pickers now use separate registry-backed pages with transactional preview; the current catalog is embedded and deterministic, while file/remote extensions remain deferred. Keeps NO `labonair-settings` dependency. |
+| `theme-ui` | Settings→`ThemeStore` application policy (`apply_prefs_to_theme`, metrics, preview/activate/persist) and the palette theme-action handler | themes module | Extracted from `settings-ui` (R08-005) so the Settings UI is values-only; the settings→theme direction lives only here. |
 | `ui-kit` | Shared UI primitives | foundation | Enforce as the only source of shared controls. |
 | `workspace` | Workspace, tabs, panes, docks, views, and compatibility bridges | workspace plus tool modules | Transfer lifecycle/UI moved to `labonair-transfers` / `labonair-transfers-ui`; Workspace only submits requests and refreshes SFTP panes. |
 | `background` | Background image storage and GPUI layer | backgrounds module | `BackgroundStore`, image import/delete, persistence, and rendering now live in `labonair-background`; no longer workspace-owned. |
@@ -105,6 +106,10 @@ edges; the dependency verifier rejects every unlisted edge.
 - `settings-ui` depends on settings values, theme/UI primitives, notifications,
   command-palette fuzzy matching, and filesystem paths; it no longer depends on
   a workspace-owned background store, backend, Hosts UI, or panel contracts.
+  R08-005 moved the `ThemeStore` application policy and the palette theme
+  handler into `labonair-theme-ui`; `settings-ui` now only *calls*
+  `labonair_theme_ui::apply_prefs_to_theme` after it writes a value, and owns
+  no theme preview/activation/persistence policy.
 - `panel-explorer` no longer depends on `workspace` (R07-004). Its open-file,
   open-terminal, open-preview, and active-file intents cross the injected
   `labonair-explorer-host::ExplorerHost` contract; the shared `DraggedPaths` /

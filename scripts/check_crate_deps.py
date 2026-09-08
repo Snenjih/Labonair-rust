@@ -92,6 +92,15 @@ ALLOWED = {
     },
     "labonair-command-palette-core": {"labonair-interaction-contracts"},
     "labonair-command-palette-runtime": {"labonair-command-palette-core"},
+    # R08-005: Theme application policy — reads the layered settings values and
+    # persists picker selections into `ThemeStore`, plus the palette
+    # preview/activate handler. Extracted from `settings-ui` so the Settings UI
+    # is values-only. `labonair-theme` itself keeps NO `labonair-settings`
+    # dependency; the settings->theme direction lives only here.
+    "labonair-theme-ui": {
+        "labonair-theme", "labonair-settings",
+        "labonair-command-palette-core", "labonair-command-palette-runtime",
+    },
     # Platform service — secret storage and encryption, without GPUI or
     # feature-module dependencies.
     "labonair-secrets": {"labonair-filesystem"},
@@ -152,7 +161,8 @@ ALLOWED = {
     # `PreferencesStore`/`GlobalPreferences` bridge stays for modules not yet
     # migrated onto the `Settings` trait (see `store.rs`'s doc comment).
     "labonair-settings-ui": {
-        "labonair-theme", "labonair-ui-kit", "labonair-gpui-ext",
+        "labonair-theme", "labonair-theme-ui", "labonair-ui-kit",
+        "labonair-gpui-ext",
         "labonair-notifications", "labonair-command-palette",
         "labonair-command-palette-core", "labonair-command-palette-runtime",
         "labonair-settings", "labonair-settings-content", "labonair-filesystem",
@@ -201,7 +211,8 @@ ALLOWED = {
     # turn a merged `keymap.json` into real `gpui::KeyBinding`s / watch the
     # file live.
     "labonair-shell": {
-        "labonair-theme", "labonair-ui-kit", "labonair-gpui-ext",
+        "labonair-theme", "labonair-theme-ui", "labonair-ui-kit",
+        "labonair-gpui-ext",
         "labonair-notifications", "labonair-command-palette",
         "labonair-command-palette-core",
         "labonair-command-palette-runtime",

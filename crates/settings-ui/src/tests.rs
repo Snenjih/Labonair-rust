@@ -4,31 +4,12 @@
 
 #[cfg(test)]
 mod cases {
-    use gpui::TestAppContext;
     use serde_json::Value;
 
-    use labonair_settings::{
-        EditorSettings, SettingsContent, SettingsLayer, SettingsStore, TerminalSettings,
-    };
+    use labonair_settings::{SettingsContent, SettingsStore, TerminalSettings};
     use labonair_settings_content::areas::AREAS;
 
-    use crate::apply::*;
     use crate::schema::{all_fields, FieldControl};
-
-    /// A `SettingsStore` global rooted at a throwaway temp path, with the
-    /// feature slices this crate reads registered.
-    fn install_store(cx: &mut gpui::App, content: SettingsContent) {
-        let path = std::env::temp_dir().join(format!(
-            "labonair-settings-ui-test-{}.json",
-            uuid::Uuid::new_v4()
-        ));
-        let mut store = SettingsStore::new(path);
-        store.register_setting::<TerminalSettings>();
-        store.register_setting::<EditorSettings>();
-        store.register_setting::<labonair_settings::ThemeSettings>();
-        store.set_layer(SettingsLayer::User, content);
-        cx.set_global(store);
-    }
 
     /// T19-004: every generated field's `json_path` area segment must be one
     /// of `AREAS`' `target_module`s.
@@ -57,19 +38,6 @@ mod cases {
                 "unknown editor theme slug `{slug}`"
             );
         }
-    }
-
-    #[gpui::test]
-    fn font_overrides_snapshot_reads_settings(cx: &mut TestAppContext) {
-        let mut content = SettingsContent::default();
-        content.terminal.terminal_font_size = Some(18);
-        content.editor.editor_font_family = Some("Iosevka".to_string());
-        cx.update(|cx| {
-            install_store(cx, content);
-            let o = font_overrides_from_settings(cx);
-            assert_eq!(o.terminal_size, 18.0);
-            assert_eq!(o.editor_family, "Iosevka");
-        });
     }
 
     #[test]

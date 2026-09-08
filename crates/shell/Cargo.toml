@@ -23,6 +23,7 @@ tracing = { workspace = true }
 dirs = { workspace = true }
 tokio = { workspace = true }
 labonair-theme = { path = "../theme" }
+labonair-theme-ui = { path = "../theme-ui" }
 labonair-background = { path = "../background" }
 labonair-ui-kit = { path = "../ui-kit" }
 labonair-gpui-ext = { path = "../gpui-ext" }

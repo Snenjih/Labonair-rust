@@ -404,7 +404,7 @@ pub(crate) fn bootstrap(
     // ThemeStore once at startup; further changes flow through the layered
     // `SettingsStore` (`SettingsView`'s generated field grid writes straight
     // to it) and the `SettingsStore` observer below.
-    labonair_settings_ui::apply_prefs_to_theme(&theme, cx);
+    labonair_theme_ui::apply_prefs_to_theme(&theme, cx);
     // T20-007: re-derive the `ThemeMetrics` (font scales / UI density /
     // corner-radius scale / reduce-motion) whenever the layered settings
     // change. Generated `appearance` fields write straight to `SettingsStore`,
@@ -413,7 +413,7 @@ pub(crate) fn bootstrap(
     if cx.has_global::<labonair_settings::SettingsStore>() {
         let theme_m = theme.clone();
         cx.observe_global::<labonair_settings::SettingsStore>(move |_this, cx| {
-            labonair_settings_ui::apply_theme_metrics(&theme_m, cx);
+            labonair_theme_ui::apply_theme_metrics(&theme_m, cx);
         })
         .detach();
     }
@@ -536,7 +536,7 @@ pub(crate) fn bootstrap(
         command_registry.palette_action_handlers_mut(),
         open_host,
     );
-    labonair_settings_ui::command_provider::register_palette_action_handlers(
+    labonair_theme_ui::command_provider::register_palette_action_handlers(
         command_registry.palette_action_handlers_mut(),
         &theme,
     );

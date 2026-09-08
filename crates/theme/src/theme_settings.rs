@@ -72,7 +72,7 @@ impl UiDensity {
 /// The resolved metric bundle — the "settings" half of [`ActiveTheme`].
 ///
 /// Built from the user's theme-settings by the settings → `ThemeStore` bridge
-/// (`labonair_settings_ui::apply_prefs_to_theme`). Defaults reproduce the
+/// (`labonair_theme_ui::apply_prefs_to_theme`). Defaults reproduce the
 /// historical [`Typography`] defaults + `UiDensity::Default` + unit radius
 /// scale + motion on, so a store that never receives a `set_metrics` call
 /// renders exactly as it did before T20-007.

@@ -120,7 +120,7 @@ boundary.
 | Keymap | `labonair-keymap` | `labonair-keymap-ui` | Binding descriptors, file data, resolution, conflicts, and a presentation adapter; no feature behavior. |
 | Command palette | `labonair-command-palette-core` | `labonair-command-palette`, `labonair-command-palette-runtime` | UI-free command registry contract; the UI sibling owns search/navigation and submenu presentation, while the runtime sibling carries owner-provided GPUI handlers. |
 | Notifications | `labonair-notifications-core` | `labonair-notifications` | Notification registry/state and its GPUI statusbar presentation. |
-| Themes | `labonair-theme` | none yet | Built-in color and icon-theme registries, preview, and selection. |
+| Themes | `labonair-theme` | `labonair-theme-ui` | Built-in color and icon-theme registries, preview, and selection. `labonair-theme-ui` owns the settings→`ThemeStore` application policy and the palette preview/activate handler so `labonair-theme` keeps no `labonair-settings` dependency. |
 | Workspace | `labonair-workspace` | none; panel crates are separate capabilities | Workspace identity, tabs, panes, focus, layout, and session orchestration. |
 | Backgrounds | `labonair-background` | none yet | Background-image persistence and rendering; settings values are consumed through the settings store, but Settings UI does not own the capability. |
 
