@@ -31,6 +31,17 @@ queue contains a bounded task for it.
 | B06 | `command-palette → settings`, `command-palette → filesystem` | Palette reads typed palette settings and owns recent-command persistence using the filesystem boundary. | **Narrow when needed** | Keep the palette owner responsible for search and recent history. Replace direct implementation access only if another host needs the same provider or storage behavior; do not create a second registry. |
 | B07 | `shell composition → integration siblings` | `labonair-shell` constructs concrete platform integrations and injects them into capability contracts. | **Retain by design** | Keep construction in the composition root. The edge is correct as long as the shell performs no feature behavior, owns no feature state, and exposes no aggregate backend facade. |
 
+**Re-reviewed 2026-09-07** (after B01/B02 resolved): B03–B06 were checked
+against their current real consumers (`live_bridge.rs`'s single typed
+`LiveBridge` impl for B03; typed `SettingsStore` value reads only, no
+Settings management UI, for B04; the public unified-diff/preference
+contracts for B05; the palette's own search/recent-history ownership for
+B06). Every edge is still exactly what the table describes — no
+implementation-detail or feature-state leak was found. All four `Narrow when
+needed` decisions stand unchanged; none has a second consumer yet, so none is
+extracted now. See `docs/rework-roadmap.md`'s "Post-B02 audit" note for the
+accompanying Keymap/Workspace-Terminal-Editor/AI-UI review.
+
 ## Execution order
 
 1. Complete the native visual acceptance in `R07-001`.

@@ -193,6 +193,74 @@ keeps sole ownership of image storage, import/delete, persistence, decoding,
 and rendering policy. All gates pass; only the native background-layer
 visual-state recording remains, again folding into the R07-001 visual matrix.
 
+### Post-B02 audit — Keymap boundary, Workspace/Terminal/Editor ownership, AI UI, B03–B06 (2026-09-07)
+
+With B01 and B02 resolved, the remaining rework-prompt steps were audited
+against the current source tree rather than assumed complete or re-litigated
+from scratch:
+
+- **Keymap platform boundary.** `crates/shell/src/keymap_loader.rs` and
+  `crates/shell/src/menu.rs` were re-read end to end. Loading, merging,
+  validation, default layers, alias resolution, and conflict handling live
+  entirely in `labonair-keymap` (`adapter::load_descriptors`,
+  `runtime::command_for_action`, 36 focused tests covering registration,
+  resolution, context precedence, conflict reporting, and persistence). The
+  shell only turns the resulting immutable snapshot into concrete
+  `gpui::KeyBinding`s/`Action`s (`menu::apply_keymap`/`action_for`) and a
+  display-hint global, and owns the `keymap.json` file-watch via
+  `labonair_settings::watch_file`. This matches the already-normative
+  T19-008 rationale in `scripts/check_crate_deps.py` ("shell also depends on
+  `labonair-settings` directly — it owns the concrete `menu::` GPUI Actions").
+  No duplicate legacy keymap table exists (`KeybindMap`/old `apply_keybinds`
+  are gone, referenced only in a historical doc comment). A single
+  `CommandId` enum (`labonair-command-palette-core`, ~113 variants) is the
+  sole command registry; no competing per-module command/action enum was
+  found. Conclusion: **compliant, no extraction required.**
+- **Workspace/Terminal/Editor ownership.** `labonair-terminal` and
+  `labonair-editor` already own their engine algorithms (session/PTY
+  lifecycle, ANSI batching, input mapping, Vim, syntax, symbols — e.g.
+  `crates/editor/src/vim.rs` at 1603 lines is entirely in the editor crate).
+  `crates/workspace/src/views/{terminal,editor}.rs` are the GPUI adapters
+  Workspace needs to host them as tabs; they call into the engine crates
+  (`batch_runs`, `key_to_bytes`, session registries) rather than
+  reimplementing them, and cannot move into the UI-free engine crates
+  without violating rule 4 (no UI dependency). `Workspace::spawn_session`
+  translates typed Settings into `SessionOptions` and calls
+  `TerminalRegistry::create`; it holds no PTY/session code itself.
+  Conclusion: **the current engine/view split already matches the target
+  ownership boundary.** No further extraction is identified.
+- **AI UI rebuild.** The AI frontend is intentionally parked (see
+  `memory/ai-frontend-parked.md`, tag `ai-ui-v1`); `labonair-ai` backend
+  contracts are retained and `labonair-workspace`'s AI live-bridge
+  (`live_bridge.rs`) implements the typed `labonair_ai::LiveBridge` contract
+  without owning AI state or provider logic. Rebuilding the AI UI is a
+  separate product decision, not mandated by this audit; Step 6's contract
+  guidance applies whenever that rebuild starts.
+- **B03–B06 re-review.** Each retained edge in
+  [`audits/remaining-boundaries.md`](audits/remaining-boundaries.md) was
+  checked against its actual current consumer (e.g. B03 confirmed:
+  `workspace → ai` is exactly the one typed `LiveBridge` implementation, no
+  broader AI state). All four decisions (`Narrow when needed`) still hold;
+  the audit file now records the review date.
+- **Step 8 anti-pattern sweep.** Source-wide search found: no toast
+  renderer or timer-based passive popup (the two `Toast`/`toast` hits are
+  doc comments asserting the absence); no duplicate command/action registry;
+  no Jump Hosts menu/badge surface (the only `JumpHost` hits are the SSH
+  connection/tunnel implementation, matching the product decision that jump
+  hosts stay inside SSH connection config); no remote theme
+  download/marketplace scaffolding (`"Community Neon"` is a shipped
+  fixture theme name, not a network feature); Transfers is registered as an
+  owner status item and is reachable, not hidden; `crates/shell` has no file
+  over 735 lines and each one is composition/registration, not feature
+  state. This was a representative source-and-grep sweep, not a literal
+  per-action enumeration of every command in the app; no violation was found
+  large enough to justify a new crate, facade, or removal.
+
+No code change resulted from this audit pass beyond B01/B02 (R07-004,
+R07-005) — every check confirmed the existing architecture already matches
+the normative contract. This is recorded here, rather than left implicit, so
+the next session does not re-run the same audit from zero.
+
 ## Change and removal gates
 
 Every phase task must state its owner, canonical capability crate, affected

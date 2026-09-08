@@ -5,6 +5,53 @@ They may mention API names that were valid at the time of the recorded
 change; the current API and task state are defined by the latest header and
 the normative documents under `docs/`.
 
+## Current Session: 2026-09-07 (Post-B02 audit — Steps 4–7 of the rework prompt)
+
+Still the same session, per "complete everything in the task": audited the
+remaining rework-prompt steps against the current source instead of assuming
+completeness or re-doing already-finished work.
+
+- **Keymap platform boundary (Step 4):** compliant. `labonair-keymap` owns
+  loading/merging/validation/aliasing/conflicts (36 tests); the shell
+  (`keymap_loader.rs`, `menu.rs`) only turns the snapshot into concrete
+  `gpui::KeyBinding`/`Action` values and watches the file — matches the
+  existing T19-008 rationale. One `CommandId` enum (~113 variants), no
+  duplicate command/action registry found anywhere in the tree.
+- **Workspace/Terminal/Editor ownership (Step 5):** compliant. Engine
+  algorithms (PTY/session, ANSI batching, input mapping, Vim, syntax,
+  symbols) live entirely in `labonair-terminal`/`labonair-editor`;
+  `crates/workspace/src/views/{terminal,editor}.rs` are the necessary GPUI
+  adapters (can't move into the UI-free engine crates without violating rule
+  4). No engine logic duplicated in `workspace.rs`.
+- **AI UI rebuild (Step 6):** not applicable — the AI frontend is
+  intentionally parked (`memory/ai-frontend-parked.md`); Step 6's contract
+  guidance applies whenever that separate product decision reactivates it.
+- **B03–B06 re-review (Step 7):** all four `Narrow when needed` decisions in
+  `docs/audits/remaining-boundaries.md` re-confirmed against their current
+  consumers; none has a second consumer yet, so none is extracted. Annotated
+  with a 2026-09-07 review note.
+- **Anti-pattern sweep (Step 8):** no toast/timer/duplicate-error surface, no
+  duplicate command table, no Jump Hosts menu/badge remnant, no theme
+  marketplace/download scaffolding, Transfers reachable via its owner status
+  item, no oversized/feature-heavy shell file. This was a representative
+  grep-and-read sweep, not a literal enumeration of every command in the app.
+
+No code changed in this pass beyond the B01/B02 commits already made
+(`44f30a2`, `a8a2ddb`); the finding is that the architecture already matches
+the normative contract everywhere checked. Full details and evidence are in
+`docs/rework-roadmap.md`'s "Post-B02 audit" section and the
+`remaining-boundaries.md` re-review note. Verification gates for this
+documentation-only change: `check_documentation.py`, `check_rework_queue.py`,
+`git diff --check` (no Rust source changed, so the cargo gates are unchanged
+from the R07-005 commit).
+
+The one item this pass cannot close is the native visual-state matrix
+(R07-001 acceptance criterion, still explicitly deferred earlier this
+session per user direction to skip screenshots and prioritise the boundary
+backlog). "Complete everything in the task" and "skip screenshots" are in
+tension for that one criterion — flagged back to the user rather than
+silently resolved either way.
+
 ## Current Session: 2026-09-07 (R07-005 Background presentation boundary — structural migration)
 
 Continuing the same session, on explicit direction to complete the remaining
