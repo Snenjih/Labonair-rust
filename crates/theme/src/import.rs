@@ -40,8 +40,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::color::{parse_color, to_hex};
-use crate::tokens::Theme;
+use labonair_theme_tokens::{parse_color, to_hex, Theme};
 
 /// One color scheme inside a [`ThemeFile`].
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -131,18 +130,31 @@ impl ThemeFile {
     }
 }
 
-impl Theme {
+/// `ThemeFile` ⇄ `Theme` conversion. An extension trait because `Theme` is
+/// foreign to this crate (it lives in `labonair-theme-tokens`); bring it into
+/// scope where you call `Theme::from_theme_file_variant` / `.to_theme_file`.
+pub trait ThemeFileConversion: Sized {
+    fn from_theme_file(file: &ThemeFile, dark: bool) -> Result<(Theme, Vec<String>), String>;
+    fn from_theme_file_variant(
+        file: &ThemeFile,
+        dark: bool,
+        variant_key: Option<&str>,
+    ) -> Result<(Theme, Vec<String>), String>;
+    fn to_theme_file(&self, name: impl Into<String>, author: impl Into<String>) -> ThemeFile;
+}
+
+impl ThemeFileConversion for Theme {
     /// Build a renderable [`Theme`] from a [`ThemeFile`] for the given
     /// appearance. Starts from the built-in default for that mode and overlays
     /// every token the file provides. Unknown tokens / unparseable colors are
     /// returned as warnings rather than failing the whole import.
-    pub fn from_theme_file(file: &ThemeFile, dark: bool) -> Result<(Theme, Vec<String>), String> {
+    fn from_theme_file(file: &ThemeFile, dark: bool) -> Result<(Theme, Vec<String>), String> {
         Self::from_theme_file_variant(file, dark, None)
     }
 
     /// As [`Self::from_theme_file`], but selects a named variant when
     /// `variant_key` matches an existing variant of the requested appearance.
-    pub fn from_theme_file_variant(
+    fn from_theme_file_variant(
         file: &ThemeFile,
         dark: bool,
         variant_key: Option<&str>,
@@ -174,7 +186,7 @@ impl Theme {
     /// color set is written to both a `light` and a `dark` variant so the
     /// result always re-imports cleanly; edit the JSON afterwards to make the
     /// two modes differ.
-    pub fn to_theme_file(&self, name: impl Into<String>, author: impl Into<String>) -> ThemeFile {
+    fn to_theme_file(&self, name: impl Into<String>, author: impl Into<String>) -> ThemeFile {
         let colors: BTreeMap<String, String> = COLOR_TOKENS
             .iter()
             .map(|&token| (token.to_string(), to_hex(get_token(self, token))))
@@ -454,7 +466,7 @@ pub(crate) fn get_token(theme: &Theme, key: &str) -> gpui::Hsla {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::color::to_rgb8;
+    use labonair_theme_tokens::to_rgb8;
 
     const SAMPLE: &str = r##"{
         "name": "Sample",

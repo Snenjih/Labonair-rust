@@ -8,16 +8,16 @@
 //! `theme_settings.rs`).
 //!
 //! The metric half is [`ThemeMetrics`]; the density scalar set is [`UiDensity`].
-//! [`ThemeStore`] owns the live [`ThemeMetrics`] (`set_metrics`) and rebuilds
-//! its cached [`ActiveTheme`] on every colour **or** metric change; the same
-//! value is mirrored into the [`GlobalActiveTheme`] global by an observer
-//! installed in [`crate::init_theme`], so `App`-level code can read it through
-//! [`labonair_ui_kit::ActiveThemeExt`](../../labonair_ui_kit) without touching
-//! the store entity.
+//! `labonair-theme`'s `ThemeStore` owns the live [`ThemeMetrics`]
+//! (`set_metrics`) and rebuilds its cached [`ActiveTheme`] on every colour
+//! **or** metric change; the same value is mirrored into the
+//! [`GlobalActiveTheme`] global by an observer installed in
+//! `labonair_theme::init_theme`, so `App`-level code can read it through
+//! [`crate::ActiveThemeExt`] without touching the store entity.
 
 use std::time::Duration;
 
-use crate::{Animation, RadiusScale, Theme, Typography};
+use crate::tokens::{Animation, RadiusScale, Theme, Typography};
 
 /// UI density — a spacing/size multiplier applied around the layout-contract
 /// base metrics. Port of Zed's `UiDensity` (`crates/theme/src/ui_density.rs`).

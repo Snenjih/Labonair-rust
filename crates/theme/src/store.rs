@@ -13,7 +13,6 @@
 use std::path::Path;
 
 use crate::registry::Appearance;
-use crate::theme_settings::{ActiveTheme, GlobalActiveTheme, ThemeMetrics};
 use crate::{
     Animation, IconThemeContent, IconThemeMeta, IconThemeRegistry, MonoFontWeight, RadiusScale,
     Shadows, Theme, ThemeFile, ThemeMeta, ThemeRegistry,
@@ -22,15 +21,18 @@ use gpui::{
     font, App, AppContext, Context, Entity, Font, FontFallbacks, FontFeatures, FontWeight, Global,
     Hsla, WindowAppearance,
 };
+use labonair_theme_tokens::{ActiveTheme, GlobalActiveTheme, ThemeMetrics};
 
+pub use crate::import::ThemeFileConversion;
 /// Re-exported from the crate root (they live in `labonair-theme` since T16-004
 /// so the command-palette and settings crates can name them without depending
 /// on `crates/ui`). Existing `crate::theme::{EditorThemeId, ThemePreference}`
 /// paths in `crates/ui` keep working via the re-export shim there.
 pub use crate::{EditorThemeId, ThemePreference};
 
-// The `impl labonair_ui_kit::UiTheme for ThemeStore` lives in `crates/ui-kit`
-// (orphan rule: `labonair-theme` must not depend on `labonair-ui-kit`).
+// The `impl labonair_theme_tokens::UiTheme for ThemeStore` lives in
+// `crate::ui_theme_impl` (R08-008): the `UiTheme` contract moved to the
+// foundation `labonair-theme-tokens` leaf, so this crate can own the impl.
 
 /// The concrete appearance mode after resolving [`ThemePreference::System`]
 /// against the current system appearance.
@@ -1418,7 +1420,7 @@ mod tests {
 
     #[gpui::test]
     fn active_theme_recomputes_on_colour_and_on_metric_change(cx: &mut TestAppContext) {
-        use crate::theme_settings::{GlobalActiveTheme, ThemeMetrics, UiDensity};
+        use labonair_theme_tokens::{GlobalActiveTheme, ThemeMetrics, UiDensity};
 
         let store = cx.update(|cx| init(WindowAppearance::Dark, cx));
 

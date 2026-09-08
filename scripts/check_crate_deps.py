@@ -25,11 +25,19 @@ ALLOWED = {
     # Foundation ------------------------------------------------------------
     # rule 6: leaf below ui-kit, only gpui / gpui-component.
     "labonair-gpui-ext": set(),
-    # rule 5: only gpui, gpui-component, theme, gpui-ext.
-    "labonair-ui-kit": {"labonair-theme", "labonair-gpui-ext"},
+    # R08-008: the design-token layer (`Theme`, `RadiusScale`, `ThemeMetrics`,
+    # colour structs, `IconThemeContent`, the `UiTheme` contract). A leaf —
+    # only `gpui` / `serde` / `palette` (external). Sits below `ui-kit` so
+    # `ui-kit` can render against tokens without depending on the Themes
+    # *feature* crate.
+    "labonair-theme-tokens": set(),
+    # rule 5: only gpui, gpui-component, theme-tokens, gpui-ext — NOT the
+    # `labonair-theme` feature crate (R08-008).
+    "labonair-ui-kit": {"labonair-theme-tokens", "labonair-gpui-ext"},
     # Theme metadata also contributes palette commands through the shared
-    # command contract; it does not depend on the palette UI.
-    "labonair-theme": {"labonair-command-palette-core"},
+    # command contract; it does not depend on the palette UI. The token layer
+    # is `labonair-theme-tokens` (R08-008).
+    "labonair-theme": {"labonair-command-palette-core", "labonair-theme-tokens"},
     # Background capability owns image persistence and GPUI rendering. It
     # consumes only the filesystem platform service, theme, and its own
     # presentation-contract leaf (B02: `LayerScope` + the injected
@@ -471,6 +479,9 @@ if "labonair-ui-kit" in ws_members:
         "labonair-workspace", "labonair-shell", "labonair-notifications",
         "labonair-command-palette", "labonair-settings-ui",
         "labonair-hosts-ui",
+        # R08-008: the Themes *feature* crate — `ui-kit` reads tokens through
+        # the `labonair-theme-tokens` foundation leaf, never `labonair-theme`.
+        "labonair-theme",
     } | PANEL_CRATES
     bad = forbidden_for_ui_kit & reaches("labonair-ui-kit")
     if bad:

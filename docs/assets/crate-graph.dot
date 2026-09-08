@@ -181,6 +181,7 @@ digraph labonair_crates {
   "labonair-terminal" -> "labonair-terminal-integration";
   "labonair-terminal" -> "labonair-theme";
   "labonair-theme" -> "labonair-command-palette-core";
+  "labonair-theme" -> "labonair-theme-tokens";
   "labonair-theme-ui" -> "labonair-command-palette-core";
   "labonair-theme-ui" -> "labonair-command-palette-runtime";
   "labonair-theme-ui" -> "labonair-settings";
@@ -193,7 +194,7 @@ digraph labonair_crates {
   "labonair-transfers-ui" -> "labonair-transfers";
   "labonair-transfers-ui" -> "labonair-ui-kit";
   "labonair-ui-kit" -> "labonair-gpui-ext";
-  "labonair-ui-kit" -> "labonair-theme";
+  "labonair-ui-kit" -> "labonair-theme-tokens";
   "labonair-updater" -> "labonair-filesystem";
   "labonair-updater-ui" -> "labonair-command-palette-core";
   "labonair-updater-ui" -> "labonair-command-palette-runtime";

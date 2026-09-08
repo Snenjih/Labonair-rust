@@ -372,7 +372,7 @@ fn compose_builtin_commands(
             None,
         ),
         |_s, _window, cx| {
-            labonair_ui_kit::open_gallery_window(cx);
+            crate::gallery::open_gallery_window(cx);
         },
     );
 

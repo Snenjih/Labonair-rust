@@ -52,8 +52,6 @@ mod context_menu;
 mod density;
 mod disclosure;
 mod divider;
-#[cfg(any(debug_assertions, feature = "gallery"))]
-mod gallery;
 mod icon;
 mod indicator;
 mod kbd;
@@ -74,12 +72,14 @@ mod tree_row;
 pub use banner::{banner, Banner, Severity};
 pub use button::{button, button_no_hover, ButtonSize, ButtonVariant, DISABLED_OPACITY};
 pub use checkbox::{checkbox, Checkbox};
+/// Debug-only preview helper consumed by the component gallery (now in
+/// `labonair-shell`).
+#[cfg(any(debug_assertions, feature = "gallery"))]
+pub use context_menu::menu_card_preview;
 pub use context_menu::{context_menu, popover_menu, MenuClick, MenuItem, SubmenuHoverSource};
 pub use density::Density;
 pub use disclosure::disclosure;
 pub use divider::{divider, Axis};
-#[cfg(any(debug_assertions, feature = "gallery"))]
-pub use gallery::{open_gallery_window, Gallery};
 pub use icon::{
     chevron_icon_path, file_icon_path, folder_icon_path, icon_for_path, svg_path, IconName,
 };

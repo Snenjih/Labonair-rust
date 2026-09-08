@@ -1,7 +1,7 @@
 # Labonair Architecture
 
 **Status:** Normative target architecture
-**Version:** 4
+**Version:** 5
 **Related:** [`product.md`](product.md), [`capabilities.md`](capabilities.md), [`modules.md`](modules.md), [`registries.md`](registries.md), [`repository-layout.md`](repository-layout.md), [`feature-lifecycle.md`](feature-lifecycle.md)
 
 ## 1. Architecture objective
@@ -46,7 +46,7 @@ Feature modules
   keymap, notifications, command-palette, settings, ai
         ↓
 Foundation and platform services
-  ui-kit, gpui-ext, filesystem, secrets, persistence
+  ui-kit, theme-tokens, gpui-ext, filesystem, secrets, persistence
 ```
 
 Dependencies point downward. A feature may depend on a foundation contract, but a feature must not depend on the shell. Cross-feature behavior uses a typed contract, registry, or event; it does not reach into another feature's private state.
@@ -94,7 +94,8 @@ and are never lost through a deserialize/serialize round trip.
 | Crate | Responsibility |
 |---|---|
 | `labonair-gpui-ext` | GPUI helpers and small shared primitives. |
-| `labonair-ui-kit` | Buttons, inputs, lists, dropdowns, dialogs, icons, badges, disclosure, tabs, and other reusable components. |
+| `labonair-theme-tokens` | Design tokens (`Theme`, `RadiusScale`, `ThemeMetrics`, `ActiveTheme`, colour structs, `IconThemeContent`) and the `UiTheme` accessor contract. A leaf below `ui-kit`; the Themes *feature* crate (`labonair-theme`) depends on it, not the reverse. |
+| `labonair-ui-kit` | Buttons, inputs, lists, dropdowns, dialogs, icons, badges, disclosure, tabs, and other reusable components. Renders against `labonair-theme-tokens`; it does not depend on the Themes feature crate. |
 | `labonair-filesystem` | Local filesystem abstractions and watchers. |
 | `labonair-errors` | Structured, UI-free domain error contract and recovery metadata. |
 | `labonair-events` | UI-free in-process transport primitives for adapter-level events; it owns no product event vocabulary or application state. |
@@ -240,7 +241,9 @@ serialize a feature's private state into Settings as a shortcut.
 
 ## 7. Dependency rules
 
-- Foundation crates do not depend on product modules.
+- Foundation crates do not depend on product modules. `labonair-ui-kit`
+  renders against `labonair-theme-tokens` (a foundation leaf), never the
+  `labonair-theme` feature crate; the dependency verifier enforces this.
 - `labonair-ui-kit` contains no product-specific behavior.
 - Feature modules do not depend on `labonair-shell`.
 - Feature modules do not import private types from another feature.

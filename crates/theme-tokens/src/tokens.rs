@@ -342,24 +342,24 @@ impl Default for Animation {
 
 impl Default for Typography {
     fn default() -> Self {
-        let ui_fallback: Vec<String> = crate::fonts::UI_FONT_FALLBACKS
+        let ui_fallback: Vec<String> = crate::font_families::UI_FONT_FALLBACKS
             .iter()
             .map(|s| s.to_string())
             .collect();
-        let mono_fallback: Vec<String> = crate::fonts::MONO_FONT_FALLBACKS
+        let mono_fallback: Vec<String> = crate::font_families::MONO_FONT_FALLBACKS
             .iter()
             .map(|s| s.to_string())
             .collect();
         Self {
-            sans_family: crate::fonts::UI_FONT_FAMILY.into(),
-            heading_family: crate::fonts::UI_FONT_FAMILY.into(),
-            app_font_family: crate::fonts::UI_FONT_FAMILY.into(),
+            sans_family: crate::font_families::UI_FONT_FAMILY.into(),
+            heading_family: crate::font_families::UI_FONT_FAMILY.into(),
+            app_font_family: crate::font_families::UI_FONT_FAMILY.into(),
             app_font_size: 16.0,
             app_line_height: 1.5,
             ui_font_fallback: ui_fallback,
-            buffer_font_family: crate::fonts::MONO_FONT_FAMILY.into(),
+            buffer_font_family: crate::font_families::MONO_FONT_FAMILY.into(),
             buffer_font_size: 15.0,
-            terminal_font_family: crate::fonts::MONO_FONT_FAMILY.into(),
+            terminal_font_family: crate::font_families::MONO_FONT_FAMILY.into(),
             terminal_font_size: 15.0,
             terminal_line_height: 1.05,
             terminal_letter_spacing: 0.0,

@@ -52,6 +52,7 @@ members = [
     "crates/keymap-ui",
     "crates/ai",
     "crates/theme",
+    "crates/theme-tokens",
     "crates/theme-ui",
     "crates/background",
     "crates/updater",

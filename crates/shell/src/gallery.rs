@@ -16,7 +16,9 @@
 //! tints, the min/max clamp of `NumberField`, the open/closed chevron of
 //! `Disclosure`. The theme switch at the top flips the live
 //! [`labonair_theme::ThemeStore`] preference, so every primitive below
-//! re-renders in Light or Dark.
+//! re-renders in Light or Dark. Moved from `labonair-ui-kit` to
+//! `labonair-shell` in R08-008 (it holds an `Entity<ThemeStore>`, a runtime
+//! type the foundation crate no longer sees).
 
 use gpui::{
     div, point, prelude::FluentBuilder, px, size, App, AppContext, Bounds, Context, Entity,
@@ -28,12 +30,11 @@ use gpui_component::Root;
 
 use labonair_theme::{theme_store, ThemePreference, ThemeStore};
 
-use crate::context_menu::menu_card_preview;
-use crate::{
+use labonair_ui_kit::{
     banner, button, checkbox, disclosure, divider, h_stack, icon_toggle_button, indicator, kbd_row,
-    keybinding_hint, list_header, number_field, segmented_control, select_trigger, toggle_base,
-    Axis, ButtonSize, ButtonVariant, IconName, IndicatorSize, ListItem, MenuItem, Palette,
-    SegmentSize, SegmentVariant, Severity, ToggleSize, ToggleVariant,
+    keybinding_hint, list_header, menu_card_preview, number_field, segmented_control,
+    select_trigger, toggle_base, Axis, ButtonSize, ButtonVariant, IconName, IndicatorSize,
+    ListItem, MenuItem, Palette, SegmentSize, SegmentVariant, Severity, ToggleSize, ToggleVariant,
 };
 
 /// The gallery view. Holds only the handful of caller-owned flags the
@@ -240,7 +241,7 @@ impl Gallery {
             )
             .child(
                 button("btn-disabled", c, ButtonVariant::Default, ButtonSize::Sm)
-                    .opacity(crate::DISABLED_OPACITY)
+                    .opacity(labonair_ui_kit::DISABLED_OPACITY)
                     .child("Disabled"),
             );
         body = body.child(row("Icon / disabled", c, icons));

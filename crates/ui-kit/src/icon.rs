@@ -10,7 +10,7 @@
 //!    `strum(snake_case)` stems; [`IconName`] also carries back-compat aliases
 //!    (assoc. consts) for the port's earlier semantic names.
 //! 2. **File / folder icons** — a swappable *icon theme*
-//!    ([`labonair_theme::icon_theme::IconThemeContent`]). The free functions
+//!    ([`labonair_theme_tokens::IconThemeContent`]). The free functions
 //!    [`file_icon_path`] / [`folder_icon_path`] / [`chevron_icon_path`] /
 //!    [`icon_for_path`] resolve a path against the active theme and return an
 //!    asset path string; render it with [`svg_path`].
@@ -18,7 +18,7 @@
 //! [Lucide]: https://lucide.dev
 
 use gpui::{px, svg, Hsla, SharedString, Styled, Svg};
-use labonair_theme::icon_theme::IconThemeContent;
+use labonair_theme_tokens::IconThemeContent;
 
 macro_rules! icon_enum {
     ($($variant:ident => $file:literal),* $(,)?) => {

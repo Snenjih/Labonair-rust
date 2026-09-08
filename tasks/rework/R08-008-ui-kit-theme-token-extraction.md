@@ -2,76 +2,92 @@
 
 ## Status
 
-`⏳ Planned`
+`✅ Done`
 
 ## Owner
 
-- Module: foundation (`ui-kit`) + `themes`
+- Module: foundation (`ui-kit` / new `theme-tokens`) + `themes`
 - Capability-matrix row: [`../../docs/capabilities.md`](../../docs/capabilities.md)
 - Composition entry point: n/a (crate-graph change)
 
-## Why deferred
+## Goal
 
-This is a load-bearing foundation refactor: it moves the entire visual-token
-layer (`Theme`, `RadiusScale`, `ThemeMetrics`, `ActiveTheme`, colour structs,
-`IconThemeContent`, the `UiTheme` trait) out of `labonair-theme` into a new
-leaf crate that both `ui-kit` and `theme` depend on. It touches ~20 files
-across the crate that every surface renders from, and its correctness is
-partly visual. It is being handed off for review rather than executed blind at
-the end of a long batch. The `your-task-2.md` acceptance
-(`crates/ui-kit/Cargo.toml` has no `labonair-theme` dependency) is only met by
-this extraction, so it stays `Planned`, not silently dropped.
+`labonair-ui-kit` renders against a foundation-level design-token contract, not
+the Themes *feature* crate. `crates/ui-kit/Cargo.toml` has no `labonair-theme`
+dependency.
 
-The violation is confirmed: `crates/ui-kit/Cargo.toml` depends on
-`labonair-theme` (a feature module per `docs/architecture.md`), and
-`ui-kit/src/{theme,palette,icon,gallery}.rs` import `ThemeStore`,
-`GlobalActiveTheme`, `IconThemeContent`, and concrete token types. The code's
-own doc comment already states the *intent* ("must not depend on the runtime
-theme store ... mirrors Zed's `ui` / `theme` split").
+## What shipped
 
-## Scope (when activated)
+- **New leaf crate `crates/theme-tokens` (`labonair-theme-tokens`)** — deps:
+  `gpui`, `palette`, `serde`, `serde_json` only. Modules:
+  - `color`, `tokens`, `contrast` (moved verbatim from `labonair-theme`)
+  - `metrics` (was `theme_settings.rs`: `ActiveTheme`, `GlobalActiveTheme`,
+    `ThemeMetrics`, `UiDensity`)
+  - `icons` (`IconThemeContent` + `DirectoryIcons` / `ChevronIcons` /
+    `IconDefinition` + their lookup methods + the `DEFAULT_FILE_*` tables +
+    `BUILTIN_ICON_THEME_{ID,NAME}`)
+  - `ui_theme` (the `UiTheme` trait + `ActiveThemeExt` + `impl ActiveThemeExt
+    for App`, moved out of `ui-kit/src/theme.rs`)
+  - `font_families` (the 4 font-family / fallback consts `tokens.rs` needs)
+- **`labonair-theme`** — `dep: labonair-theme-tokens`; `lib.rs` re-exports
+  every moved type under its existing name so no downstream crate changed.
+  Deleted `color.rs` / `tokens.rs` / `contrast.rs` / `theme_settings.rs`;
+  `icon_theme.rs` reduced to the runtime registry. New `ui_theme_impl.rs`
+  holds `impl UiTheme for ThemeStore` (orphan rule — `ThemeStore` is local
+  here). `import.rs`'s inherent `impl Theme { from_theme_file* / to_theme_file
+  }` became the extension trait `ThemeFileConversion` (`Theme` is foreign
+  now); `store.rs` brings it into scope.
+- **`labonair-ui-kit`** — `dep: labonair-theme` → `labonair-theme-tokens`.
+  `theme.rs` is a one-line re-export shim (`pub use
+  labonair_theme_tokens::{UiTheme, ActiveThemeExt}`). `palette.rs` /
+  `icon.rs` / `test_support.rs` repointed. `mod gallery` removed;
+  `pub use context_menu::menu_card_preview` added under the gallery cfg.
+- **`labonair-shell`** — `gallery.rs` moved here (it holds
+  `Entity<ThemeStore>`), `#[cfg(any(debug_assertions, feature = "gallery"))]
+  pub mod gallery;`; `commands.rs` calls `crate::gallery::open_gallery_window`.
+- **`scripts/check_crate_deps.py`** — `labonair-theme-tokens` leaf entry;
+  `ui-kit` allow-list → `{theme-tokens, gpui-ext}`; `theme` gains
+  `theme-tokens`; `labonair-theme` added to `forbidden_for_ui_kit` (the
+  regression the audit asked for).
 
-- New leaf crate `crates/theme-tokens` (`labonair-theme-tokens`, deps: `gpui`,
-  `serde`, `serde_json`) holding: `color.rs`, `tokens.rs`, `contrast.rs`, the
-  metric layer (`ActiveTheme`, `GlobalActiveTheme`, `ThemeMetrics`,
-  `UiDensity`), the `IconThemeContent` / `DirectoryIcons` / `ChevronIcons` /
-  `IconDefinition` data types, and the `UiTheme` + `ActiveThemeExt` traits
-  (moved from `ui-kit/src/theme.rs`).
-- `labonair-theme`: depend on `theme-tokens`, re-export every moved type under
-  its current name (zero downstream churn), keep `impl UiTheme for ThemeStore`
-  here (now legal), keep the store/registry/preview/import.
-- `labonair-ui-kit`: swap the `labonair-theme` dependency for
-  `labonair-theme-tokens`; `theme.rs` becomes a thin re-export of `UiTheme` /
-  `ActiveThemeExt` for existing `labonair_ui_kit::UiTheme` consumers.
-- `gallery.rs` (the debug component gallery holding `Entity<ThemeStore>`):
-  move to `crates/shell` behind `#[cfg(debug_assertions)]`
-  (`shell::open_gallery_window`), or to `labonair-theme-ui`.
-- `scripts/check_crate_deps.py`: add the `labonair-theme-tokens` leaf entry;
-  `ui-kit` allow-list becomes `{labonair-theme-tokens, labonair-gpui-ext}`;
-  add a regression assertion that `labonair-ui-kit` may not depend on any
-  feature module.
-- Regenerate `docs/assets/crate-graph.{dot,svg}`; update `architecture.md`
-  (§ layering + crate table), `capabilities.md`, `architecture-inventory.md`.
+## Dependencies
 
-## Acceptance criteria (when activated)
+- Existing edges removed: `labonair-ui-kit → labonair-theme`.
+- New edges: `ui-kit → theme-tokens`, `theme → theme-tokens`,
+  `shell → theme-tokens` (via the moved gallery — shell already deps `theme`).
+- Dependency verifier change: as above.
 
-- [ ] `crates/ui-kit/Cargo.toml` has no `labonair-theme` dependency.
-- [ ] `rg "labonair_theme|ThemeStore|IconThemeContent" crates/ui-kit/src`
-      finds no production product references.
-- [ ] Reusable components still render from the injected/foundation token
-      contract; no visual change.
-- [ ] The component gallery is reachable only through the documented debug
-      integration.
-- [ ] A dependency-verifier regression rejects a feature-module dependency
-      from `ui-kit`.
-- [ ] Full verification suite passes; native visual spot-check of the
-      primitives (folds into the R07-001 matrix).
+## Persistence and migration
+
+None — pure code move, no logic change; every moved test moved with its code.
+
+## User-visible behavior
+
+None.
+
+## Acceptance criteria
+
+- [x] `crates/ui-kit/Cargo.toml` has no `labonair-theme` dependency.
+- [x] `rg "labonair_theme|ThemeStore|IconThemeContent" crates/ui-kit/src`
+      finds no production product references (only `labonair_theme_tokens` +
+      the re-export shim; the `//! ... labonair-theme tokens` doc comments are
+      prose).
+- [x] Reusable components still render from the foundation token contract; no
+      visual change (pure move).
+- [x] The component gallery is reachable only through the documented
+      `labonair-shell` debug integration.
+- [x] A dependency-verifier regression rejects a `labonair-theme` dependency
+      from `ui-kit` (`forbidden_for_ui_kit`).
+- [x] `cargo fmt --check`, `cargo check --workspace --all-targets`,
+      `cargo clippy --workspace --all-targets -- -D warnings`,
+      `cargo test --workspace --no-fail-fast` (0 failures),
+      `scripts/check-crate-deps.sh` (56 crates, 225 edges),
+      `cargo check -p labonair-shell --features gallery`, and
+      `git diff --check` pass.
+- [ ] Native visual spot-check of the primitives — folds into R07-001.
 
 ## Notes and follow-ups
 
-Cheaper alternative if extraction is rejected: reclassify the `labonair-theme`
-*token* surface as foundation-consumable in `docs/architecture.md` and
-document the `ui-kit → theme` edge as an approved exception with the reason
-("theme is the single design-token source"). That does **not** satisfy the
-`your-task-2.md` acceptance but is an honest, low-risk resolution if the team
-decides token ownership belongs with `labonair-theme`.
+Blocked mid-task by a full `/` volume (Rust `target/` had grown to 140 GB);
+recovered with `rm -rf target`. Next task: R08-012 (P1.2, `workspace →
+hosts-ui`).

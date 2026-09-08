@@ -1,18 +1,17 @@
 [package]
-name = "labonair-theme"
+name = "labonair-theme-tokens"
 version = "0.1.0"
 edition = "2021"
+
+[lib]
+name = "labonair_theme_tokens"
+path = "src/lib.rs"
 
 [dependencies]
 gpui = { workspace = true }
 palette = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-tracing = { workspace = true }
-tokio = { workspace = true }
-fontdb = "0.24.0"
-labonair-command-palette-core = { path = "../command-palette-core" }
-labonair-theme-tokens = { path = "../theme-tokens" }
 
 [dev-dependencies]
 gpui = { workspace = true, features = ["test-support"] }

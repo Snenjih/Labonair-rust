@@ -3,7 +3,7 @@
 //! The primitives only *read* tokens, so their tests need no runtime store —
 //! just a [`Palette`] snapshotted off a fixed [`Theme`].
 
-use labonair_theme::Theme;
+use labonair_theme_tokens::Theme;
 
 use crate::palette::Palette;
 use crate::theme::UiTheme;

@@ -17,7 +17,7 @@ gallery = []
 [dependencies]
 gpui = { workspace = true }
 gpui-component = { workspace = true }
-labonair-theme = { path = "../theme" }
+labonair-theme-tokens = { path = "../theme-tokens" }
 labonair-gpui-ext = { path = "../gpui-ext" }
 
 [dev-dependencies]

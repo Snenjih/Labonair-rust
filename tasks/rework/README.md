@@ -37,7 +37,7 @@ The active sequence is:
 28. `R08-005-theme-management-out-of-settings-ui.md` — Done
 29. `R08-006-appcomposition-accessors.md` — Done
 30. `R08-007-remove-legacy-shortcutid-model.md` — Done
-31. `R08-008-ui-kit-theme-token-extraction.md` — Planned (deferred; foundation refactor, needs review — see file)
+31. `R08-008-ui-kit-theme-token-extraction.md` — Done
 32. `R08-009-remove-notification-callback-adapter.md` — Done
 33. `R08-010-actionable-notifications.md` — Planned (no current consumer)
 34. `R08-011-defer-dormant-theme-import.md` — Done

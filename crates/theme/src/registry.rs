@@ -36,10 +36,10 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-use crate::color::parse_color;
 use crate::import::{get_token, set_token, ThemeFile};
-use crate::tokens::Theme;
 use crate::COLOR_TOKENS;
+use labonair_theme_tokens::parse_color;
+use labonair_theme_tokens::Theme;
 
 /// Which system appearance a theme variant targets.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -484,7 +484,7 @@ impl ThemeRegistry {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::color::to_rgb8;
+    use labonair_theme_tokens::to_rgb8;
 
     fn close(a: [u8; 3], b: [u8; 3]) -> bool {
         a.iter()

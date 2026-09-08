@@ -14,7 +14,7 @@
 //! site literally cannot pass a hardcoded colour without writing one itself.
 
 use gpui::{px, Hsla, Pixels};
-use labonair_theme::RadiusScale;
+use labonair_theme_tokens::RadiusScale;
 
 use crate::theme::UiTheme;
 
@@ -135,7 +135,7 @@ impl Palette {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use labonair_theme::Theme;
+    use labonair_theme_tokens::Theme;
 
     struct TestTheme(Theme);
     impl UiTheme for TestTheme {

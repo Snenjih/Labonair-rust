@@ -4797,11 +4797,22 @@ dependencies = [
  "fontdb 0.24.0",
  "gpui",
  "labonair-command-palette-core",
+ "labonair-theme-tokens",
  "palette",
  "serde",
  "serde_json",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "labonair-theme-tokens"
+version = "0.1.0"
+dependencies = [
+ "gpui",
+ "palette",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -4865,7 +4876,7 @@ dependencies = [
  "gpui",
  "gpui-component",
  "labonair-gpui-ext",
- "labonair-theme",
+ "labonair-theme-tokens",
 ]
 
 [[package]]
