@@ -261,6 +261,39 @@ R07-005) — every check confirmed the existing architecture already matches
 the normative contract. This is recorded here, rather than left implicit, so
 the next session does not re-run the same audit from zero.
 
+### Follow-up audit — module-boundary and product-surface review (2026-09-08)
+
+A second, deeper independent review (`your-task-2.md`) went past the
+representative sweep above and read each foundation/feature crate boundary in
+full. It found boundary and ownership issues the grep-level pass did not
+surface, so the "no violation large enough to act on" conclusion above is
+**superseded for the specific edges listed below**. The green dependency
+verifier is necessary but not sufficient: several allow-listed edges are
+acyclic yet architecturally undesirable.
+
+Confirmed against current source:
+
+- `labonair-ui-kit` (foundation) depends on `labonair-theme` (feature) and
+  imports concrete `ThemeStore` / gallery types (P1.1).
+- `labonair-workspace` stores `Entity<HostManagerView>` /
+  `Entity<ConnectionStatusStore>` and mutates Hosts-UI state directly (P1.2).
+- `panel-snippets` and `transfers-ui` store `Entity<Workspace>` and call it
+  directly for execution / SFTP refresh (P1.3, P1.4).
+- `settings-ui` owns theme preview / activation / persistence policy (P1.5).
+- The pre-migration `ShortcutId` / `SHORTCUTS` keymap model is inert but still
+  present and re-exported (P1.6).
+- Zoom In/Out/Reset and Format Document are visible palette/menu commands with
+  no execution handler (P1.7).
+- Titlebar and statusbar popovers anchor to the pointer, not the trigger
+  bounds (P2.1).
+
+These are being worked as bounded follow-up tasks (R08-series) in the order
+recorded in `tasks/rework/README.md`. Task/acceptance status in R01-004,
+R03-002, R04-002, R05-001, and R06-001 was reconciled the same day: their
+non-visual acceptance criteria are ticked with evidence, residual items carry
+an explicit follow-up pointer, and visual criteria are delegated to the
+still-open R07-001 matrix.
+
 ## Change and removal gates
 
 Every phase task must state its owner, canonical capability crate, affected

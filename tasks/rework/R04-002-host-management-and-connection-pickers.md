@@ -78,15 +78,18 @@ Shift+Enter opening SFTP, while jump hosts remain part of SSH configuration.
 
 ## Acceptance criteria
 
-- [ ] Hosts management is absent from Settings and has one canonical surface.
-- [ ] The palette lists configured hosts, supports filtering, and opens SSH on
-      Enter and SFTP on Shift+Enter.
-- [ ] Jump hosts remain available in SSH configuration without a separate
-      primary menu or badge.
-- [ ] Host definitions and secrets have one persistence owner each.
-- [ ] Focused tests and all repository verification gates pass.
+- [x] Hosts management is absent from Settings and has one canonical surface
+      (the Hosts-owned native management window; `OpenHosts` command identity).
+- [x] The palette lists configured hosts, supports filtering, and opens SSH on
+      Enter and SFTP on Shift+Enter (owner-provided `HostPickerRow` snapshots).
+- [x] Jump hosts remain available in SSH configuration without a separate
+      primary menu or badge (verified by the R07-001 anti-pattern sweep).
+- [x] Host definitions and secrets have one persistence owner each
+      (`labonair-hosts` store + `labonair-secrets`; SQLite-to-Settings
+      projection removed).
+- [x] Focused tests and all repository verification gates pass.
 - [ ] Empty, filtered, configured, invalid, and connection-pending states are
-      visually checked.
+      visually checked. *Deferred into the R07-001 visual matrix.*
 
 ## Progress
 
@@ -105,8 +108,8 @@ Shift+Enter opening SFTP, while jump hosts remain part of SSH configuration.
       `HostsDb` alias. Persistence initialization now uses the foundation
       database contract directly; only the explicitly tracked MCP integration
       and transport adapters remain in backend.
-- [x] Perform
-      the visual state review for empty, filtered, invalid, and pending flows.
+- [ ] Perform the visual state review for empty, filtered, invalid, and
+      pending flows. *Deferred into the R07-001 visual matrix.*
 
 ## Removal condition
 

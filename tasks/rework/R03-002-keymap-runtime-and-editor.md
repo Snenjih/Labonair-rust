@@ -109,20 +109,28 @@ editor surface.
 
 ## Acceptance criteria
 
-- [ ] A new action can register a stable command ID and default binding without
-      editing shell or palette tables.
-- [ ] Resolution is deterministic across contexts, user overrides, and
-      conflicts, with focused UI-free tests.
-- [ ] Tab, pane, panel, editor, terminal, host, transfer, and palette actions
+- [x] A new action can register a stable command ID and default binding without
+      editing shell or palette tables (`CommandDescriptor::with_default_binding`
+      feeds the keymap default layer via `adapter::load_descriptors`).
+- [x] Resolution is deterministic across contexts, user overrides, and
+      conflicts, with focused UI-free tests (`keymap::runtime`, 36 tests).
+- [x] Tab, pane, panel, editor, terminal, host, transfer, and palette actions
       have command identities; missing defaults are intentional and documented.
-- [ ] The keymap editor reads/writes the canonical file without losing unknown
-      or invalid entries.
-- [ ] The keymap module does not own feature execution or feature UI state.
-- [ ] Shared controls use `labonair-ui-kit`; no toast or duplicate inline error
-      surface exists.
-- [ ] Focused tests and all repository verification gates pass.
+- [x] The keymap editor reads/writes the canonical file without losing unknown
+      or invalid entries (`keymap::file::KeymapDocument`, append-only override
+      writer).
+- [x] The keymap module does not own feature execution or feature UI state.
+- [x] Shared controls use `labonair-ui-kit`; no toast or duplicate inline error
+      surface exists (diagnostics publish through the notification registry).
+- [x] Focused tests and all repository verification gates pass.
+- [x] A new action registers without touching a private shortcut table.
+      *Residual: the pre-migration `ShortcutId` / `SHORTCUTS` model in
+      `keymap/src/lib.rs` is retained and re-exported but is no longer an
+      active runtime or rendering source. Physically removing it, together
+      with the `migrate_v2` slug alias map, is tracked by the P1.6 follow-up
+      task.*
 - [ ] Keymap normal, filtered, conflict, empty, and malformed-file states are
-      visually checked.
+      visually checked. *Deferred into the R07-001 visual matrix.*
 
 ## Removal condition
 

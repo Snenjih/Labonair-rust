@@ -1,9 +1,9 @@
 # Settings Field Inventory
 
 **Status:** Normative for R05-001  
-**Version:** 1
+**Version:** 2
 **Owner:** `labonair-settings-content` (values), `labonair-settings` (layers and persistence), `labonair-settings-ui` (value editor)  
-**Last reviewed:** 2026-09-07
+**Last reviewed:** 2026-09-08
 
 This inventory is the gate for changing `SettingsContent`. A field may remain
 in the model only when its owning runtime consumer, default, validation, and
@@ -45,7 +45,7 @@ means a runtime module, not merely serialization or the generated Settings UI.
 | `appearance` | `appFontFamily`, `appFontSize`, `appLineHeight`, `bufferFontFamily`, `bufferFontSize`, `bufferLineHeight`, `uiDensity`, `cornerRadiusScale`, `reduceMotion` | theme metrics/font pipeline; Global | Keep |
 | `appearance` | `backgroundImage`, `backgroundOpacity`, `backgroundBlur`, `backgroundTintColor`, `backgroundTintOpacity` | `labonair-background` store; Global | Removed from Settings model; values migrate to the Background owner |
 | `appearance` | `appCornerRadius` | superseded by `cornerRadiusScale`; no current consumer | Remove; legacy values migrate to `cornerRadiusScale` |
-| `appearance` | `tabsLocation`, `zenModeShowHeader`, `zenModeShowStatusbar` | shell/workspace presentation; Global | Keep pending direct consumer tests |
+| `appearance` | `tabsLocation`, `zenModeShowHeader`, `zenModeShowStatusbar` | shell/workspace presentation (`shell/src/titlebar.rs`, `shell/src/app_shell.rs`, `command-palette/src/palette.rs`); Global | Keep |
 | `appearance` | `sidebarTabInfoLine`, `sidebarGroupByFolder`, `sidebarGroupSingleTabs`, `badgesAlwaysVisible`, `titlebarsIconsPosition` | no current native consumer; titlebar position is legacy | Remove; legacy input remains deserializable only |
 | `terminal` | `terminalShell` | terminal/workspace launch; Global + safe Project values | Keep |
 | `terminal` | `terminalFontFamily`, `terminalFontSize`, `terminalLineHeight`, `terminalScrollback`, `terminalCursorStyle`, `terminalCursorBlink`, `terminalCopyOnSelect`, `terminalRightClickPastes`, `terminalBell`, `terminalOpacity` | terminal renderer/settings adapter; Global + safe Project values | Keep |
@@ -70,8 +70,9 @@ means a runtime module, not merely serialization or the generated Settings UI.
 
 ## Required follow-up order
 
-1. Add focused consumer tests for every **Keep**/**Review** field whose runtime
-   owner is currently indirect.
+1. Add focused consumer tests for every **Keep** field whose runtime owner is
+   reached indirectly (the consumer exists and is identified in the table
+   above; a dedicated regression test does not yet pin every one).
 2. Keep Background and workspace layout state behind their owning module
    contracts, preserving existing user data with explicit migrations. Both
    owner paths are active; remaining work is consumer proof and removal of
@@ -81,9 +82,12 @@ means a runtime module, not merely serialization or the generated Settings UI.
 4. Rebuild the project whitelist from this inventory instead of maintaining a
    second unrelated list.
 
-All current Settings fields now have an inventory row and consumer evidence.
-New Settings fields require an inventory row, consumer, type, default, and
-scope before code changes.
+Every current Settings field has an inventory row with an identified consumer
+(or an explicit Remove/Review decision). Focused consumer regression tests are
+complete for the terminal, editor, Vim, explorer/SCM, and command-palette
+value groups; follow-up item 1 above tracks the remaining indirect-owner
+**Keep** fields. New Settings fields require an inventory row, consumer, type,
+default, and scope before code changes.
 
 ## Unmodelled legacy input
 

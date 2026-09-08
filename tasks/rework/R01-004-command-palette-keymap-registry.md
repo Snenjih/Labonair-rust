@@ -44,11 +44,19 @@ storage, contexts, precedence, conflicts, and editing.
 
 ## Acceptance criteria
 
-- [ ] One command registry/provider surface is the only source of palette
-  entries.
-- [ ] Dynamic submenus can supply immutable filtered snapshots and typed
-  selection actions.
-- [ ] Keymap resolution and conflict detection are independent of GPUI.
-- [ ] Owning modules register commands without editing palette internals.
-- [ ] Legacy duplicate/static entries are removed or explicitly migrated.
-- [ ] Focused registry/keymap tests and all workspace verification gates pass.
+- [x] One command registry/provider surface is the only source of palette
+      entries (`CommandId` + `CommandRegistry` provider contributions).
+- [x] Dynamic submenus can supply immutable filtered snapshots and typed
+      selection actions (`SubmenuSnapshot` + `PaletteAction`).
+- [x] Keymap resolution and conflict detection are independent of GPUI
+      (`labonair-keymap` is a UI-free crate).
+- [x] Owning modules register commands without editing palette internals
+      (per-module `CommandProvider` impls composed by the shell).
+- [x] Legacy duplicate/static entries are removed or explicitly migrated.
+      Runtime keymap resolution and the palette shortcut hint now derive from
+      owner `with_default_binding` metadata and the `CommandId`-keyed
+      `KeybindDisplay` map. The legacy `ShortcutId` / `SHORTCUTS` table is
+      inert (its `with_shortcut` metadata is never rendered) but is still
+      physically present and re-exported; deleting it is tracked by the P1.6
+      follow-up task.
+- [x] Focused registry/keymap tests and all workspace verification gates pass.

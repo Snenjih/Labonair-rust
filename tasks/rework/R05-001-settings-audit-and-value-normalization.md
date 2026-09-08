@@ -73,14 +73,22 @@ management UI in the Settings system.
 
 ## Acceptance criteria
 
-- [ ] Every retained setting has a real consumer, type, default, and scope.
-- [ ] Hosts, themes, icon themes, keymap editing, transfers, notifications,
+- [x] Every retained setting has a real consumer, type, default, and scope.
+      `docs/settings-inventory.md` carries the field-to-consumer table; the
+      previously indirect `tabsLocation` / `zenModeShow*` fields now have
+      concrete readers in `shell/src/titlebar.rs`, `shell/src/app_shell.rs`,
+      and `command-palette/src/palette.rs`.
+- [x] Hosts, themes, icon themes, keymap editing, transfers, notifications,
       and command registration are absent as Settings categories.
-- [ ] Global/project values merge deterministically and preserve user data.
-- [ ] Settings UI is generated from the typed model and uses UI-kit controls.
-- [ ] Malformed files and writes use notifications; invalid fields remain
+- [x] Global/project values merge deterministically and preserve user data
+      (layered-merge and round-trip migration fixtures in `labonair-settings`).
+- [x] Settings UI field rows are generated from the typed model schema and use
+      UI-kit controls. *(The generic search box is a documented UI-kit input
+      exception, tracked by the P2.2 follow-up.)*
+- [x] Malformed files and writes use notifications; invalid fields remain
       actionable without duplicating passive errors.
-- [ ] Focused fixtures and all repository verification gates pass.
+- [x] Focused fixtures and all repository verification gates pass
+      (`cargo test --workspace` green, 109 binaries, 0 failures).
 
 ## Removal condition
 

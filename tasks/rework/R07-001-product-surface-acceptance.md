@@ -146,7 +146,11 @@ a separate product decision after the core workflow is stable.
       surfaces. The working matrix is recorded in
       [`../../docs/audits/product-surface-acceptance.md`](../../docs/audits/product-surface-acceptance.md);
       all applicable visual cells remain pending until native-bundle evidence
-      is recorded.
+      is recorded. This matrix also carries the sole remaining acceptance item
+      for [`R07-004`](R07-004-explorer-host-contract.md) (Explorer layer) and
+      [`R07-005`](R07-005-background-presentation-boundary.md) (terminal /
+      App-scope background layers), whose structural work has landed and whose
+      other criteria are met.
 - [ ] Native launch confirms the Rust window exists, but macOS currently denies
       Screen Recording to the capture runner. Capture the visual matrix with
       the native Rust bundle once Screen Recording access is available.

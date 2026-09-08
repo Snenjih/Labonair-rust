@@ -75,14 +75,19 @@ facade to reach unrelated state.
 
 ## Acceptance criteria
 
-- [ ] No feature module depends on broad backend application state.
-- [ ] Every remaining backend function is either a narrow platform adapter or
-      has moved to its capability owner.
-- [ ] Cross-module communication uses typed contracts, events, or registries.
-- [ ] The application root contains construction and registration only.
-- [ ] Transitional edges and compatibility paths have been removed or have a
-      separately named owner/task.
-- [ ] Focused tests and all repository verification gates pass.
+- [x] No feature module depends on broad backend application state. The
+      `labonair-backend` crate is absent; `AppComposition` is confined to
+      `labonair-shell` / `labonair` (composition roots only).
+- [x] Every remaining backend function is either a narrow platform adapter or
+      has moved to its capability owner (SSH transport adapters remain the
+      `BackendSsh*` structs in `labonair-ssh-transport`).
+- [x] Cross-module communication uses typed contracts, events, or registries.
+- [x] The application root contains construction and registration only.
+- [x] Transitional edges and compatibility paths have been removed or have a
+      separately named owner/task. *Residual naming/shape cleanups
+      (`AppComposition` `Deref`, `BackendSsh*` names, notification action
+      closures) are tracked by the P2.4 / P2.5 follow-up tasks.*
+- [x] Focused tests and all repository verification gates pass.
 
 ## Removal condition
 
