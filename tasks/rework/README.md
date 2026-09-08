@@ -41,7 +41,7 @@ The active sequence is:
 32. `R08-009-remove-notification-callback-adapter.md` — Done
 33. `R08-010-actionable-notifications.md` — Planned (no current consumer)
 34. `R08-011-defer-dormant-theme-import.md` — Done
-35. `R08-012-workspace-hosts-ui-decoupling.md` — Planned (deferred; highest-risk decoupling, needs review — see file)
+35. `R08-012-workspace-hosts-ui-decoupling.md` — Done
 
 Phases 0–6 are complete. R02-001 is the first bounded Phase 2 shell task and
 also connects the already-established theme registry to its intended palette

@@ -28,18 +28,20 @@
 <path class="e" d="M1302.0 560.0 L553.0 774.0"/>
 <path class="e" d="M1302.0 560.0 L2051.0 774.0"/>
 <path class="e" d="M1302.0 560.0 L1730.0 650.0"/>
-<path class="e" d="M767.0 436.0 L339.0 774.0"/>
-<path class="e" d="M767.0 436.0 L660.0 650.0"/>
-<path class="e" d="M767.0 436.0 L1088.0 526.0"/>
-<path class="e" d="M767.0 436.0 L553.0 774.0"/>
 <path class="e" d="M767.0 436.0 L1302.0 526.0"/>
-<path class="e" d="M767.0 436.0 L1516.0 526.0"/>
-<path class="e" d="M767.0 436.0 L2051.0 774.0"/>
-<path class="e" d="M767.0 436.0 L1730.0 650.0"/>
-<path class="e" d="M767.0 436.0 L2158.0 650.0"/>
-<path class="e" d="M767.0 436.0 L2372.0 650.0"/>
-<path class="e" d="M767.0 436.0 L2586.0 650.0"/>
-<path class="e" d="M767.0 436.0 L2800.0 650.0"/>
+<path class="e" d="M1516.0 312.0 L339.0 774.0"/>
+<path class="e" d="M1516.0 312.0 L660.0 650.0"/>
+<path class="e" d="M1516.0 312.0 L1088.0 526.0"/>
+<path class="e" d="M1516.0 312.0 L553.0 774.0"/>
+<path class="e" d="M1516.0 312.0 L1302.0 526.0"/>
+<path class="e" d="M1516.0 312.0 L767.0 402.0"/>
+<path class="e" d="M1516.0 312.0 L1516.0 526.0"/>
+<path class="e" d="M1516.0 312.0 L2051.0 774.0"/>
+<path class="e" d="M1516.0 312.0 L1730.0 650.0"/>
+<path class="e" d="M1516.0 312.0 L2158.0 650.0"/>
+<path class="e" d="M1516.0 312.0 L2372.0 650.0"/>
+<path class="e" d="M1516.0 312.0 L2586.0 650.0"/>
+<path class="e" d="M1516.0 312.0 L2800.0 650.0"/>
 <path class="e" d="M1302.0 684.0 L339.0 774.0"/>
 <path class="e" d="M981.0 436.0 L339.0 774.0"/>
 <path class="e" d="M981.0 436.0 L660.0 650.0"/>
@@ -97,17 +99,17 @@
 <path class="e" d="M1730.0 560.0 L2265.0 774.0"/>
 <path class="e" d="M1730.0 560.0 L2479.0 774.0"/>
 <path class="e" d="M1944.0 684.0 L2479.0 774.0"/>
-<path class="e" d="M1623.0 312.0 L339.0 402.0"/>
-<path class="e" d="M1623.0 312.0 L339.0 774.0"/>
-<path class="e" d="M1623.0 312.0 L660.0 650.0"/>
-<path class="e" d="M1623.0 312.0 L1195.0 774.0"/>
-<path class="e" d="M1623.0 312.0 L1409.0 774.0"/>
-<path class="e" d="M1623.0 312.0 L1516.0 526.0"/>
-<path class="e" d="M1623.0 312.0 L1730.0 526.0"/>
-<path class="e" d="M1623.0 312.0 L1944.0 650.0"/>
-<path class="e" d="M1623.0 312.0 L2586.0 650.0"/>
-<path class="e" d="M1623.0 312.0 L2693.0 402.0"/>
-<path class="e" d="M1623.0 312.0 L2800.0 650.0"/>
+<path class="e" d="M1730.0 312.0 L339.0 402.0"/>
+<path class="e" d="M1730.0 312.0 L339.0 774.0"/>
+<path class="e" d="M1730.0 312.0 L660.0 650.0"/>
+<path class="e" d="M1730.0 312.0 L1195.0 774.0"/>
+<path class="e" d="M1730.0 312.0 L1409.0 774.0"/>
+<path class="e" d="M1730.0 312.0 L1516.0 526.0"/>
+<path class="e" d="M1730.0 312.0 L1730.0 526.0"/>
+<path class="e" d="M1730.0 312.0 L1944.0 650.0"/>
+<path class="e" d="M1730.0 312.0 L2586.0 650.0"/>
+<path class="e" d="M1730.0 312.0 L2693.0 402.0"/>
+<path class="e" d="M1730.0 312.0 L2800.0 650.0"/>
 <path class="e" d="M1944.0 560.0 L553.0 774.0"/>
 <path class="e" d="M1944.0 560.0 L2372.0 650.0"/>
 <path class="e" d="M2265.0 436.0 L553.0 774.0"/>
@@ -130,6 +132,7 @@
 <path class="e" d="M1730.0 188.0 L1409.0 774.0"/>
 <path class="e" d="M1730.0 188.0 L1302.0 526.0"/>
 <path class="e" d="M1730.0 188.0 L767.0 402.0"/>
+<path class="e" d="M1730.0 188.0 L1516.0 278.0"/>
 <path class="e" d="M1730.0 188.0 L1302.0 650.0"/>
 <path class="e" d="M1730.0 188.0 L981.0 402.0"/>
 <path class="e" d="M1730.0 188.0 L1623.0 774.0"/>
@@ -143,7 +146,7 @@
 <path class="e" d="M1730.0 188.0 L2051.0 774.0"/>
 <path class="e" d="M1730.0 188.0 L1730.0 650.0"/>
 <path class="e" d="M1730.0 188.0 L1730.0 526.0"/>
-<path class="e" d="M1730.0 188.0 L1623.0 278.0"/>
+<path class="e" d="M1730.0 188.0 L1730.0 278.0"/>
 <path class="e" d="M1730.0 188.0 L1944.0 526.0"/>
 <path class="e" d="M1730.0 188.0 L2265.0 402.0"/>
 <path class="e" d="M1730.0 188.0 L2158.0 650.0"/>
@@ -160,7 +163,7 @@
 <path class="e" d="M1730.0 188.0 L2800.0 650.0"/>
 <path class="e" d="M1730.0 188.0 L3014.0 650.0"/>
 <path class="e" d="M1730.0 188.0 L3121.0 402.0"/>
-<path class="e" d="M1730.0 188.0 L1837.0 278.0"/>
+<path class="e" d="M1730.0 188.0 L1944.0 278.0"/>
 <path class="e" d="M2158.0 684.0 L339.0 774.0"/>
 <path class="e" d="M2158.0 684.0 L553.0 774.0"/>
 <path class="e" d="M2158.0 684.0 L2051.0 774.0"/>
@@ -202,31 +205,31 @@
 <path class="e" d="M3121.0 436.0 L2586.0 650.0"/>
 <path class="e" d="M3121.0 436.0 L2800.0 650.0"/>
 <path class="e" d="M3121.0 436.0 L3014.0 650.0"/>
-<path class="e" d="M1837.0 312.0 L446.0 650.0"/>
-<path class="e" d="M1837.0 312.0 L125.0 774.0"/>
-<path class="e" d="M1837.0 312.0 L339.0 402.0"/>
-<path class="e" d="M1837.0 312.0 L339.0 774.0"/>
-<path class="e" d="M1837.0 312.0 L660.0 650.0"/>
-<path class="e" d="M1837.0 312.0 L874.0 650.0"/>
-<path class="e" d="M1837.0 312.0 L981.0 774.0"/>
-<path class="e" d="M1837.0 312.0 L1195.0 774.0"/>
-<path class="e" d="M1837.0 312.0 L1088.0 650.0"/>
-<path class="e" d="M1837.0 312.0 L1409.0 774.0"/>
-<path class="e" d="M1837.0 312.0 L1302.0 526.0"/>
-<path class="e" d="M1837.0 312.0 L767.0 402.0"/>
-<path class="e" d="M1837.0 312.0 L1302.0 650.0"/>
-<path class="e" d="M1837.0 312.0 L1623.0 774.0"/>
-<path class="e" d="M1837.0 312.0 L1516.0 526.0"/>
-<path class="e" d="M1837.0 312.0 L1516.0 650.0"/>
-<path class="e" d="M1837.0 312.0 L1623.0 402.0"/>
-<path class="e" d="M1837.0 312.0 L1730.0 526.0"/>
-<path class="e" d="M1837.0 312.0 L2265.0 774.0"/>
-<path class="e" d="M1837.0 312.0 L1944.0 526.0"/>
-<path class="e" d="M1837.0 312.0 L2372.0 650.0"/>
-<path class="e" d="M1837.0 312.0 L2372.0 526.0"/>
-<path class="e" d="M1837.0 312.0 L2586.0 650.0"/>
-<path class="e" d="M1837.0 312.0 L3335.0 774.0"/>
-<path class="e" d="M1837.0 312.0 L2800.0 650.0"/>
+<path class="e" d="M1944.0 312.0 L446.0 650.0"/>
+<path class="e" d="M1944.0 312.0 L125.0 774.0"/>
+<path class="e" d="M1944.0 312.0 L339.0 402.0"/>
+<path class="e" d="M1944.0 312.0 L339.0 774.0"/>
+<path class="e" d="M1944.0 312.0 L660.0 650.0"/>
+<path class="e" d="M1944.0 312.0 L874.0 650.0"/>
+<path class="e" d="M1944.0 312.0 L981.0 774.0"/>
+<path class="e" d="M1944.0 312.0 L1195.0 774.0"/>
+<path class="e" d="M1944.0 312.0 L1088.0 650.0"/>
+<path class="e" d="M1944.0 312.0 L1409.0 774.0"/>
+<path class="e" d="M1944.0 312.0 L1302.0 526.0"/>
+<path class="e" d="M1944.0 312.0 L767.0 402.0"/>
+<path class="e" d="M1944.0 312.0 L1302.0 650.0"/>
+<path class="e" d="M1944.0 312.0 L1623.0 774.0"/>
+<path class="e" d="M1944.0 312.0 L1516.0 526.0"/>
+<path class="e" d="M1944.0 312.0 L1516.0 650.0"/>
+<path class="e" d="M1944.0 312.0 L1623.0 402.0"/>
+<path class="e" d="M1944.0 312.0 L1730.0 526.0"/>
+<path class="e" d="M1944.0 312.0 L2265.0 774.0"/>
+<path class="e" d="M1944.0 312.0 L1944.0 526.0"/>
+<path class="e" d="M1944.0 312.0 L2372.0 650.0"/>
+<path class="e" d="M1944.0 312.0 L2372.0 526.0"/>
+<path class="e" d="M1944.0 312.0 L2586.0 650.0"/>
+<path class="e" d="M1944.0 312.0 L3335.0 774.0"/>
+<path class="e" d="M1944.0 312.0 L2800.0 650.0"/>
 <rect class="n" x="1635.0" y="30.0" width="190" height="34" rx="6"/>
 <text class="t" x="1730.0" y="47.0">labonair</text>
 <rect class="n" x="351.0" y="650.0" width="190" height="34" rx="6"/>
@@ -262,7 +265,9 @@
 <rect class="n" x="1207.0" y="526.0" width="190" height="34" rx="6"/>
 <text class="t" x="1302.0" y="543.0">labonair-hosts</text>
 <rect class="n" x="672.0" y="402.0" width="190" height="34" rx="6"/>
-<text class="t" x="767.0" y="419.0">labonair-hosts-ui</text>
+<text class="t" x="767.0" y="419.0">labonair-hosts-host</text>
+<rect class="n" x="1421.0" y="278.0" width="190" height="34" rx="6"/>
+<text class="t" x="1516.0" y="295.0">labonair-hosts-ui</text>
 <rect class="n" x="1207.0" y="650.0" width="190" height="34" rx="6"/>
 <text class="t" x="1302.0" y="667.0">labonair-keymap</text>
 <rect class="n" x="886.0" y="402.0" width="190" height="34" rx="6"/>
@@ -297,8 +302,8 @@
 <text class="t" x="2265.0" y="791.0">labonair-settings-json</text>
 <rect class="n" x="2384.0" y="774.0" width="190" height="34" rx="6"/>
 <text class="t" x="2479.0" y="791.0">labonair-settings-macros</text>
-<rect class="n" x="1528.0" y="278.0" width="190" height="34" rx="6"/>
-<text class="t" x="1623.0" y="295.0">labonair-settings-ui</text>
+<rect class="n" x="1635.0" y="278.0" width="190" height="34" rx="6"/>
+<text class="t" x="1730.0" y="295.0">labonair-settings-ui</text>
 <rect class="n" x="1849.0" y="526.0" width="190" height="34" rx="6"/>
 <text class="t" x="1944.0" y="543.0">labonair-sftp</text>
 <rect class="n" x="2170.0" y="402.0" width="190" height="34" rx="6"/>
@@ -337,6 +342,6 @@
 <text class="t" x="3014.0" y="667.0">labonair-updater</text>
 <rect class="n" x="3026.0" y="402.0" width="190" height="34" rx="6"/>
 <text class="t" x="3121.0" y="419.0">labonair-updater-ui</text>
-<rect class="n" x="1742.0" y="278.0" width="190" height="34" rx="6"/>
-<text class="t" x="1837.0" y="295.0">labonair-workspace</text>
+<rect class="n" x="1849.0" y="278.0" width="190" height="34" rx="6"/>
+<text class="t" x="1944.0" y="295.0">labonair-workspace</text>
 </svg>

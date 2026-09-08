@@ -186,6 +186,10 @@ ALLOWED = {
     # ssh terminal / ssh-session lookup). A leaf — only `gpui` — so
     # `panel-snippets` and `workspace` can both depend on it without a cycle.
     "labonair-snippets-host": set(),
+    # R08-012: narrow host-view contract (catalog reads + status/tunnel
+    # snapshot sinks). Deps `gpui` + `labonair-hosts` (for `HostPickerRow`);
+    # lets `panel`/`workspace` reach the Hosts UI without depending on it.
+    "labonair-hosts-host": {"labonair-hosts"},
     # rule 3 + §8.4: workspace owns the tab-view entities, so it pulls
     # hosts-ui and panel-git-graph (acyclic — neither depends back on it).
     # T19-002: ThemeSettings/TerminalSettings real consumers
@@ -196,11 +200,15 @@ ALLOWED = {
     # `labonair_settings_json::json_path_at_offset` directly to resolve the
     # key path under the mouse — a leaf crate (`labonair-settings-json`),
     # no cycle.
+    # R08-012: no `labonair-hosts-ui` edge — the workspace reads the host
+    # catalog and pushes status/tunnel snapshots through the narrow
+    # `labonair-hosts-host::HostView` contract; the connection-status store
+    # moved into `workspace` itself.
     "labonair-workspace": {
         "labonair-theme", "labonair-ui-kit", "labonair-gpui-ext",
         "labonair-notifications", "labonair-command-palette",
-        "labonair-panel", "labonair-panel-git-graph", "labonair-hosts-ui",
-        "labonair-hosts",
+        "labonair-panel", "labonair-panel-git-graph",
+        "labonair-hosts", "labonair-hosts-host",
         "labonair-terminal", "labonair-editor",
         "labonair-git",
         "labonair-ai", "labonair-settings", "labonair-settings-json",
@@ -226,6 +234,7 @@ ALLOWED = {
         "labonair-keymap-ui",
         "labonair-workspace", "labonair-settings-ui", "labonair-panel",
         "labonair-explorer-host", "labonair-snippets-host",
+        "labonair-hosts-host",
         "labonair-panel-explorer", "labonair-panel-scm",
         "labonair-panel-git-graph", "labonair-panel-snippets",
         "labonair-terminal",
@@ -296,7 +305,8 @@ ALLOWED = {
     # absent so the management surface cannot create a second write path.
     "labonair-hosts-ui": {
         "labonair-theme", "labonair-ui-kit", "labonair-notifications",
-        "labonair-hosts", "labonair-credentials", "labonair-persistence",
+        "labonair-hosts", "labonair-hosts-host", "labonair-credentials",
+        "labonair-persistence",
         "labonair-secrets", "labonair-snippets", "labonair-ssh",
         "labonair-errors", "labonair-command-palette-core",
         "labonair-command-palette-runtime",

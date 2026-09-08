@@ -29,11 +29,13 @@ digraph labonair_crates {
   "labonair-hosts" -> "labonair-errors";
   "labonair-hosts" -> "labonair-persistence";
   "labonair-hosts" -> "labonair-secrets";
+  "labonair-hosts-host" -> "labonair-hosts";
   "labonair-hosts-ui" -> "labonair-command-palette-core";
   "labonair-hosts-ui" -> "labonair-command-palette-runtime";
   "labonair-hosts-ui" -> "labonair-credentials";
   "labonair-hosts-ui" -> "labonair-errors";
   "labonair-hosts-ui" -> "labonair-hosts";
+  "labonair-hosts-ui" -> "labonair-hosts-host";
   "labonair-hosts-ui" -> "labonair-notifications";
   "labonair-hosts-ui" -> "labonair-persistence";
   "labonair-hosts-ui" -> "labonair-secrets";
@@ -130,6 +132,7 @@ digraph labonair_crates {
   "labonair-shell" -> "labonair-git-transport";
   "labonair-shell" -> "labonair-gpui-ext";
   "labonair-shell" -> "labonair-hosts";
+  "labonair-shell" -> "labonair-hosts-host";
   "labonair-shell" -> "labonair-hosts-ui";
   "labonair-shell" -> "labonair-keymap";
   "labonair-shell" -> "labonair-keymap-ui";
@@ -214,7 +217,7 @@ digraph labonair_crates {
   "labonair-workspace" -> "labonair-git";
   "labonair-workspace" -> "labonair-gpui-ext";
   "labonair-workspace" -> "labonair-hosts";
-  "labonair-workspace" -> "labonair-hosts-ui";
+  "labonair-workspace" -> "labonair-hosts-host";
   "labonair-workspace" -> "labonair-keymap";
   "labonair-workspace" -> "labonair-mcp-core";
   "labonair-workspace" -> "labonair-notifications";

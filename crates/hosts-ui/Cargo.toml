@@ -19,6 +19,7 @@ labonair-theme = { path = "../theme" }
 labonair-ui-kit = { path = "../ui-kit" }
 labonair-notifications = { path = "../notifications" }
 labonair-hosts = { path = "../hosts" }
+labonair-hosts-host = { path = "../hosts-host" }
 labonair-credentials = { path = "../credentials" }
 labonair-persistence = { path = "../persistence" }
 labonair-secrets = { path = "../secrets" }

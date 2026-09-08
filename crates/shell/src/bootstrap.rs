@@ -340,7 +340,42 @@ pub(crate) fn bootstrap(
             transfer_service,
             tokio.clone(),
             agent_access.clone(),
-            host_manager.clone(),
+            {
+                // R08-012: Workspace reaches the Hosts UI only through this
+                // narrow `HostView` contract, not an `Entity<HostManagerView>`.
+                let hm = host_manager.clone();
+                labonair_hosts_host::HostView::new(
+                    {
+                        let hm = hm.clone();
+                        move |cx| hm.read(cx).host_ids()
+                    },
+                    {
+                        let hm = hm.clone();
+                        move |id, cx| hm.read(cx).host_name(id)
+                    },
+                    {
+                        let hm = hm.clone();
+                        move |id, cx| hm.read(cx).jump_host_label(id)
+                    },
+                    {
+                        let hm = hm.clone();
+                        move |cx| hm.read(cx).picker_rows()
+                    },
+                    {
+                        let hm = hm.clone();
+                        move |n, cx| hm.read(cx).recent_picker_rows(n)
+                    },
+                    {
+                        let hm = hm.clone();
+                        move |id, status, cx| {
+                            hm.update(cx, |h, cx| h.set_status(id, status, cx));
+                        }
+                    },
+                    move |rows, cx| {
+                        hm.update(cx, |h, cx| h.set_active_tunnels(rows, cx));
+                    },
+                )
+            },
             session_snapshot,
             window,
             cx,

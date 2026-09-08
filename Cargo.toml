@@ -21,6 +21,7 @@ members = [
     "crates/settings-content",
     "crates/settings-macros",
     "crates/hosts-ui",
+    "crates/hosts-host",
     "crates/panel-explorer",
     "crates/panel-scm",
     "crates/panel-git-graph",

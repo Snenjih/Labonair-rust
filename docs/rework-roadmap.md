@@ -278,6 +278,8 @@ Confirmed against current source:
   — token layer extracted to the `labonair-theme-tokens` leaf.
 - `labonair-workspace` stores `Entity<HostManagerView>` /
   `Entity<ConnectionStatusStore>` and mutates Hosts-UI state directly (P1.2).
+  **Resolved (R08-012)** — `HostView` leaf contract + the status store moved
+  into `workspace`.
 - `panel-snippets` and `transfers-ui` store `Entity<Workspace>` and call it
   directly for execution / SFTP refresh (P1.3, P1.4).
 - `settings-ui` owns theme preview / activation / persistence policy (P1.5).
@@ -305,7 +307,7 @@ Status:
 | P2.5 notification callback adapter | R08-009 (+ R08-010) | Done — removed (no consumer); actionable-notification design parked in R08-010 |
 | P2.6 dormant theme import/watch | R08-011 | Done — quarantined: retained under test, doc-marked deferred, capability-matrix row added |
 | P1.1 `ui-kit → theme` | R08-008 | Done — extracted the `labonair-theme-tokens` foundation leaf (`Theme` / `RadiusScale` / `ThemeMetrics` / `ActiveTheme` / `IconThemeContent` / `UiTheme`); `ui-kit` depends on it, not `labonair-theme`; the debug gallery moved to `labonair-shell`; the verifier's `forbidden_for_ui_kit` set now includes `labonair-theme`. |
-| P1.2 `workspace → hosts-ui` | R08-012 | **Planned / deferred** — highest regression risk; needs review. Follow the `explorer-host` leaf-crate pattern. |
+| P1.2 `workspace → hosts-ui` | R08-012 | Done — new `labonair-hosts-host` leaf carries the `HostView` contract (catalog reads + status/tunnel snapshot sinks) plus `HostStatus` / `ActiveTunnelRow`; the connection-status store moved into `workspace`. `workspace` no longer depends on `labonair-hosts-ui` and holds no `Entity<HostManagerView>`. |
 
 ## Change and removal gates
 

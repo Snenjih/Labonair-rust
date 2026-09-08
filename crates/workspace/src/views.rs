@@ -1,8 +1,9 @@
 //! Tab-content views owned by [`Workspace`](crate::Workspace).
 //!
-//! Moved out of `crates/ui` in T16-006. In T16-008 `git_graph` moved on to
-//! `labonair-panel-git-graph` and `hosts` / `ssh_connection` to
-//! `labonair-hosts-ui`; `Workspace` now imports those from their own crates.
+//! Moved out of `crates/ui` in T16-006. `git_graph` moved to
+//! `labonair-panel-git-graph`; `hosts` reaches the Hosts UI through the narrow
+//! `labonair-hosts-host::HostView` contract (R08-012); the connection-status
+//! store is `crate::ssh_connection`.
 
 pub mod diff;
 pub mod editor;

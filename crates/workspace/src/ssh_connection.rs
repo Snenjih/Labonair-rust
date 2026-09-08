@@ -1,7 +1,11 @@
 //! Per-session SSH connection status store (T16-015).
 //!
+//! Moved from `labonair-hosts-ui` to `labonair-workspace` in R08-012: nothing
+//! in the Hosts UI used it — the workspace creates it, drives its state
+//! machine off the SSH event stream, and renders the `SshLoadingScreen`.
+//!
 //! Port of `reference-src/src/modules/hosts/store/connectionStatusStore.ts`: a
-//! single observable map, keyed by backend SSH session id, that the
+//! single observable map, keyed by SSH session id, that the
 //! `SshLoadingScreen` full-pane view, the status bar and
 //! the command palette all read. It tracks, per session:
 //!

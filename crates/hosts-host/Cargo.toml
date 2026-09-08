@@ -1,0 +1,15 @@
+[package]
+name = "labonair-hosts-host"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "labonair_hosts_host"
+path = "src/lib.rs"
+
+[dependencies]
+gpui = { workspace = true }
+labonair-hosts = { path = "../hosts" }
+
+[dev-dependencies]
+gpui = { workspace = true, features = ["test-support"] }

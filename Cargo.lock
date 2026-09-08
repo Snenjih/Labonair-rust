@@ -4342,6 +4342,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "labonair-hosts-host"
+version = "0.1.0"
+dependencies = [
+ "gpui",
+ "labonair-hosts",
+]
+
+[[package]]
 name = "labonair-hosts-ui"
 version = "0.1.0"
 dependencies = [
@@ -4352,6 +4360,7 @@ dependencies = [
  "labonair-credentials",
  "labonair-errors",
  "labonair-hosts",
+ "labonair-hosts-host",
  "labonair-notifications",
  "labonair-persistence",
  "labonair-secrets",
@@ -4663,6 +4672,7 @@ dependencies = [
  "labonair-git-transport",
  "labonair-gpui-ext",
  "labonair-hosts",
+ "labonair-hosts-host",
  "labonair-hosts-ui",
  "labonair-keymap",
  "labonair-keymap-ui",
@@ -4930,7 +4940,7 @@ dependencies = [
  "labonair-git",
  "labonair-gpui-ext",
  "labonair-hosts",
- "labonair-hosts-ui",
+ "labonair-hosts-host",
  "labonair-keymap",
  "labonair-mcp-core",
  "labonair-notifications",

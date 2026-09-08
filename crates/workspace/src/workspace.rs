@@ -40,6 +40,7 @@ pub mod pane;
 pub mod pane_group;
 pub mod search_overlay;
 pub mod session;
+pub mod ssh_connection;
 pub mod ssh_event_bridge;
 pub mod status_bar;
 pub mod status_items;
@@ -105,6 +106,9 @@ use crate::session::{
     plan_restore, PaneSessionKind, PaneSessionSnapshot, RestoreAction, RestoreResult,
     SerializedLayout, SessionSnapshot, TabSnapshot, WorkspaceTabSnapshot,
 };
+use crate::ssh_connection::{
+    ConnStage, ConnectionKind, ConnectionState, ConnectionStatusStore, StageStatus,
+};
 use crate::tabs::{Tab, TabData, TabKind, TabStore};
 use crate::theme::ThemeStore;
 use crate::views::editor::{EditorEvent, EditorView};
@@ -113,10 +117,7 @@ use crate::views::sftp::{SftpEvent, SftpView};
 use crate::views::terminal::TerminalView;
 use labonair_background_host::BackgroundHost;
 use labonair_hosts::{HostOpenMode, HostOpenRequest, HostPickerRow};
-use labonair_hosts_ui::ssh_connection::{
-    ConnStage, ConnectionKind, ConnectionState, ConnectionStatusStore, StageStatus,
-};
-use labonair_hosts_ui::{ActiveTunnelRow, HostManagerView, HostStatus};
+use labonair_hosts_host::{ActiveTunnelRow, HostStatus, HostView};
 use labonair_panel_git_graph::GitGraphView;
 use labonair_settings::content::general::StartupTab;
 use labonair_settings::content::terminal::CursorStyle as PrefCursorStyle;
@@ -431,7 +432,7 @@ pub struct Workspace {
     mcp_access: Arc<dyn McpSessionAccessService>,
     mcp_tab_operations: Arc<dyn McpTabOperationService>,
     tokio: TokioHandle,
-    host_manager: Entity<HostManagerView>,
+    host_view: HostView,
     /// Live SSH terminal tabs, keyed by registry session id.
     ssh_tabs: HashMap<SessionId, SshTab>,
     /// Host ids queued by the host manager for connection, drained in `render`
@@ -505,7 +506,7 @@ impl Workspace {
         transfer_service: Arc<dyn TransferService>,
         tokio: TokioHandle,
         agent_access: Entity<AgentAccessStore>,
-        host_manager: Entity<HostManagerView>,
+        host_view: HostView,
         restore: Option<SessionSnapshot>,
         window: &mut Window,
         cx: &mut Context<Self>,
@@ -528,8 +529,6 @@ impl Workspace {
                 break;
             }
         });
-
-        cx.observe(&host_manager, |_, _, cx| cx.notify()).detach();
 
         // SSH connection events → UI (T17-008): one injected source and one
         // foreground bridge. No backend event bus reaches Workspace.
@@ -608,7 +607,7 @@ impl Workspace {
             sftp_session,
             sftp_browser,
             tokio,
-            host_manager,
+            host_view,
             ssh_tabs: HashMap::new(),
             pending_connect: Vec::new(),
             ssh_prompt: None,
@@ -797,7 +796,7 @@ impl Workspace {
         cx: &mut Context<Self>,
     ) -> RestoreResult {
         let known_hosts: std::collections::HashSet<String> =
-            self.host_manager.read(cx).host_ids().into_iter().collect();
+            self.host_view.host_ids(cx).into_iter().collect();
         let mut next_pane = self.next_pane_id;
         let actions = plan_restore(
             snapshot,
@@ -1982,12 +1981,12 @@ impl Workspace {
 
     /// Canonical rows for every known host — feeds palette host choices.
     pub fn host_picker_rows(&self, cx: &App) -> Vec<HostPickerRow> {
-        self.host_manager.read(cx).picker_rows()
+        self.host_view.picker_rows(cx)
     }
 
     /// Recent hosts for palette providers; ordering and labels belong to Hosts.
     pub fn recent_host_picker_rows(&self, cx: &App, n: usize) -> Vec<HostPickerRow> {
-        self.host_manager.read(cx).recent_picker_rows(n)
+        self.host_view.recent_picker_rows(n, cx)
     }
 
     /// The host the active tab targets (SSH terminal or SFTP browser), if any.
@@ -2035,12 +2034,6 @@ impl Workspace {
     /// typed event and opens the Hosts-owned window.
     pub fn request_open_hosts(&self, cx: &mut Context<Self>) {
         cx.emit(WorkspaceEvent::OpenHosts);
-    }
-
-    /// The shared host-manager entity used by the Hosts capability and
-    /// connection flows.
-    pub fn host_manager(&self) -> Entity<HostManagerView> {
-        self.host_manager.clone()
     }
 
     /// Open (or reuse) an SSH terminal tab for `host_id` (`+` dropdown / menu).
@@ -2603,9 +2596,8 @@ impl Workspace {
 
         let session_id = uuid::Uuid::new_v4().to_string();
         let label = self
-            .host_manager
-            .read(cx)
-            .host_name(&host_id)
+            .host_view
+            .host_name(&host_id, cx)
             .unwrap_or_else(|| host_id.clone());
         let tab_id = self.tabs.update(cx, |s, cx| {
             let id = s.open(
@@ -2810,8 +2802,7 @@ impl Workspace {
     // ── SSH connection flow (T07-001) ──────────────────────────────────────
 
     fn set_host_status(&mut self, host_id: &str, status: HostStatus, cx: &mut Context<Self>) {
-        self.host_manager
-            .update(cx, |h, cx| h.set_status(host_id, status, cx));
+        self.host_view.set_status(host_id, status, cx);
     }
 
     /// Push a completed [`TabOpResult`] back to a pending MCP `open_tab` /
@@ -2835,7 +2826,7 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let label = match self.host_manager.read(cx).host_name(&host_id) {
+        let label = match self.host_view.host_name(&host_id, cx) {
             Some(name) => name,
             None => {
                 self.respond_mcp_tab_op(
@@ -2985,13 +2976,12 @@ impl Workspace {
         let handle = self.registry.handle(session_id)?;
 
         let pane_id = self.alloc_pane();
-        let (host_label, jump_label) = {
-            let hm = self.host_manager.read(cx);
-            (
-                hm.host_name(&host_id).unwrap_or_else(|| host_id.clone()),
-                hm.jump_host_label(&host_id),
-            )
-        };
+        let (host_label, jump_label) = (
+            self.host_view
+                .host_name(&host_id, cx)
+                .unwrap_or_else(|| host_id.clone()),
+            self.host_view.jump_host_label(&host_id, cx),
+        );
         let tab_title = ssh_tab_title(&host_label, jump_label.as_deref());
         let tab_id = self.tabs.update(cx, |s, cx| {
             let id = s.open(
@@ -3131,18 +3121,19 @@ impl Workspace {
     /// Push the current set of running forwards into the host manager panel.
     fn refresh_active_tunnels(&self, cx: &mut Context<Self>) {
         let raw = self.ssh_tunnels.active();
-        let hm = self.host_manager.read(cx);
         let rows: Vec<ActiveTunnelRow> = raw
             .into_iter()
             .map(|t| ActiveTunnelRow {
-                host_label: hm.host_name(&t.host_id).unwrap_or(t.host_id),
+                host_label: self
+                    .host_view
+                    .host_name(&t.host_id, cx)
+                    .unwrap_or(t.host_id),
                 local_port: t.local_port,
                 remote_host: t.remote_host,
                 remote_port: t.remote_port,
             })
             .collect();
-        self.host_manager
-            .update(cx, |h, cx| h.set_active_tunnels(rows, cx));
+        self.host_view.set_active_tunnels(rows, cx);
     }
 
     fn retry_ssh(
@@ -3454,7 +3445,7 @@ impl Workspace {
     /// / error with retry+edit-host).
     fn render_ssh_loading(
         &mut self,
-        entry: labonair_hosts_ui::ssh_connection::ConnectionEntry,
+        entry: crate::ssh_connection::ConnectionEntry,
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
         let theme = self.theme.read(cx);

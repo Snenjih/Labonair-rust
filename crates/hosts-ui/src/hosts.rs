@@ -43,42 +43,15 @@ use labonair_ui_kit::{
     checkbox, context_menu, indicator, IconName, IndicatorSize, ListItem, MenuItem, Palette,
 };
 
-/// Connection status for a host, tracked live off the SSH event stream.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum HostStatus {
-    #[default]
-    Disconnected,
-    Connecting,
-    Connected,
-    Failed,
-}
-
-impl HostStatus {
-    /// Short label for the host-list item's status pill.
-    fn label(self) -> &'static str {
-        match self {
-            HostStatus::Disconnected => "offline",
-            HostStatus::Connecting => "connecting\u{2026}",
-            HostStatus::Connected => "connected",
-            HostStatus::Failed => "failed",
-        }
-    }
-}
+/// Connection status + the active-tunnel row shape moved to the leaf
+/// `labonair-hosts-host` contract in R08-012; re-exported so existing
+/// `labonair_hosts_ui::{HostStatus, ActiveTunnelRow}` call sites keep working.
+pub use labonair_hosts_host::{ActiveTunnelRow, HostStatus};
 
 /// Emitted to the workspace to drive an action it owns.
 pub enum HostManagerEvent {
     /// Open the requested transport for a saved host.
     Open(HostOpenRequest),
-}
-
-/// One running port-forward, as shown in the host manager's active-tunnel panel.
-/// Built by the workspace from the SSH tunnel capability snapshot.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ActiveTunnelRow {
-    pub host_label: String,
-    pub local_port: u16,
-    pub remote_host: String,
-    pub remote_port: u16,
 }
 
 /// Drag payload for reordering host list items / dropping them onto a group

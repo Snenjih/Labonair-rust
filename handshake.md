@@ -82,18 +82,23 @@ Landed so far:
   `load_user_themes`, plus a `docs/capabilities.md` deferred-table row. Code
   retained under test, wired to nothing.
 
-Deferred with owner + activation condition (task files under `tasks/rework/`):
-
-- **R08-008 / P1.1** (`ui-kit → theme`) — `⏳ Planned`. Load-bearing
-  token-layer extraction into a new `labonair-theme-tokens` leaf; ~20 files
-  across the visual foundation; correctness is partly visual. Handed off for
-  review. The task file also documents the cheaper reclassification
-  alternative.
-- **R08-012 / P1.2** (`workspace → hosts-ui`) — `⏳ Planned`. Highest
-  regression risk in the audit: `workspace.rs` (>4000 lines) stores
-  `Entity<HostManagerView>` / `Entity<ConnectionStatusStore>` and drives the
-  live SSH connection-status path. Follow the `explorer-host` / `snippets-host`
-  leaf-crate pattern; do NOT introduce a host-service facade.
+- **R08-008 / P1.1** (`ui-kit → theme`, `2de5f4b`): new foundation leaf
+  `labonair-theme-tokens` holds the design-token layer (`color` / `tokens` /
+  `contrast`, the metric layer, the icon-theme data types + tables, the
+  `UiTheme` / `ActiveThemeExt` contract, the font-family consts). `theme`
+  depends on it and re-exports every moved type — no downstream churn.
+  `ui-kit` depends on `theme-tokens`, not `labonair-theme`; the debug
+  component gallery moved to `labonair-shell`. Verifier: `ui-kit` allow-list
+  is `{theme-tokens, gpui-ext}` and `labonair-theme` is in
+  `forbidden_for_ui_kit`. *(Blocked mid-task by a full `/` volume — Rust
+  `target/` had grown to 140 GB; recovered with `rm -rf target`.)*
+- **R08-012 / P1.2** (`workspace → hosts-ui`): `ConnectionStatusStore` + its
+  enums moved from `hosts-ui` (which never used them) to
+  `crates/workspace/src/ssh_connection.rs`. New leaf `labonair-hosts-host`
+  carries `HostView` (seven injected callbacks) + `HostStatus` /
+  `ActiveTunnelRow`. `Workspace` holds a `HostView`, not an
+  `Entity<HostManagerView>`; `bootstrap` builds it from the active
+  `HostManagerView`. `workspace` no longer depends on `labonair-hosts-ui`.
 
 Not started (lower priority, from the audit's own P2 tail): P2.2 (ui-kit input
 compliance — mostly documented exceptions already), P2.3 (raw `Database` /
@@ -101,8 +106,14 @@ compliance — mostly documented exceptions already), P2.3 (raw `Database` /
 free-function layer is already a reasonable boundary), P2.7 / P2.8 (visual /
 AI, out of code scope here).
 
-Crate count: 55 (theme-ui +1, snippets-host +1, interaction-contracts −1 net
-from the R07 baseline of 54). `crates/*/target` is regenerable.
+Every `your-task-2.md` P0/P1/P2 code item is now resolved or explicitly
+deferred with an owner + activation condition (R08-010 actionable
+notifications — no consumer; R08-011 dormant theme import — quarantined). Only
+R07-001's native visual matrix (user-owned) remains open.
+
+Crate count: 57 (theme-ui, theme-tokens, snippets-host, hosts-host added;
+interaction-contracts removed; from the R07 baseline of 54).
+`crates/*/target` is regenerable — do not commit it.
 
 ## Current Session: 2026-09-07 (Post-B02 audit — Steps 4–7 of the rework prompt)
 
