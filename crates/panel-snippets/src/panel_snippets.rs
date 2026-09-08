@@ -11,20 +11,16 @@
 //! * [`SnippetsView`] is the GPUI sidebar panel — grouped list + search, the
 //!   create/edit form, the variable-prompt and host-picker modals and the log
 //!   drawer. CRUD/groups/reorder persist through
-//!   `labonair_snippets::store`; execution is delegated to
-//!   [`crate::workspace::Workspace`] (terminal / inject) or
+//!   `labonair_snippets::store`; execution is delegated to the injected
+//!   [`labonair_snippets_host::SnippetExecutionHost`] (terminal / inject) or
 //!   the standalone `labonair_snippets::exec` runner (silent).
 
 // Crate root (T16-008): this file is the `labonair-panel-snippets` lib root.
-// The `theme` / `workspace` shims keep the pre-split `crate::…` paths resolving
-// against their new home crates.
+// The `theme` shim keeps the pre-split `crate::…` paths resolving against its
+// new home crate.
 
 pub(crate) mod theme {
     pub use labonair_theme::store::*;
-}
-
-pub(crate) mod workspace {
-    pub use labonair_workspace::Workspace;
 }
 
 use std::collections::{HashMap, HashSet};
@@ -50,8 +46,8 @@ use labonair_snippets::{
 use tokio::runtime::Handle as TokioHandle;
 
 use crate::theme::ThemeStore;
-use crate::workspace::Workspace;
 use labonair_notifications::{notification_center, Notification};
+use labonair_snippets_host::SnippetExecutionHost;
 use labonair_ui_kit::{
     button, context_menu, disclosure, icon_toggle_button, list_header, segmented_control,
     ButtonSize, ButtonVariant, IconName, ListItem, MenuItem, Palette,
@@ -463,7 +459,7 @@ pub struct SnippetsView {
     database: Database,
     tokio: TokioHandle,
     theme: Entity<ThemeStore>,
-    workspace: Entity<Workspace>,
+    exec_host: SnippetExecutionHost,
     focus: FocusHandle,
 
     snippets: Vec<CommandSnippet>,
@@ -507,7 +503,7 @@ impl SnippetsView {
         database: Database,
         tokio: TokioHandle,
         theme: Entity<ThemeStore>,
-        workspace: Entity<Workspace>,
+        exec_host: SnippetExecutionHost,
         ssh_executor: std::sync::Arc<dyn SshCommandExecutor>,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -542,7 +538,7 @@ impl SnippetsView {
             database,
             tokio,
             theme,
-            workspace,
+            exec_host,
             focus: cx.focus_handle(),
             snippets: Vec::new(),
             groups: Vec::new(),
@@ -895,8 +891,7 @@ impl SnippetsView {
         let PendingRun { snippet, mode } = pending;
 
         if mode == ExecMode::Inject {
-            self.workspace
-                .update(cx, |w, cx| w.inject_into_active_terminal(&command, cx));
+            self.exec_host.inject_into_active_terminal(&command, cx);
             cx.notify();
             return;
         }
@@ -933,14 +928,12 @@ impl SnippetsView {
             ExecMode::Inject => unreachable!(),
             ExecMode::Terminal => {
                 if let Some(host_id) = host_id {
-                    self.workspace.update(cx, |w, cx| {
-                        w.run_snippet_ssh_terminal(host_id, command, window, cx)
-                    });
+                    self.exec_host
+                        .run_snippet_ssh_terminal(host_id, command, window, cx);
                 } else {
                     let cwd = (!snippet.working_dir.clone().unwrap_or_default().is_empty())
                         .then(|| snippet.working_dir.clone().unwrap());
-                    self.workspace
-                        .update(cx, |w, cx| w.run_snippet_local(cwd, command, window, cx));
+                    self.exec_host.run_snippet_local(cwd, command, window, cx);
                 }
                 cx.notify();
             }
@@ -971,7 +964,7 @@ impl SnippetsView {
         self.selected_run = Some(run_id.clone());
 
         if let Some(host_id) = host_id {
-            let Some(session_id) = self.workspace.read(cx).ssh_session_for_host(&host_id) else {
+            let Some(session_id) = self.exec_host.ssh_session_for_host(&host_id, cx) else {
                 self.fail_silent(
                     &run_id,
                     "No active SSH session for this host. Open a terminal tab first or use Terminal mode.",

@@ -42,6 +42,7 @@ labonair-git = { path = "../git" }
 labonair-git-transport = { path = "../git-transport" }
 labonair-snippets = { path = "../snippets" }
 labonair-snippets-ssh = { path = "../snippets-ssh" }
+labonair-snippets-host = { path = "../snippets-host" }
 labonair-settings-ui = { path = "../settings-ui" }
 labonair-panel-explorer = { path = "../panel-explorer" }
 labonair-panel-scm = { path = "../panel-scm" }

@@ -166,6 +166,10 @@ ALLOWED = {
     # only `gpui` (external) — so both `panel-explorer` and `workspace` can
     # depend on it without either depending on the other.
     "labonair-explorer-host": set(),
+    # R08-003: narrow Snippet execution-host contract (inject / run local / run
+    # ssh terminal / ssh-session lookup). A leaf — only `gpui` — so
+    # `panel-snippets` and `workspace` can both depend on it without a cycle.
+    "labonair-snippets-host": set(),
     # rule 3 + §8.4: workspace owns the tab-view entities, so it pulls
     # hosts-ui and panel-git-graph (acyclic — neither depends back on it).
     # T19-002: ThemeSettings/TerminalSettings real consumers
@@ -204,7 +208,7 @@ ALLOWED = {
         "labonair-keymap",
         "labonair-keymap-ui",
         "labonair-workspace", "labonair-settings-ui", "labonair-panel",
-        "labonair-explorer-host",
+        "labonair-explorer-host", "labonair-snippets-host",
         "labonair-panel-explorer", "labonair-panel-scm",
         "labonair-panel-git-graph", "labonair-panel-snippets",
         "labonair-terminal",
@@ -235,11 +239,13 @@ ALLOWED = {
         "labonair-transfers",
     },
 
-    # Panels — rule 2 (+ §8.4: snippets/ai may pull workspace).
+    # Panels — rule 2.
     # Each panel crate depends on `labonair-panel` to `impl Panel` (T17-001);
     # the contracts crate is a leaf (only gpui / gpui-ext), so no cycle.
-    # R07-004: explorer no longer depends on `labonair-workspace`; it reaches
-    # the workspace only through the injected `labonair-explorer-host` contract.
+    # R07-004 / R08-003: neither explorer nor snippets depends on
+    # `labonair-workspace`; each reaches the workspace only through its
+    # injected narrow host contract (`labonair-explorer-host`,
+    # `labonair-snippets-host`).
     "labonair-panel-explorer": {
         "labonair-theme", "labonair-ui-kit", "labonair-panel",
         "labonair-notifications", "labonair-explorer-host",
@@ -262,7 +268,8 @@ ALLOWED = {
     "labonair-panel-snippets": {
         "labonair-theme", "labonair-ui-kit", "labonair-panel",
         "labonair-notifications", "labonair-hosts", "labonair-snippets",
-        "labonair-persistence", "labonair-workspace",
+        "labonair-snippets-host",
+        "labonair-persistence",
         # owner contribution for the dynamic palette snippet action
         "labonair-command-palette-core", "labonair-command-palette-runtime",
     },

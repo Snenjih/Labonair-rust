@@ -32,6 +32,7 @@ The active sequence is:
 23. `R07-005-background-presentation-boundary.md` — Planned (structural migration landed early; visual evidence folds into R07-001)
 24. `R08-001-transfers-ui-workspace-decoupling.md` — Done
 25. `R08-002-remove-no-op-command-affordances.md` — Done
+26. `R08-003-panel-snippets-workspace-decoupling.md` — Done
 
 Phases 0–6 are complete. R02-001 is the first bounded Phase 2 shell task and
 also connects the already-established theme registry to its intended palette

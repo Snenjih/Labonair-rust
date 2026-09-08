@@ -42,10 +42,11 @@ removal conditions.
 | `notifications` | GPUI notification adapter and statusbar dropdown | notifications module | Owns the statusbar notification item; shell only registers it. |
 | `panel` | Panel/status contracts | workspace foundation | Keep contracts-only. |
 | `explorer-host` | Explorer host contract plus the drag/preview value types shared with the terminal and preview views | explorer module | Leaf (only `gpui`); lets `panel-explorer` and `workspace` interoperate without either depending on the other (R07-004). |
+| `snippets-host` | Snippet execution-host contract (inject / run local / run SSH terminal / SSH-session lookup) | snippets module | Leaf (only `gpui`); lets `panel-snippets` run snippets without depending on `labonair-workspace` (R08-003). |
 | `panel-explorer` | Explorer panel | explorer module | Workspace dependency removed (R07-004): opens files/terminals/previews and reads the active file through the injected `labonair-explorer-host::ExplorerHost` contract. |
 | `panel-git-graph` | Git graph panel | git module | Consumes `labonair-git::GitGraphService`; the `labonair-git-transport` implementation is injected at composition. |
 | `panel-scm` | Source-control panel | git module | Consumes `labonair-git::GitService`; backend implementation is injected at composition. |
-| `panel-snippets` | Snippet panel and execution UI | snippets module | Receives `Database` and execution contracts; has no backend-facade dependency. |
+| `panel-snippets` | Snippet panel and execution UI | snippets module | Receives `Database` and execution contracts; has no backend-facade dependency. R08-003: no `labonair-workspace` edge — runs snippets through the injected `labonair-snippets-host::SnippetExecutionHost`. |
 | `settings` | Layered settings store | settings module | Keep as core after removing misplaced categories. |
 | `settings-content` | Typed settings data | settings module | Keep only actual configuration values. |
 | `settings-json` | JSON editing | settings module | Keep as persistence adapter. |
@@ -213,6 +214,10 @@ edges; the dependency verifier rejects every unlisted edge.
   database and remain explicit integration inputs.
 - `panel-snippets` receives its database and SSH execution capabilities through
   the composition root, with concrete execution owned by `labonair-snippets-ssh`.
+  R08-003 removed its `labonair-workspace` dependency: terminal inject, local
+  run, SSH-terminal run, and active-SSH-session lookup now cross the narrow
+  `labonair-snippets-host::SnippetExecutionHost` contract, wired to the active
+  Workspace by `bootstrap`.
 - `panel-explorer` no longer declares or imports a backend facade; filesystem
   access already uses `labonair-filesystem` directly.
 - `panel-git-graph` consumes the `labonair-git` contract and receives the
@@ -291,6 +296,7 @@ families. These are not target dependencies; each has a removal condition:
 | `workspace → background-host` | Workspace/Terminal render the background layer through the injected `BackgroundHost` contract; `labonair-shell` builds it from the concrete `BackgroundStore` at composition. | Retain by design (R07-005): `background-host` is a leaf contract crate that breaks the `workspace ↔ background` coupling, mirroring the Explorer host pattern. |
 | `workspace → ai`, `workspace → settings` | Workspace hosts the AI live bridge and consumes typed settings values for workspace-owned behavior. | Keep orchestration in Workspace; move AI context and any remaining direct implementation access behind narrow contracts. |
 | `panel-explorer → explorer-host`, `workspace → explorer-host` | Explorer's open-file/open-terminal/open-preview/active-file intents and the `DraggedPaths` / `is_previewable` value types shared with the terminal and preview views. | Retain by design (R07-004): `explorer-host` is a leaf contract crate that breaks the `panel-explorer ↔ workspace` coupling; the shell injects the Workspace-backed `ExplorerHost`. |
+| `panel-snippets → snippets-host`, `shell → snippets-host` | The Snippets panel's terminal-inject / run-local / run-SSH-terminal / active-SSH-session intents. | Retain by design (R08-003): `snippets-host` is a leaf contract crate that breaks the `panel-snippets → workspace` coupling; the shell injects the Workspace-backed `SnippetExecutionHost`. |
 | `panel-explorer → settings` | Explorer consumes the public typed `ExplorerSettings` value contract. | Keep only the typed public settings contract; no Settings implementation details or management UI may cross the edge. |
 | `panel-scm → editor`, `panel-scm → settings` | SCM reuses the public unified-diff contract and typed SCM presentation settings. | Keep public contracts; extract only if a future shared diff/settings contract has a real second consumer. |
 | `command-palette → settings`, `command-palette → filesystem` | Palette reads its typed presentation values, persists palette preferences, and owns recent-command storage. | Replace only implementation-level access with narrow contracts if the palette surface needs another host; retain capability ownership and avoid a second registry. |

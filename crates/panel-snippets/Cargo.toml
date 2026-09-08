@@ -19,8 +19,8 @@ labonair-panel = { path = "../panel" }
 labonair-notifications = { path = "../notifications" }
 labonair-hosts = { path = "../hosts" }
 labonair-snippets = { path = "../snippets" }
+labonair-snippets-host = { path = "../snippets-host" }
 labonair-persistence = { path = "../persistence" }
-labonair-workspace = { path = "../workspace" }
 labonair-command-palette-core = { path = "../command-palette-core" }
 labonair-command-palette-runtime = { path = "../command-palette-runtime" }
 

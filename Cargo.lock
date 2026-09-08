@@ -4520,9 +4520,9 @@ dependencies = [
  "labonair-panel",
  "labonair-persistence",
  "labonair-snippets",
+ "labonair-snippets-host",
  "labonair-theme",
  "labonair-ui-kit",
- "labonair-workspace",
  "serde_json",
  "tokio",
  "tracing",
@@ -4690,6 +4690,7 @@ dependencies = [
  "labonair-sftp",
  "labonair-sftp-ssh",
  "labonair-snippets",
+ "labonair-snippets-host",
  "labonair-snippets-ssh",
  "labonair-ssh",
  "labonair-ssh-transport",
@@ -4721,6 +4722,13 @@ dependencies = [
  "serde",
  "tokio",
  "uuid",
+]
+
+[[package]]
+name = "labonair-snippets-host"
+version = "0.1.0"
+dependencies = [
+ "gpui",
 ]
 
 [[package]]

@@ -472,6 +472,35 @@ pub(crate) fn bootstrap(
     crate::keymap_loader::reload_and_apply(cx, &command_registry);
     crate::keymap_loader::watch(cx, command_registry.clone());
     set_settings_deps(settings_services(), tokio.clone(), cx);
+    // Snippets no longer holds the workspace entity (R08-003): it runs
+    // snippets through this narrow execution-host contract wired to the
+    // active Workspace.
+    let snippet_exec_host = {
+        let ws = workspace.clone();
+        labonair_snippets_host::SnippetExecutionHost::new(
+            {
+                let ws = ws.clone();
+                move |command, cx| {
+                    ws.update(cx, |w, cx| w.inject_into_active_terminal(command, cx));
+                }
+            },
+            {
+                let ws = ws.clone();
+                move |cwd, command, window, cx| {
+                    ws.update(cx, |w, cx| w.run_snippet_local(cwd, command, window, cx));
+                }
+            },
+            {
+                let ws = ws.clone();
+                move |host_id, command, window, cx| {
+                    ws.update(cx, |w, cx| {
+                        w.run_snippet_ssh_terminal(host_id, command, window, cx)
+                    });
+                }
+            },
+            move |host_id, cx| ws.read(cx).ssh_session_for_host(host_id),
+        )
+    };
     let snippets = cx.new(|cx| {
         let ssh_executor =
             std::sync::Arc::new(labonair_snippets_ssh::exec::SshSnippetExecutor::new(
@@ -482,7 +511,7 @@ pub(crate) fn bootstrap(
             backend.db.clone(),
             tokio.clone(),
             theme.clone(),
-            workspace.clone(),
+            snippet_exec_host,
             ssh_executor,
             cx,
         )
