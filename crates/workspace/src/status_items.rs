@@ -5,9 +5,9 @@
 //! shared status-item registry.
 
 use gpui::{
-    div, px, AnyElement, App, AppContext, ClickEvent, Context, Entity, InteractiveElement,
-    IntoElement, KeyDownEvent, ParentElement, Pixels, Point, Render, SharedString,
-    StatefulInteractiveElement, Styled, Window,
+    canvas, div, px, AnyElement, App, AppContext, Bounds, ClickEvent, Context, Entity,
+    InteractiveElement, IntoElement, KeyDownEvent, ParentElement, Pixels, Point, Render,
+    SharedString, StatefulInteractiveElement, Styled, Window,
 };
 use labonair_mcp_core::SessionKind;
 use labonair_panel::{StatusItem, StatusSide};
@@ -22,7 +22,13 @@ pub struct AgentAccessStatusItem {
     store: Entity<AgentAccessStore>,
     workspace: Entity<Workspace>,
     theme: Entity<ThemeStore>,
-    open: Option<Point<Pixels>>,
+    open: bool,
+    /// The badge trigger's window-space bounds from the last paint; the
+    /// dropdown drops from `bounds.bottom_left()`.
+    trigger_bounds: Option<Bounds<Pixels>>,
+    /// Click position that opened the dropdown — used only before the first
+    /// paint records `trigger_bounds`.
+    fallback_anchor: Point<Pixels>,
     focus: gpui::FocusHandle,
 }
 
@@ -40,7 +46,9 @@ impl AgentAccessStatusItem {
             store,
             workspace,
             theme,
-            open: None,
+            open: false,
+            trigger_bounds: None,
+            fallback_anchor: Point::default(),
             focus: cx.focus_handle(),
         }
     }
@@ -69,6 +77,22 @@ impl AgentAccessStatusItem {
             .text_color(muted)
             .hover(|s| s.bg(border).text_color(fg))
             .child(IconName::Shield.svg(muted))
+            .child({
+                let weak = cx.weak_entity();
+                canvas(
+                    move |bounds, _window, cx| {
+                        let _ = weak.update(cx, |this, cx| {
+                            if this.trigger_bounds != Some(bounds) {
+                                this.trigger_bounds = Some(bounds);
+                                cx.notify();
+                            }
+                        });
+                    },
+                    |_, _, _, _| {},
+                )
+                .absolute()
+                .size_full()
+            })
             .child(
                 div()
                     .absolute()
@@ -87,36 +111,41 @@ impl AgentAccessStatusItem {
                     .child(SharedString::from(count.to_string())),
             )
             .on_click(cx.listener(|this, ev: &ClickEvent, w, cx| {
-                if this.open.is_some() {
-                    this.open = None;
+                if this.open {
+                    this.open = false;
                 } else {
-                    this.open = Some(ev.position());
+                    this.open = true;
+                    this.fallback_anchor = ev.position();
                     w.focus(&this.focus);
                 }
                 cx.notify();
             }))
             .on_key_down(cx.listener(|this, ev: &KeyDownEvent, _w, cx| {
-                if this.open.is_some() && ev.keystroke.key == "escape" {
-                    this.open = None;
+                if this.open && ev.keystroke.key == "escape" {
+                    this.open = false;
                     cx.notify();
                     cx.stop_propagation();
                 }
             }));
 
-        let Some(anchor) = self.open else {
+        if !self.open {
             return div()
                 .relative()
                 .flex_shrink_0()
                 .child(badge)
                 .into_any_element();
-        };
+        }
+        let anchor = self
+            .trigger_bounds
+            .map(|b| b.bottom_left())
+            .unwrap_or(self.fallback_anchor);
 
         let view = cx.entity();
         let dismiss = {
             let v = view.clone();
             move |_w: &mut Window, cx: &mut App| {
                 v.update(cx, |this, cx| {
-                    this.open = None;
+                    this.open = false;
                     cx.notify();
                 })
             }
@@ -155,7 +184,7 @@ impl AgentAccessStatusItem {
                             .truncate()
                             .child(SharedString::from(entry.label.clone()))
                             .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
-                                this.open = None;
+                                this.open = false;
                                 this.workspace
                                     .update(cx, |w, cx| w.reveal_tab(tab_id, window, cx));
                                 cx.notify();

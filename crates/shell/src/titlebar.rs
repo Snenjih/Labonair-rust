@@ -25,9 +25,9 @@
 //! renders nothing and the OS window frame / traffic lights take over.
 
 use gpui::{
-    div, point, px, App, ClickEvent, Context, Entity, EventEmitter, FocusHandle, Focusable,
-    InteractiveElement, IntoElement, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
-    ParentElement, Pixels, Point, Render, StatefulInteractiveElement, Styled, Window,
+    canvas, div, point, px, App, Bounds, ClickEvent, Context, Entity, EventEmitter, FocusHandle,
+    Focusable, InteractiveElement, IntoElement, MouseButton, MouseDownEvent, MouseMoveEvent,
+    MouseUpEvent, ParentElement, Pixels, Point, Render, StatefulInteractiveElement, Styled, Window,
     WindowControlArea,
 };
 use labonair_command_palette::Page as PalettePage;
@@ -50,10 +50,18 @@ pub(crate) enum TitlebarEvent {
     Palette(PalettePage),
 }
 
-fn global_menu_anchor(position: Point<Pixels>) -> Point<Pixels> {
-    // MouseDownEvent::position is window-space. The menu is aligned to the
-    // button's x coordinate and starts immediately below the 40px titlebar.
-    point(position.x, px(HEADER_H))
+/// Window-space anchor for the global menu: the bottom-left of the `⋯`
+/// trigger's rendered bounds when known (measured by a `canvas` probe on the
+/// last paint), so any click inside the trigger produces the same stable
+/// anchor. Falls back to the click x + titlebar bottom before the first paint.
+fn global_menu_anchor(
+    trigger_bounds: Option<Bounds<Pixels>>,
+    click: Point<Pixels>,
+) -> Point<Pixels> {
+    match trigger_bounds {
+        Some(b) => b.bottom_left(),
+        None => point(click.x, px(HEADER_H)),
+    }
 }
 /// Left inset reserved for the macOS traffic-light buttons, plus extra
 /// breathing room so the first tab doesn't crowd the traffic lights. Linux
@@ -68,10 +76,13 @@ pub struct Titlebar {
     workspace: Entity<Workspace>,
     /// The right-hand global menu dropdown.
     menu_open: bool,
-    /// Window-space anchor for that dropdown — the pointer position of the
-    /// press that opened it, so `popover_menu` drops below the `⋯` button
-    /// instead of at the window's top-left corner.
+    /// Window-space anchor for that dropdown — the bottom-left of the `⋯`
+    /// trigger, so `popover_menu` drops below the button regardless of where
+    /// inside it the click landed.
     menu_anchor: Point<Pixels>,
+    /// The `⋯` trigger's window-space bounds from the last paint, measured by
+    /// a `canvas` probe. Drives [`global_menu_anchor`].
+    trigger_bounds: Option<Bounds<Pixels>>,
     /// Drag-to-move latch: set on a background press, consumed on the first
     /// move (→ `start_window_move`), cleared on release.
     should_move: bool,
@@ -95,6 +106,7 @@ impl Titlebar {
             workspace,
             menu_open: false,
             menu_anchor: point(px(0.0), px(HEADER_H)),
+            trigger_bounds: None,
             should_move: false,
             focus_handle: cx.focus_handle(),
         }
@@ -189,6 +201,7 @@ impl Titlebar {
                 // above, fixes this at 26px), documented exception.
                 div()
                     .id("account-menu")
+                    .relative()
                     .size(px(26.0))
                     .flex()
                     .items_center()
@@ -197,13 +210,29 @@ impl Titlebar {
                     .text_color(c.muted)
                     .hover(move |s| s.bg(c.border).text_color(c.fg))
                     .child(IconName::Ellipsis.svg(c.muted))
+                    .child({
+                        let weak = cx.weak_entity();
+                        canvas(
+                            move |bounds, _window, cx| {
+                                let _ = weak.update(cx, |this, cx| {
+                                    if this.trigger_bounds != Some(bounds) {
+                                        this.trigger_bounds = Some(bounds);
+                                        cx.notify();
+                                    }
+                                });
+                            },
+                            |_, _, _, _| {},
+                        )
+                        .absolute()
+                        .size_full()
+                    })
                     .on_mouse_down(
                         MouseButton::Left,
                         cx.listener(|this, ev: &MouseDownEvent, _w, cx| {
                             this.menu_open = !this.menu_open;
                             // Anchor the flyout's top-right under the button:
                             // snap-to-window pulls it left off this near-edge x.
-                            this.menu_anchor = global_menu_anchor(ev.position);
+                            this.menu_anchor = global_menu_anchor(this.trigger_bounds, ev.position);
                             cx.notify();
                         }),
                     ),
@@ -312,8 +341,20 @@ mod tests {
     use super::*;
 
     #[test]
-    fn global_menu_anchor_uses_window_x_and_titlebar_bottom() {
-        let anchor = global_menu_anchor(point(px(712.0), px(19.0)));
+    fn global_menu_anchor_prefers_trigger_bottom_left() {
+        // Known trigger bounds → any click inside produces the trigger's
+        // bottom-left, so the menu is stable regardless of click x.
+        let bounds = Bounds {
+            origin: point(px(700.0), px(7.0)),
+            size: gpui::size(px(26.0), px(26.0)),
+        };
+        let anchor = global_menu_anchor(Some(bounds), point(px(719.0), px(19.0)));
+        assert_eq!(anchor, point(px(700.0), px(33.0)));
+    }
+
+    #[test]
+    fn global_menu_anchor_falls_back_to_click_before_first_paint() {
+        let anchor = global_menu_anchor(None, point(px(712.0), px(19.0)));
         assert_eq!(anchor.x, px(712.0));
         assert_eq!(anchor.y, px(HEADER_H));
     }

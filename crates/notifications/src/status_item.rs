@@ -7,8 +7,8 @@ use std::{collections::HashSet, sync::Arc};
 
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, px, AnyElement, App, AppContext, ClickEvent, Context, Entity, FocusHandle, Focusable,
-    InteractiveElement, IntoElement, ParentElement, Pixels, Point, Render, SharedString,
+    canvas, div, px, AnyElement, App, AppContext, Bounds, ClickEvent, Context, Entity, FocusHandle,
+    Focusable, InteractiveElement, IntoElement, ParentElement, Pixels, Point, Render, SharedString,
     StatefulInteractiveElement, Styled, Window,
 };
 use labonair_panel::{AnyStatusItemHandle, StatusItem, StatusItemRegistration, StatusSide};
@@ -21,7 +21,14 @@ use crate::NotificationCenter;
 pub struct NotificationsStatusItem {
     center: Entity<NotificationCenter>,
     theme: Entity<ThemeStore>,
-    open: Option<Point<Pixels>>,
+    open: bool,
+    /// The bell trigger's window-space bounds from the last paint. The
+    /// dropdown drops from `bounds.bottom_left()` so it stays anchored to the
+    /// trigger, not to wherever inside it the click landed.
+    trigger_bounds: Option<Bounds<Pixels>>,
+    /// Click position of the press that opened the dropdown — used only until
+    /// the first paint records `trigger_bounds`.
+    fallback_anchor: Point<Pixels>,
     expanded: HashSet<u64>,
     focus: FocusHandle,
 }
@@ -37,7 +44,9 @@ impl NotificationsStatusItem {
         Self {
             center,
             theme,
-            open: None,
+            open: false,
+            trigger_bounds: None,
+            fallback_anchor: Point::default(),
             expanded: HashSet::new(),
             focus: cx.focus_handle(),
         }
@@ -85,54 +94,70 @@ impl StatusItem for NotificationsStatusItem {
             )
         };
         let palette = Palette::from_theme(self.theme.read(cx));
-        let bell = icon_toggle_button(
-            "bar-notifications",
-            palette,
-            IconName::Bell,
-            self.open.is_some(),
-        )
-        .track_focus(&self.focus)
-        .key_context("StatusPopover")
-        .relative()
-        .when(count > 0, |button| {
-            button.child(
-                div()
-                    .absolute()
-                    .top(px(-2.0))
-                    .right(px(-2.0))
-                    .min_w(px(13.0))
-                    .h(px(13.0))
-                    .px(px(2.0))
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .rounded_full()
-                    .bg(accent)
-                    .text_color(fg)
-                    .text_size(px(8.0))
-                    .child(SharedString::from(count.to_string())),
-            )
-        })
-        .on_click(cx.listener(|this, ev: &ClickEvent, window, cx| {
-            if this.open.is_some() {
-                this.open = None;
-            } else {
-                this.open = Some(ev.position());
-                window.focus(&this.focus);
-            }
-            cx.notify();
-        }))
-        .on_key_down(cx.listener(|this, ev: &gpui::KeyDownEvent, _window, cx| {
-            if this.open.is_some() && ev.keystroke.key == "escape" {
-                this.open = None;
+        let bell = icon_toggle_button("bar-notifications", palette, IconName::Bell, self.open)
+            .track_focus(&self.focus)
+            .key_context("StatusPopover")
+            .relative()
+            .child({
+                let weak = cx.weak_entity();
+                canvas(
+                    move |bounds, _window, cx| {
+                        let _ = weak.update(cx, |this, cx| {
+                            if this.trigger_bounds != Some(bounds) {
+                                this.trigger_bounds = Some(bounds);
+                                cx.notify();
+                            }
+                        });
+                    },
+                    |_, _, _, _| {},
+                )
+                .absolute()
+                .size_full()
+            })
+            .when(count > 0, |button| {
+                button.child(
+                    div()
+                        .absolute()
+                        .top(px(-2.0))
+                        .right(px(-2.0))
+                        .min_w(px(13.0))
+                        .h(px(13.0))
+                        .px(px(2.0))
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .rounded_full()
+                        .bg(accent)
+                        .text_color(fg)
+                        .text_size(px(8.0))
+                        .child(SharedString::from(count.to_string())),
+                )
+            })
+            .on_click(cx.listener(|this, ev: &ClickEvent, window, cx| {
+                if this.open {
+                    this.open = false;
+                } else {
+                    this.open = true;
+                    this.fallback_anchor = ev.position();
+                    window.focus(&this.focus);
+                }
                 cx.notify();
-                cx.stop_propagation();
-            }
-        }));
+            }))
+            .on_key_down(cx.listener(|this, ev: &gpui::KeyDownEvent, _window, cx| {
+                if this.open && ev.keystroke.key == "escape" {
+                    this.open = false;
+                    cx.notify();
+                    cx.stop_propagation();
+                }
+            }));
 
-        let Some(anchor) = self.open else {
+        if !self.open {
             return bell.into_any_element();
-        };
+        }
+        let anchor = self
+            .trigger_bounds
+            .map(|b| b.bottom_left())
+            .unwrap_or(self.fallback_anchor);
 
         let snapshots = self.center.read(cx).snapshots();
         let view = cx.entity();
@@ -140,7 +165,7 @@ impl StatusItem for NotificationsStatusItem {
             let view = view.clone();
             move |_window: &mut Window, cx: &mut App| {
                 view.update(cx, |item, cx| {
-                    item.open = None;
+                    item.open = false;
                     cx.notify();
                 });
             }
@@ -174,7 +199,7 @@ impl StatusItem for NotificationsStatusItem {
                         .on_click(cx.listener(
                             |this, _: &ClickEvent, _window, cx| {
                                 this.center.update(cx, |center, cx| center.clear_all(cx));
-                                this.open = None;
+                                this.open = false;
                                 cx.notify();
                             },
                         )),

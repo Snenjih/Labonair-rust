@@ -293,7 +293,11 @@ transfers-ui → workspace edge removed); R08-002 (P1.7, the no-op Zoom
 In/Out/Reset, Adjust Font Size, and Format Document affordances were removed
 from the palette, native menu, and default keymap); R08-003 (P1.3,
 panel-snippets → workspace edge removed via the leaf
-`labonair-snippets-host::SnippetExecutionHost` contract). Task/acceptance status in R01-004,
+`labonair-snippets-host::SnippetExecutionHost` contract); R08-004 (P2.1, the
+titlebar global menu, the Notifications / Agent Access statusbar dropdowns, and
+the Settings select/font dropdowns now anchor to their trigger's rendered
+bounds instead of the click position). Right-edge collision behavior is left
+to the R07-001 visual matrix. Task/acceptance status in R01-004,
 R03-002, R04-002, R05-001, and R06-001 was reconciled the same day: their
 non-visual acceptance criteria are ticked with evidence, residual items carry
 an explicit follow-up pointer, and visual criteria are delegated to the

@@ -7,7 +7,7 @@
 
 pub use gpui::prelude::FluentBuilder;
 pub use gpui::{
-    div, px, App, AppContext, ClickEvent, Context, Entity, FocusHandle, Focusable,
+    canvas, div, px, App, AppContext, Bounds, ClickEvent, Context, Entity, FocusHandle, Focusable,
     InteractiveElement, IntoElement, KeyDownEvent, ParentElement, Pixels, Point, Render,
     ScrollHandle, SharedString, StatefulInteractiveElement, Styled, Window,
 };
@@ -31,7 +31,7 @@ pub(crate) use crate::search::{SearchIndex, SearchRow, SearchTarget};
 pub(crate) use crate::services::{SettingsServices, SystemFontService};
 pub(crate) use crate::window::*;
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 pub(crate) struct EditState {
     /// The field's `json_path` (e.g. `"terminal.terminalFontSize"`).
@@ -80,6 +80,10 @@ pub struct SettingsView {
     /// An open `Select` dropdown (json_path + anchor position + options),
     /// drawn as a deferred floating layer so it escapes the scroll clip.
     pub(crate) dropdown: Option<SelectMenu>,
+    /// Each select trigger's window-space bounds from the last paint, keyed by
+    /// `json_path`. The open dropdown anchors to `bounds.bottom_left()` so it
+    /// drops from the trigger, not from wherever inside it the click landed.
+    pub(crate) select_bounds: HashMap<&'static str, Bounds<Pixels>>,
     /// Scanned system font family names for the `FontFamily` picker, loaded
     /// once asynchronously when the window opens.
     pub(crate) system_fonts: Vec<SharedString>,
@@ -180,6 +184,7 @@ impl SettingsView {
             editing: None,
             windowed: false,
             dropdown: None,
+            select_bounds: HashMap::new(),
             system_fonts: Vec::new(),
             focus: cx.focus_handle(),
             all_fields,

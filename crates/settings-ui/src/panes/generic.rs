@@ -128,6 +128,39 @@ impl SettingsView {
     /// (`render_generated_body`, `render_field_groups`) resolve them once per
     /// visible field via [`Self::field_render_inputs`] instead of every row
     /// re-querying the store — this is part of what keeps scrolling smooth.
+    /// An invisible overlay that records a select trigger's window-space
+    /// bounds (keyed by `json_path`) on every paint, so the dropdown can drop
+    /// from the trigger's bottom-left instead of the click position (P2.1).
+    fn select_bounds_probe(
+        &self,
+        json_path: &'static str,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let weak = cx.weak_entity();
+        canvas(
+            move |bounds, _w, cx| {
+                let _ = weak.update(cx, |this, cx| {
+                    if this.select_bounds.get(json_path) != Some(&bounds) {
+                        this.select_bounds.insert(json_path, bounds);
+                        cx.notify();
+                    }
+                });
+            },
+            |_, _, _, _| {},
+        )
+        .absolute()
+        .size_full()
+    }
+
+    /// Anchor for the dropdown opened from the `json_path` trigger: its
+    /// recorded bottom-left, or `click` before the first paint records bounds.
+    fn select_anchor(&self, json_path: &'static str, click: Point<Pixels>) -> Point<Pixels> {
+        self.select_bounds
+            .get(json_path)
+            .map(|b| b.bottom_left())
+            .unwrap_or(click)
+    }
+
     pub(crate) fn render_field(
         &self,
         field: &AnyField,
@@ -212,6 +245,8 @@ impl SettingsView {
                     SharedString::from(label.to_string()),
                     is_open,
                 )
+                .relative()
+                .child(self.select_bounds_probe(json_path, cx))
                 .on_click(cx.listener(move |this, ev: &ClickEvent, _w, cx| {
                     if this.dropdown.as_ref().is_some_and(|d| d.key == json_path) {
                         this.dropdown = None;
@@ -222,7 +257,7 @@ impl SettingsView {
                                 .iter()
                                 .map(|(t, l)| (SharedString::from(*t), SharedString::from(*l)))
                                 .collect(),
-                            at: ev.position(),
+                            at: this.select_anchor(json_path, ev.position()),
                             default_sentinel: None,
                         });
                     }
@@ -249,6 +284,8 @@ impl SettingsView {
                     is_open,
                 )
                 .min_w(px(200.0))
+                .relative()
+                .child(self.select_bounds_probe(json_path, cx))
                 .on_click(cx.listener(move |this, ev: &ClickEvent, _w, cx| {
                     if this.dropdown.as_ref().is_some_and(|d| d.key == json_path) {
                         this.dropdown = None;
@@ -259,7 +296,7 @@ impl SettingsView {
                         this.dropdown = Some(SelectMenu {
                             key: json_path,
                             options,
-                            at: ev.position(),
+                            at: this.select_anchor(json_path, ev.position()),
                             default_sentinel: Some(sentinel),
                         });
                     }
