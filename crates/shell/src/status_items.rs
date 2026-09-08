@@ -61,8 +61,7 @@ pub fn register_builtin_status_items(
         labonair_workspace::status_items::cursor_position_registration(workspace, theme, cx);
     let preview = labonair_workspace::status_items::preview_url_registration(workspace, theme, cx);
     let updater_item = labonair_updater_ui::status_item::registration(updater, theme, cx);
-    let transfers =
-        labonair_transfers_ui::status_item_registration(workspace, transfers_view, theme, cx);
+    let transfers = labonair_transfers_ui::status_item_registration(transfers_view, theme, cx);
     let agent = labonair_workspace::status_items::status_item_registration(
         agent_access,
         workspace,

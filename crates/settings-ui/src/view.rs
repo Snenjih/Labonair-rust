@@ -1144,21 +1144,16 @@ impl Render for SettingsView {
         // `render_generated_body`) — it owns `track_scroll` so that
         // `ScrollHandle::scroll_to_item` can address each section row
         // directly. This wrapper only centres it and caps its width.
-        let content = div()
-            .flex_1()
-            .min_h_0()
-            .flex()
-            .child(sidebar)
-            .child(
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .min_h_0()
-                    .flex()
-                    .flex_col()
-                    .items_center()
-                    .child(body),
-            );
+        let content = div().flex_1().min_h_0().flex().child(sidebar).child(
+            div()
+                .flex_1()
+                .min_w_0()
+                .min_h_0()
+                .flex()
+                .flex_col()
+                .items_center()
+                .child(body),
+        );
 
         let card = div()
             .id("settings-card")

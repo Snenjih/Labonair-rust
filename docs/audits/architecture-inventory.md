@@ -62,7 +62,7 @@ removal conditions.
 | `updater` | Update manifest, download/verification/install logic | updater module | GPUI presentation is isolated in the `updater-ui` sibling; capability logic remains in `labonair-updater` and is no longer backend-owned. |
 | `transfers` | Typed transfer values, lifecycle registry, and service/event contracts | transfers module | UI-free owner; concrete SFTP execution is supplied by the `transfers-ssh` integration sibling. |
 | `transfers-ssh` | Concrete SFTP transfer worker and russh/russh-sftp execution adapter | transfers module | Dedicated integration sibling extracted from the backend; owns chunking, checksums, conflicts, cancellation, and reconnect requeue behavior. |
-| `transfers-ui` | Statusbar-anchored transfer queue and resolution dialogs | transfers module | New canonical transfer presentation; uses only typed transfer contracts and shared UI primitives. |
+| `transfers-ui` | Statusbar-anchored transfer queue and resolution dialogs | transfers module | New canonical transfer presentation; uses only typed transfer contracts and shared UI primitives. R08-001: no `labonair-workspace` edge — emits `TransferUiEvent::Completed`; the shell routes it to the SFTP pane refresh. |
 
 ## Generated current dependency graph
 
@@ -239,7 +239,9 @@ edges; the dependency verifier rejects every unlisted edge.
   Agent Access now belongs to `labonair-workspace`, and the Transfers item to
   `labonair-transfers-ui`; all permanent feature status items now expose owner
   registrations, including notification item construction, and the remaining
-  shell status-item code is composition.
+  shell status-item code is composition. R08-001 removed the last
+  `transfers-ui → workspace` edge: the Transfers item emits only
+  `TransferUiEvent::Completed` and `bootstrap` wires the SFTP pane refresh.
 - The pure CWD breadcrumb path/provider helpers now belong to
   `labonair-workspace::cwd_breadcrumb`; the interactive CWD view now lives in
   `labonair-workspace::cwd_status_item` as well. Cursor Position, Preview URL,

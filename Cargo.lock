@@ -4840,7 +4840,6 @@ dependencies = [
  "labonair-theme",
  "labonair-transfers",
  "labonair-ui-kit",
- "labonair-workspace",
  "serde_json",
  "tokio",
  "tracing",

@@ -13,9 +13,8 @@ use gpui::{
 use labonair_panel::{AnyStatusItemHandle, StatusItem, StatusItemRegistration, StatusSide};
 use labonair_theme::store::ThemeStore;
 use labonair_ui_kit::{icon_toggle_button, IconName, Palette};
-use labonair_workspace::Workspace;
 
-use crate::{TransferUiEvent, TransfersView};
+use crate::TransfersView;
 
 fn simple_bar_button<T: 'static>(
     key: &'static str,
@@ -34,36 +33,19 @@ fn simple_bar_button<T: 'static>(
 
 /// Status-bar badge exposing the transfer queue and its dropdown.
 pub struct TransfersStatusItem {
-    workspace: Entity<Workspace>,
     transfers: Entity<TransfersView>,
     theme: Entity<ThemeStore>,
 }
 
 impl TransfersStatusItem {
     pub fn new(
-        workspace: Entity<Workspace>,
         transfers: Entity<TransfersView>,
         theme: Entity<ThemeStore>,
         cx: &mut Context<Self>,
     ) -> Self {
-        cx.observe(&workspace, |_, _, cx| cx.notify()).detach();
         cx.observe(&transfers, |_, _, cx| cx.notify()).detach();
         cx.observe(&theme, |_, _, cx| cx.notify()).detach();
-        cx.subscribe(&transfers, |this, _, event: &TransferUiEvent, cx| {
-            let TransferUiEvent::Completed {
-                session_id,
-                direction,
-            } = event;
-            this.workspace.update(cx, |workspace, cx| {
-                workspace.refresh_sftp_after_transfer(session_id, *direction, cx);
-            });
-        })
-        .detach();
-        Self {
-            workspace,
-            transfers,
-            theme,
-        }
+        Self { transfers, theme }
     }
 }
 
@@ -136,15 +118,16 @@ impl StatusItem for TransfersStatusItem {
 }
 
 /// Build the transfer status-bar contribution for application composition.
+///
+/// The `TransferUiEvent::Completed` signal that refreshes the SFTP pane is
+/// wired to Workspace by the composition root, not by this item — see
+/// `docs/registries.md`.
 pub fn status_item_registration(
-    workspace: &Entity<Workspace>,
     transfers: &Entity<TransfersView>,
     theme: &Entity<ThemeStore>,
     cx: &mut App,
 ) -> StatusItemRegistration {
-    let item = cx.new(|cx| {
-        TransfersStatusItem::new(workspace.clone(), transfers.clone(), theme.clone(), cx)
-    });
+    let item = cx.new(|cx| TransfersStatusItem::new(transfers.clone(), theme.clone(), cx));
     let handle = item.clone();
     StatusItemRegistration {
         id: item.read(cx).id(),

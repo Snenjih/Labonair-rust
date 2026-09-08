@@ -31,7 +31,7 @@ use labonair_ssh::{
 };
 use labonair_terminal::TerminalRegistry;
 use labonair_transfers::{TransferEventSource, TransferService};
-use labonair_transfers_ui::TransfersView;
+use labonair_transfers_ui::{TransferUiEvent, TransfersView};
 use tokio::runtime::Handle as TokioHandle;
 
 use labonair_command_palette::{CommandPalette, Page as PalettePage, PaletteEvent};
@@ -358,6 +358,24 @@ pub(crate) fn bootstrap(
     // Shell re-render on workspace change — keeps the `.when(can_split)` action
     // bindings in `render` in sync with the active tab.
     cx.observe(&workspace, |_, _, cx| cx.notify()).detach();
+
+    // Route the Transfers UI completion signal to the SFTP pane refresh. The
+    // transfer view emits only the typed event (`docs/registries.md`); the
+    // composition root owns the Workspace-side wiring so `transfers-ui` does
+    // not depend on `labonair-workspace`.
+    cx.subscribe(&transfers, {
+        let workspace = workspace.clone();
+        move |_this, _transfers, event: &TransferUiEvent, cx| {
+            let TransferUiEvent::Completed {
+                session_id,
+                direction,
+            } = event;
+            workspace.update(cx, |workspace, cx| {
+                workspace.refresh_sftp_after_transfer(session_id, *direction, cx);
+            });
+        }
+    })
+    .detach();
 
     let git_panel =
         cx.new(|cx| GitPanelView::new(git_service.clone(), tokio.clone(), theme.clone(), cx));

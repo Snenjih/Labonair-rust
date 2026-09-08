@@ -111,12 +111,30 @@ enum Modal {
     },
 }
 
-/// Emitted so the workspace can refresh the pane that just received a file.
+/// Emitted so the composition root can refresh the SFTP pane that just
+/// received a file. `transfers-ui` does not depend on `labonair-workspace`
+/// (R08-001); the shell subscribes to this event and calls
+/// `Workspace::refresh_sftp_after_transfer`.
 pub enum TransferUiEvent {
     Completed {
         session_id: String,
         direction: TransferDirection,
     },
+}
+
+/// Map a registry update to the typed completion signal, if any. Pure so the
+/// dispatch mapping is testable without a `TransfersView` entity.
+fn completion_event(update: &RegistryUpdate) -> Option<TransferUiEvent> {
+    match update {
+        RegistryUpdate::Completed {
+            session_id,
+            direction,
+        } => Some(TransferUiEvent::Completed {
+            session_id: session_id.clone(),
+            direction: *direction,
+        }),
+        RegistryUpdate::None | RegistryUpdate::Resolve(_) => None,
+    }
 }
 
 pub struct TransfersView {
@@ -247,15 +265,8 @@ impl TransfersView {
             }
         }
         cx.notify();
-        if let RegistryUpdate::Completed {
-            session_id,
-            direction,
-        } = &update
-        {
-            cx.emit(TransferUiEvent::Completed {
-                session_id: session_id.clone(),
-                direction: *direction,
-            });
+        if let Some(event) = completion_event(&update) {
+            cx.emit(event);
         }
         update
     }
@@ -1026,5 +1037,22 @@ mod tests {
         assert_eq!(status_label(&TransferStatus::Queued), "queued");
         assert_eq!(status_label(&TransferStatus::Failed("x".into())), "failed");
         assert_eq!(status_label(&TransferStatus::Completed), "done");
+    }
+
+    #[test]
+    fn completion_event_maps_only_completed_updates() {
+        // R08-001: the SFTP-refresh signal is derived here, with no Workspace
+        // entity involved. The shell subscribes to the emitted event.
+        let event = completion_event(&RegistryUpdate::Completed {
+            session_id: "s1".into(),
+            direction: TransferDirection::Download,
+        });
+        assert!(matches!(
+            event,
+            Some(TransferUiEvent::Completed { session_id, direction })
+                if session_id == "s1" && direction == TransferDirection::Download
+        ));
+        assert!(completion_event(&RegistryUpdate::None).is_none());
+        assert!(completion_event(&RegistryUpdate::Resolve(vec![])).is_none());
     }
 }
