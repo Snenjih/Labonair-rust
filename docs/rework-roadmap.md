@@ -288,31 +288,23 @@ Confirmed against current source:
 - Titlebar and statusbar popovers anchor to the pointer, not the trigger
   bounds (P2.1).
 
-These are being worked as bounded follow-up tasks (R08-series) in the order
-recorded in `tasks/rework/README.md`. Resolved so far: R08-001 (P1.4,
-transfers-ui → workspace edge removed); R08-002 (P1.7, the no-op Zoom
-In/Out/Reset, Adjust Font Size, and Format Document affordances were removed
-from the palette, native menu, and default keymap); R08-003 (P1.3,
-panel-snippets → workspace edge removed via the leaf
-`labonair-snippets-host::SnippetExecutionHost` contract); R08-004 (P2.1, the
-titlebar global menu, the Notifications / Agent Access statusbar dropdowns, and
-the Settings select/font dropdowns now anchor to their trigger's rendered
-bounds instead of the click position); R08-005 (P1.5, the settings→`ThemeStore`
-application policy and the palette theme-action handler moved from `settings-ui`
-into the new `labonair-theme-ui` sibling — `settings-ui` owns no theme
-preview/activation/persistence policy, and `labonair-theme` keeps no
-`labonair-settings` dependency). R08-006 (P2.4, the `AppComposition` bundle lost its blanket `Deref` — now one
-explicit accessor per capability — and the `BackendSsh*` transport adapters
-were renamed to `Ssh*Adapter`; `main.rs` / `bootstrap` name the bundle
-`composition`, not `backend`); R08-007 (P1.6, the pre-migration `ShortcutId` /
-`SHORTCUTS` cheat-sheet model and every `.with_shortcut()` call site were
-deleted, the now-empty `labonair-interaction-contracts` crate removed, and the
-`command_palette.rs` re-exports trimmed to `keystroke_tokens`). Right-edge
-collision behavior for P2.1 is left to the R07-001 visual matrix. Task/acceptance status in R01-004,
-R03-002, R04-002, R05-001, and R06-001 was reconciled the same day: their
-non-visual acceptance criteria are ticked with evidence, residual items carry
-an explicit follow-up pointer, and visual criteria are delegated to the
-still-open R07-001 matrix.
+These are worked as bounded R08-series tasks (see `tasks/rework/README.md`).
+Status:
+
+| Finding | Task | State |
+|---|---|---|
+| P0.2 task/doc reconciliation | — | Done — R01-004/R03-002/R04-002/R05-001/R06-001 non-visual criteria ticked with evidence; residuals carry follow-up pointers; visual criteria delegated to R07-001 |
+| P1.3 `panel-snippets → workspace` | R08-003 | Done — leaf `labonair-snippets-host::SnippetExecutionHost` |
+| P1.4 `transfers-ui → workspace` | R08-001 | Done — `TransferUiEvent::Completed` wired at composition |
+| P1.5 Theme policy in `settings-ui` | R08-005 | Done — new `labonair-theme-ui` sibling; `labonair-theme` keeps no settings dep |
+| P1.6 legacy `ShortcutId` / `SHORTCUTS` | R08-007 | Done — model + every `.with_shortcut()` + the `labonair-interaction-contracts` crate deleted |
+| P1.7 no-op Zoom / Format Document | R08-002 | Done — removed from palette, native menu, default keymap |
+| P2.1 popover trigger-bounds anchoring | R08-004 (+ `caad6ad`) | Done — titlebar, statusbar dropdowns, Settings selects, tab/new-tab menus; right-edge collision folds into R07-001 |
+| P2.4 `AppComposition` `Deref` / backend names | R08-006 | Done — explicit accessors; `BackendSsh*` → `Ssh*Adapter`; bundle renamed `composition` |
+| P2.5 notification callback adapter | R08-009 (+ R08-010) | Done — removed (no consumer); actionable-notification design parked in R08-010 |
+| P2.6 dormant theme import/watch | R08-011 | Done — quarantined: retained under test, doc-marked deferred, capability-matrix row added |
+| P1.1 `ui-kit → theme` | R08-008 | **Planned / deferred** — load-bearing token-layer extraction; needs review. Cheaper honest alternative documented in the task. |
+| P1.2 `workspace → hosts-ui` | R08-012 | **Planned / deferred** — highest regression risk; needs review. Follow the `explorer-host` leaf-crate pattern. |
 
 ## Change and removal gates
 

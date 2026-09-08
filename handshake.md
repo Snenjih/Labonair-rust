@@ -51,11 +51,58 @@ Landed so far:
   now anchor to their trigger's rendered bounds (measured by a `canvas`
   probe) instead of the click position, per `docs/design-system.md`. (The
   tab / new-tab menu part of P2.1 was already in `caad6ad`.)
+- **R08-005 / P1.5** (`f030f34`): new `labonair-theme-ui` sibling crate owns
+  the settings→`ThemeStore` bridge (`apply_prefs_to_theme`, metrics, font
+  overrides), registry-theme activation/persistence, and the palette
+  theme-action handler — all moved from `settings-ui`. `settings-ui`'s
+  `sync_theme_from_prefs` just calls the bridge; `labonair-theme` keeps no
+  `labonair-settings` dependency.
+- **R08-006 / P2.4** (`bb4ff2f`): `AppComposition` lost its blanket
+  `Deref<Target = AppCompositionInner>`; the inner type + fields are private
+  and each capability has an explicit accessor (`db()`, `ssh()`, …). The
+  `BackendSsh*` transport adapters became `Ssh*Adapter`; the bundle var/param
+  is `composition`, not `backend`. Stale `crates/backend/…` doc comments
+  fixed.
+- **R08-007 / P1.6** (`6db469d`): deleted the pre-migration `ShortcutId` /
+  `SHORTCUTS` cheat-sheet model, every `.with_shortcut()` call site, the
+  `CommandDescriptor.shortcut` / `Command.shortcut` fields, and the
+  now-empty `labonair-interaction-contracts` crate (4 consumer edges gone).
+  `keymap/src/lib.rs` is now just `normalize_keystrokes` + `keystroke_tokens`.
+  `architecture.md` / `registries.md` updated; crate graph regenerated.
+  ~810 deletions.
+- **R08-009 / P2.5** (`0d3d3d6`): removed the notification callback-action
+  adapter (`ActionCallback`, closure-backed `NotificationAction`,
+  `Notification.action`, `trigger_action`, `action_label`, the statusbar
+  action button) — no feature ever produced one. GPUI adapter now stores no
+  closures. R08-010 parks the actionable-notification design (stable action
+  ids) with no current consumer.
+- **R08-011 / P2.6** (`0d3d3d6`): quarantined the dormant theme-file
+  import/watch code in `labonair-theme` — "Deferred boundary (R08-011)" doc
+  comments on `import.rs` / `import_theme_file*` / `reload_user_themes` /
+  `load_user_themes`, plus a `docs/capabilities.md` deferred-table row. Code
+  retained under test, wired to nothing.
 
-Next: R08-005 (P1.5, Theme-management policy out of `settings-ui`), then
-P2.4 (`AppComposition` `Deref`), P1.6 (delete the inert `ShortcutId` /
-`SHORTCUTS` model), P1.1 (`ui-kit → theme`), P1.2 (`workspace → hosts-ui`),
-and the P2.5 / P2.6 dispositions. `crates/*/target` is regenerable.
+Deferred with owner + activation condition (task files under `tasks/rework/`):
+
+- **R08-008 / P1.1** (`ui-kit → theme`) — `⏳ Planned`. Load-bearing
+  token-layer extraction into a new `labonair-theme-tokens` leaf; ~20 files
+  across the visual foundation; correctness is partly visual. Handed off for
+  review. The task file also documents the cheaper reclassification
+  alternative.
+- **R08-012 / P1.2** (`workspace → hosts-ui`) — `⏳ Planned`. Highest
+  regression risk in the audit: `workspace.rs` (>4000 lines) stores
+  `Entity<HostManagerView>` / `Entity<ConnectionStatusStore>` and drives the
+  live SSH connection-status path. Follow the `explorer-host` / `snippets-host`
+  leaf-crate pattern; do NOT introduce a host-service facade.
+
+Not started (lower priority, from the audit's own P2 tail): P2.2 (ui-kit input
+compliance — mostly documented exceptions already), P2.3 (raw `Database` /
+`SecretsState` narrowing in `hosts-ui` / `panel-snippets` — the `host_store::*`
+free-function layer is already a reasonable boundary), P2.7 / P2.8 (visual /
+AI, out of code scope here).
+
+Crate count: 55 (theme-ui +1, snippets-host +1, interaction-contracts −1 net
+from the R07 baseline of 54). `crates/*/target` is regenerable.
 
 ## Current Session: 2026-09-07 (Post-B02 audit — Steps 4–7 of the rework prompt)
 
