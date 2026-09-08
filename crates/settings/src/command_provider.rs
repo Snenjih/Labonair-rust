@@ -6,7 +6,6 @@ use labonair_command_palette_core::{
     CommandContext, CommandDescriptor, CommandIcon, CommandId, CommandProvider,
 };
 use labonair_command_palette_runtime::CommandHandlerRegistry;
-use labonair_interaction_contracts::ShortcutId;
 
 use crate::{Settings as _, SettingsStore, ThemeSettings};
 
@@ -101,7 +100,6 @@ impl CommandProvider for SettingsCommandProvider {
             )
             .with_icon(CommandIcon::Edit),
             CommandDescriptor::new(CommandId::ToggleZenMode, "Toggle: Zen Mode", "Settings")
-                .with_shortcut(ShortcutId::ViewZenMode)
                 .with_default_binding("cmd-shift-z", None)
                 .with_icon(CommandIcon::Eye),
             CommandDescriptor::new(

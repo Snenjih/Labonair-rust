@@ -281,7 +281,8 @@ Confirmed against current source:
   directly for execution / SFTP refresh (P1.3, P1.4).
 - `settings-ui` owns theme preview / activation / persistence policy (P1.5).
 - The pre-migration `ShortcutId` / `SHORTCUTS` keymap model is inert but still
-  present and re-exported (P1.6).
+  present and re-exported (P1.6). **Resolved (R08-007)** — deleted, along with
+  the now-empty `labonair-interaction-contracts` crate.
 - Zoom In/Out/Reset and Format Document are visible palette/menu commands with
   no execution handler (P1.7).
 - Titlebar and statusbar popovers anchor to the pointer, not the trigger
@@ -303,8 +304,11 @@ preview/activation/persistence policy, and `labonair-theme` keeps no
 `labonair-settings` dependency). R08-006 (P2.4, the `AppComposition` bundle lost its blanket `Deref` — now one
 explicit accessor per capability — and the `BackendSsh*` transport adapters
 were renamed to `Ssh*Adapter`; `main.rs` / `bootstrap` name the bundle
-`composition`, not `backend`). Right-edge collision behavior for P2.1 is left
-to the R07-001 visual matrix. Task/acceptance status in R01-004,
+`composition`, not `backend`); R08-007 (P1.6, the pre-migration `ShortcutId` /
+`SHORTCUTS` cheat-sheet model and every `.with_shortcut()` call site were
+deleted, the now-empty `labonair-interaction-contracts` crate removed, and the
+`command_palette.rs` re-exports trimmed to `keystroke_tokens`). Right-edge
+collision behavior for P2.1 is left to the R07-001 visual matrix. Task/acceptance status in R01-004,
 R03-002, R04-002, R05-001, and R06-001 was reconciled the same day: their
 non-visual acceptance criteria are ticked with evidence, residual items carry
 an explicit follow-up pointer, and visual criteria are delegated to the

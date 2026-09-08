@@ -36,6 +36,7 @@ The active sequence is:
 27. `R08-004-popover-trigger-bounds-anchoring.md` — Done
 28. `R08-005-theme-management-out-of-settings-ui.md` — Done
 29. `R08-006-appcomposition-accessors.md` — Done
+30. `R08-007-remove-legacy-shortcutid-model.md` — Done
 
 Phases 0–6 are complete. R02-001 is the first bounded Phase 2 shell task and
 also connects the already-established theme registry to its intended palette

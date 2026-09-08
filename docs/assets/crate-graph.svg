@@ -1,328 +1,339 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="2604" height="1210" viewBox="0 0 2604 1210" font-family="Helvetica, Arial, sans-serif" font-size="11">
+<svg xmlns="http://www.w3.org/2000/svg" width="3246" height="962" viewBox="0 0 3246 962" font-family="Helvetica, Arial, sans-serif" font-size="11">
 <style>.n{fill:#f5f5f7;stroke:#c8102e;stroke-width:1.2}.t{fill:#1d1d1f;text-anchor:middle;dominant-baseline:middle}.e{stroke:#9aa0a6;stroke-width:1;fill:none;marker-end:url(#a)}</style>
 <defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#9aa0a6"/></marker></defs>
-<rect width="2604" height="1210" fill="white"/>
-<path class="e" d="M1302.0 64.0 L1302.0 154.0"/>
-<path class="e" d="M1302.0 64.0 L1730.0 774.0"/>
-<path class="e" d="M1302.0 64.0 L2265.0 898.0"/>
-<path class="e" d="M660.0 1056.0 L553.0 1146.0"/>
-<path class="e" d="M446.0 808.0 L553.0 1146.0"/>
-<path class="e" d="M446.0 808.0 L2265.0 898.0"/>
-<path class="e" d="M1195.0 684.0 L874.0 1022.0"/>
-<path class="e" d="M1195.0 684.0 L339.0 898.0"/>
-<path class="e" d="M1195.0 684.0 L553.0 1146.0"/>
-<path class="e" d="M1195.0 684.0 L1409.0 898.0"/>
-<path class="e" d="M1195.0 684.0 L1088.0 774.0"/>
-<path class="e" d="M1195.0 684.0 L2265.0 898.0"/>
-<path class="e" d="M1195.0 684.0 L2158.0 774.0"/>
-<path class="e" d="M874.0 1056.0 L981.0 1146.0"/>
-<path class="e" d="M339.0 932.0 L874.0 1022.0"/>
-<path class="e" d="M553.0 932.0 L1623.0 1146.0"/>
-<path class="e" d="M553.0 932.0 L1302.0 1022.0"/>
-<path class="e" d="M767.0 932.0 L874.0 1022.0"/>
-<path class="e" d="M767.0 932.0 L981.0 1146.0"/>
-<path class="e" d="M981.0 932.0 L874.0 1022.0"/>
-<path class="e" d="M660.0 808.0 L339.0 1146.0"/>
-<path class="e" d="M660.0 808.0 L981.0 898.0"/>
-<path class="e" d="M660.0 808.0 L2051.0 898.0"/>
-<path class="e" d="M1195.0 932.0 L874.0 1022.0"/>
-<path class="e" d="M1195.0 932.0 L125.0 1146.0"/>
-<path class="e" d="M1195.0 932.0 L1623.0 1146.0"/>
-<path class="e" d="M1195.0 932.0 L1302.0 1022.0"/>
-<path class="e" d="M767.0 560.0 L874.0 1022.0"/>
+<rect width="3246" height="962" fill="white"/>
+<path class="e" d="M1623.0 64.0 L1623.0 154.0"/>
+<path class="e" d="M1623.0 64.0 L2158.0 650.0"/>
+<path class="e" d="M1623.0 64.0 L2586.0 774.0"/>
+<path class="e" d="M446.0 808.0 L1195.0 898.0"/>
+<path class="e" d="M874.0 684.0 L125.0 898.0"/>
+<path class="e" d="M874.0 684.0 L1195.0 898.0"/>
+<path class="e" d="M874.0 684.0 L2586.0 774.0"/>
 <path class="e" d="M767.0 560.0 L339.0 898.0"/>
-<path class="e" d="M767.0 560.0 L553.0 898.0"/>
-<path class="e" d="M767.0 560.0 L125.0 1146.0"/>
+<path class="e" d="M767.0 560.0 L660.0 774.0"/>
 <path class="e" d="M767.0 560.0 L1195.0 898.0"/>
-<path class="e" d="M767.0 560.0 L1409.0 650.0"/>
-<path class="e" d="M767.0 560.0 L1623.0 1146.0"/>
-<path class="e" d="M767.0 560.0 L1302.0 1022.0"/>
-<path class="e" d="M767.0 560.0 L1837.0 898.0"/>
-<path class="e" d="M767.0 560.0 L1730.0 1022.0"/>
-<path class="e" d="M767.0 560.0 L2265.0 898.0"/>
-<path class="e" d="M767.0 560.0 L2158.0 774.0"/>
-<path class="e" d="M1409.0 932.0 L874.0 1022.0"/>
-<path class="e" d="M1409.0 932.0 L981.0 1146.0"/>
-<path class="e" d="M981.0 560.0 L874.0 1022.0"/>
-<path class="e" d="M981.0 560.0 L339.0 898.0"/>
-<path class="e" d="M981.0 560.0 L1409.0 898.0"/>
-<path class="e" d="M981.0 560.0 L1409.0 650.0"/>
-<path class="e" d="M981.0 560.0 L2265.0 898.0"/>
-<path class="e" d="M981.0 560.0 L2158.0 774.0"/>
-<path class="e" d="M874.0 808.0 L125.0 1146.0"/>
-<path class="e" d="M874.0 808.0 L339.0 1146.0"/>
-<path class="e" d="M874.0 808.0 L1195.0 898.0"/>
-<path class="e" d="M874.0 808.0 L1195.0 1146.0"/>
-<path class="e" d="M874.0 808.0 L1623.0 1146.0"/>
-<path class="e" d="M874.0 808.0 L1302.0 1022.0"/>
-<path class="e" d="M874.0 808.0 L2051.0 898.0"/>
-<path class="e" d="M1409.0 684.0 L1409.0 1146.0"/>
-<path class="e" d="M1409.0 684.0 L1088.0 1022.0"/>
-<path class="e" d="M1409.0 684.0 L2265.0 898.0"/>
-<path class="e" d="M1409.0 684.0 L2158.0 774.0"/>
-<path class="e" d="M1088.0 1056.0 L767.0 1146.0"/>
-<path class="e" d="M1088.0 312.0 L553.0 1146.0"/>
-<path class="e" d="M1088.0 312.0 L1409.0 650.0"/>
-<path class="e" d="M1088.0 312.0 L1088.0 1022.0"/>
-<path class="e" d="M1088.0 312.0 L1088.0 774.0"/>
-<path class="e" d="M1088.0 312.0 L2265.0 898.0"/>
-<path class="e" d="M1088.0 312.0 L2158.0 774.0"/>
-<path class="e" d="M1088.0 312.0 L1302.0 402.0"/>
-<path class="e" d="M1195.0 560.0 L981.0 898.0"/>
-<path class="e" d="M1195.0 560.0 L1409.0 650.0"/>
-<path class="e" d="M1195.0 560.0 L1088.0 1022.0"/>
-<path class="e" d="M1195.0 560.0 L2265.0 898.0"/>
-<path class="e" d="M1195.0 560.0 L2158.0 774.0"/>
-<path class="e" d="M1409.0 560.0 L874.0 1022.0"/>
-<path class="e" d="M1409.0 560.0 L339.0 898.0"/>
-<path class="e" d="M1409.0 560.0 L767.0 898.0"/>
-<path class="e" d="M1409.0 560.0 L981.0 898.0"/>
-<path class="e" d="M1409.0 560.0 L1409.0 650.0"/>
-<path class="e" d="M1409.0 560.0 L1088.0 1022.0"/>
-<path class="e" d="M1409.0 560.0 L1088.0 774.0"/>
-<path class="e" d="M1409.0 560.0 L2265.0 898.0"/>
-<path class="e" d="M1409.0 560.0 L2158.0 774.0"/>
-<path class="e" d="M1302.0 312.0 L874.0 1022.0"/>
-<path class="e" d="M1302.0 312.0 L339.0 898.0"/>
-<path class="e" d="M1302.0 312.0 L1195.0 898.0"/>
-<path class="e" d="M1302.0 312.0 L1409.0 650.0"/>
-<path class="e" d="M1302.0 312.0 L1088.0 1022.0"/>
-<path class="e" d="M1302.0 312.0 L1623.0 1146.0"/>
-<path class="e" d="M1302.0 312.0 L1837.0 898.0"/>
-<path class="e" d="M1302.0 312.0 L2265.0 898.0"/>
-<path class="e" d="M1302.0 312.0 L2158.0 774.0"/>
-<path class="e" d="M1302.0 312.0 L1302.0 402.0"/>
-<path class="e" d="M1302.0 1056.0 L553.0 1146.0"/>
-<path class="e" d="M1088.0 808.0 L874.0 1022.0"/>
+<path class="e" d="M767.0 560.0 L1302.0 774.0"/>
+<path class="e" d="M767.0 560.0 L1516.0 650.0"/>
+<path class="e" d="M767.0 560.0 L2586.0 774.0"/>
+<path class="e" d="M767.0 560.0 L2372.0 650.0"/>
+<path class="e" d="M660.0 808.0 L339.0 898.0"/>
+<path class="e" d="M1088.0 684.0 L2051.0 898.0"/>
+<path class="e" d="M1088.0 684.0 L1730.0 774.0"/>
+<path class="e" d="M874.0 808.0 L339.0 898.0"/>
 <path class="e" d="M1088.0 808.0 L339.0 898.0"/>
-<path class="e" d="M1088.0 808.0 L981.0 1146.0"/>
-<path class="e" d="M1088.0 808.0 L1516.0 1022.0"/>
-<path class="e" d="M1088.0 808.0 L1837.0 1146.0"/>
-<path class="e" d="M1088.0 808.0 L2051.0 1146.0"/>
-<path class="e" d="M1516.0 1056.0 L2051.0 1146.0"/>
-<path class="e" d="M1623.0 560.0 L1195.0 650.0"/>
-<path class="e" d="M1623.0 560.0 L874.0 1022.0"/>
-<path class="e" d="M1623.0 560.0 L339.0 898.0"/>
-<path class="e" d="M1623.0 560.0 L553.0 1146.0"/>
-<path class="e" d="M1623.0 560.0 L767.0 1146.0"/>
-<path class="e" d="M1623.0 560.0 L1409.0 650.0"/>
-<path class="e" d="M1623.0 560.0 L1088.0 774.0"/>
-<path class="e" d="M1623.0 560.0 L1516.0 1022.0"/>
-<path class="e" d="M1623.0 560.0 L2265.0 898.0"/>
-<path class="e" d="M1623.0 560.0 L2158.0 774.0"/>
-<path class="e" d="M1623.0 932.0 L125.0 1146.0"/>
-<path class="e" d="M1623.0 932.0 L1730.0 1022.0"/>
-<path class="e" d="M1302.0 808.0 L125.0 1146.0"/>
-<path class="e" d="M1302.0 808.0 L339.0 1146.0"/>
-<path class="e" d="M1302.0 808.0 L1623.0 1146.0"/>
-<path class="e" d="M1302.0 808.0 L1302.0 1022.0"/>
-<path class="e" d="M1302.0 808.0 L1623.0 898.0"/>
-<path class="e" d="M1302.0 808.0 L1730.0 1022.0"/>
-<path class="e" d="M1302.0 808.0 L2051.0 898.0"/>
-<path class="e" d="M1302.0 188.0 L446.0 774.0"/>
-<path class="e" d="M1302.0 188.0 L1195.0 650.0"/>
-<path class="e" d="M1302.0 188.0 L874.0 1022.0"/>
-<path class="e" d="M1302.0 188.0 L339.0 898.0"/>
-<path class="e" d="M1302.0 188.0 L767.0 898.0"/>
-<path class="e" d="M1302.0 188.0 L339.0 1146.0"/>
-<path class="e" d="M1302.0 188.0 L553.0 1146.0"/>
-<path class="e" d="M1302.0 188.0 L981.0 898.0"/>
-<path class="e" d="M1302.0 188.0 L660.0 774.0"/>
-<path class="e" d="M1302.0 188.0 L767.0 1146.0"/>
-<path class="e" d="M1302.0 188.0 L1195.0 898.0"/>
-<path class="e" d="M1302.0 188.0 L767.0 526.0"/>
-<path class="e" d="M1302.0 188.0 L1409.0 898.0"/>
-<path class="e" d="M1302.0 188.0 L981.0 526.0"/>
-<path class="e" d="M1302.0 188.0 L1195.0 1146.0"/>
-<path class="e" d="M1302.0 188.0 L874.0 774.0"/>
-<path class="e" d="M1302.0 188.0 L1409.0 650.0"/>
-<path class="e" d="M1302.0 188.0 L1088.0 1022.0"/>
-<path class="e" d="M1302.0 188.0 L1088.0 278.0"/>
-<path class="e" d="M1302.0 188.0 L1195.0 526.0"/>
-<path class="e" d="M1302.0 188.0 L1409.0 526.0"/>
-<path class="e" d="M1302.0 188.0 L1302.0 278.0"/>
-<path class="e" d="M1302.0 188.0 L1623.0 1146.0"/>
-<path class="e" d="M1302.0 188.0 L1302.0 1022.0"/>
-<path class="e" d="M1302.0 188.0 L1088.0 774.0"/>
-<path class="e" d="M1302.0 188.0 L1623.0 526.0"/>
-<path class="e" d="M1302.0 188.0 L1623.0 898.0"/>
-<path class="e" d="M1302.0 188.0 L1302.0 774.0"/>
-<path class="e" d="M1302.0 188.0 L1837.0 898.0"/>
-<path class="e" d="M1302.0 188.0 L1516.0 774.0"/>
-<path class="e" d="M1302.0 188.0 L1730.0 1022.0"/>
-<path class="e" d="M1302.0 188.0 L2051.0 898.0"/>
-<path class="e" d="M1302.0 188.0 L1730.0 774.0"/>
-<path class="e" d="M1302.0 188.0 L2265.0 898.0"/>
-<path class="e" d="M1302.0 188.0 L2479.0 1146.0"/>
-<path class="e" d="M1302.0 188.0 L1944.0 774.0"/>
-<path class="e" d="M1302.0 188.0 L1516.0 278.0"/>
-<path class="e" d="M1302.0 188.0 L2158.0 774.0"/>
-<path class="e" d="M1302.0 188.0 L1944.0 1022.0"/>
-<path class="e" d="M1302.0 188.0 L1837.0 526.0"/>
-<path class="e" d="M1302.0 188.0 L1302.0 402.0"/>
-<path class="e" d="M1837.0 932.0 L874.0 1022.0"/>
-<path class="e" d="M1837.0 932.0 L125.0 1146.0"/>
-<path class="e" d="M1837.0 932.0 L1623.0 1146.0"/>
-<path class="e" d="M1516.0 808.0 L339.0 1146.0"/>
-<path class="e" d="M1516.0 808.0 L1837.0 898.0"/>
-<path class="e" d="M1516.0 808.0 L2051.0 898.0"/>
-<path class="e" d="M1730.0 1056.0 L125.0 1146.0"/>
-<path class="e" d="M2051.0 932.0 L125.0 1146.0"/>
-<path class="e" d="M2051.0 932.0 L339.0 1146.0"/>
-<path class="e" d="M2051.0 932.0 L553.0 1146.0"/>
-<path class="e" d="M2051.0 932.0 L1623.0 1146.0"/>
-<path class="e" d="M2051.0 932.0 L1302.0 1022.0"/>
-<path class="e" d="M2051.0 932.0 L1730.0 1022.0"/>
-<path class="e" d="M2051.0 932.0 L2265.0 1146.0"/>
-<path class="e" d="M1730.0 808.0 L874.0 1022.0"/>
-<path class="e" d="M1730.0 808.0 L339.0 898.0"/>
-<path class="e" d="M1730.0 808.0 L2265.0 1146.0"/>
-<path class="e" d="M1730.0 808.0 L2265.0 898.0"/>
-<path class="e" d="M2265.0 932.0 L874.0 1022.0"/>
-<path class="e" d="M1944.0 808.0 L339.0 1146.0"/>
-<path class="e" d="M1944.0 808.0 L2051.0 898.0"/>
-<path class="e" d="M1944.0 808.0 L2479.0 1146.0"/>
-<path class="e" d="M1516.0 312.0 L1088.0 1022.0"/>
-<path class="e" d="M1516.0 312.0 L2265.0 898.0"/>
-<path class="e" d="M1516.0 312.0 L2479.0 1146.0"/>
-<path class="e" d="M1516.0 312.0 L2158.0 774.0"/>
-<path class="e" d="M1516.0 312.0 L1302.0 402.0"/>
-<path class="e" d="M2158.0 808.0 L767.0 1146.0"/>
-<path class="e" d="M2158.0 808.0 L2265.0 898.0"/>
-<path class="e" d="M1944.0 1056.0 L553.0 1146.0"/>
-<path class="e" d="M1837.0 560.0 L874.0 1022.0"/>
-<path class="e" d="M1837.0 560.0 L339.0 898.0"/>
-<path class="e" d="M1837.0 560.0 L1409.0 650.0"/>
-<path class="e" d="M1837.0 560.0 L1088.0 1022.0"/>
-<path class="e" d="M1837.0 560.0 L2265.0 898.0"/>
-<path class="e" d="M1837.0 560.0 L2158.0 774.0"/>
-<path class="e" d="M1837.0 560.0 L1944.0 1022.0"/>
-<path class="e" d="M1302.0 436.0 L660.0 1022.0"/>
-<path class="e" d="M1302.0 436.0 L446.0 774.0"/>
-<path class="e" d="M1302.0 436.0 L1195.0 650.0"/>
-<path class="e" d="M1302.0 436.0 L874.0 1022.0"/>
-<path class="e" d="M1302.0 436.0 L339.0 898.0"/>
-<path class="e" d="M1302.0 436.0 L767.0 898.0"/>
-<path class="e" d="M1302.0 436.0 L553.0 1146.0"/>
+<path class="e" d="M981.0 560.0 L767.0 898.0"/>
+<path class="e" d="M981.0 560.0 L1088.0 774.0"/>
+<path class="e" d="M981.0 560.0 L1944.0 650.0"/>
+<path class="e" d="M1302.0 684.0 L339.0 898.0"/>
+<path class="e" d="M1302.0 684.0 L553.0 898.0"/>
+<path class="e" d="M1302.0 684.0 L2051.0 898.0"/>
+<path class="e" d="M1302.0 684.0 L1730.0 774.0"/>
+<path class="e" d="M874.0 436.0 L339.0 898.0"/>
+<path class="e" d="M874.0 436.0 L660.0 774.0"/>
+<path class="e" d="M874.0 436.0 L1088.0 650.0"/>
+<path class="e" d="M874.0 436.0 L553.0 898.0"/>
+<path class="e" d="M874.0 436.0 L1302.0 650.0"/>
+<path class="e" d="M874.0 436.0 L1409.0 526.0"/>
+<path class="e" d="M874.0 436.0 L2051.0 898.0"/>
+<path class="e" d="M874.0 436.0 L1730.0 774.0"/>
+<path class="e" d="M874.0 436.0 L2158.0 774.0"/>
+<path class="e" d="M874.0 436.0 L2372.0 774.0"/>
+<path class="e" d="M874.0 436.0 L2586.0 774.0"/>
+<path class="e" d="M874.0 436.0 L2372.0 650.0"/>
+<path class="e" d="M1302.0 808.0 L339.0 898.0"/>
+<path class="e" d="M1088.0 436.0 L339.0 898.0"/>
+<path class="e" d="M1088.0 436.0 L660.0 774.0"/>
+<path class="e" d="M1088.0 436.0 L1302.0 774.0"/>
+<path class="e" d="M1088.0 436.0 L1409.0 526.0"/>
+<path class="e" d="M1088.0 436.0 L2586.0 774.0"/>
+<path class="e" d="M1088.0 436.0 L2372.0 650.0"/>
+<path class="e" d="M1195.0 560.0 L553.0 898.0"/>
+<path class="e" d="M1195.0 560.0 L767.0 898.0"/>
+<path class="e" d="M1195.0 560.0 L1302.0 650.0"/>
+<path class="e" d="M1195.0 560.0 L1623.0 898.0"/>
+<path class="e" d="M1195.0 560.0 L2051.0 898.0"/>
+<path class="e" d="M1195.0 560.0 L1730.0 774.0"/>
+<path class="e" d="M1195.0 560.0 L1944.0 650.0"/>
+<path class="e" d="M1409.0 560.0 L1837.0 898.0"/>
+<path class="e" d="M1409.0 560.0 L1516.0 774.0"/>
+<path class="e" d="M1409.0 560.0 L2586.0 774.0"/>
+<path class="e" d="M1409.0 560.0 L2372.0 650.0"/>
+<path class="e" d="M1516.0 808.0 L1409.0 898.0"/>
 <path class="e" d="M1302.0 436.0 L981.0 898.0"/>
-<path class="e" d="M1302.0 436.0 L767.0 1146.0"/>
 <path class="e" d="M1302.0 436.0 L1195.0 898.0"/>
-<path class="e" d="M1302.0 436.0 L767.0 526.0"/>
-<path class="e" d="M1302.0 436.0 L1409.0 898.0"/>
-<path class="e" d="M1302.0 436.0 L1195.0 1146.0"/>
-<path class="e" d="M1302.0 436.0 L1409.0 650.0"/>
-<path class="e" d="M1302.0 436.0 L1088.0 1022.0"/>
-<path class="e" d="M1302.0 436.0 L1195.0 526.0"/>
-<path class="e" d="M1302.0 436.0 L1088.0 774.0"/>
-<path class="e" d="M1302.0 436.0 L1837.0 1146.0"/>
-<path class="e" d="M1302.0 436.0 L1623.0 898.0"/>
-<path class="e" d="M1302.0 436.0 L1730.0 1022.0"/>
-<path class="e" d="M1302.0 436.0 L1730.0 774.0"/>
-<path class="e" d="M1302.0 436.0 L2265.0 898.0"/>
-<path class="e" d="M1302.0 436.0 L2479.0 1146.0"/>
-<path class="e" d="M1302.0 436.0 L2158.0 774.0"/>
-<rect class="n" x="1207.0" y="30.0" width="190" height="34" rx="6"/>
-<text class="t" x="1302.0" y="47.0">labonair</text>
-<rect class="n" x="565.0" y="1022.0" width="190" height="34" rx="6"/>
-<text class="t" x="660.0" y="1039.0">labonair-ai</text>
+<path class="e" d="M1302.0 436.0 L1409.0 526.0"/>
+<path class="e" d="M1302.0 436.0 L1516.0 774.0"/>
+<path class="e" d="M1302.0 436.0 L1516.0 650.0"/>
+<path class="e" d="M1302.0 436.0 L2586.0 774.0"/>
+<path class="e" d="M1302.0 436.0 L2372.0 650.0"/>
+<path class="e" d="M1516.0 436.0 L1088.0 774.0"/>
+<path class="e" d="M1516.0 436.0 L1409.0 526.0"/>
+<path class="e" d="M1516.0 436.0 L1516.0 774.0"/>
+<path class="e" d="M1516.0 436.0 L2586.0 774.0"/>
+<path class="e" d="M1516.0 436.0 L2372.0 650.0"/>
+<path class="e" d="M1730.0 436.0 L339.0 898.0"/>
+<path class="e" d="M1730.0 436.0 L660.0 774.0"/>
+<path class="e" d="M1730.0 436.0 L874.0 774.0"/>
+<path class="e" d="M1730.0 436.0 L1088.0 774.0"/>
+<path class="e" d="M1730.0 436.0 L1409.0 526.0"/>
+<path class="e" d="M1730.0 436.0 L1516.0 774.0"/>
+<path class="e" d="M1730.0 436.0 L1516.0 650.0"/>
+<path class="e" d="M1730.0 436.0 L2586.0 774.0"/>
+<path class="e" d="M1730.0 436.0 L2372.0 650.0"/>
+<path class="e" d="M1944.0 436.0 L339.0 898.0"/>
+<path class="e" d="M1944.0 436.0 L660.0 774.0"/>
+<path class="e" d="M1944.0 436.0 L1302.0 650.0"/>
+<path class="e" d="M1944.0 436.0 L1409.0 526.0"/>
+<path class="e" d="M1944.0 436.0 L1516.0 774.0"/>
+<path class="e" d="M1944.0 436.0 L2051.0 898.0"/>
+<path class="e" d="M1944.0 436.0 L2158.0 774.0"/>
+<path class="e" d="M1944.0 436.0 L2693.0 898.0"/>
+<path class="e" d="M1944.0 436.0 L2586.0 774.0"/>
+<path class="e" d="M1944.0 436.0 L2372.0 650.0"/>
+<path class="e" d="M1730.0 808.0 L1195.0 898.0"/>
+<path class="e" d="M1516.0 684.0 L339.0 898.0"/>
+<path class="e" d="M1516.0 684.0 L660.0 774.0"/>
+<path class="e" d="M1516.0 684.0 L1944.0 774.0"/>
+<path class="e" d="M1516.0 684.0 L2265.0 898.0"/>
+<path class="e" d="M1516.0 684.0 L2479.0 898.0"/>
+<path class="e" d="M1944.0 808.0 L2479.0 898.0"/>
+<path class="e" d="M2158.0 436.0 L767.0 526.0"/>
+<path class="e" d="M2158.0 436.0 L339.0 898.0"/>
+<path class="e" d="M2158.0 436.0 L660.0 774.0"/>
+<path class="e" d="M2158.0 436.0 L1195.0 898.0"/>
+<path class="e" d="M2158.0 436.0 L1409.0 898.0"/>
+<path class="e" d="M2158.0 436.0 L1409.0 526.0"/>
+<path class="e" d="M2158.0 436.0 L1516.0 650.0"/>
+<path class="e" d="M2158.0 436.0 L1944.0 774.0"/>
+<path class="e" d="M2158.0 436.0 L2586.0 774.0"/>
+<path class="e" d="M2158.0 436.0 L2051.0 526.0"/>
+<path class="e" d="M2158.0 436.0 L2372.0 650.0"/>
+<path class="e" d="M1730.0 684.0 L553.0 898.0"/>
+<path class="e" d="M1730.0 684.0 L2372.0 774.0"/>
+<path class="e" d="M1623.0 560.0 L553.0 898.0"/>
+<path class="e" d="M1623.0 560.0 L767.0 898.0"/>
+<path class="e" d="M1623.0 560.0 L2051.0 898.0"/>
+<path class="e" d="M1623.0 560.0 L1730.0 774.0"/>
+<path class="e" d="M1623.0 560.0 L1730.0 650.0"/>
+<path class="e" d="M1623.0 560.0 L2372.0 774.0"/>
+<path class="e" d="M1623.0 560.0 L1944.0 650.0"/>
+<path class="e" d="M1623.0 188.0 L874.0 650.0"/>
+<path class="e" d="M1623.0 188.0 L767.0 526.0"/>
+<path class="e" d="M1623.0 188.0 L339.0 898.0"/>
+<path class="e" d="M1623.0 188.0 L660.0 774.0"/>
+<path class="e" d="M1623.0 188.0 L874.0 774.0"/>
+<path class="e" d="M1623.0 188.0 L767.0 898.0"/>
+<path class="e" d="M1623.0 188.0 L981.0 898.0"/>
+<path class="e" d="M1623.0 188.0 L1195.0 898.0"/>
+<path class="e" d="M1623.0 188.0 L1088.0 774.0"/>
+<path class="e" d="M1623.0 188.0 L981.0 526.0"/>
+<path class="e" d="M1623.0 188.0 L1409.0 898.0"/>
+<path class="e" d="M1623.0 188.0 L1302.0 650.0"/>
+<path class="e" d="M1623.0 188.0 L874.0 402.0"/>
+<path class="e" d="M1623.0 188.0 L1302.0 774.0"/>
+<path class="e" d="M1623.0 188.0 L1088.0 402.0"/>
+<path class="e" d="M1623.0 188.0 L1623.0 898.0"/>
+<path class="e" d="M1623.0 188.0 L1195.0 526.0"/>
+<path class="e" d="M1623.0 188.0 L1409.0 526.0"/>
+<path class="e" d="M1623.0 188.0 L1516.0 774.0"/>
+<path class="e" d="M1623.0 188.0 L1302.0 402.0"/>
+<path class="e" d="M1623.0 188.0 L1516.0 402.0"/>
+<path class="e" d="M1623.0 188.0 L1730.0 402.0"/>
+<path class="e" d="M1623.0 188.0 L1944.0 402.0"/>
+<path class="e" d="M1623.0 188.0 L2051.0 898.0"/>
+<path class="e" d="M1623.0 188.0 L1730.0 774.0"/>
+<path class="e" d="M1623.0 188.0 L1516.0 650.0"/>
+<path class="e" d="M1623.0 188.0 L2158.0 402.0"/>
+<path class="e" d="M1623.0 188.0 L1730.0 650.0"/>
+<path class="e" d="M1623.0 188.0 L1623.0 526.0"/>
+<path class="e" d="M1623.0 188.0 L2158.0 774.0"/>
+<path class="e" d="M1623.0 188.0 L2693.0 898.0"/>
+<path class="e" d="M1623.0 188.0 L1837.0 526.0"/>
+<path class="e" d="M1623.0 188.0 L2372.0 774.0"/>
+<path class="e" d="M1623.0 188.0 L1944.0 650.0"/>
+<path class="e" d="M1623.0 188.0 L2158.0 650.0"/>
+<path class="e" d="M1623.0 188.0 L2586.0 774.0"/>
+<path class="e" d="M1623.0 188.0 L2051.0 526.0"/>
+<path class="e" d="M1623.0 188.0 L3121.0 898.0"/>
+<path class="e" d="M1623.0 188.0 L2265.0 526.0"/>
+<path class="e" d="M1623.0 188.0 L2479.0 526.0"/>
+<path class="e" d="M1623.0 188.0 L2372.0 650.0"/>
+<path class="e" d="M1623.0 188.0 L2800.0 774.0"/>
+<path class="e" d="M1623.0 188.0 L2372.0 402.0"/>
+<path class="e" d="M1623.0 188.0 L1623.0 278.0"/>
+<path class="e" d="M2158.0 808.0 L339.0 898.0"/>
+<path class="e" d="M2158.0 808.0 L553.0 898.0"/>
+<path class="e" d="M2158.0 808.0 L2051.0 898.0"/>
+<path class="e" d="M1837.0 560.0 L767.0 898.0"/>
+<path class="e" d="M1837.0 560.0 L2158.0 774.0"/>
+<path class="e" d="M1837.0 560.0 L1944.0 650.0"/>
+<path class="e" d="M2372.0 808.0 L553.0 898.0"/>
+<path class="e" d="M1944.0 684.0 L553.0 898.0"/>
+<path class="e" d="M1944.0 684.0 L767.0 898.0"/>
+<path class="e" d="M1944.0 684.0 L1195.0 898.0"/>
+<path class="e" d="M1944.0 684.0 L2051.0 898.0"/>
+<path class="e" d="M1944.0 684.0 L1730.0 774.0"/>
+<path class="e" d="M1944.0 684.0 L2372.0 774.0"/>
+<path class="e" d="M1944.0 684.0 L2907.0 898.0"/>
+<path class="e" d="M2158.0 684.0 L339.0 898.0"/>
+<path class="e" d="M2158.0 684.0 L660.0 774.0"/>
+<path class="e" d="M2158.0 684.0 L2907.0 898.0"/>
+<path class="e" d="M2158.0 684.0 L2586.0 774.0"/>
+<path class="e" d="M2586.0 808.0 L339.0 898.0"/>
+<path class="e" d="M2051.0 560.0 L339.0 898.0"/>
+<path class="e" d="M2051.0 560.0 L660.0 774.0"/>
+<path class="e" d="M2051.0 560.0 L1516.0 650.0"/>
+<path class="e" d="M2051.0 560.0 L2586.0 774.0"/>
+<path class="e" d="M2265.0 560.0 L767.0 898.0"/>
+<path class="e" d="M2265.0 560.0 L1944.0 650.0"/>
+<path class="e" d="M2265.0 560.0 L3121.0 898.0"/>
+<path class="e" d="M2479.0 560.0 L1516.0 774.0"/>
+<path class="e" d="M2479.0 560.0 L2586.0 774.0"/>
+<path class="e" d="M2479.0 560.0 L3121.0 898.0"/>
+<path class="e" d="M2479.0 560.0 L2372.0 650.0"/>
+<path class="e" d="M2372.0 684.0 L1409.0 898.0"/>
+<path class="e" d="M2372.0 684.0 L2586.0 774.0"/>
+<path class="e" d="M2800.0 808.0 L1195.0 898.0"/>
+<path class="e" d="M2372.0 436.0 L339.0 898.0"/>
+<path class="e" d="M2372.0 436.0 L660.0 774.0"/>
+<path class="e" d="M2372.0 436.0 L1409.0 526.0"/>
+<path class="e" d="M2372.0 436.0 L1516.0 774.0"/>
+<path class="e" d="M2372.0 436.0 L2586.0 774.0"/>
+<path class="e" d="M2372.0 436.0 L2372.0 650.0"/>
+<path class="e" d="M2372.0 436.0 L2800.0 774.0"/>
+<path class="e" d="M1623.0 312.0 L446.0 774.0"/>
+<path class="e" d="M1623.0 312.0 L125.0 898.0"/>
+<path class="e" d="M1623.0 312.0 L767.0 526.0"/>
+<path class="e" d="M1623.0 312.0 L339.0 898.0"/>
+<path class="e" d="M1623.0 312.0 L660.0 774.0"/>
+<path class="e" d="M1623.0 312.0 L874.0 774.0"/>
+<path class="e" d="M1623.0 312.0 L981.0 898.0"/>
+<path class="e" d="M1623.0 312.0 L1195.0 898.0"/>
+<path class="e" d="M1623.0 312.0 L1088.0 774.0"/>
+<path class="e" d="M1623.0 312.0 L1409.0 898.0"/>
+<path class="e" d="M1623.0 312.0 L1302.0 650.0"/>
+<path class="e" d="M1623.0 312.0 L874.0 402.0"/>
+<path class="e" d="M1623.0 312.0 L1302.0 774.0"/>
+<path class="e" d="M1623.0 312.0 L1623.0 898.0"/>
+<path class="e" d="M1623.0 312.0 L1409.0 526.0"/>
+<path class="e" d="M1623.0 312.0 L1516.0 774.0"/>
+<path class="e" d="M1623.0 312.0 L1516.0 402.0"/>
+<path class="e" d="M1623.0 312.0 L1516.0 650.0"/>
+<path class="e" d="M1623.0 312.0 L2265.0 898.0"/>
+<path class="e" d="M1623.0 312.0 L1730.0 650.0"/>
+<path class="e" d="M1623.0 312.0 L2372.0 774.0"/>
+<path class="e" d="M1623.0 312.0 L2158.0 650.0"/>
+<path class="e" d="M1623.0 312.0 L2586.0 774.0"/>
+<path class="e" d="M1623.0 312.0 L3121.0 898.0"/>
+<path class="e" d="M1623.0 312.0 L2372.0 650.0"/>
+<rect class="n" x="1528.0" y="30.0" width="190" height="34" rx="6"/>
+<text class="t" x="1623.0" y="47.0">labonair</text>
 <rect class="n" x="351.0" y="774.0" width="190" height="34" rx="6"/>
-<text class="t" x="446.0" y="791.0">labonair-background</text>
-<rect class="n" x="1100.0" y="650.0" width="190" height="34" rx="6"/>
-<text class="t" x="1195.0" y="667.0">labonair-command-palette</text>
-<rect class="n" x="779.0" y="1022.0" width="190" height="34" rx="6"/>
-<text class="t" x="874.0" y="1039.0">labonair-command-palette-core</text>
-<rect class="n" x="244.0" y="898.0" width="190" height="34" rx="6"/>
-<text class="t" x="339.0" y="915.0">labonair-command-palette-runtime</text>
-<rect class="n" x="458.0" y="898.0" width="190" height="34" rx="6"/>
-<text class="t" x="553.0" y="915.0">labonair-credentials</text>
-<rect class="n" x="672.0" y="898.0" width="190" height="34" rx="6"/>
-<text class="t" x="767.0" y="915.0">labonair-editor</text>
-<rect class="n" x="30.0" y="1146.0" width="190" height="34" rx="6"/>
-<text class="t" x="125.0" y="1163.0">labonair-errors</text>
-<rect class="n" x="244.0" y="1146.0" width="190" height="34" rx="6"/>
-<text class="t" x="339.0" y="1163.0">labonair-events</text>
-<rect class="n" x="458.0" y="1146.0" width="190" height="34" rx="6"/>
-<text class="t" x="553.0" y="1163.0">labonair-filesystem</text>
-<rect class="n" x="886.0" y="898.0" width="190" height="34" rx="6"/>
-<text class="t" x="981.0" y="915.0">labonair-git</text>
-<rect class="n" x="565.0" y="774.0" width="190" height="34" rx="6"/>
-<text class="t" x="660.0" y="791.0">labonair-git-transport</text>
-<rect class="n" x="672.0" y="1146.0" width="190" height="34" rx="6"/>
-<text class="t" x="767.0" y="1163.0">labonair-gpui-ext</text>
-<rect class="n" x="1100.0" y="898.0" width="190" height="34" rx="6"/>
-<text class="t" x="1195.0" y="915.0">labonair-hosts</text>
+<text class="t" x="446.0" y="791.0">labonair-ai</text>
+<rect class="n" x="779.0" y="650.0" width="190" height="34" rx="6"/>
+<text class="t" x="874.0" y="667.0">labonair-background</text>
+<rect class="n" x="30.0" y="898.0" width="190" height="34" rx="6"/>
+<text class="t" x="125.0" y="915.0">labonair-background-host</text>
 <rect class="n" x="672.0" y="526.0" width="190" height="34" rx="6"/>
-<text class="t" x="767.0" y="543.0">labonair-hosts-ui</text>
-<rect class="n" x="886.0" y="1146.0" width="190" height="34" rx="6"/>
-<text class="t" x="981.0" y="1163.0">labonair-interaction-contracts</text>
-<rect class="n" x="1314.0" y="898.0" width="190" height="34" rx="6"/>
-<text class="t" x="1409.0" y="915.0">labonair-keymap</text>
-<rect class="n" x="886.0" y="526.0" width="190" height="34" rx="6"/>
-<text class="t" x="981.0" y="543.0">labonair-keymap-ui</text>
-<rect class="n" x="1100.0" y="1146.0" width="190" height="34" rx="6"/>
-<text class="t" x="1195.0" y="1163.0">labonair-mcp-core</text>
+<text class="t" x="767.0" y="543.0">labonair-command-palette</text>
+<rect class="n" x="244.0" y="898.0" width="190" height="34" rx="6"/>
+<text class="t" x="339.0" y="915.0">labonair-command-palette-core</text>
+<rect class="n" x="565.0" y="774.0" width="190" height="34" rx="6"/>
+<text class="t" x="660.0" y="791.0">labonair-command-palette-runtime</text>
+<rect class="n" x="993.0" y="650.0" width="190" height="34" rx="6"/>
+<text class="t" x="1088.0" y="667.0">labonair-credentials</text>
 <rect class="n" x="779.0" y="774.0" width="190" height="34" rx="6"/>
-<text class="t" x="874.0" y="791.0">labonair-mcp-server</text>
-<rect class="n" x="1314.0" y="650.0" width="190" height="34" rx="6"/>
-<text class="t" x="1409.0" y="667.0">labonair-notifications</text>
-<rect class="n" x="1314.0" y="1146.0" width="190" height="34" rx="6"/>
-<text class="t" x="1409.0" y="1163.0">labonair-notifications-core</text>
-<rect class="n" x="993.0" y="1022.0" width="190" height="34" rx="6"/>
-<text class="t" x="1088.0" y="1039.0">labonair-panel</text>
-<rect class="n" x="993.0" y="278.0" width="190" height="34" rx="6"/>
-<text class="t" x="1088.0" y="295.0">labonair-panel-explorer</text>
-<rect class="n" x="1100.0" y="526.0" width="190" height="34" rx="6"/>
-<text class="t" x="1195.0" y="543.0">labonair-panel-git-graph</text>
-<rect class="n" x="1314.0" y="526.0" width="190" height="34" rx="6"/>
-<text class="t" x="1409.0" y="543.0">labonair-panel-scm</text>
-<rect class="n" x="1207.0" y="278.0" width="190" height="34" rx="6"/>
-<text class="t" x="1302.0" y="295.0">labonair-panel-snippets</text>
-<rect class="n" x="1528.0" y="1146.0" width="190" height="34" rx="6"/>
-<text class="t" x="1623.0" y="1163.0">labonair-persistence</text>
-<rect class="n" x="1207.0" y="1022.0" width="190" height="34" rx="6"/>
-<text class="t" x="1302.0" y="1039.0">labonair-secrets</text>
+<text class="t" x="874.0" y="791.0">labonair-editor</text>
+<rect class="n" x="458.0" y="898.0" width="190" height="34" rx="6"/>
+<text class="t" x="553.0" y="915.0">labonair-errors</text>
+<rect class="n" x="672.0" y="898.0" width="190" height="34" rx="6"/>
+<text class="t" x="767.0" y="915.0">labonair-events</text>
+<rect class="n" x="886.0" y="898.0" width="190" height="34" rx="6"/>
+<text class="t" x="981.0" y="915.0">labonair-explorer-host</text>
+<rect class="n" x="1100.0" y="898.0" width="190" height="34" rx="6"/>
+<text class="t" x="1195.0" y="915.0">labonair-filesystem</text>
 <rect class="n" x="993.0" y="774.0" width="190" height="34" rx="6"/>
-<text class="t" x="1088.0" y="791.0">labonair-settings</text>
-<rect class="n" x="1421.0" y="1022.0" width="190" height="34" rx="6"/>
-<text class="t" x="1516.0" y="1039.0">labonair-settings-content</text>
-<rect class="n" x="1742.0" y="1146.0" width="190" height="34" rx="6"/>
-<text class="t" x="1837.0" y="1163.0">labonair-settings-json</text>
-<rect class="n" x="1956.0" y="1146.0" width="190" height="34" rx="6"/>
-<text class="t" x="2051.0" y="1163.0">labonair-settings-macros</text>
-<rect class="n" x="1528.0" y="526.0" width="190" height="34" rx="6"/>
-<text class="t" x="1623.0" y="543.0">labonair-settings-ui</text>
-<rect class="n" x="1528.0" y="898.0" width="190" height="34" rx="6"/>
-<text class="t" x="1623.0" y="915.0">labonair-sftp</text>
+<text class="t" x="1088.0" y="791.0">labonair-git</text>
+<rect class="n" x="886.0" y="526.0" width="190" height="34" rx="6"/>
+<text class="t" x="981.0" y="543.0">labonair-git-transport</text>
+<rect class="n" x="1314.0" y="898.0" width="190" height="34" rx="6"/>
+<text class="t" x="1409.0" y="915.0">labonair-gpui-ext</text>
+<rect class="n" x="1207.0" y="650.0" width="190" height="34" rx="6"/>
+<text class="t" x="1302.0" y="667.0">labonair-hosts</text>
+<rect class="n" x="779.0" y="402.0" width="190" height="34" rx="6"/>
+<text class="t" x="874.0" y="419.0">labonair-hosts-ui</text>
 <rect class="n" x="1207.0" y="774.0" width="190" height="34" rx="6"/>
-<text class="t" x="1302.0" y="791.0">labonair-sftp-ssh</text>
-<rect class="n" x="1207.0" y="154.0" width="190" height="34" rx="6"/>
-<text class="t" x="1302.0" y="171.0">labonair-shell</text>
+<text class="t" x="1302.0" y="791.0">labonair-keymap</text>
+<rect class="n" x="993.0" y="402.0" width="190" height="34" rx="6"/>
+<text class="t" x="1088.0" y="419.0">labonair-keymap-ui</text>
+<rect class="n" x="1528.0" y="898.0" width="190" height="34" rx="6"/>
+<text class="t" x="1623.0" y="915.0">labonair-mcp-core</text>
+<rect class="n" x="1100.0" y="526.0" width="190" height="34" rx="6"/>
+<text class="t" x="1195.0" y="543.0">labonair-mcp-server</text>
+<rect class="n" x="1314.0" y="526.0" width="190" height="34" rx="6"/>
+<text class="t" x="1409.0" y="543.0">labonair-notifications</text>
 <rect class="n" x="1742.0" y="898.0" width="190" height="34" rx="6"/>
-<text class="t" x="1837.0" y="915.0">labonair-snippets</text>
+<text class="t" x="1837.0" y="915.0">labonair-notifications-core</text>
 <rect class="n" x="1421.0" y="774.0" width="190" height="34" rx="6"/>
-<text class="t" x="1516.0" y="791.0">labonair-snippets-ssh</text>
-<rect class="n" x="1635.0" y="1022.0" width="190" height="34" rx="6"/>
-<text class="t" x="1730.0" y="1039.0">labonair-ssh</text>
-<rect class="n" x="1956.0" y="898.0" width="190" height="34" rx="6"/>
-<text class="t" x="2051.0" y="915.0">labonair-ssh-transport</text>
-<rect class="n" x="1635.0" y="774.0" width="190" height="34" rx="6"/>
-<text class="t" x="1730.0" y="791.0">labonair-terminal</text>
-<rect class="n" x="2170.0" y="1146.0" width="190" height="34" rx="6"/>
-<text class="t" x="2265.0" y="1163.0">labonair-terminal-integration</text>
-<rect class="n" x="2170.0" y="898.0" width="190" height="34" rx="6"/>
-<text class="t" x="2265.0" y="915.0">labonair-theme</text>
-<rect class="n" x="2384.0" y="1146.0" width="190" height="34" rx="6"/>
-<text class="t" x="2479.0" y="1163.0">labonair-transfers</text>
-<rect class="n" x="1849.0" y="774.0" width="190" height="34" rx="6"/>
-<text class="t" x="1944.0" y="791.0">labonair-transfers-ssh</text>
-<rect class="n" x="1421.0" y="278.0" width="190" height="34" rx="6"/>
-<text class="t" x="1516.0" y="295.0">labonair-transfers-ui</text>
-<rect class="n" x="2063.0" y="774.0" width="190" height="34" rx="6"/>
-<text class="t" x="2158.0" y="791.0">labonair-ui-kit</text>
-<rect class="n" x="1849.0" y="1022.0" width="190" height="34" rx="6"/>
-<text class="t" x="1944.0" y="1039.0">labonair-updater</text>
-<rect class="n" x="1742.0" y="526.0" width="190" height="34" rx="6"/>
-<text class="t" x="1837.0" y="543.0">labonair-updater-ui</text>
+<text class="t" x="1516.0" y="791.0">labonair-panel</text>
 <rect class="n" x="1207.0" y="402.0" width="190" height="34" rx="6"/>
-<text class="t" x="1302.0" y="419.0">labonair-workspace</text>
+<text class="t" x="1302.0" y="419.0">labonair-panel-explorer</text>
+<rect class="n" x="1421.0" y="402.0" width="190" height="34" rx="6"/>
+<text class="t" x="1516.0" y="419.0">labonair-panel-git-graph</text>
+<rect class="n" x="1635.0" y="402.0" width="190" height="34" rx="6"/>
+<text class="t" x="1730.0" y="419.0">labonair-panel-scm</text>
+<rect class="n" x="1849.0" y="402.0" width="190" height="34" rx="6"/>
+<text class="t" x="1944.0" y="419.0">labonair-panel-snippets</text>
+<rect class="n" x="1956.0" y="898.0" width="190" height="34" rx="6"/>
+<text class="t" x="2051.0" y="915.0">labonair-persistence</text>
+<rect class="n" x="1635.0" y="774.0" width="190" height="34" rx="6"/>
+<text class="t" x="1730.0" y="791.0">labonair-secrets</text>
+<rect class="n" x="1421.0" y="650.0" width="190" height="34" rx="6"/>
+<text class="t" x="1516.0" y="667.0">labonair-settings</text>
+<rect class="n" x="1849.0" y="774.0" width="190" height="34" rx="6"/>
+<text class="t" x="1944.0" y="791.0">labonair-settings-content</text>
+<rect class="n" x="2170.0" y="898.0" width="190" height="34" rx="6"/>
+<text class="t" x="2265.0" y="915.0">labonair-settings-json</text>
+<rect class="n" x="2384.0" y="898.0" width="190" height="34" rx="6"/>
+<text class="t" x="2479.0" y="915.0">labonair-settings-macros</text>
+<rect class="n" x="2063.0" y="402.0" width="190" height="34" rx="6"/>
+<text class="t" x="2158.0" y="419.0">labonair-settings-ui</text>
+<rect class="n" x="1635.0" y="650.0" width="190" height="34" rx="6"/>
+<text class="t" x="1730.0" y="667.0">labonair-sftp</text>
+<rect class="n" x="1528.0" y="526.0" width="190" height="34" rx="6"/>
+<text class="t" x="1623.0" y="543.0">labonair-sftp-ssh</text>
+<rect class="n" x="1528.0" y="154.0" width="190" height="34" rx="6"/>
+<text class="t" x="1623.0" y="171.0">labonair-shell</text>
+<rect class="n" x="2063.0" y="774.0" width="190" height="34" rx="6"/>
+<text class="t" x="2158.0" y="791.0">labonair-snippets</text>
+<rect class="n" x="2598.0" y="898.0" width="190" height="34" rx="6"/>
+<text class="t" x="2693.0" y="915.0">labonair-snippets-host</text>
+<rect class="n" x="1742.0" y="526.0" width="190" height="34" rx="6"/>
+<text class="t" x="1837.0" y="543.0">labonair-snippets-ssh</text>
+<rect class="n" x="2277.0" y="774.0" width="190" height="34" rx="6"/>
+<text class="t" x="2372.0" y="791.0">labonair-ssh</text>
+<rect class="n" x="1849.0" y="650.0" width="190" height="34" rx="6"/>
+<text class="t" x="1944.0" y="667.0">labonair-ssh-transport</text>
+<rect class="n" x="2063.0" y="650.0" width="190" height="34" rx="6"/>
+<text class="t" x="2158.0" y="667.0">labonair-terminal</text>
+<rect class="n" x="2812.0" y="898.0" width="190" height="34" rx="6"/>
+<text class="t" x="2907.0" y="915.0">labonair-terminal-integration</text>
+<rect class="n" x="2491.0" y="774.0" width="190" height="34" rx="6"/>
+<text class="t" x="2586.0" y="791.0">labonair-theme</text>
+<rect class="n" x="1956.0" y="526.0" width="190" height="34" rx="6"/>
+<text class="t" x="2051.0" y="543.0">labonair-theme-ui</text>
+<rect class="n" x="3026.0" y="898.0" width="190" height="34" rx="6"/>
+<text class="t" x="3121.0" y="915.0">labonair-transfers</text>
+<rect class="n" x="2170.0" y="526.0" width="190" height="34" rx="6"/>
+<text class="t" x="2265.0" y="543.0">labonair-transfers-ssh</text>
+<rect class="n" x="2384.0" y="526.0" width="190" height="34" rx="6"/>
+<text class="t" x="2479.0" y="543.0">labonair-transfers-ui</text>
+<rect class="n" x="2277.0" y="650.0" width="190" height="34" rx="6"/>
+<text class="t" x="2372.0" y="667.0">labonair-ui-kit</text>
+<rect class="n" x="2705.0" y="774.0" width="190" height="34" rx="6"/>
+<text class="t" x="2800.0" y="791.0">labonair-updater</text>
+<rect class="n" x="2277.0" y="402.0" width="190" height="34" rx="6"/>
+<text class="t" x="2372.0" y="419.0">labonair-updater-ui</text>
+<rect class="n" x="1528.0" y="278.0" width="190" height="34" rx="6"/>
+<text class="t" x="1623.0" y="295.0">labonair-workspace</text>
 </svg>

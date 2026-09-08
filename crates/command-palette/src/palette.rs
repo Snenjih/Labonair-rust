@@ -1,7 +1,7 @@
 //! Command registry + the [`CommandPalette`] modal overlay view.
 //!
 //! * **Data** — a UI adapter for the injected, UI-free command registry
-//!   descriptors (id / title / section / contexts / optional shortcut) plus
+//!   descriptors (id / title / section / contexts / default binding) plus
 //!   pure filtering / search helpers.
 //! * **View** — [`CommandPalette`], a modal overlay opened with `Cmd+P`. Type
 //!   to filter, arrow keys to move, `Enter` to run, `Esc` to close. Commands
@@ -34,7 +34,6 @@ use labonair_command_palette_core::{
     toggle_pref_key, CommandContext, CommandDescriptor, CommandIcon, CommandId, CommandSubmenu,
     PaletteAction, SubmenuAction, SubmenuItem, SubmenuRegistry,
 };
-use labonair_keymap::ShortcutId;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Settings reads (T-block3: the palette reads its slice of the layered
@@ -230,8 +229,6 @@ pub struct Command {
     /// Empty = always available; otherwise only when the active context is
     /// listed (reference `filterByContext`).
     pub contexts: Vec<CommandContext>,
-    /// Right-aligned shortcut hint, if the command has a bound shortcut.
-    pub shortcut: Option<ShortcutId>,
     /// First owner-contributed default binding, used before the shell has
     /// published a runtime snapshot (for example in isolated palette tests).
     pub default_binding: Option<String>,
@@ -250,7 +247,6 @@ impl Command {
             section: descriptor.section,
             aliases: descriptor.aliases,
             contexts: descriptor.contexts,
-            shortcut: descriptor.shortcut,
             default_binding: descriptor
                 .default_bindings
                 .first()
@@ -1442,8 +1438,7 @@ mod tests {
             )),
             Command::from_descriptor(
                 CommandDescriptor::new(CommandId::SplitRight, "Split Pane Right", "Layout")
-                    .with_contexts(&[CommandContext::Terminal])
-                    .with_shortcut(ShortcutId::PaneSplitRight),
+                    .with_contexts(&[CommandContext::Terminal]),
             ),
             Command::from_descriptor(
                 CommandDescriptor::new(CommandId::GoToSymbol, "Go to Symbol", "Editor")
@@ -1480,7 +1475,6 @@ mod tests {
         let split = command(&commands, CommandId::SplitRight).expect("test command");
         assert_eq!(split.title, "Split Pane Right");
         assert_eq!(split.contexts, vec![CommandContext::Terminal]);
-        assert_eq!(split.shortcut, Some(ShortcutId::PaneSplitRight));
     }
 
     #[test]

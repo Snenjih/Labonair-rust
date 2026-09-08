@@ -4209,9 +4209,6 @@ dependencies = [
 [[package]]
 name = "labonair-command-palette-core"
 version = "0.1.0"
-dependencies = [
- "labonair-interaction-contracts",
-]
 
 [[package]]
 name = "labonair-command-palette-runtime"
@@ -4240,7 +4237,6 @@ name = "labonair-editor"
 version = "0.1.0"
 dependencies = [
  "labonair-command-palette-core",
- "labonair-interaction-contracts",
  "tree-sitter",
  "tree-sitter-bash",
  "tree-sitter-c",
@@ -4371,10 +4367,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "labonair-interaction-contracts"
-version = "0.1.0"
-
-[[package]]
 name = "labonair-keymap"
 version = "0.1.0"
 dependencies = [
@@ -4382,7 +4374,6 @@ dependencies = [
  "gpui",
  "jsonc-parser",
  "labonair-command-palette-core",
- "labonair-interaction-contracts",
  "serde_json",
  "tracing",
 ]
@@ -4558,7 +4549,6 @@ dependencies = [
  "jsonschema",
  "labonair-command-palette-core",
  "labonair-command-palette-runtime",
- "labonair-interaction-contracts",
  "labonair-settings-content",
  "labonair-settings-json",
  "labonair-settings-macros",

@@ -1,7 +1,7 @@
 # Registry Contracts
 
 **Status:** Normative
-**Version:** 1
+**Version:** 2
 
 Registries are the extension mechanism for a capability that has multiple
 providers or consumers and therefore needs discovery. A registry owns
@@ -34,9 +34,9 @@ The command registry contract is intentionally UI-free. Capability crates may
 depend on `labonair-command-palette-core` to publish metadata, while the
 palette UI depends on the contract and only renders its snapshots. Executable
 owner callbacks use the separate `labonair-command-palette-runtime` bridge;
-that bridge knows GPUI but not the shell or any product module. Stable shortcut
-identities live in `labonair-interaction-contracts`, so the command core,
-runtime, and keymap can depend on the same foundation without a cycle.
+that bridge knows GPUI but not the shell or any product module. `CommandId` in
+`labonair-command-palette-core` is the single command identity; keymap depends
+on that contract (not the reverse), so there is no cycle.
 
 ## Command registry
 
@@ -94,9 +94,9 @@ keymap module. The keymap system owns:
 - display formatting;
 - user overrides.
 
-Shortcut identity is defined by `labonair-interaction-contracts`, below both
-the keymap and command registries. This lets keymap publish its own command
-metadata without making the command contract depend back on keymap.
+Command identity is `CommandId` in `labonair-command-palette-core`, below the
+keymap runtime. Keymap depends on that contract to publish its own command
+metadata, so the command contract never depends back on keymap.
 
 The keymap system does not contain feature behavior. A feature owns the action
 it registers and supplies the stable command ID; keymap resolution only maps
@@ -126,9 +126,9 @@ in the adapter because they are richer than the keymap runtime's portable
 context identifiers; the adapter must not duplicate action-name aliases.
 
 Palette and other UI surfaces consume effective bindings by `CommandId`. The
-legacy `ShortcutId` table remains exported only for migration of older callers;
-it must not be used as the source for new command rows or keymap management
-views.
+pre-migration `ShortcutId` / `SHORTCUTS` cheat-sheet model was removed in
+R08-007; owner `CommandDescriptor` default bindings are the only default
+source, and `labonair-keymap`'s runtime owns resolution and conflicts.
 
 The legacy action name `settings::OpenShortcuts` is accepted only as a
 migration alias for existing user keymap files and resolves to the canonical

@@ -36,7 +36,6 @@ removal conditions.
 | `snippets` | Snippet domain, SQLite store, and local/SSH execution contracts | snippets module | Shared run events and the SSH executor contract are standalone; `labonair-snippets-ssh` supplies the concrete russh adapter. |
 | `snippets-ssh` | Concrete SSH snippet execution adapter | snippets module | Dedicated integration sibling | Receives `SshState`, `Database`, and `EventBus` through the snippet execution contract; no application facade. |
 | `gpui-ext` | Shared GPUI helpers | foundation | Keep dependency-free from features. |
-| `interaction-contracts` | Stable shortcut and interaction identities | foundation | Keep UI-free and below command/keymap modules; no feature state or behavior. |
 | `hosts-ui` | Host management UI and host-related dependencies | hosts module | Owns the native Hosts management window and consumes host, credential, snippet, database, and secret contracts directly; it emits typed open requests and operation failures publish through Notifications. |
 | `notifications-core` | UI-free notification registry and lifecycle | notifications module | New owner of retention, ordering, deduplication, read state, and structured metadata. |
 | `notifications` | GPUI notification adapter and statusbar dropdown | notifications module | Owns the statusbar notification item; shell only registers it. |
@@ -128,9 +127,9 @@ edges; the dependency verifier rejects every unlisted edge.
 - Initial command metadata providers now live in the owning workspace, terminal,
   editor, hosts, themes, and settings crates. The shell retains only native
   window/debug command registration and composition callbacks; it does not
-  provide feature rows. The stable shortcut identity now lives in
-  `interaction-contracts`, so keymap can publish its own command metadata
-  through the one-way keymap → command-core edge.
+  provide feature rows. `CommandId` in `command-palette-core` is the single
+  command identity, so keymap publishes its own command metadata through the
+  one-way keymap → command-core edge.
 - Workspace tab/pane commands, Git commands, and Snippet commands now also
   contribute owner-local provider metadata. The remaining shell palette rows
   are now absent; `Toggle Full Screen` is a shell-owned provider because it
@@ -151,9 +150,11 @@ edges; the dependency verifier rejects every unlisted edge.
   injects only the callback that opens the canonical Hosts picker; SSH/SFTP
   intent remains represented by the picker row's primary and secondary actions.
 - The dependency verifier now explicitly allows owner crates to consume the
-  UI-free command registry contract. `interaction-contracts` owns the stable
-  shortcut identity, so the former command-core → keymap edge is removed and
-  keymap owns its `Open Keymap` provider through the reverse one-way edge.
+  UI-free command registry contract. `CommandId` in `command-palette-core` is
+  the single command identity, so the former command-core → keymap edge is
+  removed and keymap owns its `Open Keymap` provider through the reverse
+  one-way edge. R08-007 deleted the now-unused `interaction-contracts` crate
+  (its only export, `ShortcutId`, is gone).
 - `settings::OpenShortcuts` is modeled as a compatibility alias for the
   canonical `zed::OpenKeymap` action. Validation accepts it, while discovery
   excludes it from visible command rows.
@@ -177,9 +178,11 @@ edges; the dependency verifier rejects every unlisted edge.
 - Owner providers now publish the migrated defaults for palette, editor search,
   workspace navigation, Zen mode, and shell debug actions. The old JSON asset
   remains as a compatibility layer until all default metadata is migrated.
-- The command palette, panel tooltips, and tab context-menu hints now render
-  from effective `CommandId` bindings. The old `ShortcutId` lookup is no longer
-  an active UI source and remains exported only for migration compatibility.
+- The command palette, panel tooltips, and tab context-menu hints render from
+  effective `CommandId` bindings. R08-007 deleted the pre-migration
+  `ShortcutId` / `SHORTCUTS` cheat-sheet model entirely; only the v1→v2
+  keybind-slug alias table in `settings::legacy_migrations::migrate_v2` remains
+  (string data, no `ShortcutId` type).
 - `keymap::file::KeymapDocument` now separates authoritative raw user source
   from derived parsing/validation state, providing the lossless foundation for
   the dedicated keymap management/editor surface.

@@ -26,11 +26,7 @@ pub use labonair_command_palette_core::{
     CommandRegistryError, CommandSubmenu, PaletteAction, SubmenuAction, SubmenuDescriptor,
     SubmenuItem, SubmenuProvider, SubmenuRegistry, SubmenuSecondary, SubmenuSnapshot,
 };
-pub use labonair_keymap::{
-    effective_binding, effective_keys, find_conflict, keystroke_tokens, resolve_conflict, shortcut,
-    shortcut_from_slug, shortcut_keys, shortcut_slug, shortcuts, Conflict, KeybindMap, Shortcut,
-    ShortcutGroup, ShortcutId, RESERVED_ACCELERATORS,
-};
+pub use labonair_keymap::keystroke_tokens;
 
 /// GPUI-facing publication of the effective keymap. The keymap domain stays
 /// UI-free; this wrapper is an adapter consumed by palette/statusbar views.

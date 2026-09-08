@@ -8,8 +8,6 @@
 
 use std::fmt;
 
-use labonair_interaction_contracts::ShortcutId;
-
 pub mod command_provider;
 
 /// The surface that is active in the focused tab.
@@ -283,7 +281,6 @@ pub struct CommandDescriptor {
     pub section: String,
     pub aliases: Vec<String>,
     pub contexts: Vec<CommandContext>,
-    pub shortcut: Option<ShortcutId>,
     pub icon: CommandIcon,
     pub submenu: Option<CommandSubmenu>,
     pub default_bindings: Vec<DefaultBinding>,
@@ -297,7 +294,6 @@ impl CommandDescriptor {
             section: section.into(),
             aliases: Vec::new(),
             contexts: Vec::new(),
-            shortcut: None,
             icon: CommandIcon::Command,
             submenu: None,
             default_bindings: Vec::new(),
@@ -311,11 +307,6 @@ impl CommandDescriptor {
 
     pub fn with_aliases(mut self, aliases: &[&str]) -> Self {
         self.aliases = aliases.iter().map(|alias| (*alias).to_string()).collect();
-        self
-    }
-
-    pub fn with_shortcut(mut self, shortcut: ShortcutId) -> Self {
-        self.shortcut = Some(shortcut);
         self
     }
 
@@ -430,13 +421,6 @@ impl CommandRegistry {
             .iter()
             .filter(|command| command.is_available_in(context))
             .collect()
-    }
-
-    pub fn command_for_shortcut(&self, shortcut: ShortcutId) -> Option<CommandId> {
-        self.commands
-            .iter()
-            .find(|command| command.shortcut == Some(shortcut))
-            .map(|command| command.id)
     }
 }
 

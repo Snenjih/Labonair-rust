@@ -1,7 +1,7 @@
 # Labonair Architecture
 
 **Status:** Normative target architecture
-**Version:** 3
+**Version:** 4
 **Related:** [`product.md`](product.md), [`capabilities.md`](capabilities.md), [`modules.md`](modules.md), [`registries.md`](registries.md), [`repository-layout.md`](repository-layout.md), [`feature-lifecycle.md`](feature-lifecycle.md)
 
 ## 1. Architecture objective
@@ -46,13 +46,11 @@ Feature modules
   keymap, notifications, command-palette, settings, ai
         ↓
 Foundation and platform services
-  ui-kit, gpui-ext, interaction-contracts, filesystem, secrets, persistence
+  ui-kit, gpui-ext, filesystem, secrets, persistence
 ```
 
 Dependencies point downward. A feature may depend on a foundation contract, but a feature must not depend on the shell. Cross-feature behavior uses a typed contract, registry, or event; it does not reach into another feature's private state.
 
-`labonair-interaction-contracts` is a lower-level UI-free identity foundation.
-It owns stable `ShortcutId` values and has no feature dependencies.
 `labonair-command-palette-core` is a contract-level registry crate even though
 it belongs to the Command Palette module. Capability crates may depend on this
 UI-free contract to contribute command metadata; they must not depend on the
@@ -96,7 +94,6 @@ and are never lost through a deserialize/serialize round trip.
 | Crate | Responsibility |
 |---|---|
 | `labonair-gpui-ext` | GPUI helpers and small shared primitives. |
-| `labonair-interaction-contracts` | Stable UI-free identities shared by interactive feature modules. |
 | `labonair-ui-kit` | Buttons, inputs, lists, dropdowns, dialogs, icons, badges, disclosure, tabs, and other reusable components. |
 | `labonair-filesystem` | Local filesystem abstractions and watchers. |
 | `labonair-errors` | Structured, UI-free domain error contract and recovery metadata. |

@@ -27,9 +27,6 @@ ALLOWED = {
     "labonair-gpui-ext": set(),
     # rule 5: only gpui, gpui-component, theme, gpui-ext.
     "labonair-ui-kit": {"labonair-theme", "labonair-gpui-ext"},
-    # UI-free identity contracts shared by commands and keymap. Keeping this
-    # below both feature crates prevents a command/keymap dependency cycle.
-    "labonair-interaction-contracts": set(),
     # Theme metadata also contributes palette commands through the shared
     # command contract; it does not depend on the palette UI.
     "labonair-theme": {"labonair-command-palette-core"},
@@ -76,10 +73,11 @@ ALLOWED = {
     "labonair-transfers-ssh": {
         "labonair-events", "labonair-ssh-transport", "labonair-transfers",
     },
-    # UI-free shortcut identities, keymap file data/defaults, and conflict
-    # resolution. GPUI publication remains in the palette/shell adapters.
+    # Module-owned keymap runtime: default/user layer composition, context
+    # resolution, conflict detection, and the lossless file editor model, keyed
+    # on `CommandId`. GPUI publication remains in the palette/shell adapters.
     "labonair-keymap": {
-        "labonair-interaction-contracts", "labonair-command-palette-core",
+        "labonair-command-palette-core",
     },
     # Keymap presentation is a real sibling boundary: it consumes the
     # keymap-owned snapshot and shared UI/theme contracts, but owns no
@@ -90,7 +88,7 @@ ALLOWED = {
         "labonair-notifications",
         "labonair-theme", "labonair-ui-kit",
     },
-    "labonair-command-palette-core": {"labonair-interaction-contracts"},
+    "labonair-command-palette-core": set(),
     "labonair-command-palette-runtime": {"labonair-command-palette-core"},
     # R08-005: Theme application policy — reads the layered settings values and
     # persists picker selections into `ThemeStore`, plus the palette
@@ -328,7 +326,7 @@ ALLOWED = {
         "labonair-ssh-transport",
     },
     "labonair-editor": {
-        "labonair-command-palette-core", "labonair-interaction-contracts",
+        "labonair-command-palette-core",
     },
     "labonair-ai": {"labonair-filesystem"},
 
@@ -350,7 +348,6 @@ ALLOWED = {
         "labonair-settings-content", "labonair-settings-macros",
         "labonair-settings-json",
         "labonair-command-palette-core", "labonair-command-palette-runtime",
-        "labonair-interaction-contracts",
     },
 }
 

@@ -242,25 +242,17 @@ pub(crate) fn attach_action_handlers(
 /// command is limited to composition or a native-window action.
 const ALWAYS: &[CommandContext] = &[];
 
-#[allow(clippy::too_many_arguments)]
 fn command_descriptor(
     id: CommandId,
     title: &str,
     section: &str,
     contexts: &[CommandContext],
-    shortcut: Option<labonair_keymap::ShortcutId>,
     icon: CommandIcon,
     submenu: Option<CommandSubmenu>,
 ) -> CommandDescriptor {
     let mut descriptor = CommandDescriptor::new(id, title, section)
         .with_contexts(contexts)
         .with_icon(icon);
-    if let Some(shortcut) = shortcut {
-        descriptor = descriptor.with_shortcut(shortcut);
-        let context = contexts.first().copied().filter(|_| contexts.len() == 1);
-        descriptor =
-            descriptor.with_default_binding(labonair_keymap::shortcut(shortcut).binding, context);
-    }
     if let Some(submenu) = submenu {
         descriptor = descriptor.with_submenu(submenu);
     }
@@ -376,7 +368,6 @@ fn compose_builtin_commands(
             "Debug: Open Component Gallery",
             "Application",
             always,
-            None,
             CommandIcon::Palette,
             None,
         ),
@@ -393,7 +384,6 @@ fn compose_builtin_commands(
             "Toggle Full Screen",
             "View",
             always,
-            None,
             CommandIcon::Square,
             None,
         ),
