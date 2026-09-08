@@ -1411,6 +1411,7 @@ where
             .inset_0()
             .flex()
             .justify_center()
+            .items_start()
             .pt(top)
             .bg(modal_scrim())
             .track_focus(&self.focus)

@@ -123,7 +123,7 @@ use labonair_settings::content::terminal::CursorStyle as PrefCursorStyle;
 use labonair_settings::{GeneralSettings, Settings as _, TerminalSettings};
 use labonair_ui_kit::{
     context_menu, h_stack, indicator, ButtonSize, ButtonVariant, IconName, IndicatorSize, MenuItem,
-    Palette,
+    Palette, SubmenuHoverSource,
 };
 
 /// Interval for draining backend SSH events into the workspace.
@@ -247,10 +247,17 @@ const SESSION_SAVE_INTERVAL: Duration = Duration::from_secs(30);
 
 /// Thickness of a split-divider resize handle.
 const HANDLE: f32 = 6.0;
-/// Height of `AppShell`'s overlay titlebar. The tab strip now lives inside it,
-/// so tab-menu / new-tab-menu anchors (captured in window coords) are shifted
-/// up by this much to land in the `Workspace`'s own coordinate space.
+/// Height of `AppShell`'s titlebar. The tab strip lives inside it, so the
+/// tab / new-tab menus (rendered via the window-anchored `context_menu`
+/// primitive) drop from the bar's bottom edge instead of the pointer's `y`.
 const TITLEBAR_OFFSET: f32 = 40.0;
+
+/// The new-tab dropdown's two host submenus.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum NewTabSubmenu {
+    Ssh,
+    Sftp,
+}
 
 /// The layered `terminal` settings slice, or its all-defaults value if the
 /// `SettingsStore` global was never installed (headless test).
@@ -401,6 +408,10 @@ pub struct Workspace {
     context_menu: Option<(u64, gpui::Point<gpui::Pixels>)>,
     /// Anchor position of the open "+" new-tab dropdown, if any.
     new_tab_menu: Option<gpui::Point<gpui::Pixels>>,
+    /// Which of the new-tab dropdown's `SSH ▸` / `SFTP ▸` submenus is open.
+    /// Held here (not as pure `:hover` state) so the two flyouts are mutually
+    /// exclusive and can't overlap. Only meaningful while `new_tab_menu`.
+    new_tab_submenu: Option<NewTabSubmenu>,
     /// Tab whose title is being edited inline: `(tab id, buffer)`.
     rename_tab: Option<(u64, String)>,
     rename_focus: FocusHandle,
@@ -579,6 +590,7 @@ impl Workspace {
             confirm_close: None,
             context_menu: None,
             new_tab_menu: None,
+            new_tab_submenu: None,
             rename_tab: None,
             rename_focus: cx.focus_handle(),
             focus_handle: cx.focus_handle(),
@@ -3944,8 +3956,7 @@ impl Workspace {
             .on_mouse_down(
                 MouseButton::Right,
                 cx.listener(move |this, ev: &MouseDownEvent, _window, cx| {
-                    this.context_menu =
-                        Some((id, ev.position - point(px(0.0), px(TITLEBAR_OFFSET))));
+                    this.context_menu = Some((id, point(ev.position.x, px(TITLEBAR_OFFSET))));
                     cx.notify();
                 }),
             )
@@ -3992,7 +4003,8 @@ impl Workspace {
             .on_mouse_down(
                 MouseButton::Right,
                 cx.listener(|this, ev: &MouseDownEvent, _w, cx| {
-                    this.new_tab_menu = Some(ev.position - point(px(0.0), px(TITLEBAR_OFFSET)));
+                    this.new_tab_menu = Some(point(ev.position.x, px(TITLEBAR_OFFSET)));
+                    this.new_tab_submenu = None;
                     this.context_menu = None;
                     cx.notify();
                 }),
@@ -4024,8 +4036,8 @@ impl Workspace {
                     .on_mouse_down(
                         MouseButton::Left,
                         cx.listener(|this, ev: &MouseDownEvent, _window, cx| {
-                            this.new_tab_menu =
-                                Some(ev.position - point(px(0.0), px(TITLEBAR_OFFSET)));
+                            this.new_tab_menu = Some(point(ev.position.x, px(TITLEBAR_OFFSET)));
+                            this.new_tab_submenu = None;
                             this.context_menu = None;
                             cx.notify();
                         }),
@@ -4043,6 +4055,35 @@ impl Workspace {
     ) -> impl IntoElement {
         let recent = self.recent_host_picker_rows(cx, 5);
         let view = cx.entity();
+        let open_sub = self.new_tab_submenu;
+
+        // Hover wiring for a controlled `SSH ▸` / `SFTP ▸` submenu: entering
+        // the trigger or its flyout opens that one (which closes the other,
+        // since only one id is held); leaving the flyout closes it. Leaving
+        // the trigger is deliberately ignored — the pointer is usually on its
+        // way into the flyout.
+        let submenu_cb = |which: NewTabSubmenu| {
+            let v = view.clone();
+            move |src: SubmenuHoverSource, hovered: bool, _w: &mut Window, cx: &mut App| {
+                v.update(cx, |this, cx| {
+                    let changed = if hovered {
+                        let was = this.new_tab_submenu;
+                        this.new_tab_submenu = Some(which);
+                        was != Some(which)
+                    } else if src == SubmenuHoverSource::Flyout
+                        && this.new_tab_submenu == Some(which)
+                    {
+                        this.new_tab_submenu = None;
+                        true
+                    } else {
+                        false
+                    };
+                    if changed {
+                        cx.notify();
+                    }
+                });
+            }
+        };
 
         // Recent-host rows for one protocol submenu (`ssh == false` → SFTP),
         // followed by a separator and the protocol's "All hosts…" entry.
@@ -4141,8 +4182,18 @@ impl Workspace {
                     }
                 }),
             MenuItem::separator(),
-            MenuItem::submenu("nt-ssh", "SSH", host_items(true)).icon(IconName::Server),
-            MenuItem::submenu("nt-sftp", "SFTP", host_items(false)).icon(IconName::Cloud),
+            MenuItem::submenu("nt-ssh", "SSH", host_items(true))
+                .icon(IconName::Server)
+                .submenu_control(
+                    open_sub == Some(NewTabSubmenu::Ssh),
+                    submenu_cb(NewTabSubmenu::Ssh),
+                ),
+            MenuItem::submenu("nt-sftp", "SFTP", host_items(false))
+                .icon(IconName::Cloud)
+                .submenu_control(
+                    open_sub == Some(NewTabSubmenu::Sftp),
+                    submenu_cb(NewTabSubmenu::Sftp),
+                ),
         ];
 
         let dismiss = {

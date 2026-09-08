@@ -41,6 +41,22 @@ use crate::palette::Palette;
 
 type Handler = Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>;
 
+/// Which part of a controlled submenu a hover transition came from. The caller
+/// needs the distinction: leaving the *trigger* must not close the submenu
+/// (the pointer may be travelling into the flyout), while leaving the *flyout*
+/// should.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SubmenuHoverSource {
+    /// The `Label ▸` row in the parent menu.
+    Trigger,
+    /// The open flyout panel.
+    Flyout,
+}
+
+/// Hover callback for a *controlled* submenu — `(source, hovered)`: `hovered`
+/// is `true` on pointer-enter, `false` on pointer-leave.
+type SubmenuHover = Rc<dyn Fn(SubmenuHoverSource, bool, &mut Window, &mut App)>;
+
 /// Boxed click handler — the shape `MenuItem::on_click` accepts once boxed.
 /// Exported so call sites can name it in helper signatures (clippy
 /// `type_complexity`).
@@ -75,7 +91,19 @@ enum Kind {
         label: SharedString,
         icon: Option<IconName>,
         items: Vec<MenuItem>,
+        /// `None` → the flyout is revealed by pure CSS `:hover` (fine for a
+        /// lone submenu). `Some` → the caller owns "which submenu is open" as
+        /// explicit state: the flyout is only built when `open`, and hover
+        /// transitions are reported back through the callback. Two adjacent
+        /// controlled submenus can't both latch open, since the caller holds a
+        /// single open-id.
+        control: Option<SubmenuControl>,
     },
+}
+
+struct SubmenuControl {
+    open: bool,
+    on_hover: SubmenuHover,
 }
 
 impl MenuItem {
@@ -122,8 +150,29 @@ impl MenuItem {
                 label: label.into(),
                 icon: None,
                 items,
+                control: None,
             },
         }
+    }
+
+    /// Put this submenu under caller-owned open/close state instead of pure
+    /// `:hover`. `open` builds (and shows) the flyout; `on_hover` fires `true`
+    /// when the pointer enters the trigger row or the open flyout and `false`
+    /// when it leaves. The caller keeps one "open submenu" id, so sibling
+    /// submenus can't both open and their flyouts can't overlap. No-op on
+    /// non-submenu items.
+    pub fn submenu_control(
+        mut self,
+        open: bool,
+        on_hover: impl Fn(SubmenuHoverSource, bool, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        if let Kind::Submenu { control, .. } = &mut self.kind {
+            *control = Some(SubmenuControl {
+                open,
+                on_hover: Rc::new(on_hover),
+            });
+        }
+        self
     }
 
     /// Leading icon.
@@ -290,35 +339,54 @@ fn render_item(item: MenuItem, c: Palette, depth: usize) -> AnyElement {
             label,
             icon,
             items,
+            control,
         } => {
             let group = SharedString::from(format!("ctxsub-{id}-{depth}"));
-            let panel = div()
-                .absolute()
-                .left_full()
-                // A small downward offset so the flyout reads as hanging off
-                // the trigger row rather than capping it. Kept flush on the
-                // left edge (no `ml` gap) so the pointer can cross from the
-                // trigger into the panel without passing over dead space —
-                // otherwise `group_hover` drops and the panel vanishes.
-                .top(c.space(4.0))
-                .invisible()
-                .group_hover(group.clone(), |s| s.visible())
-                // Once open, keep it open while the pointer is over the panel
-                // itself (the trigger's `group` hitbox no longer covers it).
-                .hover(|s| s.visible())
-                .flex()
-                .flex_col()
-                .min_w(c.space(160.0))
-                .p(c.space(4.0))
-                .rounded_md()
-                .bg(c.popover)
-                .border_1()
-                .border_color(c.border)
-                .shadow_lg()
-                .children(items.into_iter().map(|it| render_item(it, c, depth + 1)));
-            div()
+            let flyout_id = SharedString::from(format!("ctxsubfly-{id}-{depth}"));
+
+            // In controlled mode the flyout only exists while the caller says
+            // it's open; otherwise it's always in the tree and revealed by CSS.
+            let show_panel = control.as_ref().map(|c| c.open).unwrap_or(true);
+            let panel = show_panel.then(|| {
+                let panel = div()
+                    .id(flyout_id)
+                    .absolute()
+                    .left_full()
+                    // A small downward offset so the flyout reads as hanging
+                    // off the trigger row rather than capping it.
+                    .top(c.space(4.0))
+                    .flex()
+                    .flex_col()
+                    .min_w(c.space(160.0))
+                    .p(c.space(4.0))
+                    .rounded_md()
+                    .bg(c.popover)
+                    .border_1()
+                    .border_color(c.border)
+                    .shadow_lg()
+                    .children(items.into_iter().map(|it| render_item(it, c, depth + 1)));
+                match &control {
+                    Some(ctrl) => {
+                        let on_hover = ctrl.on_hover.clone();
+                        // Controlled open/close doesn't depend on an unbroken
+                        // hover chain, so the flyout can sit clear of the
+                        // parent card instead of flush against it.
+                        panel.ml(c.space(6.0)).occlude().on_hover(move |h, w, cx| {
+                            on_hover(SubmenuHoverSource::Flyout, *h, w, cx)
+                        })
+                    }
+                    // CSS-hover mode: flush left edge (no `ml`) so the pointer
+                    // crosses from the trigger into the panel without passing
+                    // over dead space, which would drop `group_hover`.
+                    None => panel
+                        .invisible()
+                        .group_hover(group.clone(), |s| s.visible())
+                        .hover(|s| s.visible()),
+                }
+            });
+
+            let mut row = div()
                 .id(id)
-                .group(group)
                 .relative()
                 .flex()
                 .items_center()
@@ -336,9 +404,15 @@ fn render_item(item: MenuItem, c: Palette, depth: usize) -> AnyElement {
                     div()
                         .ml_auto()
                         .child(IconName::ChevronRight.svg(c.muted).size(px(14.0))),
-                )
-                .child(panel)
-                .into_any_element()
+                );
+            row = match control {
+                Some(ctrl) => {
+                    let on_hover = ctrl.on_hover.clone();
+                    row.on_hover(move |h, w, cx| on_hover(SubmenuHoverSource::Trigger, *h, w, cx))
+                }
+                None => row.group(group),
+            };
+            row.children(panel).into_any_element()
         }
     }
 }

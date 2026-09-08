@@ -74,7 +74,7 @@ mod tree_row;
 pub use banner::{banner, Banner, Severity};
 pub use button::{button, button_no_hover, ButtonSize, ButtonVariant, DISABLED_OPACITY};
 pub use checkbox::{checkbox, Checkbox};
-pub use context_menu::{context_menu, popover_menu, MenuClick, MenuItem};
+pub use context_menu::{context_menu, popover_menu, MenuClick, MenuItem, SubmenuHoverSource};
 pub use density::Density;
 pub use disclosure::disclosure;
 pub use divider::{divider, Axis};

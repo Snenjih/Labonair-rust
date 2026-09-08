@@ -90,8 +90,8 @@ pub struct SettingsView {
     /// Every top-level page (`crate::pages::pages()`), in `AREAS` order.
     pub(crate) pages: Vec<SettingsPage>,
     /// Top-level sidebar rows whose sub-section list is expanded
-    /// (`docs/architecture.md` §8.3 deviation). The active area is expanded
-    /// on navigation.
+    /// (`docs/architecture.md` §8.3 deviation). Toggled only by the row's
+    /// disclosure chevron; selecting a category does not expand it.
     pub(crate) expanded_areas: HashSet<usize>,
     /// A section label the sidebar asked to scroll the content area to,
     /// consumed by `render_generated_body` once the section rows are built.
@@ -405,7 +405,8 @@ impl SettingsView {
     pub(crate) fn go_to_area(&mut self, i: usize, cx: &mut Context<Self>) {
         self.active_area = i;
         self.active_subpage = None;
-        self.expanded_areas.insert(i);
+        // Selecting a top-level category does not auto-expand its
+        // sub-section list — that is the disclosure chevron's job.
         self.search.clear();
         cx.notify();
     }
@@ -1043,36 +1044,53 @@ impl Render for SettingsView {
                     } else {
                         IconName::ChevronRight
                     };
-                    let toggle: gpui::AnyElement = if has_sections {
-                        button(
-                            SharedString::from(format!("area-tw-{}", area.key)),
-                            c,
-                            ButtonVariant::Ghost,
-                            ButtonSize::IconXs,
-                        )
-                        .child(chevron.svg(c.sidebar_fg).size(px(12.0)))
-                        .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
-                            this.toggle_area_expanded(i, cx);
-                        }))
-                        .into_any_element()
-                    } else {
-                        div().w(px(20.0)).flex_shrink_0().into_any_element()
-                    };
-                    let row = h_stack().items_center().gap_0p5().child(toggle).child(
-                        div().flex_1().min_w_0().child(
-                            ListItem::new(
-                                SharedString::from(area.key),
-                                c.sidebar_fg,
-                                c.muted,
-                                c.accent,
-                            )
-                            .selected(is_active)
+                    // One cohesive row that reads as a single button: a
+                    // full-width hover/selected fill spanning both the
+                    // disclosure chevron and the label. The chevron and the
+                    // label are separate, non-overlapping click zones — the
+                    // chevron only toggles the sub-section list, the label
+                    // navigates to the area without expanding it.
+                    let mut toggle = div()
+                        .id(SharedString::from(format!("area-toggle-{}", area.key)))
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .flex_shrink_0()
+                        .w(px(24.0))
+                        .h(px(28.0))
+                        .rounded_sm();
+                    if has_sections {
+                        toggle = toggle
+                            .cursor_pointer()
+                            .hover(|s| s.bg(c.muted_bg))
+                            .child(chevron.svg(c.sidebar_fg).size(px(12.0)))
                             .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
-                                this.go_to_area(i, cx);
-                            }))
-                            .child(SharedString::from(area.title)),
-                        ),
-                    );
+                                this.toggle_area_expanded(i, cx);
+                            }));
+                    }
+                    let row = div()
+                        .flex()
+                        .items_center()
+                        .w_full()
+                        .pr(px(8.0))
+                        .rounded_sm()
+                        .text_size(px(12.0))
+                        .text_color(c.sidebar_fg)
+                        .when(is_active, |d| d.bg(c.accent))
+                        .when(!is_active, |d| d.hover(|s| s.bg(c.accent)))
+                        .child(toggle)
+                        .child(
+                            div()
+                                .id(SharedString::from(format!("area-{}", area.key)))
+                                .flex_1()
+                                .min_w_0()
+                                .py(px(6.0))
+                                .cursor_pointer()
+                                .child(SharedString::from(area.title))
+                                .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                                    this.go_to_area(i, cx);
+                                })),
+                        );
                     let sub = (expanded && has_sections).then(|| {
                         v_stack()
                             .gap_0p5()
@@ -1080,14 +1098,15 @@ impl Render for SettingsView {
                             .children(sections.into_iter().map(|label| {
                                 div()
                                     .id(SharedString::from(format!("sec-{i}-{label}")))
+                                    .w_full()
                                     .pl(px(30.0))
-                                    .pr_2()
-                                    .py(px(3.0))
+                                    .pr(px(8.0))
+                                    .py(px(5.0))
                                     .rounded_sm()
                                     .text_size(px(11.5))
                                     .text_color(c.muted)
                                     .cursor_pointer()
-                                    .hover(|s| s.text_color(c.sidebar_fg))
+                                    .hover(|s| s.bg(c.accent).text_color(c.sidebar_fg))
                                     .child(SharedString::from(label))
                                     .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
                                         this.go_to_section(i, label, cx);
@@ -1121,26 +1140,25 @@ impl Render for SettingsView {
 
         let header = self.render_header(&c, cx);
 
-        let content = div().flex_1().min_h_0().flex().child(sidebar).child(
-            div()
-                .id("settings-scroll")
-                .flex_1()
-                .min_w_0()
-                .flex()
-                .flex_col()
-                .items_center()
-                .p_4()
-                .overflow_y_scroll()
-                .track_scroll(&self.content_scroll)
-                .child(
-                    div()
-                        .w_full()
-                        .max_w(px(580.0))
-                        .flex()
-                        .flex_col()
-                        .child(body),
-                ),
-        );
+        // `body` is the content-area scroll container itself (see
+        // `render_generated_body`) — it owns `track_scroll` so that
+        // `ScrollHandle::scroll_to_item` can address each section row
+        // directly. This wrapper only centres it and caps its width.
+        let content = div()
+            .flex_1()
+            .min_h_0()
+            .flex()
+            .child(sidebar)
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .min_h_0()
+                    .flex()
+                    .flex_col()
+                    .items_center()
+                    .child(body),
+            );
 
         let card = div()
             .id("settings-card")

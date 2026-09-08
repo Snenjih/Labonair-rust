@@ -416,15 +416,15 @@ impl SettingsView {
         let PageBody::Generated(items) = self.active_body();
         let items: Vec<SettingsPageItemOwned> =
             items.iter().map(SettingsPageItemOwned::from).collect();
-        let leading = if area.key == "general" && self.active_subpage.is_none() {
-            Some(self.render_about_hero(c, cx))
-        } else {
-            None
-        };
-
         let mut rows: Vec<gpui::AnyElement> = Vec::new();
-        // Row index of each section header, so a sidebar sub-entry click
-        // (`scroll_to_section`, §8.3) or a search jump can scroll to it.
+        if area.key == "general" && self.active_subpage.is_none() {
+            rows.push(self.render_about_hero(c, cx));
+        }
+
+        // Direct-child index of each section header within the scroll
+        // container below — this is what `ScrollHandle::scroll_to_item`
+        // addresses, so a sidebar sub-entry click (`scroll_to_section`) or a
+        // search jump can scroll the content to it.
         let mut section_rows: Vec<(usize, &'static str)> = Vec::new();
         // T19-007: a search jump asks to land on a specific field's row
         // (`pending_scroll`) — recorded here so it can be scrolled to once
@@ -489,20 +489,34 @@ impl SettingsView {
             }
         }
 
-        if let Some(target) = self.scroll_to_section.take() {
-            if let Some((row, _)) = section_rows.iter().find(|(_, l)| *l == target) {
-                scroll_to_row = Some(*row);
-            }
-        }
         if let Some(row) = scroll_to_row {
             self.content_scroll.scroll_to_item(row);
             self.pending_scroll = None;
         }
+        if let Some(target) = self.scroll_to_section.take() {
+            if let Some((row, _)) = section_rows.iter().find(|(_, l)| *l == target) {
+                // Pin the section header to the top of the content area.
+                self.content_scroll.scroll_to_top_of_item(*row);
+            }
+        }
 
-        // T20-001: shared `v_stack` layout helper.
-        v_stack()
-            .children(leading)
-            .child(v_stack().gap_2().children(rows))
+        // The content-area scroll container: section headers and field rows
+        // are its direct children so `ScrollHandle::scroll_to_item` can
+        // address them by index. `track_scroll` lives here, not on an outer
+        // wrapper, for the same reason.
+        div()
+            .id("settings-scroll")
+            .flex_1()
+            .min_h_0()
+            .w_full()
+            .max_w(px(580.0))
+            .flex()
+            .flex_col()
+            .gap_2()
+            .p_4()
+            .overflow_y_scroll()
+            .track_scroll(&self.content_scroll)
+            .children(rows)
             .into_any_element()
     }
 
