@@ -275,6 +275,8 @@ impl ThemeRegistry {
     /// This is an extension adapter, not part of the current static catalog.
     /// Malformed / unreadable files are skipped and returned as warnings; the
     /// registry is never left empty (the built-in family always remains).
+    ///
+    /// Deferred boundary (R08-011): retained under test, not wired to any UI.
     pub fn load_user_themes(&mut self, dir: &Path) -> Vec<String> {
         self.families.retain(|f| f.builtin);
         let mut warnings = Vec::new();

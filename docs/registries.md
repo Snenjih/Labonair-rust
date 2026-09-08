@@ -164,9 +164,11 @@ timestamp, actions, and deduplication metadata. Records remain available until
 dismissed or cleared and expose read state for the statusbar badge. It does not
 render toasts, run timers, or contain feature-specific error handling.
 
-The GPUI notification adapter may temporarily bridge callback actions for
-existing callers. New actions must use stable IDs and be interpreted by the
-owning module or command registry.
+The GPUI notification adapter stores no closures. R08-009 removed the
+callback-action compatibility path because no feature produced one. An
+actionable notification returns as a bounded task (R08-010) with a stable
+action id + typed payload dispatched through the owning module or command
+registry.
 
 User-visible errors are notifications too. A feature may keep an internal
 error state for retry logic, but it must not render a second feature-local

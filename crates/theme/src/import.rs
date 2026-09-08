@@ -1,11 +1,16 @@
 //! User theme import/export (T02-003).
 //!
-//! Labonair lets a user import a theme as a JSON file, export the active theme,
-//! and keep a list of imported themes. This module owns the *conversion* between
-//! that on-disk JSON format ([`ThemeFile`]) and the typed [`Theme`] the renderer
-//! consumes. Persistence (writing the files, listing them, deleting user
-//! themes) lives in the theme capability registry — this module only parses and
-//! converts, it never executes anything from a theme file.
+//! **Deferred boundary (R08-011).** This module is retained under test but is
+//! not wired to any product surface: no palette action, Settings field, or
+//! file-watch reaches `ThemeStore::import_theme_file{,_variant}`,
+//! `reload_user_themes`, or `ThemeRegistry::load_user_themes`. The current
+//! product contract ships deterministic built-in catalogs only
+//! (`docs/capabilities.md`). Activation needs a concrete user flow owned by
+//! `labonair-theme-ui`; removal is safe if that flow is rejected.
+//!
+//! It owns the *conversion* between the on-disk JSON format ([`ThemeFile`])
+//! and the typed [`Theme`] the renderer consumes. It never executes anything
+//! from a theme file.
 //!
 //! # JSON schema (compatible with Labonair's existing theme files)
 //!

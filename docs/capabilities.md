@@ -54,6 +54,7 @@ product ownership boundaries:
 | Duplicate feature-local operation-error banners | Remove | Operation failures publish notifications; actionable dialogs and field validation remain only where a decision or correction is required. |
 | Jump-host primary menu/badge | Remove as a separate surface; keep the capability | Jump hosts remain part of SSH connection configuration and execution; no dedicated statusbar item is registered. |
 | Remote theme/icon-theme downloads | Defer | Only built-in, explicitly registered themes are supported until an extension workflow has a concrete owner and user flow. |
+| User theme-file import/export (local `.json`) | Defer — code retained, not wired (R08-011) | `labonair-theme` keeps `import.rs`, `ThemeStore::import_theme_file{,_variant}`, `reload_user_themes`, and `ThemeRegistry::load_user_themes` under test, but no palette action, Settings field, or file-watch exposes them. Activation needs a concrete user flow + owner (`labonair-theme-ui`); removal is safe if that flow is rejected. |
 | Static shell-wide command tables | Remove | Commands and submenus are contributed by owning modules through the command registry. |
 | Full Zed fork or greenfield rewrite | Reject for the current migration | Continue the standalone Rust implementation and use Zed only as a clean-room reference. |
 

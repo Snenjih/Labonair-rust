@@ -392,6 +392,8 @@ impl ThemeStore {
     /// Rescan the user themes directory and rebuild the registry. If the active
     /// family survived the rescan it is re-resolved live; if it vanished the
     /// store falls back to the built-in themes. Returns non-fatal load warnings.
+    ///
+    /// Deferred boundary (R08-011): retained under test, not wired to any UI.
     pub fn reload_user_themes(&mut self, dir: &Path, cx: &mut Context<Self>) -> Vec<String> {
         let warnings = self.registry.load_user_themes(dir);
         if let Some(fam) = self.active_family.clone() {
@@ -559,6 +561,8 @@ impl ThemeStore {
     /// activates it. The file is validated first; a half-parsed theme is never
     /// set active. Returns any non-fatal warnings (unknown tokens, unparseable
     /// color values that fell back to defaults).
+    ///
+    /// Deferred boundary (R08-011): retained under test, not wired to any UI.
     pub fn import_theme_file(
         &mut self,
         file: ThemeFile,

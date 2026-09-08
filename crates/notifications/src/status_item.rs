@@ -237,7 +237,7 @@ impl StatusItem for NotificationsStatusItem {
                                 );
                             }
                         }
-                        let mut row = ListItem::new(
+                        let row = ListItem::new(
                             SharedString::from(format!("bar-notification-{id}")),
                             fg,
                             muted,
@@ -255,30 +255,6 @@ impl StatusItem for NotificationsStatusItem {
                         })
                         .extra(move |row| row.border_b_1().border_color(border))
                         .child(message);
-                        if expanded {
-                            if let Some(label) = snapshot.action_label.clone() {
-                                let action_view = view.clone();
-                                let action = labonair_ui_kit::button_no_hover(
-                                    SharedString::from(format!("bar-notification-action-{id}")),
-                                    palette,
-                                    ButtonVariant::Ghost,
-                                    ButtonSize::Xs,
-                                )
-                                .text_color(accent)
-                                .child(label)
-                                .on_click(
-                                    move |_: &ClickEvent, window, cx| {
-                                        action_view.update(cx, |item, cx| {
-                                            item.center.update(cx, |center, cx| {
-                                                center.trigger_action(id, window, cx);
-                                            });
-                                        });
-                                        cx.stop_propagation();
-                                    },
-                                );
-                                row = row.trailing(action);
-                            }
-                        }
                         row
                     })),
             )

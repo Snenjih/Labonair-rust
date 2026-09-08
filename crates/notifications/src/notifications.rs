@@ -2,12 +2,17 @@
 //!
 //! The retained data model and lifecycle live in
 //! [`labonair_notifications_core`]. This crate adds only GPUI invalidation and
-//! callback-backed compatibility actions. Notifications are consumed by the
-//! statusbar dropdown; this crate deliberately has no toast renderer.
+//! the `Severity` spelling. Notifications are consumed by the statusbar
+//! dropdown; this crate deliberately has no toast renderer.
+//!
+//! Actionable notifications are not currently produced by any feature. When
+//! one is needed it returns as a bounded task (R08-010) with a stable action
+//! id + typed payload dispatched through the command/owner registry — never a
+//! stored closure.
 
-use std::{collections::HashMap, time::Instant};
+use std::time::Instant;
 
-use gpui::{App, AppContext, Context, Entity, Global, SharedString, Window};
+use gpui::{App, AppContext, Context, Entity, Global, SharedString};
 use labonair_notifications_core::{NotificationDraft, NotificationKind, NotificationRegistry};
 
 mod status_item;
@@ -37,39 +42,6 @@ impl From<Severity> for NotificationKind {
     }
 }
 
-/// Callback fired when a compatibility action is activated in the dropdown.
-type ActionCallback = Box<dyn FnMut(&mut Window, &mut App) + 'static>;
-
-/// A callback-backed action for existing callers.
-///
-/// New actions should eventually use a stable command/action ID rather than a
-/// closure. The registry already stores action metadata separately from this
-/// adapter-specific callback.
-pub struct NotificationAction {
-    pub label: SharedString,
-    callback: ActionCallback,
-}
-
-impl NotificationAction {
-    pub fn new(
-        label: impl Into<SharedString>,
-        callback: impl FnMut(&mut Window, &mut App) + 'static,
-    ) -> Self {
-        Self {
-            label: label.into(),
-            callback: Box::new(callback),
-        }
-    }
-}
-
-impl std::fmt::Debug for NotificationAction {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("NotificationAction")
-            .field("label", &self.label)
-            .finish()
-    }
-}
-
 /// A notification draft to publish. Identity and read state are assigned by
 /// the UI-free registry on insert.
 #[derive(Debug)]
@@ -80,7 +52,6 @@ pub struct Notification {
     pub source: Option<SharedString>,
     pub details: Option<SharedString>,
     pub dedupe_key: Option<SharedString>,
-    pub action: Option<NotificationAction>,
 }
 
 impl Notification {
@@ -96,7 +67,6 @@ impl Notification {
             source: None,
             details: None,
             dedupe_key: None,
-            action: None,
         }
     }
 
@@ -134,11 +104,6 @@ impl Notification {
         self.dedupe_key = Some(key.into());
         self
     }
-
-    pub fn action(mut self, action: NotificationAction) -> Self {
-        self.action = Some(action);
-        self
-    }
 }
 
 /// Read-only view of a retained notification for the statusbar dropdown.
@@ -150,21 +115,18 @@ pub struct NotificationSnapshot {
     pub body: SharedString,
     pub details: Option<SharedString>,
     pub source: Option<SharedString>,
-    pub action_label: Option<SharedString>,
     pub read: bool,
 }
 
 /// GPUI-facing adapter around [`NotificationRegistry`].
 pub struct NotificationCenter {
     registry: NotificationRegistry,
-    actions: HashMap<u64, NotificationAction>,
 }
 
 impl Default for NotificationCenter {
     fn default() -> Self {
         Self {
             registry: NotificationRegistry::new(),
-            actions: HashMap::new(),
         }
     }
 }
@@ -197,7 +159,6 @@ impl NotificationCenter {
         now: Instant,
         cx: &mut Context<Self>,
     ) -> Option<u64> {
-        let action = notif.action;
         let default_key = format!(
             "{:?}|{}|{}|{}",
             notif.severity,
@@ -227,23 +188,12 @@ impl NotificationCenter {
         if let Some(details) = notif.details {
             draft = draft.details(details.to_string());
         }
-        if let Some(action) = action {
-            draft = draft.action(labonair_notifications_core::NotificationAction::new(
-                "default",
-                action.label.to_string(),
-            ));
-            let id = self.registry.insert(draft, now)?;
-            self.actions.insert(id, action);
-            cx.notify();
-            return Some(id);
-        }
         let id = self.registry.insert(draft, now)?;
         cx.notify();
         Some(id)
     }
 
     pub fn dismiss(&mut self, id: u64, cx: &mut Context<Self>) {
-        self.actions.remove(&id);
         if self.registry.dismiss(id) {
             cx.notify();
         }
@@ -256,7 +206,6 @@ impl NotificationCenter {
     }
 
     pub fn clear_all(&mut self, cx: &mut Context<Self>) {
-        self.actions.clear();
         if self.registry.clear() {
             cx.notify();
         }
@@ -291,22 +240,9 @@ impl NotificationCenter {
                 body: SharedString::from(item.summary.clone()),
                 details: item.details.clone().map(SharedString::from),
                 source: item.source.clone().map(SharedString::from),
-                action_label: item
-                    .actions
-                    .first()
-                    .map(|action| SharedString::from(action.label.clone())),
                 read: item.read,
             })
             .collect()
-    }
-
-    pub fn trigger_action(&mut self, id: u64, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(mut action) = self.actions.remove(&id) else {
-            return;
-        };
-        (action.callback)(window, cx);
-        self.registry.dismiss(id);
-        cx.notify();
     }
 }
 
