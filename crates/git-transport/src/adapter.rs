@@ -15,7 +15,8 @@ pub struct GitGraphTransportService {
 }
 
 /// Full source-control adapter. The UI receives this capability at the
-/// composition root and never needs the backend facade or SSH executor.
+/// composition root; it holds only `SshState` + the event bus, no aggregate
+/// composition state.
 pub struct GitTransportService {
     ssh_state: SshState,
     events: EventBus,

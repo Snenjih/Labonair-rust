@@ -1,4 +1,4 @@
-//! Backend adapters for the UI-free SSH capability contracts.
+//! Concrete transport adapters for the UI-free SSH capability contracts.
 
 use super::{client, config_parser, pty, sftp as remote, tunnels};
 use labonair_errors::LabonairError;
@@ -12,7 +12,7 @@ use labonair_ssh::{
 use serde::Deserialize;
 
 #[derive(Clone)]
-pub struct BackendSshConnectionService {
+pub struct SshConnectionServiceAdapter {
     state: super::SshState,
     trust: super::TrustState,
     hosts_db: labonair_persistence::Database,
@@ -20,7 +20,7 @@ pub struct BackendSshConnectionService {
     events: EventBus,
 }
 
-impl BackendSshConnectionService {
+impl SshConnectionServiceAdapter {
     pub fn new(
         state: super::SshState,
         trust: super::TrustState,
@@ -39,14 +39,14 @@ impl BackendSshConnectionService {
 }
 
 #[derive(Clone)]
-pub struct BackendSshConnectionTester {
+pub struct SshConnectionTesterAdapter {
     trust: super::TrustState,
     hosts_db: labonair_persistence::Database,
     secrets: std::sync::Arc<labonair_secrets::SecretsState>,
     events: EventBus,
 }
 
-impl BackendSshConnectionTester {
+impl SshConnectionTesterAdapter {
     pub fn new(
         trust: super::TrustState,
         hosts_db: labonair_persistence::Database,
@@ -63,18 +63,18 @@ impl BackendSshConnectionTester {
 }
 
 #[derive(Clone)]
-pub struct BackendSshConfigService {
+pub struct SshConfigServiceAdapter {
     hosts_db: labonair_persistence::Database,
 }
 
-impl BackendSshConfigService {
+impl SshConfigServiceAdapter {
     pub fn new(hosts_db: labonair_persistence::Database) -> Self {
         Self { hosts_db }
     }
 }
 
 #[derive(Clone)]
-pub struct BackendSshTunnelService {
+pub struct SshTunnelServiceAdapter {
     tunnel_state: tunnels::TunnelState,
     hosts_db: labonair_persistence::Database,
     secrets: std::sync::Arc<labonair_secrets::SecretsState>,
@@ -82,7 +82,7 @@ pub struct BackendSshTunnelService {
     events: EventBus,
 }
 
-impl BackendSshTunnelService {
+impl SshTunnelServiceAdapter {
     pub fn new(
         tunnel_state: tunnels::TunnelState,
         hosts_db: labonair_persistence::Database,
@@ -104,44 +104,45 @@ impl BackendSshTunnelService {
 /// registry because writing and resizing an existing session do not require
 /// host, trust, database, or secret state.
 #[derive(Clone)]
-pub struct BackendSshPtyService {
+pub struct SshPtyServiceAdapter {
     state: super::SshState,
 }
 
-impl BackendSshPtyService {
+impl SshPtyServiceAdapter {
     pub fn new(state: super::SshState) -> Self {
         Self { state }
     }
 }
 
 /// Narrow adapter for remote file operations that need connection-loss
-/// reporting. It does not retain the aggregate backend App.
+/// reporting. It retains only `SshState` + the event bus, not the aggregate
+/// composition bundle.
 #[derive(Clone)]
-pub struct BackendSshRemoteService {
+pub struct SshRemoteServiceAdapter {
     state: super::SshState,
     events: EventBus,
 }
 
-impl BackendSshRemoteService {
+impl SshRemoteServiceAdapter {
     pub fn new(state: super::SshState, events: EventBus) -> Self {
         Self { state, events }
     }
 }
 
-/// Shell-composed adapter that translates the legacy backend event stream into
-/// the narrow SSH connection-event contract.
+/// Shell-composed adapter that translates the raw `EventBus` transport stream
+/// into the narrow SSH connection-event contract.
 #[derive(Clone)]
-pub struct BackendSshEventSource {
+pub struct SshEventSourceAdapter {
     events: EventBus,
 }
 
-impl BackendSshEventSource {
+impl SshEventSourceAdapter {
     pub fn new(events: EventBus) -> Self {
         Self { events }
     }
 }
 
-struct BackendSshEventReceiver {
+struct SshEventReceiverAdapter {
     receiver: tokio::sync::broadcast::Receiver<RawEvent>,
 }
 
@@ -218,7 +219,7 @@ fn decode_connection_event(raw: &RawEvent) -> Option<SshConnectionEvent> {
     }
 }
 
-impl SshEventReceiver for BackendSshEventReceiver {
+impl SshEventReceiver for SshEventReceiverAdapter {
     fn recv<'a>(&'a mut self) -> BoxFuture<'a, Option<SshConnectionEvent>> {
         Box::pin(async move {
             loop {
@@ -239,9 +240,9 @@ impl SshEventReceiver for BackendSshEventReceiver {
     }
 }
 
-impl SshEventSource for BackendSshEventSource {
+impl SshEventSource for SshEventSourceAdapter {
     fn subscribe(&self) -> Box<dyn SshEventReceiver> {
-        Box::new(BackendSshEventReceiver {
+        Box::new(SshEventReceiverAdapter {
             receiver: self.events.subscribe(),
         })
     }
@@ -295,7 +296,7 @@ impl From<ImportConflict> for config_parser::ImportConflict {
     }
 }
 
-impl SshConnectionService for BackendSshConnectionService {
+impl SshConnectionService for SshConnectionServiceAdapter {
     fn connect<'a>(
         &'a self,
         request: SshConnectRequest,
@@ -346,7 +347,7 @@ impl SshConnectionService for BackendSshConnectionService {
     }
 }
 
-impl SshPtyService for BackendSshPtyService {
+impl SshPtyService for SshPtyServiceAdapter {
     fn write<'a>(
         &'a self,
         session_id: SshSessionId,
@@ -367,7 +368,7 @@ impl SshPtyService for BackendSshPtyService {
     }
 }
 
-impl SshRemoteCommandService for BackendSshRemoteService {
+impl SshRemoteCommandService for SshRemoteServiceAdapter {
     fn chown<'a>(
         &'a self,
         session_id: SshSessionId,
@@ -399,7 +400,7 @@ impl SshRemoteCommandService for BackendSshRemoteService {
     }
 }
 
-impl SshRemoteFileService for BackendSshRemoteService {
+impl SshRemoteFileService for SshRemoteServiceAdapter {
     fn prepare_remote_edit<'a>(
         &'a self,
         session_id: SshSessionId,
@@ -454,7 +455,7 @@ impl SshRemoteFileService for BackendSshRemoteService {
     }
 }
 
-impl SshConnectionTester for BackendSshConnectionTester {
+impl SshConnectionTester for SshConnectionTesterAdapter {
     fn test<'a>(
         &'a self,
         host_id: String,
@@ -491,7 +492,7 @@ impl SshConnectionTester for BackendSshConnectionTester {
     }
 }
 
-impl SshConfigService for BackendSshConfigService {
+impl SshConfigService for SshConfigServiceAdapter {
     fn parse<'a>(&'a self) -> BoxFuture<'a, Result<Vec<SshConfigEntry>, String>> {
         Box::pin(async move {
             config_parser::parse_ssh_config_cmd()
@@ -526,7 +527,7 @@ impl SshConfigService for BackendSshConfigService {
     }
 }
 
-impl SshTunnelService for BackendSshTunnelService {
+impl SshTunnelService for SshTunnelServiceAdapter {
     fn start<'a>(&'a self, host_id: String) -> BoxFuture<'a, Result<(), String>> {
         let tunnel_state = self.tunnel_state.clone();
         let hosts_db = self.hosts_db.clone();

@@ -31,10 +31,11 @@ fn main() {
     let data_dir = dirs::data_dir()
         .unwrap_or_else(|| std::path::PathBuf::from("."))
         .join("labonair");
-    let backend = AppComposition::new(&data_dir).expect("failed to initialize application state");
-    backend.spawn_workers();
+    let composition =
+        AppComposition::new(&data_dir).expect("failed to initialize application state");
+    composition.spawn_workers();
     #[cfg(debug_assertions)]
-    backend.spawn_event_logger();
+    composition.spawn_event_logger();
 
     // T19-009: one-time migration of the legacy `preferences`/`editor`/`mcp`
     // split into the flat `SettingsContent` area layout (+ `keymap.json` for
@@ -96,7 +97,7 @@ fn main() {
                             .detach();
                         let background = labonair_shell::init_background(cx);
                         let notifications = labonair_shell::init_notifications(cx);
-                        let backend = backend.clone();
+                        let composition = composition.clone();
                         let tokio_handle = tokio_handle.clone();
                         // The window's first layer must be a `gpui_component::Root`
                         // so gpui-component primitives (Input, popovers, dialogs,
@@ -106,7 +107,7 @@ fn main() {
                                 theme,
                                 background,
                                 notifications,
-                                backend,
+                                composition,
                                 tokio_handle,
                                 window,
                                 cx,

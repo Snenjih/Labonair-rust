@@ -190,8 +190,8 @@ impl ConnectionEntry {
 }
 
 /// Map one `ssh_connect_log` message to `(stage_index, stage_complete)`, or
-/// `None` if the line isn't a stage marker. Markers come from `log_step!` in
-/// `crates/backend/src/modules/ssh/client.rs`.
+/// `None` if the line isn't a stage marker. Markers come from the connection
+/// stage logging in `labonair-ssh-transport`'s client.
 pub fn detect_stage(line: &str) -> Option<(usize, bool)> {
     let l = line;
     if l.contains("TCP connection established") {

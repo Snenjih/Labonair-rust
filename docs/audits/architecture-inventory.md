@@ -186,7 +186,11 @@ edges; the dependency verifier rejects every unlisted edge.
 - `labonair-shell` owns the composition-only `AppComposition` bundle in
   `shell::composition`. The former backend crate no longer exposes an
   aggregate `App`/`AppState` facade; concrete integrations are named sibling
-  crates and are injected through capability contracts.
+  crates and are injected through capability contracts. R08-006 removed the
+  bundle's blanket `Deref<Target = AppCompositionInner>`: it now exposes one
+  explicit accessor per capability (`db()`, `ssh()`, `events()`, …) so
+  `bootstrap` hands each feature constructor only the capability it needs, and
+  the SSH transport adapters are renamed from `BackendSsh*` to `Ssh*Adapter`.
   Shell's direct `labonair-persistence` edge is intentional: the composition
   root initializes the shared database before injecting it into capability
   adapters.

@@ -300,7 +300,10 @@ bounds instead of the click position); R08-005 (P1.5, the settings→`ThemeStore
 application policy and the palette theme-action handler moved from `settings-ui`
 into the new `labonair-theme-ui` sibling — `settings-ui` owns no theme
 preview/activation/persistence policy, and `labonair-theme` keeps no
-`labonair-settings` dependency). Right-edge collision behavior for P2.1 is left
+`labonair-settings` dependency). R08-006 (P2.4, the `AppComposition` bundle lost its blanket `Deref` — now one
+explicit accessor per capability — and the `BackendSsh*` transport adapters
+were renamed to `Ssh*Adapter`; `main.rs` / `bootstrap` name the bundle
+`composition`, not `backend`). Right-edge collision behavior for P2.1 is left
 to the R07-001 visual matrix. Task/acceptance status in R01-004,
 R03-002, R04-002, R05-001, and R06-001 was reconciled the same day: their
 non-visual acceptance criteria are ticked with evidence, residual items carry

@@ -38,12 +38,12 @@ pub enum SnippetRunEvent {
 /// Event sink supplied by the owning UI or application adapter.
 pub type SnippetRunEventSink = Arc<dyn Fn(SnippetRunEvent) + Send + Sync>;
 
-/// Boxed asynchronous operation used by a backend execution adapter.
+/// Boxed asynchronous operation used by a transport execution adapter.
 pub type ExecutionFuture = Pin<Box<dyn Future<Output = Result<(), String>> + Send>>;
 
 /// Capability contract for executing a snippet through an established SSH
-/// session. The snippets capability owns this contract; the backend owns the
-/// transport-specific implementation.
+/// session. The snippets capability owns this contract; the transport
+/// integration crate owns the SSH-specific implementation.
 pub trait SshCommandExecutor: Send + Sync {
     fn execute(
         &self,

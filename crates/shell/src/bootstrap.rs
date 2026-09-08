@@ -139,7 +139,7 @@ pub(crate) fn bootstrap(
     theme: Entity<ThemeStore>,
     background: Entity<BackgroundStore>,
     notifications: Entity<NotificationCenter>,
-    backend: AppComposition,
+    composition: AppComposition,
     tokio: TokioHandle,
     window: &mut Window,
     cx: &mut Context<AppShell>,
@@ -160,17 +160,17 @@ pub(crate) fn bootstrap(
     let registry = Arc::new(TerminalRegistry::new());
     let local_terminal_access = Arc::new(TerminalRegistryAccess::new(registry.clone()));
     let mcp_access = Arc::new(McpSessionAccessAdapter::new(
-        backend.mcp.clone(),
-        backend.db.clone(),
+        composition.mcp().clone(),
+        composition.db().clone(),
     ));
     let agent_access_service: Arc<dyn McpSessionAccessService> = mcp_access.clone();
     let mcp_tab_operations: Arc<dyn McpTabOperationService> = mcp_access;
     let mcp_server_access = labonair_mcp_server::McpServerAccess::new(
-        backend.ssh.clone(),
+        composition.ssh().clone(),
         local_terminal_access,
-        backend.db.clone(),
-        backend.secrets.clone(),
-        backend.events.clone(),
+        composition.db().clone(),
+        composition.secrets().clone(),
+        composition.events().clone(),
     );
     let agent_access =
         cx.new(|_| AgentAccessStore::new(agent_access_service.clone(), tokio.clone()));
@@ -184,7 +184,7 @@ pub(crate) fn bootstrap(
             s.hydrate(prefs.bridge_enabled, prefs.notify_on_activity, cx)
         });
         let mcp_server_access = mcp_server_access.clone();
-        let mcp_state = backend.mcp.clone();
+        let mcp_state = composition.mcp().clone();
         tokio.spawn(async move {
             let _ = mcp_set_port(prefs.bridge_port, mcp_server_access.clone(), &mcp_state).await;
             let _ =
@@ -204,57 +204,57 @@ pub(crate) fn bootstrap(
         .then(crate::session::load_snapshot)
         .flatten();
     let ssh_service: Arc<dyn SshConnectionService> = Arc::new(
-        labonair_ssh_transport::contract::BackendSshConnectionService::new(
-            backend.ssh.clone(),
-            backend.trust.clone(),
-            backend.db.clone(),
-            backend.secrets.clone(),
-            backend.events.clone(),
+        labonair_ssh_transport::contract::SshConnectionServiceAdapter::new(
+            composition.ssh().clone(),
+            composition.trust().clone(),
+            composition.db().clone(),
+            composition.secrets().clone(),
+            composition.events().clone(),
         ),
     );
     let ssh_pty_service: Arc<dyn SshPtyService> = Arc::new(
-        labonair_ssh_transport::contract::BackendSshPtyService::new(backend.ssh.clone()),
+        labonair_ssh_transport::contract::SshPtyServiceAdapter::new(composition.ssh().clone()),
     );
     let ssh_remote_service: Arc<dyn SshRemoteCommandService> = Arc::new(
-        labonair_ssh_transport::contract::BackendSshRemoteService::new(
-            backend.ssh.clone(),
-            backend.events.clone(),
+        labonair_ssh_transport::contract::SshRemoteServiceAdapter::new(
+            composition.ssh().clone(),
+            composition.events().clone(),
         ),
     );
     let ssh_remote_file_service: Arc<dyn SshRemoteFileService> = Arc::new(
-        labonair_ssh_transport::contract::BackendSshRemoteService::new(
-            backend.ssh.clone(),
-            backend.events.clone(),
+        labonair_ssh_transport::contract::SshRemoteServiceAdapter::new(
+            composition.ssh().clone(),
+            composition.events().clone(),
         ),
     );
     let ssh_tunnel_service: Arc<dyn SshTunnelService> = Arc::new(
-        labonair_ssh_transport::contract::BackendSshTunnelService::new(
-            backend.tunnels.clone(),
-            backend.db.clone(),
-            backend.secrets.clone(),
-            backend.trust.clone(),
-            backend.events.clone(),
+        labonair_ssh_transport::contract::SshTunnelServiceAdapter::new(
+            composition.tunnels().clone(),
+            composition.db().clone(),
+            composition.secrets().clone(),
+            composition.trust().clone(),
+            composition.events().clone(),
         ),
     );
     let ssh_tester: Arc<dyn SshConnectionTester> = Arc::new(
-        labonair_ssh_transport::contract::BackendSshConnectionTester::new(
-            backend.trust.clone(),
-            backend.db.clone(),
-            backend.secrets.clone(),
-            backend.events.clone(),
+        labonair_ssh_transport::contract::SshConnectionTesterAdapter::new(
+            composition.trust().clone(),
+            composition.db().clone(),
+            composition.secrets().clone(),
+            composition.events().clone(),
         ),
     );
     let ssh_config: Arc<dyn SshConfigService> = Arc::new(
-        labonair_ssh_transport::contract::BackendSshConfigService::new(backend.db.clone()),
+        labonair_ssh_transport::contract::SshConfigServiceAdapter::new(composition.db().clone()),
     );
     let ssh_event_source: Arc<dyn SshEventSource> = Arc::new(
-        labonair_ssh_transport::contract::BackendSshEventSource::new(backend.events.clone()),
+        labonair_ssh_transport::contract::SshEventSourceAdapter::new(composition.events().clone()),
     );
     let mcp_event_source: Arc<dyn McpEventSource> =
-        Arc::new(McpEventSourceAdapter::new(backend.events.clone()));
+        Arc::new(McpEventSourceAdapter::new(composition.events().clone()));
     let host_manager = {
-        let mcp_state_for_host_events = backend.mcp.clone();
-        let events_for_host_events = backend.events.clone();
+        let mcp_state_for_host_events = composition.mcp().clone();
+        let events_for_host_events = composition.events().clone();
         let host_event_handler = Arc::new(move |event| {
             labonair_mcp_server::revoke_agent_access(
                 &mcp_state_for_host_events,
@@ -264,8 +264,8 @@ pub(crate) fn bootstrap(
         });
         cx.new(|cx| {
             HostManagerView::new(
-                backend.db.clone(),
-                backend.secrets.clone(),
+                composition.db().clone(),
+                composition.secrets().clone(),
                 labonair_filesystem::paths::data_dir(),
                 Some(host_event_handler),
                 ssh_tester,
@@ -278,29 +278,33 @@ pub(crate) fn bootstrap(
     };
     let sftp_session_service: Arc<dyn SftpSessionService> =
         Arc::new(labonair_sftp_ssh::contract::SftpTransportService::new(
-            backend.ssh.clone(),
-            backend.events.clone(),
+            composition.ssh().clone(),
+            composition.events().clone(),
         ));
     let sftp_browser_service: Arc<dyn SftpBrowserService> =
         Arc::new(labonair_sftp_ssh::contract::SftpTransportService::new(
-            backend.ssh.clone(),
-            backend.events.clone(),
+            composition.ssh().clone(),
+            composition.events().clone(),
         ));
     let transfer_service: Arc<dyn TransferService> = Arc::new(
-        labonair_transfers_ssh::adapter::TransferServiceAdapter::new(backend.transfer.clone()),
+        labonair_transfers_ssh::adapter::TransferServiceAdapter::new(
+            composition.transfer().clone(),
+        ),
     );
     let transfer_events: Arc<dyn TransferEventSource> = Arc::new(
-        labonair_transfers_ssh::adapter::TransferEventSourceAdapter::new(backend.events.clone()),
+        labonair_transfers_ssh::adapter::TransferEventSourceAdapter::new(
+            composition.events().clone(),
+        ),
     );
     let git_service: Arc<dyn labonair_git::GitService> =
         Arc::new(labonair_git_transport::GitTransportService::new(
-            backend.ssh.clone(),
-            backend.events.clone(),
+            composition.ssh().clone(),
+            composition.events().clone(),
         ));
     let git_graph_service: Arc<dyn labonair_git::GitGraphService> =
         Arc::new(labonair_git_transport::GitGraphTransportService::new(
-            backend.ssh.clone(),
-            backend.events.clone(),
+            composition.ssh().clone(),
+            composition.events().clone(),
         ));
     let transfers = cx.new(|cx| {
         TransfersView::new(
@@ -504,11 +508,11 @@ pub(crate) fn bootstrap(
     let snippets = cx.new(|cx| {
         let ssh_executor =
             std::sync::Arc::new(labonair_snippets_ssh::exec::SshSnippetExecutor::new(
-                backend.ssh.clone(),
-                backend.snippet_run.clone(),
+                composition.ssh().clone(),
+                composition.snippet_run().clone(),
             ));
         SnippetsView::new(
-            backend.db.clone(),
+            composition.db().clone(),
             tokio.clone(),
             theme.clone(),
             snippet_exec_host,
