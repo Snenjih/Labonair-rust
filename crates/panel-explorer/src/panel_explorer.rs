@@ -42,7 +42,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use gpui::{
-    div, px, uniform_list, App, AppContext, ClickEvent, ClipboardItem, Context, Entity,
+    canvas, div, px, uniform_list, App, AppContext, ClickEvent, ClipboardItem, Context, Entity,
     ExternalPaths, FocusHandle, Focusable, Hsla, InteractiveElement, IntoElement, KeyDownEvent,
     MouseButton, MouseDownEvent, ParentElement, Pixels, Point, Render, ScrollStrategy,
     SharedString, StatefulInteractiveElement, Styled, Task, UniformListScrollHandle, Window,
@@ -741,6 +741,9 @@ pub struct ExplorerView {
     context_menu: Option<(PathBuf, Point<Pixels>)>,
     /// The compact root row's `…` overflow menu anchor (Phase 3.1).
     overflow_menu: Option<Point<Pixels>>,
+    /// Last painted panel width — decides whether the toolbar actions render
+    /// as inline icon buttons or collapse into the `…` overflow menu.
+    measured_width: Option<Pixels>,
     confirm_delete: Option<PathBuf>,
     focus: FocusHandle,
     /// Virtual-list scroll handle — drives sticky-ancestor computation and
@@ -798,6 +801,7 @@ impl ExplorerView {
             search_field: None,
             context_menu: None,
             overflow_menu: None,
+            measured_width: None,
             confirm_delete: None,
             focus: cx.focus_handle(),
             scroll: UniformListScrollHandle::new(),
@@ -1622,11 +1626,13 @@ impl Render for ExplorerView {
             let theme = self.theme.read(cx);
             icon_for_path(theme.icon_theme(), &root_name, true, false)
         };
-        // Phase 3.1: the five permanent toolbar icons collapse to a compact
-        // root row — the root identity, one discoverable search affordance,
-        // and one overflow button. New File / New Folder / Refresh / hidden-
-        // files move into the `…` menu (and stay in the tree context menu).
-        let toolbar = div()
+        // Phase 3.1 / T-responsive-toolbar: when the panel is wide enough the
+        // New File / New Folder / Refresh / hidden-files actions render as
+        // inline icon buttons; when it is too narrow they collapse into the
+        // `…` overflow menu (they always stay in the tree context menu too).
+        let show_inline_actions = self.measured_width.map_or(true, |w| w >= px(232.0));
+
+        let mut toolbar = div()
             .flex()
             .flex_row()
             .items_center()
@@ -1663,8 +1669,68 @@ impl Render for ExplorerView {
                 .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
                     this.toggle_search(window, cx)
                 })),
-            )
-            .child(
+            );
+
+        if show_inline_actions {
+            let nf_root = root.clone();
+            let nd_root = root.clone();
+            let rf_root = root.clone();
+            let show_hidden = self.model.show_hidden;
+            toolbar = toolbar
+                .child(
+                    button(
+                        "explorer-new-file",
+                        c.palette,
+                        ButtonVariant::Ghost,
+                        ButtonSize::IconXs,
+                    )
+                    .child(IconName::File.svg(c.muted).size(px(13.0)))
+                    .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
+                        this.begin_create(nf_root.clone(), false, window, cx)
+                    })),
+                )
+                .child(
+                    button(
+                        "explorer-new-folder",
+                        c.palette,
+                        ButtonVariant::Ghost,
+                        ButtonSize::IconXs,
+                    )
+                    .child(IconName::Folder.svg(c.muted).size(px(13.0)))
+                    .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
+                        this.begin_create(nd_root.clone(), true, window, cx)
+                    })),
+                )
+                .child(
+                    button(
+                        "explorer-refresh",
+                        c.palette,
+                        ButtonVariant::Ghost,
+                        ButtonSize::IconXs,
+                    )
+                    .child(IconName::Refresh.svg(c.muted).size(px(13.0)))
+                    .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
+                        this.load_dir(rf_root.clone(), true, cx)
+                    })),
+                )
+                .child(
+                    button(
+                        "explorer-toggle-hidden",
+                        c.palette,
+                        ButtonVariant::Ghost,
+                        ButtonSize::IconXs,
+                    )
+                    .child(
+                        if show_hidden { IconName::EyeOff } else { IconName::Eye }
+                            .svg(c.muted)
+                            .size(px(13.0)),
+                    )
+                    .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
+                        this.toggle_show_hidden(cx)
+                    })),
+                );
+        } else {
+            toolbar = toolbar.child(
                 button(
                     "explorer-overflow",
                     c.palette,
@@ -1680,6 +1746,7 @@ impl Render for ExplorerView {
                     }),
                 ),
             );
+        }
 
         let search = self.render_search(c, cx);
 
@@ -1839,6 +1906,22 @@ impl Render for ExplorerView {
             .flex_col()
             .text_color(c.fg)
             .on_key_down(cx.listener(Self::on_key))
+            .child({
+                let probe = cx.weak_entity();
+                canvas(
+                    move |bounds, _window, cx| {
+                        let _ = probe.update(cx, |this, cx| {
+                            if this.measured_width != Some(bounds.size.width) {
+                                this.measured_width = Some(bounds.size.width);
+                                cx.notify();
+                            }
+                        });
+                    },
+                    |_, _, _, _| {},
+                )
+                .absolute()
+                .size_full()
+            })
             .child(toolbar)
             .children(search)
             .children(self.render_clip_banner(c, cx))
