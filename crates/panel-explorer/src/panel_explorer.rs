@@ -1630,7 +1630,7 @@ impl Render for ExplorerView {
         // New File / New Folder / Refresh / hidden-files actions render as
         // inline icon buttons; when it is too narrow they collapse into the
         // `…` overflow menu (they always stay in the tree context menu too).
-        let show_inline_actions = self.measured_width.map_or(true, |w| w >= px(232.0));
+        let show_inline_actions = self.measured_width.is_none_or(|w| w >= px(232.0));
 
         let mut toolbar = div()
             .flex()
@@ -1685,9 +1685,11 @@ impl Render for ExplorerView {
                         ButtonSize::IconXs,
                     )
                     .child(IconName::File.svg(c.muted).size(px(13.0)))
-                    .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
-                        this.begin_create(nf_root.clone(), false, window, cx)
-                    })),
+                    .on_click(cx.listener(
+                        move |this, _: &ClickEvent, window, cx| {
+                            this.begin_create(nf_root.clone(), false, window, cx)
+                        },
+                    )),
                 )
                 .child(
                     button(
@@ -1697,9 +1699,11 @@ impl Render for ExplorerView {
                         ButtonSize::IconXs,
                     )
                     .child(IconName::Folder.svg(c.muted).size(px(13.0)))
-                    .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
-                        this.begin_create(nd_root.clone(), true, window, cx)
-                    })),
+                    .on_click(cx.listener(
+                        move |this, _: &ClickEvent, window, cx| {
+                            this.begin_create(nd_root.clone(), true, window, cx)
+                        },
+                    )),
                 )
                 .child(
                     button(
@@ -1709,9 +1713,11 @@ impl Render for ExplorerView {
                         ButtonSize::IconXs,
                     )
                     .child(IconName::Refresh.svg(c.muted).size(px(13.0)))
-                    .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
-                        this.load_dir(rf_root.clone(), true, cx)
-                    })),
+                    .on_click(cx.listener(
+                        move |this, _: &ClickEvent, _window, cx| {
+                            this.load_dir(rf_root.clone(), true, cx)
+                        },
+                    )),
                 )
                 .child(
                     button(
@@ -1721,13 +1727,17 @@ impl Render for ExplorerView {
                         ButtonSize::IconXs,
                     )
                     .child(
-                        if show_hidden { IconName::EyeOff } else { IconName::Eye }
-                            .svg(c.muted)
-                            .size(px(13.0)),
+                        if show_hidden {
+                            IconName::EyeOff
+                        } else {
+                            IconName::Eye
+                        }
+                        .svg(c.muted)
+                        .size(px(13.0)),
                     )
-                    .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
-                        this.toggle_show_hidden(cx)
-                    })),
+                    .on_click(cx.listener(
+                        move |this, _: &ClickEvent, _window, cx| this.toggle_show_hidden(cx),
+                    )),
                 );
         } else {
             toolbar = toolbar.child(

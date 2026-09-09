@@ -193,6 +193,14 @@ a Command Palette page. The menu uses the shared `popover_menu` primitive and
 anchors it in window coordinates directly below the clicked button; it must
 not implement a second menu or feature-specific behavior.
 
+The workspace tab strip renders in the titlebar by default. When
+`tabsLocation == "sidebar"` it renders instead in the Tabs dock panel, which
+`labonair-workspace` owns and registers (the tab list and all its behaviour
+stay with the tab owner; the panel is a thin wrapper). `Workspace` reconciles
+that panel's dock membership with the setting; the titlebar simply omits the
+strip. This is not a new product surface — it is the same tab strip in the
+existing dock chrome.
+
 `labonair-workspace::context` owns the UI-free distinction between workspace
 identity (`Standalone` or `Project`) and activity (`Empty` or `Active`). Tool
 tabs do not choose a second layout model for standalone use. Cross-surface

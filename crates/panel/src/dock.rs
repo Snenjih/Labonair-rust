@@ -66,6 +66,8 @@ pub enum PanelIcon {
     Snippets,
     /// AI-chat panel.
     Ai,
+    /// Workspace tab list (shown when `tabsLocation == "sidebar"`).
+    Tabs,
 }
 
 /// Lifecycle / zoom events a panel emits to its host dock.

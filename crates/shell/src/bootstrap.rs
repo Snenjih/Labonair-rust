@@ -731,12 +731,20 @@ pub(crate) fn bootstrap(
         }
     });
 
+    // The Tabs sidebar panel is owned by `labonair-workspace` (it renders the
+    // workspace tab list); composition only creates the view and forwards its
+    // contribution like the other panel owners.
+    let tabs_panel = cx.new(|cx| {
+        labonair_workspace::tabs_panel::TabsPanel::new(workspace.clone(), theme.clone(), cx)
+    });
+
     // Each panel owner builds its typed contribution; composition only inserts
     // the contributions into the shared workspace registry.
     let panel_contributions = [
         labonair_panel_explorer::panel_registration(&explorer, cx),
         labonair_panel_scm::panel_registration(&git_panel, cx),
         labonair_panel_snippets::panel_registration(&snippets, cx),
+        labonair_workspace::tabs_panel::tabs_panel_registration(&tabs_panel, cx),
     ];
     workspace.update(cx, |workspace, _cx| {
         let registry = workspace.panel_registry_mut();
@@ -751,7 +759,20 @@ pub(crate) fn bootstrap(
     workspace.update(cx, |w, cx| {
         w.set_primary_dock(layout.primary_position());
         w.init_docks(&layout.docks_json(), window, cx);
+        // Place / remove the Tabs panel to match `tabsLocation`.
+        w.sync_tabs_in_sidebar(cx);
     });
+
+    // Keep the Tabs panel's dock membership in sync when `tabsLocation`
+    // changes at runtime (the generated Settings field writes straight to
+    // `SettingsStore`).
+    if cx.has_global::<labonair_settings::SettingsStore>() {
+        let workspace_for_tabs = workspace.clone();
+        cx.observe_global::<labonair_settings::SettingsStore>(move |_, cx| {
+            workspace_for_tabs.update(cx, |w, cx| w.sync_tabs_in_sidebar(cx));
+        })
+        .detach();
+    }
 
     // Populate the status-bar item registry, then build the `StatusBar` view.
     register_builtin_status_items(

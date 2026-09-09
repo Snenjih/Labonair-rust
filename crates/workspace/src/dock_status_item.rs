@@ -17,6 +17,7 @@ pub(crate) fn panel_toggle_icon(icon: PanelIcon) -> IconName {
         PanelIcon::SourceControl => IconName::GitBranch,
         PanelIcon::Snippets => IconName::Zap,
         PanelIcon::Ai => IconName::MessageSquare,
+        PanelIcon::Tabs => IconName::Tab,
     }
 }
 
@@ -32,6 +33,7 @@ fn panel_toggle_title(persistent_name: &str) -> &'static str {
         "explorer" => "Explorer",
         "source-control" => "Source Control",
         "snippets" => "Snippets",
+        "tabs" => "Tabs",
         _ => "Panel",
     }
 }

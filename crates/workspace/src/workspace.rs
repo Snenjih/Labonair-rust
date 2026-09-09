@@ -47,6 +47,7 @@ pub mod status_items;
 pub mod status_placements;
 pub mod syntax_theme;
 pub mod tabs;
+pub mod tabs_panel;
 pub mod views;
 
 /// Re-export shim so `crate::theme::…` paths in the moved modules keep
@@ -393,6 +394,10 @@ pub struct Workspace {
     left_dock: crate::dock::Dock,
     right_dock: crate::dock::Dock,
     bottom_dock: crate::dock::Dock,
+    /// Handle to the Tabs sidebar panel, kept so [`Workspace::sync_tabs_in_sidebar`]
+    /// can add it back to a dock at runtime when `tabsLocation` flips to
+    /// `"sidebar"`. Set once by [`Workspace::init_docks`].
+    tabs_panel: Option<labonair_panel::AnyPanelHandle>,
     /// SFTP session id per `Sftp` tab id — kept alongside the view so the
     /// session can be torn down from `retire_tab` (which has no `cx`).
     sftp_sessions: HashMap<u64, String>,
@@ -581,6 +586,7 @@ impl Workspace {
             left_dock: crate::dock::Dock::new(labonair_panel::DockPosition::Left),
             right_dock: crate::dock::Dock::new(labonair_panel::DockPosition::Right),
             bottom_dock: crate::dock::Dock::new(labonair_panel::DockPosition::Bottom),
+            tabs_panel: None,
             sftp_sessions: HashMap::new(),
             remote_edits: HashMap::new(),
             pending_sftp: Vec::new(),
@@ -2251,6 +2257,42 @@ impl Workspace {
         cx.notify();
     }
 
+    /// Reconcile the Tabs sidebar panel's dock membership with the
+    /// `tabsLocation` setting. When it is `"sidebar"` the panel is added to the
+    /// primary dock (activated + opened); otherwise it is removed from every
+    /// dock. A no-op when membership already matches the setting, so it is
+    /// cheap to call from the `SettingsStore` observer on every change.
+    pub fn sync_tabs_in_sidebar(&mut self, cx: &mut Context<Self>) {
+        let want = labonair_settings::ThemeSettings::try_get(cx)
+            .map(|s| s.tabs_location() == "sidebar")
+            .unwrap_or(false);
+        let present = self.dock_of_panel("tabs").is_some();
+        if want == present {
+            return;
+        }
+
+        if want {
+            let Some(handle) = self.tabs_panel.clone() else {
+                return;
+            };
+            let pos = self.primary_dock();
+            let dock = self.dock_mut(pos);
+            dock.add_panel(handle);
+            dock.activate_panel("tabs");
+            dock.set_open(true);
+        } else {
+            for pos in labonair_panel::DockPosition::ALL {
+                let dock = self.dock_mut(pos);
+                if dock.remove_panel("tabs").is_some() && dock.is_empty() {
+                    dock.set_open(false);
+                }
+            }
+        }
+
+        self.persist_docks(cx);
+        cx.notify();
+    }
+
     /// Debounced write of the full dock layout through the workspace-owned
     /// persistence file (mirrors the reference `onLayoutChanged` 300ms persist).
     pub fn persist_docks(&mut self, cx: &mut Context<Self>) {
@@ -2323,12 +2365,24 @@ impl Workspace {
 
         for (name, default_pos, build) in regs {
             let handle = build(window, cx);
-            let target = parsed
+            let persisted = parsed
                 .iter()
                 .find(|d| d.panel_order.iter().any(|n| n == name))
                 .and_then(|d| position_from_slug(&d.position))
-                .filter(|pos| handle.position_is_valid(*pos, cx))
-                .unwrap_or(default_pos);
+                .filter(|pos| handle.position_is_valid(*pos, cx));
+            // The Tabs panel is only docked when `tabsLocation == "sidebar"`;
+            // its presence is driven by `sync_tabs_in_sidebar`, called right
+            // after `init_docks` and on every settings change. Keep the handle
+            // so it can be re-added at runtime, and only auto-place it here if
+            // a persisted layout already had it in a dock.
+            if name == "tabs" {
+                self.tabs_panel = Some(handle.clone());
+                if let Some(pos) = persisted {
+                    self.dock_mut(pos).add_panel(handle);
+                }
+                continue;
+            }
+            let target = persisted.unwrap_or(default_pos);
             self.dock_mut(target).add_panel(handle);
         }
 
@@ -3829,7 +3883,10 @@ impl Workspace {
 
     // ── Rendering ───────────────────────────────────────────────────────────
 
-    fn render_tab(&self, tab: &Tab, cx: &mut Context<Self>) -> impl IntoElement {
+    /// Render one tab row. `sidebar == true` lays the row out for the vertical
+    /// Tabs sidebar panel (full width, click-anchored menus, top-edge drop
+    /// indicator); `false` is the horizontal titlebar strip.
+    fn render_tab(&self, tab: &Tab, sidebar: bool, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = self.theme.read(cx);
         let (fg, muted, accent, border) = (
             theme.foreground(),
@@ -3896,6 +3953,7 @@ impl Workspace {
             .gap_1p5()
             .h(px(28.0))
             .px_2()
+            .when(sidebar, |d| d.w_full().flex_shrink_0())
             .rounded_md()
             .text_xs()
             .whitespace_nowrap()
@@ -3922,7 +3980,8 @@ impl Workspace {
                         .border_color(accent)
                         .child(SharedString::from(format!("{buf}\u{2502}"))),
                     None => div()
-                        .max_w(px(180.0))
+                        .when(sidebar, |d| d.flex_1().min_w_0())
+                        .when(!sidebar, |d| d.max_w(px(180.0)))
                         .overflow_hidden()
                         .whitespace_nowrap()
                         .when(tab.kind == TabKind::Editor && tab.peek, |d| d.italic())
@@ -3947,7 +4006,12 @@ impl Workspace {
             .on_mouse_down(
                 MouseButton::Right,
                 cx.listener(move |this, ev: &MouseDownEvent, _window, cx| {
-                    this.context_menu = Some((id, point(ev.position.x, px(TITLEBAR_OFFSET))));
+                    let y = if sidebar {
+                        ev.position.y
+                    } else {
+                        px(TITLEBAR_OFFSET)
+                    };
+                    this.context_menu = Some((id, point(ev.position.x, y)));
                     cx.notify();
                 }),
             )
@@ -3962,7 +4026,14 @@ impl Workspace {
                     })
                 },
             )
-            .drag_over::<DraggedTab>(move |style, _, _, _| style.border_l_2().border_color(fg))
+            .drag_over::<DraggedTab>(move |style, _, _, _| {
+                let style = if sidebar {
+                    style.border_t_2()
+                } else {
+                    style.border_l_2()
+                };
+                style.border_color(fg)
+            })
             .on_drop(cx.listener(move |this, dragged: &DraggedTab, _window, cx| {
                 this.tabs.update(cx, |s, cx| s.reorder(dragged.id, id, cx));
             }))
@@ -4008,7 +4079,7 @@ impl Workspace {
                     .gap_0p5()
                     .min_w_0()
                     .overflow_x_scroll()
-                    .children(tabs.iter().map(|t| self.render_tab(t, cx))),
+                    .children(tabs.iter().map(|t| self.render_tab(t, false, cx))),
             )
             .child(
                 div()
@@ -4034,6 +4105,82 @@ impl Workspace {
                         }),
                     ),
             )
+    }
+
+    /// The vertical tab list shown in the Tabs sidebar panel when
+    /// `tabsLocation == "sidebar"`. Same behaviour as [`Workspace::render_tab_bar`]
+    /// (select / close / reorder / rename / context menu), stacked in a column
+    /// with a "New Tab" footer. The new-tab / context menus themselves are
+    /// rendered by [`Workspace::render`], anchored at the click position.
+    pub fn render_tab_list_vertical(&mut self, cx: &mut Context<Self>) -> gpui::AnyElement {
+        let (muted, fg, border) = {
+            let theme = self.theme.read(cx);
+            (theme.muted_foreground(), theme.foreground(), theme.border())
+        };
+        let tabs = self.tabs.read(cx).tabs().to_vec();
+
+        div()
+            .flex()
+            .flex_col()
+            .min_h_0()
+            .h_full()
+            .w_full()
+            .child(
+                div()
+                    .id("sidebar-tab-list")
+                    .flex_1()
+                    .min_h_0()
+                    .flex()
+                    .flex_col()
+                    .gap_0p5()
+                    .overflow_y_scroll()
+                    .p_1p5()
+                    // Right-click on the empty area → the new-tab menu.
+                    .on_mouse_down(
+                        MouseButton::Right,
+                        cx.listener(|this, ev: &MouseDownEvent, _w, cx| {
+                            this.new_tab_menu = Some(ev.position);
+                            this.new_tab_submenu = None;
+                            this.context_menu = None;
+                            cx.notify();
+                        }),
+                    )
+                    .children(tabs.iter().map(|t| self.render_tab(t, true, cx))),
+            )
+            .child(
+                div()
+                    .flex_shrink_0()
+                    .border_t_1()
+                    .border_color(border)
+                    .p_1p5()
+                    .child(
+                        div()
+                            .id("sidebar-tab-new")
+                            .flex()
+                            .items_center()
+                            .gap_1p5()
+                            .w_full()
+                            .h(px(28.0))
+                            .px_2()
+                            .rounded_md()
+                            .text_xs()
+                            .text_color(muted)
+                            .cursor_pointer()
+                            .hover(|s| s.bg(border).text_color(fg))
+                            .child(IconName::PlusBold.svg(muted).size(px(13.0)))
+                            .child("New Tab")
+                            .on_mouse_down(
+                                MouseButton::Left,
+                                cx.listener(|this, ev: &MouseDownEvent, _window, cx| {
+                                    this.new_tab_menu = Some(ev.position);
+                                    this.new_tab_submenu = None;
+                                    this.context_menu = None;
+                                    cx.notify();
+                                }),
+                            ),
+                    ),
+            )
+            .into_any_element()
     }
 
     /// The "+" new-tab dropdown (port of `NewTabDropdownItems`): Terminal /

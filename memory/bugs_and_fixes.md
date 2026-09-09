@@ -4,6 +4,36 @@ Older entries preserve the state of the code when each issue was recorded.
 When an API was later renamed or removed, the current implementation and
 normative documentation take precedence over the historical symbol name.
 
+## 2026-09-09 — `tabsLocation == "sidebar"` did nothing (no Tabs panel existed)
+
+**Symptom:** setting Appearance → "Tab bar location" to *Sidebar* made the
+titlebar tab strip vanish with no replacement. `titlebar.rs` already gated the
+strip on `tabs_location() == "sidebar"` (`let tabs = (!tabs_in_sidebar).then(...)`)
+but there was no panel rendering the tabs anywhere — the "Tabs sidebar panel"
+the comments referenced was never built.
+
+**Fix:** added `TabsPanel` (`crates/workspace/src/tabs_panel.rs`), a thin
+`labonair_panel::Panel` wrapper owned by `labonair-workspace` (the tab owner).
+It renders `Workspace::render_tab_list_vertical` — a column variant of
+`render_tab_bar`; `render_tab` grew a `sidebar: bool` for full-width rows,
+click-anchored context/new-tab menus (instead of the `TITLEBAR_OFFSET`
+y-anchor) and a top-edge drop indicator. New `PanelIcon::Tabs` variant in the
+`labonair-panel` contract → `IconName::Tab` in `dock_status_item.rs`.
+
+**Non-obvious wiring:**
+- The panel entity is created in `shell/src/bootstrap.rs` (like the other
+  panel owners) but `labonair_workspace::tabs_panel::tabs_panel_registration`
+  builds the contribution. `Workspace` keeps the handle (`tabs_panel` field,
+  set in `init_docks`) so it can re-dock the panel at runtime.
+- `init_docks` special-cases `name == "tabs"`: it is only auto-placed if a
+  persisted layout already had it; otherwise presence is decided by
+  `Workspace::sync_tabs_in_sidebar`, called once after `init_docks` and from a
+  `SettingsStore` observer in `bootstrap.rs` on every settings change (early
+  returns when dock membership already matches the setting).
+- Precedent for a chrome view calling `workspace.update(cx, |w, cx|
+  w.render_*(cx))` inside its own `render`: `titlebar.rs` already does exactly
+  this with `render_tab_bar`.
+
 ## 2026-09-07 — Background presentation moved behind `BackgroundHost` (R07-005)
 
 **Change:** `labonair-workspace` (`Workspace` and `TerminalView`) used to hold
