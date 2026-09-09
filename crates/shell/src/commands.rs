@@ -210,7 +210,12 @@ pub(crate) fn attach_action_handlers(
     on!(menu::OpenSettings => CommandId::OpenSettings);
     on!(menu::OpenKeymapJson => CommandId::OpenKeymapJson);
     on!(menu::CheckForUpdates => CommandId::CheckForUpdates);
-    on!(menu::CommandPalette => CommandId::OpenCommandPalette);
+    // Toggling the palette updates the shell entity itself; routing it through
+    // `dispatch_command` -> owner handler re-enters `AppShell::update` from
+    // inside this listener and panics ("already being updated"). Call direct.
+    el = el.on_action(cx.listener(|this, _: &menu::CommandPalette, window, cx| {
+        this.toggle_command_palette(window, cx);
+    }));
     on!(menu::DebugCyclePanelDock => CommandId::DebugCyclePanelDock);
     on!(menu::DebugToggleDockZoom => CommandId::DebugToggleDockZoom);
     on!(menu::SelectTab1 => CommandId::SelectTab1);
