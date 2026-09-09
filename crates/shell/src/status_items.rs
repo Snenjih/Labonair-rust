@@ -49,12 +49,8 @@ pub fn register_builtin_status_items(
         DockPosition::Right,
         cx,
     );
-    let dock_btn_bottom = labonair_workspace::dock_status_item::registration(
-        workspace,
-        theme,
-        DockPosition::Bottom,
-        cx,
-    );
+    // No panel currently registers for the bottom dock (Git Graph is a tab, not
+    // a panel), so there is no bottom dock-button group in the statusbar.
     let notifications_item = labonair_notifications::registration(notifications, theme, cx);
     let cwd = labonair_workspace::cwd_status_item::registration(workspace, theme, cx);
     let cursor =
@@ -78,7 +74,6 @@ pub fn register_builtin_status_items(
     let registrations = [
         dock_btn_left,
         dock_btn_right,
-        dock_btn_bottom,
         notifications_item,
         cwd,
         cursor,

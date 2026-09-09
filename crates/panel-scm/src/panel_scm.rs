@@ -860,6 +860,8 @@ struct Selected {
 pub enum ScmEvent {
     /// Open / focus the single workspace Project Diff item.
     OpenProjectDiff(ProjectDiffRequest),
+    /// Open / focus the on-demand Git Graph tab.
+    OpenGitGraph,
 }
 
 /// Which transient header/footer popover menu is open, and where.
@@ -2224,6 +2226,21 @@ impl GitPanelView {
                 }),
             ));
         }
+        row = row.child(
+            labonair_ui_kit::button_no_hover(
+                "git-open-graph",
+                c.palette,
+                ButtonVariant::Ghost,
+                ButtonSize::IconXs,
+            )
+            .text_color(c.muted)
+            .hover(|s| s.text_color(c.fg))
+            .child(IconName::GitGraph.svg(c.muted).size(px(13.0)))
+            .tooltip(|w, cx| labonair_ui_kit::Tooltip::new("Open Git Graph").build(w, cx))
+            .on_click(cx.listener(|_this, _: &ClickEvent, _w, cx| {
+                cx.emit(ScmEvent::OpenGitGraph);
+            })),
+        );
         row = row.child(
             labonair_ui_kit::button_no_hover(
                 "git-repo-menu",

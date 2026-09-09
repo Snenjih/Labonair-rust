@@ -418,17 +418,21 @@ pub(crate) fn bootstrap(
 
     let git_panel =
         cx.new(|cx| GitPanelView::new(git_service.clone(), tokio.clone(), theme.clone(), cx));
-    // Source Control → workspace Project Diff (Zed-parity Phase 4, §12.6). The
-    // panel emits a neutral `ProjectDiffRequest`; the workspace owns the single
-    // Project Diff item's lifecycle (idempotent open/focus).
+    // Source Control → workspace surfaces. The panel emits neutral requests; the
+    // workspace owns each surface's lifecycle (idempotent open/focus): the single
+    // Project Diff item (Zed-parity Phase 4, §12.6) and the on-demand Git Graph tab.
     cx.subscribe_in(
         &git_panel,
         window,
-        |this, _, event: &ScmEvent, _window, cx| {
-            let ScmEvent::OpenProjectDiff(req) = event;
-            let req = req.clone();
-            this.workspace
-                .update(cx, |w, cx| w.open_project_diff(req, cx));
+        |this, _, event: &ScmEvent, _window, cx| match event {
+            ScmEvent::OpenProjectDiff(req) => {
+                let req = req.clone();
+                this.workspace
+                    .update(cx, |w, cx| w.open_project_diff(req, cx));
+            }
+            ScmEvent::OpenGitGraph => {
+                this.workspace.update(cx, |w, cx| w.open_git_graph_tab(cx));
+            }
         },
     )
     .detach();
@@ -732,7 +736,6 @@ pub(crate) fn bootstrap(
     let panel_contributions = [
         labonair_panel_explorer::panel_registration(&explorer, cx),
         labonair_panel_scm::panel_registration(&git_panel, cx),
-        labonair_panel_git_graph::panel_registration(&git_graph, cx),
         labonair_panel_snippets::panel_registration(&snippets, cx),
     ];
     workspace.update(cx, |workspace, _cx| {

@@ -62,8 +62,6 @@ pub enum PanelIcon {
     Explorer,
     /// Source-control (status / staging) panel.
     SourceControl,
-    /// Commit-graph panel.
-    GitGraph,
     /// Command-snippets panel.
     Snippets,
     /// AI-chat panel.

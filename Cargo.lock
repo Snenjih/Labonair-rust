@@ -4483,7 +4483,6 @@ dependencies = [
  "gpui",
  "labonair-git",
  "labonair-notifications",
- "labonair-panel",
  "labonair-theme",
  "labonair-ui-kit",
  "tokio",

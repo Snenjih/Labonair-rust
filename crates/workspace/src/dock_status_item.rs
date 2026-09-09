@@ -15,7 +15,6 @@ pub(crate) fn panel_toggle_icon(icon: PanelIcon) -> IconName {
     match icon {
         PanelIcon::Explorer => IconName::FolderTree,
         PanelIcon::SourceControl => IconName::GitBranch,
-        PanelIcon::GitGraph => IconName::GitCompare,
         PanelIcon::Snippets => IconName::Zap,
         PanelIcon::Ai => IconName::MessageSquare,
     }
@@ -32,7 +31,6 @@ fn panel_toggle_title(persistent_name: &str) -> &'static str {
     match persistent_name {
         "explorer" => "Explorer",
         "source-control" => "Source Control",
-        "git-graph" => "Git Graph",
         "snippets" => "Snippets",
         _ => "Panel",
     }

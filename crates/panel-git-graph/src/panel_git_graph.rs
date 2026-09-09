@@ -47,23 +47,6 @@ use labonair_ui_kit::{
     Palette,
 };
 
-/// Build the Git Graph contribution for the workspace-owned panel registry.
-pub fn panel_registration(
-    view: &Entity<GitGraphView>,
-    cx: &App,
-) -> labonair_panel::PanelRegistration {
-    use labonair_panel::{AnyPanelHandle, Panel, PanelRegistration};
-
-    let handle = view.clone();
-    let registration = PanelRegistration {
-        persistent_name: GitGraphView::persistent_name(),
-        default_position: view.read(cx).position(cx),
-        icon: view.read(cx).icon(),
-        build: Arc::new(move |_window, _cx| Arc::new(handle.clone()) as AnyPanelHandle),
-    };
-    registration
-}
-
 // ── geometry ───────────────────────────────────────────────────────────────
 
 const ROW_H: f32 = 32.0;
@@ -2037,50 +2020,6 @@ fn diff_line(line: &str, c: Colors) -> Div {
         } else {
             line.to_string()
         }))
-}
-
-/// [`Panel`](labonair_panel::Panel) wiring (T17-001).
-///
-/// The commit graph docks at the **bottom** at **320 px** tall — it is a wide,
-/// short view (graph lanes + a commit detail pane) that reads best across the
-/// full workspace width, matching the reference Git-Graph tab layout. All three
-/// docks are accepted (a user may still pin it to a side), but the bottom dock
-/// is the default. The bottom dock itself lands in T17-002; until then the
-/// shell keeps reaching the graph through its on-demand tab, and
-/// [`set_position`] is a no-op.
-impl labonair_panel::Panel for GitGraphView {
-    fn persistent_name() -> &'static str {
-        "git-graph"
-    }
-
-    fn title(&self, _cx: &App) -> SharedString {
-        "Git Graph".into()
-    }
-
-    fn icon(&self) -> labonair_panel::PanelIcon {
-        labonair_panel::PanelIcon::GitGraph
-    }
-
-    fn position(&self, _cx: &App) -> labonair_panel::DockPosition {
-        labonair_panel::DockPosition::Bottom
-    }
-
-    fn position_is_valid(&self, _position: labonair_panel::DockPosition) -> bool {
-        true
-    }
-
-    fn set_position(
-        &mut self,
-        _position: labonair_panel::DockPosition,
-        _window: &mut Window,
-        _cx: &mut Context<Self>,
-    ) {
-        // T17-002 owns the dock model; nothing to persist here yet.
-    }
-
-    fn default_size(&self, _cx: &App) -> Pixels {
-        px(320.0)
-    }
 }
 
 // ── tests ──────────────────────────────────────────────────────────────────
