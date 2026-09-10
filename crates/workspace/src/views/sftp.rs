@@ -14,8 +14,11 @@
 //! This view does not know about russh handles, backend state, or host storage.
 //!
 //! Deviations from the reference:
-//! * Rows render into a plain `overflow_y_scroll` column, not
-//!   `@tanstack/react-virtual` (same call the the explorer port makes).
+//! * Rows are virtualised with GPUI's [`uniform_list`] (same primitive the
+//!   explorer / SCM ports use) rather than `@tanstack/react-virtual`. The
+//!   inline rename / new-file / new-folder text field is a pinned row above
+//!   the list (not a virtualised row); during a rename the edited entry is
+//!   hidden from the list so it isn't shown twice.
 //! * The two panes are a fixed 50/50 split rather than a draggable
 //!   `ResizablePanelGroup`.
 //! * Drag between panes has no drop-target pane highlight yet (the reference
@@ -26,9 +29,10 @@
 
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, px, App, AppContext, ClickEvent, Context, Entity, EventEmitter, FocusHandle, Focusable,
-    InteractiveElement, IntoElement, KeyDownEvent, MouseButton, MouseDownEvent, ParentElement,
-    Render, SharedString, StatefulInteractiveElement, Styled, Window,
+    div, px, uniform_list, App, AppContext, ClickEvent, Context, Entity, EventEmitter, FocusHandle,
+    Focusable, InteractiveElement, IntoElement, KeyDownEvent, MouseButton, MouseDownEvent,
+    ParentElement, Render, SharedString, StatefulInteractiveElement, Styled, UniformListScrollHandle,
+    Window,
 };
 use tokio::runtime::Handle as TokioHandle;
 
@@ -215,6 +219,8 @@ struct Pane {
     /// Address-bar edit in progress.
     path_editing: bool,
     path_buffer: String,
+    /// Virtualised row-list scroll position.
+    scroll: UniformListScrollHandle,
 }
 
 impl Pane {
@@ -230,6 +236,7 @@ impl Pane {
             edit_buffer: String::new(),
             path_editing: false,
             path_buffer: String::new(),
+            scroll: UniformListScrollHandle::new(),
         }
     }
 
@@ -1299,7 +1306,8 @@ impl SftpView {
                     })
                     .flex_1()
                     .min_h_0()
-                    .overflow_y_scroll()
+                    .flex()
+                    .flex_col()
                     .on_mouse_down(
                         MouseButton::Right,
                         cx.listener(move |this, ev: &MouseDownEvent, _w, cx| {
@@ -1413,117 +1421,67 @@ impl SftpView {
         if pane.loading && pane.entries.is_empty() {
             return text_center("Loading\u{2026}", c.muted);
         }
-        let mut list = div().flex().flex_col().py_1();
 
-        if let Some(slot) = &pane.edit {
-            if slot.kind != EditKind::Rename {
-                list = list.child(self.render_inline_input(side, c, cx));
-            }
-        }
+        // Uniform row height so `uniform_list` can virtualise — only the
+        // on-screen `[range]` window is turned into elements, keeping large
+        // directories cheap (mirrors panel-explorer / panel-scm).
+        let row_h = c.palette.density_tokens().tree_row_height();
 
-        for entry in pane.visible() {
-            let is_rename = pane
-                .edit
-                .as_ref()
-                .filter(|s| s.kind == EditKind::Rename)
-                .and_then(|s| s.orig.as_deref())
-                == Some(entry.path.as_str());
-            if is_rename {
-                list = list.child(self.render_inline_input(side, c, cx));
-            } else {
-                list = list.child(self.render_row(side, entry, pane, c, cx));
-            }
-        }
-        list.into_any_element()
-    }
+        // The inline rename / new-file / new-folder text field is rendered as
+        // a pinned row *above* the virtualised list, never inside the
+        // `uniform_list` closure: that closure runs in a deferred layout pass
+        // (and again while measuring row 0), and `track_focus` must not run
+        // there. During a rename the edited entry is dropped from the list so
+        // it isn't shown twice.
+        let editing = pane.edit.is_some();
+        let rename_orig = pane
+            .edit
+            .as_ref()
+            .filter(|s| s.kind == EditKind::Rename)
+            .and_then(|s| s.orig.clone());
 
-    fn render_row(
-        &self,
-        side: Side,
-        entry: &Entry,
-        pane: &Pane,
-        c: Colors,
-        cx: &mut Context<Self>,
-    ) -> gpui::AnyElement {
-        let selected = pane.selected.as_deref() == Some(entry.path.as_str());
-        let glyph: SharedString = if entry.is_dir {
-            let store = self.theme.read(cx);
-            icon_for_path(store.icon_theme(), "", true, false)
-        } else if entry.is_symlink {
-            IconName::Link.path().into()
-        } else {
-            let store = self.theme.read(cx);
-            icon_for_path(store.icon_theme(), &entry.name, false, false)
+        // Per-frame owned snapshot: the `uniform_list` closure is `'static`
+        // and cannot borrow `pane`.
+        let entries: Vec<Entry> = pane
+            .visible()
+            .into_iter()
+            .filter(|e| rename_orig.as_deref() != Some(e.path.as_str()))
+            .cloned()
+            .collect();
+
+        let list_id = match side {
+            Side::Local => "sftp-list-local",
+            Side::Remote => "sftp-list-remote",
         };
-        let id: SharedString = format!("row:{:?}:{}", side_key(side), entry.path).into();
-        let e_click = entry.clone();
-        let e_menu = entry.clone();
-        let drag_path = entry.path.clone();
-        let perm_col = entry.permissions.clone();
-        let size_col = if entry.is_dir {
-            String::new()
-        } else {
-            format_bytes(entry.size)
-        };
+        let selected = pane.selected.clone();
+        let view = cx.entity();
 
-        // Click/right-click/drag are built up front (need `cx`) so they can
-        // move into the `'static` `.extra()` closure below, mirroring the
-        // panel-explorer tree-row / hosts-ui `render_host_list_item` pattern.
-        let on_click = cx.listener(move |this, ev: &ClickEvent, _w, cx| {
-            this.activate(side, &e_click, ev.click_count() >= 2, cx);
-        });
-        let on_right_click = cx.listener(move |this, ev: &MouseDownEvent, _w, cx| {
-            this.pane(side).selected = Some(e_menu.path.clone());
-            this.menu = Some(Menu {
-                side,
-                path: e_menu.path.clone(),
-                is_dir: e_menu.is_dir,
-                pos: ev.position,
-                confirming_delete: false,
-            });
-            cx.notify();
-        });
-
-        // `ListItem` doesn't implement `FluentBuilder`, so the optional
-        // trailing columns are built as `Option`s and spliced in via
-        // `.children(..)` (its `ParentElement` impl) instead of `.when(..)`.
-        let perm_child = (!perm_col.is_empty()).then(|| {
-            div()
-                .text_xs()
-                .font_family("monospace")
-                .text_color(c.muted)
-                .child(SharedString::from(perm_col))
-        });
-        let size_child = (!size_col.is_empty()).then(|| {
-            div()
-                .w(px(64.0))
-                .text_xs()
-                .text_color(c.muted)
-                .child(SharedString::from(size_col))
-        });
-
-        ListItem::new(id, c.fg, c.muted, c.border)
-            .selected(selected)
-            .child(div().child(svg_path(glyph, c.muted)))
-            .child(
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .child(SharedString::from(entry.name.clone())),
-            )
-            .children(perm_child)
-            .children(size_child)
-            .extra(move |row| {
-                row.on_click(on_click)
-                    .on_mouse_down(MouseButton::Right, on_right_click)
-                    .on_drag(
-                        SftpDrag {
-                            from: side,
-                            paths: vec![drag_path],
-                        },
-                        |_, _, _, cx| cx.new(|_| DragGhost),
+        let list = uniform_list(list_id, entries.len(), move |range, _win, cx| {
+            range
+                .map(|i| {
+                    let entry = &entries[i];
+                    sftp_row_element(
+                        entry,
+                        side,
+                        selected.as_deref() == Some(entry.path.as_str()),
+                        row_h,
+                        c,
+                        &view,
+                        cx,
                     )
-            })
+                })
+                .collect::<Vec<_>>()
+        })
+        .track_scroll(pane.scroll.clone())
+        .flex_1();
+
+        div()
+            .flex()
+            .flex_col()
+            .flex_1()
+            .min_h_0()
+            .when(editing, |d| d.child(self.render_inline_input(side, c, cx)))
+            .child(list)
             .into_any_element()
     }
 
@@ -1931,6 +1889,111 @@ fn side_key(side: Side) -> &'static str {
         Side::Local => "L",
         Side::Remote => "R",
     }
+}
+
+/// One virtualised file/folder row. Free function (not a `&self` method) so it
+/// can be built inside the `uniform_list` render closure, which only gets
+/// `&mut App`; handlers reach the view through `view.update(..)` — the same
+/// shape as `panel-explorer`'s `explorer_row_element`.
+#[allow(clippy::too_many_arguments)]
+fn sftp_row_element(
+    entry: &Entry,
+    side: Side,
+    selected: bool,
+    row_h: gpui::Pixels,
+    c: Colors,
+    view: &Entity<SftpView>,
+    cx: &mut App,
+) -> gpui::AnyElement {
+    let glyph: SharedString = if entry.is_symlink {
+        IconName::Link.path().into()
+    } else {
+        let store = view.read(cx).theme.read(cx);
+        icon_for_path(
+            store.icon_theme(),
+            if entry.is_dir { "" } else { &entry.name },
+            entry.is_dir,
+            false,
+        )
+    };
+    let id: SharedString = format!("row:{:?}:{}", side_key(side), entry.path).into();
+    let perm_col = entry.permissions.clone();
+    let size_col = if entry.is_dir {
+        String::new()
+    } else {
+        format_bytes(entry.size)
+    };
+
+    let on_click = {
+        let v = view.clone();
+        let entry = entry.clone();
+        move |ev: &ClickEvent, _w: &mut Window, cx: &mut App| {
+            v.update(cx, |this, cx| {
+                this.activate(side, &entry, ev.click_count() >= 2, cx);
+            });
+        }
+    };
+    let on_right_click = {
+        let v = view.clone();
+        let path = entry.path.clone();
+        let is_dir = entry.is_dir;
+        move |ev: &MouseDownEvent, _w: &mut Window, cx: &mut App| {
+            v.update(cx, |this, cx| {
+                this.pane(side).selected = Some(path.clone());
+                this.menu = Some(Menu {
+                    side,
+                    path: path.clone(),
+                    is_dir,
+                    pos: ev.position,
+                    confirming_delete: false,
+                });
+                cx.notify();
+            });
+        }
+    };
+    let drag_path = entry.path.clone();
+
+    // `ListItem` doesn't implement `FluentBuilder`, so the optional trailing
+    // columns are built as `Option`s and spliced in via `.children(..)`.
+    let perm_child = (!perm_col.is_empty()).then(|| {
+        div()
+            .text_xs()
+            .font_family("monospace")
+            .text_color(c.muted)
+            .child(SharedString::from(perm_col))
+    });
+    let size_child = (!size_col.is_empty()).then(|| {
+        div()
+            .w(px(64.0))
+            .text_xs()
+            .text_color(c.muted)
+            .child(SharedString::from(size_col))
+    });
+
+    ListItem::new(id, c.fg, c.muted, c.border)
+        .selected(selected)
+        .child(div().child(svg_path(glyph, c.muted)))
+        .child(
+            div()
+                .flex_1()
+                .min_w_0()
+                .child(SharedString::from(entry.name.clone())),
+        )
+        .children(perm_child)
+        .children(size_child)
+        .extra(move |row| {
+            row.h(row_h)
+                .on_click(on_click)
+                .on_mouse_down(MouseButton::Right, on_right_click)
+                .on_drag(
+                    SftpDrag {
+                        from: side,
+                        paths: vec![drag_path],
+                    },
+                    |_, _, _, cx| cx.new(|_| DragGhost),
+                )
+        })
+        .into_any_element()
 }
 
 fn text_center(msg: &str, color: gpui::Hsla) -> gpui::AnyElement {
