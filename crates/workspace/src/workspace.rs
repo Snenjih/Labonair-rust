@@ -391,9 +391,9 @@ pub struct Workspace {
     /// `labonair-keymap-ui` owns its rendering; the workspace owns its tab
     /// lifecycle (mirrors `git_graph`).
     keymap: Option<Entity<KeymapManagementView>>,
-    /// The single Project Diff item (Zed-parity Phase 4), lazily created for the
-    /// `GitDiff` tab. Source Control emits a `ProjectDiffRequest`; this view is
-    /// re-pointed rather than duplicated.
+    /// The single workspace Diff item, lazily created for the `Diff` tab.
+    /// Source Control and the Git Graph emit a `ProjectDiffRequest`; this view
+    /// is re-pointed (working tree ↔ commit) rather than duplicated.
     project_diff: Option<Entity<crate::views::project_diff::ProjectDiffView>>,
     /// Panel-type registry (T17-001) — populated once by
     /// `labonair_shell::register_builtin_panels`. The shell's dock rendering
@@ -731,7 +731,7 @@ impl Workspace {
                 // Transient kinds — never persisted.
                 TabKind::AiDiff
                 | TabKind::GitGraph
-                | TabKind::GitDiff
+                | TabKind::Diff
                 | TabKind::CommitDiff
                 | TabKind::Keymap => None,
             };
@@ -2602,12 +2602,12 @@ impl Workspace {
             .read(cx)
             .tabs()
             .iter()
-            .find(|t| t.kind == TabKind::GitDiff)
+            .find(|t| t.kind == TabKind::Diff)
             .map(|t| t.id);
         self.tabs.update(cx, |s, cx| match existing {
             Some(id) => s.set_active(id, cx),
             None => {
-                s.open(TabKind::GitDiff, TabData::default(), cx);
+                s.open(TabKind::Diff, TabData::default(), cx);
             }
         });
     }
@@ -4548,7 +4548,7 @@ impl Workspace {
                 Some(view) => view.clone().into_any_element(),
                 None => self.placeholder("Git Graph", cx).into_any_element(),
             },
-            TabKind::GitDiff => match &self.project_diff {
+            TabKind::Diff => match &self.project_diff {
                 Some(view) => view.clone().into_any_element(),
                 None => self.placeholder("Project Diff", cx).into_any_element(),
             },

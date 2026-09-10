@@ -31,14 +31,15 @@ use std::time::Duration;
 
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, px, uniform_list, App, AppContext, ClickEvent, Context, Entity, EventEmitter, FocusHandle,
-    Focusable, InteractiveElement, IntoElement, KeyDownEvent, MouseDownEvent, ParentElement,
-    Pixels, Point, Render, SharedString, StatefulInteractiveElement, Styled, Window,
+    div, px, uniform_list, App, AppContext, ClickEvent, ClipboardItem, Context, Entity,
+    EventEmitter, FocusHandle, Focusable, InteractiveElement, IntoElement, KeyDownEvent,
+    MouseDownEvent, ParentElement, Pixels, Point, Render, SharedString, StatefulInteractiveElement,
+    Styled, Window,
 };
 use labonair_command_palette_core::{PaletteAction, SubmenuAction};
 use labonair_command_palette_runtime::PaletteActionHandlerRegistry;
 use labonair_git::{Branch, CommitInfo, FileStatus, GitService, GitStatus, WorkspaceGitState};
-use labonair_panel::{ProjectDiffFile, ProjectDiffMode, ProjectDiffRequest};
+use labonair_panel::{DiffSource, ProjectDiffFile, ProjectDiffMode, ProjectDiffRequest};
 use tokio::runtime::Handle as TokioHandle;
 
 use crate::git_change_row::{git_change_row, StageState};
@@ -190,6 +191,25 @@ pub fn validate_commit_message(raw: &str, staged_count: usize) -> Result<String,
         return Err("Nothing staged to commit".to_string());
     }
     Ok(msg.to_string())
+}
+
+/// Compact "time ago" label for a commit timestamp (unix seconds). Mirrors the
+/// Git-Graph `RefreshAge` scale but coarser (`5m`, `3h`, `2d`, `4w`, `1y`).
+pub fn short_relative(ts: i64) -> String {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(ts);
+    let secs = (now - ts).max(0);
+    match secs {
+        s if s < 60 => "just now".to_string(),
+        s if s < 3_600 => format!("{}m ago", s / 60),
+        s if s < 86_400 => format!("{}h ago", s / 3_600),
+        s if s < 604_800 => format!("{}d ago", s / 86_400),
+        s if s < 2_592_000 => format!("{}w ago", s / 604_800),
+        s if s < 31_536_000 => format!("{}mo ago", s / 2_592_000),
+        s => format!("{}y ago", s / 31_536_000),
+    }
 }
 
 // ─── File status presentation ────────────────────────────────────────────────
@@ -950,6 +970,12 @@ pub struct GitPanelView {
     // ── history mode ──
     history: Vec<CommitInfo>,
     history_loading: bool,
+    /// Last `git log` failure, shown in place of the list.
+    history_error: Option<String>,
+    /// Keyboard-focused history row (also the click highlight).
+    history_selected: Option<usize>,
+    /// Open history right-click menu: `(row index, cursor anchor)`.
+    history_menu: Option<(usize, Point<Pixels>)>,
 
     // ── branch picker (port of BranchDropdown) ──
     branch_picker_open: bool,
@@ -1060,6 +1086,9 @@ impl GitPanelView {
             commit_expanded: false,
             history: Vec::new(),
             history_loading: false,
+            history_error: None,
+            history_selected: None,
+            history_menu: None,
             branch_picker_open: false,
             branch_filter: String::new(),
             checkout_error: None,
@@ -1127,6 +1156,9 @@ impl GitPanelView {
             // Target changed — clear stale selection + history.
             self.selected = None;
             self.history.clear();
+            self.history_selected = None;
+            self.history_menu = None;
+            self.history_error = None;
             self.dir_collapsed.clear();
         }
         let Some(root) = self.root.clone() else {
@@ -1172,7 +1204,10 @@ impl GitPanelView {
                             this.selected = None;
                             this.history.clear();
                         }
-                        if this.mode == PanelMode::History {
+                        // Only (re)load the log when there is nothing to show —
+                        // mutations clear `history` so the next poll refetches.
+                        // Avoids a `git log` on every 2 s status poll.
+                        if this.mode == PanelMode::History && this.history.is_empty() {
                             this.load_history(cx);
                         }
                     }
@@ -1245,6 +1280,7 @@ impl GitPanelView {
         cx.emit(ScmEvent::OpenProjectDiff(ProjectDiffRequest {
             repo_root,
             session_id: self.session_id.clone(),
+            source: DiffSource::WorkingTree,
             files,
             selected,
             mode: ProjectDiffMode::Unified,
@@ -1266,6 +1302,7 @@ impl GitPanelView {
             return;
         }
         self.mode = mode;
+        self.history_menu = None;
         if mode == PanelMode::History && self.history.is_empty() {
             self.load_history(cx);
         }
@@ -1280,6 +1317,7 @@ impl GitPanelView {
             return;
         }
         self.history_loading = true;
+        self.history_error = None;
         let session = self.session_id.clone();
         let git = self.git.clone();
         let generation = self.target_gen;
@@ -1294,8 +1332,19 @@ impl GitPanelView {
                     return;
                 }
                 match res {
-                    Ok(commits) => this.history = commits,
+                    Ok(commits) => {
+                        this.history = commits;
+                        this.history_error = None;
+                        let stale = this
+                            .history_selected
+                            .is_none_or(|i| i >= this.history.len());
+                        if stale {
+                            this.history_selected =
+                                (!this.history.is_empty()).then_some(0);
+                        }
+                    }
                     Err(e) => {
+                        this.history_error = Some(e.clone());
                         notify_err::<()>("Load history failed", Err(e), cx);
                     }
                 }
@@ -1303,6 +1352,40 @@ impl GitPanelView {
             });
         })
         .detach();
+    }
+
+    /// Open the workspace Diff tab (read-only) for history row `idx`.
+    fn open_history_commit(&mut self, idx: usize, cx: &mut Context<Self>) {
+        let Some(repo_root) = self.repo_root.clone() else {
+            return;
+        };
+        let Some(cm) = self.history.get(idx) else {
+            return;
+        };
+        self.history_selected = Some(idx);
+        cx.emit(ScmEvent::OpenProjectDiff(ProjectDiffRequest {
+            repo_root,
+            session_id: self.session_id.clone(),
+            source: DiffSource::Commit {
+                hash: cm.hash.clone(),
+                subject: cm.subject.clone(),
+            },
+            files: Vec::new(),
+            selected: None,
+            mode: ProjectDiffMode::Unified,
+        }));
+        cx.notify();
+    }
+
+    /// Move the history keyboard selection by `delta`, clamped.
+    fn history_nav(&mut self, delta: isize, cx: &mut Context<Self>) {
+        if self.history.is_empty() {
+            return;
+        }
+        let last = self.history.len() as isize - 1;
+        let cur = self.history_selected.unwrap_or(0) as isize;
+        self.history_selected = Some((cur + delta).clamp(0, last) as usize);
+        cx.notify();
     }
 
     // ── generic Git-operation dispatch ─────────────────────────────────────
@@ -1332,6 +1415,9 @@ impl GitPanelView {
                 this.op_in_progress = false;
                 this.repo_op = RepoOperation::Idle;
                 notify_err(title, res, cx);
+                // A mutation may have changed HEAD — drop the cached log so the
+                // History tab refetches on its next poll.
+                this.history.clear();
                 this.refresh_soon(cx);
                 cx.notify();
             });
@@ -2048,6 +2134,26 @@ impl GitPanelView {
 
     fn on_field_key(&mut self, ev: &KeyDownEvent, _w: &mut Window, cx: &mut Context<Self>) {
         let Some(field) = self.active_field else {
+            // No text field focused — drive History-tab list navigation.
+            if self.mode == PanelMode::History && self.history_menu.is_none() {
+                match ev.keystroke.key.as_str() {
+                    "down" | "j" => {
+                        self.history_nav(1, cx);
+                        cx.stop_propagation();
+                    }
+                    "up" | "k" => {
+                        self.history_nav(-1, cx);
+                        cx.stop_propagation();
+                    }
+                    "enter" => {
+                        if let Some(i) = self.history_selected {
+                            self.open_history_commit(i, cx);
+                        }
+                        cx.stop_propagation();
+                    }
+                    _ => {}
+                }
+            }
             return;
         };
         let ks = &ev.keystroke;
@@ -3426,7 +3532,26 @@ impl GitPanelView {
         ))
     }
 
-    fn render_history(&self, c: Colors, _cx: &mut Context<Self>) -> gpui::AnyElement {
+    fn render_history(&self, c: Colors, cx: &mut Context<Self>) -> gpui::AnyElement {
+        if let Some(err) = &self.history_error {
+            return div()
+                .flex_1()
+                .flex()
+                .flex_col()
+                .items_center()
+                .justify_center()
+                .gap(px(4.0))
+                .px(px(16.0))
+                .text_size(px(11.0))
+                .text_color(c.error)
+                .child(SharedString::from("Could not load history"))
+                .child(
+                    div()
+                        .text_color(c.muted)
+                        .child(SharedString::from(err.clone())),
+                )
+                .into_any_element();
+        }
         if self.history.is_empty() {
             return div()
                 .flex_1()
@@ -3443,61 +3568,165 @@ impl GitPanelView {
                 .into_any_element();
         }
         let commits = self.history.clone();
-        let row_h = px(40.0);
-        uniform_list(
-            "git-history-list",
-            commits.len(),
-            move |range, _win, _cx| {
-                range
-                    .map(|i| {
-                        let cm = &commits[i];
+        let selected = self.history_selected;
+        let row_h = px(44.0);
+        let view = cx.entity();
+        let list = uniform_list("git-history-list", commits.len(), move |range, _win, _cx| {
+            range
+                .map(|i| {
+                    let cm = &commits[i];
+                    let is_sel = selected == Some(i);
+                    let click_v = view.clone();
+                    let menu_v = view.clone();
+                    let mut top = div()
+                        .flex()
+                        .items_center()
+                        .gap(px(6.0))
+                        .overflow_hidden()
+                        .whitespace_nowrap()
+                        .text_size(px(12.0))
+                        .child(
+                            div()
+                                .flex_none()
+                                .text_color(c.info)
+                                .child(SharedString::from(cm.short_hash.clone())),
+                        );
+                    for r in cm.refs.iter().take(3) {
+                        top = top.child(
+                            div()
+                                .flex_none()
+                                .px(px(4.0))
+                                .rounded_sm()
+                                .bg(c.accent.opacity(0.18))
+                                .text_size(px(9.5))
+                                .text_color(c.accent)
+                                .child(SharedString::from(r.clone())),
+                        );
+                    }
+                    top = top.child(
                         div()
-                            .flex()
-                            .flex_col()
-                            .h(row_h)
-                            .justify_center()
-                            .px(px(10.0))
-                            .border_b_1()
-                            .border_color(c.border.opacity(0.5))
-                            .child(
-                                div()
-                                    .flex()
-                                    .gap(px(6.0))
-                                    .overflow_hidden()
-                                    .whitespace_nowrap()
-                                    .text_size(px(12.0))
-                                    .child(
-                                        div()
-                                            .flex_none()
-                                            .text_color(c.info)
-                                            .child(SharedString::from(cm.short_hash.clone())),
-                                    )
-                                    .child(
-                                        div()
-                                            .flex_1()
-                                            .overflow_hidden()
-                                            .text_color(c.fg)
-                                            .child(SharedString::from(cm.subject.clone())),
-                                    ),
-                            )
-                            .child(
-                                div()
-                                    .text_size(px(10.0))
-                                    .text_color(c.muted)
-                                    .overflow_hidden()
-                                    .whitespace_nowrap()
-                                    .child(SharedString::from(format!(
-                                        "{}  \u{2022}  +{} \u{2212}{}",
-                                        cm.author_name, cm.insertions, cm.deletions
-                                    ))),
-                            )
-                            .into_any_element()
-                    })
-                    .collect::<Vec<_>>()
-            },
-        )
-        .flex_1()
-        .into_any_element()
+                            .flex_1()
+                            .overflow_hidden()
+                            .text_color(c.fg)
+                            .child(SharedString::from(cm.subject.clone())),
+                    );
+                    div()
+                        .id(("git-history-row", i))
+                        .flex()
+                        .flex_col()
+                        .justify_center()
+                        .h(row_h)
+                        .px(px(10.0))
+                        .border_b_1()
+                        .border_color(c.border.opacity(0.5))
+                        .cursor_pointer()
+                        .when(is_sel, |d| d.bg(c.accent.opacity(0.12)))
+                        .hover(|s| s.bg(c.fg.opacity(0.04)))
+                        .child(top)
+                        .child(
+                            div()
+                                .text_size(px(10.0))
+                                .text_color(c.muted)
+                                .overflow_hidden()
+                                .whitespace_nowrap()
+                                .child(SharedString::from(format!(
+                                    "{}  \u{2022}  {}  \u{2022}  {} file{}  \u{2022}  +{} \u{2212}{}",
+                                    cm.author_name,
+                                    short_relative(cm.timestamp),
+                                    cm.files_changed,
+                                    if cm.files_changed == 1 { "" } else { "s" },
+                                    cm.insertions,
+                                    cm.deletions
+                                ))),
+                        )
+                        .on_click(move |_: &ClickEvent, _w, cx| {
+                            click_v.update(cx, |this, cx| this.open_history_commit(i, cx));
+                        })
+                        .on_mouse_down(
+                            gpui::MouseButton::Right,
+                            move |ev: &MouseDownEvent, _w, cx| {
+                                menu_v.update(cx, |this, cx| {
+                                    this.history_selected = Some(i);
+                                    this.history_menu = Some((i, ev.position));
+                                    cx.notify();
+                                });
+                            },
+                        )
+                        .into_any_element()
+                })
+                .collect::<Vec<_>>()
+        })
+        .flex_1();
+
+        div()
+            .flex_1()
+            .flex()
+            .flex_col()
+            .min_h_0()
+            .child(list)
+            .children(self.render_history_menu(c, cx))
+            .into_any_element()
+    }
+
+    fn render_history_menu(&self, c: Colors, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
+        let (idx, pos) = self.history_menu?;
+        let cm = self.history.get(idx)?;
+        let full = cm.hash.clone();
+        let short = cm.short_hash.clone();
+        let view = cx.entity();
+        let close = {
+            let v = view.clone();
+            move |cx: &mut App| {
+                v.update(cx, |this, cx| {
+                    this.history_menu = None;
+                    cx.notify();
+                });
+            }
+        };
+        let items = vec![
+            MenuItem::new("gh-view", "View Changes").on_click({
+                let v = view.clone();
+                move |_, _w, cx| {
+                    v.update(cx, |this, cx| {
+                        this.history_menu = None;
+                        this.open_history_commit(idx, cx);
+                    });
+                }
+            }),
+            MenuItem::separator(),
+            MenuItem::new("gh-copy-hash", "Copy Commit Hash")
+                .icon(IconName::Copy)
+                .on_click({
+                    let full = full.clone();
+                    let close = close.clone();
+                    move |_, _w, cx| {
+                        cx.write_to_clipboard(ClipboardItem::new_string(full.clone()));
+                        close(cx);
+                    }
+                }),
+            MenuItem::new("gh-copy-short", "Copy Short Hash")
+                .icon(IconName::Copy)
+                .on_click({
+                    let short = short.clone();
+                    let close = close.clone();
+                    move |_, _w, cx| {
+                        cx.write_to_clipboard(ClipboardItem::new_string(short.clone()));
+                        close(cx);
+                    }
+                }),
+            MenuItem::separator(),
+            MenuItem::new("gh-graph", "Open in Git Graph").on_click({
+                let v = view.clone();
+                move |_, _w, cx| {
+                    v.update(cx, |this, cx| {
+                        this.history_menu = None;
+                        cx.emit(ScmEvent::OpenGitGraph);
+                        cx.notify();
+                    });
+                }
+            }),
+        ];
+        Some(context_menu(pos, c.palette, move |_w, cx| close(cx), items))
     }
 
     fn render_panel_menu(&self, c: Colors, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {

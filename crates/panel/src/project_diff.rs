@@ -18,6 +18,32 @@ pub enum ProjectDiffMode {
     Split,
 }
 
+/// What the Diff item is reviewing. One workspace Diff surface renders every
+/// variant; the source decides where the base text comes from and whether
+/// hunk-level staging is offered (Zed's `DiffOperations` idea in miniature).
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub enum DiffSource {
+    /// Uncommitted work: the request's `files` list drives the rail and each
+    /// file's diff is `worktree↔index` or `index↔HEAD` per its flags.
+    #[default]
+    WorkingTree,
+    /// A single committed change, rendered read-only. `files` is ignored — the
+    /// item derives the changed-file rail from the commit's own patch.
+    Commit {
+        /// Full or short commit hash.
+        hash: String,
+        /// Commit subject, for the tab title / header.
+        subject: String,
+    },
+}
+
+impl DiffSource {
+    /// Hunk staging is only meaningful against the working tree.
+    pub fn supports_staging(&self) -> bool {
+        matches!(self, DiffSource::WorkingTree)
+    }
+}
+
 /// One changed file in a [`ProjectDiffRequest`], carrying the identity the diff
 /// item needs to fetch the right `git diff` for it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -41,7 +67,10 @@ pub struct ProjectDiffRequest {
     pub repo_root: String,
     /// Remote SSH session id, or `None` for a local repo.
     pub session_id: Option<String>,
-    /// Ordered changed files to review.
+    /// What is being reviewed. `WorkingTree` uses `files`; `Commit` derives its
+    /// own file list.
+    pub source: DiffSource,
+    /// Ordered changed files to review (`WorkingTree` source only).
     pub files: Vec<ProjectDiffFile>,
     /// Which file to focus initially / on a follow-up selection request. Must be
     /// one of `files`' paths; ignored otherwise.

@@ -33,8 +33,8 @@ use std::time::{Duration, Instant};
 
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, px, uniform_list, App, ClickEvent, ClipboardItem, Context, Div, Entity, FocusHandle,
-    Focusable, Font, Hsla, InteractiveElement, IntoElement, KeyDownEvent, MouseButton,
+    div, px, uniform_list, App, ClickEvent, ClipboardItem, Context, Div, Entity, EventEmitter,
+    FocusHandle, Focusable, Font, Hsla, InteractiveElement, IntoElement, KeyDownEvent, MouseButton,
     MouseDownEvent, ParentElement, Pixels, Point, Render, SharedString, Stateful,
     StatefulInteractiveElement, Styled, Window,
 };
@@ -439,6 +439,19 @@ enum GraphState {
     Loaded,
 }
 
+/// Events the Git-Graph tab emits for the shell to translate into workspace
+/// actions — keeps `labonair-workspace` free of a dependency on this crate.
+#[derive(Clone, Debug)]
+pub enum GitGraphEvent {
+    /// Open / focus the workspace Diff item for one commit, rendered read-only.
+    OpenCommitDiff {
+        repo_root: String,
+        session_id: Option<String>,
+        hash: String,
+        subject: String,
+    },
+}
+
 pub struct GitGraphView {
     git: Arc<dyn GitGraphService>,
     tokio: TokioHandle,
@@ -470,9 +483,9 @@ pub struct GitGraphView {
 
     /// Selected row index into `commits`.
     selected: Option<usize>,
+    /// Lightweight per-commit summary (`git show --numstat`) shown in the side
+    /// detail panel. The full patch opens in the workspace Diff tab, not here.
     detail_numstat: Option<Vec<FileStat>>,
-    detail_diff: Option<Result<String, String>>,
-    show_diff: bool,
     /// Open commit right-click menu: `(commit row index, cursor anchor)`.
     commit_menu: Option<(usize, Point<Pixels>)>,
     /// In-progress "Create Branch Here…" prompt: `(commit row index, buffer)`.
@@ -525,8 +538,6 @@ impl GitGraphView {
             last_refreshed: None,
             selected: None,
             detail_numstat: None,
-            detail_diff: None,
-            show_diff: false,
             commit_menu: None,
             branch_prompt: None,
             branch_prompt_focus: cx.focus_handle(),
@@ -558,8 +569,6 @@ impl GitGraphView {
         self.max_lane_count = 1;
         self.selected = None;
         self.detail_numstat = None;
-        self.detail_diff = None;
-        self.show_diff = false;
         self.total_loaded = 0;
         self.has_more = false;
         self.repo_path = None;
@@ -655,7 +664,6 @@ impl GitGraphView {
                             this.raw = page;
                             this.selected = None;
                             this.detail_numstat = None;
-                            this.detail_diff = None;
                         }
                         this.has_more = has_more;
                         this.rebuild_layout();
@@ -714,8 +722,6 @@ impl GitGraphView {
         }
         self.selected = Some(idx);
         self.detail_numstat = None;
-        self.detail_diff = None;
-        self.show_diff = false;
         cx.notify();
 
         let (Some(repo), Some(commit)) = (self.repo_path.clone(), self.commits.get(idx).cloned())
@@ -763,59 +769,6 @@ impl GitGraphView {
         .detach();
     }
 
-    fn toggle_diff(&mut self, cx: &mut Context<Self>) {
-        self.show_diff = !self.show_diff;
-        cx.notify();
-        if !self.show_diff || self.detail_diff.is_some() {
-            return;
-        }
-        let (Some(repo), Some(idx)) = (self.repo_path.clone(), self.selected) else {
-            return;
-        };
-        let Some(commit) = self.commits.get(idx).cloned() else {
-            return;
-        };
-        let hash = commit.info.hash.clone();
-        let session = self.session_id.clone();
-        let git = self.git.clone();
-        let generation = self.gen;
-
-        let jh = self
-            .tokio
-            .spawn(async move { git.commit_diff(repo, hash, session).await });
-        cx.spawn(async move |this, cx| {
-            let res = jh.await.unwrap_or_else(|e| Err(e.to_string()));
-            let _ = this.update(cx, |this, cx| {
-                if this.gen != generation || this.selected != Some(idx) {
-                    return;
-                }
-                match res {
-                    Ok(text) => this.detail_diff = Some(Ok(text)),
-                    Err(error) => {
-                        labonair_notifications::notification_center(cx).update(cx, |center, cx| {
-                            center.push(
-                                labonair_notifications::Notification::error(
-                                    "Commit diff failed",
-                                    "Could not load the selected commit diff.",
-                                )
-                                .source("git-graph")
-                                .details(error.clone())
-                                .dedupe_key(format!(
-                                    "git-graph:diff:{}",
-                                    this.commit_hash(idx).unwrap_or_default()
-                                )),
-                                cx,
-                            );
-                        });
-                        this.detail_diff = None;
-                        this.show_diff = false;
-                    }
-                }
-                cx.notify();
-            });
-        })
-        .detach();
-    }
 
     fn colors(&self, cx: &App) -> Colors {
         let t = self.theme.read(cx);
@@ -1197,17 +1150,15 @@ impl GitGraphView {
             ))
             .child(
                 button(
-                    "git-graph-toggle-diff",
+                    "git-graph-view-changes",
                     c.palette,
                     ButtonVariant::Outline,
                     ButtonSize::Xs,
                 )
-                .child(SharedString::from(if self.show_diff {
-                    "Hide diff"
-                } else {
-                    "View diff"
-                }))
-                .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| this.toggle_diff(cx))),
+                .child(SharedString::from("View Changes"))
+                .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                    this.emit_commit_diff(idx, cx)
+                })),
             )
             .child(nav_btn(
                 "git-graph-next",
@@ -1221,7 +1172,7 @@ impl GitGraphView {
                 }),
             ));
 
-        let mut body = div()
+        let body = div()
             .id("git-graph-detail-body")
             .flex()
             .flex_col()
@@ -1231,34 +1182,6 @@ impl GitGraphView {
             .child(subject)
             .child(div().border_t_1().border_color(c.border).child(files_head))
             .child(file_list);
-
-        if self.show_diff {
-            let mut diff_box = div()
-                .flex()
-                .flex_col()
-                .border_t_1()
-                .border_color(c.border)
-                .font(mono.clone())
-                .text_size(px(10.5));
-            match &self.detail_diff {
-                None => {
-                    diff_box = diff_box.child(
-                        div()
-                            .px(px(8.0))
-                            .py(px(4.0))
-                            .text_color(c.muted)
-                            .child(SharedString::from("Loading diff\u{2026}")),
-                    );
-                }
-                Some(Err(_)) => {}
-                Some(Ok(text)) => {
-                    for line in text.lines().take(800) {
-                        diff_box = diff_box.child(diff_line(line, c));
-                    }
-                }
-            }
-            body = body.child(diff_box);
-        }
 
         div()
             .flex()
@@ -1287,7 +1210,6 @@ impl GitGraphView {
                             |this, _: &ClickEvent, _w, cx| {
                                 this.selected = None;
                                 this.detail_numstat = None;
-                                this.detail_diff = None;
                                 cx.notify();
                             },
                         )),
@@ -1334,9 +1256,24 @@ impl Focusable for GitGraphView {
     }
 }
 
+impl EventEmitter<GitGraphEvent> for GitGraphView {}
+
 impl GitGraphView {
     fn commit_hash(&self, idx: usize) -> Option<String> {
         self.commits.get(idx).map(|c| c.info.hash.clone())
+    }
+
+    /// Ask the workspace to open the read-only Diff tab for commit `idx`.
+    fn emit_commit_diff(&mut self, idx: usize, cx: &mut Context<Self>) {
+        let (Some(repo_root), Some(commit)) = (self.repo_path.clone(), self.commits.get(idx)) else {
+            return;
+        };
+        cx.emit(GitGraphEvent::OpenCommitDiff {
+            repo_root,
+            session_id: self.session_id.clone(),
+            hash: commit.info.hash.clone(),
+            subject: commit.info.subject.clone(),
+        });
     }
 
     /// Run one git subcommand against the repo, then reload the graph.
@@ -1454,10 +1391,7 @@ impl GitGraphView {
                 move |_, _w, cx| {
                     v.update(cx, |this, cx| {
                         this.commit_menu = None;
-                        this.select(idx, cx);
-                        if !this.show_diff {
-                            this.toggle_diff(cx);
-                        }
+                        this.emit_commit_diff(idx, cx);
                     })
                 }
             }),
@@ -2002,24 +1936,6 @@ fn commit_row(
                 .child(SharedString::from(format_commit_date(info.timestamp))),
         )
         .child(changes)
-}
-
-fn diff_line(line: &str, c: Colors) -> Div {
-    let color = match line.as_bytes().first() {
-        Some(b'+') if !line.starts_with("+++") => c.success,
-        Some(b'-') if !line.starts_with("---") => c.error,
-        Some(b'@') => c.info,
-        _ => c.fg,
-    };
-    div()
-        .px(px(8.0))
-        .whitespace_nowrap()
-        .text_color(color)
-        .child(SharedString::from(if line.is_empty() {
-            " ".to_string()
-        } else {
-            line.to_string()
-        }))
 }
 
 // ── tests ──────────────────────────────────────────────────────────────────

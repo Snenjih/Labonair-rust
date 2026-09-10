@@ -5,7 +5,6 @@
 //! `labonair-hosts-host::HostView` contract (R08-012); the connection-status
 //! store is `crate::ssh_connection`.
 
-pub mod diff;
 pub mod editor;
 pub mod preview;
 pub mod project_diff;

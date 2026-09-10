@@ -153,6 +153,15 @@ pub trait GitService: Send + Sync {
         is_untracked: Option<bool>,
         session_id: Option<String>,
     ) -> GitFuture<String>;
+    /// Full unified patch for one commit (`git show --format= --patch <hash>`),
+    /// covering every file the commit touched. Used by the workspace Diff item
+    /// to render a committed change read-only.
+    fn commit_diff(
+        &self,
+        path: String,
+        hash: String,
+        session_id: Option<String>,
+    ) -> GitFuture<String>;
     fn stage_file(&self, path: String, file: String, session_id: Option<String>) -> GitFuture<()>;
     fn unstage_file(&self, path: String, file: String, session_id: Option<String>)
         -> GitFuture<()>;

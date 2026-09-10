@@ -39,9 +39,11 @@ pub enum TabKind {
     Sftp,
     /// A commit-graph view (Phase 09).
     GitGraph,
-    /// A single-file working-tree diff (Phase 08).
-    GitDiff,
-    /// A committed-change diff (Phase 09).
+    /// The one workspace diff surface — working-tree changes or a read-only
+    /// committed change, per the request's `DiffSource` (Phase 08 / Phase-1
+    /// diff-surface consolidation).
+    Diff,
+    /// Reserved: a dedicated committed-change tab. Currently folded into `Diff`.
     CommitDiff,
     /// The keymap management surface (browse + rebind every command).
     Keymap,
@@ -58,7 +60,7 @@ impl TabKind {
             TabKind::AiDiff => IconName::Sparkles,
             TabKind::Sftp => IconName::FolderOpen,
             TabKind::GitGraph => IconName::GitCompare,
-            TabKind::GitDiff => IconName::GitBranch,
+            TabKind::Diff => IconName::GitBranch,
             TabKind::CommitDiff => IconName::GitBranch,
             TabKind::Keymap => IconName::Command,
         }
@@ -74,7 +76,7 @@ impl TabKind {
             TabKind::AiDiff => "AI Diffs",
             TabKind::Sftp => "SFTP Tabs",
             TabKind::GitGraph => "Git Graphs",
-            TabKind::GitDiff => "Git Diffs",
+            TabKind::Diff => "Diffs",
             TabKind::CommitDiff => "Commit Diffs",
             TabKind::Keymap => "Keymaps",
         }
@@ -89,7 +91,7 @@ impl TabKind {
             TabKind::AiDiff => "AI Diff",
             TabKind::Sftp => "SFTP",
             TabKind::GitGraph => "Git Graph",
-            TabKind::GitDiff => "Diff",
+            TabKind::Diff => "Diff",
             TabKind::CommitDiff => "Commit",
             TabKind::Keymap => "Keymap",
         }
@@ -107,11 +109,11 @@ pub struct TabData {
     pub cwd: Option<String>,
     /// Live process title from OSC 0/1/2 (`Workspace`).
     pub process_title: Option<String>,
-    /// File path (`Editor`, `GitDiff`).
+    /// File path (`Editor`, `Diff`).
     pub path: Option<String>,
     /// Remote host id (`Sftp`, remote `Editor`).
     pub host_id: Option<String>,
-    /// Repository path (`GitGraph`, `GitDiff`, `CommitDiff`).
+    /// Repository path (`GitGraph`, `Diff`, `CommitDiff`).
     pub repo_path: Option<String>,
     /// Target URL (`Preview`).
     pub url: Option<String>,

@@ -443,6 +443,37 @@ pub(crate) fn bootstrap(
     // this single entity so the app-shell keeps feeding it the active CWD.
     workspace.update(cx, |w, _cx| w.set_git_graph(git_graph.clone()));
 
+    // Git Graph → workspace Diff tab. The panel no longer renders commit diffs
+    // inline; "View Changes" emits a neutral request the workspace opens as the
+    // single read-only Diff item (mirrors the Source-Control panel's flow).
+    cx.subscribe_in(
+        &git_graph,
+        window,
+        |this, _, event: &labonair_panel_git_graph::GitGraphEvent, _window, cx| match event {
+            labonair_panel_git_graph::GitGraphEvent::OpenCommitDiff {
+                repo_root,
+                session_id,
+                hash,
+                subject,
+            } => {
+                let req = labonair_panel::ProjectDiffRequest {
+                    repo_root: repo_root.clone(),
+                    session_id: session_id.clone(),
+                    source: labonair_panel::DiffSource::Commit {
+                        hash: hash.clone(),
+                        subject: subject.clone(),
+                    },
+                    files: Vec::new(),
+                    selected: None,
+                    mode: labonair_panel::ProjectDiffMode::Unified,
+                };
+                this.workspace
+                    .update(cx, |w, cx| w.open_project_diff(req, cx));
+            }
+        },
+    )
+    .detach();
+
     // Apply the persisted theme preference + font/registry state to the
     // ThemeStore once at startup; further changes flow through the layered
     // `SettingsStore` (`SettingsView`'s generated field grid writes straight

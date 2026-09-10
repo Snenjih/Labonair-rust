@@ -1,24 +1,33 @@
-//! Workspace-level Project Diff item (Zed-parity redesign Phase 4,
-//! `docs/ui-comparison-zed-sidebar-status-bar.md` §9.5 / §12.6).
+//! Workspace-level Diff item (Zed-parity redesign Phase 4,
+//! `docs/ui-comparison-zed-sidebar-status-bar.md` §9.5 / §12.6, extended in the
+//! Phase-1 diff-surface consolidation).
 //!
-//! Replaces the Source-Control panel's inline 280 px diff viewer. The panel
-//! emits a [`ProjectDiffRequest`]; the workspace opens/focuses exactly one of
-//! these views. It lists the changed files in a compact rail, renders the
-//! selected file's `git diff` as unified or side-by-side hunks, and stages /
-//! unstages individual hunks through the Git capability (`git apply
-//! --cached`). Repeated requests re-point the selection instead of duplicating.
+//! One workspace Diff surface renders every kind of change: the Source-Control
+//! panel emits a [`ProjectDiffRequest`] whose [`DiffSource`] decides where the
+//! base text comes from —
+//!
+//! * [`DiffSource::WorkingTree`] — uncommitted work. The request's `files` list
+//!   drives a compact rail; each file's `git diff` is fetched on demand and its
+//!   hunks can be staged / unstaged individually (`git apply --cached`).
+//! * [`DiffSource::Commit`] — a single committed change, fetched once as a whole
+//!   patch (`git show`), split per file for the rail, rendered **read-only**.
+//!
+//! The hunk body is virtualised ([`uniform_list`]) so large diffs stay cheap.
+//! Repeated `WorkingTree` requests re-point the selection instead of
+//! duplicating; a `Commit` request re-targets the same item at the new commit.
 
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, px, App, ClickEvent, Context, Entity, FocusHandle, Focusable, InteractiveElement,
-    IntoElement, ParentElement, Render, SharedString, StatefulInteractiveElement, Styled, Window,
+    div, px, uniform_list, App, ClickEvent, Context, Entity, FocusHandle, Focusable,
+    InteractiveElement, IntoElement, ParentElement, Render, SharedString,
+    StatefulInteractiveElement, Styled, Window,
 };
 use labonair_editor::unified::{
-    build_hunk_patch, is_whole_file_single_hunk, parse_diff_hunks, DiffHunk,
+    build_hunk_patch, is_whole_file_single_hunk, parse_diff_hunks, DiffHunk, FileDiff,
 };
 use labonair_git::GitService;
 use labonair_notifications::{notification_center, notify_err, Notification};
-use labonair_panel::{ProjectDiffFile, ProjectDiffMode, ProjectDiffRequest};
+use labonair_panel::{DiffSource, ProjectDiffFile, ProjectDiffMode, ProjectDiffRequest};
 use tokio::runtime::Handle as TokioHandle;
 
 use crate::theme::ThemeStore;
@@ -46,6 +55,27 @@ struct Colors {
     info: gpui::Hsla,
 }
 
+/// One virtualised row of the diff body.
+#[derive(Clone)]
+enum DiffRow {
+    HunkHeader {
+        text: SharedString,
+        /// Index into the selected file's `hunks`, for hunk staging.
+        hunk_idx: usize,
+        /// `false` for whole-file (new / deleted) diffs — no per-hunk control.
+        per_hunk: bool,
+    },
+    Unified(SharedString),
+    Split {
+        /// `(text, is_deletion)` — `is_deletion` tints the cell.
+        left: Option<(SharedString, bool)>,
+        /// `(text, is_addition)`.
+        right: Option<(SharedString, bool)>,
+    },
+    /// Untracked file / non-`@@` text — shown verbatim.
+    Raw(SharedString),
+}
+
 pub struct ProjectDiffView {
     theme: Entity<ThemeStore>,
     git: std::sync::Arc<dyn GitService>,
@@ -54,13 +84,19 @@ pub struct ProjectDiffView {
 
     repo_root: Option<String>,
     session_id: Option<String>,
+    source: DiffSource,
     files: Vec<ProjectDiffFile>,
     selected: Option<String>,
     mode: ProjectDiffMode,
 
-    /// Loaded `git diff` text for `selected`, plus a generation guard so a slow
-    /// response for a previous selection cannot overwrite a newer one.
+    /// `WorkingTree`: loaded `git diff` text for `selected`. `Commit`: unused.
     diff_text: Option<String>,
+    /// `Commit`: the whole commit patch, parsed once per file.
+    commit_files: Vec<FileDiff>,
+    /// Flattened body of the selected file, rebuilt on select / mode / reload.
+    rows: Vec<DiffRow>,
+    /// Generation guard so a slow response for a previous selection / commit
+    /// cannot overwrite a newer one.
     gen: u64,
     op_in_progress: bool,
 }
@@ -80,27 +116,50 @@ impl ProjectDiffView {
             focus: cx.focus_handle(),
             repo_root: None,
             session_id: None,
+            source: DiffSource::WorkingTree,
             files: Vec::new(),
             selected: None,
             mode: ProjectDiffMode::Unified,
             diff_text: None,
+            commit_files: Vec::new(),
+            rows: Vec::new(),
             gen: 0,
             op_in_progress: false,
         }
     }
 
-    /// Point the item at a (possibly new) review set. Idempotent — repeated
-    /// calls for the same repo just re-point the selection.
+    /// Point the item at a (possibly new) review. Idempotent for the working
+    /// tree — repeated calls just re-point the selection.
     pub fn apply_request(&mut self, req: ProjectDiffRequest, cx: &mut Context<Self>) {
         self.repo_root = Some(req.repo_root);
         self.session_id = req.session_id;
-        self.files = req.files;
         self.mode = req.mode;
 
-        let want = resolve_selection(&self.files, req.selected.as_deref());
-        if want != self.selected {
-            self.selected = want;
-            self.reload(cx);
+        match req.source.clone() {
+            DiffSource::WorkingTree => {
+                let source_changed = self.source != DiffSource::WorkingTree;
+                self.source = DiffSource::WorkingTree;
+                self.commit_files.clear();
+                self.files = req.files;
+                let want = resolve_selection(&self.files, req.selected.as_deref());
+                if want != self.selected || source_changed {
+                    self.selected = want;
+                    self.reload(cx);
+                }
+            }
+            DiffSource::Commit { hash, .. } => {
+                let same_commit = matches!(
+                    &self.source,
+                    DiffSource::Commit { hash: h, .. } if *h == hash
+                );
+                self.source = req.source;
+                if !same_commit {
+                    self.load_commit(hash, cx);
+                } else if let Some(sel) = req.selected {
+                    self.selected = Some(sel);
+                    self.rebuild_rows();
+                }
+            }
         }
         cx.notify();
     }
@@ -110,7 +169,10 @@ impl ProjectDiffView {
             return;
         }
         self.selected = Some(path);
-        self.reload(cx);
+        match self.source {
+            DiffSource::WorkingTree => self.reload(cx),
+            DiffSource::Commit { .. } => self.rebuild_rows(),
+        }
         cx.notify();
     }
 
@@ -119,6 +181,7 @@ impl ProjectDiffView {
             ProjectDiffMode::Unified => ProjectDiffMode::Split,
             ProjectDiffMode::Split => ProjectDiffMode::Unified,
         };
+        self.rebuild_rows();
         cx.notify();
     }
 
@@ -127,13 +190,16 @@ impl ProjectDiffView {
         self.files.iter().find(|f| f.path == sel)
     }
 
+    /// `WorkingTree`: fetch the selected file's `git diff`.
     fn reload(&mut self, cx: &mut Context<Self>) {
         let (Some(root), Some(file)) = (self.repo_root.clone(), self.current_file().cloned())
         else {
             self.diff_text = None;
+            self.rows.clear();
             return;
         };
         self.diff_text = None;
+        self.rows.clear();
         self.gen += 1;
         let generation = self.gen;
         let session = self.session_id.clone();
@@ -158,9 +224,11 @@ impl ProjectDiffView {
                 match res {
                     Ok(text) => {
                         this.diff_text = Some(text);
+                        this.rebuild_rows();
                     }
                     Err(e) => {
                         this.diff_text = None;
+                        this.rows.clear();
                         let path = this.selected.clone().unwrap_or_default();
                         notification_center(cx).update(cx, |center, cx| {
                             center.push(
@@ -182,9 +250,112 @@ impl ProjectDiffView {
         .detach();
     }
 
+    /// `Commit`: fetch the whole commit patch once, split per file for the rail.
+    fn load_commit(&mut self, hash: String, cx: &mut Context<Self>) {
+        let Some(root) = self.repo_root.clone() else {
+            return;
+        };
+        self.diff_text = None;
+        self.commit_files.clear();
+        self.files.clear();
+        self.selected = None;
+        self.rows.clear();
+        self.gen += 1;
+        let generation = self.gen;
+        let session = self.session_id.clone();
+        let git = self.git.clone();
+        let jh = self
+            .tokio
+            .spawn(async move { git.commit_diff(root, hash, session).await });
+        cx.spawn(async move |this, cx| {
+            let res = jh.await.unwrap_or_else(|e| Err(e.to_string()));
+            let _ = this.update(cx, |this, cx| {
+                if this.gen != generation {
+                    return;
+                }
+                match res {
+                    Ok(text) => {
+                        let parsed = parse_diff_hunks(&text);
+                        this.files = parsed
+                            .iter()
+                            .map(|f| ProjectDiffFile {
+                                path: f.path.clone(),
+                                staged: false,
+                                untracked: false,
+                            })
+                            .collect();
+                        this.commit_files = parsed;
+                        this.selected = this.files.first().map(|f| f.path.clone());
+                        this.rebuild_rows();
+                    }
+                    Err(e) => {
+                        this.commit_files.clear();
+                        this.files.clear();
+                        this.rows.clear();
+                        notification_center(cx).update(cx, |center, cx| {
+                            center.push(
+                                Notification::error(
+                                    "Commit diff load failed",
+                                    "Could not load the selected commit.",
+                                )
+                                .source("project-diff")
+                                .details(e.clone())
+                                .dedupe_key("project-diff:commit".to_string()),
+                                cx,
+                            );
+                        });
+                    }
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    /// Rebuild [`Self::rows`] for the current selection + layout from whichever
+    /// source is active. Pure re-derivation — no IO, no theme access.
+    fn rebuild_rows(&mut self) {
+        let is_split = matches!(self.mode, ProjectDiffMode::Split);
+        let mut rows: Vec<DiffRow> = Vec::new();
+
+        match &self.source {
+            DiffSource::WorkingTree => {
+                let Some(text) = &self.diff_text else {
+                    self.rows = rows;
+                    return;
+                };
+                let untracked = self.current_file().map(|f| f.untracked).unwrap_or(false);
+                if untracked || !text.contains("@@ ") {
+                    for line in text.lines().take(20_000) {
+                        rows.push(DiffRow::Raw(SharedString::from(line.to_string())));
+                    }
+                    self.rows = rows;
+                    return;
+                }
+                let parsed = parse_diff_hunks(text);
+                if let Some(file) = parsed.first() {
+                    let per_hunk = !is_whole_file_single_hunk(file);
+                    push_file_rows(&mut rows, file, is_split, per_hunk);
+                }
+            }
+            DiffSource::Commit { .. } => {
+                let selected_file = self
+                    .selected
+                    .as_deref()
+                    .and_then(|s| self.commit_files.iter().find(|f| f.path == s));
+                if let Some(file) = selected_file {
+                    // Committed changes are read-only — never a per-hunk control.
+                    push_file_rows(&mut rows, file, is_split, false);
+                }
+            }
+        }
+        self.rows = rows;
+    }
+
     /// Stage (or, if `reverse`, unstage) one hunk of the loaded diff.
+    /// Working-tree source only.
     fn apply_hunk(&mut self, hunk_idx: usize, reverse: bool, cx: &mut Context<Self>) {
-        if self.op_in_progress {
+        if self.op_in_progress || !self.source.supports_staging() {
             return;
         }
         let (Some(root), Some(file), Some(diff)) = (
@@ -260,6 +431,44 @@ impl ProjectDiffView {
             info: t.status_info(),
         }
     }
+
+    fn header_title(&self) -> String {
+        match &self.source {
+            DiffSource::Commit { hash, subject } => {
+                let short: String = hash.chars().take(7).collect();
+                if subject.is_empty() {
+                    short
+                } else {
+                    format!("{short}  {subject}")
+                }
+            }
+            DiffSource::WorkingTree => self
+                .selected
+                .clone()
+                .unwrap_or_else(|| "Project Diff".to_string()),
+        }
+    }
+}
+
+fn push_file_rows(rows: &mut Vec<DiffRow>, file: &FileDiff, is_split: bool, per_hunk: bool) {
+    for (i, hunk) in file.hunks.iter().enumerate() {
+        rows.push(DiffRow::HunkHeader {
+            text: SharedString::from(hunk.header.clone()),
+            hunk_idx: i,
+            per_hunk,
+        });
+        if is_split {
+            split_hunk_rows_into(rows, &hunk.lines);
+        } else {
+            for l in &hunk.lines {
+                rows.push(DiffRow::Unified(SharedString::from(if l.is_empty() {
+                    " ".to_string()
+                } else {
+                    l.clone()
+                })));
+            }
+        }
+    }
 }
 
 impl Focusable for ProjectDiffView {
@@ -280,6 +489,8 @@ impl Render for ProjectDiffView {
         let c = self.colors(cx);
         let font = self.theme.read(cx).buffer_font();
         let is_split = matches!(self.mode, ProjectDiffMode::Split);
+        let read_only = !self.source.supports_staging();
+        let reverse = self.current_file().map(|f| f.staged).unwrap_or(false);
         let selected = self.selected.clone();
         let view = cx.entity();
 
@@ -339,11 +550,22 @@ impl Render for ProjectDiffView {
             .bg(c.card)
             .text_size(px(12.0))
             .text_color(c.fg)
-            .child(SharedString::from(
-                selected
-                    .clone()
-                    .unwrap_or_else(|| "Project Diff".to_string()),
-            ))
+            .child(
+                div()
+                    .flex_1()
+                    .overflow_hidden()
+                    .whitespace_nowrap()
+                    .child(SharedString::from(self.header_title())),
+            )
+            .when(read_only, |d| {
+                d.child(
+                    div()
+                        .px(px(6.0))
+                        .text_size(px(10.0))
+                        .text_color(c.muted)
+                        .child(SharedString::from("read-only")),
+                )
+            })
             .child(
                 div()
                     .id("project-diff-mode")
@@ -361,84 +583,36 @@ impl Render for ProjectDiffView {
                     .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| this.toggle_mode(cx))),
             );
 
-        let mut body = div()
-            .id("project-diff-body")
-            .flex()
-            .flex_col()
-            .flex_1()
-            .overflow_scroll()
-            .font(font)
-            .text_size(px(12.0));
-
-        if let Some(text) = &self.diff_text {
-            let untracked = self.current_file().map(|f| f.untracked).unwrap_or(false);
-            if untracked || !text.contains("@@ ") {
-                for line in text.lines().take(2000) {
-                    body = body.child(diff_line(line, c));
-                }
+        let body: gpui::AnyElement = if self.rows.is_empty() {
+            let msg = if self.selected.is_some() {
+                "Loading diff\u{2026}"
             } else {
-                let parsed = parse_diff_hunks(text);
-                if let Some(file) = parsed.first() {
-                    let whole = is_whole_file_single_hunk(file);
-                    let reverse = self.current_file().map(|f| f.staged).unwrap_or(false);
-                    for (i, hunk) in file.hunks.iter().enumerate() {
-                        body = body.child(
-                            div()
-                                .flex()
-                                .items_center()
-                                .justify_between()
-                                .px(px(8.0))
-                                .bg(c.info.opacity(0.10))
-                                .text_color(c.info)
-                                .child(SharedString::from(hunk.header.clone()))
-                                .when(!whole, |d| {
-                                    d.child(
-                                        div()
-                                            .id(SharedString::from(format!("pd-hunk-{i}")))
-                                            .px(px(6.0))
-                                            .rounded_sm()
-                                            .text_color(c.muted)
-                                            .hover(|s| s.text_color(c.fg))
-                                            .child(SharedString::from(if reverse {
-                                                "Unstage hunk"
-                                            } else {
-                                                "Stage hunk"
-                                            }))
-                                            .on_click(cx.listener(
-                                                move |this, _: &ClickEvent, _w, cx| {
-                                                    this.apply_hunk(i, reverse, cx);
-                                                },
-                                            )),
-                                    )
-                                }),
-                        );
-                        if is_split {
-                            for row in split_hunk_rows(&hunk.lines, c) {
-                                body = body.child(row);
-                            }
-                        } else {
-                            for l in &hunk.lines {
-                                body = body.child(diff_line(l, c));
-                            }
-                        }
-                    }
-                }
-            }
-        } else if self.selected.is_some() {
-            body = body.child(
-                div()
-                    .p(px(10.0))
-                    .text_color(c.muted)
-                    .child(SharedString::from("Loading diff\u{2026}")),
-            );
+                "No changes to review"
+            };
+            div()
+                .id("project-diff-body")
+                .flex_1()
+                .p(px(10.0))
+                .text_color(c.muted)
+                .font(font)
+                .text_size(px(12.0))
+                .child(SharedString::from(msg))
+                .into_any_element()
         } else {
-            body = body.child(
-                div()
-                    .p(px(10.0))
-                    .text_color(c.muted)
-                    .child(SharedString::from("No changes to review")),
-            );
-        }
+            let rows = self.rows.clone();
+            let list_view = view.clone();
+            uniform_list("project-diff-body", rows.len(), move |range, _win, _cx| {
+                range
+                    .map(|i| {
+                        diff_row_element(&rows[i], c, is_split, read_only, reverse, &list_view)
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .flex_1()
+            .font(font)
+            .text_size(px(12.0))
+            .into_any_element()
+        };
 
         div()
             .track_focus(&self.focus)
@@ -452,85 +626,136 @@ impl Render for ProjectDiffView {
     }
 }
 
-fn diff_line(line: &str, c: Colors) -> impl IntoElement {
-    let color = match line.chars().next() {
-        Some('+') => c.success,
-        Some('-') => c.error,
-        _ => c.fg,
-    };
-    div()
-        .px(px(8.0))
-        .whitespace_nowrap()
-        .text_color(color)
-        .child(SharedString::from(if line.is_empty() {
-            " ".to_string()
-        } else {
-            line.to_string()
-        }))
+fn diff_row_element(
+    row: &DiffRow,
+    c: Colors,
+    _is_split: bool,
+    read_only: bool,
+    reverse: bool,
+    view: &Entity<ProjectDiffView>,
+) -> gpui::AnyElement {
+    match row {
+        DiffRow::HunkHeader {
+            text,
+            hunk_idx,
+            per_hunk,
+        } => {
+            let show_action = *per_hunk && !read_only;
+            let idx = *hunk_idx;
+            let v = view.clone();
+            div()
+                .flex()
+                .items_center()
+                .justify_between()
+                .px(px(8.0))
+                .bg(c.info.opacity(0.10))
+                .text_color(c.info)
+                .child(text.clone())
+                .when(show_action, |d| {
+                    d.child(
+                        div()
+                            .id(SharedString::from(format!("pd-hunk-{idx}")))
+                            .px(px(6.0))
+                            .rounded_sm()
+                            .text_color(c.muted)
+                            .hover(|s| s.text_color(c.fg))
+                            .child(SharedString::from(if reverse {
+                                "Unstage hunk"
+                            } else {
+                                "Stage hunk"
+                            }))
+                            .on_click(move |_: &ClickEvent, _w, cx| {
+                                v.update(cx, |this, cx| this.apply_hunk(idx, reverse, cx));
+                            }),
+                    )
+                })
+                .into_any_element()
+        }
+        DiffRow::Unified(text) => {
+            let color = match text.chars().next() {
+                Some('+') => c.success,
+                Some('-') => c.error,
+                _ => c.fg,
+            };
+            div()
+                .px(px(8.0))
+                .whitespace_nowrap()
+                .text_color(color)
+                .child(text.clone())
+                .into_any_element()
+        }
+        DiffRow::Raw(text) => {
+            let color = match text.chars().next() {
+                Some('+') => c.success,
+                Some('-') => c.error,
+                _ => c.fg,
+            };
+            div()
+                .px(px(8.0))
+                .whitespace_nowrap()
+                .text_color(color)
+                .child(text.clone())
+                .into_any_element()
+        }
+        DiffRow::Split { left, right } => {
+            let cell = |slot: &Option<(SharedString, bool)>, tint: gpui::Hsla| {
+                let (text, active) = match slot {
+                    Some((t, active)) => (t.clone(), *active),
+                    None => (SharedString::from(" "), false),
+                };
+                let mut d = div()
+                    .flex_1()
+                    .min_w_0()
+                    .px(px(8.0))
+                    .whitespace_nowrap()
+                    .overflow_hidden()
+                    .text_color(if active { tint } else { c.fg });
+                if active {
+                    d = d.bg(tint.opacity(0.10));
+                }
+                d.child(text)
+            };
+            div()
+                .flex()
+                .gap(px(1.0))
+                .child(cell(left, c.error))
+                .child(cell(right, c.success))
+                .into_any_element()
+        }
+    }
 }
 
-/// Side-by-side rows for one hunk's body lines (old left, new right).
-fn split_hunk_rows(lines: &[String], c: Colors) -> Vec<gpui::AnyElement> {
-    let cell = |text: &str, color: gpui::Hsla, tint: Option<gpui::Hsla>| {
-        let mut d = div()
-            .flex_1()
-            .min_w_0()
-            .px(px(8.0))
-            .whitespace_nowrap()
-            .overflow_hidden()
-            .text_color(color);
-        if let Some(t) = tint {
-            d = d.bg(t.opacity(0.10));
-        }
-        d.child(SharedString::from(if text.is_empty() {
-            " ".to_string()
-        } else {
-            text.to_string()
-        }))
-    };
-    let row = |left: gpui::AnyElement, right: gpui::AnyElement| {
-        div()
-            .flex()
-            .gap(px(1.0))
-            .child(left)
-            .child(right)
-            .into_any_element()
-    };
-    let mut out: Vec<gpui::AnyElement> = Vec::new();
-    let mut dels: Vec<&str> = Vec::new();
-    let mut adds: Vec<&str> = Vec::new();
-    let flush = |out: &mut Vec<gpui::AnyElement>, dels: &mut Vec<&str>, adds: &mut Vec<&str>| {
+/// Flatten one hunk's body lines into side-by-side [`DiffRow::Split`] rows
+/// (old left, new right).
+fn split_hunk_rows_into(out: &mut Vec<DiffRow>, lines: &[String]) {
+    let mut dels: Vec<String> = Vec::new();
+    let mut adds: Vec<String> = Vec::new();
+    let flush = |out: &mut Vec<DiffRow>, dels: &mut Vec<String>, adds: &mut Vec<String>| {
         let n = dels.len().max(adds.len());
         for i in 0..n {
-            let l = dels
-                .get(i)
-                .map(|s| cell(s, c.error, Some(c.error)).into_any_element())
-                .unwrap_or_else(|| cell("", c.fg, None).into_any_element());
-            let r = adds
-                .get(i)
-                .map(|s| cell(s, c.success, Some(c.success)).into_any_element())
-                .unwrap_or_else(|| cell("", c.fg, None).into_any_element());
-            out.push(row(l, r));
+            out.push(DiffRow::Split {
+                left: dels.get(i).map(|s| (SharedString::from(s.clone()), true)),
+                right: adds.get(i).map(|s| (SharedString::from(s.clone()), true)),
+            });
         }
         dels.clear();
         adds.clear();
     };
     for line in lines {
         match line.chars().next() {
-            Some('-') => dels.push(line.get(1..).unwrap_or("")),
-            Some('+') => adds.push(line.get(1..).unwrap_or("")),
+            Some('-') => dels.push(line.get(1..).unwrap_or("").to_string()),
+            Some('+') => adds.push(line.get(1..).unwrap_or("").to_string()),
             _ => {
-                flush(&mut out, &mut dels, &mut adds);
-                let text = line.strip_prefix(' ').unwrap_or(line);
-                out.push(row(
-                    cell(text, c.fg, None).into_any_element(),
-                    cell(text, c.fg, None).into_any_element(),
-                ));
+                flush(out, &mut dels, &mut adds);
+                let text = line.strip_prefix(' ').unwrap_or(line).to_string();
+                out.push(DiffRow::Split {
+                    left: Some((SharedString::from(text.clone()), false)),
+                    right: Some((SharedString::from(text), false)),
+                });
             }
         }
     }
-    flush(&mut out, &mut dels, &mut adds);
-    out
+    flush(out, &mut dels, &mut adds);
 }
 
 #[cfg(test)]
