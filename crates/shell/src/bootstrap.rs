@@ -764,12 +764,18 @@ pub(crate) fn bootstrap(
     });
 
     // Keep the Tabs panel's dock membership in sync when `tabsLocation`
-    // changes at runtime (the generated Settings field writes straight to
-    // `SettingsStore`).
+    // changes at runtime, and push the live-tunable `terminal` settings
+    // (scrollback depth, cursor shape/blink/interval, word separators,
+    // opacity) into every open terminal pane. The generated Settings fields
+    // write straight to `SettingsStore`, so the observer is what keeps these
+    // live for already-open terminals.
     if cx.has_global::<labonair_settings::SettingsStore>() {
-        let workspace_for_tabs = workspace.clone();
+        let workspace_for_settings = workspace.clone();
         cx.observe_global::<labonair_settings::SettingsStore>(move |_, cx| {
-            workspace_for_tabs.update(cx, |w, cx| w.sync_tabs_in_sidebar(cx));
+            workspace_for_settings.update(cx, |w, cx| {
+                w.sync_tabs_in_sidebar(cx);
+                w.reapply_terminal_settings(cx);
+            });
         })
         .detach();
     }

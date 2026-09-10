@@ -226,17 +226,54 @@ const APPEARANCE_GROUPS: &[Group] = &[
 
 const TERMINAL_MAIN: &[Group] = &[
     ("Shell", &["terminalShell"]),
-    ("Font", &["terminalFontFamily", "terminalFontSize"]),
-    ("Cursor", &["terminalCursorStyle", "terminalCursorBlink"]),
+    (
+        "Font",
+        &[
+            "terminalFontFamily",
+            "terminalFontSize",
+            "terminalLineHeight",
+            "terminalFontWeight",
+        ],
+    ),
+    (
+        "Cursor",
+        &[
+            "terminalCursorStyle",
+            "terminalCursorBlink",
+            "terminalCursorBlinkInterval",
+        ],
+    ),
+    (
+        "Scrolling",
+        &[
+            "terminalScrollback",
+            "terminalScrollSensitivity",
+            "terminalFastScrollModifier",
+        ],
+    ),
+    (
+        "Session restore",
+        &[
+            "sessionScrollbackLines",
+            "scrollbackMaxSizeMb",
+            "scrollbackRetentionDays",
+        ],
+    ),
     ("Bell", &["terminalBell"]),
-    ("Buffer", &["terminalScrollback"]),
     ("Appearance", &["terminalOpacity"]),
 ];
 
-const TERMINAL_ADVANCED: &[Group] = &[(
-    "Input",
-    &["terminalCopyOnSelect", "terminalRightClickPastes"],
-)];
+const TERMINAL_ADVANCED: &[Group] = &[
+    (
+        "Input",
+        &[
+            "terminalCopyOnSelect",
+            "terminalRightClickPastes",
+            "terminalWordSeparator",
+        ],
+    ),
+    ("Tabs", &["confirmCloseTerminalTab"]),
+];
 
 const EDITOR_MAIN: &[Group] = &[
     (
@@ -380,6 +417,30 @@ mod tests {
             Some(("advanced", "Input"))
         );
         assert_eq!(section_label_for_field("terminal", "doesNotExist"), None);
+    }
+
+    #[test]
+    fn every_terminal_field_lands_in_a_curated_section_not_other() {
+        // Each `terminal` value editor is placed by a curated group — nothing
+        // falls through to the trailing "Other" fallback.
+        let keys = [
+            "terminalLineHeight",
+            "terminalFontWeight",
+            "terminalCursorBlinkInterval",
+            "terminalScrollSensitivity",
+            "terminalFastScrollModifier",
+            "terminalWordSeparator",
+            "confirmCloseTerminalTab",
+            "sessionScrollbackLines",
+            "scrollbackMaxSizeMb",
+            "scrollbackRetentionDays",
+        ];
+        for key in keys {
+            assert!(
+                section_label_for_field("terminal", key).is_some(),
+                "`{key}` is not placed by any curated group"
+            );
+        }
     }
 
     #[test]

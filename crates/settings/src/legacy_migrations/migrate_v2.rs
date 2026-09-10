@@ -393,16 +393,40 @@ fn terminal_from(p: &Preferences) -> TerminalContent {
         terminal_shell: Some(p.terminal_shell.clone()),
         terminal_font_family: Some(p.terminal_font_family.clone()),
         terminal_font_size: Some(p.terminal_font_size),
+        terminal_line_height: Some(p.terminal_line_height),
+        terminal_font_weight: Some(terminal_font_weight(&p.terminal_font_weight)),
         terminal_scrollback: Some(p.terminal_scrollback),
         session_scrollback_lines: Some(p.session_scrollback_lines),
         scrollback_max_size_mb: Some(p.scrollback_max_size_mb),
         scrollback_retention_days: Some(p.scrollback_retention_days),
         terminal_cursor_style: Some(cursor_style(p.terminal_cursor_style)),
         terminal_cursor_blink: Some(p.terminal_cursor_blink),
+        terminal_cursor_blink_interval: Some(p.terminal_cursor_blink_interval),
         terminal_copy_on_select: Some(p.terminal_copy_on_select),
         terminal_right_click_pastes: Some(p.terminal_right_click_pastes),
+        terminal_word_separator: Some(p.terminal_word_separator.clone()),
+        terminal_scroll_sensitivity: Some(p.terminal_scroll_sensitivity),
+        terminal_fast_scroll_modifier: Some(fast_scroll_modifier(&p.terminal_fast_scroll_modifier)),
         terminal_bell: Some(p.terminal_bell),
+        confirm_close_terminal_tab: Some(p.confirm_close_terminal_tab),
         terminal_opacity: Some(p.terminal_opacity),
+    }
+}
+
+fn terminal_font_weight(v: &str) -> terminal::TerminalFontWeight {
+    match v {
+        "medium" => terminal::TerminalFontWeight::Medium,
+        "bold" => terminal::TerminalFontWeight::Bold,
+        _ => terminal::TerminalFontWeight::Normal,
+    }
+}
+
+fn fast_scroll_modifier(v: &str) -> terminal::FastScrollModifier {
+    match v {
+        "none" => terminal::FastScrollModifier::None,
+        "ctrl" => terminal::FastScrollModifier::Ctrl,
+        "shift" => terminal::FastScrollModifier::Shift,
+        _ => terminal::FastScrollModifier::Alt,
     }
 }
 
@@ -492,16 +516,9 @@ const WORKSPACE_LAYOUT_FIELDS: &[&str] = &[
 const REMOVED_TERMINAL_FIELDS: &[&str] = &[
     "terminalDefaultPath",
     "newTabInheritsCwd",
-    "confirmCloseTerminalTab",
-    "terminalLineHeight",
     "terminalShowPaneHeader",
     "terminalShowPaneFooter",
-    "terminalFontWeight",
     "terminalLetterSpacing",
-    "terminalCursorBlinkInterval",
-    "terminalWordSeparator",
-    "terminalScrollSensitivity",
-    "terminalFastScrollModifier",
     "terminalUseWebgl",
     "terminalComposerEnabled",
     "terminalComposerHistoryPopup",

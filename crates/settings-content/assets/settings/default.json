@@ -48,6 +48,10 @@
     "terminalShell": "",
     "terminalFontFamily": "\"Lilex\", SFMono-Regular, Menlo, monospace",
     "terminalFontSize": 15,
+    // Vertical line spacing as a multiple of the font size.
+    "terminalLineHeight": 1.05,
+    // "normal" | "medium" | "bold".
+    "terminalFontWeight": "normal",
     "terminalScrollback": 5000,
     // Rows of scrollback replayed on the next launch; 0 = persist all.
     "sessionScrollbackLines": 1000,
@@ -56,9 +60,19 @@
     "scrollbackRetentionDays": 0,
     "terminalCursorStyle": "bar",
     "terminalCursorBlink": true,
+    // Cursor blink half-period, in milliseconds.
+    "terminalCursorBlinkInterval": 1000,
     "terminalCopyOnSelect": false,
     "terminalRightClickPastes": false,
+    // Characters that end a double-click word selection.
+    "terminalWordSeparator": " ()[]{}',\"`",
+    // Multiplier applied to every mouse-wheel scroll step.
+    "terminalScrollSensitivity": 1,
+    // "none" | "alt" | "ctrl" | "shift" — held, multiplies the scroll step by 5.
+    "terminalFastScrollModifier": "alt",
     "terminalBell": false,
+    // Ask before closing a terminal tab whose shell is still running.
+    "confirmCloseTerminalTab": false,
     // Whole-pane background opacity in percent; 100 = fully opaque.
     "terminalOpacity": 100
   },

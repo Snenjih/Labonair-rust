@@ -4,6 +4,49 @@ Older entries preserve the state of the code when each issue was recorded.
 When an API was later renamed or removed, the current implementation and
 normative documentation take precedence over the historical symbol name.
 
+## 2026-09-10 — Terminal settings: dead `terminalCursorBlink`, stale opacity, 7 unwired fields
+
+**Symptom:** `terminalCursorBlink` had a Settings row + a `Toggle: Terminal
+Cursor Blink` palette command and was threaded into `alacritty_terminal`'s
+`default_cursor_style.blinking`, but nothing ever blinked — `RenderableCursor`
+dropped the `blinking` bit and `AlacEvent::CursorBlinkingChange` was ignored
+"Not needed by the current renderer". `terminalOpacity` was only read in
+`TerminalView::render` with no `SettingsStore` observer, so it only updated on
+the next unrelated repaint. `terminalScrollback` / `terminalCursorStyle` were
+spawn-only. `settings-inventory.md` marked `terminalFontWeight`,
+`terminalCursorBlinkInterval`, `terminalWordSeparator`,
+`terminalScrollSensitivity`, `terminalFastScrollModifier`,
+`confirmCloseTerminalTab` (and, contradictorily, `terminalLineHeight`) as
+**Remove**.
+
+**Fix (user-approved promotion to Keep):**
+* `RenderableCursor` gained `blinking`, populated from `Term::cursor_style().blinking`
+  (respects DECSCUSR). `TerminalView` drives a blink `Task` off
+  `terminalCursorBlinkInterval`, holds the cursor solid for one interval after
+  key/output (`activity_at`), and only blinks while focused.
+* `EmulatorConfig` gained `word_separators`; `TerminalEmulator::apply_config`
+  calls `Term::set_options(Config)` — the clean live re-tune path for
+  scrollback depth / default cursor style / `semantic_escape_chars`.
+* `TerminalEmulator::select_word_at` uses `SelectionType::Semantic` +
+  `include_all()` (reads `semantic_escape_chars`); wired to double-click
+  (`MouseDownEvent.click_count >= 2`).
+* Wheel handler multiplies the step by `terminalScrollSensitivity` and ×5 when
+  `terminalFastScrollModifier` is held.
+* `Workspace::reapply_terminal_settings` (called from the shell's
+  `SettingsStore` observer) pushes `apply_runtime_config` into every open pane
+  and `cx.notify()`s each `TerminalView` so opacity / blink-interval are live.
+* `confirmCloseTerminalTab` gates `Workspace::request_close` for a
+  `TabKind::Workspace` tab with a `SessionStatus::Running` local pane.
+* `terminalLineHeight` / `terminalFontWeight` flow through
+  `theme_ui::font_overrides_from_settings` → `FontOverrides` (new
+  `terminal_line_height` read + `terminal_weight`), applied live by the
+  Settings UI's existing `apply_prefs_to_theme` call.
+
+**Alacritty 0.24.2 APIs used:** `Term::set_options(Config)` (updates
+`grid.update_history`, `default_cursor_style`, `semantic_escape_chars`),
+`Term::cursor_style() -> CursorStyle { shape, blinking }`,
+`Selection::new(SelectionType::Semantic, point, side)` + `include_all()`.
+
 ## 2026-09-09 — `tabsLocation == "sidebar"` did nothing (no Tabs panel existed)
 
 **Symptom:** setting Appearance → "Tab bar location" to *Sidebar* made the

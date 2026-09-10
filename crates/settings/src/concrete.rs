@@ -13,7 +13,10 @@ use labonair_settings_content::{
     editor::EditorContent,
     file_manager::FileManagerContent,
     general::{GeneralContent, StartupTab, ThemePref},
-    terminal::{CursorStyle, TerminalContent},
+    terminal::{
+        CursorStyle, FastScrollModifier, TerminalContent, TerminalFontWeight,
+        DEFAULT_WORD_SEPARATOR,
+    },
     workspace::{PaletteSearchMode, WorkspaceContent},
     MergeFrom, SettingsContent,
 };
@@ -218,6 +221,51 @@ impl TerminalSettings {
 
     pub fn cursor_blink(&self) -> bool {
         self.0.terminal_cursor_blink.unwrap_or(true)
+    }
+
+    /// Cursor blink half-period, in milliseconds (clamped to a sane range).
+    pub fn cursor_blink_interval_ms(&self) -> u64 {
+        self.0
+            .terminal_cursor_blink_interval
+            .unwrap_or(1_000)
+            .clamp(100, 5_000) as u64
+    }
+
+    /// Vertical line spacing as a multiple of the font size.
+    pub fn line_height(&self) -> f32 {
+        self.0.terminal_line_height.unwrap_or(1.05).clamp(0.8, 2.5)
+    }
+
+    /// Terminal text weight.
+    pub fn font_weight(&self) -> TerminalFontWeight {
+        self.0
+            .terminal_font_weight
+            .unwrap_or(TerminalFontWeight::Normal)
+    }
+
+    /// Characters that terminate a double-click word selection.
+    pub fn word_separator(&self) -> &str {
+        self.0
+            .terminal_word_separator
+            .as_deref()
+            .unwrap_or(DEFAULT_WORD_SEPARATOR)
+    }
+
+    /// Multiplier applied to every mouse-wheel scroll step (>= 1).
+    pub fn scroll_sensitivity(&self) -> u32 {
+        self.0.terminal_scroll_sensitivity.unwrap_or(1).max(1)
+    }
+
+    /// Modifier that multiplies the scroll step while held.
+    pub fn fast_scroll_modifier(&self) -> FastScrollModifier {
+        self.0
+            .terminal_fast_scroll_modifier
+            .unwrap_or(FastScrollModifier::Alt)
+    }
+
+    /// Confirm before closing a terminal tab whose shell is still running.
+    pub fn confirm_close_terminal_tab(&self) -> bool {
+        self.0.confirm_close_terminal_tab.unwrap_or(false)
     }
 
     /// Ring the terminal bell on the BEL control character.
@@ -455,5 +503,26 @@ mod tests {
         let settings = TerminalSettings::from_settings(&content);
         assert_eq!(settings.terminal_opacity(), 42);
         assert!(!settings.copy_on_select());
+    }
+
+    #[test]
+    fn terminal_settings_new_field_accessors_and_clamping() {
+        let base = TerminalSettings::from_settings(&SettingsContent::default());
+        assert_eq!(base.line_height(), 1.05);
+        assert_eq!(base.font_weight(), TerminalFontWeight::Normal);
+        assert_eq!(base.cursor_blink_interval_ms(), 1_000);
+        assert_eq!(base.word_separator(), DEFAULT_WORD_SEPARATOR);
+        assert_eq!(base.scroll_sensitivity(), 1);
+        assert_eq!(base.fast_scroll_modifier(), FastScrollModifier::Alt);
+        assert!(!base.confirm_close_terminal_tab());
+
+        let mut content = SettingsContent::default();
+        content.terminal.terminal_line_height = Some(9.0);
+        content.terminal.terminal_cursor_blink_interval = Some(1);
+        content.terminal.terminal_scroll_sensitivity = Some(0);
+        let s = TerminalSettings::from_settings(&content);
+        assert_eq!(s.line_height(), 2.5, "line height clamps to the range max");
+        assert_eq!(s.cursor_blink_interval_ms(), 100, "interval clamps up");
+        assert_eq!(s.scroll_sensitivity(), 1, "sensitivity floors at 1");
     }
 }

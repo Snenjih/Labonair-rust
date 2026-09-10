@@ -49,6 +49,9 @@ pub struct SessionOptions {
     pub cursor_shape: Option<crate::CursorShape>,
     /// Whether the default cursor blinks (T13-003).
     pub cursor_blink: Option<bool>,
+    /// Characters that terminate a double-click word selection. `None`/empty →
+    /// `alacritty_terminal`'s built-in default set.
+    pub word_separators: Option<String>,
 }
 
 /// A read of the active terminal for the AI companion: working directory,
@@ -132,6 +135,9 @@ impl TerminalSession {
         }
         if let Some(blink) = options.cursor_blink {
             emu_cfg.cursor_blink = blink;
+        }
+        if let Some(seps) = options.word_separators.clone() {
+            emu_cfg.word_separators = seps;
         }
         let emulator = Arc::new(Mutex::new(TerminalEmulator::new_with(
             colors,
@@ -465,6 +471,12 @@ pub trait SessionAccess {
     fn search_step(&self, forward: bool) -> Result<(usize, usize), String>;
     /// Drop all search state / clear the match highlight.
     fn search_clear(&self) -> Result<(), String>;
+    /// Select the word under a viewport cell (double-click). Returns whether a
+    /// non-empty word was selected.
+    fn select_word_at(&self, viewport: (usize, usize)) -> Result<bool, String>;
+    /// Re-apply the tunable emulator parameters on a live session (settings
+    /// changed while terminals are open).
+    fn apply_runtime_config(&self, cfg: crate::EmulatorConfig) -> Result<(), String>;
 }
 
 impl SessionAccess for TerminalSession {
@@ -503,6 +515,12 @@ impl SessionAccess for TerminalSession {
     }
     fn search_clear(&self) -> Result<(), String> {
         self.with_emulator(|e| e.search_clear())
+    }
+    fn select_word_at(&self, viewport: (usize, usize)) -> Result<bool, String> {
+        self.with_emulator(|e| e.select_word_at(viewport))
+    }
+    fn apply_runtime_config(&self, cfg: crate::EmulatorConfig) -> Result<(), String> {
+        self.with_emulator(|e| e.apply_config(&cfg))
     }
 }
 
@@ -675,6 +693,12 @@ impl SessionAccess for RemoteSession {
     }
     fn search_clear(&self) -> Result<(), String> {
         self.with_emulator(|e| e.search_clear())
+    }
+    fn select_word_at(&self, viewport: (usize, usize)) -> Result<bool, String> {
+        self.with_emulator(|e| e.select_word_at(viewport))
+    }
+    fn apply_runtime_config(&self, cfg: crate::EmulatorConfig) -> Result<(), String> {
+        self.with_emulator(|e| e.apply_config(&cfg))
     }
 }
 

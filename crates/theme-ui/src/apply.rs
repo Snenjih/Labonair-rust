@@ -32,7 +32,20 @@ pub(crate) fn font_overrides_from_settings(cx: &App) -> labonair_theme::FontOver
             .map(|s| s.font_family().to_string())
             .unwrap_or_default(),
         terminal_size: terminal.map(|s| s.font_size() as f32).unwrap_or(15.0),
-        terminal_line_height: 0.0,
+        terminal_line_height: terminal.map(|s| s.line_height()).unwrap_or(0.0),
+        terminal_weight: terminal.map(|s| mono_weight(s.font_weight())),
+    }
+}
+
+/// Map the `terminal` area's font-weight setting onto the theme typography enum.
+fn mono_weight(
+    w: labonair_settings::content::terminal::TerminalFontWeight,
+) -> labonair_theme::MonoFontWeight {
+    use labonair_settings::content::terminal::TerminalFontWeight as W;
+    match w {
+        W::Normal => labonair_theme::MonoFontWeight::Normal,
+        W::Medium => labonair_theme::MonoFontWeight::Medium,
+        W::Bold => labonair_theme::MonoFontWeight::Bold,
     }
 }
 

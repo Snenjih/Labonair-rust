@@ -181,6 +181,9 @@ pub struct RenderableCursor {
     pub line: i32,
     pub column: usize,
     pub shape: CursorShape,
+    /// Whether the cursor should blink (renderer-side; `alacritty_terminal`
+    /// itself never toggles visibility).
+    pub blinking: bool,
 }
 
 /// A horizontal stretch of selected cells on one visible row (end exclusive).
@@ -590,7 +593,7 @@ fn to_regex_literal(q: &str, case_sensitive: bool) -> String {
 }
 
 /// Tunable emulator parameters sourced from the app preferences (T13-003).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EmulatorConfig {
     /// Lines of scrollback history kept above the viewport.
     pub scrollback: usize,
@@ -598,6 +601,9 @@ pub struct EmulatorConfig {
     pub cursor_shape: CursorShape,
     /// Whether the default cursor blinks.
     pub cursor_blink: bool,
+    /// Characters that terminate a double-click word selection. Empty = keep
+    /// `alacritty_terminal`'s built-in default set.
+    pub word_separators: String,
 }
 
 impl Default for EmulatorConfig {
@@ -606,6 +612,28 @@ impl Default for EmulatorConfig {
             scrollback: DEFAULT_SCROLLBACK_LINES,
             cursor_shape: CursorShape::Block,
             cursor_blink: false,
+            word_separators: String::new(),
+        }
+    }
+}
+
+impl EmulatorConfig {
+    /// Build the `alacritty_terminal` [`Config`] this tunable set implies,
+    /// falling back to the library defaults for everything it does not own.
+    fn to_alac_config(&self) -> Config {
+        let base = Config::default();
+        Config {
+            scrolling_history: self.scrollback.max(1),
+            default_cursor_style: alacritty_terminal::vte::ansi::CursorStyle {
+                shape: self.cursor_shape,
+                blinking: self.cursor_blink,
+            },
+            semantic_escape_chars: if self.word_separators.is_empty() {
+                base.semantic_escape_chars.clone()
+            } else {
+                self.word_separators.clone()
+            },
+            ..base
         }
     }
 }
@@ -628,14 +656,7 @@ impl TerminalEmulator {
         event_tx: Sender<TerminalEvent>,
         cfg: EmulatorConfig,
     ) -> Self {
-        let config = Config {
-            scrolling_history: cfg.scrollback.max(1),
-            default_cursor_style: alacritty_terminal::vte::ansi::CursorStyle {
-                shape: cfg.cursor_shape,
-                blinking: cfg.cursor_blink,
-            },
-            ..Config::default()
-        };
+        let config = cfg.to_alac_config();
         let pty_out = Arc::new(Mutex::new(Vec::new()));
         let proxy = EventProxy::new(event_tx, Arc::clone(&pty_out));
         let term = Term::new(config, &dimensions, proxy);
@@ -842,6 +863,31 @@ impl TerminalEmulator {
         self.colors = colors;
     }
 
+    /// Re-apply the tunable emulator parameters (scrollback depth, default
+    /// cursor shape/blink, word separators) on a live session — used when the
+    /// user changes a terminal setting while terminals are open.
+    pub fn apply_config(&mut self, cfg: &EmulatorConfig) {
+        self.term.set_options(cfg.to_alac_config());
+    }
+
+    /// Select the word under the given **viewport** cell `(column, row)` using
+    /// the configured word separators (double-click). Returns whether a
+    /// non-empty word was selected.
+    pub fn select_word_at(&mut self, viewport: (usize, usize)) -> bool {
+        use alacritty_terminal::index::{Column, Line, Point as GridIndex, Side};
+        use alacritty_terminal::selection::{Selection, SelectionType};
+
+        let offset = self.term.grid().display_offset() as i32;
+        let cols = self.dimensions.columns.max(1);
+        let (col, row) = viewport;
+        let point = GridIndex::new(Line(row as i32 - offset), Column(col.min(cols - 1)));
+        let mut selection = Selection::new(SelectionType::Semantic, point, Side::Left);
+        selection.update(point, Side::Right);
+        selection.include_all();
+        self.term.selection = Some(selection);
+        self.selection_text().is_some()
+    }
+
     /// Current grid size in cells.
     pub fn dimensions(&self) -> TermDimensions {
         self.dimensions
@@ -955,6 +1001,7 @@ impl TerminalEmulator {
     /// Build an immutable snapshot of the visible grid with theme-resolved
     /// colors.
     pub fn render(&self) -> RenderableScreen {
+        let blinking = self.term.cursor_style().blinking;
         let content = self.term.renderable_content();
         let display_offset = content.display_offset;
         let selection_range = content.selection;
@@ -962,6 +1009,7 @@ impl TerminalEmulator {
             line: content.cursor.point.line.0,
             column: content.cursor.point.column.0,
             shape: content.cursor.shape,
+            blinking,
         };
 
         let mut cells = Vec::with_capacity(self.dimensions.columns * self.dimensions.screen_lines);
@@ -1158,6 +1206,42 @@ mod tests {
             "history {} exceeded configured cap",
             term.history_len()
         );
+    }
+
+    #[test]
+    fn apply_config_retunes_a_live_emulator() {
+        let (mut term, _rx) = emulator(20, 5);
+        // Blink is off and history is the engine default to begin with.
+        assert!(!term.render().cursor.blinking);
+        term.apply_config(&EmulatorConfig {
+            scrollback: 3,
+            cursor_blink: true,
+            ..EmulatorConfig::default()
+        });
+        assert!(term.render().cursor.blinking);
+        for _ in 0..50 {
+            term.feed(b"line\r\n");
+        }
+        assert!(term.history_len() <= 3, "history {}", term.history_len());
+    }
+
+    #[test]
+    fn select_word_at_uses_the_configured_separators() {
+        let (tx, _rx) = channel();
+        let colors = TerminalColors::from_theme(&labonair_theme::Theme::dark());
+        let mut term = TerminalEmulator::new_with(
+            colors,
+            TermDimensions::new(40, 5),
+            tx,
+            EmulatorConfig {
+                word_separators: " ".to_string(),
+                ..EmulatorConfig::default()
+            },
+        );
+        term.feed(b"foo-bar baz");
+        assert!(term.select_word_at((2, 0)));
+        // `-` is not a separator here, so the whole hyphenated run is selected.
+        assert_eq!(term.selection_text().as_deref(), Some("foo-bar"));
     }
 
     #[test]

@@ -469,10 +469,16 @@ impl SettingsView {
         let pending_scroll = self.pending_scroll;
         let mut scroll_to_row: Option<usize> = None;
 
-        let leftover: Vec<AnyField> = leftover_fields(area.target_module, &self.all_fields)
-            .into_iter()
-            .copied()
-            .collect();
+        // The trailing "Other" fallback belongs on the area's main page only —
+        // a sub-page shows just its own curated groups.
+        let leftover: Vec<AnyField> = if self.active_subpage.is_none() {
+            leftover_fields(area.target_module, &self.all_fields)
+                .into_iter()
+                .copied()
+                .collect()
+        } else {
+            Vec::new()
+        };
 
         // Resolve every placed `Item` key to its `AnyField` once, then batch
         // the store lookups for all rows (placed + "Other") in a single pass.

@@ -22,7 +22,7 @@
 //! alternate-scroll mode is active; drag selects text (copy-on-select), Cmd+C /
 //! Cmd+V and right-click drive the clipboard with bracketed-paste support.
 
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use gpui::prelude::FluentBuilder;
 use gpui::{
@@ -75,7 +75,16 @@ pub struct TerminalView {
     /// Open right-click context menu anchor (when `terminalRightClickPastes`
     /// is off — mirrors the reference `TerminalPane` `<ContextMenu>`).
     menu: Option<Point<Pixels>>,
+    /// Current on/off phase of the blinking cursor (`terminalCursorBlink`).
+    blink_on: bool,
+    /// Whether this view held focus at its last paint — the blink task uses it
+    /// to skip repaints for background panes.
+    focused: bool,
+    /// Last time the terminal produced output or received input — the cursor is
+    /// held solid for one blink interval afterwards so it never blinks mid-type.
+    activity_at: Instant,
     _poll: Task<()>,
+    _blink: Task<()>,
 }
 
 impl TerminalView {
@@ -118,10 +127,42 @@ impl TerminalView {
                         .unwrap_or(false);
                     crate::bell::ring(bell);
                 }
+                // Fresh output — hold the cursor solid for one blink interval.
+                this.activity_at = Instant::now();
+                this.blink_on = true;
                 cx.notify();
                 !exited
             });
             if !matches!(keep_going, Ok(true)) {
+                break;
+            }
+        });
+
+        // Drive the blinking cursor. The interval is re-read every tick so a
+        // `terminalCursorBlinkInterval` change takes effect on the next toggle;
+        // the repaint is skipped unless this terminal is focused and the
+        // `terminalCursorBlink` preference is on, so idle/background panes stay
+        // quiet.
+        let blink = cx.spawn(async move |view, cx| loop {
+            let (ms, blink_pref) = view
+                .read_with(cx, |_, cx| {
+                    labonair_settings::TerminalSettings::try_get(cx)
+                        .map(|s| (s.cursor_blink_interval_ms(), s.cursor_blink()))
+                        .unwrap_or((1_000, true))
+                })
+                .unwrap_or((1_000, true));
+            cx.background_executor()
+                .timer(Duration::from_millis(ms))
+                .await;
+            if view
+                .update(cx, |this, cx| {
+                    this.blink_on = !this.blink_on;
+                    if blink_pref && this.focused {
+                        cx.notify();
+                    }
+                })
+                .is_err()
+            {
                 break;
             }
         });
@@ -136,7 +177,11 @@ impl TerminalView {
             drag_anchor: None,
             measured: None,
             menu: None,
+            blink_on: true,
+            focused: false,
+            activity_at: Instant::now(),
             _poll: poll,
+            _blink: blink,
         }
     }
 
@@ -340,6 +385,7 @@ impl Render for TerminalView {
                         line: 0,
                         column: 0,
                         shape: CursorShape::Block,
+                        blinking: false,
                     },
                     cells: Vec::new(),
                     selection: Vec::new(),
@@ -422,7 +468,23 @@ impl Render for TerminalView {
                 .bg(search_color)
         });
 
-        let cursor_element = cursor_overlay(&screen, cell_w, cell_h, to_hsla(colors.cursor, 1.0));
+        // Blink: hide the cursor on the "off" phase, but only while the view is
+        // focused and no key/output landed within the last blink interval.
+        self.focused = self.focus_handle.is_focused(window);
+        let blink_ms = labonair_settings::TerminalSettings::try_get(cx)
+            .map(|s| s.cursor_blink_interval_ms())
+            .unwrap_or(1_000);
+        let cursor_hidden = screen.cursor.blinking
+            && self.focused
+            && !self.blink_on
+            && self.activity_at.elapsed() >= Duration::from_millis(blink_ms);
+        let cursor_element = cursor_overlay(
+            &screen,
+            cell_w,
+            cell_h,
+            to_hsla(colors.cursor, 1.0),
+            cursor_hidden,
+        );
 
         let view = cx.weak_entity();
         let size_probe = canvas(
@@ -467,6 +529,17 @@ impl Render for TerminalView {
                         &mode,
                     ) {
                         this.send_input(&bytes);
+                    } else if ev.click_count >= 2 {
+                        // Double-click: select the word under the cursor using
+                        // the configured `terminalWordSeparator` set.
+                        this.drag_anchor = None;
+                        let selected = this
+                            .handle
+                            .with(|s| s.select_word_at(cell))
+                            .unwrap_or(false);
+                        if selected && copy_on_select(cx) {
+                            this.copy_selection(cx);
+                        }
                     } else {
                         // Native selection: anchor here, clear any old selection.
                         this.drag_anchor = Some(cell);
@@ -538,6 +611,17 @@ impl Render for TerminalView {
                     if step == 0 {
                         return;
                     }
+                    // `terminalScrollSensitivity` scales every notch;
+                    // `terminalFastScrollModifier`, held, multiplies by 5.
+                    let (sensitivity, fast) = labonair_settings::TerminalSettings::try_get(cx)
+                        .map(|s| {
+                            (
+                                s.scroll_sensitivity() as i32,
+                                fast_scroll_held(&ev.modifiers, s.fast_scroll_modifier()),
+                            )
+                        })
+                        .unwrap_or((1, false));
+                    let step = step * sensitivity.max(1) * if fast { 5 } else { 1 };
                     let cell = this.cell_at(ev.position);
                     match wheel_action(
                         &WheelInput {
@@ -577,6 +661,8 @@ impl Render for TerminalView {
                         this.send_input(&bytes);
                         this.snap_to_bottom();
                         let _ = this.handle.with(|s| s.clear_selection());
+                        this.activity_at = Instant::now();
+                        this.blink_on = true;
                         cx.notify();
                     }
                 }
@@ -676,15 +762,16 @@ impl TerminalView {
     }
 }
 
-/// The cursor overlay div, or `None` when the cursor is hidden or scrolled out
-/// of view.
+/// The cursor overlay div, or `None` when the cursor is hidden (blink "off"
+/// phase, `CursorShape::Hidden`, or scrolled out of view).
 fn cursor_overlay(
     screen: &RenderableScreen,
     cell_w: f32,
     cell_h: f32,
     color: Hsla,
+    blink_hidden: bool,
 ) -> Option<gpui::Div> {
-    if screen.display_offset != 0 {
+    if blink_hidden || screen.display_offset != 0 {
         return None;
     }
     let cur = screen.cursor;
@@ -740,6 +827,20 @@ fn copy_on_select(cx: &App) -> bool {
     labonair_settings::TerminalSettings::try_get(cx)
         .map(|s| s.copy_on_select())
         .unwrap_or(false)
+}
+
+/// Whether the configured `terminalFastScrollModifier` is currently held.
+fn fast_scroll_held(
+    mods: &gpui::Modifiers,
+    modifier: labonair_settings::content::terminal::FastScrollModifier,
+) -> bool {
+    use labonair_settings::content::terminal::FastScrollModifier as M;
+    match modifier {
+        M::None => false,
+        M::Alt => mods.alt,
+        M::Ctrl => mods.control,
+        M::Shift => mods.shift,
+    }
 }
 
 fn to_hsla(c: Rgb, alpha: f32) -> Hsla {

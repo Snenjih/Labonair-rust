@@ -66,6 +66,8 @@ pub struct FontOverrides {
     pub terminal_family: String,
     pub terminal_size: f32,
     pub terminal_line_height: f32,
+    /// `None` = keep the theme's own terminal font weight.
+    pub terminal_weight: Option<MonoFontWeight>,
 }
 
 impl FontOverrides {
@@ -91,6 +93,9 @@ impl FontOverrides {
         }
         if self.terminal_line_height > 0.0 {
             ty.terminal_line_height = self.terminal_line_height;
+        }
+        if let Some(weight) = self.terminal_weight {
+            ty.terminal_font_weight = weight;
         }
     }
 }

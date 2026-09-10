@@ -270,6 +270,22 @@ fn terminal_settings(cx: &App) -> TerminalSettings {
     })
 }
 
+/// The live-tunable emulator parameters derived from the `terminal` settings —
+/// applied to new sessions at spawn and to open sessions on a settings change.
+fn terminal_emulator_config(cx: &App) -> labonair_terminal::EmulatorConfig {
+    let ts = terminal_settings(cx);
+    labonair_terminal::EmulatorConfig {
+        scrollback: ts.scrollback().max(1) as usize,
+        cursor_shape: match ts.cursor_style() {
+            PrefCursorStyle::Block => labonair_terminal::CursorShape::Block,
+            PrefCursorStyle::Underline => labonair_terminal::CursorShape::Underline,
+            PrefCursorStyle::Bar => labonair_terminal::CursorShape::Beam,
+        },
+        cursor_blink: ts.cursor_blink(),
+        word_separators: ts.word_separator().to_string(),
+    }
+}
+
 /// Value carried by a tab drag.
 struct DraggedTab {
     id: u64,
@@ -1717,6 +1733,7 @@ impl Workspace {
             replay_scrollback,
             cursor_shape,
             cursor_blink: Some(ts.cursor_blink()),
+            word_separators: Some(ts.word_separator().to_string()),
             ..SessionOptions::default()
         };
         let session_id =
@@ -1925,18 +1942,53 @@ impl Workspace {
     /// Request closing a tab. Editor tabs with unsaved changes first ask for
     /// confirmation; everything else closes immediately, sessions torn down.
     fn request_close(&mut self, id: u64, window: &mut Window, cx: &mut Context<Self>) {
+        let kind = self.tabs.read(cx).get(id).map(|t| t.kind);
         let needs_confirm = self
             .tabs
             .read(cx)
             .get(id)
             .map(Tab::needs_close_confirm)
-            .unwrap_or(false);
+            .unwrap_or(false)
+            || (kind == Some(TabKind::Workspace)
+                && terminal_settings(cx).confirm_close_terminal_tab()
+                && self.tab_has_running_shell(id, cx));
         if needs_confirm && self.confirm_close != Some(id) {
             self.confirm_close = Some(id);
             cx.notify();
             return;
         }
         self.do_close(id, window, cx);
+    }
+
+    /// Whether a workspace (terminal) tab has at least one local pane whose
+    /// shell process is still alive — gates `confirmCloseTerminalTab`.
+    fn tab_has_running_shell(&self, id: u64, cx: &App) -> bool {
+        let Some(layout) = self.layouts.get(&id) else {
+            return false;
+        };
+        layout.leaves().iter().any(|leaf| {
+            self.panes.get(leaf).is_some_and(|entry| {
+                matches!(
+                    entry.view.read(cx).handle().status(),
+                    labonair_terminal::SessionStatus::Running
+                )
+            })
+        })
+    }
+
+    /// Re-apply the live-tunable terminal settings (scrollback depth, cursor
+    /// shape/blink, word separators) to every open terminal pane, and repaint
+    /// them so a `terminalOpacity` / `terminalCursorBlinkInterval` change is
+    /// visible immediately. Called from the shell's `SettingsStore` observer.
+    pub fn reapply_terminal_settings(&mut self, cx: &mut Context<Self>) {
+        let cfg = terminal_emulator_config(cx);
+        let views: Vec<Entity<TerminalView>> =
+            self.panes.values().map(|e| e.view.clone()).collect();
+        for view in views {
+            let handle = view.read(cx).handle().clone();
+            let _ = handle.with(|s| s.apply_runtime_config(cfg.clone()));
+            view.update(cx, |_, cx| cx.notify());
+        }
     }
 
     fn do_close(&mut self, id: u64, window: &mut Window, cx: &mut Context<Self>) {

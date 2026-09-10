@@ -295,6 +295,24 @@ pub fn all_fields() -> Vec<AnyField> {
             "Terminal font size in points."
         ),
         field!(
+            terminal.terminal_line_height,
+            "terminalLineHeight",
+            Float { min_centi: 80, max_centi: 250, step_centi: 5 },
+            "Line height",
+            "Vertical line spacing as a multiple of the font size."
+        ),
+        field!(
+            terminal.terminal_font_weight,
+            "terminalFontWeight",
+            Select(&[
+                ("normal", "Normal"),
+                ("medium", "Medium"),
+                ("bold", "Bold")
+            ]),
+            "Font weight",
+            "Weight of the terminal text."
+        ),
+        field!(
             terminal.terminal_scrollback,
             "terminalScrollback",
             Int { min: 1000, max: 200_000, step: 1000 },
@@ -338,7 +356,14 @@ pub fn all_fields() -> Vec<AnyField> {
             "terminalCursorBlink",
             Switch,
             "Cursor blink",
-            "Blink the terminal cursor."
+            "Blink the terminal cursor while the terminal is focused."
+        ),
+        field!(
+            terminal.terminal_cursor_blink_interval,
+            "terminalCursorBlinkInterval",
+            Int { min: 100, max: 5000, step: 100 },
+            "Cursor blink interval",
+            "Milliseconds between cursor blink phases."
         ),
         field!(
             terminal.terminal_copy_on_select,
@@ -355,11 +380,44 @@ pub fn all_fields() -> Vec<AnyField> {
             "Paste the clipboard on right-click instead of a context menu."
         ),
         field!(
+            terminal.terminal_word_separator,
+            "terminalWordSeparator",
+            Text,
+            "Word separators",
+            "Characters that end a double-click word selection."
+        ),
+        field!(
+            terminal.terminal_scroll_sensitivity,
+            "terminalScrollSensitivity",
+            Int { min: 1, max: 10, step: 1 },
+            "Scroll sensitivity",
+            "Multiplier applied to every mouse-wheel scroll step."
+        ),
+        field!(
+            terminal.terminal_fast_scroll_modifier,
+            "terminalFastScrollModifier",
+            Select(&[
+                ("none", "None"),
+                ("alt", "Alt"),
+                ("ctrl", "Ctrl"),
+                ("shift", "Shift")
+            ]),
+            "Fast-scroll modifier",
+            "Held while scrolling, multiplies the scroll step by five."
+        ),
+        field!(
             terminal.terminal_bell,
             "terminalBell",
             Switch,
             "Audible bell",
-            "Play a sound on the terminal bell."
+            "Play a sound on the terminal bell (macOS only)."
+        ),
+        field!(
+            terminal.confirm_close_terminal_tab,
+            "confirmCloseTerminalTab",
+            Switch,
+            "Confirm close with running shell",
+            "Ask before closing a terminal tab whose shell is still running."
         ),
         field!(
             terminal.terminal_opacity,
