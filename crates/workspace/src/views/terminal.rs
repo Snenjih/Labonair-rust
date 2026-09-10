@@ -72,6 +72,11 @@ pub struct TerminalView {
     /// over the whole window's viewport so a terminal hosted in a split pane
     /// sizes its grid to the pane, not the window (T04-002).
     measured: Option<Size<Pixels>>,
+    /// Window-relative origin of this view's content area, captured each paint.
+    /// GPUI mouse-event positions are window-relative while grid cells are
+    /// painted relative to this view, so this is subtracted before mapping a
+    /// pixel position to a cell.
+    content_origin: Point<Pixels>,
     /// Open right-click context menu anchor (when `terminalRightClickPastes`
     /// is off — mirrors the reference `TerminalPane` `<ContextMenu>`).
     menu: Option<Point<Pixels>>,
@@ -176,6 +181,7 @@ impl TerminalView {
             cell_size: (8.0, 16.0),
             drag_anchor: None,
             measured: None,
+            content_origin: Point::default(),
             menu: None,
             blink_on: true,
             focused: false,
@@ -270,8 +276,9 @@ impl TerminalView {
     fn cell_at(&self, pos: Point<gpui::Pixels>) -> (usize, usize) {
         let (cw, ch) = self.cell_size;
         let (cols, rows) = self.grid;
-        let col = (f32::from(pos.x).max(0.0) / cw) as usize;
-        let row = (f32::from(pos.y).max(0.0) / ch) as usize;
+        let local = pos - self.content_origin;
+        let col = (f32::from(local.x).max(0.0) / cw) as usize;
+        let row = (f32::from(local.y).max(0.0) / ch) as usize;
         (
             col.min(cols.saturating_sub(1)),
             row.min(rows.saturating_sub(1)),
@@ -490,6 +497,7 @@ impl Render for TerminalView {
         let size_probe = canvas(
             move |bounds, _window, cx| {
                 let _ = view.update(cx, |this, cx| {
+                    this.content_origin = bounds.origin;
                     if this.measured != Some(bounds.size) {
                         this.measured = Some(bounds.size);
                         cx.notify();
