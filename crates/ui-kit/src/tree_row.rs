@@ -250,9 +250,9 @@ impl IntoElement for TreeRow {
                     .border_color(c.primary),
             );
         } else if st.selected {
-            row = row.bg(c.accent);
+            row = row.bg(c.selected_fill);
         } else if st.marked {
-            row = row.bg(c.accent.opacity(0.4));
+            row = row.bg(c.selected_fill.opacity(0.6));
         } else {
             let hover = c.accent.opacity(0.5);
             row = row.hover(move |s| s.bg(hover));

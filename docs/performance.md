@@ -122,10 +122,14 @@ Any Rust number materially worse than that is a regression to investigate.
 
 ## 6. Visual-parity items closed here (D1–D6 from T15-001)
 
-- **D1** — canonical interaction fills: `ThemeStore::hover_fill()` = `accent`,
-  `selected_fill()` = `muted` (1:1 with the reference `focus:bg-accent` /
-  `data-selected:bg-muted`). Command palette rows switched from an ad-hoc
-  `accent` selection + `border` hover to `selected_fill()`.
+- **D1** — canonical interaction fills: `ThemeStore::hover_fill()` = `accent`
+  (neutral). Selection is now brand-tinted: `selected_fill()` = `primary` at
+  0.16 alpha and `selected_accent()` = solid `primary` for the 2px active
+  bar/border (`Palette::selected_fill` / `selected_accent` mirror these).
+  Hover deliberately stays neutral. Applied to the active editor tab, Explorer
+  / tree rows, command-palette selection, the Settings sidebar's active
+  category (+ left accent bar), and `icon_toggle_button`'s pressed state
+  (dock rail, notification bell, snippet toggles).
 - **D2** — `ThemeStore::scrollbar_thumb()` / `scrollbar_thumb_hover()` =
   foreground at 22% → 34% alpha, `SCROLLBAR_SIZE = 10.0` — matches
   `.themed-scrollbar`. (Wire into a scrollbar widget when one is adopted.)

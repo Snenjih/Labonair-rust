@@ -1095,6 +1095,7 @@ where
         let mut card = t.card();
         card.a *= opacity;
         let sel_fill = t.selected_fill();
+        let hover_fill = t.accent();
         let chip_bg = t.muted();
 
         let page = self.page();
@@ -1201,7 +1202,7 @@ where
                 })
                 .text_color(fg)
                 .when(is_sel, |d| d.bg(sel_fill))
-                .when(actionable && !is_sel, |d| d.hover(|s| s.bg(sel_fill)));
+                .when(actionable && !is_sel, |d| d.hover(|s| s.bg(hover_fill)));
 
             if let Some(icon) = row.icon {
                 r = r.child(
@@ -1298,7 +1299,7 @@ where
                         .text_color(if is_current { fg } else { muted })
                         .when(is_current, |d| d.bg(sel_fill))
                         .when(!is_current, |d| {
-                            d.hover(|s| s.bg(sel_fill)).on_click(cx.listener(
+                            d.hover(|s| s.bg(hover_fill)).on_click(cx.listener(
                                 move |this, _: &ClickEvent, _w, cx| this.go_back_to(idx, cx),
                             ))
                         })

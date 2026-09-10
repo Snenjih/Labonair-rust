@@ -3935,11 +3935,12 @@ impl Workspace {
     /// indicator); `false` is the horizontal titlebar strip.
     fn render_tab(&self, tab: &Tab, sidebar: bool, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = self.theme.read(cx);
-        let (fg, muted, accent, border) = (
+        let (fg, muted, border, primary, selected_fill) = (
             theme.foreground(),
             theme.muted_foreground(),
-            theme.accent(),
             theme.border(),
+            theme.primary(),
+            theme.selected_fill(),
         );
         let id = tab.id;
         let active = self.tabs.read(cx).active_id() == id;
@@ -4006,7 +4007,7 @@ impl Workspace {
             .whitespace_nowrap()
             .cursor_pointer()
             .text_color(if active { fg } else { muted })
-            .when(active, |d| d.bg(accent))
+            .when(active, |d| d.bg(selected_fill))
             .when(!active, |d| d.hover(|s| s.bg(border)))
             .child(div().child(tab.kind.indicator().svg(muted)))
             .child(
@@ -4024,7 +4025,7 @@ impl Workspace {
                         .px_1()
                         .rounded_sm()
                         .border_1()
-                        .border_color(accent)
+                        .border_color(primary)
                         .child(SharedString::from(format!("{buf}\u{2502}"))),
                     None => div()
                         .when(sidebar, |d| d.flex_1().min_w_0())

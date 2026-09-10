@@ -54,10 +54,17 @@ pub struct Palette {
     pub sidebar_fg: Hsla,
     /// `--sidebar-border`.
     pub sidebar_border: Hsla,
-    /// `--accent` (hover/selected fill).
+    /// `--accent` (neutral hover fill).
     pub accent: Hsla,
     /// `--accent-foreground`.
     pub accent_fg: Hsla,
+    /// Canonical selected/active fill — the primary colour at a low alpha, so a
+    /// selected row/tab/nav-item reads as "current" while the resting surface
+    /// stays calm. Hover stays neutral ([`Palette::accent`]).
+    pub selected_fill: Hsla,
+    /// The solid primary marker for a selection: the 2px active bar/border that
+    /// accompanies [`Palette::selected_fill`].
+    pub selected_accent: Hsla,
     /// `--primary`.
     pub primary: Hsla,
     /// `--primary-foreground`.
@@ -108,6 +115,8 @@ impl Palette {
             sidebar_border: theme.theme().sidebar.border,
             accent: core.accent,
             accent_fg: core.accent_foreground,
+            selected_fill: core.primary.opacity(0.16),
+            selected_accent: core.primary,
             primary: core.primary,
             primary_fg: core.primary_foreground,
             secondary: core.secondary,

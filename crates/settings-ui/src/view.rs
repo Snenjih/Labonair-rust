@@ -1083,7 +1083,13 @@ impl Render for SettingsView {
                         .rounded_sm()
                         .text_size(px(12.0))
                         .text_color(c.sidebar_fg)
-                        .when(is_active, |d| d.bg(c.accent))
+                        .border_l_2()
+                        .border_color(if is_active {
+                            c.selected_accent
+                        } else {
+                            gpui::transparent_black()
+                        })
+                        .when(is_active, |d| d.bg(c.selected_fill))
                         .when(!is_active, |d| d.hover(|s| s.bg(c.accent)))
                         .child(toggle)
                         .child(

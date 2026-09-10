@@ -90,10 +90,11 @@ pub fn icon_toggle_button(
     pressed: bool,
 ) -> Stateful<Div> {
     let size = ToggleSize::default();
-    let color = if pressed { c.fg } else { c.muted };
+    let color = if pressed { c.selected_accent } else { c.muted };
     base(id, c, ToggleVariant::default(), size, pressed, false)
         .w(c.space(size.height()))
         .justify_center()
+        .when(pressed, |d| d.bg(c.selected_fill))
         .child(icon.svg(color).size(px(size.icon())))
 }
 

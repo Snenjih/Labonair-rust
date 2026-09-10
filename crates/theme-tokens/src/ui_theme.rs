@@ -109,10 +109,15 @@ pub trait UiTheme {
     }
 
     /// Canonical selected/active fill for list selection (Explorer rows,
-    /// command-palette results). The reference `cmdk` command items use
-    /// `data-selected:bg-muted`.
+    /// command-palette results, active tab, active nav item) — the primary
+    /// colour at a low alpha; hover stays neutral.
     fn selected_fill(&self) -> Hsla {
-        self.muted()
+        self.primary().opacity(0.16)
+    }
+
+    /// The solid primary marker that accompanies [`Self::selected_fill`].
+    fn selected_accent(&self) -> Hsla {
+        self.primary()
     }
 }
 

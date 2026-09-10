@@ -798,10 +798,17 @@ impl ThemeStore {
     }
 
     /// Canonical selected/active fill for list selection (Explorer rows,
-    /// command-palette results). The reference `cmdk` command items use
-    /// `data-selected:bg-muted` (**D1**).
+    /// command-palette results, active tab, active nav item). The primary
+    /// colour at a low alpha so the current item reads as "current" while the
+    /// resting surface stays calm; hover stays neutral ([`Self::hover_fill`]).
     pub fn selected_fill(&self) -> Hsla {
-        self.muted()
+        self.primary().opacity(0.16)
+    }
+
+    /// The solid primary marker that accompanies [`Self::selected_fill`] — the
+    /// 2px active bar / active-pane border.
+    pub fn selected_accent(&self) -> Hsla {
+        self.primary()
     }
 
     /// Scrollbar thumb color for panels that keep a visible scrollbar
@@ -989,10 +996,12 @@ mod tests {
         cx.update(|cx| {
             let store = cx.new(|_| ThemeStore::new(WindowAppearance::Dark));
             let s = store.read(cx);
-            // D1 — hover = accent, selection = muted (1:1 with the reference
-            // `focus:bg-accent` / `data-selected:bg-muted`).
+            // D1 — hover stays neutral (`focus:bg-accent`); selection is the
+            // primary colour at a low alpha, with a solid primary marker.
             assert_eq!(s.hover_fill(), s.accent());
-            assert_eq!(s.selected_fill(), s.muted());
+            assert_eq!(s.selected_fill().h, s.primary().h);
+            assert!((s.selected_fill().a - 0.16).abs() < 1e-6);
+            assert_eq!(s.selected_accent(), s.primary());
             // D2 — thumb is the foreground at 22% → 34% alpha.
             assert!((s.scrollbar_thumb().a - 0.22).abs() < 1e-6);
             assert!((s.scrollbar_thumb_hover().a - 0.34).abs() < 1e-6);
