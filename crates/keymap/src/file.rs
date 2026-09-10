@@ -187,6 +187,175 @@ pub fn append_user_binding_override(
     Ok(updated)
 }
 
+/// Remove every user override that binds — or explicitly unbinds — `action`
+/// in `context`, leaving all other source text (comments, unrelated bindings)
+/// untouched. This is the keymap surface's "Reset to default".
+///
+/// Matching is by resolved command identity, so a user file that used a
+/// migration alias is still reset by its canonical command. A `"<chord>": null`
+/// entry is removed when its chord matches one of `default_keystrokes`, which
+/// is how an explicit user unbind of a shipped default is undone. A block that
+/// would be left with no bindings is removed whole.
+///
+/// Returns the source unchanged when there is nothing to remove. Returns `Err`
+/// — without proposing any write — when the document is malformed or the edit
+/// would not round-trip; the caller then routes the user to the raw editor.
+pub fn remove_user_binding_override(
+    source: &str,
+    context: Option<&str>,
+    action: &str,
+    default_keystrokes: &[String],
+) -> Result<String, String> {
+    parse_keymap_jsonc(source)
+        .map_err(|error| format!("cannot reset a binding while keymap.json is invalid: {error}"))?;
+
+    let ast = jsonc_parser::parse_to_ast(
+        source,
+        &jsonc_parser::CollectOptions::default(),
+        &jsonc_parser::ParseOptions::default(),
+    )
+    .map_err(|error| error.to_string())?;
+    let Some(jsonc_parser::ast::Value::Array(array)) = ast.value else {
+        return Ok(source.to_string());
+    };
+
+    let target = crate::runtime::command_for_action(action);
+    let wanted_context = context.map(str::to_string);
+    let wanted_context = normalize_context(&wanted_context);
+    let default_norm: Vec<String> = default_keystrokes
+        .iter()
+        .map(|chord| normalize_chord(chord))
+        .collect();
+
+    let mut removals: Vec<(usize, usize)> = Vec::new();
+    for element in &array.elements {
+        let jsonc_parser::ast::Value::Object(object) = element else {
+            continue;
+        };
+        let element_context = object
+            .properties
+            .iter()
+            .find(|prop| prop.name.as_str() == "context")
+            .and_then(|prop| match &prop.value {
+                jsonc_parser::ast::Value::StringLit(lit) => Some(lit.value.to_string()),
+                _ => None,
+            });
+        if normalize_context(&element_context) != wanted_context {
+            continue;
+        }
+        let Some(bindings_prop) = object
+            .properties
+            .iter()
+            .find(|prop| prop.name.as_str() == "bindings")
+        else {
+            continue;
+        };
+        let jsonc_parser::ast::Value::Object(bindings) = &bindings_prop.value else {
+            continue;
+        };
+
+        let matched: Vec<&jsonc_parser::ast::ObjectProp> = bindings
+            .properties
+            .iter()
+            .filter(|prop| {
+                let chord = prop.name.as_str();
+                match &prop.value {
+                    jsonc_parser::ast::Value::StringLit(lit) => match target {
+                        Some(id) => {
+                            crate::runtime::command_for_action(lit.value.as_ref()) == Some(id)
+                        }
+                        None => lit.value.as_ref() == action,
+                    },
+                    jsonc_parser::ast::Value::NullKeyword(_) => {
+                        default_norm.contains(&normalize_chord(chord))
+                    }
+                    _ => false,
+                }
+            })
+            .collect();
+
+        if matched.is_empty() {
+            continue;
+        }
+        if matched.len() == bindings.properties.len() {
+            removals.push((object.range.start, object.range.end));
+        } else {
+            for prop in matched {
+                removals.push((prop.range.start, prop.range.end));
+            }
+        }
+    }
+
+    if removals.is_empty() {
+        return Ok(source.to_string());
+    }
+
+    let updated = collapse_blank_lines(&splice_out(source, &mut removals));
+    parse_keymap_jsonc(&updated).map_err(|error| {
+        format!("automatic reset produced invalid keymap.json ({error}); edit the file directly")
+    })?;
+    Ok(updated)
+}
+
+/// Remove `ranges` (byte offsets into `source`), each expanded to also swallow
+/// one adjacent list separator so the surrounding array/object stays valid.
+/// `ranges` is sorted and overlap-merged in place.
+fn splice_out(source: &str, ranges: &mut [(usize, usize)]) -> String {
+    ranges.sort_by_key(|(start, _)| *start);
+    let mut merged: Vec<(usize, usize)> = Vec::new();
+    for (start, end) in ranges.iter().copied() {
+        match merged.last_mut() {
+            Some(last) if start <= last.1 => last.1 = last.1.max(end),
+            _ => merged.push((start, end)),
+        }
+    }
+
+    let bytes = source.as_bytes();
+    let mut out = String::with_capacity(source.len());
+    let mut pos = 0usize;
+    for (start, end) in merged {
+        let mut lo = start;
+        let mut hi = end;
+        let mut scan = hi;
+        while scan < bytes.len() && bytes[scan].is_ascii_whitespace() {
+            scan += 1;
+        }
+        if scan < bytes.len() && bytes[scan] == b',' {
+            hi = scan + 1;
+        } else {
+            let mut back = lo;
+            while back > 0 && bytes[back - 1].is_ascii_whitespace() {
+                back -= 1;
+            }
+            if back > 0 && bytes[back - 1] == b',' {
+                lo = back - 1;
+            }
+        }
+        if lo > pos {
+            out.push_str(&source[pos..lo]);
+        }
+        pos = hi.max(pos);
+    }
+    out.push_str(&source[pos..]);
+    out
+}
+
+/// Collapse runs of blank lines left behind by [`splice_out`] to a single one;
+/// every non-blank line is preserved byte-for-byte.
+fn collapse_blank_lines(source: &str) -> String {
+    let mut out = String::with_capacity(source.len());
+    let mut prev_blank = false;
+    for line in source.split_inclusive('\n') {
+        let blank = line.strip_suffix('\n').unwrap_or(line).trim().is_empty();
+        if blank && prev_blank {
+            continue;
+        }
+        prev_blank = blank;
+        out.push_str(line);
+    }
+    out
+}
+
 impl std::fmt::Display for KeymapParseError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "line {}: {}", self.line, self.message)
@@ -800,5 +969,56 @@ mod tests {
         .expect("an empty valid document can receive an unbind override");
         assert!(updated.contains("\"cmd-f\": null"));
         assert!(parse_keymap_jsonc(&updated).is_ok());
+    }
+
+    #[test]
+    fn remove_user_binding_override_deletes_a_whole_generated_block() {
+        let source = "// header\n[\n  { \"context\": \"Editor\", \"bindings\": { \"cmd-f\": \"search::Toggle\" } }\n]\n";
+        let updated =
+            remove_user_binding_override(source, Some("Editor"), "search::Toggle", &[]).unwrap();
+        assert!(updated.starts_with("// header"));
+        assert!(!updated.contains("search::Toggle"));
+        assert!(parse_keymap_jsonc(&updated).unwrap().0.is_empty());
+    }
+
+    #[test]
+    fn remove_user_binding_override_keeps_sibling_bindings_and_comments() {
+        let source = "[\n  { \"bindings\": {\n    \"cmd-f\": \"search::Toggle\", // rebound\n    \"cmd-g\": \"editor::Foo\"\n  } }\n]\n";
+        let updated = remove_user_binding_override(source, None, "search::Toggle", &[]).unwrap();
+        assert!(!updated.contains("cmd-f"));
+        assert!(updated.contains("\"cmd-g\": \"editor::Foo\""));
+        assert!(parse_keymap_jsonc(&updated).is_ok());
+    }
+
+    #[test]
+    fn remove_user_binding_override_undoes_an_explicit_default_unbind() {
+        let source = "[{ \"bindings\": { \"cmd-f\": null } }]";
+        let updated =
+            remove_user_binding_override(source, None, "search::Toggle", &["cmd-f".to_string()])
+                .unwrap();
+        assert!(!updated.contains("cmd-f"));
+        assert!(parse_keymap_jsonc(&updated).is_ok());
+    }
+
+    #[test]
+    fn remove_user_binding_override_matches_migration_aliases() {
+        let canonical = labonair_command_palette_core::CommandId::OpenKeymapJson.action_name();
+        let source = "[{ \"bindings\": { \"cmd-k cmd-s\": \"zed::OpenKeymap\" } }]";
+        let updated = remove_user_binding_override(source, None, canonical, &[]).unwrap();
+        assert!(!updated.contains("zed::OpenKeymap"));
+    }
+
+    #[test]
+    fn remove_user_binding_override_is_noop_and_rejects_malformed() {
+        let source = "[{ \"bindings\": { \"cmd-t\": \"tab::NewTerminal\" } }]";
+        assert_eq!(
+            remove_user_binding_override(source, None, "search::Toggle", &[]).unwrap(),
+            source
+        );
+        assert!(
+            remove_user_binding_override("[{\"bindings\": }]", None, "search::Toggle", &[])
+                .unwrap_err()
+                .contains("invalid")
+        );
     }
 }

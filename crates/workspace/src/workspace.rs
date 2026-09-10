@@ -1925,8 +1925,15 @@ impl Workspace {
 
     fn focus_active(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let active_id = self.tabs.read(cx).active_id();
+        let active_kind = self.tabs.read(cx).active().map(|tab| tab.kind);
         if let Some(editor) = self.editors.get(&active_id) {
             editor.read(cx).focus(window);
+        } else if active_kind == Some(TabKind::Keymap) {
+            if let Some(view) = &self.keymap {
+                window.focus(&view.read(cx).focus_handle(cx));
+            } else {
+                window.focus(&self.focus_handle);
+            }
         } else if let Some(view) = self.active_pane_view(cx) {
             view.read(cx).focus(window);
         } else {
@@ -2537,6 +2544,17 @@ impl Workspace {
             let view =
                 cx.new(|cx| KeymapManagementView::new(theme, descriptors, open_raw, window, cx));
             cx.observe(&view, |_, _, cx| cx.notify()).detach();
+            // Keep the surface current when `keymap.json` is edited outside it
+            // (the raw editor tab, another editor, a sync). The keymap module
+            // owns loading/merging; this only nudges the view to re-read.
+            let view_for_watch = view.downgrade();
+            labonair_settings::watch_file(
+                cx,
+                labonair_keymap::file::user_keymap_path(),
+                move |cx| {
+                    let _ = view_for_watch.update(cx, |view, cx| view.reload(cx));
+                },
+            );
             self.keymap = Some(view);
         }
         let existing = self

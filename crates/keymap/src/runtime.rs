@@ -27,6 +27,22 @@ pub fn context_name(context: CommandContext) -> &'static str {
     }
 }
 
+/// Human-facing label for a portable context, for the keymap surface. Distinct
+/// from [`context_name`], which is the stable identifier written to and read
+/// from `keymap.json` — this one may be reworded without a migration.
+pub fn context_label(context: CommandContext) -> &'static str {
+    match context {
+        CommandContext::Terminal => "Terminal",
+        CommandContext::Editor => "Editor",
+        CommandContext::Sftp => "SFTP",
+        CommandContext::Home => "Home",
+        CommandContext::SshTerminal => "SSH Terminal",
+    }
+}
+
+/// The label shown when a binding is not scoped to any context.
+pub const GLOBAL_CONTEXT_LABEL: &str = "Global";
+
 /// Convert owner-contributed command defaults into the runtime's binding
 /// values. The keymap owns precedence and user overrides, while feature
 /// modules own which commands exist and which defaults they publish.

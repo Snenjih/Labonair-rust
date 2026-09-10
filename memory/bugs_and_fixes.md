@@ -4,6 +4,41 @@ Older entries preserve the state of the code when each issue was recorded.
 When an API was later renamed or removed, the current implementation and
 normative documentation take precedence over the historical symbol name.
 
+## 2026-09-10 — Keymap surface UX rework: GPUI / jsonc-parser constraints
+
+**`uniform_list` requires a uniform item height.** It measures item 0 and
+reuses that height for every row. The keymap tab now mixes section-header rows
+and command rows in one `uniform_list`, so both are forced to the same fixed
+height (`ROW_HEIGHT == SECTION_HEIGHT`, wrapped in `div().h(..).w_full()`).
+A shorter header row silently overlapped the command rows below it.
+
+**Capturing a keystroke without triggering its action needs
+`App::intercept_keystrokes`, not `on_key_down`.** Interceptors run in
+`Window::dispatch_key_event` *before* `dispatch_key` (action matching);
+`cx.stop_propagation()` inside the interceptor prevents action dispatch. A
+plain `on_key_down` handler runs after action matching for global bindings and
+cannot suppress them. `gpui-component`'s `Input` also binds `up`/`down`/`enter`
+as actions in its own `"Input"` key context, so an ancestor `on_key_down`
+never sees those keys while an `Input` is focused — the keymap tab hand-rolls
+its filter string via a single view-level `on_key_down` router instead (same
+pattern as `HostManagerView::on_search_key`).
+
+**`gpui::Keystroke`'s `Display` renders platform glyphs (`⌘⇧P`), not a
+parseable binding string.** `labonair-keymap-ui::keystroke::to_binding_string`
+emits `cmd-shift-p` form in `labonair_keymap::normalize_single_keystroke` rank
+order (ctrl, alt, shift, cmd) so the result is already normalized and
+round-trips through `Keystroke::parse`. Modifier-only keystrokes
+(`key == "cmd"` etc., which GPUI synthesizes on a lone-modifier tap) are
+dropped during capture.
+
+**`jsonc-parser` 0.23 exposes byte ranges on every AST node** via
+`parse_to_ast` + `Ranged` (`ObjectProp.range`, `Object.range`, `Array.elements`).
+`file::remove_user_binding_override` uses this for a surgical text edit
+(delete matched property spans + one adjacent comma, drop a block that would
+be left empty), then re-parses and returns `Err` if the result would not
+round-trip rather than writing a broken file. `serde_json::Value` (via
+`parse_to_serde_value`) has no ranges — that path is only for validation.
+
 ## 2026-09-10 — Terminal settings: dead `terminalCursorBlink`, stale opacity, 7 unwired fields
 
 **Symptom:** `terminalCursorBlink` had a Settings row + a `Toggle: Terminal

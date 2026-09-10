@@ -181,6 +181,27 @@ opens the existing editor tab. Each row now has an inline rebind editor with
 GPUI keystroke validation, same-context conflict detection, explicit unbind,
 and a lossless JSONC append-only override writer. Keymap diagnostics and
 load/save failures are published through the app-wide retained notification
-registry; the management view does not render a duplicate passive error
-banner. The user confirmed the native visual state, and the full workspace
+registry. The user confirmed the native visual state, and the full workspace
 verification gates pass.
+
+**Keymap surface UX rework (follow-on, keeps the same owner and entry point).**
+The management tab now: groups rows by section with collapsible headers;
+filters by All / Modified / Conflicts / Unbound (`management::RowFilter`,
+`search_filtered`); is keyboard-navigable (type to filter, arrows to move,
+Enter to edit) with the filter focused on reveal (`Workspace::focus_active`
+gained a `TabKind::Keymap` arm); records the pressed chord via
+`App::intercept_keystrokes` instead of requiring a hand-typed string
+(`labonair-keymap-ui`'s `keystroke` module, round-tripped through
+`gpui::Keystroke::parse`), with a text field kept as the advanced fallback;
+edits in a popover anchored at the clicked binding, with a context picker when
+adding a new binding; shows the shipped default and a "Reset to default"
+control (`file::remove_user_binding_override`, an AST-range JSONC edit that
+refuses to write a non-round-tripping result); renders `keymap.json`
+diagnostics as an in-tab `ui-kit` banner in addition to the notification; and
+live-reloads when the file changes on disk, deferred while a rebind is open
+(`KeymapManagementView::reload`, wired by the workspace to
+`settings::watch_file`). Override and conflict state is derived data on
+`labonair-keymap::management` (`OverrideState`, `row_override_state`,
+`conflict_commands`, `shadowed_defaults`), so the UI compares no enums and
+duplicates no rules. This closes the deferred "focused/filtered/conflict"
+visual states from the acceptance list below.
