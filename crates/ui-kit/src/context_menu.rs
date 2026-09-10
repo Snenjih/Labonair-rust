@@ -27,12 +27,13 @@
 //! ])
 //! ```
 
+use std::cell::RefCell;
 use std::rc::Rc;
 
 use gpui::{
-    anchored, deferred, div, prelude::FluentBuilder, px, AnyElement, App, ClickEvent,
-    InteractiveElement, IntoElement, MouseButton, MouseDownEvent, ParentElement, Pixels, Point,
-    SharedString, StatefulInteractiveElement, Styled, Window,
+    anchored, canvas, deferred, div, prelude::FluentBuilder, px, AnyElement, App, Bounds,
+    ClickEvent, InteractiveElement, IntoElement, MouseButton, MouseDownEvent, ParentElement,
+    Pixels, Point, SharedString, StatefulInteractiveElement, Styled, Window,
 };
 
 use super::IconName;
@@ -240,6 +241,36 @@ impl MenuItem {
     }
 }
 
+/// Per-render list of open submenu-flyout rectangles in window space. A
+/// controlled submenu flyout is painted *outside* the parent menu card's own
+/// bounds (`absolute().left_full()`), so a click that lands in the flyout would
+/// otherwise trip the card's `on_mouse_down_out` (capture phase) and dismiss the
+/// whole menu before the flyout row's `on_click` (bubble, on mouse-up) can run —
+/// i.e. clicking a host in the `+ ▸ SSH ▸` / `SFTP ▸` submenus did nothing.
+///
+/// Each open flyout records its bounds here during prepaint; the card's
+/// outside-press dismiss and the full-screen backdrop consult it and skip the
+/// dismiss when the press is inside a flyout. The `Rc` is rebuilt on every
+/// `context_menu` / `popover_menu` call, so it is always fresh for the frame.
+type FlyoutBounds = Rc<RefCell<Vec<Bounds<Pixels>>>>;
+
+/// A layout-neutral probe that records its own painted rectangle into `sink`
+/// during prepaint. Dropped into each open submenu flyout so the menu's dismiss
+/// paths can tell "inside a flyout" from "outside the menu".
+fn flyout_probe(sink: FlyoutBounds) -> impl IntoElement {
+    canvas(
+        move |bounds, _window, _cx| sink.borrow_mut().push(bounds),
+        |_, _, _, _| {},
+    )
+    .absolute()
+    .inset_0()
+}
+
+/// True when `pos` falls inside any recorded open-flyout rectangle.
+fn in_flyout(flyouts: &FlyoutBounds, pos: Point<Pixels>) -> bool {
+    flyouts.borrow().iter().any(|b| b.contains(&pos))
+}
+
 /// A fixed 16px centred box holding a 14px glyph — keeps every row's icon the
 /// same size and every label aligned to the same left edge regardless of the
 /// individual SVG's internal padding.
@@ -253,7 +284,7 @@ fn icon_slot(icon: IconName, color: gpui::Hsla) -> impl IntoElement {
         .child(icon.svg(color).size(px(14.0)))
 }
 
-fn render_item(item: MenuItem, c: Palette, depth: usize) -> AnyElement {
+fn render_item(item: MenuItem, c: Palette, depth: usize, flyouts: &FlyoutBounds) -> AnyElement {
     match item.kind {
         Kind::Separator => div()
             .my(c.space(4.0))
@@ -364,16 +395,26 @@ fn render_item(item: MenuItem, c: Palette, depth: usize) -> AnyElement {
                     .border_1()
                     .border_color(c.border)
                     .shadow_lg()
-                    .children(items.into_iter().map(|it| render_item(it, c, depth + 1)));
+                    .children(
+                        items
+                            .into_iter()
+                            .map(|it| render_item(it, c, depth + 1, flyouts)),
+                    );
                 match &control {
                     Some(ctrl) => {
                         let on_hover = ctrl.on_hover.clone();
                         // Controlled open/close doesn't depend on an unbroken
                         // hover chain, so the flyout can sit clear of the
                         // parent card instead of flush against it.
-                        panel.ml(c.space(6.0)).occlude().on_hover(move |h, w, cx| {
-                            on_hover(SubmenuHoverSource::Flyout, *h, w, cx)
-                        })
+                        panel
+                            .ml(c.space(6.0))
+                            .occlude()
+                            .on_hover(move |h, w, cx| {
+                                on_hover(SubmenuHoverSource::Flyout, *h, w, cx)
+                            })
+                            // Report this flyout's rect so a click inside it
+                            // isn't treated as an outside-press on the card.
+                            .child(flyout_probe(flyouts.clone()))
                     }
                     // CSS-hover mode: flush left edge (no `ml`) so the pointer
                     // crosses from the trigger into the panel without passing
@@ -419,7 +460,7 @@ fn render_item(item: MenuItem, c: Palette, depth: usize) -> AnyElement {
 
 /// The menu card itself — the `p-1 rounded-md bg-popover border shadow-md`
 /// panel shared by [`context_menu`] and [`popover_menu`].
-fn menu_card(c: Palette, items: Vec<MenuItem>) -> gpui::Div {
+fn menu_card(c: Palette, items: Vec<MenuItem>, flyouts: FlyoutBounds) -> gpui::Div {
     div()
         .flex()
         .flex_col()
@@ -432,7 +473,11 @@ fn menu_card(c: Palette, items: Vec<MenuItem>) -> gpui::Div {
         .border_color(c.border)
         .shadow_lg()
         .occlude()
-        .children(items.into_iter().map(move |it| render_item(it, c, 0)))
+        .children(
+            items
+                .into_iter()
+                .map(move |it| render_item(it, c, 0, &flyouts)),
+        )
 }
 
 /// The bare menu card on its own — no full-screen backdrop, no anchoring, no
@@ -441,7 +486,7 @@ fn menu_card(c: Palette, items: Vec<MenuItem>) -> gpui::Div {
 /// [`context_menu`] / [`popover_menu`].
 #[cfg(any(debug_assertions, feature = "gallery"))]
 pub fn menu_card_preview(c: Palette, items: Vec<MenuItem>) -> gpui::Div {
-    menu_card(c, items)
+    menu_card(c, items, Rc::new(RefCell::new(Vec::new())))
 }
 
 /// Build a full-screen context-menu overlay anchored at `anchor` (window
@@ -456,6 +501,14 @@ pub fn context_menu(
     let d2 = dismiss.clone();
     let d3 = dismiss.clone();
 
+    // Open submenu flyouts record their rects here each frame so the dismiss
+    // paths below can skip a press that landed inside a flyout (which paints
+    // outside the card's own bounds). See [`FlyoutBounds`].
+    let flyouts: FlyoutBounds = Rc::new(RefCell::new(Vec::new()));
+    let fb_out = flyouts.clone();
+    let fb_left = flyouts.clone();
+    let fb_right = flyouts.clone();
+
     // `anchored().snap_to_window()` positions the card in *window* coordinates
     // (the right-click `MouseDownEvent::position` is already window-space) and
     // flips it back inside the viewport near an edge; `deferred(..)` lifts the
@@ -469,10 +522,13 @@ pub fn context_menu(
     // e.g. a 20px status-bar item) element opened the menu, so `inset_0` does
     // not actually cover the window and a click next to the menu would leave it
     // stuck open. The card, by contrast, always knows its own bounds.
-    let card = anchored()
-        .position(anchor)
-        .snap_to_window()
-        .child(menu_card(c, items).on_mouse_down_out(move |_, w, cx| d3(w, cx)));
+    let card = anchored().position(anchor).snap_to_window().child(
+        menu_card(c, items, flyouts).on_mouse_down_out(move |ev, w, cx| {
+            if !in_flyout(&fb_out, ev.position) {
+                d3(w, cx)
+            }
+        }),
+    );
 
     deferred(
         div()
@@ -480,11 +536,19 @@ pub fn context_menu(
             .inset_0()
             .on_mouse_down(
                 MouseButton::Left,
-                move |_: &MouseDownEvent, w: &mut Window, cx: &mut App| dismiss(w, cx),
+                move |ev: &MouseDownEvent, w: &mut Window, cx: &mut App| {
+                    if !in_flyout(&fb_left, ev.position) {
+                        dismiss(w, cx)
+                    }
+                },
             )
             .on_mouse_down(
                 MouseButton::Right,
-                move |_: &MouseDownEvent, w: &mut Window, cx: &mut App| d2(w, cx),
+                move |ev: &MouseDownEvent, w: &mut Window, cx: &mut App| {
+                    if !in_flyout(&fb_right, ev.position) {
+                        d2(w, cx)
+                    }
+                },
             )
             .child(card),
     )
@@ -517,10 +581,18 @@ pub fn popover_menu(
 ) -> AnyElement {
     let dismiss = Rc::new(dismiss);
     let d_out = dismiss.clone();
-    let card = anchored()
-        .position(anchor)
-        .snap_to_window()
-        .child(menu_card(c, items).on_mouse_down_out(move |_, w, cx| d_out(w, cx)));
+
+    let flyouts: FlyoutBounds = Rc::new(RefCell::new(Vec::new()));
+    let fb_out = flyouts.clone();
+    let fb_bd = flyouts.clone();
+
+    let card = anchored().position(anchor).snap_to_window().child(
+        menu_card(c, items, flyouts).on_mouse_down_out(move |ev, w, cx| {
+            if !in_flyout(&fb_out, ev.position) {
+                d_out(w, cx)
+            }
+        }),
+    );
 
     deferred(
         div()
@@ -528,7 +600,11 @@ pub fn popover_menu(
             .inset_0()
             .on_mouse_down(
                 MouseButton::Left,
-                move |_: &MouseDownEvent, w: &mut Window, cx: &mut App| dismiss(w, cx),
+                move |ev: &MouseDownEvent, w: &mut Window, cx: &mut App| {
+                    if !in_flyout(&fb_bd, ev.position) {
+                        dismiss(w, cx)
+                    }
+                },
             )
             .child(card),
     )
@@ -588,5 +664,22 @@ mod tests {
             MenuItem::submenu("s", "Sub", vec![MenuItem::new("a", "A")]).kind,
             Kind::Submenu { .. }
         ));
+    }
+
+    #[test]
+    fn in_flyout_matches_recorded_rects() {
+        use gpui::{point, px, size};
+        let flyouts: FlyoutBounds = Rc::new(RefCell::new(Vec::new()));
+        // No flyout open → every press is "outside", menu dismisses.
+        assert!(!in_flyout(&flyouts, point(px(150.0), px(80.0))));
+
+        flyouts.borrow_mut().push(Bounds {
+            origin: point(px(120.0), px(40.0)),
+            size: size(px(160.0), px(120.0)),
+        });
+        // A press inside the flyout rect must not count as an outside-press…
+        assert!(in_flyout(&flyouts, point(px(150.0), px(80.0))));
+        // …but one clearly outside it still does.
+        assert!(!in_flyout(&flyouts, point(px(400.0), px(400.0))));
     }
 }
