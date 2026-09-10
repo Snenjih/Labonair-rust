@@ -33,7 +33,7 @@ pub enum StageState {
 
 impl StageState {
     /// The checkbox is "on" only when fully staged.
-    fn is_checked(self) -> bool {
+    pub(crate) fn is_checked(self) -> bool {
         matches!(self, StageState::Staged)
     }
 }
@@ -53,6 +53,7 @@ pub struct GitChangeRow {
     label: SharedString,
     secondary: Option<SharedString>,
     icon: Option<IconName>,
+    icon_color: Option<gpui::Hsla>,
     icon_path: Option<SharedString>,
     selected: bool,
     tooltip: Option<SharedString>,
@@ -83,6 +84,7 @@ pub fn git_change_row(
         label: label.into(),
         secondary: None,
         icon: None,
+        icon_color: None,
         icon_path: None,
         selected: false,
         tooltip: None,
@@ -116,6 +118,11 @@ impl GitChangeRow {
 
     pub fn icon(mut self, icon: IconName) -> Self {
         self.icon = Some(icon);
+        self
+    }
+
+    pub fn icon_color(mut self, color: gpui::Hsla) -> Self {
+        self.icon_color = Some(color);
         self
     }
 
@@ -182,14 +189,14 @@ impl IntoElement for GitChangeRow {
         let box_border = if checked || partial {
             c.primary
         } else {
-            gpui::transparent_black()
+            c.border
         };
         let box_bg = if checked {
             c.primary
         } else if partial {
             c.primary.opacity(0.4)
         } else {
-            c.input.opacity(0.9)
+            c.bg
         };
         let mut check = div()
             .id(SharedString::from(format!("{}::stage", self.id)))
@@ -231,12 +238,14 @@ impl IntoElement for GitChangeRow {
                     .path(p)
                     .size(px(14.0))
                     .flex_none()
-                    .text_color(c.muted)
+                    .text_color(self.icon_color.unwrap_or(c.muted))
                     .into_any_element(),
             ),
-            None => self
-                .icon
-                .map(|icon| icon.svg(c.muted).size(px(14.0)).into_any_element()),
+            None => self.icon.map(|icon| {
+                icon.svg(self.icon_color.unwrap_or(c.muted))
+                    .size(px(14.0))
+                    .into_any_element()
+            }),
         };
 
         let mut row = div()
@@ -255,14 +264,19 @@ impl IntoElement for GitChangeRow {
             .cursor_pointer();
 
         if self.selected {
-            row = row.bg(c.accent);
+            row = row
+                .bg(c.accent.opacity(0.16))
+                .border_1()
+                .border_color(c.primary);
         } else {
             let hover = c.accent.opacity(0.5);
-            row = row.hover(move |s| s.bg(hover));
+            row = row
+                .border_1()
+                .border_color(gpui::transparent_black())
+                .hover(move |s| s.bg(hover));
         }
 
         row = row
-            .child(check)
             .child(
                 div()
                     .w(px(12.0))
@@ -286,7 +300,8 @@ impl IntoElement for GitChangeRow {
                         x.child(div().text_size(px(11.0)).text_color(c.muted).child(sec))
                     }),
             )
-            .children(actions);
+            .children(actions)
+            .child(check);
 
         if let Some(tooltip) = self.tooltip {
             row = row.tooltip(move |window, cx| Tooltip::new(tooltip.clone()).build(window, cx));

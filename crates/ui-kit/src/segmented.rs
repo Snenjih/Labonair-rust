@@ -8,6 +8,8 @@
 //!   keeps the accent border. This is the shape the port already uses.
 //! * [`SegmentVariant::Solid`] — `tabsListVariants.default`: a `bg-muted`
 //!   container whose active segment lifts to `bg-background`.
+//! * [`SegmentVariant::Flat`] — a full-width, borderless tab strip for dense
+//!   workspace panels.
 //!
 //! Replaces hand-rolled theme picker controls and the theme variant picker.
 //! The ModelPicker's
@@ -39,6 +41,9 @@ pub enum SegmentVariant {
     Outline,
     /// A muted track whose active segment lifts to the background colour.
     Solid,
+    /// A full-width, borderless tab strip. Active text uses the foreground
+    /// token; inactive text remains muted.
+    Flat,
 }
 
 /// Segment height/typography. Matches [`crate::ButtonSize`]'s naming.
@@ -169,6 +174,7 @@ impl IntoElement for SegmentedControl {
             .flex()
             .flex_row()
             .items_center()
+            .when(variant == SegmentVariant::Flat, |d| d.w_full())
             .when(variant == SegmentVariant::Outline, |d| d.gap(c.space(6.0)))
             .when(variant == SegmentVariant::Solid, |d| {
                 d.gap(c.space(2.0))
@@ -186,11 +192,14 @@ impl IntoElement for SegmentedControl {
                 .id(SharedString::from(format!("{group_id}-{key}")))
                 .flex()
                 .flex_shrink_0()
+                .when(variant == SegmentVariant::Flat, |d| d.flex_1())
                 .items_center()
                 .justify_center()
                 .h(c.space(size.height()))
                 .px(c.space(10.0))
-                .rounded(px(c.radius.md))
+                .when(variant != SegmentVariant::Flat, |d| {
+                    d.rounded(px(c.radius.md))
+                })
                 .text_size(px(size.text()))
                 .text_color(if on { c.fg } else { c.muted })
                 .when(variant == SegmentVariant::Outline, |d| {
@@ -198,8 +207,17 @@ impl IntoElement for SegmentedControl {
                         .border_color(if on { c.accent } else { c.border })
                 })
                 .when(variant == SegmentVariant::Solid && on, |d| d.bg(c.bg))
+                .when(variant == SegmentVariant::Flat && on, |d| {
+                    d.border_b_1().border_color(c.fg)
+                })
                 .when(!disabled, |d| {
-                    d.cursor_pointer().hover(move |s| s.bg(c.muted_bg))
+                    d.cursor_pointer().hover(move |s| {
+                        if variant == SegmentVariant::Flat {
+                            s.bg(c.muted_bg.opacity(0.45))
+                        } else {
+                            s.bg(c.muted_bg)
+                        }
+                    })
                 })
                 .child(label)
                 .when(!disabled, move |d| match handler {
@@ -235,7 +253,11 @@ mod tests {
     #[test]
     fn builds_in_every_variant_size_and_state() {
         let c = test_palette();
-        for v in [SegmentVariant::Outline, SegmentVariant::Solid] {
+        for v in [
+            SegmentVariant::Outline,
+            SegmentVariant::Solid,
+            SegmentVariant::Flat,
+        ] {
             for s in [SegmentSize::Xs, SegmentSize::Sm, SegmentSize::Md] {
                 for disabled in [true, false] {
                     let _ = segmented_control("g", c, "a")

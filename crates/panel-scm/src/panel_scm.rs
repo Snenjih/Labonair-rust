@@ -45,9 +45,9 @@ use crate::git_change_row::{git_change_row, StageState};
 use crate::theme::ThemeStore;
 use labonair_notifications::{notification_center, notify_err, Notification};
 use labonair_ui_kit::{
-    button, checkbox, context_menu, disclosure, field_input, h_stack, segmented_control,
-    ButtonSize, ButtonVariant, IconName, InputEvent, InputState, ListItem, MenuItem, Palette,
-    SegmentSize, SegmentVariant,
+    checkbox, context_menu, disclosure, field_input, h_stack, segmented_control, ButtonSize,
+    ButtonVariant, IconName, InputEvent, InputState, ListItem, MenuItem, Palette, SegmentSize,
+    SegmentVariant,
 };
 
 /// Build the Source Control contribution for the workspace-owned panel registry.
@@ -643,33 +643,21 @@ fn git_list_element(
             let section = *section;
             let key = section as u8;
             let v = view.clone();
-            let toggle_v = view.clone();
-            let label = format!("{} ({})", title.to_uppercase(), count);
-            // Section-level tri-state staging checkbox (Zed-parity Phase 4,
-            // §9.5 "Change rows"). Reuses the file row's staging control.
-            let box_row = git_change_row(
-                SharedString::from(format!("git-sec-cb-{title}")),
-                c.palette,
-                *stage,
-                SharedString::default(),
-            )
-            .on_toggle_stage(move |want_staged: &bool, _w, cx| {
-                let want_staged = *want_staged;
-                toggle_v.update(cx, |this, cx| this.stage_section(section, want_staged, cx));
-            });
+            let label = format!("{title} ({count})");
+            let stage_v = view.clone();
+            let stage_checkbox =
+                checkbox(("git-sec-cb", key as u64), c.palette, stage.is_checked()).on_click(
+                    move |want_staged: &bool, _w, cx| {
+                        let want_staged = *want_staged;
+                        stage_v.update(cx, |this, cx| this.stage_section(section, want_staged, cx));
+                    },
+                );
             div()
                 .flex()
                 .items_center()
-                .gap(px(2.0))
+                .gap(px(6.0))
                 .h(row_h)
                 .px(px(8.0))
-                .child(
-                    div()
-                        .flex_none()
-                        .w(px(24.0))
-                        .overflow_hidden()
-                        .child(box_row),
-                )
                 .child(
                     disclosure(
                         SharedString::from(format!("git-sec-{title}")),
@@ -678,7 +666,8 @@ fn git_list_element(
                         c.muted,
                         c.fg,
                     )
-                    .text_size(px(10.0))
+                    .flex_1()
+                    .text_size(px(12.0))
                     .on_click(move |_: &ClickEvent, _w, cx| {
                         v.update(cx, |this, cx| {
                             if this.collapsed.contains(&key) {
@@ -690,6 +679,7 @@ fn git_list_element(
                         });
                     }),
                 )
+                .child(stage_checkbox)
                 .into_any_element()
         }
         GitListEntry::Directory {
@@ -799,7 +789,6 @@ fn git_list_element(
                 SharedString::from(short_path(path)),
             )
             .depth(*depth)
-            .status(letter.to_string(), lc)
             .selected(*selected)
             .secondary(SharedString::from(dir_prefix(path)))
             .tooltip(SharedString::from(path.clone()))
@@ -822,6 +811,14 @@ fn git_list_element(
                     cx.notify();
                 });
             });
+            if *untracked {
+                row = row
+                    .status(SharedString::default(), lc)
+                    .icon(IconName::SquarePlus)
+                    .icon_color(lc);
+            } else {
+                row = row.status(letter.to_string(), lc);
+            }
             if let Some(a) = actions {
                 row = row.actions(a);
             }
@@ -870,6 +867,7 @@ enum PanelMenu {
     ViewOptions,
     Overflow,
     Repo,
+    Commit,
 }
 
 /// A pending destructive action awaiting an explicit in-panel confirmation
@@ -2091,7 +2089,7 @@ impl GitPanelView {
             let mut s = InputState::new(window, cx)
                 .multi_line(true)
                 .auto_grow(2, 8)
-                .placeholder("Message (\u{2318}\u{21A9} to commit)");
+                .placeholder("Enter commit message");
             if !seed.is_empty() {
                 s.set_value(seed, window, cx);
             }
@@ -2147,7 +2145,7 @@ impl GitPanelView {
         c: Colors,
         cx: &mut Context<Self>,
         on_click: impl Fn(&mut Self, &mut Window, &mut Context<Self>) + 'static,
-    ) -> impl IntoElement {
+    ) -> gpui::Stateful<gpui::Div> {
         labonair_ui_kit::button_no_hover(id, c.palette, ButtonVariant::Ghost, ButtonSize::Xs)
             .text_color(c.muted)
             .hover(|s| s.bg(c.border).text_color(c.fg))
@@ -2169,53 +2167,75 @@ impl GitPanelView {
 
         let mut bar = div().flex().flex_col().border_t_1().border_color(c.border);
 
+        let repo_name = self
+            .repo_root
+            .as_deref()
+            .and_then(|root| root.rsplit('/').find(|part| !part.is_empty()))
+            .unwrap_or("Repository");
+        let branch_name = if state.current_branch.is_empty() {
+            "—"
+        } else {
+            &state.current_branch
+        };
+        let branch_button = labonair_ui_kit::button_no_hover(
+            "git-branch-toggle",
+            c.palette,
+            ButtonVariant::Ghost,
+            ButtonSize::Xs,
+        )
+        .flex_none()
+        .justify_start()
+        .max_w(px(220.0))
+        .overflow_hidden()
+        .whitespace_nowrap()
+        .text_color(c.fg)
+        .hover(|s| s.bg(c.border))
+        .child(IconName::GitBranch.svg(c.muted).size(px(13.0)))
+        .child(SharedString::from(format!("{repo_name} / {branch_name}")))
+        .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
+            this.branch_picker_open = !this.branch_picker_open;
+            cx.notify();
+        }));
+        let push_label = if self.current_branch_has_upstream() {
+            "Push"
+        } else {
+            "Publish"
+        };
+        let push_text = if status.ahead > 0 {
+            format!("\u{2191} {} {push_label}", status.ahead)
+        } else {
+            push_label.to_string()
+        };
+        let push_button = self
+            .tool_btn("git-push", push_text, c, cx, |this, _w, cx| this.push(cx))
+            .rounded(px(c.palette.radius.sm))
+            .border_1()
+            .border_color(c.border)
+            .text_color(c.fg);
+        let push_menu = labonair_ui_kit::button_no_hover(
+            "git-repo-menu",
+            c.palette,
+            ButtonVariant::Outline,
+            ButtonSize::IconXs,
+        )
+        .rounded(px(c.palette.radius.sm))
+        .text_color(c.fg)
+        .hover(|s| s.bg(c.border))
+        .child(IconName::ChevronDown.svg(c.muted).size(px(13.0)))
+        .on_click(cx.listener(|this, ev: &ClickEvent, _w, cx| {
+            this.panel_menu = Some((PanelMenu::Repo, ev.position()));
+            cx.notify();
+        }));
+
         let mut row = div()
             .flex()
             .items_center()
-            .gap(px(6.0))
-            .h(px(28.0))
+            .gap(px(4.0))
+            .h(px(36.0))
             .px(px(8.0))
             .text_size(px(11.0))
-            .child(
-                labonair_ui_kit::button_no_hover(
-                    "git-branch-toggle",
-                    c.palette,
-                    ButtonVariant::Ghost,
-                    ButtonSize::Xs,
-                )
-                .flex_1()
-                .justify_start()
-                .overflow_hidden()
-                .whitespace_nowrap()
-                .text_color(c.fg)
-                .hover(|s| s.text_color(c.accent))
-                .child(SharedString::from(format!(
-                    "\u{2325} {} \u{25BE}",
-                    if state.current_branch.is_empty() {
-                        "\u{2014}"
-                    } else {
-                        &state.current_branch
-                    }
-                )))
-                .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
-                    this.branch_picker_open = !this.branch_picker_open;
-                    cx.notify();
-                })),
-            );
-        if status.behind > 0 {
-            row = row.child(
-                div()
-                    .text_color(c.error)
-                    .child(SharedString::from(format!("\u{2193}{}", status.behind))),
-            );
-        }
-        if status.ahead > 0 {
-            row = row.child(
-                div()
-                    .text_color(c.info)
-                    .child(SharedString::from(format!("\u{2191}{}", status.ahead))),
-            );
-        }
+            .child(branch_button)
+            .child(div().flex_1());
         if self.repo_op.is_busy() {
             row = row.child(div().text_size(px(10.0)).text_color(c.muted).child(
                 SharedString::from(match self.repo_op {
@@ -2226,36 +2246,7 @@ impl GitPanelView {
                 }),
             ));
         }
-        row = row.child(
-            labonair_ui_kit::button_no_hover(
-                "git-open-graph",
-                c.palette,
-                ButtonVariant::Ghost,
-                ButtonSize::IconXs,
-            )
-            .text_color(c.muted)
-            .hover(|s| s.text_color(c.fg))
-            .child(IconName::GitGraph.svg(c.muted).size(px(13.0)))
-            .tooltip(|w, cx| labonair_ui_kit::Tooltip::new("Open Git Graph").build(w, cx))
-            .on_click(cx.listener(|_this, _: &ClickEvent, _w, cx| {
-                cx.emit(ScmEvent::OpenGitGraph);
-            })),
-        );
-        row = row.child(
-            labonair_ui_kit::button_no_hover(
-                "git-repo-menu",
-                c.palette,
-                ButtonVariant::Ghost,
-                ButtonSize::IconXs,
-            )
-            .text_color(c.muted)
-            .hover(|s| s.text_color(c.fg))
-            .child(SharedString::from("\u{22EF}"))
-            .on_click(cx.listener(|this, ev: &ClickEvent, _w, cx| {
-                this.panel_menu = Some((PanelMenu::Repo, ev.position()));
-                cx.notify();
-            })),
-        );
+        row = row.child(push_button).child(push_menu);
         bar = bar.child(row);
 
         if in_progress {
@@ -2291,9 +2282,8 @@ impl GitPanelView {
         bar.into_any_element()
     }
 
-    /// Editor-backed commit composer (Zed-parity Phase 4, §9.5). Compact by
-    /// default, `⤢` grows it; adaptive `Commit` / `Commit Tracked` / `Amend`
-    /// button with a tooltip explaining any disabled reason.
+    /// Editor-backed commit composer with a flat, editor-like surface and a
+    /// compact action rail matching the Source Control reference layout.
     fn render_commit_composer(&self, c: Colors, cx: &mut Context<Self>) -> gpui::AnyElement {
         let text = self.commit_text(cx);
         let mode = self.commit_mode();
@@ -2303,29 +2293,31 @@ impl GitPanelView {
         let over_title = title_len > 72;
 
         let input_el: gpui::AnyElement = match &self.commit_input {
-            Some(input) => field_input(input).into_any_element(),
+            Some(input) => field_input(input)
+                .appearance(false)
+                .bordered(false)
+                .focus_bordered(false)
+                .h_full()
+                .into_any_element(),
             None => div()
                 .id("git-commit-input-seed")
-                .min_h(px(48.0))
-                .p(px(6.0))
-                .rounded_sm()
-                .border_1()
-                .border_color(c.border)
-                .bg(c.bg)
+                .flex_1()
+                .p(px(10.0))
                 .text_size(px(12.0))
                 .text_color(c.muted)
-                .child(SharedString::from("Message (\u{2318}\u{21A9} to commit)"))
+                .child(SharedString::from("Enter commit message"))
                 .into_any_element(),
         };
 
         let commit_label = SharedString::from(mode.label());
-        let mut commit_btn = button(
+        let mut commit_btn = labonair_ui_kit::button_no_hover(
             "git-commit-btn",
             c.palette,
-            ButtonVariant::Default,
+            ButtonVariant::Outline,
             ButtonSize::Sm,
         )
-        .flex_1()
+        .rounded(px(c.palette.radius.sm))
+        .text_color(c.fg)
         .child(commit_label);
         if let Some(desc) = disabled_desc {
             // No `on_click` → inert; dimmed + tooltip explains why.
@@ -2341,17 +2333,39 @@ impl GitPanelView {
             }));
         }
 
+        let commit_menu = labonair_ui_kit::button_no_hover(
+            "git-commit-menu",
+            c.palette,
+            ButtonVariant::Outline,
+            ButtonSize::IconXs,
+        )
+        .rounded(px(c.palette.radius.sm))
+        .text_color(c.fg)
+        .hover(|s| s.bg(c.border))
+        .child(IconName::ChevronDown.svg(c.muted).size(px(13.0)))
+        .on_click(cx.listener(|this, ev: &ClickEvent, _w, cx| {
+            this.panel_menu = Some((PanelMenu::Commit, ev.position()));
+            cx.notify();
+        }));
+
         div()
             .flex()
             .flex_col()
-            .gap(px(4.0))
-            .p(px(8.0))
             .border_t_1()
             .border_color(c.border)
+            .bg(c.bg)
+            .min_h(if self.commit_expanded {
+                px(220.0)
+            } else {
+                px(150.0)
+            })
+            .gap(px(2.0))
             .child(
                 div()
                     .id("git-commit-box")
-                    .when(self.commit_expanded, |d| d.min_h(px(160.0)))
+                    .relative()
+                    .flex_1()
+                    .min_h(px(96.0))
                     .child(input_el),
             )
             .when(over_title, |d| {
@@ -2369,6 +2383,8 @@ impl GitPanelView {
                     .flex()
                     .items_center()
                     .gap(px(4.0))
+                    .h(px(38.0))
+                    .px(px(8.0))
                     .child(
                         checkbox("git-amend", c.palette, self.amend)
                             .label("Amend")
@@ -2394,9 +2410,10 @@ impl GitPanelView {
                                 cx.notify();
                             },
                         )),
-                    ),
+                    )
+                    .child(commit_btn)
+                    .child(commit_menu),
             )
-            .child(div().flex().child(commit_btn))
             .into_any_element()
     }
 
@@ -3284,113 +3301,90 @@ impl GitPanelView {
             .into_any_element()
     }
 
-    /// Adaptive Changes header (Zed-parity Phase 4, §9.5): repo-level tri-state
-    /// checkbox, `View Diff` (+ file count), a view-options menu, an adaptive
-    /// Stage All / Unstage All action and an overflow menu for the rare /
-    /// destructive repo-wide operations.
+    /// Adaptive Changes header (Zed-parity Phase 4, §9.5): `View Diff`, a
+    /// view-options menu, an adaptive Stage All / Unstage All action and an
+    /// overflow menu for the rare / destructive repo-wide operations.
     fn render_changes_header(
         &self,
         buckets: &Buckets,
         c: Colors,
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
-        let total = buckets.conflicted.len()
-            + buckets.staged.len()
-            + buckets.unstaged.len()
-            + buckets.untracked.len();
-        let unstaged_total =
-            buckets.conflicted.len() + buckets.unstaged.len() + buckets.untracked.len();
-        let mut flags: Vec<bool> = vec![true; buckets.staged.len()];
-        flags.extend(std::iter::repeat_n(false, unstaged_total));
-        let repo_stage = aggregate_stage(&flags);
         let has_unstaged = !buckets.unstaged.is_empty() || !buckets.untracked.is_empty();
 
-        let repo_v = cx.entity();
-        let repo_box = git_change_row(
-            "git-repo-cb",
+        let view_diff = labonair_ui_kit::button_no_hover(
+            "git-view-diff",
             c.palette,
-            repo_stage,
-            SharedString::default(),
+            ButtonVariant::Ghost,
+            ButtonSize::Xs,
         )
-        .on_toggle_stage(move |want: &bool, _w, cx| {
-            let want = *want;
-            repo_v.update(cx, |this, cx| {
-                if want {
-                    this.stage_all(cx);
-                } else {
-                    this.unstage_all(cx);
-                }
-            });
-        });
+        .text_color(c.fg)
+        .hover(|s| s.bg(c.border))
+        .child(IconName::Plus.svg(c.muted).size(px(13.0)))
+        .child(SharedString::from("View Diff"))
+        .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| this.emit_project_diff(None, cx)));
+
+        let view_options = labonair_ui_kit::button_no_hover(
+            "git-view-options",
+            c.palette,
+            ButtonVariant::Ghost,
+            ButtonSize::IconXs,
+        )
+        .text_color(c.muted)
+        .hover(|s| s.bg(c.border).text_color(c.fg))
+        .child(IconName::Settings.svg(c.muted).size(px(14.0)))
+        .on_click(cx.listener(|this, ev: &ClickEvent, _w, cx| {
+            this.panel_menu = Some((PanelMenu::ViewOptions, ev.position()));
+            cx.notify();
+        }));
+
+        let stage_label = if has_unstaged {
+            "Stage All"
+        } else {
+            "Unstage All"
+        };
+        let stage_action = if has_unstaged {
+            self.tool_btn("git-stage-all", stage_label, c, cx, |this, _w, cx| {
+                this.stage_all(cx)
+            })
+        } else {
+            self.tool_btn("git-unstage-all", stage_label, c, cx, |this, _w, cx| {
+                this.unstage_all(cx)
+            })
+        }
+        .rounded(px(c.palette.radius.sm))
+        .border_1()
+        .border_color(c.border)
+        .text_color(c.fg);
+
+        let stage_menu = labonair_ui_kit::button_no_hover(
+            "git-stage-menu",
+            c.palette,
+            ButtonVariant::Outline,
+            ButtonSize::IconXs,
+        )
+        .rounded(px(c.palette.radius.sm))
+        .text_color(c.fg)
+        .hover(|s| s.bg(c.border))
+        .child(IconName::ChevronDown.svg(c.muted).size(px(13.0)))
+        .on_click(cx.listener(|this, ev: &ClickEvent, _w, cx| {
+            this.panel_menu = Some((PanelMenu::Overflow, ev.position()));
+            cx.notify();
+        }));
 
         div()
             .flex()
             .items_center()
-            .gap(px(2.0))
-            .h(px(28.0))
-            .px(px(6.0))
+            .gap(px(4.0))
+            .h(px(36.0))
+            .px(px(8.0))
             .border_b_1()
             .border_color(c.border)
-            .child(
-                div()
-                    .flex_none()
-                    .w(px(24.0))
-                    .overflow_hidden()
-                    .child(repo_box),
-            )
-            .child(
-                self.tool_btn("git-view-diff", "View Diff", c, cx, |this, _w, cx| {
-                    this.emit_project_diff(None, cx)
-                }),
-            )
-            .child(
-                div()
-                    .text_size(px(10.0))
-                    .text_color(c.muted)
-                    .child(SharedString::from(format!("{total} files"))),
-            )
+            .child(view_diff)
             .child(div().flex_1())
-            .child(
-                labonair_ui_kit::button_no_hover(
-                    "git-view-options",
-                    c.palette,
-                    ButtonVariant::Ghost,
-                    ButtonSize::IconXs,
-                )
-                .text_color(c.muted)
-                .hover(|s| s.text_color(c.fg))
-                .child(SharedString::from("\u{22EE}"))
-                .on_click(cx.listener(|this, ev: &ClickEvent, _w, cx| {
-                    this.panel_menu = Some((PanelMenu::ViewOptions, ev.position()));
-                    cx.notify();
-                })),
-            )
-            .child(if has_unstaged {
-                self.tool_btn("git-stage-all", "Stage All", c, cx, |this, _w, cx| {
-                    this.stage_all(cx)
-                })
-                .into_any_element()
-            } else {
-                self.tool_btn("git-unstage-all", "Unstage All", c, cx, |this, _w, cx| {
-                    this.unstage_all(cx)
-                })
-                .into_any_element()
-            })
-            .child(
-                labonair_ui_kit::button_no_hover(
-                    "git-overflow",
-                    c.palette,
-                    ButtonVariant::Ghost,
-                    ButtonSize::IconXs,
-                )
-                .text_color(c.muted)
-                .hover(|s| s.text_color(c.fg))
-                .child(SharedString::from("\u{25BE}"))
-                .on_click(cx.listener(|this, ev: &ClickEvent, _w, cx| {
-                    this.panel_menu = Some((PanelMenu::Overflow, ev.position()));
-                    cx.notify();
-                })),
-            )
+            .child(view_options)
+            .child(stage_action)
+            .child(stage_menu)
             .into_any_element()
     }
 
@@ -3618,8 +3612,24 @@ impl GitPanelView {
                             cx.notify();
                         },
                     ))),
+                    MenuItem::separator(),
+                    MenuItem::new("rp-graph", "Open Git Graph")
+                        .on_click(act(Box::new(|_this, cx| cx.emit(ScmEvent::OpenGitGraph)))),
                 ]
             }
+            PanelMenu::Commit => vec![MenuItem::new(
+                "cm-amend",
+                if self.amend {
+                    "Disable Amend"
+                } else {
+                    "Amend Commit"
+                },
+            )
+            .checked(self.amend)
+            .on_click(act(Box::new(|this, cx| {
+                this.amend = !this.amend;
+                cx.notify();
+            })))],
         };
 
         Some(context_menu(pos, c.palette, move |_w, cx| close(cx), items))
@@ -3651,19 +3661,28 @@ impl Render for GitPanelView {
             PanelMode::Changes => "changes",
             PanelMode::History => "history",
         };
+        let change_count = self
+            .state
+            .as_ref()
+            .map(|state| {
+                state.status.staged.len()
+                    + state.status.unstaged.len()
+                    + state.status.untracked.len()
+            })
+            .unwrap_or(0);
         root = root.child(
             div()
                 .flex()
                 .items_center()
-                .h(px(28.0))
-                .px(px(6.0))
+                .h(px(36.0))
+                .w_full()
                 .border_b_1()
                 .border_color(c.border)
                 .child(
                     segmented_control("git-tabs", c.palette, mode_key)
-                        .variant(SegmentVariant::Solid)
-                        .size(SegmentSize::Xs)
-                        .segment("changes", "Changes")
+                        .variant(SegmentVariant::Flat)
+                        .size(SegmentSize::Md)
+                        .segment("changes", format!("Changes ({change_count})"))
                         .segment("history", "History")
                         .on_select(cx.listener(|this, key: &SharedString, _w, cx| {
                             let mode = if key.as_ref() == "history" {

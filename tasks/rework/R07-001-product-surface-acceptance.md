@@ -154,6 +154,11 @@ a separate product decision after the core workflow is stable.
 - [ ] Native launch confirms the Rust window exists, but macOS currently denies
       Screen Recording to the capture runner. Capture the visual matrix with
       the native Rust bundle once Screen Recording access is available.
+- [ ] Source Control visual parity follow-up: the panel now uses a clean-room
+      Zed-inspired flat tab strip, trailing staging controls, visible selected
+      rows, repository push controls, and an editor-like commit composer. The
+      native screenshot comparison remains pending until the capture runner
+      can identify the rendered Rust window.
 - [x] The PID validator accepts both absolute packaged paths and the relative
       executable path reported by `cargo run -p labonair`; the retry reached the
       correct native window before macOS denied the capture.
