@@ -350,15 +350,10 @@ fn compose_builtin_commands(
             labonair_workspace::command_provider::terminal_command_target(workspace),
         );
         let descriptors = r.descriptors();
-        let workspace = workspace.clone();
-        labonair_keymap_ui::command_provider::register_handlers(
+        labonair_workspace::command_provider::register_keymap_handler(
             &mut r.owner_handlers,
+            workspace,
             descriptors,
-            Rc::new(move |window, cx| {
-                workspace.update(cx, |workspace, cx| {
-                    workspace.open_or_create_user_keymap_json(window, cx);
-                });
-            }),
         );
     }
 

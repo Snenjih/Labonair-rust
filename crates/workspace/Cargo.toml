@@ -27,6 +27,7 @@ labonair-command-palette = { path = "../command-palette" }
 labonair-command-palette-core = { path = "../command-palette-core" }
 labonair-command-palette-runtime = { path = "../command-palette-runtime" }
 labonair-keymap = { path = "../keymap" }
+labonair-keymap-ui = { path = "../keymap-ui" }
 labonair-panel = { path = "../panel" }
 labonair-explorer-host = { path = "../explorer-host" }
 labonair-panel-git-graph = { path = "../panel-git-graph" }

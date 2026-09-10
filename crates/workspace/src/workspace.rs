@@ -119,6 +119,7 @@ use crate::views::terminal::TerminalView;
 use labonair_background_host::BackgroundHost;
 use labonair_hosts::{HostOpenMode, HostOpenRequest, HostPickerRow};
 use labonair_hosts_host::{ActiveTunnelRow, HostStatus, HostView};
+use labonair_keymap_ui::KeymapManagementView;
 use labonair_panel_git_graph::GitGraphView;
 use labonair_settings::content::general::StartupTab;
 use labonair_settings::content::terminal::CursorStyle as PrefCursorStyle;
@@ -370,6 +371,10 @@ pub struct Workspace {
     previews: HashMap<u64, Entity<PreviewView>>,
     /// The shared commit-graph view, lazily created for the `GitGraph` tab.
     git_graph: Option<Entity<GitGraphView>>,
+    /// The keymap-management view, lazily created for the single `Keymap` tab.
+    /// `labonair-keymap-ui` owns its rendering; the workspace owns its tab
+    /// lifecycle (mirrors `git_graph`).
+    keymap: Option<Entity<KeymapManagementView>>,
     /// The single Project Diff item (Zed-parity Phase 4), lazily created for the
     /// `GitDiff` tab. Source Control emits a `ProjectDiffRequest`; this view is
     /// re-pointed rather than duplicated.
@@ -577,6 +582,7 @@ impl Workspace {
             sftp_views: HashMap::new(),
             previews: HashMap::new(),
             git_graph: None,
+            keymap: None,
             project_diff: None,
             panel_registry: labonair_panel::PanelRegistry::new(),
             status_item_registry: labonair_panel::StatusItemRegistry::new(),
@@ -707,9 +713,11 @@ impl Workspace {
                     })
                 }),
                 // Transient kinds — never persisted.
-                TabKind::AiDiff | TabKind::GitGraph | TabKind::GitDiff | TabKind::CommitDiff => {
-                    None
-                }
+                TabKind::AiDiff
+                | TabKind::GitGraph
+                | TabKind::GitDiff
+                | TabKind::CommitDiff
+                | TabKind::Keymap => None,
             };
             if let Some(snap) = snap {
                 if tab.id == active_id {
@@ -1075,9 +1083,10 @@ impl Workspace {
         self.open_file(path.to_string_lossy().into_owned(), false, window, cx);
     }
 
-    /// Command: "Open Keymap (JSON)" (T19-008) — create (if missing)
-    /// `~/.config/labonair/keymap.json` and open it as an editor tab, same
-    /// pattern as [`Self::open_or_create_user_settings_json`].
+    /// The keymap tab's "Edit keymap.json" escape hatch (T19-008) — create (if
+    /// missing) `~/.config/labonair/keymap.json` and open it as an editor tab,
+    /// same pattern as [`Self::open_or_create_user_settings_json`]. Injected
+    /// into [`KeymapManagementView`] by [`Self::open_keymap_tab`].
     pub fn open_or_create_user_keymap_json(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let path = match labonair_keymap::file::ensure_user_keymap_file() {
             Ok(path) => path,
@@ -2451,6 +2460,44 @@ impl Workspace {
             Some(id) => s.set_active(id, cx),
             None => {
                 s.open(TabKind::GitGraph, TabData::default(), cx);
+            }
+        });
+    }
+
+    /// Open (or focus) the single keymap-management tab. The keymap tab
+    /// presents the full command catalog, so composition supplies the
+    /// descriptor snapshot; `labonair-keymap-ui` renders it while the
+    /// workspace owns the tab lifecycle (mirrors [`Self::open_git_graph_tab`]).
+    pub fn open_keymap_tab(
+        &mut self,
+        descriptors: Vec<labonair_command_palette_core::CommandDescriptor>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.keymap.is_none() {
+            let theme = self.theme.clone();
+            let weak = cx.entity().downgrade();
+            let open_raw: labonair_keymap_ui::OpenRawCallback = Box::new(move |window, cx| {
+                let _ = weak.update(cx, |workspace, cx| {
+                    workspace.open_or_create_user_keymap_json(window, cx);
+                });
+            });
+            let view =
+                cx.new(|cx| KeymapManagementView::new(theme, descriptors, open_raw, window, cx));
+            cx.observe(&view, |_, _, cx| cx.notify()).detach();
+            self.keymap = Some(view);
+        }
+        let existing = self
+            .tabs
+            .read(cx)
+            .tabs()
+            .iter()
+            .find(|t| t.kind == TabKind::Keymap)
+            .map(|t| t.id);
+        self.tabs.update(cx, |s, cx| match existing {
+            Some(id) => s.set_active(id, cx),
+            None => {
+                s.open(TabKind::Keymap, TabData::default(), cx);
             }
         });
     }
@@ -4433,6 +4480,10 @@ impl Workspace {
             TabKind::GitDiff => match &self.project_diff {
                 Some(view) => view.clone().into_any_element(),
                 None => self.placeholder("Project Diff", cx).into_any_element(),
+            },
+            TabKind::Keymap => match &self.keymap {
+                Some(view) => view.clone().into_any_element(),
+                None => self.placeholder("Keymap", cx).into_any_element(),
             },
             other => self
                 .placeholder(other.default_title(), cx)

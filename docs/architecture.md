@@ -188,8 +188,9 @@ by the workspace session snapshot and are not folded into this layout file.
 
 The titlebar is a shell surface, not a feature owner. Its single global-menu
 button publishes `TitlebarEvent` intent. The composition root connects that
-intent to Settings, the keymap file surface, the Hosts management surface, or
-a Command Palette page. The menu uses the shared `popover_menu` primitive and
+intent to Settings, the Hosts management surface, a Command Palette page, or
+`Workspace::open_keymap_tab` (the keymap surface is a workspace tab, not an OS
+window). The menu uses the shared `popover_menu` primitive and
 anchors it in window coordinates directly below the clicked button; it must
 not implement a second menu or feature-specific behavior.
 

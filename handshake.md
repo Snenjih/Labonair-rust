@@ -5,6 +5,62 @@ They may mention API names that were valid at the time of the recorded
 change; the current API and task state are defined by the latest header and
 the normative documents under `docs/`.
 
+## Current Session: 2026-09-10 (Keymap surface: OS window → workspace tab)
+
+User-directed product change (not an R-series queue task; `R07-001` stays the
+single in-progress task). The keymap-management surface no longer opens as its
+own `WindowKind::Normal` OS window — it is now the single `Keymap` workspace
+tab, mirroring the Git Graph tab pattern (tab owner holds the view entity).
+
+What changed:
+
+- **`labonair-keymap-ui`**: deleted `open_keymap_window`, the `KeymapWindowRef`
+  global, and `command_provider.rs`. `KeymapManagementView` / `::new` /
+  `OpenRawCallback` are now `pub`; the crate is presentation-only. Dropped the
+  `gpui-component`, `labonair-command-palette-runtime`, and `tracing` deps.
+- **`labonair-workspace`**: new `TabKind::Keymap` (transient — never persisted,
+  like `GitGraph`), `keymap: Option<Entity<KeymapManagementView>>` field, and
+  `open_keymap_tab(descriptors, window, cx)` (mirrors `open_git_graph_tab`;
+  injects `open_or_create_user_keymap_json` as the raw-JSONC escape hatch via a
+  weak-entity callback). Command execution registered through the new
+  `command_provider::register_keymap_handler` (precedent: `register_search_handler`).
+  New dep `labonair-keymap-ui` (allow-listed alongside `panel-git-graph`).
+- **`labonair-shell`**: `TitlebarEvent::Keymap` → `workspace.open_keymap_tab`;
+  `commands.rs` registers via `register_keymap_handler`; native menu item
+  relabelled `"Open Keymap (JSON)"` → `"Keymap"`. Dropped the
+  `labonair-keymap-ui` dep entirely.
+- **`labonair-keymap`**: palette descriptor label `"Open Keymap (JSON)"` →
+  `"Open Keymap"`. `CommandId::OpenKeymapJson` + `zed::OpenKeymap` /
+  `settings::OpenShortcuts` aliases kept unchanged for keymap-file compat.
+- Docs updated: `registries.md`, `architecture.md`, `capabilities.md`,
+  `audits/architecture-inventory.md`. Deps allow-list
+  (`scripts/check_crate_deps.py`) updated.
+
+**Follow-up (same session): keymap list virtualization.** User reported the
+keymap tab was very laggy while scrolling *and* while hovering — the command
+list rendered every row (~150) plus every interactive child on every mouse-
+move frame. `keymap_ui.rs` now renders the list with `uniform_list`
+(`list_scroll: UniformListScrollHandle` field, `.track_scroll(...)`), so only
+the visible window becomes elements. Because the `uniform_list` closure only
+gets `&mut App`, `render_row` / `binding_edit_button` / `unbound_edit_button`
+became free functions taking `&Entity<KeymapManagementView>` and route clicks
+through `view.update(...)` instead of `cx.listener`; `BindingEditRequest`
+derives `Clone`. The interleaved uppercase section headers were dropped
+(uniform_list needs uniform row height) — section still shows in each row's
+`section · context` subtitle.
+
+Verification (all green): `cargo fmt --check`, `cargo check --workspace
+--all-targets`, `cargo clippy --workspace --all-targets -D warnings`, `cargo
+test --workspace --no-fail-fast` (exit 0), `scripts/check-crate-deps.sh`,
+`check_documentation.py`, `check_rework_queue.py`. Not done: live visual check
+with `cargo run -p labonair` (sandbox has no display) — needs a manual pass:
+titlebar menu → Keymap opens the tab (re-invoke focuses it), palette "Open
+Keymap" / Window menu → Keymap do the same, filter/rebind/unbind/"Edit
+keymap.json" still work, tab not restored after restart, and scrolling/
+hovering the command list is smooth.
+
+Committed on branch `feat/keymap-tab` (see git log).
+
 ## Current Session: 2026-09-08 (Follow-up audit `your-task-2.md` — R08 series)
 
 Working the module-boundary / product-surface follow-up audit

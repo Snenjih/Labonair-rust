@@ -32,6 +32,26 @@ pub fn register_search_handler(registry: &mut CommandHandlerRegistry, toggle: Se
         .expect("workspace search handler must have a unique id");
 }
 
+/// Register the keymap-management entry point owned by Workspace.
+///
+/// The keymap tab presents the full command catalog, so composition supplies
+/// the descriptor snapshot; the [`KeymapManagementView`](labonair_keymap_ui::KeymapManagementView)
+/// is created and cached by Workspace as a tab (mirrors `CommandId::OpenGitGraph`).
+pub fn register_keymap_handler(
+    registry: &mut CommandHandlerRegistry,
+    workspace: &Entity<Workspace>,
+    descriptors: Vec<CommandDescriptor>,
+) {
+    let workspace = workspace.clone();
+    registry
+        .register(CommandId::OpenKeymapJson, move |window, cx| {
+            workspace.update(cx, |workspace, cx| {
+                workspace.open_keymap_tab(descriptors.clone(), window, cx);
+            });
+        })
+        .expect("workspace keymap handler must have a unique id");
+}
+
 struct WorkspaceTerminalCommandTarget(Entity<Workspace>);
 
 impl TerminalCommandTarget for WorkspaceTerminalCommandTarget {

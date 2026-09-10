@@ -342,7 +342,7 @@ fn app_menus() -> Vec<Menu> {
                 MenuItem::action("Minimize", Minimize),
                 MenuItem::action("Zoom", ZoomWindow),
                 MenuItem::separator(),
-                MenuItem::action("Open Keymap (JSON)", OpenKeymapJson),
+                MenuItem::action("Keymap", OpenKeymapJson),
                 MenuItem::action("Settings", OpenSettings),
                 MenuItem::separator(),
                 MenuItem::action("Next Tab", NextTab),

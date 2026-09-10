@@ -117,7 +117,12 @@ diagnosed without being silently normalized away.
 `labonair-keymap-ui` is the keymap module's sibling presentation boundary. It
 receives a `KeymapManagementSnapshot`, provides filtering and diagnostics, and
 offers the raw JSONC editor as an explicit action. It does not read files on
-the GPUI thread, resolve commands, or maintain a second shortcut registry.
+the GPUI thread, resolve commands, or maintain a second shortcut registry. Its
+`KeymapManagementView` is presentation only — `labonair-workspace` constructs
+it and hosts it as the single `Keymap` workspace tab (the same tab-owns-the-
+view pattern as the Git Graph tab), not a separate OS window. Both entry
+points (the titlebar global menu and the `Open Keymap` palette/menu command,
+`CommandId::OpenKeymapJson`) route to `Workspace::open_keymap_tab`.
 
 The file/GPUI adapter must cross this boundary once: persisted action names are
 resolved through `keymap::runtime::command_for_action` into `CommandId`, and
@@ -132,8 +137,9 @@ source, and `labonair-keymap`'s runtime owns resolution and conflicts.
 
 The legacy action name `settings::OpenShortcuts` is accepted only as a
 migration alias for existing user keymap files and resolves to the canonical
-`Open Keymap (JSON)` action. It is not registered as a separate palette entry,
-native menu surface, or Settings page. New actions must use the keymap/command
+`Open Keymap` action (`CommandId::OpenKeymapJson`, historical name kept for
+file compatibility). It is not registered as a separate palette entry, native
+menu surface, or Settings page. New actions must use the keymap/command
 contracts rather than the legacy name.
 
 The former `connections::OpenHostSettings` action is handled the same way: it

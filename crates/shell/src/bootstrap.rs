@@ -797,16 +797,9 @@ pub(crate) fn bootstrap(
             }
             TitlebarEvent::Keymap => {
                 let descriptors = this.command_registry.descriptors();
-                let workspace = this.workspace.clone();
-                labonair_keymap_ui::open_keymap_window(
-                    descriptors,
-                    move |window, cx| {
-                        workspace.update(cx, |workspace, cx| {
-                            workspace.open_or_create_user_keymap_json(window, cx);
-                        });
-                    },
-                    cx,
-                );
+                this.workspace.update(cx, |workspace, cx| {
+                    workspace.open_keymap_tab(descriptors, window, cx);
+                });
             }
             TitlebarEvent::Hosts => {
                 open_hosts_window(this.panels.hosts.clone(), cx);

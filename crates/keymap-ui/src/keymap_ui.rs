@@ -1,32 +1,32 @@
 //! Native keymap management surface.
 //!
 //! This crate owns presentation only. The keymap domain supplies the
-//! lossless document, diagnostics, and effective command rows; the shell
-//! supplies the one composition callback that opens the raw JSONC document.
-//! No command execution, file parsing, or feature state belongs here.
-
-pub mod command_provider;
+//! lossless document, diagnostics, and effective command rows; the tab owner
+//! (`labonair-workspace`) constructs and hosts [`KeymapManagementView`] as a
+//! workspace tab and supplies the one composition callback that opens the raw
+//! JSONC document. No command execution, file parsing, tab lifecycle, or
+//! feature state belongs here.
 
 use gpui::{
-    div, point, px, size, App, AppContext, Bounds, ClickEvent, Context, Entity, FocusHandle,
-    Focusable, InteractiveElement, IntoElement, ParentElement, Render, SharedString,
-    StatefulInteractiveElement, Styled, Subscription, TitlebarOptions, Window, WindowBounds,
-    WindowHandle, WindowKind, WindowOptions,
+    div, px, uniform_list, AnyElement, App, AppContext, ClickEvent, Context, Entity, FocusHandle,
+    Focusable, IntoElement, ParentElement, Render, SharedString, StatefulInteractiveElement,
+    Styled, Subscription, UniformListScrollHandle, Window,
 };
-use gpui_component::Root;
 
 use labonair_command_palette_core::CommandDescriptor;
 use labonair_keymap::{adapter, file, management, management::KeymapManagementSnapshot};
 use labonair_notifications::{notification_center, Notification};
-use labonair_theme::{theme_store, ThemeStore};
+use labonair_theme::ThemeStore;
 use labonair_ui_kit::{
     button, field_input, kbd_row, ButtonSize, ButtonVariant, InputEvent, InputState, ListItem,
     Palette,
 };
 
-type OpenRawCallback = Box<dyn FnMut(&mut Window, &mut App) + 'static>;
+/// Composition callback that opens the raw user `keymap.json` document. Its
+/// tab lifecycle belongs to the workspace, so the owner injects it.
+pub type OpenRawCallback = Box<dyn FnMut(&mut Window, &mut App) + 'static>;
 
-/// The management window's view state.
+/// The keymap tab's view state.
 pub struct KeymapManagementView {
     theme: Entity<ThemeStore>,
     descriptors: Vec<CommandDescriptor>,
@@ -39,6 +39,8 @@ pub struct KeymapManagementView {
     edit_error: Option<String>,
     saving: bool,
     diagnostic_key: Option<String>,
+    /// Scroll position of the virtualized command list, retained across frames.
+    list_scroll: UniformListScrollHandle,
     focus: FocusHandle,
     _input_subscription: Subscription,
     _edit_subscription: Option<Subscription>,
@@ -51,6 +53,7 @@ struct EditingBinding {
     old_bindings: Vec<String>,
 }
 
+#[derive(Clone)]
 struct BindingEditRequest {
     command: labonair_command_palette_core::CommandId,
     title: String,
@@ -66,7 +69,7 @@ impl Focusable for KeymapManagementView {
 }
 
 impl KeymapManagementView {
-    fn new(
+    pub fn new(
         theme: Entity<ThemeStore>,
         descriptors: Vec<CommandDescriptor>,
         open_raw: OpenRawCallback,
@@ -92,6 +95,7 @@ impl KeymapManagementView {
             edit_error: None,
             saving: false,
             diagnostic_key: None,
+            list_scroll: UniformListScrollHandle::new(),
             focus: cx.focus_handle(),
             _input_subscription: input_subscription,
             _edit_subscription: None,
@@ -419,155 +423,138 @@ impl KeymapManagementView {
         Some(card.into_any_element())
     }
 
-    fn binding_edit_button(
-        &self,
-        row: &management::KeymapCommandRow,
-        index: usize,
-        palette: Palette,
-        cx: &mut Context<Self>,
-    ) -> gpui::AnyElement {
-        let binding = &row.effective_bindings[index];
-        let command = row.command;
-        let title = row.title.clone();
-        let context = binding.context.clone();
-        let initial = binding.keystrokes.clone();
-        let old_bindings = row
-            .effective_bindings
-            .iter()
-            .filter(|candidate| candidate.context == binding.context)
-            .map(|candidate| candidate.keystrokes.clone())
-            .collect::<Vec<_>>();
-        button(
-            (row.command.action_name(), index),
-            palette,
-            ButtonVariant::Ghost,
-            ButtonSize::Xs,
-        )
-        .child(kbd_row(
-            labonair_keymap::keystroke_tokens(&binding.keystrokes),
-            palette,
-        ))
-        .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
-            this.begin_edit(
-                BindingEditRequest {
-                    command,
-                    title: title.clone(),
-                    context: context.clone(),
-                    old_bindings: old_bindings.clone(),
-                    initial: initial.clone(),
-                },
-                window,
-                cx,
-            );
-        }))
-        .into_any_element()
-    }
-
-    fn unbound_edit_button(
-        &self,
-        row: &management::KeymapCommandRow,
-        palette: Palette,
-        cx: &mut Context<Self>,
-    ) -> gpui::AnyElement {
-        let command = row.command;
-        let title = row.title.clone();
-        let (context, old_bindings) = row
-            .default_bindings
-            .first()
-            .map(|binding| {
-                (
-                    binding.context.map(|context| format!("{context:?}")),
-                    Vec::new(),
-                )
-            })
-            .unwrap_or((None, Vec::new()));
-        button(
-            row.command.action_name(),
-            palette,
-            ButtonVariant::Outline,
-            ButtonSize::Xs,
-        )
-        .child("Unbound · Edit")
-        .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
-            this.begin_edit(
-                BindingEditRequest {
-                    command,
-                    title: title.clone(),
-                    context: context.clone(),
-                    old_bindings: old_bindings.clone(),
-                    initial: String::new(),
-                },
-                window,
-                cx,
-            );
-        }))
-        .into_any_element()
-    }
-
-    fn render_row(
-        &self,
-        row: &management::KeymapCommandRow,
-        palette: Palette,
-        cx: &mut Context<Self>,
-    ) -> impl IntoElement {
-        let binding_label = if row.effective_bindings.is_empty() {
-            self.unbound_edit_button(row, palette, cx)
-        } else {
-            div()
-                .flex()
-                .items_center()
-                .gap(px(4.0))
-                .children(
-                    row.effective_bindings
-                        .iter()
-                        .enumerate()
-                        .map(|(index, _)| self.binding_edit_button(row, index, palette, cx)),
-                )
-                .into_any_element()
-        };
-        let context = if row.contexts.is_empty() {
-            "Global".to_string()
-        } else {
-            row.contexts
-                .iter()
-                .map(|context| format!("{context:?}"))
-                .collect::<Vec<_>>()
-                .join(", ")
-        };
-
-        ListItem::new(
-            row.command.action_name(),
-            palette.fg,
-            palette.muted,
-            palette.muted_bg,
-        )
-        .icon(labonair_ui_kit::IconName::Command)
-        .child(
-            div()
-                .flex()
-                .flex_col()
-                .flex_1()
-                .min_w_0()
-                .child(
-                    div()
-                        .text_size(px(12.0))
-                        .child(SharedString::from(row.title.clone())),
-                )
-                .child(
-                    div()
-                        .text_size(px(10.0))
-                        .text_color(palette.muted)
-                        .child(SharedString::from(format!("{} · {}", row.section, context))),
-                ),
-        )
-        .trailing(binding_label)
-    }
-
     fn open_raw_document(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(callback) = self.open_raw.as_mut() {
             callback(window, cx);
         }
     }
+}
+
+/// One virtualized command row. Free function (not a method) because the
+/// `uniform_list` render closure only has `&mut App` — mutation routes through
+/// the captured `view` entity.
+fn render_row(
+    view: &Entity<KeymapManagementView>,
+    row: &management::KeymapCommandRow,
+    palette: Palette,
+) -> ListItem {
+    let binding_label: AnyElement = if row.effective_bindings.is_empty() {
+        unbound_edit_button(view, row, palette)
+    } else {
+        div()
+            .flex()
+            .items_center()
+            .gap(px(4.0))
+            .children(
+                (0..row.effective_bindings.len())
+                    .map(|index| binding_edit_button(view, row, index, palette)),
+            )
+            .into_any_element()
+    };
+    let context = if row.contexts.is_empty() {
+        "Global".to_string()
+    } else {
+        row.contexts
+            .iter()
+            .map(|context| format!("{context:?}"))
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+
+    ListItem::new(
+        row.command.action_name(),
+        palette.fg,
+        palette.muted,
+        palette.muted_bg,
+    )
+    .icon(labonair_ui_kit::IconName::Command)
+    .child(
+        div()
+            .flex()
+            .flex_col()
+            .flex_1()
+            .min_w_0()
+            .child(
+                div()
+                    .text_size(px(12.0))
+                    .child(SharedString::from(row.title.clone())),
+            )
+            .child(
+                div()
+                    .text_size(px(10.0))
+                    .text_color(palette.muted)
+                    .child(SharedString::from(format!("{} · {}", row.section, context))),
+            ),
+    )
+    .trailing(binding_label)
+}
+
+fn binding_edit_button(
+    view: &Entity<KeymapManagementView>,
+    row: &management::KeymapCommandRow,
+    index: usize,
+    palette: Palette,
+) -> AnyElement {
+    let binding = &row.effective_bindings[index];
+    let request = BindingEditRequest {
+        command: row.command,
+        title: row.title.clone(),
+        context: binding.context.clone(),
+        old_bindings: row
+            .effective_bindings
+            .iter()
+            .filter(|candidate| candidate.context == binding.context)
+            .map(|candidate| candidate.keystrokes.clone())
+            .collect::<Vec<_>>(),
+        initial: binding.keystrokes.clone(),
+    };
+    let view = view.clone();
+    button(
+        (row.command.action_name(), index),
+        palette,
+        ButtonVariant::Ghost,
+        ButtonSize::Xs,
+    )
+    .child(kbd_row(
+        labonair_keymap::keystroke_tokens(&binding.keystrokes),
+        palette,
+    ))
+    .on_click(move |_: &ClickEvent, window, cx| {
+        let request = request.clone();
+        view.update(cx, |this, cx| this.begin_edit(request, window, cx));
+    })
+    .into_any_element()
+}
+
+fn unbound_edit_button(
+    view: &Entity<KeymapManagementView>,
+    row: &management::KeymapCommandRow,
+    palette: Palette,
+) -> AnyElement {
+    let context = row
+        .default_bindings
+        .first()
+        .and_then(|binding| binding.context.map(|context| format!("{context:?}")));
+    let request = BindingEditRequest {
+        command: row.command,
+        title: row.title.clone(),
+        context,
+        old_bindings: Vec::new(),
+        initial: String::new(),
+    };
+    let view = view.clone();
+    button(
+        row.command.action_name(),
+        palette,
+        ButtonVariant::Outline,
+        ButtonSize::Xs,
+    )
+    .child("Unbound · Edit")
+    .on_click(move |_: &ClickEvent, window, cx| {
+        let request = request.clone();
+        view.update(cx, |this, cx| this.begin_edit(request, window, cx));
+    })
+    .into_any_element()
 }
 
 impl Render for KeymapManagementView {
@@ -590,30 +577,26 @@ impl Render for KeymapManagementView {
                         .child("No commands match the filter."),
                 );
             } else {
-                let mut list = div()
-                    .id("keymap-command-list")
-                    .flex()
-                    .flex_col()
-                    .gap(px(2.0))
-                    .px(px(12.0))
-                    .pb(px(16.0))
-                    .overflow_y_scroll();
-                let mut section = None::<String>;
-                for row in rows {
-                    if section.as_deref() != Some(row.section.as_str()) {
-                        list = list.child(
-                            div()
-                                .pt(px(10.0))
-                                .pb(px(4.0))
-                                .px(px(8.0))
-                                .text_size(px(10.0))
-                                .text_color(palette.muted)
-                                .child(SharedString::from(row.section.to_uppercase())),
-                        );
-                        section = Some(row.section.clone());
-                    }
-                    list = list.child(self.render_row(row, palette, cx));
-                }
+                // Virtualized: only the visible window is turned into
+                // elements, so scroll/hover stay smooth with the full command
+                // catalog. The closure gets `&mut App`, so row handlers route
+                // through the captured view entity. Section grouping is
+                // preserved in each row's subtitle (`section · context`).
+                let view = cx.entity();
+                let rows: Vec<management::KeymapCommandRow> = rows.into_iter().cloned().collect();
+                let list = uniform_list(
+                    "keymap-command-list",
+                    rows.len(),
+                    move |range, _window, _cx| {
+                        range
+                            .map(|i| render_row(&view, &rows[i], palette))
+                            .collect::<Vec<_>>()
+                    },
+                )
+                .track_scroll(self.list_scroll.clone())
+                .px(px(12.0))
+                .pb(px(16.0))
+                .flex_1();
                 body = body.child(list);
             }
         } else if self.load_error.is_none() {
@@ -685,73 +668,12 @@ impl Render for KeymapManagementView {
     }
 }
 
-#[derive(Default)]
-struct KeymapWindowRef {
-    handle: Option<WindowHandle<Root>>,
-}
-
-impl gpui::Global for KeymapWindowRef {}
-
-/// Open the keymap management window or activate the existing one.
-pub fn open_keymap_window<F>(descriptors: Vec<CommandDescriptor>, on_open_raw: F, cx: &mut App)
-where
-    F: FnMut(&mut Window, &mut App) + 'static,
-{
-    if let Some(handle) = cx
-        .try_global::<KeymapWindowRef>()
-        .and_then(|ref_| ref_.handle)
-    {
-        if handle
-            .update(cx, |_, window, _| window.activate_window())
-            .is_ok()
-        {
-            cx.activate(true);
-            return;
-        }
-        cx.set_global(KeymapWindowRef { handle: None });
-    }
-
-    let bounds = Bounds::centered(None, size(px(760.0), px(680.0)), cx);
-    let opened = cx.open_window(
-        WindowOptions {
-            window_bounds: Some(WindowBounds::Windowed(bounds)),
-            titlebar: Some(TitlebarOptions {
-                title: Some("Keymap".into()),
-                appears_transparent: true,
-                traffic_light_position: Some(point(px(19.0), px(13.0))),
-            }),
-            window_min_size: Some(size(px(560.0), px(420.0))),
-            kind: WindowKind::Normal,
-            is_movable: true,
-            ..Default::default()
-        },
-        move |window, cx| {
-            let theme = theme_store(cx);
-            let view = cx.new(|cx| {
-                KeymapManagementView::new(theme, descriptors, Box::new(on_open_raw), window, cx)
-            });
-            let view: gpui::AnyView = view.into();
-            cx.new(|cx| Root::new(view, window, cx))
-        },
-    );
-
-    match opened {
-        Ok(handle) => {
-            cx.set_global(KeymapWindowRef {
-                handle: Some(handle),
-            });
-            cx.activate(true);
-        }
-        Err(error) => tracing::error!("failed to open keymap window: {error}"),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn keymap_window_type_is_ui_owned() {
+    fn keymap_view_type_is_ui_owned() {
         fn assert_focusable<T: Focusable>() {}
         assert_focusable::<KeymapManagementView>();
         let _ = labonair_command_palette_core::CommandId::OpenKeymapJson;

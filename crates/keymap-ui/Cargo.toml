@@ -9,14 +9,11 @@ path = "src/keymap_ui.rs"
 
 [dependencies]
 gpui = { workspace = true }
-gpui-component = { workspace = true }
 labonair-command-palette-core = { path = "../command-palette-core" }
-labonair-command-palette-runtime = { path = "../command-palette-runtime" }
 labonair-keymap = { path = "../keymap" }
 labonair-notifications = { path = "../notifications" }
 labonair-theme = { path = "../theme" }
 labonair-ui-kit = { path = "../ui-kit" }
-tracing = { workspace = true }
 
 [dev-dependencies]
 gpui = { workspace = true, features = ["test-support"] }

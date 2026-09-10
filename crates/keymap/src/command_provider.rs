@@ -3,15 +3,17 @@
 use labonair_command_palette_core::{CommandDescriptor, CommandIcon, CommandId, CommandProvider};
 
 /// The keymap capability owns the discoverable entry point for editing the
-/// user's keymap. The JSON editor itself remains an execution concern of the
-/// host until its UI boundary is extracted.
+/// user's keymap. Opening the surface (a workspace tab) is an execution
+/// concern of the tab owner (`labonair-workspace`); this crate only publishes
+/// the command metadata. `CommandId::OpenKeymapJson` keeps its historical name
+/// (and `zed::OpenKeymap` alias) for user-keymap-file compatibility.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct KeymapCommandProvider;
 
 impl CommandProvider for KeymapCommandProvider {
     fn commands(&self) -> Vec<CommandDescriptor> {
         vec![
-            CommandDescriptor::new(CommandId::OpenKeymapJson, "Open Keymap (JSON)", "Keymap")
+            CommandDescriptor::new(CommandId::OpenKeymapJson, "Open Keymap", "Keymap")
                 .with_default_binding("cmd-shift-/", None)
                 .with_icon(CommandIcon::Edit),
         ]

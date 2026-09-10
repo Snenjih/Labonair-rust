@@ -89,10 +89,10 @@ ALLOWED = {
     },
     # Keymap presentation is a real sibling boundary: it consumes the
     # keymap-owned snapshot and shared UI/theme contracts, but owns no
-    # persistence, resolution, or feature execution.
+    # persistence, resolution, or feature execution. `labonair-workspace` hosts
+    # `KeymapManagementView` as a tab; `keymap-ui` never depends back.
     "labonair-keymap-ui": {
         "labonair-command-palette-core", "labonair-keymap",
-        "labonair-command-palette-runtime",
         "labonair-notifications",
         "labonair-theme", "labonair-ui-kit",
     },
@@ -191,7 +191,9 @@ ALLOWED = {
     # lets `panel`/`workspace` reach the Hosts UI without depending on it.
     "labonair-hosts-host": {"labonair-hosts"},
     # rule 3 + §8.4: workspace owns the tab-view entities, so it pulls
-    # hosts-ui and panel-git-graph (acyclic — neither depends back on it).
+    # panel-git-graph and keymap-ui (the Keymap tab hosts
+    # `labonair_keymap_ui::KeymapManagementView`) — acyclic, neither depends
+    # back on it.
     # T19-002: ThemeSettings/TerminalSettings real consumers
     # (workspace.rs::reduce_motion, views/terminal.rs opacity/copy-on-select/
     # right-click-pastes) pull the typed settings store directly.
@@ -208,6 +210,7 @@ ALLOWED = {
         "labonair-theme", "labonair-ui-kit", "labonair-gpui-ext",
         "labonair-notifications", "labonair-command-palette",
         "labonair-panel", "labonair-panel-git-graph",
+        "labonair-keymap-ui",
         "labonair-hosts", "labonair-hosts-host",
         "labonair-terminal", "labonair-editor",
         "labonair-git",
@@ -231,7 +234,6 @@ ALLOWED = {
         "labonair-command-palette-core",
         "labonair-command-palette-runtime",
         "labonair-keymap",
-        "labonair-keymap-ui",
         "labonair-workspace", "labonair-settings-ui", "labonair-panel",
         "labonair-explorer-host", "labonair-snippets-host",
         "labonair-hosts-host",

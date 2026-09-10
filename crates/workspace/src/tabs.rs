@@ -2,8 +2,8 @@
 //!
 //! Labonair's tab system is the central navigation element. A *tab* is a light
 //! descriptor with a [`TabKind`] discriminant (`workspace`, `editor`,
-//! `preview`, `sftp`, `git-graph`, `git-diff`, `commit-diff`, `ai-diff`) plus
-//! kind-specific data in [`TabData`]. The reference keeps this in the
+//! `preview`, `sftp`, `git-graph`, `git-diff`, `commit-diff`, `ai-diff`,
+//! `keymap`) plus kind-specific data in [`TabData`]. The reference keeps this in the
 //! `useTabs` Zustand store; here it is the GPUI [`TabStore`] entity. The
 //! host-manager dashboard was a `TabKind::Hosts` tab through T17-009; T19-010
 //! removed it — host management is now owned by the Hosts capability
@@ -43,6 +43,8 @@ pub enum TabKind {
     GitDiff,
     /// A committed-change diff (Phase 09).
     CommitDiff,
+    /// The keymap management surface (browse + rebind every command).
+    Keymap,
 }
 
 impl TabKind {
@@ -58,6 +60,7 @@ impl TabKind {
             TabKind::GitGraph => IconName::GitCompare,
             TabKind::GitDiff => IconName::GitBranch,
             TabKind::CommitDiff => IconName::GitBranch,
+            TabKind::Keymap => IconName::Command,
         }
     }
 
@@ -73,6 +76,7 @@ impl TabKind {
             TabKind::GitGraph => "Git Graphs",
             TabKind::GitDiff => "Git Diffs",
             TabKind::CommitDiff => "Commit Diffs",
+            TabKind::Keymap => "Keymaps",
         }
     }
 
@@ -87,6 +91,7 @@ impl TabKind {
             TabKind::GitGraph => "Git Graph",
             TabKind::GitDiff => "Diff",
             TabKind::CommitDiff => "Commit",
+            TabKind::Keymap => "Keymap",
         }
     }
 }
