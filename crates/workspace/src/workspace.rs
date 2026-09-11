@@ -4227,17 +4227,6 @@ impl Workspace {
             .h(px(28.0))
             .w_full()
             .flex_shrink_0()
-            // Right-click anywhere on the empty strip → the new-tab menu
-            // (reference `TabBar` empty-area menu).
-            .on_mouse_down(
-                MouseButton::Right,
-                cx.listener(|this, ev: &MouseDownEvent, _w, cx| {
-                    this.new_tab_menu = Some(point(ev.position.x, px(TITLEBAR_OFFSET)));
-                    this.new_tab_submenu = None;
-                    this.context_menu = None;
-                    cx.notify();
-                }),
-            )
             .child(
                 div()
                     .id("tab-strip")
@@ -4302,16 +4291,6 @@ impl Workspace {
                     .gap_0p5()
                     .overflow_y_scroll()
                     .p_1p5()
-                    // Right-click on the empty area → the new-tab menu.
-                    .on_mouse_down(
-                        MouseButton::Right,
-                        cx.listener(|this, ev: &MouseDownEvent, _w, cx| {
-                            this.new_tab_menu = Some(ev.position);
-                            this.new_tab_submenu = None;
-                            this.context_menu = None;
-                            cx.notify();
-                        }),
-                    )
                     .children(tabs.iter().map(|t| self.render_tab(t, true, cx))),
             )
             .child(
