@@ -1313,13 +1313,24 @@ where
         } else {
             header = header.child(IconName::Search.svg(muted));
         }
-        header = header.child(
-            div()
-                .flex_1()
-                .text_size(px(15.0))
-                .text_color(input_color)
-                .child(SharedString::from(input_text)),
-        );
+        let mut input_row = div().flex_1().flex().items_center().text_size(px(15.0));
+        if !self.query.is_empty() {
+            input_row = input_row.child(
+                div()
+                    .text_color(fg)
+                    .child(SharedString::from(input_text.clone())),
+            );
+        }
+        input_row = input_row.child(labonair_ui_kit::caret(fg, 18.0));
+        if self.query.is_empty() {
+            input_row = input_row.child(
+                div()
+                    .pl(px(4.0))
+                    .text_color(input_color)
+                    .child(SharedString::from(input_text)),
+            );
+        }
+        header = header.child(input_row);
 
         // ── footer ───────────────────────────────────────────────────────────
         let mut hints = div().flex().items_center().gap(px(12.0)).ml_auto();

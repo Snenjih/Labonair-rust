@@ -18,7 +18,7 @@
 
 pub use gpui_component::input::{InputEvent, InputState};
 
-use gpui::{Context, Entity, Window};
+use gpui::{div, px, Context, Div, Entity, Hsla, Styled, Window};
 use gpui_component::input::Input;
 
 /// Creates a single-line [`InputState`] ready to be stored in `cx.new(..)`.
@@ -29,4 +29,16 @@ pub fn text_field(window: &mut Window, cx: &mut Context<InputState>) -> InputSta
 /// Builds the renderable [`Input`] element bound to `state`.
 pub fn field_input(state: &Entity<InputState>) -> Input {
     Input::new(state)
+}
+
+/// A static caret bar for the hand-rolled, single-`String` text fields that
+/// predate `InputState` (a view-level `on_key_down` router editing a plain
+/// `String`, documented across `command-palette`/`hosts-ui`/`panel-snippets`
+/// as out of scope for a full `InputState` migration). These fields only
+/// ever append/pop at the end of the string, so the caret always sits right
+/// after the current value — callers should render it only while the field
+/// actually has keyboard focus, otherwise the field looks alive when it
+/// isn't.
+pub fn caret(color: Hsla, height: f32) -> Div {
+    div().flex_none().w(px(1.5)).h(px(height)).bg(color)
 }

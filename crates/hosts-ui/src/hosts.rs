@@ -3455,14 +3455,34 @@ impl HostManagerView {
 }
 
 impl Render for HostManagerView {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let p = self.palette(cx);
         let accent = p.accent;
         let p_card = p.card;
         let visible = self.visible_hosts();
         let quick = self.quick_connect_target();
+        let search_focused = self.search_focus.is_focused(window);
 
         // ── left pane: search + quick-connect suggestion ──────────────────
+        let mut search_text = div().flex_1().flex().items_center().text_xs();
+        if !self.search.is_empty() {
+            search_text = search_text.child(
+                div()
+                    .text_color(p.fg)
+                    .child(SharedString::from(self.search.clone())),
+            );
+        }
+        if search_focused {
+            search_text = search_text.child(labonair_ui_kit::caret(p.fg, 12.0));
+        }
+        if self.search.is_empty() {
+            search_text = search_text.child(
+                div()
+                    .when(search_focused, |d| d.pl(px(4.0)))
+                    .text_color(p.muted)
+                    .child("Find a host or type user@hostname\u{2026}"),
+            );
+        }
         let search_box = div()
             .track_focus(&self.search_focus)
             .key_context("HostSearch")
@@ -3477,21 +3497,7 @@ impl Render for HostManagerView {
             .border_1()
             .border_color(p.border)
             .child(IconName::Search.svg(p.muted).size(px(12.0)))
-            .child(
-                div()
-                    .flex_1()
-                    .text_xs()
-                    .text_color(if self.search.is_empty() {
-                        p.muted
-                    } else {
-                        p.fg
-                    })
-                    .child(SharedString::from(if self.search.is_empty() {
-                        "Find a host or type user@hostname\u{2026}".to_string()
-                    } else {
-                        format!("{}\u{2502}", self.search)
-                    })),
-            );
+            .child(search_text);
 
         let quick_card = quick.clone().map(|(user, host, port)| {
             ListItem::new("quick-connect", p.fg, p.muted, p.border)

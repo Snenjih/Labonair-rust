@@ -1006,25 +1006,36 @@ impl Render for SettingsView {
         // always act on what's currently on screen (cheap — ~200 entries).
         self.refresh_search_results();
 
-        let search_box = div()
+        let search_focused = self.editing.is_none();
+        let mut search_box = div()
             .mb_2()
             .px_2()
             .py(px(4.0))
+            .flex()
+            .items_center()
             .rounded_sm()
             .border_1()
             .border_color(if searching { c.accent } else { c.border })
             .bg(c.bg)
-            .text_size(px(11.5))
-            .text_color(if self.search.is_empty() {
-                c.muted
-            } else {
-                c.fg
-            })
-            .child(SharedString::from(if self.search.is_empty() {
-                "Search settings\u{2026}".to_string()
-            } else {
-                self.search.clone()
-            }));
+            .text_size(px(11.5));
+        if !self.search.is_empty() {
+            search_box = search_box.child(
+                div()
+                    .text_color(c.fg)
+                    .child(SharedString::from(self.search.clone())),
+            );
+        }
+        if search_focused {
+            search_box = search_box.child(labonair_ui_kit::caret(c.fg, 14.0));
+        }
+        if self.search.is_empty() {
+            search_box = search_box.child(
+                div()
+                    .when(search_focused, |d| d.pl(px(4.0)))
+                    .text_color(c.muted)
+                    .child("Search settings\u{2026}"),
+            );
+        }
 
         // Left: fixed-order top-level categories (rule 1), sourced from
         // `AREAS` contains only value-oriented settings categories. Capability

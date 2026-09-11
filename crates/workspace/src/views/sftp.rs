@@ -1388,7 +1388,7 @@ struct Colors {
 }
 
 impl Render for SftpView {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let c = {
             let t = self.theme.read(cx);
             Colors {
@@ -1413,8 +1413,8 @@ impl Render for SftpView {
             }
         };
 
-        let local = self.render_pane(Side::Local, c, cx);
-        let remote = self.render_pane(Side::Remote, c, cx);
+        let local = self.render_pane(Side::Local, c, window, cx);
+        let remote = self.render_pane(Side::Remote, c, window, cx);
 
         let mut root = div()
             .id("sftp")
@@ -1443,7 +1443,13 @@ impl Render for SftpView {
 }
 
 impl SftpView {
-    fn render_pane(&self, side: Side, c: Colors, cx: &mut Context<Self>) -> gpui::AnyElement {
+    fn render_pane(
+        &self,
+        side: Side,
+        c: Colors,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> gpui::AnyElement {
         let pane = match side {
             Side::Local => &self.local,
             Side::Remote => &self.remote,
@@ -1566,7 +1572,7 @@ impl SftpView {
             .child(header)
             .child(toolbar)
             .when(pane.search_open, |d| {
-                d.child(self.render_search_row(side, pane, c, cx))
+                d.child(self.render_search_row(side, pane, c, window, cx))
             });
 
         // Body
@@ -1701,9 +1707,43 @@ impl SftpView {
         side: Side,
         pane: &Pane,
         c: Colors,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
         let q = pane.search_query.clone();
+        let focused = self.edit_focus.is_focused(window);
+        let mut field = div()
+            .id(match side {
+                Side::Local => "sftp-local-searchbox",
+                Side::Remote => "sftp-remote-searchbox",
+            })
+            .track_focus(&self.edit_focus)
+            .flex_1()
+            .flex()
+            .items_center()
+            .px_1()
+            .text_xs()
+            .rounded_sm()
+            .border_1()
+            .border_color(c.accent)
+            .bg(c.card)
+            .on_key_down(cx.listener(move |this, ev: &KeyDownEvent, _w, cx| {
+                this.on_search_key(side, ev, cx)
+            }));
+        if !q.is_empty() {
+            field = field.child(div().text_color(c.fg).child(SharedString::from(q.clone())));
+        }
+        if focused {
+            field = field.child(labonair_ui_kit::caret(c.fg, 12.0));
+        }
+        if q.is_empty() {
+            field = field.child(
+                div()
+                    .when(focused, |d| d.pl(px(4.0)))
+                    .text_color(c.muted)
+                    .child("Filter by name\u{2026}"),
+            );
+        }
         div()
             .flex()
             .flex_row()
@@ -1712,30 +1752,7 @@ impl SftpView {
             .py(px(2.0))
             .border_b_1()
             .border_color(c.border)
-            .child(
-                div()
-                    .id(match side {
-                        Side::Local => "sftp-local-searchbox",
-                        Side::Remote => "sftp-remote-searchbox",
-                    })
-                    .track_focus(&self.edit_focus)
-                    .flex_1()
-                    .px_1()
-                    .text_xs()
-                    .rounded_sm()
-                    .border_1()
-                    .border_color(c.accent)
-                    .bg(c.card)
-                    .text_color(if q.is_empty() { c.muted } else { c.fg })
-                    .child(SharedString::from(if q.is_empty() {
-                        "Filter by name\u{2026}".to_string()
-                    } else {
-                        format!("{q}\u{2502}")
-                    }))
-                    .on_key_down(cx.listener(move |this, ev: &KeyDownEvent, _w, cx| {
-                        this.on_search_key(side, ev, cx)
-                    })),
-            )
+            .child(field)
             .into_any_element()
     }
 

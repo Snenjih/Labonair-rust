@@ -1220,6 +1220,12 @@ impl SnippetsView {
             } else {
                 value.to_string()
             }))
+            // The search field is the only one whose live typing feedback
+            // this touches — the caret makes it visible that the field is
+            // actually capturing keystrokes while `search_open` is true.
+            .when(active && field == Field::Search, |d| {
+                d.child(labonair_ui_kit::caret(c.fg, 12.0))
+            })
             .on_click(cx.listener(move |this, _: &ClickEvent, w, cx| {
                 cx.stop_propagation();
                 this.active_field = Some(field);
