@@ -7,6 +7,25 @@
 //! Part of `SettingsView` — see `crate::view`.
 
 use crate::view::*;
+use labonair_settings_content::file_manager::{default_sftp_columns, SftpColumn};
+use labonair_ui_kit::DISABLED_OPACITY;
+
+/// Parse a stored `sftpColumns` JSON value into an ordered, de-duplicated
+/// column list, falling back to the shipped default when absent/unparseable.
+fn sftp_visible_columns(value: Option<&Value>) -> Vec<SftpColumn> {
+    let Some(arr) = value.and_then(|v| v.as_array()) else {
+        return default_sftp_columns();
+    };
+    let mut out = Vec::new();
+    for tok in arr.iter().filter_map(|t| t.as_str()) {
+        if let Some(col) = SftpColumn::from_token(tok) {
+            if !out.contains(&col) {
+                out.push(col);
+            }
+        }
+    }
+    out
+}
 
 impl SettingsView {
     /// Load system fonts off the UI thread for the shared `FontFamily` field
@@ -305,6 +324,7 @@ impl SettingsView {
                 .into_any_element()
             }
             FieldControl::Text => self.render_text_control(json_path, value, c, cx),
+            FieldControl::SftpColumns => self.render_sftp_columns_control(json_path, value, c, cx),
         };
 
         let non_default = origin != OriginBadge::Default;
@@ -428,6 +448,137 @@ impl SettingsView {
                 this.begin_edit(json_path, false, cx);
             }))
             .into_any_element()
+    }
+
+    /// Ordered visible-column editor for the SFTP browser
+    /// (`FieldControl::SftpColumns`). Each column gets a checkbox
+    /// (visible/hidden) and up/down reorder buttons; the stored value is a
+    /// JSON array of column tokens in display order.
+    fn render_sftp_columns_control(
+        &self,
+        json_path: &'static str,
+        value: Option<Value>,
+        c: &Palette,
+        cx: &mut Context<Self>,
+    ) -> gpui::AnyElement {
+        let visible = sftp_visible_columns(value.as_ref());
+
+        // Rows: the visible columns in order, then the hidden ones.
+        let mut ordered = visible.clone();
+        for col in SftpColumn::ALL {
+            if !ordered.contains(&col) {
+                ordered.push(col);
+            }
+        }
+
+        let mut stack = v_stack().gap(px(2.0));
+        for col in ordered {
+            let vis_pos = visible.iter().position(|x| *x == col);
+            let is_visible = vis_pos.is_some();
+            let can_up = vis_pos.is_some_and(|i| i > 0);
+            let can_down = vis_pos.is_some_and(|i| i + 1 < visible.len());
+
+            let arrow = |icon: IconName, id: &str, enabled: bool, delta: i32| {
+                let mut b = button(
+                    SharedString::from(format!("{id}-{}", col.token())),
+                    *c,
+                    ButtonVariant::Ghost,
+                    ButtonSize::IconXs,
+                )
+                .child(icon.svg(if enabled { c.fg } else { c.muted }).size(px(12.0)));
+                if enabled {
+                    b = b.on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                        this.sftp_columns_move(json_path, col, delta, cx);
+                    }));
+                } else {
+                    b = b.opacity(DISABLED_OPACITY);
+                }
+                b
+            };
+
+            stack = stack.child(
+                h_stack()
+                    .gap(px(4.0))
+                    .items_center()
+                    .child(
+                        checkbox(
+                            SharedString::from(format!("sftpcol-{}", col.token())),
+                            *c,
+                            is_visible,
+                        )
+                        .label(col.label())
+                        .on_click(cx.listener(move |this, checked: &bool, _w, cx| {
+                            this.sftp_columns_toggle(json_path, col, *checked, cx);
+                        })),
+                    )
+                    .child(div().flex_1())
+                    .child(arrow(IconName::ArrowUp, "sftpcol-up", can_up, -1))
+                    .child(arrow(IconName::ArrowDown, "sftpcol-down", can_down, 1)),
+            );
+        }
+        v_stack()
+            .w(px(240.0))
+            .gap(px(4.0))
+            .child(stack)
+            .child(
+                div()
+                    .text_size(px(10.5))
+                    .text_color(c.muted)
+                    .child("Order also adjusts by dragging the column headers in the SFTP browser."),
+            )
+            .into_any_element()
+    }
+
+    fn sftp_columns_write(
+        &mut self,
+        json_path: &'static str,
+        cols: &[SftpColumn],
+        cx: &mut Context<Self>,
+    ) {
+        let arr = Value::Array(
+            cols.iter()
+                .map(|col| Value::String(col.token().to_string()))
+                .collect(),
+        );
+        self.set_field_value(json_path, arr, cx);
+    }
+
+    fn sftp_columns_toggle(
+        &mut self,
+        json_path: &'static str,
+        col: SftpColumn,
+        checked: bool,
+        cx: &mut Context<Self>,
+    ) {
+        let field = self.field_by_path(json_path).copied();
+        let cur = field.and_then(|f| self.field_value(&f, cx));
+        let mut cols = sftp_visible_columns(cur.as_ref());
+        cols.retain(|x| *x != col);
+        if checked {
+            cols.push(col);
+        }
+        self.sftp_columns_write(json_path, &cols, cx);
+    }
+
+    fn sftp_columns_move(
+        &mut self,
+        json_path: &'static str,
+        col: SftpColumn,
+        delta: i32,
+        cx: &mut Context<Self>,
+    ) {
+        let field = self.field_by_path(json_path).copied();
+        let cur = field.and_then(|f| self.field_value(&f, cx));
+        let mut cols = sftp_visible_columns(cur.as_ref());
+        let Some(i) = cols.iter().position(|x| *x == col) else {
+            return;
+        };
+        let j = i as i32 + delta;
+        if j < 0 || j as usize >= cols.len() {
+            return;
+        }
+        cols.swap(i, j as usize);
+        self.sftp_columns_write(json_path, &cols, cx);
     }
 
     // ── T19-004: top-level render dispatch ──────────────────────────────

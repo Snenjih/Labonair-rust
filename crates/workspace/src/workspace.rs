@@ -356,6 +356,8 @@ enum PendingOpen {
         host_id: String,
         temp_path: String,
     },
+    /// Open/focus an SSH terminal tab (SFTP remote pane's `>_ Term` action).
+    SshTab(String),
 }
 
 /// Events emitted by the workspace for actions owned by another surface.
@@ -2887,6 +2889,10 @@ impl Workspace {
                     }
                 });
             }
+            SftpEvent::OpenRemoteTerminal { host_id } => {
+                self.pending_open.push(PendingOpen::SshTab(host_id.clone()));
+                cx.notify();
+            }
         }
     }
 
@@ -5301,6 +5307,7 @@ impl Render for Workspace {
                         window,
                         cx,
                     ),
+                    PendingOpen::SshTab(host_id) => self.open_ssh_tab(host_id, window, cx),
                 }
             }
         }

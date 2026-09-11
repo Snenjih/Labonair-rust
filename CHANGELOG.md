@@ -20,6 +20,29 @@ versions follow [SemVer](https://semver.org/).
   glyph is kept — the hosts panel reuses it for the "pin to top" marker.
 
 ### Added
+- **SFTP browser rework.**
+  - Each pane now shows a `LOCAL` / `REMOTE · <host>` label with a live item
+    count, a two-row toolbar (up · address · search · refresh · hidden ·
+    remote-only `>_ Term`), and a sticky metadata column-header row.
+  - Column headers are drag-reorderable (persisted) and have right-edge
+    resize grips; the visible set + order is also editable in
+    **Settings → File Manager → SFTP browser** (checkbox + ↑/↓ list). New
+    `fileManager` settings: `sftpShowHiddenFiles`, `sftpShowUpFolder`,
+    `sftpZebraStriping`, `sftpRelativeTimes`, `sftpColumns` (backed by
+    `SftpBrowserSettings`, applied live via a `SettingsStore` observer). The
+    four v1 `sftpColumn*` booleans migrate into `sftpColumns`.
+  - Columns: Size, Last modified, Created (local birth-time; `—` over SFTP),
+    Permissions, Type (extension). Timestamps render relative (`13d ago`) by
+    default.
+  - Alternating "zebra" row backgrounds; a synthetic `..` row at the top of
+    every non-root directory (single click walks up); italic symlink names;
+    file icons resolved through the active icon theme at the same size as the
+    sidebar Explorer.
+  - Inline name-filter box (toolbar search), `Copy Name` context-menu entry,
+    and a directional drop-target tint on the receiving pane during a
+    cross-pane drag.
+  - `>_ Term` on the remote pane opens an SSH terminal tab for the host
+    (`SftpEvent::OpenRemoteTerminal`).
 - **Auto-updater — macOS (T15-005).**
   - `labonair-updater` gained `fetch_manifest` / `download_update`
     (streamed, with progress) / `verify_update` (minisign Ed25519, pre-hashed —

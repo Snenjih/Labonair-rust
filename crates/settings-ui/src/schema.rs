@@ -54,6 +54,11 @@ pub enum FieldControl {
     Select(&'static [(&'static str, &'static str)]),
     FontFamily,
     Text,
+    /// The SFTP browser's ordered visible-column list. The value is a JSON
+    /// array of column tokens (`["size","modified","permissions"]`); the
+    /// renderer offers a checkbox + reorder control over the fixed set of
+    /// columns.
+    SftpColumns,
 }
 
 /// One generated settings row: a stable deep-link path into the merged
@@ -134,7 +139,7 @@ macro_rules! field {
 /// Order is declaration order within each Settings area; page layout
 /// (`pages.rs`) decides on-screen placement, not this list.
 pub fn all_fields() -> Vec<AnyField> {
-    use FieldControl::{Float, FontFamily, Int, Select, Switch, Text};
+    use FieldControl::{Float, FontFamily, Int, Select, SftpColumns, Switch, Text};
     vec![
         // ── general ─────────────────────────────────────────────────────
         field!(
@@ -571,6 +576,41 @@ pub fn all_fields() -> Vec<AnyField> {
             Switch,
             "Source Control: file tree",
             "Show the change list as a directory tree instead of flat status groups."
+        ),
+        field!(
+            file_manager.sftp_show_hidden_files,
+            "sftpShowHiddenFiles",
+            Switch,
+            "SFTP: show hidden files",
+            "Start each SFTP pane with dotfiles visible."
+        ),
+        field!(
+            file_manager.sftp_show_up_folder,
+            "sftpShowUpFolder",
+            Switch,
+            "SFTP: show '..' up-folder row",
+            "Show a '..' row at the top of every non-root directory to walk up."
+        ),
+        field!(
+            file_manager.sftp_zebra_striping,
+            "sftpZebraStriping",
+            Switch,
+            "SFTP: zebra striping",
+            "Alternate the row background in the SFTP file list."
+        ),
+        field!(
+            file_manager.sftp_relative_times,
+            "sftpRelativeTimes",
+            Switch,
+            "SFTP: relative times",
+            "Show '13d ago' instead of an absolute timestamp in the file list."
+        ),
+        field!(
+            file_manager.sftp_columns,
+            "sftpColumns",
+            SftpColumns,
+            "SFTP: columns",
+            "Which metadata columns the SFTP browser shows, and in what order."
         ),
         // ── workspace ───────────────────────────────────────────────────
         field!(

@@ -307,6 +307,16 @@ const FILE_MANAGER_GROUPS: &[Group] = &[
         ],
     ),
     ("Source Control", &["scmFileTree"]),
+    (
+        "SFTP browser",
+        &[
+            "sftpShowHiddenFiles",
+            "sftpShowUpFolder",
+            "sftpZebraStriping",
+            "sftpRelativeTimes",
+            "sftpColumns",
+        ],
+    ),
 ];
 
 const WORKSPACE_GROUPS: &[Group] = &[

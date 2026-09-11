@@ -101,7 +101,14 @@
     "explorerAutoRevealActiveFile": false,
     "explorerFoldSingleChildDirs": false,
     "explorerGitDecorations": true,
-    "scmFileTree": false
+    "scmFileTree": false,
+
+    // SFTP dual-pane browser
+    "sftpShowHiddenFiles": false,
+    "sftpShowUpFolder": true,
+    "sftpZebraStriping": true,
+    "sftpRelativeTimes": true,
+    "sftpColumns": ["size", "modified", "permissions"]
   },
 
   "workspace": {

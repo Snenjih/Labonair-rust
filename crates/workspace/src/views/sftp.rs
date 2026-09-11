@@ -38,6 +38,7 @@ use tokio::runtime::Handle as TokioHandle;
 
 use labonair_filesystem::{mutate, tree};
 use labonair_notifications::{notification_center, Notification};
+use labonair_settings::{Settings as _, SettingsStore, SftpBrowserSettings, SftpColumn};
 use labonair_sftp::{RemoteEntry, SftpBrowserService, SftpSessionHandle, SftpSessionService};
 use labonair_ssh::{
     SshConnectRequest, SshConnectionService, SshEventSink, SshRemoteCommandService,
@@ -147,6 +148,82 @@ pub fn format_bytes(bytes: u64) -> String {
     }
 }
 
+/// `secs` as a coarse relative age against `now` (`13d ago`, `just now`).
+/// Falls back to [`format_epoch`] for anything older than ~30 days and to
+/// `—` for `0`. Mirrors the reference `formatRelativeTime`.
+pub fn format_relative_epoch(secs: i64, now: i64) -> String {
+    if secs <= 0 {
+        return "\u{2014}".to_string();
+    }
+    let diff = now - secs;
+    if diff < 60 {
+        "just now".to_string()
+    } else if diff < 3_600 {
+        format!("{}m ago", diff / 60)
+    } else if diff < 86_400 {
+        format!("{}h ago", diff / 3_600)
+    } else if diff < 86_400 * 30 {
+        format!("{}d ago", diff / 86_400)
+    } else {
+        format_epoch(secs)
+    }
+}
+
+/// Current wall-clock time as UNIX seconds (for relative formatting).
+fn now_secs() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0)
+}
+
+/// Whether `path` on `side` has no parent to walk up to.
+fn is_filesystem_root(side: Side, path: &str) -> bool {
+    match side {
+        Side::Local => std::path::Path::new(path).parent().is_none(),
+        Side::Remote => parent_path(path) == path,
+    }
+}
+
+/// Ordinal of a column in [`SftpColumn::ALL`] — the index into
+/// [`SftpView::col_widths`].
+fn column_ord(col: SftpColumn) -> usize {
+    SftpColumn::ALL.iter().position(|c| *c == col).unwrap_or(0)
+}
+
+/// Default pixel width of a metadata column.
+fn default_column_width(col: SftpColumn) -> f32 {
+    match col {
+        SftpColumn::Size => 84.0,
+        SftpColumn::Modified => 120.0,
+        SftpColumn::Created => 120.0,
+        SftpColumn::Permissions => 96.0,
+        SftpColumn::Type => 64.0,
+    }
+}
+
+/// Snapshot of the `fileManager` settings the SFTP browser reads.
+struct BrowserPrefs {
+    columns: Vec<SftpColumn>,
+    zebra: bool,
+    show_up_folder: bool,
+    relative_times: bool,
+    show_hidden: bool,
+}
+
+fn sftp_browser_settings(cx: &App) -> BrowserPrefs {
+    let s = SftpBrowserSettings::try_get(cx).cloned().unwrap_or_else(|| {
+        SftpBrowserSettings::from_settings(&labonair_settings::SettingsContent::default())
+    });
+    BrowserPrefs {
+        columns: s.columns(),
+        zebra: s.zebra_striping(),
+        show_up_folder: s.show_up_folder(),
+        relative_times: s.relative_times(),
+        show_hidden: s.show_hidden_files(),
+    }
+}
+
 // ── data model ─────────────────────────────────────────────────────────────
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -162,11 +239,16 @@ pub struct Entry {
     pub path: String,
     pub size: u64,
     pub modified_at: i64,
+    /// Creation / birth time (UNIX seconds); `0` when the source doesn't
+    /// expose it — always `0` over SFTP, best-effort for local entries.
+    pub created_at: i64,
     pub is_dir: bool,
     pub is_symlink: bool,
     pub symlink_target: Option<String>,
     /// 9-char permission string (remote only; empty for local).
     pub permissions: String,
+    /// Synthetic `..` parent-navigation row — not a real listing entry.
+    pub is_parent_link: bool,
 }
 
 impl Entry {
@@ -176,10 +258,28 @@ impl Entry {
             path: n.path,
             size: n.size,
             modified_at: n.modified_at,
+            created_at: 0,
             is_dir: n.is_dir,
             is_symlink: n.is_symlink,
             symlink_target: n.symlink_target,
             permissions: n.permissions,
+            is_parent_link: false,
+        }
+    }
+
+    /// The synthetic `..` row that walks one directory up.
+    fn parent_link(parent: String) -> Self {
+        Self {
+            name: "..".to_string(),
+            path: parent,
+            size: 0,
+            modified_at: 0,
+            created_at: 0,
+            is_dir: true,
+            is_symlink: false,
+            symlink_target: None,
+            permissions: String::new(),
+            is_parent_link: true,
         }
     }
 }
@@ -219,6 +319,9 @@ struct Pane {
     /// Address-bar edit in progress.
     path_editing: bool,
     path_buffer: String,
+    /// Inline name-filter box (toolbar search) is open.
+    search_open: bool,
+    search_query: String,
     /// Virtualised row-list scroll position.
     scroll: UniformListScrollHandle,
 }
@@ -236,14 +339,18 @@ impl Pane {
             edit_buffer: String::new(),
             path_editing: false,
             path_buffer: String::new(),
+            search_open: false,
+            search_query: String::new(),
             scroll: UniformListScrollHandle::new(),
         }
     }
 
     fn visible(&self) -> Vec<&Entry> {
+        let needle = self.search_query.trim().to_lowercase();
         self.entries
             .iter()
             .filter(|e| self.show_hidden || !e.name.starts_with('.'))
+            .filter(|e| needle.is_empty() || e.name.to_lowercase().contains(&needle))
             .collect()
     }
 }
@@ -315,6 +422,9 @@ pub enum SftpEvent {
         session_id: String,
         error: Option<String>,
     },
+    /// Open (or focus) an SSH terminal tab for this host — the remote pane's
+    /// `>_ Term` action.
+    OpenRemoteTerminal { host_id: String },
 }
 
 /// Payload of a pointer-drag of one or more rows from one pane to the other
@@ -348,6 +458,17 @@ pub struct SftpView {
     sftp_handle: Option<SftpSessionHandle>,
     local: Pane,
     remote: Pane,
+    /// Visible metadata columns, in display order (from `fileManager` settings,
+    /// reorderable by dragging the column headers).
+    columns: Vec<SftpColumn>,
+    /// Per-column pixel width, indexed by [`column_ord`]. Session-only.
+    col_widths: [f32; 5],
+    /// Alternating row background.
+    zebra: bool,
+    /// Show the synthetic `..` row at the top of non-root directories.
+    show_up_folder: bool,
+    /// Relative (`13d ago`) vs absolute timestamps in the list.
+    relative_times: bool,
     menu: Option<Menu>,
     perm: Option<PermDialog>,
     props: Option<PropsDialog>,
@@ -381,6 +502,11 @@ impl SftpView {
         let home = dirs::home_dir()
             .map(|p| p.to_string_lossy().to_string())
             .unwrap_or_else(|| "/".to_string());
+        let s = sftp_browser_settings(cx);
+        let mut local = Pane::new(home);
+        let mut remote = Pane::new("/".to_string());
+        local.show_hidden = s.show_hidden;
+        remote.show_hidden = s.show_hidden;
         let mut this = Self {
             ssh,
             ssh_remote,
@@ -393,8 +519,13 @@ impl SftpView {
             host_label: host_label.into(),
             conn: Conn::Connecting,
             sftp_handle: None,
-            local: Pane::new(home),
-            remote: Pane::new("/".to_string()),
+            local,
+            remote,
+            columns: s.columns,
+            col_widths: std::array::from_fn(|i| default_column_width(SftpColumn::ALL[i])),
+            zebra: s.zebra,
+            show_up_folder: s.show_up_folder,
+            relative_times: s.relative_times,
             menu: None,
             perm: None,
             props: None,
@@ -402,9 +533,21 @@ impl SftpView {
             edit_focus: cx.focus_handle(),
             dialog_focus: cx.focus_handle(),
         };
+        cx.observe_global::<SettingsStore>(Self::apply_settings).detach();
         this.load_local(cx);
         this.connect(cx);
         this
+    }
+
+    /// Re-read the `fileManager` settings that drive the browser chrome
+    /// (columns, zebra, `..` row, relative times, default hidden-files).
+    fn apply_settings(&mut self, cx: &mut Context<Self>) {
+        let s = sftp_browser_settings(cx);
+        self.columns = s.columns;
+        self.zebra = s.zebra;
+        self.show_up_folder = s.show_up_folder;
+        self.relative_times = s.relative_times;
+        cx.notify();
     }
 
     pub fn session_id(&self) -> &str {
@@ -538,10 +681,12 @@ impl SftpView {
                                 path: join_path(&path, &d.name),
                                 size: d.size,
                                 modified_at: (d.mtime / 1000) as i64,
+                                created_at: (d.created / 1000) as i64,
                                 is_dir: matches!(d.kind, tree::EntryKind::Dir),
                                 is_symlink: matches!(d.kind, tree::EntryKind::Symlink),
                                 symlink_target: None,
                                 permissions: String::new(),
+                                is_parent_link: false,
                             })
                             .collect();
                         sort_entries(&mut entries);
@@ -646,6 +791,43 @@ impl SftpView {
     fn toggle_hidden(&mut self, side: Side, cx: &mut Context<Self>) {
         let pane = self.pane(side);
         pane.show_hidden = !pane.show_hidden;
+        cx.notify();
+    }
+
+    fn toggle_search(&mut self, side: Side, cx: &mut Context<Self>) {
+        let pane = self.pane(side);
+        pane.search_open = !pane.search_open;
+        if !pane.search_open {
+            pane.search_query.clear();
+        }
+        cx.notify();
+    }
+
+    /// Move `moved` so it sits where `target` is in the visible-column order,
+    /// then persist the new order to `fileManager` settings.
+    fn reorder_column(&mut self, moved: SftpColumn, target: SftpColumn, cx: &mut Context<Self>) {
+        if moved == target {
+            return;
+        }
+        let mut cols = self.columns.clone();
+        let Some(from) = cols.iter().position(|c| *c == moved) else {
+            return;
+        };
+        cols.remove(from);
+        let to = cols.iter().position(|c| *c == target).unwrap_or(cols.len());
+        cols.insert(to, moved);
+        self.columns = cols.clone();
+        if cx.has_global::<SettingsStore>() {
+            let _ = cx.global_mut::<SettingsStore>().update_user(move |c| {
+                c.file_manager.sftp_columns = Some(cols.clone());
+            });
+        }
+        cx.notify();
+    }
+
+    fn resize_column(&mut self, col: SftpColumn, delta_px: f32, cx: &mut Context<Self>) {
+        let ord = column_ord(col);
+        self.col_widths[ord] = (self.col_widths[ord] + delta_px).clamp(48.0, 320.0);
         cx.notify();
     }
 
@@ -1100,6 +1282,32 @@ impl SftpView {
         cx.stop_propagation();
     }
 
+    fn on_search_key(&mut self, side: Side, ev: &KeyDownEvent, cx: &mut Context<Self>) {
+        let ks = &ev.keystroke;
+        match ks.key.as_str() {
+            "escape" => {
+                let pane = self.pane(side);
+                pane.search_open = false;
+                pane.search_query.clear();
+                cx.notify();
+            }
+            "backspace" => {
+                self.pane(side).search_query.pop();
+                cx.notify();
+            }
+            key => {
+                if ks.modifiers.platform || ks.modifiers.control || ks.modifiers.alt {
+                    return;
+                }
+                if let Some(ch) = printable(ks, key) {
+                    self.pane(side).search_query.push_str(&ch);
+                    cx.notify();
+                }
+            }
+        }
+        cx.stop_propagation();
+    }
+
     fn on_perm_key(&mut self, ev: &KeyDownEvent, cx: &mut Context<Self>) {
         let ks = &ev.keystroke;
         match ks.key.as_str() {
@@ -1170,6 +1378,10 @@ struct Colors {
     card: gpui::Hsla,
     bg: gpui::Hsla,
     err: gpui::Hsla,
+    /// Subtle alternating-row fill (zebra striping).
+    zebra: gpui::Hsla,
+    /// Directional drop-target tint.
+    drop: gpui::Hsla,
     /// The full token snapshot the ui-kit primitives (`button`, `banner`, …)
     /// are styled from.
     palette: Palette,
@@ -1187,6 +1399,16 @@ impl Render for SftpView {
                 card: t.card(),
                 bg: t.background(),
                 err: t.status_error(),
+                zebra: {
+                    let mut h = t.hover_fill();
+                    h.a *= 0.5;
+                    h
+                },
+                drop: {
+                    let mut a = t.accent();
+                    a.a = 0.12;
+                    a
+                },
                 palette: Palette::from_theme(t),
             }
         };
@@ -1226,13 +1448,46 @@ impl SftpView {
             Side::Local => &self.local,
             Side::Remote => &self.remote,
         };
-        let title = match side {
-            Side::Local => "Local".to_string(),
-            Side::Remote => format!("Remote \u{00b7} {}", self.host_label),
+        let (label, count_label) = match side {
+            Side::Local => ("LOCAL", format!("{} items", pane.visible().len())),
+            Side::Remote => (
+                "REMOTE",
+                match &self.conn {
+                    Conn::Ready => format!(
+                        "{} \u{00b7} {} items",
+                        self.host_label,
+                        pane.visible().len()
+                    ),
+                    Conn::Connecting => format!("{} \u{00b7} connecting\u{2026}", self.host_label),
+                    Conn::Error(_) => format!("{} \u{00b7} offline", self.host_label),
+                },
+            ),
         };
 
-        // Toolbar
-        let toolbar = div()
+        // Row 1: pane label + item count.
+        let header = div()
+            .flex()
+            .flex_row()
+            .items_center()
+            .gap_2()
+            .px_2()
+            .h(px(22.0))
+            .child(
+                div()
+                    .text_size(px(10.5))
+                    .font_weight(gpui::FontWeight::SEMIBOLD)
+                    .text_color(c.fg)
+                    .child(label),
+            )
+            .child(
+                div()
+                    .text_size(px(10.5))
+                    .text_color(c.muted)
+                    .child(SharedString::from(count_label)),
+            );
+
+        // Row 2: up · path · search · refresh · hidden · (remote) term.
+        let mut toolbar = div()
             .flex()
             .flex_row()
             .items_center()
@@ -1243,15 +1498,27 @@ impl SftpView {
             .border_b_1()
             .border_color(c.border)
             .child(
-                div()
-                    .text_xs()
-                    .text_color(c.muted)
-                    .child(SharedString::from(title)),
-            )
-            .child(
-                self.tool_btn(side, "up", "\u{2191}", c, cx, |this, side, cx| {
+                self.tool_btn(side, "up", IconName::ArrowUp.svg(c.muted), c, cx, |this, side, cx| {
                     this.go_up(side, cx)
                 }),
+            )
+            .child(self.render_path_bar(side, pane, c, cx))
+            .child(
+                icon_toggle_button(
+                    match side {
+                        Side::Local => "sftp-local-search",
+                        Side::Remote => "sftp-remote-search",
+                    },
+                    c.palette,
+                    IconName::Search,
+                    pane.search_open,
+                )
+                .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
+                    this.toggle_search(side, cx);
+                    if this.pane(side).search_open {
+                        window.focus(&this.edit_focus);
+                    }
+                })),
             )
             .child(self.tool_btn(
                 side,
@@ -1278,8 +1545,29 @@ impl SftpView {
                 .on_click(
                     cx.listener(move |this, _: &ClickEvent, _w, cx| this.toggle_hidden(side, cx)),
                 ),
-            )
-            .child(self.render_path_bar(side, pane, c, cx));
+            );
+        if side == Side::Remote {
+            let hid = self.host_id.clone();
+            toolbar = toolbar.child(
+                button("sftp-remote-term", c.palette, ButtonVariant::Ghost, ButtonSize::Xs)
+                    .child(IconName::Terminal.svg(c.muted).size(px(13.0)))
+                    .child("Term")
+                    .on_click(cx.listener(move |_this, _: &ClickEvent, _w, cx| {
+                        cx.emit(SftpEvent::OpenRemoteTerminal {
+                            host_id: hid.clone(),
+                        });
+                    })),
+            );
+        }
+
+        let toolbar = div()
+            .flex()
+            .flex_col()
+            .child(header)
+            .child(toolbar)
+            .when(pane.search_open, |d| {
+                d.child(self.render_search_row(side, pane, c, cx))
+            });
 
         // Body
         let body: gpui::AnyElement = if side == Side::Remote {
@@ -1293,6 +1581,7 @@ impl SftpView {
         };
 
         let bhandler_side = side;
+        let drop_fill = c.drop;
         div()
             .flex()
             .flex_col()
@@ -1304,6 +1593,7 @@ impl SftpView {
                         Side::Local => "sftp-local-body",
                         Side::Remote => "sftp-remote-body",
                     })
+                    .relative()
                     .flex_1()
                     .min_h_0()
                     .flex()
@@ -1327,6 +1617,15 @@ impl SftpView {
                             cx.notify();
                         }),
                     )
+                    // Directional drop-target highlight: the opposite pane
+                    // tints + rings while a row-drag hovers it (T08-002 gap).
+                    .drag_over::<SftpDrag>(move |style, drag, _w, _cx| {
+                        if drag.from != bhandler_side {
+                            style.bg(drop_fill)
+                        } else {
+                            style
+                        }
+                    })
                     .on_drop(cx.listener(move |this, d: &SftpDrag, _w, cx| {
                         if d.from != bhandler_side {
                             this.enqueue(d.from, d.paths.clone(), cx);
@@ -1396,6 +1695,50 @@ impl SftpView {
         }
     }
 
+    /// Inline name-filter box shown under the toolbar when search is toggled.
+    fn render_search_row(
+        &self,
+        side: Side,
+        pane: &Pane,
+        c: Colors,
+        cx: &mut Context<Self>,
+    ) -> gpui::AnyElement {
+        let q = pane.search_query.clone();
+        div()
+            .flex()
+            .flex_row()
+            .items_center()
+            .px_2()
+            .py(px(2.0))
+            .border_b_1()
+            .border_color(c.border)
+            .child(
+                div()
+                    .id(match side {
+                        Side::Local => "sftp-local-searchbox",
+                        Side::Remote => "sftp-remote-searchbox",
+                    })
+                    .track_focus(&self.edit_focus)
+                    .flex_1()
+                    .px_1()
+                    .text_xs()
+                    .rounded_sm()
+                    .border_1()
+                    .border_color(c.accent)
+                    .bg(c.card)
+                    .text_color(if q.is_empty() { c.muted } else { c.fg })
+                    .child(SharedString::from(if q.is_empty() {
+                        "Filter by name\u{2026}".to_string()
+                    } else {
+                        format!("{q}\u{2502}")
+                    }))
+                    .on_key_down(cx.listener(move |this, ev: &KeyDownEvent, _w, cx| {
+                        this.on_search_key(side, ev, cx)
+                    })),
+            )
+            .into_any_element()
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn tool_btn(
         &self,
@@ -1442,12 +1785,28 @@ impl SftpView {
 
         // Per-frame owned snapshot: the `uniform_list` closure is `'static`
         // and cannot borrow `pane`.
-        let entries: Vec<Entry> = pane
+        let mut entries: Vec<Entry> = pane
             .visible()
             .into_iter()
             .filter(|e| rename_orig.as_deref() != Some(e.path.as_str()))
             .cloned()
             .collect();
+
+        // Synthetic `..` row at the top of every non-root directory (unless a
+        // name filter is active — `..` never matches a query).
+        let show_up = self.show_up_folder
+            && pane.search_query.trim().is_empty()
+            && !is_filesystem_root(side, &pane.path);
+        if show_up {
+            let parent = match side {
+                Side::Local => std::path::Path::new(&pane.path)
+                    .parent()
+                    .map(|p| p.to_string_lossy().to_string())
+                    .unwrap_or_else(|| pane.path.clone()),
+                Side::Remote => parent_path(&pane.path),
+            };
+            entries.insert(0, Entry::parent_link(parent));
+        }
 
         let list_id = match side {
             Side::Local => "sftp-list-local",
@@ -1456,15 +1815,41 @@ impl SftpView {
         let selected = pane.selected.clone();
         let view = cx.entity();
 
+        let cols: Vec<(SftpColumn, gpui::Pixels)> = self
+            .columns
+            .iter()
+            .map(|col| (*col, px(self.col_widths[column_ord(*col)])))
+            .collect();
+        let rr = RowRender {
+            side,
+            row_h,
+            zebra: self.zebra,
+            relative_times: self.relative_times,
+            now: now_secs(),
+            columns: cols.clone(),
+        };
+
+        if entries.is_empty() {
+            return div()
+                .flex()
+                .flex_col()
+                .flex_1()
+                .min_h_0()
+                .when(editing, |d| d.child(self.render_inline_input(side, c, cx)))
+                .child(self.render_col_header(side, &cols, c, cx))
+                .child(text_center("Empty directory", c.muted))
+                .into_any_element();
+        }
+
         let list = uniform_list(list_id, entries.len(), move |range, _win, cx| {
             range
                 .map(|i| {
                     let entry = &entries[i];
                     sftp_row_element(
                         entry,
-                        side,
+                        &rr,
+                        i,
                         selected.as_deref() == Some(entry.path.as_str()),
-                        row_h,
                         c,
                         &view,
                         cx,
@@ -1481,8 +1866,96 @@ impl SftpView {
             .flex_1()
             .min_h_0()
             .when(editing, |d| d.child(self.render_inline_input(side, c, cx)))
+            .child(self.render_col_header(side, &cols, c, cx))
             .child(list)
             .into_any_element()
+    }
+
+    /// Sticky column-header row above the file list. Each metadata header is
+    /// a drag source + drop target (reorder, persisted to settings) with a
+    /// right-edge resize handle.
+    fn render_col_header(
+        &self,
+        side: Side,
+        cols: &[(SftpColumn, gpui::Pixels)],
+        c: Colors,
+        cx: &mut Context<Self>,
+    ) -> gpui::AnyElement {
+        let head = |text: &str| {
+            div()
+                .text_size(px(9.5))
+                .font_weight(gpui::FontWeight::SEMIBOLD)
+                .text_color(c.muted)
+                .child(SharedString::from(text.to_string()))
+        };
+
+        let mut row = div()
+            .flex()
+            .flex_row()
+            .items_center()
+            .gap_2()
+            .px_2()
+            .h(px(22.0))
+            .border_b_1()
+            .border_color(c.border)
+            .bg(c.card)
+            // icon gutter + name column
+            .child(div().w(px(20.0)).flex_shrink_0())
+            .child(div().flex_1().min_w_0().child(head("NAME")));
+
+        for (col, width) in cols.iter().copied() {
+            let moved = col;
+            row = row.child(
+                div()
+                    .id(SharedString::from(format!("sftp-colh-{}-{}", side_key(side), col.token())))
+                    .relative()
+                    .flex_shrink_0()
+                    .w(width)
+                    .flex()
+                    .items_center()
+                    .child(head(col.header()))
+                    .on_drag(ColHeaderDrag { col }, |_, _, _, cx| cx.new(|_| DragGhost))
+                    .drag_over::<ColHeaderDrag>(move |s, drag, _w, _cx| {
+                        if drag.col != moved {
+                            s.border_l_2().border_color(c.accent)
+                        } else {
+                            s
+                        }
+                    })
+                    .on_drop(cx.listener(move |this, drag: &ColHeaderDrag, _w, cx| {
+                        this.reorder_column(drag.col, moved, cx);
+                    }))
+                    // Width follows the pointer while the right-edge grip is
+                    // dragged (`ev.bounds` is this cell).
+                    .on_drag_move(cx.listener(
+                        move |this, ev: &gpui::DragMoveEvent<ColResizeDrag>, _w, cx| {
+                            if ev.drag(cx).col != moved {
+                                return;
+                            }
+                            let want = f32::from(ev.event.position.x - ev.bounds.origin.x);
+                            let cur = this.col_widths[column_ord(moved)];
+                            this.resize_column(moved, want - cur, cx);
+                        },
+                    ))
+                    .child(
+                        div()
+                            .id(SharedString::from(format!(
+                                "sftp-colh-grip-{}-{}",
+                                side_key(side),
+                                col.token()
+                            )))
+                            .absolute()
+                            .right_0()
+                            .top_0()
+                            .h_full()
+                            .w(px(4.0))
+                            .cursor_col_resize()
+                            .hover(|s| s.bg(c.accent))
+                            .on_drag(ColResizeDrag { col }, |_, _, _, cx| cx.new(|_| DragGhost)),
+                    ),
+            );
+        }
+        row.into_any_element()
     }
 
     fn render_inline_input(
@@ -1618,6 +2091,17 @@ impl SftpView {
                     .on_click(run(Box::new(move |this, cx| {
                         if let Some((_, e)) = this.menu_entry() {
                             cx.write_to_clipboard(gpui::ClipboardItem::new_string(e.path));
+                        }
+                        this.menu = None;
+                        cx.notify();
+                    }))),
+            );
+            items.push(
+                MenuItem::new("sftp-cm-copyname", "Copy Name")
+                    .icon(IconName::Copy)
+                    .on_click(run(Box::new(move |this, cx| {
+                        if let Some((_, e)) = this.menu_entry() {
+                            cx.write_to_clipboard(gpui::ClipboardItem::new_string(e.name));
                         }
                         this.menu = None;
                         cx.notify();
@@ -1884,10 +2368,76 @@ impl Render for DragGhost {
     }
 }
 
+/// Pointer-drag of a column header onto another header → reorder.
+#[derive(Clone)]
+struct ColHeaderDrag {
+    col: SftpColumn,
+}
+
+/// Pointer-drag of a column header's right-edge grip → resize.
+#[derive(Clone)]
+struct ColResizeDrag {
+    col: SftpColumn,
+}
+
+/// Per-frame render parameters shared by every row (the `uniform_list`
+/// closure is `'static` and can't borrow the view).
+#[derive(Clone)]
+struct RowRender {
+    side: Side,
+    row_h: gpui::Pixels,
+    zebra: bool,
+    relative_times: bool,
+    now: i64,
+    columns: Vec<(SftpColumn, gpui::Pixels)>,
+}
+
 fn side_key(side: Side) -> &'static str {
     match side {
         Side::Local => "L",
         Side::Remote => "R",
+    }
+}
+
+/// One metadata cell's text for `entry`.
+fn column_cell_value(col: SftpColumn, entry: &Entry, rr: &RowRender) -> String {
+    if entry.is_parent_link {
+        return String::new();
+    }
+    match col {
+        SftpColumn::Size => {
+            if entry.is_dir {
+                String::new()
+            } else {
+                format_bytes(entry.size)
+            }
+        }
+        SftpColumn::Modified => {
+            if rr.relative_times {
+                format_relative_epoch(entry.modified_at, rr.now)
+            } else {
+                format_epoch(entry.modified_at)
+            }
+        }
+        SftpColumn::Created => {
+            if rr.relative_times {
+                format_relative_epoch(entry.created_at, rr.now)
+            } else {
+                format_epoch(entry.created_at)
+            }
+        }
+        SftpColumn::Permissions => entry.permissions.clone(),
+        SftpColumn::Type => {
+            if entry.is_dir || entry.is_symlink {
+                "\u{2014}".to_string()
+            } else {
+                entry
+                    .name
+                    .rsplit_once('.')
+                    .map(|(_, ext)| ext.to_lowercase())
+                    .unwrap_or_else(|| "\u{2014}".to_string())
+            }
+        }
     }
 }
 
@@ -1898,17 +2448,21 @@ fn side_key(side: Side) -> &'static str {
 #[allow(clippy::too_many_arguments)]
 fn sftp_row_element(
     entry: &Entry,
-    side: Side,
+    rr: &RowRender,
+    index: usize,
     selected: bool,
-    row_h: gpui::Pixels,
     c: Colors,
     view: &Entity<SftpView>,
     cx: &mut App,
 ) -> gpui::AnyElement {
-    let glyph: SharedString = if entry.is_symlink {
+    let side = rr.side;
+    let is_up = entry.is_parent_link;
+
+    let glyph: SharedString = if entry.is_symlink && !is_up {
         IconName::Link.path().into()
     } else {
         let store = view.read(cx).theme.read(cx);
+        // Same icon-theme resolution the sidebar Explorer uses.
         icon_for_path(
             store.icon_theme(),
             if entry.is_dir { "" } else { &entry.name },
@@ -1916,20 +2470,21 @@ fn sftp_row_element(
             false,
         )
     };
-    let id: SharedString = format!("row:{:?}:{}", side_key(side), entry.path).into();
-    let perm_col = entry.permissions.clone();
-    let size_col = if entry.is_dir {
-        String::new()
-    } else {
-        format_bytes(entry.size)
-    };
+    let id: SharedString = format!("row:{}:{}", side_key(side), entry.path).into();
+
+    // Zebra: tint every other *data* row (index 0 = first entry).
+    let zebra_fill =
+        (rr.zebra && !selected && index % 2 == 1).then_some(c.zebra);
 
     let on_click = {
         let v = view.clone();
         let entry = entry.clone();
         move |ev: &ClickEvent, _w: &mut Window, cx: &mut App| {
             v.update(cx, |this, cx| {
-                this.activate(side, &entry, ev.click_count() >= 2, cx);
+                // `..` navigates on a single click; everything else keeps the
+                // select-then-double-click-to-open behaviour.
+                let dbl = entry.is_parent_link || ev.click_count() >= 2;
+                this.activate(side, &entry, dbl, cx);
             });
         }
     };
@@ -1938,6 +2493,9 @@ fn sftp_row_element(
         let path = entry.path.clone();
         let is_dir = entry.is_dir;
         move |ev: &MouseDownEvent, _w: &mut Window, cx: &mut App| {
+            if is_up {
+                return;
+            }
             v.update(cx, |this, cx| {
                 this.pane(side).selected = Some(path.clone());
                 this.menu = Some(Menu {
@@ -1953,45 +2511,56 @@ fn sftp_row_element(
     };
     let drag_path = entry.path.clone();
 
-    // `ListItem` doesn't implement `FluentBuilder`, so the optional trailing
-    // columns are built as `Option`s and spliced in via `.children(..)`.
-    let perm_child = (!perm_col.is_empty()).then(|| {
-        div()
-            .text_xs()
-            .font_family("monospace")
-            .text_color(c.muted)
-            .child(SharedString::from(perm_col))
-    });
-    let size_child = (!size_col.is_empty()).then(|| {
-        div()
-            .w(px(64.0))
-            .text_xs()
-            .text_color(c.muted)
-            .child(SharedString::from(size_col))
-    });
+    let cells: Vec<gpui::AnyElement> = rr
+        .columns
+        .iter()
+        .map(|(col, width)| {
+            let text = column_cell_value(*col, entry, rr);
+            let mut cell = div()
+                .flex_shrink_0()
+                .w(*width)
+                .text_xs()
+                .text_color(c.muted);
+            if *col == SftpColumn::Permissions {
+                cell = cell.font_family("monospace");
+            }
+            cell.child(SharedString::from(text)).into_any_element()
+        })
+        .collect();
 
+    let name_el = div()
+        .flex_1()
+        .min_w_0()
+        .when(entry.is_symlink && !is_up, |d| {
+            d.italic().text_color(c.muted)
+        })
+        .when(is_up, |d| d.text_color(c.muted))
+        .child(SharedString::from(entry.name.clone()));
+
+    let row_h = rr.row_h;
     ListItem::new(id, c.fg, c.muted, c.border)
         .selected(selected)
-        .child(div().child(svg_path(glyph, c.muted)))
-        .child(
-            div()
-                .flex_1()
-                .min_w_0()
-                .child(SharedString::from(entry.name.clone())),
-        )
-        .children(perm_child)
-        .children(size_child)
+        .child(div().child(svg_path(glyph, c.muted).size(px(15.0))))
+        .child(name_el)
+        .children(cells)
         .extra(move |row| {
-            row.h(row_h)
+            let mut row = row
+                .h(row_h)
                 .on_click(on_click)
-                .on_mouse_down(MouseButton::Right, on_right_click)
-                .on_drag(
+                .on_mouse_down(MouseButton::Right, on_right_click);
+            if let Some(fill) = zebra_fill {
+                row = row.bg(fill);
+            }
+            if !is_up {
+                row = row.on_drag(
                     SftpDrag {
                         from: side,
                         paths: vec![drag_path],
                     },
                     |_, _, _, cx| cx.new(|_| DragGhost),
-                )
+                );
+            }
+            row
         })
         .into_any_element()
 }
@@ -2096,10 +2665,12 @@ mod tests {
             path: format!("/{name}"),
             size: 0,
             modified_at: 0,
+            created_at: 0,
             is_dir,
             is_symlink: false,
             symlink_target: None,
             permissions: String::new(),
+            is_parent_link: false,
         };
         let mut v = vec![
             mk("Zebra", false),
@@ -2129,30 +2700,69 @@ mod tests {
     #[test]
     fn pane_visible_respects_hidden_toggle() {
         let mut p = Pane::new("/".to_string());
-        p.entries = vec![
-            Entry {
-                name: ".hidden".to_string(),
-                path: "/.hidden".to_string(),
-                size: 0,
-                modified_at: 0,
-                is_dir: false,
-                is_symlink: false,
-                symlink_target: None,
-                permissions: String::new(),
-            },
-            Entry {
-                name: "visible".to_string(),
-                path: "/visible".to_string(),
-                size: 0,
-                modified_at: 0,
-                is_dir: false,
-                is_symlink: false,
-                symlink_target: None,
-                permissions: String::new(),
-            },
-        ];
-        assert_eq!(p.visible().len(), 1);
-        p.show_hidden = true;
+        let mk = |name: &str| Entry {
+            name: name.to_string(),
+            path: format!("/{name}"),
+            size: 0,
+            modified_at: 0,
+            created_at: 0,
+            is_dir: false,
+            is_symlink: false,
+            symlink_target: None,
+            permissions: String::new(),
+            is_parent_link: false,
+        };
+        p.entries = vec![mk(".hidden"), mk("visible"), mk("other")];
         assert_eq!(p.visible().len(), 2);
+        p.show_hidden = true;
+        assert_eq!(p.visible().len(), 3);
+        p.search_query = "oth".to_string();
+        assert_eq!(p.visible().len(), 1);
+    }
+
+    #[test]
+    fn relative_epoch_buckets() {
+        let now = 1_000_000_000;
+        assert_eq!(format_relative_epoch(0, now), "\u{2014}");
+        assert_eq!(format_relative_epoch(now - 30, now), "just now");
+        assert_eq!(format_relative_epoch(now - 120, now), "2m ago");
+        assert_eq!(format_relative_epoch(now - 7_200, now), "2h ago");
+        assert_eq!(format_relative_epoch(now - 3 * 86_400, now), "3d ago");
+        // older than ~30d falls back to an absolute date
+        assert_eq!(
+            format_relative_epoch(now - 60 * 86_400, now),
+            format_epoch(now - 60 * 86_400)
+        );
+    }
+
+    #[test]
+    fn filesystem_root_detection() {
+        assert!(is_filesystem_root(Side::Remote, "/"));
+        assert!(!is_filesystem_root(Side::Remote, "/etc"));
+        assert!(is_filesystem_root(Side::Local, "/"));
+        assert!(!is_filesystem_root(Side::Local, "/Users/x"));
+    }
+
+    #[test]
+    fn type_column_uses_extension() {
+        let rr = RowRender {
+            side: Side::Local,
+            row_h: px(20.0),
+            zebra: false,
+            relative_times: false,
+            now: 0,
+            columns: vec![],
+        };
+        let mut e = Entry::parent_link("/".to_string());
+        assert_eq!(column_cell_value(SftpColumn::Type, &e, &rr), "");
+        e = Entry {
+            is_parent_link: false,
+            is_dir: false,
+            ..e
+        };
+        e.name = "notes.MD".to_string();
+        assert_eq!(column_cell_value(SftpColumn::Type, &e, &rr), "md");
+        e.name = "README".to_string();
+        assert_eq!(column_cell_value(SftpColumn::Type, &e, &rr), "\u{2014}");
     }
 }

@@ -54,7 +54,7 @@ use std::path::Path;
 use labonair_settings_content::{
     appearance::AppearanceContent,
     editor::EditorContent,
-    file_manager::FileManagerContent,
+    file_manager::{FileManagerContent, SftpColumn},
     general::{self, GeneralContent},
     terminal::{self, TerminalContent},
     workspace::{self, WorkspaceContent},
@@ -476,6 +476,24 @@ fn file_manager_from(p: &Preferences) -> FileManagerContent {
             .explorer_fold_single_child_dirs,
         explorer_git_decorations: FileManagerContent::defaults().explorer_git_decorations,
         scm_file_tree: FileManagerContent::defaults().scm_file_tree,
+        sftp_show_hidden_files: Some(p.sftp_show_hidden_files),
+        sftp_show_up_folder: Some(p.sftp_show_up_folder),
+        // No v1 equivalent — inherit the shipped defaults.
+        sftp_zebra_striping: FileManagerContent::defaults().sftp_zebra_striping,
+        sftp_relative_times: FileManagerContent::defaults().sftp_relative_times,
+        // v1 stored four independent visibility booleans; fold them into the
+        // ordered column list, in the canonical order.
+        sftp_columns: Some(
+            [
+                (p.sftp_column_size, SftpColumn::Size),
+                (p.sftp_column_modified, SftpColumn::Modified),
+                (p.sftp_column_permissions, SftpColumn::Permissions),
+                (p.sftp_column_type, SftpColumn::Type),
+            ]
+            .into_iter()
+            .filter_map(|(on, col)| on.then_some(col))
+            .collect(),
+        ),
     }
 }
 

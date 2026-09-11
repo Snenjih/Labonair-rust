@@ -11,7 +11,7 @@
 use labonair_settings_content::{
     appearance::AppearanceContent,
     editor::EditorContent,
-    file_manager::FileManagerContent,
+    file_manager::{default_sftp_columns, FileManagerContent, SftpColumn},
     general::{GeneralContent, StartupTab, ThemePref},
     terminal::{
         CursorStyle, FastScrollModifier, TerminalContent, TerminalFontWeight,
@@ -469,6 +469,55 @@ impl ExplorerSettings {
 
     pub fn git_decorations(&self) -> bool {
         self.0.explorer_git_decorations.unwrap_or(true)
+    }
+}
+
+/// `file_manager` area as read by the dual-pane SFTP browser: hidden files,
+/// the `..` up-folder row, zebra striping, relative timestamps, and the
+/// ordered list of visible metadata columns.
+#[derive(Clone, Debug, PartialEq, RegisterSetting)]
+pub struct SftpBrowserSettings(FileManagerContent);
+
+impl Settings for SftpBrowserSettings {
+    fn from_settings(content: &SettingsContent) -> Self {
+        let mut merged = FileManagerContent::defaults();
+        merged.merge_from(&content.file_manager);
+        Self(merged)
+    }
+}
+
+impl SftpBrowserSettings {
+    pub fn show_hidden_files(&self) -> bool {
+        self.0.sftp_show_hidden_files.unwrap_or(false)
+    }
+
+    pub fn show_up_folder(&self) -> bool {
+        self.0.sftp_show_up_folder.unwrap_or(true)
+    }
+
+    pub fn zebra_striping(&self) -> bool {
+        self.0.sftp_zebra_striping.unwrap_or(true)
+    }
+
+    pub fn relative_times(&self) -> bool {
+        self.0.sftp_relative_times.unwrap_or(true)
+    }
+
+    /// Visible metadata columns, in display order. De-duplicated; falls back
+    /// to the canonical default when the setting is absent.
+    pub fn columns(&self) -> Vec<SftpColumn> {
+        let raw = self
+            .0
+            .sftp_columns
+            .clone()
+            .unwrap_or_else(default_sftp_columns);
+        let mut seen = Vec::with_capacity(raw.len());
+        for col in raw {
+            if !seen.contains(&col) {
+                seen.push(col);
+            }
+        }
+        seen
     }
 }
 

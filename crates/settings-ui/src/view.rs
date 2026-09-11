@@ -20,8 +20,9 @@ pub use labonair_settings::{Settings as _, SettingsStore};
 pub use labonair_settings_content::areas::AREAS;
 pub use labonair_theme::ThemeStore;
 pub use labonair_ui_kit::{
-    button, h_stack, list_header, list_separator, number_field, select_popover, select_trigger,
-    v_stack, ButtonSize, ButtonVariant, IconName, ListItem, Palette, SelectOption, Switch,
+    button, checkbox, h_stack, list_header, list_separator, number_field, select_popover,
+    select_trigger, v_stack, ButtonSize, ButtonVariant, IconName, ListItem, Palette, SelectOption,
+    Switch,
 };
 
 pub(crate) use crate::apply::*;

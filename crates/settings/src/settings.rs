@@ -25,9 +25,10 @@ mod store;
 mod watch;
 
 pub use concrete::{
-    EditorSettings, ExplorerSettings, GeneralSettings, ScmSettings, TerminalSettings,
-    ThemeSettings, WorkspaceSettings,
+    EditorSettings, ExplorerSettings, GeneralSettings, ScmSettings, SftpBrowserSettings,
+    TerminalSettings, ThemeSettings, WorkspaceSettings,
 };
+pub use labonair_settings_content::file_manager::SftpColumn;
 pub use project::{ensure_project_settings_file, PROJECT_SETTINGS_WHITELIST};
 pub use registry::{register_all, RegisteredSetting};
 pub use schema::{description_for_path, json_schema, SettingsValidationError};

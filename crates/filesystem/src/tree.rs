@@ -20,6 +20,9 @@ pub struct DirEntry {
     pub size: u64,
     /// Milliseconds since UNIX epoch; 0 if unavailable.
     pub mtime: u64,
+    /// Creation / birth time, milliseconds since UNIX epoch; 0 if the
+    /// platform or filesystem doesn't expose it.
+    pub created: u64,
     pub is_ignored: bool,
 }
 
@@ -67,18 +70,21 @@ pub fn list_dir_entries_sync(path: &str, show_hidden: bool) -> Result<Vec<DirEnt
             };
 
             let size = meta.len();
-            let mtime = meta
-                .modified()
-                .ok()
-                .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
-                .map(|d| d.as_millis() as u64)
-                .unwrap_or(0);
+            let epoch_ms = |t: std::io::Result<std::time::SystemTime>| {
+                t.ok()
+                    .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+                    .map(|d| d.as_millis() as u64)
+                    .unwrap_or(0)
+            };
+            let mtime = epoch_ms(meta.modified());
+            let created = epoch_ms(meta.created());
 
             Some(DirEntry {
                 name,
                 kind,
                 size,
                 mtime,
+                created,
                 is_ignored: false,
             })
         })
@@ -243,6 +249,7 @@ mod tests {
                 kind: EntryKind::File,
                 size: 0,
                 mtime: 0,
+                created: 0,
                 is_ignored: false,
             })
             .collect()
