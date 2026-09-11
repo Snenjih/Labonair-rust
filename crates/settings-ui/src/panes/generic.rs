@@ -185,6 +185,8 @@ impl SettingsView {
         field: &AnyField,
         origin: OriginBadge,
         value: Option<Value>,
+        row_first: bool,
+        row_last: bool,
         c: &Palette,
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
@@ -192,9 +194,11 @@ impl SettingsView {
         let control = match field.control {
             FieldControl::Switch => {
                 let on = value.as_ref().and_then(|v| v.as_bool()).unwrap_or(false);
-                // T20-003: the shared `gpui-component` `Switch` (re-exported
-                // by `labonair-ui-kit` — its own colours are the sanctioned
-                // exception, see `ui_kit.rs`'s module doc).
+                // The shared `gpui-component` `Switch` (re-exported by
+                // `labonair-ui-kit`). Its "on" fill reads gpui-component's own
+                // global `Theme::primary`, which `apply_prefs_to_theme`
+                // (`theme-ui/src/apply.rs`) keeps synced to this app's
+                // `core.primary` token on every theme/settings apply.
                 Switch::new(SharedString::from(format!("sw-{json_path}")))
                     .checked(on)
                     .on_click(cx.listener(move |this, _: &bool, _w, cx| {
@@ -332,10 +336,12 @@ impl SettingsView {
         // can find it among a page's other fields.
         let highlighted = self.highlight == Some(json_path);
 
-        // Each setting is its own card (rounded, hairline border, raised
-        // `--card` fill) with the row list spacing them apart — see the
-        // Settings visual spec.
-        div()
+        // Consecutive fields under one section header share a single
+        // grouped card instead of each being its own box: every row draws
+        // side borders + a bottom hairline (the separator between rows, and
+        // on the last row the card's bottom edge); only the first row draws
+        // the top edge, and only the first/last round the outer corners.
+        let mut row = div()
             .id(SharedString::from(format!("field-row-{json_path}")))
             .flex()
             .items_center()
@@ -343,66 +349,70 @@ impl SettingsView {
             .gap_4()
             .px_4()
             .py_3()
-            .rounded_md()
-            .border_1()
+            .border_l_1()
+            .border_r_1()
+            .border_b_1()
             .border_color(c.border)
             .bg(if highlighted {
                 c.accent.opacity(0.25)
             } else {
-                c.card
-            })
-            .child(
-                v_stack()
-                    .gap_0p5()
-                    .flex_1()
-                    .min_w_0()
-                    .child(
-                        h_stack()
-                            .gap_1p5()
-                            .child(
-                                div()
-                                    .text_color(c.fg)
-                                    .child(SharedString::from(field.meta.title)),
-                            )
-                            .child(
-                                div()
-                                    .px_1()
-                                    .rounded_sm()
-                                    .text_size(px(9.0))
-                                    .text_color(c.muted)
-                                    .border_1()
-                                    .border_color(c.border)
-                                    .child(origin.label()),
-                            )
-                            .when(non_default, |d| {
-                                d.child(
-                                    // Icon-only, muted (no accent/"yellow", no
-                                    // "reset" text) — a quiet affordance beside
-                                    // the origin badge.
-                                    button(
-                                        SharedString::from(format!("reset-{json_path}")),
-                                        *c,
-                                        ButtonVariant::Ghost,
-                                        ButtonSize::IconXs,
-                                    )
-                                    .child(IconName::Refresh.svg(c.muted).size(px(12.0)))
-                                    .on_click(cx.listener(
-                                        move |this, _: &ClickEvent, _w, cx| {
-                                            this.reset_field(json_path, cx);
-                                        },
-                                    )),
-                                )
-                            }),
+                c.muted_bg
+            });
+        if row_first {
+            row = row.border_t_1().rounded_t_md().mt_2();
+        }
+        if row_last {
+            row = row.rounded_b_md();
+        }
+
+        let mut title_row = h_stack().gap_1p5().child(
+            div()
+                .text_color(c.fg)
+                .child(SharedString::from(field.meta.title)),
+        );
+        if non_default {
+            title_row = title_row
+                .child(
+                    div()
+                        .px_1()
+                        .rounded_sm()
+                        .text_size(px(9.0))
+                        .text_color(c.muted)
+                        .border_1()
+                        .border_color(c.border)
+                        .child(origin.label()),
+                )
+                .child(
+                    // Icon-only, muted (no accent/"yellow", no "reset"
+                    // text) — a quiet affordance beside the origin badge.
+                    button(
+                        SharedString::from(format!("reset-{json_path}")),
+                        *c,
+                        ButtonVariant::Ghost,
+                        ButtonSize::IconXs,
                     )
-                    .child(
-                        div()
-                            .text_size(px(11.0))
-                            .text_color(c.muted)
-                            .child(SharedString::from(field.meta.description)),
-                    ),
-            )
-            .child(control)
-            .into_any_element()
+                    .child(IconName::Refresh.svg(c.muted).size(px(12.0)))
+                    .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                        this.reset_field(json_path, cx);
+                    })),
+                );
+        }
+
+        row.child(
+            v_stack()
+                .gap_0p5()
+                .flex_1()
+                .min_w_0()
+                .child(title_row)
+                .child(
+                    div()
+                        .text_size(px(11.0))
+                        .text_color(c.muted)
+                        .child(SharedString::from(field.meta.description)),
+                ),
+        )
+        .child(control)
+        .into_any_element()
     }
 
     /// Text fields use the shared click-to-edit text-box widget.
@@ -656,34 +666,52 @@ impl SettingsView {
                 .unwrap_or((OriginBadge::Default, None))
         };
 
-        for (item, resolved) in items.iter().zip(placed.iter()) {
+        // Resolve headers + fields that actually render into one flat
+        // sequence first, so consecutive fields under one header can be
+        // grouped into a single card: a field's position in that sequence
+        // (first/last since the previous/next header) decides which edges
+        // `render_field` draws (see its doc comment).
+        enum Resolved {
+            Header(&'static str),
+            Field(AnyField),
+        }
+        let mut resolved: Vec<Resolved> = Vec::new();
+        for (item, field) in items.iter().zip(placed.iter()) {
             match item {
                 SettingsPageItemOwned::SectionHeader(label) => {
-                    section_rows.push((rows.len(), label));
-                    rows.push(self.render_section_header(label, c, cx));
+                    resolved.push(Resolved::Header(label));
                 }
                 SettingsPageItemOwned::Item(_) => {
-                    if let Some(field) = resolved {
-                        if pending_scroll == Some(field.json_path) {
-                            scroll_to_row = Some(rows.len());
-                        }
-                        let (origin, value) = row_input(field);
-                        rows.push(self.render_field(field, origin, value, c, cx));
+                    if let Some(field) = field {
+                        resolved.push(Resolved::Field(*field));
                     }
                 }
             }
         }
-
         if !leftover.is_empty() {
-            let label: &'static str = "Other";
-            section_rows.push((rows.len(), label));
-            rows.push(self.render_section_header(label, c, cx));
+            resolved.push(Resolved::Header("Other"));
             for field in &leftover {
-                if pending_scroll == Some(field.json_path) {
-                    scroll_to_row = Some(rows.len());
+                resolved.push(Resolved::Field(*field));
+            }
+        }
+
+        for (i, entry) in resolved.iter().enumerate() {
+            match entry {
+                Resolved::Header(label) => {
+                    section_rows.push((rows.len(), label));
+                    rows.push(self.render_section_header(label, c, cx));
                 }
-                let (origin, value) = row_input(field);
-                rows.push(self.render_field(field, origin, value, c, cx));
+                Resolved::Field(field) => {
+                    if pending_scroll == Some(field.json_path) {
+                        scroll_to_row = Some(rows.len());
+                    }
+                    let row_first = i == 0 || matches!(resolved.get(i - 1), Some(Resolved::Header(_)));
+                    let row_last = resolved
+                        .get(i + 1)
+                        .map_or(true, |next| matches!(next, Resolved::Header(_)));
+                    let (origin, value) = row_input(field);
+                    rows.push(self.render_field(field, origin, value, row_first, row_last, c, cx));
+                }
             }
         }
 
@@ -710,7 +738,6 @@ impl SettingsView {
             .max_w(px(580.0))
             .flex()
             .flex_col()
-            .gap_2()
             .p_4()
             .overflow_y_scroll()
             .track_scroll(&self.content_scroll)
@@ -721,8 +748,9 @@ impl SettingsView {
     /// A static section heading (`docs/architecture.md` §8.3 deviation from
     /// `settings-guidelines.md` rule 1: no longer a user-collapsible
     /// disclosure — the section list moved to the sidebar as scroll
-    /// anchors). Muted, semibold, hairline underneath — like image #3's
-    /// "Typography".
+    /// anchors). A small `primary`-tinted marker + a heavier label give each
+    /// section its own beat, so scrolling reads as distinct blocks instead
+    /// of one undifferentiated column of rows.
     fn render_section_header(
         &self,
         label: &'static str,
@@ -730,12 +758,19 @@ impl SettingsView {
         _cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
         div()
-            .pt_4()
-            .pb_1()
-            .text_size(px(11.0))
-            .font_weight(gpui::FontWeight::SEMIBOLD)
-            .text_color(c.muted)
-            .child(SharedString::from(label))
+            .pt_5()
+            .pb_2()
+            .flex()
+            .items_center()
+            .gap_2()
+            .child(div().w(px(3.0)).h(px(12.0)).rounded_full().bg(c.primary))
+            .child(
+                div()
+                    .text_size(px(12.5))
+                    .font_weight(gpui::FontWeight::SEMIBOLD)
+                    .text_color(c.fg)
+                    .child(SharedString::from(label)),
+            )
             .into_any_element()
     }
 

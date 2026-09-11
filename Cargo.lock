@@ -4823,6 +4823,7 @@ name = "labonair-theme-ui"
 version = "0.1.0"
 dependencies = [
  "gpui",
+ "gpui-component",
  "labonair-command-palette-core",
  "labonair-command-palette-runtime",
  "labonair-settings",

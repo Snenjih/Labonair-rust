@@ -148,6 +148,24 @@ pub fn apply_prefs_to_theme(theme: &Entity<ThemeStore>, cx: &mut App) {
             let _ = t.set_active_icon_theme("default", cx);
         });
     }
+
+    sync_gpui_component_primary(theme, cx);
+}
+
+/// Mirror this app's resolved `core.primary` into gpui-component's own,
+/// otherwise-independent global `Theme` (`gpui_component::init`'s state) —
+/// the one thing gpui-component widgets like `Switch` read their "on"/accent
+/// colour from. Everything else about that theme stays gpui-component's own;
+/// this is a narrow, deliberate bridge for the single token our UI needs to
+/// agree on, not a general re-theming of gpui-component.
+fn sync_gpui_component_primary(theme: &Entity<ThemeStore>, cx: &mut App) {
+    if !cx.has_global::<gpui_component::Theme>() {
+        // `gpui_component::init` hasn't run (headless/test contexts) — nothing
+        // to sync into.
+        return;
+    }
+    let primary = theme.read(cx).theme().core.primary;
+    gpui_component::Theme::global_mut(cx).primary = primary;
 }
 
 /// Re-apply the persisted `themeVariantOverrides[family][mode]` selection to the
