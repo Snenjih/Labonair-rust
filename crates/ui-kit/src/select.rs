@@ -28,11 +28,12 @@
 use std::rc::Rc;
 
 use gpui::{
-    anchored, deferred, div, prelude::FluentBuilder, px, AnyElement, App, ClickEvent, Div,
-    ElementId, InteractiveElement, IntoElement, MouseButton, MouseDownEvent, ParentElement, Pixels,
-    Point, SharedString, Stateful, StatefulInteractiveElement, Styled, Window,
+    anchored, deferred, div, prelude::FluentBuilder, px, AnimationExt, AnyElement, App, ClickEvent,
+    Div, ElementId, InteractiveElement, IntoElement, MouseButton, MouseDownEvent, ParentElement,
+    Pixels, Point, SharedString, Stateful, StatefulInteractiveElement, Styled, Window,
 };
 
+use crate::animation::fade_in;
 use crate::icon::IconName;
 use crate::palette::Palette;
 
@@ -137,7 +138,8 @@ pub fn select_popover(
             .border_1()
             .border_color(c.border)
             .shadow_lg()
-            .children(rows),
+            .children(rows)
+            .with_animation("select-fade", fade_in(c), |el, delta| el.opacity(delta)),
     );
 
     let backdrop_dismiss = dismiss.clone();

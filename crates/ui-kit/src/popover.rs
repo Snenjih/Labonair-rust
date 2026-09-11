@@ -13,10 +13,11 @@
 //! statusbar dropdown builds on this one function.
 
 use gpui::{
-    anchored, deferred, div, AnyElement, App, InteractiveElement, IntoElement, MouseButton,
-    MouseDownEvent, ParentElement, Pixels, Point, Styled, Window,
+    anchored, deferred, div, AnimationExt, AnyElement, App, InteractiveElement, IntoElement,
+    MouseButton, MouseDownEvent, ParentElement, Pixels, Point, Styled, Window,
 };
 
+use crate::animation::fade_in;
 use crate::palette::Palette;
 
 /// Build a dropdown card anchored at `anchor` (window coordinates — pass the
@@ -44,7 +45,8 @@ pub fn popover(
             .border_1()
             .border_color(border)
             .shadow_lg()
-            .child(content),
+            .child(content)
+            .with_animation("popover-fade", fade_in(c), |el, delta| el.opacity(delta)),
     );
 
     deferred(

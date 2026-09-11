@@ -31,12 +31,13 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use gpui::{
-    anchored, canvas, deferred, div, prelude::FluentBuilder, px, AnyElement, App, Bounds,
-    ClickEvent, InteractiveElement, IntoElement, MouseButton, MouseDownEvent, ParentElement,
-    Pixels, Point, SharedString, StatefulInteractiveElement, Styled, Window,
+    anchored, canvas, deferred, div, prelude::FluentBuilder, px, AnimationExt, AnyElement, App,
+    Bounds, ClickEvent, InteractiveElement, IntoElement, MouseButton, MouseDownEvent,
+    ParentElement, Pixels, Point, SharedString, StatefulInteractiveElement, Styled, Window,
 };
 
 use super::IconName;
+use crate::animation::fade_in;
 use crate::kbd::kbd_row;
 use crate::palette::Palette;
 
@@ -523,11 +524,15 @@ pub fn context_menu(
     // not actually cover the window and a click next to the menu would leave it
     // stuck open. The card, by contrast, always knows its own bounds.
     let card = anchored().position(anchor).snap_to_window().child(
-        menu_card(c, items, flyouts).on_mouse_down_out(move |ev, w, cx| {
-            if !in_flyout(&fb_out, ev.position) {
-                d3(w, cx)
-            }
-        }),
+        menu_card(c, items, flyouts)
+            .on_mouse_down_out(move |ev, w, cx| {
+                if !in_flyout(&fb_out, ev.position) {
+                    d3(w, cx)
+                }
+            })
+            .with_animation("context-menu-fade", fade_in(c), |el, delta| {
+                el.opacity(delta)
+            }),
     );
 
     deferred(
@@ -587,11 +592,15 @@ pub fn popover_menu(
     let fb_bd = flyouts.clone();
 
     let card = anchored().position(anchor).snap_to_window().child(
-        menu_card(c, items, flyouts).on_mouse_down_out(move |ev, w, cx| {
-            if !in_flyout(&fb_out, ev.position) {
-                d_out(w, cx)
-            }
-        }),
+        menu_card(c, items, flyouts)
+            .on_mouse_down_out(move |ev, w, cx| {
+                if !in_flyout(&fb_out, ev.position) {
+                    d_out(w, cx)
+                }
+            })
+            .with_animation("popover-menu-fade", fade_in(c), |el, delta| {
+                el.opacity(delta)
+            }),
     );
 
     deferred(

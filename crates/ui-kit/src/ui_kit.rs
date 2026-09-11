@@ -45,6 +45,7 @@
 //! is the hard part and colours are incidental: [`InputState`]/[`field_input`]
 //! (caret, selection, IME, undo), [`Badge`], [`Switch`], [`Tooltip`].
 
+mod animation;
 mod banner;
 mod button;
 mod checkbox;
@@ -69,6 +70,7 @@ pub mod theme;
 mod toggle;
 mod tree_row;
 
+pub use animation::fade_in;
 pub use banner::{banner, Banner, Severity};
 pub use button::{button, button_no_hover, ButtonSize, ButtonVariant, DISABLED_OPACITY};
 pub use checkbox::{checkbox, Checkbox};
@@ -111,10 +113,10 @@ pub mod prelude {
     pub use crate::ActiveThemeExt;
     pub use crate::{
         banner, button, checkbox, chevron_icon_path, context_menu, disclosure, divider,
-        file_icon_path, folder_icon_path, h_stack, icon_for_path, icon_toggle_button, indicator,
-        kbd, kbd_row, keybinding_hint, list_header, list_separator, number_field, popover,
-        popover_menu, segmented_control, select_popover, select_trigger, selected_label, svg_path,
-        toggle_base, tree_row, v_stack,
+        fade_in, file_icon_path, folder_icon_path, h_stack, icon_for_path, icon_toggle_button,
+        indicator, kbd, kbd_row, keybinding_hint, list_header, list_separator, number_field,
+        popover, popover_menu, segmented_control, select_popover, select_trigger, selected_label,
+        svg_path, toggle_base, tree_row, v_stack,
     };
     pub use crate::{
         Axis, Badge, Banner, ButtonSize, ButtonVariant, Checkbox, Density, IconName, IndicatorSize,

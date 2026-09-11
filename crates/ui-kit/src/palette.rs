@@ -13,8 +13,10 @@
 //! token-bound (Critical Rule 3) without forcing the borrow gymnastics — a call
 //! site literally cannot pass a hardcoded colour without writing one itself.
 
+use std::time::Duration;
+
 use gpui::{px, Hsla, Pixels};
-use labonair_theme_tokens::RadiusScale;
+use labonair_theme_tokens::{CubicBezier, RadiusScale};
 
 use crate::theme::UiTheme;
 
@@ -90,6 +92,16 @@ pub struct Palette {
     /// Feed spacing/size literals through [`Palette::space`] rather than
     /// multiplying by hand.
     pub density: f32,
+    /// The `--dur-fast` entrance-animation duration (see
+    /// [`crate::animation::fade_in`]). Raw, un-clamped — `fade_in` applies the
+    /// reduce-motion floor itself.
+    pub dur_fast: Duration,
+    /// The `--ease-premium` easing curve entrance animations ease with.
+    pub ease_premium: CubicBezier,
+    /// T20-007 reduce-motion metric — when set, [`crate::animation::fade_in`]
+    /// clamps its duration to a near-zero floor instead of skipping the
+    /// animation outright (GPUI divides by the duration each frame).
+    pub reduce_motion: bool,
 }
 
 impl Palette {
@@ -128,6 +140,9 @@ impl Palette {
             success: status.success,
             radius: theme.radius(),
             density: theme.metrics().density.spacing_scale(),
+            dur_fast: theme.theme().animation.dur_fast,
+            ease_premium: theme.theme().animation.ease_premium,
+            reduce_motion: theme.metrics().reduce_motion,
         }
     }
 

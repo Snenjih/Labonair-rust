@@ -16,9 +16,9 @@
 
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, px, App, AppContext as _, ClickEvent, Context, DismissEvent, Entity, EventEmitter,
-    FocusHandle, Focusable, Hsla, InteractiveElement, IntoElement, KeyDownEvent, ParentElement,
-    Render, SharedString, StatefulInteractiveElement, Styled, Subscription, Window,
+    div, px, AnimationExt, App, AppContext as _, ClickEvent, Context, DismissEvent, Entity,
+    EventEmitter, FocusHandle, Focusable, Hsla, InteractiveElement, IntoElement, KeyDownEvent,
+    ParentElement, Render, SharedString, StatefulInteractiveElement, Styled, Subscription, Window,
 };
 
 use labonair_settings::content::workspace::PaletteSearchMode as ContentSearchMode;
@@ -26,7 +26,7 @@ use labonair_settings::{
     EditorSettings, Settings as _, TerminalSettings, ThemeSettings, WorkspaceSettings,
 };
 use labonair_theme::{EditorThemeId, ThemePreference};
-use labonair_ui_kit::{kbd, keybinding_hint, BlinkCursor, IconName, Palette, UiTheme};
+use labonair_ui_kit::{fade_in, kbd, keybinding_hint, BlinkCursor, IconName, Palette, UiTheme};
 
 use crate::fuzzy::{match_score, SearchMode};
 use crate::KeybindDisplay;
@@ -1442,7 +1442,8 @@ where
                     .shadow_lg()
                     .child(header)
                     .child(div().flex().flex_col().min_h_0().child(list))
-                    .child(footer),
+                    .child(footer)
+                    .with_animation("palette-fade", fade_in(c), |el, delta| el.opacity(delta)),
             )
             .into_any_element()
     }
