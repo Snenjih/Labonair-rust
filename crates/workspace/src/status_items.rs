@@ -256,6 +256,11 @@ impl StatusItem for AgentAccessStatusItem {
         1
     }
 
+    fn is_empty(&self, cx: &App) -> bool {
+        let aa = self.store.read(cx);
+        !aa.bridge_enabled() || aa.entries().is_empty()
+    }
+
     fn render_status(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         let (enabled, entries) = {
             let aa = self.store.read(cx);
@@ -313,6 +318,10 @@ impl StatusItem for CursorPositionStatusItem {
         0
     }
 
+    fn is_empty(&self, cx: &App) -> bool {
+        self.workspace.read(cx).active_editor_cursor(cx).is_none()
+    }
+
     fn render_status(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         let Some((line, col)) = self.workspace.read(cx).active_editor_cursor(cx) else {
             return div().into_any_element();
@@ -365,6 +374,10 @@ impl StatusItem for PreviewUrlStatusItem {
 
     fn group(&self) -> u32 {
         0
+    }
+
+    fn is_empty(&self, cx: &App) -> bool {
+        self.workspace.read(cx).active_preview_url(cx).is_none()
     }
 
     fn render_status(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> AnyElement {

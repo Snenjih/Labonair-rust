@@ -72,6 +72,10 @@ impl StatusItem for TransfersStatusItem {
         1
     }
 
+    fn is_empty(&self, cx: &App) -> bool {
+        self.transfers.read(cx).total_count() == 0
+    }
+
     fn render_status(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         // Keep the item visible while retained history exists, so completed
         // and failed jobs remain discoverable from the statusbar.

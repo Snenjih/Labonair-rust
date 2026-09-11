@@ -53,6 +53,13 @@ impl StatusItem for UpdaterStatusItem {
         1
     }
 
+    fn is_empty(&self, cx: &App) -> bool {
+        !matches!(
+            self.updater.read(cx).status(),
+            UpdaterStatus::Available(_) | UpdaterStatus::Downloading { .. } | UpdaterStatus::Ready
+        )
+    }
+
     fn render_status(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         let ready = matches!(
             self.updater.read(cx).status(),

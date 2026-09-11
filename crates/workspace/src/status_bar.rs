@@ -273,13 +273,25 @@ impl StatusBar {
                 .map(|(_, _, _, id, _)| (*id, registry.resolve_side(id), registry.is_hidden(id)))
                 .collect()
         };
+        // An item that currently has nothing to show (e.g. no update, no open
+        // transfers) is skipped entirely, not just rendered empty — otherwise
+        // it still counts in the group sequence below and leaves behind a
+        // divider that separates nothing.
+        let empty_state: Vec<bool> = self
+            .items
+            .iter()
+            .map(|(_, _, _, _, h)| h.is_empty(cx))
+            .collect();
 
         let mut v: Vec<(i32, u32, &'static str, AnyView)> = self
             .items
             .iter()
             .zip(registry_state.iter())
-            .filter(|(_, (_, resolved_side, hidden))| *resolved_side == side && !hidden)
-            .map(|((_, order, group, id, h), _)| (*order, *group, *id, h.to_any()))
+            .zip(empty_state.iter())
+            .filter(|((_, (_, resolved_side, hidden)), empty)| {
+                *resolved_side == side && !hidden && !**empty
+            })
+            .map(|(((_, order, group, id, h), _), _)| (*order, *group, *id, h.to_any()))
             .collect();
         v.sort_by_key(|(order, _, _, _)| *order);
 

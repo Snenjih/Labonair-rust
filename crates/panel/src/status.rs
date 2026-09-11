@@ -176,6 +176,16 @@ pub trait StatusItem: Render {
         0
     }
 
+    /// Whether this item currently has nothing to show (e.g. no active
+    /// update, no open transfers) and would otherwise render an empty slot.
+    /// The status bar omits such items entirely — including from its
+    /// group-divider calculation, so a transiently-empty item never leaves
+    /// behind a divider that separates nothing. Default: never empty.
+    fn is_empty(&self, cx: &App) -> bool {
+        let _ = cx;
+        false
+    }
+
     /// Render the item's content for the status bar row.
     fn render_status(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement;
 
@@ -226,6 +236,8 @@ pub trait StatusItemHandle: Send + Sync {
     fn group(&self, cx: &App) -> u32;
     /// See [`StatusItem::hideable`].
     fn hideable(&self, cx: &App) -> bool;
+    /// See [`StatusItem::is_empty`].
+    fn is_empty(&self, cx: &App) -> bool;
     /// See [`StatusItem::status_menu_entries`].
     fn status_menu_entries(&self, cx: &mut App) -> Vec<StatusMenuEntry>;
     /// See [`StatusItem::on_active_tab_changed`].
@@ -259,6 +271,10 @@ impl<T: StatusItem + 'static> StatusItemHandle for Entity<T> {
 
     fn hideable(&self, cx: &App) -> bool {
         self.read(cx).hideable()
+    }
+
+    fn is_empty(&self, cx: &App) -> bool {
+        self.read(cx).is_empty(cx)
     }
 
     fn status_menu_entries(&self, cx: &mut App) -> Vec<StatusMenuEntry> {

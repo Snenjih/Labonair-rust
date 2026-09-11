@@ -211,6 +211,15 @@ impl StatusItem for DockPanelButtons {
         }
     }
 
+    fn is_empty(&self, cx: &App) -> bool {
+        self.workspace
+            .read(cx)
+            .dock(self.position)
+            .panels()
+            .iter()
+            .all(|panel| self.hidden.contains(panel.persistent_name()))
+    }
+
     fn render_status(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         let palette = Palette::from_theme(self.theme.read(cx));
         let keybind_display = cx
