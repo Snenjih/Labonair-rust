@@ -80,7 +80,7 @@ use gpui::{
     div, point, px, relative, Animation, AnimationExt, App, AppContext, ClickEvent, Context,
     DragMoveEvent, Entity, EventEmitter, ExternalPaths, FocusHandle, Focusable, InteractiveElement,
     IntoElement, KeyDownEvent, MouseButton, MouseDownEvent, ParentElement, Render, SharedString,
-    StatefulInteractiveElement, Styled, Task, Window,
+    StatefulInteractiveElement, Styled, Subscription, Task, Window,
 };
 use labonair_git::{GitGraphService, GitService};
 use labonair_mcp_core::{
@@ -126,8 +126,8 @@ use labonair_settings::content::general::StartupTab;
 use labonair_settings::content::terminal::CursorStyle as PrefCursorStyle;
 use labonair_settings::{GeneralSettings, Settings as _, TerminalSettings};
 use labonair_ui_kit::{
-    context_menu, h_stack, indicator, ButtonSize, ButtonVariant, IconName, IndicatorSize, MenuItem,
-    Palette, SubmenuHoverSource,
+    caret, context_menu, h_stack, indicator, BlinkCursor, ButtonSize, ButtonVariant, IconName,
+    IndicatorSize, MenuItem, Palette, SubmenuHoverSource,
 };
 
 /// Interval for draining backend SSH events into the workspace.
@@ -448,6 +448,8 @@ pub struct Workspace {
     /// Tab whose title is being edited inline: `(tab id, buffer)`.
     rename_tab: Option<(u64, String)>,
     rename_focus: FocusHandle,
+    rename_blink: Entity<BlinkCursor>,
+    _rename_blink_subs: Vec<Subscription>,
     focus_handle: FocusHandle,
     _meta_sync: Task<()>,
 
@@ -594,6 +596,18 @@ impl Workspace {
             }
         });
 
+        let rename_focus = cx.focus_handle();
+        let rename_blink = cx.new(|_| BlinkCursor::new());
+        let _rename_blink_subs = vec![
+            cx.observe(&rename_blink, |_, _, cx| cx.notify()),
+            cx.on_focus(&rename_focus, window, |this, _w, cx| {
+                this.rename_blink.update(cx, |b, cx| b.start(cx));
+            }),
+            cx.on_blur(&rename_focus, window, |this, _w, cx| {
+                this.rename_blink.update(cx, |b, cx| b.stop(cx));
+            }),
+        ];
+
         let mut this = Self {
             registry,
             tabs,
@@ -627,7 +641,9 @@ impl Workspace {
             new_tab_menu: None,
             new_tab_submenu: None,
             rename_tab: None,
-            rename_focus: cx.focus_handle(),
+            rename_focus,
+            rename_blink,
+            _rename_blink_subs,
             focus_handle: cx.focus_handle(),
             _meta_sync: meta_sync,
             _session_save: session_save,
@@ -4124,7 +4140,12 @@ impl Workspace {
                         .rounded_sm()
                         .border_1()
                         .border_color(primary)
-                        .child(SharedString::from(format!("{buf}\u{2502}"))),
+                        .flex()
+                        .items_center()
+                        .child(SharedString::from(buf.clone()))
+                        .when(self.rename_blink.read(cx).visible(), |d| {
+                            d.child(caret(fg, 14.0))
+                        }),
                     None => div()
                         .when(sidebar, |d| d.flex_1().min_w_0())
                         .when(!sidebar, |d| d.max_w(px(180.0)))
@@ -4918,6 +4939,7 @@ impl Workspace {
             }
             "backspace" => {
                 buf.pop();
+                self.rename_blink.update(cx, |b, cx| b.pause(cx));
                 cx.notify();
             }
             _ => {
@@ -4928,6 +4950,7 @@ impl Workspace {
                     .filter(|s| !s.is_empty() && !s.chars().any(|c| c.is_control()))
                 {
                     buf.push_str(ch);
+                    self.rename_blink.update(cx, |b, cx| b.pause(cx));
                     cx.notify();
                 }
             }

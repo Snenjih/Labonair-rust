@@ -22,7 +22,7 @@ use gpui::{
     div, px, uniform_list, App, AppContext, ClickEvent, ClipboardItem, Context, Entity,
     EventEmitter, FocusHandle, Focusable, InteractiveElement, IntoElement, KeyDownEvent,
     MouseButton, MouseDownEvent, ParentElement, Pixels, Point, Render, SharedString,
-    StatefulInteractiveElement, Styled, Task, UniformListScrollHandle, Window,
+    StatefulInteractiveElement, Styled, Subscription, Task, UniformListScrollHandle, Window,
 };
 use labonair_credentials::{self, Credential};
 use labonair_hosts::store::{HostCreateRequest, HostEventHandler, HostUpdateRequest};
@@ -40,7 +40,8 @@ use tokio::runtime::Handle as TokioHandle;
 use crate::theme::ThemeStore;
 use labonair_notifications::{notification_center, Notification};
 use labonair_ui_kit::{
-    checkbox, context_menu, indicator, IconName, IndicatorSize, ListItem, MenuItem, Palette,
+    caret, checkbox, context_menu, indicator, BlinkCursor, IconName, IndicatorSize, ListItem,
+    MenuItem, Palette,
 };
 
 /// Connection status + the active-tunnel row shape moved to the leaf
@@ -658,6 +659,20 @@ impl SaveState {
     }
 }
 
+/// Which hand-rolled focus region currently owns keyboard input — tracked by
+/// the `cx.on_focus`/`cx.on_blur` listeners wired once in `render()`, so the
+/// caret-rendering call sites don't need a `Window` reference to tell real
+/// window focus apart from a field merely being the *logical* edit target
+/// (`HostForm::focus`, `group_rename`, …).
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum FocusRegion {
+    Form,
+    Cred,
+    Group,
+    GroupRename,
+    Search,
+}
+
 pub struct HostManagerView {
     database: Database,
     secrets: std::sync::Arc<SecretsState>,
@@ -713,6 +728,17 @@ pub struct HostManagerView {
     focus_handle: FocusHandle,
     /// Virtualises the list-view host rows (`uniform_list`); unused in grid view.
     list_scroll: UniformListScrollHandle,
+    /// Shared blink driver for every hand-rolled field's caret (only one is
+    /// ever focused at a time); repaints on every tick via `_blink_obs`.
+    blink: Entity<BlinkCursor>,
+    _blink_obs: Subscription,
+    /// The per-field `cx.on_focus`/`cx.on_blur` listeners need a `Window`,
+    /// which `new()` doesn't have — wired lazily on first render instead.
+    blink_focus_wired: bool,
+    _blink_focus_subs: Vec<Subscription>,
+    /// Which region a `cx.on_focus` listener last fired for; `None` once its
+    /// matching `cx.on_blur` fires. See [`FocusRegion`].
+    focused_region: Option<FocusRegion>,
 }
 
 impl EventEmitter<HostManagerEvent> for HostManagerView {}
@@ -739,6 +765,8 @@ impl HostManagerView {
                 break;
             }
         });
+        let blink = cx.new(|_| BlinkCursor::new());
+        let _blink_obs = cx.observe(&blink, |_, _, cx| cx.notify());
         let this = Self {
             database,
             secrets,
@@ -779,6 +807,11 @@ impl HostManagerView {
             _ping_task: ping_task,
             focus_handle: cx.focus_handle(),
             list_scroll: UniformListScrollHandle::new(),
+            blink,
+            _blink_obs,
+            blink_focus_wired: false,
+            _blink_focus_subs: Vec::new(),
+            focused_region: None,
         };
         this.reload(cx);
         this
@@ -1927,6 +1960,7 @@ impl HostManagerView {
                 };
                 if changed {
                     self.schedule_autosave(cx);
+                    self.blink.update(cx, |b, cx| b.pause(cx));
                 }
             }
         }
@@ -1941,7 +1975,9 @@ impl HostManagerView {
             "enter" => self.add_credential(cx),
             _ => {
                 if let Some(d) = self.cred_draft.as_mut() {
-                    Self::edit_str(&mut d.name, ks);
+                    if Self::edit_str(&mut d.name, ks) {
+                        self.blink.update(cx, |b, cx| b.pause(cx));
+                    }
                 }
             }
         }
@@ -1960,7 +1996,9 @@ impl HostManagerView {
             }
             _ => {
                 if let Some(b) = self.group_draft.as_mut() {
-                    Self::edit_str(b, ks);
+                    if Self::edit_str(b, ks) {
+                        self.blink.update(cx, |b, cx| b.pause(cx));
+                    }
                 }
             }
         }
@@ -1978,7 +2016,9 @@ impl HostManagerView {
                 }
             }
             _ => {
-                Self::edit_str(&mut self.search, ks);
+                if Self::edit_str(&mut self.search, ks) {
+                    self.blink.update(cx, |b, cx| b.pause(cx));
+                }
             }
         }
         cx.stop_propagation();
@@ -2232,6 +2272,7 @@ impl HostManagerView {
         value: &str,
         field: HostField,
         active: bool,
+        show_caret: bool,
         p: &Palette,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
@@ -2252,11 +2293,10 @@ impl HostManagerView {
                     .text_sm()
                     .text_color(p.fg)
                     .cursor_text()
-                    .child(SharedString::from(if active {
-                        format!("{value}\u{2502}")
-                    } else {
-                        value.to_string()
-                    }))
+                    .flex()
+                    .items_center()
+                    .child(SharedString::from(value.to_string()))
+                    .when(show_caret, |d| d.child(caret(p.fg, 14.0)))
                     .on_click(cx.listener(move |this, _: &ClickEvent, w, cx| {
                         if let Some(f) = this.form.as_mut() {
                             f.focus = field;
@@ -2273,6 +2313,7 @@ impl HostManagerView {
         value: &str,
         field: HostField,
         active: bool,
+        show_caret: bool,
         p: &Palette,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
@@ -2288,11 +2329,10 @@ impl HostManagerView {
             .text_sm()
             .text_color(p.fg)
             .cursor_text()
-            .child(SharedString::from(if active {
-                format!("{value}\u{2502}")
-            } else {
-                value.to_string()
-            }))
+            .flex()
+            .items_center()
+            .child(SharedString::from(value.to_string()))
+            .when(show_caret, |d| d.child(caret(p.fg, 14.0)))
             .on_click(cx.listener(move |this, _: &ClickEvent, w, cx| {
                 if let Some(f) = this.form.as_mut() {
                     f.focus = field;
@@ -2308,6 +2348,7 @@ impl HostManagerView {
         p: &Palette,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
+        let form_focused = self.focused_region == Some(FocusRegion::Form) && self.blink.read(cx).visible();
         let focus = form.focus;
         let rows = form
             .tunnels
@@ -2331,6 +2372,7 @@ impl HostManagerView {
                                 &t.local_port,
                                 HostField::TunnelLocalPort(i),
                                 focus == HostField::TunnelLocalPort(i),
+                                form_focused && focus == HostField::TunnelLocalPort(i),
                                 p,
                                 cx,
                             ))
@@ -2339,6 +2381,7 @@ impl HostManagerView {
                                 &t.remote_host,
                                 HostField::TunnelRemoteHost(i),
                                 focus == HostField::TunnelRemoteHost(i),
+                                form_focused && focus == HostField::TunnelRemoteHost(i),
                                 p,
                                 cx,
                             ))
@@ -2347,6 +2390,7 @@ impl HostManagerView {
                                 &t.remote_port,
                                 HostField::TunnelRemotePort(i),
                                 focus == HostField::TunnelRemotePort(i),
+                                form_focused && focus == HostField::TunnelRemotePort(i),
                                 p,
                                 cx,
                             )),
@@ -2631,6 +2675,7 @@ impl HostManagerView {
         p: &Palette,
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
+        let form_focused = self.focused_region == Some(FocusRegion::Form) && self.blink.read(cx).visible();
         let container = div().flex().flex_col().gap_2();
         match form.tab {
             FormTab::General => container
@@ -2639,6 +2684,7 @@ impl HostManagerView {
                     &form.name,
                     HostField::Name,
                     form.focus == HostField::Name,
+                    form_focused && form.focus == HostField::Name,
                     p,
                     cx,
                 ))
@@ -2647,6 +2693,7 @@ impl HostManagerView {
                     &form.address,
                     HostField::Address,
                     form.focus == HostField::Address,
+                    form_focused && form.focus == HostField::Address,
                     p,
                     cx,
                 ))
@@ -2655,6 +2702,7 @@ impl HostManagerView {
                     &form.port,
                     HostField::Port,
                     form.focus == HostField::Port,
+                    form_focused && form.focus == HostField::Port,
                     p,
                     cx,
                 ))
@@ -2663,6 +2711,7 @@ impl HostManagerView {
                     &form.username,
                     HostField::Username,
                     form.focus == HostField::Username,
+                    form_focused && form.focus == HostField::Username,
                     p,
                     cx,
                 ))
@@ -2706,6 +2755,7 @@ impl HostManagerView {
                         &form.key_path,
                         HostField::KeyPath,
                         form.focus == HostField::KeyPath,
+                        form_focused && form.focus == HostField::KeyPath,
                         p,
                         cx,
                     ))
@@ -2716,6 +2766,7 @@ impl HostManagerView {
                         &"\u{2022}".repeat(form.password.chars().count()),
                         HostField::Password,
                         form.focus == HostField::Password,
+                        form_focused && form.focus == HostField::Password,
                         p,
                         cx,
                     ))
@@ -2822,6 +2873,7 @@ impl HostManagerView {
                     &form.notes,
                     HostField::Notes,
                     form.focus == HostField::Notes,
+                    form_focused && form.focus == HostField::Notes,
                     p,
                     cx,
                 ))
@@ -2832,6 +2884,7 @@ impl HostManagerView {
                     &form.default_path,
                     HostField::DefaultPath,
                     form.focus == HostField::DefaultPath,
+                    form_focused && form.focus == HostField::DefaultPath,
                     p,
                     cx,
                 ))
@@ -2851,6 +2904,7 @@ impl HostManagerView {
                             .as_str(),
                             HostField::SudoPassword,
                             form.focus == HostField::SudoPassword,
+                            form_focused && form.focus == HostField::SudoPassword,
                             p,
                             cx,
                         ),
@@ -2865,6 +2919,7 @@ impl HostManagerView {
                             &form.keep_alive_interval,
                             HostField::KeepAliveInterval,
                             form.focus == HostField::KeepAliveInterval,
+                            form_focused && form.focus == HostField::KeepAliveInterval,
                             p,
                             cx,
                         ))
@@ -2873,6 +2928,7 @@ impl HostManagerView {
                             &form.keep_alive_tries,
                             HostField::KeepAliveTries,
                             form.focus == HostField::KeepAliveTries,
+                            form_focused && form.focus == HostField::KeepAliveTries,
                             p,
                             cx,
                         )),
@@ -2988,6 +3044,7 @@ impl HostManagerView {
                     &form.default_path_sftp,
                     HostField::DefaultPathSftp,
                     form.focus == HostField::DefaultPathSftp,
+                    form_focused && form.focus == HostField::DefaultPathSftp,
                     p,
                     cx,
                 ))
@@ -3000,6 +3057,7 @@ impl HostManagerView {
 
     fn render_credentials(&self, p: &Palette, cx: &mut Context<Self>) -> gpui::AnyElement {
         let draft = self.cred_draft.as_ref();
+        let cred_focused = self.focused_region == Some(FocusRegion::Cred) && self.blink.read(cx).visible();
         div()
             .absolute()
             .inset_0()
@@ -3068,7 +3126,10 @@ impl HostManagerView {
                                     .border_color(p.accent)
                                     .text_sm()
                                     .text_color(p.fg)
-                                    .child(SharedString::from(format!("{}\u{2502}", d.name))),
+                                    .flex()
+                                    .items_center()
+                                    .child(SharedString::from(d.name.clone()))
+                                    .when(cred_focused, |el| el.child(caret(p.fg, 14.0))),
                             )
                             .child(
                                 self.btn(
@@ -3456,12 +3517,34 @@ impl HostManagerView {
 
 impl Render for HostManagerView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        if !self.blink_focus_wired {
+            self.blink_focus_wired = true;
+            for (handle, region) in [
+                (self.form_focus.clone(), FocusRegion::Form),
+                (self.cred_focus.clone(), FocusRegion::Cred),
+                (self.group_focus.clone(), FocusRegion::Group),
+                (self.group_rename_focus.clone(), FocusRegion::GroupRename),
+                (self.search_focus.clone(), FocusRegion::Search),
+            ] {
+                self._blink_focus_subs.push(cx.on_focus(&handle, window, move |this, _w, cx| {
+                    this.focused_region = Some(region);
+                    this.blink.update(cx, |b, cx| b.start(cx));
+                }));
+                self._blink_focus_subs.push(cx.on_blur(&handle, window, move |this, _w, cx| {
+                    if this.focused_region == Some(region) {
+                        this.focused_region = None;
+                    }
+                    this.blink.update(cx, |b, cx| b.stop(cx));
+                }));
+            }
+        }
         let p = self.palette(cx);
         let accent = p.accent;
         let p_card = p.card;
         let visible = self.visible_hosts();
         let quick = self.quick_connect_target();
         let search_focused = self.search_focus.is_focused(window);
+        let blink_visible = self.blink.read(cx).visible();
 
         // ── left pane: search + quick-connect suggestion ──────────────────
         let mut search_text = div().flex_1().flex().items_center().text_xs();
@@ -3472,7 +3555,7 @@ impl Render for HostManagerView {
                     .child(SharedString::from(self.search.clone())),
             );
         }
-        if search_focused {
+        if search_focused && blink_visible {
             search_text = search_text.child(labonair_ui_kit::caret(p.fg, 12.0));
         }
         if self.search.is_empty() {
@@ -3544,7 +3627,13 @@ impl Render for HostManagerView {
                     .border_color(accent)
                     .text_xs()
                     .text_color(p.fg)
-                    .child(SharedString::from(format!("{b}\u{2502}")))
+                    .flex()
+                    .items_center()
+                    .child(SharedString::from(b.clone()))
+                    .when(
+                        self.focused_region == Some(FocusRegion::Group) && blink_visible,
+                        |el| el.child(caret(p.fg, 12.0)),
+                    )
                     .into_any_element(),
                 None => self
                     .btn("new-group", "New Group", &p, false, cx)
@@ -3931,6 +4020,8 @@ impl HostManagerView {
 
     fn render_group_rename(&self, p: &Palette, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
         let (_, buf) = self.group_rename.as_ref()?;
+        let show_caret =
+            self.focused_region == Some(FocusRegion::GroupRename) && self.blink.read(cx).visible();
         Some(
             div()
                 .absolute()
@@ -3979,7 +4070,10 @@ impl HostManagerView {
                                 .border_color(p.accent)
                                 .text_size(px(12.0))
                                 .text_color(p.fg)
-                                .child(SharedString::from(format!("{buf}\u{2502}"))),
+                                .flex()
+                                .items_center()
+                                .child(SharedString::from(buf.clone()))
+                                .when(show_caret, |el| el.child(caret(p.fg, 12.0))),
                         ),
                 )
                 .into_any_element(),
@@ -4007,6 +4101,7 @@ impl HostManagerView {
             }
             "backspace" => {
                 buf.pop();
+                self.blink.update(cx, |b, cx| b.pause(cx));
                 cx.notify();
             }
             _ => {
@@ -4017,6 +4112,7 @@ impl HostManagerView {
                     .filter(|s| !s.is_empty() && !s.chars().any(|c| c.is_control()))
                 {
                     buf.push_str(ch);
+                    self.blink.update(cx, |b, cx| b.pause(cx));
                     cx.notify();
                 }
             }

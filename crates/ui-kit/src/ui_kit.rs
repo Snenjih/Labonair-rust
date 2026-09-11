@@ -92,7 +92,7 @@ pub use popover::popover;
 pub use segmented::{segmented_control, SegmentSize, SegmentVariant, SegmentedControl};
 pub use select::{select_popover, select_trigger, selected_label, SelectOption};
 pub use stack::{h_stack, v_stack};
-pub use text_field::{caret, field_input, text_field, InputEvent, InputState};
+pub use text_field::{caret, field_input, text_field, BlinkCursor, InputEvent, InputState};
 pub use theme::{ActiveThemeExt, UiTheme};
 pub use toggle::{icon_toggle_button, toggle_base, ToggleSize, ToggleVariant};
 pub use tree_row::{tree_row, TreeRow, TreeRowState, TREE_INDENT_STEP};

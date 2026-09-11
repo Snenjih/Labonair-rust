@@ -16,9 +16,9 @@
 
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, px, App, ClickEvent, Context, DismissEvent, Entity, EventEmitter, FocusHandle, Focusable,
-    Hsla, InteractiveElement, IntoElement, KeyDownEvent, ParentElement, Render, SharedString,
-    StatefulInteractiveElement, Styled, Window,
+    div, px, App, AppContext as _, ClickEvent, Context, DismissEvent, Entity, EventEmitter,
+    FocusHandle, Focusable, Hsla, InteractiveElement, IntoElement, KeyDownEvent, ParentElement,
+    Render, SharedString, StatefulInteractiveElement, Styled, Subscription, Window,
 };
 
 use labonair_settings::content::workspace::PaletteSearchMode as ContentSearchMode;
@@ -26,7 +26,7 @@ use labonair_settings::{
     EditorSettings, Settings as _, TerminalSettings, ThemeSettings, WorkspaceSettings,
 };
 use labonair_theme::{EditorThemeId, ThemePreference};
-use labonair_ui_kit::{kbd, keybinding_hint, IconName, Palette, UiTheme};
+use labonair_ui_kit::{kbd, keybinding_hint, BlinkCursor, IconName, Palette, UiTheme};
 
 use crate::fuzzy::{match_score, SearchMode};
 use crate::KeybindDisplay;
@@ -523,6 +523,8 @@ pub struct CommandPalette<W, Th> {
     recent: Vec<CommandId>,
     data: PaletteData,
     focus: FocusHandle,
+    blink: Entity<BlinkCursor>,
+    _blink_sub: Subscription,
 }
 
 impl<W, Th> EventEmitter<PaletteEvent> for CommandPalette<W, Th>
@@ -547,6 +549,8 @@ where
     Th: UiTheme + 'static,
 {
     pub fn new(theme: Entity<Th>, workspace: Entity<W>, cx: &mut Context<Self>) -> Self {
+        let blink = cx.new(|_| BlinkCursor::new());
+        let _blink_sub = cx.observe(&blink, |_, _, cx| cx.notify());
         Self {
             theme,
             workspace,
@@ -557,6 +561,8 @@ where
             recent: recent::load(),
             data: PaletteData::default(),
             focus: cx.focus_handle(),
+            blink,
+            _blink_sub,
         }
     }
 
@@ -587,6 +593,7 @@ where
         self.query.clear();
         self.selected = 0;
         window.focus(&self.focus);
+        self.blink.update(cx, |b, cx| b.start(cx));
         cx.notify();
     }
 
@@ -607,6 +614,7 @@ where
         self.query.clear();
         self.pages = vec![Page::Root];
         self.selected = 0;
+        self.blink.update(cx, |b, cx| b.stop(cx));
         cx.emit(PaletteEvent::Action(PaletteAction::PreviewAppTheme(None)));
         cx.emit(PaletteEvent::Action(PaletteAction::PreviewIconTheme(None)));
         if was_open {
@@ -1010,6 +1018,7 @@ where
                 } else {
                     self.query.pop();
                     self.selected = 0;
+                    self.blink.update(cx, |b, cx| b.pause(cx));
                     cx.notify();
                 }
             }
@@ -1025,6 +1034,7 @@ where
                 if let Some(ch) = ch {
                     self.query.push_str(&ch);
                     self.selected = 0;
+                    self.blink.update(cx, |b, cx| b.pause(cx));
                     cx.notify();
                 }
             }
@@ -1321,7 +1331,9 @@ where
                     .child(SharedString::from(input_text.clone())),
             );
         }
-        input_row = input_row.child(labonair_ui_kit::caret(fg, 18.0));
+        if self.blink.read(cx).visible() {
+            input_row = input_row.child(labonair_ui_kit::caret(fg, 18.0));
+        }
         if self.query.is_empty() {
             input_row = input_row.child(
                 div()

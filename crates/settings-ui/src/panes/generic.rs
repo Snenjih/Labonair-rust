@@ -8,7 +8,7 @@
 
 use crate::view::*;
 use labonair_settings_content::file_manager::{default_sftp_columns, SftpColumn};
-use labonair_ui_kit::DISABLED_OPACITY;
+use labonair_ui_kit::{caret, DISABLED_OPACITY};
 
 /// Parse a stored `sftpColumns` JSON value into an ordered, de-duplicated
 /// column list, falling back to the shipped default when absent/unparseable.
@@ -424,6 +424,7 @@ impl SettingsView {
         });
         let active = editing.is_some();
         let empty = display_value.is_empty();
+        let show_caret = active && self.blink.read(cx).visible();
         // T20-003: a click-to-edit text field driven by `self.editing`'s
         // keydown-buffer state machine — no `button()`/`ListItem` fits a
         // text-input trigger, documented exception (same shape as
@@ -433,6 +434,8 @@ impl SettingsView {
             .w(px(200.0))
             .px_2()
             .py(px(3.0))
+            .flex()
+            .items_center()
             .rounded_sm()
             .border_1()
             .border_color(if active { c.accent } else { c.border })
@@ -444,6 +447,7 @@ impl SettingsView {
             } else {
                 display_value
             }))
+            .when(show_caret, |d| d.child(caret(c.fg, 12.0)))
             .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
                 this.begin_edit(json_path, false, cx);
             }))

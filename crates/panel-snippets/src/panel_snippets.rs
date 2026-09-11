@@ -28,9 +28,9 @@ use std::sync::Arc;
 
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, px, App, ClickEvent, Context, Entity, FocusHandle, Focusable, InteractiveElement,
-    IntoElement, KeyDownEvent, MouseButton, MouseDownEvent, ParentElement, Render, SharedString,
-    StatefulInteractiveElement, Styled, Window,
+    div, px, App, AppContext as _, ClickEvent, Context, Entity, FocusHandle, Focusable,
+    InteractiveElement, IntoElement, KeyDownEvent, MouseButton, MouseDownEvent, ParentElement,
+    Render, SharedString, StatefulInteractiveElement, Styled, Subscription, Window,
 };
 use labonair_command_palette_core::{PaletteAction, SubmenuAction};
 use labonair_command_palette_runtime::PaletteActionHandlerRegistry;
@@ -50,7 +50,7 @@ use labonair_notifications::{notification_center, Notification};
 use labonair_snippets_host::SnippetExecutionHost;
 use labonair_ui_kit::{
     button, context_menu, disclosure, icon_toggle_button, list_header, segmented_control,
-    ButtonSize, ButtonVariant, IconName, ListItem, MenuItem, Palette,
+    BlinkCursor, ButtonSize, ButtonVariant, IconName, ListItem, MenuItem, Palette,
 };
 
 /// Build the Snippets contribution for the workspace-owned panel registry.
@@ -490,6 +490,14 @@ pub struct SnippetsView {
     local_runs: std::sync::Arc<LocalRunRegistry>,
     ssh_executor: std::sync::Arc<dyn SshCommandExecutor>,
     _poll: gpui::Task<()>,
+    /// Drives the caret blink for whichever hand-rolled field `active_field`
+    /// currently points at — only one is ever focused at a time.
+    blink: Entity<BlinkCursor>,
+    _blink_obs: Subscription,
+    /// `cx.on_focus`/`cx.on_blur` need a `Window`, which `new()` doesn't
+    /// have — wired lazily on first render instead.
+    blink_focus_wired: bool,
+    _blink_focus_subs: Vec<Subscription>,
 }
 
 impl Focusable for SnippetsView {
@@ -534,6 +542,8 @@ impl SnippetsView {
             }
         });
 
+        let blink = cx.new(|_| BlinkCursor::new());
+        let _blink_obs = cx.observe(&blink, |_, _, cx| cx.notify());
         let this = Self {
             database,
             tokio,
@@ -561,6 +571,10 @@ impl SnippetsView {
             local_runs: std::sync::Arc::new(LocalRunRegistry::new()),
             ssh_executor,
             _poll: poll,
+            blink,
+            _blink_obs,
+            blink_focus_wired: false,
+            _blink_focus_subs: Vec::new(),
         };
         this.reload(cx);
         this
@@ -1144,6 +1158,7 @@ impl SnippetsView {
                 if let Some(buf) = self.field_buf_mut(field) {
                     buf.pop();
                 }
+                self.blink.update(cx, |b, cx| b.pause(cx));
             }
             key => {
                 if ks.modifiers.platform || ks.modifiers.control || ks.modifiers.alt {
@@ -1158,6 +1173,7 @@ impl SnippetsView {
                     if let Some(buf) = self.field_buf_mut(field) {
                         buf.push_str(&ch);
                     }
+                    self.blink.update(cx, |b, cx| b.pause(cx));
                 }
             }
         }
@@ -1200,6 +1216,7 @@ impl SnippetsView {
     ) -> impl IntoElement {
         let active = self.active_field == Some(field);
         let empty = value.is_empty();
+        let show_caret = active && self.blink.read(cx).visible();
         div()
             .id(id)
             .w_full()
@@ -1220,16 +1237,12 @@ impl SnippetsView {
             } else {
                 value.to_string()
             }))
-            // The search field is the only one whose live typing feedback
-            // this touches — the caret makes it visible that the field is
-            // actually capturing keystrokes while `search_open` is true.
-            .when(active && field == Field::Search, |d| {
-                d.child(labonair_ui_kit::caret(c.fg, 12.0))
-            })
+            .when(show_caret, |d| d.child(labonair_ui_kit::caret(c.fg, 12.0)))
             .on_click(cx.listener(move |this, _: &ClickEvent, w, cx| {
                 cx.stop_propagation();
                 this.active_field = Some(field);
                 w.focus(&this.focus);
+                this.blink.update(cx, |b, cx| b.pause(cx));
                 cx.notify();
             }))
     }
@@ -1872,6 +1885,7 @@ impl SnippetsView {
         for (i, v) in p.vars.iter().enumerate() {
             let val = p.values.get(i).map(|(_, x)| x.clone()).unwrap_or_default();
             let active = self.active_field == Some(Field::VarValue) && p.active == i;
+            let show_caret = active && self.blink.read(cx).visible();
             rows = rows.child(
                 div()
                     .flex()
@@ -1902,6 +1916,9 @@ impl SnippetsView {
                             } else {
                                 val
                             }))
+                            .when(show_caret, |d| {
+                                d.child(labonair_ui_kit::caret(c.fg, 12.0))
+                            })
                             .on_click(cx.listener(move |this, _: &ClickEvent, w, cx| {
                                 cx.stop_propagation();
                                 if let Some(p) = this.var_prompt.as_mut() {
@@ -1909,6 +1926,7 @@ impl SnippetsView {
                                 }
                                 this.active_field = Some(Field::VarValue);
                                 w.focus(&this.focus);
+                                this.blink.update(cx, |b, cx| b.pause(cx));
                                 cx.notify();
                             })),
                     ),
@@ -2264,10 +2282,27 @@ fn label(c: &Colors, text: &'static str) -> gpui::AnyElement {
 }
 
 impl Render for SnippetsView {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let _span =
             tracing::trace_span!(target: "labonair::perf", "render", view = "snippets_panel")
                 .entered();
+        if !self.blink_focus_wired {
+            self.blink_focus_wired = true;
+            self._blink_focus_subs.push(cx.on_focus(
+                &self.focus.clone(),
+                window,
+                |this, _w, cx| {
+                    this.blink.update(cx, |b, cx| b.start(cx));
+                },
+            ));
+            self._blink_focus_subs.push(cx.on_blur(
+                &self.focus.clone(),
+                window,
+                |this, _w, cx| {
+                    this.blink.update(cx, |b, cx| b.stop(cx));
+                },
+            ));
+        }
         let c = self.colors(cx);
         let p = Palette::from_theme(self.theme.read(cx));
 

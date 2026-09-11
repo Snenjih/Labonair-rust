@@ -34,7 +34,7 @@ use gpui::{
     div, px, uniform_list, App, AppContext, ClickEvent, ClipboardItem, Context, Entity,
     EventEmitter, FocusHandle, Focusable, InteractiveElement, IntoElement, KeyDownEvent,
     MouseDownEvent, ParentElement, Pixels, Point, Render, SharedString, StatefulInteractiveElement,
-    Styled, Window,
+    Styled, Subscription, Window,
 };
 use labonair_command_palette_core::{PaletteAction, SubmenuAction};
 use labonair_command_palette_runtime::PaletteActionHandlerRegistry;
@@ -46,9 +46,9 @@ use crate::git_change_row::{git_change_row, StageState};
 use crate::theme::ThemeStore;
 use labonair_notifications::{notification_center, notify_err, Notification};
 use labonair_ui_kit::{
-    checkbox, context_menu, disclosure, field_input, h_stack, segmented_control, ButtonSize,
-    ButtonVariant, IconName, InputEvent, InputState, ListItem, MenuItem, Palette, SegmentSize,
-    SegmentVariant,
+    caret, checkbox, context_menu, disclosure, field_input, h_stack, segmented_control,
+    BlinkCursor, ButtonSize, ButtonVariant, IconName, InputEvent, InputState, ListItem, MenuItem,
+    Palette, SegmentSize, SegmentVariant,
 };
 
 /// Build the Source Control contribution for the workspace-owned panel registry.
@@ -1014,6 +1014,14 @@ pub struct GitPanelView {
     drop_confirm_stash: Option<(u32, String)>,
 
     active_field: Option<Field>,
+    /// Drives the caret blink for whichever hand-rolled field `active_field`
+    /// currently points at — only one is ever focused at a time.
+    blink: Entity<BlinkCursor>,
+    _blink_obs: Subscription,
+    /// `cx.on_focus`/`cx.on_blur` need a `Window`, which `new()` doesn't
+    /// have — wired lazily on first render instead.
+    blink_focus_wired: bool,
+    _blink_focus_subs: Vec<Subscription>,
 }
 
 impl Focusable for GitPanelView {
@@ -1055,6 +1063,8 @@ impl GitPanelView {
         })
         .detach();
 
+        let blink = cx.new(|_| BlinkCursor::new());
+        let _blink_obs = cx.observe(&blink, |_, _, cx| cx.notify());
         Self {
             git,
             tokio,
@@ -1114,6 +1124,10 @@ impl GitPanelView {
             stash_msg: String::new(),
             drop_confirm_stash: None,
             active_field: None,
+            blink,
+            _blink_obs,
+            blink_focus_wired: false,
+            _blink_focus_subs: Vec::new(),
         }
     }
 
@@ -2162,6 +2176,7 @@ impl GitPanelView {
             "enter" => self.submit_field(field, cx),
             "backspace" => {
                 self.field_buf_mut(field).pop();
+                self.blink.update(cx, |b, cx| b.pause(cx));
             }
             key => {
                 if ks.modifiers.platform || ks.modifiers.control || ks.modifiers.alt {
@@ -2174,6 +2189,7 @@ impl GitPanelView {
                     .or_else(|| (key.chars().count() == 1).then(|| key.to_string()));
                 if let Some(ch) = ch {
                     self.field_buf_mut(field).push_str(&ch);
+                    self.blink.update(cx, |b, cx| b.pause(cx));
                 }
             }
         }
@@ -2538,6 +2554,7 @@ impl GitPanelView {
         let active = self.active_field == Some(field);
         let value = self.field_value(field).to_string();
         let empty = value.is_empty();
+        let show_caret = active && self.blink.read(cx).visible();
         div()
             .id(id)
             .h(px(22.0))
@@ -2557,10 +2574,12 @@ impl GitPanelView {
             } else {
                 value
             }))
+            .when(show_caret, |d| d.child(caret(c.fg, 12.0)))
             .on_click(cx.listener(move |this, _: &ClickEvent, w, cx| {
                 cx.stop_propagation();
                 this.active_field = Some(field);
                 w.focus(&this.focus);
+                this.blink.update(cx, |b, cx| b.pause(cx));
                 cx.notify();
             }))
     }
@@ -3869,6 +3888,23 @@ impl Render for GitPanelView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let _span =
             tracing::trace_span!(target: "labonair::perf", "render", view = "scm_panel").entered();
+        if !self.blink_focus_wired {
+            self.blink_focus_wired = true;
+            self._blink_focus_subs.push(cx.on_focus(
+                &self.focus.clone(),
+                window,
+                |this, _w, cx| {
+                    this.blink.update(cx, |b, cx| b.start(cx));
+                },
+            ));
+            self._blink_focus_subs.push(cx.on_blur(
+                &self.focus.clone(),
+                window,
+                |this, _w, cx| {
+                    this.blink.update(cx, |b, cx| b.stop(cx));
+                },
+            ));
+        }
         let c = self.colors(cx);
         self.ensure_commit_input(window, cx);
 

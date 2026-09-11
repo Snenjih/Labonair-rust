@@ -31,8 +31,8 @@ use gpui::prelude::FluentBuilder;
 use gpui::{
     div, px, uniform_list, App, AppContext, ClickEvent, Context, Entity, EventEmitter, FocusHandle,
     Focusable, InteractiveElement, IntoElement, KeyDownEvent, MouseButton, MouseDownEvent,
-    ParentElement, Render, SharedString, StatefulInteractiveElement, Styled, UniformListScrollHandle,
-    Window,
+    ParentElement, Render, SharedString, StatefulInteractiveElement, Styled, Subscription,
+    UniformListScrollHandle, Window,
 };
 use tokio::runtime::Handle as TokioHandle;
 
@@ -48,8 +48,8 @@ use labonair_transfers::TransferDirection;
 
 use crate::theme::ThemeStore;
 use labonair_ui_kit::{
-    button, context_menu, divider, icon_for_path, icon_toggle_button, svg_path, Axis, ButtonSize,
-    ButtonVariant, IconName, ListItem, MenuClick, MenuItem, Palette,
+    button, caret, context_menu, divider, icon_for_path, icon_toggle_button, svg_path, Axis,
+    BlinkCursor, ButtonSize, ButtonVariant, IconName, ListItem, MenuClick, MenuItem, Palette,
 };
 
 /// A menu action against the SFTP view (wrapped into a [`MenuClick`]).
@@ -475,6 +475,16 @@ pub struct SftpView {
     focus: FocusHandle,
     edit_focus: FocusHandle,
     dialog_focus: FocusHandle,
+    /// Drives the caret blink for every hand-rolled field on this view (path
+    /// edit, name filter, rename, chmod) — only one is ever focused at once.
+    blink: Entity<BlinkCursor>,
+    _blink_obs: Subscription,
+    /// `cx.on_focus`/`cx.on_blur` need a `Window`, which `new()` doesn't
+    /// have — wired lazily on first render instead.
+    blink_focus_wired: bool,
+    _blink_focus_subs: Vec<Subscription>,
+    edit_focused: bool,
+    dialog_focused: bool,
 }
 
 impl EventEmitter<SftpEvent> for SftpView {}
@@ -507,6 +517,8 @@ impl SftpView {
         let mut remote = Pane::new("/".to_string());
         local.show_hidden = s.show_hidden;
         remote.show_hidden = s.show_hidden;
+        let blink = cx.new(|_| BlinkCursor::new());
+        let _blink_obs = cx.observe(&blink, |_, _, cx| cx.notify());
         let mut this = Self {
             ssh,
             ssh_remote,
@@ -532,6 +544,12 @@ impl SftpView {
             focus: cx.focus_handle(),
             edit_focus: cx.focus_handle(),
             dialog_focus: cx.focus_handle(),
+            blink,
+            _blink_obs,
+            blink_focus_wired: false,
+            _blink_focus_subs: Vec::new(),
+            edit_focused: false,
+            dialog_focused: false,
         };
         cx.observe_global::<SettingsStore>(Self::apply_settings).detach();
         this.load_local(cx);
@@ -1237,6 +1255,7 @@ impl SftpView {
             "enter" => self.commit_edit(side, cx),
             "backspace" => {
                 self.pane(side).edit_buffer.pop();
+                self.blink.update(cx, |b, cx| b.pause(cx));
                 cx.notify();
             }
             key => {
@@ -1245,6 +1264,7 @@ impl SftpView {
                 }
                 if let Some(ch) = printable(ks, key) {
                     self.pane(side).edit_buffer.push_str(&ch);
+                    self.blink.update(cx, |b, cx| b.pause(cx));
                     cx.notify();
                 }
             }
@@ -1267,6 +1287,7 @@ impl SftpView {
             }
             "backspace" => {
                 self.pane(side).path_buffer.pop();
+                self.blink.update(cx, |b, cx| b.pause(cx));
                 cx.notify();
             }
             key => {
@@ -1275,6 +1296,7 @@ impl SftpView {
                 }
                 if let Some(ch) = printable(ks, key) {
                     self.pane(side).path_buffer.push_str(&ch);
+                    self.blink.update(cx, |b, cx| b.pause(cx));
                     cx.notify();
                 }
             }
@@ -1293,6 +1315,7 @@ impl SftpView {
             }
             "backspace" => {
                 self.pane(side).search_query.pop();
+                self.blink.update(cx, |b, cx| b.pause(cx));
                 cx.notify();
             }
             key => {
@@ -1301,6 +1324,7 @@ impl SftpView {
                 }
                 if let Some(ch) = printable(ks, key) {
                     self.pane(side).search_query.push_str(&ch);
+                    self.blink.update(cx, |b, cx| b.pause(cx));
                     cx.notify();
                 }
             }
@@ -1334,6 +1358,7 @@ impl SftpView {
                         PermField::Group => d.group.pop(),
                     };
                 }
+                self.blink.update(cx, |b, cx| b.pause(cx));
                 cx.notify();
             }
             key => {
@@ -1352,6 +1377,7 @@ impl SftpView {
                             PermField::Group => d.group.push_str(&ch),
                         }
                     }
+                    self.blink.update(cx, |b, cx| b.pause(cx));
                     cx.notify();
                 }
             }
@@ -1389,6 +1415,41 @@ struct Colors {
 
 impl Render for SftpView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        if !self.blink_focus_wired {
+            self.blink_focus_wired = true;
+            self._blink_focus_subs.push(cx.on_focus(
+                &self.edit_focus.clone(),
+                window,
+                |this, _w, cx| {
+                    this.edit_focused = true;
+                    this.blink.update(cx, |b, cx| b.start(cx));
+                },
+            ));
+            self._blink_focus_subs.push(cx.on_blur(
+                &self.edit_focus.clone(),
+                window,
+                |this, _w, cx| {
+                    this.edit_focused = false;
+                    this.blink.update(cx, |b, cx| b.stop(cx));
+                },
+            ));
+            self._blink_focus_subs.push(cx.on_focus(
+                &self.dialog_focus.clone(),
+                window,
+                |this, _w, cx| {
+                    this.dialog_focused = true;
+                    this.blink.update(cx, |b, cx| b.start(cx));
+                },
+            ));
+            self._blink_focus_subs.push(cx.on_blur(
+                &self.dialog_focus.clone(),
+                window,
+                |this, _w, cx| {
+                    this.dialog_focused = false;
+                    this.blink.update(cx, |b, cx| b.stop(cx));
+                },
+            ));
+        }
         let c = {
             let t = self.theme.read(cx);
             Colors {
@@ -1654,6 +1715,7 @@ impl SftpView {
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
         if pane.path_editing {
+            let show_caret = self.edit_focused && self.blink.read(cx).visible();
             div()
                 .id(match side {
                     Side::Local => "sftp-local-path",
@@ -1661,6 +1723,8 @@ impl SftpView {
                 })
                 .track_focus(&self.edit_focus)
                 .flex_1()
+                .flex()
+                .items_center()
                 .px_1()
                 .text_xs()
                 .font_family("monospace")
@@ -1668,7 +1732,8 @@ impl SftpView {
                 .border_1()
                 .border_color(c.accent)
                 .bg(c.card)
-                .child(SharedString::from(format!("{}\u{2502}", pane.path_buffer)))
+                .child(SharedString::from(pane.path_buffer.clone()))
+                .when(show_caret, |d| d.child(caret(c.fg, 12.0)))
                 .on_key_down(cx.listener(move |this, ev: &KeyDownEvent, _w, cx| {
                     this.on_path_key(side, ev, cx)
                 }))
@@ -1712,6 +1777,7 @@ impl SftpView {
     ) -> gpui::AnyElement {
         let q = pane.search_query.clone();
         let focused = self.edit_focus.is_focused(window);
+        let show_caret = focused && self.blink.read(cx).visible();
         let mut field = div()
             .id(match side {
                 Side::Local => "sftp-local-searchbox",
@@ -1733,8 +1799,8 @@ impl SftpView {
         if !q.is_empty() {
             field = field.child(div().text_color(c.fg).child(SharedString::from(q.clone())));
         }
-        if focused {
-            field = field.child(labonair_ui_kit::caret(c.fg, 12.0));
+        if show_caret {
+            field = field.child(caret(c.fg, 12.0));
         }
         if q.is_empty() {
             field = field.child(
@@ -1982,9 +2048,10 @@ impl SftpView {
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let buffer = match side {
-            Side::Local => &self.local.edit_buffer,
-            Side::Remote => &self.remote.edit_buffer,
+            Side::Local => self.local.edit_buffer.clone(),
+            Side::Remote => self.remote.edit_buffer.clone(),
         };
+        let show_caret = self.edit_focused && self.blink.read(cx).visible();
         div()
             .flex()
             .flex_row()
@@ -1996,13 +2063,16 @@ impl SftpView {
                     .id("sftp-inline-input")
                     .track_focus(&self.edit_focus)
                     .flex_1()
+                    .flex()
+                    .items_center()
                     .px_1()
                     .text_sm()
                     .rounded_sm()
                     .border_1()
                     .border_color(c.accent)
                     .bg(c.card)
-                    .child(SharedString::from(format!("{buffer}\u{2502}")))
+                    .child(SharedString::from(buffer))
+                    .when(show_caret, |d| d.child(caret(c.fg, 14.0)))
                     .on_key_down(cx.listener(move |this, ev: &KeyDownEvent, _w, cx| {
                         this.on_edit_key(side, ev, cx)
                     })),
@@ -2214,6 +2284,7 @@ impl SftpView {
         let Some(d) = self.perm.as_ref() else {
             return div().into_any_element();
         };
+        let dialog_focused = self.dialog_focused && self.blink.read(cx).visible();
         let row = |label: &str, value: String, active: bool| {
             div()
                 .flex()
@@ -2230,6 +2301,8 @@ impl SftpView {
                 .child(
                     div()
                         .flex_1()
+                        .flex()
+                        .items_center()
                         .px_1()
                         .text_sm()
                         .font_family("monospace")
@@ -2237,11 +2310,8 @@ impl SftpView {
                         .border_1()
                         .border_color(if active { c.accent } else { c.border })
                         .bg(c.card)
-                        .child(SharedString::from(if active {
-                            format!("{value}\u{2502}")
-                        } else {
-                            value
-                        })),
+                        .child(SharedString::from(value))
+                        .when(active && dialog_focused, |d| d.child(caret(c.fg, 14.0))),
                 )
         };
         overlay()

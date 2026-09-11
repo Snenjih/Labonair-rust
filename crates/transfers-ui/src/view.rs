@@ -20,10 +20,11 @@
 use std::collections::HashSet;
 use std::sync::Arc;
 
+use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, px, App, ClickEvent, Context, Entity, EventEmitter, FocusHandle, Focusable,
-    InteractiveElement, IntoElement, KeyDownEvent, ParentElement, Render, SharedString,
-    StatefulInteractiveElement, Styled, Window,
+    div, px, App, AppContext as _, ClickEvent, Context, Entity, EventEmitter, FocusHandle,
+    Focusable, InteractiveElement, IntoElement, KeyDownEvent, ParentElement, Render, SharedString,
+    StatefulInteractiveElement, Styled, Subscription, Window,
 };
 use tokio::runtime::Handle as TokioHandle;
 
@@ -34,7 +35,8 @@ use labonair_transfers::{
     TransferSnapshot, TransferStatus,
 };
 use labonair_ui_kit::{
-    button, indicator, ButtonSize, ButtonVariant, IndicatorSize, ListItem, Palette,
+    button, caret, indicator, BlinkCursor, ButtonSize, ButtonVariant, IndicatorSize, ListItem,
+    Palette,
 };
 
 // ── pure helpers (unit-tested) ─────────────────────────────────────────────
@@ -148,6 +150,11 @@ pub struct TransfersView {
     open: bool,
     focus: FocusHandle,
     dialog_focus: FocusHandle,
+    blink: Entity<BlinkCursor>,
+    _blink_obs: Subscription,
+    blink_focus_wired: bool,
+    _blink_focus_subs: Vec<Subscription>,
+    dialog_focused: bool,
 }
 
 impl EventEmitter<TransferUiEvent> for TransfersView {}
@@ -166,6 +173,8 @@ impl TransfersView {
         theme: Entity<ThemeStore>,
         cx: &mut Context<Self>,
     ) -> Self {
+        let blink = cx.new(|_| BlinkCursor::new());
+        let _blink_obs = cx.observe(&blink, |_, _, cx| cx.notify());
         let this = Self {
             service,
             registry: TransferRegistry::default(),
@@ -176,6 +185,11 @@ impl TransfersView {
             open: false,
             focus: cx.focus_handle(),
             dialog_focus: cx.focus_handle(),
+            blink,
+            _blink_obs,
+            blink_focus_wired: false,
+            _blink_focus_subs: Vec::new(),
+            dialog_focused: false,
         };
         let view = cx.entity().downgrade();
         let service = this.service.clone();
@@ -402,6 +416,7 @@ impl TransfersView {
                 {
                     n.pop();
                 }
+                self.blink.update(cx, |b, cx| b.pause(cx));
             }
             _ => {
                 if ks.modifiers.platform || ks.modifiers.control || ks.modifiers.alt {
@@ -414,6 +429,7 @@ impl TransfersView {
                     {
                         n.push_str(&ch);
                     }
+                    self.blink.update(cx, |b, cx| b.pause(cx));
                 }
             }
         }
@@ -449,7 +465,26 @@ struct Colors {
 }
 
 impl Render for TransfersView {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        if !self.blink_focus_wired {
+            self.blink_focus_wired = true;
+            self._blink_focus_subs.push(cx.on_focus(
+                &self.dialog_focus.clone(),
+                window,
+                |this, _w, cx| {
+                    this.dialog_focused = true;
+                    this.blink.update(cx, |b, cx| b.start(cx));
+                },
+            ));
+            self._blink_focus_subs.push(cx.on_blur(
+                &self.dialog_focus.clone(),
+                window,
+                |this, _w, cx| {
+                    this.dialog_focused = false;
+                    this.blink.update(cx, |b, cx| b.stop(cx));
+                },
+            ));
+        }
         let c = {
             let t = self.theme.read(cx);
             Colors {
@@ -808,11 +843,14 @@ impl TransfersView {
         if let Some(buffer) = renaming {
             let id_owned = job_id.to_string();
             let id_key = job_id.to_string();
+            let show_caret = self.dialog_focused && self.blink.read(cx).visible();
             root = root
                 .child(
                     div()
                         .id("transfer-rename")
                         .track_focus(&self.dialog_focus)
+                        .flex()
+                        .items_center()
                         .px_2()
                         .py_1()
                         .text_sm()
@@ -820,7 +858,8 @@ impl TransfersView {
                         .border_1()
                         .border_color(c.accent)
                         .bg(c.bg)
-                        .child(SharedString::from(format!("{buffer}\u{2502}")))
+                        .child(SharedString::from(buffer.clone()))
+                        .when(show_caret, |d| d.child(caret(c.fg, 14.0)))
                         .on_key_down(cx.listener(move |this, ev: &KeyDownEvent, _w, cx| {
                             this.on_rename_key(id_key.clone(), ev, cx)
                         })),

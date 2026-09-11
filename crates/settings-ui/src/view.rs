@@ -9,7 +9,7 @@ pub use gpui::prelude::FluentBuilder;
 pub use gpui::{
     canvas, div, px, App, AppContext, Bounds, ClickEvent, Context, Entity, FocusHandle, Focusable,
     InteractiveElement, IntoElement, KeyDownEvent, ParentElement, Pixels, Point, Render,
-    ScrollHandle, SharedString, StatefulInteractiveElement, Styled, Window,
+    ScrollHandle, SharedString, StatefulInteractiveElement, Styled, Subscription, Window,
 };
 pub use serde_json::Value;
 pub use tokio::runtime::Handle as TokioHandle;
@@ -21,8 +21,8 @@ pub use labonair_settings_content::areas::AREAS;
 pub use labonair_theme::ThemeStore;
 pub use labonair_ui_kit::{
     button, checkbox, h_stack, list_header, list_separator, number_field, select_popover,
-    select_trigger, v_stack, ButtonSize, ButtonVariant, IconName, ListItem, Palette, SelectOption,
-    Switch,
+    select_trigger, v_stack, BlinkCursor, ButtonSize, ButtonVariant, IconName, ListItem, Palette,
+    SelectOption, Switch,
 };
 
 pub(crate) use crate::apply::*;
@@ -130,6 +130,10 @@ pub struct SettingsView {
     /// repaints from creating duplicate notifications while still allowing a
     /// changed problem to be reported again.
     pub(crate) published_diagnostics: Option<String>,
+    /// Drives the caret blink for the search box and the active inline
+    /// field editor — only one of the two is ever "typing" at a time.
+    pub(crate) blink: Entity<BlinkCursor>,
+    _blink_obs: Subscription,
 }
 
 pub(crate) struct SelectMenu {
@@ -174,6 +178,8 @@ impl SettingsView {
         let all_fields = all_fields();
         let pages = pages();
         let search_index = SearchIndex::build(&all_fields);
+        let blink = cx.new(|_| BlinkCursor::new());
+        let _blink_obs = cx.observe(&blink, |_, _, cx| cx.notify());
         Self {
             theme,
             font_service: services.fonts,
@@ -202,6 +208,8 @@ impl SettingsView {
             highlight_token: 0,
             pending_scroll: None,
             published_diagnostics: None,
+            blink,
+            _blink_obs,
         }
     }
 
@@ -220,6 +228,7 @@ impl SettingsView {
         self.highlight = None;
         self.pending_scroll = None;
         window.focus(&self.focus);
+        self.blink.update(cx, |b, cx| b.start(cx));
         self.publish_settings_diagnostics(cx);
         self.load_system_fonts(cx);
         cx.notify();
@@ -228,6 +237,7 @@ impl SettingsView {
     pub fn close(&mut self, cx: &mut Context<Self>) {
         self.open = false;
         self.editing = None;
+        self.blink.update(cx, |b, cx| b.stop(cx));
         cx.notify();
     }
 
@@ -663,6 +673,7 @@ impl SettingsView {
             buffer,
             numeric,
         });
+        self.blink.update(cx, |b, cx| b.pause(cx));
         cx.notify();
     }
 
@@ -709,6 +720,7 @@ impl SettingsView {
                     if let Some(e) = self.editing.as_mut() {
                         e.buffer.pop();
                     }
+                    self.blink.update(cx, |b, cx| b.pause(cx));
                     cx.notify();
                 }
                 _ => {
@@ -719,6 +731,7 @@ impl SettingsView {
                         if let Some(e) = self.editing.as_mut() {
                             e.buffer.push_str(&ch);
                         }
+                        self.blink.update(cx, |b, cx| b.pause(cx));
                         cx.notify();
                     }
                 }
@@ -743,6 +756,7 @@ impl SettingsView {
             "backspace" => {
                 self.search.pop();
                 self.refresh_search_results();
+                self.blink.update(cx, |b, cx| b.pause(cx));
                 cx.notify();
             }
             "down" if !self.search_results.is_empty() => {
@@ -766,6 +780,7 @@ impl SettingsView {
                 if let Some(ch) = char_of(ks) {
                     self.search.push_str(&ch);
                     self.refresh_search_results();
+                    self.blink.update(cx, |b, cx| b.pause(cx));
                     cx.notify();
                 }
             }
@@ -1007,6 +1022,7 @@ impl Render for SettingsView {
         self.refresh_search_results();
 
         let search_focused = self.editing.is_none();
+        let show_caret = search_focused && self.blink.read(cx).visible();
         let mut search_box = div()
             .mb_2()
             .px_2()
@@ -1025,7 +1041,7 @@ impl Render for SettingsView {
                     .child(SharedString::from(self.search.clone())),
             );
         }
-        if search_focused {
+        if show_caret {
             search_box = search_box.child(labonair_ui_kit::caret(c.fg, 14.0));
         }
         if self.search.is_empty() {

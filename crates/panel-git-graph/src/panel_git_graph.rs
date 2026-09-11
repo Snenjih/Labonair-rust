@@ -33,18 +33,18 @@ use std::time::{Duration, Instant};
 
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, px, uniform_list, App, ClickEvent, ClipboardItem, Context, Div, Entity, EventEmitter,
-    FocusHandle, Focusable, Font, Hsla, InteractiveElement, IntoElement, KeyDownEvent, MouseButton,
-    MouseDownEvent, ParentElement, Pixels, Point, Render, SharedString, Stateful,
-    StatefulInteractiveElement, Styled, Window,
+    div, px, uniform_list, App, AppContext as _, ClickEvent, ClipboardItem, Context, Div, Entity,
+    EventEmitter, FocusHandle, Focusable, Font, Hsla, InteractiveElement, IntoElement,
+    KeyDownEvent, MouseButton, MouseDownEvent, ParentElement, Pixels, Point, Render, SharedString,
+    Stateful, StatefulInteractiveElement, Styled, Subscription, Window,
 };
 use labonair_git::{CommitInfo, GitGraphService};
 use tokio::runtime::Handle as TokioHandle;
 
 use crate::theme::ThemeStore;
 use labonair_ui_kit::{
-    button, context_menu, keybinding_hint, ButtonSize, ButtonVariant, IconName, ListItem, MenuItem,
-    Palette,
+    button, caret, context_menu, keybinding_hint, BlinkCursor, ButtonSize, ButtonVariant,
+    IconName, ListItem, MenuItem, Palette,
 };
 
 // ── geometry ───────────────────────────────────────────────────────────────
@@ -491,6 +491,11 @@ pub struct GitGraphView {
     /// In-progress "Create Branch Here…" prompt: `(commit row index, buffer)`.
     branch_prompt: Option<(usize, String)>,
     branch_prompt_focus: FocusHandle,
+    blink: Entity<BlinkCursor>,
+    _blink_obs: Subscription,
+    blink_focus_wired: bool,
+    _blink_focus_subs: Vec<Subscription>,
+    branch_prompt_focused: bool,
 }
 
 impl GitGraphView {
@@ -518,6 +523,8 @@ impl GitGraphView {
         })
         .detach();
 
+        let blink = cx.new(|_| BlinkCursor::new());
+        let _blink_obs = cx.observe(&blink, |_, _, cx| cx.notify());
         Self {
             git,
             tokio,
@@ -541,6 +548,11 @@ impl GitGraphView {
             commit_menu: None,
             branch_prompt: None,
             branch_prompt_focus: cx.focus_handle(),
+            blink,
+            _blink_obs,
+            blink_focus_wired: false,
+            _blink_focus_subs: Vec::new(),
+            branch_prompt_focused: false,
         }
     }
 
@@ -1517,7 +1529,13 @@ impl GitGraphView {
                                 .border_color(c.accent)
                                 .text_size(px(12.0))
                                 .text_color(c.fg)
-                                .child(SharedString::from(format!("{buf}\u{2502}"))),
+                                .flex()
+                                .items_center()
+                                .child(SharedString::from(buf.clone()))
+                                .when(
+                                    self.branch_prompt_focused && self.blink.read(cx).visible(),
+                                    |d| d.child(caret(c.fg, 14.0)),
+                                ),
                         )
                         .child(
                             div()
@@ -1554,6 +1572,7 @@ impl GitGraphView {
             }
             "backspace" => {
                 buf.pop();
+                self.blink.update(cx, |b, cx| b.pause(cx));
                 cx.notify();
             }
             _ => {
@@ -1564,6 +1583,7 @@ impl GitGraphView {
                     .filter(|s| !s.is_empty() && !s.chars().any(|c| c.is_control()))
                 {
                     buf.push_str(ch);
+                    self.blink.update(cx, |b, cx| b.pause(cx));
                     cx.notify();
                 }
             }
@@ -1572,10 +1592,29 @@ impl GitGraphView {
 }
 
 impl Render for GitGraphView {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let _span =
             tracing::trace_span!(target: "labonair::perf", "render", view = "git_graph_panel")
                 .entered();
+        if !self.blink_focus_wired {
+            self.blink_focus_wired = true;
+            self._blink_focus_subs.push(cx.on_focus(
+                &self.branch_prompt_focus.clone(),
+                window,
+                |this, _w, cx| {
+                    this.branch_prompt_focused = true;
+                    this.blink.update(cx, |b, cx| b.start(cx));
+                },
+            ));
+            self._blink_focus_subs.push(cx.on_blur(
+                &self.branch_prompt_focus.clone(),
+                window,
+                |this, _w, cx| {
+                    this.branch_prompt_focused = false;
+                    this.blink.update(cx, |b, cx| b.stop(cx));
+                },
+            ));
+        }
         let c = self.colors(cx);
         div()
             .track_focus(&self.focus)
