@@ -118,6 +118,12 @@ pub struct FileManagerContent {
     /// empty list hides every optional column (name only). Unknown tokens are
     /// ignored; duplicates are de-duplicated on read.
     pub sftp_columns: Option<Vec<SftpColumn>>,
+    /// Local-pane fraction (`0.0..1.0`) of the draggable split between the
+    /// local and remote SFTP panes. Absent means the default 50/50 split.
+    pub sftp_split_ratio: Option<f32>,
+    /// Per-column pixel widths, keyed by [`SftpColumn::token`]. A column with
+    /// no entry falls back to its built-in default width.
+    pub sftp_column_widths: Option<std::collections::BTreeMap<String, f32>>,
 }
 
 impl FileManagerContent {
@@ -135,6 +141,8 @@ impl FileManagerContent {
             sftp_zebra_striping: Some(true),
             sftp_relative_times: Some(true),
             sftp_columns: Some(default_sftp_columns()),
+            sftp_split_ratio: Some(0.5),
+            sftp_column_widths: Some(std::collections::BTreeMap::new()),
         }
     }
 }

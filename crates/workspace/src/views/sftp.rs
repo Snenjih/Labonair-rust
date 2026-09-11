@@ -19,10 +19,15 @@
 //!   inline rename / new-file / new-folder text field is a pinned row above
 //!   the list (not a virtualised row); during a rename the edited entry is
 //!   hidden from the list so it isn't shown twice.
-//! * The two panes are a fixed 50/50 split rather than a draggable
-//!   `ResizablePanelGroup`.
-//! * Drag between panes has no drop-target pane highlight yet (the reference
-//!   dims the hovered pane).
+//! * The two panes are a draggable split (`split_ratio`, persisted) rather
+//!   than a `ResizablePanelGroup`; multi-select uses Cmd/Shift-click plus an
+//!   index-based marquee over the virtualised rows (no real geometric
+//!   hit-testing, since only the on-screen row window is ever materialised)
+//!   rather than `@tanstack/react-virtual`'s per-row geometry.
+//! * The `Created` column has no SFTP equivalent — SFTPv3 (what `russh-sftp`
+//!   and OpenSSH servers speak) exposes no birth/creation-time attribute, so
+//!   it's local-pane-only and hidden for the remote pane rather than showing
+//!   a permanent "—".
 //! * Remote-edit conflict detection (remote file changed underneath the temp
 //!   copy) is not implemented — the backend `save_remote_edit` is a plain
 //!   overwrite. Documented as a follow-up.
@@ -31,8 +36,8 @@ use gpui::prelude::FluentBuilder;
 use gpui::{
     div, px, uniform_list, App, AppContext, ClickEvent, Context, Entity, EventEmitter, FocusHandle,
     Focusable, InteractiveElement, IntoElement, KeyDownEvent, MouseButton, MouseDownEvent,
-    ParentElement, Render, SharedString, StatefulInteractiveElement, Styled, Subscription,
-    UniformListScrollHandle, Window,
+    MouseMoveEvent, MouseUpEvent, ParentElement, Render, ScrollStrategy, SharedString,
+    StatefulInteractiveElement, Styled, Subscription, Timer, UniformListScrollHandle, Window,
 };
 use tokio::runtime::Handle as TokioHandle;
 
@@ -48,8 +53,9 @@ use labonair_transfers::TransferDirection;
 
 use crate::theme::ThemeStore;
 use labonair_ui_kit::{
-    button, caret, context_menu, divider, icon_for_path, icon_toggle_button, svg_path, Axis,
-    BlinkCursor, ButtonSize, ButtonVariant, IconName, ListItem, MenuClick, MenuItem, Palette,
+    button, caret, context_menu, divider, icon_for_path, icon_toggle_button, tree_row, Axis,
+    BlinkCursor, ButtonSize, ButtonVariant, Density, IconName, MenuClick, MenuItem, Palette,
+    Tooltip, TreeRowState,
 };
 
 /// A menu action against the SFTP view (wrapped into a [`MenuClick`]).
@@ -77,6 +83,19 @@ pub fn join_path(dir: &str, name: &str) -> String {
     } else {
         format!("{dir}/{name}")
     }
+}
+
+/// Splits an absolute POSIX-style path into breadcrumb `(label, path)`
+/// segments, root first — clicking a segment navigates to its `path`.
+pub fn path_segments(path: &str) -> Vec<(String, String)> {
+    let mut segments = vec![("/".to_string(), "/".to_string())];
+    let mut acc = String::new();
+    for part in path.split('/').filter(|s| !s.is_empty()) {
+        acc.push('/');
+        acc.push_str(part);
+        segments.push((part.to_string(), acc.clone()));
+    }
+    segments
 }
 
 /// Trims and rejects empty / `.` / `..` / names containing a path separator.
@@ -191,6 +210,16 @@ fn column_ord(col: SftpColumn) -> usize {
     SftpColumn::ALL.iter().position(|c| *c == col).unwrap_or(0)
 }
 
+/// The local-pane fraction of the split given a pointer x-position and the
+/// container's total width, clamped so neither pane can be dragged fully
+/// shut. `width <= 0.0` (not yet laid out) is a no-op fallback to 50/50.
+pub fn split_ratio_from_drag(x: f32, width: f32) -> f32 {
+    if width <= 0.0 {
+        return 0.5;
+    }
+    (x / width).clamp(0.2, 0.8)
+}
+
 /// Default pixel width of a metadata column.
 fn default_column_width(col: SftpColumn) -> f32 {
     match col {
@@ -209,6 +238,11 @@ struct BrowserPrefs {
     show_up_folder: bool,
     relative_times: bool,
     show_hidden: bool,
+    /// Draggable-split local-pane fraction, persisted from the last drag.
+    split_ratio: f32,
+    /// Per-column pixel width, indexed by [`column_ord`] — persisted values
+    /// where set, [`default_column_width`] otherwise.
+    col_widths: [f32; 5],
 }
 
 fn sftp_browser_settings(cx: &App) -> BrowserPrefs {
@@ -221,6 +255,11 @@ fn sftp_browser_settings(cx: &App) -> BrowserPrefs {
         show_up_folder: s.show_up_folder(),
         relative_times: s.relative_times(),
         show_hidden: s.show_hidden_files(),
+        split_ratio: s.split_ratio(),
+        col_widths: std::array::from_fn(|i| {
+            let col = SftpColumn::ALL[i];
+            s.column_width(col).unwrap_or_else(|| default_column_width(col))
+        }),
     }
 }
 
@@ -284,13 +323,126 @@ impl Entry {
     }
 }
 
-/// Sorts entries dirs-first, then case-insensitively by name.
+/// The column a pane's row list is sorted by. Mirrors [`SftpColumn`] plus a
+/// `Name` variant (Name isn't a toggleable metadata column, so it isn't part
+/// of `SftpColumn`, but it's the default/most common sort key).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum SortKey {
+    #[default]
+    Name,
+    Size,
+    Modified,
+    Created,
+    Permissions,
+    Type,
+}
+
+impl SortKey {
+    fn from_column(col: SftpColumn) -> Self {
+        match col {
+            SftpColumn::Size => SortKey::Size,
+            SftpColumn::Modified => SortKey::Modified,
+            SftpColumn::Created => SortKey::Created,
+            SftpColumn::Permissions => SortKey::Permissions,
+            SftpColumn::Type => SortKey::Type,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum SortDir {
+    #[default]
+    Asc,
+    Desc,
+}
+
+impl SortDir {
+    fn toggled(self) -> Self {
+        match self {
+            SortDir::Asc => SortDir::Desc,
+            SortDir::Desc => SortDir::Asc,
+        }
+    }
+}
+
+/// The same classification the `Type` column cell displays: lowercased
+/// extension, empty for directories/symlinks. Sorting uses this (not the
+/// rendered "—" placeholder text) so the empty classification sorts first.
+fn type_sort_key(e: &Entry) -> String {
+    if e.is_dir || e.is_symlink {
+        String::new()
+    } else {
+        e.name
+            .rsplit_once('.')
+            .map(|(_, ext)| ext.to_lowercase())
+            .unwrap_or_default()
+    }
+}
+
+/// Orders two entries by a single column/direction — the underlying value,
+/// never the rendered display string (this matters for `Modified`/`Created`,
+/// whose relative-time text like `"3m ago"` doesn't sort the way the epoch
+/// does).
+fn cmp_entries(a: &Entry, b: &Entry, col: SortKey, dir: SortDir) -> std::cmp::Ordering {
+    let ord = match col {
+        SortKey::Name => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
+        SortKey::Size => a.size.cmp(&b.size),
+        SortKey::Modified => a.modified_at.cmp(&b.modified_at),
+        SortKey::Created => a.created_at.cmp(&b.created_at),
+        SortKey::Permissions => {
+            perm_string_to_octal(&a.permissions).cmp(&perm_string_to_octal(&b.permissions))
+        }
+        SortKey::Type => type_sort_key(a).cmp(&type_sort_key(b)),
+    };
+    match dir {
+        SortDir::Asc => ord,
+        SortDir::Desc => ord.reverse(),
+    }
+}
+
+/// Sorts entries dirs-first, then by the given column/direction. Dirs-first
+/// applies to every column, not only `Name` — folders would otherwise
+/// scatter among files when sorting by size/date/type (and a folder's `Size`
+/// cell is always blank, making a pure numeric size sort meaningless for
+/// them); this also reproduces the pre-existing default ordering exactly
+/// when `col == Name, dir == Asc`.
+pub fn sort_entries_by(entries: &mut [Entry], col: SortKey, dir: SortDir) {
+    entries.sort_by(|a, b| b.is_dir.cmp(&a.is_dir).then_with(|| cmp_entries(a, b, col, dir)));
+}
+
+/// Sorts entries dirs-first, then case-insensitively by name — the default
+/// ordering. Thin wrapper over [`sort_entries_by`] kept for the load-time
+/// call sites and existing tests.
 pub fn sort_entries(entries: &mut [Entry]) {
-    entries.sort_by(|a, b| {
-        b.is_dir
-            .cmp(&a.is_dir)
-            .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
-    });
+    sort_entries_by(entries, SortKey::Name, SortDir::Asc);
+}
+
+/// Paths between the indices of `anchor` and `target` in `visible`
+/// (inclusive, order-independent). Falls back to `[target]` if either path
+/// isn't present (e.g. filtered out by a search query since the anchor was
+/// set). Used by Shift-click range selection.
+pub fn path_range(visible: &[String], anchor: &str, target: &str) -> Vec<String> {
+    let ai = visible.iter().position(|p| p == anchor);
+    let ti = visible.iter().position(|p| p == target);
+    match (ai, ti) {
+        (Some(a), Some(t)) => {
+            let (lo, hi) = (a.min(t), a.max(t));
+            visible[lo..=hi].to_vec()
+        }
+        _ => vec![target.to_string()],
+    }
+}
+
+/// Paths at indices `[a, b]` (inclusive, order-independent) of `rows`
+/// (path, is-`..`-row) pairs, skipping the synthetic `..` row. Used by
+/// marquee-drag selection over the virtualised (index-addressed) row list.
+pub fn rows_in_range(rows: &[(String, bool)], a: usize, b: usize) -> Vec<String> {
+    let (lo, hi) = (a.min(b), a.max(b));
+    rows.iter()
+        .enumerate()
+        .filter(|(i, (_, is_up))| *i >= lo && *i <= hi && !*is_up)
+        .map(|(_, (p, _))| p.clone())
+        .collect()
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -306,12 +458,26 @@ struct EditSlot {
     orig: Option<String>,
 }
 
+/// Transient rubber-band (marquee) selection drag, started by a mouse-down
+/// in the empty area below the last row. `base` is the selection to union
+/// the swept range into (the pre-drag selection when Cmd/Ctrl is held,
+/// otherwise empty).
+struct MarqueeState {
+    start_index: usize,
+    current_index: usize,
+    base: std::collections::BTreeSet<String>,
+}
+
 struct Pane {
     path: String,
     entries: Vec<Entry>,
     show_hidden: bool,
     loading: bool,
-    selected: Option<String>,
+    selected: std::collections::BTreeSet<String>,
+    /// Shift-click range base.
+    anchor: Option<String>,
+    /// In-progress marquee drag, if any.
+    marquee: Option<MarqueeState>,
     /// Bumped on every load; a stale async response compares and bails.
     generation: u64,
     edit: Option<EditSlot>,
@@ -324,6 +490,13 @@ struct Pane {
     search_query: String,
     /// Virtualised row-list scroll position.
     scroll: UniformListScrollHandle,
+    /// Column-header click sort — applied live in [`Pane::visible`], not at
+    /// load time, so switching it never needs a re-list.
+    sort_col: SortKey,
+    sort_dir: SortDir,
+    /// Destination paths of a just-completed enqueue — rows matching one of
+    /// these get a brief landing highlight, cleared by a spawned timer.
+    flashing: std::collections::BTreeSet<String>,
 }
 
 impl Pane {
@@ -333,7 +506,9 @@ impl Pane {
             entries: Vec::new(),
             show_hidden: false,
             loading: false,
-            selected: None,
+            selected: std::collections::BTreeSet::new(),
+            anchor: None,
+            marquee: None,
             generation: 0,
             edit: None,
             edit_buffer: String::new(),
@@ -342,16 +517,26 @@ impl Pane {
             search_open: false,
             search_query: String::new(),
             scroll: UniformListScrollHandle::new(),
+            sort_col: SortKey::default(),
+            sort_dir: SortDir::default(),
+            flashing: std::collections::BTreeSet::new(),
         }
     }
 
     fn visible(&self) -> Vec<&Entry> {
         let needle = self.search_query.trim().to_lowercase();
-        self.entries
+        let mut v: Vec<&Entry> = self
+            .entries
             .iter()
             .filter(|e| self.show_hidden || !e.name.starts_with('.'))
             .filter(|e| needle.is_empty() || e.name.to_lowercase().contains(&needle))
-            .collect()
+            .collect();
+        v.sort_by(|a, b| {
+            b.is_dir
+                .cmp(&a.is_dir)
+                .then_with(|| cmp_entries(a, b, self.sort_col, self.sort_dir))
+        });
+        v
     }
 }
 
@@ -425,6 +610,9 @@ pub enum SftpEvent {
     /// Open (or focus) an SSH terminal tab for this host — the remote pane's
     /// `>_ Term` action.
     OpenRemoteTerminal { host_id: String },
+    /// Open a local terminal tab with the given working directory — the
+    /// local pane's context-menu "Open Terminal Here" action.
+    OpenLocalTerminal { cwd: String },
 }
 
 /// Payload of a pointer-drag of one or more rows from one pane to the other
@@ -461,8 +649,19 @@ pub struct SftpView {
     /// Visible metadata columns, in display order (from `fileManager` settings,
     /// reorderable by dragging the column headers).
     columns: Vec<SftpColumn>,
-    /// Per-column pixel width, indexed by [`column_ord`]. Session-only.
+    /// Per-column pixel width, indexed by [`column_ord`]. Persisted to
+    /// `fileManager.sftpColumnWidths` once a resize drag ends.
     col_widths: [f32; 5],
+    /// Local-pane fraction (`0.2..0.8`) of the draggable split between the
+    /// local and remote panes. Persisted to `fileManager.sftpSplitRatio`
+    /// once a split-drag ends.
+    split_ratio: f32,
+    /// Which resize gesture (if any) is currently in progress — set at the
+    /// drag's `on_drag` start, read and cleared by the shared left
+    /// mouse-up handler, which persists the final value exactly once
+    /// rather than on every `on_drag_move` frame (each settings write is a
+    /// synchronous file read+patch+rename on the UI thread).
+    resizing: Option<ResizeKind>,
     /// Alternating row background.
     zebra: bool,
     /// Show the synthetic `..` row at the top of non-root directories.
@@ -472,7 +671,17 @@ pub struct SftpView {
     menu: Option<Menu>,
     perm: Option<PermDialog>,
     props: Option<PropsDialog>,
-    focus: FocusHandle,
+    /// Which pane currently owns keyboard focus — drives the visible focus
+    /// ring and which pane arrow/Enter/F2/Delete/Backspace act on.
+    active_pane: Side,
+    local_focus: FocusHandle,
+    remote_focus: FocusHandle,
+    /// The pane a row-drag currently originates from, if any — dims that
+    /// pane's body for the duration of the drag. Set from the dragged row's
+    /// `on_drag` constructor (GPUI's drag-start hook); cleared on the next
+    /// left mouse-up, which GPUI guarantees fires whether the drag lands on
+    /// a valid target, an invalid one, or empty space.
+    dragging_side: Option<Side>,
     edit_focus: FocusHandle,
     dialog_focus: FocusHandle,
     /// Drives the caret blink for every hand-rolled field on this view (path
@@ -491,7 +700,10 @@ impl EventEmitter<SftpEvent> for SftpView {}
 
 impl Focusable for SftpView {
     fn focus_handle(&self, _cx: &App) -> FocusHandle {
-        self.focus.clone()
+        match self.active_pane {
+            Side::Local => self.local_focus.clone(),
+            Side::Remote => self.remote_focus.clone(),
+        }
     }
 }
 
@@ -534,14 +746,19 @@ impl SftpView {
             local,
             remote,
             columns: s.columns,
-            col_widths: std::array::from_fn(|i| default_column_width(SftpColumn::ALL[i])),
+            col_widths: s.col_widths,
+            split_ratio: s.split_ratio,
+            resizing: None,
             zebra: s.zebra,
             show_up_folder: s.show_up_folder,
             relative_times: s.relative_times,
             menu: None,
             perm: None,
             props: None,
-            focus: cx.focus_handle(),
+            active_pane: Side::Local,
+            local_focus: cx.focus_handle(),
+            remote_focus: cx.focus_handle(),
+            dragging_side: None,
             edit_focus: cx.focus_handle(),
             dialog_focus: cx.focus_handle(),
             blink,
@@ -599,6 +816,19 @@ impl SftpView {
             Side::Local => &mut self.local,
             Side::Remote => &mut self.remote,
         }
+    }
+
+    /// Column-header click: switches the pane's sort column, or toggles
+    /// direction when the same column is clicked again.
+    fn toggle_sort(&mut self, side: Side, col: SortKey, cx: &mut Context<Self>) {
+        let pane = self.pane(side);
+        if pane.sort_col == col {
+            pane.sort_dir = pane.sort_dir.toggled();
+        } else {
+            pane.sort_col = col;
+            pane.sort_dir = SortDir::Asc;
+        }
+        cx.notify();
     }
 
     // ── connection ─────────────────────────────────────────────────────────
@@ -787,7 +1017,8 @@ impl SftpView {
     fn navigate(&mut self, side: Side, path: String, cx: &mut Context<Self>) {
         let pane = self.pane(side);
         pane.path = path;
-        pane.selected = None;
+        pane.selected.clear();
+        pane.anchor = None;
         pane.edit = None;
         pane.path_editing = false;
         self.reload(side, cx);
@@ -804,6 +1035,117 @@ impl SftpView {
             Side::Remote => parent_path(&self.remote.path),
         };
         self.navigate(side, up, cx);
+    }
+
+    /// Whether the synthetic `..` row is currently shown above `side`'s
+    /// entries (mirrors the condition in [`Self::render_list`]) — needed so
+    /// arrow-key scroll-into-view targets the right virtualised row index.
+    fn shows_up_row(&self, side: Side) -> bool {
+        let pane = match side {
+            Side::Local => &self.local,
+            Side::Remote => &self.remote,
+        };
+        self.show_up_folder
+            && pane.search_query.trim().is_empty()
+            && !is_filesystem_root(side, &pane.path)
+    }
+
+    /// Move the single-row keyboard selection by `delta` within `side`'s
+    /// visible entries, clamping at the ends, and scroll it into view.
+    fn move_list_selection(&mut self, side: Side, delta: isize, cx: &mut Context<Self>) {
+        let up_offset = usize::from(self.shows_up_row(side));
+        let pane = self.pane(side);
+        let visible: Vec<String> = pane.visible().into_iter().map(|e| e.path.clone()).collect();
+        if visible.is_empty() {
+            return;
+        }
+        let current = pane.selected.iter().next().cloned();
+        let cur_idx = current.and_then(|p| visible.iter().position(|v| *v == p));
+        let next_idx = match cur_idx {
+            Some(i) => {
+                let n = i as isize + delta;
+                if n < 0 || n as usize >= visible.len() {
+                    return;
+                }
+                n as usize
+            }
+            None => {
+                if delta > 0 {
+                    0
+                } else {
+                    visible.len() - 1
+                }
+            }
+        };
+        let path = visible[next_idx].clone();
+        pane.selected.clear();
+        pane.selected.insert(path.clone());
+        pane.anchor = Some(path);
+        pane.scroll
+            .scroll_to_item(next_idx + up_offset, ScrollStrategy::Center);
+        cx.notify();
+    }
+
+    /// `Enter` on the keyboard-selected row — same activation path as a
+    /// double-click.
+    fn activate_selected(&mut self, side: Side, cx: &mut Context<Self>) {
+        let pane = self.pane(side);
+        let Some(path) = pane.selected.iter().next().cloned() else {
+            return;
+        };
+        let Some(entry) = pane.entries.iter().find(|e| e.path == path).cloned() else {
+            return;
+        };
+        self.activate(side, &entry, true, cx);
+    }
+
+    /// Keyboard navigation for the file list itself (arrows / Enter / F2 /
+    /// Delete / Backspace / Tab) — a no-op whenever an inline edit, the
+    /// address bar, the search box, or a dialog/menu currently owns input.
+    fn on_list_key(
+        &mut self,
+        side: Side,
+        ev: &KeyDownEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.menu.is_some() || self.perm.is_some() || self.props.is_some() {
+            return;
+        }
+        {
+            let pane = self.pane(side);
+            if pane.edit.is_some() || pane.path_editing || pane.search_open {
+                return;
+            }
+        }
+        match ev.keystroke.key.as_str() {
+            "up" => self.move_list_selection(side, -1, cx),
+            "down" => self.move_list_selection(side, 1, cx),
+            "enter" => self.activate_selected(side, cx),
+            "backspace" => self.go_up(side, cx),
+            "f2" => self.start_edit(side, EditKind::Rename, cx),
+            "delete" => {
+                let pane = self.pane(side);
+                let Some(path) = pane.selected.iter().next().cloned() else {
+                    return;
+                };
+                self.delete(side, path, cx);
+            }
+            "tab" => {
+                let next = match side {
+                    Side::Local => Side::Remote,
+                    Side::Remote => Side::Local,
+                };
+                self.active_pane = next;
+                match next {
+                    Side::Local => window.focus(&self.local_focus),
+                    Side::Remote => window.focus(&self.remote_focus),
+                }
+                cx.notify();
+            }
+            _ => return,
+        }
+        cx.stop_propagation();
     }
 
     fn toggle_hidden(&mut self, side: Side, cx: &mut Context<Self>) {
@@ -846,11 +1188,54 @@ impl SftpView {
     fn resize_column(&mut self, col: SftpColumn, delta_px: f32, cx: &mut Context<Self>) {
         let ord = column_ord(col);
         self.col_widths[ord] = (self.col_widths[ord] + delta_px).clamp(48.0, 320.0);
+        self.resizing = Some(ResizeKind::Column(col));
         cx.notify();
     }
 
+    /// Set the local-pane fraction of the pane split. `ratio` is expected
+    /// pre-clamped (see [`split_ratio_from_drag`]) but is clamped again
+    /// defensively.
+    fn resize_split(&mut self, ratio: f32, cx: &mut Context<Self>) {
+        self.split_ratio = ratio.clamp(0.2, 0.8);
+        self.resizing = Some(ResizeKind::Split);
+        cx.notify();
+    }
+
+    /// Persist whichever resize gesture just ended (column width or split
+    /// ratio) to `fileManager` settings — called once from the shared
+    /// left-mouse-up handler, not per `on_drag_move` frame: each
+    /// `update_user` call is a synchronous settings-file read+patch+rename
+    /// on the UI thread, cheap once per gesture but not once per pixel.
+    fn persist_resize(&mut self, cx: &mut Context<Self>) {
+        let Some(kind) = self.resizing.take() else {
+            return;
+        };
+        if !cx.has_global::<SettingsStore>() {
+            return;
+        }
+        match kind {
+            ResizeKind::Column(col) => {
+                let width = self.col_widths[column_ord(col)];
+                let token = col.token().to_string();
+                let _ = cx.global_mut::<SettingsStore>().update_user(move |c| {
+                    let widths = c.file_manager.sftp_column_widths.get_or_insert_with(Default::default);
+                    widths.insert(token.clone(), width);
+                });
+            }
+            ResizeKind::Split => {
+                let ratio = self.split_ratio;
+                let _ = cx.global_mut::<SettingsStore>().update_user(move |c| {
+                    c.file_manager.sftp_split_ratio = Some(ratio);
+                });
+            }
+        }
+    }
+
     fn activate(&mut self, side: Side, entry: &Entry, dbl: bool, cx: &mut Context<Self>) {
-        self.pane(side).selected = Some(entry.path.clone());
+        let pane = self.pane(side);
+        pane.selected.clear();
+        pane.selected.insert(entry.path.clone());
+        pane.anchor = Some(entry.path.clone());
         if entry.is_dir {
             if dbl {
                 let target = entry
@@ -879,7 +1264,7 @@ impl SftpView {
         self.menu = None;
         let (buffer, orig) = match kind {
             EditKind::Rename => {
-                let sel = self.pane(side).selected.clone();
+                let sel = self.pane(side).selected.iter().next().cloned();
                 let Some(sel) = sel else { return };
                 let name = std::path::Path::new(&sel)
                     .file_name()
@@ -1209,7 +1594,12 @@ impl SftpView {
             Side::Local => (self.remote.path.clone(), TransferDirection::Upload),
             Side::Remote => (self.local.path.clone(), TransferDirection::Download),
         };
+        let target_side = match from {
+            Side::Local => Side::Remote,
+            Side::Remote => Side::Local,
+        };
         let session_id = self.session_id.clone();
+        let mut landed = Vec::new();
         for src in src_paths {
             let name = src
                 .rsplit(['/', '\\'])
@@ -1217,12 +1607,31 @@ impl SftpView {
                 .filter(|s| !s.is_empty())
                 .unwrap_or("file")
                 .to_string();
+            let dest_path = join_path(&dest_dir, &name);
+            landed.push(dest_path.clone());
             cx.emit(SftpEvent::Enqueue {
                 session_id: session_id.clone(),
                 src_path: src,
-                dest_path: join_path(&dest_dir, &name),
+                dest_path,
                 direction,
             });
+        }
+        if !landed.is_empty() {
+            for p in &landed {
+                self.pane(target_side).flashing.insert(p.clone());
+            }
+            cx.spawn(async move |this, cx| {
+                Timer::after(std::time::Duration::from_millis(900)).await;
+                this.update(cx, |this, cx| {
+                    let pane = this.pane(target_side);
+                    for p in &landed {
+                        pane.flashing.remove(p);
+                    }
+                    cx.notify();
+                })
+                .ok();
+            })
+            .detach();
         }
         cx.notify();
     }
@@ -1449,6 +1858,25 @@ impl Render for SftpView {
                     this.blink.update(cx, |b, cx| b.stop(cx));
                 },
             ));
+            // Keep `active_pane` in sync with real keyboard focus so the
+            // pane-body click-to-focus behaviour (from `track_focus`) also
+            // drives the focus ring / arrow-key target, not just `Tab`.
+            self._blink_focus_subs.push(cx.on_focus(
+                &self.local_focus.clone(),
+                window,
+                |this, _w, cx| {
+                    this.active_pane = Side::Local;
+                    cx.notify();
+                },
+            ));
+            self._blink_focus_subs.push(cx.on_focus(
+                &self.remote_focus.clone(),
+                window,
+                |this, _w, cx| {
+                    this.active_pane = Side::Remote;
+                    cx.notify();
+                },
+            ));
         }
         let c = {
             let t = self.theme.read(cx);
@@ -1479,16 +1907,64 @@ impl Render for SftpView {
 
         let mut root = div()
             .id("sftp")
-            .track_focus(&self.focus)
             .relative()
             .size_full()
             .flex()
             .flex_row()
             .bg(c.bg)
             .text_color(c.fg)
-            .child(div().flex_1().min_w_0().h_full().child(local))
-            .child(divider(Axis::Vertical, c.border))
-            .child(div().flex_1().min_w_0().h_full().child(remote));
+            // GPUI clears `cx.active_drag` on every left mouse-up while a
+            // drag is live, whether it lands on a valid target, an invalid
+            // one, or empty space — mirroring that here reliably clears the
+            // source-pane dim in all three cases, not just a successful
+            // drop, and doubles as the "drag end" signal for the debounced
+            // column-width/split-ratio settings persist (see
+            // `SftpView::persist_resize` — writing on every `on_drag_move`
+            // frame would mean a synchronous settings-file rewrite tens of
+            // times a second while a resize is in progress).
+            .on_mouse_up(
+                MouseButton::Left,
+                cx.listener(|this, _: &MouseUpEvent, _w, cx| {
+                    let mut changed = this.dragging_side.take().is_some();
+                    if this.resizing.is_some() {
+                        this.persist_resize(cx);
+                        changed = true;
+                    }
+                    if changed {
+                        cx.notify();
+                    }
+                }),
+            )
+            // Ratio math lives on this outer container (not the grip
+            // itself) so `ev.bounds` is the whole local+grip+remote row —
+            // mirrors the dock-resize precedent in `workspace.rs`, where
+            // the handle only starts the drag and the ancestor computes
+            // the new size from its own bounds.
+            .on_drag_move(cx.listener(
+                |this, ev: &gpui::DragMoveEvent<SplitDrag>, _w, cx| {
+                    let b = ev.bounds;
+                    let width = f32::from(b.size.width);
+                    let x = f32::from(ev.event.position.x - b.origin.x);
+                    this.resize_split(split_ratio_from_drag(x, width), cx);
+                },
+            ))
+            .child(
+                div()
+                    .w(gpui::relative(self.split_ratio))
+                    .flex_shrink_0()
+                    .min_w_0()
+                    .h_full()
+                    .child(local),
+            )
+            .child(self.render_split_grip(c))
+            .child(
+                div()
+                    .w(gpui::relative(1.0 - self.split_ratio))
+                    .flex_shrink_0()
+                    .min_w_0()
+                    .h_full()
+                    .child(remote),
+            );
 
         if self.menu.is_some() {
             root = root.child(self.render_menu(c, cx));
@@ -1504,6 +1980,31 @@ impl Render for SftpView {
 }
 
 impl SftpView {
+    /// Thin draggable grip between the two panes. The drag itself only
+    /// starts here; the ratio math runs on the outer `root` container in
+    /// `render()` (see the `on_drag_move` comment there).
+    fn render_split_grip(&self, c: Colors) -> gpui::AnyElement {
+        div()
+            .relative()
+            .w(px(1.0))
+            .h_full()
+            .flex_shrink_0()
+            .child(divider(Axis::Vertical, c.border))
+            .child(
+                div()
+                    .id("sftp-split-grip")
+                    .absolute()
+                    .top_0()
+                    .bottom_0()
+                    .left(px(-3.0))
+                    .w(px(6.0))
+                    .cursor_col_resize()
+                    .hover(|s| s.bg(c.accent))
+                    .on_drag(SplitDrag, |_, _, _, cx| cx.new(|_| DragGhost)),
+            )
+            .into_any_element()
+    }
+
     fn render_pane(
         &self,
         side: Side,
@@ -1649,10 +2150,28 @@ impl SftpView {
 
         let bhandler_side = side;
         let drop_fill = c.drop;
+        let pane_focus = match side {
+            Side::Local => &self.local_focus,
+            Side::Remote => &self.remote_focus,
+        };
+        // Phase 4 drag feedback: the pane a row-drag originates from dims
+        // slightly; the *other* pane (the only valid drop target) shows a
+        // persistent "Upload/Download here" hint for the whole drag, not
+        // just on pixel-precise hover — `drag_over` below still supplies the
+        // extra hover tint on top of this for the exact target feedback.
+        let is_drag_source = self.dragging_side == Some(side);
+        let drop_hint = match self.dragging_side {
+            Some(from) if from != side => Some(match side {
+                Side::Remote => ("Upload here", IconName::ArrowUp),
+                Side::Local => ("Download here", IconName::Download),
+            }),
+            _ => None,
+        };
         div()
             .flex()
             .flex_col()
             .size_full()
+            .when(is_drag_source, |d| d.opacity(0.6))
             .child(toolbar)
             .child(
                 div()
@@ -1660,6 +2179,10 @@ impl SftpView {
                         Side::Local => "sftp-local-body",
                         Side::Remote => "sftp-remote-body",
                     })
+                    .track_focus(pane_focus)
+                    .on_key_down(cx.listener(move |this, ev: &KeyDownEvent, window, cx| {
+                        this.on_list_key(side, ev, window, cx)
+                    }))
                     .relative()
                     .flex_1()
                     .min_h_0()
@@ -1698,7 +2221,38 @@ impl SftpView {
                             this.enqueue(d.from, d.paths.clone(), cx);
                         }
                     }))
-                    .child(body),
+                    .child(body)
+                    .when_some(drop_hint, |el, (label, icon)| {
+                        el.child(
+                            div()
+                                .absolute()
+                                .inset_0()
+                                .flex()
+                                .items_center()
+                                .justify_center()
+                                .child(
+                                    div()
+                                        .flex()
+                                        .flex_col()
+                                        .items_center()
+                                        .gap_1()
+                                        .px_3()
+                                        .py_2()
+                                        .rounded_md()
+                                        .bg(c.card.opacity(0.92))
+                                        .border_1()
+                                        .border_color(c.palette.primary)
+                                        .child(icon.svg(c.palette.primary).size(px(20.0)))
+                                        .child(
+                                            div()
+                                                .text_size(px(11.0))
+                                                .font_weight(gpui::FontWeight::MEDIUM)
+                                                .text_color(c.fg)
+                                                .child(label),
+                                        ),
+                                ),
+                        )
+                    }),
             )
             .into_any_element()
     }
@@ -1739,29 +2293,82 @@ impl SftpView {
                 }))
                 .into_any_element()
         } else {
-            div()
+            // Clickable breadcrumb segments (one per path component) instead
+            // of a single-line text field — the free-text editor above
+            // remains reachable via the trailing pencil button.
+            let segments = path_segments(&pane.path);
+            let last_idx = segments.len().saturating_sub(1);
+            let crumbs = div()
                 .id(match side {
                     Side::Local => "sftp-local-pathview",
                     Side::Remote => "sftp-remote-pathview",
                 })
                 .flex_1()
+                .flex()
+                .items_center()
                 .px_1()
-                .text_xs()
-                .font_family("monospace")
-                .text_color(c.muted)
-                .rounded_sm()
-                .hover(|s| s.bg(c.card))
-                .child(SharedString::from(pane.path.clone()))
-                .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
-                    let p = match side {
-                        Side::Local => &mut this.local,
-                        Side::Remote => &mut this.remote,
-                    };
-                    p.path_buffer = p.path.clone();
-                    p.path_editing = true;
-                    window.focus(&this.edit_focus);
-                    cx.notify();
+                .overflow_hidden()
+                .children(segments.into_iter().enumerate().map(|(i, (label, seg_path))| {
+                    let is_last = i == last_idx;
+                    let mut crumb = div()
+                        .id(SharedString::from(format!("sftp-crumb-{}-{}", side_key(side), i)))
+                        .flex_none()
+                        .px(px(2.0))
+                        .text_xs()
+                        .font_family("monospace")
+                        .rounded_sm()
+                        .text_color(if is_last { c.fg } else { c.muted })
+                        .child(SharedString::from(label));
+                    if !is_last {
+                        crumb = crumb.cursor_pointer().hover(|s| s.bg(c.card)).on_click(
+                            cx.listener(move |this, _: &ClickEvent, _window, cx| {
+                                this.navigate(side, seg_path.clone(), cx);
+                            }),
+                        );
+                    }
+                    if is_last {
+                        crumb.into_any_element()
+                    } else {
+                        div()
+                            .flex_none()
+                            .flex()
+                            .items_center()
+                            .child(crumb)
+                            .child(IconName::ChevronRight.svg(c.muted).size(px(10.0)))
+                            .into_any_element()
+                    }
                 }))
+                .into_any_element();
+
+            div()
+                .flex_1()
+                .flex()
+                .items_center()
+                .gap(px(2.0))
+                .child(crumbs)
+                .child(
+                    div()
+                        .id(match side {
+                            Side::Local => "sftp-local-path-edit",
+                            Side::Remote => "sftp-remote-path-edit",
+                        })
+                        .flex_none()
+                        .cursor_pointer()
+                        .rounded_sm()
+                        .p(px(2.0))
+                        .hover(|s| s.bg(c.card))
+                        .child(IconName::Pencil.svg(c.muted).size(px(12.0)))
+                        .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
+                            let p = match side {
+                                Side::Local => &mut this.local,
+                                Side::Remote => &mut this.remote,
+                            };
+                            p.path_buffer = p.path.clone();
+                            p.path_editing = true;
+                            window.focus(&this.edit_focus);
+                            cx.notify();
+                        })),
+                )
                 .into_any_element()
         }
     }
@@ -1848,10 +2455,10 @@ impl SftpView {
             return text_center("Loading\u{2026}", c.muted);
         }
 
-        // Uniform row height so `uniform_list` can virtualise — only the
-        // on-screen `[range]` window is turned into elements, keeping large
-        // directories cheap (mirrors panel-explorer / panel-scm).
-        let row_h = c.palette.density_tokens().tree_row_height();
+        // Uniform row height (driven by `TreeRow`'s density tokens) so
+        // `uniform_list` can virtualise — only the on-screen `[range]` window
+        // is turned into elements, keeping large directories cheap (mirrors
+        // panel-explorer / panel-scm).
 
         // The inline rename / new-file / new-folder text field is rendered as
         // a pinned row *above* the virtualised list, never inside the
@@ -1877,9 +2484,7 @@ impl SftpView {
 
         // Synthetic `..` row at the top of every non-root directory (unless a
         // name filter is active — `..` never matches a query).
-        let show_up = self.show_up_folder
-            && pane.search_query.trim().is_empty()
-            && !is_filesystem_root(side, &pane.path);
+        let show_up = self.shows_up_row(side);
         if show_up {
             let parent = match side {
                 Side::Local => std::path::Path::new(&pane.path)
@@ -1898,18 +2503,24 @@ impl SftpView {
         let selected = pane.selected.clone();
         let view = cx.entity();
 
+        // SFTP (russh-sftp, SFTPv3) has no birth/creation-time attribute —
+        // `Created` is only ever meaningful for the local pane (see
+        // `Entry::from_remote`, which always sets `created_at: 0`). Filter
+        // it out of the remote pane's columns instead of silently rendering
+        // a permanent "—".
         let cols: Vec<(SftpColumn, gpui::Pixels)> = self
             .columns
             .iter()
+            .filter(|col| !(side == Side::Remote && **col == SftpColumn::Created))
             .map(|col| (*col, px(self.col_widths[column_ord(*col)])))
             .collect();
         let rr = RowRender {
             side,
-            row_h,
             zebra: self.zebra,
             relative_times: self.relative_times,
             now: now_secs(),
             columns: cols.clone(),
+            flashing: pane.flashing.clone(),
         };
 
         if entries.is_empty() {
@@ -1924,22 +2535,98 @@ impl SftpView {
                 .into_any_element();
         }
 
+        let is_active_pane = self.active_pane == side;
+
+        // Marquee (rubber-band) selection: the virtualised list has no
+        // per-row geometry to hit-test against, so a window-relative mouse Y
+        // is converted to a row index via the list's own `ScrollHandle`
+        // bounds/offset (public API — `logical_scroll_top_index()` is
+        // test-only and unusable here) and the fixed `TreeRow` height.
+        let total_rows = entries.len();
+        let row_paths: Vec<(String, bool)> = entries
+            .iter()
+            .map(|e| (e.path.clone(), e.is_parent_link))
+            .collect();
+        let row_h = f32::from(Density::from_palette(&c.palette).tree_row_height());
+        let scroll_handle = pane.scroll.clone();
+
         let list = uniform_list(list_id, entries.len(), move |range, _win, cx| {
             range
                 .map(|i| {
                     let entry = &entries[i];
+                    let row_selected = selected.contains(entry.path.as_str());
                     sftp_row_element(
                         entry,
                         &rr,
                         i,
-                        selected.as_deref() == Some(entry.path.as_str()),
+                        row_selected,
+                        is_active_pane && row_selected,
                         c,
                         &view,
+                        &selected,
                         cx,
                     )
                 })
                 .collect::<Vec<_>>()
         })
+        .on_mouse_down(MouseButton::Left, {
+            let scroll_handle = scroll_handle.clone();
+            cx.listener(move |this, ev: &MouseDownEvent, _window, cx| {
+                let raw = row_index_raw(&scroll_handle, row_h, ev.position.y);
+                if raw >= 0 && (raw as usize) < total_rows {
+                    // Landed on a real row — its own click/drag handlers own
+                    // this gesture.
+                    return;
+                }
+                let start = raw.clamp(0, total_rows.saturating_sub(1) as isize) as usize;
+                let pane = this.pane(side);
+                let base = if ev.modifiers.secondary() {
+                    pane.selected.clone()
+                } else {
+                    std::collections::BTreeSet::new()
+                };
+                pane.selected = base.clone();
+                pane.marquee = Some(MarqueeState {
+                    start_index: start,
+                    current_index: start,
+                    base,
+                });
+                cx.notify();
+            })
+        })
+        .on_mouse_move({
+            let scroll_handle = scroll_handle.clone();
+            let row_paths = row_paths.clone();
+            cx.listener(move |this, ev: &MouseMoveEvent, _window, cx| {
+                if ev.pressed_button != Some(MouseButton::Left) {
+                    return;
+                }
+                let pane = this.pane(side);
+                let Some(marquee) = pane.marquee.as_mut() else {
+                    return;
+                };
+                let raw = row_index_raw(&scroll_handle, row_h, ev.position.y);
+                let cur = raw.clamp(0, total_rows.saturating_sub(1) as isize) as usize;
+                if cur == marquee.current_index {
+                    return;
+                }
+                marquee.current_index = cur;
+                let start = marquee.start_index;
+                let mut sel = marquee.base.clone();
+                sel.extend(rows_in_range(&row_paths, start, cur));
+                pane.selected = sel;
+                cx.notify();
+            })
+        })
+        .on_mouse_up(
+            MouseButton::Left,
+            cx.listener(move |this, _ev: &MouseUpEvent, _window, cx| {
+                let pane = this.pane(side);
+                if pane.marquee.take().is_some() {
+                    cx.notify();
+                }
+            }),
+        )
         .track_scroll(pane.scroll.clone())
         .flex_1();
 
@@ -1964,12 +2651,31 @@ impl SftpView {
         c: Colors,
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
-        let head = |text: &str| {
+        let (sort_col, sort_dir) = match side {
+            Side::Local => (self.local.sort_col, self.local.sort_dir),
+            Side::Remote => (self.remote.sort_col, self.remote.sort_dir),
+        };
+        let arrow = move |active: bool| -> Option<gpui::AnyElement> {
+            if !active {
+                return None;
+            }
+            let icon = if sort_dir == SortDir::Asc {
+                IconName::ChevronUp
+            } else {
+                IconName::ChevronDown
+            };
+            Some(icon.svg(c.muted).size(px(10.0)).flex_none().into_any_element())
+        };
+        let head = move |text: &str, active: bool| {
             div()
+                .flex()
+                .items_center()
+                .gap_1()
                 .text_size(px(9.5))
                 .font_weight(gpui::FontWeight::SEMIBOLD)
                 .text_color(c.muted)
                 .child(SharedString::from(text.to_string()))
+                .children(arrow(active))
         };
 
         let mut row = div()
@@ -1984,10 +2690,21 @@ impl SftpView {
             .bg(c.card)
             // icon gutter + name column
             .child(div().w(px(20.0)).flex_shrink_0())
-            .child(div().flex_1().min_w_0().child(head("NAME")));
+            .child(
+                div()
+                    .id(SharedString::from(format!("sftp-colh-{}-name", side_key(side))))
+                    .flex_1()
+                    .min_w_0()
+                    .cursor_pointer()
+                    .child(head("NAME", sort_col == SortKey::Name))
+                    .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                        this.toggle_sort(side, SortKey::Name, cx);
+                    })),
+            );
 
         for (col, width) in cols.iter().copied() {
             let moved = col;
+            let is_sorted = sort_col == SortKey::from_column(col);
             row = row.child(
                 div()
                     .id(SharedString::from(format!("sftp-colh-{}-{}", side_key(side), col.token())))
@@ -1996,7 +2713,11 @@ impl SftpView {
                     .w(width)
                     .flex()
                     .items_center()
-                    .child(head(col.header()))
+                    .cursor_pointer()
+                    .child(head(col.header(), is_sorted))
+                    .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                        this.toggle_sort(side, SortKey::from_column(moved), cx);
+                    }))
                     .on_drag(ColHeaderDrag { col }, |_, _, _, cx| cx.new(|_| DragGhost))
                     .drag_over::<ColHeaderDrag>(move |s, drag, _w, _cx| {
                         if drag.col != moved {
@@ -2225,6 +2946,47 @@ impl SftpView {
                         }))),
                 );
             }
+        }
+        if !is_remote {
+            // The target is the right-clicked entry, or — for a background
+            // right-click (`!has_entry`) — the pane's current directory
+            // itself (`menu.path`, set to `pane.path` in that case).
+            let reveal_path = entry
+                .as_ref()
+                .map(|e| e.path.clone())
+                .unwrap_or_else(|| menu.path.clone());
+            let cwd = match &entry {
+                Some(e) if e.is_dir => e.path.clone(),
+                Some(e) => std::path::Path::new(&e.path)
+                    .parent()
+                    .map(|p| p.to_string_lossy().to_string())
+                    .unwrap_or_else(|| menu.path.clone()),
+                None => menu.path.clone(),
+            };
+            items.push(MenuItem::separator());
+            {
+                let v = view.clone();
+                items.push(
+                    MenuItem::new("sftp-cm-reveal", "Reveal in Finder")
+                        .icon(IconName::FolderOpen)
+                        .on_click(move |_ev, _w, cx| {
+                            cx.reveal_path(std::path::Path::new(&reveal_path));
+                            v.update(cx, |this, cx| {
+                                this.menu = None;
+                                cx.notify();
+                            });
+                        }),
+                );
+            }
+            items.push(
+                MenuItem::new("sftp-cm-terminal", "Open Terminal Here")
+                    .icon(IconName::Terminal)
+                    .on_click(run(Box::new(move |this, cx| {
+                        this.menu = None;
+                        cx.emit(SftpEvent::OpenLocalTerminal { cwd: cwd.clone() });
+                        cx.notify();
+                    }))),
+            );
         }
         items.push(MenuItem::separator());
         items.push(
@@ -2467,16 +3229,30 @@ struct ColResizeDrag {
     col: SftpColumn,
 }
 
+/// Pointer-drag of the grip between the local and remote panes → resize.
+#[derive(Clone)]
+struct SplitDrag;
+
+/// Which resize gesture is live between drag-start and the next mouse-up —
+/// drives the one-shot settings persist at drag end (see [`SftpView::resizing`]).
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ResizeKind {
+    Column(SftpColumn),
+    Split,
+}
+
 /// Per-frame render parameters shared by every row (the `uniform_list`
 /// closure is `'static` and can't borrow the view).
 #[derive(Clone)]
 struct RowRender {
     side: Side,
-    row_h: gpui::Pixels,
     zebra: bool,
     relative_times: bool,
     now: i64,
     columns: Vec<(SftpColumn, gpui::Pixels)>,
+    /// Destination paths of a just-completed drop — rendered with a brief
+    /// landing highlight (Phase 4 drop feedback).
+    flashing: std::collections::BTreeSet<String>,
 }
 
 fn side_key(side: Side) -> &'static str {
@@ -2528,6 +3304,16 @@ fn column_cell_value(col: SftpColumn, entry: &Entry, rr: &RowRender) -> String {
     }
 }
 
+/// Window-relative Y → row index (unclamped) for the marquee-select hit
+/// test, via the `uniform_list`'s own `ScrollHandle` bounds/offset. Not
+/// unit-tested: `ScrollHandle` bounds/offset are only populated by GPUI's
+/// layout pass, not constructible in a plain unit test.
+fn row_index_raw(scroll: &UniformListScrollHandle, row_h: f32, y: gpui::Pixels) -> isize {
+    let base = scroll.0.borrow().base_handle.clone();
+    let local_y = f32::from(y) - f32::from(base.bounds().top()) - f32::from(base.offset().y);
+    (local_y / row_h).floor() as isize
+}
+
 /// One virtualised file/folder row. Free function (not a `&self` method) so it
 /// can be built inside the `uniform_list` render closure, which only gets
 /// `&mut App`; handlers reach the view through `view.update(..)` — the same
@@ -2538,8 +3324,10 @@ fn sftp_row_element(
     rr: &RowRender,
     index: usize,
     selected: bool,
+    focused: bool,
     c: Colors,
     view: &Entity<SftpView>,
+    all_selected: &std::collections::BTreeSet<String>,
     cx: &mut App,
 ) -> gpui::AnyElement {
     let side = rr.side;
@@ -2562,15 +3350,42 @@ fn sftp_row_element(
     // Zebra: tint every other *data* row (index 0 = first entry).
     let zebra_fill =
         (rr.zebra && !selected && index % 2 == 1).then_some(c.zebra);
+    // Phase 4: a row whose path just received a dropped transfer gets a
+    // brief landing highlight (cleared by `enqueue`'s spawned timer).
+    let just_landed = !selected && rr.flashing.contains(&entry.path);
 
     let on_click = {
         let v = view.clone();
         let entry = entry.clone();
         move |ev: &ClickEvent, _w: &mut Window, cx: &mut App| {
             v.update(cx, |this, cx| {
-                // `..` navigates on a single click; everything else keeps the
-                // select-then-double-click-to-open behaviour.
+                // `..` navigates on a single click; a real double-click always
+                // opens — neither takes the Cmd/Shift multi-select branches.
                 let dbl = entry.is_parent_link || ev.click_count() >= 2;
+                if !dbl {
+                    let mods = ev.modifiers();
+                    if mods.secondary() {
+                        // Cmd (macOS) / Ctrl (elsewhere): toggle membership.
+                        let pane = this.pane(side);
+                        if !pane.selected.remove(&entry.path) {
+                            pane.selected.insert(entry.path.clone());
+                            pane.anchor = Some(entry.path.clone());
+                        }
+                        cx.notify();
+                        return;
+                    }
+                    if mods.shift {
+                        let pane = this.pane(side);
+                        let anchor = pane.anchor.clone().unwrap_or_else(|| entry.path.clone());
+                        let visible: Vec<String> =
+                            pane.visible().into_iter().map(|e| e.path.clone()).collect();
+                        for p in path_range(&visible, &anchor, &entry.path) {
+                            pane.selected.insert(p);
+                        }
+                        cx.notify();
+                        return;
+                    }
+                }
                 this.activate(side, &entry, dbl, cx);
             });
         }
@@ -2584,7 +3399,10 @@ fn sftp_row_element(
                 return;
             }
             v.update(cx, |this, cx| {
-                this.pane(side).selected = Some(path.clone());
+                let pane = this.pane(side);
+                pane.selected.clear();
+                pane.selected.insert(path.clone());
+                pane.anchor = Some(path.clone());
                 this.menu = Some(Menu {
                     side,
                     path: path.clone(),
@@ -2596,14 +3414,34 @@ fn sftp_row_element(
             });
         }
     };
-    let drag_path = entry.path.clone();
+    // Dragging a row that's part of the current multi-selection drags the
+    // whole selection; dragging an unselected row drags just that row
+    // (matches Finder/Explorer: dragging outside the selection replaces it
+    // implicitly for the purpose of the drag).
+    let drag_paths: Vec<String> = if selected && all_selected.len() > 1 {
+        all_selected.iter().cloned().collect()
+    } else {
+        vec![entry.path.clone()]
+    };
+    // Cloned at function scope (owned `Entity<SftpView>`, not the borrowed
+    // `&Entity<SftpView>` parameter) so the `'static` `.extra()`/`.on_drag`
+    // closures below can move it in without borrowing past this call.
+    let drag_view = view.clone();
 
-    let cells: Vec<gpui::AnyElement> = rr
-        .columns
-        .iter()
-        .map(|(col, width)| {
+    let cells_row = div()
+        .flex()
+        .items_center()
+        .children(rr.columns.iter().enumerate().map(|(ci, (col, width))| {
             let text = column_cell_value(*col, entry, rr);
+            // `.tooltip()` is a `StatefulInteractiveElement` method — needs
+            // `.id()` first to become a `Stateful<Div>`.
             let mut cell = div()
+                .id(SharedString::from(format!(
+                    "sftp-cell-{}-{}-{}",
+                    side_key(side),
+                    entry.path,
+                    ci
+                )))
                 .flex_shrink_0()
                 .w(*width)
                 .text_xs()
@@ -2611,40 +3449,66 @@ fn sftp_row_element(
             if *col == SftpColumn::Permissions {
                 cell = cell.font_family("monospace");
             }
+            // Relative time is a compact display value; the exact absolute
+            // timestamp is a hover away rather than dropped entirely.
+            if rr.relative_times && !is_up {
+                let abs = match col {
+                    SftpColumn::Modified => Some(format_epoch(entry.modified_at)),
+                    SftpColumn::Created => Some(format_epoch(entry.created_at)),
+                    _ => None,
+                };
+                if let Some(abs) = abs {
+                    let abs = SharedString::from(abs);
+                    cell = cell.tooltip(move |window, cx| Tooltip::new(abs.clone()).build(window, cx));
+                }
+            }
             cell.child(SharedString::from(text)).into_any_element()
-        })
-        .collect();
+        }));
 
-    let name_el = div()
-        .flex_1()
-        .min_w_0()
-        .when(entry.is_symlink && !is_up, |d| {
-            d.italic().text_color(c.muted)
-        })
-        .when(is_up, |d| d.text_color(c.muted))
-        .child(SharedString::from(entry.name.clone()));
+    // `TreeRow` only carries a single label colour (no italic channel) — the
+    // symlink/`..` muted tint survives the migration, the italic styling
+    // doesn't (accepted, tracked as a minor visual regression).
+    let label_tint = (entry.is_symlink || is_up).then_some(c.muted);
+    // Dotfiles are only ever rendered when "show hidden" is on — dim the
+    // whole row so they stay visually marked as hidden instead of blending
+    // in with regular entries.
+    let is_hidden = !is_up && entry.name.starts_with('.');
 
-    let row_h = rr.row_h;
-    ListItem::new(id, c.fg, c.muted, c.border)
-        .selected(selected)
-        .child(div().child(svg_path(glyph, c.muted).size(px(15.0))))
-        .child(name_el)
-        .children(cells)
+    tree_row(id, c.palette, SharedString::from(entry.name.clone()))
+        .icon_path(Some(glyph))
+        .chevron(None)
+        .trailing(cells_row)
+        .when_some(label_tint, |row, tint| row.label_tint(tint))
+        .state(TreeRowState {
+            selected,
+            focused,
+            ..Default::default()
+        })
+        .on_click(on_click)
+        .on_secondary_down(on_right_click)
         .extra(move |row| {
-            let mut row = row
-                .h(row_h)
-                .on_click(on_click)
-                .on_mouse_down(MouseButton::Right, on_right_click);
+            let mut row = row;
             if let Some(fill) = zebra_fill {
                 row = row.bg(fill);
+            } else if just_landed {
+                row = row.bg(c.palette.selected_accent.opacity(0.28));
+            }
+            if is_hidden {
+                row = row.opacity(0.55);
             }
             if !is_up {
                 row = row.on_drag(
                     SftpDrag {
                         from: side,
-                        paths: vec![drag_path],
+                        paths: drag_paths,
                     },
-                    |_, _, _, cx| cx.new(|_| DragGhost),
+                    move |_, _, _, cx| {
+                        drag_view.update(cx, |this, cx| {
+                            this.dragging_side = Some(side);
+                            cx.notify();
+                        });
+                        cx.new(|_| DragGhost)
+                    },
                 );
             }
             row
@@ -2720,10 +3584,52 @@ mod tests {
     }
 
     #[test]
+    fn split_ratio_from_drag_divides_and_clamps() {
+        assert_eq!(split_ratio_from_drag(400.0, 800.0), 0.5);
+        assert_eq!(
+            split_ratio_from_drag(10.0, 800.0),
+            0.2,
+            "clamps below the allowed range"
+        );
+        assert_eq!(
+            split_ratio_from_drag(790.0, 800.0),
+            0.8,
+            "clamps above the allowed range"
+        );
+        assert_eq!(
+            split_ratio_from_drag(400.0, 0.0),
+            0.5,
+            "not-yet-laid-out width falls back to 50/50"
+        );
+    }
+
+    #[test]
     fn join_path_single_separator() {
         assert_eq!(join_path("/a", "b"), "/a/b");
         assert_eq!(join_path("/a/", "b"), "/a/b");
         assert_eq!(join_path("/", "b"), "/b");
+    }
+
+    #[test]
+    fn path_segments_builds_breadcrumb_chain() {
+        assert_eq!(path_segments("/"), vec![("/".to_string(), "/".to_string())]);
+        assert_eq!(
+            path_segments("/Users/foo"),
+            vec![
+                ("/".to_string(), "/".to_string()),
+                ("Users".to_string(), "/Users".to_string()),
+                ("foo".to_string(), "/Users/foo".to_string()),
+            ]
+        );
+        assert_eq!(
+            path_segments("/a/b/"),
+            vec![
+                ("/".to_string(), "/".to_string()),
+                ("a".to_string(), "/a".to_string()),
+                ("b".to_string(), "/a/b".to_string()),
+            ],
+            "trailing slash doesn't produce an empty trailing segment"
+        );
     }
 
     #[test]
@@ -2768,6 +3674,79 @@ mod tests {
         sort_entries(&mut v);
         let names: Vec<&str> = v.iter().map(|e| e.name.as_str()).collect();
         assert_eq!(names, vec!["banana", "Mango", "apple", "Zebra"]);
+    }
+
+    #[test]
+    fn sort_entries_by_size_keeps_dirs_first_and_respects_direction() {
+        let mk = |name: &str, is_dir: bool, size: u64| Entry {
+            name: name.to_string(),
+            path: format!("/{name}"),
+            size,
+            modified_at: 0,
+            created_at: 0,
+            is_dir,
+            is_symlink: false,
+            symlink_target: None,
+            permissions: String::new(),
+            is_parent_link: false,
+        };
+        let mut v = vec![
+            mk("big.txt", false, 300),
+            mk("folder", true, 0),
+            mk("small.txt", false, 10),
+        ];
+        sort_entries_by(&mut v, SortKey::Size, SortDir::Asc);
+        let names: Vec<&str> = v.iter().map(|e| e.name.as_str()).collect();
+        // Dirs-first still wins regardless of the sort column.
+        assert_eq!(names, vec!["folder", "small.txt", "big.txt"]);
+
+        sort_entries_by(&mut v, SortKey::Size, SortDir::Desc);
+        let names: Vec<&str> = v.iter().map(|e| e.name.as_str()).collect();
+        assert_eq!(names, vec!["folder", "big.txt", "small.txt"]);
+    }
+
+    #[test]
+    fn sort_entries_by_type_groups_extensions_and_dirs_have_no_extension() {
+        let mk = |name: &str, is_dir: bool| Entry {
+            name: name.to_string(),
+            path: format!("/{name}"),
+            size: 0,
+            modified_at: 0,
+            created_at: 0,
+            is_dir,
+            is_symlink: false,
+            symlink_target: None,
+            permissions: String::new(),
+            is_parent_link: false,
+        };
+        let mut v = vec![mk("b.rs", false), mk("dir", true), mk("a.md", false)];
+        sort_entries_by(&mut v, SortKey::Type, SortDir::Asc);
+        let names: Vec<&str> = v.iter().map(|e| e.name.as_str()).collect();
+        assert_eq!(names, vec!["dir", "a.md", "b.rs"]);
+    }
+
+    #[test]
+    fn path_range_spans_either_direction_and_falls_back() {
+        let v = vec!["/a".to_string(), "/b".to_string(), "/c".to_string(), "/d".to_string()];
+        assert_eq!(path_range(&v, "/b", "/d"), vec!["/b", "/c", "/d"]);
+        // Shift-clicking back toward the anchor covers the same range.
+        assert_eq!(path_range(&v, "/d", "/b"), vec!["/b", "/c", "/d"]);
+        assert_eq!(path_range(&v, "/a", "/a"), vec!["/a"]);
+        // Anchor no longer visible (e.g. filtered out) — fall back to just the target.
+        assert_eq!(path_range(&v, "/missing", "/c"), vec!["/c"]);
+    }
+
+    #[test]
+    fn rows_in_range_skips_the_up_row_and_spans_either_direction() {
+        let rows = vec![
+            ("/..".to_string(), true),
+            ("/a".to_string(), false),
+            ("/b".to_string(), false),
+            ("/c".to_string(), false),
+        ];
+        assert_eq!(rows_in_range(&rows, 0, 2), vec!["/a", "/b"]);
+        assert_eq!(rows_in_range(&rows, 2, 0), vec!["/a", "/b"]);
+        assert_eq!(rows_in_range(&rows, 1, 1), vec!["/a"]);
     }
 
     #[test]
@@ -2834,11 +3813,11 @@ mod tests {
     fn type_column_uses_extension() {
         let rr = RowRender {
             side: Side::Local,
-            row_h: px(20.0),
             zebra: false,
             relative_times: false,
             now: 0,
             columns: vec![],
+            flashing: std::collections::BTreeSet::new(),
         };
         let mut e = Entry::parent_link("/".to_string());
         assert_eq!(column_cell_value(SftpColumn::Type, &e, &rr), "");

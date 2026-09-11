@@ -28,11 +28,12 @@
 //! ```
 
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::rc::Rc;
 
 use gpui::{
     anchored, canvas, deferred, div, prelude::FluentBuilder, px, AnimationExt, AnyElement, App,
-    Bounds, ClickEvent, InteractiveElement, IntoElement, MouseButton, MouseDownEvent,
+    Bounds, ClickEvent, Corner, InteractiveElement, IntoElement, MouseButton, MouseDownEvent,
     ParentElement, Pixels, Point, SharedString, StatefulInteractiveElement, Styled, Window,
 };
 
@@ -272,6 +273,60 @@ fn in_flyout(flyouts: &FlyoutBounds, pos: Point<Pixels>) -> bool {
     flyouts.borrow().iter().any(|b| b.contains(&pos))
 }
 
+/// Assumed flyout width used only to decide whether a submenu has room to
+/// open to the right of its trigger row — the panel's real width isn't known
+/// until its own layout runs (cards in this file are `min_w` 160px but grow
+/// with content), so this is a conservative overestimate. Mirrors the same
+/// kind of margin Zed's `ContextMenu::open_submenu` uses for this decision.
+const ASSUMED_FLYOUT_WIDTH: Pixels = px(200.0);
+
+thread_local! {
+    /// Most recently observed window-space bounds of each submenu trigger
+    /// row, keyed by the flyout's element id (`ctxsubfly-{id}-{depth}`).
+    /// Recorded every frame by [`trigger_probe`] so [`record_submenu_side`]
+    /// always has a fresh measurement to work from as soon as the trigger is
+    /// hovered.
+    static TRIGGER_BOUNDS: RefCell<HashMap<SharedString, Bounds<Pixels>>> =
+        RefCell::new(HashMap::new());
+
+    /// Whether each submenu flyout should open to the left of its trigger row
+    /// instead of the right, keyed the same way as `TRIGGER_BOUNDS`. Decided
+    /// in [`record_submenu_side`] when the trigger is hovered and read back
+    /// by `render_item` on the next render — menus in this file are rebuilt
+    /// fresh from caller state every render, so this cache is the only place
+    /// the decision can live between "hover fires" and "the flyout is built".
+    static SUBMENU_FLIP_LEFT: RefCell<HashMap<SharedString, bool>> = RefCell::new(HashMap::new());
+}
+
+/// A layout-neutral probe that continuously records the trigger row's own
+/// bounds into [`TRIGGER_BOUNDS`], mirroring [`flyout_probe`] but for the row
+/// rather than the flyout.
+fn trigger_probe(key: SharedString) -> impl IntoElement {
+    canvas(
+        move |bounds, _window, _cx| {
+            TRIGGER_BOUNDS.with(|b| b.borrow_mut().insert(key.clone(), bounds));
+        },
+        |_, _, _, _| {},
+    )
+    .absolute()
+    .inset_0()
+}
+
+/// Recomputes whether the submenu keyed by `key` has room to open to the
+/// right of its trigger row, using the row's last-probed bounds and the
+/// window's current viewport, and caches the answer in [`SUBMENU_FLIP_LEFT`]
+/// for `render_item` to pick up on the next render. Called from the trigger
+/// row's `on_hover` (for both controlled and CSS-hover submenus) so the
+/// flyout already opens on the correct side by the time it becomes visible,
+/// rather than only correcting itself a frame after rendering off-screen.
+fn record_submenu_side(key: &SharedString, window: &Window) {
+    let Some(bounds) = TRIGGER_BOUNDS.with(|b| b.borrow().get(key).cloned()) else {
+        return;
+    };
+    let flip_left = bounds.right() + ASSUMED_FLYOUT_WIDTH > window.viewport_size().width;
+    SUBMENU_FLIP_LEFT.with(|f| f.borrow_mut().insert(key.clone(), flip_left));
+}
+
 /// A fixed 16px centred box holding a 14px glyph — keeps every row's icon the
 /// same size and every label aligned to the same left edge regardless of the
 /// individual SVG's internal padding.
@@ -379,14 +434,12 @@ fn render_item(item: MenuItem, c: Palette, depth: usize, flyouts: &FlyoutBounds)
             // In controlled mode the flyout only exists while the caller says
             // it's open; otherwise it's always in the tree and revealed by CSS.
             let show_panel = control.as_ref().map(|c| c.open).unwrap_or(true);
+            let flip_left = SUBMENU_FLIP_LEFT
+                .with(|f| f.borrow().get(&flyout_id).copied())
+                .unwrap_or(false);
             let panel = show_panel.then(|| {
-                let panel = div()
-                    .id(flyout_id)
-                    .absolute()
-                    .left_full()
-                    // A small downward offset so the flyout reads as hanging
-                    // off the trigger row rather than capping it.
-                    .top(c.space(4.0))
+                let card = div()
+                    .id(flyout_id.clone())
                     .flex()
                     .flex_col()
                     .min_w(c.space(160.0))
@@ -401,15 +454,10 @@ fn render_item(item: MenuItem, c: Palette, depth: usize, flyouts: &FlyoutBounds)
                             .into_iter()
                             .map(|it| render_item(it, c, depth + 1, flyouts)),
                     );
-                match &control {
+                let card = match &control {
                     Some(ctrl) => {
                         let on_hover = ctrl.on_hover.clone();
-                        // Controlled open/close doesn't depend on an unbroken
-                        // hover chain, so the flyout can sit clear of the
-                        // parent card instead of flush against it.
-                        panel
-                            .ml(c.space(6.0))
-                            .occlude()
+                        card.occlude()
                             .on_hover(move |h, w, cx| {
                                 on_hover(SubmenuHoverSource::Flyout, *h, w, cx)
                             })
@@ -417,14 +465,46 @@ fn render_item(item: MenuItem, c: Palette, depth: usize, flyouts: &FlyoutBounds)
                             // isn't treated as an outside-press on the card.
                             .child(flyout_probe(flyouts.clone()))
                     }
-                    // CSS-hover mode: flush left edge (no `ml`) so the pointer
-                    // crosses from the trigger into the panel without passing
-                    // over dead space, which would drop `group_hover`.
-                    None => panel
+                    // CSS-hover mode: flush edge so the pointer crosses from
+                    // the trigger into the panel without passing over dead
+                    // space, which would drop `group_hover`.
+                    None => card
                         .invisible()
                         .group_hover(group.clone(), |s| s.visible())
                         .hover(|s| s.visible()),
-                }
+                };
+
+                // The host pins itself to the trigger row's top-right corner
+                // (open right) or top-left corner (`flip_left` — open left)
+                // via CSS-style percentage insets, which Taffy resolves
+                // against the row's real measured width. `anchored()` (no
+                // explicit `.position()`) then reads that resolved point as
+                // its own origin, and `snap_to_window_with_margin` slides the
+                // flyout back inside the window if it still doesn't fit on
+                // either axis — the same idea as the top-level menu card's
+                // `snap_to_window()`, just anchored to the row instead of a
+                // click point.
+                let host = div()
+                    .absolute()
+                    .top(c.space(4.0))
+                    .when(flip_left, |d| d.right_full())
+                    .when(!flip_left, |d| d.left_full())
+                    // Controlled open/close doesn't depend on an unbroken
+                    // hover chain, so the flyout can sit clear of the parent
+                    // card instead of flush against it.
+                    .when(control.is_some() && !flip_left, |d| d.ml(c.space(6.0)))
+                    .when(control.is_some() && flip_left, |d| d.mr(c.space(6.0)));
+
+                host.child(
+                    anchored()
+                        .anchor(if flip_left {
+                            Corner::TopRight
+                        } else {
+                            Corner::TopLeft
+                        })
+                        .snap_to_window_with_margin(px(8.0))
+                        .child(card),
+                )
             });
 
             let mut row = div()
@@ -450,11 +530,26 @@ fn render_item(item: MenuItem, c: Palette, depth: usize, flyouts: &FlyoutBounds)
             row = match control {
                 Some(ctrl) => {
                     let on_hover = ctrl.on_hover.clone();
-                    row.on_hover(move |h, w, cx| on_hover(SubmenuHoverSource::Trigger, *h, w, cx))
+                    let key = flyout_id.clone();
+                    row.on_hover(move |h, w, cx| {
+                        if *h {
+                            record_submenu_side(&key, w);
+                        }
+                        on_hover(SubmenuHoverSource::Trigger, *h, w, cx)
+                    })
                 }
-                None => row.group(group),
+                None => {
+                    let key = flyout_id.clone();
+                    row.group(group).on_hover(move |h, w, _cx| {
+                        if *h {
+                            record_submenu_side(&key, w);
+                        }
+                    })
+                }
             };
-            row.children(panel).into_any_element()
+            row.child(trigger_probe(flyout_id))
+                .children(panel)
+                .into_any_element()
         }
     }
 }

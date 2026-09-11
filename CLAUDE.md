@@ -15,3 +15,6 @@ Use the local `reference-src/` and `zed-refrence/` trees as read-only references
 For local execution and visual verification, use `cargo run -p labonair` or
 an explicit native Rust executable path. Never use `open -a Labonair`, because
 the legacy Tauri app may be installed under the same display name.
+
+## Enviorment Info
+Your running on a macbook, there is the old Tauri version and the current new Rust verison of Labonair installed so make sure to use the rust version, the tauri version is the /Applications/Labonair.app when you need confirmation you can do so yourself but do not start the TAURI version when trying to test the RUST

@@ -519,6 +519,20 @@ impl SftpBrowserSettings {
         }
         seen
     }
+
+    /// Local-pane fraction of the draggable split between the local and
+    /// remote SFTP panes. `0.5` (50/50) when never dragged.
+    pub fn split_ratio(&self) -> f32 {
+        self.0.sftp_split_ratio.unwrap_or(0.5).clamp(0.2, 0.8)
+    }
+
+    /// Persisted pixel width for `col`, if the user has resized it.
+    pub fn column_width(&self, col: SftpColumn) -> Option<f32> {
+        self.0
+            .sftp_column_widths
+            .as_ref()
+            .and_then(|widths| widths.get(col.token()).copied())
+    }
 }
 
 #[cfg(test)]
@@ -573,5 +587,44 @@ mod tests {
         assert_eq!(s.line_height(), 2.5, "line height clamps to the range max");
         assert_eq!(s.cursor_blink_interval_ms(), 100, "interval clamps up");
         assert_eq!(s.scroll_sensitivity(), 1, "sensitivity floors at 1");
+    }
+
+    #[test]
+    fn sftp_split_ratio_defaults_and_clamps() {
+        let base = SftpBrowserSettings::from_settings(&SettingsContent::default());
+        assert_eq!(base.split_ratio(), 0.5, "50/50 when never dragged");
+
+        let mut content = SettingsContent::default();
+        content.file_manager.sftp_split_ratio = Some(0.05);
+        let s = SftpBrowserSettings::from_settings(&content);
+        assert_eq!(s.split_ratio(), 0.2, "clamps below the allowed range");
+
+        content.file_manager.sftp_split_ratio = Some(0.95);
+        let s = SftpBrowserSettings::from_settings(&content);
+        assert_eq!(s.split_ratio(), 0.8, "clamps above the allowed range");
+    }
+
+    #[test]
+    fn sftp_column_width_round_trips_by_token_and_falls_back_to_none() {
+        let base = SftpBrowserSettings::from_settings(&SettingsContent::default());
+        assert_eq!(
+            base.column_width(SftpColumn::Size),
+            None,
+            "no persisted width yet"
+        );
+
+        let mut content = SettingsContent::default();
+        content.file_manager.sftp_column_widths = Some(
+            [("size".to_string(), 120.0_f32)]
+                .into_iter()
+                .collect(),
+        );
+        let s = SftpBrowserSettings::from_settings(&content);
+        assert_eq!(s.column_width(SftpColumn::Size), Some(120.0));
+        assert_eq!(
+            s.column_width(SftpColumn::Modified),
+            None,
+            "unset columns still fall back"
+        );
     }
 }

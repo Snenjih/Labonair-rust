@@ -108,7 +108,9 @@
     "sftpShowUpFolder": true,
     "sftpZebraStriping": true,
     "sftpRelativeTimes": true,
-    "sftpColumns": ["size", "modified", "permissions"]
+    "sftpColumns": ["size", "modified", "permissions"],
+    "sftpSplitRatio": 0.5,
+    "sftpColumnWidths": {}
   },
 
   "workspace": {

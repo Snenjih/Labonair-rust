@@ -494,6 +494,9 @@ fn file_manager_from(p: &Preferences) -> FileManagerContent {
             .filter_map(|(on, col)| on.then_some(col))
             .collect(),
         ),
+        // No v1 equivalent — inherit the shipped defaults.
+        sftp_split_ratio: FileManagerContent::defaults().sftp_split_ratio,
+        sftp_column_widths: FileManagerContent::defaults().sftp_column_widths,
     }
 }
 

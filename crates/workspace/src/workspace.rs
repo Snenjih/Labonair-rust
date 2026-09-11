@@ -359,6 +359,9 @@ enum PendingOpen {
     },
     /// Open/focus an SSH terminal tab (SFTP remote pane's `>_ Term` action).
     SshTab(String),
+    /// Open a new local terminal tab rooted at a directory (SFTP local
+    /// pane's "Open Terminal Here" context action).
+    LocalTerminal(String),
 }
 
 /// Events emitted by the workspace for actions owned by another surface.
@@ -2931,6 +2934,11 @@ impl Workspace {
                 self.pending_open.push(PendingOpen::SshTab(host_id.clone()));
                 cx.notify();
             }
+            SftpEvent::OpenLocalTerminal { cwd } => {
+                self.pending_open
+                    .push(PendingOpen::LocalTerminal(cwd.clone()));
+                cx.notify();
+            }
         }
     }
 
@@ -5333,6 +5341,9 @@ impl Render for Workspace {
                         cx,
                     ),
                     PendingOpen::SshTab(host_id) => self.open_ssh_tab(host_id, window, cx),
+                    PendingOpen::LocalTerminal(cwd) => {
+                        self.new_terminal_tab_in(Some(cwd), window, cx)
+                    }
                 }
             }
         }
