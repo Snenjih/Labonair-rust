@@ -15,7 +15,7 @@
 use std::{rc::Rc, sync::Arc};
 
 use gpui::{App, AppContext, Context, Entity, PathPromptOptions, Window, WindowBounds};
-use labonair_hosts_ui::{open_hosts_window, HostManagerEvent, HostManagerView};
+use labonair_hosts_ui::{HostManagerEvent, HostManagerView};
 use labonair_mcp_core::{
     preferences::McpPreferences, McpEventSource, McpSessionAccessService, McpTabOperationService,
 };
@@ -341,8 +341,12 @@ pub(crate) fn bootstrap(
             tokio.clone(),
             agent_access.clone(),
             {
-                // R08-012: Workspace reaches the Hosts UI only through this
-                // narrow `HostView` contract, not an `Entity<HostManagerView>`.
+                // Workspace's continuous host-data needs (picker rows, tunnel
+                // status) still go through this narrow `HostView` contract;
+                // separately, `host_manager.clone()` below hands Workspace the
+                // concrete entity too, for rendering the `Hosts` tab body
+                // (supersedes R08-012, which avoided that — see host-manager
+                // window→tab migration).
                 let hm = host_manager.clone();
                 labonair_hosts_host::HostView::new(
                     {
@@ -376,20 +380,18 @@ pub(crate) fn bootstrap(
                     },
                 )
             },
+            host_manager.clone(),
             session_snapshot,
             window,
             cx,
         )
     });
-    // Workspace emits intent for cross-surface navigation; it does not hold a
-    // shell callback or know how the Hosts surface is presented.
+    // Workspace emits intent for cross-surface navigation it can't present
+    // itself (the project-folder picker is a native OS dialog).
     cx.subscribe_in(
         &workspace,
         window,
         |this, _, event: &WorkspaceEvent, _window, cx| match event {
-            WorkspaceEvent::OpenHosts => {
-                open_hosts_window(this.panels.hosts.clone(), cx);
-            }
             WorkspaceEvent::OpenProject => open_project_picker(this.workspace.clone(), cx),
         },
     )
@@ -538,7 +540,6 @@ pub(crate) fn bootstrap(
     let mut command_registry = crate::commands::register_builtin_commands_for(
         &workspace,
         &updater,
-        &host_manager,
         palette_toggle,
         search_toggle,
         host_picker,
@@ -839,7 +840,9 @@ pub(crate) fn bootstrap(
                 });
             }
             TitlebarEvent::Hosts => {
-                open_hosts_window(this.panels.hosts.clone(), cx);
+                this.workspace.update(cx, |workspace, cx| {
+                    workspace.open_hosts_tab(cx);
+                });
             }
             TitlebarEvent::Palette(page) => {
                 this.show_command_palette(Some(*page), window, cx);
@@ -856,7 +859,6 @@ pub(crate) fn bootstrap(
         snippets,
         updater,
         command_palette,
-        hosts: host_manager,
     };
 
     AppShell::from_parts(

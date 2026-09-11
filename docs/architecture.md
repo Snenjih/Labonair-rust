@@ -188,11 +188,12 @@ by the workspace session snapshot and are not folded into this layout file.
 
 The titlebar is a shell surface, not a feature owner. Its single global-menu
 button publishes `TitlebarEvent` intent. The composition root connects that
-intent to Settings, the Hosts management surface, a Command Palette page, or
-`Workspace::open_keymap_tab` (the keymap surface is a workspace tab, not an OS
-window). The menu uses the shared `popover_menu` primitive and
-anchors it in window coordinates directly below the clicked button; it must
-not implement a second menu or feature-specific behavior.
+intent to Settings, a Command Palette page, or `Workspace::open_keymap_tab` /
+`Workspace::open_hosts_tab` (the keymap and hosts-management surfaces are both
+workspace tabs, not OS windows — occasional-use tabs, never a startup tab).
+The menu uses the shared `popover_menu` primitive and anchors it in window
+coordinates directly below the clicked button; it must not implement a second
+menu or feature-specific behavior.
 
 The workspace tab strip renders in the titlebar by default. When
 `tabsLocation == "sidebar"` it renders instead in the Tabs dock panel, which
@@ -205,9 +206,11 @@ existing dock chrome.
 `labonair-workspace::context` owns the UI-free distinction between workspace
 identity (`Standalone` or `Project`) and activity (`Empty` or `Active`). Tool
 tabs do not choose a second layout model for standalone use. Cross-surface
-requests such as opening Hosts or presenting the project picker are emitted as
-typed `WorkspaceEvent` values; the shell subscribes and composes the
-platform-specific destination. Identity mutation uses the single typed
+requests the workspace can satisfy itself (opening the Keymap or Hosts tab)
+are plain methods on `Workspace`; only requests for a platform-specific
+surface it can't present itself (the native project-folder picker) are
+emitted as a typed `WorkspaceEvent` for the shell to compose. Identity
+mutation uses the single typed
 `WorkspaceTransition` contract (`OpenProject` or `ReturnToStandalone`); a
 terminal current-working-directory event is never a workspace transition. The
 pure `WorkspaceContext` applies that transition; GPUI workspace state only

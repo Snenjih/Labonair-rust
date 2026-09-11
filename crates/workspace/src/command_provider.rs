@@ -52,6 +52,19 @@ pub fn register_keymap_handler(
         .expect("workspace keymap handler must have a unique id");
 }
 
+/// Register the host-management entry point owned by Workspace (the `Hosts`
+/// tab, mirrors `register_keymap_handler`).
+pub fn register_hosts_handler(registry: &mut CommandHandlerRegistry, workspace: &Entity<Workspace>) {
+    let workspace = workspace.clone();
+    registry
+        .register(CommandId::OpenHosts, move |_window, cx| {
+            workspace.update(cx, |workspace, cx| {
+                workspace.open_hosts_tab(cx);
+            });
+        })
+        .expect("workspace hosts handler must have a unique id");
+}
+
 struct WorkspaceTerminalCommandTarget(Entity<Workspace>);
 
 impl TerminalCommandTarget for WorkspaceTerminalCommandTarget {

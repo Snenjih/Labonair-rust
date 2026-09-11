@@ -21,7 +21,6 @@ use labonair_command_palette_core::{
     CommandRegistry as PaletteCommandRegistry, CommandSubmenu,
 };
 use labonair_command_palette_runtime::{CommandHandlerRegistry, PaletteActionHandlerRegistry};
-use labonair_hosts_ui::HostManagerView;
 
 use crate::app_shell::AppShell;
 use crate::menu;
@@ -162,6 +161,37 @@ impl AppShell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        // These four ids' owner handlers close over a clone of the shell
+        // entity and call `.update()` on it to reach this same `AppShell` —
+        // fine when invoked from an arbitrary `App` context, but
+        // `dispatch_command` is only ever called with `AppShell` already
+        // leased (from an `on_action` listener or `PaletteEvent::Run`), so
+        // going through them here re-enters `AppShell::update` and panics
+        // ("already being updated"), same as the `menu::CommandPalette`
+        // bridge above. Call the shell method directly instead.
+        match id {
+            CommandId::OpenCommandPalette => {
+                self.toggle_command_palette(window, cx);
+                return;
+            }
+            CommandId::Find => {
+                self.toggle_search_overlay(window, cx);
+                return;
+            }
+            CommandId::NewSshTab
+            | CommandId::NewSftpTab
+            | CommandId::NewQuickSsh
+            | CommandId::NewSshConnection => {
+                self.show_command_palette(
+                    Some(labonair_command_palette::Page::Hosts),
+                    window,
+                    cx,
+                );
+                return;
+            }
+            _ => {}
+        }
+
         if let Some(run) = self.command_registry.owner_handler_for(id) {
             run(window, cx);
         } else if let Some(run) = self.command_registry.run_for(id) {
@@ -266,14 +296,13 @@ fn command_descriptor(
 
 #[allow(dead_code)]
 pub(crate) fn register_builtin_commands() -> CommandDispatcher {
-    compose_builtin_commands(None, None, None, None, None, None)
+    compose_builtin_commands(None, None, None, None, None)
 }
 
 /// Compose the command registry with owner-provided executable handlers.
 pub(crate) fn register_builtin_commands_for(
     workspace: &gpui::Entity<Workspace>,
     updater: &Entity<UpdaterView>,
-    hosts: &Entity<HostManagerView>,
     palette_toggle: labonair_command_palette::command_provider::ToggleHandler,
     search_toggle: labonair_workspace::command_provider::SearchToggleHandler,
     host_picker: labonair_hosts_ui::command_provider::HostPickerHandler,
@@ -281,7 +310,6 @@ pub(crate) fn register_builtin_commands_for(
     compose_builtin_commands(
         Some(workspace),
         Some(updater),
-        Some(hosts),
         Some(palette_toggle),
         Some(search_toggle),
         Some(host_picker),
@@ -291,7 +319,6 @@ pub(crate) fn register_builtin_commands_for(
 fn compose_builtin_commands(
     workspace: Option<&Entity<Workspace>>,
     updater: Option<&Entity<UpdaterView>>,
-    hosts: Option<&Entity<HostManagerView>>,
     palette_toggle: Option<labonair_command_palette::command_provider::ToggleHandler>,
     search_toggle: Option<labonair_workspace::command_provider::SearchToggleHandler>,
     host_picker: Option<labonair_hosts_ui::command_provider::HostPickerHandler>,
@@ -340,11 +367,12 @@ fn compose_builtin_commands(
     if let Some(updater) = updater {
         labonair_updater_ui::command_provider::register_handlers(&mut r.owner_handlers, updater);
     }
-    if let Some(hosts) = hosts {
-        labonair_hosts_ui::command_provider::register_handlers(&mut r.owner_handlers, hosts);
-    }
     if let Some(workspace) = workspace {
         labonair_workspace::command_provider::register_handlers(&mut r.owner_handlers, workspace);
+        labonair_workspace::command_provider::register_hosts_handler(
+            &mut r.owner_handlers,
+            workspace,
+        );
         labonair_terminal::command_provider::register_handlers(
             &mut r.owner_handlers,
             labonair_workspace::command_provider::terminal_command_target(workspace),

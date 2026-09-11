@@ -191,9 +191,10 @@ ALLOWED = {
     # lets `panel`/`workspace` reach the Hosts UI without depending on it.
     "labonair-hosts-host": {"labonair-hosts"},
     # rule 3 + §8.4: workspace owns the tab-view entities, so it pulls
-    # panel-git-graph and keymap-ui (the Keymap tab hosts
-    # `labonair_keymap_ui::KeymapManagementView`) — acyclic, neither depends
-    # back on it.
+    # panel-git-graph, keymap-ui (the Keymap tab hosts
+    # `labonair_keymap_ui::KeymapManagementView`), and hosts-ui (the Hosts tab
+    # hosts `labonair_hosts_ui::HostManagerView`, mirroring Keymap) — acyclic,
+    # none of them depends back on it.
     # T19-002: ThemeSettings/TerminalSettings real consumers
     # (workspace.rs::reduce_motion, views/terminal.rs opacity/copy-on-select/
     # right-click-pastes) pull the typed settings store directly.
@@ -202,16 +203,18 @@ ALLOWED = {
     # `labonair_settings_json::json_path_at_offset` directly to resolve the
     # key path under the mouse — a leaf crate (`labonair-settings-json`),
     # no cycle.
-    # R08-012: no `labonair-hosts-ui` edge — the workspace reads the host
-    # catalog and pushes status/tunnel snapshots through the narrow
-    # `labonair-hosts-host::HostView` contract; the connection-status store
-    # moved into `workspace` itself.
+    # Host-manager window→tab migration (supersedes R08-012's "no
+    # `labonair-hosts-ui` edge" rule): workspace now also holds
+    # `Entity<HostManagerView>` directly to render the `Hosts` tab body,
+    # alongside (not instead of) the narrow `labonair-hosts-host::HostView`
+    # contract, which still carries the host catalog / status / tunnel
+    # snapshots workspace needs independent of tab visibility.
     "labonair-workspace": {
         "labonair-theme", "labonair-ui-kit", "labonair-gpui-ext",
         "labonair-notifications", "labonair-command-palette",
         "labonair-panel", "labonair-panel-git-graph",
         "labonair-keymap-ui",
-        "labonair-hosts", "labonair-hosts-host",
+        "labonair-hosts", "labonair-hosts-host", "labonair-hosts-ui",
         "labonair-terminal", "labonair-editor",
         "labonair-git",
         "labonair-ai", "labonair-settings", "labonair-settings-json",

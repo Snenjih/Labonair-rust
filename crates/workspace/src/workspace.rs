@@ -119,6 +119,7 @@ use crate::views::terminal::TerminalView;
 use labonair_background_host::BackgroundHost;
 use labonair_hosts::{HostOpenMode, HostOpenRequest, HostPickerRow};
 use labonair_hosts_host::{ActiveTunnelRow, HostStatus, HostView};
+use labonair_hosts_ui::HostManagerView;
 use labonair_keymap_ui::KeymapManagementView;
 use labonair_panel_git_graph::GitGraphView;
 use labonair_settings::content::general::StartupTab;
@@ -363,8 +364,6 @@ enum PendingOpen {
 /// Events emitted by the workspace for actions owned by another surface.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum WorkspaceEvent {
-    /// Ask the application shell to reveal the canonical Hosts surface.
-    OpenHosts,
     /// Ask the application shell to present the native project-folder picker.
     OpenProject,
 }
@@ -393,6 +392,11 @@ pub struct Workspace {
     /// `labonair-keymap-ui` owns its rendering; the workspace owns its tab
     /// lifecycle (mirrors `git_graph`).
     keymap: Option<Entity<KeymapManagementView>>,
+    /// The host-management view for the single `Hosts` tab. Unlike `keymap`,
+    /// this is never `None`: the composition root constructs it eagerly
+    /// because it also serves as the live host-data hub (tunnel status,
+    /// picker rows) via `host_view`, independent of whether its tab is open.
+    hosts: Entity<HostManagerView>,
     /// The single workspace Diff item, lazily created for the `Diff` tab.
     /// Source Control and the Git Graph emit a `ProjectDiffRequest`; this view
     /// is re-pointed (working tree ↔ commit) rather than duplicated.
@@ -535,6 +539,7 @@ impl Workspace {
         tokio: TokioHandle,
         agent_access: Entity<AgentAccessStore>,
         host_view: HostView,
+        hosts: Entity<HostManagerView>,
         restore: Option<SessionSnapshot>,
         window: &mut Window,
         cx: &mut Context<Self>,
@@ -601,6 +606,7 @@ impl Workspace {
             previews: HashMap::new(),
             git_graph: None,
             keymap: None,
+            hosts,
             project_diff: None,
             panel_registry: labonair_panel::PanelRegistry::new(),
             status_item_registry: labonair_panel::StatusItemRegistry::new(),
@@ -735,7 +741,8 @@ impl Workspace {
                 | TabKind::GitGraph
                 | TabKind::Diff
                 | TabKind::CommitDiff
-                | TabKind::Keymap => None,
+                | TabKind::Keymap
+                | TabKind::Hosts => None,
             };
             if let Some(snap) = snap {
                 if tab.id == active_id {
@@ -1936,6 +1943,8 @@ impl Workspace {
             } else {
                 window.focus(&self.focus_handle);
             }
+        } else if active_kind == Some(TabKind::Hosts) {
+            window.focus(&self.hosts.read(cx).focus_handle(cx));
         } else if let Some(view) = self.active_pane_view(cx) {
             view.read(cx).focus(window);
         } else {
@@ -2103,13 +2112,6 @@ impl Workspace {
             HostOpenMode::Sftp => self.pending_sftp.push(request.host_id),
         }
         cx.notify();
-    }
-
-    /// Request the canonical Hosts management surface without knowing how the
-    /// shell presents it. The application composition root subscribes to this
-    /// typed event and opens the Hosts-owned window.
-    pub fn request_open_hosts(&self, cx: &mut Context<Self>) {
-        cx.emit(WorkspaceEvent::OpenHosts);
     }
 
     /// Open (or reuse) an SSH terminal tab for `host_id` (`+` dropdown / menu).
@@ -2570,6 +2572,26 @@ impl Workspace {
             Some(id) => s.set_active(id, cx),
             None => {
                 s.open(TabKind::Keymap, TabData::default(), cx);
+            }
+        });
+    }
+
+    /// Open (or focus) the single host-management tab. Unlike
+    /// [`Self::open_keymap_tab`], `self.hosts` is never lazily created here —
+    /// the composition root builds it eagerly (it's also the live host-data
+    /// hub used regardless of tab visibility) — this only manages the tab.
+    pub fn open_hosts_tab(&mut self, cx: &mut Context<Self>) {
+        let existing = self
+            .tabs
+            .read(cx)
+            .tabs()
+            .iter()
+            .find(|t| t.kind == TabKind::Hosts)
+            .map(|t| t.id);
+        self.tabs.update(cx, |s, cx| match existing {
+            Some(id) => s.set_active(id, cx),
+            None => {
+                s.open(TabKind::Hosts, TabData::default(), cx);
             }
         });
     }
@@ -3783,7 +3805,7 @@ impl Workspace {
                         .child(
                             loading_btn("ssh-l-edit", "Edit Host", c, muted, border, false, fg)
                                 .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
-                                    this.request_open_hosts(cx)
+                                    this.open_hosts_tab(cx)
                                 })),
                         )
                         .child(
@@ -4387,7 +4409,7 @@ impl Workspace {
                         move |_, _w, cx| {
                             v.update(cx, |this, cx| {
                                 this.new_tab_menu = None;
-                                this.request_open_hosts(cx)
+                                this.open_hosts_tab(cx)
                             })
                         }
                     }),
@@ -4562,6 +4584,7 @@ impl Workspace {
                 Some(view) => view.clone().into_any_element(),
                 None => self.placeholder("Keymap", cx).into_any_element(),
             },
+            TabKind::Hosts => self.hosts.clone().into_any_element(),
             other => self
                 .placeholder(other.default_title(), cx)
                 .into_any_element(),

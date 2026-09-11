@@ -47,6 +47,10 @@ pub enum TabKind {
     CommitDiff,
     /// The keymap management surface (browse + rebind every command).
     Keymap,
+    /// The host management surface (create/edit hosts, groups, tunnels,
+    /// credentials, import/export) — an occasional utility tab, never a
+    /// startup tab (mirrors `Keymap`).
+    Hosts,
 }
 
 impl TabKind {
@@ -63,6 +67,7 @@ impl TabKind {
             TabKind::Diff => IconName::GitBranch,
             TabKind::CommitDiff => IconName::GitBranch,
             TabKind::Keymap => IconName::Command,
+            TabKind::Hosts => IconName::Server,
         }
     }
 
@@ -79,6 +84,7 @@ impl TabKind {
             TabKind::Diff => "Diffs",
             TabKind::CommitDiff => "Commit Diffs",
             TabKind::Keymap => "Keymaps",
+            TabKind::Hosts => "Hosts",
         }
     }
 
@@ -94,6 +100,7 @@ impl TabKind {
             TabKind::Diff => "Diff",
             TabKind::CommitDiff => "Commit",
             TabKind::Keymap => "Keymap",
+            TabKind::Hosts => "Hosts",
         }
     }
 }

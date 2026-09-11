@@ -5,6 +5,58 @@ They may mention API names that were valid at the time of the recorded
 change; the current API and task state are defined by the latest header and
 the normative documents under `docs/`.
 
+## Current Session: 2026-09-11 (Hosts surface: OS window → workspace tab)
+
+User-directed product change (not an R-series queue task). The Host Manager
+no longer opens as its own `WindowKind::Normal` OS window — it is now the
+single `Hosts` workspace tab, an occasional-use tab (never a startup tab),
+1:1 mirroring the `Keymap` tab migration from the previous session (below).
+Preceded by a UX discussion: sidebar-panel placement was tried before
+(T16-016) and rejected by the user; Settings-category placement (T19-010)
+and native-window placement (R04-002) were tried after that and both
+superseded; a workspace tab is the shape settled on.
+
+Unlike Keymap, `HostManagerView` is not lazily created on first tab-open:
+it's also the live host-data hub (tunnel status, picker rows) the workspace
+needs continuously regardless of the tab's visibility, so the shell composes
+it eagerly exactly as before — only its presentation moved.
+
+This migration explicitly supersedes R08-012 ("workspace reaches the Hosts UI
+only through the narrow `HostView` contract, not an `Entity<HostManagerView>`")
+by user decision: rendering a tab body requires the concrete entity, so
+`workspace` now holds `Entity<HostManagerView>` directly, in addition to (not
+instead of) the narrow `HostView` contract, which still carries Workspace's
+continuous host-data needs.
+
+What changed:
+
+- **`labonair-hosts-ui`**: deleted `open_hosts_window`, the `HostsWindowRef`
+  global, and the `register_handlers` command registration (the `CommandId::
+  OpenHosts` handler moved to `labonair-workspace`). `command_provider.rs` now
+  only registers the picker/palette-action handlers. Dropped the
+  `gpui-component` and `tracing` deps.
+- **`labonair-workspace`**: new `TabKind::Hosts` (transient — never
+  persisted, like `Keymap`), `hosts: Entity<HostManagerView>` field (always
+  present, not `Option` — see above), and `open_hosts_tab(cx)` (mirrors
+  `open_git_graph_tab`; no lazy construction needed). `focus_active` and the
+  tab-body dispatch gained a `TabKind::Hosts` arm. Removed
+  `request_open_hosts` and `WorkspaceEvent::OpenHosts` (both call sites — the
+  SSH-error-recovery "Edit Host" button and the new-tab "All hosts…" menu
+  item — now call `self.open_hosts_tab(cx)` directly, matching how
+  `open_keymap_tab` is called with no shell round-trip). New
+  `command_provider::register_hosts_handler` (precedent:
+  `register_keymap_handler`). New dep `labonair-hosts-ui` (allow-listed
+  alongside `keymap-ui`).
+- **`labonair-shell`**: `TitlebarEvent::Hosts` → `workspace.open_hosts_tab`;
+  `commands.rs` registers via the new `register_hosts_handler` instead of
+  `hosts-ui`'s removed one; `ShellPanels.hosts` field removed (no remaining
+  consumer once both `open_hosts_window` call sites were gone). `bootstrap.rs`
+  still composes `HostManagerView` eagerly exactly as before and now also
+  passes it into `Workspace::new`.
+- Docs updated: `architecture.md`, `capabilities.md`,
+  `audits/architecture-inventory.md`. Deps allow-list
+  (`scripts/check_crate_deps.py`) updated.
+
 ## Current Session: 2026-09-10 (Keymap surface: OS window → workspace tab)
 
 User-directed product change (not an R-series queue task; `R07-001` stays the
