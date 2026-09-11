@@ -331,11 +331,14 @@ fn search_mode<'a>(
         .into_iter()
         .enumerate()
         .filter_map(|(index, command)| {
-            let haystack = std::iter::once(command.title.as_str())
-                .chain(std::iter::once(command.section.as_str()))
-                .chain(command.aliases.iter().map(String::as_str))
-                .collect::<Vec<_>>()
-                .join(" ");
+            let mut haystack = String::with_capacity(command.title.len() + command.section.len() + 1);
+            haystack.push_str(&command.title);
+            haystack.push(' ');
+            haystack.push_str(&command.section);
+            for alias in &command.aliases {
+                haystack.push(' ');
+                haystack.push_str(alias);
+            }
             match_score(mode, &haystack, query).map(|score| (score, index, command))
         })
         .collect();

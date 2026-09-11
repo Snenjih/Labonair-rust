@@ -59,8 +59,11 @@ pub fn batch_runs(screen: &RenderableScreen) -> Vec<StyledRun> {
     }
 
     let mut runs = Vec::new();
-    for (line, mut cells) in per_line.into_iter().enumerate() {
-        cells.sort_by_key(|c| c.column);
+    for (line, cells) in per_line.into_iter().enumerate() {
+        debug_assert!(
+            cells.windows(2).all(|w| w[0].column < w[1].column),
+            "display_iter is expected to yield cells column-ascending per line"
+        );
         let mut current: Option<StyledRun> = None;
         let mut next_col = 0usize;
         for cell in cells {

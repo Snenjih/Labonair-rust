@@ -19,10 +19,10 @@ use std::time::Duration;
 
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, px, App, AppContext, ClickEvent, ClipboardItem, Context, Entity, EventEmitter,
-    FocusHandle, Focusable, InteractiveElement, IntoElement, KeyDownEvent, MouseButton,
-    MouseDownEvent, ParentElement, Pixels, Point, Render, SharedString, StatefulInteractiveElement,
-    Styled, Task, Window,
+    div, px, uniform_list, App, AppContext, ClickEvent, ClipboardItem, Context, Entity,
+    EventEmitter, FocusHandle, Focusable, InteractiveElement, IntoElement, KeyDownEvent,
+    MouseButton, MouseDownEvent, ParentElement, Pixels, Point, Render, SharedString,
+    StatefulInteractiveElement, Styled, Task, UniformListScrollHandle, Window,
 };
 use labonair_credentials::{self, Credential};
 use labonair_hosts::store::{HostCreateRequest, HostEventHandler, HostUpdateRequest};
@@ -68,6 +68,150 @@ impl Render for HostDragGhost {
     fn render(&mut self, _w: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
         div().w(px(180.0)).h(px(2.0))
     }
+}
+
+/// Per-row data a `uniform_list` closure needs to draw one host row without
+/// borrowing `HostManagerView` — see [`HostManagerView::host_row_data`].
+struct HostRowData {
+    id: String,
+    name: String,
+    subtitle: String,
+    icon: IconName,
+    pin_to_top: bool,
+    status: HostStatus,
+    ping: Ping,
+    selected: bool,
+}
+
+/// Builds one host-list row. Runs inside the `uniform_list` render closure
+/// (list view, only the on-screen `range`) as well as directly from `render`
+/// (grid view, not yet virtualised) — both call sites only have `&mut App`
+/// available in the former case, so click/drag handlers go through
+/// `view.update(cx, ..)` rather than `cx.listener` (which needs
+/// `&mut Context<HostManagerView>`).
+///
+/// T20-003: migrated to the shared [`ListItem`] primitive — icon/label/
+/// subtitle/trailing use its `.child()`/`.trailing()` builder methods, and
+/// the click/right-click/drag-and-drop wiring (none of which `ListItem`
+/// has a named builder for) goes through its `.extra()` escape hatch,
+/// matching the tree-row pattern in `panel-explorer`'s
+/// `render_file_row` (T20-002). The bg/border chrome is fully
+/// re-applied in `.extra()` (rather than via `.selected()`) to keep the
+/// exact pre-migration look: a border-ring highlight with an
+/// accent-border hover (via `.hover_style()`), not `ListItem`'s default
+/// bg-tint hover.
+fn render_host_row(
+    row: &HostRowData,
+    p: &Palette,
+    view: &Entity<HostManagerView>,
+    cx: &mut App,
+) -> gpui::AnyElement {
+    let id = row.id.clone();
+    let (id_click, id_right, id_drop) = (id.clone(), id.clone(), id.clone());
+    let accent = p.accent;
+    let card = p.card;
+    let border = p.border;
+    let selected = row.selected;
+
+    let v = view.clone();
+    let on_click = move |_: &ClickEvent, w: &mut Window, cx: &mut App| {
+        v.update(cx, |this, cx| {
+            if let Some(h) = this.hosts.iter().find(|h| h.id == id_click).cloned() {
+                this.select_host(&h, w, cx);
+            }
+        });
+    };
+    let v = view.clone();
+    let on_right_click = move |ev: &MouseDownEvent, _w: &mut Window, cx: &mut App| {
+        v.update(cx, |this, cx| {
+            this.host_menu = Some((id_right.clone(), ev.position));
+            cx.notify();
+        });
+    };
+    let v = view.clone();
+    let on_drop = move |dragged: &DraggedHost, _w: &mut Window, cx: &mut App| {
+        v.update(cx, |this, cx| {
+            this.reorder_hosts(&dragged.id, &id_drop, cx);
+        });
+    };
+
+    let ping_color = match row.ping {
+        Ping::Online => p.accent,
+        Ping::Offline => p.muted,
+        Ping::Checking => p.border,
+    };
+
+    ListItem::new(
+        SharedString::from(format!("host-item-{id}")),
+        p.fg,
+        p.muted,
+        border,
+    )
+    .child(div().child(row.icon.svg(p.muted).size(px(14.0))))
+    .child(
+        div()
+            .flex_1()
+            .min_w_0()
+            .flex()
+            .flex_col()
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap_1()
+                    .when(row.pin_to_top, |d| {
+                        d.child(IconName::Bookmark.svg(p.accent).size(px(9.0)))
+                    })
+                    .child(
+                        div()
+                            .text_sm()
+                            .text_color(p.fg)
+                            .child(SharedString::from(row.name.clone())),
+                    ),
+            )
+            .child(
+                div()
+                    .text_xs()
+                    .text_color(p.muted)
+                    .child(SharedString::from(row.subtitle.clone())),
+            ),
+    )
+    .trailing(
+        div()
+            .flex()
+            .items_center()
+            .gap_2()
+            .child(indicator(IndicatorSize::Sm, ping_color))
+            .when(row.status != HostStatus::Disconnected, |d| {
+                d.child(
+                    div()
+                        .text_size(px(9.0))
+                        .text_color(if row.status == HostStatus::Failed {
+                            p.fg
+                        } else {
+                            p.accent
+                        })
+                        .child(row.status.label()),
+                )
+            }),
+    )
+    .on_click(on_click)
+    .hover_style(move |s| s.border_color(accent))
+    .extra(move |list_row| {
+        list_row
+            .py(px(8.0))
+            .rounded_md()
+            .bg(if selected { border } else { card })
+            .border_1()
+            .border_color(if selected { accent } else { border })
+            .on_mouse_down(MouseButton::Right, on_right_click)
+            .on_drag(DraggedHost { id: id.clone() }, |_, _, _, cx| {
+                cx.new(|_| HostDragGhost)
+            })
+            .drag_over::<DraggedHost>(move |style, _, _, _| style.border_color(accent))
+            .on_drop(on_drop)
+    })
+    .into_any_element()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -567,6 +711,8 @@ pub struct HostManagerView {
     edit_gen: u64,
     _ping_task: Task<()>,
     focus_handle: FocusHandle,
+    /// Virtualises the list-view host rows (`uniform_list`); unused in grid view.
+    list_scroll: UniformListScrollHandle,
 }
 
 impl EventEmitter<HostManagerEvent> for HostManagerView {}
@@ -632,6 +778,7 @@ impl HostManagerView {
             edit_gen: 0,
             _ping_task: ping_task,
             focus_handle: cx.focus_handle(),
+            list_scroll: UniformListScrollHandle::new(),
         };
         this.reload(cx);
         this
@@ -1941,126 +2088,22 @@ impl HostManagerView {
         Some((user.to_string(), host.to_string(), port))
     }
 
-    fn ping_dot(&self, host_id: &str, p: &Palette) -> gpui::Div {
-        let (color, _label) = match self.ping.get(host_id).copied().unwrap_or_default() {
-            Ping::Online => (p.accent, "online"),
-            Ping::Offline => (p.muted, "offline"),
-            Ping::Checking => (p.border, "checking"),
-        };
-        // T20-001: shared `Indicator` primitive (7px == `IndicatorSize::Sm`).
-        indicator(IndicatorSize::Sm, color)
-    }
-
-    /// T20-003: migrated to the shared [`ListItem`] primitive — icon/label/
-    /// subtitle/trailing use its `.child()`/`.trailing()` builder methods, and
-    /// the click/right-click/drag-and-drop wiring (none of which `ListItem`
-    /// has a named builder for) goes through its `.extra()` escape hatch,
-    /// matching the tree-row pattern in `panel-explorer`'s
-    /// `render_file_row` (T20-002). The bg/border chrome is fully
-    /// re-applied in `.extra()` (rather than via `.selected()`) to keep the
-    /// exact pre-migration look: a border-ring highlight with an
-    /// accent-border hover (via `.hover_style()`), not `ListItem`'s default
-    /// bg-tint hover.
-    fn render_host_list_item(
-        &self,
-        host: &Host,
-        p: &Palette,
-        cx: &mut Context<Self>,
-    ) -> gpui::AnyElement {
-        let selected =
-            self.form.as_ref().and_then(|f| f.editing_id.as_deref()) == Some(host.id.as_str());
-        let status = self.status_of(&host.id);
-        let id = host.id.clone();
-        let (id_click, id_right, id_drop) = (id.clone(), id.clone(), id.clone());
-        let subtitle = format!("{}@{}:{}", host.username, host.host_address, host.port);
-        let icon = host_icon(host.icon.as_deref());
-        let accent = p.accent;
-        let card = p.card;
-        let border = p.border;
-
-        let on_click = cx.listener(move |this, _: &ClickEvent, w, cx| {
-            if let Some(h) = this.hosts.iter().find(|h| h.id == id_click).cloned() {
-                this.select_host(&h, w, cx);
-            }
-        });
-        let on_right_click = cx.listener(move |this, ev: &MouseDownEvent, _w, cx| {
-            this.host_menu = Some((id_right.clone(), ev.position));
-            cx.notify();
-        });
-        let on_drop = cx.listener(move |this, dragged: &DraggedHost, _w, cx| {
-            this.reorder_hosts(&dragged.id, &id_drop, cx);
-        });
-
-        ListItem::new(
-            SharedString::from(format!("host-item-{id}")),
-            p.fg,
-            p.muted,
-            border,
-        )
-        .child(div().child(icon.svg(p.muted).size(px(14.0))))
-        .child(
-            div()
-                .flex_1()
-                .min_w_0()
-                .flex()
-                .flex_col()
-                .child(
-                    div()
-                        .flex()
-                        .items_center()
-                        .gap_1()
-                        .when(host.pin_to_top, |d| {
-                            d.child(IconName::Bookmark.svg(p.accent).size(px(9.0)))
-                        })
-                        .child(
-                            div()
-                                .text_sm()
-                                .text_color(p.fg)
-                                .child(SharedString::from(host.name.clone())),
-                        ),
-                )
-                .child(
-                    div()
-                        .text_xs()
-                        .text_color(p.muted)
-                        .child(SharedString::from(subtitle)),
-                ),
-        )
-        .trailing(
-            div()
-                .flex()
-                .items_center()
-                .gap_2()
-                .child(self.ping_dot(&host.id, p))
-                .when(status != HostStatus::Disconnected, |d| {
-                    d.child(
-                        div()
-                            .text_size(px(9.0))
-                            .text_color(if status == HostStatus::Failed {
-                                p.fg
-                            } else {
-                                p.accent
-                            })
-                            .child(status.label()),
-                    )
-                }),
-        )
-        .on_click(on_click)
-        .hover_style(move |s| s.border_color(accent))
-        .extra(move |row| {
-            row.py(px(8.0))
-                .rounded_md()
-                .bg(if selected { border } else { card })
-                .border_1()
-                .border_color(if selected { accent } else { border })
-                .on_mouse_down(MouseButton::Right, on_right_click)
-                .on_drag(DraggedHost { id: id.clone() }, |_, _, _, cx| {
-                    cx.new(|_| HostDragGhost)
-                })
-                .drag_over::<DraggedHost>(move |style, _, _, _| style.border_color(accent))
-                .on_drop(on_drop)
-        })
-        .into_any_element()
+    /// Per-frame snapshot of a `visible_hosts()` row, precomputed *outside*
+    /// the `uniform_list` closure below: the closure gets only `&mut App`
+    /// (no `&self`), so anything derived from `self` — status, ping,
+    /// selection — must be resolved before the closure captures it.
+    fn host_row_data(&self, host: &Host) -> HostRowData {
+        HostRowData {
+            id: host.id.clone(),
+            name: host.name.clone(),
+            subtitle: format!("{}@{}:{}", host.username, host.host_address, host.port),
+            icon: host_icon(host.icon.as_deref()),
+            pin_to_top: host.pin_to_top,
+            status: self.status_of(&host.id),
+            ping: self.ping.get(&host.id).copied().unwrap_or_default(),
+            selected: self.form.as_ref().and_then(|f| f.editing_id.as_deref())
+                == Some(host.id.as_str()),
+        }
     }
 
     /// T20-003 documented exception: `ui-kit` has no "toggle pill with an
@@ -3555,22 +3598,42 @@ impl Render for HostManagerView {
                 .text_color(p.muted)
                 .child("No hosts. Add one with \u{201c}New Host\u{201d}.")
                 .into_any_element()
-        } else {
-            let items = visible
+        } else if self.grid_view {
+            // Card grid wraps rows, which `uniform_list` (single-column,
+            // fixed row height) can't lay out — kept as a plain `.children()`
+            // div; grids are for at-a-glance browsing, not huge inventories.
+            let rows: Vec<HostRowData> = visible.iter().map(|h| self.host_row_data(h)).collect();
+            let view = cx.entity();
+            let items = rows
                 .iter()
-                .map(|h| self.render_host_list_item(h, &p, cx))
+                .map(|row| render_host_row(row, &p, &view, cx))
                 .collect::<Vec<_>>();
             div()
                 .id("host-list")
                 .flex()
-                .flex_col()
+                .flex_row()
+                .flex_wrap()
                 .gap_1()
                 .overflow_y_scroll()
                 .flex_1()
                 .min_h_0()
-                .when(self.grid_view, |d| d.flex_row().flex_wrap())
                 .children(items)
                 .into_any_element()
+        } else {
+            // Virtualised: only the on-screen `range` becomes elements, so
+            // large host inventories stay cheap to render (mirrors the SFTP
+            // browser / Explorer / SCM panes).
+            let rows: Vec<HostRowData> = visible.iter().map(|h| self.host_row_data(h)).collect();
+            let view = cx.entity();
+            uniform_list("host-list", rows.len(), move |range, _win, cx| {
+                range
+                    .map(|i| render_host_row(&rows[i], &p, &view, cx))
+                    .collect::<Vec<_>>()
+            })
+            .track_scroll(self.list_scroll.clone())
+            .flex_1()
+            .min_h_0()
+            .into_any_element()
         };
 
         let tunnels_panel = (!self.active_tunnels.is_empty()).then(|| {
