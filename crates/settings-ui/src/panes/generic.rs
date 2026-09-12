@@ -27,6 +27,12 @@ fn sftp_visible_columns(value: Option<&Value>) -> Vec<SftpColumn> {
     out
 }
 
+#[derive(Clone, Copy)]
+struct FieldRowState {
+    first: bool,
+    last: bool,
+}
+
 impl SettingsView {
     /// Load system fonts off the UI thread for the shared `FontFamily` field
     /// renderer. Font selection is a Settings value; the picker itself is
@@ -180,13 +186,12 @@ impl SettingsView {
             .unwrap_or(click)
     }
 
-    pub(crate) fn render_field(
+    fn render_field(
         &self,
         field: &AnyField,
         origin: OriginBadge,
         value: Option<Value>,
-        row_first: bool,
-        row_last: bool,
+        edges: FieldRowState,
         c: &Palette,
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
@@ -358,10 +363,10 @@ impl SettingsView {
             } else {
                 c.muted_bg
             });
-        if row_first {
+        if edges.first {
             row = row.border_t_1().rounded_t_md().mt_2();
         }
-        if row_last {
+        if edges.last {
             row = row.rounded_b_md();
         }
 
@@ -392,9 +397,11 @@ impl SettingsView {
                         ButtonSize::IconXs,
                     )
                     .child(IconName::Refresh.svg(c.muted).size(px(12.0)))
-                    .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
-                        this.reset_field(json_path, cx);
-                    })),
+                    .on_click(cx.listener(
+                        move |this, _: &ClickEvent, _w, cx| {
+                            this.reset_field(json_path, cx);
+                        },
+                    )),
                 );
         }
 
@@ -499,7 +506,10 @@ impl SettingsView {
                     ButtonVariant::Ghost,
                     ButtonSize::IconXs,
                 )
-                .child(icon.svg(if enabled { c.fg } else { c.muted }).size(px(12.0)));
+                .child(
+                    icon.svg(if enabled { c.fg } else { c.muted })
+                        .size(px(12.0)),
+                );
                 if enabled {
                     b = b.on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
                         this.sftp_columns_move(json_path, col, delta, cx);
@@ -521,9 +531,11 @@ impl SettingsView {
                             is_visible,
                         )
                         .label(col.label())
-                        .on_click(cx.listener(move |this, checked: &bool, _w, cx| {
-                            this.sftp_columns_toggle(json_path, col, *checked, cx);
-                        })),
+                        .on_click(cx.listener(
+                            move |this, checked: &bool, _w, cx| {
+                                this.sftp_columns_toggle(json_path, col, *checked, cx);
+                            },
+                        )),
                     )
                     .child(div().flex_1())
                     .child(arrow(IconName::ArrowUp, "sftpcol-up", can_up, -1))
@@ -535,10 +547,9 @@ impl SettingsView {
             .gap(px(4.0))
             .child(stack)
             .child(
-                div()
-                    .text_size(px(10.5))
-                    .text_color(c.muted)
-                    .child("Order also adjusts by dragging the column headers in the SFTP browser."),
+                div().text_size(px(10.5)).text_color(c.muted).child(
+                    "Order also adjusts by dragging the column headers in the SFTP browser.",
+                ),
             )
             .into_any_element()
     }
@@ -705,12 +716,23 @@ impl SettingsView {
                     if pending_scroll == Some(field.json_path) {
                         scroll_to_row = Some(rows.len());
                     }
-                    let row_first = i == 0 || matches!(resolved.get(i - 1), Some(Resolved::Header(_)));
+                    let row_first =
+                        i == 0 || matches!(resolved.get(i - 1), Some(Resolved::Header(_)));
                     let row_last = resolved
                         .get(i + 1)
-                        .map_or(true, |next| matches!(next, Resolved::Header(_)));
+                        .is_none_or(|next| matches!(next, Resolved::Header(_)));
                     let (origin, value) = row_input(field);
-                    rows.push(self.render_field(field, origin, value, row_first, row_last, c, cx));
+                    rows.push(self.render_field(
+                        field,
+                        origin,
+                        value,
+                        FieldRowState {
+                            first: row_first,
+                            last: row_last,
+                        },
+                        c,
+                        cx,
+                    ));
                 }
             }
         }

@@ -31,6 +31,8 @@ pub mod cwd_breadcrumb;
 pub mod cwd_status_item;
 pub mod dock;
 pub mod dock_status_item;
+pub mod editor_git_bridge;
+pub mod file_finder;
 pub mod layout;
 pub mod live_bridge;
 pub mod markdown;
@@ -38,6 +40,7 @@ pub mod mcp_event_bridge;
 pub mod modal_layer;
 pub mod pane;
 pub mod pane_group;
+pub mod project_search;
 pub mod search_overlay;
 pub mod session;
 pub mod ssh_connection;
@@ -82,6 +85,7 @@ use gpui::{
     IntoElement, KeyDownEvent, MouseButton, MouseDownEvent, ParentElement, Render, SharedString,
     StatefulInteractiveElement, Styled, Subscription, Task, Window,
 };
+use labonair_command_palette_core::CommandId;
 use labonair_git::{GitGraphService, GitService};
 use labonair_mcp_core::{
     McpEvent, McpEventSource, McpSessionAccessService, McpTabOperationService, SessionGrantRequest,
@@ -101,8 +105,10 @@ use labonair_transfers::{TransferDirection, TransferRequest, TransferService};
 use tokio::runtime::Handle as TokioHandle;
 
 use crate::dock::{position_slug, RESIZE_HANDLE_SIZE};
+use crate::editor_git_bridge::{EditorGitContext, WorkspaceGitBridge};
 use crate::live_bridge::LiveCommand;
 use crate::pane::{CloseOutcome, Member, PaneId, SplitAxis, SplitDirection, WorkspaceLayout};
+use crate::project_search::root_safe_path;
 use crate::session::{
     plan_restore, PaneSessionKind, PaneSessionSnapshot, RestoreAction, RestoreResult,
     SerializedLayout, SessionSnapshot, TabSnapshot, WorkspaceTabSnapshot,
@@ -117,6 +123,12 @@ use crate::views::preview::PreviewView;
 use crate::views::sftp::{SftpEvent, SftpView};
 use crate::views::terminal::TerminalView;
 use labonair_background_host::BackgroundHost;
+use labonair_editor::{
+    command_provider::{route_for_command, EditorLanguageCommand, GitEditorCommand},
+    editing::{EditIntent, EditorCommand, SplitIntent},
+    FileFinderCandidate, FileFinderQuery, FileFinderResult, LanguageServiceRuntime, Position,
+    ProjectSearchHit, ProjectSearchQuery, ProjectSearchSnapshot, SearchError, SearchQuery,
+};
 use labonair_hosts::{HostOpenMode, HostOpenRequest, HostPickerRow};
 use labonair_hosts_host::{ActiveTunnelRow, HostStatus, HostView};
 use labonair_hosts_ui::HostManagerView;
@@ -142,6 +154,70 @@ pub enum SearchTarget {
     Terminal,
     /// SFTP list, git graph, host manager, … — search is not offered.
     Unavailable,
+}
+
+/// Outcome of resolving a command through the active-tab editor bridge.
+/// Editor-specific unsupported operations are reported by EditorView through
+/// the canonical notification center; this result covers the composition
+/// boundary itself without duplicating editor state in Workspace.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum EditorCommandDispatchResult {
+    Forwarded,
+    NoActiveEditor,
+    Unsupported(CommandId),
+}
+
+fn editor_command_dispatch_target(
+    has_active_editor: bool,
+    id: CommandId,
+) -> EditorCommandDispatchResult {
+    if !has_active_editor {
+        EditorCommandDispatchResult::NoActiveEditor
+    } else if labonair_editor::command_provider::EXECUTABLE_EDITOR_COMMAND_IDS.contains(&id) {
+        EditorCommandDispatchResult::Forwarded
+    } else {
+        EditorCommandDispatchResult::Unsupported(id)
+    }
+}
+
+fn editor_git_files(
+    state: &labonair_git::WorkspaceGitState,
+) -> Vec<labonair_panel::ProjectDiffFile> {
+    let mut files = Vec::new();
+    files.extend(
+        state
+            .status
+            .staged
+            .iter()
+            .map(|file| labonair_panel::ProjectDiffFile {
+                path: file.path.clone(),
+                staged: true,
+                untracked: false,
+            }),
+    );
+    files.extend(
+        state
+            .status
+            .unstaged
+            .iter()
+            .map(|file| labonair_panel::ProjectDiffFile {
+                path: file.path.clone(),
+                staged: false,
+                untracked: false,
+            }),
+    );
+    files.extend(
+        state
+            .status
+            .untracked
+            .iter()
+            .map(|file| labonair_panel::ProjectDiffFile {
+                path: file.path.clone(),
+                staged: false,
+                untracked: true,
+            }),
+    );
+    files
 }
 
 /// One open SSH terminal tab: its backend session id, the host it targets and
@@ -395,6 +471,9 @@ pub struct Workspace {
     panes: HashMap<PaneId, PaneEntry>,
     /// Editor view per `Editor` tab id.
     editors: HashMap<u64, Entity<EditorView>>,
+    /// The cancellable operation handle for the Editor-owned project search.
+    /// Query/result/status state remains inside the active Editor entity.
+    project_search_task: Option<Task<()>>,
     /// SFTP browser view per `Sftp` tab id (T08-001).
     sftp_views: HashMap<u64, Entity<SftpView>>,
     /// Native preview view per `Preview` tab id (T15-006 — WebView replacement).
@@ -475,6 +554,13 @@ pub struct Workspace {
     sftp_session: Arc<dyn SftpSessionService>,
     sftp_browser: Arc<dyn SftpBrowserService>,
     git: Arc<dyn GitService>,
+    /// Workspace-owned adapter for editor Git projections and typed hunk
+    /// actions. Git remains the sole repository/index owner.
+    editor_git_bridge: Arc<WorkspaceGitBridge>,
+    /// Shared Editor-owned language-service composition runtime. Workspace
+    /// stores only the injected handle; process/document state stays in the
+    /// editor capability.
+    editor_language_services: Arc<LanguageServiceRuntime>,
     git_graph_service: Arc<dyn GitGraphService>,
     mcp_access: Arc<dyn McpSessionAccessService>,
     mcp_tab_operations: Arc<dyn McpTabOperationService>,
@@ -621,6 +707,9 @@ impl Workspace {
             }),
         ];
 
+        let editor_git_bridge = Arc::new(WorkspaceGitBridge::new(git.clone()));
+        let editor_language_services = Arc::new(LanguageServiceRuntime::default());
+        editor_language_services.set_tokio_handle(tokio.clone());
         let mut this = Self {
             registry,
             tabs,
@@ -629,6 +718,7 @@ impl Workspace {
             layouts: HashMap::new(),
             panes: HashMap::new(),
             editors: HashMap::new(),
+            project_search_task: None,
             sftp_views: HashMap::new(),
             previews: HashMap::new(),
             git_graph: None,
@@ -661,6 +751,8 @@ impl Workspace {
             _meta_sync: meta_sync,
             _session_save: session_save,
             git,
+            editor_git_bridge,
+            editor_language_services,
             git_graph_service,
             mcp_access,
             mcp_tab_operations,
@@ -746,33 +838,40 @@ impl Workspace {
         let mut tabs = Vec::new();
         let mut active_index = 0;
         for tab in store.tabs() {
-            let snap = match tab.kind {
-                TabKind::Workspace => self.snapshot_workspace_tab(tab, cx),
-                TabKind::Editor => tab
-                    .data
-                    .path
-                    .clone()
-                    .filter(|_| tab.data.host_id.is_none())
-                    .map(|path| TabSnapshot::Editor(crate::session::EditorTabSnapshot { path })),
-                TabKind::Preview => tab
-                    .data
-                    .url
-                    .clone()
-                    .map(|url| TabSnapshot::Preview(crate::session::PreviewTabSnapshot { url })),
-                TabKind::Sftp => tab.data.host_id.clone().map(|host_id| {
-                    TabSnapshot::Sftp(crate::session::SftpTabSnapshot {
-                        host_id,
-                        title: tab.custom_title.clone(),
-                    })
-                }),
-                // Transient kinds — never persisted.
-                TabKind::AiDiff
-                | TabKind::GitGraph
-                | TabKind::Diff
-                | TabKind::CommitDiff
-                | TabKind::Keymap
-                | TabKind::Hosts => None,
-            };
+            let snap =
+                match tab.kind {
+                    TabKind::Workspace => self.snapshot_workspace_tab(tab, cx),
+                    TabKind::Editor => tab
+                        .data
+                        .path
+                        .clone()
+                        .filter(|_| tab.data.host_id.is_none())
+                        .map(|path| {
+                            TabSnapshot::Editor(crate::session::EditorTabSnapshot {
+                                state: self
+                                    .editors
+                                    .get(&tab.id)
+                                    .map(|view| view.read(cx).session_snapshot()),
+                                path,
+                            })
+                        }),
+                    TabKind::Preview => tab.data.url.clone().map(|url| {
+                        TabSnapshot::Preview(crate::session::PreviewTabSnapshot { url })
+                    }),
+                    TabKind::Sftp => tab.data.host_id.clone().map(|host_id| {
+                        TabSnapshot::Sftp(crate::session::SftpTabSnapshot {
+                            host_id,
+                            title: tab.custom_title.clone(),
+                        })
+                    }),
+                    // Transient kinds — never persisted.
+                    TabKind::AiDiff
+                    | TabKind::GitGraph
+                    | TabKind::Diff
+                    | TabKind::CommitDiff
+                    | TabKind::Keymap
+                    | TabKind::Hosts => None,
+                };
             if let Some(snap) = snap {
                 if tab.id == active_id {
                     active_index = tabs.len();
@@ -900,8 +999,14 @@ impl Workspace {
                     }
                     Some(id)
                 }
-                RestoreAction::Editor { path } => {
+                RestoreAction::Editor { path, state } => {
                     self.open_file(path, false, window, cx);
+                    if let Some(state) = state {
+                        let id = self.tabs.read(cx).active_id();
+                        if let Some(view) = self.editors.get(&id).cloned() {
+                            view.update(cx, |editor, _| editor.set_pending_session(state));
+                        }
+                    }
                     Some(self.tabs.read(cx).active_id())
                 }
                 RestoreAction::Preview { url } => {
@@ -1008,6 +1113,19 @@ impl Workspace {
         )
     }
 
+    /// Spawn the Workspace filesystem adapter for one Editor-owned finder
+    /// generation. The root is passed explicitly and all traversal and
+    /// canonicalization happen on the blocking runtime, never on GPUI's
+    /// foreground thread.
+    pub fn file_finder_listing(
+        &self,
+        filesystem_root: std::path::PathBuf,
+        query: FileFinderQuery,
+        generation: u64,
+    ) -> tokio::task::JoinHandle<Result<FileFinderResult, String>> {
+        crate::file_finder::spawn_listing(&self.tokio, filesystem_root, query, generation)
+    }
+
     /// Return the repository root for workspace-owned Git surfaces.
     pub fn git_root(&self, cx: &App) -> Option<String> {
         context::resolve_git_root(
@@ -1028,6 +1146,7 @@ impl Workspace {
         if !self.context.apply_transition(&transition) {
             return;
         }
+        self.sync_editor_git_context();
         match transition {
             context::WorkspaceTransition::OpenProject { root } => {
                 self.last_project_settings_rejection_signature = None;
@@ -1041,6 +1160,17 @@ impl Workspace {
                 cx.notify();
             }
         }
+    }
+
+    fn sync_editor_git_context(&self) {
+        self.editor_git_bridge.set_context(EditorGitContext {
+            root: self
+                .context
+                .identity()
+                .project_root()
+                .map(|root| root.to_string_lossy().into_owned()),
+            session_id: None,
+        });
     }
 
     /// Request an explicit project-folder selection from the application
@@ -1275,30 +1405,188 @@ impl Workspace {
     /// Returns `(current_1_based, total)`; `None` when the tab is not searchable.
     pub fn search_set(
         &mut self,
-        query: &str,
-        case_sensitive: bool,
+        query: SearchQuery,
         cx: &mut Context<Self>,
-    ) -> Option<(usize, usize)> {
+    ) -> Option<Result<(usize, usize), SearchError>> {
+        self.project_search_task.take();
         let id = self.tabs.read(cx).active_id();
         if let Some(e) = self.editors.get(&id).cloned() {
-            return Some(e.update(cx, |e, cx| e.search_set(query, case_sensitive, cx)));
+            return Some(e.update(cx, |e, cx| e.search_set(query, cx)));
         }
         let view = self.active_pane_view(cx)?;
-        Some(view.update(cx, |v, cx| v.search_set(query, case_sensitive, cx)))
+        Some(Ok(view.update(cx, |v, cx| {
+            v.search_set(&query.text, query.case_sensitive_for_matching(), cx)
+        })))
+    }
+
+    /// Start the Editor-owned project search through the explicit workspace
+    /// filesystem root. Workspace owns only this async adapter and operation
+    /// handle; all query/result/status state stays in `EditorView`.
+    pub fn project_search_set(
+        &mut self,
+        query: ProjectSearchQuery,
+        cx: &mut Context<Self>,
+    ) -> Option<()> {
+        self.project_search_task.take();
+        let tab_id = self.tabs.read(cx).active_id();
+        let editor = self.editors.get(&tab_id).cloned()?;
+        let request = editor.update(cx, |editor, cx| editor.begin_project_search(query, cx));
+        if request.query.text.is_empty() {
+            return Some(());
+        }
+        let generation = request.generation;
+        let Some(root) = self.filesystem_root(cx).map(std::path::PathBuf::from) else {
+            let _ = editor.update(cx, |editor, cx| {
+                editor.fail_project_search(
+                    request.generation,
+                    "No filesystem root is available for this workspace.",
+                    cx,
+                )
+            });
+            return Some(());
+        };
+
+        let job = self
+            .tokio
+            .spawn_blocking(move || crate::project_search::search_blocking(root, request));
+        self.project_search_task = Some(cx.spawn(async move |this, cx| {
+            let result = job.await.map_err(|error| error.to_string()).and_then(|r| r);
+            let _ = this.update(cx, |workspace, cx| {
+                if workspace.tabs.read(cx).active_id() != tab_id {
+                    return;
+                }
+                workspace.project_search_task = None;
+                match result {
+                    Ok(result) => {
+                        let _ = editor
+                            .update(cx, |editor, cx| editor.accept_project_search(result, cx));
+                    }
+                    Err(error) => {
+                        let _ = editor.update(cx, |editor, cx| {
+                            editor.fail_project_search(generation, error.clone(), cx)
+                        });
+                        labonair_notifications::notification_center(cx).update(cx, |center, cx| {
+                            center.push(
+                                labonair_notifications::Notification::error(
+                                    "Project search failed",
+                                    "The project search could not be completed.",
+                                )
+                                .source("editor")
+                                .details(error.clone())
+                                .dedupe_key(format!("editor:project-search:{error}")),
+                                cx,
+                            );
+                        });
+                    }
+                }
+            });
+        }));
+        Some(())
+    }
+
+    pub fn project_search_snapshot(&self, cx: &App) -> Option<ProjectSearchSnapshot> {
+        let id = self.tabs.read(cx).active_id();
+        self.editors
+            .get(&id)
+            .map(|editor| editor.read(cx).project_search_snapshot())
+    }
+
+    pub fn project_search_move(
+        &mut self,
+        delta: isize,
+        cx: &mut Context<Self>,
+    ) -> Option<ProjectSearchHit> {
+        let id = self.tabs.read(cx).active_id();
+        self.editors.get(&id).cloned().and_then(|editor| {
+            let result = editor.update(cx, |editor, _| editor.move_project_search_selection(delta));
+            if result.is_some() {
+                cx.notify();
+            }
+            result
+        })
+    }
+
+    /// Open a selected project result through the canonical file route and
+    /// move the Editor caret to its reported line/column.
+    pub fn open_project_search_hit(
+        &mut self,
+        hit: ProjectSearchHit,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(root) = self.filesystem_root(cx).map(std::path::PathBuf::from) else {
+            labonair_notifications::notify_err::<()>(
+                "Open search result",
+                Err("No filesystem root is available for this workspace.".to_string()),
+                cx,
+            );
+            return;
+        };
+        let path = match root_safe_path(&root, std::path::Path::new(&hit.path)) {
+            Ok(path) => path,
+            Err(error) => {
+                labonair_notifications::notify_err::<()>("Open search result", Err(error), cx);
+                return;
+            }
+        };
+        self.open_file(path.to_string_lossy().into_owned(), false, window, cx);
+        let id = self.tabs.read(cx).active_id();
+        if let Some(editor) = self.editors.get(&id).cloned() {
+            editor.update(cx, |editor, cx| {
+                editor.goto_position(
+                    Position::new(hit.line.saturating_sub(1) as usize, hit.start_column),
+                    cx,
+                )
+            });
+        }
     }
 
     /// Step to the next / previous match. Returns `(current, total)`.
-    pub fn search_step(&mut self, forward: bool, cx: &mut Context<Self>) -> Option<(usize, usize)> {
+    pub fn search_step(
+        &mut self,
+        forward: bool,
+        cx: &mut Context<Self>,
+    ) -> Option<Result<(usize, usize), SearchError>> {
         let id = self.tabs.read(cx).active_id();
         if let Some(e) = self.editors.get(&id).cloned() {
             return Some(e.update(cx, |e, cx| e.search_step(forward, cx)));
         }
         let view = self.active_pane_view(cx)?;
-        Some(view.update(cx, |v, cx| v.search_step(forward, cx)))
+        Some(Ok(view.update(cx, |v, cx| v.search_step(forward, cx))))
+    }
+
+    /// Forward Editor-owned replacement actions without exposing the document
+    /// or its mutable structures to Workspace.
+    pub fn search_replace_one(
+        &mut self,
+        replacement: &str,
+        cx: &mut Context<Self>,
+    ) -> Option<Result<bool, SearchError>> {
+        let id = self.tabs.read(cx).active_id();
+        let editor = self.editors.get(&id).cloned()?;
+        Some(editor.update(cx, |editor, cx| editor.search_replace_one(replacement, cx)))
+    }
+
+    pub fn search_replace_all(
+        &mut self,
+        replacement: &str,
+        cx: &mut Context<Self>,
+    ) -> Option<Result<usize, SearchError>> {
+        let id = self.tabs.read(cx).active_id();
+        let editor = self.editors.get(&id).cloned()?;
+        Some(editor.update(cx, |editor, cx| editor.search_replace_all(replacement, cx)))
+    }
+
+    pub fn search_can_replace(&self, cx: &App) -> bool {
+        let id = self.tabs.read(cx).active_id();
+        self.editors
+            .get(&id)
+            .is_some_and(|editor| editor.read(cx).search_can_replace())
     }
 
     /// Clear all search state / match highlights on the active surface.
     pub fn search_end(&mut self, cx: &mut Context<Self>) {
+        self.project_search_task.take();
         let id = self.tabs.read(cx).active_id();
         if let Some(e) = self.editors.get(&id).cloned() {
             e.update(cx, |e, cx| e.search_close(cx));
@@ -1532,6 +1820,30 @@ impl Workspace {
         self.focus_active(window, cx);
     }
 
+    /// Open one Finder result only after re-validating it against the current
+    /// explicit workspace root. Finder results may outlive a root transition
+    /// or a file deletion, so the adapter never trusts stale UI metadata.
+    pub fn open_file_finder_candidate(
+        &mut self,
+        candidate: FileFinderCandidate,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Result<(), String> {
+        let root = self
+            .filesystem_root(cx)
+            .map(std::path::PathBuf::from)
+            .ok_or_else(|| "No filesystem root is available for this workspace.".to_string())?;
+        let path = root_safe_path(&root, &candidate.path)?;
+        if !path.is_file() {
+            return Err(format!(
+                "File finder result is not a file: {}",
+                path.display()
+            ));
+        }
+        self.open_file(path.to_string_lossy().into_owned(), false, window, cx);
+        Ok(())
+    }
+
     /// `Cmd-E` / File ▸ New Editor Tab — an empty, pathless editor.
     pub fn new_editor_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let tab_id = self
@@ -1610,9 +1922,255 @@ impl Workspace {
         }
     }
 
+    /// Resolve the canonical command id to the active Editor owner. Workspace
+    /// supplies only the active-view lookup; command meaning and execution
+    /// remain in `EditorView`/`labonair-editor`.
+    pub(crate) fn dispatch_active_editor_command(
+        &mut self,
+        id: CommandId,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> EditorCommandDispatchResult {
+        let tab_id = self.tabs.read(cx).active_id();
+        let target = editor_command_dispatch_target(self.editors.contains_key(&tab_id), id);
+        if !matches!(target, EditorCommandDispatchResult::Forwarded) {
+            return target;
+        }
+        let Some(editor) = self.editors.get(&tab_id).cloned() else {
+            return EditorCommandDispatchResult::NoActiveEditor;
+        };
+        if route_for_command(id, editor.read(cx).cursor_position()).is_none() {
+            return EditorCommandDispatchResult::Unsupported(id);
+        };
+        editor.update(cx, |editor, cx| match id {
+            CommandId::EditorAddCursor => {
+                let _ = editor.execute_command(
+                    EditorCommand::Edit(EditIntent::AddCursor(editor.cursor_position())),
+                    cx,
+                );
+            }
+            CommandId::EditorSelectNextOccurrence => {
+                let _ = editor
+                    .execute_command(EditorCommand::Edit(EditIntent::SelectNextOccurrence), cx);
+            }
+            CommandId::EditorSelectAllOccurrences => {
+                let _ = editor
+                    .execute_command(EditorCommand::Edit(EditIntent::SelectAllOccurrences), cx);
+            }
+            CommandId::EditorExpandSelection => {
+                let _ =
+                    editor.execute_command(EditorCommand::Edit(EditIntent::ExpandSelection), cx);
+            }
+            CommandId::EditorShrinkSelection => {
+                let _ =
+                    editor.execute_command(EditorCommand::Edit(EditIntent::ShrinkSelection), cx);
+            }
+            CommandId::EditorDuplicateLines => {
+                let _ = editor.execute_command(EditorCommand::Edit(EditIntent::DuplicateLines), cx);
+            }
+            CommandId::EditorMoveLines => {
+                let _ = editor.execute_command(
+                    EditorCommand::Edit(EditIntent::MoveLines { down: true }),
+                    cx,
+                );
+            }
+            CommandId::EditorIndent => {
+                let _ = editor.execute_command(
+                    EditorCommand::Edit(EditIntent::Indent { unit: "  ".into() }),
+                    cx,
+                );
+            }
+            CommandId::EditorOutdent => {
+                let _ = editor.execute_command(
+                    EditorCommand::Edit(EditIntent::Outdent { unit: "  ".into() }),
+                    cx,
+                );
+            }
+            CommandId::EditorToggleComment => {
+                let _ = editor.execute_command(EditorCommand::Edit(EditIntent::ToggleComment), cx);
+            }
+            CommandId::EditorTranspose => {
+                let _ = editor.execute_command(EditorCommand::Edit(EditIntent::Transpose), cx);
+            }
+            CommandId::EditorSplitRight => {
+                let _ = editor.execute_command(EditorCommand::Split(SplitIntent::Right), cx);
+            }
+            CommandId::EditorSplitDown => {
+                let _ = editor.execute_command(EditorCommand::Split(SplitIntent::Down), cx);
+            }
+            CommandId::EditorFocusNextGroup => {
+                let _ = editor.execute_command(EditorCommand::Split(SplitIntent::FocusNext), cx);
+            }
+            CommandId::EditorFocusPreviousGroup => {
+                let _ =
+                    editor.execute_command(EditorCommand::Split(SplitIntent::FocusPrevious), cx);
+            }
+            CommandId::EditorCloseGroup => {
+                let _ = editor.execute_command(EditorCommand::Split(SplitIntent::Close), cx);
+            }
+            CommandId::EditorCloseOtherGroups => {
+                let _ = editor.execute_command(EditorCommand::Split(SplitIntent::CloseOthers), cx);
+            }
+            CommandId::EditorTriggerCompletion => {
+                editor.execute_language_command(EditorLanguageCommand::TriggerCompletion, cx)
+            }
+            CommandId::EditorGoToDefinition => {
+                editor.execute_language_command(EditorLanguageCommand::GoToDefinition, cx)
+            }
+            CommandId::EditorGoToDeclaration => {
+                editor.execute_language_command(EditorLanguageCommand::GoToDeclaration, cx)
+            }
+            CommandId::EditorGoToReferences => {
+                editor.execute_language_command(EditorLanguageCommand::GoToReferences, cx)
+            }
+            CommandId::EditorGoToImplementation => {
+                editor.execute_language_command(EditorLanguageCommand::GoToImplementation, cx)
+            }
+            CommandId::EditorPeekDefinition => {
+                editor.execute_language_command(EditorLanguageCommand::PeekDefinition, cx)
+            }
+            CommandId::EditorRenameSymbol => {
+                editor.execute_language_command(EditorLanguageCommand::Rename, cx)
+            }
+            CommandId::EditorCodeAction => {
+                editor.execute_language_command(EditorLanguageCommand::CodeAction, cx)
+            }
+            CommandId::EditorFormatDocument => {
+                editor.execute_language_command(EditorLanguageCommand::FormatDocument, cx)
+            }
+            CommandId::EditorFormatSelection => {
+                editor.execute_language_command(EditorLanguageCommand::FormatSelection, cx)
+            }
+            CommandId::EditorOrganizeImports => {
+                editor.execute_language_command(EditorLanguageCommand::OrganizeImports, cx)
+            }
+            CommandId::EditorRestartLanguageServer => {
+                editor.execute_language_command(EditorLanguageCommand::RestartLanguageServer, cx)
+            }
+            CommandId::EditorStopLanguageServer => {
+                editor.execute_language_command(EditorLanguageCommand::StopLanguageServer, cx)
+            }
+            CommandId::EditorShowDiagnostics => {
+                editor.execute_language_command(EditorLanguageCommand::ShowDiagnostics, cx)
+            }
+            CommandId::EditorNextDiagnostic => {
+                editor.execute_language_command(EditorLanguageCommand::NextDiagnostic, cx)
+            }
+            CommandId::EditorPreviousDiagnostic => {
+                editor.execute_language_command(EditorLanguageCommand::PreviousDiagnostic, cx)
+            }
+            CommandId::EditorNextGitChange => {
+                editor.execute_git_command(GitEditorCommand::NextChange, cx)
+            }
+            CommandId::EditorPreviousGitChange => {
+                editor.execute_git_command(GitEditorCommand::PreviousChange, cx)
+            }
+            CommandId::EditorOpenProjectDiff => {
+                editor.execute_git_command(GitEditorCommand::OpenProjectDiff, cx)
+            }
+            _ => {}
+        });
+        EditorCommandDispatchResult::Forwarded
+    }
+
     fn new_editor_view(&self, cx: &mut Context<Self>) -> Entity<EditorView> {
         let theme = self.theme.clone();
-        cx.new(|cx| EditorView::new(theme, cx))
+        let bridge = self.editor_git_bridge.clone();
+        let language_services = self.editor_language_services.clone();
+        cx.new(|cx| {
+            let mut view = EditorView::new_with_language_services(theme, language_services, cx);
+            view.set_git_bridge(bridge.clone(), bridge.clone());
+            view
+        })
+    }
+
+    /// Composition seam for the app/shell to inject an explicitly configured
+    /// local language-service runtime. Workspace stores only the handle and
+    /// forwards it to existing editor views; it owns no LSP state.
+    pub fn set_editor_language_services(
+        &mut self,
+        runtime: Arc<LanguageServiceRuntime>,
+        cx: &mut Context<Self>,
+    ) {
+        runtime.set_tokio_handle(self.tokio.clone());
+        self.editor_language_services = runtime.clone();
+        for view in self.editors.values() {
+            let runtime = runtime.clone();
+            view.update(cx, |view, _cx| view.set_language_services(runtime));
+        }
+    }
+
+    pub fn editor_language_services(&self) -> Arc<LanguageServiceRuntime> {
+        self.editor_language_services.clone()
+    }
+
+    /// Drain editor review intents and resolve them through the one canonical
+    /// Project Diff item. Git state discovery runs on the injected service's
+    /// async boundary; no Git I/O occurs while rendering.
+    fn drain_editor_git_actions(&mut self, cx: &mut Context<Self>) {
+        for queued in self.editor_git_bridge.take_review_actions() {
+            let action = queued.action;
+            let target = match &action {
+                labonair_editor::GitHunkAction::OpenProjectDiff { target }
+                | labonair_editor::GitHunkAction::ShowChange { target } => target.clone(),
+                _ => continue,
+            };
+            let context = queued.context;
+            let Some(root) = context.root.clone() else {
+                labonair_notifications::notify_err::<()>(
+                    "Open Project Diff",
+                    Err("Git actions require an explicit repository workspace.".to_string()),
+                    cx,
+                );
+                continue;
+            };
+            let git = self.git.clone();
+            let session = context.session_id.clone();
+            let relative_target = target.path.clone();
+            let task = self.tokio.spawn(async move {
+                let repo_root = git.repo_root(root, session.clone()).await?;
+                let state = git
+                    .workspace_state(repo_root.clone(), session.clone())
+                    .await?;
+                let mut files = editor_git_files(&state);
+                let selected =
+                    crate::editor_git_bridge::relative_path(&repo_root, &relative_target);
+                if !files.iter().any(|file| file.path == selected) {
+                    files.push(labonair_panel::ProjectDiffFile {
+                        path: selected.clone(),
+                        staged: false,
+                        untracked: false,
+                    });
+                }
+                Ok::<_, String>(labonair_panel::ProjectDiffRequest {
+                    repo_root,
+                    session_id: session,
+                    source: labonair_panel::DiffSource::WorkingTree,
+                    files,
+                    selected: Some(selected),
+                    mode: labonair_panel::ProjectDiffMode::Unified,
+                })
+            });
+            cx.spawn(async move |this, cx| {
+                let result = task.await.unwrap_or_else(|error| Err(error.to_string()));
+                let _ = this.update(cx, |this, cx| {
+                    if this.editor_git_bridge.context() != context {
+                        return;
+                    }
+                    match result {
+                        Ok(request) => this.open_project_diff(request, cx),
+                        Err(error) => {
+                            labonair_notifications::notify_err::<()>(
+                                "Open Project Diff",
+                                Err(error),
+                                cx,
+                            );
+                        }
+                    }
+                });
+            })
+            .detach();
+        }
     }
 
     fn watch_editor(&self, tab_id: u64, view: &Entity<EditorView>, cx: &mut Context<Self>) {
@@ -5320,6 +5878,7 @@ impl Render for Workspace {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let _span =
             tracing::trace_span!(target: "labonair::perf", "render", view = "workspace").entered();
+        self.drain_editor_git_actions(cx);
         // T19-003: keep `labonair-settings`'s active project root in sync
         // with the explicit workspace identity (cheap no-op unless it
         // changed — see the method doc).
@@ -5527,7 +6086,10 @@ impl labonair_command_palette::PaletteWorkspace for Workspace {
 
 #[cfg(test)]
 mod tests {
-    use super::{shell_quote, ssh_tab_title};
+    use super::{
+        editor_command_dispatch_target, shell_quote, ssh_tab_title, EditorCommandDispatchResult,
+    };
+    use labonair_command_palette_core::CommandId;
 
     #[test]
     fn shell_quote_wraps_and_escapes() {
@@ -5541,6 +6103,22 @@ mod tests {
         assert_eq!(
             ssh_tab_title("prod-web", Some("bastion")),
             "SSH \u{00b7} prod-web  \u{2192} bastion"
+        );
+    }
+
+    #[test]
+    fn editor_dispatch_target_is_clean_for_non_editor_and_unknown_commands() {
+        assert_eq!(
+            editor_command_dispatch_target(false, CommandId::EditorFormatDocument),
+            EditorCommandDispatchResult::NoActiveEditor
+        );
+        assert_eq!(
+            editor_command_dispatch_target(true, CommandId::NewEditorTab),
+            EditorCommandDispatchResult::Unsupported(CommandId::NewEditorTab)
+        );
+        assert_eq!(
+            editor_command_dispatch_target(true, CommandId::EditorFormatDocument),
+            EditorCommandDispatchResult::Forwarded
         );
     }
 }

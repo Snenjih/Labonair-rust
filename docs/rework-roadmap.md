@@ -161,6 +161,39 @@ implemented only through bounded follow-up tasks.
 Remote theme downloads, marketplace behavior, and extension hosting remain
 deferred until a later product decision adds a concrete workflow and owner.
 
+### Planned Editor rework sequence — blocked behind R07-001 (2026-09-12)
+
+The Editor rework is a bounded post-acceptance sequence. It does not change
+the current R07-001 acceptance gate, and no R09 task may start until that gate
+is complete. The Editor remains the sole owner of Editor state, behavior,
+UI-boundary, commands, persistence, and tests; Workspace remains a hosting and
+composition adapter. Local language services are in scope before any remote
+language-service work. Autosave and format-on-save are opt-in and default to
+disabled.
+
+The accepted split decision is recorded in
+[docs/adr/0004-editor-internal-splits.md](adr/0004-editor-internal-splits.md).
+The executable sequence is:
+
+1. [R09-001-editor-e0-text-model-contract.md](../tasks/rework/R09-001-editor-e0-text-model-contract.md)
+   — Rope/anchors/transactions and immutable Editor snapshots.
+2. [R09-002-editor-e1-file-lifecycle.md](../tasks/rework/R09-002-editor-e1-file-lifecycle.md)
+   — FileState, EOL/BOM/encoding, read-only, atomic save, and conflicts.
+3. [R09-003-editor-e2-editing-and-splits.md](../tasks/rework/R09-003-editor-e2-editing-and-splits.md)
+   — Multi-selection editing and Editor-owned internal splits.
+4. [R09-004-editor-e3-display-search-navigation.md](../tasks/rework/R09-004-editor-e3-display-search-navigation.md)
+   — Display mapping, folding, search/replace, navigation, and visual polish.
+5. [R09-005-editor-e4-local-language-services.md](../tasks/rework/R09-005-editor-e4-local-language-services.md)
+   — Local LSP, diagnostics, completion, navigation, code actions, and tokens.
+6. [R09-006-editor-e5-git-gutter-review-bridge.md](../tasks/rework/R09-006-editor-e5-git-gutter-review-bridge.md)
+   — Git gutter decorations and typed handoff to canonical Project Diff/SCM.
+7. [R09-007-editor-e6-persistence-polish-and-p2.md](../tasks/rework/R09-007-editor-e6-persistence-polish-and-p2.md)
+   — Versioned session persistence, opt-in save policies, and remaining P2.
+
+Each task is planned rather than completed and must update the Settings
+inventory, capability evidence, dependency checks, and visual evidence when
+it changes those areas. This sequence is an implementation plan, not evidence
+that the current Editor already provides the target behavior.
 The cross-module visual and workflow gate remains open:
 [`R07-001-product-surface-acceptance.md`](../tasks/rework/R07-001-product-surface-acceptance.md).
 The owner-contribution task is complete and closes the dynamic palette

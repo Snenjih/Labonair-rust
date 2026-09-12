@@ -525,6 +525,11 @@ pub(crate) fn bootstrap(
         Rc::new(move |window: &mut Window, app: &mut App| {
             search_shell.update(app, |shell, cx| shell.toggle_search_overlay(window, cx));
         });
+    let file_finder_shell = shell.clone();
+    let file_finder_toggle: labonair_workspace::command_provider::FileFinderToggleHandler =
+        Rc::new(move |window: &mut Window, app: &mut App| {
+            file_finder_shell.update(app, |shell, cx| shell.toggle_file_finder(window, cx));
+        });
     let palette_shell = shell;
     let host_picker_shell = palette_shell.clone();
     let palette_toggle: labonair_command_palette::command_provider::ToggleHandler =
@@ -542,6 +547,7 @@ pub(crate) fn bootstrap(
         &updater,
         palette_toggle,
         search_toggle,
+        file_finder_toggle,
         host_picker,
     );
     crate::keymap_loader::reload_and_apply(cx, &command_registry);

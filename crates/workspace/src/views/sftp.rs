@@ -246,9 +246,11 @@ struct BrowserPrefs {
 }
 
 fn sftp_browser_settings(cx: &App) -> BrowserPrefs {
-    let s = SftpBrowserSettings::try_get(cx).cloned().unwrap_or_else(|| {
-        SftpBrowserSettings::from_settings(&labonair_settings::SettingsContent::default())
-    });
+    let s = SftpBrowserSettings::try_get(cx)
+        .cloned()
+        .unwrap_or_else(|| {
+            SftpBrowserSettings::from_settings(&labonair_settings::SettingsContent::default())
+        });
     BrowserPrefs {
         columns: s.columns(),
         zebra: s.zebra_striping(),
@@ -258,7 +260,8 @@ fn sftp_browser_settings(cx: &App) -> BrowserPrefs {
         split_ratio: s.split_ratio(),
         col_widths: std::array::from_fn(|i| {
             let col = SftpColumn::ALL[i];
-            s.column_width(col).unwrap_or_else(|| default_column_width(col))
+            s.column_width(col)
+                .unwrap_or_else(|| default_column_width(col))
         }),
     }
 }
@@ -407,7 +410,11 @@ fn cmp_entries(a: &Entry, b: &Entry, col: SortKey, dir: SortDir) -> std::cmp::Or
 /// them); this also reproduces the pre-existing default ordering exactly
 /// when `col == Name, dir == Asc`.
 pub fn sort_entries_by(entries: &mut [Entry], col: SortKey, dir: SortDir) {
-    entries.sort_by(|a, b| b.is_dir.cmp(&a.is_dir).then_with(|| cmp_entries(a, b, col, dir)));
+    entries.sort_by(|a, b| {
+        b.is_dir
+            .cmp(&a.is_dir)
+            .then_with(|| cmp_entries(a, b, col, dir))
+    });
 }
 
 /// Sorts entries dirs-first, then case-insensitively by name — the default
@@ -768,7 +775,8 @@ impl SftpView {
             edit_focused: false,
             dialog_focused: false,
         };
-        cx.observe_global::<SettingsStore>(Self::apply_settings).detach();
+        cx.observe_global::<SettingsStore>(Self::apply_settings)
+            .detach();
         this.load_local(cx);
         this.connect(cx);
         this
@@ -1227,7 +1235,10 @@ impl SftpView {
                 let width = self.col_widths[column_ord(col)];
                 let token = col.token().to_string();
                 let _ = cx.global_mut::<SettingsStore>().update_user(move |c| {
-                    let widths = c.file_manager.sftp_column_widths.get_or_insert_with(Default::default);
+                    let widths = c
+                        .file_manager
+                        .sftp_column_widths
+                        .get_or_insert_with(Default::default);
                     widths.insert(token.clone(), width);
                 });
             }
@@ -1949,14 +1960,14 @@ impl Render for SftpView {
             // mirrors the dock-resize precedent in `workspace.rs`, where
             // the handle only starts the drag and the ancestor computes
             // the new size from its own bounds.
-            .on_drag_move(cx.listener(
-                |this, ev: &gpui::DragMoveEvent<SplitDrag>, _w, cx| {
+            .on_drag_move(
+                cx.listener(|this, ev: &gpui::DragMoveEvent<SplitDrag>, _w, cx| {
                     let b = ev.bounds;
                     let width = f32::from(b.size.width);
                     let x = f32::from(ev.event.position.x - b.origin.x);
                     this.resize_split(split_ratio_from_drag(x, width), cx);
-                },
-            ))
+                }),
+            )
             .child(
                 div()
                     .w(gpui::relative(self.split_ratio))
@@ -2074,11 +2085,14 @@ impl SftpView {
             .h(px(30.0))
             .border_b_1()
             .border_color(c.border)
-            .child(
-                self.tool_btn(side, "up", IconName::ArrowUp.svg(c.muted), c, cx, |this, side, cx| {
-                    this.go_up(side, cx)
-                }),
-            )
+            .child(self.tool_btn(
+                side,
+                "up",
+                IconName::ArrowUp.svg(c.muted),
+                c,
+                cx,
+                |this, side, cx| this.go_up(side, cx),
+            ))
             .child(self.render_path_bar(side, pane, c, cx))
             .child(
                 icon_toggle_button(
@@ -2126,14 +2140,19 @@ impl SftpView {
         if side == Side::Remote {
             let hid = self.host_id.clone();
             toolbar = toolbar.child(
-                button("sftp-remote-term", c.palette, ButtonVariant::Ghost, ButtonSize::Xs)
-                    .child(IconName::Terminal.svg(c.muted).size(px(13.0)))
-                    .child("Term")
-                    .on_click(cx.listener(move |_this, _: &ClickEvent, _w, cx| {
-                        cx.emit(SftpEvent::OpenRemoteTerminal {
-                            host_id: hid.clone(),
-                        });
-                    })),
+                button(
+                    "sftp-remote-term",
+                    c.palette,
+                    ButtonVariant::Ghost,
+                    ButtonSize::Xs,
+                )
+                .child(IconName::Terminal.svg(c.muted).size(px(13.0)))
+                .child("Term")
+                .on_click(cx.listener(move |_this, _: &ClickEvent, _w, cx| {
+                    cx.emit(SftpEvent::OpenRemoteTerminal {
+                        host_id: hid.clone(),
+                    });
+                })),
             );
         }
 
@@ -2317,36 +2336,45 @@ impl SftpView {
                 .items_center()
                 .px_1()
                 .overflow_hidden()
-                .children(segments.into_iter().enumerate().map(|(i, (label, seg_path))| {
-                    let is_last = i == last_idx;
-                    let mut crumb = div()
-                        .id(SharedString::from(format!("sftp-crumb-{}-{}", side_key(side), i)))
-                        .flex_none()
-                        .px(px(2.0))
-                        .text_xs()
-                        .font_family("monospace")
-                        .rounded_sm()
-                        .text_color(if is_last { c.fg } else { c.muted })
-                        .child(SharedString::from(label));
-                    if !is_last {
-                        crumb = crumb.cursor_pointer().hover(|s| s.bg(c.card)).on_click(
-                            cx.listener(move |this, _: &ClickEvent, _window, cx| {
-                                this.navigate(side, seg_path.clone(), cx);
-                            }),
-                        );
-                    }
-                    if is_last {
-                        crumb.into_any_element()
-                    } else {
-                        div()
-                            .flex_none()
-                            .flex()
-                            .items_center()
-                            .child(crumb)
-                            .child(IconName::ChevronRight.svg(c.muted).size(px(10.0)))
-                            .into_any_element()
-                    }
-                }))
+                .children(
+                    segments
+                        .into_iter()
+                        .enumerate()
+                        .map(|(i, (label, seg_path))| {
+                            let is_last = i == last_idx;
+                            let mut crumb = div()
+                                .id(SharedString::from(format!(
+                                    "sftp-crumb-{}-{}",
+                                    side_key(side),
+                                    i
+                                )))
+                                .flex_none()
+                                .px(px(2.0))
+                                .text_xs()
+                                .font_family("monospace")
+                                .rounded_sm()
+                                .text_color(if is_last { c.fg } else { c.muted })
+                                .child(SharedString::from(label));
+                            if !is_last {
+                                crumb = crumb.cursor_pointer().hover(|s| s.bg(c.card)).on_click(
+                                    cx.listener(move |this, _: &ClickEvent, _window, cx| {
+                                        this.navigate(side, seg_path.clone(), cx);
+                                    }),
+                                );
+                            }
+                            if is_last {
+                                crumb.into_any_element()
+                            } else {
+                                div()
+                                    .flex_none()
+                                    .flex()
+                                    .items_center()
+                                    .child(crumb)
+                                    .child(IconName::ChevronRight.svg(c.muted).size(px(10.0)))
+                                    .into_any_element()
+                            }
+                        }),
+                )
                 .into_any_element();
 
             div()
@@ -2394,24 +2422,25 @@ impl SftpView {
         let q = pane.search_query.clone();
         let focused = self.edit_focus.is_focused(window);
         let show_caret = focused && self.blink.read(cx).visible();
-        let mut field = div()
-            .id(match side {
-                Side::Local => "sftp-local-searchbox",
-                Side::Remote => "sftp-remote-searchbox",
-            })
-            .track_focus(&self.edit_focus)
-            .flex_1()
-            .flex()
-            .items_center()
-            .px_1()
-            .text_xs()
-            .rounded_sm()
-            .border_1()
-            .border_color(c.accent)
-            .bg(c.card)
-            .on_key_down(cx.listener(move |this, ev: &KeyDownEvent, _w, cx| {
-                this.on_search_key(side, ev, cx)
-            }));
+        let mut field =
+            div()
+                .id(match side {
+                    Side::Local => "sftp-local-searchbox",
+                    Side::Remote => "sftp-remote-searchbox",
+                })
+                .track_focus(&self.edit_focus)
+                .flex_1()
+                .flex()
+                .items_center()
+                .px_1()
+                .text_xs()
+                .rounded_sm()
+                .border_1()
+                .border_color(c.accent)
+                .bg(c.card)
+                .on_key_down(cx.listener(move |this, ev: &KeyDownEvent, _w, cx| {
+                    this.on_search_key(side, ev, cx)
+                }));
         if !q.is_empty() {
             field = field.child(div().text_color(c.fg).child(SharedString::from(q.clone())));
         }
@@ -2673,7 +2702,12 @@ impl SftpView {
             } else {
                 IconName::ChevronDown
             };
-            Some(icon.svg(c.muted).size(px(10.0)).flex_none().into_any_element())
+            Some(
+                icon.svg(c.muted)
+                    .size(px(10.0))
+                    .flex_none()
+                    .into_any_element(),
+            )
         };
         let head = move |text: &str, active: bool| {
             div()
@@ -2701,7 +2735,10 @@ impl SftpView {
             .child(div().w(px(20.0)).flex_shrink_0())
             .child(
                 div()
-                    .id(SharedString::from(format!("sftp-colh-{}-name", side_key(side))))
+                    .id(SharedString::from(format!(
+                        "sftp-colh-{}-name",
+                        side_key(side)
+                    )))
                     .flex_1()
                     .min_w_0()
                     .cursor_pointer()
@@ -2716,7 +2753,11 @@ impl SftpView {
             let is_sorted = sort_col == SortKey::from_column(col);
             row = row.child(
                 div()
-                    .id(SharedString::from(format!("sftp-colh-{}-{}", side_key(side), col.token())))
+                    .id(SharedString::from(format!(
+                        "sftp-colh-{}-{}",
+                        side_key(side),
+                        col.token()
+                    )))
                     .relative()
                     .flex_shrink_0()
                     .w(width)
@@ -3357,8 +3398,7 @@ fn sftp_row_element(
     let id: SharedString = format!("row:{}:{}", side_key(side), entry.path).into();
 
     // Zebra: tint every other *data* row (index 0 = first entry).
-    let zebra_fill =
-        (rr.zebra && !selected && index % 2 == 1).then_some(c.zebra);
+    let zebra_fill = (rr.zebra && !selected && index % 2 == 1).then_some(c.zebra);
     // Phase 4: a row whose path just received a dropped transfer gets a
     // brief landing highlight (cleared by `enqueue`'s spawned timer).
     let just_landed = !selected && rr.flashing.contains(&entry.path);
@@ -3468,7 +3508,8 @@ fn sftp_row_element(
                 };
                 if let Some(abs) = abs {
                     let abs = SharedString::from(abs);
-                    cell = cell.tooltip(move |window, cx| Tooltip::new(abs.clone()).build(window, cx));
+                    cell =
+                        cell.tooltip(move |window, cx| Tooltip::new(abs.clone()).build(window, cx));
                 }
             }
             cell.child(SharedString::from(text)).into_any_element()
@@ -3736,7 +3777,12 @@ mod tests {
 
     #[test]
     fn path_range_spans_either_direction_and_falls_back() {
-        let v = vec!["/a".to_string(), "/b".to_string(), "/c".to_string(), "/d".to_string()];
+        let v = vec![
+            "/a".to_string(),
+            "/b".to_string(),
+            "/c".to_string(),
+            "/d".to_string(),
+        ];
         assert_eq!(path_range(&v, "/b", "/d"), vec!["/b", "/c", "/d"]);
         // Shift-clicking back toward the anchor covers the same range.
         assert_eq!(path_range(&v, "/d", "/b"), vec!["/b", "/c", "/d"]);

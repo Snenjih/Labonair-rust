@@ -17,7 +17,7 @@ use labonair_command_palette::{
 use labonair_command_palette_core::{CommandSubmenu, SubmenuRegistry, SubmenuSnapshot};
 use labonair_settings::{EditorSettings, GeneralSettings, Settings as _, ThemeSettings};
 
-use labonair_workspace::search_overlay::SearchOverlay;
+use labonair_workspace::{file_finder::FileFinderView, search_overlay::SearchOverlay};
 
 use crate::app_shell::AppShell;
 use crate::menu;
@@ -109,6 +109,18 @@ impl AppShell {
         self.modal_layer.update(cx, |layer, cx| {
             layer.toggle_modal::<SearchOverlay, _>(window, cx, move |window, cx| {
                 SearchOverlay::new(workspace, theme, window, cx)
+            });
+        });
+    }
+
+    /// `Cmd+Shift+O` — open the Editor-owned fuzzy file finder in the single
+    /// existing modal overlay layer.
+    pub(crate) fn toggle_file_finder(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let workspace = self.workspace.clone();
+        let theme = self.theme.clone();
+        self.modal_layer.update(cx, |layer, cx| {
+            layer.toggle_modal::<FileFinderView, _>(window, cx, move |window, cx| {
+                FileFinderView::new(workspace, theme, window, cx)
             });
         });
     }

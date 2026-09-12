@@ -43,8 +43,8 @@ use tokio::runtime::Handle as TokioHandle;
 
 use crate::theme::ThemeStore;
 use labonair_ui_kit::{
-    button, caret, context_menu, keybinding_hint, BlinkCursor, ButtonSize, ButtonVariant,
-    IconName, ListItem, MenuItem, Palette,
+    button, caret, context_menu, keybinding_hint, BlinkCursor, ButtonSize, ButtonVariant, IconName,
+    ListItem, MenuItem, Palette,
 };
 
 // ── geometry ───────────────────────────────────────────────────────────────
@@ -781,7 +781,6 @@ impl GitGraphView {
         .detach();
     }
 
-
     fn colors(&self, cx: &App) -> Colors {
         let t = self.theme.read(cx);
         Colors {
@@ -1168,9 +1167,9 @@ impl GitGraphView {
                     ButtonSize::Xs,
                 )
                 .child(SharedString::from("View Changes"))
-                .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
-                    this.emit_commit_diff(idx, cx)
-                })),
+                .on_click(
+                    cx.listener(move |this, _: &ClickEvent, _w, cx| this.emit_commit_diff(idx, cx)),
+                ),
             )
             .child(nav_btn(
                 "git-graph-next",
@@ -1277,7 +1276,8 @@ impl GitGraphView {
 
     /// Ask the workspace to open the read-only Diff tab for commit `idx`.
     fn emit_commit_diff(&mut self, idx: usize, cx: &mut Context<Self>) {
-        let (Some(repo_root), Some(commit)) = (self.repo_path.clone(), self.commits.get(idx)) else {
+        let (Some(repo_root), Some(commit)) = (self.repo_path.clone(), self.commits.get(idx))
+        else {
             return;
         };
         cx.emit(GitGraphEvent::OpenCommitDiff {

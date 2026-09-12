@@ -1916,9 +1916,7 @@ impl SnippetsView {
                             } else {
                                 val
                             }))
-                            .when(show_caret, |d| {
-                                d.child(labonair_ui_kit::caret(c.fg, 12.0))
-                            })
+                            .when(show_caret, |d| d.child(labonair_ui_kit::caret(c.fg, 12.0)))
                             .on_click(cx.listener(move |this, _: &ClickEvent, w, cx| {
                                 cx.stop_propagation();
                                 if let Some(p) = this.var_prompt.as_mut() {
@@ -2295,13 +2293,10 @@ impl Render for SnippetsView {
                     this.blink.update(cx, |b, cx| b.start(cx));
                 },
             ));
-            self._blink_focus_subs.push(cx.on_blur(
-                &self.focus.clone(),
-                window,
-                |this, _w, cx| {
+            self._blink_focus_subs
+                .push(cx.on_blur(&self.focus.clone(), window, |this, _w, cx| {
                     this.blink.update(cx, |b, cx| b.stop(cx));
-                },
-            ));
+                }));
         }
         let c = self.colors(cx);
         let p = Palette::from_theme(self.theme.read(cx));

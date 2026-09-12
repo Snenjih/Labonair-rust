@@ -1,4 +1,6 @@
+use std::fmt;
 use std::io::Write;
+use std::path::PathBuf;
 use std::time::UNIX_EPOCH;
 
 use serde::Serialize;
@@ -169,15 +171,215 @@ pub async fn fs_stat(path: String) -> Result<FileStat, String> {
 // the GPUI editor view runs these on `cx.background_executor().spawn`. They also
 // surface the mtime so the editor can detect external changes.
 
-/// Outcome of loading a file for the editor.
-pub enum EditorLoad {
-    /// UTF-8 text plus the file's mtime (ms since epoch).
-    Text { content: String, mtime: u64 },
-    /// Binary / invalid-UTF-8 — the editor refuses to open it as text.
-    Binary,
-    /// Larger than `limit` bytes.
-    TooLarge { size: u64, limit: u64 },
+/// Storage-side identity. The editor capability converts this value into its
+/// own domain identity at the Workspace adapter boundary; the foundation must
+/// not depend upward on `labonair-editor`.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct StorageFileIdentity {
+    pub path: PathBuf,
+    pub size: u64,
+    pub modified_ms: u64,
+    pub content_hash: u64,
 }
+
+impl StorageFileIdentity {
+    fn new(path: impl Into<PathBuf>, size: u64, modified_ms: u64, content_hash: u64) -> Self {
+        Self {
+            path: path.into(),
+            size,
+            modified_ms,
+            content_hash,
+        }
+    }
+
+    pub fn from_bytes(path: impl Into<PathBuf>, modified_ms: u64, bytes: &[u8]) -> Self {
+        Self::new(
+            path,
+            bytes.len() as u64,
+            modified_ms,
+            storage_content_hash(bytes),
+        )
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct StorageFileCapabilities {
+    pub can_read: bool,
+    pub can_edit: bool,
+    pub can_save: bool,
+}
+
+impl StorageFileCapabilities {
+    const fn editable() -> Self {
+        Self {
+            can_read: true,
+            can_edit: true,
+            can_save: true,
+        }
+    }
+
+    const fn read_only() -> Self {
+        Self {
+            can_read: true,
+            can_edit: false,
+            can_save: false,
+        }
+    }
+
+    pub const fn unavailable() -> Self {
+        Self {
+            can_read: false,
+            can_edit: false,
+            can_save: false,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum StorageLineEnding {
+    Lf,
+    CrLf,
+    Cr,
+    Mixed,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum StorageBom {
+    None,
+    Utf8,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum StorageEncoding {
+    Utf8,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StorageFileSnapshot {
+    pub identity: StorageFileIdentity,
+    pub text: String,
+    pub line_ending: StorageLineEnding,
+    pub encoding: StorageEncoding,
+    pub bom: StorageBom,
+    pub capabilities: StorageFileCapabilities,
+}
+
+impl StorageFileSnapshot {
+    fn new(
+        identity: StorageFileIdentity,
+        text: String,
+        line_ending: StorageLineEnding,
+        encoding: StorageEncoding,
+        bom: StorageBom,
+        capabilities: StorageFileCapabilities,
+    ) -> Self {
+        Self {
+            identity,
+            text,
+            line_ending,
+            encoding,
+            bom,
+            capabilities,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StorageSaveIntent {
+    Normal,
+    OverwriteExternal,
+}
+
+/// Outcome of loading a file for the editor.
+pub enum EditorLifecycleLoad {
+    /// UTF-8 text plus the complete accepted disk snapshot.
+    Text { snapshot: StorageFileSnapshot },
+    /// Binary — the editor refuses to open it as text.
+    Binary {
+        identity: StorageFileIdentity,
+        capabilities: StorageFileCapabilities,
+    },
+    /// Larger than `limit` bytes.
+    TooLarge {
+        identity: StorageFileIdentity,
+        size: u64,
+        limit: u64,
+        capabilities: StorageFileCapabilities,
+    },
+    /// A recognized non-UTF-8 encoding is not decoded lossy.
+    UnsupportedEncoding {
+        identity: StorageFileIdentity,
+        encoding: String,
+        capabilities: StorageFileCapabilities,
+    },
+    /// Invalid UTF-8 is not exposed as editable text.
+    InvalidUtf8 {
+        identity: StorageFileIdentity,
+        capabilities: StorageFileCapabilities,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EditorFileStat {
+    pub identity: StorageFileIdentity,
+    pub capabilities: StorageFileCapabilities,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EditorFileError {
+    Missing {
+        path: PathBuf,
+    },
+    Io {
+        path: PathBuf,
+        message: String,
+    },
+    InvalidUtf8 {
+        path: PathBuf,
+    },
+    UnsupportedEncoding {
+        path: PathBuf,
+        encoding: String,
+    },
+    Binary {
+        path: PathBuf,
+    },
+    TooLarge {
+        path: PathBuf,
+        size: u64,
+        limit: u64,
+    },
+    ExternalChange {
+        expected: StorageFileIdentity,
+        actual: StorageFileIdentity,
+    },
+    ReadOnly {
+        path: PathBuf,
+    },
+}
+
+impl fmt::Display for EditorFileError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Missing { path } => write!(f, "file not found: {}", path.display()),
+            Self::Io { path, message } => write!(f, "{}: {message}", path.display()),
+            Self::InvalidUtf8 { path } => write!(f, "invalid UTF-8: {}", path.display()),
+            Self::UnsupportedEncoding { path, encoding } => {
+                write!(f, "unsupported {encoding} encoding: {}", path.display())
+            }
+            Self::Binary { path } => write!(f, "binary file: {}", path.display()),
+            Self::TooLarge { path, size, limit } => write!(
+                f,
+                "file {} is {size} bytes, exceeding the {limit}-byte editor limit",
+                path.display()
+            ),
+            Self::ExternalChange { .. } => write!(f, "file changed on disk before save"),
+            Self::ReadOnly { path } => write!(f, "file is read-only: {}", path.display()),
+        }
+    }
+}
+
+impl std::error::Error for EditorFileError {}
 
 fn mtime_ms(meta: &std::fs::Metadata) -> u64 {
     meta.modified()
@@ -187,58 +389,365 @@ fn mtime_ms(meta: &std::fs::Metadata) -> u64 {
         .unwrap_or(0)
 }
 
-/// Read a file as editor text. `max_bytes` defaults to [`MAX_READ_BYTES`].
-pub fn load_editor_file_sync(path: &str, max_bytes: Option<u64>) -> Result<EditorLoad, String> {
-    let limit = max_bytes.unwrap_or(MAX_READ_BYTES);
-    let p = super::paths::expand_home(path)?;
-    let meta = std::fs::metadata(&p).map_err(|e| e.to_string())?;
-    let size = meta.len();
-    if size > limit {
-        return Ok(EditorLoad::TooLarge { size, limit });
+fn storage_content_hash(bytes: &[u8]) -> u64 {
+    let mut hash = 0xcbf29ce484222325u64;
+    for byte in bytes {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(0x100000001b3);
     }
-    let mtime = mtime_ms(&meta);
-    let bytes = std::fs::read(&p).map_err(|e| e.to_string())?;
-    let sniff_len = bytes.len().min(BINARY_SNIFF_BYTES);
-    if bytes[..sniff_len].contains(&0) {
-        return Ok(EditorLoad::Binary);
+    hash
+}
+
+fn storage_detect_line_ending(text: &str) -> StorageLineEnding {
+    let bytes = text.as_bytes();
+    let mut lf = 0usize;
+    let mut crlf = 0usize;
+    let mut cr = 0usize;
+    let mut index = 0usize;
+    while index < bytes.len() {
+        match bytes[index] {
+            b'\r' if bytes.get(index + 1) == Some(&b'\n') => {
+                crlf += 1;
+                index += 2;
+            }
+            b'\r' => {
+                cr += 1;
+                index += 1;
+            }
+            b'\n' => {
+                lf += 1;
+                index += 1;
+            }
+            _ => index += 1,
+        }
     }
-    match String::from_utf8(bytes) {
-        Ok(content) => Ok(EditorLoad::Text { content, mtime }),
-        Err(_) => Ok(EditorLoad::Binary),
+    let styles = [lf > 0, crlf > 0, cr > 0]
+        .into_iter()
+        .filter(|present| *present)
+        .count();
+    if styles > 1 {
+        StorageLineEnding::Mixed
+    } else if crlf > 0 {
+        StorageLineEnding::CrLf
+    } else if cr > 0 {
+        StorageLineEnding::Cr
+    } else {
+        StorageLineEnding::Lf
     }
 }
 
-/// Atomic write (stage sibling temp, rename over target). Returns the new mtime.
-pub fn save_editor_file_sync(path: &str, content: &str) -> Result<u64, String> {
-    let target = super::paths::expand_home(path)?;
-    let parent = target
-        .parent()
-        .ok_or_else(|| "path has no parent".to_string())?;
-    let file_name = target
-        .file_name()
-        .and_then(|s| s.to_str())
-        .ok_or_else(|| "path has no file name".to_string())?;
-    let tmp = parent.join(format!(".{file_name}.labonair.tmp"));
+fn storage_normalize_line_endings(text: &str) -> String {
+    text.replace("\r\n", "\n").replace('\r', "\n")
+}
+
+fn storage_apply_line_ending(text: &str, ending: StorageLineEnding) -> String {
+    match ending {
+        StorageLineEnding::Lf | StorageLineEnding::Mixed => text.to_string(),
+        StorageLineEnding::CrLf => text.replace('\n', "\r\n"),
+        StorageLineEnding::Cr => text.replace('\n', "\r"),
+    }
+}
+
+fn capabilities(meta: &std::fs::Metadata) -> StorageFileCapabilities {
+    #[cfg(unix)]
     {
-        let mut f = std::fs::File::create(&tmp).map_err(|e| e.to_string())?;
-        f.write_all(content.as_bytes()).map_err(|e| e.to_string())?;
-        f.sync_all().map_err(|e| e.to_string())?;
+        use std::os::unix::fs::PermissionsExt;
+        if meta.permissions().mode() & 0o222 != 0 {
+            StorageFileCapabilities::editable()
+        } else {
+            StorageFileCapabilities::read_only()
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        if meta.permissions().readonly() {
+            StorageFileCapabilities::read_only()
+        } else {
+            StorageFileCapabilities::editable()
+        }
+    }
+}
+
+fn stat_for_bytes(
+    path: &std::path::Path,
+    meta: &std::fs::Metadata,
+    bytes: &[u8],
+) -> EditorFileStat {
+    EditorFileStat {
+        identity: StorageFileIdentity::new(
+            path.to_path_buf(),
+            meta.len(),
+            mtime_ms(meta),
+            storage_content_hash(bytes),
+        ),
+        capabilities: capabilities(meta),
+    }
+}
+
+fn unsupported_encoding(bytes: &[u8]) -> Option<&'static str> {
+    if bytes.starts_with(&[0xff, 0xfe]) || bytes.starts_with(&[0xfe, 0xff]) {
+        Some("UTF-16")
+    } else if bytes.starts_with(&[0xff, 0xfe, 0, 0]) || bytes.starts_with(&[0, 0, 0xfe, 0xff]) {
+        Some("UTF-32")
+    } else {
+        None
+    }
+}
+
+fn snapshot_from_bytes(
+    path: &std::path::Path,
+    meta: &std::fs::Metadata,
+    bytes: &[u8],
+) -> Result<StorageFileSnapshot, EditorFileError> {
+    let stat = stat_for_bytes(path, meta, bytes);
+    if let Some(encoding) = unsupported_encoding(bytes) {
+        return Err(EditorFileError::UnsupportedEncoding {
+            path: path.to_path_buf(),
+            encoding: encoding.to_string(),
+        });
+    }
+    let (bom, text_bytes) = if bytes.starts_with(&[0xef, 0xbb, 0xbf]) {
+        (StorageBom::Utf8, &bytes[3..])
+    } else {
+        (StorageBom::None, bytes)
+    };
+    let text =
+        String::from_utf8(text_bytes.to_vec()).map_err(|_| EditorFileError::InvalidUtf8 {
+            path: path.to_path_buf(),
+        })?;
+    Ok(StorageFileSnapshot::new(
+        stat.identity,
+        storage_normalize_line_endings(&text),
+        storage_detect_line_ending(&text),
+        StorageEncoding::Utf8,
+        bom,
+        stat.capabilities,
+    ))
+}
+
+/// Read a file as editor text. `max_bytes` defaults to [`MAX_READ_BYTES`].
+pub fn load_editor_file_lifecycle_sync(
+    path: &str,
+    max_bytes: Option<u64>,
+) -> Result<EditorLifecycleLoad, EditorFileError> {
+    let limit = max_bytes.unwrap_or(MAX_READ_BYTES);
+    let p = super::paths::expand_home(path).map_err(|message| EditorFileError::Io {
+        path: PathBuf::from(path),
+        message,
+    })?;
+    let meta = std::fs::metadata(&p).map_err(|error| {
+        if error.kind() == std::io::ErrorKind::NotFound {
+            EditorFileError::Missing { path: p.clone() }
+        } else {
+            EditorFileError::Io {
+                path: p.clone(),
+                message: error.to_string(),
+            }
+        }
+    })?;
+    let bytes = std::fs::read(&p).map_err(|error| EditorFileError::Io {
+        path: p.clone(),
+        message: error.to_string(),
+    })?;
+    let stat = stat_for_bytes(&p, &meta, &bytes);
+    if meta.len() > limit {
+        return Ok(EditorLifecycleLoad::TooLarge {
+            identity: stat.identity,
+            size: meta.len(),
+            limit,
+            capabilities: stat.capabilities,
+        });
+    }
+    if let Some(encoding) = unsupported_encoding(&bytes) {
+        return Ok(EditorLifecycleLoad::UnsupportedEncoding {
+            identity: stat.identity,
+            encoding: encoding.to_string(),
+            capabilities: stat.capabilities,
+        });
+    }
+    let sniff_len = bytes.len().min(BINARY_SNIFF_BYTES);
+    if bytes[..sniff_len].contains(&0) {
+        return Ok(EditorLifecycleLoad::Binary {
+            identity: stat.identity,
+            capabilities: stat.capabilities,
+        });
+    }
+    match snapshot_from_bytes(&p, &meta, &bytes) {
+        Ok(snapshot) => Ok(EditorLifecycleLoad::Text { snapshot }),
+        Err(EditorFileError::InvalidUtf8 { .. }) => Ok(EditorLifecycleLoad::InvalidUtf8 {
+            identity: stat.identity,
+            capabilities: stat.capabilities,
+        }),
+        Err(error) => Err(error),
+    }
+}
+
+/// Read the current identity and permissions for an open editor file.
+pub fn stat_editor_file_sync(path: &str) -> Result<EditorFileStat, EditorFileError> {
+    let p = super::paths::expand_home(path).map_err(|message| EditorFileError::Io {
+        path: PathBuf::from(path),
+        message,
+    })?;
+    let meta = std::fs::metadata(&p).map_err(|error| {
+        if error.kind() == std::io::ErrorKind::NotFound {
+            EditorFileError::Missing { path: p.clone() }
+        } else {
+            EditorFileError::Io {
+                path: p.clone(),
+                message: error.to_string(),
+            }
+        }
+    })?;
+    let bytes = std::fs::read(&p).map_err(|error| EditorFileError::Io {
+        path: p.clone(),
+        message: error.to_string(),
+    })?;
+    Ok(stat_for_bytes(&p, &meta, &bytes))
+}
+
+/// Atomic write with EOL/BOM preservation and a pre-rename identity check.
+pub fn save_editor_file_lifecycle_sync(
+    path: &str,
+    content: &str,
+    line_ending: StorageLineEnding,
+    bom: StorageBom,
+    expected: &StorageFileIdentity,
+    intent: StorageSaveIntent,
+) -> Result<StorageFileSnapshot, EditorFileError> {
+    let target = super::paths::expand_home(path).map_err(|message| EditorFileError::Io {
+        path: PathBuf::from(path),
+        message,
+    })?;
+    let parent = target.parent().ok_or_else(|| EditorFileError::Io {
+        path: target.clone(),
+        message: "path has no parent".into(),
+    })?;
+    let file_name =
+        target
+            .file_name()
+            .and_then(|s| s.to_str())
+            .ok_or_else(|| EditorFileError::Io {
+                path: target.clone(),
+                message: "path has no file name".into(),
+            })?;
+    let current = stat_editor_file_sync(path)?;
+    if !current.capabilities.can_save {
+        return Err(EditorFileError::ReadOnly {
+            path: target.clone(),
+        });
+    }
+    if intent == StorageSaveIntent::Normal && current.identity != *expected {
+        return Err(EditorFileError::ExternalChange {
+            expected: expected.clone(),
+            actual: current.identity,
+        });
+    }
+    let tmp = parent.join(format!(".{file_name}.labonair.tmp"));
+    let original_permissions = std::fs::metadata(&target)
+        .map_err(|e| EditorFileError::Io {
+            path: target.clone(),
+            message: e.to_string(),
+        })?
+        .permissions();
+    let mut serialized = storage_apply_line_ending(content, line_ending);
+    if bom == StorageBom::Utf8 {
+        serialized.insert(0, '\u{feff}');
+    }
+    {
+        let mut f = std::fs::File::create(&tmp).map_err(|e| EditorFileError::Io {
+            path: tmp.clone(),
+            message: e.to_string(),
+        })?;
+        f.write_all(serialized.as_bytes())
+            .map_err(|e| EditorFileError::Io {
+                path: tmp.clone(),
+                message: e.to_string(),
+            })?;
+        f.set_permissions(original_permissions.clone())
+            .map_err(|e| EditorFileError::Io {
+                path: tmp.clone(),
+                message: e.to_string(),
+            })?;
+        f.sync_all().map_err(|e| EditorFileError::Io {
+            path: tmp.clone(),
+            message: e.to_string(),
+        })?;
+    }
+    if intent == StorageSaveIntent::Normal {
+        let latest = stat_editor_file_sync(path)?;
+        if latest.identity != *expected {
+            let _ = std::fs::remove_file(&tmp);
+            return Err(EditorFileError::ExternalChange {
+                expected: expected.clone(),
+                actual: latest.identity,
+            });
+        }
     }
     std::fs::rename(&tmp, &target).map_err(|e| {
         let _ = std::fs::remove_file(&tmp);
-        e.to_string()
+        EditorFileError::Io {
+            path: target.clone(),
+            message: e.to_string(),
+        }
     })?;
-    let mtime = std::fs::metadata(&target)
-        .map(|m| mtime_ms(&m))
-        .unwrap_or(0);
-    Ok(mtime)
+    let meta = std::fs::metadata(&target).map_err(|e| EditorFileError::Io {
+        path: target.clone(),
+        message: e.to_string(),
+    })?;
+    snapshot_from_bytes(&target, &meta, serialized.as_bytes())
 }
 
-/// The mtime (ms) of a file, or an error if it can't be stat'd (e.g. deleted).
-pub fn file_mtime_sync(path: &str) -> Result<u64, String> {
-    let p = super::paths::expand_home(path)?;
-    let meta = std::fs::metadata(&p).map_err(|e| e.to_string())?;
-    Ok(mtime_ms(&meta))
+// Compatibility boundary for the AI file tools. The editor/workspace uses
+// the typed lifecycle functions above; this adapter remains only until the AI
+// capability consumes the same FileSnapshot contract.
+#[derive(Debug)]
+pub enum EditorLoad {
+    Text { content: String, mtime: u64 },
+    Binary,
+    TooLarge { size: u64, limit: u64 },
+}
+
+pub fn load_editor_file_sync(path: &str, max_bytes: Option<u64>) -> Result<EditorLoad, String> {
+    match load_editor_file_lifecycle_sync(path, max_bytes).map_err(|error| error.to_string())? {
+        EditorLifecycleLoad::Text { snapshot } => Ok(EditorLoad::Text {
+            content: snapshot.text,
+            mtime: snapshot.identity.modified_ms,
+        }),
+        EditorLifecycleLoad::Binary { .. } | EditorLifecycleLoad::InvalidUtf8 { .. } => {
+            Ok(EditorLoad::Binary)
+        }
+        EditorLifecycleLoad::TooLarge { size, limit, .. } => {
+            Ok(EditorLoad::TooLarge { size, limit })
+        }
+        EditorLifecycleLoad::UnsupportedEncoding { .. } => Ok(EditorLoad::Binary),
+    }
+}
+
+pub fn save_editor_file_sync(path: &str, content: &str) -> Result<u64, String> {
+    let snapshot =
+        match load_editor_file_lifecycle_sync(path, None).map_err(|error| error.to_string())? {
+            EditorLifecycleLoad::Text { snapshot } => snapshot,
+            EditorLifecycleLoad::TooLarge { size, limit, .. } => {
+                return Err(format!(
+                    "file is {size} bytes, exceeding the {limit}-byte limit"
+                ))
+            }
+            EditorLifecycleLoad::Binary { .. }
+            | EditorLifecycleLoad::InvalidUtf8 { .. }
+            | EditorLifecycleLoad::UnsupportedEncoding { .. } => {
+                return Err("file is not supported as UTF-8 text".into())
+            }
+        };
+    save_editor_file_lifecycle_sync(
+        path,
+        content,
+        snapshot.line_ending,
+        snapshot.bom,
+        &snapshot.identity,
+        StorageSaveIntent::Normal,
+    )
+    .map(|saved| saved.identity.modified_ms)
+    .map_err(|error| error.to_string())
 }
 
 pub async fn fs_file_exists(path: String) -> bool {

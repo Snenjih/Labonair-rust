@@ -461,6 +461,13 @@ pub fn all_fields() -> Vec<AnyField> {
             "Editor font size in points."
         ),
         field!(
+            editor.editor_line_height,
+            "editorLineHeight",
+            Float { min_centi: 100, max_centi: 250, step_centi: 5 },
+            "Line height",
+            "Editor line-height multiplier."
+        ),
+        field!(
             editor.editor_tab_size,
             "editorTabSize",
             Int { min: 2, max: 8, step: 2 },
@@ -494,6 +501,167 @@ pub fn all_fields() -> Vec<AnyField> {
             Switch,
             "Indent with tabs",
             "Use tab characters instead of spaces."
+        ),
+        field!(
+            editor.editor_indentation_guides,
+            "editorIndentationGuides",
+            Switch,
+            "Indentation guides",
+            "Show vertical guides for indentation levels."
+        ),
+        field!(
+            editor.editor_whitespace,
+            "editorWhitespace",
+            Select(&[("none", "None"), ("boundary", "Boundary"), ("all", "All")]),
+            "Whitespace",
+            "Show spaces, tabs, and line endings in the editor."
+        ),
+        field!(
+            editor.editor_minimap,
+            "editorMinimap",
+            Switch,
+            "Minimap",
+            "Show a compact code overview at the editor edge."
+        ),
+        field!(
+            editor.editor_bracket_matching,
+            "editorBracketMatching",
+            Switch,
+            "Bracket matching",
+            "Highlight matching brackets when the caret is adjacent."
+        ),
+        field!(
+            editor.editor_rulers,
+            "editorRulers",
+            Text,
+            "Rulers",
+            "Comma-separated display columns, for example 80,120."
+        ),
+        field!(
+            editor.editor_scroll_beyond_last_line,
+            "editorScrollBeyondLastLine",
+            Switch,
+            "Scroll beyond last line",
+            "Allow blank space below the final line."
+        ),
+        field!(
+            editor.editor_sticky_context,
+            "editorStickyContext",
+            Switch,
+            "Sticky context",
+            "Keep the current symbol context visible while scrolling."
+        ),
+        field!(
+            editor.editor_diagnostics,
+            "editorDiagnostics",
+            Switch,
+            "Diagnostics",
+            "Show syntax and language-service diagnostics."
+        ),
+        field!(
+            editor.editor_semantic_tokens,
+            "editorSemanticTokens",
+            Switch,
+            "Semantic tokens",
+            "Show semantic token colours when a local provider supports them."
+        ),
+        field!(
+            editor.editor_git_gutter,
+            "editorGitGutter",
+            Switch,
+            "Git gutter",
+            "Show line change markers from the Git review bridge."
+        ),
+        field!(
+            editor.editor_git_word_diff,
+            "editorGitWordDiff",
+            Switch,
+            "Git word diff",
+            "Show intra-line Git change decorations without changing gutter markers."
+        ),
+        field!(
+            editor.editor_completion,
+            "editorCompletion",
+            Switch,
+            "Completion",
+            "Enable local completion suggestions when supported."
+        ),
+        field!(
+            editor.editor_hover,
+            "editorHover",
+            Switch,
+            "Hover information",
+            "Show local hover information when supported."
+        ),
+        field!(
+            editor.editor_format_on_save,
+            "editorFormatOnSave",
+            Switch,
+            "Format on save",
+            "Apply the editor's local formatter before saving (off by default)."
+        ),
+        field!(
+            editor.editor_auto_save,
+            "editorAutoSave",
+            Switch,
+            "Auto save",
+            "Save after a quiet period following edits (off by default)."
+        ),
+        field!(
+            editor.editor_auto_save_delay,
+            "editorAutoSaveDelay",
+            Int { min: 250, max: 60000, step: 250 },
+            "Auto-save delay",
+            "Quiet period before auto-save, in milliseconds."
+        ),
+        field!(
+            editor.editor_trim_trailing_whitespace,
+            "editorTrimTrailingWhitespace",
+            Switch,
+            "Trim trailing whitespace",
+            "Remove trailing spaces during save (off by default)."
+        ),
+        field!(
+            editor.editor_insert_final_newline,
+            "editorInsertFinalNewline",
+            Switch,
+            "Final newline",
+            "Append a final newline during save (off by default)."
+        ),
+        field!(
+            editor.editor_show_cursor_position,
+            "editorShowCursorPosition",
+            Switch,
+            "Cursor position",
+            "Show line and column in the editor status affordance."
+        ),
+        field!(
+            editor.editor_show_selection_stats,
+            "editorShowSelectionStats",
+            Switch,
+            "Selection statistics",
+            "Show selected character and line counts."
+        ),
+        field!(
+            editor.editor_show_outline,
+            "editorShowOutline",
+            Switch,
+            "Code outline",
+            "Expose the document symbol outline affordance."
+        ),
+        field!(
+            editor.editor_autocomplete_debounce_ms,
+            "editorAutocompleteDebounceMs",
+            Int { min: 50, max: 2000, step: 50 },
+            "Completion delay",
+            "Debounce local completion requests, in milliseconds."
+        ),
+        field!(
+            editor.editor_max_file_size_mb,
+            "editorMaxFileSizeMb",
+            Int { min: 1, max: 512, step: 1 },
+            "Maximum text file size",
+            "Reject text loads above this size and keep them out of the edit buffer."
         ),
         field!(
             editor.editor_vim_mode,
@@ -826,5 +994,18 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn editor_git_word_diff_is_a_canonical_switch_field() {
+        let field = all_fields()
+            .into_iter()
+            .find(|field| field.json_path == "editor.editorGitWordDiff")
+            .expect("editorGitWordDiff must be registered");
+        assert!(matches!(field.control, FieldControl::Switch));
+
+        let mut content = SettingsContent::defaults();
+        assert!((field.set)(&mut content, Value::Bool(false)));
+        assert_eq!((field.get)(&content), Some(Value::Bool(false)));
     }
 }

@@ -3,9 +3,30 @@ name = "labonair-editor"
 version = "0.1.0"
 edition = "2021"
 
+[[bin]]
+name = "labonair-editor-lsp-fixture"
+path = "src/bin/lsp_fixture.rs"
+
 [dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
 # gpui not needed by the core editing model; the GPUI view lives in labonair-ui.
 labonair-command-palette-core = { path = "../command-palette-core" }
+
+# The editor's canonical text store. Ropey's cheap structural clones allow
+# immutable snapshots and transaction history without full-document copies.
+# License: MIT OR Apache-2.0 (ropey 2.0.0-beta.1).
+ropey = { version = "2.0.0-beta.1", default-features = false, features = [
+    "simd",
+    "metric_chars",
+    "metric_lines_lf",
+    "metric_lines_lf_cr",
+] }
+
+# Typed literal/regex search with Unicode-safe byte ranges. License: MIT OR
+# Apache-2.0. The dependency avoids a second ad-hoc regex parser in Editor.
+regex = { version = "1.11", default-features = false, features = ["std", "unicode"] }
 
 # Syntax highlighting — Tree-sitter (grammar-based parsing, same approach as Zed).
 tree-sitter = "0.25"

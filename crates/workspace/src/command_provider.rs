@@ -23,6 +23,9 @@ pub struct WorkspaceCommandProvider;
 /// Host operation used to present or dismiss the workspace search overlay.
 pub type SearchToggleHandler = Rc<dyn Fn(&mut Window, &mut App)>;
 
+/// Host operation used to present or dismiss the Editor-owned Open File modal.
+pub type FileFinderToggleHandler = Rc<dyn Fn(&mut Window, &mut App)>;
+
 /// Register the executable search contribution owned by Workspace.
 pub fn register_search_handler(registry: &mut CommandHandlerRegistry, toggle: SearchToggleHandler) {
     registry
@@ -30,6 +33,20 @@ pub fn register_search_handler(registry: &mut CommandHandlerRegistry, toggle: Se
             toggle(window, cx);
         })
         .expect("workspace search handler must have a unique id");
+}
+
+/// Register the Editor-owned Open File contribution at the modal composition
+/// boundary. Workspace supplies the view/adapter; the shell supplies the
+/// existing ModalLayer host callback.
+pub fn register_file_finder_handler(
+    registry: &mut CommandHandlerRegistry,
+    toggle: FileFinderToggleHandler,
+) {
+    registry
+        .register(CommandId::OpenFile, move |window, cx| {
+            toggle(window, cx);
+        })
+        .expect("workspace file finder handler must have a unique id");
 }
 
 /// Register the keymap-management entry point owned by Workspace.
@@ -54,7 +71,10 @@ pub fn register_keymap_handler(
 
 /// Register the host-management entry point owned by Workspace (the `Hosts`
 /// tab, mirrors `register_keymap_handler`).
-pub fn register_hosts_handler(registry: &mut CommandHandlerRegistry, workspace: &Entity<Workspace>) {
+pub fn register_hosts_handler(
+    registry: &mut CommandHandlerRegistry,
+    workspace: &Entity<Workspace>,
+) {
     let workspace = workspace.clone();
     registry
         .register(CommandId::OpenHosts, move |_window, cx| {
@@ -259,6 +279,31 @@ pub fn register_handlers(registry: &mut CommandHandlerRegistry, workspace: &Enti
             cx.notify();
         });
     });
+}
+
+/// Register the executable Editor contribution at the Workspace composition
+/// boundary. The Editor owns command meaning and metadata; Workspace only
+/// resolves the active tab and forwards the typed command to its view.
+pub fn register_editor_handlers(
+    registry: &mut CommandHandlerRegistry,
+    workspace: &Entity<Workspace>,
+) {
+    macro_rules! register {
+        ($id:expr) => {
+            let workspace = workspace.clone();
+            registry
+                .register($id, move |window, cx| {
+                    workspace.update(cx, |workspace, cx| {
+                        workspace.dispatch_active_editor_command($id, window, cx);
+                    });
+                })
+                .expect("editor command handler must have a unique id");
+        };
+    }
+
+    for id in labonair_editor::command_provider::EXECUTABLE_EDITOR_COMMAND_IDS {
+        register!(*id);
+    }
 }
 
 /// Register Workspace-owned dynamic palette actions. The palette only emits
@@ -479,5 +524,31 @@ mod tests {
         assert!(commands
             .iter()
             .any(|command| command.id == CommandId::SplitRight));
+    }
+
+    #[test]
+    fn editor_handler_inventory_is_unique_and_descriptor_backed() {
+        let ids = labonair_editor::command_provider::EXECUTABLE_EDITOR_COMMAND_IDS;
+        let mut unique = ids.to_vec();
+        unique.sort_by_key(|id| format!("{id:?}"));
+        unique.dedup();
+        assert_eq!(unique.len(), ids.len());
+
+        let descriptors = labonair_editor::command_provider::EditorCommandProvider.commands();
+        assert!(ids
+            .iter()
+            .all(|id| descriptors.iter().any(|descriptor| descriptor.id == *id)));
+    }
+
+    #[test]
+    fn open_file_is_not_a_second_workspace_descriptor() {
+        let workspace_commands = WorkspaceCommandProvider.commands();
+        let editor_commands = labonair_editor::command_provider::EditorCommandProvider.commands();
+        assert!(!workspace_commands
+            .iter()
+            .any(|command| command.id == CommandId::OpenFile));
+        assert!(editor_commands
+            .iter()
+            .any(|command| command.id == CommandId::OpenFile));
     }
 }

@@ -152,8 +152,9 @@ a separate product decision after the core workflow is stable.
       App-scope background layers), whose structural work has landed and whose
       other criteria are met.
 - [ ] Native launch confirms the Rust window exists, but macOS currently denies
-      Screen Recording to the capture runner. Capture the visual matrix with
-      the native Rust bundle once Screen Recording access is available.
+      Screen Recording to the capture runner. A later exact-bundle capture is
+      now available for the normal standalone shell state, but the complete
+      visual matrix remains open until the remaining states are inspected.
 - [ ] Source Control visual parity follow-up: the panel now uses a clean-room
       Zed-inspired flat tab strip, trailing staging controls, visible selected
       rows, repository push controls, and an editor-like commit composer. The
@@ -162,3 +163,89 @@ a separate product decision after the core workflow is stable.
 - [x] The PID validator accepts both absolute packaged paths and the relative
       executable path reported by `cargo run -p labonair`; the retry reached the
       correct native window before macOS denied the capture.
+
+## Verification run — 2026-09-12
+
+- `scripts/check-crate-deps.sh` — passed: 57 workspace crates, 227 internal
+  edges, acyclic, no untracked boundary violations.
+- `python3 scripts/check_rework_queue.py` — passed; R07-001 remains the active
+  task and R09 remains planned.
+- `python3 scripts/check_documentation.py` — passed: 13 normative docs and 93
+  Markdown files checked.
+- `cargo fmt --check` — failed on pre-existing formatting differences in
+  unrelated `command-palette`, `hosts-ui`, `panel-*`, `settings*`, and
+  `workspace` files; no formatting-only changes were made in this acceptance
+  task.
+- `cargo check --workspace --all-targets` — passed, with the existing unused
+  `cx` warning in `hosts-ui`.
+- `cargo clippy --workspace --all-targets -- -D warnings` — failed on existing
+  `hosts-ui` unused-variable/too-many-arguments lints and existing
+  `settings-ui` too-many-arguments/unnecessary-map-or lints; these are outside
+  R07-001 scope.
+- `cargo test --workspace` — passed after the sandbox-only first attempt was
+  repeated with the required elevated execution; all tests and doc-tests passed.
+- `LABONAIR_SMOKE_LAUNCH=1 scripts/smoke-test.sh` — passed: release bundle,
+  bundle metadata, core smoke tests, and exact Rust launch survived five
+  seconds.
+- `scripts/screenshot.sh /tmp/labonair-r07-native.png 94593` — passed with
+  exact Rust executable validation; the native evidence is recorded in the
+  acceptance matrix. The process was then stopped cleanly.
+
+R07-001 remains `In Progress`: structural and automated gates are evidenced,
+but the complete native visual-state matrix is not yet verified.
+
+## Baseline gate repair — 2026-09-12
+
+The repository-gate findings from the previous verification run were repaired
+with formatting-only changes and minimal local lint fixes. No R09/editor code,
+reference source, ADR, or editor comparison report was changed by this repair.
+
+### Formatting evidence
+
+Before the repair, `cargo fmt --all -- --check` reported these exact files:
+
+- `crates/command-palette/src/palette.rs`
+- `crates/hosts-ui/src/hosts.rs`
+- `crates/panel-git-graph/src/panel_git_graph.rs`
+- `crates/panel-scm/src/panel_scm.rs`
+- `crates/panel-snippets/src/panel_snippets.rs`
+- `crates/settings/src/concrete.rs`
+- `crates/settings-content/src/file_manager.rs`
+- `crates/settings-ui/src/panes/generic.rs`
+- `crates/shell/src/commands.rs`
+- `crates/workspace/src/command_provider.rs`
+- `crates/workspace/src/views/sftp.rs`
+
+`cargo fmt --all` was applied only to those reported Rust files. A subsequent
+`cargo fmt --all -- --check` passed.
+
+### Clippy evidence
+
+The first post-format Clippy run reported an unused `cx` in
+`hosts-ui/src/hosts.rs` and `too_many_arguments` in its two local field
+renderers. The repair removed the unused renderer/closure parameter and
+grouped the two visual booleans into a private `FieldRenderState`, preserving
+the existing rendering behavior.
+
+The next run exposed the remaining local `settings-ui` findings: the
+crate-private `render_field` helper had `too_many_arguments`, and one
+`map_or(true, ...)` could use `is_none_or(...)`. The helper now receives a
+private `FieldRowState`, is private because it has no external callers, and
+uses `is_none_or`.
+
+After these minimal changes:
+
+- `cargo clippy --workspace --all-targets -- -D warnings` — passed.
+- `cargo check --workspace --all-targets` — passed.
+- `cargo test --workspace` — passed outside the sandbox: all workspace unit,
+  integration, and doc tests passed; the initial sandbox run was blocked only
+  by the local HTTP-listener permission required by the AI client test.
+- `python3 scripts/check_rework_queue.py` — passed; R07-001 is still the only
+  active task and R09 remains planned.
+- `python3 scripts/check_documentation.py` — passed after the external native
+  screenshot artifact was recorded as a filesystem path rather than an
+  escaping Markdown link.
+- `git diff --check` — passed.
+
+The complete native visual-state matrix remains the only known R07-001
+acceptance blocker. R09 remains planned and was not started.

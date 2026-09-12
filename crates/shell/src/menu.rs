@@ -42,6 +42,7 @@ actions!(
         NewSftpTab,
         NewPreviewTab,
         NewEditorTab,
+        OpenFile,
         Save,
         CloseTab,
         ClosePane,
@@ -195,6 +196,7 @@ fn action_for(name: &str) -> Option<Box<dyn Action>> {
         CommandId::ClosePane => Box::new(ClosePane),
         CommandId::FocusNextPane => Box::new(FocusNextPane),
         CommandId::Find => Box::new(Find),
+        CommandId::OpenFile => Box::new(OpenFile),
         CommandId::ToggleSidebar => Box::new(ToggleSidebar),
         CommandId::ToggleZenMode => Box::new(ToggleZenMode),
         CommandId::ToggleFullScreen => Box::new(ToggleFullScreen),
@@ -293,6 +295,7 @@ fn app_menus() -> Vec<Menu> {
                 MenuItem::action("New SFTP Tab", NewSftpTab),
                 MenuItem::action("New Preview Tab", NewPreviewTab),
                 MenuItem::action("New Editor Tab", NewEditorTab),
+                MenuItem::action("Open File…", OpenFile),
                 MenuItem::separator(),
                 MenuItem::action("Close Tab", CloseTab),
                 MenuItem::action("Close Pane", ClosePane),
@@ -404,6 +407,7 @@ mod tests {
     fn legacy_shortcuts_action_resolves_to_keymap_surface() {
         assert!(action_for("settings::OpenShortcuts").is_some());
         assert!(action_for("zed::OpenKeymap").is_some());
+        assert!(action_for(CommandId::OpenFile.action_name()).is_some());
     }
 
     #[test]

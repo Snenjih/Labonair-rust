@@ -331,7 +331,8 @@ fn search_mode<'a>(
         .into_iter()
         .enumerate()
         .filter_map(|(index, command)| {
-            let mut haystack = String::with_capacity(command.title.len() + command.section.len() + 1);
+            let mut haystack =
+                String::with_capacity(command.title.len() + command.section.len() + 1);
             haystack.push_str(&command.title);
             haystack.push(' ');
             haystack.push_str(&command.section);

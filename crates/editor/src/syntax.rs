@@ -22,6 +22,7 @@ use tree_sitter_highlight::{
     Error as HighlightError, Highlight, HighlightConfiguration, HighlightEvent, Highlighter,
 };
 
+use crate::buffer::{BufferSnapshot, Revision};
 use crate::language::Language;
 
 /// A coarse token class that an editor theme maps to a colour. Deliberately
@@ -155,7 +156,7 @@ const WINDOW_MARGIN: usize = 32 * 1024;
 /// (revision, viewport) pair.
 pub struct SyntaxHighlighter {
     language: Language,
-    revision: u64,
+    revision: Revision,
     covered: Range<usize>,
     spans: Vec<HighlightSpan>,
 }
@@ -164,7 +165,7 @@ impl SyntaxHighlighter {
     pub fn new(language: Language) -> Self {
         Self {
             language,
-            revision: u64::MAX,
+            revision: Revision::new(u64::MAX),
             covered: 0..0,
             spans: Vec::new(),
         }
@@ -189,23 +190,26 @@ impl SyntaxHighlighter {
 
     /// Force a re-parse on the next [`Self::update`].
     pub fn invalidate(&mut self) {
-        self.revision = u64::MAX;
+        self.revision = Revision::new(u64::MAX);
         self.covered = 0..0;
         self.spans.clear();
     }
 
-    /// Ensure the cached spans cover `visible` for document `text` at `revision`.
+    /// Ensure the cached spans cover `visible` for a snapshot revision.
     ///
-    /// `text` must be the exact `\n`-joined document contents; `visible` is a
-    /// byte range into it. Cheap no-op when nothing relevant changed.
-    pub fn update(&mut self, text: &str, revision: u64, visible: Range<usize>) {
+    /// The snapshot is the only source of document text. The temporary UTF-8
+    /// view is created only when Tree-sitter needs contiguous source bytes;
+    /// the highlighter never owns or mutates a second document buffer.
+    pub fn update(&mut self, snapshot: &BufferSnapshot, visible: Range<usize>) {
+        let revision = snapshot.revision();
+        let text_len = snapshot.byte_len();
         let fresh = revision == self.revision;
         let covered =
-            self.covered.start <= visible.start && self.covered.end >= visible.end.min(text.len());
+            self.covered.start <= visible.start && self.covered.end >= visible.end.min(text_len);
         if fresh && covered && !self.spans.is_empty() {
             return;
         }
-        if fresh && covered && self.covered.end >= text.len() {
+        if fresh && covered && self.covered.end >= text_len {
             // Whole document already covered and nothing changed.
             return;
         }
@@ -214,13 +218,14 @@ impl SyntaxHighlighter {
         self.spans.clear();
         self.covered = 0..0;
 
-        if text.is_empty() || text.len() > MAX_HIGHLIGHT_BYTES {
+        if text_len == 0 || text_len > MAX_HIGHLIGHT_BYTES {
             return;
         }
         let Some(cfg) = config(self.language) else {
             return;
         };
 
+        let text = snapshot.text();
         let win_start = visible.start.saturating_sub(WINDOW_MARGIN);
         let win_end = visible.end.saturating_add(WINDOW_MARGIN).min(text.len());
 
@@ -279,11 +284,13 @@ impl SyntaxHighlighter {
     /// `line` is the raw line text; `line_start` is its start byte offset in the
     /// document text. Gaps between spans (and everything when no grammar is
     /// active) come back as runs with `kind: None`.
-    pub fn line_runs(&self, line: &str, line_start: usize) -> Vec<StyledRun> {
-        let line_end = line_start + line.len();
+    pub fn line_runs(&self, snapshot: &BufferSnapshot, line: usize) -> Vec<StyledRun> {
+        let content = snapshot.line(line);
+        let line_start = snapshot.line_start_byte(line);
+        let line_end = line_start + content.len();
         if self.spans.is_empty() {
             return vec![StyledRun {
-                text: line.to_string(),
+                text: content,
                 kind: None,
             }];
         }
@@ -304,25 +311,25 @@ impl SyntaxHighlighter {
             }
             if s > at {
                 runs.push(StyledRun {
-                    text: line[at - line_start..s - line_start].to_string(),
+                    text: content[at - line_start..s - line_start].to_string(),
                     kind: None,
                 });
             }
             runs.push(StyledRun {
-                text: line[s - line_start..e - line_start].to_string(),
+                text: content[s - line_start..e - line_start].to_string(),
                 kind: Some(span.kind),
             });
             at = e;
         }
         if at < line_end {
             runs.push(StyledRun {
-                text: line[at - line_start..].to_string(),
+                text: content[at - line_start..].to_string(),
                 kind: None,
             });
         }
         if runs.is_empty() {
             runs.push(StyledRun {
-                text: line.to_string(),
+                text: content,
                 kind: None,
             });
         }
@@ -477,7 +484,9 @@ mod tests {
 
     fn kinds(lang: Language, src: &str) -> Vec<(HighlightKind, String)> {
         let mut hl = SyntaxHighlighter::new(lang);
-        hl.update(src, 1, 0..src.len());
+        let buffer = crate::EditorBuffer::from_text(src);
+        let snapshot = buffer.snapshot();
+        hl.update(&snapshot, 0..src.len());
         hl.spans()
             .iter()
             .map(|s| (s.kind, src[s.start..s.end].to_string()))
@@ -522,7 +531,9 @@ mod tests {
     #[test]
     fn plain_text_and_unsupported_produce_no_spans() {
         let mut hl = SyntaxHighlighter::new(Language::PlainText);
-        hl.update("just words\n", 1, 0..11);
+        let buffer = crate::EditorBuffer::from_text("just words\n");
+        let snapshot = buffer.snapshot();
+        hl.update(&snapshot, 0..11);
         assert!(hl.spans().is_empty());
         assert!(!hl.has_grammar());
         assert!(SyntaxHighlighter::new(Language::Rust).has_grammar());
@@ -532,8 +543,10 @@ mod tests {
     fn line_runs_partition_the_line_exactly() {
         let src = "let x = 1;\n";
         let mut hl = SyntaxHighlighter::new(Language::Rust);
-        hl.update(src, 1, 0..src.len());
-        let runs = hl.line_runs("let x = 1;", 0);
+        let buffer = crate::EditorBuffer::from_text(src);
+        let snapshot = buffer.snapshot();
+        hl.update(&snapshot, 0..src.len());
+        let runs = hl.line_runs(&snapshot, 0);
         let joined: String = runs.iter().map(|r| r.text.as_str()).collect();
         assert_eq!(joined, "let x = 1;");
         assert!(runs.iter().any(|r| r.kind == Some(HighlightKind::Keyword)));
@@ -545,8 +558,10 @@ mod tests {
         src.push_str(&"// filler line\n".repeat(4000));
         src.push_str("fn zzz() {}\n");
         let mut hl = SyntaxHighlighter::new(Language::Rust);
+        let buffer = crate::EditorBuffer::from_text(&src);
+        let snapshot = buffer.snapshot();
         // Only look at the first 200 bytes.
-        hl.update(&src, 1, 0..200);
+        hl.update(&snapshot, 0..200);
         let last = src.rfind("zzz").unwrap();
         assert!(
             hl.spans().iter().all(|s| s.start < last),
@@ -559,9 +574,12 @@ mod tests {
     fn revision_cache_is_reused() {
         let src = "fn a() {}\n";
         let mut hl = SyntaxHighlighter::new(Language::Rust);
-        hl.update(src, 7, 0..src.len());
+        let buffer = crate::EditorBuffer::from_text(src);
+        let snapshot = buffer.snapshot();
+        hl.update(&snapshot, 0..src.len());
         let snapshot = hl.spans().to_vec();
-        hl.update(src, 7, 0..src.len());
+        let buffer_snapshot = buffer.snapshot();
+        hl.update(&buffer_snapshot, 0..src.len());
         assert_eq!(hl.spans(), snapshot.as_slice());
     }
 }

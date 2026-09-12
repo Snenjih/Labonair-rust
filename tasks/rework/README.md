@@ -42,6 +42,13 @@ The active sequence is:
 33. `R08-010-actionable-notifications.md` — Planned (no current consumer)
 34. `R08-011-defer-dormant-theme-import.md` — Done
 35. `R08-012-workspace-hosts-ui-decoupling.md` — Done
+36. `R09-001-editor-e0-text-model-contract.md` — Planned
+37. `R09-002-editor-e1-file-lifecycle.md` — Planned
+38. `R09-003-editor-e2-editing-and-splits.md` — Planned
+39. `R09-004-editor-e3-display-search-navigation.md` — Planned
+40. `R09-005-editor-e4-local-language-services.md` — Planned
+41. `R09-006-editor-e5-git-gutter-review-bridge.md` — Planned
+42. `R09-007-editor-e6-persistence-polish-and-p2.md` — Planned
 
 Phases 0–6 are complete. R02-001 is the first bounded Phase 2 shell task and
 also connects the already-established theme registry to its intended palette
@@ -66,3 +73,22 @@ also landed early, for the same reason and with the same `Planned` status
 pending the R07-001 visual matrix.
 
 Only the earliest task whose dependencies are complete may be started.
+
+The Editor rework is planned after the acceptance gate as the ordered R09
+sequence:
+
+- R09-001 establishes Rope/anchors/transactions and immutable snapshots.
+- R09-002 establishes FileState, EOL/BOM/encoding, read-only, and conflict
+  safety.
+- R09-003 adds multi-selection editing and Editor-internal splits under
+  [ADR 0004](../../docs/adr/0004-editor-internal-splits.md).
+- R09-004 adds display mapping, folding, search/replace, and navigation.
+- R09-005 adds local-only language services before any remote LSP work.
+- R09-006 adds Git gutter decoration through a typed Git bridge while
+  preserving Project Diff as the canonical review surface.
+- R09-007 adds versioned persistence, opt-in autosave/format-on-save, and
+  the selected P2 polish.
+
+All R09 tasks remain Planned until R07-001 is complete. They are bounded
+implementation records, not evidence that the target Editor behavior exists
+in the current tree.

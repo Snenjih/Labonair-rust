@@ -456,11 +456,35 @@ fn editor_from(p: &Preferences, e: &EditorPrefs) -> EditorContent {
     EditorContent {
         editor_font_family: Some(p.editor_font_family.clone()),
         editor_font_size: Some(p.editor_font_size),
+        editor_line_height: Some(p.editor_line_height),
         editor_tab_size: Some(p.editor_tab_size),
         editor_word_wrap: Some(p.editor_word_wrap),
         editor_line_numbers: Some(p.editor_line_numbers),
         editor_relative_line_numbers: Some(p.editor_relative_line_numbers),
         editor_indent_with_tabs: Some(p.editor_indent_with_tabs),
+        editor_indentation_guides: Some(p.editor_indentation_guides),
+        editor_whitespace: Some("none".to_string()),
+        editor_minimap: Some(false),
+        editor_bracket_matching: Some(p.editor_bracket_matching),
+        editor_rulers: Some(String::new()),
+        editor_scroll_beyond_last_line: Some(true),
+        editor_sticky_context: Some(false),
+        editor_diagnostics: Some(true),
+        editor_semantic_tokens: Some(true),
+        editor_git_gutter: Some(true),
+        editor_git_word_diff: Some(true),
+        editor_completion: Some(true),
+        editor_hover: Some(true),
+        editor_format_on_save: Some(p.editor_format_on_save),
+        editor_auto_save: Some(p.editor_auto_save != "off"),
+        editor_auto_save_delay: Some(p.editor_auto_save_delay),
+        editor_trim_trailing_whitespace: Some(p.editor_trim_trailing_whitespace),
+        editor_insert_final_newline: Some(p.editor_insert_final_newline),
+        editor_show_cursor_position: Some(p.editor_show_cursor_position),
+        editor_show_selection_stats: Some(p.editor_show_selection_stats),
+        editor_show_outline: Some(p.editor_show_outline),
+        editor_autocomplete_debounce_ms: Some(p.editor_autocomplete_debounce_ms),
+        editor_max_file_size_mb: Some(p.editor_max_file_size_mb),
         editor_vim_mode: Some(p.editor_vim_mode),
         editor_theme: Some(p.editor_theme.clone()),
         vim_hlsearch: Some(e.hlsearch),
@@ -583,21 +607,7 @@ const REMOVED_APPEARANCE_FIELDS: &[&str] = &[
 /// Legacy editor preferences with no native editor consumer. They remain
 /// readable in the backend wire shape solely for old configuration files.
 #[cfg_attr(not(test), allow(dead_code))]
-const REMOVED_EDITOR_FIELDS: &[&str] = &[
-    "editorLineHeight",
-    "editorTrimTrailingWhitespace",
-    "editorInsertFinalNewline",
-    "editorBracketMatching",
-    "editorShowCursorPosition",
-    "editorShowSelectionStats",
-    "editorShowOutline",
-    "editorIndentationGuides",
-    "editorFormatOnSave",
-    "editorAutoSave",
-    "editorAutoSaveDelay",
-    "editorAutocompleteDebounceMs",
-    "editorMaxFileSizeMb",
-];
+const REMOVED_EDITOR_FIELDS: &[&str] = &["editorAutocompleteDebounceMs", "editorMaxFileSizeMb"];
 
 /// Legacy SFTP and transfer preferences now owned by the SFTP/transfer
 /// runtime, not by the general Settings value store. The current native
@@ -1255,6 +1265,12 @@ mod tests {
     }
 
     #[test]
+    fn legacy_editor_conversion_emits_git_word_diff_default() {
+        let converted = editor_from(&Preferences::default(), &EditorPrefs::default());
+        assert_eq!(converted.editor_git_word_diff, Some(true));
+    }
+
+    #[test]
     fn v1_background_values_are_migrated_to_the_background_owner() {
         let dir = tmp("background-v1");
         let mut prefs = serde_json::to_value(Preferences::default()).unwrap();
@@ -1501,10 +1517,10 @@ mod tests {
             }
         );
 
-        // Input was `Preferences::default()` end to end, so every migrated
-        // area leaf equalled its `SettingsContent` default — nothing is left
-        // to persist. `default.json` stays the full reference; `config.json`
-        // is just the schema stamp.
+        // The legacy default for `editorShowSelectionStats` was true while
+        // the current opt-in default is false, so that one promoted value is
+        // intentionally retained. `default.json` stays the full reference;
+        // `config.json` carries only this compatibility override.
         let after = read_settings_from(&dir);
         assert_eq!(after.get(KEY_SCHEMA_VERSION), Some(&Value::from(2)));
         assert_eq!(after.get(KEY_SPARSIFIED), Some(&Value::from(true)));
@@ -1514,15 +1530,29 @@ mod tests {
         assert!(!after.contains_key("mcp_legacy"));
         assert!(!after.contains_key(KEY_MIGRATED_UNKNOWN));
         for area in SETTINGS_CONTENT_AREAS {
-            assert!(
-                !after.contains_key(*area),
-                "all-default area `{area}` should have been stripped, found {:?}",
-                after.get(*area)
-            );
+            if *area == "editor" {
+                assert_eq!(
+                    after["editor"],
+                    serde_json::json!({"editorShowSelectionStats": true})
+                );
+            } else {
+                assert!(
+                    !after.contains_key(*area),
+                    "all-default area `{area}` should have been stripped, found {:?}",
+                    after.get(*area)
+                );
+            }
         }
 
         // And an app reading this file sees exactly the shipped defaults.
-        assert_eq!(merged_from_map(&after), SettingsContent::defaults());
+        let mut expected = SettingsContent::defaults();
+        expected.editor.editor_show_selection_stats = Some(true);
+        assert_eq!(
+            expected.editor.editor_git_word_diff,
+            Some(true),
+            "new editor Git word diff setting keeps its canonical default"
+        );
+        assert_eq!(merged_from_map(&after), expected);
 
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -1565,6 +1595,7 @@ mod tests {
         let mut expected = SettingsContent::defaults();
         expected.terminal.terminal_font_size = Some(20);
         expected.editor.editor_tab_size = Some(8);
+        expected.editor.editor_show_selection_stats = Some(true);
         assert_eq!(merged_from_map(&after), expected);
 
         let _ = std::fs::remove_dir_all(&dir);

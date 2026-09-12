@@ -1,7 +1,7 @@
 # Product Surface Acceptance Matrix
 
 **Status:** Working acceptance evidence for R07-001
-**Date:** 2026-09-07
+**Date:** 2026-09-12
 
 This document is evidence for the current product-surface audit. It is not a
 replacement for the normative product or architecture contracts. A structural
@@ -44,9 +44,9 @@ condition, and a capture or reproducible inspection note in the task/handshake.
 
 | Surface | Normal | Narrow | Focused | Empty | Loading | Error | Long list | Overlay / anchoring |
 |---|---|---|---|---|---|---|---|---|
-| Titlebar / global menu | Pending | Pending | Pending | N/A | N/A | N/A | N/A | Pending |
-| Workspace / docks | Pending | Pending | Pending | Pending | Pending | Pending | Pending | Pending |
-| Statusbar | Pending | Pending | Pending | Pending | Pending | N/A | N/A | Pending |
+| Titlebar / global menu | Verified¹ | Pending | Pending | N/A | N/A | N/A | N/A | Pending |
+| Workspace / docks | Verified¹ | Pending | Pending | Verified¹ | Pending | Pending | Pending | Pending |
+| Statusbar | Verified¹ | Pending | Pending | Pending | Pending | N/A | N/A | Pending |
 | Command Palette | Pending | Pending | Pending | Pending | N/A | Pending | Pending | Pending |
 | Keymap surface | Pending | Pending | Pending | Pending | Pending | Pending | Pending | Pending |
 | Settings | Pending | Pending | Pending | Pending | Pending | Pending | Pending | Pending |
@@ -88,3 +88,15 @@ R07-003 now classifies this retained compatibility envelope in the Settings
 owner; the migration remains idempotent and genuinely unknown future keys
 remain warnings. The launch record predates that fix and is retained as audit
 history, not as current runtime evidence.
+
+### 2026-09-12 native evidence
+
+¹ The exact Rust release executable
+`/Users/niklas/Developer/active/Labonair/Labonair-rust/target/release/bundle/macos/Labonair.app/Contents/MacOS/labonair`
+was launched as PID `94593`. `scripts/screenshot.sh` validated that PID and
+captured `/tmp/labonair-r07-native.png`
+(4024×2284 PNG). The capture shows the native Rust titlebar, normal standalone
+workspace, empty workspace state, empty Snippets dock, and normal statusbar.
+Only those visible normal/empty states are marked `Verified`; no keyboard
+focus path, narrow viewport, loading/error state, or overlay anchoring was
+inspected in this run. The remaining matrix cells stay `Pending`.

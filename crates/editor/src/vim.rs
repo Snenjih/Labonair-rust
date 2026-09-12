@@ -16,9 +16,13 @@
 //! caret helpers break history coalescing, so each operator application forms
 //! its own undo unit while a stretch of insert-mode typing stays one unit.
 
-use crate::buffer::Position;
+use crate::buffer::{BufferSnapshot, Position, TextRange};
 use crate::document::Document;
 use crate::search::{find_all, SearchQuery};
+
+fn snapshot(doc: &Document) -> BufferSnapshot {
+    doc.snapshot()
+}
 
 /// The editor mode. `Operator*` is implicit (tracked via `pending_op`); the
 /// public mode never reports operator-pending separately — it stays `Normal`.
@@ -334,13 +338,14 @@ impl Vim {
                     text: parts[0].to_string(),
                     case_sensitive: self.case_sensitive(parts[0]),
                     whole_word: false,
+                    ..Default::default()
                 };
                 let global = parts.get(2).map(|f| f.contains('g')).unwrap_or(false);
                 if whole_file {
                     doc.replace_all(&query, parts[1]);
                 } else {
                     let line = doc.cursor.line;
-                    let src = doc.buffer.line(line).to_string();
+                    let src = snapshot(doc).line(line);
                     let out = src.replacen(parts[0], parts[1], if global { usize::MAX } else { 1 });
                     if out != src {
                         let len = src.chars().count();
@@ -500,7 +505,7 @@ impl Vim {
                     // Doubled operator → linewise on `count` lines.
                     self.pending_op = None;
                     let last = (doc.cursor.line + count.saturating_sub(1))
-                        .min(doc.buffer.line_count() - 1);
+                        .min(snapshot(doc).line_count() - 1);
                     self.apply_operator(doc, c, MotionKind::Linewise(doc.cursor.line, last));
                 } else {
                     self.pending_op = Some(c);
@@ -601,7 +606,7 @@ impl Vim {
         match c {
             'g' => {
                 let line = if count > 0 {
-                    (count - 1).min(doc.buffer.line_count() - 1)
+                    (count - 1).min(snapshot(doc).line_count() - 1)
                 } else {
                     0
                 };
@@ -630,7 +635,7 @@ impl Vim {
 
     fn enter_insert(&mut self, doc: &mut Document, c: char) {
         let cur = doc.cursor;
-        let line_len = doc.buffer.line_len(cur.line);
+        let line_len = snapshot(doc).line_len(cur.line);
         match c {
             'i' => {}
             'a' if line_len > 0 => {
@@ -673,7 +678,7 @@ impl Vim {
 
     fn op_to_line_end(&mut self, doc: &mut Document, op: char) {
         let cur = doc.cursor;
-        let end = Position::new(cur.line, doc.buffer.line_len(cur.line));
+        let end = Position::new(cur.line, snapshot(doc).line_len(cur.line));
         self.apply_operator(doc, op, MotionKind::Exclusive(end));
     }
 
@@ -682,14 +687,14 @@ impl Vim {
     fn resolve_motion(&mut self, doc: &Document, c: char, count: usize) -> Option<MotionKind> {
         let n = count.max(1);
         let cur = doc.cursor;
-        let last_line = doc.buffer.line_count() - 1;
+        let last_line = snapshot(doc).line_count() - 1;
         Some(match c {
             'h' => {
                 let col = cur.column.saturating_sub(n);
                 MotionKind::Exclusive(Position::new(cur.line, col))
             }
             'l' | ' ' => {
-                let max = doc.buffer.line_len(cur.line);
+                let max = snapshot(doc).line_len(cur.line);
                 MotionKind::Exclusive(Position::new(cur.line, (cur.column + n).min(max)))
             }
             'j' | '\r' => {
@@ -706,7 +711,7 @@ impl Vim {
                 let line = (cur.line + n - 1).min(last_line);
                 MotionKind::Inclusive(Position::new(
                     line,
-                    doc.buffer.line_len(line).saturating_sub(1),
+                    snapshot(doc).line_len(line).saturating_sub(1),
                 ))
             }
             'G' => {
@@ -762,7 +767,7 @@ impl Vim {
             MotionKind::Linewise(a, b) => {
                 // Whichever end differs from the current line is the target.
                 let target = if b != doc.cursor.line { b } else { a };
-                let col = doc.cursor.column.min(doc.buffer.line_len(target));
+                let col = doc.cursor.column.min(snapshot(doc).line_len(target));
                 doc.set_caret(Position::new(target, col), extend);
             }
         }
@@ -771,7 +776,7 @@ impl Vim {
 
     fn apply_char_search(&mut self, doc: &mut Document, kind: char, target: char) {
         let cur = doc.cursor;
-        let chars: Vec<char> = doc.buffer.line(cur.line).chars().collect();
+        let chars: Vec<char> = snapshot(doc).line(cur.line).chars().collect();
         let found = match kind {
             'f' | 't' => {
                 let start = cur.column + 1;
@@ -814,10 +819,10 @@ impl Vim {
             }
             MotionKind::Linewise(a, b) => {
                 let start = Position::new(a, 0);
-                let end = if b + 1 < doc.buffer.line_count() {
+                let end = if b + 1 < snapshot(doc).line_count() {
                     Position::new(b + 1, 0)
                 } else {
-                    Position::new(b, doc.buffer.line_len(b))
+                    Position::new(b, snapshot(doc).line_len(b))
                 };
                 (start, end, true)
             }
@@ -840,7 +845,7 @@ impl Vim {
             'd' => {
                 self.range_delete(doc, start, end);
                 if linewise {
-                    let line = start.line.min(doc.buffer.line_count() - 1);
+                    let line = start.line.min(snapshot(doc).line_count() - 1);
                     doc.set_caret(Position::new(line, first_non_blank(doc, line)), false);
                 }
             }
@@ -851,7 +856,7 @@ impl Vim {
                     let l0 = start.line;
                     let multiline = end.line > start.line;
                     self.range_delete(doc, start, end);
-                    let at = l0.min(doc.buffer.line_count().saturating_sub(1));
+                    let at = l0.min(snapshot(doc).line_count().saturating_sub(1));
                     if multiline {
                         doc.set_caret(Position::new(at, 0), false);
                         doc.insert("\n");
@@ -899,10 +904,10 @@ impl Vim {
             let a = self.vline_anchor.min(doc.cursor.line);
             let b = self.vline_anchor.max(doc.cursor.line);
             let start = Position::new(a, 0);
-            let end = if b + 1 < doc.buffer.line_count() {
+            let end = if b + 1 < snapshot(doc).line_count() {
                 Position::new(b + 1, 0)
             } else {
-                Position::new(b, doc.buffer.line_len(b))
+                Position::new(b, snapshot(doc).line_len(b))
             };
             (start, end, true)
         } else {
@@ -917,7 +922,7 @@ impl Vim {
     fn delete_chars(&mut self, doc: &mut Document, count: isize) {
         let cur = doc.cursor;
         if count >= 0 {
-            let end = (cur.column + count as usize).min(doc.buffer.line_len(cur.line));
+            let end = (cur.column + count as usize).min(snapshot(doc).line_len(cur.line));
             if end > cur.column {
                 let text = self.range_text(doc, cur, Position::new(cur.line, end));
                 self.register = Register {
@@ -937,11 +942,11 @@ impl Vim {
 
     fn replace_char(&mut self, doc: &mut Document, c: char) {
         let cur = doc.cursor;
-        if doc.buffer.line_len(cur.line) == 0 {
+        if snapshot(doc).line_len(cur.line) == 0 {
             return;
         }
         let n = self.take_count().max(1);
-        let end = (cur.column + n).min(doc.buffer.line_len(cur.line));
+        let end = (cur.column + n).min(snapshot(doc).line_len(cur.line));
         if end == cur.column {
             return;
         }
@@ -953,7 +958,7 @@ impl Vim {
 
     fn toggle_case(&mut self, doc: &mut Document) {
         let cur = doc.cursor;
-        let chars: Vec<char> = doc.buffer.line(cur.line).chars().collect();
+        let chars: Vec<char> = snapshot(doc).line(cur.line).chars().collect();
         let n = self.take_count();
         let end = (cur.column + n).min(chars.len());
         if end <= cur.column {
@@ -973,7 +978,7 @@ impl Vim {
         doc.set_caret(cur, false);
         doc.insert(&flipped);
         doc.set_caret(
-            Position::new(cur.line, end.min(doc.buffer.line_len(cur.line))),
+            Position::new(cur.line, end.min(snapshot(doc).line_len(cur.line))),
             false,
         );
     }
@@ -981,12 +986,13 @@ impl Vim {
     fn join_lines(&mut self, doc: &mut Document, count: usize) {
         let line = doc.cursor.line;
         for _ in 0..count.saturating_sub(1) {
-            if line + 1 >= doc.buffer.line_count() {
+            if line + 1 >= snapshot(doc).line_count() {
                 break;
             }
-            let cur_len = doc.buffer.line_len(line);
-            let next_full = doc.buffer.line_len(line + 1);
-            let next_trimmed = doc.buffer.line(line + 1).trim_start().chars().count();
+            let current = snapshot(doc);
+            let cur_len = current.line_len(line);
+            let next_full = current.line_len(line + 1);
+            let next_trimmed = current.line(line + 1).trim_start().chars().count();
             let ws = next_full - next_trimmed;
             self.range_delete(
                 doc,
@@ -1010,7 +1016,7 @@ impl Vim {
         if reg.linewise {
             let body = reg.text.trim_end_matches('\n');
             if after {
-                let end = doc.buffer.line_len(cur.line);
+                let end = snapshot(doc).line_len(cur.line);
                 doc.set_caret(Position::new(cur.line, end), false);
                 doc.insert(&format!("\n{body}"));
                 doc.set_caret(
@@ -1026,7 +1032,7 @@ impl Vim {
                 );
             }
         } else {
-            let at = if after && doc.buffer.line_len(cur.line) > 0 {
+            let at = if after && snapshot(doc).line_len(cur.line) > 0 {
                 Position::new(cur.line, cur.column + 1)
             } else {
                 cur
@@ -1071,8 +1077,10 @@ impl Vim {
             text: pattern.clone(),
             case_sensitive: self.case_sensitive(&pattern),
             whole_word: false,
+            ..Default::default()
         };
-        let matches = find_all(&doc.buffer, &query);
+        let snapshot = doc.snapshot();
+        let matches = find_all(&snapshot, &query);
         if self.options.hlsearch {
             self.search_matches = matches.clone();
         }
@@ -1094,8 +1102,9 @@ impl Vim {
     // ── Range helpers over Document's public API ───────────────────────────
 
     fn range_text(&self, doc: &Document, a: Position, b: Position) -> String {
-        let mut clone = doc.buffer.clone();
-        clone.delete(a, b)
+        let snapshot = doc.snapshot();
+        let range = TextRange::new(snapshot.position_to_byte(a), snapshot.position_to_byte(b));
+        snapshot.text_range(range)
     }
 
     fn range_delete(&self, doc: &mut Document, a: Position, b: Position) {
@@ -1124,7 +1133,7 @@ impl Vim {
     /// Keep the caret on a real character in normal mode (never one past EOL).
     fn clamp_normal(&self, doc: &mut Document) {
         if self.mode == VimMode::Normal || self.mode == VimMode::VisualLine {
-            let len = doc.buffer.line_len(doc.cursor.line);
+            let len = snapshot(doc).line_len(doc.cursor.line);
             let max = len.saturating_sub(if self.mode == VimMode::Normal { 1 } else { 0 });
             if len > 0 && doc.cursor.column > max {
                 doc.set_caret(Position::new(doc.cursor.line, max), self.mode.is_visual());
@@ -1154,9 +1163,10 @@ fn order(a: Position, b: Position) -> (Position, Position) {
 }
 
 fn next_char_pos(doc: &Document, p: Position) -> Position {
-    if p.column < doc.buffer.line_len(p.line) {
+    let snapshot = snapshot(doc);
+    if p.column < snapshot.line_len(p.line) {
         Position::new(p.line, p.column + 1)
-    } else if p.line + 1 < doc.buffer.line_count() {
+    } else if p.line + 1 < snapshot.line_count() {
         Position::new(p.line + 1, 0)
     } else {
         p
@@ -1164,7 +1174,7 @@ fn next_char_pos(doc: &Document, p: Position) -> Position {
 }
 
 fn first_non_blank(doc: &Document, line: usize) -> usize {
-    doc.buffer
+    snapshot(doc)
         .line(line)
         .chars()
         .position(|c| !c.is_whitespace())
@@ -1190,18 +1200,20 @@ fn class(c: char, big: bool) -> Class {
 
 /// Char offset stream that treats `\n` as a single blank character.
 fn to_offset(doc: &Document, p: Position) -> usize {
+    let snapshot = snapshot(doc);
     let mut off = 0;
     for l in 0..p.line {
-        off += doc.buffer.line_len(l) + 1;
+        off += snapshot.line_len(l) + 1;
     }
     off + p.column
 }
 
 fn from_offset(doc: &Document, mut off: usize) -> Position {
+    let snapshot = snapshot(doc);
     let mut line = 0;
-    let last = doc.buffer.line_count() - 1;
+    let last = snapshot.line_count() - 1;
     loop {
-        let len = doc.buffer.line_len(line);
+        let len = snapshot.line_len(line);
         if off <= len || line == last {
             return Position::new(line, off.min(len));
         }
@@ -1211,11 +1223,12 @@ fn from_offset(doc: &Document, mut off: usize) -> Position {
 }
 
 fn char_at(doc: &Document, off: usize) -> Option<char> {
+    let snapshot = snapshot(doc);
     let p = from_offset(doc, off);
-    let len = doc.buffer.line_len(p.line);
+    let len = snapshot.line_len(p.line);
     if p.column < len {
-        doc.buffer.line(p.line).chars().nth(p.column)
-    } else if p.line + 1 < doc.buffer.line_count() {
+        snapshot.line(p.line).chars().nth(p.column)
+    } else if p.line + 1 < snapshot.line_count() {
         Some('\n')
     } else {
         None
@@ -1223,8 +1236,9 @@ fn char_at(doc: &Document, off: usize) -> Option<char> {
 }
 
 fn total_offset(doc: &Document) -> usize {
-    let last = doc.buffer.line_count() - 1;
-    to_offset(doc, Position::new(last, doc.buffer.line_len(last)))
+    let snapshot = snapshot(doc);
+    let last = snapshot.line_count() - 1;
+    to_offset(doc, Position::new(last, snapshot.line_len(last)))
 }
 
 fn word_forward(doc: &Document, p: Position, big: bool) -> Position {
@@ -1308,9 +1322,10 @@ fn word_end_back(doc: &Document, p: Position) -> Position {
 }
 
 fn paragraph(doc: &Document, p: Position, dir: Line) -> Position {
-    let last = doc.buffer.line_count() - 1;
+    let snapshot = snapshot(doc);
+    let last = snapshot.line_count() - 1;
     let mut line = p.line;
-    let blank = |l: usize| doc.buffer.line(l).trim().is_empty();
+    let blank = |l: usize| snapshot.line(l).trim().is_empty();
     match dir {
         Line::Fwd => {
             if line < last {
@@ -1332,7 +1347,7 @@ fn paragraph(doc: &Document, p: Position, dir: Line) -> Position {
 
 fn match_bracket(doc: &Document, p: Position) -> Option<Position> {
     const PAIRS: &[(char, char)] = &[('(', ')'), ('[', ']'), ('{', '}')];
-    let line: Vec<char> = doc.buffer.line(p.line).chars().collect();
+    let line: Vec<char> = snapshot(doc).line(p.line).chars().collect();
     let (col, open, close, forward) = (p.column..line.len()).find_map(|i| {
         PAIRS.iter().find_map(|&(o, c)| {
             if line[i] == o {

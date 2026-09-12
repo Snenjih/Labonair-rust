@@ -1,64 +1,57 @@
-//! Undo / redo stack.
+//! Transaction-based undo / redo history.
 //!
-//! Stores full-document snapshots. Consecutive same-kind edits within a short
-//! window coalesce into one undo step so typing a word is a single undo, but a
-//! caret move or a delete starts a fresh step.
+//! History stores forward and inverse edits, not full document snapshots.
+//! Consecutive typing transactions are grouped explicitly until a caret move
+//! or another edit source breaks the group; no wall-clock coalescing is used.
 
-use std::time::{Duration, Instant};
+use crate::buffer::{EditSource, Transaction};
 
-use crate::buffer::{Position, TextBuffer};
-
-const COALESCE_WINDOW: Duration = Duration::from_millis(600);
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum EditKind {
-    Insert,
-    Delete,
-    /// A change that must never coalesce (paste, external reload, replace-all).
-    Barrier,
+struct HistoryStep {
+    forward: Transaction,
+    inverse: Transaction,
 }
 
-#[derive(Clone)]
-struct Snapshot {
-    buffer: TextBuffer,
-    cursor: Position,
+struct HistoryGroup {
+    steps: Vec<HistoryStep>,
 }
 
+/// Undo/redo stack for one editor document.
 #[derive(Default)]
 pub struct History {
-    undo: Vec<Snapshot>,
-    redo: Vec<Snapshot>,
-    last_kind: Option<EditKind>,
-    last_at: Option<Instant>,
+    undo: Vec<HistoryGroup>,
+    redo: Vec<HistoryGroup>,
+    can_coalesce: bool,
 }
 
 impl History {
-    /// Record the pre-edit state, unless it can coalesce with the previous one.
-    pub fn record(&mut self, buffer: &TextBuffer, cursor: Position, kind: EditKind) {
-        let now = Instant::now();
-        let coalesce = kind != EditKind::Barrier
-            && self.last_kind == Some(kind)
-            && self
-                .last_at
-                .map(|t| now.duration_since(t) < COALESCE_WINDOW)
-                .unwrap_or(false)
-            && !self.undo.is_empty();
-
-        if !coalesce {
-            self.undo.push(Snapshot {
-                buffer: buffer.clone(),
-                cursor,
+    /// Record one applied transaction and its inverse.
+    pub fn record(&mut self, forward: Transaction, inverse: Transaction) {
+        let source = forward.source();
+        let should_group = self.can_coalesce
+            && source == EditSource::Typing
+            && self.undo.last().is_some_and(|group| {
+                group
+                    .steps
+                    .iter()
+                    .all(|step| step.forward.source() == EditSource::Typing)
             });
-            self.redo.clear();
+
+        if should_group {
+            if let Some(group) = self.undo.last_mut() {
+                group.steps.push(HistoryStep { forward, inverse });
+            }
+        } else {
+            self.undo.push(HistoryGroup {
+                steps: vec![HistoryStep { forward, inverse }],
+            });
         }
-        self.last_kind = Some(kind);
-        self.last_at = Some(now);
+        self.redo.clear();
+        self.can_coalesce = source == EditSource::Typing;
     }
 
-    /// Force the next [`record`](Self::record) to start a new step.
+    /// Force the next transaction to start a new undo group.
     pub fn break_coalescing(&mut self) {
-        self.last_kind = None;
-        self.last_at = None;
+        self.can_coalesce = false;
     }
 
     pub fn can_undo(&self) -> bool {
@@ -69,68 +62,84 @@ impl History {
         !self.redo.is_empty()
     }
 
-    /// Pop an undo step, pushing the current state onto the redo stack.
-    pub fn undo(
-        &mut self,
-        current: &TextBuffer,
-        cursor: Position,
-    ) -> Option<(TextBuffer, Position)> {
-        let snap = self.undo.pop()?;
-        self.redo.push(Snapshot {
-            buffer: current.clone(),
-            cursor,
-        });
-        self.break_coalescing();
-        Some((snap.buffer, snap.cursor))
+    /// Move the latest group to redo and return inverse transactions in apply
+    /// order (last edit first).
+    pub fn undo(&mut self) -> Option<Vec<Transaction>> {
+        let group = self.undo.pop()?;
+        let inverse = group
+            .steps
+            .iter()
+            .rev()
+            .map(|step| step.inverse.clone())
+            .collect();
+        self.redo.push(group);
+        self.can_coalesce = false;
+        Some(inverse)
     }
 
-    pub fn redo(
-        &mut self,
-        current: &TextBuffer,
-        cursor: Position,
-    ) -> Option<(TextBuffer, Position)> {
-        let snap = self.redo.pop()?;
-        self.undo.push(Snapshot {
-            buffer: current.clone(),
-            cursor,
-        });
-        self.break_coalescing();
-        Some((snap.buffer, snap.cursor))
+    /// Move the latest group to undo and return forward transactions in apply
+    /// order.
+    pub fn redo(&mut self) -> Option<Vec<Transaction>> {
+        let group = self.redo.pop()?;
+        let forward = group
+            .steps
+            .iter()
+            .map(|step| step.forward.clone())
+            .collect();
+        self.undo.push(group);
+        self.can_coalesce = false;
+        Some(forward)
+    }
+
+    pub fn clear(&mut self) {
+        self.undo.clear();
+        self.redo.clear();
+        self.can_coalesce = false;
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::buffer::{Anchor, AnchorAffinity, Edit, EditorBuffer, Selection, SelectionSet};
 
-    #[test]
-    fn typing_coalesces_but_delete_breaks() {
-        let mut h = History::default();
-        let b0 = TextBuffer::from_text("");
-        h.record(&b0, Position::default(), EditKind::Insert);
-        let b1 = TextBuffer::from_text("a");
-        h.record(&b1, Position::new(0, 1), EditKind::Insert);
-        let b2 = TextBuffer::from_text("ab");
-        h.record(&b2, Position::new(0, 2), EditKind::Delete);
-        let b3 = TextBuffer::from_text("a");
+    fn selection() -> SelectionSet {
+        SelectionSet::single(Selection::collapsed(Anchor::new(0, AnchorAffinity::After)))
+    }
 
-        // one undo for the whole "ab" typing burst, one for the delete
-        let (u1, _) = h.undo(&b3, Position::new(0, 1)).unwrap();
-        assert_eq!(u1.text(), "ab");
-        let (u2, _) = h.undo(&u1, Position::default()).unwrap();
-        assert_eq!(u2.text(), "");
-        assert!(!h.can_undo());
+    fn tx(buffer: &EditorBuffer, source: EditSource, text: &str) -> Transaction {
+        Transaction::new(
+            buffer.revision(),
+            vec![Edit::insertion(0, text)],
+            selection(),
+            selection(),
+            source,
+            None,
+        )
+        .expect("valid transaction")
     }
 
     #[test]
-    fn redo_restores() {
-        let mut h = History::default();
-        let b0 = TextBuffer::from_text("x");
-        h.record(&b0, Position::default(), EditKind::Barrier);
-        let b1 = TextBuffer::from_text("xy");
-        let (u, _) = h.undo(&b1, Position::new(0, 2)).unwrap();
-        assert_eq!(u.text(), "x");
-        let (r, _) = h.redo(&u, Position::default()).unwrap();
-        assert_eq!(r.text(), "xy");
+    fn typing_transactions_group_without_timing() {
+        let buffer = EditorBuffer::default();
+        let mut history = History::default();
+        let first = tx(&buffer, EditSource::Typing, "a");
+        let second = tx(&buffer, EditSource::Typing, "b");
+        history.record(first.clone(), first);
+        history.record(second.clone(), second);
+        assert_eq!(history.undo().expect("group").len(), 2);
+        assert!(!history.can_undo());
+    }
+
+    #[test]
+    fn non_typing_source_breaks_the_group() {
+        let buffer = EditorBuffer::default();
+        let mut history = History::default();
+        let first = tx(&buffer, EditSource::Typing, "a");
+        let delete = tx(&buffer, EditSource::Delete, "b");
+        history.record(first.clone(), first);
+        history.record(delete.clone(), delete);
+        assert_eq!(history.undo().expect("delete").len(), 1);
+        assert_eq!(history.undo().expect("typing").len(), 1);
     }
 }

@@ -292,27 +292,64 @@ const EDITOR_MAIN: &[Group] = &[
         ],
     ),
     ("Theme", &["editorTheme"]),
-    ("Font", &["editorFontFamily", "editorFontSize"]),
-    ("Behaviour", &["editorTabSize"]),
-    ("Indentation", &["editorIndentWithTabs"]),
     (
-        "Cursor",
+        "Font",
+        &["editorFontFamily", "editorFontSize", "editorLineHeight"],
+    ),
+    ("Behaviour", &["editorTabSize", "editorBracketMatching"]),
+    (
+        "Indentation",
+        &["editorIndentWithTabs", "editorIndentationGuides"],
+    ),
+    (
+        "Display",
+        &[
+            "editorLineNumbers",
+            "editorRelativeLineNumbers",
+            "editorWordWrap",
+            "editorWhitespace",
+            "editorMinimap",
+            "editorRulers",
+            "editorScrollBeyondLastLine",
+            "editorStickyContext",
+            "editorHighlightCurrentLine",
+        ],
+    ),
+    (
+        "Language services",
+        &[
+            "editorDiagnostics",
+            "editorSemanticTokens",
+            "editorCompletion",
+            "editorHover",
+            "editorShowOutline",
+            "editorAutocompleteDebounceMs",
+        ],
+    ),
+    ("Git", &["editorGitGutter", "editorGitWordDiff"]),
+    (
+        "Saving",
+        &[
+            "editorAutoSave",
+            "editorAutoSaveDelay",
+            "editorFormatOnSave",
+            "editorTrimTrailingWhitespace",
+            "editorInsertFinalNewline",
+        ],
+    ),
+    (
+        "Caret & status",
         &[
             "editorCursorStyle",
             "editorCursorBlink",
             "editorCursorBlinkIntervalMs",
+            "editorShowCursorPosition",
+            "editorShowSelectionStats",
         ],
     ),
 ];
 
-const EDITOR_DISPLAY: &[Group] = &[(
-    "Display",
-    &[
-        "editorLineNumbers",
-        "editorWordWrap",
-        "editorHighlightCurrentLine",
-    ],
-)];
+const EDITOR_DISPLAY: &[Group] = &[("Advanced", &["editorMaxFileSizeMb"])];
 
 const FILE_MANAGER_GROUPS: &[Group] = &[
     ("Browsing", &["explorerShowHiddenByDefault"]),
@@ -457,6 +494,10 @@ mod tests {
             Some(("advanced", "Input"))
         );
         assert_eq!(section_label_for_field("terminal", "doesNotExist"), None);
+        assert_eq!(
+            section_label_for_field("editor", "editorGitWordDiff"),
+            Some(("", "Git"))
+        );
     }
 
     #[test]

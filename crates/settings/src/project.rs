@@ -57,12 +57,25 @@ pub const PROJECT_SETTINGS_WHITELIST: &[(&str, &[&str])] = &[
     (
         "editor",
         &[
+            "editorLineHeight",
             "editorTabSize",
             "editorWordWrap",
             "editorIndentWithTabs",
+            "editorIndentationGuides",
+            "editorWhitespace",
+            "editorBracketMatching",
+            "editorScrollBeyondLastLine",
+            "editorStickyContext",
+            "editorDiagnostics",
+            "editorSemanticTokens",
+            "editorGitWordDiff",
+            "editorCompletion",
+            "editorHover",
             "editorTrimTrailingWhitespace",
             "editorInsertFinalNewline",
-            "editorIndentationGuides",
+            "editorFormatOnSave",
+            "editorAutoSave",
+            "editorAutoSaveDelay",
             "editorLineNumbers",
             "editorRelativeLineNumbers",
         ],
@@ -179,11 +192,13 @@ mod tests {
 
     #[test]
     fn filter_and_parse_keeps_every_whitelisted_leaf() {
-        let (content, rejected) =
-            filter_and_parse(r#"{"editor":{"editorTabSize":4,"editorWordWrap":true}}"#);
+        let (content, rejected) = filter_and_parse(
+            r#"{"editor":{"editorTabSize":4,"editorWordWrap":true,"editorGitWordDiff":false}}"#,
+        );
         assert!(rejected.is_empty());
         assert_eq!(content.editor.editor_tab_size, Some(4));
         assert_eq!(content.editor.editor_word_wrap, Some(true));
+        assert_eq!(content.editor.editor_git_word_diff, Some(false));
     }
 
     #[test]

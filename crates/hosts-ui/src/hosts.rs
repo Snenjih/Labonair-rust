@@ -84,6 +84,12 @@ struct HostRowData {
     selected: bool,
 }
 
+#[derive(Clone, Copy)]
+struct FieldRenderState {
+    active: bool,
+    show_caret: bool,
+}
+
 /// Builds one host-list row. Runs inside the `uniform_list` render closure
 /// (list view, only the on-screen `range`) as well as directly from `render`
 /// (grid view, not yet virtualised) — both call sites only have `&mut App`
@@ -105,7 +111,6 @@ fn render_host_row(
     row: &HostRowData,
     p: &Palette,
     view: &Entity<HostManagerView>,
-    _cx: &mut App,
 ) -> gpui::AnyElement {
     let id = row.id.clone();
     let (id_click, id_right, id_drop) = (id.clone(), id.clone(), id.clone());
@@ -2271,8 +2276,7 @@ impl HostManagerView {
         label: &'static str,
         value: &str,
         field: HostField,
-        active: bool,
-        show_caret: bool,
+        state: FieldRenderState,
         p: &Palette,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
@@ -2289,14 +2293,14 @@ impl HostManagerView {
                     .rounded_md()
                     .bg(p.bg)
                     .border_1()
-                    .border_color(if active { p.accent } else { p.border })
+                    .border_color(if state.active { p.accent } else { p.border })
                     .text_sm()
                     .text_color(p.fg)
                     .cursor_text()
                     .flex()
                     .items_center()
                     .child(SharedString::from(value.to_string()))
-                    .when(show_caret, |d| d.child(caret(p.fg, 14.0)))
+                    .when(state.show_caret, |d| d.child(caret(p.fg, 14.0)))
                     .on_click(cx.listener(move |this, _: &ClickEvent, w, cx| {
                         if let Some(f) = this.form.as_mut() {
                             f.focus = field;
@@ -2312,8 +2316,7 @@ impl HostManagerView {
         id: String,
         value: &str,
         field: HostField,
-        active: bool,
-        show_caret: bool,
+        state: FieldRenderState,
         p: &Palette,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
@@ -2325,14 +2328,14 @@ impl HostManagerView {
             .rounded_md()
             .bg(p.bg)
             .border_1()
-            .border_color(if active { p.accent } else { p.border })
+            .border_color(if state.active { p.accent } else { p.border })
             .text_sm()
             .text_color(p.fg)
             .cursor_text()
             .flex()
             .items_center()
             .child(SharedString::from(value.to_string()))
-            .when(show_caret, |d| d.child(caret(p.fg, 14.0)))
+            .when(state.show_caret, |d| d.child(caret(p.fg, 14.0)))
             .on_click(cx.listener(move |this, _: &ClickEvent, w, cx| {
                 if let Some(f) = this.form.as_mut() {
                     f.focus = field;
@@ -2348,7 +2351,8 @@ impl HostManagerView {
         p: &Palette,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
-        let form_focused = self.focused_region == Some(FocusRegion::Form) && self.blink.read(cx).visible();
+        let form_focused =
+            self.focused_region == Some(FocusRegion::Form) && self.blink.read(cx).visible();
         let focus = form.focus;
         let rows = form
             .tunnels
@@ -2371,8 +2375,11 @@ impl HostManagerView {
                                 format!("tun-lp-{i}"),
                                 &t.local_port,
                                 HostField::TunnelLocalPort(i),
-                                focus == HostField::TunnelLocalPort(i),
-                                form_focused && focus == HostField::TunnelLocalPort(i),
+                                FieldRenderState {
+                                    active: focus == HostField::TunnelLocalPort(i),
+                                    show_caret: form_focused
+                                        && focus == HostField::TunnelLocalPort(i),
+                                },
                                 p,
                                 cx,
                             ))
@@ -2380,8 +2387,11 @@ impl HostManagerView {
                                 format!("tun-rh-{i}"),
                                 &t.remote_host,
                                 HostField::TunnelRemoteHost(i),
-                                focus == HostField::TunnelRemoteHost(i),
-                                form_focused && focus == HostField::TunnelRemoteHost(i),
+                                FieldRenderState {
+                                    active: focus == HostField::TunnelRemoteHost(i),
+                                    show_caret: form_focused
+                                        && focus == HostField::TunnelRemoteHost(i),
+                                },
                                 p,
                                 cx,
                             ))
@@ -2389,8 +2399,11 @@ impl HostManagerView {
                                 format!("tun-rp-{i}"),
                                 &t.remote_port,
                                 HostField::TunnelRemotePort(i),
-                                focus == HostField::TunnelRemotePort(i),
-                                form_focused && focus == HostField::TunnelRemotePort(i),
+                                FieldRenderState {
+                                    active: focus == HostField::TunnelRemotePort(i),
+                                    show_caret: form_focused
+                                        && focus == HostField::TunnelRemotePort(i),
+                                },
                                 p,
                                 cx,
                             )),
@@ -2675,7 +2688,8 @@ impl HostManagerView {
         p: &Palette,
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
-        let form_focused = self.focused_region == Some(FocusRegion::Form) && self.blink.read(cx).visible();
+        let form_focused =
+            self.focused_region == Some(FocusRegion::Form) && self.blink.read(cx).visible();
         let container = div().flex().flex_col().gap_2();
         match form.tab {
             FormTab::General => container
@@ -2683,8 +2697,10 @@ impl HostManagerView {
                     "Name",
                     &form.name,
                     HostField::Name,
-                    form.focus == HostField::Name,
-                    form_focused && form.focus == HostField::Name,
+                    FieldRenderState {
+                        active: form.focus == HostField::Name,
+                        show_caret: form_focused && form.focus == HostField::Name,
+                    },
                     p,
                     cx,
                 ))
@@ -2692,8 +2708,10 @@ impl HostManagerView {
                     "Address",
                     &form.address,
                     HostField::Address,
-                    form.focus == HostField::Address,
-                    form_focused && form.focus == HostField::Address,
+                    FieldRenderState {
+                        active: form.focus == HostField::Address,
+                        show_caret: form_focused && form.focus == HostField::Address,
+                    },
                     p,
                     cx,
                 ))
@@ -2701,8 +2719,10 @@ impl HostManagerView {
                     "Port",
                     &form.port,
                     HostField::Port,
-                    form.focus == HostField::Port,
-                    form_focused && form.focus == HostField::Port,
+                    FieldRenderState {
+                        active: form.focus == HostField::Port,
+                        show_caret: form_focused && form.focus == HostField::Port,
+                    },
                     p,
                     cx,
                 ))
@@ -2710,8 +2730,10 @@ impl HostManagerView {
                     "Username",
                     &form.username,
                     HostField::Username,
-                    form.focus == HostField::Username,
-                    form_focused && form.focus == HostField::Username,
+                    FieldRenderState {
+                        active: form.focus == HostField::Username,
+                        show_caret: form_focused && form.focus == HostField::Username,
+                    },
                     p,
                     cx,
                 ))
@@ -2754,8 +2776,10 @@ impl HostManagerView {
                         "Private key path",
                         &form.key_path,
                         HostField::KeyPath,
-                        form.focus == HostField::KeyPath,
-                        form_focused && form.focus == HostField::KeyPath,
+                        FieldRenderState {
+                            active: form.focus == HostField::KeyPath,
+                            show_caret: form_focused && form.focus == HostField::KeyPath,
+                        },
                         p,
                         cx,
                     ))
@@ -2765,8 +2789,10 @@ impl HostManagerView {
                         "Password (stored in the secret store)",
                         &"\u{2022}".repeat(form.password.chars().count()),
                         HostField::Password,
-                        form.focus == HostField::Password,
-                        form_focused && form.focus == HostField::Password,
+                        FieldRenderState {
+                            active: form.focus == HostField::Password,
+                            show_caret: form_focused && form.focus == HostField::Password,
+                        },
                         p,
                         cx,
                     ))
@@ -2872,8 +2898,10 @@ impl HostManagerView {
                     "Notes / runbook",
                     &form.notes,
                     HostField::Notes,
-                    form.focus == HostField::Notes,
-                    form_focused && form.focus == HostField::Notes,
+                    FieldRenderState {
+                        active: form.focus == HostField::Notes,
+                        show_caret: form_focused && form.focus == HostField::Notes,
+                    },
                     p,
                     cx,
                 ))
@@ -2883,8 +2911,10 @@ impl HostManagerView {
                     "Start directory (runs `cd <path>`)",
                     &form.default_path,
                     HostField::DefaultPath,
-                    form.focus == HostField::DefaultPath,
-                    form_focused && form.focus == HostField::DefaultPath,
+                    FieldRenderState {
+                        active: form.focus == HostField::DefaultPath,
+                        show_caret: form_focused && form.focus == HostField::DefaultPath,
+                    },
                     p,
                     cx,
                 ))
@@ -2903,8 +2933,10 @@ impl HostManagerView {
                             }
                             .as_str(),
                             HostField::SudoPassword,
-                            form.focus == HostField::SudoPassword,
-                            form_focused && form.focus == HostField::SudoPassword,
+                            FieldRenderState {
+                                active: form.focus == HostField::SudoPassword,
+                                show_caret: form_focused && form.focus == HostField::SudoPassword,
+                            },
                             p,
                             cx,
                         ),
@@ -2918,8 +2950,11 @@ impl HostManagerView {
                             "Keep-alive interval (s)",
                             &form.keep_alive_interval,
                             HostField::KeepAliveInterval,
-                            form.focus == HostField::KeepAliveInterval,
-                            form_focused && form.focus == HostField::KeepAliveInterval,
+                            FieldRenderState {
+                                active: form.focus == HostField::KeepAliveInterval,
+                                show_caret: form_focused
+                                    && form.focus == HostField::KeepAliveInterval,
+                            },
                             p,
                             cx,
                         ))
@@ -2927,8 +2962,10 @@ impl HostManagerView {
                             "Keep-alive max tries",
                             &form.keep_alive_tries,
                             HostField::KeepAliveTries,
-                            form.focus == HostField::KeepAliveTries,
-                            form_focused && form.focus == HostField::KeepAliveTries,
+                            FieldRenderState {
+                                active: form.focus == HostField::KeepAliveTries,
+                                show_caret: form_focused && form.focus == HostField::KeepAliveTries,
+                            },
                             p,
                             cx,
                         )),
@@ -3043,8 +3080,10 @@ impl HostManagerView {
                     "SFTP start directory",
                     &form.default_path_sftp,
                     HostField::DefaultPathSftp,
-                    form.focus == HostField::DefaultPathSftp,
-                    form_focused && form.focus == HostField::DefaultPathSftp,
+                    FieldRenderState {
+                        active: form.focus == HostField::DefaultPathSftp,
+                        show_caret: form_focused && form.focus == HostField::DefaultPathSftp,
+                    },
                     p,
                     cx,
                 ))
@@ -3057,7 +3096,8 @@ impl HostManagerView {
 
     fn render_credentials(&self, p: &Palette, cx: &mut Context<Self>) -> gpui::AnyElement {
         let draft = self.cred_draft.as_ref();
-        let cred_focused = self.focused_region == Some(FocusRegion::Cred) && self.blink.read(cx).visible();
+        let cred_focused =
+            self.focused_region == Some(FocusRegion::Cred) && self.blink.read(cx).visible();
         div()
             .absolute()
             .inset_0()
@@ -3526,16 +3566,18 @@ impl Render for HostManagerView {
                 (self.group_rename_focus.clone(), FocusRegion::GroupRename),
                 (self.search_focus.clone(), FocusRegion::Search),
             ] {
-                self._blink_focus_subs.push(cx.on_focus(&handle, window, move |this, _w, cx| {
-                    this.focused_region = Some(region);
-                    this.blink.update(cx, |b, cx| b.start(cx));
-                }));
-                self._blink_focus_subs.push(cx.on_blur(&handle, window, move |this, _w, cx| {
-                    if this.focused_region == Some(region) {
-                        this.focused_region = None;
-                    }
-                    this.blink.update(cx, |b, cx| b.stop(cx));
-                }));
+                self._blink_focus_subs
+                    .push(cx.on_focus(&handle, window, move |this, _w, cx| {
+                        this.focused_region = Some(region);
+                        this.blink.update(cx, |b, cx| b.start(cx));
+                    }));
+                self._blink_focus_subs
+                    .push(cx.on_blur(&handle, window, move |this, _w, cx| {
+                        if this.focused_region == Some(region) {
+                            this.focused_region = None;
+                        }
+                        this.blink.update(cx, |b, cx| b.stop(cx));
+                    }));
             }
         }
         let p = self.palette(cx);
@@ -3701,7 +3743,7 @@ impl Render for HostManagerView {
             let view = cx.entity();
             let items = rows
                 .iter()
-                .map(|row| render_host_row(row, &p, &view, cx))
+                .map(|row| render_host_row(row, &p, &view))
                 .collect::<Vec<_>>();
             div()
                 .id("host-list")
@@ -3720,9 +3762,9 @@ impl Render for HostManagerView {
             // browser / Explorer / SCM panes).
             let rows: Vec<HostRowData> = visible.iter().map(|h| self.host_row_data(h)).collect();
             let view = cx.entity();
-            uniform_list("host-list", rows.len(), move |range, _win, cx| {
+            uniform_list("host-list", rows.len(), move |range, _win, _cx| {
                 range
-                    .map(|i| render_host_row(&rows[i], &p, &view, cx))
+                    .map(|i| render_host_row(&rows[i], &p, &view))
                     .collect::<Vec<_>>()
             })
             .track_scroll(self.list_scroll.clone())

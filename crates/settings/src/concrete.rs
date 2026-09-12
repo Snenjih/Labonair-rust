@@ -384,7 +384,26 @@ impl EditorSettings {
         self.0.editor_highlight_current_line.unwrap_or(true)
     }
 
-    /// Blink the caret while the editor is focused.
+    pub fn line_height(&self) -> f32 {
+        self.0.editor_line_height.unwrap_or(1.618).clamp(1.0, 2.5)
+    }
+
+    pub fn indentation_guides(&self) -> bool {
+        self.0.editor_indentation_guides.unwrap_or(true)
+    }
+
+    pub fn whitespace(&self) -> &str {
+        self.0.editor_whitespace.as_deref().unwrap_or("none")
+    }
+
+    pub fn minimap(&self) -> bool {
+        self.0.editor_minimap.unwrap_or(false)
+    }
+
+    pub fn bracket_matching(&self) -> bool {
+        self.0.editor_bracket_matching.unwrap_or(true)
+    }
+
     pub fn cursor_blink(&self) -> bool {
         self.0.editor_cursor_blink.unwrap_or(true)
     }
@@ -400,6 +419,93 @@ impl EditorSettings {
     /// Caret shape.
     pub fn cursor_style(&self) -> EditorCursorStyle {
         self.0.editor_cursor_style.unwrap_or(EditorCursorStyle::Bar)
+    }
+
+    pub fn rulers(&self) -> &str {
+        self.0.editor_rulers.as_deref().unwrap_or("")
+    }
+
+    pub fn scroll_beyond_last_line(&self) -> bool {
+        self.0.editor_scroll_beyond_last_line.unwrap_or(true)
+    }
+
+    pub fn sticky_context(&self) -> bool {
+        self.0.editor_sticky_context.unwrap_or(false)
+    }
+
+    pub fn diagnostics(&self) -> bool {
+        self.0.editor_diagnostics.unwrap_or(true)
+    }
+
+    pub fn semantic_tokens(&self) -> bool {
+        self.0.editor_semantic_tokens.unwrap_or(true)
+    }
+
+    pub fn git_gutter(&self) -> bool {
+        self.0.editor_git_gutter.unwrap_or(true)
+    }
+
+    /// Show conservative intra-line decorations for Git changes. Line-level
+    /// gutter markers and hunk actions are controlled independently by
+    /// [`Self::git_gutter`].
+    pub fn git_word_diff(&self) -> bool {
+        self.0.editor_git_word_diff.unwrap_or(true)
+    }
+
+    pub fn completion(&self) -> bool {
+        self.0.editor_completion.unwrap_or(true)
+    }
+
+    pub fn hover(&self) -> bool {
+        self.0.editor_hover.unwrap_or(true)
+    }
+
+    pub fn format_on_save(&self) -> bool {
+        self.0.editor_format_on_save.unwrap_or(false)
+    }
+
+    pub fn auto_save(&self) -> bool {
+        self.0.editor_auto_save.unwrap_or(false)
+    }
+
+    pub fn auto_save_delay_ms(&self) -> u64 {
+        u64::from(
+            self.0
+                .editor_auto_save_delay
+                .unwrap_or(1_000)
+                .clamp(250, 60_000),
+        )
+    }
+
+    pub fn trim_trailing_whitespace(&self) -> bool {
+        self.0.editor_trim_trailing_whitespace.unwrap_or(false)
+    }
+
+    pub fn insert_final_newline(&self) -> bool {
+        self.0.editor_insert_final_newline.unwrap_or(false)
+    }
+
+    pub fn show_cursor_position(&self) -> bool {
+        self.0.editor_show_cursor_position.unwrap_or(true)
+    }
+
+    pub fn show_selection_stats(&self) -> bool {
+        self.0.editor_show_selection_stats.unwrap_or(false)
+    }
+
+    pub fn show_outline(&self) -> bool {
+        self.0.editor_show_outline.unwrap_or(false)
+    }
+
+    pub fn autocomplete_debounce_ms(&self) -> u32 {
+        self.0
+            .editor_autocomplete_debounce_ms
+            .unwrap_or(350)
+            .clamp(50, 2_000)
+    }
+
+    pub fn max_file_size_mb(&self) -> u32 {
+        self.0.editor_max_file_size_mb.unwrap_or(10).max(1)
     }
 }
 
@@ -671,6 +777,17 @@ mod tests {
     }
 
     #[test]
+    fn editor_settings_reads_git_word_diff_with_default_fallback() {
+        let defaults = EditorSettings::from_settings(&SettingsContent::default());
+        assert!(defaults.git_word_diff());
+
+        let mut content = SettingsContent::default();
+        content.editor.editor_git_word_diff = Some(false);
+        let settings = EditorSettings::from_settings(&content);
+        assert!(!settings.git_word_diff());
+    }
+
+    #[test]
     fn sftp_split_ratio_defaults_and_clamps() {
         let base = SftpBrowserSettings::from_settings(&SettingsContent::default());
         assert_eq!(base.split_ratio(), 0.5, "50/50 when never dragged");
@@ -695,11 +812,8 @@ mod tests {
         );
 
         let mut content = SettingsContent::default();
-        content.file_manager.sftp_column_widths = Some(
-            [("size".to_string(), 120.0_f32)]
-                .into_iter()
-                .collect(),
-        );
+        content.file_manager.sftp_column_widths =
+            Some([("size".to_string(), 120.0_f32)].into_iter().collect());
         let s = SftpBrowserSettings::from_settings(&content);
         assert_eq!(s.column_width(SftpColumn::Size), Some(120.0));
         assert_eq!(

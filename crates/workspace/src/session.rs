@@ -270,6 +270,10 @@ pub enum PaneSessionKind {
 #[serde(rename_all = "camelCase")]
 pub struct EditorTabSnapshot {
     pub path: String,
+    /// Editor-owned view/session payload. `None` keeps old path-only session
+    /// files compatible; the workspace never interprets its internals.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub state: Option<labonair_editor::EditorSessionSnapshot>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -309,7 +313,10 @@ pub enum RestoreAction {
         title: Option<String>,
     },
     /// Re-open a local editor tab for `path`.
-    Editor { path: String },
+    Editor {
+        path: String,
+        state: Option<labonair_editor::EditorSessionSnapshot>,
+    },
     /// Re-open a native preview tab for `url` (path or URL).
     Preview { url: String },
     /// Re-open an SFTP browser for `host_id`.
@@ -348,6 +355,7 @@ pub fn plan_restore(
                 if file_exists(&e.path) {
                     RestoreAction::Editor {
                         path: e.path.clone(),
+                        state: e.state.clone(),
                     }
                 } else {
                     RestoreAction::Skip {
@@ -594,9 +602,11 @@ mod tests {
                 }),
                 TabSnapshot::Editor(EditorTabSnapshot {
                     path: "/present.rs".into(),
+                    state: None,
                 }),
                 TabSnapshot::Editor(EditorTabSnapshot {
                     path: "/gone.rs".into(),
+                    state: None,
                 }),
                 TabSnapshot::Preview(PreviewTabSnapshot {
                     url: "https://x".into(),
@@ -811,7 +821,8 @@ mod tests {
         assert_eq!(
             actions[3],
             RestoreAction::Editor {
-                path: "/present.rs".into()
+                path: "/present.rs".into(),
+                state: None,
             }
         );
         assert!(

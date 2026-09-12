@@ -5,9 +5,7 @@ use serde::{Deserialize, Serialize};
 
 /// One optional metadata column the SFTP browser can show next to the file
 /// name. `Name` is always pinned first and is not part of this list.
-#[derive(
-    Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, schemars::JsonSchema,
-)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub enum SftpColumn {
     Size,

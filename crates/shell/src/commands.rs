@@ -182,11 +182,7 @@ impl AppShell {
             | CommandId::NewSftpTab
             | CommandId::NewQuickSsh
             | CommandId::NewSshConnection => {
-                self.show_command_palette(
-                    Some(labonair_command_palette::Page::Hosts),
-                    window,
-                    cx,
-                );
+                self.show_command_palette(Some(labonair_command_palette::Page::Hosts), window, cx);
                 return;
             }
             _ => {}
@@ -234,6 +230,7 @@ pub(crate) fn attach_action_handlers(
     on!(menu::NextTab => CommandId::NextTab);
     on!(menu::PrevTab => CommandId::PrevTab);
     on!(menu::Find => CommandId::Find);
+    on!(menu::OpenFile => CommandId::OpenFile);
     on!(menu::ToggleSidebar => CommandId::ToggleSidebar);
     on!(menu::ToggleZenMode => CommandId::ToggleZenMode);
     on!(menu::FocusNextPane => CommandId::FocusNextPane);
@@ -296,7 +293,7 @@ fn command_descriptor(
 
 #[allow(dead_code)]
 pub(crate) fn register_builtin_commands() -> CommandDispatcher {
-    compose_builtin_commands(None, None, None, None, None)
+    compose_builtin_commands(None, None, None, None, None, None)
 }
 
 /// Compose the command registry with owner-provided executable handlers.
@@ -305,6 +302,7 @@ pub(crate) fn register_builtin_commands_for(
     updater: &Entity<UpdaterView>,
     palette_toggle: labonair_command_palette::command_provider::ToggleHandler,
     search_toggle: labonair_workspace::command_provider::SearchToggleHandler,
+    file_finder_toggle: labonair_workspace::command_provider::FileFinderToggleHandler,
     host_picker: labonair_hosts_ui::command_provider::HostPickerHandler,
 ) -> CommandDispatcher {
     compose_builtin_commands(
@@ -312,6 +310,7 @@ pub(crate) fn register_builtin_commands_for(
         Some(updater),
         Some(palette_toggle),
         Some(search_toggle),
+        Some(file_finder_toggle),
         Some(host_picker),
     )
 }
@@ -321,6 +320,7 @@ fn compose_builtin_commands(
     updater: Option<&Entity<UpdaterView>>,
     palette_toggle: Option<labonair_command_palette::command_provider::ToggleHandler>,
     search_toggle: Option<labonair_workspace::command_provider::SearchToggleHandler>,
+    file_finder_toggle: Option<labonair_workspace::command_provider::FileFinderToggleHandler>,
     host_picker: Option<labonair_hosts_ui::command_provider::HostPickerHandler>,
 ) -> CommandDispatcher {
     let mut r = CommandDispatcher::default();
@@ -358,6 +358,12 @@ fn compose_builtin_commands(
             search_toggle,
         );
     }
+    if let Some(file_finder_toggle) = file_finder_toggle {
+        labonair_workspace::command_provider::register_file_finder_handler(
+            &mut r.owner_handlers,
+            file_finder_toggle,
+        );
+    }
     if let Some(host_picker) = host_picker {
         labonair_hosts_ui::command_provider::register_picker_handlers(
             &mut r.owner_handlers,
@@ -369,6 +375,12 @@ fn compose_builtin_commands(
     }
     if let Some(workspace) = workspace {
         labonair_workspace::command_provider::register_handlers(&mut r.owner_handlers, workspace);
+        // The Editor owns command meaning; Workspace only resolves the active
+        // editor entity at this composition boundary.
+        labonair_workspace::command_provider::register_editor_handlers(
+            &mut r.owner_handlers,
+            workspace,
+        );
         labonair_workspace::command_provider::register_hosts_handler(
             &mut r.owner_handlers,
             workspace,

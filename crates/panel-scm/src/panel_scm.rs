@@ -1353,8 +1353,7 @@ impl GitPanelView {
                             .history_selected
                             .is_none_or(|i| i >= this.history.len());
                         if stale {
-                            this.history_selected =
-                                (!this.history.is_empty()).then_some(0);
+                            this.history_selected = (!this.history.is_empty()).then_some(0);
                         }
                     }
                     Err(e) => {
@@ -3897,13 +3896,10 @@ impl Render for GitPanelView {
                     this.blink.update(cx, |b, cx| b.start(cx));
                 },
             ));
-            self._blink_focus_subs.push(cx.on_blur(
-                &self.focus.clone(),
-                window,
-                |this, _w, cx| {
+            self._blink_focus_subs
+                .push(cx.on_blur(&self.focus.clone(), window, |this, _w, cx| {
                     this.blink.update(cx, |b, cx| b.stop(cx));
-                },
-            ));
+                }));
         }
         let c = self.colors(cx);
         self.ensure_commit_input(window, cx);
