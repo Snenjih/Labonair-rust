@@ -21,10 +21,13 @@ use serde::{Deserialize, Serialize};
 use crate::context::WorkspaceIdentity;
 use crate::pane::{PaneId, SplitAxis, WorkspaceLayout};
 use crate::pane_group::{Member, PaneAxis, PaneGroup};
+use crate::spaces::SpaceColor;
 
 /// Bumped whenever the snapshot layout changes incompatibly; an older/newer
-/// file is discarded rather than mis-read.
-pub const SNAPSHOT_VERSION: u32 = 1;
+/// file is discarded rather than mis-read. Bumped to 2 for [`SpacesSnapshot`]
+/// (T20-008) — a pre-Spaces flat file is migrated rather than discarded, see
+/// [`load_from`].
+pub const SNAPSHOT_VERSION: u32 = 2;
 
 // ─────────────────────────────── model ───────────────────────────────────
 
@@ -67,6 +70,40 @@ impl SessionSnapshot {
             identity,
             active_tab_index,
             tabs,
+        }
+    }
+}
+
+/// The full persisted state (T20-008 Spaces): every open Space, each with its
+/// own [`SessionSnapshot`]-shaped tab set. Wraps `SessionSnapshot` per space
+/// rather than duplicating its fields, so `plan_restore` / `RestoreAction` /
+/// `Workspace::restore_session` keep working completely unchanged — they're
+/// just invoked once per space instead of once globally.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SpacesSnapshot {
+    pub version: u32,
+    /// Index into `spaces` of the space that was active.
+    pub active_space_index: usize,
+    pub spaces: Vec<SpaceEntry>,
+}
+
+/// One persisted Space: its display identity plus its tab set.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SpaceEntry {
+    pub name: String,
+    #[serde(default)]
+    pub color: SpaceColor,
+    pub session: SessionSnapshot,
+}
+
+impl SpacesSnapshot {
+    pub fn new(spaces: Vec<SpaceEntry>, active_space_index: usize) -> Self {
+        Self {
+            version: SNAPSHOT_VERSION,
+            active_space_index,
+            spaces,
         }
     }
 }
@@ -475,14 +512,16 @@ fn snapshot_path() -> PathBuf {
 }
 
 /// The persisted snapshot, or `None` if there is none / it is unreadable / its
-/// version does not match (a stale file is deleted).
-pub fn load_snapshot() -> Option<SessionSnapshot> {
+/// version does not match (a stale file is deleted). A pre-Spaces flat file
+/// is migrated into a single `Default` space rather than discarded — see
+/// [`load_from`].
+pub fn load_snapshot() -> Option<SpacesSnapshot> {
     load_from(&snapshot_path())
 }
 
 /// Persist `snapshot` (best-effort; failures are logged, never propagated —
 /// losing the session must not block quitting).
-pub fn save_snapshot(snapshot: &SessionSnapshot) {
+pub fn save_snapshot(snapshot: &SpacesSnapshot) {
     save_to(&snapshot_path(), snapshot);
 }
 
@@ -491,17 +530,31 @@ pub fn clear_snapshot() {
     let _ = std::fs::remove_file(snapshot_path());
 }
 
-pub(crate) fn load_from(path: &Path) -> Option<SessionSnapshot> {
+pub(crate) fn load_from(path: &Path) -> Option<SpacesSnapshot> {
     let raw = std::fs::read_to_string(path).ok()?;
-    let snap: SessionSnapshot = serde_json::from_str(&raw).ok()?;
-    if snap.version != SNAPSHOT_VERSION {
-        let _ = std::fs::remove_file(path);
-        return None;
+    if let Ok(snap) = serde_json::from_str::<SpacesSnapshot>(&raw) {
+        if snap.version != SNAPSHOT_VERSION {
+            let _ = std::fs::remove_file(path);
+            return None;
+        }
+        return Some(snap);
     }
-    Some(snap)
+    // Not a `SpacesSnapshot` — try the pre-Spaces flat shape (T20-008) so an
+    // upgrading user's restored tabs aren't silently lost. Wrapped into one
+    // `Default` space, matching `SpaceStore::new()`'s own seeded space.
+    let legacy: SessionSnapshot = serde_json::from_str(&raw).ok()?;
+    Some(SpacesSnapshot {
+        version: SNAPSHOT_VERSION,
+        active_space_index: 0,
+        spaces: vec![SpaceEntry {
+            name: "Default".to_string(),
+            color: SpaceColor::default(),
+            session: legacy,
+        }],
+    })
 }
 
-pub(crate) fn save_to(path: &Path, snapshot: &SessionSnapshot) {
+pub(crate) fn save_to(path: &Path, snapshot: &SpacesSnapshot) {
     if let Some(dir) = path.parent() {
         if let Err(err) = std::fs::create_dir_all(dir) {
             tracing::warn!(%err, "failed to create session-state dir");
@@ -634,13 +687,77 @@ mod tests {
         assert!(json.contains("\"activeTabIndex\":1"));
     }
 
+    /// Wrap one `SessionSnapshot` into a single-space `SpacesSnapshot`
+    /// (mirrors `SpaceStore::new()`'s own seeded `Default` space).
+    fn wrap_default(session: SessionSnapshot) -> SpacesSnapshot {
+        SpacesSnapshot::new(
+            vec![SpaceEntry {
+                name: "Default".to_string(),
+                color: SpaceColor::default(),
+                session,
+            }],
+            0,
+        )
+    }
+
     #[test]
     fn zero_tab_snapshot_round_trips_on_disk() {
         let dir = tmp_dir();
         let path = dir.join("session.json");
-        let snap = SessionSnapshot::new(Vec::new(), 0);
+        let snap = wrap_default(SessionSnapshot::new(Vec::new(), 0));
         save_to(&path, &snap);
         assert_eq!(load_from(&path), Some(snap));
+    }
+
+    #[test]
+    fn multi_space_snapshot_round_trips_through_json() {
+        let snap = SpacesSnapshot::new(
+            vec![
+                SpaceEntry {
+                    name: "Default".to_string(),
+                    color: SpaceColor::Orange,
+                    session: SessionSnapshot::new(Vec::new(), 0),
+                },
+                SpaceEntry {
+                    name: "Work".to_string(),
+                    color: SpaceColor::Blue,
+                    session: SessionSnapshot::with_identity(
+                        WorkspaceIdentity::project("/repo"),
+                        sample().tabs,
+                        1,
+                    ),
+                },
+            ],
+            1,
+        );
+        let json = serde_json::to_string(&snap).unwrap();
+        let back: SpacesSnapshot = serde_json::from_str(&json).unwrap();
+        assert_eq!(snap, back);
+        assert!(json.contains("\"activeSpaceIndex\":1"));
+        assert!(json.contains("\"name\":\"Work\""));
+    }
+
+    #[test]
+    fn legacy_flat_snapshot_migrates_into_one_default_space() {
+        // Pre-Spaces (T20-008) on-disk shape: a bare, flat `SessionSnapshot`
+        // (version 1, `tabs` at the top level, no `spaces` wrapper).
+        let dir = tmp_dir();
+        let path = dir.join("session.json");
+        let legacy = r#"{"version":1,"savedAt":0,"activeTabIndex":0,
+            "tabs":[{"kind":"preview","url":"https://x"}]}"#;
+        std::fs::write(&path, legacy).unwrap();
+
+        let loaded = load_from(&path).expect("legacy file migrates instead of being discarded");
+        assert_eq!(loaded.version, SNAPSHOT_VERSION);
+        assert_eq!(loaded.active_space_index, 0);
+        assert_eq!(loaded.spaces.len(), 1);
+        assert_eq!(loaded.spaces[0].name, "Default");
+        assert_eq!(
+            loaded.spaces[0].session.tabs,
+            vec![TabSnapshot::Preview(PreviewTabSnapshot {
+                url: "https://x".to_string()
+            })]
+        );
     }
 
     #[test]
@@ -672,7 +789,7 @@ mod tests {
     fn load_rejects_version_mismatch_and_deletes_file() {
         let dir = tmp_dir();
         let path = dir.join("session.json");
-        let mut snap = sample();
+        let mut snap = wrap_default(sample());
         snap.version = SNAPSHOT_VERSION + 1;
         save_to(&path, &snap);
         assert!(path.exists());
@@ -684,7 +801,7 @@ mod tests {
     fn save_then_load_round_trips_on_disk() {
         let dir = tmp_dir();
         let path = dir.join("nested/session.json");
-        let snap = sample();
+        let snap = wrap_default(sample());
         save_to(&path, &snap);
         assert_eq!(load_from(&path), Some(snap));
     }

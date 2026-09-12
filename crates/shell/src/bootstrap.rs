@@ -114,6 +114,54 @@ fn open_project_picker(workspace: Entity<Workspace>, cx: &mut Context<AppShell>)
     .detach();
 }
 
+/// Same platform picker as [`open_project_picker`], but the resolved folder
+/// creates and switches to a *new* Space (T20-008) instead of re-rooting the
+/// current one — the Workspace/shell boundary is identical, just a different
+/// `Workspace` entry point on success.
+fn new_project_space_picker(workspace: Entity<Workspace>, cx: &mut Context<AppShell>) {
+    let receiver = cx.prompt_for_paths(PathPromptOptions {
+        files: false,
+        directories: true,
+        multiple: false,
+        prompt: Some("New Space from Folder".into()),
+    });
+
+    cx.spawn(async move |_this, cx| {
+        let result = receiver.await;
+        match result {
+            Ok(Ok(Some(paths))) => {
+                let Some(root) = paths.into_iter().find(|path| path.is_dir()) else {
+                    let _ = cx.update(|app| {
+                        notification_center(app).update(app, |center, cx| {
+                            center.push(
+                                Notification::error(
+                                    "New Space",
+                                    "The selected path is not an accessible folder.",
+                                ),
+                                cx,
+                            );
+                        });
+                    });
+                    return;
+                };
+                let _ = workspace.update(cx, |workspace, cx| {
+                    workspace.create_space_from_project(root, cx);
+                });
+            }
+            Ok(Err(error)) => {
+                let message = format!("The project folder picker could not be opened: {error}");
+                let _ = cx.update(|app| {
+                    notification_center(app).update(app, |center, cx| {
+                        center.push(Notification::error("New Space", message), cx);
+                    });
+                });
+            }
+            Ok(Ok(None)) | Err(_) => {}
+        }
+    })
+    .detach();
+}
+
 /// Rebuild the AI live-bridge [`LiveSnapshot`] from the current workspace +
 /// explorer state. Called event-driven (T17-006) from `cx.observe` on the
 /// workspace + explorer, instead of every frame.
@@ -393,6 +441,7 @@ pub(crate) fn bootstrap(
         window,
         |this, _, event: &WorkspaceEvent, _window, cx| match event {
             WorkspaceEvent::OpenProject => open_project_picker(this.workspace.clone(), cx),
+            WorkspaceEvent::NewProjectSpace => new_project_space_picker(this.workspace.clone(), cx),
         },
     )
     .detach();

@@ -43,6 +43,7 @@ pub mod pane_group;
 pub mod project_search;
 pub mod search_overlay;
 pub mod session;
+pub mod spaces;
 pub mod ssh_connection;
 pub mod ssh_event_bridge;
 pub mod status_bar;
@@ -111,8 +112,10 @@ use crate::pane::{CloseOutcome, Member, PaneId, SplitAxis, SplitDirection, Works
 use crate::project_search::root_safe_path;
 use crate::session::{
     plan_restore, PaneSessionKind, PaneSessionSnapshot, RestoreAction, RestoreResult,
-    SerializedLayout, SessionSnapshot, TabSnapshot, WorkspaceTabSnapshot,
+    SerializedLayout, SessionSnapshot, SpaceEntry, SpacesSnapshot, TabSnapshot,
+    WorkspaceTabSnapshot,
 };
+use crate::spaces::{Space, SpaceId, SpaceStore, DEFAULT_SPACE_ID};
 use crate::ssh_connection::{
     ConnStage, ConnectionKind, ConnectionState, ConnectionStatusStore, StageStatus,
 };
@@ -453,8 +456,13 @@ enum PendingOpen {
 /// Events emitted by the workspace for actions owned by another surface.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum WorkspaceEvent {
-    /// Ask the application shell to present the native project-folder picker.
+    /// Ask the application shell to present the native project-folder picker,
+    /// re-rooting the *current* space.
     OpenProject,
+    /// Ask the application shell to present the native project-folder picker
+    /// for a *new* space (T20-008 Spaces) — the current space's identity is
+    /// left untouched.
+    NewProjectSpace,
 }
 
 /// The tabbed, split-pane workspace shell.
@@ -462,6 +470,22 @@ pub struct Workspace {
     context: context::WorkspaceContext,
     registry: Arc<TerminalRegistry>,
     tabs: Entity<TabStore>,
+    /// Named, switchable groups of tabs (T20-008 Spaces). Exactly one is
+    /// visible in the tab strip at a time; the others' tabs are simply not
+    /// the ones `TabStore` currently reports — their sessions/views stay
+    /// alive in `layouts`/`panes`/`editors`/etc. unchanged.
+    spaces: Entity<SpaceStore>,
+    /// Anchor position of the open Spaces popover, if any (mirrors
+    /// `new_tab_menu`).
+    spaces_menu: Option<gpui::Point<gpui::Pixels>>,
+    /// Which spaces are collapsed in the Spaces popover / Tabs sidebar.
+    /// Shared by both presentations — one data model, two views.
+    collapsed_spaces: std::collections::HashSet<SpaceId>,
+    /// Space whose name is being edited inline: `(space id, buffer)`. Shares
+    /// `rename_focus`/`rename_blink` with tab-rename — only one hand-rolled
+    /// rename field is ever focused at a time (mutually exclusive with
+    /// `rename_tab`), same invariant `caret`'s own doc comment documents.
+    space_rename: Option<(SpaceId, String)>,
     theme: Entity<ThemeStore>,
     background: BackgroundHost,
     /// Split-pane tree per `Workspace` tab id — survives tab switches so the
@@ -641,16 +665,25 @@ impl Workspace {
         agent_access: Entity<AgentAccessStore>,
         host_view: HostView,
         hosts: Entity<HostManagerView>,
-        restore: Option<SessionSnapshot>,
+        restore: Option<SpacesSnapshot>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
         let tabs = cx.new(|_| TabStore::new());
+        let spaces = cx.new(|_| SpaceStore::new());
         cx.observe(&tabs, |_, _, cx| cx.notify()).detach();
+        cx.observe(&spaces, |_, _, cx| cx.notify()).detach();
         cx.subscribe(&tabs, |this, _, ev: &crate::tabs::ActiveTabChanged, cx| {
             if let Some(editor) = this.editors.get(&ev.0).cloned() {
                 editor.update(cx, |e, cx| e.check_external(cx));
             }
+            // Keep the active space's "resume here" tab current live, so a
+            // later `switch_space` away and back lands on the right tab
+            // without a separate save step (T20-008 Spaces).
+            let active_space = this.spaces.read(cx).active_id();
+            this.spaces.update(cx, |s, _| {
+                s.record_last_active_tab(active_space, Some(ev.0));
+            });
         })
         .detach();
         cx.observe(&theme, |_, _, cx| cx.notify()).detach();
@@ -713,6 +746,10 @@ impl Workspace {
         let mut this = Self {
             registry,
             tabs,
+            spaces,
+            spaces_menu: None,
+            collapsed_spaces: std::collections::HashSet::new(),
+            space_rename: None,
             theme,
             background,
             layouts: HashMap::new(),
@@ -786,31 +823,50 @@ impl Workspace {
         cx.observe(&this.ssh_connection, |_, _, cx| cx.notify())
             .detach();
 
-        // Restore the persisted identity before recreating tabs so settings,
-        // Explorer, and Git observers see the correct project scope from the
-        // first workspace notification. Missing identity data is already
-        // normalized to Standalone by `SessionSnapshot` deserialization.
-        if let Some(snapshot) = restore.as_ref() {
-            if let context::WorkspaceIdentity::Project { root } = &snapshot.identity {
-                this.apply_transition(
-                    context::WorkspaceTransition::OpenProject { root: root.clone() },
-                    cx,
-                );
-            }
-        }
-
-        // Startup (T14-001 / T17-009). A passed-in snapshot means session
-        // restore is on *and* a snapshot was found — replay it verbatim, even
-        // if it restores zero tabs (an empty workspace is a valid state). With
-        // no snapshot, honour the `startup_tab` preference: `terminal` opens
-        // one local terminal, `empty` opens nothing. There is no automatic
-        // host-manager tab any more.
+        // Startup (T14-001 / T17-009 / T20-008 Spaces). A passed-in snapshot
+        // means session restore is on *and* a snapshot was found — replay
+        // every space it carried, even if a space restores zero tabs (an
+        // empty space is a valid state). With no snapshot, honour the
+        // `startup_tab` preference in the single seeded Default space:
+        // `terminal` opens one local terminal, `empty` opens nothing. There
+        // is no automatic host-manager tab any more.
         match restore {
-            Some(snap) => {
-                let result = this.restore_session(&snap, window, cx);
-                for (title, reason) in &result.failed {
-                    tracing::warn!(title, reason, "session tab not restored");
+            Some(snapshot) => {
+                let mut space_ids = Vec::with_capacity(snapshot.spaces.len());
+                for (index, entry) in snapshot.spaces.iter().enumerate() {
+                    let id = this.spaces.update(cx, |s, cx| {
+                        s.restore_entry(
+                            index == 0,
+                            entry.name.clone(),
+                            entry.color,
+                            entry.session.identity.clone(),
+                            cx,
+                        )
+                    });
+                    space_ids.push(id);
+                    this.tabs.update(cx, |s, _| s.set_current_space(id));
+
+                    let result = this.restore_session(&entry.session, window, cx);
+                    for (title, reason) in &result.failed {
+                        tracing::warn!(title, reason, "session tab not restored");
+                    }
+
+                    // Record this space's "resume here" tab now, while
+                    // `current_space` is still pinned to it — the very next
+                    // space's restore would otherwise overwrite
+                    // `TabStore::active_id` before we get a chance to read it.
+                    let last_tab = this.tabs.read(cx).active_id();
+                    let belongs = this.tabs.read(cx).get(last_tab).map(|t| t.space_id) == Some(id);
+                    this.spaces.update(cx, |s, _| {
+                        s.record_last_active_tab(id, belongs.then_some(last_tab));
+                    });
                 }
+
+                let active_space_id = space_ids
+                    .get(snapshot.active_space_index)
+                    .copied()
+                    .unwrap_or(DEFAULT_SPACE_ID);
+                this.apply_space_switch(active_space_id, cx);
             }
             None => {
                 let startup = GeneralSettings::try_get(cx)
@@ -831,15 +887,23 @@ impl Workspace {
 
     // ── Session persistence (T14-001) ─────────────────────────────────────
 
-    /// Snapshot every persistable tab + each workspace tab's split-pane tree.
-    pub fn session_snapshot(&self, cx: &App) -> SessionSnapshot {
+    /// Snapshot every Space, each with its persistable tabs + every workspace
+    /// tab's split-pane tree (T20-008 Spaces).
+    pub fn session_snapshot(&self, cx: &App) -> SpacesSnapshot {
         let store = self.tabs.read(cx);
+        let space_store = self.spaces.read(cx);
         let active_id = store.active_id();
-        let mut tabs = Vec::new();
-        let mut active_index = 0;
-        for tab in store.tabs() {
-            let snap =
-                match tab.kind {
+        let active_space_id = space_store.active_id();
+        let mut entries = Vec::with_capacity(space_store.len());
+        let mut active_space_index = 0;
+        for (index, space) in space_store.spaces().iter().enumerate() {
+            if space.id == active_space_id {
+                active_space_index = index;
+            }
+            let mut tabs = Vec::new();
+            let mut active_index = 0;
+            for tab in store.tabs_in_space(space.id) {
+                let snap = match tab.kind {
                     TabKind::Workspace => self.snapshot_workspace_tab(tab, cx),
                     TabKind::Editor => tab
                         .data
@@ -872,14 +936,20 @@ impl Workspace {
                     | TabKind::Keymap
                     | TabKind::Hosts => None,
                 };
-            if let Some(snap) = snap {
-                if tab.id == active_id {
-                    active_index = tabs.len();
+                if let Some(snap) = snap {
+                    if tab.id == active_id {
+                        active_index = tabs.len();
+                    }
+                    tabs.push(snap);
                 }
-                tabs.push(snap);
             }
+            entries.push(SpaceEntry {
+                name: space.name.clone(),
+                color: space.color,
+                session: SessionSnapshot::with_identity(space.identity.clone(), tabs, active_index),
+            });
         }
-        SessionSnapshot::with_identity(self.context.identity().clone(), tabs, active_index)
+        SpacesSnapshot::new(entries, active_space_index)
     }
 
     fn snapshot_workspace_tab(&self, tab: &Tab, cx: &App) -> Option<TabSnapshot> {
@@ -1160,6 +1230,146 @@ impl Workspace {
                 cx.notify();
             }
         }
+    }
+
+    // ── Spaces (T20-008) ───────────────────────────────────────────────────
+
+    /// Switch which Space is visible. No-op if `target` is already active or
+    /// unknown. Reuses `apply_transition` for Explorer/Git/settings-root
+    /// retargeting — the same path "Open Project…" already uses — so a Space
+    /// switch changes both which tabs are shown *and* which project scope is
+    /// live, in one step.
+    pub fn switch_space(&mut self, target: SpaceId, cx: &mut Context<Self>) {
+        if target == self.spaces.read(cx).active_id() {
+            return;
+        }
+        self.apply_space_switch(target, cx);
+    }
+
+    /// The actual switch, without the "already active" guard — also used to
+    /// land on the right space/tab once startup restore has recreated every
+    /// space's tabs (see `Workspace::new`), where the freshly-seeded
+    /// `SpaceStore` may already *report* `DEFAULT_SPACE_ID` as active even
+    /// though its identity/active-tab still need to be applied.
+    fn apply_space_switch(&mut self, target: SpaceId, cx: &mut Context<Self>) {
+        let Some(target_space) = self.spaces.read(cx).get(target).cloned() else {
+            return;
+        };
+        let outgoing = self.spaces.read(cx).active_id();
+        let current_tab = self.tabs.read(cx).active_id();
+        let current_belongs =
+            self.tabs.read(cx).get(current_tab).map(|t| t.space_id) == Some(outgoing);
+        self.spaces.update(cx, |s, cx| {
+            s.record_last_active_tab(outgoing, current_belongs.then_some(current_tab));
+            s.set_active(target, cx);
+        });
+        self.tabs.update(cx, |s, _| s.set_current_space(target));
+
+        // Edge case: the target space's project root was deleted from disk
+        // since it was last active. Don't silently point Explorer/Git at a
+        // dead root — switch the tabs but leave the current identity as-is
+        // and tell the user why.
+        match &target_space.identity {
+            context::WorkspaceIdentity::Project { root } if root.is_dir() => {
+                self.apply_transition(
+                    context::WorkspaceTransition::OpenProject { root: root.clone() },
+                    cx,
+                );
+            }
+            context::WorkspaceIdentity::Project { root } => {
+                labonair_notifications::notify_err::<()>(
+                    "Switch Space",
+                    Err(format!(
+                        "\"{}\"'s project folder no longer exists ({}).",
+                        target_space.name,
+                        root.display()
+                    )),
+                    cx,
+                );
+            }
+            context::WorkspaceIdentity::Standalone => {
+                self.apply_transition(context::WorkspaceTransition::ReturnToStandalone, cx);
+            }
+        }
+
+        let next_tab = target_space
+            .last_active_tab
+            .filter(|id| self.tabs.read(cx).get(*id).map(|t| t.space_id) == Some(target))
+            .or_else(|| {
+                self.tabs
+                    .read(cx)
+                    .tabs_in_space(target)
+                    .first()
+                    .map(|t| t.id)
+            });
+        if let Some(id) = next_tab {
+            self.tabs.update(cx, |s, cx| s.set_active(id, cx));
+        }
+        cx.notify();
+    }
+
+    /// Create a new Standalone space (auto-numbered name) and switch to it.
+    pub fn create_space_standalone(&mut self, cx: &mut Context<Self>) -> SpaceId {
+        let n = self.spaces.read(cx).len() + 1;
+        let id = self.spaces.update(cx, |s, cx| {
+            s.create(
+                format!("Space {n}"),
+                context::WorkspaceIdentity::Standalone,
+                cx,
+            )
+        });
+        self.switch_space(id, cx);
+        id
+    }
+
+    /// Create a new Project-backed space rooted at `root` and switch to it.
+    /// Called by the shell once the native folder picker resolves (mirrors
+    /// `request_open_project`'s split: Workspace owns the identity, the shell
+    /// owns the platform picker).
+    pub fn create_space_from_project(
+        &mut self,
+        root: std::path::PathBuf,
+        cx: &mut Context<Self>,
+    ) -> SpaceId {
+        let name = root
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| root.display().to_string());
+        let id = self.spaces.update(cx, |s, cx| {
+            s.create(name, context::WorkspaceIdentity::project(root), cx)
+        });
+        self.switch_space(id, cx);
+        id
+    }
+
+    /// Ask the application shell to present the native folder picker for a
+    /// *new* space (as opposed to `request_open_project`, which re-roots the
+    /// current space).
+    pub fn request_new_project_space(&self, cx: &mut Context<Self>) {
+        cx.emit(WorkspaceEvent::NewProjectSpace);
+    }
+
+    /// Close a space and every tab in it. Rejected for the permanent Default
+    /// space. Forced, without a per-tab dirty confirmation — mirrors the
+    /// existing "Close All {kind}" precedent (`Workspace::close_by_kind`,
+    /// tab context menu), not the sequential single-tab `close_all_tabs`
+    /// path, since a bulk/scoped close is the closer existing analogue.
+    pub fn close_space(&mut self, id: SpaceId, window: &mut Window, cx: &mut Context<Self>) {
+        if id == DEFAULT_SPACE_ID {
+            return;
+        }
+        let was_active = self.spaces.read(cx).active_id() == id;
+        for tab in self.tabs.update(cx, |s, cx| s.close_by_space(id, cx)) {
+            self.retire_tab(&tab, cx);
+        }
+        self.spaces.update(cx, |s, cx| {
+            s.close(id, cx);
+        });
+        if was_active {
+            self.apply_space_switch(DEFAULT_SPACE_ID, cx);
+        }
+        self.focus_active(window, cx);
+        cx.notify();
     }
 
     fn sync_editor_git_context(&self) {
@@ -4815,7 +5025,20 @@ impl Workspace {
         let theme = self.theme.read(cx);
         let (muted, fg, border) = (theme.muted_foreground(), theme.foreground(), theme.border());
         let c = Palette::from_theme(theme);
-        let tabs = self.tabs.read(cx).tabs().to_vec();
+        let active_space_id = self.spaces.read(cx).active_id();
+        // Only the active Space's tabs show in the titlebar strip — every
+        // other Space's tabs stay alive (T20-008) but out of sight until
+        // switched to. The sidebar's `render_tab_list_vertical` intentionally
+        // shows every Space's tabs at once, grouped into sections instead.
+        let tabs: Vec<Tab> = self
+            .tabs
+            .read(cx)
+            .tabs_in_space(active_space_id)
+            .into_iter()
+            .cloned()
+            .collect();
+
+        let active_space = self.spaces.read(cx).active().cloned();
 
         div()
             .flex()
@@ -4824,6 +5047,41 @@ impl Workspace {
             .h(px(28.0))
             .w_full()
             .flex_shrink_0()
+            .child(
+                div()
+                    .id("spaces-trigger")
+                    .flex_shrink_0()
+                    .flex()
+                    .items_center()
+                    .gap_1()
+                    .h(px(24.0))
+                    .px_1p5()
+                    .rounded_md()
+                    .bg(c.muted_bg)
+                    .cursor_pointer()
+                    .hover(|s| s.bg(border))
+                    .child(IconName::Box.svg(muted).size(px(13.0)))
+                    .when_some(active_space, |d, space| {
+                        d.child(
+                            div()
+                                .max_w(px(96.0))
+                                .overflow_hidden()
+                                .whitespace_nowrap()
+                                .text_xs()
+                                .text_color(fg)
+                                .child(space.name),
+                        )
+                    })
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(|this, ev: &MouseDownEvent, _window, cx| {
+                            this.spaces_menu = Some(point(ev.position.x, px(TITLEBAR_OFFSET)));
+                            this.new_tab_menu = None;
+                            this.context_menu = None;
+                            cx.notify();
+                        }),
+                    ),
+            )
             .child(
                 div()
                     .id("tab-strip")
@@ -4870,7 +5128,27 @@ impl Workspace {
             let theme = self.theme.read(cx);
             (theme.muted_foreground(), theme.foreground(), theme.border())
         };
+        let spaces = self.spaces.read(cx).spaces().to_vec();
         let tabs = self.tabs.read(cx).tabs().to_vec();
+
+        // Grouped into a collapsible section per Space (T20-008) — the same
+        // data and row component the Spaces popover uses, just expanded
+        // inline instead of in a floating card.
+        let mut groups: Vec<gpui::AnyElement> = Vec::with_capacity(spaces.len());
+        for space in &spaces {
+            let space_tabs: Vec<&Tab> = tabs.iter().filter(|t| t.space_id == space.id).collect();
+            groups.push(
+                self.render_space_header(space, space_tabs.len(), cx)
+                    .into_any_element(),
+            );
+            if !self.collapsed_spaces.contains(&space.id) {
+                groups.extend(
+                    space_tabs
+                        .into_iter()
+                        .map(|t| self.render_tab(t, true, cx).into_any_element()),
+                );
+            }
+        }
 
         div()
             .flex()
@@ -4888,7 +5166,7 @@ impl Workspace {
                     .gap_0p5()
                     .overflow_y_scroll()
                     .p_1p5()
-                    .children(tabs.iter().map(|t| self.render_tab(t, true, cx))),
+                    .children(groups),
             )
             .child(
                 div()
@@ -5533,6 +5811,385 @@ impl Workspace {
         }
     }
 
+    /// Start editing a space's name inline (Spaces popover / Tabs sidebar
+    /// header). Mutually exclusive with tab-rename — both share
+    /// `rename_focus`/`rename_blink`.
+    fn begin_space_rename(&mut self, id: SpaceId, window: &mut Window, cx: &mut Context<Self>) {
+        let current = self
+            .spaces
+            .read(cx)
+            .get(id)
+            .map(|s| s.name.clone())
+            .unwrap_or_default();
+        self.rename_tab = None;
+        self.space_rename = Some((id, current));
+        window.focus(&self.rename_focus);
+        cx.notify();
+    }
+
+    fn commit_space_rename(&mut self, cx: &mut Context<Self>) {
+        if let Some((id, buf)) = self.space_rename.take() {
+            let trimmed = buf.trim();
+            if !trimmed.is_empty() {
+                self.spaces.update(cx, |s, cx| s.rename(id, trimmed, cx));
+            }
+        }
+        cx.notify();
+    }
+
+    fn on_space_rename_key(
+        &mut self,
+        ev: &KeyDownEvent,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some((_, buf)) = self.space_rename.as_mut() else {
+            return;
+        };
+        match ev.keystroke.key.as_str() {
+            "enter" => self.commit_space_rename(cx),
+            "escape" => {
+                self.space_rename = None;
+                cx.notify();
+            }
+            "backspace" => {
+                buf.pop();
+                self.rename_blink.update(cx, |b, cx| b.pause(cx));
+                cx.notify();
+            }
+            _ => {
+                if let Some(ch) = ev
+                    .keystroke
+                    .key_char
+                    .as_ref()
+                    .filter(|s| !s.is_empty() && !s.chars().any(|c| c.is_control()))
+                {
+                    buf.push_str(ch);
+                    self.rename_blink.update(cx, |b, cx| b.pause(cx));
+                    cx.notify();
+                }
+            }
+        }
+    }
+
+    /// One space's header row (colored initial badge, name, tab count,
+    /// collapse chevron) — shared by the Spaces popover and the Tabs sidebar
+    /// (T20-008), so both presentations stay identical. Clicking the row
+    /// body switches to it; clicking the chevron only toggles collapse.
+    fn render_space_header(
+        &mut self,
+        space: &Space,
+        tab_count: usize,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let c = Palette::from_theme(self.theme.read(cx));
+        let id = space.id;
+        let active = self.spaces.read(cx).active_id() == id;
+        let collapsed = self.collapsed_spaces.contains(&id);
+
+        let badge = div()
+            .flex_none()
+            .size(px(20.0))
+            .rounded_sm()
+            .bg(space.color.hsla())
+            .flex()
+            .items_center()
+            .justify_center()
+            .text_size(px(11.0))
+            .text_color(gpui::white())
+            .child(
+                space
+                    .name
+                    .chars()
+                    .next()
+                    .map(|ch| ch.to_uppercase().to_string())
+                    .unwrap_or_default(),
+            );
+
+        let name_slot: gpui::AnyElement =
+            match self.space_rename.as_ref().filter(|(rid, _)| *rid == id) {
+                Some((_, buf)) => div()
+                    .track_focus(&self.rename_focus)
+                    .key_context("SpaceRename")
+                    .on_key_down(cx.listener(Self::on_space_rename_key))
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(|_, _: &MouseDownEvent, _w, cx| cx.stop_propagation()),
+                    )
+                    .flex_1()
+                    .min_w_0()
+                    .px_1()
+                    .rounded_sm()
+                    .border_1()
+                    .border_color(c.ring)
+                    .flex()
+                    .items_center()
+                    .child(SharedString::from(buf.clone()))
+                    .when(self.rename_blink.read(cx).visible(), |d| {
+                        d.child(caret(c.fg, 13.0))
+                    })
+                    .into_any_element(),
+                None => div()
+                    .flex_1()
+                    .min_w_0()
+                    .overflow_hidden()
+                    .whitespace_nowrap()
+                    .text_sm()
+                    .child(space.name.clone())
+                    .into_any_element(),
+            };
+
+        div()
+            .id(("space-header", id))
+            .flex()
+            .items_center()
+            .gap_2()
+            .w_full()
+            .px_2()
+            .py_1p5()
+            .rounded_md()
+            .cursor_pointer()
+            .when(active, |d| d.bg(c.accent))
+            .when(!active, |d| d.hover(|s| s.bg(c.muted_bg)))
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(move |this, _: &MouseDownEvent, _w, cx| {
+                    this.spaces_menu = None;
+                    this.switch_space(id, cx);
+                }),
+            )
+            .child(
+                div()
+                    .id(("space-collapse", id))
+                    .flex_none()
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(move |this, _: &MouseDownEvent, _w, cx| {
+                            cx.stop_propagation();
+                            if this.collapsed_spaces.contains(&id) {
+                                this.collapsed_spaces.remove(&id);
+                            } else {
+                                this.collapsed_spaces.insert(id);
+                            }
+                            cx.notify();
+                        }),
+                    )
+                    .child(
+                        if collapsed {
+                            IconName::ChevronRight
+                        } else {
+                            IconName::ChevronDown
+                        }
+                        .svg(c.muted)
+                        .size(px(13.0)),
+                    ),
+            )
+            .child(badge)
+            .child(name_slot)
+            .child(
+                div()
+                    .id(("space-rename-btn", id))
+                    .flex_none()
+                    .invisible()
+                    .group_hover("space-row", |s| s.visible())
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(move |this, _: &MouseDownEvent, w, cx| {
+                            cx.stop_propagation();
+                            this.begin_space_rename(id, w, cx);
+                        }),
+                    )
+                    .child(IconName::Pencil.svg(c.muted).size(px(12.0))),
+            )
+            .child(
+                div()
+                    .flex_none()
+                    .text_size(px(11.0))
+                    .text_color(c.muted)
+                    .child(tab_count.to_string()),
+            )
+            .group("space-row")
+    }
+
+    /// The Spaces popover (T20-008): a switcher for every open Space,
+    /// collapsible, each listing its tabs — the reference Warp-style
+    /// "Spaces" switcher's compact presentation of the same data the Tabs
+    /// sidebar shows expanded (`render_tab_list_vertical`).
+    fn render_spaces_popover(
+        &mut self,
+        anchor: gpui::Point<gpui::Pixels>,
+        cx: &mut Context<Self>,
+    ) -> gpui::AnyElement {
+        let c = Palette::from_theme(self.theme.read(cx));
+        let spaces = self.spaces.read(cx).spaces().to_vec();
+        let tabs = self.tabs.read(cx).tabs().to_vec();
+        let view = cx.entity();
+
+        let mut rows: Vec<gpui::AnyElement> = Vec::new();
+        rows.push(
+            div()
+                .flex()
+                .items_center()
+                .justify_between()
+                .px_2()
+                .py_1()
+                .child(div().text_sm().text_color(c.muted).child("Spaces"))
+                .child(
+                    div()
+                        .id("spaces-new")
+                        .cursor_pointer()
+                        .rounded_sm()
+                        .p_0p5()
+                        .hover(|s| s.bg(c.muted_bg))
+                        .child(IconName::PlusBold.svg(c.muted).size(px(14.0)))
+                        .on_mouse_down(MouseButton::Left, {
+                            let v = view.clone();
+                            move |_: &MouseDownEvent, _w, cx| {
+                                v.update(cx, |this, cx| {
+                                    this.spaces_menu = None;
+                                    this.create_space_standalone(cx);
+                                })
+                            }
+                        }),
+                )
+                .into_any_element(),
+        );
+        rows.push(div().my_1().h(px(1.0)).bg(c.border).into_any_element());
+
+        for space in &spaces {
+            let count = tabs.iter().filter(|t| t.space_id == space.id).count();
+            rows.push(
+                self.render_space_header(space, count, cx)
+                    .into_any_element(),
+            );
+            if !self.collapsed_spaces.contains(&space.id) {
+                for tab in tabs.iter().filter(|t| t.space_id == space.id) {
+                    let tab_id = tab.id;
+                    let space_id = space.id;
+                    let label = SharedString::from(tab.label());
+                    let icon = tab.kind.indicator();
+                    rows.push(
+                        div()
+                            .id(("space-tab", tab_id))
+                            .flex()
+                            .items_center()
+                            .gap_2()
+                            .w_full()
+                            .pl_6()
+                            .pr_2()
+                            .py_1()
+                            .rounded_md()
+                            .cursor_pointer()
+                            .text_sm()
+                            .text_color(c.muted)
+                            .hover(|s| s.bg(c.muted_bg).text_color(c.fg))
+                            .child(icon.svg(c.muted).size(px(13.0)))
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .min_w_0()
+                                    .overflow_hidden()
+                                    .whitespace_nowrap()
+                                    .child(label),
+                            )
+                            .on_mouse_down(MouseButton::Left, {
+                                let v = view.clone();
+                                move |_: &MouseDownEvent, _w, cx| {
+                                    v.update(cx, |this, cx| {
+                                        this.spaces_menu = None;
+                                        this.switch_space(space_id, cx);
+                                        this.tabs.update(cx, |s, cx| s.set_active(tab_id, cx));
+                                    })
+                                }
+                            })
+                            .into_any_element(),
+                    );
+                }
+            }
+        }
+
+        rows.push(
+            div()
+                .mt_1()
+                .pt_1()
+                .border_t_1()
+                .border_color(c.border)
+                .into_any_element(),
+        );
+        rows.push(
+            div()
+                .id("spaces-new-footer")
+                .flex()
+                .items_center()
+                .gap_1p5()
+                .px_2()
+                .py_1p5()
+                .rounded_md()
+                .cursor_pointer()
+                .text_sm()
+                .text_color(c.muted)
+                .hover(|s| s.bg(c.muted_bg).text_color(c.fg))
+                .child(IconName::PlusBold.svg(c.muted).size(px(13.0)))
+                .child("New space")
+                .on_mouse_down(MouseButton::Left, {
+                    let v = view.clone();
+                    move |_: &MouseDownEvent, _w, cx| {
+                        v.update(cx, |this, cx| {
+                            this.spaces_menu = None;
+                            this.create_space_standalone(cx);
+                        })
+                    }
+                })
+                .into_any_element(),
+        );
+        rows.push(
+            div()
+                .id("spaces-new-project-footer")
+                .flex()
+                .items_center()
+                .gap_1p5()
+                .px_2()
+                .py_1p5()
+                .rounded_md()
+                .cursor_pointer()
+                .text_sm()
+                .text_color(c.muted)
+                .hover(|s| s.bg(c.muted_bg).text_color(c.fg))
+                .child(IconName::FolderOpen.svg(c.muted).size(px(13.0)))
+                .child("New space from folder\u{2026}")
+                .on_mouse_down(MouseButton::Left, {
+                    let v = view.clone();
+                    move |_: &MouseDownEvent, _w, cx| {
+                        v.update(cx, |this, cx| {
+                            this.spaces_menu = None;
+                            this.request_new_project_space(cx);
+                        })
+                    }
+                })
+                .into_any_element(),
+        );
+
+        let content = div()
+            .id("spaces-popover-list")
+            .flex()
+            .flex_col()
+            .max_h(px(420.0))
+            .overflow_y_scroll()
+            .children(rows)
+            .into_any_element();
+
+        let dismiss = {
+            let v = view.clone();
+            move |_w: &mut Window, cx: &mut App| {
+                v.update(cx, |this, cx| {
+                    this.spaces_menu = None;
+                    cx.notify();
+                });
+            }
+        };
+        labonair_ui_kit::popover(anchor, px(320.0), c, dismiss, content)
+    }
+
     fn render_context_menu(
         &mut self,
         id: u64,
@@ -5954,6 +6611,9 @@ impl Render for Workspace {
         let new_tab_menu = self
             .new_tab_menu
             .map(|pos| self.render_new_tab_menu(pos, cx).into_any_element());
+        let spaces_menu = self
+            .spaces_menu
+            .map(|pos| self.render_spaces_popover(pos, cx));
 
         // T17-006: the three edge docks + the drag-to-resize handler used to
         // live in `AppShell::render`; they compose here now so the shell only
@@ -6015,6 +6675,7 @@ impl Render for Workspace {
             .children(confirm)
             .children(context_menu)
             .children(new_tab_menu)
+            .children(spaces_menu)
     }
 }
 

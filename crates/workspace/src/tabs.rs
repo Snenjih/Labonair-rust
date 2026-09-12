@@ -23,6 +23,8 @@ use gpui::{Context, EventEmitter};
 use labonair_terminal::SessionId;
 use labonair_ui_kit::IconName;
 
+use crate::spaces::{SpaceId, DEFAULT_SPACE_ID};
+
 /// The category of a tab. Content views for most kinds arrive in later phases;
 /// the model already covers them so the tab bar and store are stable.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -141,6 +143,10 @@ pub struct Tab {
     /// "Peek" preview tab, rendered italic (`Editor`).
     pub peek: bool,
     pub data: TabData,
+    /// The Space this tab belongs to (T20-008 Spaces). Set once, from
+    /// [`TabStore::current_space`], at creation time — there is no such thing
+    /// as a tab outside every space.
+    pub space_id: SpaceId,
 }
 
 impl Tab {
@@ -179,6 +185,11 @@ pub struct TabStore {
     tabs: Vec<Tab>,
     active_id: u64,
     next_id: u64,
+    /// Which Space a newly-opened tab joins. Kept in sync by
+    /// [`crate::Workspace::switch_space`] — this is what lets every existing
+    /// `open`/`open_workspace` call site keep working unchanged while still
+    /// filing new tabs into the currently active space.
+    current_space: SpaceId,
 }
 
 impl EventEmitter<ActiveTabChanged> for TabStore {}
@@ -196,11 +207,30 @@ impl TabStore {
             tabs: Vec::new(),
             active_id: 0,
             next_id: 1,
+            current_space: DEFAULT_SPACE_ID,
         }
     }
 
     pub fn tabs(&self) -> &[Tab] {
         &self.tabs
+    }
+
+    /// Which Space new tabs are filed into. Set by
+    /// [`crate::Workspace::switch_space`] whenever the active space changes.
+    pub fn current_space(&self) -> SpaceId {
+        self.current_space
+    }
+
+    pub fn set_current_space(&mut self, id: SpaceId) {
+        self.current_space = id;
+    }
+
+    /// All tabs belonging to `space_id`, in tab order.
+    pub fn tabs_in_space(&self, space_id: SpaceId) -> Vec<&Tab> {
+        self.tabs
+            .iter()
+            .filter(|t| t.space_id == space_id)
+            .collect()
     }
 
     pub fn active_id(&self) -> u64 {
@@ -240,6 +270,7 @@ impl TabStore {
             dirty: false,
             peek: false,
             data,
+            space_id: self.current_space,
         });
         self.set_active(id, cx);
         cx.notify();
@@ -274,12 +305,24 @@ impl TabStore {
         cx.notify();
     }
 
-    /// Activate the next / previous tab, wrapping around.
+    /// Activate the next / previous tab within the active tab's own Space,
+    /// wrapping around. Scoped to one space so cycling never silently jumps
+    /// you into a different project's Explorer/Git root (T20-008 Spaces).
     pub fn cycle(&mut self, forward: bool, cx: &mut Context<Self>) {
-        let Some(pos) = self.tabs.iter().position(|t| t.id == self.active_id) else {
+        let Some(active) = self.tabs.iter().find(|t| t.id == self.active_id) else {
             return;
         };
-        let n = self.tabs.len();
+        let space_id = active.space_id;
+        let in_space: Vec<u64> = self
+            .tabs
+            .iter()
+            .filter(|t| t.space_id == space_id)
+            .map(|t| t.id)
+            .collect();
+        let Some(pos) = in_space.iter().position(|id| *id == self.active_id) else {
+            return;
+        };
+        let n = in_space.len();
         if n <= 1 {
             return;
         }
@@ -288,8 +331,7 @@ impl TabStore {
         } else {
             (pos + n - 1) % n
         };
-        let id = self.tabs[next].id;
-        self.set_active(id, cx);
+        self.set_active(in_space[next], cx);
     }
 
     /// Close a tab. Any tab can be closed — closing the last one leaves the
@@ -333,6 +375,21 @@ impl TabStore {
         let (removed, kept): (Vec<Tab>, Vec<Tab>) = std::mem::take(&mut self.tabs)
             .into_iter()
             .partition(|t| t.kind == kind);
+        self.tabs = kept;
+        if !self.tabs.iter().any(|t| t.id == self.active_id) {
+            self.activate_fallback(cx);
+        }
+        cx.notify();
+        removed
+    }
+
+    /// Close every tab belonging to `space_id`. Returns removed tabs. Used
+    /// when a Space is closed (T20-008); may leave the store with tabs in
+    /// other spaces still active, or empty it entirely.
+    pub fn close_by_space(&mut self, space_id: SpaceId, cx: &mut Context<Self>) -> Vec<Tab> {
+        let (removed, kept): (Vec<Tab>, Vec<Tab>) = std::mem::take(&mut self.tabs)
+            .into_iter()
+            .partition(|t| t.space_id == space_id);
         self.tabs = kept;
         if !self.tabs.iter().any(|t| t.id == self.active_id) {
             self.activate_fallback(cx);

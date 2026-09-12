@@ -280,31 +280,32 @@ fn in_flyout(flyouts: &FlyoutBounds, pos: Point<Pixels>) -> bool {
 /// kind of margin Zed's `ContextMenu::open_submenu` uses for this decision.
 const ASSUMED_FLYOUT_WIDTH: Pixels = px(200.0);
 
-thread_local! {
-    /// Most recently observed window-space bounds of each submenu trigger
-    /// row, keyed by the flyout's element id (`ctxsubfly-{id}-{depth}`).
-    /// Recorded every frame by [`trigger_probe`] so [`record_submenu_side`]
-    /// always has a fresh measurement to work from as soon as the trigger is
-    /// hovered.
-    static TRIGGER_BOUNDS: RefCell<HashMap<SharedString, Bounds<Pixels>>> =
-        RefCell::new(HashMap::new());
-
-    /// Whether each submenu flyout should open to the left of its trigger row
-    /// instead of the right, keyed the same way as `TRIGGER_BOUNDS`. Decided
-    /// in [`record_submenu_side`] when the trigger is hovered and read back
-    /// by `render_item` on the next render — menus in this file are rebuilt
-    /// fresh from caller state every render, so this cache is the only place
-    /// the decision can live between "hover fires" and "the flyout is built".
-    static SUBMENU_FLIP_LEFT: RefCell<HashMap<SharedString, bool>> = RefCell::new(HashMap::new());
+/// Per-submenu geometry: the trigger row's last-probed window-space bounds,
+/// plus whether its flyout should open to the left instead of the right.
+/// Keyed by the flyout's element id (`ctxsubfly-{id}-{depth}`).
+///
+/// This is an `Rc<RefCell<..>>` created fresh by [`context_menu`] /
+/// [`popover_menu`] for each call — the same idiom as [`FlyoutBounds`] just
+/// above — rather than a `thread_local!` keyed only by that string id. A
+/// thread-local would be shared by every open menu in the process (and, if
+/// this app ever grows a second window, every window too): two independent
+/// menus that happen to reuse the same submenu id at the same depth would
+/// silently share each other's flip decision, and entries would never be
+/// cleaned up. Scoping it per menu instance removes both problems for free.
+#[derive(Clone, Copy, Default)]
+struct SubmenuGeom {
+    bounds: Option<Bounds<Pixels>>,
+    flip_left: bool,
 }
+type SubmenuGeometry = Rc<RefCell<HashMap<SharedString, SubmenuGeom>>>;
 
 /// A layout-neutral probe that continuously records the trigger row's own
-/// bounds into [`TRIGGER_BOUNDS`], mirroring [`flyout_probe`] but for the row
-/// rather than the flyout.
-fn trigger_probe(key: SharedString) -> impl IntoElement {
+/// bounds into `geometry`, mirroring [`flyout_probe`] but for the row rather
+/// than the flyout.
+fn trigger_probe(key: SharedString, geometry: SubmenuGeometry) -> impl IntoElement {
     canvas(
         move |bounds, _window, _cx| {
-            TRIGGER_BOUNDS.with(|b| b.borrow_mut().insert(key.clone(), bounds));
+            geometry.borrow_mut().entry(key.clone()).or_default().bounds = Some(bounds);
         },
         |_, _, _, _| {},
     )
@@ -314,17 +315,20 @@ fn trigger_probe(key: SharedString) -> impl IntoElement {
 
 /// Recomputes whether the submenu keyed by `key` has room to open to the
 /// right of its trigger row, using the row's last-probed bounds and the
-/// window's current viewport, and caches the answer in [`SUBMENU_FLIP_LEFT`]
-/// for `render_item` to pick up on the next render. Called from the trigger
+/// window's current viewport, and caches the answer in `geometry` for
+/// `render_item` to pick up on the next render. Called from the trigger
 /// row's `on_hover` (for both controlled and CSS-hover submenus) so the
 /// flyout already opens on the correct side by the time it becomes visible,
 /// rather than only correcting itself a frame after rendering off-screen.
-fn record_submenu_side(key: &SharedString, window: &Window) {
-    let Some(bounds) = TRIGGER_BOUNDS.with(|b| b.borrow().get(key).cloned()) else {
+fn record_submenu_side(key: &SharedString, geometry: &SubmenuGeometry, window: &Window) {
+    let mut geometry = geometry.borrow_mut();
+    let Some(entry) = geometry.get_mut(key) else {
         return;
     };
-    let flip_left = bounds.right() + ASSUMED_FLYOUT_WIDTH > window.viewport_size().width;
-    SUBMENU_FLIP_LEFT.with(|f| f.borrow_mut().insert(key.clone(), flip_left));
+    let Some(bounds) = entry.bounds else {
+        return;
+    };
+    entry.flip_left = bounds.right() + ASSUMED_FLYOUT_WIDTH > window.viewport_size().width;
 }
 
 /// A fixed 16px centred box holding a 14px glyph — keeps every row's icon the
@@ -340,7 +344,13 @@ fn icon_slot(icon: IconName, color: gpui::Hsla) -> impl IntoElement {
         .child(icon.svg(color).size(px(14.0)))
 }
 
-fn render_item(item: MenuItem, c: Palette, depth: usize, flyouts: &FlyoutBounds) -> AnyElement {
+fn render_item(
+    item: MenuItem,
+    c: Palette,
+    depth: usize,
+    flyouts: &FlyoutBounds,
+    geometry: &SubmenuGeometry,
+) -> AnyElement {
     match item.kind {
         Kind::Separator => div()
             .my(c.space(4.0))
@@ -434,8 +444,10 @@ fn render_item(item: MenuItem, c: Palette, depth: usize, flyouts: &FlyoutBounds)
             // In controlled mode the flyout only exists while the caller says
             // it's open; otherwise it's always in the tree and revealed by CSS.
             let show_panel = control.as_ref().map(|c| c.open).unwrap_or(true);
-            let flip_left = SUBMENU_FLIP_LEFT
-                .with(|f| f.borrow().get(&flyout_id).copied())
+            let flip_left = geometry
+                .borrow()
+                .get(&flyout_id)
+                .map(|g| g.flip_left)
                 .unwrap_or(false);
             let panel = show_panel.then(|| {
                 let card = div()
@@ -452,7 +464,7 @@ fn render_item(item: MenuItem, c: Palette, depth: usize, flyouts: &FlyoutBounds)
                     .children(
                         items
                             .into_iter()
-                            .map(|it| render_item(it, c, depth + 1, flyouts)),
+                            .map(|it| render_item(it, c, depth + 1, flyouts, geometry)),
                     );
                 let card = match &control {
                     Some(ctrl) => {
@@ -531,23 +543,25 @@ fn render_item(item: MenuItem, c: Palette, depth: usize, flyouts: &FlyoutBounds)
                 Some(ctrl) => {
                     let on_hover = ctrl.on_hover.clone();
                     let key = flyout_id.clone();
+                    let geom = geometry.clone();
                     row.on_hover(move |h, w, cx| {
                         if *h {
-                            record_submenu_side(&key, w);
+                            record_submenu_side(&key, &geom, w);
                         }
                         on_hover(SubmenuHoverSource::Trigger, *h, w, cx)
                     })
                 }
                 None => {
                     let key = flyout_id.clone();
+                    let geom = geometry.clone();
                     row.group(group).on_hover(move |h, w, _cx| {
                         if *h {
-                            record_submenu_side(&key, w);
+                            record_submenu_side(&key, &geom, w);
                         }
                     })
                 }
             };
-            row.child(trigger_probe(flyout_id))
+            row.child(trigger_probe(flyout_id, geometry.clone()))
                 .children(panel)
                 .into_any_element()
         }
@@ -556,7 +570,12 @@ fn render_item(item: MenuItem, c: Palette, depth: usize, flyouts: &FlyoutBounds)
 
 /// The menu card itself — the `p-1 rounded-md bg-popover border shadow-md`
 /// panel shared by [`context_menu`] and [`popover_menu`].
-fn menu_card(c: Palette, items: Vec<MenuItem>, flyouts: FlyoutBounds) -> gpui::Div {
+fn menu_card(
+    c: Palette,
+    items: Vec<MenuItem>,
+    flyouts: FlyoutBounds,
+    geometry: SubmenuGeometry,
+) -> gpui::Div {
     div()
         .flex()
         .flex_col()
@@ -572,7 +591,7 @@ fn menu_card(c: Palette, items: Vec<MenuItem>, flyouts: FlyoutBounds) -> gpui::D
         .children(
             items
                 .into_iter()
-                .map(move |it| render_item(it, c, 0, &flyouts)),
+                .map(move |it| render_item(it, c, 0, &flyouts, &geometry)),
         )
 }
 
@@ -582,7 +601,12 @@ fn menu_card(c: Palette, items: Vec<MenuItem>, flyouts: FlyoutBounds) -> gpui::D
 /// [`context_menu`] / [`popover_menu`].
 #[cfg(any(debug_assertions, feature = "gallery"))]
 pub fn menu_card_preview(c: Palette, items: Vec<MenuItem>) -> gpui::Div {
-    menu_card(c, items, Rc::new(RefCell::new(Vec::new())))
+    menu_card(
+        c,
+        items,
+        Rc::new(RefCell::new(Vec::new())),
+        Rc::new(RefCell::new(HashMap::new())),
+    )
 }
 
 /// Build a full-screen context-menu overlay anchored at `anchor` (window
@@ -604,6 +628,9 @@ pub fn context_menu(
     let fb_out = flyouts.clone();
     let fb_left = flyouts.clone();
     let fb_right = flyouts.clone();
+    // Fresh per call, so two independent open menus never share a submenu's
+    // flip decision — see `SubmenuGeometry`'s own doc comment.
+    let geometry: SubmenuGeometry = Rc::new(RefCell::new(HashMap::new()));
 
     // `anchored().snap_to_window()` positions the card in *window* coordinates
     // (the right-click `MouseDownEvent::position` is already window-space) and
@@ -619,7 +646,7 @@ pub fn context_menu(
     // not actually cover the window and a click next to the menu would leave it
     // stuck open. The card, by contrast, always knows its own bounds.
     let card = anchored().position(anchor).snap_to_window().child(
-        menu_card(c, items, flyouts)
+        menu_card(c, items, flyouts, geometry)
             .on_mouse_down_out(move |ev, w, cx| {
                 if !in_flyout(&fb_out, ev.position) {
                     d3(w, cx)
@@ -685,9 +712,10 @@ pub fn popover_menu(
     let flyouts: FlyoutBounds = Rc::new(RefCell::new(Vec::new()));
     let fb_out = flyouts.clone();
     let fb_bd = flyouts.clone();
+    let geometry: SubmenuGeometry = Rc::new(RefCell::new(HashMap::new()));
 
     let card = anchored().position(anchor).snap_to_window().child(
-        menu_card(c, items, flyouts)
+        menu_card(c, items, flyouts, geometry)
             .on_mouse_down_out(move |ev, w, cx| {
                 if !in_flyout(&fb_out, ev.position) {
                     d_out(w, cx)
