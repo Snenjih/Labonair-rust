@@ -94,10 +94,7 @@ fn open_project_picker(workspace: Entity<Workspace>, cx: &mut Context<AppShell>)
                     return;
                 };
                 let _ = workspace.update(cx, |workspace, cx| {
-                    workspace.apply_transition(
-                        labonair_workspace::context::WorkspaceTransition::OpenProject { root },
-                        cx,
-                    );
+                    workspace.open_project_in_place(root, cx);
                 });
             }
             Ok(Err(error)) => {

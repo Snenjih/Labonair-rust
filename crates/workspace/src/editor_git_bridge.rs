@@ -10,6 +10,8 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
+use tokio::runtime::Handle as TokioHandle;
+
 use labonair_editor::{
     GitDecorationProvider, GitDecorationRequest, GitGutterError, GitGutterSnapshot, GitHunkAction,
     GitProviderFuture, HunkActionSink, Revision,
@@ -44,13 +46,15 @@ struct BridgeState {
 /// Typed Workspace adapter implementing both editor-side Git boundaries.
 pub struct WorkspaceGitBridge {
     git: Arc<dyn GitService>,
+    tokio: TokioHandle,
     state: Mutex<BridgeState>,
 }
 
 impl WorkspaceGitBridge {
-    pub fn new(git: Arc<dyn GitService>) -> Self {
+    pub fn new(git: Arc<dyn GitService>, tokio: TokioHandle) -> Self {
         Self {
             git,
+            tokio,
             state: Mutex::new(BridgeState {
                 context: EditorGitContext::default(),
                 latest_revisions: HashMap::new(),
@@ -188,7 +192,8 @@ impl GitDecorationProvider for WorkspaceGitBridge {
             });
         };
         let git = self.git.clone();
-        Box::pin(async move {
+        let tokio = self.tokio.clone();
+        Box::pin(run_on_tokio(tokio, async move {
             let is_repo = git
                 .is_repo(root.clone(), context.session_id.clone())
                 .await
@@ -233,7 +238,7 @@ impl GitDecorationProvider for WorkspaceGitBridge {
                     }
                     other => other,
                 })
-        })
+        }))
     }
 }
 
@@ -283,7 +288,8 @@ impl WorkspaceGitBridge {
         stage: bool,
     ) -> GitProviderFuture<()> {
         let git = self.git.clone();
-        Box::pin(async move {
+        let tokio = self.tokio.clone();
+        Box::pin(run_on_tokio(tokio, async move {
             let Some(root) = context.root else {
                 return Err(GitGutterError::Provider(
                     "Git actions require an explicit repository workspace".into(),
@@ -302,7 +308,24 @@ impl WorkspaceGitBridge {
                     .await
             };
             result.map_err(GitGutterError::Provider)
-        })
+        }))
+    }
+}
+
+/// Runs a git future on the process's real Tokio runtime rather than
+/// whatever executor is polling this adapter's returned future (normally
+/// GPUI's own `cx.spawn`, which never enters a Tokio runtime). Git calls
+/// eventually reach `tokio::task::spawn_blocking` (see `git-transport`),
+/// which panics with "there is no reactor running" unless it's actually
+/// driven from inside a Tokio runtime.
+async fn run_on_tokio<T, F>(tokio: TokioHandle, fut: F) -> Result<T, GitGutterError>
+where
+    F: std::future::Future<Output = Result<T, GitGutterError>> + Send + 'static,
+    T: Send + 'static,
+{
+    match tokio.spawn(fut).await {
+        Ok(result) => result,
+        Err(error) => Err(GitGutterError::Provider(error.to_string())),
     }
 }
 

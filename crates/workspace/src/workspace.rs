@@ -41,6 +41,7 @@ pub mod modal_layer;
 pub mod pane;
 pub mod pane_group;
 pub mod project_search;
+pub mod recent_projects;
 pub mod search_overlay;
 pub mod session;
 pub mod spaces;
@@ -486,6 +487,19 @@ pub struct Workspace {
     /// rename field is ever focused at a time (mutually exclusive with
     /// `rename_tab`), same invariant `caret`'s own doc comment documents.
     space_rename: Option<(SpaceId, String)>,
+    /// MRU list of project folders opened via Spaces — independent of
+    /// `spaces` itself so a closed Space's project is still one click away.
+    recent_projects: recent_projects::RecentProjectsList,
+    /// Whether the "Recent Projects" section is expanded in the Spaces
+    /// popover / Tabs sidebar footer.
+    recent_projects_open: bool,
+    /// Anchor position of the Tabs sidebar's "New Space" dropdown (search +
+    /// Recent Projects + New Space / Open Local Folder), if open.
+    new_space_menu: Option<gpui::Point<gpui::Pixels>>,
+    /// Filter text typed into the New Space dropdown's search field.
+    new_space_search: String,
+    new_space_search_focus: FocusHandle,
+    new_space_search_blink: Entity<BlinkCursor>,
     theme: Entity<ThemeStore>,
     background: BackgroundHost,
     /// Split-pane tree per `Workspace` tab id — survives tab switches so the
@@ -730,17 +744,39 @@ impl Workspace {
 
         let rename_focus = cx.focus_handle();
         let rename_blink = cx.new(|_| BlinkCursor::new());
-        let _rename_blink_subs = vec![
+        let mut _rename_blink_subs = vec![
             cx.observe(&rename_blink, |_, _, cx| cx.notify()),
             cx.on_focus(&rename_focus, window, |this, _w, cx| {
                 this.rename_blink.update(cx, |b, cx| b.start(cx));
             }),
             cx.on_blur(&rename_focus, window, |this, _w, cx| {
                 this.rename_blink.update(cx, |b, cx| b.stop(cx));
+                // Losing focus (click-away, popover dismissed, space switched)
+                // must end the rename the same way Enter would — otherwise the
+                // edit box is left stuck in-place until the app restarts,
+                // since nothing else ever clears `rename_tab`/`space_rename`.
+                if this.rename_tab.is_some() {
+                    this.commit_tab_rename(cx);
+                }
+                if this.space_rename.is_some() {
+                    this.commit_space_rename(cx);
+                }
             }),
         ];
 
-        let editor_git_bridge = Arc::new(WorkspaceGitBridge::new(git.clone()));
+        let new_space_search_focus = cx.focus_handle();
+        let new_space_search_blink = cx.new(|_| BlinkCursor::new());
+        _rename_blink_subs.extend([
+            cx.observe(&new_space_search_blink, |_, _, cx| cx.notify()),
+            cx.on_focus(&new_space_search_focus, window, |this, _w, cx| {
+                this.new_space_search_blink.update(cx, |b, cx| b.start(cx));
+            }),
+            cx.on_blur(&new_space_search_focus, window, |this, _w, cx| {
+                this.new_space_search_blink.update(cx, |b, cx| b.stop(cx));
+            }),
+        ]);
+
+        let editor_git_bridge = Arc::new(WorkspaceGitBridge::new(git.clone(), tokio.clone()));
         let editor_language_services = Arc::new(LanguageServiceRuntime::default());
         editor_language_services.set_tokio_handle(tokio.clone());
         let mut this = Self {
@@ -750,6 +786,12 @@ impl Workspace {
             spaces_menu: None,
             collapsed_spaces: std::collections::HashSet::new(),
             space_rename: None,
+            recent_projects: recent_projects::load(),
+            recent_projects_open: false,
+            new_space_menu: None,
+            new_space_search: String::new(),
+            new_space_search_focus,
+            new_space_search_blink,
             theme,
             background,
             layouts: HashMap::new(),
@@ -1208,6 +1250,15 @@ impl Workspace {
     }
 
     /// Apply one explicit project/standalone identity transition.
+    ///
+    /// Also writes the resulting identity back onto the currently active
+    /// Space. `apply_space_switch` already left the active Space's stored
+    /// identity in sync before calling this, so that write is a harmless
+    /// no-op there; for the direct "Open Project…" / "Return to Standalone"
+    /// commands (which retarget the active Space in place rather than
+    /// creating a new one) it is the fix that keeps `SpaceStore` from going
+    /// stale — without it, switching away and back to that Space would
+    /// silently revert the retarget.
     pub fn apply_transition(
         &mut self,
         transition: context::WorkspaceTransition,
@@ -1217,19 +1268,40 @@ impl Workspace {
             return;
         }
         self.sync_editor_git_context();
+        let active_space = self.spaces.read(cx).active_id();
         match transition {
             context::WorkspaceTransition::OpenProject { root } => {
                 self.last_project_settings_rejection_signature = None;
-                labonair_settings::set_active_project_root(cx, Some(root));
+                labonair_settings::set_active_project_root(cx, Some(root.clone()));
+                self.spaces.update(cx, |s, cx| {
+                    s.set_identity(active_space, context::WorkspaceIdentity::project(root), cx)
+                });
                 self.notify_project_settings_rejections(cx);
                 cx.notify();
             }
             context::WorkspaceTransition::ReturnToStandalone => {
                 self.last_project_settings_rejection_signature = None;
                 labonair_settings::set_active_project_root(cx, None);
+                self.spaces.update(cx, |s, cx| {
+                    s.set_identity(active_space, context::WorkspaceIdentity::Standalone, cx)
+                });
                 cx.notify();
             }
         }
+    }
+
+    /// Explicit "Open Project…" action: re-roots the *active* Space at
+    /// `root` in place (unlike `create_space_from_project`, which opens a
+    /// new Space for it) and records it in Recent Projects. The shell's
+    /// project-folder picker calls this once a folder is chosen, rather than
+    /// `apply_transition` directly, so a bare internal resync (Space switch)
+    /// never bumps Recent Projects on its own.
+    pub fn open_project_in_place(&mut self, root: std::path::PathBuf, cx: &mut Context<Self>) {
+        self.apply_transition(
+            context::WorkspaceTransition::OpenProject { root: root.clone() },
+            cx,
+        );
+        self.record_recent_project(root);
     }
 
     // ── Spaces (T20-008) ───────────────────────────────────────────────────
@@ -1336,10 +1408,48 @@ impl Workspace {
             .map(|n| n.to_string_lossy().into_owned())
             .unwrap_or_else(|| root.display().to_string());
         let id = self.spaces.update(cx, |s, cx| {
-            s.create(name, context::WorkspaceIdentity::project(root), cx)
+            s.create(name, context::WorkspaceIdentity::project(root.clone()), cx)
         });
         self.switch_space(id, cx);
+        self.record_recent_project(root);
         id
+    }
+
+    /// Reopen a project from "Recent Projects": switches to the existing
+    /// Space already rooted there if one is open, otherwise creates a new
+    /// one — avoids piling up duplicate Spaces for the same folder.
+    pub fn open_or_create_project_space(
+        &mut self,
+        root: std::path::PathBuf,
+        cx: &mut Context<Self>,
+    ) -> SpaceId {
+        let existing = self
+            .spaces
+            .read(cx)
+            .spaces()
+            .iter()
+            .find(|s| s.identity.project_root() == Some(root.as_path()))
+            .map(|s| s.id);
+        if let Some(id) = existing {
+            self.switch_space(id, cx);
+            self.record_recent_project(root);
+            id
+        } else {
+            self.create_space_from_project(root, cx)
+        }
+    }
+
+    /// Record `root` in the persisted Recent Projects list (best-effort disk
+    /// write) — shared by every path that roots a Space at a project folder.
+    fn record_recent_project(&mut self, root: std::path::PathBuf) {
+        self.recent_projects.record(root);
+        recent_projects::save(&self.recent_projects);
+    }
+
+    /// Recent project folders opened via Spaces, most-recent first — feeds
+    /// the "Recent Projects" section of the Spaces popover / Tabs sidebar.
+    pub fn recent_projects(&self) -> &[recent_projects::RecentProject] {
+        self.recent_projects.entries()
     }
 
     /// Ask the application shell to present the native folder picker for a
@@ -1395,6 +1505,22 @@ impl Workspace {
     /// status-bar cwd breadcrumb (T04-003).
     pub fn active_cwd(&self, cx: &App) -> Option<String> {
         self.active_pane_view(cx).and_then(|v| v.read(cx).cwd())
+    }
+
+    /// The working directory to seed a freshly spawned local terminal with.
+    /// Prefers the active pane's live cwd, so splits/new tabs keep following
+    /// wherever the user already `cd`-ed to; falls back to the active space's
+    /// project root when there is no live cwd yet (e.g. the first terminal
+    /// opened in a brand-new Project space), and finally to the shell's own
+    /// default (home) when there is no project scope either.
+    fn terminal_spawn_cwd(&self, cx: &App) -> Option<String> {
+        context::resolve_terminal_cwd(
+            self.active_cwd(cx),
+            self.context
+                .identity()
+                .project_root()
+                .map(std::path::Path::to_path_buf),
+        )
     }
 
     /// Report project-settings keys rejected by the project whitelist once per
@@ -1891,7 +2017,7 @@ impl Workspace {
             let _ = view.read(cx).handle().write(format!("{cmd}\n").as_bytes());
             self.focus_active(window, cx);
         } else {
-            let cwd = self.active_cwd(cx);
+            let cwd = self.terminal_spawn_cwd(cx);
             self.run_snippet_local(cwd, cmd, window, cx);
         }
     }
@@ -2572,7 +2698,7 @@ impl Workspace {
 
     /// Spawn a new local terminal session and open a workspace tab for it.
     fn open_terminal_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let cwd = self.active_pane_view(cx).and_then(|v| v.read(cx).cwd());
+        let cwd = self.terminal_spawn_cwd(cx);
         let Some((session_id, handle, scrollback_id)) = self.spawn_session(cwd.clone(), None, cx)
         else {
             return;
@@ -2600,7 +2726,7 @@ impl Workspace {
         let Some(tab_id) = self.active_ws_tab(cx) else {
             return;
         };
-        let cwd = self.active_pane_view(cx).and_then(|v| v.read(cx).cwd());
+        let cwd = self.terminal_spawn_cwd(cx);
         let Some((session_id, handle, scrollback_id)) = self.spawn_session(cwd, None, cx) else {
             return;
         };
@@ -5149,6 +5275,9 @@ impl Workspace {
                 );
             }
         }
+        // Recent Projects lives in the "New Space" dropdown (`sidebar-new-space`)
+        // here, not inline — the titlebar Spaces popover still shows it inline
+        // since it has no equivalent creation dropdown of its own.
 
         div()
             .flex()
@@ -5174,28 +5303,26 @@ impl Workspace {
                     .border_t_1()
                     .border_color(border)
                     .p_1p5()
+                    .flex()
+                    .justify_end()
                     .child(
                         div()
-                            .id("sidebar-tab-new")
+                            .id("sidebar-new-space")
+                            .size(px(28.0))
                             .flex()
                             .items_center()
-                            .gap_1p5()
-                            .w_full()
-                            .h(px(28.0))
-                            .px_2()
+                            .justify_center()
                             .rounded_md()
-                            .text_xs()
                             .text_color(muted)
                             .cursor_pointer()
                             .hover(|s| s.bg(border).text_color(fg))
-                            .child(IconName::PlusBold.svg(muted).size(px(13.0)))
-                            .child("New Tab")
+                            .child(IconName::FolderAdd.svg(muted).size(px(15.0)))
                             .on_mouse_down(
                                 MouseButton::Left,
-                                cx.listener(|this, ev: &MouseDownEvent, _window, cx| {
-                                    this.new_tab_menu = Some(ev.position);
-                                    this.new_tab_submenu = None;
-                                    this.context_menu = None;
+                                cx.listener(|this, ev: &MouseDownEvent, window, cx| {
+                                    this.new_space_menu = Some(ev.position);
+                                    this.new_space_search.clear();
+                                    window.focus(&this.new_space_search_focus);
                                     cx.notify();
                                 }),
                             ),
@@ -5766,6 +5893,7 @@ impl Workspace {
             .get(id)
             .map(|t| t.label().to_string())
             .unwrap_or_default();
+        self.space_rename = None;
         self.rename_tab = Some((id, current));
         window.focus(&self.rename_focus);
         cx.notify();
@@ -5866,6 +5994,62 @@ impl Workspace {
                 {
                     buf.push_str(ch);
                     self.rename_blink.update(cx, |b, cx| b.pause(cx));
+                    cx.notify();
+                }
+            }
+        }
+    }
+
+    /// `Recent Projects` entries matching the New Space dropdown's search
+    /// buffer (case-insensitive substring on the display name; empty buffer
+    /// matches everything).
+    fn filtered_recent_projects(&self) -> Vec<recent_projects::RecentProject> {
+        let query = self.new_space_search.trim().to_lowercase();
+        self.recent_projects
+            .entries()
+            .iter()
+            .filter(|e| query.is_empty() || e.name.to_lowercase().contains(&query))
+            .cloned()
+            .collect()
+    }
+
+    fn close_new_space_menu(&mut self, cx: &mut Context<Self>) {
+        self.new_space_menu = None;
+        self.new_space_search.clear();
+        cx.notify();
+    }
+
+    fn on_new_space_search_key(
+        &mut self,
+        ev: &KeyDownEvent,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.new_space_menu.is_none() {
+            return;
+        }
+        match ev.keystroke.key.as_str() {
+            "escape" => self.close_new_space_menu(cx),
+            "enter" => {
+                if let Some(first) = self.filtered_recent_projects().into_iter().next() {
+                    self.close_new_space_menu(cx);
+                    self.open_or_create_project_space(first.root, cx);
+                }
+            }
+            "backspace" => {
+                self.new_space_search.pop();
+                self.new_space_search_blink.update(cx, |b, cx| b.pause(cx));
+                cx.notify();
+            }
+            _ => {
+                if let Some(ch) = ev
+                    .keystroke
+                    .key_char
+                    .as_ref()
+                    .filter(|s| !s.is_empty() && !s.chars().any(|c| c.is_control()))
+                {
+                    self.new_space_search.push_str(ch);
+                    self.new_space_search_blink.update(cx, |b, cx| b.pause(cx));
                     cx.notify();
                 }
             }
@@ -5988,10 +6172,45 @@ impl Workspace {
             .child(name_slot)
             .child(
                 div()
+                    .flex_none()
+                    .text_size(px(11.0))
+                    .text_color(c.muted)
+                    .child(tab_count.to_string()),
+            )
+            .child(
+                div()
+                    .id(("space-new-tab-btn", id))
+                    .flex_none()
+                    .invisible()
+                    .group_hover("space-row", |s| s.visible())
+                    .px_1()
+                    .py_1()
+                    .rounded_sm()
+                    .hover(|s| s.bg(c.muted_bg))
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(move |this, ev: &MouseDownEvent, _w, cx| {
+                            cx.stop_propagation();
+                            this.spaces_menu = None;
+                            this.switch_space(id, cx);
+                            this.new_tab_menu = Some(ev.position);
+                            this.new_tab_submenu = None;
+                            this.context_menu = None;
+                            cx.notify();
+                        }),
+                    )
+                    .child(IconName::PlusBold.svg(c.muted).size(px(12.0))),
+            )
+            .child(
+                div()
                     .id(("space-rename-btn", id))
                     .flex_none()
                     .invisible()
                     .group_hover("space-row", |s| s.visible())
+                    .px_1()
+                    .py_1()
+                    .rounded_sm()
+                    .hover(|s| s.bg(c.muted_bg))
                     .on_mouse_down(
                         MouseButton::Left,
                         cx.listener(move |this, _: &MouseDownEvent, w, cx| {
@@ -6001,14 +6220,343 @@ impl Workspace {
                     )
                     .child(IconName::Pencil.svg(c.muted).size(px(12.0))),
             )
-            .child(
-                div()
-                    .flex_none()
-                    .text_size(px(11.0))
-                    .text_color(c.muted)
-                    .child(tab_count.to_string()),
-            )
+            .when(id != DEFAULT_SPACE_ID, |d| {
+                d.child(
+                    div()
+                        .id(("space-close-btn", id))
+                        .flex_none()
+                        .invisible()
+                        .group_hover("space-row", |s| s.visible())
+                        .px_1()
+                        .py_1()
+                        .rounded_sm()
+                        .text_color(c.muted)
+                        .hover(|s| s.bg(c.muted_bg).text_color(c.fg))
+                        .child("\u{2715}")
+                        .on_mouse_down(
+                            MouseButton::Left,
+                            cx.listener(move |this, _: &MouseDownEvent, w, cx| {
+                                cx.stop_propagation();
+                                this.spaces_menu = None;
+                                this.close_space(id, w, cx);
+                            }),
+                        ),
+                )
+            })
             .group("space-row")
+    }
+
+    /// The collapsible "Recent Projects" section shared by the Spaces
+    /// popover and the Tabs sidebar footer: project folders previously
+    /// opened via a Space, independent of which Spaces are open right now —
+    /// so a closed Space's project is still one click away. Renders nothing
+    /// when the list is empty.
+    fn render_recent_projects_section(&mut self, cx: &mut Context<Self>) -> Vec<gpui::AnyElement> {
+        let c = Palette::from_theme(self.theme.read(cx));
+        let entries = self.recent_projects.entries().to_vec();
+        if entries.is_empty() {
+            return Vec::new();
+        }
+        let open = self.recent_projects_open;
+        let view = cx.entity();
+
+        let mut rows: Vec<gpui::AnyElement> = Vec::new();
+        rows.push(
+            div()
+                .id("recent-projects-header")
+                .flex()
+                .items_center()
+                .gap_2()
+                .w_full()
+                .px_2()
+                .py_1p5()
+                .rounded_md()
+                .cursor_pointer()
+                .hover(|s| s.bg(c.muted_bg))
+                .on_mouse_down(MouseButton::Left, {
+                    let v = view.clone();
+                    move |_: &MouseDownEvent, _w, cx| {
+                        v.update(cx, |this, cx| {
+                            this.recent_projects_open = !this.recent_projects_open;
+                            cx.notify();
+                        });
+                    }
+                })
+                .child(
+                    if open {
+                        IconName::ChevronDown
+                    } else {
+                        IconName::ChevronRight
+                    }
+                    .svg(c.muted)
+                    .size(px(13.0)),
+                )
+                .child(
+                    div()
+                        .flex_1()
+                        .text_sm()
+                        .text_color(c.muted)
+                        .child("Recent Projects"),
+                )
+                .into_any_element(),
+        );
+        if open {
+            for (idx, entry) in entries.iter().enumerate() {
+                let root = entry.root.clone();
+                let name = SharedString::from(entry.name.clone());
+                rows.push(
+                    div()
+                        .id(("recent-project", idx))
+                        .flex()
+                        .items_center()
+                        .gap_2()
+                        .w_full()
+                        .pl_6()
+                        .pr_2()
+                        .py_1()
+                        .rounded_md()
+                        .cursor_pointer()
+                        .text_sm()
+                        .text_color(c.muted)
+                        .hover(|s| s.bg(c.muted_bg).text_color(c.fg))
+                        .child(IconName::FolderOpen.svg(c.muted).size(px(13.0)))
+                        .child(
+                            div()
+                                .flex_1()
+                                .min_w_0()
+                                .overflow_hidden()
+                                .whitespace_nowrap()
+                                .child(name.clone()),
+                        )
+                        .child(
+                            div()
+                                .id(("recent-project-remove", idx))
+                                .flex_none()
+                                .invisible()
+                                .group_hover("recent-project-row", |s| s.visible())
+                                .px_1()
+                                .rounded_sm()
+                                .hover(|s| s.bg(c.border))
+                                .child("\u{2715}")
+                                .on_mouse_down(MouseButton::Left, {
+                                    let v = view.clone();
+                                    let root = root.clone();
+                                    move |_: &MouseDownEvent, _w, cx| {
+                                        cx.stop_propagation();
+                                        v.update(cx, |this, cx| {
+                                            this.recent_projects.remove(&root);
+                                            recent_projects::save(&this.recent_projects);
+                                            cx.notify();
+                                        });
+                                    }
+                                }),
+                        )
+                        .on_mouse_down(MouseButton::Left, {
+                            let v = view.clone();
+                            let root = root.clone();
+                            move |_: &MouseDownEvent, _w, cx| {
+                                v.update(cx, |this, cx| {
+                                    this.spaces_menu = None;
+                                    this.open_or_create_project_space(root.clone(), cx);
+                                });
+                            }
+                        })
+                        .group("recent-project-row")
+                        .into_any_element(),
+                );
+            }
+        }
+        rows
+    }
+
+    /// The Tabs sidebar's "New Space" dropdown: a search field over Recent
+    /// Projects (reusing the fuzzy-free substring filter Spaces already
+    /// keeps), with "New Space" / "Open Local Folder" as footer actions —
+    /// the sidebar's dedicated space-creation surface, replacing the old
+    /// three stacked "New Tab" / "New Space" / "New Space from Folder…"
+    /// footer rows with a single icon trigger (`sidebar-new-space`).
+    fn render_new_space_menu(
+        &mut self,
+        anchor: gpui::Point<gpui::Pixels>,
+        cx: &mut Context<Self>,
+    ) -> gpui::AnyElement {
+        let c = Palette::from_theme(self.theme.read(cx));
+        let view = cx.entity();
+        let query = self.new_space_search.clone();
+        let matches = self.filtered_recent_projects();
+
+        let mut rows: Vec<gpui::AnyElement> = Vec::new();
+
+        rows.push(
+            div()
+                .id("new-space-search")
+                .track_focus(&self.new_space_search_focus)
+                .key_context("NewSpaceSearch")
+                .on_key_down(cx.listener(Self::on_new_space_search_key))
+                .on_mouse_down(
+                    MouseButton::Left,
+                    cx.listener(|_, _: &MouseDownEvent, _w, cx| cx.stop_propagation()),
+                )
+                .mb_1()
+                .px_2()
+                .h(px(28.0))
+                .rounded_md()
+                .border_1()
+                .border_color(c.border)
+                .bg(c.input)
+                .flex()
+                .items_center()
+                .text_sm()
+                .when(
+                    query.is_empty(),
+                    |d| d.text_color(c.muted).child("Search projects\u{2026}"),
+                )
+                .when(!query.is_empty(), |d| {
+                    d.text_color(c.fg).child(SharedString::from(query.clone()))
+                })
+                .when(self.new_space_search_blink.read(cx).visible(), |d| {
+                    d.child(caret(c.fg, 13.0))
+                })
+                .into_any_element(),
+        );
+
+        if matches.is_empty() {
+            rows.push(
+                div()
+                    .px_2()
+                    .py_1()
+                    .text_sm()
+                    .text_color(c.muted)
+                    .child(if self.recent_projects.entries().is_empty() {
+                        "No recent projects"
+                    } else {
+                        "No matches"
+                    })
+                    .into_any_element(),
+            );
+        } else {
+            for (idx, entry) in matches.iter().enumerate() {
+                let root = entry.root.clone();
+                let name = SharedString::from(entry.name.clone());
+                rows.push(
+                    div()
+                        .id(("new-space-recent", idx))
+                        .flex()
+                        .items_center()
+                        .gap_2()
+                        .w_full()
+                        .px_2()
+                        .py_1()
+                        .rounded_md()
+                        .cursor_pointer()
+                        .text_sm()
+                        .text_color(c.fg)
+                        .hover(|s| s.bg(c.muted_bg))
+                        .child(IconName::FolderOpen.svg(c.muted).size(px(13.0)))
+                        .child(
+                            div()
+                                .flex_1()
+                                .min_w_0()
+                                .overflow_hidden()
+                                .whitespace_nowrap()
+                                .child(name),
+                        )
+                        .on_mouse_down(MouseButton::Left, {
+                            let v = view.clone();
+                            let root = root.clone();
+                            move |_: &MouseDownEvent, _w, cx| {
+                                v.update(cx, |this, cx| {
+                                    this.close_new_space_menu(cx);
+                                    this.open_or_create_project_space(root.clone(), cx);
+                                });
+                            }
+                        })
+                        .into_any_element(),
+                );
+            }
+        }
+
+        rows.push(
+            div()
+                .mt_1()
+                .pt_1()
+                .border_t_1()
+                .border_color(c.border)
+                .into_any_element(),
+        );
+        rows.push(
+            div()
+                .id("new-space-create")
+                .flex()
+                .items_center()
+                .gap_1p5()
+                .w_full()
+                .px_2()
+                .py_1p5()
+                .rounded_md()
+                .cursor_pointer()
+                .text_sm()
+                .text_color(c.muted)
+                .hover(|s| s.bg(c.muted_bg).text_color(c.fg))
+                .child(IconName::PlusBold.svg(c.muted).size(px(13.0)))
+                .child("New Space")
+                .on_mouse_down(MouseButton::Left, {
+                    let v = view.clone();
+                    move |_: &MouseDownEvent, _w, cx| {
+                        v.update(cx, |this, cx| {
+                            this.close_new_space_menu(cx);
+                            this.create_space_standalone(cx);
+                        })
+                    }
+                })
+                .into_any_element(),
+        );
+        rows.push(
+            div()
+                .id("new-space-open-folder")
+                .flex()
+                .items_center()
+                .gap_1p5()
+                .w_full()
+                .px_2()
+                .py_1p5()
+                .rounded_md()
+                .cursor_pointer()
+                .text_sm()
+                .text_color(c.muted)
+                .hover(|s| s.bg(c.muted_bg).text_color(c.fg))
+                .child(IconName::FolderOpen.svg(c.muted).size(px(13.0)))
+                .child("Open Local Folder")
+                .on_mouse_down(MouseButton::Left, {
+                    let v = view.clone();
+                    move |_: &MouseDownEvent, _w, cx| {
+                        v.update(cx, |this, cx| {
+                            this.close_new_space_menu(cx);
+                            this.request_new_project_space(cx);
+                        })
+                    }
+                })
+                .into_any_element(),
+        );
+
+        let content = div()
+            .id("new-space-menu-list")
+            .flex()
+            .flex_col()
+            .max_h(px(420.0))
+            .overflow_y_scroll()
+            .children(rows)
+            .into_any_element();
+
+        let dismiss = {
+            let v = view.clone();
+            move |_w: &mut Window, cx: &mut App| {
+                v.update(cx, |this, cx| {
+                    this.close_new_space_menu(cx);
+                });
+            }
+        };
+        labonair_ui_kit::popover(anchor, px(280.0), c, dismiss, content)
     }
 
     /// The Spaces popover (T20-008): a switcher for every open Space,
@@ -6108,6 +6656,8 @@ impl Workspace {
             }
         }
 
+        rows.extend(self.render_recent_projects_section(cx));
+
         rows.push(
             div()
                 .mt_1()
@@ -6156,7 +6706,7 @@ impl Workspace {
                 .text_color(c.muted)
                 .hover(|s| s.bg(c.muted_bg).text_color(c.fg))
                 .child(IconName::FolderOpen.svg(c.muted).size(px(13.0)))
-                .child("New space from folder\u{2026}")
+                .child("Open Local Folder")
                 .on_mouse_down(MouseButton::Left, {
                     let v = view.clone();
                     move |_: &MouseDownEvent, _w, cx| {
@@ -6614,6 +7164,9 @@ impl Render for Workspace {
         let spaces_menu = self
             .spaces_menu
             .map(|pos| self.render_spaces_popover(pos, cx));
+        let new_space_menu = self
+            .new_space_menu
+            .map(|pos| self.render_new_space_menu(pos, cx));
 
         // T17-006: the three edge docks + the drag-to-resize handler used to
         // live in `AppShell::render`; they compose here now so the shell only
@@ -6676,6 +7229,7 @@ impl Render for Workspace {
             .children(context_menu)
             .children(new_tab_menu)
             .children(spaces_menu)
+            .children(new_space_menu)
     }
 }
 

@@ -156,6 +156,22 @@ pub fn resolve_git_root(
         .or(active_cwd)
 }
 
+/// Resolve the working directory to seed a freshly spawned local terminal
+/// with.
+///
+/// Unlike [`resolve_filesystem_root`]/[`resolve_git_root`], the live pane cwd
+/// is tried *first*: a split or a new tab opened while a session is already
+/// running should keep following wherever the user already `cd`-ed to, not
+/// snap back to the project root underneath them. The project root is only a
+/// fallback for when there is no live cwd yet — e.g. the very first terminal
+/// opened in a brand-new Project space.
+pub fn resolve_terminal_cwd(
+    active_cwd: Option<String>,
+    project_root: Option<PathBuf>,
+) -> Option<String> {
+    active_cwd.or_else(|| project_root.map(|path| path.to_string_lossy().into_owned()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -239,5 +255,29 @@ mod tests {
             Some("/Users/test".into())
         );
         assert_eq!(resolve_git_root(None, None), None);
+    }
+
+    #[test]
+    fn terminal_cwd_prefers_live_pane_cwd_over_project_root() {
+        assert_eq!(
+            resolve_terminal_cwd(
+                Some("/project/src".into()),
+                Some(PathBuf::from("/project")),
+            ),
+            Some("/project/src".into())
+        );
+    }
+
+    #[test]
+    fn terminal_cwd_falls_back_to_project_root_when_no_live_cwd() {
+        assert_eq!(
+            resolve_terminal_cwd(None, Some(PathBuf::from("/project"))),
+            Some("/project".into())
+        );
+    }
+
+    #[test]
+    fn terminal_cwd_is_none_for_a_fresh_standalone_space() {
+        assert_eq!(resolve_terminal_cwd(None, None), None);
     }
 }
