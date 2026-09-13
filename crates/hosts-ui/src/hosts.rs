@@ -4086,7 +4086,15 @@ impl HostManagerView {
                         .on_key_down(cx.listener(Self::on_group_rename_key))
                         .on_mouse_down(
                             MouseButton::Left,
-                            cx.listener(|_, _: &MouseDownEvent, _w, cx| cx.stop_propagation()),
+                            cx.listener(|this, _: &MouseDownEvent, window, cx| {
+                                // Explicit re-focus, not just `stop_propagation` — GPUI's
+                                // automatic focus-on-click for `track_focus` and this
+                                // listener share the same mouse-down dispatch pass, and
+                                // `stop_propagation` aborts it before the automatic
+                                // focus transfer runs, silently killing click-to-refocus.
+                                window.focus(&this.group_rename_focus);
+                                cx.stop_propagation();
+                            }),
                         )
                         .flex()
                         .flex_col()

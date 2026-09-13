@@ -959,6 +959,10 @@ pub struct GitPanelView {
     // ── commit composer (editor-backed, Zed-parity Phase 4) ──
     /// Real text input; created lazily in `render` (needs a `Window`).
     commit_input: Option<Entity<InputState>>,
+    /// Tracked from `InputEvent::Focus`/`Blur` — `commit_input` strips
+    /// gpui-component's own focus border (`.focus_bordered(false)`) to blend
+    /// into the panel, so this drives the composer's own focus ring instead.
+    commit_input_focused: bool,
     /// Seed text before the input exists (tests / first paint).
     commit_seed: String,
     commit_error: Option<String>,
@@ -1090,6 +1094,7 @@ impl GitPanelView {
             panel_menu: None,
             pending_confirm: None,
             commit_input: None,
+            commit_input_focused: false,
             commit_seed: String::new(),
             commit_error: None,
             amend: false,
@@ -2218,8 +2223,8 @@ impl GitPanelView {
         });
         let view = cx.entity();
         window
-            .subscribe(&input, cx, move |input, ev: &InputEvent, window, cx| {
-                if let InputEvent::PressEnter { secondary } = ev {
+            .subscribe(&input, cx, move |input, ev: &InputEvent, window, cx| match ev {
+                InputEvent::PressEnter { secondary } => {
                     if !*secondary {
                         return;
                     }
@@ -2227,6 +2232,19 @@ impl GitPanelView {
                     let trimmed = v.strip_suffix('\n').unwrap_or(&v).to_string();
                     view.update(cx, |this, cx| this.do_commit(trimmed, window, cx));
                 }
+                InputEvent::Focus => {
+                    view.update(cx, |this, cx| {
+                        this.commit_input_focused = true;
+                        cx.notify();
+                    });
+                }
+                InputEvent::Blur => {
+                    view.update(cx, |this, cx| {
+                        this.commit_input_focused = false;
+                        cx.notify();
+                    });
+                }
+                _ => {}
             })
             .detach();
         self.commit_input = Some(input);
@@ -2487,6 +2505,12 @@ impl GitPanelView {
                     .relative()
                     .flex_1()
                     .min_h(px(96.0))
+                    .border_1()
+                    .border_color(if self.commit_input_focused {
+                        c.accent
+                    } else {
+                        gpui::transparent_black()
+                    })
                     .child(input_el),
             )
             .when(over_title, |d| {

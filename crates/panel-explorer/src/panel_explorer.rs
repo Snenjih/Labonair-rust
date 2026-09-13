@@ -1981,6 +1981,7 @@ impl ExplorerView {
                 .mx_2()
                 .my(px(6.0))
                 .h(px(28.0))
+                .overflow_hidden()
                 .rounded_sm()
                 .border_1()
                 .border_color(c.border)
@@ -2542,6 +2543,7 @@ fn inline_input_row(
         .flex_row()
         .items_center()
         .h(row_h)
+        .overflow_hidden()
         .pl(px(8.0 + depth as f32 * INDENT))
         .pr_2()
         .on_key_down(move |ev: &KeyDownEvent, _w, cx| {

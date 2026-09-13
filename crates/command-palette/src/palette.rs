@@ -1333,7 +1333,7 @@ where
             );
         }
         if self.blink.read(cx).visible() {
-            input_row = input_row.child(labonair_ui_kit::caret(fg, 18.0));
+            input_row = input_row.child(labonair_ui_kit::caret(fg, 15.0));
         }
         if self.query.is_empty() {
             input_row = input_row.child(

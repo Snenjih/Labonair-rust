@@ -5065,7 +5065,15 @@ impl Workspace {
                         .on_key_down(cx.listener(Self::on_rename_key))
                         .on_mouse_down(
                             MouseButton::Left,
-                            cx.listener(|_, _: &MouseDownEvent, _w, cx| cx.stop_propagation()),
+                            cx.listener(|this, _: &MouseDownEvent, window, cx| {
+                                // Explicit re-focus, not just `stop_propagation` — GPUI's
+                                // automatic focus-on-click for `track_focus` and this
+                                // listener share the same mouse-down dispatch pass, and
+                                // `stop_propagation` aborts it before the automatic
+                                // focus transfer runs, silently killing click-to-refocus.
+                                window.focus(&this.rename_focus);
+                                cx.stop_propagation();
+                            }),
                         )
                         .min_w(px(80.0))
                         .max_w(px(180.0))
@@ -5077,7 +5085,7 @@ impl Workspace {
                         .items_center()
                         .child(SharedString::from(buf.clone()))
                         .when(self.rename_blink.read(cx).visible(), |d| {
-                            d.child(caret(fg, 14.0))
+                            d.child(caret(fg, 12.0))
                         }),
                     None => div()
                         .when(sidebar, |d| d.flex_1().min_w_0())
@@ -6098,7 +6106,15 @@ impl Workspace {
                     .on_key_down(cx.listener(Self::on_space_rename_key))
                     .on_mouse_down(
                         MouseButton::Left,
-                        cx.listener(|_, _: &MouseDownEvent, _w, cx| cx.stop_propagation()),
+                        cx.listener(|this, _: &MouseDownEvent, window, cx| {
+                            // Explicit re-focus, not just `stop_propagation` — GPUI's
+                            // automatic focus-on-click for `track_focus` and this
+                            // listener share the same mouse-down dispatch pass, and
+                            // `stop_propagation` aborts it before the automatic
+                            // focus transfer runs, silently killing click-to-refocus.
+                            window.focus(&this.rename_focus);
+                            cx.stop_propagation();
+                        }),
                     )
                     .flex_1()
                     .min_w_0()
@@ -6108,9 +6124,10 @@ impl Workspace {
                     .border_color(c.ring)
                     .flex()
                     .items_center()
+                    .text_sm()
                     .child(SharedString::from(buf.clone()))
                     .when(self.rename_blink.read(cx).visible(), |d| {
-                        d.child(caret(c.fg, 13.0))
+                        d.child(caret(c.fg, 14.0))
                     })
                     .into_any_element(),
                 None => div()
@@ -6395,7 +6412,15 @@ impl Workspace {
                 .on_key_down(cx.listener(Self::on_new_space_search_key))
                 .on_mouse_down(
                     MouseButton::Left,
-                    cx.listener(|_, _: &MouseDownEvent, _w, cx| cx.stop_propagation()),
+                    cx.listener(|this, _: &MouseDownEvent, window, cx| {
+                        // Explicit re-focus, not just `stop_propagation` — GPUI's
+                        // automatic focus-on-click for `track_focus` and this
+                        // listener share the same mouse-down dispatch pass, and
+                        // `stop_propagation` aborts it before the automatic
+                        // focus transfer runs, silently killing click-to-refocus.
+                        window.focus(&this.new_space_search_focus);
+                        cx.stop_propagation();
+                    }),
                 )
                 .mb_1()
                 .px_2()
@@ -6415,7 +6440,7 @@ impl Workspace {
                     d.text_color(c.fg).child(SharedString::from(query.clone()))
                 })
                 .when(self.new_space_search_blink.read(cx).visible(), |d| {
-                    d.child(caret(c.fg, 13.0))
+                    d.child(caret(c.fg, 14.0))
                 })
                 .into_any_element(),
         );

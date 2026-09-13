@@ -1042,7 +1042,7 @@ impl Render for SettingsView {
             );
         }
         if show_caret {
-            search_box = search_box.child(labonair_ui_kit::caret(c.fg, 14.0));
+            search_box = search_box.child(labonair_ui_kit::caret(c.fg, 12.0));
         }
         if self.search.is_empty() {
             search_box = search_box.child(

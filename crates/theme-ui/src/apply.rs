@@ -149,23 +149,50 @@ pub fn apply_prefs_to_theme(theme: &Entity<ThemeStore>, cx: &mut App) {
         });
     }
 
-    sync_gpui_component_primary(theme, cx);
+    sync_gpui_component_theme(theme, cx);
 }
 
-/// Mirror this app's resolved `core.primary` into gpui-component's own,
-/// otherwise-independent global `Theme` (`gpui_component::init`'s state) —
-/// the one thing gpui-component widgets like `Switch` read their "on"/accent
-/// colour from. Everything else about that theme stays gpui-component's own;
-/// this is a narrow, deliberate bridge for the single token our UI needs to
-/// agree on, not a general re-theming of gpui-component.
-fn sync_gpui_component_primary(theme: &Entity<ThemeStore>, cx: &mut App) {
+/// Mirror this app's resolved palette into gpui-component's own,
+/// otherwise-independent global `Theme` (`gpui_component::init`'s state).
+///
+/// Every real text input in the app (`ui-kit::text_field`/`field_input`,
+/// wrapping `gpui_component::input::Input`) reads its background, border,
+/// focus-ring, caret and text-selection colours straight off this global —
+/// left unsynced, those all render in gpui-component's own shipped defaults
+/// instead of the active Labonair theme, which on a custom/dark palette can
+/// put the focus border and caret at effectively zero contrast against the
+/// surrounding chrome (looks like clicking/focusing the field "does
+/// nothing"). `primary` was the only token bridged historically (for
+/// `Switch`'s on-colour); this now covers every token `Input` actually
+/// paints with.
+fn sync_gpui_component_theme(theme: &Entity<ThemeStore>, cx: &mut App) {
     if !cx.has_global::<gpui_component::Theme>() {
         // `gpui_component::init` hasn't run (headless/test contexts) — nothing
         // to sync into.
         return;
     }
-    let primary = theme.read(cx).theme().core.primary;
-    gpui_component::Theme::global_mut(cx).primary = primary;
+    let core = theme.read(cx).theme().core.clone();
+    let t = gpui_component::Theme::global_mut(cx);
+    t.primary = core.primary;
+    t.primary_hover = core.primary;
+    t.primary_active = core.primary;
+    t.primary_foreground = core.primary_foreground;
+    t.background = core.background;
+    t.foreground = core.foreground;
+    t.border = core.border;
+    t.input = core.input;
+    t.ring = core.ring;
+    t.muted = core.muted;
+    t.muted_foreground = core.muted_foreground;
+    t.accent = core.accent;
+    t.accent_foreground = core.accent_foreground;
+    // Input's own colours: caret uses `primary` so it reads as the same
+    // "active" colour as a row/tab selection bar elsewhere in the app;
+    // selection is `primary` at a stronger alpha than the row-selection fill
+    // (0.16) since a text highlight needs to stay legible against the glyphs
+    // painted on top of it, not just mark "this row is current".
+    t.caret = core.primary;
+    t.selection = core.primary.opacity(0.35);
 }
 
 /// Re-apply the persisted `themeVariantOverrides[family][mode]` selection to the

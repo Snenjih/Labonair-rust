@@ -40,6 +40,11 @@ pub fn field_input(state: &Entity<InputState>) -> Input {
 /// the current value — callers should render it only while the field
 /// actually has keyboard focus *and* [`BlinkCursor::visible`] is true,
 /// otherwise the field looks alive when it isn't.
+///
+/// `height` should be close to the field's own ambient `text_size`/`text_sm`/
+/// `text_xs` value, not the row's full height — `gpui_component`'s own
+/// `Input` cursor uses `0.85 * line_height` (≈ the font size), and a caret
+/// noticeably taller than the text it sits next to reads as oversized.
 pub fn caret(color: Hsla, height: f32) -> Div {
     div().flex_none().w(px(1.5)).h(px(height)).bg(color)
 }

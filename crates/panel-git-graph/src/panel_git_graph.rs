@@ -1503,7 +1503,15 @@ impl GitGraphView {
                         .on_key_down(cx.listener(Self::on_branch_prompt_key))
                         .on_mouse_down(
                             MouseButton::Left,
-                            cx.listener(|_, _: &MouseDownEvent, _w, cx| cx.stop_propagation()),
+                            cx.listener(|this, _: &MouseDownEvent, window, cx| {
+                                // Explicit re-focus, not just `stop_propagation` — GPUI's
+                                // automatic focus-on-click for `track_focus` and this
+                                // listener share the same mouse-down dispatch pass, and
+                                // `stop_propagation` aborts it before the automatic
+                                // focus transfer runs, silently killing click-to-refocus.
+                                window.focus(&this.branch_prompt_focus);
+                                cx.stop_propagation();
+                            }),
                         )
                         .flex()
                         .flex_col()
@@ -1534,7 +1542,7 @@ impl GitGraphView {
                                 .child(SharedString::from(buf.clone()))
                                 .when(
                                     self.branch_prompt_focused && self.blink.read(cx).visible(),
-                                    |d| d.child(caret(c.fg, 14.0)),
+                                    |d| d.child(caret(c.fg, 12.0)),
                                 ),
                         )
                         .child(
