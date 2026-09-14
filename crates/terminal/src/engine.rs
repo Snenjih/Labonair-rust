@@ -1022,8 +1022,12 @@ impl TerminalEmulator {
                 continue;
             }
             let point: Point = item.point;
-            let line = point.line.0;
-            if line < 0 {
+            // `display_iter` yields points relative to the current scroll
+            // position (negative once `display_offset > 0`); shift by the
+            // offset to get the on-screen row, matching `point_to_viewport`
+            // in `alacritty_terminal`.
+            let line = point.line.0 + display_offset as i32;
+            if line < 0 || line as usize >= self.dimensions.screen_lines {
                 continue;
             }
             let dim = flags.contains(Flags::DIM);
@@ -1405,6 +1409,32 @@ mod tests {
         assert!(term.render().display_offset > 0);
         term.scroll(Scroll::Bottom);
         assert_eq!(term.render().display_offset, 0);
+    }
+
+    #[test]
+    fn render_cells_stay_populated_while_scrolled_into_history() {
+        let (mut term, _rx) = emulator(10, 3);
+        for i in 0..50 {
+            term.feed(format!("line{i}\r\n").as_bytes());
+        }
+        term.scroll(Scroll::Top);
+        let screen = term.render();
+        assert!(screen.display_offset > 0);
+        // Every row of the viewport must still have cells, even far back in
+        // scrollback (regression: cells used to be dropped once
+        // `display_offset >= screen_lines`, leaving the whole grid blank).
+        let rows_with_cells: std::collections::HashSet<usize> =
+            screen.cells.iter().map(|c| c.line).collect();
+        assert_eq!(
+            rows_with_cells.len(),
+            screen.screen_lines,
+            "expected all {} rows populated, got {:?}",
+            screen.screen_lines,
+            rows_with_cells
+        );
+        for cell in &screen.cells {
+            assert!(cell.line < screen.screen_lines);
+        }
     }
 
     #[test]
