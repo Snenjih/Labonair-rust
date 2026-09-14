@@ -718,20 +718,30 @@ pub(crate) fn bootstrap(
             move |cx| ws.read(cx).active_file_path(cx),
         )
     };
-    let explorer = cx.new(|cx| ExplorerView::new(theme.clone(), explorer_host, cx));
+    let explorer = cx.new(|cx| {
+        ExplorerView::new(
+            theme.clone(),
+            explorer_host,
+            sftp_session_service.clone(),
+            sftp_browser_service.clone(),
+            tokio.clone(),
+            cx,
+        )
+    });
 
     // Project identity is authoritative; standalone falls back to the active
-    // terminal's cwd and then $HOME.
+    // terminal's cwd and then $HOME. When the active tab is a connected SSH
+    // terminal, the root is that host's remote cwd instead (`explorer_root`).
     {
-        let initial = workspace.read(cx).filesystem_root(cx);
-        explorer.update(cx, |e, cx| e.set_root_str(initial, cx));
+        let (root, ssh_id) = workspace.read(cx).explorer_root(cx).unzip();
+        explorer.update(cx, |e, cx| e.set_root_str(root, ssh_id.flatten(), cx));
     }
     cx.observe(&workspace, {
         let explorer = explorer.clone();
         move |_, workspace, cx| {
-            let root = workspace.read(cx).filesystem_root(cx);
+            let (root, ssh_id) = workspace.read(cx).explorer_root(cx).unzip();
             explorer.update(cx, |e, cx| {
-                e.set_root_str(root, cx);
+                e.set_root_str(root, ssh_id.flatten(), cx);
                 e.notify_active_file_changed(cx);
             });
         }

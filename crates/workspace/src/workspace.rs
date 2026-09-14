@@ -1225,6 +1225,29 @@ impl Workspace {
         )
     }
 
+    /// The `(path, ssh_session_id)` pair the sidebar Explorer should browse.
+    /// `ssh_session_id` is `Some` while the active tab is a connected SSH
+    /// terminal, so Explorer lists the remote host over SFTP instead of the
+    /// local disk. `active_cwd` already reports the *remote* OSC-7 cwd for an
+    /// SSH terminal — feeding that straight into `filesystem_root`'s local
+    /// resolution used to point Explorer at a path that only exists on the
+    /// remote host, which is why it rendered empty during SSH sessions.
+    pub fn explorer_root(&self, cx: &App) -> Option<(String, Option<String>)> {
+        if let Some(ssh_id) = self.active_ssh_session_id(cx) {
+            return self.active_cwd(cx).map(|cwd| (cwd, Some(ssh_id)));
+        }
+        self.filesystem_root(cx).map(|root| (root, None))
+    }
+
+    /// The live SSH connection id backing the active tab's terminal, if any.
+    fn active_ssh_session_id(&self, cx: &App) -> Option<String> {
+        let active = self.tabs.read(cx).active()?;
+        self.ssh_tabs
+            .values()
+            .find(|t| t.tab_id == active.id)
+            .map(|t| t.ssh_id.clone())
+    }
+
     /// Spawn the Workspace filesystem adapter for one Editor-owned finder
     /// generation. The root is passed explicitly and all traversal and
     /// canonicalization happen on the blocking runtime, never on GPUI's

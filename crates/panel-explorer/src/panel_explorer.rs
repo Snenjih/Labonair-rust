@@ -53,6 +53,9 @@ use notify::{RecommendedWatcher, RecursiveMode};
 use notify_debouncer_mini::{new_debouncer, Debouncer};
 
 use labonair_filesystem::{mutate, tree};
+use labonair_sftp::{SftpBrowserService, SftpSessionService};
+use labonair_ssh::SshSessionId;
+use tokio::runtime::Handle as TokioHandle;
 
 use crate::theme::ThemeStore;
 use labonair_explorer_host::ExplorerHost;
@@ -194,6 +197,10 @@ enum Row {
 #[derive(Default)]
 struct TreeModel {
     root: Option<PathBuf>,
+    /// SSH session id when `root` is a path on a remote host rather than the
+    /// local disk — set by [`ExplorerView::set_root`], never by `set_root`
+    /// itself, so its identity comparison stays a pure path comparison.
+    remote_ssh_id: Option<String>,
     nodes: HashMap<PathBuf, NodeState>,
     expanded: HashSet<PathBuf>,
     show_hidden: bool,
@@ -725,6 +732,10 @@ pub struct ExplorerView {
     /// The composition root wires it to the active workspace; this view never
     /// holds the workspace entity (R07-004).
     host: ExplorerHost,
+    /// Remote directory listing for SSH-connected roots (`TreeModel::remote_ssh_id`).
+    sftp_session: Arc<dyn SftpSessionService>,
+    sftp_browser: Arc<dyn SftpBrowserService>,
+    tokio: TokioHandle,
     model: TreeModel,
     selection: Vec<PathBuf>,
     clipboard: Option<Clipboard>,
@@ -772,7 +783,14 @@ pub struct ExplorerView {
 }
 
 impl ExplorerView {
-    pub fn new(theme: Entity<ThemeStore>, host: ExplorerHost, cx: &mut Context<Self>) -> Self {
+    pub fn new(
+        theme: Entity<ThemeStore>,
+        host: ExplorerHost,
+        sftp_session: Arc<dyn SftpSessionService>,
+        sftp_browser: Arc<dyn SftpBrowserService>,
+        tokio: TokioHandle,
+        cx: &mut Context<Self>,
+    ) -> Self {
         cx.observe(&theme, |_, _, cx| cx.notify()).detach();
         // Phase 3.5: auto-reveal follows the host's active editor. The
         // composition root re-notifies this view when that changes, since the
@@ -791,6 +809,9 @@ impl ExplorerView {
         Self {
             theme,
             host,
+            sftp_session,
+            sftp_browser,
+            tokio,
             model: TreeModel::default(),
             selection: Vec::new(),
             clipboard: None,
@@ -820,10 +841,29 @@ impl ExplorerView {
     }
 
     /// Point the explorer at a new working directory (driven by the active
-    /// terminal's cwd — see [`crate::app_shell`]). No-op if unchanged.
-    pub fn set_root(&mut self, root: Option<PathBuf>, cx: &mut Context<Self>) {
-        if !self.model.set_root(root) {
-            return;
+    /// terminal's cwd — see [`crate::app_shell`]). `ssh_id` is `Some` when
+    /// `root` is a path on that remote host rather than the local disk. No-op
+    /// if neither changed.
+    pub fn set_root(
+        &mut self,
+        root: Option<PathBuf>,
+        ssh_id: Option<String>,
+        cx: &mut Context<Self>,
+    ) {
+        let remote_changed = self.model.remote_ssh_id != ssh_id;
+        self.model.remote_ssh_id = ssh_id;
+        let root_changed = self.model.set_root(root);
+        if !root_changed {
+            if !remote_changed {
+                return;
+            }
+            // Path string unchanged but local/remote flipped underneath it —
+            // force the same reset `set_root` does on an actual path change.
+            self.model.generation += 1;
+            self.model.nodes.clear();
+            self.model.expanded.clear();
+            self.model.pending_create = None;
+            self.model.edit_mode = EditMode::None;
         }
         self.selection.clear();
         self.clipboard = None;
@@ -903,7 +943,7 @@ impl ExplorerView {
     /// `git status --porcelain`, off the GPUI thread. Remote roots degrade
     /// gracefully — no decorations, same row geometry.
     fn poll_git(&mut self, cx: &mut Context<Self>) {
-        if !Self::settings(cx).git_decorations() {
+        if !Self::settings(cx).git_decorations() || self.is_remote() {
             self.git_status.clear();
             return;
         }
@@ -959,6 +999,9 @@ impl ExplorerView {
             cx.notify();
             return;
         }
+        if self.is_remote() {
+            return;
+        }
         let Some(root) = self.model.root.clone() else {
             return;
         };
@@ -993,8 +1036,36 @@ impl ExplorerView {
         .detach();
     }
 
-    pub fn set_root_str(&mut self, root: Option<String>, cx: &mut Context<Self>) {
-        self.set_root(root.map(PathBuf::from), cx);
+    pub fn set_root_str(
+        &mut self,
+        root: Option<String>,
+        ssh_id: Option<String>,
+        cx: &mut Context<Self>,
+    ) {
+        self.set_root(root.map(PathBuf::from), ssh_id, cx);
+    }
+
+    /// Whether the current root lives on a remote host rather than the local
+    /// disk. Gates the local-only affordances (Git decorations, project-wide
+    /// search walk, create/rename/delete/paste/drop) that would otherwise
+    /// silently operate on a local path that happens to share the remote
+    /// path's string, or on nothing at all.
+    fn is_remote(&self) -> bool {
+        self.model.remote_ssh_id.is_some()
+    }
+
+    fn notify_remote_unsupported(&self, action: &str, cx: &mut Context<Self>) {
+        notification_center(cx).update(cx, |center, cx| {
+            center.push(
+                Notification::error(
+                    "Not supported over SSH yet",
+                    format!("{action} isn't supported for remote folders yet."),
+                )
+                .source("explorer")
+                .dedupe_key(format!("explorer:remote-unsupported:{action}")),
+                cx,
+            );
+        });
     }
 
     fn load_dir(&mut self, path: PathBuf, force: bool, cx: &mut Context<Self>) {
@@ -1007,6 +1078,73 @@ impl ExplorerView {
         let gen = self.model.generation();
         let show_hidden = self.model.show_hidden;
         let path_str = path.to_string_lossy().to_string();
+
+        if let Some(ssh_id) = self.model.remote_ssh_id.clone() {
+            let session_service = self.sftp_session.clone();
+            let browser = self.sftp_browser.clone();
+            let jh = self.tokio.spawn(async move {
+                let handle = session_service
+                    .open(SshSessionId::new(ssh_id))
+                    .await
+                    .map_err(|e| e.to_string())?;
+                browser
+                    .read_dir(handle, path_str)
+                    .await
+                    .map_err(|e| e.to_string())
+            });
+            cx.spawn(async move |view, cx| {
+                let result = jh.await.unwrap_or_else(|e| Err(e.to_string()));
+                let _ = view.update(cx, |this, cx| {
+                    if this.model.generation() != gen {
+                        return;
+                    }
+                    match result {
+                        Ok(list) => {
+                            let mut entries: Vec<Entry> = list
+                                .into_iter()
+                                .filter(|e| show_hidden || !e.name.starts_with('.'))
+                                .map(|e| Entry {
+                                    name: e.name,
+                                    is_dir: e.is_dir,
+                                    is_ignored: false,
+                                })
+                                .collect();
+                            entries.sort_by(|a, b| {
+                                b.is_dir
+                                    .cmp(&a.is_dir)
+                                    .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+                            });
+                            this.model.set_node(
+                                path.clone(),
+                                NodeState::Loaded {
+                                    entries,
+                                    has_more: false,
+                                },
+                            );
+                        }
+                        Err(message) => {
+                            let path_label = path.display().to_string();
+                            notification_center(cx).update(cx, |center, cx| {
+                                center.push(
+                                    Notification::error(
+                                        "Folder load failed",
+                                        "Could not read the remote directory.",
+                                    )
+                                    .source("explorer")
+                                    .details(message.clone())
+                                    .dedupe_key(format!("explorer:load:{path_label}")),
+                                    cx,
+                                );
+                            });
+                            this.model.set_node(path.clone(), NodeState::Error);
+                        }
+                    }
+                    cx.notify();
+                });
+            })
+            .detach();
+            return;
+        }
 
         cx.spawn(async move |view, cx| {
             let result = cx
@@ -1153,6 +1291,10 @@ impl ExplorerView {
 
     fn paste_into(&mut self, dir: PathBuf, cx: &mut Context<Self>) {
         self.context_menu = None;
+        if self.is_remote() {
+            self.notify_remote_unsupported("Paste", cx);
+            return;
+        }
         let Some(clip) = self.clipboard.clone() else {
             return;
         };
@@ -1220,6 +1362,10 @@ impl ExplorerView {
     /// Drop of a dragged row (or rows) onto a directory — move.
     fn drop_move(&mut self, srcs: Vec<PathBuf>, dest_dir: PathBuf, cx: &mut Context<Self>) {
         self.drop_target = None;
+        if self.is_remote() {
+            self.notify_remote_unsupported("Moving files", cx);
+            return;
+        }
         let srcs: Vec<PathBuf> = srcs
             .into_iter()
             .filter(|s| can_drop_into(s, &dest_dir))
@@ -1269,6 +1415,10 @@ impl ExplorerView {
     fn drop_external(&mut self, srcs: Vec<PathBuf>, dest_dir: PathBuf, cx: &mut Context<Self>) {
         self.drop_target = None;
         if srcs.is_empty() {
+            return;
+        }
+        if self.is_remote() {
+            self.notify_remote_unsupported("Copying files in", cx);
             return;
         }
         let paths: Vec<String> = srcs
@@ -1330,6 +1480,10 @@ impl ExplorerView {
         cx: &mut Context<Self>,
     ) {
         self.context_menu = None;
+        if self.is_remote() {
+            self.notify_remote_unsupported("Creating files", cx);
+            return;
+        }
         self.model.expanded.insert(parent.clone());
         self.load_dir(parent.clone(), false, cx);
         self.model.pending_create = Some(PendingCreate { parent, is_dir });
@@ -1341,6 +1495,10 @@ impl ExplorerView {
 
     fn begin_rename(&mut self, path: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
         self.context_menu = None;
+        if self.is_remote() {
+            self.notify_remote_unsupported("Renaming", cx);
+            return;
+        }
         self.edit_buffer = path
             .file_name()
             .map(|n| n.to_string_lossy().to_string())
@@ -1419,6 +1577,10 @@ impl ExplorerView {
 
     fn request_delete(&mut self, path: PathBuf, cx: &mut Context<Self>) {
         self.context_menu = None;
+        if self.is_remote() {
+            self.notify_remote_unsupported("Deleting", cx);
+            return;
+        }
         self.confirm_delete = Some(path);
         cx.notify();
     }
@@ -1449,6 +1611,10 @@ impl ExplorerView {
     where
         F: FnOnce() -> Result<(), String> + Send + 'static,
     {
+        if self.is_remote() {
+            self.notify_remote_unsupported("This operation", cx);
+            return;
+        }
         cx.spawn(async move |view, cx| {
             let result = cx.background_executor().spawn(async move { op() }).await;
             let _ = view.update(cx, |this, cx| match result {
@@ -1480,6 +1646,10 @@ impl ExplorerView {
 
     fn open_in_terminal(&mut self, dir: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
         self.context_menu = None;
+        if self.is_remote() {
+            self.notify_remote_unsupported("Opening a terminal here", cx);
+            return;
+        }
         let cwd = dir.to_string_lossy().to_string();
         self.host.open_terminal_in(cwd, window, cx);
         cx.notify();
@@ -1487,12 +1657,20 @@ impl ExplorerView {
 
     fn open_in_preview(&mut self, path: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
         self.context_menu = None;
+        if self.is_remote() {
+            self.notify_remote_unsupported("Preview", cx);
+            return;
+        }
         let target = path.to_string_lossy().to_string();
         self.host.open_preview(target, window, cx);
         cx.notify();
     }
 
     fn open_file(&mut self, path: &Path, peek: bool, window: &mut Window, cx: &mut Context<Self>) {
+        if self.is_remote() {
+            self.notify_remote_unsupported("Opening remote files", cx);
+            return;
+        }
         let path = path.to_string_lossy().to_string();
         self.host.open_file(path, peek, window, cx);
         cx.notify();

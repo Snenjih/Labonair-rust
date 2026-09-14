@@ -19,6 +19,9 @@ labonair-notifications = { path = "../notifications" }
 labonair-filesystem = { path = "../filesystem" }
 labonair-explorer-host = { path = "../explorer-host" }
 labonair-settings = { path = "../settings" }
+labonair-sftp = { path = "../sftp" }
+labonair-ssh = { path = "../ssh" }
+tokio = { workspace = true }
 
 [dev-dependencies]
 gpui = { workspace = true, features = ["test-support"] }
