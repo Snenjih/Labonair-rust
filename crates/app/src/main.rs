@@ -43,8 +43,17 @@ fn main() {
     // host definitions are projected into Settings.
     labonair_shell::migrate_legacy_settings();
 
-    drop(guard);
-    // Keep the runtime (and its background workers) alive for the process.
+    // Keep both the runtime and the entered guard alive for the process: GPUI
+    // drives its foreground executor (`cx.spawn`) on this same main thread,
+    // and code reached from it — e.g. `labonair-git-transport`'s local
+    // executor — calls the ambient `tokio::task::spawn_blocking`/
+    // `Handle::current()` instead of the explicit `tokio_handle` threaded
+    // elsewhere. Dropping the guard here removed the main thread's Tokio
+    // context before the app even opened its window, so every local git
+    // command run from GPUI's event loop (e.g. the git-gutter refresh on
+    // every file open) panicked with "there is no reactor running" and
+    // aborted the whole process.
+    std::mem::forget(guard);
     std::mem::forget(runtime);
 
     tracing::info!("Labonair-rust starting");
