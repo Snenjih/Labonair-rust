@@ -142,14 +142,14 @@ fn can_drop_into(src: &Path, dest_dir: &Path) -> bool {
     !dest_dir.starts_with(src)
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 struct Entry {
     name: String,
     is_dir: bool,
     is_ignored: bool,
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 enum NodeState {
     Loading,
     Loaded { entries: Vec<Entry>, has_more: bool },
@@ -1072,8 +1072,15 @@ impl ExplorerView {
         if !force && !self.model.needs_load(&path) {
             return;
         }
-        self.model.mark_loading(path.clone());
-        cx.notify();
+        // A refresh of an already-loaded directory (fs-watch churn, manual
+        // "Refresh") keeps showing its current entries until the re-fetch
+        // lands instead of flashing a `Row::Loading` placeholder over the
+        // whole subtree — that collapse/repopulate was the Explorer flicker.
+        let already_loaded = matches!(self.model.nodes.get(&path), Some(NodeState::Loaded { .. }));
+        if !already_loaded {
+            self.model.mark_loading(path.clone());
+            cx.notify();
+        }
 
         let gen = self.model.generation();
         let show_hidden = self.model.show_hidden;
@@ -1098,7 +1105,7 @@ impl ExplorerView {
                     if this.model.generation() != gen {
                         return;
                     }
-                    match result {
+                    let new_state = match result {
                         Ok(list) => {
                             let mut entries: Vec<Entry> = list
                                 .into_iter()
@@ -1114,13 +1121,10 @@ impl ExplorerView {
                                     .cmp(&a.is_dir)
                                     .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
                             });
-                            this.model.set_node(
-                                path.clone(),
-                                NodeState::Loaded {
-                                    entries,
-                                    has_more: false,
-                                },
-                            );
+                            NodeState::Loaded {
+                                entries,
+                                has_more: false,
+                            }
                         }
                         Err(message) => {
                             let path_label = path.display().to_string();
@@ -1136,10 +1140,15 @@ impl ExplorerView {
                                     cx,
                                 );
                             });
-                            this.model.set_node(path.clone(), NodeState::Error);
+                            NodeState::Error
                         }
+                    };
+                    // Skip the write + notify entirely when a background
+                    // refresh came back identical to what's already shown.
+                    if this.model.nodes.get(&path) != Some(&new_state) {
+                        this.model.set_node(path.clone(), new_state);
+                        cx.notify();
                     }
-                    cx.notify();
                 });
             })
             .detach();
@@ -1155,7 +1164,7 @@ impl ExplorerView {
                 if this.model.generation() != gen {
                     return;
                 }
-                match result {
+                let new_state = match result {
                     Ok(page) => {
                         let entries = page
                             .entries
@@ -1166,13 +1175,10 @@ impl ExplorerView {
                                 is_ignored: e.is_ignored,
                             })
                             .collect();
-                        this.model.set_node(
-                            path.clone(),
-                            NodeState::Loaded {
-                                entries,
-                                has_more: page.has_more,
-                            },
-                        );
+                        NodeState::Loaded {
+                            entries,
+                            has_more: page.has_more,
+                        }
                     }
                     Err(message) => {
                         let path_label = path.display().to_string();
@@ -1188,11 +1194,18 @@ impl ExplorerView {
                                 cx,
                             );
                         });
-                        this.model.set_node(path.clone(), NodeState::Error);
+                        NodeState::Error
                     }
+                };
+                // Skip the write + notify entirely when a background refresh
+                // (fs-watch debounce, manual Refresh) came back identical to
+                // what's already on screen — this is what stops the sidebar
+                // from flashing empty/"Loading" on every no-op checkup.
+                if this.model.nodes.get(&path) != Some(&new_state) {
+                    this.model.set_node(path.clone(), new_state);
+                    this.sync_watchers();
+                    cx.notify();
                 }
-                this.sync_watchers();
-                cx.notify();
             });
         })
         .detach();
