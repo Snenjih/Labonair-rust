@@ -273,12 +273,30 @@ fn in_flyout(flyouts: &FlyoutBounds, pos: Point<Pixels>) -> bool {
     flyouts.borrow().iter().any(|b| b.contains(&pos))
 }
 
+/// Hard cap on a submenu flyout's own width (`menu_card` caps the top-level
+/// card the same way). Without this, a flyout with wide rows — e.g. the
+/// `+ ▸ SSH` / `SFTP` host lists, whose `detail` column is a full
+/// `user@host:port` string — could grow past the room available on *either*
+/// side of its trigger, so `snap_to_window` had nowhere sane to put it and
+/// slid it back on top of the trigger's own parent menu. Capping the width
+/// keeps [`ASSUMED_FLYOUT_WIDTH`] below an honest upper bound instead of a
+/// guess, so the flip decision it drives is actually reliable.
+const FLYOUT_MAX_WIDTH: Pixels = px(340.0);
+
 /// Assumed flyout width used only to decide whether a submenu has room to
 /// open to the right of its trigger row — the panel's real width isn't known
-/// until its own layout runs (cards in this file are `min_w` 160px but grow
-/// with content), so this is a conservative overestimate. Mirrors the same
-/// kind of margin Zed's `ContextMenu::open_submenu` uses for this decision.
-const ASSUMED_FLYOUT_WIDTH: Pixels = px(200.0);
+/// until its own layout runs, so this mirrors [`FLYOUT_MAX_WIDTH`] (the
+/// actual upper bound enforced on the flyout card) rather than guessing low
+/// and letting `snap_to_window` paper over a wrong flip decision.
+const ASSUMED_FLYOUT_WIDTH: Pixels = FLYOUT_MAX_WIDTH;
+
+/// Assumed flyout height used only to decide whether a submenu has room to
+/// open *downward* from its trigger row, mirroring [`ASSUMED_FLYOUT_WIDTH`].
+/// Host-list submenus (`+ ▸ SSH` / `SFTP`) can run to 5+ rows plus an "All
+/// hosts…" entry, so a wider margin than a handful of plain action rows is
+/// assumed here on purpose — better to flip up a little early than to have
+/// the flyout's tail get clipped/snapped back over its own trigger row.
+const ASSUMED_FLYOUT_HEIGHT: Pixels = px(280.0);
 
 /// Per-submenu geometry: the trigger row's last-probed window-space bounds,
 /// plus whether its flyout should open to the left instead of the right.
@@ -296,6 +314,7 @@ const ASSUMED_FLYOUT_WIDTH: Pixels = px(200.0);
 struct SubmenuGeom {
     bounds: Option<Bounds<Pixels>>,
     flip_left: bool,
+    flip_up: bool,
 }
 type SubmenuGeometry = Rc<RefCell<HashMap<SharedString, SubmenuGeom>>>;
 
@@ -328,7 +347,9 @@ fn record_submenu_side(key: &SharedString, geometry: &SubmenuGeometry, window: &
     let Some(bounds) = entry.bounds else {
         return;
     };
-    entry.flip_left = bounds.right() + ASSUMED_FLYOUT_WIDTH > window.viewport_size().width;
+    let viewport = window.viewport_size();
+    entry.flip_left = bounds.right() + ASSUMED_FLYOUT_WIDTH > viewport.width;
+    entry.flip_up = bounds.top() + ASSUMED_FLYOUT_HEIGHT > viewport.height;
 }
 
 /// A fixed 16px centred box holding a 14px glyph — keeps every row's icon the
@@ -401,10 +422,11 @@ fn render_item(
                     };
                     d.child(icon_slot(glyph, text_color))
                 })
-                .child(label)
+                .child(div().flex_1().min_w_0().truncate().child(label))
                 .when_some(detail, |d, text| {
                     d.child(
                         div()
+                            .flex_shrink_0()
                             .ml_auto()
                             .pl(c.space(8.0))
                             .text_size(px(12.0))
@@ -444,17 +466,18 @@ fn render_item(
             // In controlled mode the flyout only exists while the caller says
             // it's open; otherwise it's always in the tree and revealed by CSS.
             let show_panel = control.as_ref().map(|c| c.open).unwrap_or(true);
-            let flip_left = geometry
+            let (flip_left, flip_up) = geometry
                 .borrow()
                 .get(&flyout_id)
-                .map(|g| g.flip_left)
-                .unwrap_or(false);
+                .map(|g| (g.flip_left, g.flip_up))
+                .unwrap_or((false, false));
             let panel = show_panel.then(|| {
                 let card = div()
                     .id(flyout_id.clone())
                     .flex()
                     .flex_col()
                     .min_w(c.space(160.0))
+                    .max_w(FLYOUT_MAX_WIDTH)
                     .p(c.space(4.0))
                     .rounded_md()
                     .bg(c.popover)
@@ -498,7 +521,8 @@ fn render_item(
                 // click point.
                 let host = div()
                     .absolute()
-                    .top(c.space(4.0))
+                    .when(!flip_up, |d| d.top(c.space(4.0)))
+                    .when(flip_up, |d| d.bottom(c.space(4.0)))
                     .when(flip_left, |d| d.right_full())
                     .when(!flip_left, |d| d.left_full())
                     // Controlled open/close doesn't depend on an unbroken
@@ -507,13 +531,16 @@ fn render_item(
                     .when(control.is_some() && !flip_left, |d| d.ml(c.space(6.0)))
                     .when(control.is_some() && flip_left, |d| d.mr(c.space(6.0)));
 
+                let anchor_corner = match (flip_left, flip_up) {
+                    (false, false) => Corner::TopLeft,
+                    (true, false) => Corner::TopRight,
+                    (false, true) => Corner::BottomLeft,
+                    (true, true) => Corner::BottomRight,
+                };
+
                 host.child(
                     anchored()
-                        .anchor(if flip_left {
-                            Corner::TopRight
-                        } else {
-                            Corner::TopLeft
-                        })
+                        .anchor(anchor_corner)
                         .snap_to_window_with_margin(px(8.0))
                         .child(card),
                 )

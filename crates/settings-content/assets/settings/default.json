@@ -94,8 +94,6 @@
     "editorWhitespace": "none",
     "editorMinimap": false,
     "editorBracketMatching": true,
-    "editorCursorStyle": "line",
-    "editorCursorBlink": true,
     "editorRulers": "",
     "editorScrollBeyondLastLine": true,
     "editorStickyContext": false,

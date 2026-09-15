@@ -142,8 +142,8 @@ use labonair_settings::content::general::StartupTab;
 use labonair_settings::content::terminal::CursorStyle as PrefCursorStyle;
 use labonair_settings::{ConnectionsSettings, GeneralSettings, Settings as _, TerminalSettings};
 use labonair_ui_kit::{
-    caret, context_menu, h_stack, indicator, BlinkCursor, ButtonSize, ButtonVariant, IconName,
-    IndicatorSize, MenuItem, Palette, SubmenuHoverSource,
+    caret, context_menu, divider, h_stack, indicator, Axis, BlinkCursor, ButtonSize,
+    ButtonVariant, IconName, IndicatorSize, MenuItem, Palette, SubmenuHoverSource,
 };
 
 /// Interval for draining backend SSH events into the workspace.
@@ -5291,11 +5291,12 @@ impl Workspace {
         // Grouped into a collapsible section per Space (T20-008) — the same
         // data and row component the Spaces popover uses, just expanded
         // inline instead of in a floating card.
-        let mut groups: Vec<gpui::AnyElement> = Vec::with_capacity(spaces.len());
-        for space in &spaces {
+        let mut groups: Vec<gpui::AnyElement> = Vec::with_capacity(spaces.len() * 2);
+        let last_space_idx = spaces.len().saturating_sub(1);
+        for (idx, space) in spaces.iter().enumerate() {
             let space_tabs: Vec<&Tab> = tabs.iter().filter(|t| t.space_id == space.id).collect();
             groups.push(
-                self.render_space_header(space, space_tabs.len(), cx)
+                self.render_space_header(space, space_tabs.len(), false, cx)
                     .into_any_element(),
             );
             if !self.collapsed_spaces.contains(&space.id) {
@@ -5304,6 +5305,9 @@ impl Workspace {
                         .into_iter()
                         .map(|t| self.render_tab(t, true, cx).into_any_element()),
                 );
+            }
+            if idx != last_space_idx {
+                groups.push(divider(Axis::Horizontal, border).my_1().into_any_element());
             }
         }
         // Recent Projects lives in the "New Space" dropdown (`sidebar-new-space`)
@@ -6095,11 +6099,12 @@ impl Workspace {
         &mut self,
         space: &Space,
         tab_count: usize,
+        highlight_active: bool,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let c = Palette::from_theme(self.theme.read(cx));
         let id = space.id;
-        let active = self.spaces.read(cx).active_id() == id;
+        let active = self.spaces.read(cx).active_id() == id && highlight_active;
         let collapsed = self.collapsed_spaces.contains(&id);
 
         let badge = div()
@@ -6655,7 +6660,7 @@ impl Workspace {
         for space in &spaces {
             let count = tabs.iter().filter(|t| t.space_id == space.id).count();
             rows.push(
-                self.render_space_header(space, count, cx)
+                self.render_space_header(space, count, true, cx)
                     .into_any_element(),
             );
             if !self.collapsed_spaces.contains(&space.id) {
