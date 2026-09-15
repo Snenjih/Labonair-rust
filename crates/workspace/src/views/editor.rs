@@ -12,13 +12,14 @@
 //! onto the tab.
 
 use std::path::PathBuf;
+use std::time::Duration;
 
 use gpui::prelude::FluentBuilder;
 use gpui::{
     canvas, div, px, App, Bounds, ClickEvent, ClipboardItem, Context, Entity, EventEmitter,
     FocusHandle, Focusable, HighlightStyle, InteractiveElement, IntoElement, KeyDownEvent,
     MouseButton, MouseDownEvent, MouseMoveEvent, ParentElement, Pixels, Point, Render,
-    ScrollWheelEvent, SharedString, StatefulInteractiveElement, Styled, StyledText, Window,
+    ScrollWheelEvent, SharedString, StatefulInteractiveElement, Styled, StyledText, Task, Window,
 };
 use labonair_filesystem::file::{
     file_mtime_sync, load_editor_file_sync, save_editor_file_sync, EditorLoad,
@@ -85,6 +86,12 @@ pub struct EditorView {
     /// every mouse-move so a plain source file never pays the tree-sitter
     /// lookup cost).
     hover: Option<(Point<Pixels>, SharedString)>,
+    /// Current on/off phase of the blinking caret (`editorCursorBlink`).
+    blink_on: bool,
+    /// Whether this view held focus at its last paint — the blink task uses
+    /// it to skip repaints for background editors.
+    focused: bool,
+    _blink: Task<()>,
 }
 
 /// The current editor-settings snapshot (all-defaults before the store exists).
@@ -114,6 +121,32 @@ impl EditorView {
             .detach();
         let prefs = current_prefs(cx);
         let vim = prefs.vim_mode().then(|| Vim::new(vim_options(&prefs)));
+
+        // Drive the blinking caret. The interval/on-off preference is re-read
+        // every tick so an `editorCursorBlink*` change takes effect on the
+        // next toggle; the repaint is skipped unless this editor is focused,
+        // so idle/background editors stay quiet.
+        let blink = cx.spawn(async move |view, cx| loop {
+            let (ms, blink_pref) = view
+                .read_with(cx, |_, cx| current_prefs(cx))
+                .map(|p| (p.cursor_blink_interval_ms(), p.cursor_blink()))
+                .unwrap_or((530, true));
+            cx.background_executor()
+                .timer(Duration::from_millis(ms))
+                .await;
+            if view
+                .update(cx, |this, cx| {
+                    this.blink_on = !this.blink_on;
+                    if blink_pref && this.focused {
+                        cx.notify();
+                    }
+                })
+                .is_err()
+            {
+                break;
+            }
+        });
+
         Self {
             doc: Document::empty(),
             theme,
@@ -128,6 +161,9 @@ impl EditorView {
             vim,
             prefs,
             hover: None,
+            blink_on: true,
+            focused: false,
+            _blink: blink,
         }
     }
 
@@ -943,6 +979,7 @@ impl Focusable for EditorView {
 
 impl Render for EditorView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.focused = self.focus_handle.is_focused(window);
         let theme = self.theme.read(cx);
         let bg = theme.background();
         let fg = theme.foreground();
@@ -1167,25 +1204,51 @@ impl Render for EditorView {
         } else {
             (0, cursor.column)
         };
-        let caret = caret_layout.map(|(top, _)| {
-            div()
-                .absolute()
-                .top(px(top + caret_seg as f32 * line_h))
-                .left(px(caret_col as f32 * char_w))
-                .w(px(2.0))
-                .h(px(line_h))
-                .bg(accent)
+        let show_caret = self.blink_on || !self.prefs.cursor_blink() || !self.focused;
+        let caret = caret_layout.filter(|_| show_caret).map(|(top, _)| {
+            use labonair_settings::content::editor::EditorCursorStyle;
+            let top_px = top + caret_seg as f32 * line_h;
+            let left = px(caret_col as f32 * char_w);
+            match self.prefs.cursor_style() {
+                EditorCursorStyle::Bar => div()
+                    .absolute()
+                    .top(px(top_px))
+                    .left(left)
+                    .w(px(2.0))
+                    .h(px(line_h))
+                    .bg(accent),
+                EditorCursorStyle::Underline => div()
+                    .absolute()
+                    .top(px(top_px + line_h - 2.0))
+                    .left(left)
+                    .w(px(char_w))
+                    .h(px(2.0))
+                    .bg(accent),
+                EditorCursorStyle::Block => div()
+                    .absolute()
+                    .top(px(top_px))
+                    .left(left)
+                    .w(px(char_w))
+                    .h(px(line_h))
+                    .bg(accent.opacity(0.6)),
+            }
         });
 
-        let current_line = caret_layout.map(|(top, segs)| {
-            div()
-                .absolute()
-                .top(px(top))
-                .left(px(0.0))
-                .right(px(0.0))
-                .h(px(segs as f32 * line_h))
-                .bg(fg.opacity(0.04))
-        });
+        let current_line = self
+            .prefs
+            .highlight_current_line()
+            .then(|| {
+                caret_layout.map(|(top, segs)| {
+                    div()
+                        .absolute()
+                        .top(px(top))
+                        .left(px(0.0))
+                        .right(px(0.0))
+                        .h(px(segs as f32 * line_h))
+                        .bg(fg.opacity(0.04))
+                })
+            })
+            .flatten();
 
         let weak = cx.weak_entity();
         let probe = canvas(

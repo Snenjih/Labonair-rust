@@ -124,7 +124,7 @@ use labonair_keymap_ui::KeymapManagementView;
 use labonair_panel_git_graph::GitGraphView;
 use labonair_settings::content::general::StartupTab;
 use labonair_settings::content::terminal::CursorStyle as PrefCursorStyle;
-use labonair_settings::{GeneralSettings, Settings as _, TerminalSettings};
+use labonair_settings::{ConnectionsSettings, GeneralSettings, Settings as _, TerminalSettings};
 use labonair_ui_kit::{
     caret, context_menu, h_stack, indicator, BlinkCursor, ButtonSize, ButtonVariant, IconName,
     IndicatorSize, MenuItem, Palette, SubmenuHoverSource,
@@ -269,6 +269,16 @@ fn terminal_settings(cx: &App) -> TerminalSettings {
     TerminalSettings::try_get(cx).cloned().unwrap_or_else(|| {
         TerminalSettings::from_settings(&labonair_settings::SettingsContent::default())
     })
+}
+
+/// The layered `connections` settings slice, or its all-defaults value if the
+/// `SettingsStore` global was never installed (headless test).
+fn connections_settings(cx: &App) -> ConnectionsSettings {
+    ConnectionsSettings::try_get(cx)
+        .cloned()
+        .unwrap_or_else(|| {
+            ConnectionsSettings::from_settings(&labonair_settings::SettingsContent::default())
+        })
 }
 
 /// The live-tunable emulator parameters derived from the `terminal` settings —
@@ -1757,6 +1767,8 @@ impl Workspace {
         let options = SessionOptions {
             working_directory: cwd,
             shell,
+            args: ts.shell_args(),
+            env: ts.environment_variables(),
             scrollback: Some(ts.scrollback().max(1) as usize),
             replay_scrollback,
             cursor_shape,
@@ -1995,6 +2007,17 @@ impl Workspace {
             return;
         }
         self.do_close(id, window, cx);
+    }
+
+    /// Whether *any* open pane — terminal or SSH — still has a live shell.
+    /// Gates `confirmQuitWithActiveSessions` at the window-close boundary.
+    pub fn has_running_shells(&self, cx: &App) -> bool {
+        self.panes.values().any(|entry| {
+            matches!(
+                entry.view.read(cx).handle().status(),
+                labonair_terminal::SessionStatus::Running
+            )
+        })
     }
 
     /// Whether a workspace (terminal) tab has at least one local pane whose
@@ -3269,6 +3292,12 @@ impl Workspace {
         let ssh = self.ssh.clone();
         let event_sink = Arc::new(WorkspaceSshEventSink(feed));
         let connect_id = ssh_id.clone();
+        let conns = connections_settings(cx);
+        let (connect_timeout_secs, keepalive_interval_secs, keepalive_max_failures) = (
+            conns.connect_timeout_secs(),
+            conns.keepalive_interval_secs(),
+            conns.keepalive_max_failures(),
+        );
         let jh = self.tokio.spawn(async move {
             ssh.connect(
                 SshConnectRequest {
@@ -3279,7 +3308,9 @@ impl Workspace {
                     initial_cols: Some(80),
                     initial_rows: Some(24),
                     blocks: false,
-                    connect_timeout_secs: Some(20),
+                    connect_timeout_secs: Some(connect_timeout_secs),
+                    keepalive_interval_secs: Some(keepalive_interval_secs),
+                    keepalive_max_failures: Some(keepalive_max_failures),
                 },
                 event_sink,
             )

@@ -431,6 +431,20 @@ pub fn all_fields() -> Vec<AnyField> {
             "Background opacity",
             "Terminal background opacity in percent (100 = opaque)."
         ),
+        field!(
+            terminal.terminal_environment_variables,
+            "terminalEnvironmentVariables",
+            Text,
+            "Environment variables",
+            "Extra env vars for every new shell, as KEY=value,KEY2=value2."
+        ),
+        field!(
+            terminal.terminal_shell_args,
+            "terminalShellArgs",
+            Text,
+            "Shell arguments",
+            "Extra arguments appended to the shell, space-separated."
+        ),
         // ── editor ──────────────────────────────────────────────────────
         field!(
             editor.editor_font_family,
@@ -526,6 +540,38 @@ pub fn all_fields() -> Vec<AnyField> {
             Switch,
             "Vim: smart case",
             "Case-insensitive search unless the pattern has an uppercase letter."
+        ),
+        field!(
+            editor.editor_highlight_current_line,
+            "editorHighlightCurrentLine",
+            Switch,
+            "Highlight current line",
+            "Tint the line the caret is on."
+        ),
+        field!(
+            editor.editor_cursor_style,
+            "editorCursorStyle",
+            Select(&[
+                ("block", "Block"),
+                ("underline", "Underline"),
+                ("bar", "Bar")
+            ]),
+            "Cursor style",
+            "Shape of the editor caret."
+        ),
+        field!(
+            editor.editor_cursor_blink,
+            "editorCursorBlink",
+            Switch,
+            "Cursor blink",
+            "Blink the caret while the editor is focused."
+        ),
+        field!(
+            editor.editor_cursor_blink_interval_ms,
+            "editorCursorBlinkIntervalMs",
+            Int { min: 100, max: 5000, step: 100 },
+            "Cursor blink interval",
+            "Milliseconds between caret blink phases."
         ),
         // ── file_manager ────────────────────────────────────────────────
         field!(
@@ -662,6 +708,35 @@ pub fn all_fields() -> Vec<AnyField> {
             Switch,
             "Close on click-away",
             "Dismiss the palette when clicking outside the card."
+        ),
+        field!(
+            workspace.confirm_quit_with_active_sessions,
+            "confirmQuitWithActiveSessions",
+            Switch,
+            "Confirm quit with active sessions",
+            "Block the first quit attempt while a terminal or SSH shell is still running."
+        ),
+        // ── connections ─────────────────────────────────────────────────
+        field!(
+            connections.ssh_connect_timeout_secs,
+            "sshConnectTimeoutSecs",
+            Int { min: 1, max: 300, step: 1 },
+            "Connect timeout",
+            "Seconds to wait for the initial TCP+SSH handshake before giving up."
+        ),
+        field!(
+            connections.ssh_keepalive_interval_secs,
+            "sshKeepaliveIntervalSecs",
+            Int { min: 1, max: 600, step: 1 },
+            "Keep-alive interval",
+            "Fallback keep-alive ping interval, in seconds, for hosts that don't set their own."
+        ),
+        field!(
+            connections.ssh_keepalive_max_failures,
+            "sshKeepaliveMaxFailures",
+            Int { min: 1, max: 20, step: 1 },
+            "Keep-alive max failures",
+            "Fallback missed-ping tolerance for hosts that don't set their own."
         ),
     ]
 }

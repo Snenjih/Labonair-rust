@@ -96,6 +96,40 @@ pub struct TerminalContent {
     pub confirm_close_terminal_tab: Option<bool>,
     /// Terminal background opacity in percent (100 = fully opaque).
     pub terminal_opacity: Option<u32>,
+    /// Extra environment variables applied to every new terminal/SSH shell,
+    /// as `KEY=value` pairs separated by commas (e.g. `"EDITOR=hx,FOO=bar"`).
+    /// Malformed pairs (no `=`) are ignored.
+    pub terminal_environment_variables: Option<String>,
+    /// Extra arguments appended to `terminalShell`, whitespace-separated
+    /// (e.g. `"-l --foo"`). No quoting support — use a wrapper script for
+    /// arguments that contain spaces.
+    pub terminal_shell_args: Option<String>,
+}
+
+/// Parse [`TerminalContent::terminal_environment_variables`]'s `KEY=value,
+/// KEY2=value2` syntax. Entries without an `=` are dropped; a later
+/// duplicate key overrides an earlier one.
+pub fn parse_environment_variables(raw: &str) -> Vec<(String, String)> {
+    let mut vars = Vec::new();
+    for pair in raw.split(',') {
+        let pair = pair.trim();
+        if pair.is_empty() {
+            continue;
+        }
+        if let Some((key, value)) = pair.split_once('=') {
+            let key = key.trim();
+            if !key.is_empty() {
+                vars.push((key.to_string(), value.trim().to_string()));
+            }
+        }
+    }
+    vars
+}
+
+/// Parse [`TerminalContent::terminal_shell_args`]'s whitespace-separated
+/// argument list.
+pub fn parse_shell_args(raw: &str) -> Vec<String> {
+    raw.split_whitespace().map(str::to_string).collect()
 }
 
 /// The default word-separator set for double-click selection (mirrors the
@@ -126,6 +160,8 @@ impl TerminalContent {
             terminal_bell: Some(false),
             confirm_close_terminal_tab: Some(false),
             terminal_opacity: Some(100),
+            terminal_environment_variables: Some(String::new()),
+            terminal_shell_args: Some(String::new()),
         }
     }
 }

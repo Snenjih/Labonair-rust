@@ -35,6 +35,12 @@ pub struct WorkspaceContent {
     pub command_palette_position: Option<String>,
     pub command_palette_history_size: Option<u32>,
     pub command_palette_close_on_overlay_click: Option<bool>,
+
+    // ── Quit confirmation ──────────────────────────────────────────────
+    /// Block the first quit attempt (and show a notification) while a
+    /// terminal or SSH shell is still running; quitting again within a few
+    /// seconds proceeds.
+    pub confirm_quit_with_active_sessions: Option<bool>,
 }
 
 impl WorkspaceContent {
@@ -46,6 +52,7 @@ impl WorkspaceContent {
             command_palette_position: Some("top".to_string()),
             command_palette_history_size: Some(5),
             command_palette_close_on_overlay_click: Some(true),
+            confirm_quit_with_active_sessions: Some(true),
         }
     }
 }

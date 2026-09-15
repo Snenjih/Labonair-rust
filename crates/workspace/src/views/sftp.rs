@@ -843,6 +843,13 @@ impl SftpView {
         let ssh = self.ssh.clone();
         let sftp = self.sftp_session.clone();
         let (sid, hid) = (self.session_id.clone(), self.host_id.clone());
+        let conns = labonair_settings::ConnectionsSettings::try_get(cx).cloned();
+        let connect_timeout_secs = conns
+            .as_ref()
+            .map(|s| s.connect_timeout_secs())
+            .unwrap_or(20);
+        let keepalive_interval_secs = conns.as_ref().map(|s| s.keepalive_interval_secs());
+        let keepalive_max_failures = conns.as_ref().map(|s| s.keepalive_max_failures());
         let jh = self.tokio.spawn(async move {
             ssh.connect(
                 SshConnectRequest {
@@ -853,7 +860,9 @@ impl SftpView {
                     initial_cols: None,
                     initial_rows: None,
                     blocks: false,
-                    connect_timeout_secs: None,
+                    connect_timeout_secs: Some(connect_timeout_secs),
+                    keepalive_interval_secs,
+                    keepalive_max_failures,
                 },
                 std::sync::Arc::new(QuietSshEventSink),
             )

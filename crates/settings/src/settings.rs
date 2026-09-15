@@ -25,8 +25,8 @@ mod store;
 mod watch;
 
 pub use concrete::{
-    EditorSettings, ExplorerSettings, GeneralSettings, ScmSettings, SftpBrowserSettings,
-    TerminalSettings, ThemeSettings, WorkspaceSettings,
+    ConnectionsSettings, EditorSettings, ExplorerSettings, GeneralSettings, ScmSettings,
+    SftpBrowserSettings, TerminalSettings, ThemeSettings, WorkspaceSettings,
 };
 pub use labonair_settings_content::file_manager::SftpColumn;
 pub use project::{ensure_project_settings_file, PROJECT_SETTINGS_WHITELIST};

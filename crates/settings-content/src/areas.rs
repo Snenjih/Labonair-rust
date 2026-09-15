@@ -73,4 +73,11 @@ pub const AREAS: &[AreaMeta] = &[
         kind: AreaKind::Generated,
         target_module: "workspace",
     },
+    AreaMeta {
+        key: "connections",
+        title: "Connections",
+        slug: "connections",
+        kind: AreaKind::Generated,
+        target_module: "connections",
+    },
 ];

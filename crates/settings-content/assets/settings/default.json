@@ -74,7 +74,11 @@
     // Ask before closing a terminal tab whose shell is still running.
     "confirmCloseTerminalTab": false,
     // Whole-pane background opacity in percent; 100 = fully opaque.
-    "terminalOpacity": 100
+    "terminalOpacity": 100,
+    // "KEY=value,KEY2=value2" applied to every new shell.
+    "terminalEnvironmentVariables": "",
+    // Whitespace-separated extra shell arguments (no quoting support).
+    "terminalShellArgs": ""
   },
 
   "editor": {
@@ -91,7 +95,13 @@
     // Folded in from the legacy standalone "editor" settings-file key.
     "vimHlsearch": true,
     "vimIncsearch": true,
-    "vimSmartcase": true
+    "vimSmartcase": true,
+    "editorHighlightCurrentLine": true,
+    "editorCursorBlink": true,
+    // Caret blink half-period, in milliseconds.
+    "editorCursorBlinkIntervalMs": 530,
+    // "block" | "underline" | "bar".
+    "editorCursorStyle": "bar"
   },
 
   "fileManager": {
@@ -120,6 +130,17 @@
     // "top" | "high" | "center".
     "commandPalettePosition": "top",
     "commandPaletteHistorySize": 5,
-    "commandPaletteCloseOnOverlayClick": true
+    "commandPaletteCloseOnOverlayClick": true,
+    // Block the first quit attempt while a terminal/SSH shell is running.
+    "confirmQuitWithActiveSessions": true
+  },
+
+  "connections": {
+    // Seconds to wait for the initial TCP+SSH handshake before giving up.
+    "sshConnectTimeoutSecs": 20,
+    // Fallback keep-alive ping interval for hosts that don't set their own.
+    "sshKeepaliveIntervalSecs": 25,
+    // Fallback missed-ping tolerance for hosts that don't set their own.
+    "sshKeepaliveMaxFailures": 3
   },
 }

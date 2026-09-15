@@ -385,6 +385,9 @@ fn workspace_from(p: &Preferences) -> WorkspaceContent {
         command_palette_position: Some(p.command_palette_position.clone()),
         command_palette_history_size: Some(p.command_palette_history_size),
         command_palette_close_on_overlay_click: Some(p.command_palette_close_on_overlay_click),
+        // No v1 `Preferences` equivalent — inherits the shipped default.
+        confirm_quit_with_active_sessions: WorkspaceContent::defaults()
+            .confirm_quit_with_active_sessions,
     }
 }
 
@@ -410,6 +413,9 @@ fn terminal_from(p: &Preferences) -> TerminalContent {
         terminal_bell: Some(p.terminal_bell),
         confirm_close_terminal_tab: Some(p.confirm_close_terminal_tab),
         terminal_opacity: Some(p.terminal_opacity),
+        // No v1 `Preferences` equivalent — inherits the shipped default.
+        terminal_environment_variables: TerminalContent::defaults().terminal_environment_variables,
+        terminal_shell_args: TerminalContent::defaults().terminal_shell_args,
     }
 }
 
@@ -460,6 +466,11 @@ fn editor_from(p: &Preferences, e: &EditorPrefs) -> EditorContent {
         vim_hlsearch: Some(e.hlsearch),
         vim_incsearch: Some(e.incsearch),
         vim_smartcase: Some(e.smartcase),
+        // No v1 `Preferences` equivalent — inherits the shipped default.
+        editor_highlight_current_line: EditorContent::defaults().editor_highlight_current_line,
+        editor_cursor_blink: EditorContent::defaults().editor_cursor_blink,
+        editor_cursor_blink_interval_ms: EditorContent::defaults().editor_cursor_blink_interval_ms,
+        editor_cursor_style: EditorContent::defaults().editor_cursor_style,
     }
 }
 

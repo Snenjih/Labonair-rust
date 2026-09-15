@@ -105,7 +105,7 @@ fn render_host_row(
     row: &HostRowData,
     p: &Palette,
     view: &Entity<HostManagerView>,
-    cx: &mut App,
+    _cx: &mut App,
 ) -> gpui::AnyElement {
     let id = row.id.clone();
     let (id_click, id_right, id_drop) = (id.clone(), id.clone(), id.clone());

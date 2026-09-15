@@ -294,6 +294,8 @@ pub async fn ssh_connect(
     secrets: &labonair_secrets::SecretsState,
     events: EventBus,
     connect_timeout_secs: Option<u64>,
+    default_keepalive_interval_secs: Option<u64>,
+    default_keepalive_max_failures: Option<u32>,
 ) -> Result<(), LabonairError> {
     // Step 1: Fetch host from SQLite (fast, sync — do before spawn_blocking)
     log_step!(events, session_id, "Reading host configuration…");
@@ -402,6 +404,12 @@ pub async fn ssh_connect(
         }
         None => None,
     };
+
+    // A host record's own keep-alive fields win; a global Settings default
+    // (`ConnectionsSettings`) only fills in what the host record left unset.
+    let keep_alive_interval =
+        keep_alive_interval.or(default_keepalive_interval_secs.map(|v| v as i64));
+    let keep_alive_tries = keep_alive_tries.or(default_keepalive_max_failures.map(|v| v as i64));
 
     let state_inner = state.clone();
     let trust_inner = trust_state.clone();
@@ -1630,6 +1638,8 @@ mod tests {
             &app.secrets,
             app.events.clone(),
             Some(1),
+            None,
+            None,
         )
         .await;
         assert!(

@@ -184,6 +184,7 @@ fn groups_for(area_key: &str) -> &'static [Group] {
         "appearance" => APPEARANCE_GROUPS,
         "file_manager" => FILE_MANAGER_GROUPS,
         "workspace" => WORKSPACE_GROUPS,
+        "connections" => CONNECTIONS_GROUPS,
         _ => &[],
     }
 }
@@ -273,6 +274,10 @@ const TERMINAL_ADVANCED: &[Group] = &[
         ],
     ),
     ("Tabs", &["confirmCloseTerminalTab"]),
+    (
+        "Environment",
+        &["terminalEnvironmentVariables", "terminalShellArgs"],
+    ),
 ];
 
 const EDITOR_MAIN: &[Group] = &[
@@ -290,9 +295,24 @@ const EDITOR_MAIN: &[Group] = &[
     ("Font", &["editorFontFamily", "editorFontSize"]),
     ("Behaviour", &["editorTabSize"]),
     ("Indentation", &["editorIndentWithTabs"]),
+    (
+        "Cursor",
+        &[
+            "editorCursorStyle",
+            "editorCursorBlink",
+            "editorCursorBlinkIntervalMs",
+        ],
+    ),
 ];
 
-const EDITOR_DISPLAY: &[Group] = &[("Display", &["editorLineNumbers", "editorWordWrap"])];
+const EDITOR_DISPLAY: &[Group] = &[(
+    "Display",
+    &[
+        "editorLineNumbers",
+        "editorWordWrap",
+        "editorHighlightCurrentLine",
+    ],
+)];
 
 const FILE_MANAGER_GROUPS: &[Group] = &[
     ("Browsing", &["explorerShowHiddenByDefault"]),
@@ -332,7 +352,17 @@ const WORKSPACE_GROUPS: &[Group] = &[
         ],
     ),
     ("Source Control", &["gitStatusPollIntervalMs"]),
+    ("Quit", &["confirmQuitWithActiveSessions"]),
 ];
+
+const CONNECTIONS_GROUPS: &[Group] = &[(
+    "SSH defaults",
+    &[
+        "sshConnectTimeoutSecs",
+        "sshKeepaliveIntervalSecs",
+        "sshKeepaliveMaxFailures",
+    ],
+)];
 
 #[cfg(test)]
 mod tests {

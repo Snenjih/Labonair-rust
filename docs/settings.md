@@ -56,6 +56,13 @@ The initial categories are intentionally small and currently consist of:
 - Editor
 - Workspace
 - File Manager
+- Connections
+
+`Connections` holds global SSH connection-behaviour defaults (handshake
+timeout, keep-alive interval, keep-alive failure tolerance) — the fallback a
+host record falls back to when it doesn't set its own value. It does not
+manage hosts, credentials, or the connection list; that remains the Hosts
+module's surface.
 
 Update policy is a General field and is grouped under the General page's
 Updates section; it is not a separate management category.

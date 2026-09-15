@@ -6,6 +6,25 @@
 
 use serde::{Deserialize, Serialize};
 
+/// Editor caret shape (independent of the terminal's `CursorStyle` — the two
+/// areas stay decoupled per-module).
+#[derive(
+    Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, schemars::JsonSchema,
+)]
+#[serde(rename_all = "lowercase")]
+pub enum EditorCursorStyle {
+    Block,
+    Underline,
+    #[default]
+    Bar,
+}
+
+impl crate::MergeFrom for EditorCursorStyle {
+    fn merge_from(&mut self, other: &Self) {
+        *self = *other;
+    }
+}
+
 #[derive(
     Clone, Debug, Default, PartialEq, Serialize, Deserialize, schemars::JsonSchema, crate::MergeFrom,
 )]
@@ -28,6 +47,14 @@ pub struct EditorContent {
     pub vim_incsearch: Option<bool>,
     /// Vim `smartcase`.
     pub vim_smartcase: Option<bool>,
+    /// Tint the line the caret is on.
+    pub editor_highlight_current_line: Option<bool>,
+    /// Blink the caret while the editor is focused.
+    pub editor_cursor_blink: Option<bool>,
+    /// Caret blink half-period, in milliseconds.
+    pub editor_cursor_blink_interval_ms: Option<u32>,
+    /// Caret shape.
+    pub editor_cursor_style: Option<EditorCursorStyle>,
 }
 
 impl EditorContent {
@@ -46,6 +73,10 @@ impl EditorContent {
             vim_hlsearch: Some(true),
             vim_incsearch: Some(true),
             vim_smartcase: Some(true),
+            editor_highlight_current_line: Some(true),
+            editor_cursor_blink: Some(true),
+            editor_cursor_blink_interval_ms: Some(530),
+            editor_cursor_style: Some(EditorCursorStyle::Bar),
         }
     }
 }

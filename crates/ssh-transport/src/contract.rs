@@ -327,6 +327,8 @@ impl SshConnectionService for SshConnectionServiceAdapter {
                 &secrets,
                 event_bus,
                 request.connect_timeout_secs,
+                request.keepalive_interval_secs,
+                request.keepalive_max_failures,
             )
             .await
         })

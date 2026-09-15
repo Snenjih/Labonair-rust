@@ -107,6 +107,13 @@ pub struct SshConnectRequest {
     pub initial_rows: Option<u32>,
     pub blocks: bool,
     pub connect_timeout_secs: Option<u64>,
+    /// Fallback keep-alive ping interval, in seconds, applied when the host
+    /// record doesn't set its own (`None` = use the transport's built-in
+    /// default).
+    pub keepalive_interval_secs: Option<u64>,
+    /// Fallback missed-ping tolerance applied when the host record doesn't
+    /// set its own (`None` = use the transport's built-in default).
+    pub keepalive_max_failures: Option<u32>,
 }
 
 pub trait SshConnectionService: Send + Sync {

@@ -39,7 +39,7 @@ use labonair_panel_explorer::ExplorerView;
 use labonair_panel_git_graph::GitGraphView;
 use labonair_panel_scm::{GitPanelView, ScmEvent};
 use labonair_panel_snippets::SnippetsView;
-use labonair_settings::{GeneralSettings, Settings as _};
+use labonair_settings::{GeneralSettings, Settings as _, WorkspaceSettings};
 use labonair_settings_ui::set_settings_deps;
 use labonair_workspace::agent_access::AgentAccessStore;
 use labonair_workspace::live_bridge::{LiveSnapshot, WorkspaceLiveBridge};
@@ -739,9 +739,33 @@ pub(crate) fn bootstrap(
 
     // Persist the final window geometry on close (the throttled per-render save
     // covers force-quit within the last second).
+    let quit_confirmed_at: Rc<std::cell::Cell<Option<std::time::Instant>>> =
+        Rc::new(std::cell::Cell::new(None));
     window.on_window_should_close(cx, {
         let workspace = workspace.clone();
         move |window, cx| {
+            let confirm_quit = WorkspaceSettings::try_get(cx)
+                .map(|s| s.confirm_quit_with_active_sessions())
+                .unwrap_or(true);
+            if confirm_quit && workspace.read(cx).has_running_shells(cx) {
+                let now = std::time::Instant::now();
+                let recently_confirmed = quit_confirmed_at
+                    .get()
+                    .is_some_and(|t| now.duration_since(t) < std::time::Duration::from_secs(3));
+                if !recently_confirmed {
+                    quit_confirmed_at.set(Some(now));
+                    notification_center(cx).update(cx, |center, cx| {
+                        center.push(
+                            Notification::warning(
+                                "Active sessions running",
+                                "A terminal or SSH shell is still running. Quit again within 3 seconds to close anyway.",
+                            ),
+                            cx,
+                        );
+                    });
+                    return false;
+                }
+            }
             if let WindowBounds::Windowed(bounds) = window.window_bounds() {
                 window_state::save(bounds);
             }

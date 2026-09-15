@@ -10,7 +10,8 @@
 
 use labonair_settings_content::{
     appearance::AppearanceContent,
-    editor::EditorContent,
+    connections::ConnectionsContent,
+    editor::{EditorContent, EditorCursorStyle},
     file_manager::{default_sftp_columns, FileManagerContent, SftpColumn},
     general::{GeneralContent, StartupTab, ThemePref},
     terminal::{
@@ -289,6 +290,24 @@ impl TerminalSettings {
         let d = self.0.scrollback_retention_days.unwrap_or(0);
         (d > 0).then(|| d as u64 * 86_400)
     }
+
+    /// Extra environment variables applied to every new shell.
+    pub fn environment_variables(&self) -> Vec<(String, String)> {
+        self.0
+            .terminal_environment_variables
+            .as_deref()
+            .map(labonair_settings_content::terminal::parse_environment_variables)
+            .unwrap_or_default()
+    }
+
+    /// Extra shell arguments appended after [`Self::shell`].
+    pub fn shell_args(&self) -> Vec<String> {
+        self.0
+            .terminal_shell_args
+            .as_deref()
+            .map(labonair_settings_content::terminal::parse_shell_args)
+            .unwrap_or_default()
+    }
 }
 
 /// `editor` area.
@@ -359,6 +378,29 @@ impl EditorSettings {
     pub fn font_size(&self) -> u32 {
         self.0.editor_font_size.unwrap_or(15)
     }
+
+    /// Tint the line the caret is on.
+    pub fn highlight_current_line(&self) -> bool {
+        self.0.editor_highlight_current_line.unwrap_or(true)
+    }
+
+    /// Blink the caret while the editor is focused.
+    pub fn cursor_blink(&self) -> bool {
+        self.0.editor_cursor_blink.unwrap_or(true)
+    }
+
+    /// Caret blink half-period, in milliseconds (clamped to a sane range).
+    pub fn cursor_blink_interval_ms(&self) -> u64 {
+        self.0
+            .editor_cursor_blink_interval_ms
+            .unwrap_or(530)
+            .clamp(100, 5_000) as u64
+    }
+
+    /// Caret shape.
+    pub fn cursor_style(&self) -> EditorCursorStyle {
+        self.0.editor_cursor_style.unwrap_or(EditorCursorStyle::Bar)
+    }
 }
 
 /// `workspace` area (command palette preferences).
@@ -405,6 +447,45 @@ impl WorkspaceSettings {
         self.0
             .command_palette_close_on_overlay_click
             .unwrap_or(true)
+    }
+
+    /// Block the first quit attempt while a terminal/SSH shell is running.
+    pub fn confirm_quit_with_active_sessions(&self) -> bool {
+        self.0.confirm_quit_with_active_sessions.unwrap_or(true)
+    }
+}
+
+/// `connections` area — global SSH connection-behaviour defaults.
+#[derive(Clone, Debug, PartialEq, RegisterSetting)]
+pub struct ConnectionsSettings(ConnectionsContent);
+
+impl Settings for ConnectionsSettings {
+    fn from_settings(content: &SettingsContent) -> Self {
+        let mut merged = ConnectionsContent::defaults();
+        merged.merge_from(&content.connections);
+        Self(merged)
+    }
+}
+
+impl ConnectionsSettings {
+    pub fn content(&self) -> &ConnectionsContent {
+        &self.0
+    }
+
+    /// Seconds to wait for the initial TCP+SSH handshake before giving up.
+    pub fn connect_timeout_secs(&self) -> u64 {
+        self.0.ssh_connect_timeout_secs.unwrap_or(20)
+    }
+
+    /// Fallback keep-alive ping interval, in seconds, for hosts that don't
+    /// set their own.
+    pub fn keepalive_interval_secs(&self) -> u64 {
+        self.0.ssh_keepalive_interval_secs.unwrap_or(25)
+    }
+
+    /// Fallback missed-ping tolerance for hosts that don't set their own.
+    pub fn keepalive_max_failures(&self) -> u32 {
+        self.0.ssh_keepalive_max_failures.unwrap_or(3)
     }
 }
 
