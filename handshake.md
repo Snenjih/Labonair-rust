@@ -5,6 +5,20 @@ They may mention API names that were valid at the time of the recorded
 change; the current API and task state are defined by the latest header and
 the normative documents under `docs/`.
 
+## Current Session: 2026-09-25 (Titlebar Spaces trigger hover styling)
+
+User-directed UI polish: the Titlebar Spaces trigger no longer renders its
+muted surface in the resting state. It remains transparent like the supplied
+reference and keeps the existing token-backed border hover surface; click and
+popover behavior are unchanged.
+
+Verification: `cargo check -p labonair-workspace --all-targets` and
+`cargo test -p labonair-workspace --lib` pass (159 tests). `git diff --check`
+passes. The native visual capture could not be completed: `cargo run -p
+labonair` started the Rust binary, but the PID-scoped screenshot helper could
+not find a layer-0 Labonair window, and the available CUA surface exposed no
+native-app controls. The visual acceptance remains open for a manual pass.
+
 ## Current Session: 2026-09-11 (Hosts surface: OS window → workspace tab)
 
 User-directed product change (not an R-series queue task). The Host Manager

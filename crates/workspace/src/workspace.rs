@@ -5214,7 +5214,6 @@ impl Workspace {
                     .h(px(24.0))
                     .px_1p5()
                     .rounded_md()
-                    .bg(c.muted_bg)
                     .cursor_pointer()
                     .hover(|s| s.bg(border))
                     .child(IconName::Box.svg(muted).size(px(13.0)))
