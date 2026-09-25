@@ -1234,7 +1234,8 @@ impl Render for SettingsView {
         // `body` is the content-area scroll container itself (see
         // `render_generated_body`) — it owns `track_scroll` so that
         // `ScrollHandle::scroll_to_item` can address each section row
-        // directly. This wrapper only centres it and caps its width.
+        // directly. The scroll area fills the available content width so the
+        // field rows continue to adapt when the window is resized.
         let content = div().flex_1().min_h_0().flex().child(sidebar).child(
             div()
                 .flex_1()
@@ -1242,7 +1243,6 @@ impl Render for SettingsView {
                 .min_h_0()
                 .flex()
                 .flex_col()
-                .items_start()
                 .child(body),
         );
 
