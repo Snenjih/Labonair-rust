@@ -9,10 +9,34 @@ can be judged against them.
 
 > Scope note: per the task warning, this pass is **measure-first**. The
 > GPUI-native architecture (no WebView, no IPC, no JSON round-trips) already
-> removes the structural overhead that made the Tauri/React build slow, and a
-> static review found the known hot paths already guarded (see the inventory
-> below). This document is the yard-stick; it does not add speculative
-> micro-optimisation.
+> removes the structural overhead that made the Tauri/React build slow. This
+> document is the yard-stick for the native hot-path guards and does not add
+> speculative micro-optimisation.
+
+## 0. Hot-path changes implemented in the native port
+
+The current performance pass removed the following foreground work without
+changing the user-facing contracts:
+
+- Terminal PTY notifications use a bounded queue and coalesced wakeups. Views
+  wait for session notifications instead of polling every 16 ms. Agent output
+  is copied only while an agent subscriber is present.
+- Terminal search marks its scrollback index dirty while output is arriving.
+  Navigation refreshes immediately; render-time highlight refresh is rate
+  limited to avoid rescanning scrollback for every PTY chunk.
+- Settings UI writes are committed to the in-memory store immediately and
+  serialized by one FIFO writer thread. User/project watcher parsing also runs
+  on the background executor; only applying an already-parsed result reaches
+  the GPUI thread.
+- Editor display layouts and document symbols are cached by buffer revision and
+  relevant configuration. Repaints copy only the visible display rows.
+- Periodic session snapshot JSON, scrollback compression, scrollback file I/O,
+  and window-geometry writes run off the GPUI thread. The explicit quit path
+  remains synchronous so the final session state is not lost during shutdown.
+
+These are source-level guarantees. No release-build frame-time or RSS number
+is claimed until the graphical measurement procedure below has been run on a
+macOS host.
 
 ## 1. Baseline measurement method
 
@@ -47,8 +71,9 @@ Any Rust number materially worse than that is a regression to investigate.
 - Idle RSS with one tab: **< 150 MB**.
 - Terminal output: no visible hitching at 200k lines; scrollback capped
   (`terminalScrollback` pref, default from `preferences.rs`).
-- 5k-row lists scroll at display refresh rate (Git-Graph is `uniform_list`
-  virtualised; Explorer/SFTP are page-capped — see inventory).
+- 5k-row lists scroll at display refresh rate (Git-Graph and SFTP row rendering
+  are `uniform_list` virtualised; directory enumeration remains a separate
+  measurement).
 - Git status: exactly one poll per interval (2 s local, ×N remote), skipped
   when there is no repo root.
 
@@ -60,8 +85,9 @@ Any Rust number materially worse than that is a regression to investigate.
       after it finishes (buffer is bounded, not retained unbounded).
 - [ ] Open/close ~20 terminal + editor tabs in a loop — RSS returns close to
       baseline (sessions/among `panes` map are dropped on close).
-- [ ] Explorer + SFTP on a large directory — scroll is smooth, first page
-      appears immediately (500-entry page cap + lazy paging).
+- [ ] Explorer + SFTP on a large directory — scroll is smooth and the
+      virtualised row surface stays bounded; record directory-load latency
+      separately from first paint.
 - [ ] Git-Graph on a large repo — only visible rows render; scroll is smooth.
 - [ ] Git panel: with `RUST_LOG=labonair=debug`, confirm the poll cadence and
       that switching away from a repo stops useful work.
@@ -79,19 +105,24 @@ Any Rust number materially worse than that is a regression to investigate.
 | Startup | backend workers `spawn_workers()` + event logger are `tokio::spawn`; the window opens without waiting on them. SQLite open is the only sync step and is cheap. | `crates/app/src/main.rs` |
 | TreeSitter grammars | behind the `build-grammars` feature / loaded lazily, not at boot. | editor crate |
 | Fonts | bundled assets registered once at `init_fonts`. | `crates/theme/src/fonts.rs` |
-| Terminal render | alacritty computes the renderable diff; GPUI retains the element tree and only repaints on `cx.notify()` after PTY output. | `crates/workspace/src/views/terminal.rs`, `crates/terminal/` |
+| Terminal render | The PTY reader feeds the emulator on its own thread; the event-driven view drains bounded/coalesced notifications and repaints on output instead of maintaining a 16 ms timer. | `crates/workspace/src/views/terminal.rs`, `crates/terminal/` |
+| Terminal agent tap | PTY bytes are copied into the broadcast tap only when at least one agent subscriber exists. | `crates/terminal/src/session.rs` |
+| Terminal search | Full scrollback matching is deferred and render-time refresh is rate limited while output is active. | `crates/terminal/src/engine.rs` |
+| Settings persistence | Typed changes update memory immediately; surgical JSONC writes are serialized on one writer thread and flushed at shutdown. | `crates/settings/src/store.rs`, `crates/settings-ui/src/view.rs` |
+| Settings watchers | File reads, JSONC parsing, schema validation, and project filtering run in the background; GPUI only applies the loaded layer. | `crates/settings/src/watch.rs`, `crates/settings/src/store.rs` |
+| Editor layout/symbols | Display coordinates and document symbols are reused for a buffer revision; paints clone only visible rows. | `crates/editor/src/display.rs`, `crates/workspace/src/views/editor.rs` |
 | Explorer | `generation` counter discards stale async dir reads; bounded rendering and lazy expansion. | `crates/panel-explorer/src/panel_explorer.rs` |
-| SFTP list | bounded scrolling and async remote listing. | `crates/workspace/src/views/sftp.rs` |
+| SFTP list | `uniform_list` bounds row-element construction and remote listing is asynchronous; directory enumeration itself is measured separately. | `crates/workspace/src/views/sftp.rs` |
 | Git-Graph | row list virtualised with `uniform_list` — only visible commit rows build elements. | `crates/panel-git-graph/src/panel_git_graph.rs` |
 | Git status poll | refresh guards prevent overlap and stale results. | `crates/panel-scm/src/panel_scm.rs` |
-| Session sync | workspace metadata is pushed on change, not polled. | `crates/workspace/src/workspace.rs` |
+| Session sync | Workspace metadata is batched and shell metadata is read under one session access; periodic session serialization and scrollback persistence are background work. | `crates/workspace/src/workspace.rs` |
 | AI streaming | frontend AI is currently paused; backend streaming remains available for the future rebuild. | `crates/ai/` |
 
 ### Follow-ups deliberately deferred (need a profiler + a real workload)
 
-- Windowing `uniform_list` for Explorer/SFTP (currently page-capped, which
-  keeps the element count bounded but not constant). Noted in
-  `crates/panel-explorer/src/panel_explorer.rs` module docs.
+- Streaming/paging directory enumeration for Explorer/SFTP. The SFTP row
+  surface is virtualized, but the current local and remote loaders still
+  collect and sort a directory before the first list is shown.
 - Pausing the Git status poll while the panel is off-screen or the window is
   unfocused — would need a visibility signal from `AppShell`. Low payoff at a
   2 s interval with the existing guards; revisit if profiling shows it.

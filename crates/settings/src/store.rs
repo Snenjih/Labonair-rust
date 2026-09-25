@@ -8,8 +8,11 @@
 //! `labonair-settings-json`.
 
 use std::any::{Any, TypeId};
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::{sync_channel, Receiver, SyncSender};
+use std::sync::{Arc, Condvar, Mutex, OnceLock};
 
 use gpui::{App, Global};
 use serde_json::Value;
@@ -59,6 +62,292 @@ pub enum SettingsLayer {
 
 /// One computed-value builder, monomorphized per registered `Settings` type.
 type Builder = Box<dyn Fn(&SettingsContent, &mut HashMap<TypeId, Box<dyn Any>>)>;
+
+/// A user-layer update whose in-memory commit has already happened and whose
+/// text-preserving file write can run off the GPUI thread.
+pub struct UserSettingsWrite {
+    path: PathBuf,
+    old_content: SettingsContent,
+    new_content: SettingsContent,
+    backup: bool,
+}
+
+impl UserSettingsWrite {
+    fn persist(self) -> Result<(), String> {
+        persist_user_settings_surgical_to_path(
+            &self.path,
+            &self.old_content,
+            &self.new_content,
+            self.backup,
+        )
+    }
+}
+
+struct PendingUserWrite {
+    request: UserSettingsWrite,
+    waiters: Vec<SyncSender<Result<(), String>>>,
+}
+
+struct UserWriteQueueState {
+    pending: VecDeque<PendingUserWrite>,
+    active: bool,
+    flush_waiters: Vec<SyncSender<()>>,
+}
+
+struct UserWriteQueue {
+    state: Mutex<UserWriteQueueState>,
+    wake: Condvar,
+    available: AtomicBool,
+}
+
+impl UserWriteQueue {
+    fn new() -> Arc<Self> {
+        let queue = Arc::new(Self {
+            state: Mutex::new(UserWriteQueueState {
+                pending: VecDeque::new(),
+                active: false,
+                flush_waiters: Vec::new(),
+            }),
+            wake: Condvar::new(),
+            available: AtomicBool::new(false),
+        });
+        let worker_queue = Arc::clone(&queue);
+        match std::thread::Builder::new()
+            .name("labonair-settings-writer".to_string())
+            .spawn(move || worker_queue.run())
+        {
+            Ok(_) => queue.available.store(true, Ordering::Release),
+            Err(error) => tracing::error!(%error, "failed to start settings writer"),
+        }
+        queue
+    }
+
+    fn run(self: Arc<Self>) {
+        loop {
+            let Some(pending) = self.take_pending() else {
+                return;
+            };
+            let result = pending.request.persist();
+            for waiter in pending.waiters {
+                let _ = waiter.send(result.clone());
+            }
+            let mut state = match self.state.lock() {
+                Ok(state) => state,
+                Err(_) => return,
+            };
+            state.active = false;
+            if state.pending.is_empty() {
+                for waiter in state.flush_waiters.drain(..) {
+                    let _ = waiter.send(());
+                }
+            }
+            self.wake.notify_all();
+        }
+    }
+
+    fn take_pending(&self) -> Option<PendingUserWrite> {
+        let mut state = self.state.lock().ok()?;
+        while state.pending.is_empty() {
+            if !state.flush_waiters.is_empty() {
+                for waiter in state.flush_waiters.drain(..) {
+                    let _ = waiter.send(());
+                }
+            }
+            state = self.wake.wait(state).ok()?;
+        }
+        state.active = true;
+        state.pending.pop_front()
+    }
+
+    fn enqueue(&self, request: UserSettingsWrite) -> Result<Receiver<Result<(), String>>, String> {
+        if !self.available.load(Ordering::Acquire) {
+            return Err("settings writer is unavailable".to_string());
+        }
+        let (waiter, result) = sync_channel(1);
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| "settings writer state is poisoned".to_string())?;
+        if let Some(last) = state.pending.back_mut() {
+            if last.request.path == request.path {
+                last.request.new_content = request.new_content;
+                last.request.backup |= request.backup;
+                last.waiters.push(waiter);
+            } else {
+                state.pending.push_back(PendingUserWrite {
+                    request,
+                    waiters: vec![waiter],
+                });
+            }
+        } else {
+            state.pending.push_back(PendingUserWrite {
+                request,
+                waiters: vec![waiter],
+            });
+        }
+        self.wake.notify_one();
+        Ok(result)
+    }
+
+    fn flush(&self) {
+        let (waiter, result) = sync_channel(1);
+        let Ok(mut state) = self.state.lock() else {
+            return;
+        };
+        if !state.active && state.pending.is_empty() {
+            return;
+        }
+        state.flush_waiters.push(waiter);
+        self.wake.notify_one();
+        drop(state);
+        let _ = result.recv();
+    }
+}
+
+static USER_WRITE_QUEUE: OnceLock<Arc<UserWriteQueue>> = OnceLock::new();
+
+fn user_write_queue() -> &'static Arc<UserWriteQueue> {
+    USER_WRITE_QUEUE.get_or_init(UserWriteQueue::new)
+}
+
+/// Queue one user-settings file update for the dedicated writer thread. The
+/// returned receiver is useful to UI callers that want to surface a write
+/// error without blocking the foreground thread.
+pub fn enqueue_user_settings_write(
+    request: UserSettingsWrite,
+) -> Result<Receiver<Result<(), String>>, String> {
+    user_write_queue().enqueue(request)
+}
+
+/// Wait until all queued settings writes have reached the filesystem.
+/// Shutdown code uses this once, after the normal UI work has stopped.
+pub fn flush_user_settings_writes() {
+    user_write_queue().flush();
+}
+
+pub(crate) struct UserLayerLoad {
+    content: Option<SettingsContent>,
+    parse_errors: Vec<FieldError>,
+    json_error: Option<String>,
+    schema_errors: Vec<SettingsValidationError>,
+    schema_warnings: Vec<SettingsValidationError>,
+}
+
+pub(crate) fn load_user_layer(path: &Path) -> UserLayerLoad {
+    let Ok(raw) = std::fs::read_to_string(path) else {
+        return UserLayerLoad {
+            content: Some(SettingsContent::default()),
+            parse_errors: Vec::new(),
+            json_error: None,
+            schema_errors: Vec::new(),
+            schema_warnings: Vec::new(),
+        };
+    };
+
+    let parsed_value = match jsonc_parser::parse_to_serde_value(&raw, &Default::default()) {
+        Ok(value) => value,
+        Err(error) => {
+            let line = raw[..error.range.start.min(raw.len())]
+                .matches('\n')
+                .count()
+                + 1;
+            let message = format!("Line {line}: {}", error.message);
+            tracing::warn!(
+                path = %path.display(),
+                message = %message,
+                "config.json is not valid JSON/JSONC — keeping the last good settings",
+            );
+            return UserLayerLoad {
+                content: None,
+                parse_errors: Vec::new(),
+                json_error: Some(message),
+                schema_errors: Vec::new(),
+                schema_warnings: Vec::new(),
+            };
+        }
+    };
+
+    let (content, parse_errors) = labonair_settings_content::parse(&raw);
+    for error in &parse_errors {
+        tracing::warn!(
+            area = error.area,
+            message = %error.message,
+            "settings area failed to parse, using its default"
+        );
+    }
+    let instance = parsed_value.unwrap_or_else(|| Value::Object(Default::default()));
+    let (schema_errors, schema_warnings) = schema::validate(&instance, Some(&raw));
+    for error in &schema_errors {
+        tracing::warn!(
+            json_path = %error.json_path,
+            message = %error.message,
+            "settings value failed schema validation, field uses its default"
+        );
+    }
+    for warning in &schema_warnings {
+        tracing::warn!(
+            json_path = %warning.json_path,
+            "unknown settings key (ignored)"
+        );
+    }
+    UserLayerLoad {
+        content: Some(content),
+        parse_errors,
+        json_error: None,
+        schema_errors,
+        schema_warnings,
+    }
+}
+
+pub(crate) struct ProjectLayerLoad {
+    content: Option<SettingsContent>,
+    rejected: Vec<String>,
+    schema_errors: Vec<SettingsValidationError>,
+    schema_warnings: Vec<SettingsValidationError>,
+}
+
+pub(crate) fn load_project_layer(path: &Path) -> ProjectLayerLoad {
+    let Ok(raw) = std::fs::read_to_string(path) else {
+        return ProjectLayerLoad {
+            content: Some(SettingsContent::default()),
+            rejected: Vec::new(),
+            schema_errors: Vec::new(),
+            schema_warnings: Vec::new(),
+        };
+    };
+    let Ok(parsed_value) = jsonc_parser::parse_to_serde_value(&raw, &Default::default()) else {
+        tracing::warn!(
+            path = %path.display(),
+            "project .labonair/settings.json is not valid JSON/JSONC — keeping the last good settings",
+        );
+        return ProjectLayerLoad {
+            content: None,
+            rejected: Vec::new(),
+            schema_errors: Vec::new(),
+            schema_warnings: Vec::new(),
+        };
+    };
+
+    let instance = parsed_value.unwrap_or_else(|| Value::Object(Default::default()));
+    let (content, rejected) = project::filter_value_and_parse(instance.clone());
+    for key in &rejected {
+        tracing::debug!(key = %key, path = %path.display(), "project settings key was filtered");
+    }
+    let (schema_errors, schema_warnings) = schema::validate(&instance, Some(&raw));
+    for error in &schema_errors {
+        tracing::warn!(
+            json_path = %error.json_path,
+            message = %error.message,
+            "project settings value failed schema validation, field uses its default"
+        );
+    }
+    ProjectLayerLoad {
+        content: Some(content),
+        rejected,
+        schema_errors,
+        schema_warnings,
+    }
+}
 
 /// The layered settings store. Lives as a GPUI [`Global`]
 /// (`cx.global::<SettingsStore>()`); mutation goes through `cx.global_mut`,
@@ -282,55 +571,18 @@ impl SettingsStore {
     /// other area still applies (`labonair_settings_content::parse`'s
     /// existing per-area granularity).
     pub fn reload_user_layer(&mut self) {
-        let Ok(raw) = std::fs::read_to_string(&self.user_path) else {
-            // No file yet (first run) — an absent file is not a corrupt one;
-            // treat it as an empty User layer.
-            self.user_json_error = None;
-            self.schema_errors.clear();
-            self.schema_warnings.clear();
-            self.raw
-                .insert(SettingsLayer::User, SettingsContent::default());
-            self.recompute();
+        let loaded = load_user_layer(&self.user_path);
+        self.apply_user_layer_load(loaded);
+    }
+
+    pub(crate) fn apply_user_layer_load(&mut self, loaded: UserLayerLoad) {
+        self.user_json_error = loaded.json_error;
+        self.schema_errors = loaded.schema_errors;
+        self.schema_warnings = loaded.schema_warnings;
+        let Some(content) = loaded.content else {
             return;
         };
-
-        let parsed_value = match jsonc_parser::parse_to_serde_value(&raw, &Default::default()) {
-            Ok(v) => v,
-            Err(e) => {
-                let line = raw[..e.range.start.min(raw.len())].matches('\n').count() + 1;
-                let message = format!("Line {line}: {}", e.message);
-                tracing::warn!(
-                    path = %self.user_path.display(),
-                    message = %message,
-                    "config.json is not valid JSON/JSONC — keeping the last good settings",
-                );
-                self.user_json_error = Some(message);
-                self.schema_errors.clear();
-                self.schema_warnings.clear();
-                return;
-            }
-        };
-        self.user_json_error = None;
-
-        let (content, errors) = labonair_settings_content::parse(&raw);
-        if !errors.is_empty() {
-            for e in &errors {
-                tracing::warn!(area = e.area, message = %e.message, "settings area failed to parse, using its default");
-            }
-        }
-        self.parse_errors = errors;
-
-        let instance = parsed_value.unwrap_or_else(|| Value::Object(Default::default()));
-        let (schema_errors, schema_warnings) = schema::validate(&instance, Some(&raw));
-        for e in &schema_errors {
-            tracing::warn!(json_path = %e.json_path, message = %e.message, "settings value failed schema validation, field uses its default");
-        }
-        for w in &schema_warnings {
-            tracing::warn!(json_path = %w.json_path, "unknown settings key (ignored)");
-        }
-        self.schema_errors = schema_errors;
-        self.schema_warnings = schema_warnings;
-
+        self.parse_errors = loaded.parse_errors;
         self.raw.insert(SettingsLayer::User, content);
         self.recompute();
     }
@@ -385,6 +637,44 @@ impl SettingsStore {
         Ok(())
     }
 
+    /// Apply a user-layer update immediately in memory and return the
+    /// text-preserving write as a background-safe request. This is the UI
+    /// variant of [`Self::update_user_settings`]: typed settings are updated
+    /// immediately while file I/O and JSON text editing leave the GPUI thread.
+    pub fn update_user_settings_deferred(
+        &mut self,
+        f: impl FnOnce(&mut SettingsContent),
+    ) -> Result<Option<UserSettingsWrite>, String> {
+        if let Some(err) = &self.user_json_error {
+            return Err(format!(
+                "config.json has a syntax error and can't be edited from the GUI \
+                 until it's fixed: {err}"
+            ));
+        }
+
+        let old_content = self
+            .raw
+            .get(&SettingsLayer::User)
+            .cloned()
+            .unwrap_or_default();
+        let mut new_content = old_content.clone();
+        f(&mut new_content);
+        if new_content == old_content {
+            return Ok(None);
+        }
+
+        let backup = !self.bak_written_this_session;
+        self.bak_written_this_session = true;
+        self.raw.insert(SettingsLayer::User, new_content.clone());
+        self.recompute();
+        Ok(Some(UserSettingsWrite {
+            path: self.user_path.clone(),
+            old_content,
+            new_content,
+            backup,
+        }))
+    }
+
     /// Convenience wrapper: mutate a clone of the current `User` layer, then
     /// commit + persist it in one step. Alias for
     /// [`Self::update_user_settings`] (kept so `crates/settings-ui`'s
@@ -404,41 +694,60 @@ impl SettingsStore {
         old_content: &SettingsContent,
         new_content: &SettingsContent,
     ) -> Result<(), String> {
-        let mut text = std::fs::read_to_string(&self.user_path).unwrap_or_default();
-        if text.trim().is_empty() {
-            text = "{}\n".to_string();
-        }
-
-        let old_value = serde_json::to_value(old_content).map_err(|e| e.to_string())?;
-        let new_value = serde_json::to_value(new_content).map_err(|e| e.to_string())?;
-        let indent = labonair_settings_json::infer_json_indent_size(&text);
-        let mut edits = Vec::new();
-        labonair_settings_json::update_value_in_json_text(
-            &mut text,
-            &mut Vec::new(),
-            indent,
-            &old_value,
-            &new_value,
-            &mut edits,
+        let backup = !self.bak_written_this_session && self.user_path.exists();
+        let result = persist_user_settings_surgical_to_path(
+            &self.user_path,
+            old_content,
+            new_content,
+            backup,
         );
-
-        let dir = self
-            .user_path
-            .parent()
-            .map(Path::to_path_buf)
-            .unwrap_or_else(|| PathBuf::from("."));
-        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-
-        if !self.bak_written_this_session && self.user_path.exists() {
-            let _ = std::fs::copy(&self.user_path, self.user_path.with_extension("json.bak"));
+        if result.is_ok() && backup {
             self.bak_written_this_session = true;
         }
+        result
+    }
+}
 
-        let tmp = self.user_path.with_extension("json.tmp");
-        std::fs::write(&tmp, &text).map_err(|e| e.to_string())?;
-        std::fs::rename(&tmp, &self.user_path).map_err(|e| e.to_string())
+fn persist_user_settings_surgical_to_path(
+    user_path: &Path,
+    old_content: &SettingsContent,
+    new_content: &SettingsContent,
+    backup: bool,
+) -> Result<(), String> {
+    let mut text = std::fs::read_to_string(user_path).unwrap_or_default();
+    if text.trim().is_empty() {
+        text = "{}\n".to_string();
     }
 
+    let old_value = serde_json::to_value(old_content).map_err(|e| e.to_string())?;
+    let new_value = serde_json::to_value(new_content).map_err(|e| e.to_string())?;
+    let indent = labonair_settings_json::infer_json_indent_size(&text);
+    let mut edits = Vec::new();
+    labonair_settings_json::update_value_in_json_text(
+        &mut text,
+        &mut Vec::new(),
+        indent,
+        &old_value,
+        &new_value,
+        &mut edits,
+    );
+
+    let dir = user_path
+        .parent()
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| PathBuf::from("."));
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+
+    if backup && user_path.exists() {
+        let _ = std::fs::copy(user_path, user_path.with_extension("json.bak"));
+    }
+
+    let tmp = user_path.with_extension("json.tmp");
+    std::fs::write(&tmp, &text).map_err(|e| e.to_string())?;
+    std::fs::rename(&tmp, user_path).map_err(|e| e.to_string())
+}
+
+impl SettingsStore {
     /// Currently active project root, if any (T19-003).
     pub fn project_root(&self) -> Option<&Path> {
         self.current_project
@@ -518,52 +827,32 @@ impl SettingsStore {
     /// `Project` layer, same guarantee `reload_user_layer` gives the `User`
     /// layer — never crashes, never silently reverts to no overrides.
     pub fn reload_project_layer(&mut self) {
-        let Some((root, id)) = self.current_project.clone() else {
+        let Some(root) = self.current_project.as_ref().map(|(root, _)| root.clone()) else {
             return;
         };
         let path = root.join(project::PROJECT_SETTINGS_RELATIVE_PATH);
+        self.apply_project_layer_load(load_project_layer(&path));
+    }
 
-        let Ok(raw) = std::fs::read_to_string(&path) else {
-            self.raw
-                .insert(SettingsLayer::Project(id), SettingsContent::default());
-            self.project_rejected.clear();
-            self.project_schema_errors.clear();
-            self.project_schema_warnings.clear();
-            self.recompute();
+    pub(crate) fn apply_project_layer_load(&mut self, loaded: ProjectLayerLoad) {
+        let Some((_, id)) = self.current_project.as_ref() else {
             return;
         };
-
-        let parsed_value = match jsonc_parser::parse_to_serde_value(&raw, &Default::default()) {
-            Ok(v) => v,
-            Err(_) => {
-                tracing::warn!(
-                    path = %path.display(),
-                    "project .labonair/settings.json is not valid JSON/JSONC — keeping the last good settings",
-                );
-                return;
-            }
+        let id = *id;
+        let Some(content) = loaded.content else {
+            return;
         };
-
-        let (content, rejected) = project::filter_and_parse(&raw);
-        for key in &rejected {
+        for key in &loaded.rejected {
             if !self.project_rejected.contains(key) {
                 tracing::warn!(
                     key = %key,
-                    path = %path.display(),
                     "project settings: key is not on the project whitelist, ignored",
                 );
             }
         }
-        self.project_rejected = rejected;
-
-        let instance = parsed_value.unwrap_or_else(|| Value::Object(Default::default()));
-        let (errors, warnings) = schema::validate(&instance, Some(&raw));
-        for e in &errors {
-            tracing::warn!(json_path = %e.json_path, message = %e.message, "project settings value failed schema validation, field uses its default");
-        }
-        self.project_schema_errors = errors;
-        self.project_schema_warnings = warnings;
-
+        self.project_rejected = loaded.rejected;
+        self.project_schema_errors = loaded.schema_errors;
+        self.project_schema_warnings = loaded.schema_warnings;
         self.raw.insert(SettingsLayer::Project(id), content);
         self.recompute();
     }
@@ -905,6 +1194,30 @@ mod tests {
         store
             .update_user_settings(|c| c.general.restore_window_state = Some(false))
             .unwrap();
+
+        let mut reloaded = SettingsStore::new(path);
+        reloaded.reload_user_layer();
+        assert!(!reloaded.merged().general.restore_window_state.unwrap());
+    }
+
+    #[test]
+    fn deferred_user_settings_write_commits_in_memory_and_persists_off_thread() {
+        let path = tmp_path();
+        let mut store = SettingsStore::new(path.clone());
+        store.reload_user_layer();
+
+        let request = store
+            .update_user_settings_deferred(|c| c.general.restore_window_state = Some(false))
+            .unwrap()
+            .expect("changed settings should produce a write request");
+        assert!(!store.merged().general.restore_window_state.unwrap());
+
+        let result = enqueue_user_settings_write(request)
+            .unwrap()
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .expect("settings writer should finish");
+        result.unwrap();
+        flush_user_settings_writes();
 
         let mut reloaded = SettingsStore::new(path);
         reloaded.reload_user_layer();

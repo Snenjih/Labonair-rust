@@ -153,7 +153,7 @@ impl AppShell {
     }
 
     /// Save the window geometry at most once per [`SAVE_THROTTLE`].
-    fn maybe_persist_geometry(&mut self, window: &Window) {
+    fn maybe_persist_geometry(&mut self, window: &Window, cx: &App) {
         let WindowBounds::Windowed(bounds) = window.window_bounds() else {
             return;
         };
@@ -165,7 +165,9 @@ impl AppShell {
             }
         };
         if stale {
-            window_state::save(bounds);
+            cx.background_executor()
+                .spawn(async move { window_state::save(bounds) })
+                .detach();
             self.last_saved = Some((bounds, now));
         }
     }
@@ -181,7 +183,7 @@ impl Render for AppShell {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let _span =
             tracing::trace_span!(target: "labonair::perf", "render", view = "shell").entered();
-        self.maybe_persist_geometry(window);
+        self.maybe_persist_geometry(window, cx);
         // Mirror the async-driven updater dialog into the modal layer (it flips
         // its flag outside a user action, so `render` is the one place with a
         // `&mut Window`).

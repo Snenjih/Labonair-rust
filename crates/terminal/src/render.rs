@@ -126,10 +126,10 @@ mod tests {
     use super::*;
     use crate::engine::{TermDimensions, TerminalEmulator};
     use crate::TerminalColors;
-    use std::sync::mpsc::channel;
+    use std::sync::mpsc::sync_channel;
 
     fn emulator(cols: usize, rows: usize) -> TerminalEmulator {
-        let (tx, _rx) = channel();
+        let (tx, _rx) = sync_channel(256);
         let colors = TerminalColors::from_theme(&labonair_theme::Theme::dark());
         TerminalEmulator::new(colors, TermDimensions::new(cols, rows), tx)
     }

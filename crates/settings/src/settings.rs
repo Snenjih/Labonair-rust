@@ -34,8 +34,9 @@ pub use registry::{register_all, RegisteredSetting};
 pub use schema::{description_for_path, json_schema, SettingsValidationError};
 pub use settings_trait::Settings;
 pub use store::{
-    ensure_user_settings_file, settings_schema_path, user_settings_path, SettingsLayer,
-    SettingsStore, WorktreeId,
+    enqueue_user_settings_write, ensure_user_settings_file, flush_user_settings_writes,
+    settings_schema_path, user_settings_path, SettingsLayer, SettingsStore, UserSettingsWrite,
+    WorktreeId,
 };
 pub use watch::{watch_dir, watch_file};
 

@@ -7,15 +7,17 @@
 //! [`mpsc`](std::sync::mpsc) channel — the I/O thread never touches UI state.
 
 use std::io::{Read, Write};
-use std::sync::mpsc::{channel, Receiver, Sender};
+use std::sync::mpsc::{sync_channel, Receiver, SyncSender};
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 
 use alacritty_terminal::grid::Scroll;
 use portable_pty::{native_pty_system, ChildKiller, CommandBuilder, MasterPty, PtySize};
+use tokio::sync::Notify;
 
 use crate::engine::{
-    ModeState, RenderableScreen, SessionMetadata, TermDimensions, TerminalEmulator, TerminalEvent,
+    send_event, ModeState, RenderableScreen, SessionMetadata, TermDimensions, TerminalEmulator,
+    TerminalEvent,
 };
 use crate::TerminalColors;
 
@@ -75,6 +77,7 @@ pub struct TerminalSession {
     shell_pid: Option<u32>,
     reader_thread: Option<JoinHandle<()>>,
     agent_tap: tokio::sync::broadcast::Sender<Vec<u8>>,
+    event_notify: Arc<Notify>,
 }
 
 impl TerminalSession {
@@ -84,6 +87,18 @@ impl TerminalSession {
         colors: TerminalColors,
         dimensions: TermDimensions,
         options: SessionOptions,
+    ) -> Result<Self, String> {
+        Self::spawn_with_notifier(colors, dimensions, options, Arc::new(Notify::new()))
+    }
+
+    /// Spawn a session using a caller-owned event notifier. The registry keeps
+    /// this notifier stable across restarts so a terminal view can wait for
+    /// output without maintaining one timer per live terminal.
+    pub(crate) fn spawn_with_notifier(
+        colors: TerminalColors,
+        dimensions: TermDimensions,
+        options: SessionOptions,
+        event_notify: Arc<Notify>,
     ) -> Result<Self, String> {
         let pty_system = native_pty_system();
         let pair = pty_system
@@ -125,7 +140,8 @@ impl TerminalSession {
             .map_err(|e| format!("pty writer take failed: {e}"))?;
         let writer = Arc::new(Mutex::new(writer));
 
-        let (event_tx, events): (Sender<TerminalEvent>, Receiver<TerminalEvent>) = channel();
+        let (event_tx, events): (SyncSender<TerminalEvent>, Receiver<TerminalEvent>) =
+            sync_channel(256);
         let mut emu_cfg = crate::EmulatorConfig::default();
         if let Some(sb) = options.scrollback {
             emu_cfg.scrollback = sb;
@@ -172,6 +188,7 @@ impl TerminalSession {
 
         let (agent_tap, _) = tokio::sync::broadcast::channel(256);
         let reader_agent_tap = agent_tap.clone();
+        let reader_event_notify = Arc::clone(&event_notify);
         let reader_thread = {
             let emulator = Arc::clone(&emulator);
             let writer = Arc::clone(&writer);
@@ -184,7 +201,13 @@ impl TerminalSession {
                         match reader.read(&mut buf) {
                             Ok(0) => break,
                             Ok(n) => {
-                                let _ = reader_agent_tap.send(buf[..n].to_vec());
+                                // The normal terminal renderer does not need a
+                                // second copy of the PTY bytes. Only allocate
+                                // when an agent/MCP observer is actually
+                                // subscribed.
+                                if reader_agent_tap.receiver_count() > 0 {
+                                    let _ = reader_agent_tap.send(buf[..n].to_vec());
+                                }
                                 let mut guard = match emulator.lock() {
                                     Ok(g) => g,
                                     Err(_) => break,
@@ -193,7 +216,7 @@ impl TerminalSession {
                                 let replies = guard.take_pty_output();
                                 drop(guard);
                                 for ev in extra {
-                                    let _ = event_tx.send(ev);
+                                    send_event(&event_tx, ev);
                                 }
                                 // Service any PtyWrite the emulator queued
                                 // (DA/DSR replies) without waiting on the UI.
@@ -203,11 +226,13 @@ impl TerminalSession {
                                         let _ = w.flush();
                                     }
                                 }
+                                reader_event_notify.notify_one();
                             }
                             Err(_) => break,
                         }
                     }
-                    let _ = event_tx.send(TerminalEvent::Exit);
+                    send_event(&event_tx, TerminalEvent::Exit);
+                    reader_event_notify.notify_one();
                 })
                 .map_err(|e| format!("failed to spawn pty reader thread: {e}"))?
         };
@@ -235,6 +260,7 @@ impl TerminalSession {
             shell_pid,
             reader_thread: Some(reader_thread),
             agent_tap,
+            event_notify,
         })
     }
 
@@ -413,11 +439,9 @@ impl TerminalSession {
 
     /// Take an immutable snapshot of the visible grid for rendering.
     pub fn render(&self) -> Result<RenderableScreen, String> {
-        Ok(self
-            .emulator
-            .lock()
-            .map_err(|_| "emulator poisoned")?
-            .render())
+        let mut guard = self.emulator.lock().map_err(|_| "emulator poisoned")?;
+        guard.refresh_search_if_due();
+        Ok(guard.render())
     }
 
     /// Run `f` with a lock on the emulator (advanced access).
@@ -432,6 +456,11 @@ impl TerminalSession {
     /// Non-blocking drain of pending terminal events.
     pub fn drain_events(&self) -> Vec<TerminalEvent> {
         self.events.try_iter().collect()
+    }
+
+    /// Wait until the session has new output or a lifecycle event.
+    pub async fn wait_for_events(&self) {
+        self.event_notify.notified().await;
     }
 
     /// Block until the next terminal event (used by the headless smoke test).
@@ -511,7 +540,10 @@ impl SessionAccess for TerminalSession {
         self.with_emulator(|e| e.search_set(query, case_sensitive))
     }
     fn search_step(&self, forward: bool) -> Result<(usize, usize), String> {
-        self.with_emulator(|e| e.search_step(forward))
+        self.with_emulator(|e| {
+            e.refresh_search_if_due();
+            e.search_step(forward)
+        })
     }
     fn search_clear(&self) -> Result<(), String> {
         self.with_emulator(|e| e.search_clear())
@@ -548,8 +580,9 @@ pub struct RemoteSession {
 #[derive(Clone)]
 pub struct RemoteFeed {
     emulator: Arc<Mutex<TerminalEmulator>>,
-    events: Sender<TerminalEvent>,
+    events: SyncSender<TerminalEvent>,
     writer: RemoteWriter,
+    event_notify: Arc<Notify>,
 }
 
 impl RemoteFeed {
@@ -564,9 +597,9 @@ impl RemoteFeed {
         let replies = guard.take_pty_output();
         drop(guard);
         for ev in extra {
-            let _ = self.events.send(ev);
+            send_event(&self.events, ev);
         }
-        let _ = self.events.send(TerminalEvent::Wakeup);
+        self.event_notify.notify_one();
         if !replies.is_empty() {
             (self.writer)(replies);
         }
@@ -574,7 +607,8 @@ impl RemoteFeed {
 
     /// Mark the transport as gone — surfaces as a shell-exit in the UI.
     pub fn mark_disconnected(&self) {
-        let _ = self.events.send(TerminalEvent::Exit);
+        send_event(&self.events, TerminalEvent::Exit);
+        self.event_notify.notify_one();
     }
 }
 
@@ -587,7 +621,17 @@ impl RemoteSession {
         writer: RemoteWriter,
         resizer: RemoteResizer,
     ) -> (Self, RemoteFeed) {
-        let (tx, rx): (Sender<TerminalEvent>, Receiver<TerminalEvent>) = channel();
+        Self::new_with_notifier(colors, dimensions, writer, resizer, Arc::new(Notify::new()))
+    }
+
+    pub(crate) fn new_with_notifier(
+        colors: TerminalColors,
+        dimensions: TermDimensions,
+        writer: RemoteWriter,
+        resizer: RemoteResizer,
+        event_notify: Arc<Notify>,
+    ) -> (Self, RemoteFeed) {
+        let (tx, rx): (SyncSender<TerminalEvent>, Receiver<TerminalEvent>) = sync_channel(256);
         let emulator = Arc::new(Mutex::new(TerminalEmulator::new(
             colors,
             dimensions,
@@ -597,6 +641,7 @@ impl RemoteSession {
             emulator: Arc::clone(&emulator),
             events: tx,
             writer: Arc::clone(&writer),
+            event_notify,
         };
         (
             Self {
@@ -649,7 +694,10 @@ impl RemoteSession {
 
 impl SessionAccess for RemoteSession {
     fn render(&self) -> Result<RenderableScreen, String> {
-        self.with_emulator(|e| e.render())
+        self.with_emulator(|e| {
+            e.refresh_search_if_due();
+            e.render()
+        })
     }
     fn cwd(&self) -> Option<String> {
         self.metadata().ok().and_then(|m| m.cwd)
@@ -689,7 +737,10 @@ impl SessionAccess for RemoteSession {
         self.with_emulator(|e| e.search_set(query, case_sensitive))
     }
     fn search_step(&self, forward: bool) -> Result<(usize, usize), String> {
-        self.with_emulator(|e| e.search_step(forward))
+        self.with_emulator(|e| {
+            e.refresh_search_if_dirty();
+            e.search_step(forward)
+        })
     }
     fn search_clear(&self) -> Result<(), String> {
         self.with_emulator(|e| e.search_clear())

@@ -37,18 +37,18 @@ use labonair_editor::{
     editing::{EditorCommand, EditorCommandResult, SplitIntent},
     find,
     lifecycle::{FileCapabilities, FileLifecycleEvent, FileState, ReloadDecision, SaveIntent},
-    next_match_with_wrap, CancellationToken, DisplayConfig, DisplayMap, DisplayRowKind, Document,
-    DocumentVersion, Edit, EditorSessionId, EditorSessionSnapshot, EditorViewSession, FoldRange,
-    GitDecorationProvider, GitDecorationRequest, GitDiscardPreview, GitEditorCommand,
-    GitGutterError, GitGutterSnapshot, GitHunkAction, GitHunkActionKind, GitHunkStatus,
-    HunkActionSink, Language, LanguageId, LanguageServiceEditRequest, LanguageServiceEditResponse,
-    LanguageServiceRequest, LanguageServiceResponse, LanguageServiceResult, LanguageServiceRuntime,
-    LanguageServiceRuntimeSnapshot, LanguageServiceRuntimeSource, LanguageServiceRuntimeStatus,
-    LanguageServiceSnapshot, LanguageServiceState, LocalLanguageServiceRequest, LspPosition,
-    LspRange, Match, Position, ProjectSearchHit, ProjectSearchQuery, ProjectSearchRequest,
-    ProjectSearchResult, ProjectSearchSession, ProjectSearchSnapshot, Revision, SavePolicy,
-    SearchError, SearchQuery, SyntaxHighlighter, TextRange, Viewport, Vim, VimKey, VimMode,
-    VimOptions, WhitespaceMode,
+    next_match_with_wrap, CancellationToken, DisplayConfig, DisplayMap, DisplayRowKind,
+    DisplaySnapshot, Document, DocumentVersion, Edit, EditorSessionId, EditorSessionSnapshot,
+    EditorViewSession, FoldRange, GitDecorationProvider, GitDecorationRequest, GitDiscardPreview,
+    GitEditorCommand, GitGutterError, GitGutterSnapshot, GitHunkAction, GitHunkActionKind,
+    GitHunkStatus, HunkActionSink, Language, LanguageId, LanguageServiceEditRequest,
+    LanguageServiceEditResponse, LanguageServiceRequest, LanguageServiceResponse,
+    LanguageServiceResult, LanguageServiceRuntime, LanguageServiceRuntimeSnapshot,
+    LanguageServiceRuntimeSource, LanguageServiceRuntimeStatus, LanguageServiceSnapshot,
+    LanguageServiceState, LocalLanguageServiceRequest, LspPosition, LspRange, Match, Position,
+    ProjectSearchHit, ProjectSearchQuery, ProjectSearchRequest, ProjectSearchResult,
+    ProjectSearchSession, ProjectSearchSnapshot, Revision, SavePolicy, SearchError, SearchQuery,
+    SyntaxHighlighter, TextRange, Viewport, Vim, VimKey, VimMode, VimOptions, WhitespaceMode,
 };
 use labonair_editor::{build_breadcrumb_state, BreadcrumbState};
 
@@ -216,6 +216,19 @@ impl EditorSearch {
 
 const MAX_COMPLETION_ITEMS: usize = 50;
 
+struct DisplayLayoutCache {
+    revision: Revision,
+    config: DisplayConfig,
+    folds: Vec<FoldRange>,
+    layout: DisplaySnapshot,
+}
+
+struct SymbolCache {
+    revision: Revision,
+    language: Language,
+    symbols: Arc<[labonair_editor::DocumentSymbol]>,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum LanguageServiceRequestSlot {
     Other,
@@ -307,6 +320,13 @@ pub struct EditorView {
     /// Cached glyph metrics `(char_width, line_height)` in px.
     metrics: (f32, f32),
     gutter_width: f32,
+    /// Document-wide display coordinates are reused across paints until the
+    /// buffer revision, display settings, or folds change.
+    display_layout_cache: Option<DisplayLayoutCache>,
+    /// Tree-sitter symbols are likewise stable for one buffer revision and
+    /// language. The render path uses this for outline, folds, breadcrumbs,
+    /// and sticky context instead of parsing the document repeatedly.
+    symbol_cache: Option<SymbolCache>,
     search: Option<EditorSearch>,
     project_search: ProjectSearchSession,
     pending_navigation: Option<Position>,
@@ -464,6 +484,8 @@ impl EditorView {
             split_drag_last: None,
             metrics: (8.0, 18.0),
             gutter_width: 48.0,
+            display_layout_cache: None,
+            symbol_cache: None,
             search: None,
             project_search: ProjectSearchSession::default(),
             pending_navigation: None,
@@ -1550,35 +1572,60 @@ impl EditorView {
         }
     }
 
-    /// Build the visible editor-owned display snapshot. The bootstrap map
-    /// contains coordinates only, then the final map retains just the rows
-    /// needed by this paint pass.
+    fn display_layout(
+        &mut self,
+        snapshot: &labonair_editor::BufferSnapshot,
+        config: DisplayConfig,
+    ) -> &DisplaySnapshot {
+        let needs_rebuild = self.display_layout_cache.as_ref().is_none_or(|cache| {
+            cache.revision != snapshot.revision()
+                || cache.config != config
+                || cache.folds != self.folds
+        });
+        if needs_rebuild {
+            let layout = DisplayMap::build(
+                snapshot,
+                Viewport {
+                    height_rows: snapshot.line_count().saturating_add(1),
+                    ..Default::default()
+                },
+                config,
+                &self.folds,
+            );
+            self.display_layout_cache = Some(DisplayLayoutCache {
+                revision: snapshot.revision(),
+                config,
+                folds: self.folds.clone(),
+                layout,
+            });
+        }
+        &self
+            .display_layout_cache
+            .as_ref()
+            .expect("display layout cache is populated")
+            .layout
+    }
+
+    /// Build the visible editor-owned display snapshot from the cached
+    /// document-wide coordinate layout. Only the visible rows are cloned for
+    /// this paint pass.
     fn display_snapshot(
-        &self,
+        &mut self,
         snapshot: &labonair_editor::BufferSnapshot,
     ) -> labonair_editor::DisplaySnapshot {
         let config = self.display_config();
-        let bootstrap = DisplayMap::build(
-            snapshot,
-            Viewport {
-                height_rows: snapshot.line_count().saturating_add(1),
-                ..Default::default()
-            },
-            config,
-            &self.folds,
-        );
-        let top_row = bootstrap.logical_line_to_visual_row(self.scroll_top);
-        DisplayMap::build(
-            snapshot,
-            Viewport {
-                top_row,
-                left_column: self.scroll_left,
-                height_rows: self.visible_rows().saturating_add(1),
-                width_columns: self.wrap_cols().max(self.content_width_columns()).max(1),
-            },
-            config,
-            &self.folds,
-        )
+        let visible_rows = self.visible_rows().saturating_add(1);
+        let width_columns = self.wrap_cols().max(self.content_width_columns()).max(1);
+        let scroll_left = self.scroll_left;
+        let scroll_top = self.scroll_top;
+        let layout = self.display_layout(snapshot, config);
+        let top_row = layout.logical_line_to_visual_row(scroll_top);
+        layout.for_viewport(Viewport {
+            top_row,
+            left_column: scroll_left,
+            height_rows: visible_rows,
+            width_columns,
+        })
     }
 
     /// Vertical caret motion across visual (wrapped) rows. Returns `false` when
@@ -2577,35 +2624,36 @@ impl EditorView {
 
     fn clamp_scroll(&mut self) {
         let snapshot = self.doc.snapshot();
-        self.scroll_top = self.scroll_top.min(self.max_scroll_line());
-        let max_left = if self.wrap_cols() == 0 {
-            (0..snapshot.line_count())
-                .map(|line| snapshot.line_len(line))
-                .max()
-                .unwrap_or(0)
-                .saturating_sub(self.content_width_columns())
+        let config = self.display_config();
+        let max_line_width = self.display_layout(&snapshot, config).max_line_width;
+        let max_scroll_line = self.max_scroll_line_for_snapshot(&snapshot, config);
+        self.scroll_top = self.scroll_top.min(max_scroll_line);
+        let max_left = if config.wrap_columns.is_none() {
+            max_line_width.saturating_sub(self.content_width_columns())
         } else {
             0
         };
         self.scroll_left = self.scroll_left.min(max_left);
     }
 
-    fn max_scroll_line(&self) -> usize {
+    fn max_scroll_line(&mut self) -> usize {
         let snapshot = self.doc.snapshot();
-        if self.prefs.scroll_beyond_last_line() {
+        self.max_scroll_line_for_snapshot(&snapshot, self.display_config())
+    }
+
+    fn max_scroll_line_for_snapshot(
+        &mut self,
+        snapshot: &labonair_editor::BufferSnapshot,
+        config: DisplayConfig,
+    ) -> usize {
+        if config.scroll_beyond_last_line {
             return snapshot.line_count().saturating_sub(1);
         }
-        let full = DisplayMap::build(
-            &snapshot,
-            Viewport {
-                height_rows: self.visible_rows(),
-                width_columns: self.wrap_cols().max(self.content_width_columns()).max(1),
-                ..Default::default()
-            },
-            self.display_config(),
-            &self.folds,
-        );
-        full.display_to_position(full.max_scroll_row(), 0)
+        let visible_rows = self.visible_rows().max(1);
+        let layout = self.display_layout(snapshot, config);
+        let max_row = layout.total_rows.saturating_sub(visible_rows);
+        layout
+            .display_to_position(max_row, 0)
             .map(|position| position.line)
             .unwrap_or_else(|| snapshot.line_count().saturating_sub(1))
     }
@@ -2632,17 +2680,10 @@ impl EditorView {
 
     fn scroll_to_visual_row(&mut self, row: usize, cx: &mut Context<Self>) {
         let snapshot = self.doc.snapshot();
-        let full = DisplayMap::build(
-            &snapshot,
-            Viewport {
-                height_rows: snapshot.line_count().saturating_add(1),
-                ..Default::default()
-            },
-            self.display_config(),
-            &self.folds,
-        );
-        let next = full
-            .display_to_position(row.min(full.total_rows.saturating_sub(1)), 0)
+        let config = self.display_config();
+        let layout = self.display_layout(&snapshot, config);
+        let next = layout
+            .display_to_position(row.min(layout.total_rows.saturating_sub(1)), 0)
             .map(|position| position.line)
             .unwrap_or_else(|| snapshot.line_count().saturating_sub(1));
         if next != self.scroll_top {
@@ -4842,12 +4883,36 @@ impl EditorView {
             .into_any_element()
     }
 
-    fn sticky_context_label(&self, snapshot: &labonair_editor::BufferSnapshot) -> Option<String> {
+    fn symbols_for_snapshot(
+        &mut self,
+        snapshot: &labonair_editor::BufferSnapshot,
+    ) -> Arc<[labonair_editor::DocumentSymbol]> {
+        let language = self.doc.language;
+        let needs_rebuild = self.symbol_cache.as_ref().is_none_or(|cache| {
+            cache.revision != snapshot.revision() || cache.language != language
+        });
+        if needs_rebuild {
+            self.symbol_cache = Some(SymbolCache {
+                revision: snapshot.revision(),
+                language,
+                symbols: Arc::from(document_symbols(language, snapshot)),
+            });
+        }
+        Arc::clone(
+            &self
+                .symbol_cache
+                .as_ref()
+                .expect("symbol cache is populated")
+                .symbols,
+        )
+    }
+
+    fn sticky_context_label(&self, symbols: &[labonair_editor::DocumentSymbol]) -> Option<String> {
         if !self.prefs.sticky_context() {
             return None;
         }
-        document_symbols(self.doc.language, snapshot)
-            .into_iter()
+        symbols
+            .iter()
             .filter(|symbol| symbol.line <= self.doc.cursor.line)
             .max_by_key(|symbol| symbol.line)
             .map(|symbol| format!("{}  ·  line {}", symbol.name, symbol.line + 1))
@@ -4937,12 +5002,7 @@ impl Render for EditorView {
         let palette = EditorPalette::resolve(theme.editor_theme(), theme);
         let ui_palette = Palette::from_theme(theme);
         let rename_input = self.rename_input.clone();
-        let symbols = document_symbols(self.doc.language, &snapshot);
-        let outline_symbols = if self.prefs.show_outline() {
-            symbols.clone()
-        } else {
-            Vec::new()
-        };
+        let symbols = self.symbols_for_snapshot(&snapshot);
         let fold_candidates = fold_ranges_from_symbols(&symbols, &snapshot);
         let breadcrumb_state = build_breadcrumb_state(
             self.doc.file_state(),
@@ -4951,7 +5011,7 @@ impl Render for EditorView {
             cursor.line,
             EDITOR_BREADCRUMB_MAX_PATH_CHARS,
         );
-        let sticky_context = self.sticky_context_label(&snapshot);
+        let sticky_context = self.sticky_context_label(&symbols);
         let sticky_height = if sticky_context.is_some() { 24.0 } else { 0.0 };
         let ruler_columns = self
             .prefs
@@ -5463,8 +5523,7 @@ impl Render for EditorView {
             buffer_surface = buffer_surface.child(editor_surface_container);
         }
         if self.prefs.show_outline() {
-            buffer_surface =
-                buffer_surface.child(self.render_outline(&outline_symbols, ui_palette, cx));
+            buffer_surface = buffer_surface.child(self.render_outline(&symbols, ui_palette, cx));
         }
 
         div()

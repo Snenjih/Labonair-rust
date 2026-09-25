@@ -43,7 +43,9 @@ use tokio::runtime::Handle as TokioHandle;
 
 use labonair_filesystem::{mutate, tree};
 use labonair_notifications::{notification_center, Notification};
-use labonair_settings::{Settings as _, SettingsStore, SftpBrowserSettings, SftpColumn};
+use labonair_settings::{
+    enqueue_user_settings_write, Settings as _, SettingsStore, SftpBrowserSettings, SftpColumn,
+};
 use labonair_sftp::{RemoteEntry, SftpBrowserService, SftpSessionHandle, SftpSessionService};
 use labonair_ssh::{
     SshConnectRequest, SshConnectionService, SshEventSink, SshRemoteCommandService,
@@ -1180,6 +1182,23 @@ impl SftpView {
         cx.notify();
     }
 
+    fn queue_settings_update(
+        &mut self,
+        cx: &mut Context<Self>,
+        update: impl FnOnce(&mut labonair_settings::SettingsContent),
+    ) {
+        if !cx.has_global::<SettingsStore>() {
+            return;
+        }
+        let Ok(Some(request)) = cx
+            .global_mut::<SettingsStore>()
+            .update_user_settings_deferred(update)
+        else {
+            return;
+        };
+        let _ = enqueue_user_settings_write(request);
+    }
+
     /// Move `moved` so it sits where `target` is in the visible-column order,
     /// then persist the new order to `fileManager` settings.
     fn reorder_column(&mut self, moved: SftpColumn, target: SftpColumn, cx: &mut Context<Self>) {
@@ -1194,11 +1213,9 @@ impl SftpView {
         let to = cols.iter().position(|c| *c == target).unwrap_or(cols.len());
         cols.insert(to, moved);
         self.columns = cols.clone();
-        if cx.has_global::<SettingsStore>() {
-            let _ = cx.global_mut::<SettingsStore>().update_user(move |c| {
-                c.file_manager.sftp_columns = Some(cols.clone());
-            });
-        }
+        self.queue_settings_update(cx, move |c| {
+            c.file_manager.sftp_columns = Some(cols.clone());
+        });
         cx.notify();
     }
 
@@ -1221,20 +1238,17 @@ impl SftpView {
     /// Persist whichever resize gesture just ended (column width or split
     /// ratio) to `fileManager` settings — called once from the shared
     /// left-mouse-up handler, not per `on_drag_move` frame: each
-    /// `update_user` call is a synchronous settings-file read+patch+rename
-    /// on the UI thread, cheap once per gesture but not once per pixel.
+    /// The settings update is committed in memory and queued for the dedicated
+    /// settings writer, once per gesture rather than once per pixel.
     fn persist_resize(&mut self, cx: &mut Context<Self>) {
         let Some(kind) = self.resizing.take() else {
             return;
         };
-        if !cx.has_global::<SettingsStore>() {
-            return;
-        }
         match kind {
             ResizeKind::Column(col) => {
                 let width = self.col_widths[column_ord(col)];
                 let token = col.token().to_string();
-                let _ = cx.global_mut::<SettingsStore>().update_user(move |c| {
+                self.queue_settings_update(cx, move |c| {
                     let widths = c
                         .file_manager
                         .sftp_column_widths
@@ -1244,7 +1258,7 @@ impl SftpView {
             }
             ResizeKind::Split => {
                 let ratio = self.split_ratio;
-                let _ = cx.global_mut::<SettingsStore>().update_user(move |c| {
+                self.queue_settings_update(cx, move |c| {
                     c.file_manager.sftp_split_ratio = Some(ratio);
                 });
             }

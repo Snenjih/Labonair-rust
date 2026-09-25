@@ -74,6 +74,7 @@ gpui::actions!(
 );
 
 use std::collections::HashMap;
+use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -329,6 +330,28 @@ const META_SYNC_INTERVAL: Duration = Duration::from_millis(400);
 /// How often the session snapshot is re-written while the app runs (T14-001).
 const SESSION_SAVE_INTERVAL: Duration = Duration::from_secs(30);
 
+struct ScrollbackCapture {
+    session_id: String,
+    ansi: String,
+    max_bytes: Option<usize>,
+}
+
+struct SessionCapture {
+    snapshot: SpacesSnapshot,
+    scrollbacks: Vec<ScrollbackCapture>,
+}
+
+fn persist_scrollback_captures(data_dir: &Path, captures: Vec<ScrollbackCapture>) {
+    for capture in captures {
+        let _ = labonair_terminal::scrollback::save(
+            data_dir,
+            &capture.session_id,
+            &capture.ansi,
+            capture.max_bytes,
+        );
+    }
+}
+
 /// Thickness of a split-divider resize handle.
 const HANDLE: f32 = 6.0;
 /// Height of `AppShell`'s titlebar. The tab strip lives inside it, so the
@@ -581,6 +604,10 @@ pub struct Workspace {
     rename_blink: Entity<BlinkCursor>,
     _rename_blink_subs: Vec<Subscription>,
     focus_handle: FocusHandle,
+    /// Cached active-terminal preview URL. Statusbar `is_empty` and render
+    /// both read this value, so terminal grid-to-text conversion happens at
+    /// most once per metadata refresh rather than twice per statusbar pass.
+    preview_url_cache: Option<Option<String>>,
     _meta_sync: Task<()>,
 
     // ── SSH (T07-001) ──────────────────────────────────────────────────────
@@ -827,6 +854,7 @@ impl Workspace {
             rename_blink,
             _rename_blink_subs,
             focus_handle: cx.focus_handle(),
+            preview_url_cache: None,
             _meta_sync: meta_sync,
             _session_save: session_save,
             git,
@@ -932,6 +960,25 @@ impl Workspace {
     /// Snapshot every Space, each with its persistable tabs + every workspace
     /// tab's split-pane tree (T20-008 Spaces).
     pub fn session_snapshot(&self, cx: &App) -> SpacesSnapshot {
+        let capture = self.session_capture(cx);
+        persist_scrollback_captures(&labonair_filesystem::paths::data_dir(), capture.scrollbacks);
+        capture.snapshot
+    }
+
+    fn session_capture(&self, cx: &App) -> SessionCapture {
+        let mut scrollbacks = Vec::new();
+        let snapshot = self.session_snapshot_collect(cx, &mut scrollbacks);
+        SessionCapture {
+            snapshot,
+            scrollbacks,
+        }
+    }
+
+    fn session_snapshot_collect(
+        &self,
+        cx: &App,
+        scrollbacks: &mut Vec<ScrollbackCapture>,
+    ) -> SpacesSnapshot {
         let store = self.tabs.read(cx);
         let space_store = self.spaces.read(cx);
         let active_id = store.active_id();
@@ -946,7 +993,7 @@ impl Workspace {
             let mut active_index = 0;
             for tab in store.tabs_in_space(space.id) {
                 let snap = match tab.kind {
-                    TabKind::Workspace => self.snapshot_workspace_tab(tab, cx),
+                    TabKind::Workspace => self.snapshot_workspace_tab(tab, cx, scrollbacks),
                     TabKind::Editor => tab
                         .data
                         .path
@@ -994,7 +1041,12 @@ impl Workspace {
         SpacesSnapshot::new(entries, active_space_index)
     }
 
-    fn snapshot_workspace_tab(&self, tab: &Tab, cx: &App) -> Option<TabSnapshot> {
+    fn snapshot_workspace_tab(
+        &self,
+        tab: &Tab,
+        cx: &App,
+        scrollbacks: &mut Vec<ScrollbackCapture>,
+    ) -> Option<TabSnapshot> {
         let layout = self.layouts.get(&tab.id)?.clone();
         let ts = terminal_settings(cx);
         let max_lines = ts.session_scrollback_lines();
@@ -1010,12 +1062,11 @@ impl Workspace {
                 // shows its prior history above the fresh prompt (T14-002).
                 let scrollback_id = entry.filter(|_| is_local).map(|e| {
                     if let Some(ansi) = e.view.read(cx).handle().serialize_scrollback(max_lines) {
-                        let _ = labonair_terminal::scrollback::save(
-                            &labonair_filesystem::paths::data_dir(),
-                            &e.scrollback_id,
-                            &ansi,
+                        scrollbacks.push(ScrollbackCapture {
+                            session_id: e.scrollback_id.clone(),
+                            ansi,
                             max_bytes,
-                        );
+                        });
                     }
                     e.scrollback_id.clone()
                 });
@@ -1063,7 +1114,14 @@ impl Workspace {
             .map(|s| s.session_restore())
             .unwrap_or(false)
         {
-            crate::session::save_snapshot(&self.session_snapshot(cx));
+            let capture = self.session_capture(cx);
+            let data_dir = labonair_filesystem::paths::data_dir();
+            cx.background_executor()
+                .spawn(async move {
+                    crate::session::save_snapshot(&capture.snapshot);
+                    persist_scrollback_captures(&data_dir, capture.scrollbacks);
+                })
+                .detach();
         }
     }
 
@@ -2006,7 +2064,9 @@ impl Workspace {
     /// Local dev-server URL detected in the active terminal's output, if any
     /// (statusbar `previewUrl` item).
     pub fn active_preview_url(&self, cx: &App) -> Option<String> {
-        self.active_pane_view(cx)?.read(cx).preview_url()
+        self.preview_url_cache
+            .clone()
+            .unwrap_or_else(|| self.active_pane_view(cx)?.read(cx).preview_url())
     }
 
     /// Last `n` lines of the active terminal's buffer (AI live bridge).
@@ -4988,14 +5048,23 @@ impl Workspace {
             .iter()
             .filter_map(|(tab_id, layout)| {
                 let v = self.panes.get(&layout.active?)?.view.read(cx);
-                Some((*tab_id, v.cwd(), v.shell_title()))
+                let (cwd, title) = v.shell_meta();
+                Some((*tab_id, cwd, title))
             })
             .collect();
+        let preview_url = self
+            .active_pane_view(cx)
+            .and_then(|view| view.read(cx).preview_url());
+        let preview_changed = self.preview_url_cache.as_ref() != Some(&preview_url);
+        self.preview_url_cache = Some(preview_url);
         self.tabs.update(cx, |store, cx| {
             for (id, cwd, title) in updates {
                 store.sync_workspace_meta(id, cwd, title, cx);
             }
         });
+        if preview_changed {
+            cx.notify();
+        }
     }
 
     // ── Rendering ───────────────────────────────────────────────────────────

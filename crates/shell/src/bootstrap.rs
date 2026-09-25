@@ -39,7 +39,9 @@ use labonair_panel_explorer::ExplorerView;
 use labonair_panel_git_graph::GitGraphView;
 use labonair_panel_scm::{GitPanelView, ScmEvent};
 use labonair_panel_snippets::SnippetsView;
-use labonair_settings::{GeneralSettings, Settings as _, WorkspaceSettings};
+use labonair_settings::{
+    flush_user_settings_writes, GeneralSettings, Settings as _, WorkspaceSettings,
+};
 use labonair_settings_ui::set_settings_deps;
 use labonair_workspace::agent_access::AgentAccessStore;
 use labonair_workspace::live_bridge::{LiveSnapshot, WorkspaceLiveBridge};
@@ -845,6 +847,7 @@ pub(crate) fn bootstrap(
                     None,
                 );
             }
+            flush_user_settings_writes();
             true
         }
     });

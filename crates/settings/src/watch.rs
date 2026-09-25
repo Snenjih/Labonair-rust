@@ -3,9 +3,9 @@
 //! Same crates + debounce pattern as `labonair-filesystem`: the debouncer runs its
 //! callback on its own background thread — it must never touch GPUI directly
 //! (Warnung: "niemals den Store vom Tokio-Thread mutieren"). The callback
-//! only flips an `AtomicBool`; a `cx.spawn`ed foreground task polls that flag
-//! on a short timer and, when set, brings the reload back onto the main
-//! thread via `cx.update`.
+//! only flips an `AtomicBool`; a `cx.spawn`ed task polls that flag on a short
+//! timer, parses the changed file on the background executor, and brings only
+//! the parsed result back onto the main thread via `cx.update`.
 
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -16,7 +16,7 @@ use gpui::App;
 use notify::{RecommendedWatcher, RecursiveMode};
 use notify_debouncer_mini::{new_debouncer, DebouncedEvent, Debouncer};
 
-use crate::store::SettingsStore;
+use crate::store::{load_project_layer, load_user_layer, SettingsStore};
 
 /// How often the foreground poll checks the dirty flag. Matches the task's
 /// "~150 ms" debounce note; the debouncer itself also debounces at 150 ms, so
@@ -68,15 +68,30 @@ pub(crate) fn spawn(cx: &App, user_path: PathBuf) {
 
 /// Owns the `Debouncer` for as long as the returned `Task` runs (a detached,
 /// infinite loop — same idiom `crates/shell/src/bootstrap.rs` uses for its
-/// `live_drain` poll), and drains the dirty flag on the foreground thread.
+/// `live_drain` poll), and drains the dirty flag and applies already-loaded
+/// results on the foreground thread. File I/O and parsing stay on the
+/// background executor.
 fn keep_alive_and_poll(cx: &App, debouncer: Debouncer<RecommendedWatcher>, dirty: Arc<AtomicBool>) {
     cx.spawn(async move |cx| {
         let _debouncer = debouncer;
         loop {
             cx.background_executor().timer(POLL_INTERVAL).await;
             if dirty.swap(false, Ordering::SeqCst) {
+                let path =
+                    match cx.update(|cx| cx.global::<SettingsStore>().user_path().to_path_buf()) {
+                        Ok(path) => path,
+                        Err(_) => break,
+                    };
+                let load_path = path.clone();
+                let loaded = cx
+                    .background_executor()
+                    .spawn(async move { load_user_layer(&load_path) })
+                    .await;
                 let updated = cx.update(|cx| {
-                    cx.global_mut::<SettingsStore>().reload_user_layer();
+                    let store = cx.global_mut::<SettingsStore>();
+                    if store.user_path() == path {
+                        store.apply_user_layer_load(loaded);
+                    }
                 });
                 if updated.is_err() {
                     // App is shutting down.
@@ -125,7 +140,7 @@ pub(crate) fn spawn_project(cx: &App, dir: PathBuf, generation: u64) {
         return;
     }
 
-    keep_alive_and_poll_project(cx, debouncer, dirty, generation);
+    keep_alive_and_poll_project(cx, debouncer, dirty, generation, dir.join("settings.json"));
 }
 
 fn keep_alive_and_poll_project(
@@ -133,6 +148,7 @@ fn keep_alive_and_poll_project(
     debouncer: Debouncer<RecommendedWatcher>,
     dirty: Arc<AtomicBool>,
     generation: u64,
+    path: PathBuf,
 ) {
     cx.spawn(async move |cx| {
         let _debouncer = debouncer;
@@ -146,10 +162,15 @@ fn keep_alive_and_poll_project(
                 Err(_) => break,    // app shutting down
             }
             if dirty.swap(false, Ordering::SeqCst) {
+                let load_path = path.clone();
+                let loaded = cx
+                    .background_executor()
+                    .spawn(async move { load_project_layer(&load_path) })
+                    .await;
                 let updated = cx.update(|cx| {
                     let store = cx.global_mut::<SettingsStore>();
                     if store.project_watch_generation() == generation {
-                        store.reload_project_layer();
+                        store.apply_project_layer_load(loaded);
                     }
                 });
                 if updated.is_err() {

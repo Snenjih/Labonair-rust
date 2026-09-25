@@ -140,6 +140,7 @@ struct Slot {
     colors: Mutex<TerminalColors>,
     options: SessionOptions,
     status: Mutex<SessionStatus>,
+    event_notify: Arc<tokio::sync::Notify>,
 }
 
 /// A cheap, `Clone`able reference to one registered session.
@@ -209,6 +210,13 @@ impl SessionHandle {
         events
     }
 
+    /// Wait for a session event without polling. The notifier belongs to the
+    /// registry slot rather than a concrete backend so it remains valid when a
+    /// local terminal is restarted in place.
+    pub async fn wait_for_events(&self) {
+        self.slot.event_notify.notified().await;
+    }
+
     /// Serialize this session's scrollback + visible screen as plain text for
     /// session persistence (T14-002). `None` for a remote session, an
     /// alt-screen buffer, or an empty grid.
@@ -244,10 +252,16 @@ impl SessionHandle {
             return Err("session is still running".to_string());
         }
         let colors = *self.slot.colors.lock().unwrap();
-        let fresh = TerminalSession::spawn(colors, dimensions, self.slot.options.clone())?;
+        let fresh = TerminalSession::spawn_with_notifier(
+            colors,
+            dimensions,
+            self.slot.options.clone(),
+            Arc::clone(&self.slot.event_notify),
+        )?;
         session.terminate();
         *session = SessionBackend::Local(fresh);
         *self.slot.status.lock().unwrap() = SessionStatus::Running;
+        self.slot.event_notify.notify_one();
         Ok(())
     }
 }
@@ -280,13 +294,20 @@ impl TerminalRegistry {
         dimensions: TermDimensions,
         options: SessionOptions,
     ) -> Result<SessionId, String> {
-        let session = TerminalSession::spawn(colors, dimensions, options.clone())?;
+        let event_notify = Arc::new(tokio::sync::Notify::new());
+        let session = TerminalSession::spawn_with_notifier(
+            colors,
+            dimensions,
+            options.clone(),
+            Arc::clone(&event_notify),
+        )?;
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
         let slot = Arc::new(Slot {
             session: Mutex::new(SessionBackend::Local(session)),
             colors: Mutex::new(colors),
             options,
             status: Mutex::new(SessionStatus::Running),
+            event_notify,
         });
         self.sessions.write().unwrap().insert(id, slot);
         Ok(id)
@@ -303,13 +324,21 @@ impl TerminalRegistry {
         writer: RemoteWriter,
         resizer: RemoteResizer,
     ) -> (SessionId, RemoteFeed) {
-        let (session, feed) = RemoteSession::new(colors, dimensions, writer, resizer);
+        let event_notify = Arc::new(tokio::sync::Notify::new());
+        let (session, feed) = RemoteSession::new_with_notifier(
+            colors,
+            dimensions,
+            writer,
+            resizer,
+            Arc::clone(&event_notify),
+        );
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
         let slot = Arc::new(Slot {
             session: Mutex::new(SessionBackend::Remote(session)),
             colors: Mutex::new(colors),
             options: SessionOptions::default(),
             status: Mutex::new(SessionStatus::Running),
+            event_notify,
         });
         self.sessions.write().unwrap().insert(id, slot);
         (id, feed)

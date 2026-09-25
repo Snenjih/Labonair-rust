@@ -16,7 +16,7 @@ pub use tokio::runtime::Handle as TokioHandle;
 
 pub use labonair_filesystem::paths::config_dir;
 pub use labonair_notifications::{notification_center, Notification};
-pub use labonair_settings::{Settings as _, SettingsStore};
+pub use labonair_settings::{enqueue_user_settings_write, Settings as _, SettingsStore};
 pub use labonair_settings_content::areas::AREAS;
 pub use labonair_theme::ThemeStore;
 pub use labonair_ui_kit::{
@@ -601,14 +601,43 @@ impl SettingsView {
         if !cx.has_global::<SettingsStore>() {
             return;
         }
-        let result = cx.global_mut::<SettingsStore>().update_user(move |c| {
-            (set)(c, value.clone());
-        });
-        if let Err(err) = result {
-            // Blocked (invalid JSON on disk, T19-005) — surface it rather
-            // than silently discarding the edit.
-            self.notify_error(cx, "Could not save setting", err);
-            return;
+        let result = cx
+            .global_mut::<SettingsStore>()
+            .update_user_settings_deferred(move |c| {
+                (set)(c, value.clone());
+            });
+        match result {
+            Err(err) => {
+                // Blocked (invalid JSON on disk, T19-005) — surface it rather
+                // than silently discarding the edit.
+                self.notify_error(cx, "Could not save setting", err);
+                return;
+            }
+            Ok(Some(request)) => match enqueue_user_settings_write(request) {
+                Ok(receiver) => {
+                    cx.spawn(async move |this, cx| {
+                        let result = cx
+                            .background_executor()
+                            .spawn(async move {
+                                receiver.recv().unwrap_or_else(|_| {
+                                    Err("settings writer stopped before saving".to_string())
+                                })
+                            })
+                            .await;
+                        if let Err(error) = result {
+                            let _ = this.update(cx, |this, cx| {
+                                this.notify_error(cx, "Could not save setting", error);
+                            });
+                        }
+                    })
+                    .detach();
+                }
+                Err(err) => {
+                    self.notify_error(cx, "Could not save setting", err);
+                    return;
+                }
+            },
+            Ok(None) => {}
         }
         self.sync_theme_from_prefs(cx);
         cx.notify();

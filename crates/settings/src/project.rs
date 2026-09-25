@@ -143,6 +143,13 @@ pub fn filter_and_parse(raw: &str) -> (SettingsContent, Vec<String>) {
         Ok(Some(v)) => v,
         _ => serde_json::Value::Object(Default::default()),
     };
+    filter_value_and_parse(value)
+}
+
+/// Apply the project whitelist to an already parsed JSON value. Keeping this
+/// separate lets the settings watcher parse a changed file exactly once on
+/// its background worker before schema validation and layer application.
+pub fn filter_value_and_parse(value: serde_json::Value) -> (SettingsContent, Vec<String>) {
     let (filtered, mut rejected) = filter_json(value);
     let filtered_json = filtered.to_string();
     let (content, parse_errors) = labonair_settings_content::parse(&filtered_json);

@@ -5,6 +5,8 @@
 //! The workspace renderer can therefore paint only the visible rows while the
 //! editor keeps wrapping, folding, gutters, and scroll invariants together.
 
+use std::sync::Arc;
+
 use crate::language_services::{Diagnostic, SemanticToken};
 use crate::{BufferSnapshot, Position, Revision, TextRange};
 use serde::{Deserialize, Serialize};
@@ -190,13 +192,54 @@ pub struct DisplaySnapshot {
     pub rows: Vec<DisplayRow>,
     pub total_rows: usize,
     pub max_line_width: usize,
-    line_starts: Vec<usize>,
+    line_starts: Arc<[usize]>,
     config: DisplayConfig,
 }
 
 impl DisplaySnapshot {
     pub fn is_empty(&self) -> bool {
         self.rows.is_empty()
+    }
+
+    /// Reuse an already-built document layout for a different viewport. The
+    /// expensive document-wide row and line-start calculation is therefore
+    /// performed once per buffer revision/configuration rather than once per
+    /// repaint or scroll position.
+    pub fn for_viewport(&self, viewport: Viewport) -> Self {
+        let current_line = self
+            .row_for_visual(viewport.top_row)
+            .map(DisplayRow::logical_line)
+            .unwrap_or_else(|| {
+                viewport
+                    .top_row
+                    .min(self.line_starts.len().saturating_sub(1))
+            });
+        let start = viewport.top_row.min(self.total_rows.saturating_sub(1));
+        let end = start.saturating_add(viewport.height_rows.max(1));
+        let source_rows = if start < self.rows.len() {
+            &self.rows[start..end.min(self.rows.len())]
+        } else {
+            &[]
+        };
+        let rows = source_rows
+            .iter()
+            .map(|row| {
+                let mut row = row.clone();
+                if self.config.relative_line_numbers {
+                    row.relative_line_number = Some(row.logical_line().abs_diff(current_line));
+                }
+                row
+            })
+            .collect();
+        Self {
+            revision: self.revision,
+            viewport,
+            rows,
+            total_rows: self.total_rows,
+            max_line_width: self.max_line_width,
+            line_starts: Arc::clone(&self.line_starts),
+            config: self.config,
+        }
     }
 
     pub fn max_scroll_row(&self) -> usize {
@@ -337,7 +380,10 @@ impl DisplaySnapshot {
     }
 
     fn row_for_visual(&self, visual_row: usize) -> Option<&DisplayRow> {
-        self.rows.iter().find(|row| row.visual_row == visual_row)
+        self.rows
+            .get(visual_row)
+            .filter(|row| row.visual_row == visual_row)
+            .or_else(|| self.rows.iter().find(|row| row.visual_row == visual_row))
     }
 }
 
@@ -428,7 +474,7 @@ impl DisplayMap {
             rows,
             total_rows,
             max_line_width,
-            line_starts,
+            line_starts: line_starts.into(),
             config,
         }
     }
@@ -523,6 +569,33 @@ mod tests {
         );
         assert_eq!(display.rows.len(), 1);
         assert_eq!(display.rows[0].relative_line_number, Some(0));
+    }
+
+    #[test]
+    fn cached_layout_projects_only_the_requested_viewport() {
+        let source = snapshot("a\nb\nc\nd");
+        let layout = DisplayMap::build(
+            &source,
+            Viewport {
+                height_rows: 8,
+                ..Default::default()
+            },
+            DisplayConfig {
+                relative_line_numbers: true,
+                ..Default::default()
+            },
+            &[],
+        );
+        let visible = layout.for_viewport(Viewport {
+            top_row: 1,
+            height_rows: 2,
+            ..Default::default()
+        });
+        assert_eq!(visible.rows.len(), 2);
+        assert_eq!(visible.rows[0].text(&source), "b");
+        assert_eq!(visible.rows[0].relative_line_number, Some(0));
+        assert_eq!(visible.rows[1].text(&source), "c");
+        assert_eq!(visible.rows[1].relative_line_number, Some(1));
     }
 
     #[test]

@@ -10,8 +10,9 @@
 //! T02-004): every [`alacritty_terminal::vte::ansi::Color`] on a cell becomes a
 //! concrete [`Rgb`] taken from the active theme, never an Alacritty default.
 
-use std::sync::mpsc::Sender;
+use std::sync::mpsc::SyncSender;
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use alacritty_terminal::event::{Event as AlacEvent, EventListener, WindowSize};
 use alacritty_terminal::grid::{Dimensions, Scroll};
@@ -27,6 +28,7 @@ use crate::TerminalColors;
 /// Default scrollback depth (lines kept above the viewport). Mirrors the
 /// reference app's xterm `scrollback` default.
 pub const DEFAULT_SCROLLBACK_LINES: usize = 10_000;
+const SEARCH_REFRESH_INTERVAL: Duration = Duration::from_millis(100);
 
 /// Terminal grid dimensions in cells, plus the pixel size of the text area
 /// (needed by some programs via `TIOCGWINSZ` / `CSI 14 t`).
@@ -112,19 +114,32 @@ pub enum TerminalEvent {
     MouseCursorDirty,
 }
 
+/// Send a terminal event without allowing a burst of repaint notifications to
+/// grow the queue without bounds. A wakeup only says that the current emulator
+/// state should be rendered, so dropping one while another is queued preserves
+/// the observable state. Semantic events remain lossless and may briefly apply
+/// backpressure to the producer when the UI is not draining the queue.
+pub(crate) fn send_event(tx: &SyncSender<TerminalEvent>, event: TerminalEvent) {
+    if matches!(event, TerminalEvent::Wakeup) {
+        let _ = tx.try_send(event);
+    } else {
+        let _ = tx.send(event);
+    }
+}
+
 /// [`EventListener`] that forwards [`alacritty_terminal`] events onto an
 /// [`mpsc`](std::sync::mpsc) channel as [`TerminalEvent`]s. Cloneable and
 /// `Send` so it can live inside a `Term` that moves between threads.
 #[derive(Clone)]
 pub struct EventProxy {
-    tx: Sender<TerminalEvent>,
+    tx: SyncSender<TerminalEvent>,
     /// Bytes the emulator wants written back to the PTY (DA/DSR replies). The
     /// session's I/O thread drains this via [`TerminalEmulator::take_pty_output`].
     pty_out: Arc<Mutex<Vec<u8>>>,
 }
 
 impl EventProxy {
-    fn new(tx: Sender<TerminalEvent>, pty_out: Arc<Mutex<Vec<u8>>>) -> Self {
+    fn new(tx: SyncSender<TerminalEvent>, pty_out: Arc<Mutex<Vec<u8>>>) -> Self {
         Self { tx, pty_out }
     }
 }
@@ -142,7 +157,7 @@ impl EventListener for EventProxy {
                 if let Ok(mut buf) = self.pty_out.lock() {
                     buf.extend_from_slice(text.as_bytes());
                 }
-                let _ = self.tx.send(TerminalEvent::Wakeup);
+                send_event(&self.tx, TerminalEvent::Wakeup);
                 return;
             }
             AlacEvent::MouseCursorDirty => TerminalEvent::MouseCursorDirty,
@@ -153,7 +168,7 @@ impl EventListener for EventProxy {
             | AlacEvent::ColorRequest(..)
             | AlacEvent::TextAreaSizeRequest(_) => return,
         };
-        let _ = self.tx.send(mapped);
+        send_event(&self.tx, mapped);
     }
 }
 
@@ -571,6 +586,8 @@ struct SearchState {
     case_sensitive: bool,
     matches: Vec<std::ops::RangeInclusive<Point>>,
     active: Option<usize>,
+    dirty: bool,
+    last_refresh: Option<Instant>,
 }
 
 /// Escape `q` into a regex-automata pattern that matches it literally.
@@ -644,7 +661,7 @@ impl TerminalEmulator {
     pub fn new(
         colors: TerminalColors,
         dimensions: TermDimensions,
-        event_tx: Sender<TerminalEvent>,
+        event_tx: SyncSender<TerminalEvent>,
     ) -> Self {
         Self::new_with(colors, dimensions, event_tx, EmulatorConfig::default())
     }
@@ -653,7 +670,7 @@ impl TerminalEmulator {
     pub fn new_with(
         colors: TerminalColors,
         dimensions: TermDimensions,
-        event_tx: Sender<TerminalEvent>,
+        event_tx: SyncSender<TerminalEvent>,
         cfg: EmulatorConfig,
     ) -> Self {
         let config = cfg.to_alac_config();
@@ -746,7 +763,7 @@ impl TerminalEmulator {
             self.parser.advance(&mut self.term, byte);
         }
         if !self.search.query.is_empty() {
-            self.refresh_search_matches();
+            self.search.dirty = true;
         }
         extra.push(TerminalEvent::Wakeup);
         extra
@@ -763,11 +780,13 @@ impl TerminalEmulator {
         self.search.case_sensitive = case_sensitive;
         self.search.matches.clear();
         self.search.active = None;
+        self.search.dirty = false;
         if query.is_empty() {
             self.term.selection = None;
             return (0, 0);
         }
         self.compute_search_matches();
+        self.search.last_refresh = Some(Instant::now());
         let offset = self.term.grid().display_offset() as i32;
         let top = Point::new(Line(-offset), Column(0));
         self.search.active = self
@@ -782,6 +801,7 @@ impl TerminalEmulator {
 
     /// Move to the next / previous match (wrapping). Returns `(current, total)`.
     pub fn search_step(&mut self, forward: bool) -> (usize, usize) {
+        self.refresh_search_if_dirty();
         let n = self.search.matches.len();
         if n == 0 {
             return (0, 0);
@@ -801,6 +821,32 @@ impl TerminalEmulator {
     pub fn search_clear(&mut self) {
         self.search = SearchState::default();
         self.term.selection = None;
+    }
+
+    /// Refresh deferred search matches before a navigation action.
+    /// PTY output can arrive in many small chunks; doing the full scrollback
+    /// scan once per chunk made high-volume output quadratic in practice.
+    pub fn refresh_search_if_dirty(&mut self) {
+        if self.search.dirty && !self.search.query.is_empty() {
+            self.refresh_search_matches();
+            self.search.dirty = false;
+            self.search.last_refresh = Some(Instant::now());
+        }
+    }
+
+    /// Refresh search highlights at most ten times per second while terminal
+    /// output is arriving. Search navigation still uses the immediate method
+    /// above so it always works with the latest scrollback.
+    pub fn refresh_search_if_due(&mut self) {
+        if self.search.dirty
+            && !self.search.query.is_empty()
+            && self
+                .search
+                .last_refresh
+                .is_none_or(|last| last.elapsed() >= SEARCH_REFRESH_INTERVAL)
+        {
+            self.refresh_search_if_dirty();
+        }
     }
 
     /// `(current_1_based, total)` for the active search (`0` current = none).
@@ -1178,10 +1224,10 @@ pub type GridPoint = Point<Line, Column>;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::mpsc::{channel, Receiver};
+    use std::sync::mpsc::{sync_channel, Receiver};
 
     fn emulator(cols: usize, rows: usize) -> (TerminalEmulator, Receiver<TerminalEvent>) {
-        let (tx, rx) = channel();
+        let (tx, rx) = sync_channel(256);
         let colors = TerminalColors::from_theme(&labonair_theme::Theme::dark());
         (
             TerminalEmulator::new(colors, TermDimensions::new(cols, rows), tx),
@@ -1191,7 +1237,7 @@ mod tests {
 
     #[test]
     fn emulator_config_caps_scrollback_history() {
-        let (tx, _rx) = channel();
+        let (tx, _rx) = sync_channel(256);
         let colors = TerminalColors::from_theme(&labonair_theme::Theme::dark());
         let mut term = TerminalEmulator::new_with(
             colors,
@@ -1231,7 +1277,7 @@ mod tests {
 
     #[test]
     fn select_word_at_uses_the_configured_separators() {
-        let (tx, _rx) = channel();
+        let (tx, _rx) = sync_channel(256);
         let colors = TerminalColors::from_theme(&labonair_theme::Theme::dark());
         let mut term = TerminalEmulator::new_with(
             colors,
@@ -1522,6 +1568,20 @@ mod tests {
         assert_eq!(total, 3);
         assert_eq!(current, 1);
         assert!(term.render().selection.iter().any(|s| s.start_col == 0));
+    }
+
+    #[test]
+    fn search_refresh_is_deferred_until_the_state_is_consumed() {
+        let (mut term, _rx) = emulator(20, 5);
+        term.feed(b"foo\r\n");
+        term.search_set("foo", false);
+        term.feed(b"foo\r\n");
+
+        // Feeding output only marks the matcher dirty; the full scrollback
+        // scan happens once when the renderer or navigation needs it.
+        assert_eq!(term.search_count(), (1, 1));
+        term.refresh_search_if_dirty();
+        assert_eq!(term.search_count(), (1, 2));
     }
 
     #[test]

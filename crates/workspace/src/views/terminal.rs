@@ -44,9 +44,6 @@ use labonair_explorer_host::{quote_paths, DraggedPaths};
 use labonair_settings::Settings as _;
 use labonair_ui_kit::{context_menu, IconName, MenuItem, Palette};
 
-/// How often the view polls the session for new terminal output.
-const POLL_INTERVAL: Duration = Duration::from_millis(16);
-
 /// A running terminal, rendered with GPUI.
 ///
 /// The terminal session itself lives in the shared [`TerminalRegistry`]
@@ -116,8 +113,9 @@ impl TerminalView {
         cx.observe(background.pulse(), |_, _, cx| cx.notify())
             .detach();
 
+        let event_handle = handle.clone();
         let poll = cx.spawn(async move |view, cx| loop {
-            cx.background_executor().timer(POLL_INTERVAL).await;
+            event_handle.wait_for_events().await;
             let keep_going = view.update(cx, |this, cx| {
                 let events = this.handle.drain_events();
                 if events.is_empty() {
@@ -230,6 +228,17 @@ impl TerminalView {
     pub fn shell_title(&self) -> Option<String> {
         self.handle
             .with(|s| s.metadata().ok().and_then(|m| m.title))
+    }
+
+    /// Read the two shell-integration fields needed by Workspace in one
+    /// emulator lock instead of taking one lock per field.
+    pub fn shell_meta(&self) -> (Option<String>, Option<String>) {
+        self.handle.with(|s| {
+            s.metadata()
+                .ok()
+                .map(|meta| (meta.cwd, meta.title))
+                .unwrap_or_default()
+        })
     }
 
     /// Start / update a literal scrollback search (T18-002 search overlay).
