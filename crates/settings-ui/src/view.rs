@@ -828,7 +828,11 @@ impl SettingsView {
                     self.request_close(window, cx);
                 }
             }
-            "backspace" if !self.search_input_focused => {
+            // The native InputState normally consumes this as an action before
+            // this ancestor keydown handler runs. Keep the view-level fallback
+            // for the keyboard-first path where the Settings card itself is
+            // focused, and accept both deletion key names emitted by GPUI.
+            "backspace" | "delete" => {
                 self.search.pop();
                 self.refresh_search_results();
                 cx.notify();
