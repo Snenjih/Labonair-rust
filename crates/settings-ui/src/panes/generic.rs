@@ -8,7 +8,7 @@
 
 use crate::view::*;
 use labonair_settings_content::file_manager::{default_sftp_columns, SftpColumn};
-use labonair_ui_kit::{caret, DISABLED_OPACITY};
+use labonair_ui_kit::DISABLED_OPACITY;
 
 /// Parse a stored `sftpColumns` JSON value into an ordered, de-duplicated
 /// column list, falling back to the shipped default when absent/unparseable.
@@ -25,12 +25,6 @@ fn sftp_visible_columns(value: Option<&Value>) -> Vec<SftpColumn> {
         }
     }
     out
-}
-
-#[derive(Clone, Copy)]
-struct FieldRowState {
-    first: bool,
-    last: bool,
 }
 
 impl SettingsView {
@@ -191,7 +185,6 @@ impl SettingsView {
         field: &AnyField,
         origin: OriginBadge,
         value: Option<Value>,
-        edges: FieldRowState,
         c: &Palette,
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
@@ -335,44 +328,41 @@ impl SettingsView {
             FieldControl::Text => self.render_text_control(json_path, value, c, cx),
             FieldControl::SftpColumns => self.render_sftp_columns_control(json_path, value, c, cx),
         };
+        let control = if let Some(unit) = field.meta.unit {
+            div()
+                .flex()
+                .items_center()
+                .gap(c.space(8.0))
+                .child(control)
+                .child(div().text_size(px(12.0)).text_color(c.muted).child(unit))
+                .into_any_element()
+        } else {
+            control
+        };
 
         let non_default = origin != OriginBadge::Default;
         // T19-007: a search jump briefly pulses the target row so the user
         // can find it among a page's other fields.
         let highlighted = self.highlight == Some(json_path);
 
-        // Consecutive fields under one section header share a single
-        // grouped card instead of each being its own box: every row draws
-        // side borders + a bottom hairline (the separator between rows, and
-        // on the last row the card's bottom edge); only the first row draws
-        // the top edge, and only the first/last round the outer corners.
-        let mut row = div()
+        // Ordinary values use one continuous surface. A single bottom
+        // divider keeps the list scannable without turning every section into
+        // a nested card, matching the native settings design direction.
+        let row = div()
             .id(SharedString::from(format!("field-row-{json_path}")))
             .flex()
             .items_center()
             .justify_between()
-            .gap_4()
-            .px_4()
-            .py_3()
-            .border_l_1()
-            .border_r_1()
+            .gap(c.space(24.0))
+            .py(c.space(14.0))
             .border_b_1()
             .border_color(c.border)
-            .bg(if highlighted {
-                c.accent.opacity(0.25)
-            } else {
-                c.muted_bg
-            });
-        if edges.first {
-            row = row.border_t_1().rounded_t_md().mt_2();
-        }
-        if edges.last {
-            row = row.rounded_b_md();
-        }
+            .when(highlighted, |d| d.bg(c.selected_fill.opacity(0.7)));
 
         let mut title_row = h_stack().gap_1p5().child(
             div()
                 .text_color(c.fg)
+                .text_size(px(13.0))
                 .child(SharedString::from(field.meta.title)),
         );
         if non_default {
@@ -405,24 +395,33 @@ impl SettingsView {
                 );
         }
 
-        row.child(
-            v_stack()
-                .gap_0p5()
-                .flex_1()
-                .min_w_0()
-                .child(title_row)
-                .child(
-                    div()
-                        .text_size(px(11.0))
-                        .text_color(c.muted)
-                        .child(SharedString::from(field.meta.description)),
-                ),
-        )
-        .child(control)
-        .into_any_element()
+        let mut info = v_stack()
+            .gap(c.space(4.0))
+            .flex_1()
+            .min_w_0()
+            .child(title_row)
+            .child(
+                div()
+                    .text_size(px(12.0))
+                    .text_color(c.muted)
+                    .child(SharedString::from(field.meta.description)),
+            );
+        if let Some(hint) = field.meta.hint {
+            info = info.child(
+                div()
+                    .text_size(px(11.0))
+                    .text_color(c.muted.opacity(0.85))
+                    .child(hint),
+            );
+        }
+        row.child(info)
+            .child(div().flex_shrink_0().child(control))
+            .into_any_element()
     }
 
-    /// Text fields use the shared click-to-edit text-box widget.
+    /// Text fields stay visually quiet until edited, then switch to the real
+    /// UI-kit `InputState` so selection, clipboard, IME, and undo/redo work as
+    /// expected in the native app.
     fn render_text_control(
         &self,
         json_path: &'static str,
@@ -430,43 +429,50 @@ impl SettingsView {
         c: &Palette,
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
-        let editing = self
-            .editing
-            .as_ref()
-            .filter(|e| e.key == json_path)
-            .map(|e| e.buffer.clone());
-        let display_value = editing.clone().unwrap_or_else(|| match value {
+        if self.text_input_key == Some(json_path) {
+            if let Some(input) = &self.text_input {
+                return div()
+                    .w(c.space(220.0))
+                    .rounded(px(c.radius.sm))
+                    .border_1()
+                    .border_color(c.ring)
+                    .bg(c.input)
+                    .child(
+                        field_input(input)
+                            .appearance(false)
+                            .bordered(false)
+                            .focus_bordered(false)
+                            .w_full()
+                            .text_size(px(12.0)),
+                    )
+                    .into_any_element();
+            }
+        }
+        let display_value = match value {
             Some(Value::String(s)) => s,
             _ => String::new(),
-        });
-        let active = editing.is_some();
+        };
         let empty = display_value.is_empty();
-        let show_caret = active && self.blink.read(cx).visible();
-        // T20-003: a click-to-edit text field driven by `self.editing`'s
-        // keydown-buffer state machine — no `button()`/`ListItem` fits a
-        // text-input trigger, documented exception (same shape as
-        // `panes/ai.rs`'s provider-key box).
         div()
             .id(SharedString::from(format!("txt-{json_path}")))
-            .w(px(200.0))
-            .px_2()
-            .py(px(3.0))
+            .w(c.space(220.0))
+            .px(c.space(8.0))
+            .py(c.space(6.0))
             .flex()
             .items_center()
-            .rounded_sm()
+            .rounded(px(c.radius.sm))
             .border_1()
-            .border_color(if active { c.accent } else { c.border })
-            .bg(c.bg)
+            .border_color(c.border)
+            .bg(c.input)
             .text_color(if empty { c.muted } else { c.fg })
-            .text_size(px(11.0))
+            .text_size(px(12.0))
             .child(SharedString::from(if empty {
                 "(default)".to_string()
             } else {
                 display_value
             }))
-            .when(show_caret, |d| d.child(caret(c.fg, 12.0)))
-            .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
-                this.begin_edit(json_path, false, cx);
+            .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
+                this.begin_text_edit(json_path, window, cx);
             }))
             .into_any_element()
     }
@@ -609,13 +615,86 @@ impl SettingsView {
     // ── T19-004: top-level render dispatch ──────────────────────────────
 
     pub(crate) fn render_body(&mut self, c: &Palette, cx: &mut Context<Self>) -> gpui::AnyElement {
-        // T19-007: the global search now lives in the sidebar (a flat,
-        // category-grouped result list, `SettingsView::render_search_results`)
-        // — the main content area always shows the active category/sub-page,
-        // exactly as when browsing, so a search jump lands the field in its
-        // normal place (with a highlight pulse) rather than a duplicate
-        // inline render.
+        // T19-007: search results occupy the main surface and use the same
+        // canonical field renderer as ordinary category pages. The sidebar
+        // remains stable, so search never replaces the user's orientation.
+        if !self.search.trim().is_empty() {
+            return self.render_search_body(c, cx);
+        }
         self.render_generated_body(c, cx)
+    }
+
+    fn render_search_body(&mut self, c: &Palette, cx: &mut Context<Self>) -> gpui::AnyElement {
+        let query = self.search.trim();
+        let mut rows = Vec::new();
+        rows.push(
+            div()
+                .pb(c.space(8.0))
+                .text_size(px(22.0))
+                .font_weight(gpui::FontWeight::BOLD)
+                .text_color(c.fg)
+                .child("Search settings")
+                .into_any_element(),
+        );
+        rows.push(
+            div()
+                .pb(c.space(16.0))
+                .text_size(px(12.0))
+                .text_color(c.muted)
+                .child(SharedString::from(format!(
+                    "Results for \u{201C}{query}\u{201D}"
+                )))
+                .into_any_element(),
+        );
+
+        if self.search_results.is_empty() {
+            rows.push(
+                div()
+                    .py(c.space(24.0))
+                    .text_size(px(13.0))
+                    .text_color(c.muted)
+                    .child("No setting found for this search.")
+                    .into_any_element(),
+            );
+        } else {
+            let mut last_area = None;
+            for row in self.search_results.clone() {
+                if last_area != Some(row.area_title) {
+                    last_area = Some(row.area_title);
+                    rows.push(
+                        div()
+                            .pt(c.space(20.0))
+                            .pb(c.space(4.0))
+                            .text_size(px(15.0))
+                            .font_weight(gpui::FontWeight::SEMIBOLD)
+                            .text_color(c.fg)
+                            .child(SharedString::from(row.area_title))
+                            .into_any_element(),
+                    );
+                }
+                let SearchTarget::Field(index) = row.target;
+                if let Some(field) = self.all_fields.get(index).copied() {
+                    let origin = self.field_origin(&field, cx);
+                    let value = self.field_value(&field, cx);
+                    rows.push(self.render_field(&field, origin, value, c, cx));
+                }
+            }
+        }
+
+        div()
+            .id("settings-search-scroll")
+            .flex_1()
+            .min_h_0()
+            .w_full()
+            .max_w(c.space(640.0))
+            .flex()
+            .flex_col()
+            .px(c.space(24.0))
+            .py(c.space(24.0))
+            .overflow_y_scroll()
+            .track_scroll(&self.content_scroll)
+            .children(rows)
+            .into_any_element()
     }
 
     /// Render the active `PageBody::Generated` page/sub-page: collapsible
@@ -630,6 +709,19 @@ impl SettingsView {
         let items: Vec<SettingsPageItemOwned> =
             items.iter().map(SettingsPageItemOwned::from).collect();
         let mut rows: Vec<gpui::AnyElement> = Vec::new();
+        let page_title = self
+            .active_subpage
+            .map(|index| self.pages[self.active_area].sub_pages[index].title)
+            .unwrap_or(area.title);
+        rows.push(
+            div()
+                .pb(c.space(20.0))
+                .text_size(px(22.0))
+                .font_weight(gpui::FontWeight::BOLD)
+                .text_color(c.fg)
+                .child(SharedString::from(page_title))
+                .into_any_element(),
+        );
         if area.key == "general" && self.active_subpage.is_none() {
             rows.push(self.render_about_hero(c, cx));
         }
@@ -678,10 +770,8 @@ impl SettingsView {
         };
 
         // Resolve headers + fields that actually render into one flat
-        // sequence first, so consecutive fields under one header can be
-        // grouped into a single card: a field's position in that sequence
-        // (first/last since the previous/next header) decides which edges
-        // `render_field` draws (see its doc comment).
+        // sequence first so sidebar section anchors and field rows share one
+        // stable scroll order.
         enum Resolved {
             Header(&'static str),
             Field(AnyField),
@@ -706,7 +796,7 @@ impl SettingsView {
             }
         }
 
-        for (i, entry) in resolved.iter().enumerate() {
+        for entry in &resolved {
             match entry {
                 Resolved::Header(label) => {
                     section_rows.push((rows.len(), label));
@@ -716,23 +806,8 @@ impl SettingsView {
                     if pending_scroll == Some(field.json_path) {
                         scroll_to_row = Some(rows.len());
                     }
-                    let row_first =
-                        i == 0 || matches!(resolved.get(i - 1), Some(Resolved::Header(_)));
-                    let row_last = resolved
-                        .get(i + 1)
-                        .is_none_or(|next| matches!(next, Resolved::Header(_)));
                     let (origin, value) = row_input(field);
-                    rows.push(self.render_field(
-                        field,
-                        origin,
-                        value,
-                        FieldRowState {
-                            first: row_first,
-                            last: row_last,
-                        },
-                        c,
-                        cx,
-                    ));
+                    rows.push(self.render_field(field, origin, value, c, cx));
                 }
             }
         }
@@ -757,10 +832,10 @@ impl SettingsView {
             .flex_1()
             .min_h_0()
             .w_full()
-            .max_w(px(580.0))
+            .max_w(c.space(640.0))
             .flex()
             .flex_col()
-            .p_4()
+            .p(c.space(24.0))
             .overflow_y_scroll()
             .track_scroll(&self.content_scroll)
             .children(rows)
@@ -769,10 +844,9 @@ impl SettingsView {
 
     /// A static section heading (`docs/architecture.md` §8.3 deviation from
     /// `settings-guidelines.md` rule 1: no longer a user-collapsible
-    /// disclosure — the section list moved to the sidebar as scroll
-    /// anchors). A small `primary`-tinted marker + a heavier label give each
-    /// section its own beat, so scrolling reads as distinct blocks instead
-    /// of one undifferentiated column of rows.
+    /// disclosure — the section list moved to the sidebar as scroll anchors).
+    /// Whitespace and typography provide the section beat; ordinary values
+    /// remain a continuous, card-free list.
     fn render_section_header(
         &self,
         label: &'static str,
@@ -780,19 +854,12 @@ impl SettingsView {
         _cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
         div()
-            .pt_5()
-            .pb_2()
-            .flex()
-            .items_center()
-            .gap_2()
-            .child(div().w(px(3.0)).h(px(12.0)).rounded_full().bg(c.primary))
-            .child(
-                div()
-                    .text_size(px(12.5))
-                    .font_weight(gpui::FontWeight::SEMIBOLD)
-                    .text_color(c.fg)
-                    .child(SharedString::from(label)),
-            )
+            .pt(c.space(24.0))
+            .pb(c.space(4.0))
+            .text_size(px(15.0))
+            .font_weight(gpui::FontWeight::SEMIBOLD)
+            .text_color(c.fg)
+            .child(SharedString::from(label))
             .into_any_element()
     }
 

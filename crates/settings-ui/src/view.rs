@@ -20,8 +20,8 @@ pub use labonair_settings::{Settings as _, SettingsStore};
 pub use labonair_settings_content::areas::AREAS;
 pub use labonair_theme::ThemeStore;
 pub use labonair_ui_kit::{
-    button, checkbox, h_stack, list_header, list_separator, number_field, select_popover,
-    select_trigger, v_stack, BlinkCursor, ButtonSize, ButtonVariant, IconName, ListItem, Palette,
+    button, checkbox, field_input, h_stack, number_field, select_popover, select_trigger,
+    text_field, v_stack, ButtonSize, ButtonVariant, IconName, InputEvent, InputState, Palette,
     SelectOption, Switch,
 };
 
@@ -34,12 +34,13 @@ pub(crate) use crate::window::*;
 
 use std::collections::{HashMap, HashSet};
 
-pub(crate) struct EditState {
-    /// The field's `json_path` (e.g. `"terminal.terminalFontSize"`).
-    pub(crate) key: String,
-    pub(crate) buffer: String,
-    pub(crate) numeric: bool,
-}
+/// The visual grouping is navigation-only. The canonical Settings categories
+/// remain the seven entries in `settings-content::areas::AREAS`.
+const SIDEBAR_GROUPS: &[(&str, &[&str])] = &[
+    ("GENERAL", &["general", "appearance"]),
+    ("WORK", &["terminal", "editor", "file_manager", "workspace"]),
+    ("CONNECTIONS", &["connections"]),
+];
 
 /// Which layer supplies a field's effective value, for the origin badge
 /// (`docs/settings-guidelines.md` rule 5). A thin display-only mirror of
@@ -74,7 +75,17 @@ pub struct SettingsView {
     /// has been followed (rule 1).
     pub(crate) active_subpage: Option<usize>,
     pub(crate) search: String,
-    pub(crate) editing: Option<EditState>,
+    /// The real UI-kit search input. `search` remains the view-level query so
+    /// keyboard navigation and the fuzzy index keep their existing contract.
+    pub(crate) search_input: Option<Entity<InputState>>,
+    pub(crate) search_input_focused: bool,
+    pub(crate) _search_input_subscription: Option<Subscription>,
+    /// Only one Settings text value is edited at a time. The input is created
+    /// on demand so ordinary rows stay lightweight while still gaining native
+    /// selection, clipboard, IME, and undo/redo behavior when edited.
+    pub(crate) text_input: Option<Entity<InputState>>,
+    pub(crate) text_input_key: Option<&'static str>,
+    pub(crate) _text_input_subscription: Option<Subscription>,
     /// `true` when this view is the root of its own OS window (T16-009); `false`
     /// for the legacy in-`AppShell` modal path (kept for tests only).
     pub(crate) windowed: bool,
@@ -130,10 +141,6 @@ pub struct SettingsView {
     /// repaints from creating duplicate notifications while still allowing a
     /// changed problem to be reported again.
     pub(crate) published_diagnostics: Option<String>,
-    /// Drives the caret blink for the search box and the active inline
-    /// field editor — only one of the two is ever "typing" at a time.
-    pub(crate) blink: Entity<BlinkCursor>,
-    _blink_obs: Subscription,
 }
 
 pub(crate) struct SelectMenu {
@@ -178,8 +185,6 @@ impl SettingsView {
         let all_fields = all_fields();
         let pages = pages();
         let search_index = SearchIndex::build(&all_fields);
-        let blink = cx.new(|_| BlinkCursor::new());
-        let _blink_obs = cx.observe(&blink, |_, _, cx| cx.notify());
         Self {
             theme,
             font_service: services.fonts,
@@ -188,7 +193,12 @@ impl SettingsView {
             active_area: 0,
             active_subpage: None,
             search: String::new(),
-            editing: None,
+            search_input: None,
+            search_input_focused: false,
+            _search_input_subscription: None,
+            text_input: None,
+            text_input_key: None,
+            _text_input_subscription: None,
             windowed: false,
             dropdown: None,
             select_bounds: HashMap::new(),
@@ -208,8 +218,6 @@ impl SettingsView {
             highlight_token: 0,
             pending_scroll: None,
             published_diagnostics: None,
-            blink,
-            _blink_obs,
         }
     }
 
@@ -219,7 +227,7 @@ impl SettingsView {
 
     pub fn open(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.open = true;
-        self.editing = None;
+        self.cancel_text_input(cx);
         // Sidebar categories always start collapsed on (re)open.
         self.expanded_areas.clear();
         self.search.clear();
@@ -228,7 +236,6 @@ impl SettingsView {
         self.highlight = None;
         self.pending_scroll = None;
         window.focus(&self.focus);
-        self.blink.update(cx, |b, cx| b.start(cx));
         self.publish_settings_diagnostics(cx);
         self.load_system_fonts(cx);
         cx.notify();
@@ -236,8 +243,7 @@ impl SettingsView {
 
     pub fn close(&mut self, cx: &mut Context<Self>) {
         self.open = false;
-        self.editing = None;
-        self.blink.update(cx, |b, cx| b.stop(cx));
+        self.cancel_text_input(cx);
         cx.notify();
     }
 
@@ -248,7 +254,7 @@ impl SettingsView {
     pub(crate) fn request_close(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.windowed {
             cx.set_global(SettingsWindowRef { handle: None });
-            self.editing = None;
+            self.cancel_text_input(cx);
             window.remove_window();
         } else {
             self.close(cx);
@@ -659,44 +665,133 @@ impl SettingsView {
         self.set_field_value(json_path, Value::Number(n), cx);
     }
 
-    pub(crate) fn begin_edit(&mut self, key: &str, numeric: bool, cx: &mut Context<Self>) {
-        let buffer = self
+    /// Create the real search input once the native window has a `Window`.
+    /// `InputState` owns selection, clipboard, IME, and undo/redo behavior;
+    /// the view still owns the query and fuzzy-result state.
+    pub(crate) fn ensure_search_input(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.search_input.is_some() {
+            return;
+        }
+        let input = cx.new(|cx| text_field(window, cx).placeholder("Search settings…"));
+        let subscription =
+            cx.subscribe(&input, |this, input, event: &InputEvent, cx| match event {
+                InputEvent::Change => {
+                    this.search = input.read(cx).value().to_string();
+                    this.search_selected = 0;
+                    this.refresh_search_results();
+                    cx.notify();
+                }
+                InputEvent::Focus => {
+                    this.search_input_focused = true;
+                    cx.notify();
+                }
+                InputEvent::Blur => {
+                    this.search_input_focused = false;
+                    cx.notify();
+                }
+                InputEvent::PressEnter { .. } => {
+                    if let Some(row) = this.search_results.get(this.search_selected).copied() {
+                        this.activate_search_hit(row.target, cx);
+                    }
+                }
+            });
+        self.search_input = Some(input);
+        self._search_input_subscription = Some(subscription);
+    }
+
+    /// Keep the view-level query and the visible `InputState` synchronized
+    /// after keyboard navigation or a programmatic search clear.
+    pub(crate) fn sync_search_input(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(input) = self.search_input.clone() else {
+            return;
+        };
+        let current = input.read(cx).value().to_string();
+        if current == self.search {
+            return;
+        }
+        let query = self.search.clone();
+        input.update(cx, |state, cx| state.set_value(query, window, cx));
+    }
+
+    /// Start editing a text setting with a native UI-kit input.
+    pub(crate) fn begin_text_edit(
+        &mut self,
+        key: &'static str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.text_input_key == Some(key) {
+            if let Some(input) = &self.text_input {
+                input.update(cx, |state, cx| state.focus(window, cx));
+            }
+            return;
+        }
+        self.commit_active_text_input(cx);
+
+        let initial = self
             .field_by_path(key)
-            .and_then(|f| self.field_value(f, cx))
-            .map(|v| match v {
-                Value::String(s) => s,
-                other => other.to_string(),
-            })
+            .and_then(|field| self.field_value(field, cx))
+            .and_then(|value| value.as_str().map(str::to_owned))
             .unwrap_or_default();
-        self.editing = Some(EditState {
-            key: key.to_string(),
-            buffer,
-            numeric,
+        let input = cx.new(|cx| {
+            let mut state = text_field(window, cx).placeholder("(default)");
+            if !initial.is_empty() {
+                state.set_value(initial, window, cx);
+            }
+            state
         });
-        self.blink.update(cx, |b, cx| b.pause(cx));
+        let subscription =
+            cx.subscribe(
+                &input,
+                move |this, input, event: &InputEvent, cx| match event {
+                    InputEvent::PressEnter { .. } | InputEvent::Blur => {
+                        this.commit_text_input(key, input.read(cx).value().to_string(), cx);
+                    }
+                    _ => {}
+                },
+            );
+        input.update(cx, |state, cx| state.focus(window, cx));
+        self.text_input = Some(input);
+        self.text_input_key = Some(key);
+        self._text_input_subscription = Some(subscription);
         cx.notify();
     }
 
-    pub(crate) fn commit_edit(&mut self, cx: &mut Context<Self>) {
-        let Some(edit) = self.editing.take() else {
+    pub(crate) fn commit_active_text_input(&mut self, cx: &mut Context<Self>) {
+        let Some(key) = self.text_input_key else {
             return;
         };
-        let Some(field) = self.field_by_path(&edit.key) else {
+        let value = self
+            .text_input
+            .as_ref()
+            .map(|input| input.read(cx).value().to_string())
+            .unwrap_or_default();
+        self.commit_text_input(key, value, cx);
+    }
+
+    pub(crate) fn commit_text_input(
+        &mut self,
+        key: &'static str,
+        value: String,
+        cx: &mut Context<Self>,
+    ) {
+        if self.text_input_key != Some(key) {
             return;
-        };
-        let json_path = field.json_path;
-        let value = if edit.numeric {
-            match edit.buffer.trim().parse::<i64>() {
-                Ok(n) => Value::from(n),
-                Err(_) => {
-                    cx.notify();
-                    return;
-                }
-            }
-        } else {
-            Value::String(edit.buffer.trim().to_string())
-        };
-        self.set_field_value(json_path, value, cx);
+        }
+        self.text_input_key = None;
+        self.text_input = None;
+        self._text_input_subscription = None;
+        self.set_field_value(key, Value::String(value.trim().to_owned()), cx);
+    }
+
+    pub(crate) fn cancel_text_input(&mut self, cx: &mut Context<Self>) {
+        if self.text_input_key.is_none() {
+            return;
+        }
+        self.text_input_key = None;
+        self.text_input = None;
+        self._text_input_subscription = None;
+        cx.notify();
     }
 
     // ── key handling ──────────────────────────────────────────────────────
@@ -709,32 +804,12 @@ impl SettingsView {
     ) {
         let ks = &ev.keystroke;
         let key = ks.key.as_str();
-        if self.editing.is_some() {
-            match key {
-                "escape" => {
-                    self.editing = None;
-                    cx.notify();
-                }
-                "enter" => self.commit_edit(cx),
-                "backspace" => {
-                    if let Some(e) = self.editing.as_mut() {
-                        e.buffer.pop();
-                    }
-                    self.blink.update(cx, |b, cx| b.pause(cx));
-                    cx.notify();
-                }
-                _ => {
-                    if ks.modifiers.platform || ks.modifiers.control || ks.modifiers.alt {
-                        return;
-                    }
-                    if let Some(ch) = char_of(ks) {
-                        if let Some(e) = self.editing.as_mut() {
-                            e.buffer.push_str(&ch);
-                        }
-                        self.blink.update(cx, |b, cx| b.pause(cx));
-                        cx.notify();
-                    }
-                }
+        // A real text input owns character editing. The view only handles
+        // Escape so an active edit can be cancelled without leaking the event
+        // into Settings navigation.
+        if self.text_input_key.is_some() {
+            if key == "escape" {
+                self.cancel_text_input(cx);
             }
             cx.stop_propagation();
             return;
@@ -753,10 +828,9 @@ impl SettingsView {
                     self.request_close(window, cx);
                 }
             }
-            "backspace" => {
+            "backspace" if !self.search_input_focused => {
                 self.search.pop();
                 self.refresh_search_results();
-                self.blink.update(cx, |b, cx| b.pause(cx));
                 cx.notify();
             }
             "down" if !self.search_results.is_empty() => {
@@ -774,13 +848,16 @@ impl SettingsView {
                 }
             }
             _ => {
-                if ks.modifiers.platform || ks.modifiers.control || ks.modifiers.alt {
+                if self.search_input_focused
+                    || ks.modifiers.platform
+                    || ks.modifiers.control
+                    || ks.modifiers.alt
+                {
                     return;
                 }
                 if let Some(ch) = char_of(ks) {
                     self.search.push_str(&ch);
                     self.refresh_search_results();
-                    self.blink.update(cx, |b, cx| b.pause(cx));
                     cx.notify();
                 }
             }
@@ -935,71 +1012,102 @@ impl SettingsView {
             )
             .into_any_element()
     }
+}
 
-    /// The sidebar's content while a search query is active (T19-007 step
-    /// 3): a flat, category-grouped list of `search_results` replacing the
-    /// normal category nav. Selection follows keyboard Up/Down
-    /// (`search_selected`); click/Enter jump to the field (`on_key`,
-    /// `activate_search_hit`).
-    pub(crate) fn render_search_results(
-        &mut self,
+impl SettingsView {
+    /// Render one category row plus its optional section scroll anchors. The
+    /// surrounding group labels are purely navigational; category selection
+    /// still follows `AREAS` and the existing deep-link contract.
+    fn render_area_navigation(
+        &self,
+        i: usize,
+        area: &labonair_settings_content::areas::AreaMeta,
         c: &Palette,
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
-        if self.search_results.is_empty() {
-            return div()
-                .p_2()
-                .text_size(px(11.0))
-                .text_color(c.muted)
-                .child(SharedString::from(format!(
-                    "No setting found for \u{201C}{}\u{201D}.",
-                    self.search.trim()
-                )))
-                .into_any_element();
+        let is_active = i == self.active_area;
+        let expanded = self.expanded_areas.contains(&i);
+        let sections = self.section_labels_for_area(i);
+        let has_sections = !sections.is_empty();
+        let chevron = if expanded {
+            IconName::ChevronDown
+        } else {
+            IconName::ChevronRight
+        };
+
+        let mut toggle = div()
+            .id(SharedString::from(format!("area-toggle-{}", area.key)))
+            .flex()
+            .items_center()
+            .justify_center()
+            .flex_shrink_0()
+            .w(c.space(24.0))
+            .h(c.space(28.0))
+            .rounded(px(c.radius.sm));
+        if has_sections {
+            toggle = toggle
+                .cursor_pointer()
+                .hover(|s| s.bg(c.muted_bg))
+                .child(chevron.svg(c.sidebar_fg).size(px(12.0)))
+                .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
+                    this.toggle_area_expanded(i, cx);
+                }));
         }
-        // T20-001: one `ListHeader` per category + one `ListItem` per hit,
-        // from the shared list primitives.
-        let rows = self.search_results.clone();
-        let selected = self.search_selected;
-        let mut col = div().flex().flex_col().gap_0p5();
-        let mut last_area: Option<&'static str> = None;
-        for (i, row) in rows.into_iter().enumerate() {
-            if last_area != Some(row.area_title) {
-                if last_area.is_some() {
-                    col = col.child(list_separator(c.border));
-                }
-                col = col.child(list_header(row.area_title, c.muted));
-                last_area = Some(row.area_title);
-            }
-            let target = row.target;
-            let subtitle = (!row.subtitle.is_empty()).then(|| {
+
+        let row = div()
+            .flex()
+            .items_center()
+            .w_full()
+            .pr(c.space(8.0))
+            .rounded(px(c.radius.sm))
+            .text_size(px(12.0))
+            .text_color(c.sidebar_fg)
+            .border_l_2()
+            .border_color(if is_active {
+                c.selected_accent
+            } else {
+                gpui::transparent_black()
+            })
+            .when(is_active, |d| d.bg(c.selected_fill))
+            .when(!is_active, |d| d.hover(|s| s.bg(c.accent)))
+            .child(toggle)
+            .child(
                 div()
-                    .text_size(px(10.0))
-                    .text_color(c.muted)
-                    .child(SharedString::from(row.subtitle))
-            });
-            col = col.child(
-                ListItem::new(
-                    SharedString::from(format!("search-hit-{i}")),
-                    c.fg,
-                    c.muted,
-                    c.accent,
-                )
-                .selected(i == selected)
-                .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
-                    this.activate_search_hit(target, cx);
-                }))
-                .child(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .gap_0p5()
-                        .child(SharedString::from(row.title))
-                        .children(subtitle),
-                ),
+                    .id(SharedString::from(format!("area-{}", area.key)))
+                    .flex_1()
+                    .min_w_0()
+                    .py(c.space(6.0))
+                    .cursor_pointer()
+                    .child(SharedString::from(area.title))
+                    .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
+                        this.go_to_area(i, cx);
+                    })),
             );
-        }
-        col.into_any_element()
+
+        let sub = (expanded && has_sections).then(|| {
+            v_stack()
+                .gap(c.space(2.0))
+                .pb(c.space(4.0))
+                .children(sections.into_iter().map(|label| {
+                    div()
+                        .id(SharedString::from(format!("sec-{i}-{label}")))
+                        .w_full()
+                        .pl(c.space(30.0))
+                        .pr(c.space(8.0))
+                        .py(c.space(5.0))
+                        .rounded(px(c.radius.sm))
+                        .text_size(px(11.5))
+                        .text_color(c.muted)
+                        .cursor_pointer()
+                        .hover(|s| s.bg(c.accent).text_color(c.sidebar_fg))
+                        .child(SharedString::from(label))
+                        .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
+                            this.go_to_section(i, label, cx);
+                        }))
+                }))
+        });
+
+        v_stack().child(row).children(sub).into_any_element()
     }
 }
 
@@ -1010,46 +1118,59 @@ impl Focusable for SettingsView {
 }
 
 impl Render for SettingsView {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         if !self.windowed && !self.open {
             return div().into_any_element();
         }
+        self.ensure_search_input(window, cx);
+        self.sync_search_input(window, cx);
         let c = Palette::from_theme(self.theme.read(cx));
-        let active_area = self.active_area;
         let searching = !self.search.trim().is_empty();
         // T19-007: recompute every render so Up/Down/Enter and mouse clicks
         // always act on what's currently on screen (cheap — ~200 entries).
         self.refresh_search_results();
 
-        let search_focused = self.editing.is_none();
-        let show_caret = search_focused && self.blink.read(cx).visible();
         let mut search_box = div()
+            .id("settings-search")
             .mb_2()
-            .px_2()
-            .py(px(4.0))
+            .px(c.space(8.0))
+            .py(c.space(4.0))
             .flex()
             .items_center()
-            .rounded_sm()
+            .gap(c.space(6.0))
+            .rounded(px(c.radius.sm))
             .border_1()
             .border_color(if searching { c.accent } else { c.border })
-            .bg(c.bg)
-            .text_size(px(11.5));
-        if !self.search.is_empty() {
-            search_box = search_box.child(
+            .bg(c.input)
+            .child(IconName::Search.svg(c.muted).size(px(13.0)))
+            .child(
                 div()
-                    .text_color(c.fg)
-                    .child(SharedString::from(self.search.clone())),
+                    .flex_1()
+                    .min_w_0()
+                    .children(self.search_input.as_ref().map(|input| {
+                        field_input(input)
+                            .appearance(false)
+                            .bordered(false)
+                            .focus_bordered(false)
+                            .w_full()
+                            .text_size(px(12.0))
+                    })),
             );
-        }
-        if show_caret {
-            search_box = search_box.child(labonair_ui_kit::caret(c.fg, 12.0));
-        }
-        if self.search.is_empty() {
+        if searching {
             search_box = search_box.child(
-                div()
-                    .when(search_focused, |d| d.pl(px(4.0)))
-                    .text_color(c.muted)
-                    .child("Search settings\u{2026}"),
+                button(
+                    "settings-clear-search",
+                    c,
+                    ButtonVariant::Ghost,
+                    ButtonSize::IconXs,
+                )
+                .child(IconName::X.svg(c.muted).size(px(11.0)))
+                .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
+                    this.search.clear();
+                    this.search_results.clear();
+                    this.search_selected = 0;
+                    cx.notify();
+                })),
             );
         }
 
@@ -1062,111 +1183,40 @@ impl Render for SettingsView {
         // sub-level scroll anchors (not pages). Row click navigates + expands;
         // chevron click only toggles; sub-label click scrolls the content to
         // that section.
-        let sidebar_body: gpui::AnyElement = if searching {
-            self.render_search_results(&c, cx)
-        } else {
-            div()
-                .flex()
-                .flex_col()
-                .gap_0p5()
-                .children(AREAS.iter().enumerate().map(|(i, area)| {
-                    let is_active = i == active_area;
-                    let expanded = self.expanded_areas.contains(&i);
-                    let sections = self.section_labels_for_area(i);
-                    let has_sections = !sections.is_empty();
-                    let chevron = if expanded {
-                        IconName::ChevronDown
-                    } else {
-                        IconName::ChevronRight
-                    };
-                    // One cohesive row that reads as a single button: a
-                    // full-width hover/selected fill spanning both the
-                    // disclosure chevron and the label. The chevron and the
-                    // label are separate, non-overlapping click zones — the
-                    // chevron only toggles the sub-section list, the label
-                    // navigates to the area without expanding it.
-                    let mut toggle = div()
-                        .id(SharedString::from(format!("area-toggle-{}", area.key)))
-                        .flex()
-                        .items_center()
-                        .justify_center()
-                        .flex_shrink_0()
-                        .w(px(24.0))
-                        .h(px(28.0))
-                        .rounded_sm();
-                    if has_sections {
-                        toggle = toggle
-                            .cursor_pointer()
-                            .hover(|s| s.bg(c.muted_bg))
-                            .child(chevron.svg(c.sidebar_fg).size(px(12.0)))
-                            .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
-                                this.toggle_area_expanded(i, cx);
-                            }));
-                    }
-                    let row = div()
-                        .flex()
-                        .items_center()
-                        .w_full()
-                        .pr(px(8.0))
-                        .rounded_sm()
-                        .text_size(px(12.0))
-                        .text_color(c.sidebar_fg)
-                        .border_l_2()
-                        .border_color(if is_active {
-                            c.selected_accent
-                        } else {
-                            gpui::transparent_black()
-                        })
-                        .when(is_active, |d| d.bg(c.selected_fill))
-                        .when(!is_active, |d| d.hover(|s| s.bg(c.accent)))
-                        .child(toggle)
-                        .child(
-                            div()
-                                .id(SharedString::from(format!("area-{}", area.key)))
-                                .flex_1()
-                                .min_w_0()
-                                .py(px(6.0))
-                                .cursor_pointer()
-                                .child(SharedString::from(area.title))
-                                .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
-                                    this.go_to_area(i, cx);
-                                })),
-                        );
-                    let sub = (expanded && has_sections).then(|| {
-                        v_stack()
-                            .gap_0p5()
-                            .pb_1()
-                            .children(sections.into_iter().map(|label| {
-                                div()
-                                    .id(SharedString::from(format!("sec-{i}-{label}")))
-                                    .w_full()
-                                    .pl(px(30.0))
-                                    .pr(px(8.0))
-                                    .py(px(5.0))
-                                    .rounded_sm()
-                                    .text_size(px(11.5))
-                                    .text_color(c.muted)
-                                    .cursor_pointer()
-                                    .hover(|s| s.bg(c.accent).text_color(c.sidebar_fg))
-                                    .child(SharedString::from(label))
-                                    .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
-                                        this.go_to_section(i, label, cx);
-                                    }))
-                            }))
-                    });
-                    v_stack().child(row).children(sub)
-                }))
-                .into_any_element()
-        };
+        let mut sidebar_items = Vec::new();
+        for (group_label, area_keys) in SIDEBAR_GROUPS {
+            sidebar_items.push(
+                div()
+                    .pt(c.space(12.0))
+                    .pb(c.space(4.0))
+                    .pl(c.space(8.0))
+                    .text_size(px(10.0))
+                    .font_weight(gpui::FontWeight::SEMIBOLD)
+                    .text_color(c.muted)
+                    .child(*group_label)
+                    .into_any_element(),
+            );
+            for (i, area) in AREAS.iter().enumerate() {
+                if area_keys.contains(&area.key) {
+                    sidebar_items.push(self.render_area_navigation(i, area, &c, cx));
+                }
+            }
+        }
+        let sidebar_body = div()
+            .flex()
+            .flex_col()
+            .gap(c.space(2.0))
+            .children(sidebar_items)
+            .into_any_element();
 
         let sidebar = div()
             .id("settings-sidebar")
-            .w(px(208.0))
+            .w(c.space(208.0))
             .flex_shrink_0()
             .flex()
             .flex_col()
-            .gap_0p5()
-            .p_2()
+            .gap(c.space(2.0))
+            .p(c.space(8.0))
             .overflow_y_scroll()
             // `docs/settings-guidelines.md`: the nav rail sits on its own
             // `--sidebar` surface, distinct from the `--card` content area.
@@ -1192,7 +1242,7 @@ impl Render for SettingsView {
                 .min_h_0()
                 .flex()
                 .flex_col()
-                .items_center()
+                .items_start()
                 .child(body),
         );
 
@@ -1273,14 +1323,14 @@ impl SettingsView {
                 .into_any_element()
         });
         div()
-            .h(px(44.0))
+            .h(c.space(44.0))
             .flex_shrink_0()
             .flex()
             .items_center()
             .justify_between()
             // Clear the macOS traffic lights (positioned at x = 19).
-            .pl(px(84.0))
-            .pr_3()
+            .pl(c.space(84.0))
+            .pr(c.space(12.0))
             .border_b_1()
             .border_color(c.border)
             .child(div().flex_1().min_w_0().children(crumb))

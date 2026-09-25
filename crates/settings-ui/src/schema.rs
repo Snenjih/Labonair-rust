@@ -30,6 +30,8 @@ use serde_json::Value;
 pub struct SettingsFieldMetadata {
     pub title: &'static str,
     pub description: &'static str,
+    pub unit: Option<&'static str>,
+    pub hint: Option<&'static str>,
 }
 
 /// The renderer-registry key: which Rust-type-shaped widget a field gets
@@ -102,8 +104,22 @@ macro_rules! meta {
         SettingsFieldMetadata {
             title: $title,
             description: $desc,
+            unit: None,
+            hint: None,
         }
     };
+}
+
+/// Add the small amount of context that makes numeric and delayed settings
+/// readable without turning the registry into a second schema. The base
+/// `field!` form remains the default for ordinary values.
+macro_rules! field_with_details {
+    ($area:ident.$field:ident, $json:literal, $control:expr, $title:expr, $desc:expr, $unit:expr, $hint:expr) => {{
+        let mut field = field!($area.$field, $json, $control, $title, $desc);
+        field.meta.unit = Some($unit);
+        field.meta.hint = Some($hint);
+        field
+    }};
 }
 
 /// Generate one [`AnyField`]. `get`/`set` round-trip through `serde_json`
@@ -238,12 +254,14 @@ pub fn all_fields() -> Vec<AnyField> {
             "Editor & terminal font",
             "Font used for editor and terminal text (empty = the theme's mono font)."
         ),
-        field!(
+        field_with_details!(
             appearance.buffer_font_size,
             "bufferFontSize",
             Int { min: 9, max: 24, step: 1 },
             "Editor & terminal font size",
-            "Text size for editor and terminal content, in points."
+            "Text size for editor and terminal content.",
+            "pt",
+            "Applied to editor and terminal text."
         ),
         field!(
             appearance.buffer_line_height,
@@ -292,12 +310,14 @@ pub fn all_fields() -> Vec<AnyField> {
             "Font family",
             "Terminal typeface."
         ),
-        field!(
+        field_with_details!(
             terminal.terminal_font_size,
             "terminalFontSize",
             Int { min: 8, max: 32, step: 1 },
             "Font size",
-            "Terminal font size in points."
+            "Terminal font size.",
+            "pt",
+            "Affects new and existing terminal panes."
         ),
         field!(
             terminal.terminal_line_height,
@@ -317,12 +337,14 @@ pub fn all_fields() -> Vec<AnyField> {
             "Font weight",
             "Weight of the terminal text."
         ),
-        field!(
+        field_with_details!(
             terminal.terminal_scrollback,
             "terminalScrollback",
             Int { min: 1000, max: 200_000, step: 1000 },
             "Scrollback lines",
-            "Lines of history kept per terminal."
+            "Lines of history kept per terminal.",
+            "lines",
+            "Higher values use more memory."
         ),
         field!(
             terminal.session_scrollback_lines,
@@ -331,19 +353,23 @@ pub fn all_fields() -> Vec<AnyField> {
             "Persisted scrollback lines",
             "Rows of history saved per pane on quit and replayed on the next launch (0 = all)."
         ),
-        field!(
+        field_with_details!(
             terminal.scrollback_max_size_mb,
             "scrollbackMaxSizeMb",
             Int { min: 1, max: 100, step: 1 },
             "Persisted scrollback size cap",
-            "Per-file ceiling for a saved scrollback, in MB."
+            "Per-file ceiling for a saved scrollback.",
+            "MB",
+            "Only applies to persisted scrollback files."
         ),
-        field!(
+        field_with_details!(
             terminal.scrollback_retention_days,
             "scrollbackRetentionDays",
             Int { min: 0, max: 365, step: 1 },
             "Persisted scrollback retention",
-            "Days a saved scrollback file is kept before cleanup removes it (0 = keep with the session)."
+            "Days a saved scrollback file is kept before cleanup removes it (0 = keep with the session).",
+            "days",
+            "Cleanup runs when the application starts."
         ),
         field!(
             terminal.terminal_cursor_style,
@@ -363,12 +389,14 @@ pub fn all_fields() -> Vec<AnyField> {
             "Cursor blink",
             "Blink the terminal cursor while the terminal is focused."
         ),
-        field!(
+        field_with_details!(
             terminal.terminal_cursor_blink_interval,
             "terminalCursorBlinkInterval",
             Int { min: 100, max: 5000, step: 100 },
             "Cursor blink interval",
-            "Milliseconds between cursor blink phases."
+            "Time between cursor blink phases.",
+            "ms",
+            "Only applies while the terminal is focused."
         ),
         field!(
             terminal.terminal_copy_on_select,
@@ -424,12 +452,14 @@ pub fn all_fields() -> Vec<AnyField> {
             "Confirm close with running shell",
             "Ask before closing a terminal tab whose shell is still running."
         ),
-        field!(
+        field_with_details!(
             terminal.terminal_opacity,
             "terminalOpacity",
             Int { min: 20, max: 100, step: 5 },
             "Background opacity",
-            "Terminal background opacity in percent (100 = opaque)."
+            "Terminal background opacity (100 = opaque).",
+            "%",
+            "Applies to terminal background surfaces."
         ),
         field!(
             terminal.terminal_environment_variables,
@@ -453,12 +483,14 @@ pub fn all_fields() -> Vec<AnyField> {
             "Font family",
             "Editor typeface."
         ),
-        field!(
+        field_with_details!(
             editor.editor_font_size,
             "editorFontSize",
             Int { min: 8, max: 32, step: 1 },
             "Font size",
-            "Editor font size in points."
+            "Editor font size.",
+            "pt",
+            "Applies to open and newly opened documents."
         ),
         field!(
             editor.editor_line_height,
@@ -607,12 +639,14 @@ pub fn all_fields() -> Vec<AnyField> {
             "Auto save",
             "Save after a quiet period following edits (off by default)."
         ),
-        field!(
+        field_with_details!(
             editor.editor_auto_save_delay,
             "editorAutoSaveDelay",
             Int { min: 250, max: 60000, step: 250 },
             "Auto-save delay",
-            "Quiet period before auto-save, in milliseconds."
+            "Quiet period before auto-save.",
+            "ms",
+            "Only applies when auto save is enabled."
         ),
         field!(
             editor.editor_trim_trailing_whitespace,
@@ -649,19 +683,23 @@ pub fn all_fields() -> Vec<AnyField> {
             "Code outline",
             "Expose the document symbol outline affordance."
         ),
-        field!(
+        field_with_details!(
             editor.editor_autocomplete_debounce_ms,
             "editorAutocompleteDebounceMs",
             Int { min: 50, max: 2000, step: 50 },
             "Completion delay",
-            "Debounce local completion requests, in milliseconds."
+            "Debounce local completion requests.",
+            "ms",
+            "Only affects local completion providers."
         ),
-        field!(
+        field_with_details!(
             editor.editor_max_file_size_mb,
             "editorMaxFileSizeMb",
             Int { min: 1, max: 512, step: 1 },
             "Maximum text file size",
-            "Reject text loads above this size and keep them out of the edit buffer."
+            "Reject text loads above this size and keep them out of the edit buffer.",
+            "MB",
+            "Files above the limit remain unopened in the editor."
         ),
         field!(
             editor.editor_vim_mode,
@@ -734,12 +772,14 @@ pub fn all_fields() -> Vec<AnyField> {
             "Cursor blink",
             "Blink the caret while the editor is focused."
         ),
-        field!(
+        field_with_details!(
             editor.editor_cursor_blink_interval_ms,
             "editorCursorBlinkIntervalMs",
             Int { min: 100, max: 5000, step: 100 },
             "Cursor blink interval",
-            "Milliseconds between caret blink phases."
+            "Time between caret blink phases.",
+            "ms",
+            "Only applies while the editor is focused."
         ),
         // ── file_manager ────────────────────────────────────────────────
         field!(
@@ -885,19 +925,23 @@ pub fn all_fields() -> Vec<AnyField> {
             "Block the first quit attempt while a terminal or SSH shell is still running."
         ),
         // ── connections ─────────────────────────────────────────────────
-        field!(
+        field_with_details!(
             connections.ssh_connect_timeout_secs,
             "sshConnectTimeoutSecs",
             Int { min: 1, max: 300, step: 1 },
             "Connect timeout",
-            "Seconds to wait for the initial TCP+SSH handshake before giving up."
+            "Time to wait for the initial TCP+SSH handshake before giving up.",
+            "s",
+            "Hosts can override this default."
         ),
-        field!(
+        field_with_details!(
             connections.ssh_keepalive_interval_secs,
             "sshKeepaliveIntervalSecs",
             Int { min: 1, max: 600, step: 1 },
             "Keep-alive interval",
-            "Fallback keep-alive ping interval, in seconds, for hosts that don't set their own."
+            "Fallback keep-alive ping interval for hosts that do not set their own.",
+            "s",
+            "Affects connections opened without a host-specific override."
         ),
         field!(
             connections.ssh_keepalive_max_failures,
@@ -943,6 +987,26 @@ mod tests {
                 f.json_path
             );
         }
+    }
+
+    #[test]
+    fn detailed_numeric_fields_keep_their_display_context() {
+        let fields = all_fields();
+        let font_size = fields
+            .iter()
+            .find(|field| field.json_path == "terminal.terminalFontSize")
+            .expect("terminalFontSize must be registered");
+        assert_eq!(font_size.meta.unit, Some("pt"));
+        assert_eq!(
+            font_size.meta.hint,
+            Some("Affects new and existing terminal panes.")
+        );
+
+        let timeout = fields
+            .iter()
+            .find(|field| field.json_path == "connections.sshConnectTimeoutSecs")
+            .expect("sshConnectTimeoutSecs must be registered");
+        assert_eq!(timeout.meta.unit, Some("s"));
     }
 
     #[test]

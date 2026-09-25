@@ -28,13 +28,14 @@
 //! ```
 
 use std::cell::RefCell;
-use std::collections::HashMap;
 use std::rc::Rc;
 
 use gpui::{
-    anchored, canvas, deferred, div, prelude::FluentBuilder, px, AnimationExt, AnyElement, App,
-    Bounds, ClickEvent, Corner, InteractiveElement, IntoElement, MouseButton, MouseDownEvent,
-    ParentElement, Pixels, Point, SharedString, StatefulInteractiveElement, Styled, Window,
+    anchored, canvas, deferred, div, point, prelude::FluentBuilder, px, AlignItems, AnimationExt,
+    AnyElement, App, Bounds, ClickEvent, Display, Edges, Element, GlobalElementId,
+    InspectorElementId, InteractiveElement, IntoElement, LayoutId, Length, MouseButton,
+    MouseDownEvent, ParentElement, Pixels, Point, Position, SharedString, Size,
+    StatefulInteractiveElement, Style, Styled, Window,
 };
 
 use super::IconName;
@@ -273,83 +274,171 @@ fn in_flyout(flyouts: &FlyoutBounds, pos: Point<Pixels>) -> bool {
     flyouts.borrow().iter().any(|b| b.contains(&pos))
 }
 
-/// Hard cap on a submenu flyout's own width (`menu_card` caps the top-level
-/// card the same way). Without this, a flyout with wide rows — e.g. the
-/// `+ ▸ SSH` / `SFTP` host lists, whose `detail` column is a full
-/// `user@host:port` string — could grow past the room available on *either*
-/// side of its trigger, so `snap_to_window` had nowhere sane to put it and
-/// slid it back on top of the trigger's own parent menu. Capping the width
-/// keeps [`ASSUMED_FLYOUT_WIDTH`] below an honest upper bound instead of a
-/// guess, so the flip decision it drives is actually reliable.
-const FLYOUT_MAX_WIDTH: Pixels = px(340.0);
-
-/// Assumed flyout width used only to decide whether a submenu has room to
-/// open to the right of its trigger row — the panel's real width isn't known
-/// until its own layout runs, so this mirrors [`FLYOUT_MAX_WIDTH`] (the
-/// actual upper bound enforced on the flyout card) rather than guessing low
-/// and letting `snap_to_window` paper over a wrong flip decision.
-const ASSUMED_FLYOUT_WIDTH: Pixels = FLYOUT_MAX_WIDTH;
-
-/// Assumed flyout height used only to decide whether a submenu has room to
-/// open *downward* from its trigger row, mirroring [`ASSUMED_FLYOUT_WIDTH`].
-/// Host-list submenus (`+ ▸ SSH` / `SFTP`) can run to 5+ rows plus an "All
-/// hosts…" entry, so a wider margin than a handful of plain action rows is
-/// assumed here on purpose — better to flip up a little early than to have
-/// the flyout's tail get clipped/snapped back over its own trigger row.
-const ASSUMED_FLYOUT_HEIGHT: Pixels = px(280.0);
-
-/// Per-submenu geometry: the trigger row's last-probed window-space bounds,
-/// plus whether its flyout should open to the left instead of the right.
-/// Keyed by the flyout's element id (`ctxsubfly-{id}-{depth}`).
+/// Resolve a submenu's origin from its trigger and its measured panel size.
 ///
-/// This is an `Rc<RefCell<..>>` created fresh by [`context_menu`] /
-/// [`popover_menu`] for each call — the same idiom as [`FlyoutBounds`] just
-/// above — rather than a `thread_local!` keyed only by that string id. A
-/// thread-local would be shared by every open menu in the process (and, if
-/// this app ever grows a second window, every window too): two independent
-/// menus that happen to reuse the same submenu id at the same depth would
-/// silently share each other's flip decision, and entries would never be
-/// cleaned up. Scoping it per menu instance removes both problems for free.
-#[derive(Clone, Copy, Default)]
-struct SubmenuGeom {
-    bounds: Option<Bounds<Pixels>>,
-    flip_left: bool,
-    flip_up: bool,
-}
-type SubmenuGeometry = Rc<RefCell<HashMap<SharedString, SubmenuGeom>>>;
+/// The preferred position is aligned with the trigger's top-right corner. If
+/// that does not fit, the panel is attached to the other side, and the same
+/// decision is made independently for the vertical axis. The final clamp is
+/// only a last resort for panels that are larger than the available viewport;
+/// normal edge collisions therefore never move a panel on top of its trigger.
+fn submenu_origin(
+    trigger: Bounds<Pixels>,
+    panel_size: Size<Pixels>,
+    viewport: Size<Pixels>,
+    gap: Pixels,
+    margin: Pixels,
+) -> Point<Pixels> {
+    let trigger_left = f32::from(trigger.left());
+    let trigger_right = f32::from(trigger.right());
+    let trigger_top = f32::from(trigger.top());
+    let trigger_bottom = f32::from(trigger.bottom());
+    let panel_width = f32::from(panel_size.width);
+    let panel_height = f32::from(panel_size.height);
+    let viewport_width = f32::from(viewport.width);
+    let viewport_height = f32::from(viewport.height);
+    let gap = f32::from(gap);
+    let margin = f32::from(margin);
 
-/// A layout-neutral probe that continuously records the trigger row's own
-/// bounds into `geometry`, mirroring [`flyout_probe`] but for the row rather
-/// than the flyout.
-fn trigger_probe(key: SharedString, geometry: SubmenuGeometry) -> impl IntoElement {
-    canvas(
-        move |bounds, _window, _cx| {
-            geometry.borrow_mut().entry(key.clone()).or_default().bounds = Some(bounds);
-        },
-        |_, _, _, _| {},
+    let right_origin = trigger_right + gap;
+    let left_origin = trigger_left - gap - panel_width;
+    let right_fits = right_origin + panel_width <= viewport_width - margin;
+    let left_fits = left_origin >= margin;
+    let open_left = if right_fits {
+        false
+    } else if left_fits {
+        true
+    } else {
+        let right_space = viewport_width - margin - right_origin;
+        let left_space = trigger_left - margin - gap;
+        left_space > right_space
+    };
+
+    let below_origin = trigger_top;
+    let above_origin = trigger_bottom - panel_height;
+    let below_fits = below_origin + panel_height <= viewport_height - margin;
+    let above_fits = above_origin >= margin;
+    let open_above = if below_fits {
+        false
+    } else if above_fits {
+        true
+    } else {
+        let below_space = viewport_height - margin - below_origin;
+        let above_space = trigger_bottom - margin;
+        above_space > below_space
+    };
+
+    let origin_x = if open_left { left_origin } else { right_origin };
+    let origin_y = if open_above {
+        above_origin
+    } else {
+        below_origin
+    };
+    let max_x = (viewport_width - margin - panel_width).max(margin);
+    let max_y = (viewport_height - margin - panel_height).max(margin);
+
+    point(
+        px(origin_x.clamp(margin, max_x)),
+        px(origin_y.clamp(margin, max_y)),
     )
-    .absolute()
-    .inset_0()
 }
 
-/// Recomputes whether the submenu keyed by `key` has room to open to the
-/// right of its trigger row, using the row's last-probed bounds and the
-/// window's current viewport, and caches the answer in `geometry` for
-/// `render_item` to pick up on the next render. Called from the trigger
-/// row's `on_hover` (for both controlled and CSS-hover submenus) so the
-/// flyout already opens on the correct side by the time it becomes visible,
-/// rather than only correcting itself a frame after rendering off-screen.
-fn record_submenu_side(key: &SharedString, geometry: &SubmenuGeometry, window: &Window) {
-    let mut geometry = geometry.borrow_mut();
-    let Some(entry) = geometry.get_mut(key) else {
-        return;
-    };
-    let Some(bounds) = entry.bounds else {
-        return;
-    };
-    let viewport = window.viewport_size();
-    entry.flip_left = bounds.right() + ASSUMED_FLYOUT_WIDTH > viewport.width;
-    entry.flip_up = bounds.top() + ASSUMED_FLYOUT_HEIGHT > viewport.height;
+/// Positions a submenu from its parent row after both the row and the panel
+/// have been laid out. This keeps the collision decision in the same pass as
+/// the real panel measurement instead of caching a guessed width/height in a
+/// render-local hover callback.
+struct SubmenuFlyout {
+    child: AnyElement,
+    gap: Pixels,
+    margin: Pixels,
+}
+
+impl SubmenuFlyout {
+    fn new(child: impl IntoElement, gap: Pixels, margin: Pixels) -> Self {
+        Self {
+            child: child.into_any_element(),
+            gap,
+            margin,
+        }
+    }
+}
+
+impl IntoElement for SubmenuFlyout {
+    type Element = Self;
+
+    fn into_element(self) -> Self::Element {
+        self
+    }
+}
+
+impl Element for SubmenuFlyout {
+    type RequestLayoutState = LayoutId;
+    type PrepaintState = ();
+
+    fn id(&self) -> Option<gpui::ElementId> {
+        None
+    }
+
+    fn source_location(&self) -> Option<&'static std::panic::Location<'static>> {
+        None
+    }
+
+    fn request_layout(
+        &mut self,
+        _id: Option<&GlobalElementId>,
+        _inspector_id: Option<&InspectorElementId>,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> (LayoutId, Self::RequestLayoutState) {
+        let child_layout_id = self.child.request_layout(window, cx);
+        let style = Style {
+            display: Display::Flex,
+            position: Position::Absolute,
+            align_items: Some(AlignItems::FlexStart),
+            inset: Edges::all(Length::from(px(0.0))),
+            ..Style::default()
+        };
+        let layout_id = window.request_layout(style, [child_layout_id], cx);
+        (layout_id, child_layout_id)
+    }
+
+    fn prepaint(
+        &mut self,
+        _id: Option<&GlobalElementId>,
+        _inspector_id: Option<&InspectorElementId>,
+        bounds: Bounds<Pixels>,
+        child_layout_id: &mut Self::RequestLayoutState,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> Self::PrepaintState {
+        let child_bounds = window.layout_bounds(*child_layout_id);
+        let origin = submenu_origin(
+            bounds,
+            child_bounds.size,
+            window.viewport_size(),
+            self.gap,
+            self.margin,
+        );
+        let offset = point(
+            (origin.x - child_bounds.origin.x).round(),
+            (origin.y - child_bounds.origin.y).round(),
+        );
+        window.with_element_offset(offset, |window| {
+            self.child.prepaint(window, cx);
+        });
+    }
+
+    fn paint(
+        &mut self,
+        _id: Option<&GlobalElementId>,
+        _inspector_id: Option<&InspectorElementId>,
+        _bounds: Bounds<Pixels>,
+        _child_layout_id: &mut Self::RequestLayoutState,
+        _prepaint: &mut Self::PrepaintState,
+        window: &mut Window,
+        cx: &mut App,
+    ) {
+        self.child.paint(window, cx);
+    }
 }
 
 /// A fixed 16px centred box holding a 14px glyph — keeps every row's icon the
@@ -365,13 +454,7 @@ fn icon_slot(icon: IconName, color: gpui::Hsla) -> impl IntoElement {
         .child(icon.svg(color).size(px(14.0)))
 }
 
-fn render_item(
-    item: MenuItem,
-    c: Palette,
-    depth: usize,
-    flyouts: &FlyoutBounds,
-    geometry: &SubmenuGeometry,
-) -> AnyElement {
+fn render_item(item: MenuItem, c: Palette, depth: usize, flyouts: &FlyoutBounds) -> AnyElement {
     match item.kind {
         Kind::Separator => div()
             .my(c.space(4.0))
@@ -466,18 +549,15 @@ fn render_item(
             // In controlled mode the flyout only exists while the caller says
             // it's open; otherwise it's always in the tree and revealed by CSS.
             let show_panel = control.as_ref().map(|c| c.open).unwrap_or(true);
-            let (flip_left, flip_up) = geometry
-                .borrow()
-                .get(&flyout_id)
-                .map(|g| (g.flip_left, g.flip_up))
-                .unwrap_or((false, false));
             let panel = show_panel.then(|| {
                 let card = div()
                     .id(flyout_id.clone())
                     .flex()
                     .flex_col()
                     .min_w(c.space(160.0))
-                    .max_w(FLYOUT_MAX_WIDTH)
+                    .max_w(c.space(340.0))
+                    .max_h(c.space(320.0))
+                    .overflow_y_scroll()
                     .p(c.space(4.0))
                     .rounded_md()
                     .bg(c.popover)
@@ -487,7 +567,7 @@ fn render_item(
                     .children(
                         items
                             .into_iter()
-                            .map(|it| render_item(it, c, depth + 1, flyouts, geometry)),
+                            .map(|it| render_item(it, c, depth + 1, flyouts)),
                     );
                 let card = match &control {
                     Some(ctrl) => {
@@ -508,42 +588,7 @@ fn render_item(
                         .group_hover(group.clone(), |s| s.visible())
                         .hover(|s| s.visible()),
                 };
-
-                // The host pins itself to the trigger row's top-right corner
-                // (open right) or top-left corner (`flip_left` — open left)
-                // via CSS-style percentage insets, which Taffy resolves
-                // against the row's real measured width. `anchored()` (no
-                // explicit `.position()`) then reads that resolved point as
-                // its own origin, and `snap_to_window_with_margin` slides the
-                // flyout back inside the window if it still doesn't fit on
-                // either axis — the same idea as the top-level menu card's
-                // `snap_to_window()`, just anchored to the row instead of a
-                // click point.
-                let host = div()
-                    .absolute()
-                    .when(!flip_up, |d| d.top(c.space(4.0)))
-                    .when(flip_up, |d| d.bottom(c.space(4.0)))
-                    .when(flip_left, |d| d.right_full())
-                    .when(!flip_left, |d| d.left_full())
-                    // Controlled open/close doesn't depend on an unbroken
-                    // hover chain, so the flyout can sit clear of the parent
-                    // card instead of flush against it.
-                    .when(control.is_some() && !flip_left, |d| d.ml(c.space(6.0)))
-                    .when(control.is_some() && flip_left, |d| d.mr(c.space(6.0)));
-
-                let anchor_corner = match (flip_left, flip_up) {
-                    (false, false) => Corner::TopLeft,
-                    (true, false) => Corner::TopRight,
-                    (false, true) => Corner::BottomLeft,
-                    (true, true) => Corner::BottomRight,
-                };
-
-                host.child(
-                    anchored()
-                        .anchor(anchor_corner)
-                        .snap_to_window_with_margin(px(8.0))
-                        .child(card),
-                )
+                SubmenuFlyout::new(card, c.space(6.0), px(8.0))
             });
 
             let mut row = div()
@@ -569,40 +614,18 @@ fn render_item(
             row = match control {
                 Some(ctrl) => {
                     let on_hover = ctrl.on_hover.clone();
-                    let key = flyout_id.clone();
-                    let geom = geometry.clone();
-                    row.on_hover(move |h, w, cx| {
-                        if *h {
-                            record_submenu_side(&key, &geom, w);
-                        }
-                        on_hover(SubmenuHoverSource::Trigger, *h, w, cx)
-                    })
+                    row.on_hover(move |h, w, cx| on_hover(SubmenuHoverSource::Trigger, *h, w, cx))
                 }
-                None => {
-                    let key = flyout_id.clone();
-                    let geom = geometry.clone();
-                    row.group(group).on_hover(move |h, w, _cx| {
-                        if *h {
-                            record_submenu_side(&key, &geom, w);
-                        }
-                    })
-                }
+                None => row.group(group),
             };
-            row.child(trigger_probe(flyout_id, geometry.clone()))
-                .children(panel)
-                .into_any_element()
+            row.children(panel).into_any_element()
         }
     }
 }
 
 /// The menu card itself — the `p-1 rounded-md bg-popover border shadow-md`
 /// panel shared by [`context_menu`] and [`popover_menu`].
-fn menu_card(
-    c: Palette,
-    items: Vec<MenuItem>,
-    flyouts: FlyoutBounds,
-    geometry: SubmenuGeometry,
-) -> gpui::Div {
+fn menu_card(c: Palette, items: Vec<MenuItem>, flyouts: FlyoutBounds) -> gpui::Div {
     div()
         .flex()
         .flex_col()
@@ -618,7 +641,7 @@ fn menu_card(
         .children(
             items
                 .into_iter()
-                .map(move |it| render_item(it, c, 0, &flyouts, &geometry)),
+                .map(move |it| render_item(it, c, 0, &flyouts)),
         )
 }
 
@@ -628,12 +651,7 @@ fn menu_card(
 /// [`context_menu`] / [`popover_menu`].
 #[cfg(any(debug_assertions, feature = "gallery"))]
 pub fn menu_card_preview(c: Palette, items: Vec<MenuItem>) -> gpui::Div {
-    menu_card(
-        c,
-        items,
-        Rc::new(RefCell::new(Vec::new())),
-        Rc::new(RefCell::new(HashMap::new())),
-    )
+    menu_card(c, items, Rc::new(RefCell::new(Vec::new())))
 }
 
 /// Build a full-screen context-menu overlay anchored at `anchor` (window
@@ -655,10 +673,6 @@ pub fn context_menu(
     let fb_out = flyouts.clone();
     let fb_left = flyouts.clone();
     let fb_right = flyouts.clone();
-    // Fresh per call, so two independent open menus never share a submenu's
-    // flip decision — see `SubmenuGeometry`'s own doc comment.
-    let geometry: SubmenuGeometry = Rc::new(RefCell::new(HashMap::new()));
-
     // `anchored().snap_to_window()` positions the card in *window* coordinates
     // (the right-click `MouseDownEvent::position` is already window-space) and
     // flips it back inside the viewport near an edge; `deferred(..)` lifts the
@@ -673,7 +687,7 @@ pub fn context_menu(
     // not actually cover the window and a click next to the menu would leave it
     // stuck open. The card, by contrast, always knows its own bounds.
     let card = anchored().position(anchor).snap_to_window().child(
-        menu_card(c, items, flyouts, geometry)
+        menu_card(c, items, flyouts)
             .on_mouse_down_out(move |ev, w, cx| {
                 if !in_flyout(&fb_out, ev.position) {
                     d3(w, cx)
@@ -739,10 +753,9 @@ pub fn popover_menu(
     let flyouts: FlyoutBounds = Rc::new(RefCell::new(Vec::new()));
     let fb_out = flyouts.clone();
     let fb_bd = flyouts.clone();
-    let geometry: SubmenuGeometry = Rc::new(RefCell::new(HashMap::new()));
 
     let card = anchored().position(anchor).snap_to_window().child(
-        menu_card(c, items, flyouts, geometry)
+        menu_card(c, items, flyouts)
             .on_mouse_down_out(move |ev, w, cx| {
                 if !in_flyout(&fb_out, ev.position) {
                     d_out(w, cx)
@@ -840,5 +853,88 @@ mod tests {
         assert!(in_flyout(&flyouts, point(px(150.0), px(80.0))));
         // …but one clearly outside it still does.
         assert!(!in_flyout(&flyouts, point(px(400.0), px(400.0))));
+    }
+
+    #[test]
+    fn submenu_stays_right_and_below_when_measured_space_allows() {
+        use gpui::{point, px, size};
+
+        let origin = submenu_origin(
+            Bounds {
+                origin: point(px(100.0), px(100.0)),
+                size: size(px(24.0), px(28.0)),
+            },
+            size(px(160.0), px(80.0)),
+            size(px(400.0), px(300.0)),
+            px(6.0),
+            px(8.0),
+        );
+
+        assert_eq!(origin, point(px(130.0), px(100.0)));
+    }
+
+    #[test]
+    fn submenu_flips_to_the_available_left_and_upper_sides() {
+        use gpui::{point, px, size};
+
+        let origin = submenu_origin(
+            Bounds {
+                origin: point(px(320.0), px(240.0)),
+                size: size(px(24.0), px(28.0)),
+            },
+            size(px(180.0), px(100.0)),
+            size(px(400.0), px(300.0)),
+            px(6.0),
+            px(8.0),
+        );
+
+        assert_eq!(origin, point(px(134.0), px(168.0)));
+    }
+
+    #[test]
+    fn submenu_flips_each_axis_independently() {
+        use gpui::{point, px, size};
+
+        let horizontal_flip = submenu_origin(
+            Bounds {
+                origin: point(px(320.0), px(100.0)),
+                size: size(px(24.0), px(28.0)),
+            },
+            size(px(180.0), px(80.0)),
+            size(px(400.0), px(300.0)),
+            px(6.0),
+            px(8.0),
+        );
+        let vertical_flip = submenu_origin(
+            Bounds {
+                origin: point(px(100.0), px(240.0)),
+                size: size(px(24.0), px(28.0)),
+            },
+            size(px(160.0), px(100.0)),
+            size(px(400.0), px(300.0)),
+            px(6.0),
+            px(8.0),
+        );
+
+        assert_eq!(horizontal_flip, point(px(134.0), px(100.0)));
+        assert_eq!(vertical_flip, point(px(130.0), px(168.0)));
+    }
+
+    #[test]
+    fn submenu_clamps_to_the_viewport_when_panel_is_larger_than_both_sides() {
+        use gpui::{point, px, size};
+
+        let origin = submenu_origin(
+            Bounds {
+                origin: point(px(80.0), px(80.0)),
+                size: size(px(24.0), px(24.0)),
+            },
+            size(px(240.0), px(220.0)),
+            size(px(200.0), px(180.0)),
+            px(6.0),
+            px(8.0),
+        );
+
+        assert_eq!(origin, point(px(8.0), px(8.0)));
     }
 }

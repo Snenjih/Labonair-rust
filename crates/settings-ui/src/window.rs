@@ -57,16 +57,17 @@ pub fn set_settings_deps(services: SettingsServices, tokio: TokioHandle, cx: &mu
     cx.set_global(SettingsDeps { services, tokio });
 }
 
-/// Window bounds: 860 logical px wide, height = 80 % of the primary display
+/// Window bounds: 1040 logical px wide, height = 80 % of the primary display
 /// clamped to `[580, 900]` — a straight port of `settings_window_size()` in
-/// `reference-src/src-tauri/src/lib.rs`.
+/// `reference-src/src-tauri/src/lib.rs`, widened for the native two-column
+/// Settings surface.
 fn settings_bounds(cx: &mut App) -> Bounds<gpui::Pixels> {
     let display_h = cx
         .primary_display()
         .map(|d| f32::from(d.bounds().size.height))
         .unwrap_or(1000.0);
     let h = (display_h * 0.8).clamp(580.0, 900.0);
-    Bounds::centered(None, size(px(860.0), px(h)), cx)
+    Bounds::centered(None, size(px(1040.0), px(h)), cx)
 }
 
 /// Open the settings window, or focus it if it is already open, optionally
@@ -104,7 +105,7 @@ pub fn open_settings_window(slug: Option<&'static str>, cx: &mut App) {
                 appears_transparent: true,
                 traffic_light_position: Some(point(px(19.0), px((44.0 - 14.0) / 2.0))),
             }),
-            window_min_size: Some(size(px(720.0), px(480.0))),
+            window_min_size: Some(size(px(760.0), px(480.0))),
             kind: WindowKind::Normal,
             is_movable: true,
             ..Default::default()

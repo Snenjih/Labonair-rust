@@ -24,10 +24,6 @@ struct SearchEntry {
     target: SearchTarget,
     area_index: usize,
     area_title: &'static str,
-    title: &'static str,
-    /// Shown small under the title in a result row (a field's `json_path`;
-    /// empty for a future non-field target).
-    subtitle: &'static str,
     haystack: String,
 }
 
@@ -37,8 +33,6 @@ struct SearchEntry {
 pub(crate) struct SearchRow {
     pub(crate) target: SearchTarget,
     pub(crate) area_title: &'static str,
-    pub(crate) title: &'static str,
-    pub(crate) subtitle: &'static str,
 }
 
 /// Build the full search index over every SettingsContent field. Rebuild only
@@ -54,8 +48,6 @@ fn build_index(all_fields: &[AnyField]) -> Vec<SearchEntry> {
             target: SearchTarget::Field(i),
             area_index,
             area_title: AREAS[area_index].title,
-            title: field.meta.title,
-            subtitle: field.json_path,
             haystack: format!(
                 "{} {} {}",
                 field.meta.title, field.meta.description, field.json_path
@@ -111,8 +103,6 @@ pub(crate) fn search(index: &SearchIndex, query: &str, limit: usize) -> Vec<Sear
             rows.push(SearchRow {
                 target: e.target,
                 area_title: e.area_title,
-                title: e.title,
-                subtitle: e.subtitle,
             });
             if rows.len() >= limit {
                 break 'outer;
@@ -140,10 +130,19 @@ mod tests {
         assert!(rows.iter().any(|r| r.area_title == "Appearance"));
         assert!(rows.iter().any(|r| r.area_title == "Terminal"));
         assert!(rows.iter().any(|r| r.area_title == "Editor"));
+        let fields = all_fields();
+        let terminal = fields
+            .iter()
+            .position(|field| field.json_path == "terminal.terminalFontSize")
+            .unwrap();
+        let editor = fields
+            .iter()
+            .position(|field| field.json_path == "editor.editorFontSize")
+            .unwrap();
         assert!(rows
             .iter()
-            .any(|r| r.subtitle == "terminal.terminalFontSize"));
-        assert!(rows.iter().any(|r| r.subtitle == "editor.editorFontSize"));
+            .any(|r| r.target == SearchTarget::Field(terminal)));
+        assert!(rows.iter().any(|r| r.target == SearchTarget::Field(editor)));
     }
 
     /// An exact `json_path` query finds exactly that field.
@@ -151,9 +150,13 @@ mod tests {
     fn exact_json_path_finds_the_field() {
         let idx = index();
         let rows = search(&idx, "terminal.terminalFontSize", 50);
+        let field_index = all_fields()
+            .iter()
+            .position(|field| field.json_path == "terminal.terminalFontSize")
+            .unwrap();
         assert!(rows
             .iter()
-            .any(|r| r.subtitle == "terminal.terminalFontSize"));
+            .any(|r| r.target == SearchTarget::Field(field_index)));
     }
 
     /// Empty query yields no results (category-view fallback is the caller's

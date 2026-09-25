@@ -4,6 +4,28 @@ Older entries preserve the state of the code when each issue was recorded.
 When an API was later renamed or removed, the current implementation and
 normative documentation take precedence over the historical symbol name.
 
+## 2026-09-23 — Context-menu submenus must place from measured panel bounds
+
+**Symptom:** the `+` menu's SSH/SFTP flyout could be rendered on top of its
+parent card near a window edge. The old implementation decided the side from
+fixed width/height assumptions during hover, then let `snap_to_window` clamp a
+panel whose real size was different. That correction changed the panel's
+screen position without changing the side selected for the trigger.
+
+**Resolution:** `labonair-ui-kit::context_menu` now measures the actual
+submenu panel in GPUI prepaint and computes its origin against the current
+viewport on both axes. It prefers right/below, flips independently to
+left/above when those sides fit, and clamps only when the panel itself is
+larger than the available viewport. The absolute host uses `FlexStart` so its
+cross-axis layout does not inflate the measured panel bounds. The placement
+algorithm is covered by unit tests for the preferred, flipped, and oversized
+cases.
+
+**GPUI constraint:** `Window::with_element_offset` is a prepaint-only API.
+The custom flyout must apply the offset while prepainting its child and call
+the child's `paint` directly; applying the offset again during `paint` trips
+the debug assertion as soon as the dropdown opens.
+
 ## 2026-09-10 — Keymap surface UX rework: GPUI / jsonc-parser constraints
 
 **`uniform_list` requires a uniform item height.** It measures item 0 and
