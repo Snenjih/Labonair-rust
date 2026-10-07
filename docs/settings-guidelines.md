@@ -32,3 +32,24 @@ editor, not a general application-management window.
    settings.
 9. **Removal is complete.** Removing a field requires checking defaults,
    migrations, serialization, UI metadata, command IDs, tests, and documentation.
+
+10. **Dense native navigation.** The Settings rail is one UI-kit tree with the
+    seven canonical value categories. Root selection and disclosure are
+    separate actions; section children are scroll anchors, not management
+    pages. The current category is expanded on entry and all other categories
+    remain collapsed until disclosed.
+11. **Explicit persistence scope.** The header's User/Project selector is the
+    only scope choice for a Settings edit. A Project choice is available only
+    with an active project; the Settings owner enforces the project whitelist,
+    rejects malformed project JSON, and persists sparse overrides.
+12. **Native editing and long-list behavior.** Text and numeric values use
+    real UI-kit `InputState` editors when activated. Selects support focused
+    keyboard opening and arrow/Enter selection. Field content uses GPUI's
+    variable-height virtualized list; no page may eagerly build an unbounded
+    number of rows.
+13. **Native keyboard and accessibility fallback.** Interactive Settings
+    controls expose visible focus and keyboard activation/navigation wherever
+    GPUI 0.2.2 permits it. That GPUI version does not expose native
+    accessibility roles or ARIA-style names/values; do not describe this as
+    screen-reader parity. Revisit semantic roles and announcements when the
+    native accessibility API becomes available.

@@ -75,6 +75,8 @@ pub fn select_trigger(
         .text_color(c.fg)
         .text_size(px(11.5))
         .cursor_pointer()
+        .tab_index(0)
+        .focus(|s| s.border_color(c.ring))
         .child(label.into())
         .child(IconName::ChevronDown.svg(c.muted).size(px(12.0)))
 }

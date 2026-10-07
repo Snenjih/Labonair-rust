@@ -89,6 +89,18 @@ fn allowed_leaves(area: &str) -> Option<&'static [&'static str]> {
         .map(|(_, leaves)| *leaves)
 }
 
+/// Returns whether a dotted Settings path may be written to a project file.
+///
+/// The whitelist is intentionally checked at the capability boundary rather
+/// than inferred by the Settings UI. This keeps project-file safety intact for
+/// every caller, including future non-UI writers.
+pub fn is_project_setting_allowed(json_path: &str) -> bool {
+    let Some((area, leaf)) = json_path.split_once('.') else {
+        return false;
+    };
+    allowed_leaves(area).is_some_and(|leaves| leaves.contains(&leaf))
+}
+
 /// Drop every top-level area not on [`PROJECT_SETTINGS_WHITELIST`], and
 /// every leaf key within a whitelisted area that isn't itself whitelisted,
 /// from `value` (expected to be a JSON object — anything else yields an
@@ -213,6 +225,15 @@ mod tests {
         let (content, rejected) = filter_and_parse("not json at all {{{");
         assert_eq!(content, SettingsContent::default());
         assert!(rejected.is_empty());
+    }
+
+    #[test]
+    fn project_write_whitelist_matches_the_persisted_contract() {
+        assert!(is_project_setting_allowed("general.restoreWindowState"));
+        assert!(is_project_setting_allowed("editor.editorTabSize"));
+        assert!(!is_project_setting_allowed("general.autostart"));
+        assert!(!is_project_setting_allowed("mcp.bridgePort"));
+        assert!(!is_project_setting_allowed("general"));
     }
 
     #[test]

@@ -82,6 +82,10 @@ pub struct AnyField {
     /// the field's real type — the same "wrong-typed value is rejected, not
     /// stored" guarantee the old `PreferencesStore::set_value` had.
     pub set: fn(&mut SettingsContent, Value) -> bool,
+    /// Removes the field from a sparse layer. This is distinct from writing
+    /// the default value: the layered store must be able to fall through to a
+    /// lower-precedence layer after Reset.
+    pub clear: fn(&mut SettingsContent),
 }
 
 impl AnyField {
@@ -145,6 +149,9 @@ macro_rules! field {
                 }
                 Err(_) => false,
             },
+            clear: |c| {
+                c.$area.$field = None;
+            },
         }
     };
 }
@@ -154,9 +161,28 @@ macro_rules! field {
 /// saved hosts and keymap migration data) deliberately has no row here.
 /// Order is declaration order within each Settings area; page layout
 /// (`pages.rs`) decides on-screen placement, not this list.
+/// Compatibility-only model fields that are intentionally not exposed by the
+/// native Settings UI. Their values remain readable by the Settings owner for
+/// migration/unknown-key compatibility, but a visible control would falsely
+/// advertise a runtime consumer that the inventory explicitly removed.
+const UI_REMOVED_FIELDS: &[&str] = &[
+    "editor.editorIndentationGuides",
+    "editor.editorBracketMatching",
+    "editor.editorFormatOnSave",
+    "editor.editorTrimTrailingWhitespace",
+    "editor.editorInsertFinalNewline",
+    "editor.editorShowCursorPosition",
+    "editor.editorShowSelectionStats",
+    "editor.editorShowOutline",
+    "editor.editorAutocompleteDebounceMs",
+    "editor.editorMaxFileSizeMb",
+    "editor.editorAutoSave",
+    "editor.editorAutoSaveDelay",
+];
+
 pub fn all_fields() -> Vec<AnyField> {
     use FieldControl::{Float, FontFamily, Int, Select, SftpColumns, Switch, Text};
-    vec![
+    let fields = vec![
         // ── general ─────────────────────────────────────────────────────
         field!(
             general.theme,
@@ -950,7 +976,11 @@ pub fn all_fields() -> Vec<AnyField> {
             "Keep-alive max failures",
             "Fallback missed-ping tolerance for hosts that don't set their own."
         ),
-    ]
+    ];
+    fields
+        .into_iter()
+        .filter(|field| !UI_REMOVED_FIELDS.contains(&field.json_path))
+        .collect()
 }
 
 #[cfg(test)]

@@ -108,12 +108,29 @@ impl IntoElement for Checkbox {
             .items_center()
             .gap_2()
             .text_color(c.fg)
+            .rounded(px(c.radius.sm))
+            .border_1()
+            .border_color(gpui::transparent_black())
             .when(disabled, |d| d.opacity(DISABLED_OPACITY))
-            .when(!disabled, |d| d.cursor_pointer())
+            .when(!disabled, |d| {
+                d.cursor_pointer()
+                    .tab_index(0)
+                    .focus(|style| style.border_1().border_color(c.ring))
+            })
             .child(self.box_only())
             .children(label)
             .when(!disabled, move |d| match handler {
-                Some(h) => d.on_click(move |_: &ClickEvent, w, cx| h(&next, w, cx)),
+                Some(h) => d
+                    .on_click({
+                        let click_handler = h.clone();
+                        move |_: &ClickEvent, w, cx| click_handler(&next, w, cx)
+                    })
+                    .on_key_down(move |event, window, app| {
+                        if matches!(event.keystroke.key.as_str(), "enter" | "space") {
+                            h(&next, window, app);
+                            app.stop_propagation();
+                        }
+                    }),
                 None => d,
             })
     }

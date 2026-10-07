@@ -52,9 +52,20 @@ The following must come from `labonair-ui-kit`:
 
 Feature modules may compose these primitives and provide domain content. They may not create local variants with different padding, colors, hover behavior, or typography without extending the shared component.
 
+The Settings surface specifically composes `TreeRow`, `NumberField`, the
+shared select trigger/popover, `field_input`, badges, and `keybinding_hint`.
+`NumberField` has no filled slider track in Settings: it is a compact minus /
+editable value / plus control. Numeric editing uses a native `InputState` and
+commits only validated, clamped values.
+
 ## Interaction states
 
 Every interactive component must define normal, hover, pressed, selected, focused, disabled, and error states where applicable. Keyboard focus must remain visually distinguishable.
+
+GPUI 0.2.2 does not expose native accessibility roles or ARIA-style
+name/value/expanded properties. Components must still provide visible focus
+and keyboard behavior where possible; this is a documented limitation, not
+screen-reader parity. Reassess it when GPUI exposes a native semantics API.
 
 ## Layout rules
 

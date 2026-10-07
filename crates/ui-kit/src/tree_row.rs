@@ -71,7 +71,10 @@ pub struct TreeRow {
     trailing: Option<AnyElement>,
     state: TreeRowState,
     indent_guides: bool,
+    expanded: Option<bool>,
+    tab_index: Option<isize>,
     on_click: Option<ClickFn>,
+    on_chevron_click: Option<ClickFn>,
     on_secondary_down: Option<MouseFn>,
     #[allow(clippy::type_complexity)]
     extra: Option<Box<dyn FnOnce(Stateful<Div>) -> Stateful<Div>>>,
@@ -101,7 +104,10 @@ pub fn tree_row(id: impl Into<ElementId>, c: Palette, label: impl Into<SharedStr
         trailing: None,
         state: TreeRowState::default(),
         indent_guides: false,
+        expanded: None,
+        tab_index: None,
         on_click: None,
+        on_chevron_click: None,
         on_secondary_down: None,
         extra: None,
     }
@@ -181,12 +187,38 @@ impl TreeRow {
         self
     }
 
+    /// Whether the disclosure row is expanded. The value is intentionally
+    /// caller-owned; it only documents the state for the row's visual and
+    /// keyboard contract.
+    pub fn expanded(mut self, expanded: Option<bool>) -> Self {
+        self.expanded = expanded;
+        self
+    }
+
+    /// Add the row to the host's keyboard tab order.
+    pub fn tab_index(mut self, index: isize) -> Self {
+        self.tab_index = Some(index);
+        self
+    }
+
     /// Primary click.
     pub fn on_click(
         mut self,
         handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
     ) -> Self {
         self.on_click = Some(Rc::new(handler));
+        self
+    }
+
+    /// Handle the disclosure control separately from the row activation.
+    /// GPUI 0.2.2 does not expose ARIA roles yet, so this explicit handler is
+    /// the native equivalent of keeping disclosure and selection actions
+    /// distinct.
+    pub fn on_chevron_click(
+        mut self,
+        handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_chevron_click = Some(Rc::new(handler));
         self
     }
 
@@ -237,6 +269,12 @@ impl IntoElement for TreeRow {
             .text_color(text_color)
             .cursor_pointer();
 
+        if let Some(index) = self.tab_index {
+            row = row
+                .tab_index(index)
+                .focus(|style| style.border_1().border_color(c.ring));
+        }
+
         // Background channel — strongest meaning wins; hover only when the row
         // has no resting fill.
         if st.drop_target {
@@ -283,26 +321,41 @@ impl IntoElement for TreeRow {
 
         // Disclosure slot — always present so labels line up whether or not the
         // row is expandable.
-        row = row.child(
-            div()
-                .w(px(10.0))
-                .flex_none()
-                .flex()
-                .items_center()
-                .justify_center()
-                .children(match self.chevron_path {
-                    Some(p) => Some(
-                        gpui::svg()
-                            .path(p)
-                            .size(px(12.0))
-                            .flex_none()
-                            .text_color(c.muted),
-                    ),
-                    None => self
-                        .chevron
-                        .map(|ch| ch.svg(c.muted).size(px(12.0)).flex_none()),
-                }),
-        );
+        let chevron = match self.chevron_path {
+            Some(path) => Some(
+                gpui::svg()
+                    .path(path)
+                    .size(px(12.0))
+                    .flex_none()
+                    .text_color(c.muted)
+                    .into_any_element(),
+            ),
+            None => self.chevron.map(|icon| {
+                icon.svg(c.muted)
+                    .size(px(12.0))
+                    .flex_none()
+                    .into_any_element()
+            }),
+        };
+        let mut chevron_slot = div()
+            .w(px(10.0))
+            .flex_none()
+            .flex()
+            .items_center()
+            .justify_center();
+        if let Some(chevron) = chevron {
+            let mut chevron_button = div()
+                .id(SharedString::from(format!("tree-chevron-{}", self.label)))
+                .child(chevron);
+            if let Some(handler) = self.on_chevron_click {
+                chevron_button = chevron_button.on_click(move |event, window, cx| {
+                    handler(event, window, cx);
+                    cx.stop_propagation();
+                });
+            }
+            chevron_slot = chevron_slot.child(chevron_button);
+        }
+        row = row.child(chevron_slot);
 
         if let Some(p) = self.icon_path {
             row = row.child(

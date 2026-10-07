@@ -108,3 +108,32 @@ settings crate.
 ## UI rules
 
 Generated field UI is preferred for ordinary values. A custom view is allowed only when the interaction cannot be represented as a field, and it must still use the standard settings chrome and UI-kit components.
+
+The native Settings window has one dense tree rail and one content surface:
+
+- the rail is 226 logical pixels wide and contains exactly the seven categories
+  above; General/Work/Connections group headings are not a second taxonomy;
+- the rail spans the full settings surface; the scope selector and JSON action
+  sit in the header of the right content pane, above its scrolling page;
+- the content surface keeps at least 400 logical pixels for field descriptions
+  and controls, with 24 pixels of content inset;
+- the navigation search is inset below the native titlebar controls, while the
+  right content header begins at the top of the content pane;
+- the header exposes an explicit `User` / `Project` scope selector when a
+  project is active and an outlined action opens that scope's JSON file;
+  project writes are rejected by the Settings owner unless the key is on
+  `PROJECT_SETTINGS_WHITELIST`;
+- reset removes the selected override from its sparse JSON layer so the next
+  lower-precedence value becomes effective. It must not write a duplicate
+  default value;
+- search, section navigation, and field pages use bounded or virtualized lists;
+  long pages must not eagerly materialize every row;
+- ordinary controls are UI-kit controls: native text/number editors, shared
+  select triggers/popovers, switches, badges, disclosure/tree rows, and
+  keyboard hints. Errors go to the notification center rather than a second
+  Settings-only toast/banner system.
+
+The Settings UI may use Zed as a clean-room behavioral/layout reference for
+density, tree navigation, focus, and virtualized lists. It must not copy Zed
+source code or introduce Zed-specific management surfaces, file tabs, or
+`zed://` actions.

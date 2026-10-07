@@ -21,12 +21,13 @@
 use std::rc::Rc;
 
 use gpui::{
-    div, prelude::FluentBuilder, px, AnyElement, App, ClickEvent, Div, ElementId,
+    div, prelude::FluentBuilder, px, AnyElement, App, ClickEvent, Div, ElementId, Entity,
     InteractiveElement, IntoElement, ParentElement, SharedString, StatefulInteractiveElement,
     Styled, Window,
 };
 
 use crate::palette::Palette;
+use crate::text_field::{field_input, InputState};
 use crate::DISABLED_OPACITY;
 
 /// Apply `delta` to `value`, clamp into `min..=max` and round away the binary
@@ -53,8 +54,11 @@ pub struct NumberField {
     decimals: usize,
     track: bool,
     disabled: bool,
+    editor: Option<Entity<InputState>>,
     #[allow(clippy::type_complexity)]
     on_change: Option<Rc<dyn Fn(&f64, &mut Window, &mut App)>>,
+    #[allow(clippy::type_complexity)]
+    on_edit: Option<Rc<dyn Fn(&mut Window, &mut App)>>,
 }
 
 /// A [`NumberField`] over `min..=max`, stepping by `step`.
@@ -76,7 +80,9 @@ pub fn number_field(
         decimals: 0,
         track: true,
         disabled: false,
+        editor: None,
         on_change: None,
+        on_edit: None,
     }
 }
 
@@ -100,9 +106,22 @@ impl NumberField {
         self
     }
 
+    /// Use a real UI-kit text editor for direct value entry. The caller owns
+    /// its lifecycle and commits/clamps the text through `on_edit`.
+    pub fn editor(mut self, editor: Option<Entity<InputState>>) -> Self {
+        self.editor = editor;
+        self
+    }
+
     /// Fires with the already-clamped, already-rounded new value.
     pub fn on_change(mut self, handler: impl Fn(&f64, &mut Window, &mut App) + 'static) -> Self {
         self.on_change = Some(Rc::new(handler));
+        self
+    }
+
+    /// Called when the center value is activated for direct editing.
+    pub fn on_edit(mut self, handler: impl Fn(&mut Window, &mut App) + 'static) -> Self {
+        self.on_edit = Some(Rc::new(handler));
         self
     }
 
@@ -110,9 +129,13 @@ impl NumberField {
     /// Exposed so callers (and tests) can assert the clamping without
     /// rendering.
     pub fn stepped(&self, direction: i32) -> f64 {
+        self.stepped_by(direction, 1.0)
+    }
+
+    fn stepped_by(&self, direction: i32, multiplier: f64) -> f64 {
         step_value(
             self.value,
-            self.step * f64::from(direction),
+            self.step * f64::from(direction) * multiplier,
             self.min,
             self.max,
             self.decimals,
@@ -180,10 +203,38 @@ impl IntoElement for NumberField {
     fn into_element(self) -> Self::Element {
         let c = self.c;
         let label = SharedString::from(format!("{:.*}", self.decimals, self.value));
-        div()
+        let mut value = div()
+            .id(SharedString::from(format!("{}-value", self.id)))
+            .min_w(c.space(52.0))
+            .text_center()
+            .text_color(c.fg);
+        if let Some(editor) = self.editor.as_ref() {
+            value = value.child(
+                field_input(editor)
+                    .appearance(false)
+                    .bordered(false)
+                    .focus_bordered(false)
+                    .w_full()
+                    .text_center()
+                    .text_size(px(12.0)),
+            );
+        } else {
+            value = value.child(label);
+        }
+        if !self.disabled {
+            if let Some(on_edit) = self.on_edit.as_ref() {
+                let on_edit = on_edit.clone();
+                value = value.on_click(move |_, window, cx| on_edit(window, cx));
+            }
+        }
+
+        let mut control = div()
             .flex()
             .flex_col()
             .items_end()
+            .rounded(px(c.radius.sm))
+            .border_1()
+            .border_color(gpui::transparent_black())
             .child(
                 div()
                     .flex()
@@ -192,16 +243,60 @@ impl IntoElement for NumberField {
                     // `\u{2212}` is MINUS SIGN — the glyph the reference
                     // stepper uses (not a hyphen).
                     .child(self.step_button("dec", "\u{2212}", -1))
-                    .child(
-                        div()
-                            .min_w(c.space(52.0))
-                            .text_center()
-                            .text_color(c.fg)
-                            .child(label),
-                    )
+                    .child(value)
                     .child(self.step_button("inc", "+", 1)),
             )
-            .when(self.track, |d| d.child(self.filled_track()))
+            .when(self.track, |d| d.child(self.filled_track()));
+
+        if !self.disabled && self.editor.is_none() {
+            let on_change = self.on_change.clone();
+            let on_edit = self.on_edit.clone();
+            let value = self.value;
+            let (min, max, step, decimals) = (self.min, self.max, self.step, self.decimals);
+            control = control
+                .tab_index(0)
+                .focus(|style| style.border_1().border_color(c.ring))
+                .on_key_down(
+                    move |event, window, app| match event.keystroke.key.as_str() {
+                        "enter" | "space" => {
+                            if let Some(on_edit) = on_edit.as_ref() {
+                                on_edit(window, app);
+                            }
+                            app.stop_propagation();
+                        }
+                        "up" | "down" => {
+                            let direction = if event.keystroke.key == "up" {
+                                1.0
+                            } else {
+                                -1.0
+                            };
+                            let multiplier = if event.keystroke.modifiers.shift {
+                                10.0
+                            } else if event.keystroke.modifiers.alt && decimals > 0 {
+                                0.1
+                            } else {
+                                1.0
+                            };
+                            let next = step_value(
+                                value,
+                                step * direction * multiplier,
+                                min,
+                                max,
+                                decimals,
+                            );
+                            if (next - value).abs() >= f64::EPSILON {
+                                if let Some(on_change) = on_change.as_ref() {
+                                    on_change(&next, window, app);
+                                }
+                            }
+                            app.stop_propagation();
+                        }
+                        _ => {}
+                    },
+                );
+        }
+
+        control
     }
 }
 
@@ -247,6 +342,17 @@ mod tests {
         // Degenerate range: no division by zero, no NaN.
         let flat = number_field("n", c, 5.0, 5.0, 5.0, 1.0);
         assert_eq!(flat.fraction(), 0.0);
+    }
+
+    #[test]
+    fn modifier_steps_scale_float_and_integer_values() {
+        let c = test_palette();
+        let float = number_field("float", c, 0.5, 0.0, 1.0, 0.05).decimals(2);
+        assert_eq!(float.stepped_by(1, 10.0), 1.0);
+        assert_eq!(float.stepped_by(1, 0.1), 0.51);
+
+        let integer = number_field("integer", c, 10.0, 0.0, 100.0, 2.0);
+        assert_eq!(integer.stepped_by(1, 10.0), 30.0);
     }
 
     #[test]

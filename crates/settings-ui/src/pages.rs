@@ -4,8 +4,8 @@
 //! section groupings (the old `SECTION_GROUPS` shape, ported almost
 //! verbatim — its curation is still correct, only its lookup now targets
 //! [`crate::schema::AnyField`] instead of the deleted `FieldDef`) plus
-//! [`SubPage`] entries for the categories large enough to need one (Terminal,
-//! Editor, AI — mandatory per the task's Notizen).
+//! [`SubPage`] entries for categories large enough to need one (Terminal is
+//! currently the only Settings value area that still needs a second page).
 //!
 //! This is the **one hand-maintained placement list** `docs/settings-
 //! guidelines.md` rule 3 allows: it only ever references [`AnyField`]s by
@@ -85,11 +85,7 @@ fn build_page(area: &'static AreaMeta) -> SettingsPage {
             "editor" => SettingsPage {
                 area,
                 body: PageBody::Generated(items_from_groups(EDITOR_MAIN)),
-                sub_pages: vec![SubPage {
-                    title: "Display",
-                    slug: "display",
-                    body: PageBody::Generated(items_from_groups(EDITOR_DISPLAY)),
-                }],
+                sub_pages: Vec::new(),
             },
             _ => SettingsPage {
                 area,
@@ -130,7 +126,6 @@ pub fn placed_keys_for_area(area_key: &str) -> Vec<&'static str> {
         }
         "editor" => {
             out.extend(EDITOR_MAIN.iter().flat_map(|(_, k)| k.iter().copied()));
-            out.extend(EDITOR_DISPLAY.iter().flat_map(|(_, k)| k.iter().copied()));
         }
         _ => out.extend(
             groups_for(area_key)
@@ -171,9 +166,7 @@ pub fn section_label_for_field(
         "terminal" => find(TERMINAL_MAIN)
             .map(|l| ("", l))
             .or_else(|| find(TERMINAL_ADVANCED).map(|l| ("advanced", l))),
-        "editor" => find(EDITOR_MAIN)
-            .map(|l| ("", l))
-            .or_else(|| find(EDITOR_DISPLAY).map(|l| ("display", l))),
+        "editor" => find(EDITOR_MAIN).map(|l| ("", l)),
         _ => find(groups_for(area_key)).map(|l| ("", l)),
     }
 }
@@ -296,11 +289,8 @@ const EDITOR_MAIN: &[Group] = &[
         "Font",
         &["editorFontFamily", "editorFontSize", "editorLineHeight"],
     ),
-    ("Behaviour", &["editorTabSize", "editorBracketMatching"]),
-    (
-        "Indentation",
-        &["editorIndentWithTabs", "editorIndentationGuides"],
-    ),
+    ("Behaviour", &["editorTabSize"]),
+    ("Indentation", &["editorIndentWithTabs"]),
     (
         "Display",
         &[
@@ -322,34 +312,18 @@ const EDITOR_MAIN: &[Group] = &[
             "editorSemanticTokens",
             "editorCompletion",
             "editorHover",
-            "editorShowOutline",
-            "editorAutocompleteDebounceMs",
         ],
     ),
     ("Git", &["editorGitGutter", "editorGitWordDiff"]),
     (
-        "Saving",
-        &[
-            "editorAutoSave",
-            "editorAutoSaveDelay",
-            "editorFormatOnSave",
-            "editorTrimTrailingWhitespace",
-            "editorInsertFinalNewline",
-        ],
-    ),
-    (
-        "Caret & status",
+        "Caret",
         &[
             "editorCursorStyle",
             "editorCursorBlink",
             "editorCursorBlinkIntervalMs",
-            "editorShowCursorPosition",
-            "editorShowSelectionStats",
         ],
     ),
 ];
-
-const EDITOR_DISPLAY: &[Group] = &[("Advanced", &["editorMaxFileSizeMb"])];
 
 const FILE_MANAGER_GROUPS: &[Group] = &[
     ("Browsing", &["explorerShowHiddenByDefault"]),
@@ -471,9 +445,9 @@ mod tests {
     }
 
     #[test]
-    fn terminal_editor_have_at_least_one_sub_page() {
+    fn terminal_has_a_sub_page_for_advanced_values() {
         for page in pages() {
-            if matches!(page.area.key, "terminal" | "editor") {
+            if page.area.key == "terminal" {
                 assert!(
                     !page.sub_pages.is_empty(),
                     "{} must have at least one SubPageLink (task Notizen)",

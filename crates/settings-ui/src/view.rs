@@ -7,9 +7,10 @@
 
 pub use gpui::prelude::FluentBuilder;
 pub use gpui::{
-    canvas, div, px, App, AppContext, Bounds, ClickEvent, Context, Entity, FocusHandle, Focusable,
-    InteractiveElement, IntoElement, KeyDownEvent, ParentElement, Pixels, Point, Render,
-    ScrollHandle, SharedString, StatefulInteractiveElement, Styled, Subscription, Window,
+    canvas, div, list, px, App, AppContext, Bounds, ClickEvent, Context, Entity, FocusHandle,
+    Focusable, InteractiveElement, IntoElement, KeyDownEvent, ListAlignment, ListState,
+    ParentElement, Pixels, Point, Render, SharedString, StatefulInteractiveElement, Styled,
+    Subscription, Window,
 };
 pub use serde_json::Value;
 pub use tokio::runtime::Handle as TokioHandle;
@@ -20,9 +21,9 @@ pub use labonair_settings::{enqueue_user_settings_write, Settings as _, Settings
 pub use labonair_settings_content::areas::AREAS;
 pub use labonair_theme::ThemeStore;
 pub use labonair_ui_kit::{
-    button, checkbox, field_input, h_stack, number_field, select_popover, select_trigger,
-    text_field, v_stack, ButtonSize, ButtonVariant, IconName, InputEvent, InputState, Palette,
-    SelectOption, Switch,
+    button, checkbox, field_input, h_stack, keybinding_hint, number_field, select_popover,
+    select_trigger, text_field, tree_row, v_stack, ButtonSize, ButtonVariant, IconName, InputEvent,
+    InputState, Palette, SelectOption, Switch, TreeRowState,
 };
 
 pub(crate) use crate::apply::*;
@@ -33,14 +34,6 @@ pub(crate) use crate::services::{SettingsServices, SystemFontService};
 pub(crate) use crate::window::*;
 
 use std::collections::{HashMap, HashSet};
-
-/// The visual grouping is navigation-only. The canonical Settings categories
-/// remain the seven entries in `settings-content::areas::AREAS`.
-const SIDEBAR_GROUPS: &[(&str, &[&str])] = &[
-    ("GENERAL", &["general", "appearance"]),
-    ("WORK", &["terminal", "editor", "file_manager", "workspace"]),
-    ("CONNECTIONS", &["connections"]),
-];
 
 /// Which layer supplies a field's effective value, for the origin badge
 /// (`docs/settings-guidelines.md` rule 5). A thin display-only mirror of
@@ -64,6 +57,64 @@ impl OriginBadge {
     }
 }
 
+/// The file a Settings UI edit targets. This is deliberately a scope selector,
+/// not a second category system: the Settings owner still owns the seven value
+/// areas and project writes are checked against its whitelist.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum SettingsScope {
+    #[default]
+    User,
+    Project,
+}
+
+impl SettingsScope {
+    pub(crate) fn label(self) -> &'static str {
+        match self {
+            SettingsScope::User => "User",
+            SettingsScope::Project => "Project",
+        }
+    }
+
+    pub(crate) fn token(self) -> &'static str {
+        match self {
+            SettingsScope::User => "user",
+            SettingsScope::Project => "project",
+        }
+    }
+
+    pub(crate) fn from_token(token: &str) -> Option<Self> {
+        match token {
+            "user" => Some(Self::User),
+            "project" => Some(Self::Project),
+            _ => None,
+        }
+    }
+}
+
+pub(crate) const SETTINGS_SCOPE_KEY: &str = "__settings_scope";
+
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
+pub(crate) struct NavigationTarget {
+    area: usize,
+    section: Option<&'static str>,
+}
+
+impl NavigationTarget {
+    fn area(area: usize) -> Self {
+        Self {
+            area,
+            section: None,
+        }
+    }
+
+    fn section(area: usize, section: &'static str) -> Self {
+        Self {
+            area,
+            section: Some(section),
+        }
+    }
+}
+
 pub struct SettingsView {
     pub(crate) theme: Entity<ThemeStore>,
     pub(crate) font_service: std::sync::Arc<dyn SystemFontService>,
@@ -74,18 +125,25 @@ pub struct SettingsView {
     /// Index into `self.pages[active_area].sub_pages`, when a `SubPageLink`
     /// has been followed (rule 1).
     pub(crate) active_subpage: Option<usize>,
+    /// Explicit persistence target shown in the header.
+    pub(crate) scope: SettingsScope,
     pub(crate) search: String,
     /// The real UI-kit search input. `search` remains the view-level query so
     /// keyboard navigation and the fuzzy index keep their existing contract.
     pub(crate) search_input: Option<Entity<InputState>>,
     pub(crate) search_input_focused: bool,
     pub(crate) _search_input_subscription: Option<Subscription>,
-    /// Only one Settings text value is edited at a time. The input is created
-    /// on demand so ordinary rows stay lightweight while still gaining native
-    /// selection, clipboard, IME, and undo/redo behavior when edited.
-    pub(crate) text_input: Option<Entity<InputState>>,
+    /// Native editors for every text setting. Entities stay stable while the
+    /// virtualized content list mounts/unmounts rows, so tab focus, selection,
+    /// clipboard, IME, and undo/redo do not depend on a row being rebuilt.
+    pub(crate) text_inputs: HashMap<&'static str, Entity<InputState>>,
     pub(crate) text_input_key: Option<&'static str>,
-    pub(crate) _text_input_subscription: Option<Subscription>,
+    pub(crate) _text_input_subscriptions: Vec<Subscription>,
+    /// Native editor for the one active numeric value, matching the text
+    /// field lifecycle while keeping ordinary rows lightweight.
+    pub(crate) number_input: Option<Entity<InputState>>,
+    pub(crate) number_input_key: Option<&'static str>,
+    pub(crate) _number_input_subscription: Option<Subscription>,
     /// `true` when this view is the root of its own OS window (T16-009); `false`
     /// for the legacy in-`AppShell` modal path (kept for tests only).
     pub(crate) windowed: bool,
@@ -99,6 +157,9 @@ pub struct SettingsView {
     /// Scanned system font family names for the `FontFamily` picker, loaded
     /// once asynchronously when the window opens.
     pub(crate) system_fonts: Vec<SharedString>,
+    pub(crate) font_loading: bool,
+    pub(crate) font_loaded: bool,
+    pub(crate) font_error: Option<String>,
     pub(crate) focus: FocusHandle,
     // ── T19-004: generated settings UI ──────────────────────────────────
     /// Every generated field (`crate::schema::all_fields()`), computed once.
@@ -109,13 +170,18 @@ pub struct SettingsView {
     /// (`docs/architecture.md` §8.3 deviation). Toggled only by the row's
     /// disclosure chevron; selecting a category does not expand it.
     pub(crate) expanded_areas: HashSet<usize>,
+    /// Stable focus handles for visible category and section rows. These
+    /// allow tree-style arrow navigation to move native focus between rows.
+    pub(crate) navigation_focus_handles: HashMap<NavigationTarget, FocusHandle>,
     /// A section label the sidebar asked to scroll the content area to,
     /// consumed by `render_generated_body` once the section rows are built.
     pub(crate) scroll_to_section: Option<&'static str>,
     /// Scroll position of the active generated page's content, tracked so
     /// the jump bar can scroll-to-section and highlight the section that is
     /// currently topmost (rule 1's scroll-spy).
-    pub(crate) content_scroll: ScrollHandle,
+    /// State for the virtualized variable-height content list.
+    pub(crate) content_list: ListState,
+    pub(crate) content_list_key: Option<String>,
     // ── T19-007: global settings search ─────────────────────────────────
     /// Every SettingsContent field, indexed once (`open()`) — never rebuilt
     /// per keystroke (task Warnung).
@@ -150,6 +216,8 @@ pub(crate) struct SelectMenu {
     pub(crate) at: Point<Pixels>,
     /// The `"(default)"` font entry — selecting it clears the pref to `""`.
     pub(crate) default_sentinel: Option<SharedString>,
+    /// Keyboard highlight inside the open options list.
+    pub(crate) highlighted: usize,
 }
 
 impl SettingsView {
@@ -192,25 +260,34 @@ impl SettingsView {
             open: false,
             active_area: 0,
             active_subpage: None,
+            scope: SettingsScope::User,
             search: String::new(),
             search_input: None,
             search_input_focused: false,
             _search_input_subscription: None,
-            text_input: None,
+            text_inputs: HashMap::new(),
             text_input_key: None,
-            _text_input_subscription: None,
+            _text_input_subscriptions: Vec::new(),
+            number_input: None,
+            number_input_key: None,
+            _number_input_subscription: None,
             windowed: false,
             dropdown: None,
             select_bounds: HashMap::new(),
             system_fonts: Vec::new(),
+            font_loading: false,
+            font_loaded: false,
+            font_error: None,
             focus: cx.focus_handle(),
             all_fields,
             pages,
-            // Every sidebar category starts collapsed; `open()` re-clears this
-            // so it holds on every reopen too.
+            // The active category is visible immediately; other categories are
+            // collapsed until disclosed, matching the dense tree navigation.
             expanded_areas: HashSet::new(),
+            navigation_focus_handles: HashMap::new(),
             scroll_to_section: None,
-            content_scroll: ScrollHandle::new(),
+            content_list: ListState::new(0, ListAlignment::Top, px(120.0)),
+            content_list_key: None,
             search_index,
             search_results: Vec::new(),
             search_selected: 0,
@@ -228,8 +305,11 @@ impl SettingsView {
     pub fn open(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.open = true;
         self.cancel_text_input(cx);
-        // Sidebar categories always start collapsed on (re)open.
-        self.expanded_areas.clear();
+        self.cancel_number_input(cx);
+        if self.expanded_areas.is_empty() {
+            self.expanded_areas.insert(self.active_area);
+        }
+        self.scope = SettingsScope::User;
         self.search.clear();
         self.search_results.clear();
         self.search_selected = 0;
@@ -244,6 +324,7 @@ impl SettingsView {
     pub fn close(&mut self, cx: &mut Context<Self>) {
         self.open = false;
         self.cancel_text_input(cx);
+        self.cancel_number_input(cx);
         cx.notify();
     }
 
@@ -255,6 +336,7 @@ impl SettingsView {
         if self.windowed {
             cx.set_global(SettingsWindowRef { handle: None });
             self.cancel_text_input(cx);
+            self.cancel_number_input(cx);
             window.remove_window();
         } else {
             self.close(cx);
@@ -299,6 +381,20 @@ impl SettingsView {
                     Notification::error(
                         "Settings file syntax error",
                         "config.json could not be parsed. Fix the file before editing settings.",
+                    )
+                    .source("settings")
+                    .details(details),
+                );
+            }
+
+            if let Some(error) = store.project_json_error() {
+                let details = error.to_string();
+                fingerprint.push_str("project-json:");
+                fingerprint.push_str(&details);
+                notifications.push(
+                    Notification::error(
+                        "Project settings syntax error",
+                        "The project settings file could not be parsed. Fix it before editing project settings.",
                     )
                     .source("settings")
                     .details(details),
@@ -414,6 +510,7 @@ impl SettingsView {
         };
         self.active_area = area_idx;
         self.active_subpage = sub_idx;
+        self.expanded_areas.insert(area_idx);
     }
 
     /// The active page's own body (main page, or the followed sub-page).
@@ -427,8 +524,7 @@ impl SettingsView {
     pub(crate) fn go_to_area(&mut self, i: usize, cx: &mut Context<Self>) {
         self.active_area = i;
         self.active_subpage = None;
-        // Selecting a top-level category does not auto-expand its
-        // sub-section list — that is the disclosure chevron's job.
+        self.expanded_areas.insert(i);
         self.search.clear();
         cx.notify();
     }
@@ -440,6 +536,88 @@ impl SettingsView {
             self.expanded_areas.insert(i);
         }
         cx.notify();
+    }
+
+    fn navigation_focus_handle(
+        &mut self,
+        target: NavigationTarget,
+        cx: &mut Context<Self>,
+    ) -> FocusHandle {
+        self.navigation_focus_handles
+            .entry(target)
+            .or_insert_with(|| cx.focus_handle())
+            .clone()
+    }
+
+    fn visible_navigation_targets(&self) -> Vec<NavigationTarget> {
+        let mut targets = Vec::new();
+        for (area, _) in AREAS.iter().enumerate() {
+            targets.push(NavigationTarget::area(area));
+            if self.expanded_areas.contains(&area) {
+                targets.extend(
+                    self.section_labels_for_area(area)
+                        .into_iter()
+                        .map(|section| NavigationTarget::section(area, section)),
+                );
+            }
+        }
+        targets
+    }
+
+    /// Handle the keyboard contract of a focused settings tree row. GPUI
+    /// 0.2.2 does not expose ARIA tree roles, so the native fallback keeps the
+    /// important behavior explicit: arrows move focus, Enter/Space activate,
+    /// and Left/Right controls disclosure.
+    pub(crate) fn handle_navigation_key(
+        &mut self,
+        target: NavigationTarget,
+        key: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        match (target.section, key) {
+            (Some(label), "enter" | "space") => self.go_to_section(target.area, label, cx),
+            (None, "enter" | "space") => self.go_to_area(target.area, cx),
+            (None, "right") if !self.expanded_areas.contains(&target.area) => {
+                self.expanded_areas.insert(target.area);
+                cx.notify();
+            }
+            (None, "right") => {
+                if let Some(section) = self.section_labels_for_area(target.area).first().copied() {
+                    let focus = self.navigation_focus_handle(
+                        NavigationTarget::section(target.area, section),
+                        cx,
+                    );
+                    window.focus(&focus);
+                }
+            }
+            (None, "left") if self.expanded_areas.contains(&target.area) => {
+                self.expanded_areas.remove(&target.area);
+                cx.notify();
+            }
+            (Some(_), "left") => {
+                self.expanded_areas.remove(&target.area);
+                let focus = self.navigation_focus_handle(NavigationTarget::area(target.area), cx);
+                window.focus(&focus);
+                cx.notify();
+            }
+            (_, "down" | "up") => {
+                let targets = self.visible_navigation_targets();
+                if let Some(index) = targets.iter().position(|candidate| *candidate == target) {
+                    let next = if key == "down" {
+                        (index + 1).min(targets.len().saturating_sub(1))
+                    } else {
+                        index.saturating_sub(1)
+                    };
+                    if let Some(target) = targets.get(next).copied() {
+                        let focus = self.navigation_focus_handle(target, cx);
+                        window.focus(&focus);
+                    }
+                }
+            }
+            _ => return false,
+        }
+        true
     }
 
     /// Navigate to `area` (if needed) and scroll its content to `label`'s
@@ -488,6 +666,25 @@ impl SettingsView {
         cx.notify();
     }
 
+    pub(crate) fn set_scope(&mut self, scope: SettingsScope, cx: &mut Context<Self>) {
+        if scope == SettingsScope::Project
+            && cx
+                .try_global::<SettingsStore>()
+                .and_then(|store| store.project_root())
+                .is_none()
+        {
+            self.notify_error(
+                cx,
+                "Project settings unavailable",
+                "Open a project before editing its settings.".to_string(),
+            );
+            return;
+        }
+        self.scope = scope;
+        self.dropdown = None;
+        cx.notify();
+    }
+
     // ── global search (T19-007) ─────────────────────────────────────────
 
     /// Recompute `search_results` from the current query — cheap (index is
@@ -497,6 +694,17 @@ impl SettingsView {
     /// category list.
     pub(crate) fn refresh_search_results(&mut self) {
         self.search_results = crate::search::search(&self.search_index, &self.search, 50);
+        for row in &self.search_results {
+            let SearchTarget::Field(index) = row.target;
+            if let Some(field) = self.all_fields.get(index) {
+                if let Some(area) = AREAS
+                    .iter()
+                    .position(|area| area.target_module == field.area())
+                {
+                    self.expanded_areas.insert(area);
+                }
+            }
+        }
         if self.search_selected >= self.search_results.len() {
             self.search_selected = self.search_results.len().saturating_sub(1);
         }
@@ -585,9 +793,9 @@ impl SettingsView {
         }
     }
 
-    /// Write a generated field's value through the layered `SettingsStore`
-    /// (persists the `User` layer) — every consumer reads that store
-    /// directly, so no separate bridge sync is needed.
+    /// Write a generated field's value through the explicitly selected layer.
+    /// The Settings owner validates project scope again, so the UI never
+    /// becomes the security boundary for `.labonair/settings.json`.
     pub(crate) fn set_field_value(
         &mut self,
         json_path: &'static str,
@@ -601,67 +809,106 @@ impl SettingsView {
         if !cx.has_global::<SettingsStore>() {
             return;
         }
-        let result = cx
-            .global_mut::<SettingsStore>()
-            .update_user_settings_deferred(move |c| {
-                (set)(c, value.clone());
-            });
+        let scope = self.scope;
+        let result = match scope {
+            SettingsScope::User => cx
+                .global_mut::<SettingsStore>()
+                .update_user_settings_deferred(move |c| {
+                    (set)(c, value.clone());
+                }),
+            SettingsScope::Project => {
+                if !labonair_settings::project::is_project_setting_allowed(json_path) {
+                    Err(format!(
+                        "`{json_path}` is not available in project settings"
+                    ))
+                } else {
+                    cx.global_mut::<SettingsStore>()
+                        .update_project_settings_deferred(move |c| {
+                            (set)(c, value.clone());
+                        })
+                }
+            }
+        };
         match result {
             Err(err) => {
-                // Blocked (invalid JSON on disk, T19-005) — surface it rather
-                // than silently discarding the edit.
                 self.notify_error(cx, "Could not save setting", err);
                 return;
             }
-            Ok(Some(request)) => match enqueue_user_settings_write(request) {
-                Ok(receiver) => {
-                    cx.spawn(async move |this, cx| {
-                        let result = cx
-                            .background_executor()
-                            .spawn(async move {
-                                receiver.recv().unwrap_or_else(|_| {
-                                    Err("settings writer stopped before saving".to_string())
-                                })
-                            })
-                            .await;
-                        if let Err(error) = result {
-                            let _ = this.update(cx, |this, cx| {
-                                this.notify_error(cx, "Could not save setting", error);
-                            });
-                        }
-                    })
-                    .detach();
-                }
-                Err(err) => {
-                    self.notify_error(cx, "Could not save setting", err);
-                    return;
-                }
-            },
+            Ok(Some(request)) => self.queue_settings_write(request, cx),
             Ok(None) => {}
         }
         self.sync_theme_from_prefs(cx);
         cx.notify();
     }
 
-    /// "Reset to default" (rule 5) — writes the field's `SettingsContent::
-    /// defaults()` value back into the `User` layer. This is a pragmatic
-    /// simplification of "clear the User-layer override": `SettingsStore`
-    /// has no per-field unset, only whole-layer replacement, so a reset
-    /// leaves the field explicitly set to its default rather than truly
-    /// absent — visually and functionally identical (the field shows its
-    /// default value and the origin badge would only differ from `Default`
-    /// if a lower-priority… there is none below `Default`, so this is exact
-    /// for the common case of no active project override).
+    /// Clear the layer that currently supplies the field. Reset therefore
+    /// reveals the next lower-precedence value instead of materializing a
+    /// duplicate default in a higher layer.
     pub(crate) fn reset_field(&mut self, json_path: &'static str, cx: &mut Context<Self>) {
         let Some(field) = self.field_by_path(json_path) else {
             return;
         };
-        let Some(default_value) =
-            (field.get)(&labonair_settings_content::SettingsContent::defaults())
-        else {
+        if !cx.has_global::<SettingsStore>() {
             return;
+        }
+        let clear = field.clear;
+        let scope = match self.field_origin(field, cx) {
+            OriginBadge::Project => SettingsScope::Project,
+            OriginBadge::User => SettingsScope::User,
+            OriginBadge::Default => self.scope,
         };
-        self.set_field_value(json_path, default_value, cx);
+        let result = match scope {
+            SettingsScope::User => cx
+                .global_mut::<SettingsStore>()
+                .update_user_settings_deferred(clear),
+            SettingsScope::Project => {
+                if !labonair_settings::project::is_project_setting_allowed(json_path) {
+                    self.notify_error(
+                        cx,
+                        "Could not reset setting",
+                        format!("`{json_path}` is not available in project settings"),
+                    );
+                    return;
+                }
+                cx.global_mut::<SettingsStore>()
+                    .update_project_settings_deferred(clear)
+            }
+        };
+        match result {
+            Ok(Some(request)) => self.queue_settings_write(request, cx),
+            Ok(None) => {}
+            Err(error) => self.notify_error(cx, "Could not reset setting", error),
+        }
+        self.sync_theme_from_prefs(cx);
+        cx.notify();
+    }
+
+    fn queue_settings_write(
+        &self,
+        request: labonair_settings::UserSettingsWrite,
+        cx: &mut Context<Self>,
+    ) {
+        match enqueue_user_settings_write(request) {
+            Ok(receiver) => {
+                cx.spawn(async move |this, cx| {
+                    let result = cx
+                        .background_executor()
+                        .spawn(async move {
+                            receiver.recv().unwrap_or_else(|_| {
+                                Err("settings writer stopped before saving".to_string())
+                            })
+                        })
+                        .await;
+                    if let Err(error) = result {
+                        let _ = this.update(cx, |this, cx| {
+                            this.notify_error(cx, "Could not save setting", error);
+                        });
+                    }
+                })
+                .detach();
+            }
+            Err(error) => self.notify_error(cx, "Could not save setting", error),
+        }
     }
 
     /// Re-derive the [`ThemeStore`] state (color mode, fonts, metrics, active
@@ -721,6 +968,7 @@ impl SettingsView {
                 InputEvent::PressEnter { .. } => {
                     if let Some(row) = this.search_results.get(this.search_selected).copied() {
                         this.activate_search_hit(row.target, cx);
+                        cx.stop_propagation();
                     }
                 }
             });
@@ -742,7 +990,88 @@ impl SettingsView {
         input.update(cx, |state, cx| state.set_value(query, window, cx));
     }
 
-    /// Start editing a text setting with a native UI-kit input.
+    /// Create one native UI-kit input per text setting. The entities are
+    /// intentionally independent of the virtualized row tree: a row may be
+    /// rebuilt as the user scrolls without losing its editing identity.
+    pub(crate) fn ensure_text_inputs(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let fields: Vec<(&'static str, String)> = self
+            .all_fields
+            .iter()
+            .filter(|field| matches!(field.control, FieldControl::Text))
+            .map(|field| {
+                let value = self
+                    .field_value(field, cx)
+                    .and_then(|value| value.as_str().map(str::to_owned))
+                    .unwrap_or_default();
+                (field.json_path, value)
+            })
+            .collect();
+
+        for (key, initial) in fields {
+            if self.text_inputs.contains_key(key) {
+                continue;
+            }
+            let input = cx.new(|cx| {
+                let mut state = text_field(window, cx).placeholder("(default)");
+                if !initial.is_empty() {
+                    state.set_value(initial, window, cx);
+                }
+                state
+            });
+            let subscription =
+                cx.subscribe(
+                    &input,
+                    move |this, input, event: &InputEvent, cx| match event {
+                        InputEvent::Focus => {
+                            if this.text_input_key != Some(key) {
+                                this.commit_active_text_input(cx);
+                                this.text_input_key = Some(key);
+                            }
+                            cx.notify();
+                        }
+                        InputEvent::PressEnter { .. } | InputEvent::Blur => {
+                            this.commit_text_input(key, input.read(cx).value().to_string(), cx);
+                        }
+                        _ => {}
+                    },
+                );
+            self.text_inputs.insert(key, input);
+            self._text_input_subscriptions.push(subscription);
+        }
+    }
+
+    /// Update only non-focused native text editors from the merged settings
+    /// tree. A focused editor owns its in-progress text until Enter, Blur, or
+    /// Escape, so external store notifications cannot overwrite user input.
+    pub(crate) fn sync_text_inputs(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let values: Vec<(&'static str, String)> = self
+            .all_fields
+            .iter()
+            .filter(|field| matches!(field.control, FieldControl::Text))
+            .map(|field| {
+                let value = self
+                    .field_value(field, cx)
+                    .and_then(|value| value.as_str().map(str::to_owned))
+                    .unwrap_or_default();
+                (field.json_path, value)
+            })
+            .collect();
+
+        for (key, value) in values {
+            if self.text_input_key == Some(key) {
+                continue;
+            }
+            let Some(input) = self.text_inputs.get(key).cloned() else {
+                continue;
+            };
+            if input.read(cx).value() != value {
+                input.update(cx, |state, cx| state.set_value(value, window, cx));
+            }
+        }
+    }
+
+    /// Focus an existing native text editor. The editor's Focus event sets the
+    /// active key as well, while this method keeps mouse activation immediate.
     pub(crate) fn begin_text_edit(
         &mut self,
         key: &'static str,
@@ -750,39 +1079,18 @@ impl SettingsView {
         cx: &mut Context<Self>,
     ) {
         if self.text_input_key == Some(key) {
-            if let Some(input) = &self.text_input {
+            if let Some(input) = self.text_inputs.get(key) {
                 input.update(cx, |state, cx| state.focus(window, cx));
             }
             return;
         }
+        self.cancel_number_input(cx);
         self.commit_active_text_input(cx);
-
-        let initial = self
-            .field_by_path(key)
-            .and_then(|field| self.field_value(field, cx))
-            .and_then(|value| value.as_str().map(str::to_owned))
-            .unwrap_or_default();
-        let input = cx.new(|cx| {
-            let mut state = text_field(window, cx).placeholder("(default)");
-            if !initial.is_empty() {
-                state.set_value(initial, window, cx);
-            }
-            state
-        });
-        let subscription =
-            cx.subscribe(
-                &input,
-                move |this, input, event: &InputEvent, cx| match event {
-                    InputEvent::PressEnter { .. } | InputEvent::Blur => {
-                        this.commit_text_input(key, input.read(cx).value().to_string(), cx);
-                    }
-                    _ => {}
-                },
-            );
-        input.update(cx, |state, cx| state.focus(window, cx));
-        self.text_input = Some(input);
+        let Some(input) = self.text_inputs.get(key).cloned() else {
+            return;
+        };
         self.text_input_key = Some(key);
-        self._text_input_subscription = Some(subscription);
+        input.update(cx, |state, cx| state.focus(window, cx));
         cx.notify();
     }
 
@@ -791,8 +1099,8 @@ impl SettingsView {
             return;
         };
         let value = self
-            .text_input
-            .as_ref()
+            .text_inputs
+            .get(key)
             .map(|input| input.read(cx).value().to_string())
             .unwrap_or_default();
         self.commit_text_input(key, value, cx);
@@ -808,8 +1116,6 @@ impl SettingsView {
             return;
         }
         self.text_input_key = None;
-        self.text_input = None;
-        self._text_input_subscription = None;
         self.set_field_value(key, Value::String(value.trim().to_owned()), cx);
     }
 
@@ -818,8 +1124,110 @@ impl SettingsView {
             return;
         }
         self.text_input_key = None;
-        self.text_input = None;
-        self._text_input_subscription = None;
+        cx.notify();
+    }
+
+    pub(crate) fn begin_number_edit(
+        &mut self,
+        key: &'static str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.number_input_key == Some(key) {
+            if let Some(input) = &self.number_input {
+                input.update(cx, |state, cx| state.focus(window, cx));
+            }
+            return;
+        }
+        let Some(field) = self.field_by_path(key).copied() else {
+            return;
+        };
+        let decimals = match field.control {
+            FieldControl::Int { .. } => 0,
+            FieldControl::Float { .. } => 2,
+            _ => return,
+        };
+        self.cancel_text_input(cx);
+        self.cancel_number_input(cx);
+        let initial = self
+            .field_value(&field, cx)
+            .and_then(|value| value.as_f64())
+            .map(|value| format!("{value:.decimals$}"))
+            .unwrap_or_default();
+        let input = cx.new(|cx| {
+            let mut state = text_field(window, cx).placeholder("(default)");
+            state.set_value(initial, window, cx);
+            state
+        });
+        let subscription =
+            cx.subscribe(
+                &input,
+                move |this, input, event: &InputEvent, cx| match event {
+                    InputEvent::PressEnter { .. } | InputEvent::Blur => {
+                        this.commit_number_input(key, input.read(cx).value().to_string(), cx);
+                    }
+                    _ => {}
+                },
+            );
+        input.update(cx, |state, cx| state.focus(window, cx));
+        self.number_input = Some(input);
+        self.number_input_key = Some(key);
+        self._number_input_subscription = Some(subscription);
+        cx.notify();
+    }
+
+    pub(crate) fn commit_number_input(
+        &mut self,
+        key: &'static str,
+        raw: String,
+        cx: &mut Context<Self>,
+    ) {
+        if self.number_input_key != Some(key) {
+            return;
+        }
+        self.number_input = None;
+        self.number_input_key = None;
+        self._number_input_subscription = None;
+
+        let Some(field) = self.field_by_path(key).copied() else {
+            return;
+        };
+        let Ok(parsed) = raw.trim().parse::<f64>() else {
+            self.notify_error(
+                cx,
+                "Invalid number",
+                format!("Enter a numeric value for {}.", field.meta.title),
+            );
+            cx.notify();
+            return;
+        };
+        let value = match field.control {
+            FieldControl::Int { min, max, .. } => {
+                Value::from(parsed.round().clamp(min as f64, max as f64) as i64)
+            }
+            FieldControl::Float {
+                min_centi,
+                max_centi,
+                ..
+            } => {
+                let value = (parsed.clamp(min_centi as f64 / 100.0, max_centi as f64 / 100.0)
+                    * 100.0)
+                    .round()
+                    / 100.0;
+                Value::from(value)
+            }
+            _ => return,
+        };
+        self.set_field_value(key, value, cx);
+    }
+
+    pub(crate) fn cancel_number_input(&mut self, cx: &mut Context<Self>) {
+        if self.number_input_key.is_none() {
+            return;
+        }
+        self.number_input = None;
+        self.number_input_key = None;
+        self._number_input_subscription = None;
         cx.notify();
     }
 
@@ -833,12 +1241,77 @@ impl SettingsView {
     ) {
         let ks = &ev.keystroke;
         let key = ks.key.as_str();
+        if self.dropdown.is_some() {
+            match key {
+                "escape" => {
+                    self.dropdown = None;
+                    cx.stop_propagation();
+                    cx.notify();
+                    return;
+                }
+                "up" | "down" => {
+                    if let Some(menu) = self.dropdown.as_mut() {
+                        let len = menu.options.len();
+                        if len > 0 {
+                            menu.highlighted = if key == "up" {
+                                (menu.highlighted + len - 1) % len
+                            } else {
+                                (menu.highlighted + 1) % len
+                            };
+                        }
+                    }
+                    cx.stop_propagation();
+                    cx.notify();
+                    return;
+                }
+                "enter" | "space" => {
+                    let Some(menu) = self.dropdown.take() else {
+                        return;
+                    };
+                    let Some((token, _)) = menu.options.get(menu.highlighted).cloned() else {
+                        cx.stop_propagation();
+                        cx.notify();
+                        return;
+                    };
+                    if menu.key == SETTINGS_SCOPE_KEY {
+                        if let Some(scope) = SettingsScope::from_token(token.as_ref()) {
+                            self.set_scope(scope, cx);
+                        }
+                    } else {
+                        let value = if menu.default_sentinel.as_ref() == Some(&token) {
+                            String::new()
+                        } else {
+                            token.to_string()
+                        };
+                        self.set_field_value(menu.key, Value::String(value), cx);
+                    }
+                    cx.stop_propagation();
+                    return;
+                }
+                "tab" => {
+                    self.dropdown = None;
+                    cx.notify();
+                    return;
+                }
+                _ => {
+                    cx.stop_propagation();
+                    return;
+                }
+            }
+        }
         // A real text input owns character editing. The view only handles
         // Escape so an active edit can be cancelled without leaking the event
         // into Settings navigation.
         if self.text_input_key.is_some() {
             if key == "escape" {
                 self.cancel_text_input(cx);
+            }
+            cx.stop_propagation();
+            return;
+        }
+        if self.number_input_key.is_some() {
+            if key == "escape" {
+                self.cancel_number_input(cx);
             }
             cx.stop_propagation();
             return;
@@ -897,162 +1370,15 @@ impl SettingsView {
         }
         cx.stop_propagation();
     }
-
-    /// The General page's own leading content: an About hero, above the
-    /// generated field grid.
-    pub(crate) fn render_about_hero(
-        &self,
-        c: &Palette,
-        cx: &mut Context<Self>,
-    ) -> gpui::AnyElement {
-        // A single raised info card: identity + "Check for updates" on the
-        // left, a stacked list of icon links on the right.
-        let os = match std::env::consts::OS {
-            "macos" => "macOS",
-            "linux" => "Linux",
-            "windows" => "Windows",
-            other => other,
-        };
-
-        // One right-hand link: icon + (title / subtitle), the whole row
-        // clickable.
-        let link = |id: &'static str,
-                    icon: IconName,
-                    title: &'static str,
-                    subtitle: &'static str,
-                    url: &'static str| {
-            div()
-                .id(id)
-                .flex()
-                .flex_row()
-                .items_center()
-                .gap_3()
-                .cursor_pointer()
-                .child(icon.svg(c.muted).size(px(18.0)))
-                .child(
-                    v_stack()
-                        .child(div().text_size(px(13.0)).text_color(c.fg).child(title))
-                        .child(
-                            div()
-                                .text_size(px(11.0))
-                                .text_color(c.muted)
-                                .child(subtitle),
-                        ),
-                )
-                .on_click(cx.listener(move |_, _: &ClickEvent, _w, cx| {
-                    cx.open_url(url);
-                }))
-        };
-
-        div()
-            .rounded_lg()
-            .border_1()
-            .border_color(c.border)
-            .bg(c.card)
-            .p(px(24.0))
-            .mb_4()
-            .child(
-                h_stack()
-                    .items_start()
-                    .justify_between()
-                    .gap_6()
-                    .child(
-                        v_stack()
-                            .gap_3()
-                            .child(
-                                h_stack()
-                                    .gap_3()
-                                    .child(
-                                        div()
-                                            .size(px(52.0))
-                                            .rounded_lg()
-                                            .bg(c.bg)
-                                            .border_1()
-                                            .border_color(c.border)
-                                            .flex()
-                                            .items_center()
-                                            .justify_center()
-                                            .text_color(c.fg)
-                                            .text_size(px(24.0))
-                                            .font_weight(gpui::FontWeight::BOLD)
-                                            .child("L"),
-                                    )
-                                    .child(
-                                        v_stack()
-                                            .gap_0p5()
-                                            .child(
-                                                div()
-                                                    .text_size(px(22.0))
-                                                    .font_weight(gpui::FontWeight::BOLD)
-                                                    .text_color(c.fg)
-                                                    .child("Labonair"),
-                                            )
-                                            .child(
-                                                div()
-                                                    .text_size(px(12.0))
-                                                    .text_color(c.muted)
-                                                    .child(SharedString::from(format!(
-                                                        "{}  \u{2022}  {}  \u{2022}  v{}",
-                                                        os,
-                                                        std::env::consts::ARCH,
-                                                        env!("CARGO_PKG_VERSION"),
-                                                    ))),
-                                            ),
-                                    ),
-                            )
-                            .child(
-                                button(
-                                    "about-check-updates",
-                                    *c,
-                                    ButtonVariant::Default,
-                                    ButtonSize::Sm,
-                                )
-                                .child("Check for updates")
-                                .on_click(cx.listener(
-                                    |_, _: &ClickEvent, _w, cx| {
-                                        cx.open_url(
-                                            "https://github.com/Snenjih/Labonair-rust/releases",
-                                        );
-                                    },
-                                )),
-                            ),
-                    )
-                    .child(
-                        v_stack()
-                            .gap_3()
-                            .child(link(
-                                "about-report",
-                                IconName::Warning,
-                                "Report a problem",
-                                "Generate a pre-filled GitHub issue",
-                                "https://github.com/Snenjih/Labonair-rust/issues/new",
-                            ))
-                            .child(link(
-                                "about-github",
-                                IconName::GitBranch,
-                                "GitHub",
-                                "Source code",
-                                "https://github.com/Snenjih/Labonair-rust",
-                            ))
-                            .child(link(
-                                "about-website",
-                                IconName::Globe,
-                                "Website",
-                                "labonair.app",
-                                "https://github.com/Snenjih/Labonair-rust",
-                            )),
-                    ),
-            )
-            .into_any_element()
-    }
 }
 
 impl SettingsView {
-    /// Render one category row plus its optional section scroll anchors. The
-    /// surrounding group labels are purely navigational; category selection
-    /// still follows `AREAS` and the existing deep-link contract.
+    /// Render one category tree row plus its optional section scroll anchors.
+    /// The settings window uses the shared UI-kit tree primitive so row density,
+    /// selection, focus and disclosure affordances remain consistent with the
+    /// rest of the native shell.
     fn render_area_navigation(
-        &self,
+        &mut self,
         i: usize,
         area: &labonair_settings_content::areas::AreaMeta,
         c: &Palette,
@@ -1062,83 +1388,117 @@ impl SettingsView {
         let expanded = self.expanded_areas.contains(&i);
         let sections = self.section_labels_for_area(i);
         let has_sections = !sections.is_empty();
-        let chevron = if expanded {
+        let view = cx.entity();
+        let target = NavigationTarget::area(i);
+        let focus_handle = self.navigation_focus_handle(target, cx);
+        let state = TreeRowState {
+            selected: is_active,
+            ..Default::default()
+        };
+        let mut row = tree_row(
+            SharedString::from(format!("settings-area-{}", area.key)),
+            *c,
+            area.title,
+        )
+        .label_tint(c.sidebar_fg)
+        .state(state)
+        .tab_index(0)
+        .expanded(has_sections.then_some(expanded))
+        .chevron(has_sections.then_some(if expanded {
             IconName::ChevronDown
         } else {
             IconName::ChevronRight
-        };
-
-        let mut toggle = div()
-            .id(SharedString::from(format!("area-toggle-{}", area.key)))
-            .flex()
-            .items_center()
-            .justify_center()
-            .flex_shrink_0()
-            .w(c.space(24.0))
-            .h(c.space(28.0))
-            .rounded(px(c.radius.sm));
-        if has_sections {
-            toggle = toggle
-                .cursor_pointer()
-                .hover(|s| s.bg(c.muted_bg))
-                .child(chevron.svg(c.sidebar_fg).size(px(12.0)))
-                .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
-                    this.toggle_area_expanded(i, cx);
-                }));
-        }
-
-        let row = div()
-            .flex()
-            .items_center()
-            .w_full()
-            .pr(c.space(8.0))
-            .rounded(px(c.radius.sm))
-            .text_size(px(12.0))
-            .text_color(c.sidebar_fg)
-            .border_l_2()
-            .border_color(if is_active {
-                c.selected_accent
-            } else {
-                gpui::transparent_black()
-            })
-            .when(is_active, |d| d.bg(c.selected_fill))
-            .when(!is_active, |d| d.hover(|s| s.bg(c.accent)))
-            .child(toggle)
-            .child(
-                div()
-                    .id(SharedString::from(format!("area-{}", area.key)))
-                    .flex_1()
-                    .min_w_0()
-                    .py(c.space(6.0))
-                    .cursor_pointer()
-                    .child(SharedString::from(area.title))
-                    .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
-                        this.go_to_area(i, cx);
-                    })),
-            );
-
-        let sub = (expanded && has_sections).then(|| {
-            v_stack()
-                .gap(c.space(2.0))
-                .pb(c.space(4.0))
-                .children(sections.into_iter().map(|label| {
-                    div()
-                        .id(SharedString::from(format!("sec-{i}-{label}")))
-                        .w_full()
-                        .pl(c.space(30.0))
-                        .pr(c.space(8.0))
-                        .py(c.space(5.0))
-                        .rounded(px(c.radius.sm))
-                        .text_size(px(11.5))
-                        .text_color(c.muted)
-                        .cursor_pointer()
-                        .hover(|s| s.bg(c.accent).text_color(c.sidebar_fg))
-                        .child(SharedString::from(label))
-                        .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
-                            this.go_to_section(i, label, cx);
-                        }))
-                }))
+        }))
+        .on_click({
+            let view = view.clone();
+            let focus_handle = focus_handle.clone();
+            move |_event, window, app| {
+                window.focus(&focus_handle);
+                view.update(app, |this, cx| this.go_to_area(i, cx));
+            }
         });
+        if has_sections {
+            row = row.on_chevron_click({
+                let view = view.clone();
+                move |_event, _window, app| {
+                    view.update(app, |this, cx| this.toggle_area_expanded(i, cx));
+                }
+            });
+        }
+        row = row.extra({
+            let view = view.clone();
+            let focus_handle = focus_handle.clone();
+            move |element| {
+                element.track_focus(&focus_handle).on_key_down(
+                    move |event: &KeyDownEvent, window, app| {
+                        view.update(app, |this, cx| {
+                            if this.handle_navigation_key(
+                                target,
+                                event.keystroke.key.as_str(),
+                                window,
+                                cx,
+                            ) {
+                                cx.stop_propagation();
+                            }
+                        });
+                    },
+                )
+            }
+        });
+
+        let sub = if expanded && has_sections {
+            let mut section_rows = Vec::new();
+            for label in sections {
+                let target = NavigationTarget::section(i, label);
+                let focus_handle = self.navigation_focus_handle(target, cx);
+                let view = cx.entity();
+                let click_view = view.clone();
+                section_rows.push(
+                    tree_row(
+                        SharedString::from(format!("settings-section-{i}-{label}")),
+                        *c,
+                        label,
+                    )
+                    .depth(1)
+                    .tab_index(0)
+                    .state(TreeRowState::default())
+                    .on_click({
+                        let focus_handle = focus_handle.clone();
+                        move |_event, window, app| {
+                            window.focus(&focus_handle);
+                            click_view.update(app, |this, cx| this.go_to_section(i, label, cx));
+                        }
+                    })
+                    .extra({
+                        let view = view.clone();
+                        move |element| {
+                            element.track_focus(&focus_handle).on_key_down(
+                                move |event: &KeyDownEvent, window, app| {
+                                    view.update(app, |this, cx| {
+                                        if this.handle_navigation_key(
+                                            target,
+                                            event.keystroke.key.as_str(),
+                                            window,
+                                            cx,
+                                        ) {
+                                            cx.stop_propagation();
+                                        }
+                                    });
+                                },
+                            )
+                        }
+                    }),
+                );
+            }
+            Some(
+                v_stack()
+                    .gap(c.space(1.0))
+                    .pb(c.space(4.0))
+                    .children(section_rows),
+            )
+        } else {
+            None
+        };
 
         v_stack().child(row).children(sub).into_any_element()
     }
@@ -1155,8 +1515,19 @@ impl Render for SettingsView {
         if !self.windowed && !self.open {
             return div().into_any_element();
         }
+        if self.scope == SettingsScope::Project
+            && cx
+                .try_global::<SettingsStore>()
+                .and_then(|store| store.project_root())
+                .is_none()
+        {
+            self.scope = SettingsScope::User;
+            self.dropdown = None;
+        }
         self.ensure_search_input(window, cx);
         self.sync_search_input(window, cx);
+        self.ensure_text_inputs(window, cx);
+        self.sync_text_inputs(window, cx);
         let c = Palette::from_theme(self.theme.read(cx));
         let searching = !self.search.trim().is_empty();
         // T19-007: recompute every render so Up/Down/Enter and mouse clicks
@@ -1197,100 +1568,111 @@ impl Render for SettingsView {
                     ButtonVariant::Ghost,
                     ButtonSize::IconXs,
                 )
+                .tab_index(0)
+                .focus(|style| style.border_1().border_color(c.ring))
                 .child(IconName::X.svg(c.muted).size(px(11.0)))
                 .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
                     this.search.clear();
                     this.search_results.clear();
                     this.search_selected = 0;
                     cx.notify();
-                })),
+                }))
+                .on_key_down(cx.listener(
+                    |this, event: &KeyDownEvent, _window, cx| {
+                        if matches!(event.keystroke.key.as_str(), "enter" | "space") {
+                            this.search.clear();
+                            this.search_results.clear();
+                            this.search_selected = 0;
+                            cx.stop_propagation();
+                            cx.notify();
+                        }
+                    },
+                )),
             );
         }
 
-        // Left: fixed-order top-level categories (rule 1), sourced from
-        // `AREAS` contains only value-oriented settings categories. Capability
-        // management surfaces are registered by their owning modules.
-        //
-        // `docs/architecture.md` §8.3 deviation: each top-level row carries a
-        // disclosure chevron that reveals the page's section labels as
-        // sub-level scroll anchors (not pages). Row click navigates + expands;
-        // chevron click only toggles; sub-label click scrolls the content to
-        // that section.
-        let mut sidebar_items = Vec::new();
-        for (group_label, area_keys) in SIDEBAR_GROUPS {
-            sidebar_items.push(
-                div()
-                    .pt(c.space(12.0))
-                    .pb(c.space(4.0))
-                    .pl(c.space(8.0))
-                    .text_size(px(10.0))
-                    .font_weight(gpui::FontWeight::SEMIBOLD)
-                    .text_color(c.muted)
-                    .child(*group_label)
-                    .into_any_element(),
-            );
-            for (i, area) in AREAS.iter().enumerate() {
-                if area_keys.contains(&area.key) {
-                    sidebar_items.push(self.render_area_navigation(i, area, &c, cx));
-                }
-            }
-        }
+        // The canonical seven Settings areas are the only root navigation
+        // entries. Management surfaces such as Hosts, Themes and Keymap have
+        // their own owning-module entry points and never become fake Settings
+        // categories.
+        let sidebar_items: Vec<_> = AREAS
+            .iter()
+            .enumerate()
+            .map(|(i, area)| self.render_area_navigation(i, area, &c, cx))
+            .collect();
         let sidebar_body = div()
+            .id("settings-sidebar-list")
             .flex()
             .flex_col()
             .gap(c.space(2.0))
+            .flex_1()
+            .min_h_0()
+            .overflow_y_scroll()
             .children(sidebar_items)
             .into_any_element();
 
         let sidebar = div()
             .id("settings-sidebar")
-            .w(c.space(208.0))
+            .w(c.space(226.0))
             .flex_shrink_0()
             .flex()
             .flex_col()
             .gap(c.space(2.0))
-            .p(c.space(8.0))
-            .overflow_y_scroll()
+            .px(c.space(8.0))
+            .pt(c.space(if self.windowed { 30.0 } else { 8.0 }))
+            .pb(c.space(8.0))
+            .overflow_hidden()
             // `docs/settings-guidelines.md`: the nav rail sits on its own
             // `--sidebar` surface, distinct from the `--card` content area.
             .bg(c.sidebar)
             .border_r_1()
             .border_color(c.sidebar_border)
             .child(search_box)
-            .child(sidebar_body);
+            .child(sidebar_body)
+            .child(
+                div()
+                    .mt_auto()
+                    .pt(c.space(8.0))
+                    .border_t_1()
+                    .border_color(c.sidebar_border)
+                    .child(keybinding_hint("Navigate", ["↑", "↓", "Enter"], c)),
+            );
 
         let body = self.render_body(&c, cx);
         let windowed = self.windowed;
 
         let header = self.render_header(&c, cx);
 
-        // `body` is the content-area scroll container itself (see
-        // `render_generated_body`) — it owns `track_scroll` so that
-        // `ScrollHandle::scroll_to_item` can address each section row
-        // directly. The scroll area fills the available content width so the
-        // field rows continue to adapt when the window is resized.
-        let content = div().flex_1().min_h_0().flex().child(sidebar).child(
-            div()
-                .flex_1()
-                .min_w_0()
-                .min_h_0()
-                .flex()
-                .flex_col()
-                .child(body),
-        );
+        // The navigation rail spans the full Settings surface. Scope and JSON
+        // actions live in the content pane above its virtualized field list.
+        // Keeping these as sibling columns matches the native Settings layout
+        // and leaves the sidebar visually continuous beside both header/body.
+        let content_pane = div()
+            .flex_1()
+            .min_w(px(400.0))
+            .min_h_0()
+            .flex()
+            .flex_col()
+            .child(header)
+            .child(body);
+        let content = div()
+            .flex_1()
+            .min_h_0()
+            .flex()
+            .child(sidebar)
+            .child(content_pane);
 
         let card = div()
             .id("settings-card")
             .track_focus(&self.focus)
             .key_context("Settings")
             .flex()
-            .flex_col()
             .bg(c.card)
             .text_color(c.fg)
             .on_key_down(cx.listener(Self::on_key))
-            .child(header)
             .child(content)
-            .children(self.render_dropdown(&c, cx));
+            .children(self.render_dropdown(&c, cx))
+            .children(self.render_scope_dropdown(&c, cx));
 
         if windowed {
             return card.size_full().into_any_element();
@@ -1344,10 +1726,20 @@ impl SettingsView {
                         ButtonVariant::Ghost,
                         ButtonSize::IconXs,
                     )
+                    .tab_index(0)
+                    .focus(|style| style.border_1().border_color(c.ring))
                     .child("\u{2190}")
                     .on_click(cx.listener(|this, _: &ClickEvent, _w, cx| {
                         this.go_back_to_main_page(cx);
-                    })),
+                    }))
+                    .on_key_down(cx.listener(
+                        |this, event: &KeyDownEvent, _w, cx| {
+                            if matches!(event.keystroke.key.as_str(), "enter" | "space") {
+                                this.go_back_to_main_page(cx);
+                                cx.stop_propagation();
+                            }
+                        },
+                    )),
                 )
                 .child(SharedString::from(format!(
                     "{} \u{203A} {}",
@@ -1355,30 +1747,134 @@ impl SettingsView {
                 )))
                 .into_any_element()
         });
+        let scope_open = self
+            .dropdown
+            .as_ref()
+            .is_some_and(|menu| menu.key == SETTINGS_SCOPE_KEY);
+        let mut scope_options = vec![(SharedString::from("user"), SharedString::from("User"))];
+        if cx
+            .try_global::<SettingsStore>()
+            .is_some_and(|store| store.project_root().is_some())
+        {
+            scope_options.push((SharedString::from("project"), SharedString::from("Project")));
+        }
+        let scope_options_for_click = scope_options.clone();
+        let scope_options_for_key = scope_options.clone();
+        let scope_selected_index = usize::from(self.scope == SettingsScope::Project)
+            .min(scope_options.len().saturating_sub(1));
+        let scope_trigger = select_trigger(
+            "settings-scope",
+            *c,
+            SharedString::from(self.scope.label()),
+            scope_open,
+        )
+        .min_w(px(112.0))
+        .relative()
+        .child(self.select_bounds_probe(SETTINGS_SCOPE_KEY, cx))
+        .on_click(cx.listener(move |this, event: &ClickEvent, _window, cx| {
+            if this
+                .dropdown
+                .as_ref()
+                .is_some_and(|menu| menu.key == SETTINGS_SCOPE_KEY)
+            {
+                this.dropdown = None;
+            } else {
+                this.dropdown = Some(SelectMenu {
+                    key: SETTINGS_SCOPE_KEY,
+                    options: scope_options_for_click.clone(),
+                    at: this.select_anchor(SETTINGS_SCOPE_KEY, event.position()),
+                    default_sentinel: None,
+                    highlighted: scope_selected_index,
+                });
+            }
+            cx.notify();
+        }))
+        .on_key_down(cx.listener(move |this, event: &KeyDownEvent, _window, cx| {
+            if matches!(event.keystroke.key.as_str(), "enter" | "space" | "down") {
+                this.dropdown = Some(SelectMenu {
+                    key: SETTINGS_SCOPE_KEY,
+                    options: scope_options_for_key.clone(),
+                    at: this.select_anchor(SETTINGS_SCOPE_KEY, Point::default()),
+                    default_sentinel: None,
+                    highlighted: scope_selected_index,
+                });
+                cx.stop_propagation();
+                cx.notify();
+            }
+        }));
+        let scope = self.scope;
+        let json_label = match scope {
+            SettingsScope::User => "Edit in config.json",
+            SettingsScope::Project => "Edit in project settings.json",
+        };
+        let left = h_stack()
+            .flex_1()
+            .min_w_0()
+            .items_center()
+            .gap(c.space(8.0))
+            .child(scope_trigger)
+            .children(crumb);
+
         div()
             .h(c.space(44.0))
             .flex_shrink_0()
             .flex()
             .items_center()
             .justify_between()
-            // Clear the macOS traffic lights (positioned at x = 19).
-            .pl(c.space(84.0))
-            .pr(c.space(12.0))
-            .border_b_1()
-            .border_color(c.border)
-            .child(div().flex_1().min_w_0().children(crumb))
+            .pl(c.space(24.0))
+            .pr(c.space(24.0))
+            .child(left)
             .child(
-                // T20-003: `button()` (`Ghost`/`Xs`) — the one header action.
+                // T20-003: `button()` (`Outline`/`Xs`) — the one header action.
                 button(
                     "settings-open-json",
                     *c,
-                    ButtonVariant::Ghost,
+                    ButtonVariant::Outline,
                     ButtonSize::Xs,
                 )
-                .child("Edit in config.json")
-                .on_click(cx.listener(|_, _: &ClickEvent, _w, cx| {
-                    cx.reveal_path(&config_dir().join("config.json"));
-                })),
+                .tab_index(0)
+                .focus(|style| style.border_1().border_color(c.ring))
+                .child(json_label)
+                .on_click(cx.listener(move |this, _: &ClickEvent, _w, cx| {
+                    let path = match this.scope {
+                        SettingsScope::User => Some(config_dir().join("config.json")),
+                        SettingsScope::Project => cx
+                            .try_global::<SettingsStore>()
+                            .and_then(|store| store.project_settings_path()),
+                    };
+                    if let Some(path) = path {
+                        cx.reveal_path(&path);
+                    } else {
+                        this.notify_error(
+                            cx,
+                            "Project settings unavailable",
+                            "Open a project before opening project settings.json.".to_string(),
+                        );
+                    }
+                }))
+                .on_key_down(cx.listener(
+                    move |this, event: &KeyDownEvent, _w, cx| {
+                        if matches!(event.keystroke.key.as_str(), "enter" | "space") {
+                            let path = match this.scope {
+                                SettingsScope::User => Some(config_dir().join("config.json")),
+                                SettingsScope::Project => cx
+                                    .try_global::<SettingsStore>()
+                                    .and_then(|store| store.project_settings_path()),
+                            };
+                            if let Some(path) = path {
+                                cx.reveal_path(&path);
+                            } else {
+                                this.notify_error(
+                                    cx,
+                                    "Project settings unavailable",
+                                    "Open a project before opening project settings.json."
+                                        .to_string(),
+                                );
+                            }
+                            cx.stop_propagation();
+                        }
+                    },
+                )),
             )
             .into_any_element()
     }
