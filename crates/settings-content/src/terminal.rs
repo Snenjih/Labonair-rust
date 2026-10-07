@@ -138,11 +138,11 @@ pub const DEFAULT_WORD_SEPARATOR: &str = " ()[]{}',\"`";
 
 impl TerminalContent {
     pub fn defaults() -> Self {
-        let mono = "\"Lilex\", SFMono-Regular, Menlo, monospace".to_string();
+        let mono = "\"JetBrains Mono\", SFMono-Regular, Menlo, monospace".to_string();
         Self {
             terminal_shell: Some(String::new()),
             terminal_font_family: Some(mono),
-            terminal_font_size: Some(15),
+            terminal_font_size: Some(14),
             terminal_line_height: Some(1.05),
             terminal_font_weight: Some(TerminalFontWeight::Normal),
             terminal_scrollback: Some(5_000),

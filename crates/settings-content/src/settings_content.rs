@@ -115,6 +115,34 @@ mod tests {
     }
 
     #[test]
+    fn reference_typography_defaults_are_canonical() {
+        let defaults = SettingsContent::defaults();
+
+        assert_eq!(
+            defaults.appearance.app_font_family.as_deref(),
+            Some("\"Inter Variable\", sans-serif")
+        );
+        assert_eq!(defaults.appearance.app_font_size, Some(13));
+        assert_eq!(defaults.appearance.app_line_height, Some(1.5));
+        assert_eq!(
+            defaults.terminal.terminal_font_family.as_deref(),
+            Some("\"JetBrains Mono\", SFMono-Regular, Menlo, monospace")
+        );
+        assert_eq!(defaults.terminal.terminal_font_size, Some(14));
+        assert_eq!(
+            defaults.terminal.terminal_font_weight,
+            Some(terminal::TerminalFontWeight::Normal)
+        );
+        assert_eq!(defaults.terminal.terminal_line_height, Some(1.05));
+        assert_eq!(
+            defaults.editor.editor_font_family.as_deref(),
+            Some("\"JetBrains Mono\", SFMono-Regular, Menlo, monospace")
+        );
+        assert_eq!(defaults.editor.editor_font_size, Some(13));
+        assert_eq!(defaults.editor.editor_line_height, Some(1.55));
+    }
+
+    #[test]
     fn shipped_default_json_contains_only_typed_fields() {
         let raw = jsonc_parser::parse_to_serde_value(DEFAULT_JSON, &Default::default())
             .expect("shipped default JSON must parse")
@@ -175,7 +203,7 @@ mod tests {
     #[test]
     fn merge_from_layers_user_over_default_over_project() {
         let mut layered = SettingsContent::defaults();
-        assert_eq!(layered.terminal.terminal_font_size, Some(15));
+        assert_eq!(layered.terminal.terminal_font_size, Some(14));
 
         let mut user = SettingsContent::default();
         user.terminal.terminal_font_size = Some(18);

@@ -119,7 +119,7 @@ impl ThemeSettings {
 
     /// UI-chrome font size, px (raw `u32` — [`Self::ui_font_size`] gives the `f32`).
     pub fn app_font_size(&self) -> u32 {
-        self.0.app_font_size.unwrap_or(16)
+        self.0.app_font_size.unwrap_or(13)
     }
 
     // ── T20-007 `theme_settings` layer ───────────────────────────────────
@@ -131,7 +131,7 @@ impl ThemeSettings {
 
     /// UI-chrome font size, px.
     pub fn ui_font_size(&self) -> f32 {
-        self.0.app_font_size.unwrap_or(16) as f32
+        self.0.app_font_size.unwrap_or(13) as f32
     }
 
     /// UI-chrome line-height multiple.
@@ -146,12 +146,12 @@ impl ThemeSettings {
 
     /// Editor/terminal text font size, px.
     pub fn buffer_font_size(&self) -> f32 {
-        self.0.buffer_font_size.unwrap_or(15) as f32
+        self.0.buffer_font_size.unwrap_or(13) as f32
     }
 
     /// Editor/terminal text line-height multiple.
     pub fn buffer_line_height(&self) -> f32 {
-        self.0.buffer_line_height.unwrap_or(1.618)
+        self.0.buffer_line_height.unwrap_or(1.55)
     }
 
     /// UI density token (`"compact"` | `"default"` | `"comfortable"`).
@@ -197,7 +197,7 @@ impl TerminalSettings {
 
     /// Terminal text size, px.
     pub fn font_size(&self) -> u32 {
-        self.0.terminal_font_size.unwrap_or(15)
+        self.0.terminal_font_size.unwrap_or(14)
     }
 
     /// Total scrollback the emulator keeps in memory, in rows.
@@ -372,11 +372,11 @@ impl EditorSettings {
         self.0
             .editor_font_family
             .as_deref()
-            .unwrap_or("\"Lilex\", SFMono-Regular, Menlo, monospace")
+            .unwrap_or("\"JetBrains Mono\", SFMono-Regular, Menlo, monospace")
     }
 
     pub fn font_size(&self) -> u32 {
-        self.0.editor_font_size.unwrap_or(15)
+        self.0.editor_font_size.unwrap_or(13)
     }
 
     /// Tint the line the caret is on.
@@ -385,7 +385,7 @@ impl EditorSettings {
     }
 
     pub fn line_height(&self) -> f32 {
-        self.0.editor_line_height.unwrap_or(1.618).clamp(1.0, 2.5)
+        self.0.editor_line_height.unwrap_or(1.55).clamp(1.0, 2.5)
     }
 
     pub fn indentation_guides(&self) -> bool {
@@ -738,12 +738,12 @@ mod tests {
 
     #[test]
     fn theme_settings_metric_accessors() {
-        // Fresh defaults: unit scale, default density, Zed-style 16/15px fonts.
+        // Fresh defaults: unit scale, default density, reference-style 13px fonts.
         let base = ThemeSettings::from_settings(&SettingsContent::default());
         assert_eq!(base.corner_radius_scale(), 1.0);
         assert_eq!(base.ui_density(), "default");
-        assert_eq!(base.ui_font_size(), 16.0);
-        assert_eq!(base.buffer_font_size(), 15.0);
+        assert_eq!(base.ui_font_size(), 13.0);
+        assert_eq!(base.buffer_font_size(), 13.0);
     }
 
     #[test]

@@ -23,15 +23,15 @@ pub(crate) fn font_overrides_from_settings(cx: &App) -> labonair_theme::FontOver
         app_family: appearance
             .map(|s| s.ui_font_family().to_string())
             .unwrap_or_default(),
-        app_size: appearance.map(|s| s.ui_font_size()).unwrap_or(16.0),
+        app_size: appearance.map(|s| s.ui_font_size()).unwrap_or(13.0),
         editor_family: editor
             .map(|s| s.font_family().to_string())
             .unwrap_or_default(),
-        editor_size: editor.map(|s| s.font_size() as f32).unwrap_or(15.0),
+        editor_size: editor.map(|s| s.font_size() as f32).unwrap_or(13.0),
         terminal_family: terminal
             .map(|s| s.font_family().to_string())
             .unwrap_or_default(),
-        terminal_size: terminal.map(|s| s.font_size() as f32).unwrap_or(15.0),
+        terminal_size: terminal.map(|s| s.font_size() as f32).unwrap_or(14.0),
         terminal_line_height: terminal.map(|s| s.line_height()).unwrap_or(0.0),
         terminal_weight: terminal.map(|s| mono_weight(s.font_weight())),
     }

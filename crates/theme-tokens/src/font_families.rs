@@ -2,11 +2,11 @@
 //! and system-font discovery stay in `labonair-theme::fonts`; only these
 //! string constants are needed by the token defaults, so they live here.
 
-/// Bundled UI-chrome font family (IBM Plex Sans).
-pub const UI_FONT_FAMILY: &str = "IBM Plex Sans";
+/// Bundled UI-chrome font family (Inter Variable).
+pub const UI_FONT_FAMILY: &str = "Inter Variable";
 
-/// Bundled editor/terminal monospace font family (Lilex).
-pub const MONO_FONT_FAMILY: &str = "Lilex";
+/// Bundled editor/terminal monospace font family (JetBrains Mono).
+pub const MONO_FONT_FAMILY: &str = "JetBrains Mono";
 
 /// Platform fallbacks appended after [`UI_FONT_FAMILY`].
 pub const UI_FONT_FALLBACKS: &[&str] = &[".SystemUIFont", "sans-serif"];

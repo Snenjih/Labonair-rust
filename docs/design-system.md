@@ -18,6 +18,19 @@ tests. A view may not introduce a global color, spacing, radius, typography,
 shadow, or state value inline. If a new visual value is genuinely required,
 extend the token source first and record the reason in the owning task.
 
+## Default typography
+
+The default typography follows the frozen reference application:
+
+- UI chrome: `Inter Variable`, 13 px, line-height `1.5`.
+- Terminal: `JetBrains Mono` with `SFMono-Regular`, `Menlo`, and `monospace`
+  fallbacks; 14 px, normal weight, letter-spacing `0`, line-height `1.05`.
+- Editor: the same monospace stack at 13 px with line-height `1.55`.
+
+Terminal weight remains a value setting with Normal, Medium, and Bold options.
+Font smoothing is not a persisted setting; native GPUI text rasterization owns
+that platform-specific behavior.
+
 Tokens are semantic rather than feature-specific: a feature consumes, for
 example, surface, text, focus, selected, danger, and spacing roles instead of
 defining a `host-row-blue` or `terminal-padding` value. Color-theme and

@@ -91,7 +91,7 @@ mod cases {
             .find(|f| f.json_path == "terminal.terminalFontSize")
             .unwrap();
         assert!(!(field.set)(&mut content, Value::String("huge".into())));
-        assert_eq!(content.terminal.terminal_font_size, Some(15));
+        assert_eq!(content.terminal.terminal_font_size, Some(14));
     }
 
     #[test]

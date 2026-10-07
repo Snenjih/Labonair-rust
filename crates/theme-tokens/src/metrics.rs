@@ -73,9 +73,9 @@ impl UiDensity {
 ///
 /// Built from the user's theme-settings by the settings → `ThemeStore` bridge
 /// (`labonair_theme_ui::apply_prefs_to_theme`). Defaults reproduce the
-/// historical [`Typography`] defaults + `UiDensity::Default` + unit radius
-/// scale + motion on, so a store that never receives a `set_metrics` call
-/// renders exactly as it did before T20-007.
+/// typography defaults + `UiDensity::Default` + unit radius scale + motion on,
+/// so a store that never receives a `set_metrics` call still has the canonical
+/// reference typography metrics.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ThemeMetrics {
     /// UI-chrome font family (empty = the theme's own `app_font_family`).
@@ -107,7 +107,7 @@ impl Default for ThemeMetrics {
             ui_line_height: ty.app_line_height,
             buffer_font_family: String::new(),
             buffer_font_size: ty.buffer_font_size,
-            buffer_line_height: ty.app_line_height,
+            buffer_line_height: 1.55,
             density: UiDensity::Default,
             corner_radius_scale: 1.0,
             reduce_motion: false,
@@ -293,6 +293,7 @@ mod tests {
         assert_eq!(m.ui_font_size, ty.app_font_size);
         assert_eq!(m.ui_line_height, ty.app_line_height);
         assert_eq!(m.buffer_font_size, ty.buffer_font_size);
+        assert_eq!(m.buffer_line_height, 1.55);
         assert_eq!(m.corner_radius_scale, 1.0);
         assert_eq!(m.density, UiDensity::Default);
         assert!(!m.reduce_motion);

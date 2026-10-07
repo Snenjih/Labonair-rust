@@ -1,12 +1,11 @@
 //! Bundled font assets.
 //!
-//! The defaults mirror Zed's own (`.ZedSans` → IBM Plex Sans for the UI,
-//! `.ZedMono` → Lilex for the editor/terminal); the reference web app's
-//! Inter Variable / JetBrains Mono families stay bundled so existing user
-//! settings that name them keep resolving. There is no webview here, so every
-//! family is embedded directly in the binary via [`include_bytes!`] and handed
-//! to GPUI's text system with `cx.text_system().add_fonts(embedded_fonts())`
-//! at startup.
+//! The defaults mirror the frozen reference app (Inter Variable for the UI,
+//! JetBrains Mono for the editor/terminal). The former IBM Plex Sans/Lilex
+//! families stay bundled so existing user settings that name them keep
+//! resolving. There is no webview here, so every family is embedded directly
+//! in the binary via [`include_bytes!`] and handed to GPUI's text system with
+//! `cx.text_system().add_fonts(embedded_fonts())` at startup.
 //!
 //! All bundled files are SIL OFL 1.1 licensed — see `assets/fonts/`.
 
@@ -14,13 +13,13 @@ use std::borrow::Cow;
 use std::collections::BTreeSet;
 use std::sync::OnceLock;
 
-/// UI / sans-serif family name (matches the `name` table of the IBM Plex Sans
-/// files); mirrors Zed's `.ZedSans` alias.
-pub const UI_FONT_FAMILY: &str = "IBM Plex Sans";
+/// UI / sans-serif family name (matches the `name` table of the Inter Variable
+/// files).
+pub const UI_FONT_FAMILY: &str = "Inter Variable";
 
-/// Monospace family name (matches the `name` table of the Lilex files), used for
-/// both the terminal and the code editor; mirrors Zed's `.ZedMono` alias.
-pub const MONO_FONT_FAMILY: &str = "Lilex";
+/// Monospace family name (matches the `name` table of the JetBrains Mono files),
+/// used for both the terminal and the code editor.
+pub const MONO_FONT_FAMILY: &str = "JetBrains Mono";
 
 /// Runtime fallbacks for the UI font when [`UI_FONT_FAMILY`] is unavailable.
 pub const UI_FONT_FALLBACKS: &[&str] = &[".SystemUIFont", "sans-serif"];
@@ -37,7 +36,7 @@ macro_rules! font {
 /// Every bundled font file, ready to pass to `TextSystem::add_fonts`.
 pub fn embedded_fonts() -> Vec<Cow<'static, [u8]>> {
     [
-        // Defaults (mirror Zed): IBM Plex Sans for the UI, Lilex for mono.
+        // Reference defaults: Inter Variable for the UI, JetBrains Mono for mono.
         font!("IBMPlexSans-Regular.ttf"),
         font!("IBMPlexSans-Italic.ttf"),
         font!("IBMPlexSans-SemiBold.ttf"),
@@ -125,8 +124,8 @@ mod tests {
 
     #[test]
     fn family_names_are_stable() {
-        assert_eq!(UI_FONT_FAMILY, "IBM Plex Sans");
-        assert_eq!(MONO_FONT_FAMILY, "Lilex");
+        assert_eq!(UI_FONT_FAMILY, "Inter Variable");
+        assert_eq!(MONO_FONT_FAMILY, "JetBrains Mono");
         assert!(MONO_FONT_FALLBACKS.contains(&"Menlo"));
     }
 }
