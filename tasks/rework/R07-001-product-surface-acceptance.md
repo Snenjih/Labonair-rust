@@ -152,9 +152,10 @@ a separate product decision after the core workflow is stable.
       App-scope background layers), whose structural work has landed and whose
       other criteria are met.
 - [ ] Native launch confirms the Rust window exists, but macOS currently denies
-      Screen Recording to the capture runner. A later exact-bundle capture is
-      now available for the normal standalone shell state, but the complete
-      visual matrix remains open until the remaining states are inspected.
+      Screen Recording to the capture runner. A historical exact-bundle
+      diagnostic capture exists in the audit log, but it is not a durable
+      registry artifact; the complete visual matrix remains open until all
+      states are inspected and recorded under the current evidence contract.
 - [ ] Source Control visual parity follow-up: the panel now uses a clean-room
       Zed-inspired flat tab strip, trailing staging controls, visible selected
       rows, repository push controls, and an editor-like commit composer. The
