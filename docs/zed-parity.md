@@ -28,16 +28,25 @@ specific, user-approved divergence.
 
 | Property | Pinned target |
 |---|---|
-| Local Zed source reference | `zed-refrence/zed` at `3569541038dd51524b03998ba4d38d253cb54f80` (`nightly-9`) |
+| Local Zed source reference | `zed-refrence/zed` at `3569541038dd51524b03998ba4d38d253cb54f80`; the `nightly-9` label is not confirmed by a local Git tag |
 | Initial visual and workflow acceptance platform | macOS |
 | Other platforms | Inventory platform-specific behavior in the specification; lock the supported release matrix before cross-platform implementation sign-off |
 | Public documentation snapshot consulted | Zed documentation as observed 2026-10-09; newer docs must be checked against the pinned runtime before they change the target |
 
-The referenced Zed working tree was clean at baseline capture. The parent
-repository currently has no `.gitmodules` mapping for the `zed-refrence/zed`
-gitlink, so reproducible acquisition of this pin is an explicit item in the
-baseline task. Do not silently update the pinned commit. A target update
-requires a new baseline record and a reviewed feature-catalog diff.
+The referenced Zed working tree is clean at the pinned commit. The parent
+repository maps the `zed-refrence/zed` gitlink in [`.gitmodules`](../.gitmodules)
+to the upstream Zed repository. A clean-clone acquisition check remains open
+until that mapping is present in a committed parent revision. Do not silently
+update the pinned commit. A target update requires a new baseline record and a
+reviewed feature-catalog diff. The local checkout is on `main`; no local tag
+named `nightly-9` points at this commit.
+
+R07-000 working records are indexed in [`docs/parity/README.md`](parity/README.md).
+The Settings source analysis is research-side material in
+[`docs/reports/zed-parity-settings-analysis-2026-10-09.md`](reports/zed-parity-settings-analysis-2026-10-09.md).
+The source-independent coverage map is
+[`docs/parity/feature-crosswalk.md`](parity/feature-crosswalk.md); it is a
+draft and does not claim the inventory is complete.
 
 ## Clean-room working boundary
 
@@ -138,6 +147,53 @@ contract rather than a speculative registry.
   the same user workflows while making all tab kinds discoverable and
   movable through one consistent system.
 
+#### Tab and split lifecycle contract
+
+- A tab kind has one stable owner ID. Each open instance has a distinct
+  instance ID, owner label/icon, dirty and busy snapshot, close policy,
+  context actions, versioned persistence payload, and owner renderer.
+- Workspace owns ordered tabs, active tab, focused pane, split tree, split
+  ratios, tab movement between panes, and the serialized layout. Feature
+  owners own the document or session state carried by each tab.
+- Opening and restoring a tab must resolve its owner and payload version.
+  Unsupported or corrupt payloads produce a recoverable item-level failure;
+  they must not silently erase the remaining workspace session.
+- Closing a tab asks its owner whether close is allowed. Dirty or busy state
+  may require an owner-provided decision. Cancel leaves the tab and focus
+  unchanged; a confirmed close selects the nearest surviving tab in the same
+  pane, then the nearest pane, or the documented empty-pane state.
+- Moving a tab preserves its instance ID and owner state. A split creates a
+  new pane with a defined orientation and ratio, focuses the destination, and
+  retains the existing tab. Merging panes moves tabs in visible order and
+  focuses the selected surviving tab. Closing a pane follows the same owner
+  close checks as closing its tabs.
+- Restoring a session preserves pane order, tab order, active tab, split
+  ratios, and focus when the referenced owners and versions are available.
+  Missing owners or tabs are reported through the owning recovery surface and
+  do not prevent unrelated tabs from restoring.
+
+These rules are a target proposal. R07-000 still needs contract review, typed
+API definitions, and acceptance scenarios before they are considered accepted
+for implementation.
+
+#### Shared DiffView contract
+
+- A diff producer supplies a typed input containing stable producer identity,
+  comparison identity, display labels, optional revision identities, and the
+  two comparable content sides or a typed content provider.
+- DiffView owns presentation, hunk navigation, side-by-side/unified mode,
+  synchronized scrolling where applicable, and common review state. The
+  producer owns domain actions such as staging, applying, or saving.
+- Diff inputs declare whether they are read-only and which producer actions
+  are available. DiffView never infers a Git action from a file path or label.
+- Missing content, an expired provider, and unsupported comparison versions
+  render a recoverable error while preserving the tab identity and other
+  workspace state.
+
+This contract is also a target proposal. Its input shape, navigation behavior,
+and owner actions remain open until the crosswalk and typed contract are
+reviewed.
+
 ### Shared interaction and visual system
 
 The UI-kit specification must define common dimensions and variants for
@@ -177,12 +233,13 @@ Parity status: present / partial / missing / intentional divergence:
 Dependencies and implementation order:
 ```
 
-The generated universal UI checklist will be attached to every UI or
-interaction task. It covers keyboard shortcuts and discoverability,
-mouse-complete operation, light/dark themes, focus and hover, narrow/short and
-high-DPI layouts, resizing, viewport-safe dialogs, platform inputs, immediate
-feedback, large workloads, terminology, success/failure/offline/missing-data
-flows, undo, and progressive discovery.
+The independent universal UI checklist in
+[`docs/parity/universal-checklist.md`](parity/universal-checklist.md) is
+attached to every UI or interaction task. It records measurements and
+acceptance steps for controls, menus, popups, responsive layouts, keyboard and
+mouse input, light/dark themes, workload states, accessibility, failure and
+offline behavior, undo, and progressive discovery. Its values remain pending
+until paired native evidence exists.
 
 ## Settings parity pilot
 
@@ -192,6 +249,8 @@ The pilot does not begin with another implementation attempt.
 
 1. Correlate the four reported attempts with their commits, screenshots, and
    captured viewport/platform. Preserve those artifacts as a failure review.
+   Current commit and artifact findings are recorded separately; the causes
+   of the visual misses remain unknown until paired evidence exists.
 2. Capture the pinned Zed Settings surface and Labonair Settings under the same
    macOS build, window bounds, theme, scaling, and scroll positions.
 3. Inventory every reference category and field, including displayed label,

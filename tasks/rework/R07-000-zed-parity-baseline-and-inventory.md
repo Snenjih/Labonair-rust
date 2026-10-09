@@ -60,7 +60,9 @@ from the accepted specification.
 - Use macOS as the first paired visual and interaction acceptance platform.
 - Compare public documentation with the pinned runtime and record drift.
 - Make the local gitlink reproducible on a clean checkout; the parent
-  repository currently lacks its `.gitmodules` entry.
+  repository was missing its `.gitmodules` entry. The mapping is now present
+  in the working tree; verify acquisition from a clean parent clone after the
+  mapping is committed.
 - Store source-level inspection only with reference analysis. Produce a
   separate implementation packet with independently worded observable
   requirements; do not give the implementation role the Zed checkout or
@@ -129,6 +131,68 @@ support, and hosted workflows present in the pinned build.
 - Evidence: pinned commit and reproducible acquisition record, complete
   feature crosswalk, Settings pilot and prior-attempt review, paired macOS captures,
   glossary/checklist coverage, and ordered implementation task graph.
+
+## Change contract
+
+```text
+Request type: Reference-baseline and product-specification work
+Owner module: Product architecture, with each capability owner responsible for its crosswalk
+Canonical capability crate: N/A; this task changes contracts and research records, not runtime behavior
+Canonical user entry point: N/A; no user-facing implementation in this task
+Public typed contract: docs/zed-parity.md and the bounded, source-independent follow-up tasks
+State/persistence owner: Unchanged; inventory must identify each reference behavior's Labonair owner
+Commands and keymap entries: Inventory all reference actions and map them to current or planned owner contributions
+Events and registry contributions: Specify multi-owner contracts only where discovery is required
+Settings: Record every pinned setting, scope, default, owner, control, and observable effect
+Notifications: Inventory action feedback and assign it to the owning surface/notification contract
+UI-kit components: Record reusable control geometry and interaction requirements; do not add product controls here
+Allowed dependency changes: Parent .gitmodules mapping for the pinned Zed gitlink only
+Tests: Documentation, active-queue, and diff checks; no product tests are added by this specification task
+Visual evidence: Paired native Settings captures are required; currently pending because native-window inspection/capture is unavailable in this session
+Security impact: Inventory extension, remote, collaboration, agent, and hosted-service permission boundaries; no runtime policy change
+Performance impact: Record measurable targets and fixtures in the parity catalog; no runtime performance claim
+Removal condition for compatibility code: N/A; no compatibility path is introduced
+```
+
+## Progress record — 2026-10-09
+
+- Verified the local Zed checkout at the exact pinned commit and clean tree.
+- Built `target/debug/zed` successfully from that checkout with
+  `mise exec cmake@4.4.3 -- cargo build --locked -p zed`. The linker emitted
+  an `__eh_frame` size warning; the binary has not been opened for native
+  visual inspection.
+- Added the missing parent `.gitmodules` URL mapping. A fresh-parent-clone
+  acquisition check is still pending because this mapping is not committed;
+  the repository maintainer owns committing it and verifying a clean clone.
+- Recorded the local macOS version (`26.7.1`) and exact Labonair parent
+  revision (`c42d33fae184b98c90516d747bfbb4844eb21992`). The Zed runtime
+  binary, matching window bounds/theme/scale/fonts, and paired captures are
+  not yet recorded.
+- Confirmed the four Settings-history candidate commits and reviewed their
+  code changes. No Settings capture exists for any candidate; visual miss
+  causes remain unknown.
+- Added a draft coverage crosswalk. It does not yet enumerate every pinned
+  action, setting, extension, and workflow and must not be treated as complete.
+- Added an independent Labonair glossary, reusable UI acceptance checklist,
+  and proposed Tab/Split and DiffView lifecycle contracts. The proposed
+  contracts still need owner review and typed API decisions.
+- Recorded the pinned Settings navigation and all 70 visible Editor setting
+  labels/keys from the research pass, plus representative control types and
+  source-declared window dimensions. Full defaults/effects/control mapping and
+  rendered interaction states remain pending.
+- Named the legal, asset, extension-distribution, hosted-service, remote, and
+  release review questions and their proposed review owners.
+- Documented the source-blind checkout procedure, but that checkout has not
+  been created or audited yet.
+- The current CUA session reports no application surfaces (`apps: []`); its
+  documented native entry points fail at runtime (`cua.getApp is not a
+  function`; `cua.computer` is undefined).
+  The prior native acceptance log also records macOS denying
+  Screen Recording to the runner. Settings visual evidence remains pending;
+  the workspace host operator owns restoring native-window access and the
+  macOS Screen Recording grant for the runner.
+
+The task remains `In Progress`; no product code was changed.
 
 ## Exit condition
 
