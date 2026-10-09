@@ -32,10 +32,15 @@ jobs:
         run: brew install minisign
 
       - name: Write updater signing key
-        if: ${{ secrets.LABONAIR_UPDATER_PRIVATE_KEY != '' }}
+        env:
+          LABONAIR_UPDATER_PRIVATE_KEY: ${{ secrets.LABONAIR_UPDATER_PRIVATE_KEY }}
         run: |
-          printf '%s' "${{ secrets.LABONAIR_UPDATER_PRIVATE_KEY }}" > "$RUNNER_TEMP/updater.key"
-          echo "LABONAIR_UPDATER_KEY=$RUNNER_TEMP/updater.key" >> "$GITHUB_ENV"
+          if [[ -n "$LABONAIR_UPDATER_PRIVATE_KEY" ]]; then
+            printf '%s' "$LABONAIR_UPDATER_PRIVATE_KEY" > "$RUNNER_TEMP/updater.key"
+            echo "LABONAIR_UPDATER_KEY=$RUNNER_TEMP/updater.key" >> "$GITHUB_ENV"
+          else
+            echo "No updater signing key configured; release artifact remains unsigned."
+          fi
 
       - name: Build, verify and package
         env:
