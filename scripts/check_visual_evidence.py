@@ -25,6 +25,7 @@ REQUIRED_ROOT = {
     "capture_helper",
     "default_platform",
     "default_viewport",
+    "required_viewports",
     "environment_status",
     "environment_blocker",
     "last_verified",
@@ -41,9 +42,33 @@ REQUIRED_CAPTURE = {
     "pid",
     "window",
     "captured_at",
+    "commit",
 }
 PLACEHOLDER_RE = re.compile(r"\{([a-z_]+)\}")
 SAFE_RELATIVE = re.compile(r"^[^/][^\n]*$")
+COMMIT_RE = re.compile(r"^[0-9a-f]{7,64}$")
+
+
+def slug(value: str) -> str:
+    result = re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")
+    return result or "state"
+
+
+def viewport_for_state(data: dict, state: str) -> str:
+    if state.strip().lower() == "narrow window":
+        return "narrow"
+    return data["default_viewport"]
+
+
+def expected_artifact(data: dict, surface_id: str, state: str, viewport: str, platform: str, commit: str) -> str:
+    filename = data["artifact_name_pattern"].format(
+        surface_id=slug(surface_id),
+        state_slug=slug(state),
+        viewport=viewport,
+        platform=platform,
+        commit=commit,
+    )
+    return f"{data['artifact_root']}/{filename}"
 
 
 def load(path: Path) -> dict:
@@ -109,6 +134,17 @@ def main() -> int:
             "visual-evidence.toml: artifact_name_pattern must contain exactly "
             "surface_id/state_slug/viewport/platform/commit placeholders"
         )
+    viewports = data.get("required_viewports")
+    if (
+        not isinstance(viewports, list)
+        or not viewports
+        or not all(isinstance(viewport, str) and viewport.strip() for viewport in viewports)
+        or len(viewports) != len(set(viewports))
+        or data.get("default_viewport") not in viewports
+        or "narrow" not in viewports
+    ):
+        errors.append("visual-evidence.toml: required_viewports must uniquely include default_viewport and narrow")
+        viewports = viewports if isinstance(viewports, list) else []
 
     catalog_surfaces = catalog.get("surface", [])
     catalog_by_id = {surface.get("id"): surface for surface in catalog_surfaces}
@@ -186,6 +222,27 @@ def main() -> int:
                 errors.append(f"{identifier}: captured_at must be an ISO date")
             if isinstance(artifact, str) and artifact_is_safe(artifact, artifact_root) and not (ROOT / artifact).is_file():
                 errors.append(f"{identifier}: verified artifact does not exist: {artifact}")
+        commit = capture.get("commit")
+        if not isinstance(commit, str) or COMMIT_RE.fullmatch(commit) is None:
+            errors.append(f"{identifier}: commit must be a lowercase hexadecimal identifier")
+        platform = capture.get("platform")
+        viewport = capture.get("viewport")
+        if platform not in {data.get("default_platform")}:
+            errors.append(f"{identifier}: platform must be the declared native platform")
+        if viewport not in viewports:
+            errors.append(f"{identifier}: viewport must be one of {viewports}")
+        elif viewport != viewport_for_state(data, state):
+            errors.append(f"{identifier}: viewport does not match the catalog state")
+        if (
+            isinstance(commit, str)
+            and COMMIT_RE.fullmatch(commit)
+            and isinstance(platform, str)
+            and isinstance(viewport, str)
+            and isinstance(artifact, str)
+        ):
+            expected = expected_artifact(data, surface_id, state, viewport, platform, commit)
+            if artifact != expected:
+                errors.append(f"{identifier}: artifact must be exactly {expected}")
 
     if errors:
         print("visual evidence check FAILED:", file=sys.stderr)

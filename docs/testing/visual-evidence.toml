@@ -7,6 +7,7 @@ native_binary_rule = "Capture only a layer-0 window owned by the exact native Ru
 capture_helper = "scripts/screenshot.sh"
 default_platform = "macos"
 default_viewport = "standard"
+required_viewports = ["standard", "narrow"]
 environment_status = "Pending"
 environment_blocker = "Current verification runs on Linux without a native macOS window or Screen Recording access."
 last_verified = "2026-10-09"

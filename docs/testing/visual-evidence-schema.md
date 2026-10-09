@@ -20,6 +20,7 @@ The registry must declare:
 - a repository-relative artifact root;
 - a deterministic screenshot filename pattern containing surface, state,
   viewport, platform, and commit placeholders;
+- the supported capture viewports, including a distinct `narrow` viewport;
 - the exact native-binary rule and capture helper;
 - the current environment blocker, when native evidence is unavailable;
 - one state-status map for every surface ID in `surfaces.toml`.
@@ -41,9 +42,12 @@ The registry uses `Verified`, `Partial`, `Pending`, and `N/A`.
 - `N/A` requires a state-specific reason in the source record.
 
 An optional `capture` record attaches durable evidence to a state. Its
-artifact filename must match the deterministic pattern. A pending state does
-not receive a placeholder screenshot; the generated index prints the exact
-path that a future capture must use.
+artifact filename must match the deterministic pattern and contain the exact
+lowercase commit identifier. A `narrow window` state always uses the `narrow`
+viewport; other states use the declared default unless a future source rule
+explicitly says otherwise. A pending state does not receive a placeholder
+screenshot; the generated index prints the exact path that a future capture
+must use.
 
 ## Capture rule
 

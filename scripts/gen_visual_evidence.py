@@ -22,10 +22,11 @@ def slug(value: str) -> str:
 
 
 def expected_artifact(data: dict, surface_id: str, state: str) -> str:
+    viewport = "narrow" if state.strip().lower() == "narrow window" else data["default_viewport"]
     filename = data["artifact_name_pattern"].format(
         surface_id=slug(surface_id),
         state_slug=slug(state),
-        viewport=data["default_viewport"],
+        viewport=viewport,
         platform=data["default_platform"],
         commit="<commit>",
     )
@@ -101,7 +102,8 @@ def main() -> int:
                 (
                     item for key, item in captures.items()
                     if key[0] == surface["id"] and key[1] == state
-                    and key[2] == data["default_platform"] and key[3] == data["default_viewport"]
+                    and key[2] == data["default_platform"]
+                    and key[3] == ("narrow" if state.strip().lower() == "narrow window" else data["default_viewport"])
                 ),
                 None,
             )
