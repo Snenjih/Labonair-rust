@@ -55,6 +55,10 @@ interaction checks.
 - `scripts/package-macos.sh` builds the canonical bundle.
 - `scripts/smoke-test.sh` verifies the bundle, core smoke tests, and optionally
   the exact Rust process with `LABONAIR_SMOKE_LAUNCH=1`.
+- `scripts/capture-macos-native.sh` launches the exact packaged Rust bundle,
+  resolves its new executable PID, and delegates to `scripts/screenshot.sh`.
+  The manual `.github/workflows/visual-native.yml` workflow builds that bundle
+  and uploads the capture plus launch log for reviewer inspection.
 - `scripts/screenshot.sh` accepts an explicit Rust PID and fails closed when
   no matching native window can be captured. It also distinguishes an invalid
   PID from a macOS Screen Recording permission failure.

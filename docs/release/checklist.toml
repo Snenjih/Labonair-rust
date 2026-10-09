@@ -97,3 +97,15 @@ source_refs = ["docs/release/support-policy.md", "docs/release/platforms.md", "d
 limitation = "No release-specific artifact handoff for the current commit exists."
 next_action = "Attach version, target, artifact digest, commit, known limitations, and recovery path per release."
 last_verified = "2026-10-09"
+
+[[check]]
+id = "release.native-visual-baseline"
+area = "visual evidence"
+owner = "R07 acceptance"
+command = "gh workflow run visual-native.yml --ref master"
+status = "Conditional"
+evidence = ["The manual macOS workflow builds the exact native bundle, validates its executable PID, and uploads one fail-closed capture/log artifact."]
+source_refs = [".github/workflows/visual-native.yml", "scripts/capture-macos-native.sh", "scripts/screenshot.sh", "docs/visual-verification.md"]
+limitation = "The workflow does not claim a surface state until a reviewer inspects the PNG and records a truthful capture in visual-evidence.toml."
+next_action = "Run the workflow with a labeled catalog state, inspect the PNG, and add a durable capture record only when the state is truthful."
+last_verified = "2026-10-09"
