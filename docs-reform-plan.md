@@ -359,6 +359,7 @@ docs/
     visual-matrix.md
     visual-evidence-schema.md
     visual-evidence.toml
+    native-visual-capture-runbook.md
     integration-matrix.md
 
   performance/

@@ -48,6 +48,7 @@ NORMATIVE_DOCS = (
     "docs/testing/evidence-model.md",
     "docs/testing/visual-matrix.md",
     "docs/testing/visual-evidence-schema.md",
+    "docs/testing/native-visual-capture-runbook.md",
     "docs/visual-verification.md",
     "docs/workspace-model.md",
     "docs/reform/README.md",

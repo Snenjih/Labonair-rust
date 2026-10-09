@@ -66,6 +66,8 @@ map of those authorities:
 - architecture projection → `docs/generated/architecture.md` (derived only).
 - command/surface/menu ownership → `docs/product/`;
 - evidence and visual interpretation → `docs/testing/` and `docs/evidence/`;
+- native visual preparation and capture procedure →
+  `docs/testing/native-visual-capture-runbook.md`;
 - reform definition-of-done traceability → `docs/reform/requirements.toml` and
   `docs/generated/reform-coverage.md`;
 - deterministic screenshot indexes → `docs/testing/visual-evidence.toml` and `docs/generated/visual-evidence.md`;

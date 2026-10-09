@@ -190,6 +190,7 @@ def main() -> int:
 
     captures = data.get("capture", [])
     capture_keys: set[tuple[str, str, str, str]] = set()
+    captures_by_key: dict[tuple[str, str, str, str], dict] = {}
     for capture in captures:
         identifier = f"capture {capture.get('surface_id', '<unnamed>')}::{capture.get('state', '<unnamed>')}"
         errors.extend(f"{identifier}: missing {field}" for field in sorted(REQUIRED_CAPTURE - set(capture)))
@@ -205,6 +206,7 @@ def main() -> int:
         if key in capture_keys:
             errors.append(f"{identifier}: duplicate surface/state/platform/viewport capture")
         capture_keys.add(key)
+        captures_by_key[key] = capture
         status = capture.get("status")
         if status not in ALLOWED:
             errors.append(f"{identifier}: unsupported status {status!r}")
@@ -213,16 +215,16 @@ def main() -> int:
         artifact = capture.get("artifact")
         if not isinstance(artifact, str) or not artifact_is_safe(artifact, artifact_root):
             errors.append(f"{identifier}: artifact must be below {artifact_root}")
-        if status == "Verified":
+        if status in {"Verified", "Partial"}:
             for field in ("binary", "pid", "window", "platform", "viewport"):
                 if not isinstance(capture.get(field), str) or not capture[field].strip():
-                    errors.append(f"{identifier}: verified capture needs non-empty {field}")
+                    errors.append(f"{identifier}: accepted capture needs non-empty {field}")
             try:
                 date.fromisoformat(capture.get("captured_at"))
             except (TypeError, ValueError):
                 errors.append(f"{identifier}: captured_at must be an ISO date")
             if isinstance(artifact, str) and artifact_is_safe(artifact, artifact_root) and not (ROOT / artifact).is_file():
-                errors.append(f"{identifier}: verified artifact does not exist: {artifact}")
+                errors.append(f"{identifier}: accepted artifact does not exist: {artifact}")
         commit = capture.get("commit")
         if not isinstance(commit, str) or COMMIT_RE.fullmatch(commit) is None:
             errors.append(f"{identifier}: commit must be a lowercase hexadecimal identifier")
@@ -244,6 +246,27 @@ def main() -> int:
             expected = expected_artifact(data, surface_id, state, viewport, platform, commit)
             if artifact != expected:
                 errors.append(f"{identifier}: artifact must be exactly {expected}")
+
+    # A verified state is a claim about an accepted artifact, not a free-form
+    # status flag. Require the default-platform/default-state capture that
+    # carries the same verified status before allowing the claim through.
+    for record in records:
+        surface_id = record.get("id")
+        for state, status in record.get("state_status", {}).items():
+            if status not in {"Verified", "Partial"}:
+                continue
+            platform = data.get("default_platform")
+            viewport = viewport_for_state(data, state)
+            key = (surface_id, state, platform, viewport)
+            capture = captures_by_key.get(key)
+            if capture is None:
+                errors.append(
+                    f"{surface_id}::{state}: {status} state needs a matching {platform}/{viewport} capture record"
+                )
+            elif capture.get("status") != status:
+                errors.append(
+                    f"{surface_id}::{state}: state status {status!r} does not match capture status {capture.get('status')!r}"
+                )
 
     if errors:
         print("visual evidence check FAILED:", file=sys.stderr)

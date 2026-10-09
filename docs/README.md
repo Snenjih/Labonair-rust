@@ -88,6 +88,9 @@ the migration is complete.
   states and native artifact rules.
 - [`testing/visual-evidence-schema.md`](testing/visual-evidence-schema.md) —
   deterministic screenshot registry and per-surface evidence contract.
+- [`testing/native-visual-capture-runbook.md`](testing/native-visual-capture-runbook.md)
+  — supported-host procedure for preparing and recording every catalog visual
+  state.
 - [`testing/visual-evidence.toml`](testing/visual-evidence.toml) — structured
   per-surface state and native-capture source.
 - [`evidence/scorecard.toml`](evidence/scorecard.toml) — structured product

@@ -38,6 +38,8 @@ The registry uses `Verified`, `Partial`, `Pending`, and `N/A`.
 - `Verified` requires an exact native executable, PID/window identity,
   platform, viewport, capture date, and an existing artifact under the
   declared artifact root.
+- `Partial` also requires a durable capture record and existing artifact; it
+  means the retained evidence does not cover the complete state requirement.
 - `Partial` identifies evidence that exists but does not cover the complete
   state requirement.
 - `Pending` records missing evidence and keeps the blocker visible.
