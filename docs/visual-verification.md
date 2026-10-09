@@ -59,6 +59,8 @@ interaction checks.
   resolves its new executable PID, and delegates to `scripts/screenshot.sh`.
   The manual `.github/workflows/visual-native.yml` workflow builds that bundle
   and uploads the capture plus launch log for reviewer inspection.
+- `scripts/visual_capture_path.py` accepts only a canonical surface/state and
+  resolves the exact commit-bound artifact path used by the registry.
 - `scripts/screenshot.sh` accepts an explicit Rust PID and fails closed when
   no matching native window can be captured. It also distinguishes an invalid
   PID from a macOS Screen Recording permission failure.

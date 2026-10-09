@@ -23,6 +23,7 @@ REQUIRED_ROOT = {
     "artifact_name_pattern",
     "native_binary_rule",
     "capture_helper",
+    "artifact_path_helper",
     "default_platform",
     "default_viewport",
     "required_viewports",
@@ -119,7 +120,7 @@ def main() -> int:
         date.fromisoformat(data.get("last_verified"))
     except (TypeError, ValueError):
         errors.append("visual-evidence.toml: last_verified must be an ISO date")
-    for key in ("surface_source", "matrix_source", "capture_helper"):
+    for key in ("surface_source", "matrix_source", "capture_helper", "artifact_path_helper"):
         value = data.get(key)
         if not isinstance(value, str) or not (ROOT / value).exists():
             errors.append(f"visual-evidence.toml: missing path for {key}: {value!r}")

@@ -22,6 +22,8 @@ The registry must declare:
   viewport, platform, and commit placeholders;
 - the supported capture viewports, including a distinct `narrow` viewport;
 - the exact native-binary rule and capture helper;
+- the artifact-path helper that resolves an exact catalog state and commit to
+  the deterministic filename;
 - the current environment blocker, when native evidence is unavailable;
 - one state-status map for every surface ID in `surfaces.toml`.
 

@@ -5,6 +5,7 @@ artifact_root = "artifacts/visual"
 artifact_name_pattern = "{surface_id}--{state_slug}--{viewport}--{platform}--{commit}.png"
 native_binary_rule = "Capture only a layer-0 window owned by the exact native Rust executable and PID."
 capture_helper = "scripts/screenshot.sh"
+artifact_path_helper = "scripts/visual_capture_path.py"
 default_platform = "macos"
 default_viewport = "standard"
 required_viewports = ["standard", "narrow"]

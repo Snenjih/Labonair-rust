@@ -102,10 +102,10 @@ last_verified = "2026-10-09"
 id = "release.native-visual-baseline"
 area = "visual evidence"
 owner = "R07 acceptance"
-command = "gh workflow run visual-native.yml --ref master"
+command = "gh workflow run visual-native.yml --ref master --field surface_id=workspace.active --field state=home"
 status = "Conditional"
 evidence = ["The manual macOS workflow builds the exact native bundle, validates its executable PID, and uploads one fail-closed capture/log artifact."]
-source_refs = [".github/workflows/visual-native.yml", "scripts/capture-macos-native.sh", "scripts/screenshot.sh", "docs/visual-verification.md"]
+source_refs = [".github/workflows/visual-native.yml", "scripts/visual_capture_path.py", "scripts/capture-macos-native.sh", "scripts/screenshot.sh", "docs/visual-verification.md"]
 limitation = "The workflow does not claim a surface state until a reviewer inspects the PNG and records a truthful capture in visual-evidence.toml."
-next_action = "Run the workflow with a labeled catalog state, inspect the PNG, and add a durable capture record only when the state is truthful."
+next_action = "Run the workflow once for each labeled catalog state, inspect each PNG, and add durable capture records only when the states are truthful."
 last_verified = "2026-10-09"

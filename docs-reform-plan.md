@@ -165,6 +165,10 @@ tree:
   surfaces, with 63 exact catalog states, deterministic artifact naming, and a
   generated per-surface screenshot index; all states remain explicitly
   `Pending` until supported-host captures exist.
+- a commit-bound visual capture path resolver and manual macOS workflow that
+  accept only canonical surface/state labels, enforce the catalog viewport
+  rule, and upload a reviewer-inspectable native capture without claiming a
+  state automatically.
 - a 15-workflow end-to-end catalog connecting entry points, state,
   persistence, notifications, failures, security, tests, and visual evidence.
 - a definition-of-done traceability catalog covering all 17 reform requirements

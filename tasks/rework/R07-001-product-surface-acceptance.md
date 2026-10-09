@@ -282,6 +282,10 @@ The native acceptance matrix now has a checked machine-readable companion:
 - `scripts/check_visual_evidence.py` rejects missing/extra states, unsupported
   statuses, unsafe artifact paths, and verified captures without exact
   binary/PID/date/artifact fields;
+- `scripts/visual_capture_path.py` resolves only a declared surface/state and
+  commit to the deterministic artifact path, rejecting unknown states and
+  viewport mismatches; `.github/workflows/visual-native.yml` uses that helper
+  for one reviewer-inspected macOS capture at a time;
 - `docs/generated/visual-evidence.md` is the generated per-surface screenshot
   index and prints the deterministic future artifact path for every pending
   state;

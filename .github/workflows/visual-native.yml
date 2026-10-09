@@ -3,10 +3,14 @@ name: Native visual evidence
 on:
   workflow_dispatch:
     inputs:
-      artifact_name:
-        description: Repository-relative PNG path under artifacts/visual
+      surface_id:
+        description: Canonical surface ID from docs/product/surfaces.toml
         required: false
-        default: artifacts/visual/workspace-active--home--standard--macos--manual.png
+        default: workspace.active
+      state:
+        description: Exact visual state label from the canonical surface catalog
+        required: false
+        default: home
 
 permissions:
   contents: read
@@ -26,24 +30,20 @@ jobs:
       - name: Build native bundle
         run: scripts/package-macos.sh
 
-      - name: Capture exact Rust window
+      - name: Resolve deterministic artifact path
         env:
-          REQUESTED_ARTIFACT: ${{ inputs.artifact_name }}
+          REQUESTED_SURFACE: ${{ inputs.surface_id }}
+          REQUESTED_STATE: ${{ inputs.state }}
         run: |
-          case "$REQUESTED_ARTIFACT" in
-            artifacts/visual/*.png) ;;
-            *)
-              echo "artifact_name must be a repository-relative artifacts/visual/*.png path" >&2
-              exit 2
-              ;;
-          esac
-          case "$REQUESTED_ARTIFACT" in
-            *..*)
-              echo "artifact_name must not contain parent-directory traversal" >&2
-              exit 2
-              ;;
-          esac
-          scripts/capture-macos-native.sh "$REQUESTED_ARTIFACT"
+          REQUESTED_ARTIFACT="$(python3 scripts/visual_capture_path.py \
+            --surface "$REQUESTED_SURFACE" \
+            --state "$REQUESTED_STATE" \
+            --commit "$GITHUB_SHA")"
+          echo "REQUESTED_ARTIFACT=$REQUESTED_ARTIFACT" >> "$GITHUB_ENV"
+          echo "resolved artifact: $REQUESTED_ARTIFACT"
+
+      - name: Capture exact Rust window
+        run: scripts/capture-macos-native.sh "$REQUESTED_ARTIFACT"
 
       - name: Upload native capture and launch log
         if: ${{ always() }}
