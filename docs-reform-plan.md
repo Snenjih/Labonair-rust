@@ -169,6 +169,9 @@ tree:
   accept only canonical surface/state labels, enforce the catalog viewport
   rule, and upload a reviewer-inspectable native capture without claiming a
   state automatically.
+- a visual path-contract check that exercises every catalog state and rejects
+  unknown surfaces, states, viewports, platforms, and commit identifiers before
+  a native capture can be attempted.
 - a 15-workflow end-to-end catalog connecting entry points, state,
   persistence, notifications, failures, security, tests, and visual evidence.
 - a definition-of-done traceability catalog covering all 17 reform requirements

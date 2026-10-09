@@ -54,6 +54,7 @@ SCOPES: dict[str, tuple[tuple[str, ...], ...]] = {
         ("python3", "scripts/gen_release.py", "--check"),
     ),
     "visual": (
+        ("python3", "scripts/check_visual_capture_path.py"),
         ("python3", "scripts/check_visual_evidence.py"),
         ("python3", "scripts/gen_visual_evidence.py", "--check"),
     ),

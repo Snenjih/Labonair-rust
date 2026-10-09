@@ -61,6 +61,9 @@ interaction checks.
   and uploads the capture plus launch log for reviewer inspection.
 - `scripts/visual_capture_path.py` accepts only a canonical surface/state and
   resolves the exact commit-bound artifact path used by the registry.
+- `scripts/check_visual_capture_path.py` is run by the visual verification
+  scope and exercises every catalog state plus rejection cases before any
+  capture record can be accepted.
 - `scripts/screenshot.sh` accepts an explicit Rust PID and fails closed when
   no matching native window can be captured. It also distinguishes an invalid
   PID from a macOS Screen Recording permission failure.

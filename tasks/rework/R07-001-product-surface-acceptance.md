@@ -286,6 +286,8 @@ The native acceptance matrix now has a checked machine-readable companion:
   commit to the deterministic artifact path, rejecting unknown states and
   viewport mismatches; `.github/workflows/visual-native.yml` uses that helper
   for one reviewer-inspected macOS capture at a time;
+- `scripts/check_visual_capture_path.py` exercises all 63 catalog states and
+  negative input cases in the visual verification scope;
 - `docs/generated/visual-evidence.md` is the generated per-surface screenshot
   index and prints the deterministic future artifact path for every pending
   state;

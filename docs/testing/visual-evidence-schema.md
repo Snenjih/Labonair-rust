@@ -60,3 +60,7 @@ name, a generic `Labonair` window title, a reference rendering, or a
 successful compile is not visual evidence. If the supported native host or
 capture permission is unavailable, keep the state `Pending`, record the
 blocker, and leave the next action in the active task or handoff.
+
+The visual verification scope also runs
+`scripts/check_visual_capture_path.py`, which exercises every declared state
+and rejects invalid surface, state, viewport, platform, and commit inputs.
