@@ -60,4 +60,4 @@ jobs:
             target/release/bundle/macos/*.dmg
             target/release/bundle/macos/*.app.tar.gz
             target/release/bundle/macos/latest.json
-        fail_on_unmatched_files: true
+          fail_on_unmatched_files: true
