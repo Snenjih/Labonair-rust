@@ -2,7 +2,7 @@
 
 ## Status
 
-`🔄 In Progress`
+`⏳ Planned`
 
 ## Owner
 
@@ -12,8 +12,8 @@
 
 ## Dependencies
 
+- `R07-000-zed-parity-baseline-and-inventory`
 - `R06-001-backend-adapter-eradication`
-- all preceding active rework tasks
 
 ## Goal
 
@@ -26,8 +26,11 @@ to introduce new features.
 - In scope: full capability matrix audit, repository layout, registry
   ownership, Settings boundary, notifications, command/keymap flows, hosts,
   themes, transfers, standalone/project workflows, and visual consistency.
-- Out of scope: marketplace, remote theme downloads, extension hosting, and
-  speculative product expansion.
+- Out of scope for this bounded acceptance task: implementing the expanded
+  clean-room Zed parity target. The current product decision and its complete
+  feature crosswalk are recorded in
+  [`../../docs/zed-parity.md`](../../docs/zed-parity.md) and specified first
+  in R07-000. This bounded acceptance audit follows that specification work.
 
 ## Contracts and ownership
 

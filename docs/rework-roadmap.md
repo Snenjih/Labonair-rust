@@ -1,16 +1,22 @@
 # Labonair Architecture Rework Roadmap
 
 **Status:** Current implementation plan
-**Version:** 5
+**Version:** 6
 
 The rework is through the completed R06 backend-adapter eradication. The
 capability-owned registries and surfaces, shell/workspace identity, settings
-reduction, and explicit module boundaries are established. R07 is now the
-active acceptance and cleanup phase: prove that documentation, ownership,
-dependency direction, and permanent product surfaces agree, then remove the
-remaining transitional shell adapters.
+reduction, and explicit module boundaries are established. R07 now starts with
+the clean-room parity specification and macOS Settings baseline in R07-000.
+R07-001 then verifies that documentation, ownership, dependency direction, and
+permanent product surfaces agree before remaining cleanup work proceeds.
 
 This roadmap replaces the historical task order. Existing completed work remains valuable, but old tasks do not override the contracts in `docs/`.
+
+The current user decision sets complete clean-room feature and UI/UX parity
+with the fixed Zed reference as the product target. This supersedes the former
+scope exclusions in the roadmap; it does not authorize a source fork. The
+canonical parity plan is [`zed-parity.md`](zed-parity.md), and its first
+specification task is ordered in `tasks/rework/README.md`.
 
 Work proceeds in dependency order. A later phase may not introduce a second
 owner or bypass an unfinished contract from an earlier phase. The roadmap is a
@@ -175,14 +181,30 @@ implemented only through bounded follow-up tasks.
 - evaluate projects/workspace enhancements;
 - add extensions or downloads only after the core is stable.
 
-Remote theme downloads, marketplace behavior, and extension hosting remain
-deferred until a later product decision adds a concrete workflow and owner.
+Remote theme downloads, marketplace behavior, and extension hosting were
+previously deferred. They are now included in the parity inventory and remain
+unimplemented until that inventory records the owner, trust boundary, service
+contract, and acceptance evidence.
 
-### Planned Editor rework sequence — blocked behind R07-001 (2026-09-12)
+## Phase 9 — Clean-room Zed parity specification and delivery
 
-The Editor rework is a bounded post-acceptance sequence. It does not change
-the current R07-001 acceptance gate, and no R09 task may start until that gate
-is complete. The Editor remains the sole owner of Editor state, behavior,
+Follow [`zed-parity.md`](zed-parity.md) for the pinned baseline, clean-room
+boundary, complete feature inventory, universal UI checklist, Settings pilot,
+shared registries, universal tab model, and parity acceptance rules.
+
+The active inventory and specification task is
+[`R07-000-zed-parity-baseline-and-inventory.md`](../tasks/rework/R07-000-zed-parity-baseline-and-inventory.md).
+It starts with the macOS Settings pilot and then builds the complete parity
+inventory. R07-001 product-surface acceptance follows this specification
+baseline. The existing R09 Editor tasks remain planned until the inventory
+assigns their place in the full dependency order; their implementation scope
+must align with the parity catalog before any R09 task starts.
+
+### Planned Editor rework sequence — reconcile through R07-000 (2026-09-12)
+
+The Editor rework is a bounded post-acceptance sequence. No R09 task may start
+until the R07-000 parity inventory and R07-001 acceptance gate are complete.
+The Editor remains the sole owner of Editor state, behavior,
 UI-boundary, commands, persistence, and tests; Workspace remains a hosting and
 composition adapter. Local language services are in scope before any remote
 language-service work. Autosave and format-on-save are opt-in and default to

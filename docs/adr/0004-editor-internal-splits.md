@@ -62,6 +62,12 @@ owner.
 
 ## Consequences
 
+The scope in consequence 8 below is superseded by the current full
+clean-room parity target in [`../zed-parity.md`](../zed-parity.md).
+Editor-owned split state remains the initial boundary; R07-000 must specify
+how remote editor views, collaboration, and their session lifecycle extend
+that contract before implementation.
+
 Positive consequences:
 
 - editor interactions stay with the Editor owner instead of expanding

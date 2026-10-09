@@ -1,7 +1,7 @@
 # Capability Matrix
 
 **Status:** Normative ownership map
-**Version:** 4
+**Version:** 6
 **Related:** [`architecture.md`](architecture.md), [`modules.md`](modules.md), [`registries.md`](registries.md)
 
 This matrix is the authoritative index for product capabilities. A capability
@@ -16,6 +16,11 @@ The application-composition and foundation rows make non-product boundaries
 visible for dependency auditing. The one-capability/one-capability-crate rule
 applies to product rows; composition and foundation crates have one explicit
 coordination or reusable-service responsibility instead.
+
+The dispositions below describe existing implementation and earlier product
+decisions. Under the current parity target, they are crosswalk inputs, not
+exclusions for capabilities present in the pinned Zed baseline. R07-000 must
+reconcile them before any later implementation task starts.
 
 | Capability | Disposition | Owning module | Contract / domain crate | UI crate | Storage / integration | Canonical entry point | Current implementation state |
 |---|---|---|---|---|---|---|---|
@@ -33,19 +38,21 @@ coordination or reusable-service responsibility instead.
 | Git / source control | Keep / isolate | `git` | `labonair-git` | `labonair-panel-scm`, `labonair-panel-git-graph`, Project Diff | `labonair-git-transport` owns local/remote Git execution and adapters | Source Control panel / palette | Contracts and concrete integration are isolated |
 | Explorer | Redesign | `explorer` | `labonair-panel-explorer`, `labonair-explorer-host` | `labonair-panel-explorer` | `labonair-filesystem`; shell-injected SSH/SFTP adapter | Explorer dock panel | Canonical Explorer capability/UI crate; `workspace`, `ssh`, and `sftp` implementation edges are removed (R07-004). Open-file/terminal/preview/active-file intents and SSH-backed directory reads cross the injected `labonair-explorer-host` contracts; concrete remote services remain in shell composition. |
 | Snippets | Keep / isolate | `snippets` | `labonair-snippets`, `labonair-snippets-host` | `labonair-panel-snippets` | persistence and injected SSH executor | Snippets panel / palette | Contracts and panel isolated; the `workspace` dependency is removed (R08-003) — inject/run/SSH-session intents cross the injected `labonair-snippets-host::SnippetExecutionHost` contract |
-| Settings | Redesign / reduce | `settings` | `labonair-settings` | `labonair-settings-ui` | `labonair-settings-content`, `labonair-settings-json`, `labonair-settings-macros` | Settings window | Value-only navigation; legacy capability sections are migration-only and diagnostics use Notifications |
+| Settings | Redesign / reference parity | `settings` | `labonair-settings` | `labonair-settings-ui` | `labonair-settings-content`, `labonair-settings-json`, `labonair-settings-macros` | Settings window | Existing value model remains current state; category, field, navigation, and control parity is specified by R07-000 |
 | Keymap | Redesign | `keymap` | `labonair-keymap` | `labonair-keymap-ui` | keymap file and binding registry | Titlebar global menu → Keymap; quick access through palette | UI-free keymap crate is active; `labonair-keymap-ui`'s `KeymapManagementView` renders as a workspace `Keymap` tab (`Workspace::open_keymap_tab`), not an OS window; shell retains only platform key installation/watch wiring. The tab groups commands by section, filters by All/Modified/Conflicts/Unbound, is keyboard-navigable, records keystrokes instead of requiring hand-typed chords (`keymap-ui`'s `keystroke` module + `App::intercept_keystrokes`), edits in an anchored popover with a context picker for new bindings, "Reset to default" (`file::remove_user_binding_override`), surfaces `keymap.json` diagnostics as an in-tab banner, and live-reloads on external file changes (`KeymapManagementView::reload`, wired to `settings::watch_file` by the workspace). Conflict/override state is derived data on `management` (`OverrideState`, `conflict_commands`, `shadowed_defaults`). |
 | Command Palette | Redesign | `command-palette` | `labonair-command-palette-core` | `labonair-command-palette` | typed providers and `PaletteActionHandlerRegistry` contributions from feature modules | Titlebar global menu / global shortcut | Metadata, ordinary command handlers, and dynamic submenu actions are owner-contributed; shell only composes and forwards actions |
 | Notifications | Redesign | `notifications` | `labonair-notifications-core` | `labonair-notifications` | none; retained in registry | Statusbar notification dropdown | Registry and statusbar presentation are capability-owned; migrated operation errors use structured details/source/deduplication; no toast surface |
-| Themes (color and icon) | Redesign / static first | `themes` | `labonair-theme`, `labonair-theme-ui` | `labonair-theme` (runtime + catalogs); `labonair-theme-ui` (settings→store policy + palette handler) | built-in definitions first | Titlebar global menu → Themes / Icon Themes → palette submenu | Separate app-theme and icon-theme palette pages; the icon catalog includes Labonair and Material Icon Theme; catalogs and preview state are owner-owned, and selection/preview actions use the typed owner registry; R08-005 moved the settings-application policy out of `settings-ui` into `labonair-theme-ui`; downloads and user-authored themes remain deferred |
+| Themes (color and icon) | Redesign / reference parity | `themes` | `labonair-theme`, `labonair-theme-ui` | `labonair-theme` (runtime + catalogs); `labonair-theme-ui` (settings→store policy + palette handler) | extension and distribution contracts pending R07-000 | Titlebar global menu → Themes / Icon Themes → palette submenu | Existing app-theme and icon-theme registries remain current state; extension, import, discovery, and management behavior is crosswalked against the pinned baseline |
 | Updates | Keep / isolate | `updater` | `labonair-updater` | `labonair-updater-ui` | release manifest, signed artifact verification and macOS installation | Settings/global menu update action | Capability logic, dialog, state view, status item, and command contribution are isolated from the shell UI |
-| AI | Defer UI / keep core | `ai` | `labonair-ai` | `labonair-ai` until a real UI boundary requires a sibling crate | provider/session persistence; MCP integration in `labonair-mcp-server` | AI panel / workspace context | Core retained; UI rework open and no aggregate backend dependency |
+| AI | Keep / reference parity | `ai` | `labonair-ai` | `labonair-ai` until a real UI boundary requires a sibling crate | provider/session persistence; MCP integration in `labonair-mcp-server` | AI panel / workspace context | Core retained; UI and service rework are open and must be crosswalked against the pinned baseline |
 
 ## Explicit product dispositions
 
 These items are deliberately not capability rows because they are surfaces,
 implementation strategies, or predecessor behaviors rather than independent
-product ownership boundaries:
+product ownership boundaries. Earlier keep/defer/remove decisions are subject
+to the pinned-reference crosswalk; only independent architecture rules remain
+binding without that review:
 
 | Item | Decision | Consequence |
 |---|---|---|
@@ -53,10 +60,10 @@ product ownership boundaries:
 | Toast notifications | Remove | Passive messages are retained and displayed only by the notification registry and statusbar dropdown. |
 | Duplicate feature-local operation-error banners | Remove | Operation failures publish notifications; actionable dialogs and field validation remain only where a decision or correction is required. |
 | Jump-host primary menu/badge | Remove as a separate surface; keep the capability | Jump hosts remain part of SSH connection configuration and execution; no dedicated statusbar item is registered. |
-| Remote theme/icon-theme downloads | Defer | Only built-in, explicitly registered themes are supported until an extension workflow has a concrete owner and user flow. |
-| User theme-file import/export (local `.json`) | Defer — code retained, not wired (R08-011) | `labonair-theme` keeps `import.rs`, `ThemeStore::import_theme_file{,_variant}`, `reload_user_themes`, and `ThemeRegistry::load_user_themes` under test, but no palette action, Settings field, or file-watch exposes them. Activation needs a concrete user flow + owner (`labonair-theme-ui`); removal is safe if that flow is rejected. |
+| Remote theme/icon-theme downloads | Crosswalk against the pinned baseline | Extension and theme distribution workflows are in the parity inventory; the owner, trust model, and service boundary are defined before implementation. |
+| User theme-file import/export (local `.json`) | Crosswalk against the pinned baseline | Existing code remains dormant until the parity inventory decides whether the pinned reference has an equivalent workflow and which owner exposes it. |
 | Static shell-wide command tables | Remove | Commands and submenus are contributed by owning modules through the command registry. |
-| Full Zed fork or greenfield rewrite | Reject for the current migration | Continue the standalone Rust implementation and use Zed only as a clean-room reference. |
+| Full Zed feature and UI/UX parity | Adopt as a clean-room target, not a source fork | Keep an independent native Rust/GPUI implementation and use the fixed reference and [`zed-parity.md`](zed-parity.md) contracts to drive the complete capability inventory. |
 
 ## Rules for changing this matrix
 

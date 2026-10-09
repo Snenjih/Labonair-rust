@@ -1,7 +1,7 @@
 # Documentation Governance
 
 **Status:** Normative
-**Version:** 2
+**Version:** 3
 
 This document defines where project knowledge belongs and how documentation
 changes are kept consistent. It complements the product, architecture, and
@@ -13,6 +13,7 @@ feature-lifecycle contracts; it does not replace them.
 |---|---|---|---|
 | `AGENTS.md` | engineering instructions | binding | Repository-wide implementation constraints and verification gates. |
 | `docs/*.md` | normative contract | binding | Current product, architecture, module, registry, design, settings, workspace, and lifecycle rules. |
+| `docs/zed-parity.md` | normative product/specification plan | binding | Pinned Zed target, clean-room boundary, full feature scope, parity inventory, and specification gates. |
 | `docs/architecture/*.md` | decomposed normative contract | binding | Layer, composition, lifecycle, and dependency rules used by agents and reviewers. |
 | `docs/architecture/graph.toml` | machine-readable policy source | binding | Exact crate ownership, layer, and internal dependency policy checked against Cargo metadata. |
 | `docs/generated/` | generated projection | derived | Human-readable views generated from canonical policy sources; never edit directly. Every view carries a deterministic source fingerprint. |
@@ -47,6 +48,7 @@ Every subject has one canonical document. The index in `docs/README.md` is the
 map of those authorities:
 
 - product identity and scope → `docs/product.md`;
+- clean-room Zed parity scope and specification process → `docs/zed-parity.md`;
 - runtime layers and crate boundaries → `docs/architecture.md`;
 - machine-readable ownership and dependency policy → `docs/architecture/graph.toml`;
 - decomposed layer, composition, lifecycle, and dependency rules →

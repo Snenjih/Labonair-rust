@@ -10,6 +10,8 @@ the migration is complete.
 ## Normative documents
 
 - [`product.md`](product.md) — product identity, scope, and user-facing principles.
+- [`zed-parity.md`](zed-parity.md) — pinned Zed baseline, clean-room process,
+  full feature inventory, shared-system specification, and parity gates.
 - [`architecture.md`](architecture.md) — runtime architecture, layers, and dependency direction.
 - [`architecture/layers.md`](architecture/layers.md) — normative layer and direction rules.
 - [`architecture/composition-root.md`](architecture/composition-root.md) — composition-root responsibilities and prohibitions.
