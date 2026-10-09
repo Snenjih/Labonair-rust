@@ -341,3 +341,7 @@ The dependency verifier currently permits only the explicit transitional edges
 listed in [`audits/architecture-inventory.md`](audits/architecture-inventory.md).
 It must be kept strict while those edges are removed. A green dependency check
 therefore means "no untracked violation", not that the migration is complete.
+Each tolerated edge is also recorded in `architecture/graph.toml` with a
+bounded review/removal task, a review trigger, a last-reviewed date, and a
+machine-checked review interval. An expired review fails the architecture
+scope until the edge is re-evaluated.

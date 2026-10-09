@@ -39,6 +39,7 @@ keeps current implementation status separate from target status.
 | `target_status` | string | Intended completion state. |
 | `known_limitations` | array | Open gaps; never hide missing evidence. |
 | `removal_condition` | string | Compatibility removal condition, or `none`. |
+| `next_task` | repository path | Bounded active-queue task that owns the next descriptor/evidence step. |
 | `last_verified` | string | ISO date of the descriptor audit. |
 
 The `[evidence]` table is required and contains arrays for `contract`, `unit`,

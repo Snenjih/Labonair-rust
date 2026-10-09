@@ -65,17 +65,19 @@ def main() -> int:
             "",
             "## Transitional edges",
             "",
-            "Every compatibility edge has a removal condition. It remains visible",
-            "here so agents do not mistake a tolerated edge for a target dependency.",
+            "Every compatibility edge has a removal condition, a planned removal",
+            "task, and a review interval. It remains visible here so agents do not",
+            "mistake a tolerated edge for a target dependency.",
             "",
-            "| From | To | Status | Removal condition |",
-            "| --- | --- | --- | --- |",
+            "| From | To | Status | Removal task | Review trigger | Last reviewed | Removal condition |",
+            "| --- | --- | --- | --- | --- | --- | --- |",
         ]
     )
     for transition in manifest.get("transitional_edge", []):
         lines.append(
             f"| `{cell(transition['from'])}` | `{cell(transition['to'])}` | "
-            f"`{cell(transition['status'])}` | {cell(transition['removal_condition'])} |"
+            f"`{cell(transition['status'])}` | [`{cell(transition['removal_task'])}`](../../{cell(transition['removal_task'])}) | "
+            f"{cell(transition['review_trigger'])} | `{cell(transition['last_reviewed'])}` | {cell(transition['removal_condition'])} |"
         )
 
     lines.extend(

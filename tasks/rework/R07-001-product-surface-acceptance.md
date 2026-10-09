@@ -290,3 +290,13 @@ The native acceptance matrix now has a checked machine-readable companion:
 The registry intentionally contains zero accepted captures in this Linux
 session. The native macOS matrix remains `Pending`; no source inspection,
 process-only launch, or historical path is promoted to visual evidence.
+
+## Supplemental native Linux diagnostic — 2026-10-09
+
+The exact `target/debug/labonair` binary was launched under an isolated Xvfb
+display as PID `967190`, produced a 1200×800 X11 window, and survived the
+eight-second run. The diagnostic capture was `/tmp/labonair-linux-xvfb.png`.
+This confirms that the native GPUI process can render in a headless Linux
+diagnostic environment, but it does not satisfy the supported macOS R07
+matrix. The runner reported no X11 input pointers, so no keyboard/focus
+interaction evidence was accepted either.

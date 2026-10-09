@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+from datetime import date, timedelta
+from pathlib import Path
 import sys
 
 from architecture_model import load_manifest, load_workspace_metadata, manifest_graph, workspace_graph
@@ -118,9 +120,25 @@ def main() -> int:
             errors.append(f"transitional edge references unknown crate: {source} -> {target}")
         if target not in manifest_edges.get(source, set()):
             errors.append(f"transitional edge is not a real dependency: {source} -> {target}")
-        for field in ("status", "removal_condition"):
+        for field in ("status", "removal_condition", "removal_task", "review_trigger"):
             if not isinstance(transition.get(field), str) or not transition[field].strip():
                 errors.append(f"transitional edge {source} -> {target} has no {field}")
+        removal_task = transition.get("removal_task")
+        if isinstance(removal_task, str) and not (Path(__file__).resolve().parents[1] / removal_task).is_file():
+            errors.append(f"transitional edge {source} -> {target} has missing removal task: {removal_task}")
+        try:
+            reviewed = date.fromisoformat(transition.get("last_reviewed"))
+        except (TypeError, ValueError):
+            errors.append(f"transitional edge {source} -> {target} has invalid last_reviewed")
+        else:
+            interval = transition.get("review_interval_days")
+            if not isinstance(interval, int) or interval <= 0:
+                errors.append(f"transitional edge {source} -> {target} has invalid review_interval_days")
+            elif date.today() > reviewed + timedelta(days=interval):
+                errors.append(
+                    f"transitional edge {source} -> {target} review expired on "
+                    f"{reviewed + timedelta(days=interval)}; re-review the edge"
+                )
 
     check_acyclic(workspace, errors)
     if errors:

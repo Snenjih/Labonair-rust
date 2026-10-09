@@ -54,7 +54,7 @@ def main() -> int:
         if identifier in seen_ids:
             errors.append(f"{identifier}: duplicate coverage id")
         seen_ids.add(identifier)
-        for field in ("id", "display_name", "owner_module", "architecture_owner", "canonical_crate", "descriptor_file", "coverage_status", "canonical_entry_point", "next_action", "last_verified"):
+        for field in ("id", "display_name", "owner_module", "architecture_owner", "canonical_crate", "descriptor_file", "coverage_status", "canonical_entry_point", "next_action", "next_task", "last_verified"):
             if field not in entry:
                 errors.append(f"{identifier}: missing {field}")
         if entry.get("canonical_crate") not in owners:
@@ -70,6 +70,9 @@ def main() -> int:
         descriptor = entry.get("descriptor_file")
         if descriptor != "none" and not (SOURCE.parent / descriptor).is_file():
             errors.append(f"{identifier}: missing descriptor file {descriptor}")
+        next_task = entry.get("next_task")
+        if not isinstance(next_task, str) or not (ROOT / next_task).is_file():
+            errors.append(f"{identifier}: missing bounded next task {next_task!r}")
 
     if seen_names != expected:
         errors.append(f"coverage/matrix mismatch; missing={sorted(expected - seen_names)}, extra={sorted(seen_names - expected)}")

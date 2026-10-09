@@ -1,12 +1,13 @@
 # Dependency Rules
 
 **Status:** Normative
-**Version:** 1
+**Version:** 2
 **Related:** [`../architecture.md`](../architecture.md), [`layers.md`](layers.md), [`graph.toml`](graph.toml), [`../audits/remaining-boundaries.md`](../audits/remaining-boundaries.md)
 
 The architecture graph is an explicit policy, not a suggestion. Every internal
 Cargo edge must be declared in [`graph.toml`](graph.toml), and every temporary
-edge must have a removal condition.
+edge must have a removal condition, a bounded removal task, and a review
+interval.
 
 ## Rules
 
@@ -27,6 +28,8 @@ edge must have a removal condition.
    architecture check.
 10. A removed edge must be removed from the manifest, code, audit, and task
     once no consumer needs it.
+11. A transitional edge whose review interval has expired fails the
+    architecture check until its owner records a fresh review.
 
 ## Verification
 

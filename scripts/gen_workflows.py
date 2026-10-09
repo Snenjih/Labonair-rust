@@ -26,14 +26,14 @@ def main() -> int:
         f"<!-- Source fingerprint: `{fingerprint}` -->", "",
         "Source: [`../product/workflows.toml`](../product/workflows.toml).",
         "Each record connects user entry, state, persistence, failure, security, and evidence.", "",
-        "| Workflow | Owner | Entry point | Commands | Status | Next action |",
-        "| --- | --- | --- | --- | --- | --- |",
+        "| Workflow | Owner | Entry point | Commands | Status | Next task | Next action |",
+        "| --- | --- | --- | --- | --- | --- | --- |",
     ]
     for workflow in workflows:
         commands = ", ".join(f"`{command}`" for command in workflow["commands"])
         lines.append(
             f"| `{workflow['id']}` | `{workflow['owner_module']}` | {workflow['entry_point']} | "
-            f"{commands} | `{workflow['status']}` | {workflow['next_action']} |"
+            f"{commands} | `{workflow['status']}` | [`{workflow['next_task']}`](../../{workflow['next_task']}) | {workflow['next_action']} |"
         )
     lines.extend(["", "## State and failure coverage", ""])
     for workflow in workflows:

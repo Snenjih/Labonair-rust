@@ -17,6 +17,7 @@ tests = ["crates/app/src/main.rs", "scripts/smoke-test.sh"]
 visual_evidence = ["Pending: native first-paint and shutdown capture"]
 status = "partial"
 next_action = "Record native startup/interactive timing and recovery evidence."
+next_task = "tasks/rework/R07-006-documentation-knowledge-system.md"
 
 [[workflow]]
 id = "project-workspace-transition"
@@ -35,6 +36,7 @@ tests = ["crates/workspace/src/workspace.rs", "crates/workspace/src/recent_proje
 visual_evidence = ["Pending: Empty/Standalone/Project native states"]
 status = "partial"
 next_action = "Link R07 surface evidence and workflow screenshots after native capture."
+next_task = "tasks/rework/R07-006-documentation-knowledge-system.md"
 
 [[workflow]]
 id = "standalone-terminal"
@@ -53,6 +55,7 @@ tests = ["crates/terminal/src", "crates/workspace/src/views/terminal.rs"]
 visual_evidence = ["Pending: ready, loading, process-exit, and error states"]
 status = "partial"
 next_action = "Add measured startup/output performance evidence."
+next_task = "tasks/rework/R07-006-documentation-knowledge-system.md"
 
 [[workflow]]
 id = "ssh-host-connection"
@@ -71,6 +74,7 @@ tests = ["crates/hosts/src/lib.rs", "crates/ssh-transport/src", "docs/security/r
 visual_evidence = ["Pending: host list, connection progress, trust/error states"]
 status = "partial"
 next_action = "Add explicit allowed/denied remote integration evidence."
+next_task = "tasks/rework/R07-006-documentation-knowledge-system.md"
 
 [[workflow]]
 id = "sftp-browsing-and-transfer"
@@ -89,6 +93,7 @@ tests = ["crates/sftp/src", "crates/transfers/src", "crates/workspace/src/views/
 visual_evidence = ["Pending: empty, loading, error, list, transfer-progress states"]
 status = "partial"
 next_action = "Add descriptor and remote visual/performance evidence."
+next_task = "tasks/rework/R07-006-documentation-knowledge-system.md"
 
 [[workflow]]
 id = "editor-file-lifecycle"
@@ -107,6 +112,7 @@ tests = ["crates/editor/src", "crates/workspace/src/views/editor.rs"]
 visual_evidence = ["Pending: focused, dirty, conflict, diagnostics, and error states"]
 status = "partial"
 next_action = "Add complete editor descriptor during the R09 sequence."
+next_task = "tasks/rework/R07-006-documentation-knowledge-system.md"
 
 [[workflow]]
 id = "git-source-control"
@@ -126,6 +132,7 @@ tests = ["crates/git/src", "crates/panel-scm/src", "crates/panel-git-graph/src"]
 visual_evidence = ["Pending: clean, changed, branch, diff, and empty states"]
 status = "partial"
 next_action = "Add Git performance baseline and visual artifacts."
+next_task = "tasks/rework/R07-006-documentation-knowledge-system.md"
 
 [[workflow]]
 id = "explorer-files"
@@ -146,6 +153,7 @@ tests = ["crates/panel-explorer/src/panel_explorer.rs", "crates/explorer-host/sr
 visual_evidence = ["Pending: normal, empty, loading, error, narrow, and remote states"]
 status = "partial"
 next_action = "Complete R07 native acceptance evidence."
+next_task = "tasks/rework/R07-006-documentation-knowledge-system.md"
 
 [[workflow]]
 id = "themes-and-icon-themes"
@@ -166,6 +174,7 @@ tests = ["crates/theme/src/command_provider.rs", "crates/theme/src/store.rs"]
 visual_evidence = ["Pending: theme picker, preview, and active theme states"]
 status = "partial"
 next_action = "Add theme descriptor and visual catalog evidence."
+next_task = "tasks/rework/R07-006-documentation-knowledge-system.md"
 
 [[workflow]]
 id = "settings-and-reload"
@@ -186,6 +195,7 @@ tests = ["crates/settings/src", "crates/settings-ui/src"]
 visual_evidence = ["Pending: settings navigation, validation, and error states"]
 status = "partial"
 next_action = "Add machine-readable setting descriptors and data-lifecycle evidence."
+next_task = "tasks/rework/R07-006-documentation-knowledge-system.md"
 
 [[workflow]]
 id = "keymap-editing"
@@ -206,6 +216,7 @@ tests = ["crates/keymap/src", "crates/shell/src/keymap_loader.rs"]
 visual_evidence = ["Pending: keymap tab, conflict, popover, and diagnostics states"]
 status = "partial"
 next_action = "Add keymap descriptor and native evidence."
+next_task = "tasks/rework/R07-006-documentation-knowledge-system.md"
 
 [[workflow]]
 id = "command-palette-discovery"
@@ -226,6 +237,7 @@ tests = ["crates/command-palette-core/src", "crates/command-palette/src"]
 visual_evidence = ["Pending: focused, empty, filtered, submenu, and keyboard states"]
 status = "partial"
 next_action = "Complete native palette evidence and expand per-command availability where needed."
+next_task = "tasks/rework/R07-006-documentation-knowledge-system.md"
 
 [[workflow]]
 id = "notification-lifecycle"
@@ -246,6 +258,7 @@ tests = ["crates/notifications-core/src/lib.rs", "crates/notifications/src/notif
 visual_evidence = ["Pending: badge, open, empty, detail, and clear states"]
 status = "partial"
 next_action = "Complete native notification visual evidence; defer actionable flow until needed."
+next_task = "tasks/rework/R07-006-documentation-knowledge-system.md"
 
 [[workflow]]
 id = "mcp-agent-session"
@@ -267,6 +280,7 @@ tests = ["crates/mcp-core/src/lib.rs", "crates/mcp-server/src/server.rs", "docs/
 visual_evidence = ["Pending: native agent-access grant/revoke states"]
 status = "partial"
 next_action = "Complete negative end-to-end tool tests and native grant-surface evidence."
+next_task = "tasks/rework/R07-006-documentation-knowledge-system.md"
 
 [[workflow]]
 id = "error-cancellation-recovery"
@@ -288,3 +302,4 @@ tests = ["docs/testing/evidence-model.md", "docs/registries.md"]
 visual_evidence = ["Pending: representative error/loading/recovery captures per surface"]
 status = "partial"
 next_action = "Link each capability descriptor to concrete failure/recovery evidence."
+next_task = "tasks/rework/R07-006-documentation-knowledge-system.md"

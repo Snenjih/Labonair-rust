@@ -15,6 +15,9 @@ events, settings, or evidence, but it must not create a second owner or
 contradict the matrix. Link new capability documents from the matrix and from
 the relevant implementation task. A `matrix-tracked` coverage record is an
 explicit migration state, not evidence that a full descriptor already exists.
+Every coverage record also names a repository-relative `next_task` in the
+active rework queue so the migration has a bounded owner and cannot become an
+untracked prose promise.
 
 Use the following minimum structure for a capability-specific document:
 

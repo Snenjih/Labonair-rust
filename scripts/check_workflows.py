@@ -15,7 +15,7 @@ STATUSES = {"planned", "partial", "implemented", "integration-tested", "visually
 REQUIRED = {
     "id", "display_name", "owner_module", "canonical_crate", "preconditions",
     "entry_point", "state_transitions", "commands", "persistence", "notifications",
-    "failure_modes", "security_boundary", "tests", "visual_evidence", "status", "next_action",
+    "failure_modes", "security_boundary", "tests", "visual_evidence", "status", "next_action", "next_task",
 }
 LIST_FIELDS = {"preconditions", "state_transitions", "commands", "persistence", "notifications", "failure_modes", "tests", "visual_evidence"}
 
@@ -55,6 +55,9 @@ def main() -> int:
         for path in workflow.get("tests", []):
             if not (ROOT / path).exists():
                 errors.append(f"{identifier}: missing test/evidence reference {path}")
+        next_task = workflow.get("next_task")
+        if not isinstance(next_task, str) or not (ROOT / next_task).is_file():
+            errors.append(f"{identifier}: missing bounded next task {next_task!r}")
         for field in ("display_name", "entry_point", "security_boundary", "status", "next_action"):
             if not isinstance(workflow.get(field), str) or not workflow[field].strip():
                 errors.append(f"{identifier}: {field} must be a non-empty string")

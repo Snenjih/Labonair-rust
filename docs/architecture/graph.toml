@@ -22,42 +22,70 @@ from = "labonair-command-palette"
 to = "labonair-settings"
 status = "narrow-when-needed"
 removal_condition = "Replace implementation-level settings access when a concrete provider contract exists."
+removal_task = "tasks/rework/R07-007-transitional-edge-review.md"
+review_trigger = "Before the next command-palette/settings boundary rebuild."
+last_reviewed = "2026-10-09"
+review_interval_days = 90
 
 [[transitional_edge]]
 from = "labonair-panel-explorer"
 to = "labonair-settings"
 status = "move-to-feature-contract"
 removal_condition = "Move Explorer behavior reads behind an Explorer-owned settings contract."
+removal_task = "tasks/rework/R07-007-transitional-edge-review.md"
+review_trigger = "Before the next Explorer settings or remote-boundary rebuild."
+last_reviewed = "2026-10-09"
+review_interval_days = 90
 
 [[transitional_edge]]
 from = "labonair-panel-scm"
 to = "labonair-editor"
 status = "move-to-feature-contract"
 removal_condition = "Replace direct editor view access with a typed editor capability contract."
+removal_task = "tasks/rework/R07-007-transitional-edge-review.md"
+review_trigger = "Before the next SCM/editor boundary rebuild."
+last_reviewed = "2026-10-09"
+review_interval_days = 90
 
 [[transitional_edge]]
 from = "labonair-panel-scm"
 to = "labonair-settings"
 status = "move-to-feature-contract"
 removal_condition = "Replace direct settings implementation reads with an SCM-owned settings contract."
+removal_task = "tasks/rework/R07-007-transitional-edge-review.md"
+review_trigger = "Before the next SCM/settings boundary rebuild."
+last_reviewed = "2026-10-09"
+review_interval_days = 90
 
 [[transitional_edge]]
 from = "labonair-workspace"
 to = "labonair-ai"
 status = "narrow-when-needed"
 removal_condition = "Move AI context and lifecycle details behind a typed AI bridge contract."
+removal_task = "tasks/rework/R07-007-transitional-edge-review.md"
+review_trigger = "Before the next AI/Workspace lifecycle rebuild."
+last_reviewed = "2026-10-09"
+review_interval_days = 90
 
 [[transitional_edge]]
 from = "labonair-workspace"
 to = "labonair-settings"
 status = "narrow-when-needed"
 removal_condition = "Replace implementation-level global access with a narrow capability snapshot when a concrete boundary exists."
+removal_task = "tasks/rework/R07-007-transitional-edge-review.md"
+review_trigger = "Before the next Workspace/settings boundary rebuild."
+last_reviewed = "2026-10-09"
+review_interval_days = 90
 
 [[transitional_edge]]
 from = "labonair-command-palette"
 to = "labonair-filesystem"
 status = "narrow-when-needed"
 removal_condition = "Replace direct history storage access only when a second consumer requires a typed provider."
+removal_task = "tasks/rework/R07-007-transitional-edge-review.md"
+review_trigger = "Before a second consumer requests command-history storage."
+last_reviewed = "2026-10-09"
+review_interval_days = 90
 
 
 [[crate]]

@@ -60,3 +60,9 @@ interaction checks.
   PID from a macOS Screen Recording permission failure.
 
 These helpers are verification tools, not additional application behavior.
+
+An isolated Linux Xvfb launch may be used for supplemental layout diagnosis
+when a macOS window server is unavailable. It must record the exact Rust PID
+and remain clearly labeled as non-release evidence: Linux is build-prepared,
+not a first-class packaged target, and an Xvfb capture never closes the
+macOS-supported visual matrix.

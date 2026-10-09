@@ -93,8 +93,9 @@ recorded explicitly so this document does not preserve obsolete findings:
    contracts, finish gates, handoff, and anti-pattern guidance.
 2. Most capability rows are still maintained as a human matrix. **Controlled:**
    three pilot descriptors are structured and all remaining rows have explicit
-   migration records in `docs/capabilities/coverage.toml`; expansion remains
-   a tracked follow-up rather than an undocumented gap.
+   migration records in `docs/capabilities/coverage.toml`, each with a
+   repository-relative `next_task`; expansion remains a tracked follow-up
+   rather than an undocumented gap.
 3. The owner/layer/edge model was not one source. **Resolved:**
    `docs/architecture/graph.toml` is checked against Cargo metadata and feeds a
    generated projection.
@@ -149,7 +150,9 @@ tree:
   the panel's direct SSH/SFTP dependencies.
 - structured pilot descriptors for Command Palette, Hosts, and Notifications
   under `docs/capabilities/`, with schema validation and a generated index;
-- freshness checks for the generated architecture and capability projections.
+- freshness checks for the generated architecture and capability projections;
+  every capability coverage record has a bounded `next_task` in the active
+  queue.
 - command, menu, and surface catalogs covering all 101 stable `CommandId`
   variants, with duplicate/orphan checks and generated views;
 - an evidence scorecard with 16 current product/engineering items;
@@ -519,7 +522,10 @@ The verifier must reject:
 The current checker rejects unregistered crates, edge drift, cycles, and the
 existing UI/panel boundary violations. Product catalog and scorecard checks
 now cover duplicate command/surface IDs and evidence references. Transitional
-edge expiry semantics and deeper symbol-level ownership remain later work.
+edges now also require a bounded removal task, review trigger, review date,
+and a machine-checked review interval; the execution/removal decision remains
+tracked in `R07-007` after the knowledge-system dependency. Deeper
+symbol-level ownership remains later work.
 
 ### 8.3 Immediate boundary priority
 
@@ -609,7 +615,8 @@ include:
 
 Each workflow must record preconditions, entry point, state transitions,
 commands, persistence, notifications, failure modes, security boundaries,
-tests, and visual evidence.
+tests, visual evidence, and a repository-relative `next_task` that owns the
+next unfinished implementation or evidence step.
 
 ## 10. Commands, menus, and product surfaces
 
@@ -1029,14 +1036,17 @@ must follow the existing `tasks/rework/` order:
    descriptors in owner/task order, without creating a second capability
    authority; the coverage file remains the explicit migration record until
    each descriptor is complete.
-3. **Evidence closure** — attach native visual artifacts, integration tests,
+3. **`R07-007` transitional-edge review** — after the knowledge-system task,
+   review each remaining compatibility edge against its removal condition and
+   remove or narrow it only when the owning workflow has a real consumer.
+4. **Evidence closure** — attach native visual artifacts, integration tests,
    security denials, performance measurements, and release handoffs to the
    workflow/scorecard records where the environment and product workflow
    support them.
-4. **Negative and recovery execution** — run the MCP/remote denial matrix,
+5. **Negative and recovery execution** — run the MCP/remote denial matrix,
    staged updater rollback, and representative performance workloads on their
    supported hosts; keep unavailable evidence marked `Pending`.
-5. **Generated drift hardening** — extend semantic claim/orphan checks only
+6. **Generated drift hardening** — extend semantic claim/orphan checks only
    when they can be deterministic and source-backed; do not replace the
    human authority model with duplicated prose.
 

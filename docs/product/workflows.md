@@ -13,3 +13,7 @@ Every workflow record states preconditions, canonical entry point, state
 transitions, command IDs, persistence, notifications, failure modes, security
 boundary, tests, visual evidence, and current status. `implemented` is not a
 substitute for `integration-tested` or `visually-verified`.
+
+Every record also names a repository-relative `next_task`. This is the bounded
+queue item that owns the next evidence or implementation step; prose in
+`next_action` must not be the only pointer to unfinished work.

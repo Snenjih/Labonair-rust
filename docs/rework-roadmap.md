@@ -41,6 +41,9 @@ produce them.
 The remaining completion work is tracked as
 [`R07-006-documentation-knowledge-system.md`](../tasks/rework/R07-006-documentation-knowledge-system.md)
 after the native R07 acceptance dependencies; it is not a parallel queue.
+The transitional-edge review and expiry contract is separately tracked as
+[`R07-007-transitional-edge-review.md`](../tasks/rework/R07-007-transitional-edge-review.md)
+after R07-006; it is not permission to start a second active task.
 
 ## Phase 1 — Foundation contracts
 
