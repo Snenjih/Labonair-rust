@@ -30,6 +30,7 @@ feature-lifecycle contracts; it does not replace them.
 | `docs/adr/` | accepted decision | binding for its decision | Records a deliberate architectural decision, its rationale, and consequences. |
 | `docs/audits/` | current-state evidence | descriptive | Records what the source tree currently proves, including partial migrations and blockers. |
 | `docs/reports/` | research and comparison | advisory | Preserves investigations and source comparisons; it cannot change the target. |
+| `zed-refrence/zed/` | optional frozen external reference checkout | non-authoritative | Zed comparison links may resolve here when the local gitlink is populated; CI is allowed to omit this read-only reference tree. |
 | `tasks/rework/` | active implementation queue | execution authority | Contains the ordered, bounded work needed to change the current tree. |
 | `tasks/archive/` | historical tasks | non-authoritative | Preserves the former plan and completed historical work for traceability only. |
 | `ideas/` | proposal | non-authoritative | Explores possible future directions before a product or architecture decision exists. |

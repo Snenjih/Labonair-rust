@@ -64,6 +64,7 @@ MARKDOWN_FILES = (
 )
 
 CONTROL_FILES = (".github", ".vscode")
+OPTIONAL_REFERENCE_ROOTS = (ROOT / "zed-refrence" / "zed",)
 
 INDEXED_PATHS = (
     "agents/routes.toml",
@@ -136,6 +137,8 @@ def check_links(errors: list[str]) -> None:
                 errors.append(f"{relative}: link escapes repository: {target}")
                 continue
             if not resolved.exists():
+                if any(reference_root == resolved or reference_root in resolved.parents for reference_root in OPTIONAL_REFERENCE_ROOTS):
+                    continue
                 errors.append(f"{relative}: missing link target: {target}")
 
 

@@ -37,6 +37,7 @@ Labonair-rust/
 ├── tasks/rework/               # active migration queue
 ├── tasks/archive/              # historical task records
 ├── reference-src/              # frozen predecessor reference; read-only
+├── zed-refrence/zed/           # optional frozen Zed reference gitlink; read-only
 └── scripts/                    # repository checks and tooling
 ```
 
@@ -124,6 +125,12 @@ a sibling boundary is justified.
 - `docs-reform-plan.md`: the repository-level goal and phased implementation
   plan for the documentation/agent knowledge system. It is not a second task
   queue.
+
+The reference sources are read-only and are not product dependencies. They may
+be used to verify behavior and visual parity, but they must not be imported
+into the native application or treated as current architecture authority. The
+Zed gitlink is optional in CI checkouts; Markdown links into it are validated
+when populated and tolerated as unavailable reference links when omitted.
 
 When a document changes an ownership or dependency rule, update the relevant
 normative contract, capability matrix, migration task, and inventory in the
