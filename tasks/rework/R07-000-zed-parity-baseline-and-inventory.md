@@ -60,9 +60,9 @@ from the accepted specification.
 - Use macOS as the first paired visual and interaction acceptance platform.
 - Compare public documentation with the pinned runtime and record drift.
 - Make the local gitlink reproducible on a clean checkout; the parent
-  repository was missing its `.gitmodules` entry. The mapping is now present
-  in the working tree; verify acquisition from a clean parent clone after the
-  mapping is committed.
+  repository was missing its `.gitmodules` entry. The mapping is committed in
+  `bf70e41`; a fresh parent clone at that commit successfully acquired the
+  pinned submodule.
 - Store source-level inspection only with reference analysis. Produce a
   separate implementation packet with independently worded observable
   requirements; do not give the implementation role the Zed checkout or
@@ -162,8 +162,13 @@ Removal condition for compatibility code: N/A; no compatibility path is introduc
   an `__eh_frame` size warning; the binary has not been opened for native
   visual inspection.
 - Added the missing parent `.gitmodules` URL mapping. A fresh-parent-clone
-  acquisition check is still pending because this mapping is not committed;
-  the repository maintainer owns committing it and verifying a clean clone.
+  acquisition check passed after commit `bf70e41`: a fresh parent clone ran
+  `git submodule update --init --depth 1 -- zed-refrence/zed` and checked out
+  `3569541038dd51524b03998ba4d38d253cb54f80`.
+- In that clean clone, the documentation check passed (43 normative documents,
+  159 Markdown files) and the queue check passed (46 tasks; R07-000 active).
+  The original shared worktree's pre-existing `reference-src/` deletions still
+  make its documentation check fail on missing link targets.
 - Recorded the local macOS version (`26.7.1`) and exact Labonair parent
   revision (`c42d33fae184b98c90516d747bfbb4844eb21992`). The Zed runtime
   binary, matching window bounds/theme/scale/fonts, and paired captures are

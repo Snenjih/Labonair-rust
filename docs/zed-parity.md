@@ -35,11 +35,12 @@ specific, user-approved divergence.
 
 The referenced Zed working tree is clean at the pinned commit. The parent
 repository maps the `zed-refrence/zed` gitlink in [`.gitmodules`](../.gitmodules)
-to the upstream Zed repository. A clean-clone acquisition check remains open
-until that mapping is present in a committed parent revision. Do not silently
-update the pinned commit. A target update requires a new baseline record and a
-reviewed feature-catalog diff. The local checkout is on `main`; no local tag
-named `nightly-9` points at this commit.
+to the upstream Zed repository. Clean-clone acquisition passed from parent
+commit `bf70e41`: `git submodule update --init --depth 1 -- zed-refrence/zed`
+checked out the exact pinned hash. Do not silently update the pinned commit. A
+target update requires a new baseline record and a reviewed feature-catalog
+diff. The local checkout is on `main`; no local tag named `nightly-9` points at
+this commit.
 
 R07-000 working records are indexed in [`docs/parity/README.md`](parity/README.md).
 The Settings source analysis is research-side material in
